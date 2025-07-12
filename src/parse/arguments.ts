@@ -170,6 +170,13 @@ export function parseOperation(p: Parser): Operation {
     }
 }
 
+export function parseVarOperation(p: Parser): Operation | "unset" {
+    if (p.eatIdent("unset")) {
+        return "unset";
+    }
+    return parseOperation(p);
+}
+
 export function parseNumericValue(p: Parser): Value {
     if (p.check('i64') || p.check({ kind: 'bin_op', op: 'minus' })) {
         return p.parseNumber();
@@ -335,7 +342,7 @@ export function parseCoordinates(p: Parser) {
         offset += token.length + 1;
         const end = start + token.length;
 
-        const tokenSpan = { start: sp.start + start, end: sp.start + end };
+        const tokenSpan = new Span(sp.start + start, sp.start + end);
         const isValid = isRelative(token) || isNumeric(token);
         if (!isValid) {
             addDiagnostic('Invalid component', tokenSpan);

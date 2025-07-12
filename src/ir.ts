@@ -1,24 +1,25 @@
 import type {
     Action,
     ActionHolder,
-    Condition,
+    Condition,  
 } from 'housing-common';
 import { Span } from './span';
 import { Diagnostic } from './diagnostic';
 
 type SpanElement<T> =
-    T extends Action ? IrAction :
-        T extends Condition ? IrCondition :
-            T;
+    [T] extends [Action] ? IrAction :
+    [T] extends [Condition] ? IrCondition :
+    T;
 
-type SpanArray<U> =
-    { value: SpanElement<U>[], span: Span };
+type SpanArray<U> = {
+    value: SpanElement<U>[];
+    span: Span;
+};
 
 export type Spanned<T> =
-    T extends (infer U)[]
-    ? SpanArray<U>
-    : { value: SpanElement<T>, span: Span };
-
+    [T] extends [any[]]
+    ? SpanArray<T[number]>
+    : { value: SpanElement<T>; span: Span };
 
 export type Element = { type: string };
 
@@ -27,7 +28,7 @@ export type Ir<T extends Element> = {
     span: Span;
     kwSpan: Span;
 } & {
-    [K in keyof T]: K extends 'type' ? T[K] : Spanned<Omit<T[K], 'undefined'>> | undefined;
+    [K in keyof T]: K extends 'type' ? T[K] : Spanned<NonNullable<T[K]>> | undefined;
 };
 
 export type IrAction = Ir<Action>;

@@ -1,9 +1,6 @@
-import type { Condition } from 'housing-common';
-import type { CodeStyle } from './style';
+import type { Condition } from "housing-common";
 
-export function generateConditions(
-    conditions: Condition[],
-    style: CodeStyle,
-): string {
-    return '()';
+export function generateCondition(condition: Condition): string {
+
+    return "";
 }

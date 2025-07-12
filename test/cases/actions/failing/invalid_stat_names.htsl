@@ -1,3 +1,0 @@
-stat reallyLongStatName = 5
-stat "" = 10
-stat "has spaces" = 500

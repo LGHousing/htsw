@@ -12,7 +12,7 @@ import {
 import { Span } from '../span';
 import { Diagnostic, error } from '../diagnostic';
 import type { IrAction, ParseResult } from '../ir';
-import { parseAction } from './actions.js';
+import { parseAction } from './actions';
 import { parseHolder } from './holders';
 
 export class Parser {
@@ -59,7 +59,7 @@ export class Parser {
     }
 
     parseBlock(): Array<IrAction> {
-        const actions = [];
+        const actions: IrAction[] = [];
         this.expect({ kind: 'open_delim', delim: 'brace' });
         while (true) {
             this.eatNewlines();

@@ -1,6 +1,7 @@
 import type { Parser } from './parser';
 import { error } from '../diagnostic';
 import { parseValue, parseVarName } from './arguments';
+import { Span } from '../span';
 
 export function parseNumericalPlaceholder(p: Parser): string {
     if (p.eatIdent('stat')) {
@@ -95,7 +96,7 @@ export function parseNumericalPlaceholder(p: Parser): string {
 
     function addIssueInvalidArgument(message: string) {
         const lo = index == -1 ? value.length - 1 : index + 1;
-        p.addDiagnostic(error(message, { start: span.start + lo, end: span.end }));
+        p.addDiagnostic(error(message, new Span(span.start + lo, span.end)));
     }
 
     switch (name) {

@@ -926,7 +926,7 @@ exports[`Parser > parse global stats 1`] = `
                 "end": 44,
                 "start": 32,
               },
-              "value": "%stat.global/x%",
+              "value": "%var.global/x%",
             },
             "var": {
               "span": Span {
@@ -2230,7 +2230,7 @@ exports[`Parser > parse player stats 1`] = `
                 "end": 26,
                 "start": 20,
               },
-              "value": "%stat.player/x%",
+              "value": "%var.player/x%",
             },
             "var": {
               "span": Span {
@@ -2339,7 +2339,7 @@ exports[`Parser > parse shorthands 1`] = `
                 "end": 15,
                 "start": 9,
               },
-              "value": "%stat.player/y%",
+              "value": "%var.player/y%",
             },
             "var": {
               "span": Span {
@@ -2380,7 +2380,7 @@ exports[`Parser > parse shorthands 1`] = `
                 "end": 37,
                 "start": 25,
               },
-              "value": "%stat.global/y%",
+              "value": "%var.global/y%",
             },
             "var": {
               "span": Span {
@@ -2421,7 +2421,7 @@ exports[`Parser > parse shorthands 1`] = `
                 "end": 62,
                 "start": 47,
               },
-              "value": "%stat.team/y team%",
+              "value": "%var.team/y team%",
             },
             "var": {
               "span": Span {

@@ -10,4 +10,12 @@ export class Span {
     static single(pos: number): Span {
         return new Span(pos, pos);
     }
+    
+    startSpan(): Span {
+        return Span.single(this.end);
+    }
+    
+    endSpan(): Span {
+        return Span.single(this.end);
+    }
 }

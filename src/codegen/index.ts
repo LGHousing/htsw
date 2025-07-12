@@ -1,10 +1,12 @@
-import type { ActionHolder } from 'housing-common';
-import { type CodeStyle, DEFAULT_CODE_STYLE } from './style';
-import { generateHolders } from './holders';
+import type { ActionHolder } from "housing-common";
+import { generateHolder } from "./holders";
 
-export function generate(
-    holders: ActionHolder[],
-    style: CodeStyle = DEFAULT_CODE_STYLE
-): string {
-    return generateHolders(holders, DEFAULT_CODE_STYLE);
+export function generate(holders: ActionHolder[]): string {
+    const res: string[] = [];
+
+    for (const holder of holders) {
+        res.push(generateHolder(holder));
+    }
+
+    return res.join("\n\n");
 }

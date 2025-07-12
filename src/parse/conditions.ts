@@ -14,7 +14,7 @@ import {
 } from './arguments';
 import { parseNumericalPlaceholder } from './placeholders';
 import type { ConditionKw } from '../helpers';
-import type { VarHolder } from 'housing-common/src/types';
+import type { VarHolder } from 'housing-common';
 
 type Inverted = { value: boolean; span: Span };
 

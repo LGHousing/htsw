@@ -13,7 +13,7 @@
     "type": "module",
     "license": "MIT",
     "dependencies": {
-        "housing-common": "file:../housing-common"
+        "housing-common": "git+https://github.com/housingdevs/housing-common"
     },
     "devDependencies": {
         "@types/node": "^22.13.0",

@@ -1,73 +1,42 @@
-import type { Operation, Comparison, Value } from 'housing-common';
-import type { CodeStyle } from './style';
-import {
-    OPERATION_SYMBOLS as HELPERS_OPERATION_SYMBOLS,
-    COMPARISON_SYMBOLS as HELPERS_COMPARISON_SYMBOLS,
-} from '../helpers';
-import { withWrittenStyle } from './helpers';
+import type { Action, Operation, Value } from "housing-common";
+import { generateAction } from "./actions";
+import type { Condition } from "housing-common/src/types";
 
-const OPERATION_SYMBOLS = HELPERS_OPERATION_SYMBOLS;
-const COMPARISON_SYMBOLS = HELPERS_COMPARISON_SYMBOLS;
-
-export const OPERATION_NAMES: {
-    [key in Operation]: string;
-} = {
-    increment: 'inc',
-    decrement: 'dec',
-    set: 'set',
-    multiply: 'mul',
-    divide: 'div',
-};
-
-export const COMPARISON_NAMES: {
-    [key in Comparison]: string;
-} = {
-    less_than: 'less than',
-    less_than_or_equals: 'less than or equals',
-    equals: 'equals',
-    greater_than: 'greater than',
-    greater_than_or_equals: 'greater than or equals',
-};
-
-export function generateOperation(
-    op: Operation,
-    style: CodeStyle,
-): string {
-    if (style.binOpStyle === 'symbolic') {
-        return OPERATION_SYMBOLS[op];
-    }
-
-    return withWrittenStyle(OPERATION_NAMES[op], style.binOpStyle);
-}
-
-export function generateComparison(
-    op: Comparison,
-    style: CodeStyle,
-): string {
-    if (style.cmpOpStyle === 'symbolic') {
-        return COMPARISON_SYMBOLS[op];
-    }
-
-    return withWrittenStyle(COMPARISON_NAMES[op], style.cmpOpStyle);
-}
-
-export function generateValue(
-    value: Value,
-    style: CodeStyle
-): string {
-    return '';
-}
-
-export function generateBoolean(
-    boolean: boolean,
-    style: CodeStyle,
-): string {
-    return boolean ? 'true' : 'false';
-}
-
-export function generateString(
-    string: string,
-    style: CodeStyle,
-): string {
+export function generateString(string: string): string {
     return `"${string}"`;
+}
+
+export function generateOperation(op: Operation | "unset"): string {
+    switch (op) {
+        case "set": return "=";
+        case "increment": return "+=";
+        case "decrement": return "-=";
+        case "multiply": return "*=";
+        case "divide": return "/=";
+        case "unset": return "unset";
+    }
+}
+
+export function generateValue(value: Value): string {
+    switch (typeof value) {
+        case "string": return `"${value}"`
+        case "number": return `${value}`;
+        case "bigint": return `${value}`;
+    }
+}
+
+export function generateBlock(actions: Action[]): string {
+    const res: string[] = [];
+
+    res.push("{");
+    for (const action of actions) {
+        res.push(`    ${generateAction(action)}`);
+    }
+    res.push("}");
+
+    return res.join("\n");
+}
+
+export function generateConditions(conditions: Condition[]): string {
+    return "";
 }

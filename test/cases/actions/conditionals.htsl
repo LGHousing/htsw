@@ -23,3 +23,10 @@ if (stat x < 5) { chat "true" } else { chat "false" }
 if or () {}
 if true () {}
 if false () {}
+
+if () {
+
+}
+else {
+
+}
