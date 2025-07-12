@@ -1,0 +1,29 @@
+{
+    "name": "htsw",
+    "version": "0.0.1",
+    "description": "HTSL but we don't take no Ls",
+    "main": "dist/src/index.js",
+    "types": "dist/src/index.d.ts",
+    "scripts": {
+        "dev": "npx tsx watch src/testing.ts",
+        "build": "npx tsx build/build.ts",
+        "format": "npx prettier \"**/*.{ts,tsx,css,json}\" --write",
+        "prepare": "ts-patch install -s"
+    },
+    "license": "MIT",
+    "dependencies": {
+        "housing-common": "git+https://github.com/housingdevs/housing-common",
+        "htsl": "git+https://github.com/sndyx/htsl",
+        "htsw": "file:"
+    },
+    "devDependencies": {
+        "@babel/cli": "^7.27.0",
+        "@babel/core": "^7.26.10",
+        "@babel/preset-env": "^7.26.9",
+        "bigint-polyfill": "^0.1.0",
+        "esbuild": "^0.25.3",
+        "ts-node": "^10.9.2",
+        "ts-patch": "^3.2.0",
+        "typescript": "^5.4.5"
+    }
+}

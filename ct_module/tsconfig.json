@@ -1,0 +1,19 @@
+{
+    "compilerOptions": {
+        "target": "es2015",
+        "module": "commonjs",
+        "lib": ["es2016"],
+        "outDir": "dist",
+        "rootDir": "src",
+        "strict": true,
+        "noImplicitAny": false,
+        "allowJs": false,
+        "esModuleInterop": true,
+        "skipLibCheck": true,
+        "forceConsistentCasingInFileNames": true,
+        "alwaysStrict": false,
+        "declaration": true
+    },
+    "exclude": ["dist", "node_modules"],
+    "include": ["./src/**/*.ts", "typings.d.ts"]
+}

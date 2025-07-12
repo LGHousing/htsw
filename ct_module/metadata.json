@@ -1,0 +1,8 @@
+{
+    "name": "HTSW",
+    "creator": "69Jesse",
+    "description": "HTSL but we don't take no Ls",
+    "version": "0.0.1",
+    "entry": "index.js",
+    "requires": ["axios", "Vigilance"]
+}
