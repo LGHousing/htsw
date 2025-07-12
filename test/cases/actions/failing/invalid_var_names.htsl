@@ -1,0 +1,3 @@
+var reallyLongStatName = 5
+var "" = 10
+var "has spaces" = 500

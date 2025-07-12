@@ -4,7 +4,7 @@ exports[`Lexer > comments 1`] = `
 [
   {
     "kind": "ident",
-    "span": {
+    "span": Span {
       "end": 4,
       "start": 0,
     },
@@ -12,7 +12,7 @@ exports[`Lexer > comments 1`] = `
   },
   {
     "kind": "ident",
-    "span": {
+    "span": Span {
       "end": 6,
       "start": 5,
     },
@@ -21,14 +21,14 @@ exports[`Lexer > comments 1`] = `
   {
     "kind": "cmp_op",
     "op": "equals",
-    "span": {
+    "span": Span {
       "end": 8,
       "start": 7,
     },
   },
   {
     "kind": "i64",
-    "span": {
+    "span": Span {
       "end": 10,
       "start": 9,
     },
@@ -36,14 +36,14 @@ exports[`Lexer > comments 1`] = `
   },
   {
     "kind": "eol",
-    "span": {
+    "span": Span {
       "end": 11,
       "start": 10,
     },
   },
   {
     "kind": "ident",
-    "span": {
+    "span": Span {
       "end": 15,
       "start": 11,
     },
@@ -51,7 +51,7 @@ exports[`Lexer > comments 1`] = `
   },
   {
     "kind": "ident",
-    "span": {
+    "span": Span {
       "end": 17,
       "start": 16,
     },
@@ -60,14 +60,14 @@ exports[`Lexer > comments 1`] = `
   {
     "kind": "cmp_op",
     "op": "equals",
-    "span": {
+    "span": Span {
       "end": 19,
       "start": 18,
     },
   },
   {
     "kind": "ident",
-    "span": {
+    "span": Span {
       "end": 24,
       "start": 20,
     },
@@ -75,7 +75,7 @@ exports[`Lexer > comments 1`] = `
   },
   {
     "kind": "ident",
-    "span": {
+    "span": Span {
       "end": 26,
       "start": 25,
     },
@@ -83,28 +83,28 @@ exports[`Lexer > comments 1`] = `
   },
   {
     "kind": "eol",
-    "span": {
+    "span": Span {
       "end": 41,
       "start": 40,
     },
   },
   {
     "kind": "eol",
-    "span": {
+    "span": Span {
       "end": 42,
       "start": 41,
     },
   },
   {
     "kind": "eol",
-    "span": {
+    "span": Span {
       "end": 61,
       "start": 60,
     },
   },
   {
     "kind": "ident",
-    "span": {
+    "span": Span {
       "end": 65,
       "start": 61,
     },
@@ -112,7 +112,7 @@ exports[`Lexer > comments 1`] = `
   },
   {
     "kind": "str",
-    "span": {
+    "span": Span {
       "end": 83,
       "start": 66,
     },
@@ -120,35 +120,35 @@ exports[`Lexer > comments 1`] = `
   },
   {
     "kind": "eol",
-    "span": {
+    "span": Span {
       "end": 84,
       "start": 83,
     },
   },
   {
     "kind": "eol",
-    "span": {
+    "span": Span {
       "end": 85,
       "start": 84,
     },
   },
   {
     "kind": "eol",
-    "span": {
+    "span": Span {
       "end": 128,
       "start": 127,
     },
   },
   {
     "kind": "eol",
-    "span": {
+    "span": Span {
       "end": 129,
       "start": 128,
     },
   },
   {
     "kind": "ident",
-    "span": {
+    "span": Span {
       "end": 133,
       "start": 129,
     },
@@ -156,7 +156,7 @@ exports[`Lexer > comments 1`] = `
   },
   {
     "kind": "ident",
-    "span": {
+    "span": Span {
       "end": 135,
       "start": 134,
     },
@@ -165,14 +165,14 @@ exports[`Lexer > comments 1`] = `
   {
     "kind": "cmp_op",
     "op": "equals",
-    "span": {
+    "span": Span {
       "end": 137,
       "start": 136,
     },
   },
   {
     "kind": "i64",
-    "span": {
+    "span": Span {
       "end": 140,
       "start": 138,
     },
@@ -180,35 +180,35 @@ exports[`Lexer > comments 1`] = `
   },
   {
     "kind": "eol",
-    "span": {
+    "span": Span {
       "end": 141,
       "start": 140,
     },
   },
   {
     "kind": "eol",
-    "span": {
+    "span": Span {
       "end": 142,
       "start": 141,
     },
   },
   {
     "kind": "eol",
-    "span": {
+    "span": Span {
       "end": 202,
       "start": 201,
     },
   },
   {
     "kind": "eol",
-    "span": {
+    "span": Span {
       "end": 203,
       "start": 202,
     },
   },
   {
     "kind": "ident",
-    "span": {
+    "span": Span {
       "end": 207,
       "start": 203,
     },
@@ -216,7 +216,7 @@ exports[`Lexer > comments 1`] = `
   },
   {
     "kind": "str",
-    "span": {
+    "span": Span {
       "end": 225,
       "start": 208,
     },
@@ -229,7 +229,7 @@ exports[`Lexer > identifiers 1`] = `
 [
   {
     "kind": "ident",
-    "span": {
+    "span": Span {
       "end": 4,
       "start": 0,
     },
@@ -237,7 +237,7 @@ exports[`Lexer > identifiers 1`] = `
   },
   {
     "kind": "ident",
-    "span": {
+    "span": Span {
       "end": 17,
       "start": 5,
     },
@@ -246,14 +246,14 @@ exports[`Lexer > identifiers 1`] = `
   {
     "kind": "cmp_op",
     "op": "equals",
-    "span": {
+    "span": Span {
       "end": 19,
       "start": 18,
     },
   },
   {
     "kind": "i64",
-    "span": {
+    "span": Span {
       "end": 21,
       "start": 20,
     },
@@ -261,14 +261,14 @@ exports[`Lexer > identifiers 1`] = `
   },
   {
     "kind": "eol",
-    "span": {
+    "span": Span {
       "end": 22,
       "start": 21,
     },
   },
   {
     "kind": "ident",
-    "span": {
+    "span": Span {
       "end": 26,
       "start": 22,
     },
@@ -276,7 +276,7 @@ exports[`Lexer > identifiers 1`] = `
   },
   {
     "kind": "ident",
-    "span": {
+    "span": Span {
       "end": 51,
       "start": 27,
     },
@@ -285,14 +285,14 @@ exports[`Lexer > identifiers 1`] = `
   {
     "kind": "cmp_op",
     "op": "equals",
-    "span": {
+    "span": Span {
       "end": 53,
       "start": 52,
     },
   },
   {
     "kind": "i64",
-    "span": {
+    "span": Span {
       "end": 56,
       "start": 54,
     },
@@ -300,21 +300,21 @@ exports[`Lexer > identifiers 1`] = `
   },
   {
     "kind": "eol",
-    "span": {
+    "span": Span {
       "end": 57,
       "start": 56,
     },
   },
   {
     "kind": "eol",
-    "span": {
+    "span": Span {
       "end": 58,
       "start": 57,
     },
   },
   {
     "kind": "ident",
-    "span": {
+    "span": Span {
       "end": 62,
       "start": 58,
     },
@@ -322,7 +322,7 @@ exports[`Lexer > identifiers 1`] = `
   },
   {
     "kind": "ident",
-    "span": {
+    "span": Span {
       "end": 75,
       "start": 63,
     },
@@ -331,14 +331,14 @@ exports[`Lexer > identifiers 1`] = `
   {
     "kind": "bin_op_eq",
     "op": "slash",
-    "span": {
+    "span": Span {
       "end": 78,
       "start": 76,
     },
   },
   {
     "kind": "ident",
-    "span": {
+    "span": Span {
       "end": 83,
       "start": 79,
     },
@@ -346,7 +346,7 @@ exports[`Lexer > identifiers 1`] = `
   },
   {
     "kind": "ident",
-    "span": {
+    "span": Span {
       "end": 108,
       "start": 84,
     },
@@ -354,14 +354,14 @@ exports[`Lexer > identifiers 1`] = `
   },
   {
     "kind": "eol",
-    "span": {
+    "span": Span {
       "end": 109,
       "start": 108,
     },
   },
   {
     "kind": "ident",
-    "span": {
+    "span": Span {
       "end": 113,
       "start": 109,
     },
@@ -369,7 +369,7 @@ exports[`Lexer > identifiers 1`] = `
   },
   {
     "kind": "ident",
-    "span": {
+    "span": Span {
       "end": 134,
       "start": 114,
     },
@@ -378,14 +378,14 @@ exports[`Lexer > identifiers 1`] = `
   {
     "kind": "cmp_op",
     "op": "equals",
-    "span": {
+    "span": Span {
       "end": 136,
       "start": 135,
     },
   },
   {
     "kind": "i64",
-    "span": {
+    "span": Span {
       "end": 140,
       "start": 137,
     },
@@ -398,14 +398,14 @@ exports[`Lexer > tokens 1`] = `
 [
   {
     "kind": "comma",
-    "span": {
+    "span": Span {
       "end": 1,
       "start": 0,
     },
   },
   {
     "kind": "eol",
-    "span": {
+    "span": Span {
       "end": 2,
       "start": 1,
     },
@@ -413,14 +413,14 @@ exports[`Lexer > tokens 1`] = `
   {
     "kind": "bin_op",
     "op": "plus",
-    "span": {
+    "span": Span {
       "end": 3,
       "start": 2,
     },
   },
   {
     "kind": "eol",
-    "span": {
+    "span": Span {
       "end": 4,
       "start": 3,
     },
@@ -428,14 +428,14 @@ exports[`Lexer > tokens 1`] = `
   {
     "kind": "bin_op",
     "op": "minus",
-    "span": {
+    "span": Span {
       "end": 5,
       "start": 4,
     },
   },
   {
     "kind": "eol",
-    "span": {
+    "span": Span {
       "end": 6,
       "start": 5,
     },
@@ -443,14 +443,14 @@ exports[`Lexer > tokens 1`] = `
   {
     "kind": "bin_op",
     "op": "star",
-    "span": {
+    "span": Span {
       "end": 7,
       "start": 6,
     },
   },
   {
     "kind": "eol",
-    "span": {
+    "span": Span {
       "end": 8,
       "start": 7,
     },
@@ -458,14 +458,14 @@ exports[`Lexer > tokens 1`] = `
   {
     "kind": "bin_op",
     "op": "slash",
-    "span": {
+    "span": Span {
       "end": 9,
       "start": 8,
     },
   },
   {
     "kind": "eol",
-    "span": {
+    "span": Span {
       "end": 10,
       "start": 9,
     },
@@ -473,14 +473,14 @@ exports[`Lexer > tokens 1`] = `
   {
     "kind": "bin_op",
     "op": "star_star",
-    "span": {
+    "span": Span {
       "end": 12,
       "start": 10,
     },
   },
   {
     "kind": "eol",
-    "span": {
+    "span": Span {
       "end": 13,
       "start": 12,
     },
@@ -488,14 +488,14 @@ exports[`Lexer > tokens 1`] = `
   {
     "kind": "bin_op_eq",
     "op": "plus",
-    "span": {
+    "span": Span {
       "end": 15,
       "start": 13,
     },
   },
   {
     "kind": "eol",
-    "span": {
+    "span": Span {
       "end": 16,
       "start": 15,
     },
@@ -503,14 +503,14 @@ exports[`Lexer > tokens 1`] = `
   {
     "kind": "bin_op_eq",
     "op": "minus",
-    "span": {
+    "span": Span {
       "end": 18,
       "start": 16,
     },
   },
   {
     "kind": "eol",
-    "span": {
+    "span": Span {
       "end": 19,
       "start": 18,
     },
@@ -518,14 +518,14 @@ exports[`Lexer > tokens 1`] = `
   {
     "kind": "bin_op_eq",
     "op": "star",
-    "span": {
+    "span": Span {
       "end": 21,
       "start": 19,
     },
   },
   {
     "kind": "eol",
-    "span": {
+    "span": Span {
       "end": 22,
       "start": 21,
     },
@@ -533,14 +533,14 @@ exports[`Lexer > tokens 1`] = `
   {
     "kind": "bin_op_eq",
     "op": "slash",
-    "span": {
+    "span": Span {
       "end": 24,
       "start": 22,
     },
   },
   {
     "kind": "eol",
-    "span": {
+    "span": Span {
       "end": 25,
       "start": 24,
     },
@@ -548,14 +548,14 @@ exports[`Lexer > tokens 1`] = `
   {
     "kind": "cmp_op",
     "op": "greater_than",
-    "span": {
+    "span": Span {
       "end": 26,
       "start": 25,
     },
   },
   {
     "kind": "eol",
-    "span": {
+    "span": Span {
       "end": 27,
       "start": 26,
     },
@@ -563,14 +563,14 @@ exports[`Lexer > tokens 1`] = `
   {
     "kind": "cmp_op",
     "op": "less_than",
-    "span": {
+    "span": Span {
       "end": 28,
       "start": 27,
     },
   },
   {
     "kind": "eol",
-    "span": {
+    "span": Span {
       "end": 29,
       "start": 28,
     },
@@ -578,14 +578,14 @@ exports[`Lexer > tokens 1`] = `
   {
     "kind": "cmp_op",
     "op": "equals",
-    "span": {
+    "span": Span {
       "end": 30,
       "start": 29,
     },
   },
   {
     "kind": "eol",
-    "span": {
+    "span": Span {
       "end": 31,
       "start": 30,
     },
@@ -593,14 +593,14 @@ exports[`Lexer > tokens 1`] = `
   {
     "kind": "cmp_op_eq",
     "op": "greater_than",
-    "span": {
+    "span": Span {
       "end": 33,
       "start": 31,
     },
   },
   {
     "kind": "eol",
-    "span": {
+    "span": Span {
       "end": 34,
       "start": 33,
     },
@@ -608,14 +608,14 @@ exports[`Lexer > tokens 1`] = `
   {
     "kind": "cmp_op_eq",
     "op": "less_than",
-    "span": {
+    "span": Span {
       "end": 36,
       "start": 34,
     },
   },
   {
     "kind": "eol",
-    "span": {
+    "span": Span {
       "end": 37,
       "start": 36,
     },
@@ -623,14 +623,14 @@ exports[`Lexer > tokens 1`] = `
   {
     "kind": "cmp_op_eq",
     "op": "equals",
-    "span": {
+    "span": Span {
       "end": 39,
       "start": 37,
     },
   },
   {
     "kind": "eol",
-    "span": {
+    "span": Span {
       "end": 40,
       "start": 39,
     },
@@ -638,14 +638,14 @@ exports[`Lexer > tokens 1`] = `
   {
     "delim": "parenthesis",
     "kind": "open_delim",
-    "span": {
+    "span": Span {
       "end": 41,
       "start": 40,
     },
   },
   {
     "kind": "eol",
-    "span": {
+    "span": Span {
       "end": 42,
       "start": 41,
     },
@@ -653,14 +653,14 @@ exports[`Lexer > tokens 1`] = `
   {
     "delim": "brace",
     "kind": "open_delim",
-    "span": {
+    "span": Span {
       "end": 43,
       "start": 42,
     },
   },
   {
     "kind": "eol",
-    "span": {
+    "span": Span {
       "end": 44,
       "start": 43,
     },
@@ -668,14 +668,14 @@ exports[`Lexer > tokens 1`] = `
   {
     "delim": "bracket",
     "kind": "open_delim",
-    "span": {
+    "span": Span {
       "end": 45,
       "start": 44,
     },
   },
   {
     "kind": "eol",
-    "span": {
+    "span": Span {
       "end": 46,
       "start": 45,
     },
@@ -683,14 +683,14 @@ exports[`Lexer > tokens 1`] = `
   {
     "delim": "parenthesis",
     "kind": "close_delim",
-    "span": {
+    "span": Span {
       "end": 47,
       "start": 46,
     },
   },
   {
     "kind": "eol",
-    "span": {
+    "span": Span {
       "end": 48,
       "start": 47,
     },
@@ -698,14 +698,14 @@ exports[`Lexer > tokens 1`] = `
   {
     "delim": "brace",
     "kind": "close_delim",
-    "span": {
+    "span": Span {
       "end": 49,
       "start": 48,
     },
   },
   {
     "kind": "eol",
-    "span": {
+    "span": Span {
       "end": 50,
       "start": 49,
     },
@@ -713,21 +713,21 @@ exports[`Lexer > tokens 1`] = `
   {
     "delim": "bracket",
     "kind": "close_delim",
-    "span": {
+    "span": Span {
       "end": 51,
       "start": 50,
     },
   },
   {
     "kind": "eol",
-    "span": {
+    "span": Span {
       "end": 52,
       "start": 51,
     },
   },
   {
     "kind": "str",
-    "span": {
+    "span": Span {
       "end": 60,
       "start": 52,
     },
@@ -735,14 +735,14 @@ exports[`Lexer > tokens 1`] = `
   },
   {
     "kind": "eol",
-    "span": {
+    "span": Span {
       "end": 61,
       "start": 60,
     },
   },
   {
     "kind": "placeholder",
-    "span": {
+    "span": Span {
       "end": 74,
       "start": 61,
     },
@@ -750,14 +750,14 @@ exports[`Lexer > tokens 1`] = `
   },
   {
     "kind": "eol",
-    "span": {
+    "span": Span {
       "end": 75,
       "start": 74,
     },
   },
   {
     "kind": "i64",
-    "span": {
+    "span": Span {
       "end": 80,
       "start": 75,
     },
@@ -765,14 +765,14 @@ exports[`Lexer > tokens 1`] = `
   },
   {
     "kind": "eol",
-    "span": {
+    "span": Span {
       "end": 81,
       "start": 80,
     },
   },
   {
     "kind": "f64",
-    "span": {
+    "span": Span {
       "end": 87,
       "start": 81,
     },
@@ -780,14 +780,14 @@ exports[`Lexer > tokens 1`] = `
   },
   {
     "kind": "eol",
-    "span": {
+    "span": Span {
       "end": 88,
       "start": 87,
     },
   },
   {
     "kind": "ident",
-    "span": {
+    "span": Span {
       "end": 98,
       "start": 88,
     },

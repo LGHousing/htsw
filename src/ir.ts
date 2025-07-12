@@ -1,63 +1,47 @@
 import type {
-    PartialAction,
-    PartialActionHolder,
-    PartialCondition,
-} from 'housing-common/src/types/partial';
-import type { Span } from './span';
-import type { Diagnostic } from './diagnostic';
+    Action,
+    ActionHolder,
+    Condition,  
+} from 'housing-common';
+import { Span } from './span';
+import { Diagnostic } from './diagnostic';
 
-type Wrap<T> = {
-    value: T extends PartialAction
-        ? IrAction
-        : T extends PartialCondition
-          ? IrCondition
-          : T extends (infer U)[]
-            ? WrapArray<U>
-            : T;
+type SpanElement<T> =
+    [T] extends [Action] ? IrAction :
+    [T] extends [Condition] ? IrCondition :
+    T;
+
+type SpanArray<U> = {
+    value: SpanElement<U>[];
     span: Span;
 };
 
-type WrapArray<U> = U extends PartialAction
-    ? IrAction[]
-    : U extends PartialCondition
-      ? IrCondition[]
-      : U extends (infer V)[]
-        ? WrapArray<V>[]
-        : U[];
+export type Spanned<T> =
+    [T] extends [any[]]
+    ? SpanArray<T[number]>
+    : { value: SpanElement<T>; span: Span };
 
 export type Element = { type: string };
 
-export type IrElement<T extends Element> = {
+export type Ir<T extends Element> = {
     type: T['type'];
-    kwSpan: Span;
     span: Span;
+    kwSpan: Span;
 } & {
-    [K in keyof T]: K extends 'type' ? T[K] : Wrap<T[K]>;
+    [K in keyof T]: K extends 'type' ? T[K] : Spanned<NonNullable<T[K]>> | undefined;
 };
 
-export type IrAction = IrElement<PartialAction>;
-export type IrCondition = IrElement<PartialCondition>;
-export type IrActionHolder = IrElement<PartialActionHolder>;
+export type IrAction = Ir<Action>;
+export type IrCondition = Ir<Condition>;
+export type IrActionHolder = Ir<ActionHolder>;
 
 export type ParseResult = {
     holders: IrActionHolder[];
     diagnostics: Diagnostic[];
 };
 
-function unwrapValue(value: any): any {
-    if (value === null || value === undefined) return value;
-    if (Array.isArray(value)) {
-        return value.map(unwrapValue);
-    }
-    if (typeof value === 'object') {
-        if ('value' in value && 'span' in value) {
-            return unwrapValue(value.value);
-        }
-        if ('type' in value && 'kwSpan' in value && 'span' in value) {
-            return unwrapTransform(value);
-        }
-    }
-    return value;
+export function unwrapIr<T extends Element>(element: Ir<T>): T {
+    return unwrapTransform(element);
 }
 
 function unwrapTransform(ir: any): any {
@@ -70,8 +54,20 @@ function unwrapTransform(ir: any): any {
     return result;
 }
 
-export function unwrapIr<T extends Element>(element: IrElement<T>): T {
-    return unwrapTransform(element);
+function unwrapValue(value: any): any {
+    if (value === null || value === undefined) return value;
+    if (Array.isArray(value)) {
+        return value.map(unwrapValue);
+    }
+    if (typeof value === 'object') {
+        if ('type' in value && 'kwSpan' in value && 'span' in value) {
+            return unwrapTransform(value);
+        }
+        if ('value' in value && 'span' in value) {
+            return unwrapValue(value.value);
+        }
+    }
+    return value;
 }
 
 export function irKeys(value: any) {

@@ -1,23 +1,59 @@
 import type { Parser } from './parser';
 import { error } from '../diagnostic';
-import { parseStatName } from './arguments';
+import { parseValue, parseVarName } from './arguments';
+import { Span } from '../span';
 
 export function parseNumericalPlaceholder(p: Parser): string {
     if (p.eatIdent('stat')) {
-        const name = parseStatName(p);
-        return `%stat.player/${name}%`;
+        const name = parseVarName(p);
+        return `%var.player/${name}%`;
     }
     if (p.eatIdent('globalstat')) {
-        const name = parseStatName(p);
-        return `%stat.global/${name}%`;
+        const name = parseVarName(p);
+        return `%var.global/${name}%`;
     }
     if (p.eatIdent('teamstat')) {
-        const name = parseStatName(p);
+        const name = parseVarName(p);
         if (!p.check('ident') && !p.check('str')) {
             throw error('Expected team name', p.token.span);
         }
-        const team = parseStatName(p);
-        return `%stat.team/${name} ${team}%`;
+        const team = parseVarName(p);
+        return `%var.team/${name} ${team}%`;
+    }
+    if (p.eatIdent('var')) {
+        const name = parseVarName(p);
+
+        if (p.check('i64') || p.check('f64') || p.check('str')) {
+            const fallback = parseValue(p);
+            return `%var.player/${name} ${fallback}%`
+        } else {
+            return `%var.player/${name}%`;
+        }
+    }
+    if (p.eatIdent('globalvar')) {
+        const name = parseVarName(p);
+
+        if (p.check('i64') || p.check('f64') || p.check('str')) {
+            const fallback = parseValue(p);
+            return `%var.global/${name} ${fallback}%`
+        } else {
+            return `%var.global/${name}%`;
+        }
+    }
+    if (p.eatIdent('teamvar')) {
+        const name = parseVarName(p);
+
+        if (!p.check('ident') && !p.check('str')) {
+            throw error('Expected team name', p.token.span);
+        }
+        const team = parseVarName(p);
+
+        if (p.check('i64') || p.check('f64') || p.check('str')) {
+            const fallback = parseValue(p);
+            return `%var.team/${name} ${team} ${fallback}%`
+        } else {
+            return `%var.team/${name} ${team}%`;
+        }
     }
     if (p.eatIdent('randomint')) {
         const from = p.parseNumber();
@@ -60,7 +96,7 @@ export function parseNumericalPlaceholder(p: Parser): string {
 
     function addIssueInvalidArgument(message: string) {
         const lo = index == -1 ? value.length - 1 : index + 1;
-        p.addDiagnostic(error(message, { start: span.start + lo, end: span.end }));
+        p.addDiagnostic(error(message, new Span(span.start + lo, span.end)));
     }
 
     switch (name) {

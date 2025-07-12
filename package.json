@@ -2,25 +2,24 @@
     "name": "htsl",
     "version": "1.0.0",
     "description": "HTSL compiler and decompiler",
-    "main": "dist/src/index.js",
-    "types": "dist/src/index.d.ts",
+    "main": "dist/index.js",
+    "types": "dist/index.d.ts",
     "scripts": {
-        "dev": "npx tsx watch src/index.ts",
+        "build": "tsc",
         "test": "vitest",
-        "coverage": "vitest run --coverage",
-        "format": "npx prettier \"**/*.{ts,tsx,css,json}\" --write"
+        "format": "npx prettier \"**/*.{ts,tsx,css,json}\" --write",
+        "prepare": "npm run build"
     },
     "type": "module",
     "license": "MIT",
     "dependencies": {
-        "housing-common": "git+https://github.com/housingdevs/housing-common",
-        "htsl": "file:"
+        "housing-common": "git+https://github.com/housingdevs/housing-common"
     },
     "devDependencies": {
         "@types/node": "^22.13.0",
         "prettier": "^3.5.3",
         "tsx": "^4.19.2",
         "typescript": "^5.7.3",
-        "vitest": "^3.0.4"
+        "vitest": "3.0.5"
     }
 }

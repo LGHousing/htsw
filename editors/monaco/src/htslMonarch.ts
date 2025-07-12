@@ -19,7 +19,7 @@ export const HTSL_MONARCH_DEFINITION: IMonarchLanguage = {
         'false',
     ],
 
-    typeKeywords: ['stat', 'globalstat', 'teamstat', 'placeholder'],
+    typeKeywords: ['stat', 'globalstat', 'teamstat', 'var', 'globalvar', 'teamvar', 'placeholder'],
 
     operators: [
         '=',

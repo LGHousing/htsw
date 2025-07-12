@@ -8,7 +8,7 @@ describe('Generate', () => {
         it('generate ' + test.name, () => {
             const actions = htsl.actions(test.source);
 
-            const generatedSource = htsl.transform.generate(actions);
+            const generatedSource = htsl.codegen.generate(actions);
             const newActions = htsl.actions(generatedSource);
 
             // uncomment to see where it went wrong:

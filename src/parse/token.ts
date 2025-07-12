@@ -1,4 +1,4 @@
-import type { Span } from '../span';
+import { Span } from '../span';
 
 export type Token = TokenType & { span: Span };
 

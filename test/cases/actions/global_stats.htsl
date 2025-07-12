@@ -1,3 +1,3 @@
 globalstat x = 5
 globalstat y = globalstat x
-globalstat z = "%stat.global/y%
+globalstat z = "%stat.global/y%"

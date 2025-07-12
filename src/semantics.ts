@@ -1,9 +1,8 @@
 import type { Action, Condition } from 'housing-common/src/types';
 
 export type SemanticKind =
-    | 'stat_name'
-    | 'global_stat_name'
-    | 'team_stat_name'
+    | 'var_holder'
+    | 'var_name'
     | 'team_name'
     | 'amount'
     | 'operation'
@@ -93,23 +92,12 @@ export const CONDITION_SEMANTIC_DESCRIPTORS: {
         inverted: 'boolean',
         team: 'team_name',
     },
-    COMPARE_GLOBAL_STAT: {
+    COMPARE_VAR: {
+        holder: 'var_holder',
         amount: 'amount',
-        stat: 'global_stat_name',
+        var: 'var_name',
         op: 'operation',
-        inverted: 'inversion',
-    },
-    COMPARE_TEAM_STAT: {
-        amount: 'amount',
-        stat: 'team_stat_name',
-        op: 'operation',
-        team: 'team_name',
-        inverted: 'inversion',
-    },
-    COMPARE_STAT: {
-        stat: 'stat_name',
-        op: 'comparison',
-        amount: 'amount',
+        fallback: 'amount',
         inverted: 'inversion',
     },
     REQUIRE_GAMEMODE: {
@@ -204,21 +192,12 @@ export const ACTION_SEMANTIC_DESCRIPTORS: {
         amount: 'amount',
         heal: 'boolean',
     },
-    CHANGE_STAT: {
-        stat: 'stat_name',
+    CHANGE_VAR: {
+        holder: 'var_holder',
+        var: 'var_name',
         op: 'operation',
-        amount: 'amount',
-    },
-    CHANGE_GLOBAL_STAT: {
-        stat: 'global_stat_name',
-        op: 'operation',
-        amount: 'amount',
-    },
-    CHANGE_TEAM_STAT: {
-        stat: 'team_stat_name',
-        team: 'team_name',
-        op: 'operation',
-        amount: 'amount',
+        value: 'amount',
+        unset: 'boolean',
     },
     CHANGE_HEALTH: {
         op: 'operation',

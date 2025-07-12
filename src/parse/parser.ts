@@ -1,5 +1,5 @@
-import { partialEq } from '../helpers.js';
-import type { Lexer } from './lexer.js';
+import { partialEq } from '../helpers';
+import type { Lexer } from './lexer';
 import {
     type CloseDelimKind,
     type Delimiter,
@@ -8,11 +8,11 @@ import {
     type StrKind,
     type Token,
     tokenToString,
-} from './token.js';
-import { type Span, span } from '../span.js';
-import { type Diagnostic, error } from '../diagnostic.js';
-import type { IrAction, ParseResult } from '../ir.js';
-import { parseAction } from './actions.js';
+} from './token';
+import { Span } from '../span';
+import { Diagnostic, error } from '../diagnostic';
+import type { IrAction, ParseResult } from '../ir';
+import { parseAction } from './actions';
 import { parseHolder } from './holders';
 
 export class Parser {
@@ -27,13 +27,14 @@ export class Parser {
         this.lexer = lexer;
         this.result = { holders: [], diagnostics: [] };
         this.tokens = [];
-        this.token = { kind: 'eof', span: span(0, 0) };
+        this.token = { kind: 'eof', span: new Span(0, 0) };
         this.prev = this.token;
         this.next();
     }
 
     parseCompletely(): ParseResult {
         while (!this.check('eof')) {
+            this.eatNewlines();
             this.parseRecovering(['eol'], () => {
                 this.result.holders.push(parseHolder(this));
             });
@@ -58,7 +59,7 @@ export class Parser {
     }
 
     parseBlock(): Array<IrAction> {
-        const actions = [];
+        const actions: IrAction[] = [];
         this.expect({ kind: 'open_delim', delim: 'brace' });
         while (true) {
             this.eatNewlines();
@@ -208,17 +209,22 @@ export class Parser {
         try {
             return parser.call(this, this);
         } catch (e) {
-            if (e instanceof Error) throw e;
-            this.addDiagnostic(e as Diagnostic);
-            this.recover(recoveryTokens);
+            if (e instanceof Diagnostic) {
+                this.addDiagnostic(e as Diagnostic);
+                this.recover(recoveryTokens);
+            } else throw e;
         }
+    }
+
+    checkEol(): boolean {
+        return this.check("eol") || this.check("eof");
     }
 
     spanned<T>(parser: ((p: Parser) => T) | (() => T)): { value: T; span: Span } {
         const lo = this.token.span.start;
         const value = parser.call(this, this);
         const hi = this.prev.span.end;
-        return { value, span: span(lo, hi) };
+        return { value, span: new Span(lo, hi) };
     }
 
     eatOption(value: string): boolean {

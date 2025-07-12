@@ -1,6 +1,6 @@
 import type { Parser } from './parser';
 import type { IrActionHolder } from '../ir';
-import { span } from '../span';
+import { Span } from '../span';
 import { error } from '../diagnostic';
 
 export function parseHolder(p: Parser): IrActionHolder {
@@ -25,7 +25,7 @@ function parseHolderRecovering<T extends IrActionHolder['type']>(
     p.parseRecovering(['eol'], () => {
         parser(holder);
     });
-    holder.span = span(start, p.prev.span.end);
+    holder.span = new Span(start, p.prev.span.end);
     return holder;
 }
 

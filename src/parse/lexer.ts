@@ -1,6 +1,5 @@
-import { span } from '../span.js';
-import { token, type Token } from './token.js';
-import { error } from '../diagnostic.js';
+import { Span } from '../span';
+import { token, type Token } from './token';
 
 export class Lexer {
     src: string;
@@ -16,10 +15,10 @@ export class Lexer {
         while (this.hasNext() && /^\s+$/.test(this.peek()) && this.peek() != '\n') {
             this.next();
         }
-        if (!this.hasNext()) return token('eof', span(this.pos, this.pos));
+        if (!this.hasNext()) return token('eof', new Span(this.pos, this.pos));
 
         const lo = this.pos;
-        const singleSpan = span(lo, lo + 1);
+        const singleSpan = new Span(lo, lo + 1);
         const c = this.next();
 
         if (c === '/' && this.peek() === '/') {
@@ -58,25 +57,25 @@ export class Lexer {
         if (c === '+') {
             if (this.peek(0) === '=') {
                 this.next();
-                return token('bin_op_eq', span(lo, lo + 2), { op: 'plus' });
+                return token('bin_op_eq', new Span(lo, lo + 2), { op: 'plus' });
             }
             return token('bin_op', singleSpan, { op: 'plus' });
         }
         if (c === '-') {
             if (this.peek(0) === '=') {
                 this.next();
-                return token('bin_op_eq', span(lo, lo + 2), { op: 'minus' });
+                return token('bin_op_eq', new Span(lo, lo + 2), { op: 'minus' });
             }
             return token('bin_op', singleSpan, { op: 'minus' });
         }
         if (c === '*') {
             if (this.peek(0) === '*') {
                 this.next();
-                return token('bin_op', span(lo, lo + 2), { op: 'star_star' });
+                return token('bin_op', new Span(lo, lo + 2), { op: 'star_star' });
             }
             if (this.peek(0) === '=') {
                 this.next();
-                return token('bin_op_eq', span(lo, lo + 2), { op: 'star' });
+                return token('bin_op_eq', new Span(lo, lo + 2), { op: 'star' });
             }
             return token('bin_op', singleSpan, { op: 'star' });
         }
@@ -84,30 +83,30 @@ export class Lexer {
             if (this.peek(0) === '/') this.next();
             if (this.peek(0) === '=') {
                 this.next();
-                return token('bin_op_eq', span(lo, this.pos), { op: 'slash' });
+                return token('bin_op_eq', new Span(lo, this.pos), { op: 'slash' });
             }
-            return token('bin_op', span(lo, this.pos), { op: 'slash' });
+            return token('bin_op', new Span(lo, this.pos), { op: 'slash' });
         }
 
         // comparison operators
         if (c === '=') {
             if (this.peek(0) === '=') {
                 this.next();
-                return token('cmp_op_eq', span(lo, lo + 2), { op: 'equals' });
+                return token('cmp_op_eq', new Span(lo, lo + 2), { op: 'equals' });
             }
             return token('cmp_op', singleSpan, { op: 'equals' });
         }
         if (c === '<') {
             if (this.peek(0) === '=') {
                 this.next();
-                return token('cmp_op_eq', span(lo, lo + 2), { op: 'less_than' });
+                return token('cmp_op_eq', new Span(lo, lo + 2), { op: 'less_than' });
             }
             return token('cmp_op', singleSpan, { op: 'less_than' });
         }
         if (c === '>') {
             if (this.peek(0) === '=') {
                 this.next();
-                return token('cmp_op_eq', span(lo, lo + 2), { op: 'greater_than' });
+                return token('cmp_op_eq', new Span(lo, lo + 2), { op: 'greater_than' });
             }
             return token('cmp_op', singleSpan, { op: 'greater_than' });
         }
@@ -135,7 +134,7 @@ export class Lexer {
                 value += c;
             }
 
-            return token('str', span(lo, this.pos), { value });
+            return token('str', new Span(lo, this.pos), { value });
         }
 
         if (c === '%') {
@@ -146,7 +145,7 @@ export class Lexer {
                 value += c;
             }
 
-            return token('placeholder', span(lo, this.pos), { value });
+            return token('placeholder', new Span(lo, this.pos), { value });
         }
 
         if (/[0-9]/.test(c)) {
@@ -162,9 +161,9 @@ export class Lexer {
                     if (!/[0-9]/.test(this.peek())) break;
                     value += this.next();
                 }
-                return token('f64', span(lo, this.pos), { value });
+                return token('f64', new Span(lo, this.pos), { value });
             }
-            return token('i64', span(lo, this.pos), { value });
+            return token('i64', new Span(lo, this.pos), { value });
         }
 
         if (/[a-zA-Z_]/.test(c)) {
@@ -173,7 +172,7 @@ export class Lexer {
                 if (!/[a-zA-Z_/\-0-9.-]/.test(this.peek())) break;
                 value += this.next();
             }
-            return token('ident', span(lo, this.pos), { value });
+            return token('ident', new Span(lo, this.pos), { value });
         }
 
         if (c === '\n') return token('eol', singleSpan);

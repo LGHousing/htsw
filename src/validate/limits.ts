@@ -1,10 +1,10 @@
 import { error } from '../diagnostic';
-import { ACTIONS } from '../helpers';
+import { ACTIONS_TO_KWS } from '../helpers';
 import type { IrAction, ParseResult } from '../ir';
 
 export function checkLimits(result: ParseResult) {
     for (const holder of result.holders) {
-        checkActionLimits(result, holder.actions.value ?? []);
+        checkActionLimits(result, holder.actions?.value ?? []);
     }
 }
 
@@ -27,8 +27,7 @@ const ACTION_LIMITS: {
     CLEAR_POTION_EFFECTS: 5,
     GIVE_EXPERIENCE_LEVELS: 5,
     SEND_TO_LOBBY: 1,
-    CHANGE_STAT: 10,
-    CHANGE_GLOBAL_STAT: 10,
+    CHANGE_VAR: 25,
     TELEPORT: 5,
     FAIL_PARKOUR: 1,
     PLAY_SOUND: 25,
@@ -41,7 +40,6 @@ const ACTION_LIMITS: {
     ENCHANT_HELD_ITEM: 5,
     PAUSE: 30,
     SET_TEAM: 1,
-    CHANGE_TEAM_STAT: 10,
     SET_MENU: 10,
     DROP_ITEM: 5,
     SET_VELOCITY: 5,
@@ -55,7 +53,7 @@ function checkActionLimits(result: ParseResult, actions: IrAction[]) {
 
     for (const action of actions) {
         if (limits[action.type] <= 0) {
-            const message = `Limit of ${ACTION_LIMITS[action.type]} ${ACTIONS[action.type]} actions exceeded`;
+            const message = `Limit of ${ACTION_LIMITS[action.type]} ${ACTIONS_TO_KWS[action.type]} actions exceeded`;
             result.diagnostics.push(error(message, action.span));
         }
 

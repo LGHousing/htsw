@@ -43,8 +43,12 @@ export const ACTION_KWS = [
     'function',
     'random',
     'if',
+    'var',
+    'globalvar',
+    'teamvar',
 ] as const;
 
+export type ActionKey = Action["type"];
 export type ActionKw = (typeof ACTION_KWS)[number];
 
 export const CONDITION_KWS = [
@@ -68,77 +72,77 @@ export const CONDITION_KWS = [
     'hasPermission',
     'hasTeam',
     'inRegion',
-    'teamstat',
     'stat',
     'globalstat',
+    'teamstat',
     'placeholder',
+    'var',
+    'globalvar',
+    'teamvar',
 ] as const;
 
+export type ConditionKey = Condition["type"];
 export type ConditionKw = (typeof CONDITION_KWS)[number];
 
-export const ACTIONS: {
+export const ACTIONS_TO_KWS: {
     [key in Action['type']]: ActionKw;
 } = {
+    ACTION_BAR: 'actionBar',
+    APPLY_INVENTORY_LAYOUT: 'applyLayout',
     APPLY_POTION_EFFECT: 'applyPotion',
+    CANCEL_EVENT: 'cancelEvent',
+    CHANGE_HEALTH: 'changeHealth',
+    CHANGE_HUNGER: 'hungerLevel',
+    CHANGE_MAX_HEALTH: 'maxHealth',
+    CHANGE_VAR: 'var',
     CLEAR_POTION_EFFECTS: 'clearEffects',
+    CONDITIONAL: 'if',
+    DROP_ITEM: 'dropItem',
+    ENCHANT_HELD_ITEM: 'enchant',
+    EXIT: 'exit',
     FAIL_PARKOUR: 'failParkour',
+    FUNCTION: 'function',
     GIVE_EXPERIENCE_LEVELS: 'xpLevel',
     GIVE_ITEM: 'giveItem',
-    REMOVE_ITEM: 'removeItem',
-    SEND_TO_LOBBY: 'lobby',
-    CONDITIONAL: 'if',
-    SET_GROUP: 'changePlayerGroup',
-    KILL: 'kill',
     HEAL: 'fullHeal',
-    TITLE: 'title',
-    ACTION_BAR: 'actionBar',
-    RESET_INVENTORY: 'resetInventory',
-    CHANGE_MAX_HEALTH: 'maxHealth',
-    CHANGE_STAT: 'stat',
-    CHANGE_GLOBAL_STAT: 'globalstat',
-    CHANGE_TEAM_STAT: 'teamstat',
-    CHANGE_HEALTH: 'changeHealth',
+    KILL: 'kill',
+    LAUNCH: 'launch',
     MESSAGE: 'chat',
-    RANDOM: 'random',
-    SET_VELOCITY: 'changeVelocity',
-    TELEPORT: 'tp',
-    EXIT: 'exit',
-    CANCEL_EVENT: 'cancelEvent',
+    PAUSE: 'pause',
     PLAY_SOUND: 'sound',
+    RANDOM: 'random',
+    REMOVE_ITEM: 'removeItem',
+    RESET_INVENTORY: 'resetInventory',
+    SEND_TO_LOBBY: 'lobby',
     SET_COMPASS_TARGET: 'compassTarget',
     SET_GAMEMODE: 'gamemode',
-    CHANGE_HUNGER: 'hungerLevel',
-    FUNCTION: 'function',
-    APPLY_INVENTORY_LAYOUT: 'applyLayout',
-    ENCHANT_HELD_ITEM: 'enchant',
-    PAUSE: 'pause',
-    SET_TEAM: 'setTeam',
+    SET_GROUP: 'changePlayerGroup',
     SET_MENU: 'displayMenu',
-    DROP_ITEM: 'dropItem',
-    LAUNCH: 'launch',
+    SET_TEAM: 'setTeam',
+    SET_VELOCITY: 'changeVelocity',
+    TELEPORT: 'tp',
+    TITLE: 'title',
 };
 
-export const CONDITIONS: {
+export const CONDITIONS_TO_KWS: {
     [key in Condition['type']]: ConditionKw;
 } = {
+    COMPARE_DAMAGE: 'damageAmount',
     COMPARE_HEALTH: 'health',
     COMPARE_HUNGER: 'hunger',
     COMPARE_MAX_HEALTH: 'maxHealth',
     COMPARE_PLACEHOLDER: 'placeholder',
+    COMPARE_VAR: 'var',
     IS_DOING_PARKOUR: 'doingParkour',
     IS_FLYING: 'isFlying',
     IS_IN_REGION: 'inRegion',
     IS_SNEAKING: 'isSneaking',
+    REQUIRE_GAMEMODE: 'gamemode',
     REQUIRE_GROUP: 'hasGroup',
     REQUIRE_ITEM: 'hasItem',
     REQUIRE_PERMISSION: 'hasPermission',
     REQUIRE_POTION_EFFECT: 'hasPotion',
     REQUIRE_TEAM: 'hasTeam',
-    COMPARE_TEAM_STAT: 'teamstat',
-    COMPARE_STAT: 'stat',
-    REQUIRE_GAMEMODE: 'gamemode',
-    COMPARE_DAMAGE: 'damageAmount',
-    COMPARE_GLOBAL_STAT: 'globalstat',
 };
 
 export const OPERATION_SYMBOLS: {
@@ -179,4 +183,11 @@ export function partialEq(src: any, target: any): boolean {
     return Object.keys(target).every((key) => {
         return target[key] === src[key];
     });
+}
+
+export function nullableFn<T, R>(fn: (value: T) => R): (value: T | undefined) => R | undefined {
+    return (value: T | undefined) => {
+        if (!value) return;
+        return fn(value);
+    }
 }

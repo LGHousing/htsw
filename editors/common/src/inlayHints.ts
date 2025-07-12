@@ -35,9 +35,7 @@ function provideInlayHintsForActions(actions: htsl.IrAction[]): InlayHint[] {
         }
 
         if (
-            action.type === 'CHANGE_STAT' ||
-            action.type === 'CHANGE_TEAM_STAT' ||
-            action.type === 'CHANGE_GLOBAL_STAT' ||
+            action.type === 'CHANGE_VAR' ||
             action.type === 'CONDITIONAL' ||
             action.type === 'RANDOM'
         )
@@ -66,9 +64,7 @@ function provideInlayHintsForConditions(conditions: htsl.IrCondition[]): InlayHi
 
     for (const condition of conditions) {
         if (
-            condition.type === 'COMPARE_STAT' ||
-            condition.type === 'COMPARE_GLOBAL_STAT' ||
-            condition.type === 'COMPARE_TEAM_STAT' ||
+            condition.type === 'COMPARE_VAR' ||
             condition.type === 'COMPARE_PLACEHOLDER'
         )
             continue; // don't provide hints for these

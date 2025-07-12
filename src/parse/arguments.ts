@@ -1,6 +1,6 @@
 import type {
     Operation,
-    Amount,
+    Value,
     Location,
     Comparison,
     Gamemode,
@@ -26,20 +26,20 @@ import {
     POTION_EFFECTS,
     SOUNDS,
 } from 'housing-common/src/helpers';
-import { type Span, span } from '../span';
+import { Span } from '../span';
 import { SHORTHANDS } from '../helpers';
 
 export function parseLocation(p: Parser): Location {
     if (p.eatOption('custom_location') || p.eatOption('custom_coordinates')) {
         const value = parseCoordinates(p);
-        return { type: 'LOCATION_CUSTOM', value };
+        return { type: 'location_custom', value };
     }
     if (p.eatOption('house_spawn') || p.eatOption('houseSpawn')) {
         // ???
-        return { type: 'LOCATION_SPAWN' };
+        return { type: 'location_spawn' };
     }
     if (p.eatOption('invokers_location') || p.eatOption('invokers location')) {
-        return { type: 'LOCATION_INVOKERS' };
+        return { type: 'location_invokers' };
     }
     throw error('Invalid location', p.token.span);
 }
@@ -108,7 +108,7 @@ export function parseComparison(p: Parser): Comparison {
     return 'equals';
 }
 
-export function parseStatName(p: Parser): string {
+export function parseVarName(p: Parser): string {
     if (p.token.kind !== 'ident' && p.token.kind !== 'str') {
         throw error('Expected stat name', p.token.span);
     }
@@ -170,7 +170,14 @@ export function parseOperation(p: Parser): Operation {
     }
 }
 
-export function parseAmount(p: Parser): Amount {
+export function parseVarOperation(p: Parser): Operation | "unset" {
+    if (p.eatIdent("unset")) {
+        return "unset";
+    }
+    return parseOperation(p);
+}
+
+export function parseNumericValue(p: Parser): Value {
     if (p.check('i64') || p.check({ kind: 'bin_op', op: 'minus' })) {
         return p.parseNumber();
     }
@@ -187,6 +194,16 @@ export function parseAmount(p: Parser): Amount {
     }
 
     throw error('Expected amount', p.token.span);
+}
+
+export function parseValue(p: Parser): Value {
+    if (p.check('str')) {
+        return p.parseString();
+    } else if (p.check("f64")) {
+        return p.parseFloat();
+    }
+
+    return parseNumericValue(p);
 }
 
 export function parseInventorySlot(p: Parser): InventorySlot {
@@ -325,7 +342,7 @@ export function parseCoordinates(p: Parser) {
         offset += token.length + 1;
         const end = start + token.length;
 
-        const tokenSpan = { start: sp.start + start, end: sp.start + end };
+        const tokenSpan = new Span(sp.start + start, sp.start + end);
         const isValid = isRelative(token) || isNumeric(token);
         if (!isValid) {
             addDiagnostic('Invalid component', tokenSpan);
@@ -334,7 +351,7 @@ export function parseCoordinates(p: Parser) {
     });
 
     if (components.length < 3) {
-        addDiagnostic('Expected 3 components', span(sp.start, sp.end));
+        addDiagnostic('Expected 3 components', new Span(sp.start, sp.end));
         return '';
     }
 

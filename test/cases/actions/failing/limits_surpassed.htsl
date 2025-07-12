@@ -1,22 +1,7 @@
-stat x = 1
-stat x = 1
-stat x = 1
-stat x = 1
-stat x = 1
-stat x = 1
-stat x = 1
-stat x = 1
-stat x = 1
-stat x = 1 // uh oh!
+random {}
+random {}
+random {}
+random {}
+random {}
 
-globalstat x = 1
-globalstat x = 1
-globalstat x = 1
-globalstat x = 1
-globalstat x = 1
-globalstat x = 1
-globalstat x = 1
-globalstat x = 1
-globalstat x = 1
-globalstat x = 1
-globalstat x = 1 // uh oh!
+random {}
