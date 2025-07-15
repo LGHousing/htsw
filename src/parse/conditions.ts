@@ -26,9 +26,9 @@ export function parseCondition(p: Parser): IrCondition {
 
     if (eatKw('hasGroup')) {
         return parseConditionRequireGroup(p, inverted);
-    } else if (eatKw('stat')) {
+    } else if (eatKw('var') || eatKw('stat')) {
         return parseConditionCompareVar(p, inverted);
-    } else if (eatKw('globalstat')) {
+    } else if (eatKw('globalvar') || eatKw('globalstat')) {
         return parseConditionCompareGlobalVar(p, inverted);
     } else if (eatKw('hasPermission')) {
         return parseConditionRequirePermission(p, inverted);
@@ -61,8 +61,8 @@ export function parseCondition(p: Parser): IrCondition {
         return parseConditionComparePlaceholder(p, inverted);
     } else if (eatKw('hasTeam')) {
         return parseConditionRequireTeam(p, inverted);
-    } else if (eatKw('teamstat')) {
-        return parseConditionCompareTeamStat(p, inverted);
+    } else if (eatKw('teamvar') || eatKw('teamstat')) {
+        return parseConditionCompareTeamVar(p, inverted);
     } else if (eatKw('damageAmount')) {
         return parseConditionCompareDamage(p, inverted);
     }
@@ -204,7 +204,7 @@ function parseConditionRequireTeam(p: Parser, inverted: Inverted): IrCondition {
     });
 }
 
-function parseConditionCompareTeamStat(p: Parser, inverted: Inverted): IrCondition {
+function parseConditionCompareTeamVar(p: Parser, inverted: Inverted): IrCondition {
     return parseConditionRecovering(p, 'COMPARE_VAR', inverted, (condition) => {
         condition.var = p.spanned(parseVarName);
         condition.holder = p.spanned(() => ({ type: 'team', team: p.parseName() }) as VarHolder);

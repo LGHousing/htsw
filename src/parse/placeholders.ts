@@ -2,25 +2,14 @@ import type { Parser } from './parser';
 import { error } from '../diagnostic';
 import { parseValue, parseVarName } from './arguments';
 import { Span } from '../span';
+import type { ShorthandKw } from '../helpers';
 
 export function parseNumericalPlaceholder(p: Parser): string {
-    if (p.eatIdent('stat')) {
-        const name = parseVarName(p);
-        return `%var.player/${name}%`;
+    function eatKw(kw: ShorthandKw): boolean {
+        return p.eatIdent(kw);
     }
-    if (p.eatIdent('globalstat')) {
-        const name = parseVarName(p);
-        return `%var.global/${name}%`;
-    }
-    if (p.eatIdent('teamstat')) {
-        const name = parseVarName(p);
-        if (!p.check('ident') && !p.check('str')) {
-            throw error('Expected team name', p.token.span);
-        }
-        const team = parseVarName(p);
-        return `%var.team/${name} ${team}%`;
-    }
-    if (p.eatIdent('var')) {
+
+    if (eatKw('var') || eatKw('stat')) {
         const name = parseVarName(p);
 
         if (p.check('i64') || p.check('f64') || p.check('str')) {
@@ -30,7 +19,7 @@ export function parseNumericalPlaceholder(p: Parser): string {
             return `%var.player/${name}%`;
         }
     }
-    if (p.eatIdent('globalvar')) {
+    if (eatKw('globalvar') || eatKw('globalstat')) {
         const name = parseVarName(p);
 
         if (p.check('i64') || p.check('f64') || p.check('str')) {
@@ -40,7 +29,7 @@ export function parseNumericalPlaceholder(p: Parser): string {
             return `%var.global/${name}%`;
         }
     }
-    if (p.eatIdent('teamvar')) {
+    if (eatKw('teamvar') || eatKw('teamstat')) {
         const name = parseVarName(p);
 
         if (!p.check('ident') && !p.check('str')) {
@@ -55,19 +44,19 @@ export function parseNumericalPlaceholder(p: Parser): string {
             return `%var.team/${name} ${team}%`;
         }
     }
-    if (p.eatIdent('randomint')) {
+    if (eatKw('randomint')) {
         const from = p.parseNumber();
         const to = p.parseNumber();
         return `%random.int/${from} ${to}%`;
     }
 
-    if (p.eatIdent('health')) return '%player.health%';
-    if (p.eatIdent('maxHealth')) return '%player.maxHealth%';
-    if (p.eatIdent('hunger')) return '%player.hunger%';
-    if (p.eatIdent('locX')) return '%player.location.x%';
-    if (p.eatIdent('locY')) return '%player.location.y%';
-    if (p.eatIdent('locZ')) return '%player.location.z%';
-    if (p.eatIdent('unix')) return '%date.unix%';
+    if (eatKw('health')) return '%player.health%';
+    if (eatKw('maxHealth')) return '%player.maxHealth%';
+    if (eatKw('hunger')) return '%player.hunger%';
+    if (eatKw('locX')) return '%player.location.x%';
+    if (eatKw('locY')) return '%player.location.y%';
+    if (eatKw('locZ')) return '%player.location.z%';
+    if (eatKw('unix')) return '%date.unix%';
 
     if (p.token.kind !== 'str' && p.token.kind !== 'placeholder') {
         throw error('Expected placeholder', p.token.span);
@@ -130,6 +119,14 @@ export function parseNumericalPlaceholder(p: Parser): string {
         case 'player.location.z':
         case 'player.location.pitch':
         case 'player.location.yaw':
+        case 'player.pos.x':
+        case 'player.pos.y':
+        case 'player.pos.z':
+        case 'player.pos.pitch':
+        case 'player.pos.yaw':
+        case 'player.block.x':
+        case 'player.block.y':
+        case 'player.block.z':
         case 'player.group.priority':
         case 'player.parkour.ticks':
         case 'house.guests':

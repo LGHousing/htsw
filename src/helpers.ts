@@ -1,5 +1,7 @@
 import type { Action, Comparison, Condition, Operation } from 'housing-common/src/types';
 
+export const VERSION = "v1.1.1";
+
 export const ACTION_KWS = [
     'applyLayout',
     'applyPotion',
@@ -169,6 +171,9 @@ export const SHORTHANDS = [
     'globalstat',
     'stat',
     'teamstat',
+    'globalvar',
+    'var',
+    'teamvar',
     'randomint',
     'health',
     'maxHealth',
@@ -178,6 +183,8 @@ export const SHORTHANDS = [
     'locZ',
     'unix',
 ] as const;
+
+export type ShorthandKw = (typeof SHORTHANDS)[number];
 
 export function partialEq(src: any, target: any): boolean {
     return Object.keys(target).every((key) => {

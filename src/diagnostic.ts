@@ -2,13 +2,13 @@ import type { Span } from './span';
 
 export type DiagnosticLevel = 'bug' | 'error' | 'warning' | 'info';
 
-export class Diagnostic extends Error {
+export class Diagnostic {
+    message: string;
     level: DiagnosticLevel;
     span: Span;
 
     constructor(message: string, level: DiagnosticLevel, span: Span) {
-        super(message);
-
+        this.message = message;
         this.level = level;
         this.span = span;
     }

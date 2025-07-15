@@ -14,6 +14,7 @@ import { Diagnostic, error } from '../diagnostic';
 import type { IrAction, ParseResult } from '../ir';
 import { parseAction } from './actions';
 import { parseHolder } from './holders';
+import Long from 'long';
 
 export class Parser {
     readonly result: ParseResult;
@@ -116,37 +117,41 @@ export class Parser {
 
     parseBoundedNumber(min: number, max: number): number {
         const { value, span } = this.spanned(this.parseNumber);
-        if (value < min) {
+        if (Number(value) < min) {
             this.addDiagnostic(
                 error(`Value must be greater than or equal to ${min}`, span)
             );
         }
-        if (value > max) {
+        if (Number(value) > max) {
             this.addDiagnostic(error(`Value must be less than or equal to ${max}`, span));
         }
         return Number(value);
     }
 
-    parseNumber(): bigint {
+    parseNumber(): string {
         const negative = this.eat({ kind: 'bin_op', op: 'minus' });
         this.expect('i64');
-        let value = BigInt((this.prev as I64Kind).value);
-        if (negative) value *= -1n;
+
+        const value = (this.prev as I64Kind).value;
+        const long = Long.fromString((this.prev as I64Kind).value);
+        
         if (
-            value < BigInt('-9223372036854775808') ||
-            value > BigInt('9223372036854775807')
+            value != long.toString()
         ) {
             throw error('Number exceeds 64-bit integer limit', this.prev.span);
         }
-        return value;
+
+        if (negative) return `-${value}`
+        else return value;
     }
 
-    parseFloat(): number {
+    parseDouble(): number {
         if (this.token.kind !== 'i64' && this.token.kind !== 'f64') {
             throw error('Expected number', this.token.span);
         }
+        const value = this.token.value;
         this.next();
-        return Number.parseFloat(this.token.value);
+        return Number.parseFloat(value);
     }
 
     parseDelimitedTokens(delim: Delimiter): Token[] {
@@ -241,7 +246,7 @@ export class Parser {
     }
 
     eatNewlines() {
-        while (this.eat('eol')) {}
+        while (this.eat('eol')) { }
     }
 
     recover(recoveryTokens: Array<Token['kind'] | Partial<Token>>) {

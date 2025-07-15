@@ -4,10 +4,12 @@ import { token, type Token } from './token';
 export class Lexer {
     src: string;
     pos: number;
+    offset: number;
 
-    constructor(src: string) {
+    constructor(src: string, offset: number) {
         this.src = src;
         this.pos = 0;
+        this.offset = offset;
     }
 
     advanceToken(): Token {
@@ -15,9 +17,9 @@ export class Lexer {
         while (this.hasNext() && /^\s+$/.test(this.peek()) && this.peek() != '\n') {
             this.next();
         }
-        if (!this.hasNext()) return token('eof', new Span(this.pos, this.pos));
+        if (!this.hasNext()) return token('eof', new Span(this.globalPos, this.globalPos));
 
-        const lo = this.pos;
+        const lo = this.globalPos;
         const singleSpan = new Span(lo, lo + 1);
         const c = this.next();
 
@@ -83,9 +85,9 @@ export class Lexer {
             if (this.peek(0) === '/') this.next();
             if (this.peek(0) === '=') {
                 this.next();
-                return token('bin_op_eq', new Span(lo, this.pos), { op: 'slash' });
+                return token('bin_op_eq', new Span(lo, this.globalPos), { op: 'slash' });
             }
-            return token('bin_op', new Span(lo, this.pos), { op: 'slash' });
+            return token('bin_op', new Span(lo, this.globalPos), { op: 'slash' });
         }
 
         // comparison operators
@@ -134,7 +136,7 @@ export class Lexer {
                 value += c;
             }
 
-            return token('str', new Span(lo, this.pos), { value });
+            return token('str', new Span(lo, this.globalPos), { value });
         }
 
         if (c === '%') {
@@ -145,7 +147,7 @@ export class Lexer {
                 value += c;
             }
 
-            return token('placeholder', new Span(lo, this.pos), { value });
+            return token('placeholder', new Span(lo, this.globalPos), { value });
         }
 
         if (/[0-9]/.test(c)) {
@@ -161,9 +163,9 @@ export class Lexer {
                     if (!/[0-9]/.test(this.peek())) break;
                     value += this.next();
                 }
-                return token('f64', new Span(lo, this.pos), { value });
+                return token('f64', new Span(lo, this.globalPos), { value });
             }
-            return token('i64', new Span(lo, this.pos), { value });
+            return token('i64', new Span(lo, this.globalPos), { value });
         }
 
         if (/[a-zA-Z_]/.test(c)) {
@@ -172,12 +174,16 @@ export class Lexer {
                 if (!/[a-zA-Z_/\-0-9.-]/.test(this.peek())) break;
                 value += this.next();
             }
-            return token('ident', new Span(lo, this.pos), { value });
+            return token('ident', new Span(lo, this.globalPos), { value });
         }
 
         if (c === '\n') return token('eol', singleSpan);
 
         return token('unknown', singleSpan, { value: c });
+    }
+
+    get globalPos(): number {
+        return this.pos + this.offset;
     }
 
     hasNext(): boolean {
