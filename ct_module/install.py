@@ -7,7 +7,7 @@ import shutil
 SOURCE = Path(__name__).resolve().parent
 assert SOURCE.exists()
 
-DESTINATION = Path(r'C:\Users\jesse\AppData\Roaming\.minecraft\config\ChatTriggers\modules\HTSW').resolve()
+DESTINATION = Path(r'C:\\Users\\Sandy\\AppData\\Roaming\\.minecraft\\config\\ChatTriggers\\modules\\HTSW').resolve()
 
 IGNORE = {SOURCE / '.git', SOURCE / 'node_modules', SOURCE / 'package-lock.json'}
 

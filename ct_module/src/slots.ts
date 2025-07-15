@@ -1,6 +1,4 @@
-/// <reference types="../../CTAutocomplete" />
-
-import { assertIsNormalized, normalized, removeFormatting } from './utils';
+import { assertIsNormalized, normalized, removeFormatting } from './helpers';
 
 export enum ButtonType {
     LEFT = 'LEFT',

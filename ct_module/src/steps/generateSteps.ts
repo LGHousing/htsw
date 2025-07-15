@@ -1,4 +1,4 @@
-import type { ActionHolder, Action } from 'housing-common/src/types';
+import type { ActionHolder, Action } from 'housing-common';
 import { Step } from './step';
 import {
     booleanAsValue,
@@ -9,7 +9,7 @@ import {
     stepClickButtonOrNextPage,
     stepsClickButtonThenSelectValue,
 } from './helpers';
-import { chatHistoryContains, normalized } from '../utils';
+import { chatHistoryContains, normalized } from '../helpers';
 import { Importer } from '../importer/importer';
 
 function stepsFromAction(action: Action): Step[] {
