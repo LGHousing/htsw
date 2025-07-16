@@ -15,7 +15,7 @@ import type {
 } from 'housing-common/src/types';
 import type { Parser } from './parser';
 import { error } from '../diagnostic';
-import type { StrKind } from './token';
+import type { F64Kind, StrKind } from './token';
 import { parseNumericalPlaceholder } from './placeholders';
 import {
     ENCHANTMENTS,
@@ -200,7 +200,7 @@ export function parseValue(p: Parser): Value {
     if (p.check('str')) {
         return p.parseString();
     } else if (p.check("f64")) {
-        return p.parseFloat();
+        return p.parseDouble().toFixed(20);
     }
 
     return parseNumericValue(p);

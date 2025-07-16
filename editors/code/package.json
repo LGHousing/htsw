@@ -2,7 +2,7 @@
     "name": "htsl-plus-plus",
     "displayName": "HTSL++",
     "description": "HTSL completions, diagnostics, hints, and more.",
-    "version": "0.1.0",
+    "version": "1.1.1",
     "license": "MIT",
     "type": "module",
     "repository": {

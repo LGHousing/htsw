@@ -9,10 +9,10 @@ import {
     removeFormatting,
     setAnvilItemName,
     acceptNewAnvilItem,
-} from '../utils';
+} from '../helpers';
 
-import type { ActionHolder } from 'housing-common/src/types';
-import * as htsl from 'htsl/src/index';
+import type { ActionHolder } from 'housing-common';
+import * as htsl from 'htsl';
 import { stepClickButtonOrNextPage } from '../steps/helpers';
 
 export class Importer {

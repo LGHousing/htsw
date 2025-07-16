@@ -38,6 +38,9 @@ function parseHolderUnknown(p: Parser): IrActionHolder {
 function parseHolderFunction(p: Parser): IrActionHolder {
     return parseHolderRecovering(p, 'FUNCTION', (holder) => {
         holder.name = p.spanned(p.parseName);
+        if (!p.checkEol()) { // shorthand
+            holder.repeatTicks = p.spanned(() => p.parseBoundedNumber(4, 18000));
+        }
         holder.actions = p.spanned(p.parseActions);
     });
 }

@@ -1,7 +1,7 @@
 {
     "name": "htsl-monaco",
     "private": true,
-    "version": "0.0.0",
+    "version": "1.1.1",
     "type": "module",
     "dependencies": {
         "monaco-editor": "^0.52.2",

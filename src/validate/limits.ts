@@ -49,7 +49,7 @@ const ACTION_LIMITS: {
 };
 
 function checkActionLimits(result: ParseResult, actions: IrAction[]) {
-    const limits = structuredClone(ACTION_LIMITS);
+    const limits = { ...ACTION_LIMITS };
 
     for (const action of actions) {
         if (limits[action.type] <= 0) {

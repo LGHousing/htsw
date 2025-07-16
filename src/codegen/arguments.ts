@@ -26,6 +26,10 @@ export function generateValue(value: Value): string {
 }
 
 export function generateBlock(actions: Action[]): string {
+    if (actions.length === 1) {
+        return `{ ${generateAction(actions[0])} }`;
+    }
+
     const res: string[] = [];
 
     res.push("{");

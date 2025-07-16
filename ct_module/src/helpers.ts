@@ -1,5 +1,3 @@
-/// <reference types="../../CTAutocomplete" />
-
 export function normalized(str: string): string {
     return str
         .trim()
@@ -102,4 +100,17 @@ export function acceptNewAnvilItem(): void {
         throw new Error('No open container found');
     }
     inventory.click(2, false);
+}
+
+export function chatWidth(string: string): number {
+    return Client.getMinecraft()
+        .field_71466_p
+        .func_78256_a(string);
+}
+
+export function chatSeparator(): string {
+    const totalWidth = ChatLib.getChatWidth();
+    const sepWidth = chatWidth("-");
+
+    return "-".repeat(totalWidth / sepWidth);
 }

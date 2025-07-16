@@ -1,6 +1,6 @@
 import { Step } from './step';
 import { getSlotFromName } from '../slots';
-import { normalized, assertIsNormalized } from '../utils';
+import { normalized, assertIsNormalized } from '../helpers';
 
 export function booleanAsValue(value: boolean): string {
     return value ? 'Enabled' : 'Disabled';

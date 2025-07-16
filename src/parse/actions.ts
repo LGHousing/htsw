@@ -63,9 +63,7 @@ export function parseAction(p: Parser): IrAction {
         return parseActionSetGamemode(p);
     } else if (eatKw('giveItem')) {
         return parseActionGiveItem(p);
-    } else if (eatKw('globalstat')) {
-        return parseActionChangeGlobalVar(p);
-    } else if (eatKw('globalvar')) {
+    } else if (eatKw('globalvar') || eatKw('globalstat')) {
         return parseActionChangeGlobalVar(p);
     } else if (eatKw('hungerLevel')) {
         return parseActionChangeHunger(p);
@@ -91,17 +89,13 @@ export function parseAction(p: Parser): IrAction {
         return parseActionSetTeam(p);
     } else if (eatKw('sound')) {
         return parseActionPlaySound(p);
-    } else if (eatKw('stat')) {
-        return parseActionChangeVar(p);
-    } else if (eatKw('teamstat')) {
-        return parseActionChangeTeamVar(p);
-    } else if (eatKw('teamvar')) {
+    } else if (eatKw('teamvar') || eatKw('teamstat')) {
         return parseActionChangeTeamVar(p);
     } else if (eatKw('title')) {
         return parseActionTitle(p);
     } else if (eatKw('tp')) {
         return parseActionTeleport(p);
-    } else if (eatKw('var')) {
+    } else if (eatKw('var') || eatKw('stat')) {
         return parseActionChangeVar(p);
     } else if (eatKw('xpLevel')) {
         return parseActionGiveExperienceLevels(p);
@@ -305,8 +299,8 @@ function parseActionPause(p: Parser): IrAction {
 function parseActionPlaySound(p: Parser): IrAction {
     return parseActionRecovering(p, 'PLAY_SOUND', (action) => {
         action.sound = p.spanned(parseSound);
-        action.volume = p.spanned(p.parseFloat);
-        action.pitch = p.spanned(p.parseFloat);
+        action.volume = p.spanned(p.parseDouble);
+        action.pitch = p.spanned(p.parseDouble);
         action.location = p.spanned(parseLocation);
     });
 }
