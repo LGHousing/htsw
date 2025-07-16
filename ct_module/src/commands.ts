@@ -1,6 +1,6 @@
 import * as htsl from "htsl";
 
-import { chatSeparator } from "./helpers";
+import { chatSeparator, chatWidth } from "./helpers";
 import { Simulator } from "./simulator";
 import { printDiagnostic } from "./compiler/diagnostics";
 
@@ -31,7 +31,7 @@ function commandSimulator(args: string[]) {
         const title = `&e&lHTSW &fSimulator Runtime &f&l${htsl.helpers.VERSION}`
         ChatLib.chat(`${ChatLib.getCenteredText(title)}`);
         ChatLib.chat("");
-        ChatLib.chat("&f/simulator [start <path> | restart | stop ]")
+        ChatLib.chat("&f/simulator [start [path] | restart | stop ]")
         ChatLib.chat("");
         ChatLib.chat("&f/function run <function> &7- Run a function");
         ChatLib.chat("&f// <htsl> &7- Evaluate HTSL code");
@@ -39,15 +39,11 @@ function commandSimulator(args: string[]) {
     }
 
     if (args[0] === "start") {
-        if (args.length === 1) {
-            ChatLib.chat("&cUsage: /simulator start <path>");
-            return;
-        }
-
-        const file = FileLib.read(args[1]);
-        console.log(file);
         const sm = new htsl.SourceMap();
-        sm.addFile(file, args[1]);
+        if (args.length > 1) {
+            const file = FileLib.read(args[1]);
+            sm.addFile(file, args[1]);
+        }
 
         const result = htsl.parse.parseFromSourceMap(sm);
 
