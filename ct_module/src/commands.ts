@@ -33,8 +33,8 @@ function commandSimulator(args: string[]) {
         ChatLib.chat("");
         ChatLib.chat("&f/simulator [start <path> | restart | stop ]")
         ChatLib.chat("");
-        ChatLib.chat("&f/import &7- Import actions from HTSL files");
-        ChatLib.chat("&f/simulate &7- Simulate actions from HTSL files");
+        ChatLib.chat("&f/function run <function> &7- Run a function");
+        ChatLib.chat("&f// <htsl> &7- Evaluate HTSL code");
         ChatLib.chat(`&7${chatSeparator()}`);
     }
 
@@ -44,9 +44,10 @@ function commandSimulator(args: string[]) {
             return;
         }
 
-        const file = FileLib.read(args[0]);
+        const file = FileLib.read(args[1]);
+        console.log(file);
         const sm = new htsl.SourceMap();
-        sm.addFile(file, args[0]);
+        sm.addFile(file, args[1]);
 
         const result = htsl.parse.parseFromSourceMap(sm);
 
