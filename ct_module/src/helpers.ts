@@ -1,19 +1,5 @@
-export function normalized(str: string): string {
-    return str
-        .trim()
-        .replace(/\s+/g, '_')
-        .replace(/[^a-zA-Z0-9_]/g, '')
-        .toLowerCase();
-}
-
-export function assertIsNormalized(str: string): void {
-    if (!/^[a-z0-9_]+$/.test(str)) {
-        throw new Error(`Key "${str}" is not normalized`);
-    }
-}
-
 export function removeFormatting(str: string): string {
-    return str.replace(/(?:§|&)[0-9a-fklmnor]/g, '');
+    return str.replace(/(?:§|&)[0-9a-fklmnor]/g, "");
 }
 
 type ChatHistoryEntry = {
@@ -24,7 +10,7 @@ type ChatHistoryEntry = {
 const CHAT_HISTORY_MAX_AGE = 5 * 60 * 1000;
 const CHAT_HISTORY: ChatHistoryEntry[] = [];
 
-register('chat', (event: string | ForgeClientChatReceivedEvent) => {
+register("chat", (event: string | ForgeClientChatReceivedEvent) => {
     // @ts-ignore
     const message = ChatLib.getChatMessage(event, true);
 
@@ -79,14 +65,14 @@ export function chatHistoryContains(
 export function setAnvilItemName(newName: string) {
     const inventory = Player.getContainer();
     if (inventory == null) {
-        throw new Error('No open container found');
+        throw new Error("No open container found");
     }
-    const outputSlotField = inventory.container.class.getDeclaredField('field_82852_f');
+    const outputSlotField = inventory.container.class.getDeclaredField("field_82852_f");
     // @ts-ignore
     outputSlotField.setAccessible(true);
     const outputSlot = outputSlotField.get(inventory.container);
 
-    const outputSlotItemField = outputSlot.class.getDeclaredField('field_70467_a');
+    const outputSlotItemField = outputSlot.class.getDeclaredField("field_70467_a");
     outputSlotItemField.setAccessible(true);
     let outputSlotItem = outputSlotItemField.get(outputSlot);
 
@@ -97,15 +83,13 @@ export function setAnvilItemName(newName: string) {
 export function acceptNewAnvilItem(): void {
     const inventory = Player.getContainer();
     if (inventory == null) {
-        throw new Error('No open container found');
+        throw new Error("No open container found");
     }
     inventory.click(2, false);
 }
 
 export function chatWidth(string: string): number {
-    return Client.getMinecraft()
-        .field_71466_p
-        .func_78256_a(string);
+    return Client.getMinecraft().field_71466_p.func_78256_a(string);
 }
 
 export function chatSeparator(): string {

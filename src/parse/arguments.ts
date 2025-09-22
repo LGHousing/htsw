@@ -12,11 +12,11 @@ import type {
     Permission,
     ItemProperty,
     ItemLocation,
-} from 'housing-common/src/types';
-import type { Parser } from './parser';
-import { error } from '../diagnostic';
-import type { F64Kind, StrKind } from './token';
-import { parseNumericalPlaceholder } from './placeholders';
+} from "../types";
+import type { Parser } from "./parser";
+import { error } from "../diagnostic";
+import type { F64Kind, I64Kind, StrKind } from "./token";
+import { parseNumericalPlaceholder } from "./placeholders";
 import {
     ENCHANTMENTS,
     ITEM_LOCATIONS,
@@ -25,102 +25,103 @@ import {
     PERMISSIONS,
     POTION_EFFECTS,
     SOUNDS,
-} from 'housing-common/src/helpers';
-import { Span } from '../span';
-import { SHORTHANDS } from '../helpers';
+} from "../types/helpers";
+import { Span } from "../span";
+import { SHORTHANDS } from "../helpers";
+import Long from "long";
 
 export function parseLocation(p: Parser): Location {
-    if (p.eatOption('custom_location') || p.eatOption('custom_coordinates')) {
+    if (p.eatOption("custom_location") || p.eatOption("custom_coordinates")) {
         const value = parseCoordinates(p);
-        return { type: 'location_custom', value };
+        return { type: "location_custom", value };
     }
-    if (p.eatOption('house_spawn') || p.eatOption('houseSpawn')) {
+    if (p.eatOption("house_spawn") || p.eatOption("houseSpawn")) {
         // ???
-        return { type: 'location_spawn' };
+        return { type: "location_spawn" };
     }
-    if (p.eatOption('invokers_location') || p.eatOption('invokers location')) {
-        return { type: 'location_invokers' };
+    if (p.eatOption("invokers_location") || p.eatOption("invokers location")) {
+        return { type: "location_invokers" };
     }
-    throw error('Invalid location', p.token.span);
+    throw error("Invalid location", p.token.span);
 }
 
 export function parseGamemode(p: Parser): Gamemode {
-    if (p.eatOption('survival')) {
-        return 'survival';
+    if (p.eatOption("survival")) {
+        return "survival";
     }
-    if (p.eatOption('adventure')) {
-        return 'adventure';
+    if (p.eatOption("adventure")) {
+        return "adventure";
     }
-    if (p.eatOption('creative')) {
-        return 'creative';
+    if (p.eatOption("creative")) {
+        return "creative";
     }
-    if (p.check('str') || p.check('ident')) {
+    if (p.check("str") || p.check("ident")) {
         p.addDiagnostic(
-            error('Expected gamemode (survival, adventure, creative)', p.token.span)
+            error("Expected gamemode (survival, adventure, creative)", p.token.span)
         );
     } else {
-        p.addDiagnostic(error('Expected gamemode', p.token.span));
+        p.addDiagnostic(error("Expected gamemode", p.token.span));
     }
     p.next();
-    return 'survival';
+    return "survival";
 }
 
 export function parseComparison(p: Parser): Comparison {
     if (
-        p.eatOption('equals') ||
-        p.eatOption('equal') ||
-        p.eat({ kind: 'cmp_op', op: 'equals' }) ||
-        p.eat({ kind: 'cmp_op_eq', op: 'equals' })
+        p.eatOption("equals") ||
+        p.eatOption("equal") ||
+        p.eat({ kind: "cmp_op", op: "equals" }) ||
+        p.eat({ kind: "cmp_op_eq", op: "equals" })
     ) {
-        return 'equals';
+        return "equals";
     }
-    if (p.eatOption('less than') || p.eat({ kind: 'cmp_op', op: 'less_than' })) {
-        return 'less_than';
+    if (p.eatOption("less than") || p.eat({ kind: "cmp_op", op: "less_than" })) {
+        return "less_than";
     }
     if (
-        p.eatOption('less than or equals') ||
-        p.eatOption('less than or equal') ||
-        p.eat({ kind: 'cmp_op_eq', op: 'less_than' })
+        p.eatOption("less than or equals") ||
+        p.eatOption("less than or equal") ||
+        p.eat({ kind: "cmp_op_eq", op: "less_than" })
     ) {
-        return 'less_than_or_equals';
+        return "less_than_or_equals";
     }
-    if (p.eatOption('greater than') || p.eat({ kind: 'cmp_op', op: 'greater_than' })) {
-        return 'greater_than';
+    if (p.eatOption("greater than") || p.eat({ kind: "cmp_op", op: "greater_than" })) {
+        return "greater_than";
     }
     if (
-        p.eatOption('greater than or equals') ||
-        p.eatOption('greater than or equal') ||
-        p.eat({ kind: 'cmp_op_eq', op: 'greater_than' })
+        p.eatOption("greater than or equals") ||
+        p.eatOption("greater than or equal") ||
+        p.eat({ kind: "cmp_op_eq", op: "greater_than" })
     ) {
-        return 'greater_than_or_equals';
+        return "greater_than_or_equals";
     }
-    if (p.check('str') || p.check('ident')) {
+    if (p.check("str") || p.check("ident")) {
         p.addDiagnostic(
             error(
-                'Expected comparison (less than, less than or equals, equals, greater than, greater than or equals)',
+                "Expected comparison (less than, less than or equals, equals, greater than, greater than or equals)",
                 p.token.span
             )
         );
     } else {
-        p.addDiagnostic(error('Expected comparison', p.token.span));
+        p.addDiagnostic(error("Expected comparison", p.token.span));
     }
     p.next();
-    return 'equals';
+    return "equals";
 }
 
 export function parseVarName(p: Parser): string {
-    if (p.token.kind !== 'ident' && p.token.kind !== 'str') {
-        throw error('Expected stat name', p.token.span);
+    if (p.token.kind !== "ident" && p.token.kind !== "str") {
+        throw error("Expected stat name", p.token.span);
     }
     const value = p.token.value;
     if (value.length > 16) {
-        throw error('Stat name exceeds 16-character limit', p.token.span);
+        throw error("Stat name exceeds 16-character limit", p.token.span);
     }
     if (value.length < 1) {
-        throw error('Stat name cannot be empty', p.token.span);
+        throw error("Stat name cannot be empty", p.token.span);
     }
-    if (value.includes(' ')) {
-        throw error('Stat name cannot contain spaces', p.token.span);
+    if (value.includes(" ")) {
+        throw error("Stat name cannot contain spaces", p.token.span);
     }
     p.next();
     return value;
@@ -128,45 +129,45 @@ export function parseVarName(p: Parser): string {
 
 export function parseOperation(p: Parser): Operation {
     if (
-        p.eatOption('increment') ||
-        p.eatOption('inc') ||
-        p.eat({ kind: 'bin_op_eq', op: 'plus' })
+        p.eatOption("increment") ||
+        p.eatOption("inc") ||
+        p.eat({ kind: "bin_op_eq", op: "plus" })
     ) {
-        return 'increment';
+        return "increment";
     }
     if (
-        p.eatOption('decrement') ||
-        p.eatOption('dec') ||
-        p.eat({ kind: 'bin_op_eq', op: 'minus' })
+        p.eatOption("decrement") ||
+        p.eatOption("dec") ||
+        p.eat({ kind: "bin_op_eq", op: "minus" })
     ) {
-        return 'decrement';
+        return "decrement";
     }
     if (
-        p.eatOption('multiply') ||
-        p.eatOption('mult') ||
-        p.eatOption('mul') ||
-        p.eat({ kind: 'bin_op_eq', op: 'star' })
+        p.eatOption("multiply") ||
+        p.eatOption("mult") ||
+        p.eatOption("mul") ||
+        p.eat({ kind: "bin_op_eq", op: "star" })
     ) {
-        return 'multiply';
+        return "multiply";
     }
     if (
-        p.eatOption('divide') ||
-        p.eatOption('div') ||
-        p.eat({ kind: 'bin_op_eq', op: 'slash' })
+        p.eatOption("divide") ||
+        p.eatOption("div") ||
+        p.eat({ kind: "bin_op_eq", op: "slash" })
     ) {
-        return 'divide';
+        return "divide";
     }
-    if (p.eatOption('set') || p.eat({ kind: 'cmp_op', op: 'equals' })) {
-        return 'set';
+    if (p.eatOption("set") || p.eat({ kind: "cmp_op", op: "equals" })) {
+        return "set";
     }
 
-    if (p.check('str') || p.check('ident')) {
+    if (p.check("str") || p.check("ident")) {
         throw error(
-            'Expected operation (increment, decrement, set, multiply, divide)',
+            "Expected operation (increment, decrement, set, multiply, divide)",
             p.token.span
         );
     } else {
-        throw error('Expected operation', p.token.span);
+        throw error("Expected operation", p.token.span);
     }
 }
 
@@ -178,65 +179,91 @@ export function parseVarOperation(p: Parser): Operation | "unset" {
 }
 
 export function parseNumericValue(p: Parser): Value {
-    if (p.check('i64') || p.check({ kind: 'bin_op', op: 'minus' })) {
-        return p.parseNumber();
+    const negative = p.eat({ kind: "bin_op", op: "minus" });
+
+    if (p.eat("i64")) {
+        const value = (p.prev as I64Kind).value;
+        const withNegative = negative ? `-${value}` : value;
+        const long = Long.fromString(withNegative);
+
+        if (withNegative != long.toString()) {
+            throw error("Number exceeds 64-bit integer limit", p.prev.span);
+        }
+
+        return long.toString();
+    } else if (p.eat("f64")) {
+        const value = (p.prev as F64Kind).value;
+        const withNegative = negative ? `-${value}` : value;
+        const double = parseFloat(withNegative);
+
+        return double.toFixed(20);
+    } else if (negative) {
+        throw error("Expected number", p.token.span);
     }
 
     let isShorthand = false;
     for (const shorthand of SHORTHANDS) {
-        if (p.check({ kind: 'ident', value: shorthand })) {
+        if (p.check({ kind: "ident", value: shorthand })) {
             isShorthand = true;
         }
     }
 
-    if (isShorthand || p.check('placeholder') || p.check('str')) {
+    if (isShorthand || p.check("placeholder") || p.check("str")) {
         return parseNumericalPlaceholder(p);
     }
 
-    throw error('Expected amount', p.token.span);
+    throw error("Expected amount", p.token.span);
 }
 
-export function parseValue(p: Parser): Value {
-    if (p.check('str')) {
-        return p.parseString();
-    } else if (p.check("f64")) {
-        return p.parseDouble().toFixed(20);
+export function parseValue0(p: Parser): Value {
+    if (p.check("str")) {
+        return `"${p.parseString()}"`;
     }
 
     return parseNumericValue(p);
 }
 
+export function parseValue(p: Parser): Value {
+    const value = parseValue0(p);
+
+    if (p.eatIdent("D")) {}
+    else if (p.eatIdent("L")) {}
+
+    return value;
+}
+
+
 export function parseInventorySlot(p: Parser): InventorySlot {
-    if (p.check('i64')) {
+    if (p.check("i64")) {
         return p.parseBoundedNumber(-1, 39);
     }
 
-    if (p.eatOption('helmet')) {
-        return 'helmet';
+    if (p.eatOption("helmet")) {
+        return "helmet";
     }
-    if (p.eatOption('chestplate')) {
-        return 'chestplate';
+    if (p.eatOption("chestplate")) {
+        return "chestplate";
     }
-    if (p.eatOption('leggings')) {
-        return 'leggings';
+    if (p.eatOption("leggings")) {
+        return "leggings";
     }
-    if (p.eatOption('boots')) {
-        return 'boots';
+    if (p.eatOption("boots")) {
+        return "boots";
     }
-    if (p.eatOption('first available slot') || p.eatOption('first slot')) {
-        return 'first';
+    if (p.eatOption("first available slot") || p.eatOption("first slot")) {
+        return "first";
     }
-    if (p.eatOption('hand slot')) {
-        return 'hand';
+    if (p.eatOption("hand slot")) {
+        return "hand";
     }
 
-    if (p.check('str') || p.check('ident')) {
+    if (p.check("str") || p.check("ident")) {
         throw error(
-            'Expected inventory slot (helmet, chestplate, leggings, boots, first slot, hand slot)',
+            "Expected inventory slot (helmet, chestplate, leggings, boots, first slot, hand slot)",
             p.token.span
         );
     } else {
-        throw error('Expected inventory slot', p.token.span);
+        throw error("Expected inventory slot", p.token.span);
     }
 }
 
@@ -247,7 +274,7 @@ export function parsePotionEffect(p: Parser): PotionEffect {
         }
     }
 
-    throw error('Expected potion effect', p.token.span);
+    throw error("Expected potion effect", p.token.span);
 }
 
 export function parseLobby(p: Parser): Lobby {
@@ -257,7 +284,7 @@ export function parseLobby(p: Parser): Lobby {
         }
     }
 
-    throw error('Expected lobby', p.token.span);
+    throw error("Expected lobby", p.token.span);
 }
 
 export function parseEnchantment(p: Parser): Enchantment {
@@ -267,12 +294,12 @@ export function parseEnchantment(p: Parser): Enchantment {
         }
     }
 
-    throw error('Expected enchantment', p.token.span);
+    throw error("Expected enchantment", p.token.span);
 }
 
 export function parseSound(p: Parser): Sound {
-    if (!p.check('str')) {
-        throw error('Expected sound', p.token.span);
+    if (!p.check("str")) {
+        throw error("Expected sound", p.token.span);
     }
 
     const value = (p.token as StrKind).value;
@@ -293,7 +320,7 @@ export function parsePermission(p: Parser): Permission {
         }
     }
 
-    throw error('Expected permission', p.token.span);
+    throw error("Expected permission", p.token.span);
 }
 
 export function parseItemProperty(p: Parser): ItemProperty {
@@ -303,7 +330,7 @@ export function parseItemProperty(p: Parser): ItemProperty {
         }
     }
 
-    throw error('Expected item property', p.token.span);
+    throw error("Expected item property", p.token.span);
 }
 
 export function parseItemLocation(p: Parser): ItemLocation {
@@ -313,26 +340,26 @@ export function parseItemLocation(p: Parser): ItemLocation {
         }
     }
 
-    throw error('Expected item location', p.token.span);
+    throw error("Expected item location", p.token.span);
 }
 
 export function parseCoordinates(p: Parser) {
-    if (p.token.kind !== 'str') {
-        throw error('Expected coordinates', p.token.span);
+    if (p.token.kind !== "str") {
+        throw error("Expected coordinates", p.token.span);
     }
 
     let value = p.token.value;
     const sp = p.token.span;
     p.next();
 
-    const tokens = value.split(' ');
+    const tokens = value.split(" ");
 
     function addDiagnostic(message: string, span: Span) {
         p.addDiagnostic(error(message, span));
     }
 
     const isRelative = (s: string) =>
-        (s.startsWith('~') || s.startsWith('^')) &&
+        (s.startsWith("~") || s.startsWith("^")) &&
         (s.length == 1 || isNumeric(s.substring(1)));
     const isNumeric = (s: string) => !isNaN(parseFloat(s));
 
@@ -345,35 +372,35 @@ export function parseCoordinates(p: Parser) {
         const tokenSpan = new Span(sp.start + start, sp.start + end);
         const isValid = isRelative(token) || isNumeric(token);
         if (!isValid) {
-            addDiagnostic('Invalid component', tokenSpan);
+            addDiagnostic("Invalid component", tokenSpan);
         }
         return { token, isRelative: isRelative(token), index, span: tokenSpan };
     });
 
     if (components.length < 3) {
-        addDiagnostic('Expected 3 components', new Span(sp.start, sp.end));
-        return '';
+        addDiagnostic("Expected 3 components", new Span(sp.start, sp.end));
+        return "";
     }
 
-    const allDirectional = components.every((c) => c.token.startsWith('^'));
-    const anyDirectional = components.some((c) => c.token.startsWith('^'));
+    const allDirectional = components.every((c) => c.token.startsWith("^"));
+    const anyDirectional = components.some((c) => c.token.startsWith("^"));
     if (anyDirectional && !allDirectional) {
-        addDiagnostic('All components must be directional', sp);
+        addDiagnostic("All components must be directional", sp);
     }
 
     const requiresPitchYaw = components.length === 5;
     if (components.length > 3 && !requiresPitchYaw) {
-        addDiagnostic('Expected yaw', components[3].span);
+        addDiagnostic("Expected yaw", components[3].span);
     }
 
     if (requiresPitchYaw) {
         const pitch = components[4];
         if (!isNumeric(pitch.token)) {
-            addDiagnostic('Invalid pitch', pitch.span);
+            addDiagnostic("Invalid pitch", pitch.span);
         }
         const yaw = components[4];
         if (!isNumeric(yaw.token)) {
-            addDiagnostic('Invalid pitch', yaw.span);
+            addDiagnostic("Invalid pitch", yaw.span);
         }
     }
 

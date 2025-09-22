@@ -1,16 +1,13 @@
 import * as htsl from "htsl";
 
-import { actions } from "housing-common";
 import { ExitError, PauseError, Simulator } from "./simulator";
-import { VarHolder, TeamVarKey, parseValue } from "./vars";
+import { VarHolder, parseValue } from "./vars";
 import { replacePlaceholders } from "./placeholders";
 import { runCondition } from "./conditions";
 import { printDiagnostic } from "../compiler/diagnostics";
 import { coerceWithin } from "./helpers";
 
-export function runAction(
-    action: htsl.IrAction,
-) {
+export function runAction(action: htsl.IrAction) {
     if (action.type === "ACTION_BAR") {
         runActionActionBar(action);
     } else if (action.type === "CHANGE_VAR") {
@@ -38,29 +35,28 @@ export function runAction(
     }
 }
 
-function runActionActionBar(
-    action: htsl.Ir<actions.ActionActionBar>
-) {
+function runActionActionBar(action: htsl.Ir<htsl.ActionActionBar>) {
     if (!action.message) return;
 
     const message = replacePlaceholders(action.message.value);
     ChatLib.actionBar(message);
 }
 
-function runActionChangeVar(
-    action: htsl.Ir<actions.ActionChangeVar>
-) {
-    if (!action.holder || !action.op || !action.var) return;
+function runActionChangeVar(action: htsl.Ir<htsl.ActionChangeVar>) {
+    if (!action.holder || !action.op || !action.key) return;
 
     const holderType = action.holder.value.type;
 
-    const varKey = holderType === "team"
-        ? { team: action.holder.value.team, key: action.var.value }
-        : action.var.value;
+    const varKey =
+        holderType === "team"
+            ? { team: action.holder.value.team, key: action.key.value }
+            : action.key.value;
 
     const varHolder: VarHolder<any> =
-        holderType === "team" ? Simulator.teamVars
-            : holderType === "global" ? Simulator.globalVars
+        holderType === "team"
+            ? Simulator.teamVars
+            : holderType === "global"
+                ? Simulator.globalVars
                 : Simulator.playerVars;
 
     if (action.op.value === "unset") {
@@ -95,13 +91,11 @@ function runActionChangeVar(
     } catch (e) {
         throw err;
     }
-   
+
     varHolder.setVar(varKey, result);
 }
 
-function runActionConditional(
-    action: htsl.Ir<actions.ActionConditional>
-) {
+function runActionConditional(action: htsl.Ir<htsl.ActionConditional>) {
     if (!action.matchAny || !action.conditions || !action.ifActions) return;
 
     const matchAny = action.matchAny.value;
@@ -110,7 +104,7 @@ function runActionConditional(
     for (const condition of action.conditions.value) {
         if (runCondition(condition)) matches++;
     }
-    
+
     if (
         (matchAny && matches > 0) ||
         (!matchAny && matches === action.conditions.value.length)
@@ -121,9 +115,7 @@ function runActionConditional(
     }
 }
 
-function runActionFunction(
-    action: htsl.Ir<actions.ActionFunction>
-) {
+function runActionFunction(action: htsl.Ir<htsl.ActionFunction>) {
     if (!action.function) return;
 
     const result = Simulator.runFunction(action.function.value);
@@ -134,32 +126,24 @@ function runActionFunction(
     }
 }
 
-function runActionMessage(
-    action: htsl.Ir<actions.ActionMessage>
-) {
+function runActionMessage(action: htsl.Ir<htsl.ActionMessage>) {
     if (!action.message) return;
 
     const message = replacePlaceholders(action.message.value);
     ChatLib.chat(`&7*&r ${message}`);
 }
 
-function runActionPauseExecution(
-    action: htsl.Ir<actions.ActionPauseExecution>
-) {
+function runActionPauseExecution(action: htsl.Ir<htsl.ActionPauseExecution>) {
     if (!action.ticks) return;
 
     throw new PauseError(action.ticks.value);
 }
 
-function runActionPlaySound(
-    action: htsl.Ir<actions.ActionPlaySound>
-) {
-    
+function runActionPlaySound(action: htsl.Ir<htsl.ActionPlaySound>) {
+
 }
 
-function runActionTeleport(
-    action: htsl.Ir<actions.ActionTeleport>
-) {
+function runActionTeleport(action: htsl.Ir<htsl.ActionTeleport>) {
     if (!action.location) return;
 
     if (action.location.value.type === "location_invokers") {
@@ -167,24 +151,23 @@ function runActionTeleport(
     } else if (action.location.value.type === "location_custom") {
         ChatLib.say(`/tp ${replacePlaceholders(action.location.value.value)}`);
     } else {
-        const warn = htsl.warn("House spawn cannot be used in Simulator mode", action.location.span);
+        const warn = htsl.warn(
+            "House spawn cannot be used in Simulator mode",
+            action.location.span
+        );
         printDiagnostic(Simulator.sm, warn);
     }
 }
 
-function runActionRandom(
-    action: htsl.Ir<actions.ActionRandom>
-) {
+function runActionRandom(action: htsl.Ir<htsl.ActionRandom>) {
     if (!action.actions) return;
 
     const randIdx = Math.floor(Math.random() * action.actions.value.length);
-    
+
     runAction(action.actions.value[randIdx]);
 }
 
-function runActionSetVelocity(
-    action: htsl.Ir<actions.ActionSetVelocity>
-) {
+function runActionSetVelocity(action: htsl.Ir<htsl.ActionSetVelocity>) {
     if (!action.x || !action.y || !action.z) return;
 
     function coerce(value: number): number {
@@ -197,18 +180,20 @@ function runActionSetVelocity(
 
     const player = Player.getPlayer();
 
-    player.field_71075_bZ/*capabilities*/.field_75100_b/*isFlying*/ = true;
-    player.func_71016_p/*sendPlayerAbilities*/();
+    player.field_71075_bZ /*capabilities*/.field_75100_b /*isFlying*/ = true;
+    player
+        .func_71016_p /*sendPlayerAbilities*/
+        ();
 
-    player.func_70016_h/*setVelocity*/(x / 10, y / 10, z / 10);
+    player.func_70016_h(/*setVelocity*/ x / 10, y / 10, z / 10);
 
-    player.field_71075_bZ/*capabilities*/.field_75100_b/*isFlying*/ = false;
-    player.func_71016_p/*sendPlayerAbilities*/();
+    player.field_71075_bZ /*capabilities*/.field_75100_b /*isFlying*/ = false;
+    player
+        .func_71016_p /*sendPlayerAbilities*/
+        ();
 }
 
-function runActionTitle(
-    action: htsl.Ir<actions.ActionTitle>
-) {
+function runActionTitle(action: htsl.Ir<htsl.ActionTitle>) {
     if (!action.title) return;
 
     Client.showTitle(
@@ -216,6 +201,6 @@ function runActionTitle(
         replacePlaceholders(action.subtitle?.value ?? ""),
         (action.fadein?.value ?? 1) * 20,
         (action.stay?.value ?? 5) * 20,
-        (action.fadeout?.value ?? 1) * 20,
+        (action.fadeout?.value ?? 1) * 20
     );
 }

@@ -1,56 +1,60 @@
-/// <reference types="../../CTAutocomplete" />
+import * as htsl from "htsl";
 
-import type { Step, StepSelectValue } from '../steps/step';
-import { generateSteps } from '../steps/generateSteps';
-import { getSlots, getSlotFromName, ItemSlot, ButtonType } from '../slots';
+import type { Step, StepSelectValue } from "./step";
+import { getSlotFromName, ButtonType } from "../slots";
 import {
     chatHistoryContains,
-    normalized,
-    removeFormatting,
     setAnvilItemName,
     acceptNewAnvilItem,
-} from '../helpers';
+} from "../helpers";
 
-import type { ActionHolder } from 'housing-common';
-import * as htsl from 'htsl';
-import { stepClickButtonOrNextPage } from '../steps/helpers';
+import { stepClickButtonOrNextPage } from "./helpers";
+import { stepsForHolder } from "./holders";
 
 export class Importer {
-    public static INSTANCE: Importer | null = null;
+    static remainingSteps: Step[] = [];
+    static nextIterationWaitUntil: number;
+    static lastStepExecutedAt: number;
 
-    private remainingSteps: Step[];
-    private nextIterationWaitUntil: number;
-    private lastStepExecutedAt: number;
+    static isImporting: boolean = false;
+    static triggers: Trigger[];
 
-    constructor(steps: Step[]) {
-        this.remainingSteps = steps;
+    private static init() {
+        this.remainingSteps = [];
         this.nextIterationWaitUntil = 0;
-        this.lastStepExecutedAt = 0;
+        this.lastStepExecutedAt = Date.now();
+
+        this.triggers.push(register("tick", () => {
+            try {
+                this.maybeIterate();
+            } catch (e) {
+                ChatLib.chat(`Error: ${e}`);
+            }
+
+            if (this.remainingSteps.length === 0) {
+                this.stop();
+            }
+        }));
     }
 
-    public static fromActionHolders(holders: ActionHolder[]): Importer {
-        const steps = generateSteps(holders);
-        return new Importer(steps);
-    }
+    static import(holders: htsl.ActionHolder[]) {
+        if (!this.isImporting) this.init();
 
-    public static fromSource(src: string): Importer {
-        const diagnostics: htsl.Diagnostic[] = htsl.diagnostics(src);
-        for (const diagnostic of diagnostics) {
-            console.log(`  ${diagnostic.level}: ${diagnostic.message}`);
+        const steps: Step[] = [];
+
+        for (const holder of holders) {
+            steps.push(...stepsForHolder(holder));
         }
-        const holders: ActionHolder[] = htsl.actions(src);
-        return Importer.fromActionHolders(holders);
+
+        this.remainingSteps.push(...steps);
     }
 
-    public initialize(): void {
-        Importer.INSTANCE = this;
+    private static stop() {
+        this.isImporting = false;
+        this.triggers.forEach(it => it.unregister());
     }
 
-    public getLastStepExecutedAt(): number {
-        return this.lastStepExecutedAt;
-    }
-
-    private getNextStep(): Step | null {
+    private static getNextStep(): Step | null {
         if (this.remainingSteps.length === 0) {
             return null;
         }
@@ -61,24 +65,24 @@ export class Importer {
         return step;
     }
 
-    private executeSelectValueStep(step: StepSelectValue): boolean {
+    private static executeSelectValueStep(step: StepSelectValue): boolean {
         if (
             chatHistoryContains(
-                'Please use the chat to provide the value you wish to set.',
-                this.getLastStepExecutedAt(),
+                "Please use the chat to provide the value you wish to set.",
+                this.lastStepExecutedAt,
                 false,
                 false
             )
         ) {
             // Enter chat message
             this.remainingSteps.unshift({
-                type: 'SEND_MESSAGE',
+                type: "SEND_MESSAGE",
                 message: step.value,
             });
             return true;
         }
 
-        if (Client.currentGui.getClassName() === 'GuiRepair') {
+        if (Client.currentGui.getClassName() === "GuiRepair") {
             // Anvil GUI input
             setAnvilItemName(step.value);
             acceptNewAnvilItem();
@@ -86,41 +90,41 @@ export class Importer {
             return false;
         }
 
-        if (getSlotFromName(step.key, step.keyIsNormalized) !== null) {
+        if (getSlotFromName(step.key) !== null) {
             // Boolean toggle button, already pressed
             return true;
         }
 
         // Select menu with possible next page button(s)
         this.remainingSteps.unshift(
-            stepClickButtonOrNextPage(step.value, step.valueIsNormalized)
+            stepClickButtonOrNextPage(step.value)
         );
         return true;
     }
 
-    private executeStep(step: Step): boolean {
+    private static executeStep(step: Step): boolean {
         switch (step.type) {
-            case 'RUN_COMMAND':
+            case "RUN_COMMAND":
                 const command = step.command;
                 ChatLib.command(command.slice(1));
                 this.nextIterationWaitUntil = Date.now() + 500;
                 return false;
-            case 'SEND_MESSAGE':
+            case "SEND_MESSAGE":
                 const message = step.message;
                 ChatLib.command(`ac ${message}`);
                 this.nextIterationWaitUntil = Date.now() + 500;
                 return false;
-            case 'SELECT_VALUE':
+            case "SELECT_VALUE":
                 return this.executeSelectValueStep(step);
-            case 'CLICK_BUTTON':
-                const slot = getSlotFromName(step.key, true);
+            case "CLICK_BUTTON":
+                const slot = getSlotFromName(step.key);
                 if (slot === null) {
                     throw new Error(`No slot found for key: ${step.key}`);
                 }
                 slot.click(ButtonType.LEFT);
                 this.nextIterationWaitUntil = Date.now() + 200;
                 return false;
-            case 'CONDITIONAL':
+            case "CONDITIONAL":
                 const condition = step.condition;
                 if (condition()) {
                     this.remainingSteps.unshift(...step.then());
@@ -134,11 +138,11 @@ export class Importer {
         }
     }
 
-    private iterate(): void {
+    private static iterate(): void {
         while (true) {
             const step = this.getNextStep();
             if (step === null) {
-                throw new Error('No more steps to execute');
+                throw new Error("No more steps to execute");
             }
 
             let repeat: boolean;
@@ -148,11 +152,11 @@ export class Importer {
                 this.lastStepExecutedAt = Date.now();
             }
 
-            console.log('\n\n\n\n\n\n\n\n\n\n\nRemaining steps:');
+            console.log("\n\n\n\n\n\n\n\n\n\n\nRemaining steps:");
             for (const remainingStep of this.remainingSteps) {
                 console.log(`  ${JSON.stringify(remainingStep, null, 0)}`);
             }
-            console.log('\n\n\n');
+            console.log("\n\n\n");
 
             if (!repeat) {
                 break;
@@ -160,10 +164,9 @@ export class Importer {
         }
     }
 
-    public maybeIterate(): void {
+    public static maybeIterate(): void {
         if (this.remainingSteps.length === 0) {
-            ChatLib.chat('All steps executed');
-            Importer.INSTANCE = null;
+            ChatLib.chat("All steps executed");
         }
         const now = Date.now();
         if (now < this.nextIterationWaitUntil) {
@@ -172,15 +175,3 @@ export class Importer {
         this.iterate();
     }
 }
-
-register('tick', () => {
-    if (!Importer.INSTANCE) {
-        return;
-    }
-    try {
-        Importer.INSTANCE.maybeIterate();
-    } catch (e) {
-        ChatLib.chat(`Error: ${e}`);
-        Importer.INSTANCE = null;
-    }
-});

@@ -1,8 +1,8 @@
-import { Lexer } from './lexer';
-import { Parser } from './parser';
-import type { ParseResult } from '../ir';
-import { validate } from '../validate';
-import type { SourceMap } from '../source';
+import { Lexer } from "./lexer";
+import { Parser } from "./parser";
+import type { ParseResult } from "../ir";
+import { validate } from "../validate";
+import type { SourceMap } from "../source";
 
 export function parseFromString(src: string): ParseResult {
     const lexer = new Lexer(src, 0);
@@ -15,7 +15,8 @@ export function parseFromString(src: string): ParseResult {
 export function parseFromSourceMap(sm: SourceMap): ParseResult {
     let offset = 0;
     const result: ParseResult = {
-        holders: [], diagnostics: []
+        holders: [],
+        diagnostics: [],
     };
     for (const file of sm.files) {
         const lexer = new Lexer(file.src, 0);

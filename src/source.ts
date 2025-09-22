@@ -54,7 +54,7 @@ export class SourceFile {
     private computeLineStarts(): number[] {
         const lineStarts = [0];
         for (let i = 0; i < this.src.length; i++) {
-            if (this.src[i] === '\n') {
+            if (this.src[i] === "\n") {
                 lineStarts.push(i + 1);
             }
         }
@@ -64,11 +64,12 @@ export class SourceFile {
     positionAt(offset: number): SourcePos {
         for (let i = 0; i < this.lineStarts.length; i++) {
             const start = this.lineStarts[i];
-            const end = i + 1 < this.lineStarts.length ? this.lineStarts[i + 1] : this.src.length;
+            const end =
+                i + 1 < this.lineStarts.length ? this.lineStarts[i + 1] : this.src.length;
             if (offset < end) {
                 return {
                     line: i + 1,
-                    column: offset - start
+                    column: offset - start,
                 };
             }
         }
@@ -79,7 +80,10 @@ export class SourceFile {
     lineAt(offset: number): string {
         for (let i = 0; i < this.lineStarts.length; i++) {
             const start = this.lineStarts[i];
-            const end = i + 1 < this.lineStarts.length ? this.lineStarts[i + 1] - 1 : this.src.length;
+            const end =
+                i + 1 < this.lineStarts.length
+                    ? this.lineStarts[i + 1] - 1
+                    : this.src.length;
             if (offset < end + 1) {
                 return this.src.slice(start, end);
             }
@@ -90,6 +94,6 @@ export class SourceFile {
 }
 
 export type SourcePos = {
-    line: number,
-    column: number,
+    line: number;
+    column: number;
 };

@@ -1,6 +1,6 @@
-import type { Span } from './span';
+import type { Span } from "./span";
 
-export type DiagnosticLevel = 'bug' | 'error' | 'warning' | 'info';
+export type DiagnosticLevel = "bug" | "error" | "warning" | "info";
 
 export class Diagnostic {
     message: string;
@@ -15,9 +15,9 @@ export class Diagnostic {
 }
 
 export function error(message: string, span: Span): Diagnostic {
-    return new Diagnostic(message, 'error', span);
+    return new Diagnostic(message, "error", span);
 }
 
 export function warn(message: string, span: Span): Diagnostic {
-    return new Diagnostic(message, 'warning', span);
+    return new Diagnostic(message, "warning", span);
 }

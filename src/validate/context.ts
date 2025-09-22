@@ -1,5 +1,5 @@
-import { error } from '../diagnostic';
-import type { IrAction, IrActionHolder, IrCondition, ParseResult } from '../ir';
+import { error } from "../diagnostic";
+import type { IrAction, IrActionHolder, IrCondition, ParseResult } from "../ir";
 
 export function checkContext(result: ParseResult) {
     for (const holder of result.holders) {
@@ -12,12 +12,12 @@ function checkHolderContext(result: ParseResult, holder: IrActionHolder) {
 
     checkExitActions(result, holder.actions.value); // check for exit actions used outside conditionals
 
-    if (holder.type === 'UNKNOWN') return; // don't check more rigorously
+    if (holder.type === "UNKNOWN") return; // don't check more rigorously
 
     checkActionContext(result, holder, holder.actions.value);
 
     for (const action of holder.actions.value) {
-        if (action.type === 'CONDITIONAL') {
+        if (action.type === "CONDITIONAL") {
             checkConditionalContext(result, holder, action.conditions?.value ?? []);
         }
     }
@@ -29,18 +29,18 @@ function checkActionContext(
     actions: IrAction[]
 ) {
     for (const action of actions) {
-        if (action.type === 'CONDITIONAL') {
+        if (action.type === "CONDITIONAL") {
             checkActionContext(result, holder, action.ifActions?.value ?? []);
             checkActionContext(result, holder, action.elseActions?.value ?? []);
-        } else if (action.type === 'RANDOM') {
+        } else if (action.type === "RANDOM") {
             checkActionContext(result, holder, action.actions?.value ?? []);
         }
-        if (action.type === 'CANCEL_EVENT') {
-            if (holder.type !== 'EVENT') {
+        if (action.type === "CANCEL_EVENT") {
+            if (holder.type !== "EVENT") {
                 // TODO check for events that can't be cancelled
                 result.diagnostics.push(
                     error(
-                        'Cancel Event action can only be used in event actions',
+                        "Cancel Event action can only be used in event actions",
                         action.kwSpan
                     )
                 );
@@ -55,11 +55,11 @@ function checkConditionalContext(
     conditions: IrCondition[]
 ) {
     for (const condition of conditions) {
-        if (condition.type === 'COMPARE_DAMAGE') {
-            if (!(holder.type === 'EVENT' && holder.event?.value === 'Player Damage')) {
+        if (condition.type === "COMPARE_DAMAGE") {
+            if (!(holder.type === "EVENT" && holder.event?.value === "Player Damage")) {
                 result.diagnostics.push(
                     error(
-                        'Damage Amount condition can only be used in the Player Damage event',
+                        "Damage Amount condition can only be used in the Player Damage event",
                         condition.kwSpan
                     )
                 );
@@ -70,14 +70,14 @@ function checkConditionalContext(
 
 function checkExitActions(result: ParseResult, actions: IrAction[]) {
     for (const action of actions) {
-        if (action.type === 'EXIT') {
+        if (action.type === "EXIT") {
             result.diagnostics.push(
-                error('Exit action can only be used in conditionals', action.kwSpan)
+                error("Exit action can only be used in conditionals", action.kwSpan)
             );
         }
 
         // ensure no exits are in a random action
-        if (action.type === 'RANDOM') {
+        if (action.type === "RANDOM") {
             checkExitActions(result, action.actions?.value ?? []);
         }
     }

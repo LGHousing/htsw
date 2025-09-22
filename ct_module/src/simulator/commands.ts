@@ -5,12 +5,10 @@ import { printDiagnostic } from "../compiler/diagnostics";
 
 export function registerCommandTriggers(): CommandTrigger[] {
     return [
-        register("command", 
-            (...args) => commandFunction(args)
-        ).setName("function"),
-        register("command",
-            (...args) => commandEval(args)
-        ).setName("/").setAliases("eval"),
+        register("command", (...args) => commandFunction(args)).setName("function"),
+        register("command", (...args) => commandEval(args))
+            .setName("/")
+            .setAliases("eval"),
     ];
 }
 
@@ -19,7 +17,7 @@ function commandFunction(args: string[]) {
         const name = args.slice(1).join(" ");
         if (name !== "") {
             console.log(name);
-            Simulator.runFunction(name)
+            Simulator.runFunction(name);
         } else {
             ChatLib.chat("&cInvalid usage: run <name>");
         }
@@ -46,8 +44,8 @@ function commandEval(args: string[]) {
 
 function commandVariable(args: string[]) {
     if (args.length != 3) {
-        
-
-        ChatLib.chat("&cInvalid usage: /var [<var>|global:<var>|team:<team>:<var>] [set|inc|dec|mul|div] <value>")
+        ChatLib.chat(
+            "&cInvalid usage: /var [<var>|global:<var>|team:<team>:<var>] [set|inc|dec|mul|div] <value>"
+        );
     }
 }

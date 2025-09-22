@@ -1,17 +1,17 @@
-import { defineConfig } from 'vite';
+import { defineConfig } from "vite";
 
 export default defineConfig({
     build: {
         lib: {
-            entry: './src/main.ts',
-            formats: ['cjs'],
-            fileName: 'extension',
+            entry: "./src/main.ts",
+            formats: ["cjs"],
+            fileName: "extension",
         },
         rollupOptions: {
-            external: ['vscode'],
+            external: ["vscode"],
         },
         sourcemap: true,
-        outDir: 'dist',
+        outDir: "dist",
     },
     plugins: [],
 });

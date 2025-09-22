@@ -1,6 +1,6 @@
-import * as vscode from 'vscode';
-import * as htsl from 'htsl/src';
-import * as common from 'htsl-editor-common/src';
+import * as vscode from "vscode";
+import * as htsl from "htsl/src";
+import * as common from "htsl-editor-common/src";
 
 // --- inlay hints ---
 
@@ -16,7 +16,7 @@ export class InlayHintsAdapter implements vscode.InlayHintsProvider {
             return {
                 kind: vscode.InlayHintKind.Parameter,
                 position: document.positionAt(hint.span.start),
-                label: hint.label + ':',
+                label: hint.label + ":",
             };
         });
     }
@@ -28,11 +28,11 @@ export class DiagnosticsAdapter {
     private disposables: vscode.Disposable[] = [];
     private listeners: { [uri: string]: vscode.Disposable } = Object.create(null);
     private diagnosticCollection: vscode.DiagnosticCollection =
-        vscode.languages.createDiagnosticCollection('htsl');
+        vscode.languages.createDiagnosticCollection("htsl");
 
     constructor() {
         const onModelAdded = (document: vscode.TextDocument) => {
-            if (document.languageId !== 'htsl') return;
+            if (document.languageId !== "htsl") return;
 
             let handle: NodeJS.Timeout;
             const changeSubscription = vscode.workspace.onDidChangeTextDocument((e) => {
@@ -108,7 +108,7 @@ export class DiagnosticsAdapter {
     private htslDiagnosticLevelToMarkerSeverity(
         severity: string
     ): vscode.DiagnosticSeverity {
-        severity.split(''); // placeholder for logic, adjust if necessary
+        severity.split(""); // placeholder for logic, adjust if necessary
         return vscode.DiagnosticSeverity.Error;
     }
 }

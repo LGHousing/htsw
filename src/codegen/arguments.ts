@@ -1,6 +1,5 @@
-import type { Action, Operation, Value } from "housing-common";
+import type { Action, Condition, Operation, Value } from "../types";
 import { generateAction } from "./actions";
-import type { Condition } from "housing-common/src/types";
 
 export function generateString(string: string): string {
     return `"${string}"`;
@@ -8,21 +7,23 @@ export function generateString(string: string): string {
 
 export function generateOperation(op: Operation | "unset"): string {
     switch (op) {
-        case "set": return "=";
-        case "increment": return "+=";
-        case "decrement": return "-=";
-        case "multiply": return "*=";
-        case "divide": return "/=";
-        case "unset": return "unset";
+        case "set":
+            return "=";
+        case "increment":
+            return "+=";
+        case "decrement":
+            return "-=";
+        case "multiply":
+            return "*=";
+        case "divide":
+            return "/=";
+        case "unset":
+            return "unset";
     }
 }
 
 export function generateValue(value: Value): string {
-    switch (typeof value) {
-        case "string": return `"${value}"`
-        case "number": return `${value}`;
-        case "bigint": return `${value}`;
-    }
+    return value;
 }
 
 export function generateBlock(actions: Action[]): string {
@@ -42,5 +43,5 @@ export function generateBlock(actions: Action[]): string {
 }
 
 export function generateConditions(conditions: Condition[]): string {
-    return "";
+    return "()";
 }

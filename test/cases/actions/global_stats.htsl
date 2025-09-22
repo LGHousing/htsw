@@ -1,3 +1,7 @@
 globalstat x = 5
 globalstat y = globalstat x
 globalstat z = "%stat.global/y%"
+globalvar w = -5.5
+globalvar abc = 5D
+globalvar yz = 1.0L
+globalvar zddd = "%stat.player/z%"D

@@ -1,6 +1,6 @@
-import { editor, IDisposable, languages, MarkerSeverity } from 'monaco-editor';
-import * as htsl from 'htsl/src';
-import * as common from 'htsl-editor-common/src';
+import { editor, IDisposable, languages, MarkerSeverity } from "monaco-editor";
+import * as htsl from "htsl/src";
+import * as common from "htsl-editor-common/src";
 
 // --- inlay hints ---
 
@@ -17,7 +17,7 @@ export class InlayHintsAdapter implements languages.InlayHintsProvider {
             return {
                 kind: languages.InlayHintKind.Parameter,
                 position: model.getPositionAt(hint.span.start),
-                label: hint.label + ':',
+                label: hint.label + ":",
             };
         });
 
@@ -33,7 +33,7 @@ export class DiagnosticsAdapter {
 
     constructor() {
         const onModelAdded = (model: editor.ITextModel) => {
-            if (model.getLanguageId() !== 'htsl') return;
+            if (model.getLanguageId() !== "htsl") return;
 
             let handle: number;
             const changeSubscription = model.onDidChangeContent(() => {
@@ -45,7 +45,7 @@ export class DiagnosticsAdapter {
                 if (model.isAttachedToEditor()) {
                     this.validate(model);
                 } else {
-                    editor.setModelMarkers(model, 'htsl', []);
+                    editor.setModelMarkers(model, "htsl", []);
                 }
             });
 
@@ -61,7 +61,7 @@ export class DiagnosticsAdapter {
         };
 
         const onModelRemoved = (model: editor.ITextModel) => {
-            editor.setModelMarkers(model, 'htsl', []);
+            editor.setModelMarkers(model, "htsl", []);
             const key = model.uri.toString();
             if (this.listeners[key]) {
                 this.listeners[key].dispose();
@@ -110,15 +110,15 @@ export class DiagnosticsAdapter {
             };
         });
 
-        editor.setModelMarkers(model, 'owner', markers);
+        editor.setModelMarkers(model, "owner", markers);
     }
 
     private htslDiagnosticLevelToMarkerSeverity(
         severity: htsl.DiagnosticLevel
     ): MarkerSeverity {
-        if (severity === 'error') {
+        if (severity === "error") {
             return MarkerSeverity.Error;
-        } else if (severity === 'warning') {
+        } else if (severity === "warning") {
             return MarkerSeverity.Warning;
         }
 

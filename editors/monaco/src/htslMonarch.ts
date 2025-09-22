@@ -1,48 +1,56 @@
-import { languages } from 'monaco-editor';
+import { languages } from "monaco-editor";
 import IMonarchLanguage = languages.IMonarchLanguage;
-import * as htsl from 'htsl/src';
+import * as htsl from "htsl/src";
 
 export const HTSL_MONARCH_DEFINITION: IMonarchLanguage = {
     keywords: [
-        'goto',
-        'loop',
-        'if',
-        'else',
-        'and',
-        'or',
-        'function',
-        'random',
-        'exit',
-        'define',
-        'macro',
-        'true',
-        'false',
+        "goto",
+        "loop",
+        "if",
+        "else",
+        "and",
+        "or",
+        "function",
+        "random",
+        "exit",
+        "define",
+        "macro",
+        "true",
+        "false",
     ],
 
-    typeKeywords: ['stat', 'globalstat', 'teamstat', 'var', 'globalvar', 'teamvar', 'placeholder'],
+    typeKeywords: [
+        "stat",
+        "globalstat",
+        "teamstat",
+        "var",
+        "globalvar",
+        "teamvar",
+        "placeholder",
+    ],
 
     operators: [
-        '=',
-        '>',
-        '<',
-        '!',
-        '==',
-        '<=',
-        '>=',
-        '=<',
-        '=>',
-        '!=',
-        '+',
-        '-',
-        '*',
-        '/',
-        '//',
-        '**',
-        '+=',
-        '-=',
-        '*=',
-        '/=',
-        '//=',
+        "=",
+        ">",
+        "<",
+        "!",
+        "==",
+        "<=",
+        ">=",
+        "=<",
+        "=>",
+        "!=",
+        "+",
+        "-",
+        "*",
+        "/",
+        "//",
+        "**",
+        "+=",
+        "-=",
+        "*=",
+        "/=",
+        "//=",
     ],
 
     actions: htsl.helpers.ACTION_KWS,
@@ -60,70 +68,70 @@ export const HTSL_MONARCH_DEFINITION: IMonarchLanguage = {
                 /[a-zA-Z_$][\w$]*/,
                 {
                     cases: {
-                        '@typeKeywords': 'type.keyword',
-                        '@keywords': 'keyword',
-                        '@actions': 'entity.name.function',
-                        '@conditions': 'entity.name.function',
-                        '@shorthands': 'entity.name.function',
-                        '@default': 'identifier',
+                        "@typeKeywords": "type.keyword",
+                        "@keywords": "keyword",
+                        "@actions": "entity.name.function",
+                        "@conditions": "entity.name.function",
+                        "@shorthands": "entity.name.function",
+                        "@default": "identifier",
                     },
                 },
             ],
 
             // whitespace
-            { include: '@whitespace' },
+            { include: "@whitespace" },
 
             // delimiters and operators
-            [/[{}()\[\]]/, '@brackets'],
+            [/[{}()\[\]]/, "@brackets"],
             [
                 /@symbols/,
                 {
-                    cases: { '@operators': 'operator' },
+                    cases: { "@operators": "operator" },
                 },
             ],
 
             // numbers
-            [/\d+(\.\d*)?/, 'number'],
+            [/\d+(\.\d*)?/, "number"],
 
             // delimiter: after number because of .\d floats
-            [/[;,.]/, 'delimiter'],
+            [/[;,.]/, "delimiter"],
 
             // strings
-            [/"([^"\\]|\\.)*$/, 'string.invalid'],
-            [/"/, { token: 'string.quote', bracket: '@open', next: '@string' }],
+            [/"([^"\\]|\\.)*$/, "string.invalid"],
+            [/"/, { token: "string.quote", bracket: "@open", next: "@string" }],
 
-            [/%([^%\\]|\\.)*$/, 'keyword.invalid'],
+            [/%([^%\\]|\\.)*$/, "keyword.invalid"],
             [
                 /%/,
-                { token: 'string.placeholder', bracket: '@open', next: '@placeholder' },
+                { token: "string.placeholder", bracket: "@open", next: "@placeholder" },
             ],
         ],
 
         comment: [
-            [/[^\/*]+/, 'comment'],
-            [/\/\*/, 'comment', '@push'], // nested comment
-            ['\\*/', 'comment', '@pop'],
-            [/[\/*]/, 'comment'],
+            [/[^\/*]+/, "comment"],
+            [/\/\*/, "comment", "@push"], // nested comment
+            ["\\*/", "comment", "@pop"],
+            [/[\/*]/, "comment"],
         ],
 
         string: [
-            [/[^\\"%]+/, 'string'],
+            [/[^\\"%]+/, "string"],
             [
                 /%/,
-                { token: 'string.placeholder', bracket: '@open', next: '@placeholder' },
+                { token: "string.placeholder", bracket: "@open", next: "@placeholder" },
             ],
-            [/"/, { token: 'string.quote', bracket: '@close', next: '@pop' }],
+            [/"/, { token: "string.quote", bracket: "@close", next: "@pop" }],
         ],
 
         placeholder: [
-            [/[^\\%]+/, 'string.placeholder'],
-            [/%/, { token: 'string.placeholder', bracket: '@close', next: '@pop' }],
+            [/[^\\%]+/, "string.placeholder"],
+            [/%/, { token: "string.placeholder", bracket: "@close", next: "@pop" }],
         ],
 
         whitespace: [
-            [/[ \t\r\n]+/, 'white'],
-            [/\/\*/, 'comment', '@comment'],
-            [/\/\/.*$/, 'comment'],
+            [/[ \t\r\n]+/, "white"],
+            [/\/\*/, "comment", "@comment"],
+            [/\/\/.*$/, "comment"],
         ],
     },
 };

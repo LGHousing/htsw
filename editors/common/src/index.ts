@@ -1,1 +1,1 @@
-export * from './inlayHints';
+export * from "./inlayHints";

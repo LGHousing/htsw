@@ -2,10 +2,7 @@
     "compilerOptions": {
         "target": "ESNext",
         "module": "ESNext",
-        "lib": [
-            "ES5",
-            "DOM"
-        ],
+        "lib": ["ES5", "DOM"],
         "isolatedModules": true,
         "strict": true,
         "moduleResolution": "Node",
@@ -13,7 +10,5 @@
         "skipLibCheck": true,
         "noEmit": true
     },
-    "include": [
-        "src"
-    ]
+    "include": ["src"]
 }

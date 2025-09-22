@@ -1,4 +1,4 @@
-import type { ActionHolder } from "housing-common";
+import type { ActionHolder } from "../types";
 import { generateHolder } from "./holders";
 
 export function generate(holders: ActionHolder[]): string {

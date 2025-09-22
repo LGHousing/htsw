@@ -1,9 +1,9 @@
-import { assertIsNormalized, normalized, removeFormatting } from './helpers';
+import { removeFormatting } from "./helpers";
 
 export enum ButtonType {
-    LEFT = 'LEFT',
-    RIGHT = 'RIGHT',
-    MIDDLE = 'MIDDLE',
+    LEFT = "LEFT",
+    RIGHT = "RIGHT",
+    MIDDLE = "MIDDLE",
 }
 
 export class ItemSlot {
@@ -26,7 +26,7 @@ export class ItemSlot {
     public click(buttonType: ButtonType, shift: boolean = false): void {
         const container = Player.getContainer();
         if (container == null) {
-            throw new Error('No open container found');
+            throw new Error("No open container found");
         }
         container.click(this.slotId, shift, buttonType.valueOf());
     }
@@ -35,7 +35,7 @@ export class ItemSlot {
 export function getSlots(): ItemSlot[] {
     const container = Player.getContainer();
     if (container == null) {
-        throw new Error('No open container found');
+        throw new Error("No open container found");
     }
     const slots: ItemSlot[] = [];
     for (let slotId = 0; slotId < container.getSize(); slotId++) {
@@ -48,16 +48,10 @@ export function getSlots(): ItemSlot[] {
     return slots;
 }
 
-export function getSlotFromName(name: string, isNormalized: boolean): ItemSlot | null {
-    if (isNormalized) {
-        assertIsNormalized(name);
-    }
+export function getSlotFromName(name: string): ItemSlot | null {
     const slots = getSlots();
     for (const slot of slots) {
-        let slotName = removeFormatting(slot.getItem().getName());
-        if (isNormalized) {
-            slotName = normalized(slotName);
-        }
+        const slotName = removeFormatting(slot.getItem().getName());
         if (slotName === name) {
             return slot;
         }

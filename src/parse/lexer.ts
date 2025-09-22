@@ -1,5 +1,5 @@
-import { Span } from '../span';
-import { token, type Token } from './token';
+import { Span } from "../span";
+import { token, type Token } from "./token";
 
 export class Lexer {
     src: string;
@@ -14,35 +14,36 @@ export class Lexer {
 
     advanceToken(): Token {
         // eat whitespace
-        while (this.hasNext() && /^\s+$/.test(this.peek()) && this.peek() != '\n') {
+        while (this.hasNext() && /^\s+$/.test(this.peek()) && this.peek() != "\n") {
             this.next();
         }
-        if (!this.hasNext()) return token('eof', new Span(this.globalPos, this.globalPos));
+        if (!this.hasNext())
+            return token("eof", new Span(this.globalPos, this.globalPos));
 
         const lo = this.globalPos;
         const singleSpan = new Span(lo, lo + 1);
         const c = this.next();
 
-        if (c === '/' && this.peek() === '/') {
+        if (c === "/" && this.peek() === "/") {
             // eat line comment
             do {
                 this.next();
-            } while (this.hasNext() && this.peek() !== '\n');
+            } while (this.hasNext() && this.peek() !== "\n");
 
             return this.advanceToken();
         }
 
-        if (c === '/' && this.peek() === '*') {
+        if (c === "/" && this.peek() === "*") {
             this.next();
 
             // eat block comment
             let depth = 1;
             while (this.hasNext()) {
                 const c = this.next();
-                if (c === '/' && this.peek() === '*') {
+                if (c === "/" && this.peek() === "*") {
                     this.next();
                     depth++;
-                } else if (c === '*' && this.peek() === '/') {
+                } else if (c === "*" && this.peek() === "/") {
                     this.next();
                     depth--;
                     if (depth === 0) break;
@@ -52,83 +53,83 @@ export class Lexer {
             return this.advanceToken();
         }
 
-        if (c === ',') return token('comma', singleSpan);
-        if (c === '!') return token('exclamation', singleSpan);
+        if (c === ",") return token("comma", singleSpan);
+        if (c === "!") return token("exclamation", singleSpan);
 
         // binary operators
-        if (c === '+') {
-            if (this.peek(0) === '=') {
+        if (c === "+") {
+            if (this.peek(0) === "=") {
                 this.next();
-                return token('bin_op_eq', new Span(lo, lo + 2), { op: 'plus' });
+                return token("bin_op_eq", new Span(lo, lo + 2), { op: "plus" });
             }
-            return token('bin_op', singleSpan, { op: 'plus' });
+            return token("bin_op", singleSpan, { op: "plus" });
         }
-        if (c === '-') {
-            if (this.peek(0) === '=') {
+        if (c === "-") {
+            if (this.peek(0) === "=") {
                 this.next();
-                return token('bin_op_eq', new Span(lo, lo + 2), { op: 'minus' });
+                return token("bin_op_eq", new Span(lo, lo + 2), { op: "minus" });
             }
-            return token('bin_op', singleSpan, { op: 'minus' });
+            return token("bin_op", singleSpan, { op: "minus" });
         }
-        if (c === '*') {
-            if (this.peek(0) === '*') {
+        if (c === "*") {
+            if (this.peek(0) === "*") {
                 this.next();
-                return token('bin_op', new Span(lo, lo + 2), { op: 'star_star' });
+                return token("bin_op", new Span(lo, lo + 2), { op: "star_star" });
             }
-            if (this.peek(0) === '=') {
+            if (this.peek(0) === "=") {
                 this.next();
-                return token('bin_op_eq', new Span(lo, lo + 2), { op: 'star' });
+                return token("bin_op_eq", new Span(lo, lo + 2), { op: "star" });
             }
-            return token('bin_op', singleSpan, { op: 'star' });
+            return token("bin_op", singleSpan, { op: "star" });
         }
-        if (c === '/') {
-            if (this.peek(0) === '/') this.next();
-            if (this.peek(0) === '=') {
+        if (c === "/") {
+            if (this.peek(0) === "/") this.next();
+            if (this.peek(0) === "=") {
                 this.next();
-                return token('bin_op_eq', new Span(lo, this.globalPos), { op: 'slash' });
+                return token("bin_op_eq", new Span(lo, this.globalPos), { op: "slash" });
             }
-            return token('bin_op', new Span(lo, this.globalPos), { op: 'slash' });
+            return token("bin_op", new Span(lo, this.globalPos), { op: "slash" });
         }
 
         // comparison operators
-        if (c === '=') {
-            if (this.peek(0) === '=') {
+        if (c === "=") {
+            if (this.peek(0) === "=") {
                 this.next();
-                return token('cmp_op_eq', new Span(lo, lo + 2), { op: 'equals' });
+                return token("cmp_op_eq", new Span(lo, lo + 2), { op: "equals" });
             }
-            return token('cmp_op', singleSpan, { op: 'equals' });
+            return token("cmp_op", singleSpan, { op: "equals" });
         }
-        if (c === '<') {
-            if (this.peek(0) === '=') {
+        if (c === "<") {
+            if (this.peek(0) === "=") {
                 this.next();
-                return token('cmp_op_eq', new Span(lo, lo + 2), { op: 'less_than' });
+                return token("cmp_op_eq", new Span(lo, lo + 2), { op: "less_than" });
             }
-            return token('cmp_op', singleSpan, { op: 'less_than' });
+            return token("cmp_op", singleSpan, { op: "less_than" });
         }
-        if (c === '>') {
-            if (this.peek(0) === '=') {
+        if (c === ">") {
+            if (this.peek(0) === "=") {
                 this.next();
-                return token('cmp_op_eq', new Span(lo, lo + 2), { op: 'greater_than' });
+                return token("cmp_op_eq", new Span(lo, lo + 2), { op: "greater_than" });
             }
-            return token('cmp_op', singleSpan, { op: 'greater_than' });
+            return token("cmp_op", singleSpan, { op: "greater_than" });
         }
 
         // delimiters
-        if (c === '(') return token('open_delim', singleSpan, { delim: 'parenthesis' });
-        if (c === ')') return token('close_delim', singleSpan, { delim: 'parenthesis' });
-        if (c === '{') return token('open_delim', singleSpan, { delim: 'brace' });
-        if (c === '}') return token('close_delim', singleSpan, { delim: 'brace' });
-        if (c === '[') return token('open_delim', singleSpan, { delim: 'bracket' });
-        if (c === ']') return token('close_delim', singleSpan, { delim: 'bracket' });
+        if (c === "(") return token("open_delim", singleSpan, { delim: "parenthesis" });
+        if (c === ")") return token("close_delim", singleSpan, { delim: "parenthesis" });
+        if (c === "{") return token("open_delim", singleSpan, { delim: "brace" });
+        if (c === "}") return token("close_delim", singleSpan, { delim: "brace" });
+        if (c === "[") return token("open_delim", singleSpan, { delim: "bracket" });
+        if (c === "]") return token("close_delim", singleSpan, { delim: "bracket" });
 
         // literals
         if (c === '"') {
-            let value = '';
+            let value = "";
             let escapeNext = false;
             while (this.hasNext()) {
                 const c = this.next();
                 if (!escapeNext && c === '"') break;
-                if (!escapeNext && c === '\\') {
+                if (!escapeNext && c === "\\") {
                     escapeNext = true;
                     continue;
                 }
@@ -136,18 +137,18 @@ export class Lexer {
                 value += c;
             }
 
-            return token('str', new Span(lo, this.globalPos), { value });
+            return token("str", new Span(lo, this.globalPos), { value });
         }
 
-        if (c === '%') {
-            let value = '';
+        if (c === "%") {
+            let value = "";
             while (this.hasNext()) {
                 const c = this.next();
-                if (c === '%') break;
+                if (c === "%") break;
                 value += c;
             }
 
-            return token('placeholder', new Span(lo, this.globalPos), { value });
+            return token("placeholder", new Span(lo, this.globalPos), { value });
         }
 
         if (/[0-9]/.test(c)) {
@@ -156,16 +157,16 @@ export class Lexer {
                 if (!/[0-9]/.test(this.peek())) break;
                 value += this.next();
             }
-            if (this.peek() === '.') {
-                value += '.';
+            if (this.peek() === ".") {
+                value += ".";
                 this.next();
                 while (this.hasNext()) {
                     if (!/[0-9]/.test(this.peek())) break;
                     value += this.next();
                 }
-                return token('f64', new Span(lo, this.globalPos), { value });
+                return token("f64", new Span(lo, this.globalPos), { value });
             }
-            return token('i64', new Span(lo, this.globalPos), { value });
+            return token("i64", new Span(lo, this.globalPos), { value });
         }
 
         if (/[a-zA-Z_]/.test(c)) {
@@ -174,12 +175,12 @@ export class Lexer {
                 if (!/[a-zA-Z_/\-0-9.-]/.test(this.peek())) break;
                 value += this.next();
             }
-            return token('ident', new Span(lo, this.globalPos), { value });
+            return token("ident", new Span(lo, this.globalPos), { value });
         }
 
-        if (c === '\n') return token('eol', singleSpan);
+        if (c === "\n") return token("eol", singleSpan);
 
-        return token('unknown', singleSpan, { value: c });
+        return token("unknown", singleSpan, { value: c });
     }
 
     get globalPos(): number {

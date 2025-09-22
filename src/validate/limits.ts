@@ -1,6 +1,6 @@
-import { error } from '../diagnostic';
-import { ACTIONS_TO_KWS } from '../helpers';
-import type { IrAction, ParseResult } from '../ir';
+import { error } from "../diagnostic";
+import { ACTIONS_TO_KWS } from "../helpers";
+import type { IrAction, ParseResult } from "../ir";
 
 export function checkLimits(result: ParseResult) {
     for (const holder of result.holders) {
@@ -9,7 +9,7 @@ export function checkLimits(result: ParseResult) {
 }
 
 const ACTION_LIMITS: {
-    [key in IrAction['type']]: number;
+    [key in IrAction["type"]]: number;
 } = {
     FUNCTION: 10,
     CONDITIONAL: 15,
@@ -61,10 +61,10 @@ function checkActionLimits(result: ParseResult, actions: IrAction[]) {
     }
 
     for (const action of actions) {
-        if (action.type === 'CONDITIONAL') {
+        if (action.type === "CONDITIONAL") {
             checkActionLimits(result, action.ifActions?.value ?? []);
             checkActionLimits(result, action.elseActions?.value ?? []);
-        } else if (action.type === 'RANDOM') {
+        } else if (action.type === "RANDOM") {
             checkActionLimits(result, action.actions?.value ?? []);
         }
     }

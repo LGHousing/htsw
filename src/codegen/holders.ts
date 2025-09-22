@@ -1,4 +1,4 @@
-import type { ActionHolder } from "housing-common";
+import type { ActionHolder } from "../types";
 import { generateAction } from "./actions";
 
 const HINT = "/* ? */";

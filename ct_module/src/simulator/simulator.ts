@@ -1,10 +1,14 @@
-import * as htsl from 'htsl';
+import * as htsl from "htsl";
 
-import { VarHolder, TeamVarKey } from './vars';
-import { ActionScheduler, DelayedActionScheduler, RepeatingActionScheduler } from './schedulers';
-import { registerCommandTriggers } from './commands';
-import { runAction } from './actions';
-import { printDiagnostic } from '../compiler/diagnostics';
+import { VarHolder, TeamVarKey } from "./vars";
+import {
+    ActionScheduler,
+    DelayedActionScheduler,
+    RepeatingActionScheduler,
+} from "./schedulers";
+import { registerCommandTriggers } from "./commands";
+import { runAction } from "./actions";
+import { printDiagnostic } from "../compiler/diagnostics";
 
 export class Simulator {
     static sm: htsl.SourceMap;
@@ -19,10 +23,7 @@ export class Simulator {
 
     static triggers: Trigger[];
 
-    static start(
-        sm: htsl.SourceMap,
-        holders: htsl.IrActionHolder[]
-    ) {
+    static start(sm: htsl.SourceMap, holders: htsl.IrActionHolder[]) {
         Simulator.sm = sm;
         Simulator.holders = holders;
 
@@ -64,7 +65,7 @@ export class Simulator {
 
                 runAction(action);
             } catch (err) {
-                if (err instanceof htsl.Diagnostic) { 
+                if (err instanceof htsl.Diagnostic) {
                     // We have encountered a known runtime issue
                     printDiagnostic(this.sm, err);
                 } else if (err instanceof ExitError) {
@@ -72,9 +73,7 @@ export class Simulator {
                 } else if (err instanceof PauseError) {
                     // Pause action
                     const slice = actions.slice(i + 1);
-                    this.schedulers.push(
-                        new DelayedActionScheduler(slice, err.ticks)
-                    );
+                    this.schedulers.push(new DelayedActionScheduler(slice, err.ticks));
                 }
 
                 if (childCtx) {
@@ -89,9 +88,12 @@ export class Simulator {
         this.runFunction("htsw:main");
         for (const holder of this.holders) {
             if (holder.type === "FUNCTION" && holder.actions && holder.repeatTicks) {
-                this.schedulers.push(new RepeatingActionScheduler(
-                    holder.actions.value, holder.repeatTicks.value
-                ));
+                this.schedulers.push(
+                    new RepeatingActionScheduler(
+                        holder.actions.value,
+                        holder.repeatTicks.value
+                    )
+                );
             }
         }
     }

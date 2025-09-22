@@ -5,22 +5,25 @@ export default defineConfig({
     esbuild: false,
     build: {
         lib: {
-            entry: './src/index.ts',
-            formats: ['cjs'],
-            fileName: () => 'index.js',
+            entry: "./src/index.ts",
+            formats: ["cjs"],
+            fileName: () => "index.js",
         },
-        outDir: 'dist',
+        outDir: "dist",
     },
     plugins: [
         babel({
             babelHelpers: "bundled",
             extensions: [".ts", ".tsx", ".js"],
             presets: [
-                ['@babel/preset-env', {
-                    targets: { ie: '11' }
-                }],
-                "@babel/preset-typescript"
-            ]
-        })
+                [
+                    "@babel/preset-env",
+                    {
+                        targets: { ie: "11" },
+                    },
+                ],
+                "@babel/preset-typescript",
+            ],
+        }),
     ],
 });

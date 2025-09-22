@@ -1,0 +1,686 @@
+{
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/src/source.ts": {
+        "language": "TypeScript",
+        "code": 79,
+        "comment": 0,
+        "blank": 16
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/src/index.ts": {
+        "language": "TypeScript",
+        "code": 17,
+        "comment": 0,
+        "blank": 4
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/src/helpers.ts": {
+        "language": "TypeScript",
+        "code": 187,
+        "comment": 0,
+        "blank": 13
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/src/diagnostic.ts": {
+        "language": "TypeScript",
+        "code": 18,
+        "comment": 0,
+        "blank": 6
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/tsconfig.json": {
+        "language": "JSON with Comments",
+        "code": 18,
+        "comment": 1,
+        "blank": 4
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/README.md": {
+        "language": "Markdown",
+        "code": 89,
+        "comment": 0,
+        "blank": 0
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/src/semantics.ts": {
+        "language": "TypeScript",
+        "code": 245,
+        "comment": 0,
+        "blank": 4
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/src/parse/index.ts": {
+        "language": "TypeScript",
+        "code": 28,
+        "comment": 0,
+        "blank": 4
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/src/span.ts": {
+        "language": "TypeScript",
+        "code": 17,
+        "comment": 0,
+        "blank": 4
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/src/parse/holders.ts": {
+        "language": "TypeScript",
+        "code": 40,
+        "comment": 0,
+        "blank": 7
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/src/parse/conditions.ts": {
+        "language": "TypeScript",
+        "code": 201,
+        "comment": 0,
+        "blank": 23
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/src/ir.ts": {
+        "language": "TypeScript",
+        "code": 63,
+        "comment": 0,
+        "blank": 13
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/src/parse/placeholders.ts": {
+        "language": "TypeScript",
+        "code": 144,
+        "comment": 0,
+        "blank": 17
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/src/validate/limits.ts": {
+        "language": "TypeScript",
+        "code": 65,
+        "comment": 0,
+        "blank": 7
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/src/parse/parser.ts": {
+        "language": "TypeScript",
+        "code": 248,
+        "comment": 1,
+        "blank": 42
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/test/lexer.test.ts": {
+        "language": "TypeScript",
+        "code": 13,
+        "comment": 0,
+        "blank": 3
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/test/helpers.ts": {
+        "language": "TypeScript",
+        "code": 18,
+        "comment": 0,
+        "blank": 5
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/src/parse/lexer.ts": {
+        "language": "TypeScript",
+        "code": 168,
+        "comment": 7,
+        "blank": 26
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/editors/monaco/package.json": {
+        "language": "JSON",
+        "code": 14,
+        "comment": 0,
+        "blank": 1
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/src/validate/index.ts": {
+        "language": "TypeScript",
+        "code": 11,
+        "comment": 0,
+        "blank": 2
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/test/parseAndGenerate.test.ts": {
+        "language": "TypeScript",
+        "code": 16,
+        "comment": 1,
+        "blank": 6
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/src/validate/nesting.ts": {
+        "language": "TypeScript",
+        "code": 39,
+        "comment": 1,
+        "blank": 6
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/src/validate/cooldowns.ts": {
+        "language": "TypeScript",
+        "code": 65,
+        "comment": 2,
+        "blank": 11
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/src/validate/context.ts": {
+        "language": "TypeScript",
+        "code": 72,
+        "comment": 2,
+        "blank": 11
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/src/parse/token.ts": {
+        "language": "TypeScript",
+        "code": 119,
+        "comment": 0,
+        "blank": 20
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/src/parse/actions.ts": {
+        "language": "TypeScript",
+        "code": 353,
+        "comment": 1,
+        "blank": 41
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/test/cases/tokens/tokens.htsl": {
+        "language": "HTSL",
+        "code": 27,
+        "comment": 0,
+        "blank": 0
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/editors/monaco/tsconfig.json": {
+        "language": "JSON with Comments",
+        "code": 18,
+        "comment": 2,
+        "blank": 3
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/test/cases/tokens/identifiers.htsl": {
+        "language": "HTSL",
+        "code": 4,
+        "comment": 0,
+        "blank": 1
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/test/cases/tokens/comments.htsl": {
+        "language": "HTSL",
+        "code": 14,
+        "comment": 0,
+        "blank": 5
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/src/parse/arguments.ts": {
+        "language": "TypeScript",
+        "code": 336,
+        "comment": 1,
+        "blank": 45
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/editors/monaco/src/htslMode.ts": {
+        "language": "TypeScript",
+        "code": 29,
+        "comment": 0,
+        "blank": 10
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/editors/monaco/package-lock.json": {
+        "language": "JSON",
+        "code": 81,
+        "comment": 0,
+        "blank": 1
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/test/cases/actions/player_stats.htsl": {
+        "language": "HTSL",
+        "code": 3,
+        "comment": 0,
+        "blank": 0
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/test/cases/actions/omitted_fields.htsl": {
+        "language": "HTSL",
+        "code": 5,
+        "comment": 0,
+        "blank": 1
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/test/cases/actions/teleport.htsl": {
+        "language": "HTSL",
+        "code": 12,
+        "comment": 0,
+        "blank": 3
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/test/cases/actions/shorthands.htsl": {
+        "language": "HTSL",
+        "code": 13,
+        "comment": 0,
+        "blank": 1
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/test/cases/actions/global_stats.htsl": {
+        "language": "HTSL",
+        "code": 3,
+        "comment": 0,
+        "blank": 0
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/editors/monaco/src/htslMonarch.ts": {
+        "language": "TypeScript",
+        "code": 91,
+        "comment": 24,
+        "blank": 15
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/test/cases/actions/conditionals.htsl": {
+        "language": "HTSL",
+        "code": 21,
+        "comment": 0,
+        "blank": 11
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/test/cases/actions/failing/invalid_var_names.htsl": {
+        "language": "HTSL",
+        "code": 3,
+        "comment": 0,
+        "blank": 0
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/test/cases/actions/failing/invalid_var_actions.htsl": {
+        "language": "HTSL",
+        "code": 4,
+        "comment": 0,
+        "blank": 0
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/test/cases/actions/failing/limits_surpassed.htsl": {
+        "language": "HTSL",
+        "code": 6,
+        "comment": 0,
+        "blank": 1
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/editors/common/package.json": {
+        "language": "JSON",
+        "code": 12,
+        "comment": 0,
+        "blank": 1
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/editors/monaco/src/monaco.contribution.ts": {
+        "language": "TypeScript",
+        "code": 35,
+        "comment": 0,
+        "blank": 5
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/test/cases/actions/failing/exit_outside_conditional.htsl": {
+        "language": "HTSL",
+        "code": 4,
+        "comment": 0,
+        "blank": 1
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/test/cases/actions/placeholders.htsl": {
+        "language": "HTSL",
+        "code": 26,
+        "comment": 0,
+        "blank": 2
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/editors/monaco/src/languageFeatures.ts": {
+        "language": "TypeScript",
+        "code": 102,
+        "comment": 4,
+        "blank": 22
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/package.json": {
+        "language": "JSON",
+        "code": 26,
+        "comment": 0,
+        "blank": 1
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/test/cases/actions/failing/nested_conditionals.htsl": {
+        "language": "HTSL",
+        "code": 5,
+        "comment": 0,
+        "blank": 0
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/test/cases/actions/failing/else_disconnected.htsl": {
+        "language": "HTSL",
+        "code": 4,
+        "comment": 0,
+        "blank": 3
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/editors/code/package.json": {
+        "language": "JSON",
+        "code": 53,
+        "comment": 0,
+        "blank": 1
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/package-lock.json": {
+        "language": "JSON",
+        "code": 1600,
+        "comment": 0,
+        "blank": 1
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/test/cases/actions/failing/number_above_integer_limit.htsl": {
+        "language": "HTSL",
+        "code": 1,
+        "comment": 0,
+        "blank": 0
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/src/codegen/conditions.ts": {
+        "language": "TypeScript",
+        "code": 4,
+        "comment": 0,
+        "blank": 2
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/editors/common/tsconfig.json": {
+        "language": "JSON with Comments",
+        "code": 18,
+        "comment": 2,
+        "blank": 3
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/src/codegen/actions.ts": {
+        "language": "TypeScript",
+        "code": 269,
+        "comment": 0,
+        "blank": 32
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/editors/code/tsconfig.json": {
+        "language": "JSON with Comments",
+        "code": 18,
+        "comment": 2,
+        "blank": 3
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/editors/common/package-lock.json": {
+        "language": "JSON",
+        "code": 49,
+        "comment": 0,
+        "blank": 1
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/editors/code/vite.config.ts": {
+        "language": "TypeScript",
+        "code": 16,
+        "comment": 0,
+        "blank": 2
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/editors/code/htsl.tmGrammar.json": {
+        "language": "JSON",
+        "code": 102,
+        "comment": 0,
+        "blank": 0
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/src/codegen/arguments.ts": {
+        "language": "TypeScript",
+        "code": 34,
+        "comment": 0,
+        "blank": 8
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/editors/code/package-lock.json": {
+        "language": "JSON",
+        "code": 5092,
+        "comment": 0,
+        "blank": 1
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/editors/common/src/inlayHints.ts": {
+        "language": "TypeScript",
+        "code": 60,
+        "comment": 4,
+        "blank": 25
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/editors/code/.vscodeignore": {
+        "language": "Ignore",
+        "code": 2,
+        "comment": 0,
+        "blank": 0
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/editors/common/src/index.ts": {
+        "language": "TypeScript",
+        "code": 1,
+        "comment": 0,
+        "blank": 1
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/src/codegen/helpers.ts": {
+        "language": "TypeScript",
+        "code": 0,
+        "comment": 0,
+        "blank": 1
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/src/codegen/holders.ts": {
+        "language": "TypeScript",
+        "code": 17,
+        "comment": 0,
+        "blank": 5
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/src/codegen/index.ts": {
+        "language": "TypeScript",
+        "code": 9,
+        "comment": 0,
+        "blank": 3
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/docs/resources/sin/sin.htsl": {
+        "language": "HTSL",
+        "code": 31,
+        "comment": 0,
+        "blank": 2
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/docs/getting-started/basic-syntax.md": {
+        "language": "Markdown",
+        "code": 102,
+        "comment": 0,
+        "blank": 34
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/docs/resources/template/explanation.md": {
+        "language": "Markdown",
+        "code": 4,
+        "comment": 0,
+        "blank": 3
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/ct_module/vite.config.ts": {
+        "language": "TypeScript",
+        "code": 25,
+        "comment": 0,
+        "blank": 2
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/ct_module/tsconfig.json": {
+        "language": "JSON with Comments",
+        "code": 19,
+        "comment": 0,
+        "blank": 0
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/ct_module/package.json": {
+        "language": "JSON",
+        "code": 23,
+        "comment": 0,
+        "blank": 1
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/ct_module/metadata.json": {
+        "language": "JSON",
+        "code": 8,
+        "comment": 0,
+        "blank": 1
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/docs/resources/template/template.htsl": {
+        "language": "HTSL",
+        "code": 3,
+        "comment": 0,
+        "blank": 3
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/ct_module/install.py": {
+        "language": "Python",
+        "code": 50,
+        "comment": 2,
+        "blank": 14
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/ct_module/src/index.ts": {
+        "language": "TypeScript",
+        "code": 2,
+        "comment": 0,
+        "blank": 1
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/ct_module/src/slots.ts": {
+        "language": "TypeScript",
+        "code": 58,
+        "comment": 0,
+        "blank": 9
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/docs/resources/sin/explanation.md": {
+        "language": "Markdown",
+        "code": 42,
+        "comment": 0,
+        "blank": 13
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/docs/resources/sin/sin_globalstats.htsl": {
+        "language": "HTSL",
+        "code": 34,
+        "comment": 0,
+        "blank": 2
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/ct_module/src/helpers.ts": {
+        "language": "TypeScript",
+        "code": 96,
+        "comment": 2,
+        "blank": 18
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/ct_module/package-lock.json": {
+        "language": "JSON",
+        "code": 3366,
+        "comment": 0,
+        "blank": 1
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/ct_module/src/simulator/actions.ts": {
+        "language": "TypeScript",
+        "code": 176,
+        "comment": 0,
+        "blank": 45
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/ct_module/src/importer/importer.ts": {
+        "language": "TypeScript",
+        "code": 159,
+        "comment": 6,
+        "blank": 22
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/ct_module/src/commands.ts": {
+        "language": "TypeScript",
+        "code": 61,
+        "comment": 0,
+        "blank": 10
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/ct_module/src/simulator/commands.ts": {
+        "language": "TypeScript",
+        "code": 44,
+        "comment": 0,
+        "blank": 9
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/ct_module/src/simulator/simulator.ts": {
+        "language": "TypeScript",
+        "code": 92,
+        "comment": 3,
+        "blank": 20
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/ct_module/src/simulator/schedulers.ts": {
+        "language": "TypeScript",
+        "code": 46,
+        "comment": 0,
+        "blank": 17
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/ct_module/src/simulator/vars.ts": {
+        "language": "TypeScript",
+        "code": 210,
+        "comment": 11,
+        "blank": 55
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/ct_module/src/simulator/index.ts": {
+        "language": "TypeScript",
+        "code": 1,
+        "comment": 0,
+        "blank": 0
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/ct_module/src/simulator/helpers.ts": {
+        "language": "TypeScript",
+        "code": 56,
+        "comment": 0,
+        "blank": 12
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/docs/getting-started/all-actions.md": {
+        "language": "Markdown",
+        "code": 214,
+        "comment": 2,
+        "blank": 104
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/ct_module/src/simulator/placeholders.ts": {
+        "language": "TypeScript",
+        "code": 211,
+        "comment": 12,
+        "blank": 40
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/ct_module/src/simulator/conditions.ts": {
+        "language": "TypeScript",
+        "code": 109,
+        "comment": 0,
+        "blank": 28
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/editors/code/src/main.ts": {
+        "language": "TypeScript",
+        "code": 29,
+        "comment": 1,
+        "blank": 10
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/ct_module/src/compiler/diagnostics.ts": {
+        "language": "TypeScript",
+        "code": 43,
+        "comment": 0,
+        "blank": 8
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/ct_module/src/steps/helpers.ts": {
+        "language": "TypeScript",
+        "code": 83,
+        "comment": 0,
+        "blank": 8
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/ct_module/src/steps/generateSteps.ts": {
+        "language": "TypeScript",
+        "code": 213,
+        "comment": 2,
+        "blank": 5
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/editors/code/src/languageFeatures.ts": {
+        "language": "TypeScript",
+        "code": 91,
+        "comment": 7,
+        "blank": 23
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/.prettierrc.yml": {
+        "language": "YAML",
+        "code": 6,
+        "comment": 0,
+        "blank": 1
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/ct_module/src/gui/button.ts": {
+        "language": "TypeScript",
+        "code": 125,
+        "comment": 2,
+        "blank": 18
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/ct_module/CTAutocomplete/README.md": {
+        "language": "Markdown",
+        "code": 28,
+        "comment": 0,
+        "blank": 15
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/ct_module/CTAutocomplete/asm.d.ts": {
+        "language": "TypeScript",
+        "code": 464,
+        "comment": 656,
+        "blank": 86
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/ct_module/src/steps/step.ts": {
+        "language": "TypeScript",
+        "code": 32,
+        "comment": 0,
+        "blank": 6
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/ct_module/CTAutocomplete/metadata.json": {
+        "language": "JSON",
+        "code": 8,
+        "comment": 0,
+        "blank": 1
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/ct_module/CTAutocomplete/schema.json": {
+        "language": "JSON",
+        "code": 77,
+        "comment": 0,
+        "blank": 1
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/docs/resources/exponentiation/pow2n.htsl": {
+        "language": "HTSL",
+        "code": 46,
+        "comment": 0,
+        "blank": 3
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/.github/workflows/ci.yml": {
+        "language": "YAML",
+        "code": 26,
+        "comment": 1,
+        "blank": 8
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/docs/resources/exponentiation/pow.htsl": {
+        "language": "HTSL",
+        "code": 91,
+        "comment": 0,
+        "blank": 5
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/docs/resources/exponentiation/explanation.md": {
+        "language": "Markdown",
+        "code": 1,
+        "comment": 0,
+        "blank": 1
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/docs/resources/exponentiation/pow10n.htsl": {
+        "language": "HTSL",
+        "code": 35,
+        "comment": 0,
+        "blank": 3
+    },
+    "file:///c%3A/Users/Sandy/Documents/Projects/htsl/ct_module/CTAutocomplete/index.d.ts": {
+        "language": "TypeScript",
+        "code": 5740,
+        "comment": 6636,
+        "blank": 1725
+    }
+}

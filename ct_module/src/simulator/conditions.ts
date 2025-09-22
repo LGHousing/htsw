@@ -1,14 +1,12 @@
-import { Condition, conditions } from "housing-common";
 import * as htsl from "htsl";
-import { parseValue, TeamVarKey, VarHolder, VarLong } from "./vars";
+
+import { parseValue, VarHolder, VarLong } from "./vars";
 import { parsePlaceholder } from "./placeholders";
 import { Simulator } from "./simulator";
 import { getGamemode } from "./helpers";
 import { printDiagnostic } from "../compiler/diagnostics";
 
-export function runCondition(
-    condition: htsl.Ir<Condition>
-): boolean {
+export function runCondition(condition: htsl.Ir<htsl.Condition>): boolean {
     if (condition.type === "COMPARE_HEALTH") {
         return runConditionCompareHealth(condition);
     } else if (condition.type === "COMPARE_HUNGER") {
@@ -31,17 +29,14 @@ export function runCondition(
         return runConditionRequirePotionEffect(condition);
     }
 
-    const warn = htsl.warn(
-        "Condition cannot be run in Simulator mode",
-        condition.kwSpan
-    );
+    const warn = htsl.warn("Condition cannot be run in Simulator mode", condition.kwSpan);
     printDiagnostic(Simulator.sm, warn);
 
     return false;
 }
 
 function runConditionCompareHealth(
-    condition: htsl.Ir<conditions.ConditionCompareHealth>
+    condition: htsl.Ir<htsl.ConditionCompareHealth>
 ): boolean {
     if (!condition.op || !condition.amount) return false;
 
@@ -52,7 +47,7 @@ function runConditionCompareHealth(
 }
 
 function runConditionCompareHunger(
-    condition: htsl.Ir<conditions.ConditionCompareHunger>
+    condition: htsl.Ir<htsl.ConditionCompareHunger>
 ): boolean {
     if (!condition.op || !condition.amount) return false;
 
@@ -63,18 +58,22 @@ function runConditionCompareHunger(
 }
 
 function runConditionCompareMaxHealth(
-    condition: htsl.Ir<conditions.ConditionCompareMaxHealth>
+    condition: htsl.Ir<htsl.ConditionCompareMaxHealth>
 ): boolean {
     if (!condition.op || !condition.amount) return false;
 
-    const lhs = VarLong.fromNumber(Player.getPlayer().func_110138_aP/*getMaxHealth*/());
+    const lhs = VarLong.fromNumber(
+        Player.getPlayer()
+            .func_110138_aP /*getMaxHealth*/
+            ()
+    );
     const rhs = parseValue(condition.amount.value);
 
     return lhs.cmpOp(rhs, condition.op.value);
 }
 
 function runConditionComparePlaceholder(
-    condition: htsl.Ir<conditions.ConditionComparePlaceholder>
+    condition: htsl.Ir<htsl.ConditionComparePlaceholder>
 ): boolean {
     if (!condition.placeholder || !condition.op || !condition.amount) return false;
 
@@ -85,20 +84,24 @@ function runConditionComparePlaceholder(
 }
 
 function runConditionCompareVar(
-    condition: htsl.Ir<conditions.ConditionCompareVar>
+    condition: htsl.Ir<htsl.ConditionCompareVar>
 ): boolean {
-    if (!condition.holder || !condition.var || !condition.op || !condition.amount) return false;
+    if (!condition.holder || !condition.var || !condition.op || !condition.amount)
+        return false;
 
     const holderType = condition.holder.value.type;
 
-    const varKey = holderType === "team"
-        ? { team: condition.holder.value.team, key: condition.var.value }
-        : condition.var.value;
+    const varKey =
+        holderType === "team"
+            ? { team: condition.holder.value.team, key: condition.var.value }
+            : condition.var.value;
 
     const varHolder: VarHolder<any> =
-        holderType === "team" ? Simulator.teamVars
-            : holderType === "global" ? Simulator.globalVars
-                : Simulator.playerVars;
+        holderType === "team"
+            ? Simulator.teamVars
+            : holderType === "global"
+              ? Simulator.globalVars
+              : Simulator.playerVars;
 
     const fallback = condition.fallback
         ? parseValue(condition.fallback.value)
@@ -111,7 +114,7 @@ function runConditionCompareVar(
 }
 
 function runConditionRequireGamemode(
-    condition: htsl.Ir<conditions.ConditionRequireGamemode>
+    condition: htsl.Ir<htsl.ConditionRequireGamemode>
 ): boolean {
     if (!condition.gamemode) return false;
 
@@ -119,19 +122,27 @@ function runConditionRequireGamemode(
 }
 
 function runConditionRequireItem(
-    condition: htsl.Ir<conditions.ConditionRequireItem>
+    condition: htsl.Ir<htsl.ConditionRequireItem>
 ): boolean {
-    if (!condition.item || !condition.whatToCheck || !condition.whereToCheck || !condition.amount) return false;
+    if (
+        !condition.item ||
+        !condition.whatToCheck ||
+        !condition.whereToCheck ||
+        !condition.amount
+    )
+        return false;
 
     return false; // TODO: items!
 }
 
 function runConditionRequirePotionEffect(
-    condition: htsl.Ir<conditions.ConditionRequirePotionEffect>
+    condition: htsl.Ir<htsl.ConditionRequirePotionEffect>
 ): boolean {
     if (!condition.effect) return false;
 
-    return Player.getActivePotionEffects().find((effect) => {
-        return effect.getLocalizedName() == condition.effect!.value;
-    }) !== undefined;
+    return (
+        Player.getActivePotionEffects().find((effect) => {
+            return effect.getLocalizedName() == condition.effect!.value;
+        }) !== undefined
+    );
 }

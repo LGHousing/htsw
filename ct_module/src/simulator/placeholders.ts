@@ -39,7 +39,7 @@ const MOCK_DATA = {
         cookies: 0,
         visitingrules: "&cPRIVATE",
         players: 1,
-    }
+    },
 } as const;
 
 const PLACEHOLDER_REGEX = /%([^%]+?)%/g;
@@ -60,7 +60,9 @@ export function replacePlaceholders(value: string): string {
             const evaluatedVar = parsePlaceholder(placeholderContent);
 
             value = value.replace(placeholder, evaluatedVar.toString());
-        } catch (error) { /* Ignore */ }
+        } catch (error) {
+            /* Ignore */
+        }
     }
 
     return value;
@@ -75,11 +77,11 @@ export function replacePlaceholders(value: string): string {
  * (the parser should prevent this, if it doesn't, it's a bug).
  */
 export function parsePlaceholder(placeholder: string): Var<any> {
-    const [name, argsString] = placeholder.split('/');
+    const [name, argsString] = placeholder.split("/");
 
     let args: string[] = [];
     if (argsString) {
-        args = argsString.split(' ').filter(arg => arg);
+        args = argsString.split(" ").filter((arg) => arg);
         if (args.length === 0) args = [""]; // Fixes weird parsing by hypixles :)
     }
 
@@ -92,65 +94,115 @@ export function parsePlaceholder(placeholder: string): Var<any> {
     return result;
 }
 
-export function runPlaceholder(
-    name: string,
-    ...args: string[]
-): Var<any> | undefined {
+export function runPlaceholder(name: string, ...args: string[]): Var<any> | undefined {
     switch (name) {
-        case "server.name": return new VarString(MOCK_DATA.server.name);
-        case "server.shortname": return new VarString(MOCK_DATA.server.name);
+        case "server.name":
+            return new VarString(MOCK_DATA.server.name);
+        case "server.shortname":
+            return new VarString(MOCK_DATA.server.name);
 
-        case "player.name": return new VarString(Player.getName());
-        case "player.ping": return VarLong.fromNumber(Server.getPing());
-        case "player.health": return VarLong.fromNumber(Player.getHP());
-        case "player.maxhealth": return VarLong.fromNumber(Player.getPlayer().func_110138_aP/*getMaxHealth*/());
-        case "player.hunger": return VarLong.fromNumber(Player.getHunger());
-        case "player.experience": return VarLong.fromNumber(Player.getXPProgress());
-        case "player.level": return VarLong.fromNumber(Player.getXPLevel());
-        case "player.version": return new VarString(MOCK_DATA.player.version);
-        case "player.protocol": return VarLong.fromNumber(MOCK_DATA.player.protocol);
-        case "player.gamemode": return new VarString(getGamemode().toUpperCase());
-        case "player.region.name": return new VarString(MOCK_DATA.player.region.name);
-        case "player.pos.x": return new VarDouble(Player.getX());
-        case "player.pos.y": return new VarDouble(Player.getY());
-        case "player.pos.z": return new VarDouble(Player.getZ());
-        case "player.pos.pitch": return new VarDouble(Player.getPitch());
-        case "player.pos.yaw": return new VarDouble(Player.getYaw());
-        case "player.block.x": return VarLong.fromNumber(Math.floor(Player.getX()));
-        case "player.block.y": return VarLong.fromNumber(Math.floor(Player.getY()));
-        case "player.block.z": return VarLong.fromNumber(Math.floor(Player.getZ()));
-        case "player.group.name": return new VarString(MOCK_DATA.player.group.name);
-        case "player.group.tag": return new VarString(MOCK_DATA.player.group.tag);
-        case "player.group.priority": return VarLong.fromNumber(MOCK_DATA.player.group.priority);
-        case "player.group.color": return new VarString(MOCK_DATA.player.group.color);
-        case "player.team.name": return new VarString(MOCK_DATA.player.team.name);
-        case "player.team.tag": return new VarString(MOCK_DATA.player.team.tag);
-        case "player.team.color": return new VarString(MOCK_DATA.player.team.color);
-        case "player.team.players": return runPlaceholderPlayerTeamPlayers(args);
-        case "player.parkour.ticks": return VarLong.fromNumber(MOCK_DATA.player.parkour.ticks);
-        case "player.parkour.formatted": return new VarString(MOCK_DATA.player.parkour.formatted);
+        case "player.name":
+            return new VarString(Player.getName());
+        case "player.ping":
+            return VarLong.fromNumber(Server.getPing());
+        case "player.health":
+            return VarLong.fromNumber(Player.getHP());
+        case "player.maxhealth":
+            return VarLong.fromNumber(
+                Player.getPlayer()
+                    .func_110138_aP /*getMaxHealth*/
+                    ()
+            );
+        case "player.hunger":
+            return VarLong.fromNumber(Player.getHunger());
+        case "player.experience":
+            return VarLong.fromNumber(Player.getXPProgress());
+        case "player.level":
+            return VarLong.fromNumber(Player.getXPLevel());
+        case "player.version":
+            return new VarString(MOCK_DATA.player.version);
+        case "player.protocol":
+            return VarLong.fromNumber(MOCK_DATA.player.protocol);
+        case "player.gamemode":
+            return new VarString(getGamemode().toUpperCase());
+        case "player.region.name":
+            return new VarString(MOCK_DATA.player.region.name);
+        case "player.pos.x":
+            return new VarDouble(Player.getX());
+        case "player.pos.y":
+            return new VarDouble(Player.getY());
+        case "player.pos.z":
+            return new VarDouble(Player.getZ());
+        case "player.pos.pitch":
+            return new VarDouble(Player.getPitch());
+        case "player.pos.yaw":
+            return new VarDouble(Player.getYaw());
+        case "player.block.x":
+            return VarLong.fromNumber(Math.floor(Player.getX()));
+        case "player.block.y":
+            return VarLong.fromNumber(Math.floor(Player.getY()));
+        case "player.block.z":
+            return VarLong.fromNumber(Math.floor(Player.getZ()));
+        case "player.group.name":
+            return new VarString(MOCK_DATA.player.group.name);
+        case "player.group.tag":
+            return new VarString(MOCK_DATA.player.group.tag);
+        case "player.group.priority":
+            return VarLong.fromNumber(MOCK_DATA.player.group.priority);
+        case "player.group.color":
+            return new VarString(MOCK_DATA.player.group.color);
+        case "player.team.name":
+            return new VarString(MOCK_DATA.player.team.name);
+        case "player.team.tag":
+            return new VarString(MOCK_DATA.player.team.tag);
+        case "player.team.color":
+            return new VarString(MOCK_DATA.player.team.color);
+        case "player.team.players":
+            return runPlaceholderPlayerTeamPlayers(args);
+        case "player.parkour.ticks":
+            return VarLong.fromNumber(MOCK_DATA.player.parkour.ticks);
+        case "player.parkour.formatted":
+            return new VarString(MOCK_DATA.player.parkour.formatted);
 
-        case "house.name": return new VarString(MOCK_DATA.house.name);
-        case "house.guests": return VarLong.fromNumber(MOCK_DATA.house.guests);
-        case "house.cookies": return VarLong.fromNumber(MOCK_DATA.house.cookies);
-        case "house.visitingrules": return new VarString(MOCK_DATA.house.visitingrules);
-        case "house.players": return VarLong.fromNumber(MOCK_DATA.house.players);
+        case "house.name":
+            return new VarString(MOCK_DATA.house.name);
+        case "house.guests":
+            return VarLong.fromNumber(MOCK_DATA.house.guests);
+        case "house.cookies":
+            return VarLong.fromNumber(MOCK_DATA.house.cookies);
+        case "house.visitingrules":
+            return new VarString(MOCK_DATA.house.visitingrules);
+        case "house.players":
+            return VarLong.fromNumber(MOCK_DATA.house.players);
 
-        case "date.day": return runPlaceholderDateDay(args);
-        case "date.month": return runPlaceholderDateMonth(args);
-        case "date.year": return runPlaceholderDateYear(args);
-        case "date.hour": return runPlaceholderDateHour(args);
-        case "date.minute": return runPlaceholderDateMinute(args);
-        case "date.seconds": return runPlaceholderDateSeconds(args);
-        case "date.unix": return VarLong.fromNumber(Math.floor(Date.now() / 1000));
-        case "date.unix.ms": return VarLong.fromNumber(Date.now());
+        case "date.day":
+            return runPlaceholderDateDay(args);
+        case "date.month":
+            return runPlaceholderDateMonth(args);
+        case "date.year":
+            return runPlaceholderDateYear(args);
+        case "date.hour":
+            return runPlaceholderDateHour(args);
+        case "date.minute":
+            return runPlaceholderDateMinute(args);
+        case "date.seconds":
+            return runPlaceholderDateSeconds(args);
+        case "date.unix":
+            return VarLong.fromNumber(Math.floor(Date.now() / 1000));
+        case "date.unix.ms":
+            return VarLong.fromNumber(Date.now());
 
-        case "random.whole": return runPlaceholderRandomWhole(args);
-        case "random.decimal": return runPlaceholderRandomDecimal(args);
+        case "random.whole":
+            return runPlaceholderRandomWhole(args);
+        case "random.decimal":
+            return runPlaceholderRandomDecimal(args);
 
-        case "var.player": return runPlaceholderVarPlayer(args);
-        case "var.global": return runPlaceholderVarGlobal(args);
-        case "var.team": return runPlaceholderVarTeam(args);
+        case "var.player":
+            return runPlaceholderVarPlayer(args);
+        case "var.global":
+            return runPlaceholderVarGlobal(args);
+        case "var.team":
+            return runPlaceholderVarTeam(args);
     }
 }
 
@@ -221,8 +273,8 @@ function runPlaceholderRandomDecimal(args: string[]): Var<any> | undefined {
     if (args.length !== 2) return new VarDouble(0);
 
     if (
-        !(args[0].includes('.') && !isNaN(Number(args[0]))) ||
-        !(args[1].includes('.') && !isNaN(Number(args[1])))
+        !(args[0].includes(".") && !isNaN(Number(args[0]))) ||
+        !(args[1].includes(".") && !isNaN(Number(args[1])))
     ) {
         return new VarDouble(0);
     }
@@ -239,25 +291,16 @@ function runPlaceholderRandomDecimal(args: string[]): Var<any> | undefined {
 
 function runPlaceholderVarPlayer(args: string[]): Var<any> | undefined {
     const key = args[0];
-    return Simulator.playerVars.getVar(
-        key,
-        parseValue(args[1] ?? '""')
-    );
+    return Simulator.playerVars.getVar(key, parseValue(args[1] ?? '""'));
 }
 
 function runPlaceholderVarGlobal(args: string[]): Var<any> | undefined {
     const key = args[0];
-    return Simulator.globalVars.getVar(
-        key,
-        parseValue(args[1] ?? '""')
-    );
+    return Simulator.globalVars.getVar(key, parseValue(args[1] ?? '""'));
 }
 
 function runPlaceholderVarTeam(args: string[]): Var<any> | undefined {
     const key = args[0];
     const team = args[1];
-    return Simulator.teamVars.getVar(
-        { key, team },
-        parseValue(args[2] ?? '""')
-    );
+    return Simulator.teamVars.getVar({ key, team }, parseValue(args[2] ?? '""'));
 }

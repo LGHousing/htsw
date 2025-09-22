@@ -1,5 +1,5 @@
-import * as languageFeatures from './languageFeatures';
-import { Disposable, languages } from 'vscode';
+import * as languageFeatures from "./languageFeatures";
+import { Disposable, languages } from "vscode";
 
 const disposables: Disposable[] = [];
 const providers: Disposable[] = [];
@@ -11,7 +11,7 @@ export function activate() {
 
         providers.push(
             languages.registerInlayHintsProvider(
-                'htsl',
+                "htsl",
                 new languageFeatures.InlayHintsAdapter()
             )
         );

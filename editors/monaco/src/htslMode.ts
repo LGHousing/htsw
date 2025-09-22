@@ -1,5 +1,5 @@
-import { IDisposable, languages } from 'monaco-editor';
-import * as languageFeatures from './languageFeatures';
+import { IDisposable, languages } from "monaco-editor";
+import * as languageFeatures from "./languageFeatures";
 
 export function setupHtsl() {
     setupMode();
@@ -14,7 +14,7 @@ function setupMode() {
 
         providers.push(
             languages.registerInlayHintsProvider(
-                'htsl',
+                "htsl",
                 new languageFeatures.InlayHintsAdapter()
             )
         );

@@ -1,16 +1,26 @@
 import { Gamemode, Location } from "housing-common";
 import Long from "long";
 
-export type BlockPos = { x: number, y: number, z: number }
+export type BlockPos = { x: number; y: number; z: number };
 
 export function getGamemode(): Gamemode {
     const player = Player.getPlayer();
-    const gameType = player.func_178889_l/*getCurrentGameType*/();
-    
-    if (gameType.func_77145_d/*isCreative*/()) {
+    const gameType = player
+        .func_178889_l /*getCurrentGameType*/
+        ();
+
+    if (
+        gameType
+            .func_77145_d /*isCreative*/
+            ()
+    ) {
         return "creative";
-    } else if (gameType.func_82752_c/*isAdventure*/()) {
-        return "adventure"
+    } else if (
+        gameType
+            .func_82752_c /*isAdventure*/
+            ()
+    ) {
+        return "adventure";
     } else {
         return "survival";
     }
@@ -18,10 +28,8 @@ export function getGamemode(): Gamemode {
 
 export function getDate(timezone?: string): Date {
     let date = new Date();
-    if (timezone) { 
-        date = new Date(
-            date.toLocaleString('en-US', { timeZone: timezone })
-        );
+    if (timezone) {
+        date = new Date(date.toLocaleString("en-US", { timeZone: timezone }));
     }
     return date;
 }
@@ -35,9 +43,8 @@ export function randomLong(): Long {
 
 export function getBlockPos(location: Location): BlockPos | undefined {
     if (location.type === "location_invokers") {
-        return { x: Player.getX(), y: Player.getY(), z: Player.getZ() }
+        return { x: Player.getX(), y: Player.getY(), z: Player.getZ() };
     } else if (location.type === "location_custom") {
-        
         return { x: 0, y: 0, z: 0 };
     }
 }

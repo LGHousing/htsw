@@ -20,10 +20,10 @@ export class Button {
         onClick: () => boolean | void
     ) {
         if (width <= 0) {
-            throw new Error('Width must be greater than 0');
+            throw new Error("Width must be greater than 0");
         }
         if (height <= 0) {
-            throw new Error('Height must be greater than 0');
+            throw new Error("Height must be greater than 0");
         }
         if (height > MAX_HEIGHT) {
             throw new Error(`Height cannot exceed ${MAX_HEIGHT}`);
@@ -57,7 +57,7 @@ export class Button {
 
     public setWidth(width: number) {
         if (width <= 0) {
-            throw new Error('Width must be greater than 0');
+            throw new Error("Width must be greater than 0");
         }
         this.mcObject.field_146120_f = width;
     }
@@ -68,7 +68,7 @@ export class Button {
 
     public setHeight(height: number) {
         if (height <= 0) {
-            throw new Error('Height must be greater than 0');
+            throw new Error("Height must be greater than 0");
         }
         if (height >= MAX_HEIGHT) {
             throw new Error(`Height cannot exceed ${MAX_HEIGHT}`);
@@ -77,13 +77,13 @@ export class Button {
     }
 
     public getText(): string | null {
-        const textField = this.mcObject.class.getDeclaredField('field_146126_j');
+        const textField = this.mcObject.class.getDeclaredField("field_146126_j");
         textField.setAccessible(true);
         return textField.get(this.mcObject);
     }
 
     public setText(text: string | null) {
-        const textField = this.mcObject.class.getDeclaredField('field_146126_j');
+        const textField = this.mcObject.class.getDeclaredField("field_146126_j");
         textField.setAccessible(true);
         textField.set(this.mcObject, text);
     }
@@ -103,17 +103,17 @@ export class Button {
 
     public register() {
         if (this.triggers.length > 0) {
-            throw new Error('Button is already registered');
+            throw new Error("Button is already registered");
         }
         const guiRenderTrigger = register(
-            'guiRender',
+            "guiRender",
             (x: number, y: number, gui: MCTGuiScreen) => {
                 if (!this.shouldBeVisible()) return;
                 this.render(x, y);
             }
         );
         const guiMouseClickTrigger = register(
-            'guiMouseClick',
+            "guiMouseClick",
             (
                 x: number,
                 y: number,
@@ -134,7 +134,7 @@ export class Button {
 
     public deregister() {
         if (this.triggers.length === 0) {
-            throw new Error('Button is not registered');
+            throw new Error("Button is not registered");
         }
         for (const trigger of this.triggers) {
             trigger.unregister();

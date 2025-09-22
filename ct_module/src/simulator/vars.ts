@@ -35,21 +35,31 @@ export class VarLong implements Var<Long> {
 
     binOp(other: Var<Long>, op: Operation): Var<Long> {
         switch (op) {
-            case "set": return other;
-            case "increment": return new VarLong(this.value.add(other.value));
-            case "decrement": return new VarLong(this.value.sub(other.value));
-            case "multiply": return new VarLong(this.value.mul(other.value));
-            case "divide": return new VarLong(this.value.div(other.value));
+            case "set":
+                return other;
+            case "increment":
+                return new VarLong(this.value.add(other.value));
+            case "decrement":
+                return new VarLong(this.value.sub(other.value));
+            case "multiply":
+                return new VarLong(this.value.mul(other.value));
+            case "divide":
+                return new VarLong(this.value.div(other.value));
         }
     }
 
     cmpOp(other: Var<any>, op: Comparison): boolean {
         switch (op) {
-            case "less_than": return this.value.lt(other.value);
-            case "less_than_or_equals": return this.value.lte(other.value);
-            case "equals": return this.value.eq(other.value);
-            case "greater_than": return this.value.gt(other.value);
-            case "greater_than_or_equals": return this.value.gte(other.value);
+            case "less_than":
+                return this.value.lt(other.value);
+            case "less_than_or_equals":
+                return this.value.lte(other.value);
+            case "equals":
+                return this.value.eq(other.value);
+            case "greater_than":
+                return this.value.gt(other.value);
+            case "greater_than_or_equals":
+                return this.value.gte(other.value);
         }
     }
 
@@ -84,11 +94,16 @@ export class VarDouble implements Var<number> {
 
     binOp(other: Var<number>, op: Operation): Var<number> {
         switch (op) {
-            case "set": return other;
-            case "increment": return new VarDouble(this.value + other.value);
-            case "decrement": return new VarDouble(this.value - other.value);
-            case "multiply": return new VarDouble(this.value * other.value);
-            case "divide": return new VarDouble(this.value / other.value);
+            case "set":
+                return other;
+            case "increment":
+                return new VarDouble(this.value + other.value);
+            case "decrement":
+                return new VarDouble(this.value - other.value);
+            case "multiply":
+                return new VarDouble(this.value * other.value);
+            case "divide":
+                return new VarDouble(this.value / other.value);
         }
     }
 
@@ -96,19 +111,29 @@ export class VarDouble implements Var<number> {
         if (other instanceof VarString) return false;
         if (other instanceof VarLong) {
             switch (op) {
-                case "less_than": return other.value.gte(this.value);
-                case "less_than_or_equals": return other.value.gt(this.value);
-                case "equals": return other.value.eq(this.value);
-                case "greater_than": return other.value.lte(this.value);
-                case "greater_than_or_equals": return other.value.lt(this.value);
+                case "less_than":
+                    return other.value.gte(this.value);
+                case "less_than_or_equals":
+                    return other.value.gt(this.value);
+                case "equals":
+                    return other.value.eq(this.value);
+                case "greater_than":
+                    return other.value.lte(this.value);
+                case "greater_than_or_equals":
+                    return other.value.lt(this.value);
             }
         }
         switch (op) {
-            case "less_than": return this.value < other.value;
-            case "less_than_or_equals": return this.value <= other.value;
-            case "equals": return this.value == other.value;
-            case "greater_than": return this.value > other.value;
-            case "greater_than_or_equals": return this.value >= other.value;
+            case "less_than":
+                return this.value < other.value;
+            case "less_than_or_equals":
+                return this.value <= other.value;
+            case "equals":
+                return this.value == other.value;
+            case "greater_than":
+                return this.value > other.value;
+            case "greater_than_or_equals":
+                return this.value >= other.value;
         }
     }
 
@@ -167,10 +192,9 @@ export class VarString implements Var<string> {
     }
 }
 
-export type TeamVarKey = { team: string, key: string };
+export type TeamVarKey = { team: string; key: string };
 
 export class VarHolder<T> {
-
     private stats: Map<T, Var<any>>;
 
     constructor() {
@@ -196,11 +220,9 @@ export class VarHolder<T> {
         }
         return set;
     }
-
 }
 
 const PLACEHOLDER_REGEX = /%([^%]+?)%/g;
-
 
 /**
  * Parses a string literal, which may contain placeholders.
@@ -221,23 +243,19 @@ function parseString(value: string): Var<any> {
             const evaluatedVar = parsePlaceholder(placeholderContent);
 
             value = value.replace(placeholder, evaluatedVar.toString());
-        } catch (error) { /* Ignore */ }
+        } catch (error) {
+            /* Ignore */
+        }
     }
 
     const lastChar = value.slice(-1).toUpperCase();
     const baseValue = value.slice(0, -1);
 
-    if (
-        /^\d+L?$/.test(baseValue) ||
-        lastChar === 'L' && !isNaN(Number(baseValue))
-    ) {
+    if (/^\d+L?$/.test(baseValue) || (lastChar === "L" && !isNaN(Number(baseValue)))) {
         return VarLong.fromString(baseValue);
     }
 
-    if (
-        !isNaN(Number(baseValue)) ||
-        lastChar === 'D' && !isNaN(Number(baseValue))
-    ) {
+    if (!isNaN(Number(baseValue)) || (lastChar === "D" && !isNaN(Number(baseValue)))) {
         return VarDouble.fromString(baseValue);
     }
 
@@ -246,7 +264,7 @@ function parseString(value: string): Var<any> {
 
 /**
  * Parses a variable from a string.
- * 
+ *
  * @throws An error when the value is invalid.
  */
 export function parseValue(value: string): Var<any> {
@@ -254,7 +272,7 @@ export function parseValue(value: string): Var<any> {
         throw new Error("Input value cannot be null or empty.");
     }
 
-    if (value.startsWith('%') && value.endsWith('%') && value.length > 2) {
+    if (value.startsWith("%") && value.endsWith("%") && value.length > 2) {
         const content = value.substring(1, value.length - 1);
         return parsePlaceholder(content);
     }
@@ -264,7 +282,7 @@ export function parseValue(value: string): Var<any> {
         return parseString(content);
     }
 
-    if (value.includes('.') && !isNaN(Number(value))) {
+    if (value.includes(".") && !isNaN(Number(value))) {
         return VarDouble.fromString(value);
     }
 
