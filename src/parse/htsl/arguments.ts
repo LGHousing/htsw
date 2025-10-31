@@ -12,11 +12,11 @@ import type {
     Permission,
     ItemProperty,
     ItemLocation,
-} from "../types";
+} from "../../types";
 import type { Parser } from "./parser";
-import { error } from "../diagnostic";
+import { Diagnostic } from "../../diagnostic";
 import type { F64Kind, I64Kind, StrKind } from "./token";
-import { parseNumericalPlaceholder } from "./placeholders";
+import { parseNumericalPlaceholder } from "../placeholders";
 import {
     ENCHANTMENTS,
     ITEM_LOCATIONS,
@@ -25,9 +25,9 @@ import {
     PERMISSIONS,
     POTION_EFFECTS,
     SOUNDS,
-} from "../types/helpers";
-import { Span } from "../span";
-import { SHORTHANDS } from "../helpers";
+} from "../../types/helpers";
+import { Span } from "../../span";
+import { SHORTHANDS } from "../constants";
 import Long from "long";
 
 export function parseLocation(p: Parser): Location {
@@ -42,7 +42,18 @@ export function parseLocation(p: Parser): Location {
     if (p.eatOption("invokers_location") || p.eatOption("invokers location")) {
         return { type: "location_invokers" };
     }
-    throw error("Invalid location", p.token.span);
+
+    const err = Diagnostic.error("Expected location")
+        .label(p.token.span);
+
+    if (p.check("str") || p.check("ident")) {
+        err.hint("Valid locations are:");
+        err.hint("  house_spawn");
+        err.hint("  invokers_location");
+        err.hint("  custom_location <x> <y> <z> <pitch?> <yaw?>");
+    }
+
+    throw err;
 }
 
 export function parseGamemode(p: Parser): Gamemode {
@@ -55,15 +66,15 @@ export function parseGamemode(p: Parser): Gamemode {
     if (p.eatOption("creative")) {
         return "creative";
     }
+
+    const err = Diagnostic.error("Expected gamemode")
+        .label(p.token.span);
+
     if (p.check("str") || p.check("ident")) {
-        p.addDiagnostic(
-            error("Expected gamemode (survival, adventure, creative)", p.token.span)
-        );
-    } else {
-        p.addDiagnostic(error("Expected gamemode", p.token.span));
+        err.hint("Valid gamemodes are: survival, adventure, creative")
     }
-    p.next();
-    return "survival";
+
+    throw err;
 }
 
 export function parseComparison(p: Parser): Comparison {
@@ -95,34 +106,48 @@ export function parseComparison(p: Parser): Comparison {
     ) {
         return "greater_than_or_equals";
     }
+
+    const err = Diagnostic.error("Expected comparison")
+        .label(p.token.span);
+
     if (p.check("str") || p.check("ident")) {
-        p.addDiagnostic(
-            error(
-                "Expected comparison (less than, less than or equals, equals, greater than, greater than or equals)",
-                p.token.span
-            )
-        );
+        err.hint("Valid comparisons are:");
+        err.hint("  equals");
+        err.hint("  less_than");
+        err.hint("  less_than_or_equals");
+        err.hint("  greater_than");
+        err.hint("  greater_than_or_equals");
     } else {
-        p.addDiagnostic(error("Expected comparison", p.token.span));
+        err.hint("Valid comparisons are: ==, <, <=, >, >=");
     }
-    p.next();
-    return "equals";
+
+    throw err;
 }
 
 export function parseVarName(p: Parser): string {
     if (p.token.kind !== "ident" && p.token.kind !== "str") {
-        throw error("Expected stat name", p.token.span);
+        throw Diagnostic.error("Expected var name").label(p.token.span);
     }
+
     const value = p.token.value;
+
+    const maybeErr = Diagnostic.error("Invalid var name");
     if (value.length > 16) {
-        throw error("Stat name exceeds 16-character limit", p.token.span);
+        p.addDiagnostic(
+            maybeErr.label(p.token.span, "Exceeds 16-character limit")
+        );
     }
-    if (value.length < 1) {
-        throw error("Stat name cannot be empty", p.token.span);
+    else if (value.length < 1) {
+        p.addDiagnostic(
+            maybeErr.label(p.token.span, "Cannot be empty")
+        );
     }
-    if (value.includes(" ")) {
-        throw error("Stat name cannot contain spaces", p.token.span);
+    else if (value.includes(" ")) {
+        p.addDiagnostic(
+            maybeErr.label(p.token.span, "Cannot contain spaces")
+        );
     }
+
     p.next();
     return value;
 }
@@ -161,14 +186,21 @@ export function parseOperation(p: Parser): Operation {
         return "set";
     }
 
+    const err = Diagnostic.error("Expected operation")
+        .label(p.token.span);
+
     if (p.check("str") || p.check("ident")) {
-        throw error(
-            "Expected operation (increment, decrement, set, multiply, divide)",
-            p.token.span
-        );
+        err.hint("Valid operations are:");
+        err.hint("  set");
+        err.hint("  increment");
+        err.hint("  decrement");
+        err.hint("  multiply");
+        err.hint("  divide");
     } else {
-        throw error("Expected operation", p.token.span);
+        err.hint("Valid operations are: =, +=, -=, *=, /=");
     }
+
+    throw err;
 }
 
 export function parseVarOperation(p: Parser): Operation | "unset" {
@@ -181,13 +213,15 @@ export function parseVarOperation(p: Parser): Operation | "unset" {
 export function parseNumericValue(p: Parser): Value {
     const negative = p.eat({ kind: "bin_op", op: "minus" });
 
+    const maybeErr = Diagnostic.error("Invalid amount");
+
     if (p.eat("i64")) {
         const value = (p.prev as I64Kind).value;
         const withNegative = negative ? `-${value}` : value;
         const long = Long.fromString(withNegative);
 
         if (withNegative != long.toString()) {
-            throw error("Number exceeds 64-bit integer limit", p.prev.span);
+            throw maybeErr.label(p.prev.span, "Number exceeds 64-bit integer limit");
         }
 
         return long.toString();
@@ -198,7 +232,7 @@ export function parseNumericValue(p: Parser): Value {
 
         return double.toFixed(20);
     } else if (negative) {
-        throw error("Expected number", p.token.span);
+        throw maybeErr.label(p.token.span, "Expected number");
     }
 
     let isShorthand = false;
@@ -212,7 +246,7 @@ export function parseNumericValue(p: Parser): Value {
         return parseNumericalPlaceholder(p);
     }
 
-    throw error("Expected amount", p.token.span);
+    throw Diagnostic.error("Expected amount").label(p.token.span);
 }
 
 export function parseValue0(p: Parser): Value {
@@ -226,8 +260,8 @@ export function parseValue0(p: Parser): Value {
 export function parseValue(p: Parser): Value {
     const value = parseValue0(p);
 
-    if (p.eatIdent("D")) {}
-    else if (p.eatIdent("L")) {}
+    if (p.eatIdent("D")) { }
+    else if (p.eatIdent("L")) { }
 
     return value;
 }
@@ -250,31 +284,49 @@ export function parseInventorySlot(p: Parser): InventorySlot {
     if (p.eatOption("boots")) {
         return "boots";
     }
-    if (p.eatOption("first available slot") || p.eatOption("first slot")) {
+    if (p.eatOption("first available slot") || p.eatOption("first slot")
+        || p.eatOption("first_available_slot") || p.eatOption("first_slot")) {
         return "first";
     }
-    if (p.eatOption("hand slot")) {
+    if (p.eatOption("hand slot") || p.eatOption("hand_slot")) {
         return "hand";
     }
 
+    const err = Diagnostic.error("Expected inventory slot")
+        .label(p.token.span);
+
     if (p.check("str") || p.check("ident")) {
-        throw error(
-            "Expected inventory slot (helmet, chestplate, leggings, boots, first slot, hand slot)",
-            p.token.span
-        );
-    } else {
-        throw error("Expected inventory slot", p.token.span);
+        err.hint("Valid inventory slots are:");
+        err.hint("  helmet");
+        err.hint("  chestplate");
+        err.hint("  leggings");
+        err.hint("  boots");
+        err.hint("  first_slot");
+        err.hint("  hand_slot");
     }
+
+    throw err;
 }
 
 export function parsePotionEffect(p: Parser): PotionEffect {
     for (const potionEffect of POTION_EFFECTS) {
-        if (p.eatOption(potionEffect)) {
+        if (p.eatString(potionEffect)) {
             return potionEffect;
         }
     }
 
-    throw error("Expected potion effect", p.token.span);
+    const err = Diagnostic.error("Expected potion effect")
+        .label(p.token.span);
+
+    if (p.check("str") || p.check("ident")) {
+        err.hint("Valid potion effects are:")
+        for (let i = 0; i < 5; i++) {
+            err.hint(`  ${POTION_EFFECTS[i]}`);
+        }
+        err.hint(`And ${POTION_EFFECTS.length - 5} others`);
+    }
+
+    throw err;
 }
 
 export function parseLobby(p: Parser): Lobby {
@@ -284,7 +336,18 @@ export function parseLobby(p: Parser): Lobby {
         }
     }
 
-    throw error("Expected lobby", p.token.span);
+    const err = Diagnostic.error("Expected lobby")
+        .label(p.token.span);
+
+    if (p.check("str") || p.check("ident")) {
+        err.hint("Valid lobbies are:")
+        for (let i = 0; i < 5; i++) {
+            err.hint(`  ${LOBBIES[i]}`);
+        }
+        err.hint(`And ${LOBBIES.length - 5} others`);
+    }
+
+    throw err;
 }
 
 export function parseEnchantment(p: Parser): Enchantment {
@@ -294,12 +357,23 @@ export function parseEnchantment(p: Parser): Enchantment {
         }
     }
 
-    throw error("Expected enchantment", p.token.span);
+    const err = Diagnostic.error("Expected enchantment")
+        .label(p.token.span);
+
+    if (p.check("str") || p.check("ident")) {
+        err.hint("Valid enchantments are:")
+        for (let i = 0; i < 5; i++) {
+            err.hint(`  ${ENCHANTMENTS[i]}`);
+        }
+        err.hint(`And ${ENCHANTMENTS.length - 5} others`);
+    }
+
+    throw err;
 }
 
 export function parseSound(p: Parser): Sound {
     if (!p.check("str")) {
-        throw error("Expected sound", p.token.span);
+        throw Diagnostic.error("Expected sound").label(p.token.span);
     }
 
     const value = (p.token as StrKind).value;
@@ -320,7 +394,18 @@ export function parsePermission(p: Parser): Permission {
         }
     }
 
-    throw error("Expected permission", p.token.span);
+    const err = Diagnostic.error("Expected permission")
+        .label(p.token.span);
+
+    if (p.check("str") || p.check("ident")) {
+        err.hint("Valid permissions are:")
+        for (let i = 0; i < 5; i++) {
+            err.hint(`  ${PERMISSIONS[i]}`);
+        }
+        err.hint(`And ${PERMISSIONS.length - 5} others`);
+    }
+
+    throw err;
 }
 
 export function parseItemProperty(p: Parser): ItemProperty {
@@ -330,7 +415,16 @@ export function parseItemProperty(p: Parser): ItemProperty {
         }
     }
 
-    throw error("Expected item property", p.token.span);
+    const err = Diagnostic.error("Expected item property")
+        .label(p.token.span);
+
+    if (p.check("str") || p.check("ident")) {
+        err.hint("Valid item properties are:")
+        err.hint(`  ${ITEM_PROPERTIES[0]}`);
+        err.hint(`  ${ITEM_PROPERTIES[1]}`);
+    }
+
+    throw err;
 }
 
 export function parseItemLocation(p: Parser): ItemLocation {
@@ -340,12 +434,23 @@ export function parseItemLocation(p: Parser): ItemLocation {
         }
     }
 
-    throw error("Expected item location", p.token.span);
+    const err = Diagnostic.error("Expected item location")
+        .label(p.token.span);
+
+    if (p.check("str") || p.check("ident")) {
+        err.hint("Valid item locations are:")
+        for (let i = 0; i < 5; i++) {
+            err.hint(`  ${ITEM_LOCATIONS[i]}`);
+        }
+        err.hint(`And ${ITEM_LOCATIONS.length - 5} others`);
+    }
+
+    throw err;
 }
 
 export function parseCoordinates(p: Parser) {
     if (p.token.kind !== "str") {
-        throw error("Expected coordinates", p.token.span);
+        throw Diagnostic.error("Expected coordinates").label(p.token.span);
     }
 
     let value = p.token.value;
@@ -355,7 +460,7 @@ export function parseCoordinates(p: Parser) {
     const tokens = value.split(" ");
 
     function addDiagnostic(message: string, span: Span) {
-        p.addDiagnostic(error(message, span));
+        p.addDiagnostic(Diagnostic.error(message).label(span));
     }
 
     const isRelative = (s: string) =>

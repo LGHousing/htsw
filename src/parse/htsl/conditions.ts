@@ -1,7 +1,7 @@
 import type { Parser } from "./parser";
-import type { IrCondition } from "../ir";
-import { error } from "../diagnostic";
-import { Span } from "../span";
+import type { IrCondition } from "../../ir";
+import { Diagnostic } from "../../diagnostic";
+import { Span } from "../../span";
 import {
     parseNumericValue,
     parseComparison,
@@ -14,8 +14,8 @@ import {
     parseValue,
 } from "./arguments";
 import { parseNumericalPlaceholder } from "./placeholders";
-import type { ConditionKw } from "../helpers";
-import type { VarHolder } from "../types";
+import type { ConditionKw } from "./constants";
+import type { VarHolder } from "../../types";
 
 type Inverted = { value: boolean; span: Span };
 
@@ -69,9 +69,9 @@ export function parseCondition(p: Parser): IrCondition {
     }
 
     if (p.check("ident")) {
-        throw error("Unknown condition", p.token.span);
+        throw Diagnostic.error("Unknown condition").label(p.token.span);
     } else {
-        throw error("Expected condition", p.token.span);
+        throw Diagnostic.error("Expected condition").label(p.token.span);
     }
 }
 
@@ -155,7 +155,7 @@ function parseConditionRequireItem(p: Parser, inverted: Inverted): IrCondition {
                 p.eatOption("equalOrGreaterAmount")
             ) {
                 return "Equal or Greater Amount";
-            } else throw error("Expected item amount", p.token.span);
+            } else throw Diagnostic.error("Expected item amount").label(p.token.span);
         });
     });
 }

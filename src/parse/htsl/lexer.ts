@@ -1,4 +1,4 @@
-import { Span } from "../span";
+import { Span } from "../../span";
 import { token, type Token } from "./token";
 
 export class Lexer {

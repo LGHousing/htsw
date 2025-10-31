@@ -1,8 +1,8 @@
-import type { VarHolder } from "../types";
-import { error } from "../diagnostic";
-import type { ActionKw } from "../helpers";
-import type { IrAction } from "../ir";
-import { Span } from "../span";
+import type { VarHolder } from "../../types";
+import { Diagnostic } from "../../diagnostic";
+import type { ActionKw } from "../constants";
+import type { IrAction } from "../../ir";
+import { Span } from "../../span";
 import {
     parseEnchantment,
     parseGamemode,
@@ -16,8 +16,8 @@ import {
     parseValue,
     parseVarName,
     parseVarOperation,
-} from "./arguments";
-import { parseCondition } from "./conditions";
+} from "../arguments";
+import { parseCondition } from "../conditions";
 import type { Parser } from "./parser";
 
 export function parseAction(p: Parser): IrAction {
@@ -102,11 +102,24 @@ export function parseAction(p: Parser): IrAction {
     }
 
     if (p.check("ident")) {
-        throw error("Unknown action", p.token.span);
+        const err = Diagnostic
+            .error("Unknown action")
+            .label(p.token.span);
+
+        if (p.eatIdent("goto")) {
+            err.note("goto is no longer supported in htsw");
+
+            // TODO: resolve actual import.json and make exhaustive
+            if (p.eatIdent("function")) err.hint("define this function separately in 'import.json'");
+            else if (p.eatIdent("event")) err.hint("define this event separately in 'import.json'");
+        }
+
+        // no need to recover to eol, parser already does this for actions
+        throw err;
     }
 
     p.next();
-    throw error("Expected action", p.prev.span);
+    throw Diagnostic.error("Expected action").label(p.prev.span);
 }
 
 function parseActionActionBar(p: Parser): IrAction {
@@ -194,7 +207,7 @@ function parseActionConditional(p: Parser): IrAction {
             if (p.eatIdent("and") || p.eatIdent("false")) return false;
             else if (p.eatIdent("or") || p.eatIdent("true")) return true;
             else if (p.check("ident"))
-                throw error("Expected conditional mode", p.token.span);
+                throw Diagnostic.error("Expected conditional mode").label(p.token.span);
             else return false; // not null because :(
         });
 

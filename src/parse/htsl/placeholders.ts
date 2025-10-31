@@ -1,8 +1,8 @@
 import type { Parser } from "./parser";
-import { error } from "../diagnostic";
+import { Diagnostic } from "../../diagnostic";
 import { parseValue, parseVarName } from "./arguments";
-import { Span } from "../span";
-import type { ShorthandKw } from "../helpers";
+import { Span } from "../../span";
+import type { ShorthandKw } from "./constants";
 
 export function parseNumericalPlaceholder(p: Parser): string {
     function eatKw(kw: ShorthandKw): boolean {
@@ -33,7 +33,7 @@ export function parseNumericalPlaceholder(p: Parser): string {
         const name = parseVarName(p);
 
         if (!p.check("ident") && !p.check("str")) {
-            throw error("Expected team name", p.token.span);
+            throw Diagnostic.error("Expected team name").label(p.token.span);
         }
         const team = parseVarName(p);
 
@@ -59,7 +59,7 @@ export function parseNumericalPlaceholder(p: Parser): string {
     if (eatKw("unix")) return "%date.unix%";
 
     if (p.token.kind !== "str" && p.token.kind !== "placeholder") {
-        throw error("Expected placeholder", p.token.span);
+        throw Diagnostic.error("Expected placeholder").label(p.token.span);
     }
 
     let value = p.token.value;
@@ -68,7 +68,7 @@ export function parseNumericalPlaceholder(p: Parser): string {
 
     if (p.prev.kind === "str") {
         if (!(value.startsWith("%") && value.endsWith("%"))) {
-            p.addDiagnostic(error("Expected placeholder", p.prev.span));
+            p.addDiagnostic(Diagnostic.error("Expected placeholder").label(p.prev.span));
             return "";
         }
 
@@ -80,12 +80,12 @@ export function parseNumericalPlaceholder(p: Parser): string {
     const args = index == -1 ? [] : value.substring(index + 1).split(" ");
 
     function addIssueInvalidPlaceholder() {
-        p.addDiagnostic(error("Invalid placeholder", span));
+        p.addDiagnostic(Diagnostic.error("Invalid placeholder").label(span));
     }
 
     function addIssueInvalidArgument(message: string) {
         const lo = index == -1 ? value.length - 1 : index + 1;
-        p.addDiagnostic(error(message, new Span(span.start + lo, span.end)));
+        p.addDiagnostic(Diagnostic.error(message).label(new Span(span.start + lo, span.end)));
     }
 
     switch (name) {

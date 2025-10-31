@@ -2,22 +2,50 @@ import type { Span } from "./span";
 
 export type DiagnosticLevel = "bug" | "error" | "warning" | "info";
 
+export type DiagnosticPart =
+    | { kind: "label"; span: Span; text?: string }
+    | { kind: "reference"; span: Span; text?: string }
+    | { kind: "note"; text: string }
+    | { kind: "hint"; text: string };
+
 export class Diagnostic {
     message: string;
     level: DiagnosticLevel;
-    span: Span;
 
-    constructor(message: string, level: DiagnosticLevel, span: Span) {
+    parts: DiagnosticPart[] = [];
+
+    private constructor(
+        message: string, level: DiagnosticLevel
+    ) {
         this.message = message;
         this.level = level;
-        this.span = span;
     }
-}
 
-export function error(message: string, span: Span): Diagnostic {
-    return new Diagnostic(message, "error", span);
-}
+    static error(message: string): Diagnostic {
+        return new Diagnostic(message, "error");
+    }
 
-export function warn(message: string, span: Span): Diagnostic {
-    return new Diagnostic(message, "warning", span);
+    static warning(message: string): Diagnostic {
+        return new Diagnostic(message, "warning");
+    }
+
+    label(span: Span, text?: string): this {
+        this.parts.push({ kind: "label", span, text });
+        return this;
+    }
+
+    reference(span: Span, text?: string): this {
+        this.parts.push({ kind: "reference", span, text });
+        return this;
+    }
+
+    note(text: string): this {
+        this.parts.push({ kind: "note", text });
+        return this;
+    }
+
+    hint(text: string): this {
+        this.parts.push({ kind: "hint", text });
+        return this;
+    }
 }

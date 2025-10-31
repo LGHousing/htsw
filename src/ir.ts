@@ -1,12 +1,12 @@
-import type { Action, ActionHolder, Condition } from "./types";
+import type { Action, Condition } from "./types";
 import { Span } from "./span";
 import { Diagnostic } from "./diagnostic";
 
 type SpanElement<T> = [T] extends [Action]
     ? IrAction
     : [T] extends [Condition]
-      ? IrCondition
-      : T;
+    ? IrCondition
+    : T;
 
 type SpanArray<U> = {
     value: SpanElement<U>[];
@@ -29,10 +29,9 @@ export type Ir<T extends Element> = {
 
 export type IrAction = Ir<Action>;
 export type IrCondition = Ir<Condition>;
-export type IrActionHolder = Ir<ActionHolder>;
 
 export type ParseResult = {
-    holders: IrActionHolder[];
+    actions: IrAction[];
     diagnostics: Diagnostic[];
 };
 

@@ -1,4 +1,4 @@
-import type { Action, ActionHolder, Condition } from ".";
+import type { Action, Condition } from ".";
 
 export const ACTION_NAMES: {
     [key in Action["type"]]: string;
@@ -59,14 +59,6 @@ export const CONDITION_NAMES: {
     COMPARE_PLACEHOLDER: "Placeholder Number Requirement",
     REQUIRE_TEAM: "Required Team",
     COMPARE_DAMAGE: "Damage Requirement",
-};
-
-export const ACTION_HOLDER_NAMES: {
-    [key in ActionHolder["type"]]: string;
-} = {
-    FUNCTION: "Function",
-    UNKNOWN: "Actions",
-    EVENT: "Event",
 };
 
 export const SOUNDS = [

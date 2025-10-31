@@ -1,4 +1,4 @@
-import { partialEq } from "../helpers";
+import { partialEq } from "../../helpers";
 import type { Lexer } from "./lexer";
 import {
     type CloseDelimKind,
@@ -10,11 +10,10 @@ import {
     type Token,
     tokenToString,
 } from "./token";
-import { Span } from "../span";
-import { Diagnostic, error } from "../diagnostic";
-import type { IrAction, ParseResult } from "../ir";
+import { Span } from "../../span";
+import { Diagnostic } from "../../diagnostic";
+import type { IrAction, ParseResult } from "../../ir";
 import { parseAction } from "./actions";
-import { parseHolder } from "./holders";
 import Long from "long";
 
 export class Parser {
@@ -27,7 +26,7 @@ export class Parser {
 
     constructor(lexer: Lexer) {
         this.lexer = lexer;
-        this.result = { holders: [], diagnostics: [] };
+        this.result = { actions: [], diagnostics: [] };
         this.tokens = [];
         this.token = { kind: "eof", span: new Span(0, 0) };
         this.prev = this.token;
@@ -35,37 +34,35 @@ export class Parser {
     }
 
     parseCompletely(): ParseResult {
-        while (!this.check("eof")) {
+        while (true) {
             this.eatNewlines();
-            this.parseRecovering(["eol"], () => {
-                this.result.holders.push(parseHolder(this));
-            });
-        }
+            if (this.check("eof")) break;
 
+            const action = this.parseRecovering(["eol"], () => parseAction(this));
+            if (!this.eat("eol") && !this.check("eof")) {
+                // We expect a newline always after an action
+                this.addDiagnostic(Diagnostic
+                    .error("Expected end of line")
+                    .label(this.token.span)
+                );
+            }
+
+            if (action === undefined) continue;
+            this.result.actions.push(action);
+        }
         return this.result;
     }
 
-    parseActions(): IrAction[] {
-        const actions: IrAction[] = [];
-        while (true) {
-            this.eatNewlines();
-            if (this.check({ kind: "ident", value: "goto" }) || this.check("eof")) break;
-            const action = this.parseRecovering(["eol"], () => parseAction(this));
-            if (!this.eat("eol") && !this.check("eof")) {
-                this.addDiagnostic(error("Expected end of line", this.token.span));
-            }
-            if (action === undefined) continue;
-            actions.push(action);
-        }
-        return actions;
-    }
-
-    parseBlock(): Array<IrAction> {
+    parseBlock(): IrAction[] {
         const actions: IrAction[] = [];
         this.expect({ kind: "open_delim", delim: "brace" });
         while (true) {
             this.eatNewlines();
-            if (this.check("eof")) throw error("expected }", this.token.span);
+            if (this.check("eof")) {
+                throw Diagnostic.error("expected }")
+                    .label(this.token.span);
+            }
+
             if (this.eat({ kind: "close_delim", delim: "brace" })) break;
 
             const action = this.parseRecovering(
@@ -79,7 +76,10 @@ export class Parser {
                 !this.check("eof") &&
                 !this.check({ kind: "close_delim", delim: "brace" })
             ) {
-                this.addDiagnostic(error("Expected end of line", this.token.span));
+                this.addDiagnostic(
+                    Diagnostic.error("Expected end of line")
+                        .label(this.token.span)
+                );
             }
 
             actions.push(action);
@@ -89,7 +89,8 @@ export class Parser {
 
     parseName(): string {
         if (this.token.kind !== "ident" && this.token.kind !== "str") {
-            throw error("Expected name", this.token.span);
+            throw Diagnostic.error("Expected name")
+                .label(this.token.span);
         }
 
         const value = this.token.value;
@@ -238,7 +239,11 @@ export class Parser {
     }
 
     eatOption(value: string): boolean {
-        if (this.token.kind !== "str" && this.token.kind !== "ident") return false;
+        return this.eatString(value) || this.eatIdent(value);
+    }
+
+    eatString(value: string): boolean {
+        if (this.token.kind !== "str") return false;
         if (this.token.value.toLowerCase() == value.toLowerCase()) {
             this.next();
             return true;
@@ -251,7 +256,7 @@ export class Parser {
     }
 
     eatNewlines() {
-        while (this.eat("eol")) {}
+        while (this.eat("eol")) { }
     }
 
     recover(recoveryTokens: Array<Token["kind"] | Partial<Token>>) {

@@ -7,7 +7,8 @@ import {
     PERMISSIONS,
     POTION_EFFECTS,
     SOUNDS,
-} from "./helpers";
+    type Action
+} from ".";
 
 export type Operation = "set" | "increment" | "decrement" | "multiply" | "divide";
 
@@ -54,3 +55,18 @@ export type Permission = (typeof PERMISSIONS)[number];
 
 export type ItemProperty = (typeof ITEM_PROPERTIES)[number];
 export type ItemLocation = (typeof ITEM_LOCATIONS)[number];
+
+export type AABB = {
+    x1: number;
+    y1: number;
+    z1: number;
+    x2: number;
+    y2: number;
+    z2: number;
+};
+
+export type MenuSlot = {
+    slot: number;
+    snbt: string;
+    actions?: Action[];
+};
