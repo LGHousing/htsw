@@ -1,5 +1,5 @@
-import type { IrAction } from "../../ir";
+import type { ParseResult } from "../../ir";
 
-export function check(actions: IrAction[]) {
+export function check(pr: ParseResult) {
     
 }
