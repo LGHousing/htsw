@@ -102,8 +102,11 @@ export class Parser {
         let value;
         if (this.eatIdent("true")) value = true;
         if (this.eatIdent("false")) value = false;
-        if (value === undefined)
-            throw error("expected true/false value", this.token.span);
+        if (value === undefined) {
+            throw Diagnostic
+                .error("Expected true/false value")
+                .label(this.token.span);
+        }
         return value;
     }
 
@@ -121,11 +124,17 @@ export class Parser {
         const { value, span } = this.spanned(this.parseNumber);
         if (Number(value) < min) {
             this.addDiagnostic(
-                error(`Value must be greater than or equal to ${min}`, span)
+                Diagnostic
+                    .error(`Value must be greater than or equal to ${min}`)
+                    .label(span)
             );
         }
         if (Number(value) > max) {
-            this.addDiagnostic(error(`Value must be less than or equal to ${max}`, span));
+            this.addDiagnostic(
+                Diagnostic
+                    .error(`Value must be less than or equal to ${max}`)
+                    .label(span)
+            );
         }
         return Number(value);
     }
@@ -139,7 +148,9 @@ export class Parser {
         const long = Long.fromString(withNegative);
 
         if (withNegative != long.toString()) {
-            throw error("Number exceeds 64-bit integer limit", this.prev.span);
+            throw Diagnostic
+                .error("Number exceeds 64-bit integer limit")
+                .label(this.prev.span);
         }
 
         return long;
@@ -149,7 +160,9 @@ export class Parser {
         const negative = this.eat({ kind: "bin_op", op: "minus" });
 
         if (this.token.kind !== "i64" && this.token.kind !== "f64") {
-            throw error("Expected number", this.token.span);
+            throw Diagnostic
+                .error("Expected number")
+                .label(this.token.span);
         }
         this.next();
 
@@ -167,10 +180,9 @@ export class Parser {
         let depth = 1;
         while (true) {
             if (this.check("eof")) {
-                throw error(
-                    `expected ${tokenToString({ kind: "close_delim", delim })}`,
-                    this.token.span
-                );
+                throw Diagnostic
+                    .error(`expected ${tokenToString({ kind: "close_delim", delim })}`)
+                    .label(this.token.span);
             }
 
             if (this.check({ kind: "close_delim", delim })) {
@@ -197,14 +209,19 @@ export class Parser {
         while (!this.eat(closeDelim)) {
             if (this.token.kind === "eof") {
                 // we have reached the end of the file without finding a close delim
-                throw error(`Expected ${tokenToString(closeDelim)}`, this.token.span);
+                throw Diagnostic
+                    .error(`Expected ${tokenToString(closeDelim)}`)
+                    .label(this.token.span);
             }
 
             seq.push(parser.call(this, this));
             this.eatNewlines();
             if (!this.eat("comma")) {
                 if (!this.eat(closeDelim)) {
-                    this.addDiagnostic(error("expected ,", this.token.span));
+                    this.addDiagnostic(Diagnostic
+                        .error("expected ,")
+                        .label(this.token.span)
+                    );
                     this.recover([closeDelim]);
                 } else break;
             }
@@ -270,7 +287,9 @@ export class Parser {
 
     expect(tok: Token["kind"] | Partial<Token>) {
         if (!this.eat(tok)) {
-            throw error(`Expected ${tokenToString(tok)}`, this.token.span);
+            throw Diagnostic
+                .error(`Expected ${tokenToString(tok)}`)
+                .label(this.token.span);
         }
     }
 

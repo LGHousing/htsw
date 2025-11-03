@@ -1,6 +1,6 @@
 import type { VarHolder } from "../../types";
 import { Diagnostic } from "../../diagnostic";
-import type { ActionKw } from "../constants";
+import type { ActionKw } from "./constants";
 import type { IrAction } from "../../ir";
 import { Span } from "../../span";
 import {
@@ -16,8 +16,8 @@ import {
     parseValue,
     parseVarName,
     parseVarOperation,
-} from "../arguments";
-import { parseCondition } from "../conditions";
+} from "./arguments";
+import { parseCondition } from "./conditions";
 import type { Parser } from "./parser";
 
 export function parseAction(p: Parser): IrAction {

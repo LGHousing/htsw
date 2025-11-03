@@ -16,7 +16,7 @@ import type {
 import type { Parser } from "./parser";
 import { Diagnostic } from "../../diagnostic";
 import type { F64Kind, I64Kind, StrKind } from "./token";
-import { parseNumericalPlaceholder } from "../placeholders";
+import { parseNumericalPlaceholder } from "./placeholders";
 import {
     ENCHANTMENTS,
     ITEM_LOCATIONS,
@@ -27,7 +27,7 @@ import {
     SOUNDS,
 } from "../../types/helpers";
 import { Span } from "../../span";
-import { SHORTHANDS } from "../constants";
+import { SHORTHANDS } from "./constants";
 import Long from "long";
 
 export function parseLocation(p: Parser): Location {
@@ -487,8 +487,8 @@ export function parseCoordinates(p: Parser) {
         return "";
     }
 
-    const allDirectional = components.every((c) => c.token.startsWith("^"));
-    const anyDirectional = components.some((c) => c.token.startsWith("^"));
+    const allDirectional = components.every(c => c.token.startsWith("^"));
+    const anyDirectional = components.some(c => c.token.startsWith("^"));
     if (anyDirectional && !allDirectional) {
         addDiagnostic("All components must be directional", sp);
     }
