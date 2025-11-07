@@ -1,41 +1,24 @@
-import type { Action, Condition } from "./types";
+import type { Action, Condition, Importable } from "./types";
 import { Span } from "./span";
-import { Diagnostic } from "./diagnostic";
 
-type SpanElement<T> = [T] extends [Action]
-    ? IrAction
-    : [T] extends [Condition]
-    ? IrCondition
-    : T;
+export type Spanned<T> = { value: T; span: Span };
 
-type SpanArray<U> = {
-    value: SpanElement<U>[];
-    span: Span;
-};
+export type IrObject<T> = ({
+    [K in keyof T]: K extends "type" ? T[K] : Spanned<Ir<Exclude<T[K], undefined>>> | undefined;
+}) & ("type" extends keyof T 
+    ? { typeSpan: Span; span: Span } 
+    : {});
 
-export type Spanned<T> = [T] extends [any[]]
-    ? SpanArray<T[number]>
-    : { value: SpanElement<T>; span: Span };
+export type Ir<T> =
+    T extends ReadonlyArray<infer U> ? Array<Ir<U>> :
+    T extends object ? IrObject<T> :
+    T;
 
-export type Element = { type: string };
+export type IrImportable = IrObject<Importable>;
+export type IrAction = IrObject<Action>;
+export type IrCondition = IrObject<Condition>;
 
-export type Ir<T extends Element> = {
-    type: T["type"];
-    span: Span;
-    kwSpan: Span;
-} & {
-    [K in keyof T]: K extends "type" ? T[K] : Spanned<NonNullable<T[K]>> | undefined;
-};
-
-export type IrAction = Ir<Action>;
-export type IrCondition = Ir<Condition>;
-
-export type ParseResult = {
-    actions: IrAction[];
-    diagnostics: Diagnostic[];
-};
-
-export function unwrapIr<T extends Element>(element: Ir<T>): T {
+export function unwrapIr<T>(element: Ir<T>): T {
     return unwrapTransform(element);
 }
 

@@ -61,6 +61,35 @@ export const CONDITION_NAMES: {
     COMPARE_DAMAGE: "Damage Requirement",
 };
 
+export const OPERATIONS = [
+    "Set",
+    "Increment",
+    "Decrement",
+    "Multiply",
+    "Divide",
+] as const;
+
+export const COMPARISONS = [
+    "Equals",
+    "Less Than",
+    "Less Than Or Equals",
+    "Greater Than",
+    "Greater Than Or Equals",
+] as const;
+
+export const GAMEMODES = [
+    "Adventure",
+    "Survival",
+    "Creative"
+] as const;
+
+export const LOCATIONS = [
+    "House Spawn Location",
+    "Invokers Location",
+    "Current Location",
+    "Custom Coordinates",
+] as const;
+
 export const SOUNDS = [
     { name: "Ambience Cave", path: "ambient.cave.cave" },
     { name: "Ambience Rain", path: "ambient.weather.rain" },
@@ -425,7 +454,19 @@ export const PERMISSIONS = [
     "Item: Biome Stick",
 ] as const;
 
-export const ITEM_PROPERTIES = ["Item Type", "Metadata"] as const;
+export const INVENTORY_SLOTS = [
+    "First Available Slot",
+    "Hand Slot",
+    "Helmet",
+    "Chestplate",
+    "Leggings",
+    "Boots"
+] as const;
+
+export const ITEM_PROPERTIES = [
+    "Item Type",
+    "Metadata"
+] as const;
 
 export const ITEM_LOCATIONS = [
     "Hand",
@@ -435,4 +476,9 @@ export const ITEM_LOCATIONS = [
     "Cursor",
     "Crafting Grid",
     "Anywhere",
+] as const;
+
+export const ITEM_AMOUNTS = [
+    "Any Amount",
+    "Equal or Greater Amount"
 ] as const;

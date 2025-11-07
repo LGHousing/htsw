@@ -2,7 +2,7 @@ import type { Parser } from "./parser";
 import { Diagnostic } from "../../diagnostic";
 import { parseValue, parseVarName } from "./arguments";
 import { Span } from "../../span";
-import type { ShorthandKw } from "./constants";
+import type { ShorthandKw } from "./helpers";
 
 export function parseNumericalPlaceholder(p: Parser): string {
     function eatKw(kw: ShorthandKw): boolean {
@@ -68,7 +68,7 @@ export function parseNumericalPlaceholder(p: Parser): string {
 
     if (p.prev.kind === "str") {
         if (!(value.startsWith("%") && value.endsWith("%"))) {
-            p.addDiagnostic(Diagnostic.error("Expected placeholder").label(p.prev.span));
+            p.ctx.addDiagnostic(Diagnostic.error("Expected placeholder").label(p.prev.span));
             return "";
         }
 
@@ -80,12 +80,12 @@ export function parseNumericalPlaceholder(p: Parser): string {
     const args = index == -1 ? [] : value.substring(index + 1).split(" ");
 
     function addIssueInvalidPlaceholder() {
-        p.addDiagnostic(Diagnostic.error("Invalid placeholder").label(span));
+        p.ctx.addDiagnostic(Diagnostic.error("Invalid placeholder").label(span));
     }
 
     function addIssueInvalidArgument(message: string) {
         const lo = index == -1 ? value.length - 1 : index + 1;
-        p.addDiagnostic(Diagnostic.error(message).label(new Span(span.start + lo, span.end)));
+        p.ctx.addDiagnostic(Diagnostic.error(message).label(new Span(span.start + lo, span.end)));
     }
 
     switch (name) {

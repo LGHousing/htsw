@@ -1,11 +1,12 @@
 import { Lexer } from "./lexer";
 import { Parser } from "./parser";
-import type { ParseResult } from "../../ir";
+import type { IrAction } from "../../ir";
+import type { ParseContext } from "../../context";
 
-export function parseFromString(src: string): ParseResult {
-    const lexer = new Lexer(src, 0);
-    const parser = new Parser(lexer);
-    const result = parser.parseCompletely();
-    // validate(result);
-    return result;
+export function parseHtsl(ctx: ParseContext, path: string): IrAction[] {
+    const file = ctx.sourceMap.getFile(path);
+    const lexer = new Lexer(file);
+    const parser = new Parser(ctx, lexer);
+
+    return parser.parseCompletely();
 }

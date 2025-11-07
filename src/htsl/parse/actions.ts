@@ -1,6 +1,6 @@
 import type { VarHolder } from "../../types";
 import { Diagnostic } from "../../diagnostic";
-import type { ActionKw } from "./constants";
+import { withDummyTypeSpans, type ActionKw } from "./helpers";
 import type { IrAction } from "../../ir";
 import { Span } from "../../span";
 import {
@@ -32,7 +32,7 @@ export function parseAction(p: Parser): IrAction {
     } else if (eatKw("applyPotion")) {
         return parseActionApplyPotionEffect(p);
     } else if (eatKw("cancelEvent")) {
-        return { type: "CANCEL_EVENT", kwSpan: p.prev.span, span: p.prev.span };
+        return { type: "CANCEL_EVENT", typeSpan: p.prev.span, span: p.prev.span };
     } else if (eatKw("changeHealth")) {
         return parseActionChangeHealth(p);
     } else if (eatKw("changePlayerGroup")) {
@@ -42,7 +42,7 @@ export function parseAction(p: Parser): IrAction {
     } else if (eatKw("chat")) {
         return parseActionMessage(p);
     } else if (eatKw("clearEffects")) {
-        return { type: "CLEAR_POTION_EFFECTS", kwSpan: p.prev.span, span: p.prev.span };
+        return { type: "CLEAR_POTION_EFFECTS", typeSpan: p.prev.span, span: p.prev.span };
     } else if (eatKw("compassTarget")) {
         return parseActionSetCompassTarget(p);
     } else if (eatKw("displayMenu")) {
@@ -52,11 +52,11 @@ export function parseAction(p: Parser): IrAction {
     } else if (eatKw("enchant")) {
         return parseActionEnchantHeldItem(p);
     } else if (eatKw("exit")) {
-        return { type: "EXIT", kwSpan: p.prev.span, span: p.prev.span };
+        return { type: "EXIT", typeSpan: p.prev.span, span: p.prev.span };
     } else if (eatKw("failParkour")) {
         return parseActionFailParkour(p);
     } else if (eatKw("fullHeal")) {
-        return { type: "HEAL", kwSpan: p.prev.span, span: p.prev.span };
+        return { type: "HEAL", typeSpan: p.prev.span, span: p.prev.span };
     } else if (eatKw("function")) {
         return parseActionFunction(p);
     } else if (eatKw("gamemode")) {
@@ -70,7 +70,7 @@ export function parseAction(p: Parser): IrAction {
     } else if (eatKw("if")) {
         return parseActionConditional(p);
     } else if (eatKw("kill")) {
-        return { type: "KILL", kwSpan: p.prev.span, span: p.prev.span };
+        return { type: "KILL", typeSpan: p.prev.span, span: p.prev.span };
     } else if (eatKw("launch")) {
         return parseActionLaunch(p);
     } else if (eatKw("lobby")) {
@@ -84,7 +84,7 @@ export function parseAction(p: Parser): IrAction {
     } else if (eatKw("removeItem")) {
         return parseActionRemoveItem(p);
     } else if (eatKw("resetInventory")) {
-        return { type: "RESET_INVENTORY", kwSpan: p.prev.span, span: p.prev.span };
+        return { type: "RESET_INVENTORY", typeSpan: p.prev.span, span: p.prev.span };
     } else if (eatKw("setTeam")) {
         return parseActionSetTeam(p);
     } else if (eatKw("sound")) {
@@ -147,7 +147,9 @@ function parseActionApplyPotionEffect(p: Parser): IrAction {
 
 function parseActionChangeGlobalVar(p: Parser): IrAction {
     return parseActionRecovering(p, "CHANGE_VAR", (action) => {
-        action.holder = p.spanned(() => ({ type: "global" }) as VarHolder);
+        action.holder = p.spanned(() => (
+            { type: "global", typeSpan: Span.dummy(), span: Span.dummy() }) as const
+        );
         action.key = p.spanned(parseVarName);
         action.op = p.spanned(parseVarOperation);
         action.value = p.spanned(parseValue);
@@ -181,7 +183,9 @@ function parseActionChangeTeamVar(p: Parser): IrAction {
     return parseActionRecovering(p, "CHANGE_VAR", (action) => {
         action.key = p.spanned(parseVarName);
         action.holder = p.spanned(
-            () => ({ type: "team", team: p.parseName() }) as VarHolder
+            () => withDummyTypeSpans(
+                { type: "team", team: p.spanned(p.parseName) } as const
+            )
         );
         action.op = p.spanned(parseVarOperation);
         action.value = p.spanned(parseValue);
@@ -192,7 +196,7 @@ function parseActionChangeTeamVar(p: Parser): IrAction {
 
 function parseActionChangeVar(p: Parser): IrAction {
     return parseActionRecovering(p, "CHANGE_VAR", (action) => {
-        action.holder = p.spanned(() => ({ type: "player" }) as VarHolder);
+        action.holder = p.spanned(() => (withDummyTypeSpans({ type: "player" } as const)));
         action.key = p.spanned(parseVarName);
         action.op = p.spanned(parseVarOperation);
         action.value = p.spanned(parseValue);
@@ -334,9 +338,9 @@ function parseActionRecovering<T extends IrAction["type"]>(
     const start = p.prev.span.start;
     const action = {
         type,
-        kwSpan: p.prev.span,
-        span: Span.single(-1), // placeholder
-    } as IrAction & { type: T };
+        typeSpan: p.prev.span,
+        span: Span.dummy(), // placeholder
+    } as Extract<IrAction, { type: T }>;
     p.parseRecovering(["eol"], () => {
         parser(action);
     });

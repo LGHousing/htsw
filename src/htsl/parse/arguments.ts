@@ -12,116 +12,137 @@ import type {
     Permission,
     ItemProperty,
     ItemLocation,
+    ItemAmount,
 } from "../../types";
 import type { Parser } from "./parser";
 import { Diagnostic } from "../../diagnostic";
-import type { F64Kind, I64Kind, StrKind } from "./token";
+import type { F64Kind, I64Kind, StrKind, Token } from "./token";
 import { parseNumericalPlaceholder } from "./placeholders";
 import {
+    COMPARISONS,
     ENCHANTMENTS,
+    GAMEMODES,
+    INVENTORY_SLOTS,
+    ITEM_AMOUNTS,
     ITEM_LOCATIONS,
     ITEM_PROPERTIES,
     LOBBIES,
+    LOCATIONS,
+    OPERATIONS,
     PERMISSIONS,
     POTION_EFFECTS,
     SOUNDS,
-} from "../../types/helpers";
+} from "../../types/constants";
 import { Span } from "../../span";
-import { SHORTHANDS } from "./constants";
+import { SHORTHANDS } from "./helpers";
 import Long from "long";
+import type { IrObject } from "../../ir";
 
-export function parseLocation(p: Parser): Location {
-    if (p.eatOption("custom_location") || p.eatOption("custom_coordinates")) {
-        const value = parseCoordinates(p);
-        return { type: "location_custom", value };
-    }
-    if (p.eatOption("house_spawn") || p.eatOption("houseSpawn")) {
-        // ???
-        return { type: "location_spawn" };
-    }
-    if (p.eatOption("invokers_location") || p.eatOption("invokers location")) {
-        return { type: "location_invokers" };
-    }
+export function parseLocation(p: Parser): IrObject<Location> {
+    const start = p.token.span.start;
 
-    const err = Diagnostic.error("Expected location")
-        .label(p.token.span);
+    const type = p.parseOption(
+        LOCATIONS,
+        { singular: "location", plural: "locations" }
+    );
+    const typeSpan = p.prev.span;
 
-    if (p.check("str") || p.check("ident")) {
-        err.hint("Valid locations are:");
-        err.hint("  house_spawn");
-        err.hint("  invokers_location");
-        err.hint("  custom_location <x> <y> <z> <pitch?> <yaw?>");
+    if (type === "Custom Coordinates") {
+        const value = p.spanned(parseCoordinates);
+        return { type, value, typeSpan, span: typeSpan.to(value.span) };
+    } else {
+        return { type, typeSpan, span: typeSpan };
     }
-
-    throw err;
 }
 
 export function parseGamemode(p: Parser): Gamemode {
-    if (p.eatOption("survival")) {
-        return "survival";
-    }
-    if (p.eatOption("adventure")) {
-        return "adventure";
-    }
-    if (p.eatOption("creative")) {
-        return "creative";
-    }
-
-    const err = Diagnostic.error("Expected gamemode")
-        .label(p.token.span);
-
-    if (p.check("str") || p.check("ident")) {
-        err.hint("Valid gamemodes are: survival, adventure, creative")
-    }
-
-    throw err;
+    return p.parseOption(
+        GAMEMODES,
+        { singular: "gamemode", plural: "gamemodes" }
+    );
 }
 
 export function parseComparison(p: Parser): Comparison {
     if (
-        p.eatOption("equals") ||
-        p.eatOption("equal") ||
         p.eat({ kind: "cmp_op", op: "equals" }) ||
         p.eat({ kind: "cmp_op_eq", op: "equals" })
     ) {
-        return "equals";
+        return "Equals";
     }
-    if (p.eatOption("less than") || p.eat({ kind: "cmp_op", op: "less_than" })) {
-        return "less_than";
-    }
-    if (
-        p.eatOption("less than or equals") ||
-        p.eatOption("less than or equal") ||
-        p.eat({ kind: "cmp_op_eq", op: "less_than" })
+    if (p.eatIdent("less than") ||
+        p.eat({ kind: "cmp_op", op: "less_than" })
     ) {
-        return "less_than_or_equals";
+        return "Less Than";
     }
-    if (p.eatOption("greater than") || p.eat({ kind: "cmp_op", op: "greater_than" })) {
-        return "greater_than";
+    if (p.eat({ kind: "cmp_op_eq", op: "less_than" })) {
+        return "Less Than Or Equals";
     }
-    if (
-        p.eatOption("greater than or equals") ||
-        p.eatOption("greater than or equal") ||
-        p.eat({ kind: "cmp_op_eq", op: "greater_than" })
-    ) {
-        return "greater_than_or_equals";
+    if (p.eat({ kind: "cmp_op", op: "greater_than" })) {
+        return "Greater Than";
+    }
+    if (p.eat({ kind: "cmp_op_eq", op: "greater_than" })) {
+        return "Greater Than Or Equals";
     }
 
-    const err = Diagnostic.error("Expected comparison")
-        .label(p.token.span);
-
-    if (p.check("str") || p.check("ident")) {
-        err.hint("Valid comparisons are:");
-        err.hint("  equals");
-        err.hint("  less_than");
-        err.hint("  less_than_or_equals");
-        err.hint("  greater_than");
-        err.hint("  greater_than_or_equals");
+    if (p.check("ident") || p.check("str")) {
+        return p.parseOption(
+            COMPARISONS,
+            { singular: "comparison", plural: "comparisons" }
+        );
     } else {
+        const err = Diagnostic.error("Expected comparison")
+            .label(p.token.span);
         err.hint("Valid comparisons are: ==, <, <=, >, >=");
+
+        throw err;
+    }
+}
+
+export function parseOperation(p: Parser): Operation {
+    // First try to parse alternatives
+    if (
+        p.eatIdent("Inc", true) ||
+        p.eat({ kind: "bin_op_eq", op: "plus" })
+    ) {
+        return "Increment";
+    }
+    if (
+        p.eatIdent("Dec", true) ||
+        p.eat({ kind: "bin_op_eq", op: "minus" })
+    ) {
+        return "Decrement";
+    }
+    if (
+        p.eatIdent("Mult", true) ||
+        p.eatIdent("Mul", true) ||
+        p.eat({ kind: "bin_op_eq", op: "star" })
+    ) {
+        return "Multiply";
+    }
+    if (
+        p.eatIdent("Div", true) ||
+        p.eat({ kind: "bin_op_eq", op: "slash" })
+    ) {
+        return "Divide";
+    }
+    if (p.eat({ kind: "cmp_op", op: "equals" })) {
+        return "Set";
     }
 
-    throw err;
+    if (p.check("ident") || p.check("str")) {
+        // Now parse real options
+        return p.parseOption(
+            OPERATIONS,
+            { singular: "operation", plural: "operations" }
+        );
+    } else {
+        // or, we give them the symbol version of the diagnostic
+        const err = Diagnostic.error("Expected operation")
+            .label(p.token.span);
+        err.hint("Valid operations are: =, +=, -=, *=, /=");
+
+        throw err;
+    }
 }
 
 export function parseVarName(p: Parser): string {
@@ -133,74 +154,23 @@ export function parseVarName(p: Parser): string {
 
     const maybeErr = Diagnostic.error("Invalid var name");
     if (value.length > 16) {
-        p.addDiagnostic(
+        p.ctx.addDiagnostic(
             maybeErr.label(p.token.span, "Exceeds 16-character limit")
         );
     }
     else if (value.length < 1) {
-        p.addDiagnostic(
+        p.ctx.addDiagnostic(
             maybeErr.label(p.token.span, "Cannot be empty")
         );
     }
     else if (value.includes(" ")) {
-        p.addDiagnostic(
+        p.ctx.addDiagnostic(
             maybeErr.label(p.token.span, "Cannot contain spaces")
         );
     }
 
     p.next();
     return value;
-}
-
-export function parseOperation(p: Parser): Operation {
-    if (
-        p.eatOption("increment") ||
-        p.eatOption("inc") ||
-        p.eat({ kind: "bin_op_eq", op: "plus" })
-    ) {
-        return "increment";
-    }
-    if (
-        p.eatOption("decrement") ||
-        p.eatOption("dec") ||
-        p.eat({ kind: "bin_op_eq", op: "minus" })
-    ) {
-        return "decrement";
-    }
-    if (
-        p.eatOption("multiply") ||
-        p.eatOption("mult") ||
-        p.eatOption("mul") ||
-        p.eat({ kind: "bin_op_eq", op: "star" })
-    ) {
-        return "multiply";
-    }
-    if (
-        p.eatOption("divide") ||
-        p.eatOption("div") ||
-        p.eat({ kind: "bin_op_eq", op: "slash" })
-    ) {
-        return "divide";
-    }
-    if (p.eatOption("set") || p.eat({ kind: "cmp_op", op: "equals" })) {
-        return "set";
-    }
-
-    const err = Diagnostic.error("Expected operation")
-        .label(p.token.span);
-
-    if (p.check("str") || p.check("ident")) {
-        err.hint("Valid operations are:");
-        err.hint("  set");
-        err.hint("  increment");
-        err.hint("  decrement");
-        err.hint("  multiply");
-        err.hint("  divide");
-    } else {
-        err.hint("Valid operations are: =, +=, -=, *=, /=");
-    }
-
-    throw err;
 }
 
 export function parseVarOperation(p: Parser): Operation | "unset" {
@@ -268,184 +238,130 @@ export function parseValue(p: Parser): Value {
 
 
 export function parseInventorySlot(p: Parser): InventorySlot {
+    if (!p.check("i64") && !p.check("ident") && !p.check("str")) {
+        throw Diagnostic
+            .error("Expected inventory slot name or index")
+            .label(p.token.span);
+    }
+
     if (p.check("i64")) {
         return p.parseBoundedNumber(-1, 39);
     }
 
-    if (p.eatOption("helmet")) {
-        return "helmet";
-    }
-    if (p.eatOption("chestplate")) {
-        return "chestplate";
-    }
-    if (p.eatOption("leggings")) {
-        return "leggings";
-    }
-    if (p.eatOption("boots")) {
-        return "boots";
-    }
-    if (p.eatOption("first available slot") || p.eatOption("first slot")
-        || p.eatOption("first_available_slot") || p.eatOption("first_slot")) {
-        return "first";
-    }
-    if (p.eatOption("hand slot") || p.eatOption("hand_slot")) {
-        return "hand";
-    }
-
-    const err = Diagnostic.error("Expected inventory slot")
-        .label(p.token.span);
-
-    if (p.check("str") || p.check("ident")) {
-        err.hint("Valid inventory slots are:");
-        err.hint("  helmet");
-        err.hint("  chestplate");
-        err.hint("  leggings");
-        err.hint("  boots");
-        err.hint("  first_slot");
-        err.hint("  hand_slot");
-    }
-
-    throw err;
+    return p.parseOption(
+        INVENTORY_SLOTS,
+        { singular: "inventory slot name", plural: "inventory slot names" }
+    );
 }
 
 export function parsePotionEffect(p: Parser): PotionEffect {
-    for (const potionEffect of POTION_EFFECTS) {
-        if (p.eatString(potionEffect)) {
-            return potionEffect;
-        }
-    }
-
-    const err = Diagnostic.error("Expected potion effect")
-        .label(p.token.span);
-
-    if (p.check("str") || p.check("ident")) {
-        err.hint("Valid potion effects are:")
-        for (let i = 0; i < 5; i++) {
-            err.hint(`  ${POTION_EFFECTS[i]}`);
-        }
-        err.hint(`And ${POTION_EFFECTS.length - 5} others`);
-    }
-
-    throw err;
+    return p.parseOption(
+        POTION_EFFECTS,
+        { singular: "potion effect", plural: "potion effects" }
+    );
 }
 
 export function parseLobby(p: Parser): Lobby {
-    for (const lobby of LOBBIES) {
-        if (p.eatOption(lobby)) {
-            return lobby;
-        }
-    }
-
-    const err = Diagnostic.error("Expected lobby")
-        .label(p.token.span);
-
-    if (p.check("str") || p.check("ident")) {
-        err.hint("Valid lobbies are:")
-        for (let i = 0; i < 5; i++) {
-            err.hint(`  ${LOBBIES[i]}`);
-        }
-        err.hint(`And ${LOBBIES.length - 5} others`);
-    }
-
-    throw err;
+    return p.parseOption(
+        LOBBIES,
+        { singular: "lobby", plural: "lobbies" }
+    );
 }
 
 export function parseEnchantment(p: Parser): Enchantment {
-    for (const enchantment of ENCHANTMENTS) {
-        if (p.eatOption(enchantment)) {
-            return enchantment;
-        }
-    }
-
-    const err = Diagnostic.error("Expected enchantment")
-        .label(p.token.span);
-
-    if (p.check("str") || p.check("ident")) {
-        err.hint("Valid enchantments are:")
-        for (let i = 0; i < 5; i++) {
-            err.hint(`  ${ENCHANTMENTS[i]}`);
-        }
-        err.hint(`And ${ENCHANTMENTS.length - 5} others`);
-    }
-
-    throw err;
+    return p.parseOption(
+        ENCHANTMENTS,
+        { singular: "enchantment", plural: "enchantments" }
+    );
 }
 
 export function parseSound(p: Parser): Sound {
-    if (!p.check("str")) {
-        throw Diagnostic.error("Expected sound").label(p.token.span);
+    if (p.check("ident")) {
+        // save the token for an error, because parseOption can technically
+        // advance the token in rare scenarios
+        const token = p.token as Extract<Token, { kind: "ident" }>;
+
+        try {
+            const name = p.parseOption(
+                SOUNDS.map(it => it.name),
+                { singular: "sound name", plural: "sound names" }
+            );
+
+            // return the sound path
+            return SOUNDS.find(it => it.name == name)!.path;
+        } catch (err) {
+            if (err instanceof Diagnostic && err.level === "error") {
+                // catch unquoted sound paths (probably)
+                if (token.value.includes(".")) {
+                    err.hint("Surround this sound key in quotes");
+                    err.edit([
+                        { span: token.span, text: `"${token.value}"` }
+                    ]);
+                }
+            }
+            throw err;
+        }
+    } else if (p.check("str")) {
+        const value = (p.token as StrKind).value;
+        if (
+            value.includes(" ") ||
+            // this is technically wrong but if your sound key contains no
+            // periods you don't deserve to have your code parse correctly
+            !value.includes(".")
+        ) {
+            const err = Diagnostic
+                .error("Invalid sound key")
+                .label(p.token.span);
+
+            for (const { name } of SOUNDS) {
+                if (p.eatString(name) || p.eatString(name.replaceAll(" ", "_"))) {
+                    err.hint("Convert this string to an identifier");
+                    err.edit([
+                        { span: p.prev.span, text: name.replaceAll(" ", "_") },
+                    ]);
+
+                    break;
+                }
+            }
+
+            p.ctx.addDiagnostic(err);
+        }
+
+        p.next();
+        return value as Sound;
+    } else {
+        throw Diagnostic
+            .error("Expected sound name or sound key")
+            .label(p.token.span);
     }
-
-    const value = (p.token as StrKind).value;
-    p.next();
-
-    for (const sound of SOUNDS) {
-        if (sound.name === value) return sound.path;
-        if (sound.path === value) return sound.path;
-    }
-
-    return value as Sound; // this is stupid but whatever
 }
 
 export function parsePermission(p: Parser): Permission {
-    for (const permission of PERMISSIONS) {
-        if (p.eatOption(permission)) {
-            return permission;
-        }
-    }
-
-    const err = Diagnostic.error("Expected permission")
-        .label(p.token.span);
-
-    if (p.check("str") || p.check("ident")) {
-        err.hint("Valid permissions are:")
-        for (let i = 0; i < 5; i++) {
-            err.hint(`  ${PERMISSIONS[i]}`);
-        }
-        err.hint(`And ${PERMISSIONS.length - 5} others`);
-    }
-
-    throw err;
+    return p.parseOption(
+        PERMISSIONS,
+        { singular: "permission", plural: "permissions" }
+    );
 }
 
 export function parseItemProperty(p: Parser): ItemProperty {
-    for (const property of ITEM_PROPERTIES) {
-        if (p.eatOption(property)) {
-            return property;
-        }
-    }
-
-    const err = Diagnostic.error("Expected item property")
-        .label(p.token.span);
-
-    if (p.check("str") || p.check("ident")) {
-        err.hint("Valid item properties are:")
-        err.hint(`  ${ITEM_PROPERTIES[0]}`);
-        err.hint(`  ${ITEM_PROPERTIES[1]}`);
-    }
-
-    throw err;
+    return p.parseOption(
+        ITEM_PROPERTIES,
+        { singular: "item property", plural: "item properties" }
+    );
 }
 
 export function parseItemLocation(p: Parser): ItemLocation {
-    for (const location of ITEM_LOCATIONS) {
-        if (p.eatOption(location)) {
-            return location;
-        }
-    }
+    return p.parseOption(
+        ITEM_LOCATIONS,
+        { singular: "item location", plural: "item locations" }
+    );
+}
 
-    const err = Diagnostic.error("Expected item location")
-        .label(p.token.span);
-
-    if (p.check("str") || p.check("ident")) {
-        err.hint("Valid item locations are:")
-        for (let i = 0; i < 5; i++) {
-            err.hint(`  ${ITEM_LOCATIONS[i]}`);
-        }
-        err.hint(`And ${ITEM_LOCATIONS.length - 5} others`);
-    }
-
-    throw err;
+export function parseItemAmount(p: Parser): ItemAmount {
+    return p.parseOption(
+        ITEM_AMOUNTS,
+        { singular: "item amount", plural: "item amounts" }
+    );
 }
 
 export function parseCoordinates(p: Parser) {
@@ -460,7 +376,7 @@ export function parseCoordinates(p: Parser) {
     const tokens = value.split(" ");
 
     function addDiagnostic(message: string, span: Span) {
-        p.addDiagnostic(Diagnostic.error(message).label(span));
+        p.ctx.addDiagnostic(Diagnostic.error(message).label(span));
     }
 
     const isRelative = (s: string) =>

@@ -1,10 +1,10 @@
-import * as htsl from "htsl";
+import type { Action } from "./actions";
 import type { AABB, MenuSlot } from "./types";
 
 export type ImportableFunction = {
     type: "function";
     name: string;
-    actions: htsl.Action[];
+    actions: Action[];
     repeatTicks?: number;
 };
 
@@ -12,8 +12,8 @@ export type ImportableRegion = {
     type: "region";
     name: string;
     bounds: AABB;
-    onEnterActions?: htsl.Action[];
-    onExitActions?: htsl.Action[];
+    onEnterActions?: Action[];
+    onExitActions?: Action[];
 };
 
 export type ImportableMenu = {
@@ -25,8 +25,8 @@ export type ImportableMenu = {
 export type ImportableItem = {
     type: "item";
     snbt: string;
-    leftClickActions?: htsl.Action[];
-    rightClickActions?: htsl.Action[];
+    leftClickActions?: Action[];
+    rightClickActions?: Action[];
 };
 
 export type Importable =

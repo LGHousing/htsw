@@ -1,10 +1,13 @@
 import type { Span } from "./span";
 
+export type Edit = { span: Span, text: string };
+
 export type DiagnosticLevel = "bug" | "error" | "warning" | "info";
 
 export type DiagnosticPart =
     | { kind: "label"; span: Span; text?: string }
     | { kind: "reference"; span: Span; text?: string }
+    | { kind: "edit", edits: Edit[] }
     | { kind: "note"; text: string }
     | { kind: "hint"; text: string };
 
@@ -36,6 +39,11 @@ export class Diagnostic {
 
     reference(span: Span, text?: string): this {
         this.parts.push({ kind: "reference", span, text });
+        return this;
+    }
+
+    edit(edits: Edit[]): this {
+        this.parts.push({ kind: "edit", edits });
         return this;
     }
 

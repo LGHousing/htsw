@@ -1,3 +1,4 @@
+import { Span } from "../../span";
 import type { Action, Comparison, Condition, Operation } from "../../types";
 
 export const ACTION_KWS = [
@@ -148,21 +149,21 @@ export const CONDITIONS_TO_KWS: {
 export const OPERATION_SYMBOLS: {
     [key in Operation]: string;
 } = {
-    increment: "+=",
-    decrement: "-=",
-    set: "=",
-    multiply: "*=",
-    divide: "/=",
+    Set: "=",
+    Increment: "+=",
+    Decrement: "-=",
+    Multiply: "*=",
+    Divide: "/=",
 };
 
 export const COMPARISON_SYMBOLS: {
     [key in Comparison]: string;
 } = {
-    less_than: "<",
-    less_than_or_equals: "<=",
-    equals: "==",
-    greater_than: ">",
-    greater_than_or_equals: ">=",
+    Equals: "==",
+    "Less Than": "<",
+    "Less Than Or Equals": "<=",
+    "Greater Than": ">",
+    "Greater Than Or Equals": ">=",
 };
 
 export const SHORTHANDS = [
@@ -183,3 +184,13 @@ export const SHORTHANDS = [
 ] as const;
 
 export type ShorthandKw = (typeof SHORTHANDS)[number];
+
+export function withDummyTypeSpans<T extends object>(
+    object: T
+): T & { typeSpan: Span, span: Span } {
+    return {
+        ...object,
+        typeSpan: Span.dummy(),
+        span: Span.dummy(),
+    } as const;
+}

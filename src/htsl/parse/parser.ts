@@ -12,28 +12,31 @@ import {
 } from "./token";
 import { Span } from "../../span";
 import { Diagnostic } from "../../diagnostic";
-import type { IrAction, ParseResult } from "../../ir";
+import type { IrAction } from "../../ir";
 import { parseAction } from "./actions";
 import Long from "long";
+import type { ParseContext } from "../../context";
 
 export class Parser {
-    readonly result: ParseResult;
+    readonly ctx: ParseContext;
     readonly lexer: Lexer;
 
     tokens: Token[];
     token: Token;
     prev: Token;
 
-    constructor(lexer: Lexer) {
+    constructor(ctx: ParseContext, lexer: Lexer) {
+        this.ctx = ctx;
         this.lexer = lexer;
-        this.result = { actions: [], diagnostics: [] };
         this.tokens = [];
         this.token = { kind: "eof", span: new Span(0, 0) };
         this.prev = this.token;
         this.next();
     }
 
-    parseCompletely(): ParseResult {
+    parseCompletely(): IrAction[] {
+        const actions: IrAction[] = [];
+        
         while (true) {
             this.eatNewlines();
             if (this.check("eof")) break;
@@ -41,16 +44,17 @@ export class Parser {
             const action = this.parseRecovering(["eol"], () => parseAction(this));
             if (!this.eat("eol") && !this.check("eof")) {
                 // We expect a newline always after an action
-                this.addDiagnostic(Diagnostic
+                this.ctx.addDiagnostic(Diagnostic
                     .error("Expected end of line")
                     .label(this.token.span)
                 );
             }
 
             if (action === undefined) continue;
-            this.result.actions.push(action);
+            actions.push(action);
         }
-        return this.result;
+
+        return actions;
     }
 
     parseBlock(): IrAction[] {
@@ -76,7 +80,7 @@ export class Parser {
                 !this.check("eof") &&
                 !this.check({ kind: "close_delim", delim: "brace" })
             ) {
-                this.addDiagnostic(
+                this.ctx.addDiagnostic(
                     Diagnostic.error("Expected end of line")
                         .label(this.token.span)
                 );
@@ -110,6 +114,61 @@ export class Parser {
         return value;
     }
 
+    /**
+     * Attempts to match and return a value from a list of valid options.
+     *
+     * Matching is case-insensitive and performed against a normalized form of
+     * each option, where spaces in the option list are converted to underscores
+     * before comparison. The returned value preserves the original formatting
+     * from the `options` list.
+     * 
+     * @param options A list of valid option strings.
+     * @param errorFormatting Terms used when generating error messages.
+     * @returns The parsed option in its canonical form from the `options` list.
+     */
+    parseOption<T extends string>(
+        options: readonly T[],
+        errorTerms?: { singular: string, plural: string },
+    ): T {
+        for (const option of options) {
+            if (this.eatIdent(option.replaceAll(" ", "_"), true)) {
+                return option;
+            }
+        }
+    
+        const err = Diagnostic.error(`Expected ${errorTerms?.singular ?? "option"}`)
+            .label(this.token.span);
+    
+        if (this.check("ident")) {
+            err.hint(`Valid ${errorTerms?.plural ?? "options"} are:`)
+
+            const optionsToDisplay = Math.min(5, options.length);
+            for (let i = 0; i < optionsToDisplay; i++) {
+                err.hint(`  ${options[i].replaceAll(" ", "_")}`);
+            }
+
+            if (options.length > 5) {
+                err.hint(`And ${options.length - 5} others`);
+            }
+        }
+
+        // check for incorrectly formatted options
+        else if (this.check("str")) {
+            for (const option of options) {
+                if (this.eatString(option) || this.eatString(option.replaceAll(" ", "_"))) {
+                    err.hint("Convert this string to an identifier");
+
+                    err.edit([
+                        { span: this.prev.span, text: option.replaceAll(" ", "_") },
+                    ]);
+                    break;
+                }
+            }
+        }
+    
+        throw err;
+    }
+
     parseIdent(): string {
         this.expect("ident");
         return (this.prev as IdentKind).value;
@@ -123,14 +182,14 @@ export class Parser {
     parseBoundedNumber(min: number, max: number): number {
         const { value, span } = this.spanned(this.parseNumber);
         if (Number(value) < min) {
-            this.addDiagnostic(
+            this.ctx.addDiagnostic(
                 Diagnostic
                     .error(`Value must be greater than or equal to ${min}`)
                     .label(span)
             );
         }
         if (Number(value) > max) {
-            this.addDiagnostic(
+            this.ctx.addDiagnostic(
                 Diagnostic
                     .error(`Value must be less than or equal to ${max}`)
                     .label(span)
@@ -218,7 +277,7 @@ export class Parser {
             this.eatNewlines();
             if (!this.eat("comma")) {
                 if (!this.eat(closeDelim)) {
-                    this.addDiagnostic(Diagnostic
+                    this.ctx.addDiagnostic(Diagnostic
                         .error("expected ,")
                         .label(this.token.span)
                     );
@@ -238,7 +297,7 @@ export class Parser {
             return parser.call(this, this);
         } catch (e) {
             if (e instanceof Diagnostic) {
-                this.addDiagnostic(e as Diagnostic);
+                this.ctx.addDiagnostic(e as Diagnostic);
                 this.recover(recoveryTokens);
             } else throw e;
         }
@@ -255,10 +314,6 @@ export class Parser {
         return { value, span: new Span(lo, hi) };
     }
 
-    eatOption(value: string): boolean {
-        return this.eatString(value) || this.eatIdent(value);
-    }
-
     eatString(value: string): boolean {
         if (this.token.kind !== "str") return false;
         if (this.token.value.toLowerCase() == value.toLowerCase()) {
@@ -268,7 +323,17 @@ export class Parser {
         return false;
     }
 
-    eatIdent(value: string): boolean {
+    eatIdent(value: string, caseInsensitive: boolean = false): boolean {
+        if (this.token.kind !== "ident") return false;
+
+        if (caseInsensitive) {
+            if (this.token.value.toLowerCase() == value.toLowerCase()) {
+                this.next();
+                return true;
+            }
+            return false;
+        }
+
         return this.eat({ kind: "ident", value });
     }
 
@@ -311,9 +376,5 @@ export class Parser {
             this.tokens.push(this.lexer.advanceToken());
         }
         this.token = this.tokens.shift()!; // this is fine
-    }
-
-    addDiagnostic(diagnostic: Diagnostic) {
-        this.result.diagnostics.push(diagnostic);
     }
 }

@@ -9,6 +9,7 @@ import type {
     PotionEffect,
     ItemProperty,
     VarHolder,
+    ItemAmount,
 } from "./types";
 
 export type ConditionRequireGroup = {
@@ -41,7 +42,7 @@ export type ConditionRequireItem = {
     item?: Nbt;
     whatToCheck?: ItemProperty;
     whereToCheck?: ItemLocation;
-    amount?: "Any Amount" | "Equal or Greater Amount";
+    amount?: ItemAmount;
 };
 
 export type ConditionIsDoingParkour = {

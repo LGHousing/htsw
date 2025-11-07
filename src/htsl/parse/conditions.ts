@@ -12,10 +12,10 @@ import {
     parsePotionEffect,
     parseVarName,
     parseValue,
+    parseItemAmount,
 } from "./arguments";
 import { parseNumericalPlaceholder } from "./placeholders";
-import type { ConditionKw } from "./constants";
-import type { VarHolder } from "../../types";
+import { withDummyTypeSpans, type ConditionKw } from "./helpers";
 
 type Inverted = { value: boolean; span: Span };
 
@@ -41,15 +41,15 @@ export function parseCondition(p: Parser): IrCondition {
         return {
             type: "IS_DOING_PARKOUR",
             inverted,
-            kwSpan: p.prev.span,
+            typeSpan: p.prev.span,
             span: p.prev.span,
         };
     } else if (eatKw("hasPotion")) {
         return parseConditionRequirePotionEffect(p, inverted);
     } else if (eatKw("isSneaking")) {
-        return { type: "IS_SNEAKING", inverted, kwSpan: p.prev.span, span: p.prev.span };
+        return { type: "IS_SNEAKING", inverted, typeSpan: p.prev.span, span: p.prev.span };
     } else if (eatKw("isFlying")) {
-        return { type: "IS_FLYING", inverted, kwSpan: p.prev.span, span: p.prev.span };
+        return { type: "IS_FLYING", inverted, typeSpan: p.prev.span, span: p.prev.span };
     } else if (eatKw("health")) {
         return parseConditionCompareHealth(p, inverted);
     } else if (eatKw("maxHealth")) {
@@ -85,9 +85,9 @@ function parseConditionRecovering<T extends IrCondition["type"]>(
     const condition = {
         type,
         inverted,
-        kwSpan: p.prev.span,
-        span: Span.single(-1), // placeholder
-    } as IrCondition & { type: T };
+        typeSpan: p.prev.span,
+        span: Span.dummy(), // placeholder
+    } as Extract<IrCondition, { type: T }>;
 
     p.parseRecovering(["comma", { kind: "close_delim", delim: "parenthesis" }], () => {
         parser(condition);
@@ -110,7 +110,7 @@ function parseConditionRequireGroup(p: Parser, inverted: Inverted): IrCondition 
 
 function parseConditionCompareVar(p: Parser, inverted: Inverted): IrCondition {
     return parseConditionRecovering(p, "COMPARE_VAR", inverted, (condition) => {
-        condition.holder = p.spanned(() => ({ type: "player" }) as VarHolder);
+        condition.holder = p.spanned(() => withDummyTypeSpans({ type: "player" } as const));
         condition.var = p.spanned(parseVarName);
         condition.op = p.spanned(parseComparison);
         condition.amount = p.spanned(parseValue);
@@ -121,7 +121,7 @@ function parseConditionCompareVar(p: Parser, inverted: Inverted): IrCondition {
 
 function parseConditionCompareGlobalVar(p: Parser, inverted: Inverted): IrCondition {
     return parseConditionRecovering(p, "COMPARE_VAR", inverted, (condition) => {
-        condition.holder = p.spanned(() => ({ type: "global" }) as VarHolder);
+        condition.holder = p.spanned(() => withDummyTypeSpans({ type: "global" } as const));
         condition.var = p.spanned(parseVarName);
         condition.op = p.spanned(parseComparison);
         condition.amount = p.spanned(parseValue);
@@ -147,16 +147,7 @@ function parseConditionRequireItem(p: Parser, inverted: Inverted): IrCondition {
         condition.item = p.spanned(p.parseName);
         condition.whatToCheck = p.spanned(parseItemProperty);
         condition.whereToCheck = p.spanned(parseItemLocation);
-        condition.amount = p.spanned(() => {
-            if (p.eatOption("Any Amount") || p.eatOption("anyAmount"))
-                return "Any Amount";
-            else if (
-                p.eatOption("Equal or Greater Amount") ||
-                p.eatOption("equalOrGreaterAmount")
-            ) {
-                return "Equal or Greater Amount";
-            } else throw Diagnostic.error("Expected item amount").label(p.token.span);
-        });
+        condition.amount = p.spanned(parseItemAmount);
     });
 }
 
@@ -211,7 +202,9 @@ function parseConditionCompareTeamVar(p: Parser, inverted: Inverted): IrConditio
     return parseConditionRecovering(p, "COMPARE_VAR", inverted, (condition) => {
         condition.var = p.spanned(parseVarName);
         condition.holder = p.spanned(
-            () => ({ type: "team", team: p.parseName() }) as VarHolder
+            () => withDummyTypeSpans(
+                { type: "team", team: p.spanned(p.parseName) } as const
+            )
         );
         condition.op = p.spanned(parseComparison);
         condition.amount = p.spanned(parseValue);
