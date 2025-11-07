@@ -56,7 +56,7 @@ function handleChangeVar(
     const normalizedValue =
         value.startsWith('"') && value.endsWith('"') ? value.slice(1, -1) : value;
     const isSetOperation = op === "set";
-    const certainty = isSetOperation ? "certainly" : "hopefully";
+    const certainty = isSetOperation ? "certainly" : "probably";
 
     if (LONG_REGEX.test(normalizedValue)) {
         // long constant

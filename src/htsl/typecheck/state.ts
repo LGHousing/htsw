@@ -89,9 +89,6 @@ export function unknown(type: "long" | "double" | "string"): VariableType {
     return { type, value: { type: "unknown" } };
 }
 
-export type CertaintyLevel =
-    | { certainty: "certainly" }
-    | { certainty: "probably" }
-    | { certainty: "hopefully" };
+export type CertaintyLevel = { certainty: "certainly" } | { certainty: "probably" };
 
 export type TypeState = VariableType & CertaintyLevel;
