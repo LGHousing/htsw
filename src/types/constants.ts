@@ -69,6 +69,15 @@ export const OPERATIONS = [
     "Divide",
 ] as const;
 
+export const VAR_OPERATIONS = [
+    "Shift Left",
+    "Shift Right",
+    "And Assign",
+    "Or Assign",
+    "Xor Assign",
+    "Unset",
+] as const;
+
 export const COMPARISONS = [
     "Equals",
     "Less Than",

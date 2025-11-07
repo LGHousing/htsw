@@ -2,12 +2,12 @@ import type { Diagnostic } from "./diagnostic";
 import type { SourceMap } from "./sourceMap";
 import type { IrImportable } from "./ir";
 
-export class ParseContext {
+export class GlobalCtxt {
     sourceMap: SourceMap;
     importables: IrImportable[];
     diagnostics: Diagnostic[];
 
-    private constructor(
+    constructor(
         sourceMap: SourceMap
     ) {
         this.sourceMap = sourceMap;
@@ -15,7 +15,7 @@ export class ParseContext {
         this.diagnostics = [];
     }
 
-    addDiagnostic(diagnostic: Diagnostic) {
-        this.diagnostics.push(diagnostic);
+    addDiagnostic(diag: Diagnostic) {
+        this.diagnostics.push(diag);
     }
 }

@@ -12,6 +12,7 @@ import type {
     Sound,
     VarName,
     VarHolder,
+    VarOperation,
 } from "./types";
 
 export type ActionConditional = {
@@ -106,7 +107,7 @@ export type ActionChangeVar = {
     type: "CHANGE_VAR";
     holder: VarHolder;
     key: VarName;
-    op: Operation | "unset";
+    op: VarOperation;
     value: Value;
     unset?: boolean;
 };

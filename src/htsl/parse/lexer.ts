@@ -59,37 +59,68 @@ export class Lexer {
 
         // binary operators
         if (c === "+") {
-            if (this.peek(0) === "=") {
+            if (this.peek() === "=") {
                 this.next();
                 return token("bin_op_eq", new Span(lo, lo + 2), { op: "plus" });
             }
             return token("bin_op", singleSpan, { op: "plus" });
         }
         if (c === "-") {
-            if (this.peek(0) === "=") {
+            if (this.peek() === "=") {
                 this.next();
                 return token("bin_op_eq", new Span(lo, lo + 2), { op: "minus" });
             }
             return token("bin_op", singleSpan, { op: "minus" });
         }
         if (c === "*") {
-            if (this.peek(0) === "*") {
-                this.next();
-                return token("bin_op", new Span(lo, lo + 2), { op: "star_star" });
-            }
-            if (this.peek(0) === "=") {
+            if (this.peek() === "=") {
                 this.next();
                 return token("bin_op_eq", new Span(lo, lo + 2), { op: "star" });
             }
             return token("bin_op", singleSpan, { op: "star" });
         }
         if (c === "/") {
-            if (this.peek(0) === "/") this.next();
-            if (this.peek(0) === "=") {
+            if (this.peek() === "/") this.next();
+            if (this.peek() === "=") {
                 this.next();
                 return token("bin_op_eq", new Span(lo, this.posWithOffset), { op: "slash" });
             }
             return token("bin_op", new Span(lo, this.posWithOffset), { op: "slash" });
+        }
+        if (c === "<" && this.peek() == "<") {
+            if (this.peek(1) === "=") {
+                this.next();
+                return token("bin_op_eq", new Span(lo, lo + 3), { op: "lt_lt" });
+            }
+            return token("bin_op", singleSpan, { op: "lt_lt" });
+        }
+        if (c === ">" && this.peek() == ">") {
+            if (this.peek(1) === "=") {
+                this.next();
+                return token("bin_op_eq", new Span(lo, lo + 3), { op: "gt_gt" });
+            }
+            return token("bin_op", singleSpan, { op: "gt_gt" });
+        }
+        if (c === "&") {
+            if (this.peek() === "=") {
+                this.next();
+                return token("bin_op_eq", new Span(lo, lo + 2), { op: "ampersand" });
+            }
+            return token("bin_op", singleSpan, { op: "ampersand" });
+        }
+        if (c === "|") {
+            if (this.peek() === "=") {
+                this.next();
+                return token("bin_op_eq", new Span(lo, lo + 2), { op: "vertical_bar" });
+            }
+            return token("bin_op", singleSpan, { op: "vertical_bar" });
+        }
+        if (c === "^") {
+            if (this.peek() === "=") {
+                this.next();
+                return token("bin_op_eq", new Span(lo, lo + 2), { op: "caret" });
+            }
+            return token("bin_op", singleSpan, { op: "caret" });
         }
 
         // comparison operators

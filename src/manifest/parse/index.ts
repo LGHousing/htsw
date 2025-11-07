@@ -1,5 +1,5 @@
-import type { ParseContext } from "../../context";
+import type { GlobalCtxt } from "../../context";
 
-export function parseManifest(ctx: ParseContext) {
-    
+export function parseManifest(ctx: GlobalCtxt) {
+
 }

@@ -12,6 +12,7 @@ import {
     PERMISSIONS,
     POTION_EFFECTS,
     SOUNDS,
+    VAR_OPERATIONS,
     type Action,
 } from ".";
 
@@ -26,6 +27,7 @@ export type VarHolder =
 export type Nbt = string;
 
 export type Operation = (typeof OPERATIONS)[number];
+export type VarOperation = Operation | (typeof VAR_OPERATIONS)[number];
 export type Comparison = (typeof COMPARISONS)[number];
 
 export type Gamemode = (typeof GAMEMODES)[number];

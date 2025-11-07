@@ -15,17 +15,17 @@ import { Diagnostic } from "../../diagnostic";
 import type { IrAction } from "../../ir";
 import { parseAction } from "./actions";
 import Long from "long";
-import type { ParseContext } from "../../context";
+import type { GlobalCtxt } from "../../context";
 
 export class Parser {
-    readonly ctx: ParseContext;
+    readonly ctx: GlobalCtxt;
     readonly lexer: Lexer;
 
     tokens: Token[];
     token: Token;
     prev: Token;
 
-    constructor(ctx: ParseContext, lexer: Lexer) {
+    constructor(ctx: GlobalCtxt, lexer: Lexer) {
         this.ctx = ctx;
         this.lexer = lexer;
         this.tokens = [];
@@ -36,7 +36,7 @@ export class Parser {
 
     parseCompletely(): IrAction[] {
         const actions: IrAction[] = [];
-        
+
         while (true) {
             this.eatNewlines();
             if (this.check("eof")) break;
@@ -135,10 +135,10 @@ export class Parser {
                 return option;
             }
         }
-    
+
         const err = Diagnostic.error(`Expected ${errorTerms?.singular ?? "option"}`)
             .label(this.token.span);
-    
+
         if (this.check("ident")) {
             err.hint(`Valid ${errorTerms?.plural ?? "options"} are:`)
 
@@ -165,7 +165,7 @@ export class Parser {
                 }
             }
         }
-    
+
         throw err;
     }
 

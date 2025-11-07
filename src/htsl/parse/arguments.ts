@@ -13,6 +13,7 @@ import type {
     ItemProperty,
     ItemLocation,
     ItemAmount,
+    VarOperation,
 } from "../../types";
 import type { Parser } from "./parser";
 import { Diagnostic } from "../../diagnostic";
@@ -32,6 +33,7 @@ import {
     PERMISSIONS,
     POTION_EFFECTS,
     SOUNDS,
+    VAR_OPERATIONS,
 } from "../../types/constants";
 import { Span } from "../../span";
 import { SHORTHANDS } from "./helpers";
@@ -173,11 +175,49 @@ export function parseVarName(p: Parser): string {
     return value;
 }
 
-export function parseVarOperation(p: Parser): Operation | "unset" {
-    if (p.eatIdent("unset")) {
-        return "unset";
+export function parseVarOperation(p: Parser): VarOperation {
+    try {
+        return parseOperation(p);
+    } catch (e) {
+        // Ignore the diagnostic
     }
-    return parseOperation(p);
+
+    if (
+        p.eatIdent("Shl", true) ||
+        p.eat({ kind: "bin_op_eq", op: "lt_lt" })
+    ) {
+        return "Shift Left";
+    }
+    if (
+        p.eatIdent("Shr", true) ||
+        p.eat({ kind: "bin_op_eq", op: "gt_gt" })
+    ) {
+        return "Shift Right";
+    }
+    if (p.eat({ kind: "bin_op_eq", op: "ampersand" })) {
+        return "And Assign";
+    }
+    if (p.eat({ kind: "bin_op_eq", op: "vertical_bar" })) {
+        return "Or Assign";
+    }
+    if (p.eat({ kind: "bin_op_eq", op: "caret" })) {
+        return "Xor Assign";
+    }
+
+    if (p.check("ident") || p.check("str")) {
+        // Now parse real options
+        return p.parseOption(
+            [...OPERATIONS, ...VAR_OPERATIONS],
+            { singular: "var operation", plural: "var operations" }
+        );
+    } else {
+        // or, we give them the symbol version of the diagnostic
+        const err = Diagnostic.error("Expected operation")
+            .label(p.token.span);
+        err.hint("Valid operations are: =, +=, -=, *=, /=, <<=, >>=, &=, |=, ^=, Unset");
+
+        throw err;
+    }
 }
 
 export function parseNumericValue(p: Parser): Value {
