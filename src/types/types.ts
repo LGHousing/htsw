@@ -7,7 +7,7 @@ import {
     PERMISSIONS,
     POTION_EFFECTS,
     SOUNDS,
-    type Action
+    type Action,
 } from ".";
 
 export type Operation = "set" | "increment" | "decrement" | "multiply" | "divide";
@@ -26,7 +26,7 @@ export type VarName = string;
 export type VarHolder =
     | { type: "player" }
     | { type: "global" }
-    | { type: "team"; team: string };
+    | { type: "team"; team?: string }; // TODO i changed team to optional bc thats how it is in housing idk if that breaks anything. heh.
 
 export type Location =
     | { type: "location_custom"; value: string }
