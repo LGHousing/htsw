@@ -19,14 +19,6 @@ function placeholderIntoTypeStateKey(placeholder: PlaceholderChangeVar): TypeSta
     });
 }
 
-function intoCertainty(action: Ir<ActionChangeVar>): TypeState["certainty"] {
-    const op = action.op?.value;
-    if (op === "set") {
-        return "certainly";
-    }
-    return "hopefully";
-}
-
 export type StatesMap = Map<TypeStateKey, TypeState[]>;
 
 function insertTypeState(states: StatesMap, key: TypeStateKey, state: TypeState) {
@@ -63,12 +55,14 @@ function handleChangeVar(
 
     const normalizedValue =
         value.startsWith('"') && value.endsWith('"') ? value.slice(1, -1) : value;
-    const certainty = intoCertainty(action);
+    const isSetOperation = op === "set";
+    const certainty = isSetOperation ? "certainly" : "hopefully";
 
     if (LONG_REGEX.test(normalizedValue)) {
         // long constant
+        // TODO support arithmetic
         insertTypeState(states, key, {
-            ...(certainty === "certainly"
+            ...(isSetOperation
                 ? knownConstant("long", parseInt(normalizedValue, 10))
                 : unknown("long")),
             certainty,
@@ -77,8 +71,9 @@ function handleChangeVar(
     }
     if (DOUBLE_REGEX.test(normalizedValue)) {
         // double constant
+        // TODO support arithmetic
         insertTypeState(states, key, {
-            ...(certainty === "certainly"
+            ...(isSetOperation
                 ? knownConstant("double", parseFloat(normalizedValue))
                 : unknown("double")),
             certainty,
@@ -89,10 +84,10 @@ function handleChangeVar(
     const placeholder = tryIntoPlaceholder(normalizedValue);
     if (!placeholder) {
         // no numeric constant, not a placeholder -> string constant
+        // strings can only use "set"
+        // TODO fill in known constant placeholders here
         insertTypeState(states, key, {
-            ...(certainty === "certainly"
-                ? knownConstant("string", value)
-                : unknown("string")),
+            ...knownConstant("string", value),
             certainty,
         });
         return;
