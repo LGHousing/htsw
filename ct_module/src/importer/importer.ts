@@ -1,4 +1,4 @@
-import * as htsl from "htsl";
+import { Importable } from "htsw/types";
 
 import type { Step, StepSelectValue } from "./step";
 import { getSlotFromName, ButtonType } from "../slots";
@@ -9,7 +9,7 @@ import {
 } from "../helpers";
 
 import { stepClickButtonOrNextPage } from "./helpers";
-import { stepsForHolder } from "./holders";
+import { stepsForImportable } from "./importables";
 
 export class Importer {
     static remainingSteps: Step[] = [];
@@ -37,13 +37,13 @@ export class Importer {
         }));
     }
 
-    static import(holders: htsl.ActionHolder[]) {
+    static import(importables: Importable[]) {
         if (!this.isImporting) this.init();
 
         const steps: Step[] = [];
 
-        for (const holder of holders) {
-            steps.push(...stepsForHolder(holder));
+        for (const importable of importables) {
+            steps.push(...stepsForImportable(importable));
         }
 
         this.remainingSteps.push(...steps);

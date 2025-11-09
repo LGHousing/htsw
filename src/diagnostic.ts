@@ -1,27 +1,54 @@
 import type { Span } from "./span";
 
-export type Edit = { span: Span, text: string };
+export type DiagnosticEdit = { span: Span, text: string };
 
-export type DiagnosticLevel = "bug" | "error" | "warning" | "info";
+export type DiagnosticLevel = "bug" | "error" | "warning" | "note" | "help";
 
-export type DiagnosticPart =
-    | { kind: "label"; span: Span; text?: string }
-    | { kind: "reference"; span: Span; text?: string }
-    | { kind: "edit", edits: Edit[] }
-    | { kind: "note"; text: string }
-    | { kind: "hint"; text: string };
+export type DiagnosticSpan = {
+    kind: "primary" | "secondary";
+    span: Span;
+    label?: string;
+};
 
 export class Diagnostic {
     message: string;
     level: DiagnosticLevel;
 
-    parts: DiagnosticPart[] = [];
+    spans: DiagnosticSpan[];
+    edits: DiagnosticEdit[];
+
+    subDiagnostics: Diagnostic[];
 
     private constructor(
         message: string, level: DiagnosticLevel
     ) {
         this.message = message;
         this.level = level;
+
+        this.spans = [];
+        this.edits = [];
+
+        this.subDiagnostics = [];
+    }
+
+    static bugFromError(error: Error): Diagnostic {
+        const diag = new Diagnostic(`Unexpected error: ${error.message}`, "bug");
+
+        if (error.stack) {
+            for (const line of error.stack.split("\n")) {
+                diag.addSubDiagnostic(Diagnostic.note(line));
+            }
+        }
+
+        if (error.cause instanceof Error) {
+            diag.addSubDiagnostic(Diagnostic.bugFromError(error.cause));
+        }
+
+        return diag;
+    }
+
+    static bug(message: string): Diagnostic {
+        return new Diagnostic(message, "bug");
     }
 
     static error(message: string): Diagnostic {
@@ -32,28 +59,32 @@ export class Diagnostic {
         return new Diagnostic(message, "warning");
     }
 
-    label(span: Span, text?: string): this {
-        this.parts.push({ kind: "label", span, text });
+    static note(message: string): Diagnostic {
+        return new Diagnostic(message, "note");
+    }
+
+    static help(message: string): Diagnostic {
+        return new Diagnostic(message, "help");
+    }
+
+    addPrimarySpan(span: Span, label?: string): this {
+        this.spans.push({ kind: "primary", span, label });
         return this;
     }
 
-    reference(span: Span, text?: string): this {
-        this.parts.push({ kind: "reference", span, text });
+    addSecondarySpan(span: Span, label?: string): this {
+        this.spans.push({ kind: "secondary", span, label });
         return this;
     }
 
-    edit(edits: Edit[]): this {
-        this.parts.push({ kind: "edit", edits });
+    addEdit(span: Span, text: string): this {
+        this.edits.push({ span, text });
         return this;
     }
 
-    note(text: string): this {
-        this.parts.push({ kind: "note", text });
+    addSubDiagnostic(diag: Diagnostic): this {
+        this.subDiagnostics.push(diag);
         return this;
     }
 
-    hint(text: string): this {
-        this.parts.push({ kind: "hint", text });
-        return this;
-    }
 }

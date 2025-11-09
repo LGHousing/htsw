@@ -1,4 +1,4 @@
-import * as htsl from "htsl";
+import { Action, ActionSetGroup } from "htsw/types";
 
 import { Step } from "./step";
 import {
@@ -8,7 +8,7 @@ import {
     stringAsValue,
 } from "./helpers";
 
-export function stepsForAction(action: htsl.Action): Step[] {
+export function stepsForAction(action: Action): Step[] {
     if (action.type === "SET_GROUP") {
         return stepsForActionChangeGroup(action);
     }
@@ -16,7 +16,7 @@ export function stepsForAction(action: htsl.Action): Step[] {
     return [];
 }
 
-function stepsForActionChangeGroup(action: htsl.ActionSetGroup): Step[] {
+function stepsForActionChangeGroup(action: ActionSetGroup): Step[] {
     const steps: Step[] = [];
 
     steps.push(

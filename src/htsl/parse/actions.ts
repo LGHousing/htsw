@@ -102,16 +102,21 @@ export function parseAction(p: Parser): IrAction {
     }
 
     if (p.check("ident")) {
-        const err = Diagnostic
-            .error("Unknown action")
-            .label(p.token.span);
+        const err = Diagnostic.error("Unknown action")
+            .addPrimarySpan(p.token.span);
 
         if (p.eatIdent("goto")) {
-            err.note("goto is no longer supported in htsw");
+            err.addSubDiagnostic(
+                Diagnostic.note("'goto' is no longer supported in htsw")
+            );
+
+            function addHelp(message: string) {
+                err.addSubDiagnostic(Diagnostic.help(message));
+            }
 
             // TODO: resolve actual import.json and make exhaustive
-            if (p.eatIdent("function")) err.hint("define this function separately in 'import.json'");
-            else if (p.eatIdent("event")) err.hint("define this event separately in 'import.json'");
+            if (p.eatIdent("function")) addHelp("Define this function separately in 'import.json'");
+            else if (p.eatIdent("event")) addHelp("Define this event separately in 'import.json'");
         }
 
         // no need to recover to eol, parser already does this for actions
@@ -119,7 +124,9 @@ export function parseAction(p: Parser): IrAction {
     }
 
     p.next();
-    throw Diagnostic.error("Expected action").label(p.prev.span);
+
+    throw Diagnostic.error("Expected action")
+        .addPrimarySpan(p.prev.span);
 }
 
 function parseActionActionBar(p: Parser): IrAction {
@@ -211,7 +218,8 @@ function parseActionConditional(p: Parser): IrAction {
             if (p.eatIdent("and") || p.eatIdent("false")) return false;
             else if (p.eatIdent("or") || p.eatIdent("true")) return true;
             else if (p.check("ident"))
-                throw Diagnostic.error("Expected conditional mode").label(p.token.span);
+                throw Diagnostic.error("Expected conditional mode")
+                    .addPrimarySpan(p.token.span);
             else return false; // not null because :(
         });
 
@@ -330,24 +338,6 @@ function parseActionRandom(p: Parser): IrAction {
     });
 }
 
-function parseActionRecovering<T extends IrAction["type"]>(
-    p: Parser,
-    type: T,
-    parser: (action: IrAction & { type: T }) => void
-): IrAction & { type: T } {
-    const start = p.prev.span.start;
-    const action = {
-        type,
-        typeSpan: p.prev.span,
-        span: Span.dummy(), // placeholder
-    } as Extract<IrAction, { type: T }>;
-    p.parseRecovering(["eol"], () => {
-        parser(action);
-    });
-    action.span = new Span(start, p.prev.span.end);
-    return action;
-}
-
 function parseActionRemoveItem(p: Parser): IrAction {
     return parseActionRecovering(p, "REMOVE_ITEM", (action) => {
         action.item = p.spanned(p.parseName);
@@ -411,4 +401,22 @@ function parseActionTitle(p: Parser): IrAction {
         action.stay = p.spanned(() => p.parseBoundedNumber(0, 10));
         action.fadeout = p.spanned(() => p.parseBoundedNumber(0, 5));
     });
+}
+
+function parseActionRecovering<T extends IrAction["type"]>(
+    p: Parser,
+    type: T,
+    parser: (action: IrAction & { type: T }) => void
+): IrAction & { type: T } {
+    const start = p.prev.span.start;
+    const action = {
+        type,
+        typeSpan: p.prev.span,
+        span: Span.dummy(), // placeholder
+    } as Extract<IrAction, { type: T }>;
+    p.parseRecovering(["eol"], () => {
+        parser(action);
+    });
+    action.span = new Span(start, p.prev.span.end);
+    return action;
 }

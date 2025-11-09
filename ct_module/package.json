@@ -11,11 +11,13 @@
     },
     "license": "MIT",
     "dependencies": {
-        "htsl": "file:.."
+        "htsw": "file:.."
     },
     "devDependencies": {
         "@babel/preset-env": "^7.0.0",
         "@babel/preset-typescript": "^7.0.0",
+        "@babel/plugin-transform-classes": "^7.0.0",
+        "@babel/plugin-proposal-class-properties": "^7.0.0",
         "@rollup/plugin-babel": "^6.0.0",
         "vite": "^7.0.0"
     }

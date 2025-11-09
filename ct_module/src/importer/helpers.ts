@@ -1,4 +1,4 @@
-import * as htsl from "htsl";
+import { ACTION_NAMES, Action } from "htsw/types";
 
 import { Step } from "./step";
 import { getSlotFromName } from "../slots";
@@ -29,8 +29,8 @@ export function stepsClickButtonThenSelectValue(key: string, value: string): Ste
     ];
 }
 
-export function stepsAddAction(type: htsl.Action["type"]): Step[] {
-    const name = htsl.ACTION_NAMES[type];
+export function stepsAddAction(type: Action["type"]): Step[] {
+    const name = ACTION_NAMES[type];
     return stepsClickButtonThenSelectValue("Add Action", name);
 }
 

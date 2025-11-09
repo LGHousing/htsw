@@ -18,7 +18,7 @@ import Long from "long";
 import type { GlobalCtxt } from "../../context";
 
 export class Parser {
-    readonly ctx: GlobalCtxt;
+    readonly gcx: GlobalCtxt;
     readonly lexer: Lexer;
 
     tokens: Token[];
@@ -26,7 +26,7 @@ export class Parser {
     prev: Token;
 
     constructor(ctx: GlobalCtxt, lexer: Lexer) {
-        this.ctx = ctx;
+        this.gcx = ctx;
         this.lexer = lexer;
         this.tokens = [];
         this.token = { kind: "eof", span: new Span(0, 0) };
@@ -44,9 +44,9 @@ export class Parser {
             const action = this.parseRecovering(["eol"], () => parseAction(this));
             if (!this.eat("eol") && !this.check("eof")) {
                 // We expect a newline always after an action
-                this.ctx.addDiagnostic(Diagnostic
-                    .error("Expected end of line")
-                    .label(this.token.span)
+                this.gcx.addDiagnostic(
+                    Diagnostic.error("Expected end of line")
+                        .addPrimarySpan(this.token.span)
                 );
             }
 
@@ -64,7 +64,7 @@ export class Parser {
             this.eatNewlines();
             if (this.check("eof")) {
                 throw Diagnostic.error("expected }")
-                    .label(this.token.span);
+                    .addPrimarySpan(this.token.span);
             }
 
             if (this.eat({ kind: "close_delim", delim: "brace" })) break;
@@ -80,9 +80,9 @@ export class Parser {
                 !this.check("eof") &&
                 !this.check({ kind: "close_delim", delim: "brace" })
             ) {
-                this.ctx.addDiagnostic(
+                this.gcx.addDiagnostic(
                     Diagnostic.error("Expected end of line")
-                        .label(this.token.span)
+                        .addPrimarySpan(this.token.span)
                 );
             }
 
@@ -94,7 +94,7 @@ export class Parser {
     parseName(): string {
         if (this.token.kind !== "ident" && this.token.kind !== "str") {
             throw Diagnostic.error("Expected name")
-                .label(this.token.span);
+                .addPrimarySpan(this.token.span);
         }
 
         const value = this.token.value;
@@ -107,9 +107,8 @@ export class Parser {
         if (this.eatIdent("true")) value = true;
         if (this.eatIdent("false")) value = false;
         if (value === undefined) {
-            throw Diagnostic
-                .error("Expected true/false value")
-                .label(this.token.span);
+            throw Diagnostic.error("Expected true/false value")
+                .addPrimarySpan(this.token.span);
         }
         return value;
     }
@@ -137,18 +136,23 @@ export class Parser {
         }
 
         const err = Diagnostic.error(`Expected ${errorTerms?.singular ?? "option"}`)
-            .label(this.token.span);
+            .addPrimarySpan(this.token.span);
+
+        function addHelp(message: string) {
+            err.addSubDiagnostic(Diagnostic.help(message));
+        }
 
         if (this.check("ident")) {
-            err.hint(`Valid ${errorTerms?.plural ?? "options"} are:`)
+
+            addHelp(`Valid ${errorTerms?.plural ?? "options"} are:`)
 
             const optionsToDisplay = Math.min(5, options.length);
             for (let i = 0; i < optionsToDisplay; i++) {
-                err.hint(`  ${options[i].replaceAll(" ", "_")}`);
+                addHelp(`  ${options[i].replaceAll(" ", "_")}`);
             }
 
             if (options.length > 5) {
-                err.hint(`And ${options.length - 5} others`);
+                addHelp(`And ${options.length - 5} others`);
             }
         }
 
@@ -156,11 +160,11 @@ export class Parser {
         else if (this.check("str")) {
             for (const option of options) {
                 if (this.eatString(option) || this.eatString(option.replaceAll(" ", "_"))) {
-                    err.hint("Convert this string to an identifier");
 
-                    err.edit([
-                        { span: this.prev.span, text: option.replaceAll(" ", "_") },
-                    ]);
+                    err.addSubDiagnostic(
+                        Diagnostic.help("Convert this string to an identifier")
+                            .addEdit(this.prev.span, option.replaceAll(" ", "_"))
+                    )
                     break;
                 }
             }
@@ -182,17 +186,15 @@ export class Parser {
     parseBoundedNumber(min: number, max: number): number {
         const { value, span } = this.spanned(this.parseNumber);
         if (Number(value) < min) {
-            this.ctx.addDiagnostic(
-                Diagnostic
-                    .error(`Value must be greater than or equal to ${min}`)
-                    .label(span)
+            this.gcx.addDiagnostic(
+                Diagnostic.error(`Value must be greater than or equal to ${min}`)
+                    .addPrimarySpan(span)
             );
         }
         if (Number(value) > max) {
-            this.ctx.addDiagnostic(
-                Diagnostic
-                    .error(`Value must be less than or equal to ${max}`)
-                    .label(span)
+            this.gcx.addDiagnostic(
+                Diagnostic.error(`Value must be less than or equal to ${max}`)
+                    .addPrimarySpan(span)
             );
         }
         return Number(value);
@@ -207,9 +209,8 @@ export class Parser {
         const long = Long.fromString(withNegative);
 
         if (withNegative != long.toString()) {
-            throw Diagnostic
-                .error("Number exceeds 64-bit integer limit")
-                .label(this.prev.span);
+            throw Diagnostic.error("Number exceeds 64-bit integer limit")
+                .addPrimarySpan(this.prev.span);
         }
 
         return long;
@@ -219,9 +220,8 @@ export class Parser {
         const negative = this.eat({ kind: "bin_op", op: "minus" });
 
         if (this.token.kind !== "i64" && this.token.kind !== "f64") {
-            throw Diagnostic
-                .error("Expected number")
-                .label(this.token.span);
+            throw Diagnostic.error("Expected number")
+                .addPrimarySpan(this.token.span);
         }
         this.next();
 
@@ -239,9 +239,8 @@ export class Parser {
         let depth = 1;
         while (true) {
             if (this.check("eof")) {
-                throw Diagnostic
-                    .error(`expected ${tokenToString({ kind: "close_delim", delim })}`)
-                    .label(this.token.span);
+                throw Diagnostic.error(`expected ${tokenToString({ kind: "close_delim", delim })}`)
+                    .addPrimarySpan(this.token.span);
             }
 
             if (this.check({ kind: "close_delim", delim })) {
@@ -268,18 +267,17 @@ export class Parser {
         while (!this.eat(closeDelim)) {
             if (this.token.kind === "eof") {
                 // we have reached the end of the file without finding a close delim
-                throw Diagnostic
-                    .error(`Expected ${tokenToString(closeDelim)}`)
-                    .label(this.token.span);
+                throw Diagnostic.error(`Expected ${tokenToString(closeDelim)}`)
+                    .addPrimarySpan(this.token.span);
             }
 
             seq.push(parser.call(this, this));
             this.eatNewlines();
             if (!this.eat("comma")) {
                 if (!this.eat(closeDelim)) {
-                    this.ctx.addDiagnostic(Diagnostic
-                        .error("expected ,")
-                        .label(this.token.span)
+                    this.gcx.addDiagnostic(
+                        Diagnostic.error("expected ,")
+                            .addPrimarySpan(this.token.span)
                     );
                     this.recover([closeDelim]);
                 } else break;
@@ -297,7 +295,7 @@ export class Parser {
             return parser.call(this, this);
         } catch (e) {
             if (e instanceof Diagnostic) {
-                this.ctx.addDiagnostic(e as Diagnostic);
+                this.gcx.addDiagnostic(e as Diagnostic);
                 this.recover(recoveryTokens);
             } else throw e;
         }
@@ -352,9 +350,8 @@ export class Parser {
 
     expect(tok: Token["kind"] | Partial<Token>) {
         if (!this.eat(tok)) {
-            throw Diagnostic
-                .error(`Expected ${tokenToString(tok)}`)
-                .label(this.token.span);
+            throw Diagnostic.error(`Expected ${tokenToString(tok)}`)
+                .addPrimarySpan(this.token.span);
         }
     }
 

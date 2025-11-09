@@ -1,4 +1,5 @@
-import * as htsl from "htsl";
+import { Diagnostic, SourceMap } from "htsw";
+import { IrAction, IrImportable } from "htsw/ir";
 
 import { VarHolder, TeamVarKey } from "./vars";
 import {
@@ -8,11 +9,11 @@ import {
 } from "./schedulers";
 import { registerCommandTriggers } from "./commands";
 import { runAction } from "./actions";
-import { printDiagnostic } from "../compiler/diagnostics";
+import { printDiagnostic } from "../tui/diagnostics";
 
 export class Simulator {
-    static sm: htsl.SourceMap;
-    static holders: htsl.IrActionHolder[];
+    static sm: SourceMap;
+    static importables: IrImportable[];
 
     static playerVars: VarHolder<string>;
     static globalVars: VarHolder<string>;
@@ -23,9 +24,9 @@ export class Simulator {
 
     static triggers: Trigger[];
 
-    static start(sm: htsl.SourceMap, holders: htsl.IrActionHolder[]) {
+    static start(sm: SourceMap, importables: IrImportable[]) {
         Simulator.sm = sm;
-        Simulator.holders = holders;
+        Simulator.importables = importables;
 
         this.playerVars = new VarHolder();
         this.globalVars = new VarHolder();
@@ -49,23 +50,23 @@ export class Simulator {
     }
 
     static runFunction(name: string): boolean {
-        for (const holder of this.holders) {
-            if (holder.type === "FUNCTION" && holder.name?.value === name) {
-                this.runActions(holder.actions?.value ?? []);
+        for (const importable of this.importables) {
+            if (importable.type === "FUNCTION" && importable.name?.value === name) {
+                this.runActions(importable.actions?.value ?? []);
                 return true;
             }
         }
         return false;
     }
 
-    static runActions(actions: htsl.IrAction[], childCtx: boolean = false) {
+    static runActions(actions: IrAction[], childCtx: boolean = false) {
         for (let i = 0; i < actions.length; i++) {
             try {
                 const action = actions[i];
 
                 runAction(action);
             } catch (err) {
-                if (err instanceof htsl.Diagnostic) {
+                if (err instanceof Diagnostic) {
                     // We have encountered a known runtime issue
                     printDiagnostic(this.sm, err);
                 } else if (err instanceof ExitError) {
@@ -86,12 +87,13 @@ export class Simulator {
 
     private static postinit() {
         this.runFunction("htsw:main");
-        for (const holder of this.holders) {
-            if (holder.type === "FUNCTION" && holder.actions && holder.repeatTicks) {
+
+        for (const importable of this.importables) {
+            if (importable.type === "FUNCTION" && importable.actions && importable.repeatTicks) {
                 this.schedulers.push(
                     new RepeatingActionScheduler(
-                        holder.actions.value,
-                        holder.repeatTicks.value
+                        importable.actions.value,
+                        importable.repeatTicks.value
                     )
                 );
             }

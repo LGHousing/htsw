@@ -18,4 +18,10 @@ export class GlobalCtxt {
     addDiagnostic(diag: Diagnostic) {
         this.diagnostics.push(diag);
     }
+
+    isFailed(): boolean {
+        return this.diagnostics.find(
+            it => it.level === "error" || it.level === "bug"
+        ) !== undefined;
+    }
 }

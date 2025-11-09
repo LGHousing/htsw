@@ -33,7 +33,8 @@ export function parseNumericalPlaceholder(p: Parser): string {
         const name = parseVarName(p);
 
         if (!p.check("ident") && !p.check("str")) {
-            throw Diagnostic.error("Expected team name").label(p.token.span);
+            throw Diagnostic.error("Expected team name")
+                .addPrimarySpan(p.token.span);
         }
         const team = parseVarName(p);
 
@@ -59,7 +60,8 @@ export function parseNumericalPlaceholder(p: Parser): string {
     if (eatKw("unix")) return "%date.unix%";
 
     if (p.token.kind !== "str" && p.token.kind !== "placeholder") {
-        throw Diagnostic.error("Expected placeholder").label(p.token.span);
+        throw Diagnostic.error("Expected placeholder")
+            .addPrimarySpan(p.token.span);
     }
 
     let value = p.token.value;
@@ -68,7 +70,8 @@ export function parseNumericalPlaceholder(p: Parser): string {
 
     if (p.prev.kind === "str") {
         if (!(value.startsWith("%") && value.endsWith("%"))) {
-            p.ctx.addDiagnostic(Diagnostic.error("Expected placeholder").label(p.prev.span));
+            p.gcx.addDiagnostic(Diagnostic.error("Expected placeholder")
+                .addPrimarySpan(p.prev.span));
             return "";
         }
 
@@ -80,12 +83,14 @@ export function parseNumericalPlaceholder(p: Parser): string {
     const args = index == -1 ? [] : value.substring(index + 1).split(" ");
 
     function addIssueInvalidPlaceholder() {
-        p.ctx.addDiagnostic(Diagnostic.error("Invalid placeholder").label(span));
+        p.gcx.addDiagnostic(Diagnostic.error("Invalid placeholder")
+            .addPrimarySpan(span));
     }
 
     function addIssueInvalidArgument(message: string) {
         const lo = index == -1 ? value.length - 1 : index + 1;
-        p.ctx.addDiagnostic(Diagnostic.error(message).label(new Span(span.start + lo, span.end)));
+        p.gcx.addDiagnostic(Diagnostic.error(message)
+            .addPrimarySpan(new Span(span.start + lo, span.end)));
     }
 
     switch (name) {

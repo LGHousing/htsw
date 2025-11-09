@@ -1,4 +1,4 @@
-import * as htsl from "htsl";
+import { VERSION } from "htsw";
 
 import { getDate, getGamemode, randomLong } from "./helpers";
 import { Var, VarString, VarLong, VarDouble, parseValue } from "./vars";
@@ -34,7 +34,7 @@ const MOCK_DATA = {
         },
     },
     house: {
-        name: `HTSL Runtime ${htsl.helpers.VERSION}`,
+        name: `HTSL Runtime ${VERSION}`,
         guests: 0,
         cookies: 0,
         visitingrules: "&cPRIVATE",

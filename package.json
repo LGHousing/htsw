@@ -4,6 +4,24 @@
     "description": "HTSW framework",
     "main": "dist/index.js",
     "types": "dist/index.d.ts",
+    "exports": {
+        ".": {
+            "import": "./dist/index.js",
+            "types": "./dist/index.d.ts"
+        },
+        "./types": {
+            "import": "./dist/types/index.js",
+            "types": "./dist/types/index.d.ts"
+        },
+        "./ir": {
+            "import": "./dist/ir.js",
+            "types": "./dist/ir.d.ts"
+        },
+        "./htsl": {
+            "import": "./dist/htsl/index.js",
+            "types": "./dist/htsl/index.d.ts"
+        }
+    },
     "scripts": {
         "build": "tsc",
         "test": "vitest",
@@ -21,5 +39,8 @@
         "tsx": "^4.19.2",
         "typescript": "^5.7.3",
         "vitest": "3.0.5"
-    }
+    },
+    "workspaces": [
+        "ct_module", "editors/common", "editors/code", "editors/monaco"
+    ]
 }

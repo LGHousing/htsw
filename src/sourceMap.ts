@@ -21,6 +21,28 @@ export class SourceFile {
         this.src = src;
         this.startPos = 0;
     }
+
+    getPosition(pos: number): { line: number; column: number } {
+        const index = pos - this.startPos;
+
+        if (index < 0 || index > this.src.length) {
+            return { line: 1, column: 1 };
+        }
+
+        let line = 1;
+        let lastLineBreak = -1;
+
+        for (let i = 0; i < index; i++) {
+            if (this.src.charAt(i) === "\n") {
+                line++;
+                lastLineBreak = i;
+            }
+        }
+
+        const column = index - lastLineBreak;
+
+        return { line, column };
+    }
     
     getLine(lineNumber: number): string {
         if (lineNumber < 1) return "";
@@ -45,7 +67,30 @@ export class SourceFile {
         return "";
     }
 
-    endPosition(): number {
+    getLineStartPos(lineNumber: number): number {
+        if (lineNumber < 1) return 0;
+
+        let currentLine = 1;
+        let start = 0;
+
+        for (let i = 0; i < this.src.length; i++) {
+            if (this.src.charAt(i) === "\n") {
+                if (currentLine === lineNumber) {
+                    return start + this.startPos;
+                }
+                currentLine++;
+                start = i + 1;
+            }
+        }
+
+        if (currentLine === lineNumber) {
+            return start + this.startPos;
+        }
+
+        throw new Error("Position out of bounds");
+    }
+
+    endPos(): number {
         return this.startPos + this.src.length;
     }
 }
@@ -67,7 +112,7 @@ export class SourceMap {
         // try to read the file
         let src: string;
         try {
-            src = this.fileLoader.readFile(path);
+            src = this.fileLoader.readFile(path).replaceAll("\r", "");
         } catch (e) {
             throw Diagnostic.error(`Failed to read file '${path}'`);
         }
@@ -80,7 +125,7 @@ export class SourceMap {
     registerFile(file: SourceFile) {
         if (this.sourceFiles.length > 0) {
             const last = this.sourceFiles[this.sourceFiles.length - 1];
-            file.startPos = last.endPosition();
+            file.startPos = last.endPos();
         }
 
         this.sourceFiles.push(file);
@@ -97,14 +142,14 @@ export class SourceMap {
     getFileByPos(pos: number): SourceFile {
         for (const file of this.sourceFiles) {
             const start = file.startPos;
-            const end = file.endPosition();
+            const end = file.endPos();
 
             if (pos >= start && pos < end) {
                 return file;
             }
         }
 
-        throw Error("Source position lookup out of bounds");
+        throw Error(`Source position lookup out of bounds ${pos}`);
     }
 
 }

@@ -69,21 +69,19 @@ export function parseComparison(p: Parser): Comparison {
         p.eat({ kind: "cmp_op", op: "equals" }) ||
         p.eat({ kind: "cmp_op_eq", op: "equals" })
     ) {
-        return "Equals";
+        return "Equal";
     }
-    if (p.eatIdent("less than") ||
-        p.eat({ kind: "cmp_op", op: "less_than" })
-    ) {
+    if (p.eat({ kind: "cmp_op", op: "less_than" })) {
         return "Less Than";
     }
     if (p.eat({ kind: "cmp_op_eq", op: "less_than" })) {
-        return "Less Than Or Equals";
+        return "Less Than Or Equal";
     }
     if (p.eat({ kind: "cmp_op", op: "greater_than" })) {
         return "Greater Than";
     }
     if (p.eat({ kind: "cmp_op_eq", op: "greater_than" })) {
-        return "Greater Than Or Equals";
+        return "Greater Than Or Equal";
     }
 
     if (p.check("ident") || p.check("str")) {
@@ -93,8 +91,11 @@ export function parseComparison(p: Parser): Comparison {
         );
     } else {
         const err = Diagnostic.error("Expected comparison")
-            .label(p.token.span);
-        err.hint("Valid comparisons are: ==, <, <=, >, >=");
+            .addPrimarySpan(p.token.span);
+
+        err.addSubDiagnostic(
+            Diagnostic.help("Valid comparisons are: ==, <, <=, >, >=")
+        );
 
         throw err;
     }
@@ -140,8 +141,11 @@ export function parseOperation(p: Parser): Operation {
     } else {
         // or, we give them the symbol version of the diagnostic
         const err = Diagnostic.error("Expected operation")
-            .label(p.token.span);
-        err.hint("Valid operations are: =, +=, -=, *=, /=");
+            .addPrimarySpan(p.token.span);
+
+        err.addSubDiagnostic(
+            Diagnostic.help("Valid operations are: =, +=, -=, *=, /=")
+        );
 
         throw err;
     }
@@ -149,25 +153,26 @@ export function parseOperation(p: Parser): Operation {
 
 export function parseVarName(p: Parser): string {
     if (p.token.kind !== "ident" && p.token.kind !== "str") {
-        throw Diagnostic.error("Expected var name").label(p.token.span);
+        throw Diagnostic.error("Expected var name")
+            .addPrimarySpan(p.token.span);
     }
 
     const value = p.token.value;
 
     const maybeErr = Diagnostic.error("Invalid var name");
     if (value.length > 16) {
-        p.ctx.addDiagnostic(
-            maybeErr.label(p.token.span, "Exceeds 16-character limit")
+        p.gcx.addDiagnostic(
+            maybeErr.addPrimarySpan(p.token.span, "Exceeds 16-character limit")
         );
     }
     else if (value.length < 1) {
-        p.ctx.addDiagnostic(
-            maybeErr.label(p.token.span, "Cannot be empty")
+        p.gcx.addDiagnostic(
+            maybeErr.addPrimarySpan(p.token.span, "Cannot be empty")
         );
     }
     else if (value.includes(" ")) {
-        p.ctx.addDiagnostic(
-            maybeErr.label(p.token.span, "Cannot contain spaces")
+        p.gcx.addDiagnostic(
+            maybeErr.addPrimarySpan(p.token.span, "Cannot contain spaces")
         );
     }
 
@@ -213,8 +218,11 @@ export function parseVarOperation(p: Parser): VarOperation {
     } else {
         // or, we give them the symbol version of the diagnostic
         const err = Diagnostic.error("Expected operation")
-            .label(p.token.span);
-        err.hint("Valid operations are: =, +=, -=, *=, /=, <<=, >>=, &=, |=, ^=, Unset");
+            .addPrimarySpan(p.token.span);
+
+        err.addSubDiagnostic(
+            Diagnostic.help("Valid operations are: =, +=, -=, *=, /=, <<=, >>=, &=, |=, ^=, Unset")
+        );
 
         throw err;
     }
@@ -231,7 +239,7 @@ export function parseNumericValue(p: Parser): Value {
         const long = Long.fromString(withNegative);
 
         if (withNegative != long.toString()) {
-            throw maybeErr.label(p.prev.span, "Number exceeds 64-bit integer limit");
+            throw maybeErr.addPrimarySpan(p.prev.span, "Number exceeds 64-bit integer limit");
         }
 
         return long.toString();
@@ -242,7 +250,7 @@ export function parseNumericValue(p: Parser): Value {
 
         return double.toFixed(20);
     } else if (negative) {
-        throw maybeErr.label(p.token.span, "Expected number");
+        throw maybeErr.addPrimarySpan(p.token.span, "Expected number");
     }
 
     let isShorthand = false;
@@ -256,7 +264,8 @@ export function parseNumericValue(p: Parser): Value {
         return parseNumericalPlaceholder(p);
     }
 
-    throw Diagnostic.error("Expected amount").label(p.token.span);
+    throw Diagnostic.error("Expected amount")
+        .addPrimarySpan(p.token.span);
 }
 
 export function parseValue0(p: Parser): Value {
@@ -279,9 +288,8 @@ export function parseValue(p: Parser): Value {
 
 export function parseInventorySlot(p: Parser): InventorySlot {
     if (!p.check("i64") && !p.check("ident") && !p.check("str")) {
-        throw Diagnostic
-            .error("Expected inventory slot name or index")
-            .label(p.token.span);
+        throw Diagnostic.error("Expected inventory slot name or index")
+            .addPrimarySpan(p.token.span);
     }
 
     if (p.check("i64")) {
@@ -333,10 +341,10 @@ export function parseSound(p: Parser): Sound {
             if (err instanceof Diagnostic && err.level === "error") {
                 // catch unquoted sound paths (probably)
                 if (token.value.includes(".")) {
-                    err.hint("Surround this sound key in quotes");
-                    err.edit([
-                        { span: token.span, text: `"${token.value}"` }
-                    ]);
+                    err.addSubDiagnostic(
+                        Diagnostic.help("Surround this sound key in quotes")
+                            .addEdit(token.span, `"${token.value}"`)
+                    );
                 }
             }
             throw err;
@@ -349,30 +357,28 @@ export function parseSound(p: Parser): Sound {
             // periods you don't deserve to have your code parse correctly
             !value.includes(".")
         ) {
-            const err = Diagnostic
-                .error("Invalid sound key")
-                .label(p.token.span);
+            const err = Diagnostic.error("Invalid sound key")
+                .addPrimarySpan(p.token.span);
 
             for (const { name } of SOUNDS) {
                 if (p.eatString(name) || p.eatString(name.replaceAll(" ", "_"))) {
-                    err.hint("Convert this string to an identifier");
-                    err.edit([
-                        { span: p.prev.span, text: name.replaceAll(" ", "_") },
-                    ]);
 
+                    err.addSubDiagnostic(
+                        Diagnostic.help("Convert this string to an identifier")
+                            .addEdit(p.prev.span, name.replaceAll(" ", "_"))
+                    );
                     break;
                 }
             }
 
-            p.ctx.addDiagnostic(err);
+            p.gcx.addDiagnostic(err);
         }
 
         p.next();
         return value as Sound;
     } else {
-        throw Diagnostic
-            .error("Expected sound name or sound key")
-            .label(p.token.span);
+        throw Diagnostic.error("Expected sound name or sound key")
+            .addPrimarySpan(p.token.span);
     }
 }
 
@@ -406,7 +412,8 @@ export function parseItemAmount(p: Parser): ItemAmount {
 
 export function parseCoordinates(p: Parser) {
     if (p.token.kind !== "str") {
-        throw Diagnostic.error("Expected coordinates").label(p.token.span);
+        throw Diagnostic.error("Expected coordinates")
+            .addPrimarySpan(p.token.span);
     }
 
     let value = p.token.value;
@@ -416,7 +423,8 @@ export function parseCoordinates(p: Parser) {
     const tokens = value.split(" ");
 
     function addDiagnostic(message: string, span: Span) {
-        p.ctx.addDiagnostic(Diagnostic.error(message).label(span));
+        p.gcx.addDiagnostic(Diagnostic.error(message)
+            .addPrimarySpan(span));
     }
 
     const isRelative = (s: string) =>

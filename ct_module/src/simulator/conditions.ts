@@ -1,12 +1,14 @@
-import * as htsl from "htsl";
+import { Diagnostic, htsl } from "htsw";
+import type { Ir, IrCondition } from "htsw/ir";
+import type { ConditionCompareHealth, ConditionCompareHunger, ConditionCompareMaxHealth, ConditionComparePlaceholder, ConditionCompareVar, ConditionRequireGamemode, ConditionRequireItem, ConditionRequirePotionEffect } from "htsw/types";
 
 import { parseValue, VarHolder, VarLong } from "./vars";
 import { parsePlaceholder } from "./placeholders";
 import { Simulator } from "./simulator";
 import { getGamemode } from "./helpers";
-import { printDiagnostic } from "../compiler/diagnostics";
+import { printDiagnostic } from "../tui/diagnostics";
 
-export function runCondition(condition: htsl.Ir<htsl.Condition>): boolean {
+export function runCondition(condition: IrCondition): boolean {
     if (condition.type === "COMPARE_HEALTH") {
         return runConditionCompareHealth(condition);
     } else if (condition.type === "COMPARE_HUNGER") {
@@ -29,14 +31,16 @@ export function runCondition(condition: htsl.Ir<htsl.Condition>): boolean {
         return runConditionRequirePotionEffect(condition);
     }
 
-    const warn = htsl.warn("Condition cannot be run in Simulator mode", condition.kwSpan);
+    const warn = Diagnostic.warning("Condition cannot be run in Simulator mode")
+        .addPrimarySpan(condition.typeSpan);
+
     printDiagnostic(Simulator.sm, warn);
 
     return false;
 }
 
 function runConditionCompareHealth(
-    condition: htsl.Ir<htsl.ConditionCompareHealth>
+    condition: Ir<ConditionCompareHealth>
 ): boolean {
     if (!condition.op || !condition.amount) return false;
 
@@ -47,7 +51,7 @@ function runConditionCompareHealth(
 }
 
 function runConditionCompareHunger(
-    condition: htsl.Ir<htsl.ConditionCompareHunger>
+    condition: Ir<ConditionCompareHunger>
 ): boolean {
     if (!condition.op || !condition.amount) return false;
 
@@ -58,7 +62,7 @@ function runConditionCompareHunger(
 }
 
 function runConditionCompareMaxHealth(
-    condition: htsl.Ir<htsl.ConditionCompareMaxHealth>
+    condition: Ir<ConditionCompareMaxHealth>
 ): boolean {
     if (!condition.op || !condition.amount) return false;
 
@@ -73,7 +77,7 @@ function runConditionCompareMaxHealth(
 }
 
 function runConditionComparePlaceholder(
-    condition: htsl.Ir<htsl.ConditionComparePlaceholder>
+    condition: Ir<ConditionComparePlaceholder>
 ): boolean {
     if (!condition.placeholder || !condition.op || !condition.amount) return false;
 
@@ -84,7 +88,7 @@ function runConditionComparePlaceholder(
 }
 
 function runConditionCompareVar(
-    condition: htsl.Ir<htsl.ConditionCompareVar>
+    condition: Ir<ConditionCompareVar>
 ): boolean {
     if (!condition.holder || !condition.var || !condition.op || !condition.amount)
         return false;
@@ -114,7 +118,7 @@ function runConditionCompareVar(
 }
 
 function runConditionRequireGamemode(
-    condition: htsl.Ir<htsl.ConditionRequireGamemode>
+    condition: Ir<ConditionRequireGamemode>
 ): boolean {
     if (!condition.gamemode) return false;
 
@@ -122,7 +126,7 @@ function runConditionRequireGamemode(
 }
 
 function runConditionRequireItem(
-    condition: htsl.Ir<htsl.ConditionRequireItem>
+    condition: Ir<ConditionRequireItem>
 ): boolean {
     if (
         !condition.item ||
@@ -136,7 +140,7 @@ function runConditionRequireItem(
 }
 
 function runConditionRequirePotionEffect(
-    condition: htsl.Ir<htsl.ConditionRequirePotionEffect>
+    condition: Ir<ConditionRequirePotionEffect>
 ): boolean {
     if (!condition.effect) return false;
 

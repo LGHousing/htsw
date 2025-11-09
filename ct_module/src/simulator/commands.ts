@@ -1,7 +1,8 @@
-import * as htsl from "htsl";
+import { parseIrActions, SourceMap } from "htsw";
 
 import { Simulator } from "./simulator";
-import { printDiagnostic } from "../compiler/diagnostics";
+import { StringFileLoader } from "../helpers";
+import { printDiagnostic } from "../tui/diagnostics";
 
 export function registerCommandTriggers(): CommandTrigger[] {
     return [
@@ -27,18 +28,18 @@ function commandFunction(args: string[]) {
 
 function commandEval(args: string[]) {
     console.log(args);
-    const source = args.join(" ").replace("\r", "");
 
-    const sm = new htsl.SourceMap();
-    sm.addFile(source, "source.htsl");
+    const src = args.join(" ").replace("\r", "");
+    const sm = new SourceMap(new StringFileLoader(src));
 
-    const result = htsl.parse.parseFromSourceMap(sm);
-    if (result.diagnostics.length !== 0) {
-        for (const diagnostic of result.diagnostics) {
-            printDiagnostic(sm, diagnostic);
-        }
-    } else {
-        Simulator.runActions(result.holders[0].actions!.value);
+    const result = parseIrActions(sm, "eval");
+
+    for (const diag of result.diagnostics) {
+        printDiagnostic(sm, diag);
+    }
+
+    if (!result.gcx.isFailed()) {
+        Simulator.runActions(result.value);
     }
 }
 

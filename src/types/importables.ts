@@ -2,14 +2,14 @@ import type { Action } from "./actions";
 import type { AABB, MenuSlot } from "./types";
 
 export type ImportableFunction = {
-    type: "function";
+    type: "FUNCTION";
     name: string;
     actions: Action[];
     repeatTicks?: number;
 };
 
 export type ImportableRegion = {
-    type: "region";
+    type: "REGION";
     name: string;
     bounds: AABB;
     onEnterActions?: Action[];
@@ -17,13 +17,13 @@ export type ImportableRegion = {
 };
 
 export type ImportableMenu = {
-    type: "menu";
+    type: "MENU";
     name: string;
     slots: MenuSlot[];
 };
 
 export type ImportableItem = {
-    type: "item";
+    type: "ITEM";
     snbt: string;
     leftClickActions?: Action[];
     rightClickActions?: Action[];

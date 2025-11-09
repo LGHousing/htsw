@@ -1,20 +1,20 @@
-import * as htsl from "htsl";
+import type { IrAction } from "htsw/ir";
 
 export interface ActionScheduler {
-    tick(): htsl.IrAction[] | undefined;
+    tick(): IrAction[] | undefined;
     hasNext(): boolean;
 }
 
 export class DelayedActionScheduler implements ActionScheduler {
-    actions: htsl.IrAction[];
+    actions: IrAction[];
     delay: number;
 
-    constructor(actions: htsl.IrAction[], delay: number) {
+    constructor(actions: IrAction[], delay: number) {
         this.actions = actions;
         this.delay = delay;
     }
 
-    tick(): htsl.IrAction[] | undefined {
+    tick(): IrAction[] | undefined {
         this.delay -= 1;
 
         if (this.delay == 0) return this.actions;
@@ -26,17 +26,17 @@ export class DelayedActionScheduler implements ActionScheduler {
 }
 
 export class RepeatingActionScheduler implements ActionScheduler {
-    actions: htsl.IrAction[];
+    actions: IrAction[];
     initialDelay: number;
     delay: number;
 
-    constructor(actions: htsl.IrAction[], delay: number) {
+    constructor(actions: IrAction[], delay: number) {
         this.actions = actions;
         this.initialDelay = delay;
         this.delay = delay;
     }
 
-    tick(): htsl.IrAction[] | undefined {
+    tick(): IrAction[] | undefined {
         this.delay -= 1;
 
         if (this.delay == 0) {

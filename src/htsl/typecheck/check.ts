@@ -25,7 +25,7 @@ export function check(tcx: TyCtxt, actions: IrAction[]) {
             }
 
             if (action.elseActions) {
-                for (const subCtxt of narrow(tcx, action.conditions.value, action.matchAny.value)) {
+                for (const subCtxt of narrow(tcx, action.conditions.value, action.matchAny.value, true)) {
                     // tcx.exploredConditionalBranches.add(action.elseActions.value);
                     check(subCtxt, action.elseActions.value);
                     check(subCtxt, actions.slice(i + 1));
@@ -88,19 +88,21 @@ function update(tcx: TyCtxt, action: Ir<ActionChangeVar>) {
     }
 
     if (lhs && lhs.type === "string") {
-        tcx.addDiagnostic(Diagnostic
-            .error(`Strings cannot be ${OPERATION_NAMES[action.op.value]}`)
-            .label(action.value.span)
-            .reference(lhs.declSpan, "Type inferred here")
+        tcx.addDiagnostic(
+            Diagnostic.warning(`Strings cannot be ${OPERATION_NAMES[action.op.value]}`)
+                .addPrimarySpan(action.op.span, "Invalid operation")
+                .addSecondarySpan(action.key.span, `Type inferred as ${lhs.type}`)
+                .addSecondarySpan(lhs.declSpan, "Type originates from this statement")
         );
         return;
     }
 
     if (lhs && lhs.type === "double" && action.op.value in DISALLOWED_DOUBLE_OPERATIONS) {
-        tcx.addDiagnostic(Diagnostic
-            .error(`Doubles cannot be ${OPERATION_NAMES[action.op.value]}`)
-            .reference(lhs.declSpan, "Type inferred here")
-            .label(action.value.span)
+        tcx.addDiagnostic(
+            Diagnostic.warning(`Doubles cannot be ${OPERATION_NAMES[action.op.value]}`)
+                .addPrimarySpan(action.op.span, "Invalid operation")
+                .addSecondarySpan(action.key.span, `Type inferred as ${lhs.type}`)
+                .addSecondarySpan(lhs.declSpan, "Type originates from this statement")
         );
         return;
     }
@@ -111,10 +113,11 @@ function update(tcx: TyCtxt, action: Ir<ActionChangeVar>) {
     }
 
     if (lhs.type !== rhs.type) {
-        tcx.addDiagnostic(Diagnostic
-            .error("Mismatched types")
-            .reference(lhs.declSpan, "Type inferred here")
-            .label(action.value.span, `Expected ${lhs.type}, found ${rhs.type}`)
+        tcx.addDiagnostic(
+            Diagnostic.warning("Mismatched types")
+                .addPrimarySpan(action.value.span, `Expected ${lhs.type}, found ${rhs.type}`)
+                .addSecondarySpan(action.key.span, `Type is ${lhs.type}`)
+                .addSecondarySpan(lhs.declSpan, "Type inferred here")
         );
         return;
     }
@@ -131,8 +134,34 @@ function update(tcx: TyCtxt, action: Ir<ActionChangeVar>) {
     tcx.setState(key, { ...lhs, ...newValue });
 }
 
-function narrow(tcx: TyCtxt, conditions: IrCondition[], matchAny: boolean): TyCtxt[] {
+function maybeInvert(value: boolean, inverted: boolean) {
+    return inverted ? !value : value;
+}
+
+function narrow(
+    tcx: TyCtxt,
+    conditions: IrCondition[],
+    matchAny: boolean,
+    inverted: boolean = false
+): TyCtxt[] {
     if (conditions.length === 0) return [tcx]; // Just use the owning ctxt
 
+    if (maybeInvert(matchAny, inverted)) {
+        const res: TyCtxt[] = [];
+        for (const condition of conditions) {
+            res.push(...narrow(tcx, [condition], inverted, inverted));
+        }
+        return res;
+    }
+
+    
+    
     throw Error("Not implemented");
+}
+
+function narrowCondition(
+    tcx: TyCtxt,
+    condition: IrCondition,
+) {
+    // if (condition.)
 }

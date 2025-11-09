@@ -1,24 +1,25 @@
-import * as htsl from "htsl";
+import { Importable, ImportableFunction } from "htsw/types";
+
 import { Step } from "./step";
 import { chatHistoryContains } from "../helpers";
 import { Importer } from "./importer";
 import { stepsForAction } from "./actions";
 
-export function stepsForHolder(holder: htsl.ActionHolder): Step[] {
-    if (holder.type === "FUNCTION") {
-        return stepsForHolderFunction(holder);
+export function stepsForImportable(importable: Importable): Step[] {
+    if (importable.type === "FUNCTION") {
+        return stepsforImportableFunction(importable);
     }
     return [];
 }
 
-function stepsForHolderFunction(
-    holder: htsl.ActionHolderFunction
+function stepsforImportableFunction(
+    importable: ImportableFunction
 ): Step[] {
     const steps: Step[] = [];
 
     steps.push({
         type: "RUN_COMMAND",
-        command: `/function edit ${holder.name}`,
+        command: `/function edit ${importable.name}`,
     }, {
         type: "CONDITIONAL",
         condition: () => {
@@ -32,13 +33,13 @@ function stepsForHolderFunction(
         then: () => [
             {
                 type: "RUN_COMMAND",
-                command: `/function create ${holder.name}`,
+                command: `/function create ${importable.name}`,
             },
         ],
         else: () => [],
     });
 
-    for (const action of holder.actions) {
+    for (const action of importable.actions) {
         steps.push(...stepsForAction(action));
     }
 

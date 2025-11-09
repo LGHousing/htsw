@@ -79,11 +79,11 @@ export const VAR_OPERATIONS = [
 ] as const;
 
 export const COMPARISONS = [
-    "Equals",
+    "Equal",
     "Less Than",
-    "Less Than Or Equals",
+    "Less Than Or Equal",
     "Greater Than",
-    "Greater Than Or Equals",
+    "Greater Than Or Equal",
 ] as const;
 
 export const GAMEMODES = [

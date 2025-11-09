@@ -1,3 +1,5 @@
+import { FileLoader } from "htsw";
+
 export function removeFormatting(str: string): string {
     return str.replace(/(?:§|&)[0-9a-fklmnor]/g, "");
 }
@@ -89,7 +91,12 @@ export function acceptNewAnvilItem(): void {
 }
 
 export function chatWidth(string: string): number {
-    return Client.getMinecraft().field_71466_p.func_78256_a(string);
+    const raw = ChatLib.removeFormatting(ChatLib.replaceFormatting(string));
+    return Client.getMinecraft().field_71466_p.func_78256_a(raw);
+}
+
+export function spaceWidth() {
+    return chatWidth(" ");
 }
 
 export function chatSeparator(): string {
@@ -97,4 +104,28 @@ export function chatSeparator(): string {
     const sepWidth = chatWidth("-");
 
     return "-".repeat(totalWidth / sepWidth);
+}
+
+export class FileSystemFileLoader implements FileLoader {
+    fileExists(path: string): boolean {
+        return FileLib.exists(path);
+    }
+    readFile(path: string): string {
+        return FileLib.read(path);
+    }
+}
+
+export class StringFileLoader implements FileLoader {
+    src: string;
+
+    constructor(src: string) {
+        this.src = src;
+    }
+
+    fileExists(path: string): boolean {
+        return true;
+    }
+    readFile(path: string): string {
+        return this.src;
+    }
 }

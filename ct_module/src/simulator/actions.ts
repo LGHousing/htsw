@@ -1,13 +1,15 @@
-import * as htsl from "htsl";
+import { Diagnostic, htsl } from "htsw";
+import type { Ir, IrAction } from "htsw/ir";
+import type { ActionActionBar, ActionChangeVar, ActionConditional, ActionFunction, ActionMessage, ActionPauseExecution, ActionPlaySound, ActionRandom, ActionSetVelocity, ActionTeleport, ActionTitle } from "htsw/types";
 
 import { ExitError, PauseError, Simulator } from "./simulator";
 import { VarHolder, parseValue } from "./vars";
 import { replacePlaceholders } from "./placeholders";
 import { runCondition } from "./conditions";
-import { printDiagnostic } from "../compiler/diagnostics";
 import { coerceWithin } from "./helpers";
+import { printDiagnostic } from "../tui/diagnostics";
 
-export function runAction(action: htsl.IrAction) {
+export function runAction(action: IrAction) {
     if (action.type === "ACTION_BAR") {
         runActionActionBar(action);
     } else if (action.type === "CHANGE_VAR") {
@@ -35,14 +37,14 @@ export function runAction(action: htsl.IrAction) {
     }
 }
 
-function runActionActionBar(action: htsl.Ir<htsl.ActionActionBar>) {
+function runActionActionBar(action: Ir<ActionActionBar>) {
     if (!action.message) return;
 
     const message = replacePlaceholders(action.message.value);
     ChatLib.actionBar(message);
 }
 
-function runActionChangeVar(action: htsl.Ir<htsl.ActionChangeVar>) {
+function runActionChangeVar(action: Ir<ActionChangeVar>) {
     if (!action.holder || !action.op || !action.key) return;
 
     const holderType = action.holder.value.type;
@@ -59,7 +61,7 @@ function runActionChangeVar(action: htsl.Ir<htsl.ActionChangeVar>) {
                 ? Simulator.globalVars
                 : Simulator.playerVars;
 
-    if (action.op.value === "unset") {
+    if (action.op.value === "Unset") {
         varHolder.unsetVar(varKey);
         return;
     }
@@ -69,17 +71,16 @@ function runActionChangeVar(action: htsl.Ir<htsl.ActionChangeVar>) {
     const lhs = varHolder.getVar(varKey);
     const rhs = parseValue(action.value.value);
 
-    if (action.op.value === "set") {
+    if (action.op.value === "Set") {
         varHolder.setVar(varKey, rhs);
         return;
     }
 
     const opStr = htsl.helpers.OPERATION_SYMBOLS[action.op.value];
 
-    const err = htsl.error(
-        `Operator ${opStr} cannot be applied to types ${lhs.value === "" ? "unknown" : lhs.type} and ${rhs.type}`,
-        action.op.span
-    );
+    const err = Diagnostic
+        .error(`Operator ${opStr} cannot be applied to types ${lhs.value === "" ? "unknown" : lhs.type} and ${rhs.type}`)
+        .addPrimarySpan(action.op.span);
 
     if (lhs.type !== rhs.type || lhs.type === "string" || rhs.type === "string") {
         throw err;
@@ -95,7 +96,7 @@ function runActionChangeVar(action: htsl.Ir<htsl.ActionChangeVar>) {
     varHolder.setVar(varKey, result);
 }
 
-function runActionConditional(action: htsl.Ir<htsl.ActionConditional>) {
+function runActionConditional(action: Ir<ActionConditional>) {
     if (!action.matchAny || !action.conditions || !action.ifActions) return;
 
     const matchAny = action.matchAny.value;
@@ -115,51 +116,53 @@ function runActionConditional(action: htsl.Ir<htsl.ActionConditional>) {
     }
 }
 
-function runActionFunction(action: htsl.Ir<htsl.ActionFunction>) {
+function runActionFunction(action: Ir<ActionFunction>) {
     if (!action.function) return;
 
     const result = Simulator.runFunction(action.function.value);
 
     if (!result) {
-        const warn = htsl.warn("Unknown function called", action.function.span);
+        const warn = Diagnostic.warning("Unknown function called")
+            .addPrimarySpan(action.function.span);
+
         printDiagnostic(Simulator.sm, warn);
     }
 }
 
-function runActionMessage(action: htsl.Ir<htsl.ActionMessage>) {
+function runActionMessage(action: Ir<ActionMessage>) {
     if (!action.message) return;
 
     const message = replacePlaceholders(action.message.value);
     ChatLib.chat(`&7*&r ${message}`);
 }
 
-function runActionPauseExecution(action: htsl.Ir<htsl.ActionPauseExecution>) {
+function runActionPauseExecution(action: Ir<ActionPauseExecution>) {
     if (!action.ticks) return;
 
     throw new PauseError(action.ticks.value);
 }
 
-function runActionPlaySound(action: htsl.Ir<htsl.ActionPlaySound>) {
+function runActionPlaySound(action: Ir<ActionPlaySound>) {
 
 }
 
-function runActionTeleport(action: htsl.Ir<htsl.ActionTeleport>) {
+function runActionTeleport(action: Ir<ActionTeleport>) {
     if (!action.location) return;
 
-    if (action.location.value.type === "location_invokers") {
+    if (action.location.value.type === "Invokers Location") {
         ChatLib.say("/tp ~ ~ ~");
-    } else if (action.location.value.type === "location_custom") {
-        ChatLib.say(`/tp ${replacePlaceholders(action.location.value.value)}`);
+    } else if (action.location.value.type === "Custom Coordinates") {
+        ChatLib.say(`/tp ${replacePlaceholders(action.location.value.value?.value ?? "")}`);
     } else {
-        const warn = htsl.warn(
-            "House spawn cannot be used in Simulator mode",
-            action.location.span
-        );
+        const warn = Diagnostic
+            .warning("House spawn cannot be used in Simulator mode")
+            .addPrimarySpan(action.location.span);
+
         printDiagnostic(Simulator.sm, warn);
     }
 }
 
-function runActionRandom(action: htsl.Ir<htsl.ActionRandom>) {
+function runActionRandom(action: Ir<ActionRandom>) {
     if (!action.actions) return;
 
     const randIdx = Math.floor(Math.random() * action.actions.value.length);
@@ -167,7 +170,7 @@ function runActionRandom(action: htsl.Ir<htsl.ActionRandom>) {
     runAction(action.actions.value[randIdx]);
 }
 
-function runActionSetVelocity(action: htsl.Ir<htsl.ActionSetVelocity>) {
+function runActionSetVelocity(action: Ir<ActionSetVelocity>) {
     if (!action.x || !action.y || !action.z) return;
 
     function coerce(value: number): number {
@@ -193,7 +196,7 @@ function runActionSetVelocity(action: htsl.Ir<htsl.ActionSetVelocity>) {
         ();
 }
 
-function runActionTitle(action: htsl.Ir<htsl.ActionTitle>) {
+function runActionTitle(action: Ir<ActionTitle>) {
     if (!action.title) return;
 
     Client.showTitle(

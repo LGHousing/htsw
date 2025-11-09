@@ -1,5 +1,5 @@
 import { Span } from "../../span";
-import type { Action, Comparison, Condition, Operation } from "../../types";
+import type { Action, Comparison, Condition, Operation, VarOperation } from "../../types";
 
 export const ACTION_KWS = [
     "applyLayout",
@@ -147,23 +147,29 @@ export const CONDITIONS_TO_KWS: {
 };
 
 export const OPERATION_SYMBOLS: {
-    [key in Operation]: string;
+    [key in VarOperation]: string;
 } = {
     Set: "=",
     Increment: "+=",
     Decrement: "-=",
     Multiply: "*=",
     Divide: "/=",
+    "Shift Left": "<<=",
+    "Shift Right": ">>=",
+    "And Assign": "&=",
+    "Or Assign": "|=",
+    "Xor Assign": "^=",
+    Unset: "unset"
 };
 
 export const COMPARISON_SYMBOLS: {
     [key in Comparison]: string;
 } = {
-    Equals: "==",
+    Equal: "==",
     "Less Than": "<",
-    "Less Than Or Equals": "<=",
+    "Less Than Or Equal": "<=",
     "Greater Than": ">",
-    "Greater Than Or Equals": ">=",
+    "Greater Than Or Equal": ">=",
 };
 
 export const SHORTHANDS = [

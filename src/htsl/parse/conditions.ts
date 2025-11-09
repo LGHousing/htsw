@@ -69,9 +69,11 @@ export function parseCondition(p: Parser): IrCondition {
     }
 
     if (p.check("ident")) {
-        throw Diagnostic.error("Unknown condition").label(p.token.span);
+        throw Diagnostic.error("Unknown condition")
+            .addPrimarySpan(p.token.span);
     } else {
-        throw Diagnostic.error("Expected condition").label(p.token.span);
+        throw Diagnostic.error("Expected condition")
+            .addPrimarySpan(p.token.span);
     }
 }
 
