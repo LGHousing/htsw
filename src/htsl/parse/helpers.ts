@@ -1,5 +1,5 @@
 import { Span } from "../../span";
-import type { Action, Comparison, Condition, Operation, VarOperation } from "../../types";
+import type { Action, Comparison, Condition, VarOperation } from "../../types";
 
 export const ACTION_KWS = [
     "applyLayout",

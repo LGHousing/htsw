@@ -140,11 +140,11 @@ export function parseNumericalPlaceholder(p: Parser): string {
         case "date.unix":
             if (args.length > 0) addIssueInvalidArgument("No arguments expected");
             break;
-        case "stat.player":
-        case "stat.global":
+        case "var.player":
+        case "var.global":
             if (args.length == 0) addIssueInvalidArgument("Expected stat key");
             break;
-        case "stat.team":
+        case "var.team":
             if (args.length == 0) addIssueInvalidArgument("Expected stat key");
             if (args.length == 1) addIssueInvalidArgument("Expected team name");
             if (args.length > 2)

@@ -10,8 +10,12 @@ import {
 import { registerCommandTriggers } from "./commands";
 import { runAction } from "./actions";
 import { printDiagnostic } from "../tui/diagnostics";
+import { registerEventTriggers } from "./events";
+import { registerRegionTriggers } from "./regions";
 
 export class Simulator {
+    static isActive: boolean = false;
+    
     static sm: SourceMap;
     static importables: IrImportable[];
 
@@ -25,9 +29,26 @@ export class Simulator {
     static triggers: Trigger[];
 
     static start(sm: SourceMap, importables: IrImportable[]) {
-        Simulator.sm = sm;
-        Simulator.importables = importables;
+        this.isActive = true;
+        
+        this.sm = sm;
+        this.importables = importables;
+        
+        this.init();
+    }
+    
+    static restart(): void {
+        this.stop();
+        this.init();
+    }
 
+    static stop(): void {        
+        for (const trigger of this.triggers) {
+            trigger.unregister();
+        }
+    }
+    
+    static init(): void {
         this.playerVars = new VarHolder();
         this.globalVars = new VarHolder();
         this.teamVars = new VarHolder();
@@ -38,15 +59,11 @@ export class Simulator {
         this.triggers = [
             register("tick", this.tick.bind(this)),
             ...registerCommandTriggers(),
+            ...registerEventTriggers(),
+            ...registerRegionTriggers(),
         ];
 
         this.postinit();
-    }
-
-    static stop(): void {
-        for (const trigger of this.triggers) {
-            trigger.unregister();
-        }
     }
 
     static runFunction(name: string): boolean {

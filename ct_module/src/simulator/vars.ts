@@ -12,10 +12,13 @@ export interface Var<T> {
     cmpOp(other: Var<any>, op: Comparison): boolean;
 
     shouldUnset(): boolean;
+    unsetValue(): Var<T>;
 
     toLong(): Long;
     toDouble(): number;
     toString(): string;
+    
+    toDisplayString(): string;
 }
 
 export class VarLong implements Var<Long> {
@@ -79,6 +82,10 @@ export class VarLong implements Var<Long> {
     shouldUnset(): boolean {
         return this.value.equals(Long.ZERO);
     }
+    
+    unsetValue(): Var<Long> {
+        return new VarLong(Long.ZERO);
+    }
 
     toLong(): Long {
         return this.value;
@@ -90,6 +97,10 @@ export class VarLong implements Var<Long> {
 
     toString(): string {
         return formatNumber(this.value.toString());
+    }
+    
+    toDisplayString(): string {
+        return this.toString();
     }
 }
 
@@ -155,6 +166,10 @@ export class VarDouble implements Var<number> {
     shouldUnset(): boolean {
         return this.value === 0.0;
     }
+    
+    unsetValue(): Var<number> {
+        return new VarDouble(0.0);
+    }
 
     toLong(): Long {
         return Long.fromNumber(this.value);
@@ -166,6 +181,10 @@ export class VarDouble implements Var<number> {
 
     toString(): string {
         return formatNumber(this.value.toFixed(4));
+    }
+    
+    toDisplayString(): string {
+        return this.toString();
     }
 }
 
@@ -193,6 +212,10 @@ export class VarString implements Var<string> {
     shouldUnset(): boolean {
         return this.value === "";
     }
+    
+    unsetValue(): Var<string> {
+        return new VarString("");
+    }
 
     toLong(): Long {
         return Long.ZERO;
@@ -205,32 +228,40 @@ export class VarString implements Var<string> {
     toString(): string {
         return this.value;
     }
+    
+    toDisplayString(): string {
+        return `"${this.value}"`;
+    }
 }
 
 export type TeamVarKey = { team: string; key: string };
 
 export class VarHolder<T> {
-    private stats: Map<T, Var<any>>;
+    private vars: Map<T, Var<any>>;
 
     constructor() {
-        this.stats = new Map();
+        this.vars = new Map();
+    }
+    
+    hasVar(key: T): boolean {
+        return this.vars.has(key);
     }
 
     getVar(key: T, fallback: Var<any> = new VarString("")): Var<any> {
-        return this.stats.get(key) ?? fallback;
+        return this.vars.get(key) ?? fallback;
     }
 
     setVar(key: T, value: Var<any>): void {
-        this.stats.set(key, value);
+        this.vars.set(key, value);
     }
 
     unsetVar(key: T): void {
-        this.stats.delete(key);
+        this.vars.delete(key);
     }
 
     keys(): Set<T> {
         const set = new Set<T>();
-        for (const key of this.stats.keys()) {
+        for (const key of this.vars.keys()) {
             set.add(key);
         }
         return set;
@@ -268,6 +299,12 @@ function parseString(value: string): Var<any> {
     // We do not use the replaced value if it is too long
     if (_value.length <= 32) {
         value = _value;
+    }
+    
+    if (isLong(value)) {
+        return VarLong.fromString(value);
+    } else if (EXPLICIT_DOUBLE_REGEX.test(value)) {
+        return VarDouble.fromString(value);
     }
 
     const lastChar = value.slice(-1).toUpperCase();

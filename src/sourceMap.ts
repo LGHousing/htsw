@@ -8,6 +8,10 @@ export interface FileLoader {
     fileExists(path: string): boolean;
 
     readFile(path: string): string;
+    
+    getParentPath(base: string): string;
+    
+    resolvePath(base: string, other: string): string;
 
 }
 

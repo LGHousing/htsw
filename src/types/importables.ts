@@ -1,5 +1,5 @@
 import type { Action } from "./actions";
-import type { AABB, MenuSlot } from "./types";
+import type { Bounds, Event, MenuSlot } from "./types";
 
 export type ImportableFunction = {
     type: "FUNCTION";
@@ -11,7 +11,7 @@ export type ImportableFunction = {
 export type ImportableRegion = {
     type: "REGION";
     name: string;
-    bounds: AABB;
+    bounds: Bounds;
     onEnterActions?: Action[];
     onExitActions?: Action[];
 };
@@ -29,8 +29,15 @@ export type ImportableItem = {
     rightClickActions?: Action[];
 };
 
+export type ImportableEvent = {
+    type: "EVENT";
+    event: Event;
+    actions: Action[];
+}
+
 export type Importable =
     | ImportableFunction
     | ImportableRegion
     | ImportableMenu
-    | ImportableItem;
+    | ImportableItem
+    | ImportableEvent;

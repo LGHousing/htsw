@@ -120,4 +120,7 @@ export type Condition = (
     | ConditionComparePlaceholder
     | ConditionRequireTeam
     | ConditionCompareDamage
-) & { inverted?: boolean };
+) & {
+    inverted?: boolean;
+    note?: string;
+};

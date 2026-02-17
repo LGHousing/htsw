@@ -268,23 +268,13 @@ export function parseNumericValue(p: Parser): Value {
         .addPrimarySpan(p.token.span);
 }
 
-export function parseValue0(p: Parser): Value {
+export function parseValue(p: Parser): Value {
     if (p.check("str")) {
         return `"${p.parseString()}"`;
     }
 
     return parseNumericValue(p);
 }
-
-export function parseValue(p: Parser): Value {
-    const value = parseValue0(p);
-
-    if (p.eatIdent("D")) { }
-    else if (p.eatIdent("L")) { }
-
-    return value;
-}
-
 
 export function parseInventorySlot(p: Parser): InventorySlot {
     if (!p.check("i64") && !p.check("ident") && !p.check("str")) {

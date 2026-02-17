@@ -16,6 +16,7 @@ export type TokenType =
     | F64Kind
     | PlaceholderKind
     | IdentKind
+    | DocCommentKind
     | EolKind
     | EofKind
     | UnknownKind;
@@ -38,6 +39,8 @@ export type F64Kind = { kind: "f64"; value: string };
 export type PlaceholderKind = { kind: "placeholder"; value: string };
 
 export type IdentKind = { kind: "ident"; value: string };
+
+export type DocCommentKind = { kind: "doc_comment", value: string };
 
 export type EolKind = { kind: "eol" };
 export type EofKind = { kind: "eof" };
@@ -73,6 +76,7 @@ const TOKEN_KIND_NAMES: {
     f64: "number",
     placeholder: "placeholder",
     ident: "identifier",
+    doc_comment: "doc comment",
     eol: "end of line",
     eof: "end of file",
     unknown: "unknown token",

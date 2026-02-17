@@ -11,12 +11,7 @@ export function printDiagnostics(sm: SourceMap, diags: Diagnostic[]) {
 }
 
 export function printDiagnostic(sm: SourceMap, diag: Diagnostic) {
-    const ui = new UIElementTruncate(
-        new UIElementDiagnostic(sm, diag),
-        ChatLib.getChatWidth()
-    );
-
-    printUI(ui);
+    printUI(new UIElementDiagnostic(sm, diag));
 }
 
 export const DIAGNOSTIC_LEVEL_NAMES: {
@@ -50,17 +45,22 @@ export const DIAGNOSTIC_LEVEL_UNDERLINE_CHARS: {
 }
 
 export class UIElementDiagnostic extends UIElementVStack {
-    constructor(sm: SourceMap, diag: Diagnostic) {
+    constructor(sm: SourceMap, diag: Diagnostic, isPrimary: boolean = true) {
         super();
 
         const diagLevelName = DIAGNOSTIC_LEVEL_NAMES[diag.level];
         const diagLevelColor = DIAGNOSTIC_LEVEL_COLORS[diag.level];
 
-        this.add(new UIElementText(`${diagLevelColor}&l${diagLevelName}&7: &f${diag.message}`));
-        this.add(new UIElementSnippet(sm, diag.spans, diag.level));
+        const messageColor = isPrimary ? "&f&l" : "&f";
+
+        this.add(new UIElementText(`${diagLevelColor}&l${diagLevelName}&7: ${messageColor}${diag.message}`));
+        this.add(new UIElementTruncate(
+            new UIElementSnippet(sm, diag.spans, diag.level),
+            ChatLib.getChatWidth(),
+        ));
 
         for (const subDiag of diag.subDiagnostics) {
-            this.add(new UIElementDiagnostic(sm, subDiag));
+            this.add(new UIElementDiagnostic(sm, subDiag, false));
         }
     }
 }

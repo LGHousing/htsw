@@ -60,7 +60,9 @@ function parseString(tcx: TyCtxt, value: string): VarState | undefined {
 }
 
 function parsePlaceholder(tcx: TyCtxt, placeholder: string): VarState | undefined {
-    const [name, argsString] = placeholder.split("/");
+    const pivotIndex = placeholder.indexOf("/");
+    const name = placeholder.substring(0, pivotIndex);
+    const argsString = placeholder.substring(pivotIndex + 1);
 
     let args: string[] = [];
     if (argsString) {

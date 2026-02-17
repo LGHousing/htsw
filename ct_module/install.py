@@ -2,9 +2,10 @@ from pathlib import Path
 import os
 import sys
 import shutil
+import subprocess
 
 
-SOURCE = Path(__name__).resolve().parent
+SOURCE = Path(__file__).resolve().parent
 assert SOURCE.exists()
 
 DESTINATION = Path(r'C:\\Users\\Sandy\\AppData\\Roaming\\.minecraft\\config\\ChatTriggers\\modules\\HTSW').resolve()
@@ -50,7 +51,9 @@ def copy_folder_contents(
 
 def main() -> None:
     if len(sys.argv) < 2 or sys.argv[1] != '--nobuild':
-        os.system('npm run build')
+        result = subprocess.run('npm run build', cwd=SOURCE, shell=True)
+        if result.returncode != 0:
+            raise SystemExit('build failed')
     unlink_folder_with_contents(DESTINATION)
     DESTINATION.mkdir(parents=True, exist_ok=True)
     # copy_folder_contents(SOURCE, DESTINATION, ignore=IGNORE)

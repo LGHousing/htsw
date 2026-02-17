@@ -115,9 +115,10 @@ function update(tcx: TyCtxt, action: Ir<ActionChangeVar>) {
     if (lhs.type !== rhs.type) {
         tcx.addDiagnostic(
             Diagnostic.warning("Mismatched types")
-                .addPrimarySpan(action.value.span, `Expected ${lhs.type}, found ${rhs.type}`)
+                .addPrimarySpan(action.op.span, "Mismatched types")
                 .addSecondarySpan(action.key.span, `Type is ${lhs.type}`)
-                .addSecondarySpan(lhs.declSpan, "Type inferred here")
+                .addSecondarySpan(action.value.span, `Type is ${rhs.type}`)
+                .addSecondarySpan(lhs.declSpan, `Type of ${action.key.value} inferred here`)
         );
         return;
     }
@@ -154,9 +155,7 @@ function narrow(
         return res;
     }
 
-    
-    
-    throw Error("Not implemented");
+    return []; // TODO: NOT IMPLEMENTED!
 }
 
 function narrowCondition(

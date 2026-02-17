@@ -29,7 +29,7 @@ export function parseIrActions(
     sm: SourceMap,
     path: string,
 ): ParseResult<IrAction[]> {
-    const gcx = new GlobalCtxt(sm);
+    const gcx = new GlobalCtxt(sm, path);
     const actions = parseHtsl(gcx, path);
     return { value: actions, diagnostics: gcx.diagnostics, gcx };
 }
@@ -48,7 +48,7 @@ export function parseIrImportables(
     sm: SourceMap,
     path: string,
 ): ParseResult<IrImportable[]> {
-    const gcx = new GlobalCtxt(sm);
+    const gcx = new GlobalCtxt(sm, path);
     parseImportJson(gcx, path);
     return { value: gcx.importables, diagnostics: gcx.diagnostics, gcx };
 }

@@ -8,13 +8,9 @@ export function getGamemode(): Gamemode {
     const player = Player.getPlayer();
     const gameType = player.func_178889_l/*getCurrentGameType*/();
 
-    if (
-        gameType.func_77145_d/*isCreative*/()
-    ) {
+    if (gameType.func_77145_d/*isCreative*/()) {
         return "Creative";
-    } else if (
-        gameType.func_82752_c/*isAdventure*/()
-    ) {
+    } else if (gameType.func_82752_c/*isAdventure*/()) {
         return "Adventure";
     } else {
         return "Survival";

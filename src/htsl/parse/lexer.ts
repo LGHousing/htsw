@@ -26,6 +26,17 @@ export class Lexer {
         const c = this.next();
 
         if (c === "/" && this.peek() === "/") {
+            if (this.peek(1) == "/") {
+                // parse doc comment
+                let value = "";
+                
+                do {
+                    value += this.next();
+                } while (this.hasNext() && this.peek() !== "\n");
+                
+                return token("doc_comment", new Span(lo, this.posWithOffset), { value });
+            }
+            
             // eat line comment
             do {
                 this.next();
@@ -87,15 +98,17 @@ export class Lexer {
             }
             return token("bin_op", new Span(lo, this.posWithOffset), { op: "slash" });
         }
-        if (c === "<" && this.peek() == "<") {
-            if (this.peek(1) === "=") {
+        if (c === "<" && this.peek(0) == "<") {
+            this.next();
+            if (this.peek(0) === "=") {
                 this.next();
                 return token("bin_op_eq", new Span(lo, lo + 3), { op: "lt_lt" });
             }
             return token("bin_op", singleSpan, { op: "lt_lt" });
         }
-        if (c === ">" && this.peek() == ">") {
-            if (this.peek(1) === "=") {
+        if (c === ">" && this.peek(0) == ">") {
+            this.next();
+            if (this.peek(0) === "=") {
                 this.next();
                 return token("bin_op_eq", new Span(lo, lo + 3), { op: "gt_gt" });
             }

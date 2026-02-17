@@ -14,10 +14,12 @@ export function parseActions(gcx: GlobalCtxt, node: json.Node): IrAction[] {
             .addPrimarySpan(nodeSpan(node), "Invalid extension")
     }
 
-    if (!gcx.sourceMap.fileLoader.fileExists(path)) {
+    if (!gcx.fileExists(path)) {
         throw Diagnostic.error("HTSL file does not exist")
             .addPrimarySpan(nodeSpan(node), "Not found")
     }
-
-    return parseHtsl(gcx, path);
+    
+    const resolvedPath = gcx.resolvePath(path);
+    
+    return parseHtsl(gcx, resolvedPath);
 }

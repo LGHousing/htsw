@@ -58,8 +58,7 @@ export function stepClickButtonOrNextPage(name: string): Step {
                 then: () => [
                     {
                         type: "CLICK_BUTTON",
-                        key: "next_page",
-                        keyIsNormalized: true,
+                        key: "Next Page",
                     },
                     stepClickButtonOrNextPage(name),
                 ],

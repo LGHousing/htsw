@@ -50,14 +50,16 @@ export type Location =
     | { type: "Current Location" }
     | { type: "Custom Coordinates", value: string };
 
-export type AABB = {
-    x1: number;
-    y1: number;
-    z1: number;
-    x2: number;
-    y2: number;
-    z2: number;
+export type Bounds = {
+    from: Pos;
+    to: Pos;
 };
+
+export type Pos = {
+    x: number;
+    y: number;
+    z: number;
+}
 
 export type MenuSlot = {
     slot: number;

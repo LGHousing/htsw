@@ -19,33 +19,48 @@ export type IrAction = IrObject<Action>;
 export type IrCondition = IrObject<Condition>;
 
 export function unwrapIr<T>(element: Ir<T>): T {
-    return unwrapTransform(element);
-}
-
-function unwrapTransform(ir: any): any {
-    const result: any = { type: ir.type };
-
-    for (const key in ir) {
-        if (key === "type" || key === "kwSpan" || key === "span") continue;
-        result[key] = unwrapValue(ir[key]);
+    // Arrays: unwrap each element
+    if (Array.isArray(element)) {
+        return element.map(e => unwrapIr(e)) as T;
     }
-    return result;
-}
 
-function unwrapValue(value: any): any {
-    if (value === null || value === undefined) return value;
-    if (Array.isArray(value)) {
-        return value.map(unwrapValue);
-    }
-    if (typeof value === "object") {
-        if ("type" in value && "kwSpan" in value && "span" in value) {
-            return unwrapTransform(value);
+    // Non-null object case
+    if (element !== null && typeof element === "object") {
+        const obj: any = element;
+        const result: any = {};
+
+        for (const key of Object.keys(obj)) {
+            const value = obj[key];
+
+            if (key === "type") {
+                // Copy through raw
+                result.type = value;
+                continue;
+            }
+
+            if (key === "typeSpan" || key === "span") {
+                // Skip metadata
+                continue;
+            }
+
+            if (value === undefined) {
+                result[key] = undefined;
+                continue;
+            }
+
+            // Spanned<Ir<U>>: unwrap by returning the inner value
+            if (typeof value === "object" && value !== null && "value" in value) {
+                result[key] = unwrapIr((value as any).value);
+            } else {
+                result[key] = unwrapIr(value);
+            }
         }
-        if ("value" in value && "span" in value) {
-            return unwrapValue(value.value);
-        }
+
+        return result;
     }
-    return value;
+
+    // Primitive (string, number, boolean, null, undefined)
+    return element as T;
 }
 
 export function irKeys(value: any) {

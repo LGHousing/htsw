@@ -3,7 +3,7 @@ import type { Ir, IrAction } from "htsw/ir";
 import type { ActionActionBar, ActionChangeVar, ActionConditional, ActionFunction, ActionMessage, ActionPauseExecution, ActionPlaySound, ActionRandom, ActionSetVelocity, ActionTeleport, ActionTitle } from "htsw/types";
 
 import { ExitError, PauseError, Simulator } from "./simulator";
-import { VarHolder, parseValue } from "./vars";
+import { VarHolder, VarLong, parseValue } from "./vars";
 import { replacePlaceholders } from "./placeholders";
 import { runCondition } from "./conditions";
 import { coerceWithin } from "./helpers";
@@ -68,19 +68,22 @@ function runActionChangeVar(action: Ir<ActionChangeVar>) {
 
     if (!action.value) return;
 
-    const lhs = varHolder.getVar(varKey);
     const rhs = parseValue(action.value.value);
-
+    const lhs = varHolder.getVar(varKey, rhs.unsetValue());
+    
     if (action.op.value === "Set") {
         varHolder.setVar(varKey, rhs);
         return;
     }
 
     const opStr = htsl.helpers.OPERATION_SYMBOLS[action.op.value];
+    
+    const lhsType = varHolder.hasVar(varKey) ? "unknown" : lhs.type;
 
     const err = Diagnostic
-        .error(`Operator ${opStr} cannot be applied to types ${lhs.value === "" ? "unknown" : lhs.type} and ${rhs.type}`)
-        .addPrimarySpan(action.op.span);
+        .error(`Operator ${opStr} cannot be applied to types ${lhsType} and ${rhs.type}`)
+        .addPrimarySpan(action.op.span)
+        .addSecondarySpan(action.key.span, `Value is ${lhs.toDisplayString()}`);
 
     if (lhs.type !== rhs.type || lhs.type === "string" || rhs.type === "string") {
         throw err;

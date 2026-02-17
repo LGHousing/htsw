@@ -220,7 +220,7 @@ export type ActionCancelEvent = {
     type: "CANCEL_EVENT";
 };
 
-export type Action =
+export type Action = (
     | ActionConditional
     | ActionSetGroup
     | ActionKill
@@ -255,4 +255,5 @@ export type Action =
     | ActionSetVelocity
     | ActionLaunch
     | ActionExit
-    | ActionCancelEvent;
+    | ActionCancelEvent
+) & { note?: string };

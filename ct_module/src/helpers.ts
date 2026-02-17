@@ -107,11 +107,44 @@ export function chatSeparator(): string {
 }
 
 export class FileSystemFileLoader implements FileLoader {
+    private rootPath(): any {
+        return Java.type("java.nio.file.Paths")
+            .get("./config/ChatTriggers/modules/HTSW")
+            .toAbsolutePath()
+            .normalize();
+    }
+
+    private normalizePath(path: string): string {
+        const Paths = Java.type("java.nio.file.Paths");
+        const p = Paths.get(path);
+        if (p.isAbsolute()) return p.normalize().toString();
+        return this.rootPath().resolve(p).normalize().toString();
+    }
+
     fileExists(path: string): boolean {
-        return FileLib.exists(path);
+        return FileLib.exists(this.normalizePath(path));
     }
     readFile(path: string): string {
-        return FileLib.read(path);
+        return FileLib.read(this.normalizePath(path));
+    }
+    getParentPath(base: string): string {
+        const Paths = Java.type("java.nio.file.Paths");
+        const basePath = Paths.get(base);
+        const normalized = basePath.isAbsolute()
+            ? basePath.normalize()
+            : this.rootPath().resolve(basePath).normalize();
+
+        return normalized.getParent().toAbsolutePath().toString();
+    }
+    resolvePath(base: string, other: string): string {
+        const Paths = Java.type("java.nio.file.Paths");
+        const basePath = Paths.get(base);
+        const otherPath = Paths.get(other);
+        const normalizedBase = basePath.isAbsolute()
+            ? basePath.normalize()
+            : this.rootPath().resolve(basePath).normalize();
+
+        return normalizedBase.resolve(otherPath).normalize().toAbsolutePath().toString();
     }
 }
 
@@ -127,5 +160,11 @@ export class StringFileLoader implements FileLoader {
     }
     readFile(path: string): string {
         return this.src;
+    }
+    getParentPath(base: string): string {
+        return "";
+    }
+    resolvePath(base: string, other: string): string {
+        return "";
     }
 }

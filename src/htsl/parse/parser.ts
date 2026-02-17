@@ -3,6 +3,7 @@ import type { Lexer } from "./lexer";
 import {
     type CloseDelimKind,
     type Delimiter,
+    type DocCommentKind,
     type F64Kind,
     type I64Kind,
     type IdentKind,
@@ -171,6 +172,11 @@ export class Parser {
         }
 
         throw err;
+    }
+    
+    parseDocComment(): string {
+        this.expect("doc_comment");
+        return (this.prev as DocCommentKind).value;
     }
 
     parseIdent(): string {

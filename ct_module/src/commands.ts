@@ -37,6 +37,7 @@ function commandImport(args: string[]) {
         ChatLib.chat("");
         ChatLib.chat("&f/import [path]");
         ChatLib.chat(`&7${chatSeparator()}`);
+        return;
     }
 
     const sm = new SourceMap(new FileSystemFileLoader());
@@ -47,6 +48,8 @@ function commandImport(args: string[]) {
     if (!result.gcx.isFailed()) {
         Importer.import(unwrapIr<Importable[]>(result.value));
         ChatLib.chat("&aImport started.");
+    } else {
+        ChatLib.chat("&cImport failed.");
     }
 
     return;
@@ -66,6 +69,11 @@ function commandSimulator(args: string[]) {
     }
 
     if (args[0] === "start") {
+        if (Simulator.isActive) {
+            Simulator.stop();
+            ChatLib.chat("&aSimulator stopped.");
+        }
+        
         const sm = new SourceMap(new FileSystemFileLoader());
         const result = parseIrImportables(sm, args[1]);
 
@@ -74,8 +82,7 @@ function commandSimulator(args: string[]) {
         if (result.gcx.isFailed()) {
             const errCount = result.diagnostics.filter(it => it.level === "error").length;
             printDiagnostic(
-                sm, Diagnostic
-                    .error(`Simulate failed with ${errCount} errors`)
+                sm, Diagnostic.error(`Simulate failed with ${errCount} errors`)
             );
         } else {
             Simulator.start(sm, result.value);
@@ -86,6 +93,12 @@ function commandSimulator(args: string[]) {
     }
 
     if (args[0] === "restart") {
+        if (!Simulator.isActive) {
+            ChatLib.chat("&cNo simulator active.");
+        } else {
+            Simulator.restart();
+            ChatLib.chat("&aSimulator restarted.");
+        }
         return;
     }
 
