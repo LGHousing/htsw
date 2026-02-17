@@ -5,10 +5,10 @@
         "lib": ["ES5", "DOM"],
         "isolatedModules": true,
         "strict": true,
-        "moduleResolution": "Node",
+        "moduleResolution": "bundler",
         "esModuleInterop": true,
         "skipLibCheck": true,
-        "noEmit": true
+        "noEmit": true 
     },
     "include": ["src"]
 }

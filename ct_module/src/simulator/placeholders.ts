@@ -1,4 +1,4 @@
-import * as htsl from "htsl";
+import { VERSION } from "htsw";
 
 import { getDate, getGamemode, randomLong } from "./helpers";
 import { Var, VarString, VarLong, VarDouble, parseValue } from "./vars";
@@ -34,7 +34,7 @@ const MOCK_DATA = {
         },
     },
     house: {
-        name: `HTSL Runtime ${htsl.helpers.VERSION}`,
+        name: `HTSL Runtime ${VERSION}`,
         guests: 0,
         cookies: 0,
         visitingrules: "&cPRIVATE",
@@ -77,20 +77,22 @@ export function replacePlaceholders(value: string): string {
  * (the parser should prevent this, if it doesn't, it's a bug).
  */
 export function parsePlaceholder(placeholder: string): Var<any> {
-    const [name, argsString] = placeholder.split("/");
-
+    const pivotIndex = placeholder.indexOf("/");
+    const name = placeholder.substring(0, pivotIndex);
+    const argsString = placeholder.substring(pivotIndex + 1);
+    
     let args: string[] = [];
     if (argsString) {
-        args = argsString.split(" ").filter((arg) => arg);
+        args = argsString.split(" ").filter((arg) => arg != "");
         if (args.length === 0) args = [""]; // Fixes weird parsing by hypixles :)
     }
-
+    
     const result = runPlaceholder(name, ...args);
-
+    
     if (result === undefined) {
         throw new Error(`Placeholder "${name}" could not be resolved.`);
     }
-
+    
     return result;
 }
 
@@ -109,9 +111,7 @@ export function runPlaceholder(name: string, ...args: string[]): Var<any> | unde
             return VarLong.fromNumber(Player.getHP());
         case "player.maxhealth":
             return VarLong.fromNumber(
-                Player.getPlayer()
-                    .func_110138_aP /*getMaxHealth*/
-                    ()
+                Player.getPlayer().func_110138_aP/*getMaxHealth*/()
             );
         case "player.hunger":
             return VarLong.fromNumber(Player.getHunger());
@@ -197,10 +197,13 @@ export function runPlaceholder(name: string, ...args: string[]): Var<any> | unde
         case "random.decimal":
             return runPlaceholderRandomDecimal(args);
 
+        case "stat.player":
         case "var.player":
             return runPlaceholderVarPlayer(args);
+        case "stat.global":
         case "var.global":
             return runPlaceholderVarGlobal(args);
+        case "stat.team":
         case "var.team":
             return runPlaceholderVarTeam(args);
     }

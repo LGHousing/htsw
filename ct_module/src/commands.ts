@@ -1,14 +1,15 @@
-import * as htsl from "htsl";
+import { VERSION, SourceMap, parseIrImportables, Diagnostic } from "htsw";
+import { unwrapIr } from "htsw/ir";
+import { Importable } from "htsw/types";
 
-import { chatSeparator, chatWidth } from "./helpers";
+import { chatSeparator, FileSystemFileLoader } from "./helpers";
 import { Simulator } from "./simulator";
-import { printDiagnostic } from "./compiler/diagnostics";
 import { Importer } from "./importer/importer";
+import { printDiagnostic, printDiagnostics } from "./tui/diagnostics";
 
 export function registerCommands() {
-    register("command", (...args) => commandHtsl(args))
-        .setName("htsl")
-        .setAliases("htsw");
+    register("command", (...args) => commandHtsw(args))
+        .setName("htsw");
     register("command", (...args) => commandImport(args))
         .setName("import")
     register("command", (...args) => commandSimulator(args))
@@ -16,9 +17,9 @@ export function registerCommands() {
         .setAliases("sim");
 }
 
-function commandHtsl(args: string[]) {
+function commandHtsw(args: string[]) {
     ChatLib.chat(`&7${chatSeparator()}`);
-    const title = `&e&lHTSW &f&l${htsl.helpers.VERSION}`;
+    const title = `&e&lHTSW &f&l${VERSION}`;
     ChatLib.chat(`${ChatLib.getCenteredText(title)}`);
     const subtitle = `&fCreated by @sndyx and @j_sse`;
     ChatLib.chat(`${ChatLib.getCenteredText(subtitle)}`);
@@ -31,35 +32,33 @@ function commandHtsl(args: string[]) {
 function commandImport(args: string[]) {
     if (args.length === 0) {
         ChatLib.chat(`&7${chatSeparator()}`);
-        const title = `&e&lHTSW &fImporter &f&l${htsl.helpers.VERSION}`;
+        const title = `&e&lHTSW &fImporter &f&l${VERSION}`;
         ChatLib.chat(`${ChatLib.getCenteredText(title)}`);
         ChatLib.chat("");
         ChatLib.chat("&f/import [path]");
         ChatLib.chat(`&7${chatSeparator()}`);
+        return;
     }
 
-    const sm = new htsl.SourceMap();
-    const file = FileLib.read(args[0]);
-    sm.addFile(file, args[0]);
+    const sm = new SourceMap(new FileSystemFileLoader());
+    const result = parseIrImportables(sm, args[0]);
 
-    const result = htsl.parse.parseFromSourceMap(sm);
+    printDiagnostics(sm, result.diagnostics);
 
-    if (result.diagnostics.length !== 0) {
-        for (const diagnostic of result.diagnostics) {
-            printDiagnostic(sm, diagnostic);
-        }
-    } else {
-        const holders: htsl.ActionHolder[] = htsl.actions(file);
-        Importer.import(holders);
+    if (!result.gcx.isFailed()) {
+        Importer.import(unwrapIr<Importable[]>(result.value));
         ChatLib.chat("&aImport started.");
+    } else {
+        ChatLib.chat("&cImport failed.");
     }
+
     return;
 }
 
 function commandSimulator(args: string[]) {
     if (args.length === 0) {
         ChatLib.chat(`&7${chatSeparator()}`);
-        const title = `&e&lHTSW &fSimulator Runtime &f&l${htsl.helpers.VERSION}`;
+        const title = `&e&lHTSW &fSimulator Runtime &f&l${VERSION}`;
         ChatLib.chat(`${ChatLib.getCenteredText(title)}`);
         ChatLib.chat("");
         ChatLib.chat("&f/simulator [start [path] | restart | stop ]");
@@ -70,26 +69,36 @@ function commandSimulator(args: string[]) {
     }
 
     if (args[0] === "start") {
-        const sm = new htsl.SourceMap();
-        if (args.length > 1) {
-            const file = FileLib.read(args[1]);
-            sm.addFile(file, args[1]);
+        if (Simulator.isActive) {
+            Simulator.stop();
+            ChatLib.chat("&aSimulator stopped.");
         }
+        
+        const sm = new SourceMap(new FileSystemFileLoader());
+        const result = parseIrImportables(sm, args[1]);
 
-        const result = htsl.parse.parseFromSourceMap(sm);
+        printDiagnostics(sm, result.diagnostics);
 
-        if (result.diagnostics.length !== 0) {
-            for (const diagnostic of result.diagnostics) {
-                printDiagnostic(sm, diagnostic);
-            }
+        if (result.gcx.isFailed()) {
+            const errCount = result.diagnostics.filter(it => it.level === "error").length;
+            printDiagnostic(
+                sm, Diagnostic.error(`Simulate failed with ${errCount} errors`)
+            );
         } else {
-            Simulator.start(sm, result.holders);
+            Simulator.start(sm, result.value);
             ChatLib.chat("&aSimulator started.");
         }
+        
         return;
     }
 
     if (args[0] === "restart") {
+        if (!Simulator.isActive) {
+            ChatLib.chat("&cNo simulator active.");
+        } else {
+            Simulator.restart();
+            ChatLib.chat("&aSimulator restarted.");
+        }
         return;
     }
 

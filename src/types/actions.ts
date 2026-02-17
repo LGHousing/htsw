@@ -12,6 +12,7 @@ import type {
     Sound,
     VarName,
     VarHolder,
+    VarOperation,
 } from "./types";
 
 export type ActionConditional = {
@@ -106,7 +107,7 @@ export type ActionChangeVar = {
     type: "CHANGE_VAR";
     holder: VarHolder;
     key: VarName;
-    op: Operation | "unset";
+    op: VarOperation;
     value: Value;
     unset?: boolean;
 };
@@ -219,7 +220,7 @@ export type ActionCancelEvent = {
     type: "CANCEL_EVENT";
 };
 
-export type Action =
+export type Action = (
     | ActionConditional
     | ActionSetGroup
     | ActionKill
@@ -254,4 +255,5 @@ export type Action =
     | ActionSetVelocity
     | ActionLaunch
     | ActionExit
-    | ActionCancelEvent;
+    | ActionCancelEvent
+) & { note?: string };

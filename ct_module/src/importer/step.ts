@@ -19,6 +19,16 @@ export type StepClickButton = {
     key: string;
 };
 
+export type StepClickSlot = {
+    type: "CLICK_SLOT";
+    slot: number;
+};
+
+export type StepSelectItem = {
+    type: "SELECT_ITEM";
+    item: string;
+};
+
 export type StepConditional = {
     type: "CONDITIONAL";
     condition: () => boolean;
@@ -31,4 +41,6 @@ export type Step =
     | StepSendMessage
     | StepSelectValue
     | StepClickButton
+    | StepClickSlot
+    | StepSelectItem
     | StepConditional;

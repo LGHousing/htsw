@@ -11,11 +11,21 @@ export class Span {
         return new Span(pos, pos);
     }
 
+    static dummy(): Span {
+        return Span.single(-1);
+    }
+
     startSpan(): Span {
-        return Span.single(this.end);
+        return Span.single(this.start);
     }
 
     endSpan(): Span {
         return Span.single(this.end);
+    }
+
+    to(other: Span) {
+        const start = Math.min(this.start, other.start);
+        const end = Math.max(this.end, other.end);
+        return new Span(start, end);
     }
 }

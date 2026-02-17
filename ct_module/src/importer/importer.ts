@@ -1,4 +1,4 @@
-import * as htsl from "htsl";
+import { Importable } from "htsw/types";
 
 import type { Step, StepSelectValue } from "./step";
 import { getSlotFromName, ButtonType } from "../slots";
@@ -7,9 +7,11 @@ import {
     setAnvilItemName,
     acceptNewAnvilItem,
 } from "../helpers";
+import { getItemFromNbt } from "../utils/getItemFromNbt";
+import { loadItemstack } from "../utils/loadItemstack";
 
 import { stepClickButtonOrNextPage } from "./helpers";
-import { stepsForHolder } from "./holders";
+import { stepsForImportable } from "./importables";
 
 export class Importer {
     static remainingSteps: Step[] = [];
@@ -17,12 +19,14 @@ export class Importer {
     static lastStepExecutedAt: number;
 
     static isImporting: boolean = false;
-    static triggers: Trigger[];
+    static triggers: Trigger[] = [];
 
     private static init() {
         this.remainingSteps = [];
         this.nextIterationWaitUntil = 0;
         this.lastStepExecutedAt = Date.now();
+        this.isImporting = true;
+        this.triggers = [];
 
         this.triggers.push(register("tick", () => {
             try {
@@ -37,13 +41,13 @@ export class Importer {
         }));
     }
 
-    static import(holders: htsl.ActionHolder[]) {
+    static import(importables: Importable[]) {
         if (!this.isImporting) this.init();
 
         const steps: Step[] = [];
 
-        for (const holder of holders) {
-            steps.push(...stepsForHolder(holder));
+        for (const importable of importables) {
+            steps.push(...stepsForImportable(importable));
         }
 
         this.remainingSteps.push(...steps);
@@ -102,6 +106,31 @@ export class Importer {
         return true;
     }
 
+    private static executeSelectItemStep(step: { item: string }): boolean {
+        const container = Player.getContainer();
+        if (!container) {
+            throw new Error("No open container found");
+        }
+
+        const slotMatch = step.item.match(/^slot_(\d+)$/);
+        if (slotMatch) {
+            const slot = Number(slotMatch[1]);
+            container.click(slot + 35, false);
+            this.nextIterationWaitUntil = Date.now() + 200;
+            return false;
+        }
+
+        if (!Player.asPlayerMP().player.field_71075_bZ.field_75098_d) {
+            throw new Error("Must be in creative mode to import custom items");
+        }
+
+        const item = getItemFromNbt(step.item).getItemStack();
+        loadItemstack(item, 26);
+        container.click(53, false);
+        this.nextIterationWaitUntil = Date.now() + 200;
+        return false;
+    }
+
     private static executeStep(step: Step): boolean {
         switch (step.type) {
             case "RUN_COMMAND":
@@ -124,6 +153,16 @@ export class Importer {
                 slot.click(ButtonType.LEFT);
                 this.nextIterationWaitUntil = Date.now() + 200;
                 return false;
+            case "CLICK_SLOT":
+                const container = Player.getContainer();
+                if (container == null) {
+                    throw new Error("No open container found");
+                }
+                container.click(step.slot, false);
+                this.nextIterationWaitUntil = Date.now() + 200;
+                return false;
+            case "SELECT_ITEM":
+                return this.executeSelectItemStep(step);
             case "CONDITIONAL":
                 const condition = step.condition;
                 if (condition()) {

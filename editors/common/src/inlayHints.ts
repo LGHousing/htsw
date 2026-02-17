@@ -1,4 +1,4 @@
-import * as htsl from "htsl/src";
+import * as htsl from "htsl";
 
 type InlayHint = {
     label: string;

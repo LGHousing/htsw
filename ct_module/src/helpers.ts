@@ -1,3 +1,5 @@
+import { FileLoader } from "htsw";
+
 export function removeFormatting(str: string): string {
     return str.replace(/(?:§|&)[0-9a-fklmnor]/g, "");
 }
@@ -89,7 +91,12 @@ export function acceptNewAnvilItem(): void {
 }
 
 export function chatWidth(string: string): number {
-    return Client.getMinecraft().field_71466_p.func_78256_a(string);
+    const raw = ChatLib.removeFormatting(ChatLib.replaceFormatting(string));
+    return Client.getMinecraft().field_71466_p.func_78256_a(raw);
+}
+
+export function spaceWidth() {
+    return chatWidth(" ");
 }
 
 export function chatSeparator(): string {
@@ -97,4 +104,67 @@ export function chatSeparator(): string {
     const sepWidth = chatWidth("-");
 
     return "-".repeat(totalWidth / sepWidth);
+}
+
+export class FileSystemFileLoader implements FileLoader {
+    private rootPath(): any {
+        return Java.type("java.nio.file.Paths")
+            .get("./config/ChatTriggers/modules/HTSW")
+            .toAbsolutePath()
+            .normalize();
+    }
+
+    private normalizePath(path: string): string {
+        const Paths = Java.type("java.nio.file.Paths");
+        const p = Paths.get(path);
+        if (p.isAbsolute()) return p.normalize().toString();
+        return this.rootPath().resolve(p).normalize().toString();
+    }
+
+    fileExists(path: string): boolean {
+        return FileLib.exists(this.normalizePath(path));
+    }
+    readFile(path: string): string {
+        return FileLib.read(this.normalizePath(path));
+    }
+    getParentPath(base: string): string {
+        const Paths = Java.type("java.nio.file.Paths");
+        const basePath = Paths.get(base);
+        const normalized = basePath.isAbsolute()
+            ? basePath.normalize()
+            : this.rootPath().resolve(basePath).normalize();
+
+        return normalized.getParent().toAbsolutePath().toString();
+    }
+    resolvePath(base: string, other: string): string {
+        const Paths = Java.type("java.nio.file.Paths");
+        const basePath = Paths.get(base);
+        const otherPath = Paths.get(other);
+        const normalizedBase = basePath.isAbsolute()
+            ? basePath.normalize()
+            : this.rootPath().resolve(basePath).normalize();
+
+        return normalizedBase.resolve(otherPath).normalize().toAbsolutePath().toString();
+    }
+}
+
+export class StringFileLoader implements FileLoader {
+    src: string;
+
+    constructor(src: string) {
+        this.src = src;
+    }
+
+    fileExists(path: string): boolean {
+        return true;
+    }
+    readFile(path: string): string {
+        return this.src;
+    }
+    getParentPath(base: string): string {
+        return "";
+    }
+    resolvePath(base: string, other: string): string {
+        return "";
+    }
 }
