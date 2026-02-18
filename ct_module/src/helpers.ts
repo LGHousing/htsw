@@ -1,6 +1,6 @@
 import { FileLoader } from "htsw";
 
-export function removeFormatting(str: string): string {
+export function removedFormatting(str: string): string {
     return str.replace(/(?:§|&)[0-9a-fklmnor]/g, "");
 }
 
@@ -47,7 +47,7 @@ export function chatHistoryContains(
         if (formatted) {
             entryMessage = entry.message;
         } else {
-            entryMessage = removeFormatting(entry.message);
+            entryMessage = removedFormatting(entry.message);
         }
 
         let matches: boolean;
