@@ -42,20 +42,65 @@ describe("Import JSON Items", () => {
             importJsonPath
         );
         
-        // Log diagnostics for debugging
-        console.log("Diagnostics:", result.diagnostics);
-        
         expect(result.diagnostics.length).toBe(0);
-        expect(result.value.length).toBe(1);
+        expect(result.value.length).toBe(2);
         
-        const item = result.value[0];
-        expect(item.type).toBe("ITEM");
+        // Test first item (only rightClickActions)
+        const item1 = result.value[0];
+        expect(item1.type).toBe("ITEM");
         
-        if (item.type === "ITEM") {
-            expect(item.key?.value).toBe("my_item");
-            expect(item.snbt?.value).toContain("minecraft:diamond_sword");
-            expect(item.rightClickActions?.value).toBeDefined();
-            expect(item.rightClickActions?.value.length).toBeGreaterThan(0);
+        if (item1.type === "ITEM") {
+            expect(item1.key?.value).toBe("my_item");
+            expect(item1.snbt?.value).toContain("minecraft:diamond_sword");
+            expect(item1.rightClickActions?.value).toBeDefined();
+            expect(item1.rightClickActions?.value.length).toBeGreaterThan(0);
+            expect(item1.leftClickActions).toBeUndefined();
         }
+        
+        // Test second item (both leftClickActions and rightClickActions)
+        const item2 = result.value[1];
+        expect(item2.type).toBe("ITEM");
+        
+        if (item2.type === "ITEM") {
+            expect(item2.key?.value).toBe("full_item");
+            expect(item2.snbt?.value).toContain("minecraft:diamond_sword");
+            expect(item2.leftClickActions?.value).toBeDefined();
+            expect(item2.leftClickActions?.value.length).toBeGreaterThan(0);
+            expect(item2.rightClickActions?.value).toBeDefined();
+            expect(item2.rightClickActions?.value.length).toBeGreaterThan(0);
+        }
+    });
+
+    test("should validate SNBT file extension", () => {
+        const testDir = "/tmp/test_items_invalid";
+        fs.mkdirSync(testDir, { recursive: true });
+        
+        // Create an import.json with wrong file extension
+        const importJson = {
+            items: [{
+                key: "bad_item",
+                nbt: "not_snbt.txt",
+                rightClickActions: "actions.htsl"
+            }]
+        };
+        
+        fs.writeFileSync(
+            path.join(testDir, "import.json"),
+            JSON.stringify(importJson, null, 2)
+        );
+        
+        const fileLoader = new TestFileLoader(testDir);
+        const importJsonPath = path.join(testDir, "import.json");
+        const result = htsw.parseIrImportables(
+            new htsw.SourceMap(fileLoader), 
+            importJsonPath
+        );
+        
+        // Should have an error diagnostic
+        expect(result.diagnostics.length).toBeGreaterThan(0);
+        expect(result.diagnostics[0].message).toContain(".snbt");
+        
+        // Clean up
+        fs.rmSync(testDir, { recursive: true, force: true });
     });
 });

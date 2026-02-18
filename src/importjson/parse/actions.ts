@@ -28,13 +28,13 @@ export function parseSnbt(gcx: GlobalCtxt, node: json.Node): string {
     const path = parseString(gcx, node);
 
     if (!path.endsWith(".snbt")) {
-        throw Diagnostic.error("Expected SNBT file")
-            .addPrimarySpan(nodeSpan(node), "Invalid extension")
+        throw Diagnostic.error("File must have .snbt extension")
+            .addPrimarySpan(nodeSpan(node), `Expected .snbt file, got '${path}'`)
     }
 
     if (!gcx.fileExists(path)) {
-        throw Diagnostic.error("SNBT file does not exist")
-            .addPrimarySpan(nodeSpan(node), "Not found")
+        throw Diagnostic.error(`SNBT file not found: ${path}`)
+            .addPrimarySpan(nodeSpan(node), "File does not exist")
     }
     
     return gcx.readFile(path);
