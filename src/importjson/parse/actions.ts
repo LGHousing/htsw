@@ -11,12 +11,12 @@ export function parseActions(gcx: GlobalCtxt, node: json.Node): IrAction[] {
 
     if (!path.endsWith(".htsl")) {
         throw Diagnostic.error("Expected HTSL file")
-            .addPrimarySpan(nodeSpan(node), "Invalid extension")
+            .addPrimarySpan(nodeSpan(node), "Invalid extension");
     }
 
     if (!gcx.fileExists(path)) {
         throw Diagnostic.error("HTSL file does not exist")
-            .addPrimarySpan(nodeSpan(node), "Not found")
+            .addPrimarySpan(nodeSpan(node), "Not found");
     }
     
     const resolvedPath = gcx.resolvePath(path);
@@ -29,12 +29,12 @@ export function parseSnbt(gcx: GlobalCtxt, node: json.Node): string {
 
     if (!path.endsWith(".snbt")) {
         throw Diagnostic.error("File must have .snbt extension")
-            .addPrimarySpan(nodeSpan(node), `Expected .snbt file, got '${path}'`)
+            .addPrimarySpan(nodeSpan(node), `Expected .snbt file, got '${path}'`);
     }
 
     if (!gcx.fileExists(path)) {
         throw Diagnostic.error(`SNBT file not found: ${path}`)
-            .addPrimarySpan(nodeSpan(node), "File does not exist")
+            .addPrimarySpan(nodeSpan(node), "File does not exist");
     }
     
     return gcx.readFile(path);
