@@ -9,6 +9,7 @@ import type { Action, Importable } from "./types";
 export * from "./sourceMap";
 export * from "./context";
 export * from "./diagnostic";
+export * from "./span";
 
 export * as types from "./types";
 export * as ir from "./ir";

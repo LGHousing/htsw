@@ -8,6 +8,8 @@ export class GlobalCtxt {
     sourceMap: SourceMap;
     importables: IrImportable[];
     diagnostics: Diagnostic[];
+    activeImportJsonPaths: string[];
+    loadedImportJsonPaths: Set<string>;
 
     constructor(
         sourceMap: SourceMap,
@@ -17,6 +19,8 @@ export class GlobalCtxt {
         this.path = path;
         this.importables = [];
         this.diagnostics = [];
+        this.activeImportJsonPaths = [];
+        this.loadedImportJsonPaths = new Set<string>();
     }
     
     addDiagnostic(diag: Diagnostic) {
@@ -48,6 +52,8 @@ export class GlobalCtxt {
         const gcx = new GlobalCtxt(this.sourceMap, this.resolvePath(path));
         gcx.importables = this.importables;
         gcx.diagnostics = this.diagnostics;
+        gcx.activeImportJsonPaths = this.activeImportJsonPaths;
+        gcx.loadedImportJsonPaths = this.loadedImportJsonPaths;
         return gcx;
     }
 }

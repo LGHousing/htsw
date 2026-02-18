@@ -116,7 +116,7 @@ export class SourceMap {
         // try to read the file
         let src: string;
         try {
-            src = this.fileLoader.readFile(path).replaceAll("\r", "");
+            src = this.fileLoader.readFile(path);
         } catch (e) {
             throw Diagnostic.error(`Failed to read file '${path}'`);
         }

@@ -17,9 +17,9 @@
             "import": "./dist/ir.js",
             "types": "./dist/ir.d.ts"
         },
-        "./htsl": {
-            "import": "./dist/htsl/index.js",
-            "types": "./dist/htsl/index.d.ts"
+        "./htsw": {
+            "import": "./dist/htsw/index.js",
+            "types": "./dist/htsw/index.d.ts"
         }
     },
     "scripts": {

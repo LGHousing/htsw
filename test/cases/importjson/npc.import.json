@@ -1,0 +1,24 @@
+{
+  "npcs": [
+    {
+      "name": "Guide",
+      "pos": {
+        "x": 1,
+        "y": 2,
+        "z": 3
+      },
+      "leftClickActions": "empty.htsl",
+      "rightClickActions": "empty.htsl",
+      "lookAtPlayers": true,
+      "hideNameTag": false,
+      "skin": "Steve",
+      "equipment": {
+        "helmet": "empty.snbt",
+        "chestplate": "empty.snbt",
+        "leggings": "empty.snbt",
+        "boots": "empty.snbt",
+        "hand": "empty.snbt"
+      }
+    }
+  ]
+}

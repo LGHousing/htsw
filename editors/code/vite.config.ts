@@ -8,7 +8,7 @@ export default defineConfig({
             fileName: "extension",
         },
         rollupOptions: {
-            external: ["vscode"],
+            external: ["vscode", /^node:/],
         },
         sourcemap: true,
         outDir: "dist",

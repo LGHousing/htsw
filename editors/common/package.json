@@ -3,8 +3,12 @@
     "private": true,
     "version": "1.1.1",
     "type": "module",
+    "main": "./src/index.ts",
+    "exports": {
+        ".": "./src/index.ts"
+    },
     "dependencies": {
-        "htsl": "file:../.."
+        "htsw": "file:../.."
     },
     "devDependencies": {
         "typescript": "~5.7.2"

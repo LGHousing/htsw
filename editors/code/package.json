@@ -16,10 +16,11 @@
         "package": "npx @vscode/vsce package --no-dependencies"
     },
     "dependencies": {
-        "htsl": "file:../..",
+        "htsw": "file:../..",
         "htsl-editor-common": "file:../common"
     },
     "devDependencies": {
+        "@types/node": "^24.10.1",
         "@types/vscode": "^1.97",
         "@vscode/vsce": "^3.6",
         "typescript": "^5.7",
@@ -27,7 +28,9 @@
     },
     "main": "./dist/extension.cjs",
     "activationEvents": [
-        "onLanguage:htsl"
+        "onLanguage:htsl",
+        "onLanguage:json",
+        "onLanguage:jsonc"
     ],
     "contributes": {
         "languages": [
@@ -47,6 +50,16 @@
                 "language": "htsl",
                 "scopeName": "source.htsl",
                 "path": "./htsl.tmGrammar.json"
+            }
+        ],
+        "jsonValidation": [
+            {
+                "fileMatch": "import.json",
+                "url": "./schemas/import.schema.json"
+            },
+            {
+                "fileMatch": "*.import.json",
+                "url": "./schemas/import.schema.json"
             }
         ]
     }

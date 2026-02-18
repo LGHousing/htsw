@@ -74,6 +74,7 @@ export function parseArray<T>(
         } catch (e) {
             if (e instanceof Diagnostic) {
                 gcx.addDiagnostic(e);
+                continue;
             }
             throw e;
         }
@@ -188,19 +189,42 @@ export function parseObject(
             element.parser(valueNode);
             requiredKeys.delete(key);
         } else {
-            gcx.addDiagnostic(
-                Diagnostic.error(`Unknown key '${key}'`)
-                    .addPrimarySpan(nodeSpan(keyNode))
-            );
+            const diag = Diagnostic.error(`Unknown key '${key}'`)
+                .addPrimarySpan(nodeSpan(keyNode));
+
+            const validKeys = Object.keys(tree);
+            if (validKeys.length > 0) {
+                diag.addSubDiagnostic(
+                    Diagnostic.help(`Valid keys are: ${validKeys.join(", ")}`)
+                );
+            }
+
+            gcx.addDiagnostic(diag);
         }
     }
 
     for (const missingKey of requiredKeys) {
-        gcx.addDiagnostic(
-            Diagnostic.error(`Missing required key '${missingKey}'`)
-                .addPrimarySpan(nodeSpan(node).endSpan())
-        );
+        const diag = Diagnostic.error(`Missing required key '${missingKey}'`)
+            .addPrimarySpan(nodeSpan(node).endSpan());
+
+        const validKeys = Object.keys(tree);
+        if (validKeys.length > 0) {
+            diag.addSubDiagnostic(
+                Diagnostic.help(`Allowed keys here: ${validKeys.join(", ")}`)
+            );
+        }
+
+        gcx.addDiagnostic(diag);
     }
+}
+
+export function parseBoolean(gcx: GlobalCtxt, node: json.Node): boolean {
+    if (node.type !== "boolean") {
+        throw Diagnostic.error("Expected boolean")
+            .addPrimarySpan(nodeSpan(node));
+    }
+
+    return node.value as boolean;
 }
 
 export function parseIrBounds(gcx: GlobalCtxt, node: json.Node): Ir<Bounds> {

@@ -1,0 +1,8 @@
+{
+  "events": [
+    {
+      "event": "Player Join",
+      "actions": "empty.htsl"
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+{
+  "include": ["b.import.json"],
+  "regions": [
+    { "name": "RegionA" }
+  ]
+}

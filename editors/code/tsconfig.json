@@ -9,6 +9,7 @@
 
         /* Bundler mode */
         "moduleResolution": "bundler",
+        "types": ["node", "vscode"],
         "allowImportingTsExtensions": true,
         "isolatedModules": true,
         "moduleDetection": "force",

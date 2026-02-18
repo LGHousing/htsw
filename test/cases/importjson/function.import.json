@@ -1,0 +1,9 @@
+{
+  "functions": [
+    {
+      "name": "TickFn",
+      "actions": "empty.htsl",
+      "repeatTicks": 20
+    }
+  ]
+}

@@ -472,10 +472,18 @@ exports[`Lexer > tokens 1`] = `
   },
   {
     "kind": "bin_op",
-    "op": "star_star",
+    "op": "star",
+    "span": Span {
+      "end": 11,
+      "start": 10,
+    },
+  },
+  {
+    "kind": "bin_op",
+    "op": "star",
     "span": Span {
       "end": 12,
-      "start": 10,
+      "start": 11,
     },
   },
   {

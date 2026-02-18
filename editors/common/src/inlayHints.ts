@@ -1,27 +1,49 @@
-import * as htsl from "htsl";
+import { FileLoader, parseIrActions, SourceMap, Span } from "htsw";
+import { IrAction, IrCondition, irKeys } from "htsw/ir";
 
 type InlayHint = {
     label: string;
-    span: htsl.Span;
+    span: Span;
 };
 
-function hint(label: string, span: htsl.Span): InlayHint {
+function hint(label: string, span: Span): InlayHint {
     return { label, span };
 }
 
+export class StringFileLoader implements FileLoader {
+    src: string;
+
+    constructor(src: string) {
+        this.src = src;
+    }
+
+    fileExists(path: string): boolean {
+        return true;
+    }
+    readFile(path: string): string {
+        return this.src;
+    }
+    getParentPath(base: string): string {
+        return "";
+    }
+    resolvePath(base: string, other: string): string {
+        return "";
+    }
+}
+
 export function provideInlayHints(src: string): InlayHint[] {
-    const actions = htsl.parse.parseFromString(src);
+    const fileLoader = new StringFileLoader(src);
+    const sourceMap = new SourceMap(fileLoader);
+    const actions = parseIrActions(sourceMap, "file.htsl");
 
     const hints: InlayHint[] = [];
 
-    for (const holders of actions.holders) {
-        hints.push(...provideInlayHintsForActions(holders.actions?.value ?? []));
-    }
+    hints.push(...provideInlayHintsForActions(actions.value));
 
     return hints;
 }
 
-function provideInlayHintsForActions(actions: htsl.IrAction[]): InlayHint[] {
+function provideInlayHintsForActions(actions: IrAction[]): InlayHint[] {
     const hints: InlayHint[] = [];
 
     for (const action of actions) {
@@ -41,11 +63,12 @@ function provideInlayHintsForActions(actions: htsl.IrAction[]): InlayHint[] {
         )
             continue; // don't provide hints for these
 
-        for (const key of htsl.irKeys(action)) {
+        for (const key of irKeys(action)) {
             if (key === "function") continue; // skip these
+            if (key === "note") continue; // skip these
 
             // @ts-ignore
-            const element: { value: any; span: htsl.Span } = action[key];
+            const element: { value: any; span: Span } = action[key];
 
             // this element was skipped on purpose
             if (element.value === null) continue;
@@ -59,15 +82,16 @@ function provideInlayHintsForActions(actions: htsl.IrAction[]): InlayHint[] {
     return hints;
 }
 
-function provideInlayHintsForConditions(conditions: htsl.IrCondition[]): InlayHint[] {
+function provideInlayHintsForConditions(conditions: IrCondition[]): InlayHint[] {
     const hints: InlayHint[] = [];
 
     for (const condition of conditions) {
         if (condition.type === "COMPARE_VAR" || condition.type === "COMPARE_PLACEHOLDER")
             continue; // don't provide hints for these
 
-        for (const key of htsl.irKeys(condition)) {
+        for (const key of irKeys(condition)) {
             if (key === "inverted") continue; // skip these
+            if (key === "note") continue; // skip these
 
             // @ts-ignore
             const element: { value: any; span: htsl.Span } = condition[key];

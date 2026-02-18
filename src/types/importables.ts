@@ -35,9 +35,32 @@ export type ImportableEvent = {
     actions: Action[];
 }
 
+export type NpcSkin = "Steve" | "Alex" | "Players Skin";
+
+export type NpcEquipment = {
+    helmet?: string;
+    chestplate?: string;
+    leggings?: string;
+    boots?: string;
+    hand?: string;
+};
+
+export type ImportableNpc = {
+    type: "NPC";
+    name: string;
+    pos: { x: number; y: number; z: number };
+    leftClickActions?: Action[];
+    rightClickActions?: Action[];
+    lookAtPlayers?: boolean;
+    hideNameTag?: boolean;
+    skin?: NpcSkin;
+    equipment?: NpcEquipment;
+};
+
 export type Importable =
     | ImportableFunction
     | ImportableRegion
     | ImportableMenu
     | ImportableItem
-    | ImportableEvent;
+    | ImportableEvent
+    | ImportableNpc;

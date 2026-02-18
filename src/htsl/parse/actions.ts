@@ -187,6 +187,7 @@ function parseActionChangeGlobalVar(p: Parser, note: Note): IrAction {
         );
         action.key = p.spanned(parseVarName);
         action.op = p.spanned(parseVarOperation);
+        if (action.op?.value === "Unset") return;
         action.value = p.spanned(parseValue);
         if (p.checkEol()) return; // shorthand
         action.unset = p.spanned(p.parseBoolean);
@@ -221,6 +222,7 @@ function parseActionChangeTeamVar(p: Parser, note: Note): IrAction {
             withDummyTypeSpans({ type: "team", team: p.spanned(p.parseName) } as const)
         );
         action.op = p.spanned(parseVarOperation);
+        if (action.op?.value === "Unset") return;
         action.value = p.spanned(parseValue);
         if (p.checkEol()) return; // shorthand
         action.unset = p.spanned(p.parseBoolean);
@@ -232,6 +234,7 @@ function parseActionChangeVar(p: Parser, note: Note): IrAction {
         action.holder = p.spanned(() => withDummyTypeSpans({ type: "player" } as const));
         action.key = p.spanned(parseVarName);
         action.op = p.spanned(parseVarOperation);
+        if (action.op?.value === "Unset") return;
         action.value = p.spanned(parseValue);
         if (p.checkEol()) return; // shorthand
         action.unset = p.spanned(p.parseBoolean);

@@ -1,0 +1,194 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "HTSL import.json",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "include": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/importJsonPath" }
+    },
+    "functions": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/functionImportable" }
+    },
+    "events": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/eventImportable" }
+    },
+    "regions": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/regionImportable" }
+    },
+    "npcs": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/npcImportable" }
+    }
+  },
+  "definitions": {
+    "importJsonPath": {
+      "type": "string",
+      "pattern": "(\\.import\\.json|import\\.json)$",
+      "description": "Relative import JSON file path ending in import.json or .import.json"
+    },
+    "htslPath": {
+      "type": "string",
+      "pattern": "\\.htsl$",
+      "description": "Relative HTSL file path ending in .htsl"
+    },
+    "snbtPath": {
+      "type": "string",
+      "pattern": "\\.snbt$",
+      "description": "Relative SNBT file path ending in .snbt"
+    },
+    "functionImportable": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "actions"],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "actions": {
+          "$ref": "#/definitions/htslPath"
+        },
+        "repeatTicks": {
+          "type": "number",
+          "minimum": 4,
+          "maximum": 18000
+        }
+      }
+    },
+    "eventImportable": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["event", "actions"],
+      "properties": {
+        "event": {
+          "type": "string",
+          "enum": [
+            "Player Join",
+            "Player Quit",
+            "Player Death",
+            "Player Kill",
+            "Player Respawn",
+            "Group Change",
+            "PvP State Change",
+            "Fish Caught",
+            "Player Enter Portal",
+            "Player Damage",
+            "Player Block Break",
+            "Start Parkour",
+            "Complete Parkour",
+            "Player Drop Item",
+            "Player Pick Up Item",
+            "Player Change Held Item",
+            "Player Toggle Sneak",
+            "Player Toggle Flight"
+          ]
+        },
+        "actions": {
+          "$ref": "#/definitions/htslPath"
+        }
+      }
+    },
+    "pos": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y", "z"],
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "z": { "type": "number" }
+      }
+    },
+    "bounds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from", "to"],
+      "properties": {
+        "from": { "$ref": "#/definitions/pos" },
+        "to": { "$ref": "#/definitions/pos" }
+      }
+    },
+    "regionImportable": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "bounds": {
+          "$ref": "#/definitions/bounds"
+        },
+        "onEnterActions": {
+          "$ref": "#/definitions/htslPath"
+        },
+        "onExitActions": {
+          "$ref": "#/definitions/htslPath"
+        }
+      }
+    },
+    "npcSkin": {
+      "type": "string",
+      "enum": [
+        "Steve",
+        "Alex",
+        "Players Skin"
+      ]
+    },
+    "npcEquipment": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "helmet": {
+          "$ref": "#/definitions/snbtPath"
+        },
+        "chestplate": {
+          "$ref": "#/definitions/snbtPath"
+        },
+        "leggings": {
+          "$ref": "#/definitions/snbtPath"
+        },
+        "boots": {
+          "$ref": "#/definitions/snbtPath"
+        },
+        "hand": {
+          "$ref": "#/definitions/snbtPath"
+        }
+      }
+    },
+    "npcImportable": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "pos"],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "pos": {
+          "$ref": "#/definitions/pos"
+        },
+        "leftClickActions": {
+          "$ref": "#/definitions/htslPath"
+        },
+        "rightClickActions": {
+          "$ref": "#/definitions/htslPath"
+        },
+        "lookAtPlayers": {
+          "type": "boolean"
+        },
+        "hideNameTag": {
+          "type": "boolean"
+        },
+        "skin": {
+          "$ref": "#/definitions/npcSkin"
+        },
+        "equipment": {
+          "$ref": "#/definitions/npcEquipment"
+        }
+      }
+    }
+  }
+}

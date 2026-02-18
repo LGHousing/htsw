@@ -1,0 +1,6 @@
+{
+  "include": ["shared.import.json", "./shared.import.json"],
+  "regions": [
+    { "name": "RootRegion" }
+  ]
+}
