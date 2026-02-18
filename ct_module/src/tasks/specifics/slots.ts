@@ -1,6 +1,6 @@
-import { removedFormatting } from "./helpers";
+import { removedFormatting } from "../../helpers";
 
-export enum ButtonType {
+export enum MouseButton {
     LEFT = "LEFT",
     RIGHT = "RIGHT",
     MIDDLE = "MIDDLE",
@@ -23,20 +23,21 @@ export class ItemSlot {
         return this.item;
     }
 
-    public click(buttonType: ButtonType, shift: boolean = false): void {
+    public click(button: MouseButton = MouseButton.LEFT, shift: boolean = false): void {
         const container = Player.getContainer();
         if (container == null) {
             throw new Error("No open container found");
         }
-        container.click(this.slotId, shift, buttonType.valueOf());
+        container.click(this.slotId, shift, button.valueOf());
     }
 }
 
-export function getSlots(): ItemSlot[] {
+export function getItemSlots(): ItemSlot[] | null {
     const container = Player.getContainer();
     if (container == null) {
-        throw new Error("No open container found");
+        return null;
     }
+
     const slots: ItemSlot[] = [];
     for (let slotId = 0; slotId < container.getSize(); slotId++) {
         const item = container.getStackInSlot(slotId);
@@ -45,14 +46,26 @@ export function getSlots(): ItemSlot[] {
         }
         slots.push(new ItemSlot(slotId, item));
     }
+
     return slots;
 }
 
-export function getSlotFromName(name: string): ItemSlot | null {
-    const slots = getSlots();
+export function getItemSlot(
+    check: ((slot: ItemSlot) => boolean) | string
+): ItemSlot | null {
+    if (typeof check === "string") {
+        const name = removedFormatting(check).toLowerCase();
+        return getItemSlot((slot) => {
+            return removedFormatting(slot.getItem().getName())
+                .toLowerCase()
+                .includes(name);
+        });
+    }
+
+    const slots = getItemSlots();
+    if (slots == null) return null;
     for (const slot of slots) {
-        const slotName = removedFormatting(slot.getItem().getName());
-        if (slotName === name) {
+        if (check(slot)) {
             return slot;
         }
     }

@@ -3,7 +3,6 @@ import { Importable } from "htsw/types";
 import type { Step, StepSelectValue } from "./step";
 import { getSlotFromName, ButtonType } from "../slots";
 import {
-    chatHistoryContains,
     setAnvilItemName,
     acceptNewAnvilItem,
 } from "../helpers";
@@ -71,12 +70,14 @@ export class Importer {
 
     private static executeSelectValueStep(step: StepSelectValue): boolean {
         if (
-            chatHistoryContains(
-                "Please use the chat to provide the value you wish to set.",
-                this.lastStepExecutedAt,
-                false,
-                false
-            )
+            // lol
+            // chatHistoryContains(
+            //     "Please use the chat to provide the value you wish to set.",
+            //     this.lastStepExecutedAt,
+            //     false,
+            //     false
+            // )
+            false
         ) {
             // Enter chat message
             this.remainingSteps.unshift({

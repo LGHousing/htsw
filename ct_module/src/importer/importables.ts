@@ -1,7 +1,6 @@
 import { Importable, ImportableEvent, ImportableFunction, ImportableRegion } from "htsw/types";
 
 import { Step } from "./step";
-import { chatHistoryContains } from "../helpers";
 import { Importer } from "./importer";
 import { stepsForAction } from "./actions";
 import { stepSelectValue } from "./stepHelpers";
@@ -30,12 +29,14 @@ function stepsforImportableFunction(
     }, {
         type: "CONDITIONAL",
         condition: () => {
-            return chatHistoryContains(
-                "Could not find a function with that name!",
-                Importer.lastStepExecutedAt,
-                false,
-                false
-            );
+            // lol
+            // return chatHistoryContains(
+            //     "Could not find a function with that name!",
+            //     Importer.lastStepExecutedAt,
+            //     false,
+            //     false
+            // );
+            return false;
         },
         then: () => [
             {
