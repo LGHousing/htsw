@@ -2,66 +2,42 @@ from pathlib import Path
 import os
 import sys
 import shutil
-import subprocess
+import dotenv
+
+
+HERE = Path(__file__).resolve().parent
+DOT_ENV = HERE / '.env'
+if not DOT_ENV.exists():
+    raise FileNotFoundError('Set your .env, loser!')
+
+dotenv.load_dotenv(DOT_ENV)
 
 
 SOURCE = Path(__file__).resolve().parent
 assert SOURCE.exists()
 
-DESTINATION = Path(r'C:\\Users\\Sandy\\AppData\\Roaming\\.minecraft\\config\\ChatTriggers\\modules\\HTSW').resolve()
-
-IGNORE = {SOURCE / '.git', SOURCE / 'node_modules', SOURCE / 'package-lock.json'}
-
-
-def unlink_folder_with_contents(folder: Path) -> None:
-    if not folder.is_dir():
-        return
-    for item in folder.iterdir():
-        if item.is_dir():
-            unlink_folder_with_contents(item)
-        else:
-            item.unlink()
-    folder.rmdir()
-
-
-def copy_folder_contents(
-    source: Path,
-    destination: Path,
-    *,
-    ignore: set[Path] | None = None,
-) -> None:
-    if ignore is not None and source in ignore:
-        return
-    destination.mkdir(parents=True, exist_ok=True)
-    assert source.exists() and destination.exists()
-    assert source.is_dir() and destination.is_dir()
-    for item in source.iterdir():
-        if ignore is not None and item in ignore:
-            continue
-        source_item = source / item.name
-        destination_item = destination / item.name
-        if item.is_dir():
-            copy_folder_contents(source_item, destination_item, ignore=ignore)
-        else:
-            try:
-                shutil.copy2(source_item, destination_item)
-            except Exception as e:
-                raise ValueError(f'Failed to copy {item} to {destination_item}') from e
+RAW_DESTINATION = os.getenv('CT_MODULE_DESTINATION')
+if RAW_DESTINATION is None:
+    raise ValueError('CT_MODULE_DESTINATION is not set in .env')
+DESTINATION = Path(RAW_DESTINATION).resolve()
 
 
 def main() -> None:
-    if len(sys.argv) < 2 or sys.argv[1] != '--nobuild':
-        result = subprocess.run('npm run build', cwd=SOURCE, shell=True)
-        if result.returncode != 0:
-            raise SystemExit('build failed')
-    unlink_folder_with_contents(DESTINATION)
-    DESTINATION.mkdir(parents=True, exist_ok=True)
-    # copy_folder_contents(SOURCE, DESTINATION, ignore=IGNORE)
-    # print(f'Copied {SOURCE} to {DESTINATION}')
+    os.chdir(SOURCE)
+    if '--nobuild' not in sys.argv:
+        status = os.system('npm run build')
+        if status != 0:
+            raise RuntimeError(f'Build failed with error code: {status}')
 
+    DESTINATION.mkdir(parents=True, exist_ok=True)
     shutil.copy2(SOURCE / 'dist' / 'index.js', DESTINATION / 'index.js')
     shutil.copy2(SOURCE / 'metadata.json', DESTINATION / 'metadata.json')
-    print('Done!')
+    shutil.copy2(SOURCE / '.env', DESTINATION / '.env')
+
+    print('Done!!!')
+
+    if '--open' in sys.argv:
+        os.startfile(DESTINATION)
 
 
 if __name__ == '__main__':

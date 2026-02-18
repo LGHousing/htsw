@@ -6,18 +6,22 @@ import { chatSeparator, FileSystemFileLoader } from "./helpers";
 import { Simulator } from "./simulator";
 import { Importer } from "./importer/importer";
 import { printDiagnostic, printDiagnostics } from "./tui/diagnostics";
+import { recompile } from "./recompile";
 
 export function registerCommands() {
-    register("command", (...args) => commandHtsw(args))
-        .setName("htsw");
-    register("command", (...args) => commandImport(args))
-        .setName("import")
+    register("command", (...args) => commandHtsw(args)).setName("htsw");
+    register("command", (...args) => commandImport(args)).setName("import");
     register("command", (...args) => commandSimulator(args))
         .setName("simulator")
         .setAliases("sim");
 }
 
 function commandHtsw(args: string[]) {
+    if (args.length > 0 && args[0] === "recompile") {
+        recompile();
+        return;
+    }
+
     ChatLib.chat(`&7${chatSeparator()}`);
     const title = `&e&lHTSW &f&l${VERSION}`;
     ChatLib.chat(`${ChatLib.getCenteredText(title)}`);
@@ -73,22 +77,25 @@ function commandSimulator(args: string[]) {
             Simulator.stop();
             ChatLib.chat("&aSimulator stopped.");
         }
-        
+
         const sm = new SourceMap(new FileSystemFileLoader());
         const result = parseIrImportables(sm, args[1]);
 
         printDiagnostics(sm, result.diagnostics);
 
         if (result.gcx.isFailed()) {
-            const errCount = result.diagnostics.filter(it => it.level === "error").length;
+            const errCount = result.diagnostics.filter(
+                (it) => it.level === "error"
+            ).length;
             printDiagnostic(
-                sm, Diagnostic.error(`Simulate failed with ${errCount} errors`)
+                sm,
+                Diagnostic.error(`Simulate failed with ${errCount} errors`)
             );
         } else {
             Simulator.start(sm, result.value);
             ChatLib.chat("&aSimulator started.");
         }
-        
+
         return;
     }
 
