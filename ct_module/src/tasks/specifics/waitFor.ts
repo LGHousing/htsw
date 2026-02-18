@@ -5,6 +5,7 @@ type PredicateMap = {
     tick: () => boolean;
     packetReceived: (packet: Packet) => boolean;
     packetSent: (packet: Packet) => boolean;
+    message: (message: string) => boolean;
 };
 // ^^^
 
@@ -22,6 +23,7 @@ const EVENT_CONTAINERS: EventContainers = {
     tick: [],
     packetReceived: [],
     packetSent: [],
+    message: [],
 };
 
 function maybeResolve<E extends EventName>(event: E, ...args: ParametersFor<E>) {
@@ -46,9 +48,20 @@ function maybeResolve<E extends EventName>(event: E, ...args: ParametersFor<E>) 
     }
 }
 
-register("tick", () => maybeResolve("tick"));
-register("packetReceived", (packet) => maybeResolve("packetReceived", packet));
-register("packetSent", (packet) => maybeResolve("packetSent", packet));
+register("tick", () => {
+    maybeResolve("tick");
+});
+register("packetReceived", (packet) => {
+    maybeResolve("packetReceived", packet);
+});
+register("packetSent", (packet) => {
+    maybeResolve("packetSent", packet);
+});
+register("chat", (event) => {
+    // @ts-ignore
+    const message = ChatLib.getChatMessage(event, true);
+    maybeResolve("message", message);
+});
 
 type EventName = keyof PredicateMap;
 
