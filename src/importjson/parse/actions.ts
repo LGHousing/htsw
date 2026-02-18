@@ -23,3 +23,19 @@ export function parseActions(gcx: GlobalCtxt, node: json.Node): IrAction[] {
     
     return parseHtsl(gcx, resolvedPath);
 }
+
+export function parseSnbt(gcx: GlobalCtxt, node: json.Node): string {
+    const path = parseString(gcx, node);
+
+    if (!path.endsWith(".snbt")) {
+        throw Diagnostic.error("Expected SNBT file")
+            .addPrimarySpan(nodeSpan(node), "Invalid extension")
+    }
+
+    if (!gcx.fileExists(path)) {
+        throw Diagnostic.error("SNBT file does not exist")
+            .addPrimarySpan(nodeSpan(node), "Not found")
+    }
+    
+    return gcx.readFile(path);
+}

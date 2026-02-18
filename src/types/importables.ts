@@ -24,6 +24,7 @@ export type ImportableMenu = {
 
 export type ImportableItem = {
     type: "ITEM";
+    key: string;
     snbt: string;
     leftClickActions?: Action[];
     rightClickActions?: Action[];

@@ -4,7 +4,7 @@ import type { GlobalCtxt } from "../../context";
 import { Diagnostic } from "../../diagnostic";
 import type { Ir, IrAction, IrImportable, Spanned } from "../../ir";
 import { nodeSpan, parseArray, parseBoundedNumber, parseIrBounds, parseObject, parseOption, parseString, withNodeSpan } from "./helpers";
-import { parseActions } from "./actions";
+import { parseActions, parseSnbt } from "./actions";
 import { Span } from "../../span";
 import { EVENTS, type Bounds, type Event } from "../../types";
 
@@ -53,6 +53,14 @@ function parseImportJson0(gcx: GlobalCtxt, node: json.Node) {
             parser: (node1) => {
                 gcx.importables.push(...parseArray(gcx, node1, (node2) => {
                     return parseImportableRegion(gcx, node2);
+                }));
+            }
+        },
+        "items": {
+            required: false,
+            parser: (node) => {
+                gcx.importables.push(...parseArray(gcx, node, (node) => {
+                    return parseImportableItem(gcx, node);
                 }));
             }
         }
@@ -169,5 +177,45 @@ function parseImportableRegion(gcx: GlobalCtxt, node: json.Node): IrImportable {
         type: "REGION",
         typeSpan: Span.dummy(), span: nodeSpan(node),
         name, bounds, onEnterActions, onExitActions
+    };
+}
+
+function parseImportableItem(gcx: GlobalCtxt, node: json.Node): IrImportable {
+    let key: Spanned<string> | undefined;
+    let snbt: Spanned<string> | undefined;
+    let leftClickActions: Spanned<IrAction[]> | undefined;
+    let rightClickActions: Spanned<IrAction[]> | undefined;
+    
+    parseObject(gcx, node, {
+        "key": {
+            required: true,
+            parser: (node) => {
+                key = withNodeSpan(parseString(gcx, node), node);
+            }
+        },
+        "nbt": {
+            required: true,
+            parser: (node) => {
+                snbt = withNodeSpan(parseSnbt(gcx, node), node);
+            }
+        },
+        "leftClickActions": {
+            required: false,
+            parser: (node) => {
+                leftClickActions = withNodeSpan(parseActions(gcx, node), node);
+            }
+        },
+        "rightClickActions": {
+            required: false,
+            parser: (node) => {
+                rightClickActions = withNodeSpan(parseActions(gcx, node), node);
+            }
+        }
+    });
+    
+    return {
+        type: "ITEM",
+        typeSpan: Span.dummy(), span: nodeSpan(node),
+        key, snbt, leftClickActions, rightClickActions
     };
 }
