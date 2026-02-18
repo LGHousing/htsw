@@ -70,6 +70,27 @@ describe("Import JSON Items", () => {
             expect(item2.rightClickActions?.value.length).toBeGreaterThan(0);
         }
     });
+    
+    test("should unwrap IR to plain importables", () => {
+        const testDir = "/tmp/test_items";
+        const fileLoader = new TestFileLoader(testDir);
+        
+        const importJsonPath = path.join(testDir, "import.json");
+        const importables = htsw.parseImportables(fileLoader, importJsonPath);
+        
+        expect(importables.length).toBe(2);
+        
+        const item1 = importables[0];
+        expect(item1.type).toBe("ITEM");
+        
+        if (item1.type === "ITEM") {
+            expect(item1.key).toBe("my_item");
+            expect(item1.snbt).toContain("minecraft:diamond_sword");
+            expect(item1.rightClickActions).toBeDefined();
+            expect(Array.isArray(item1.rightClickActions)).toBe(true);
+            expect(item1.leftClickActions).toBeUndefined();
+        }
+    });
 
     test("should validate SNBT file extension", () => {
         const testDir = "/tmp/test_items_invalid";
