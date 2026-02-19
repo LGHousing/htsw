@@ -278,15 +278,3 @@ async function importSetVelocity(
 ): Promise<void> {}
 
 async function importLaunch(ctx: TaskContext, action: ActionLaunch): Promise<void> {}
-
-async function importLocation(
-    ctx: TaskContext,
-    slot: number,
-    location: { type: string; value?: string }
-): Promise<void> {}
-
-async function importInventorySlot(
-    ctx: TaskContext,
-    slot: number,
-    value: number | string
-): Promise<void> {}
