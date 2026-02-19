@@ -4,7 +4,6 @@ import { Importable } from "htsw/types";
 
 import { chatSeparator, FileSystemFileLoader } from "./helpers";
 import { Simulator } from "./simulator";
-import { Importer } from "./importer/importer";
 import { printDiagnostic, printDiagnostics } from "./tui/diagnostics";
 import { recompile } from "./recompile";
 import { importImportable } from "./importer/importables";
@@ -13,6 +12,7 @@ import TaskManager from "./tasks/manager";
 export function registerCommands() {
     register("command", (...args) => commandHtsw(args)).setName("htsw");
     register("command", (...args) => commandImport(args)).setName("import");
+    register("command", (...args) => commandImport(args)).setName("htswimport");
     register("command", (...args) => commandSimulator(args))
         .setName("simulator")
         .setAliases("sim");
@@ -46,25 +46,74 @@ function commandImport(args: string[]) {
         return;
     }
 
+    ChatLib.chat(`&8[htsw]&7 import requested path='${args.join(" ")}'`);
+
     const sm = new SourceMap(new FileSystemFileLoader());
-    const result = parseIrImportables(sm, args.join(" "));
+    let result;
+    try {
+        result = parseIrImportables(sm, args.join(" "));
+    } catch (e) {
+        ChatLib.chat(`&cImport parse crashed: ${e}`);
+        return;
+    }
 
-    printDiagnostics(sm, result.diagnostics);
+    try {
+        printDiagnostics(sm, result.diagnostics);
+    } catch (e) {
+        ChatLib.chat(`&cImport diagnostic rendering failed: ${e}`);
+    }
 
-    TaskManager.run(async (ctx) => {
-        if (!result.gcx.isFailed()) {
-            ctx.displayMessage("&aImport started. Fear our aura...");
-            const importables = unwrapIr<Importable[]>(result.value);
-            for (const importable of importables) {
-                try {
-                    await importImportable(ctx, importable);
-                } catch (e) {
-                    ctx.displayMessage(`&cFailed to import: ${e}`);
+    ChatLib.chat("&8[htsw]&7 parse finished, starting task...");
+
+    let taskPromise: Promise<void> | null = null;
+    try {
+        // @ts-ignore
+        taskPromise = TaskManager.run(async (ctx) => {
+            ChatLib.chat("&8[htsw]&7 task callback entered");
+            try {
+                if (!result.gcx.isFailed()) {
+                    let importables: Importable[];
+                    try {
+                        importables = unwrapIr<Importable[]>(result.value);
+                    } catch (e) {
+                        ctx.displayMessage(`&cImport unwrap failed: ${e}`);
+                        return;
+                    }
+
+                    ctx.displayMessage(`&aImport started. Found ${importables.length} importable(s).`);
+                    if (importables.length === 0) {
+                        ctx.displayMessage(
+                            "&eNo importables were parsed from this file. Check import.json shape/paths."
+                        );
+                        return;
+                    }
+                    for (const importable of importables) {
+                        try {
+                            await importImportable(ctx, importable);
+                        } catch (e) {
+                            ctx.displayMessage(`&cFailed to import: ${e}`);
+                        }
+                    }
+                } else {
+                    ctx.displayMessage("&cImport failed.");
                 }
+            } catch (e) {
+                ctx.displayMessage(`&cImport task crashed: ${e}`);
             }
-        } else {
-            ctx.displayMessage("&cImport failed.");
-        }
+        });
+    } catch (e) {
+        ChatLib.chat(`&cImport task creation threw synchronously: ${e}`);
+        return;
+    }
+
+    if (!taskPromise || typeof (taskPromise as any).catch !== "function") {
+        ChatLib.chat("&cImport task did not return a Promise");
+        return;
+    }
+
+    void taskPromise.catch((e) => {
+        ChatLib.chat(`&cImport task promise rejected: ${e}`);
+        console.log(e);
     });
 }
 

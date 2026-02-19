@@ -5,7 +5,7 @@ import {
     ImportableRegion,
 } from "htsw/types";
 
-import { importAction } from "./actions";
+import { importActionsDiff } from "./actions";
 import TaskContext from "../tasks/context";
 import { clickSlotPaginate, goBack, setValue, waitForMenuToLoad } from "./helpers";
 import { MouseButton } from "../tasks/specifics/slots";
@@ -55,10 +55,8 @@ async function importImportableFunction(
         await waitForMenuToLoad(ctx);
     }
 
-    // we have a function!!! open!!
-    for (const action of importable.actions) {
-        await importAction(ctx, action);
-    }
+    // Reconcile currently-open Actions GUI to match HTSL exactly.
+    await importActionsDiff(ctx, importable.actions);
 
     if (importable.repeatTicks) {
         await goBack(ctx);

@@ -25,12 +25,10 @@ function soundPathToName(path: string): string | null {
 }
 
 export async function waitForMenuToLoad(ctx: TaskContext): Promise<void> {
-    // TODO idfk if we can do this without the extra tick of waiting
     await ctx.withTimeout(
         ctx.waitFor("packetReceived", (packet) => packet instanceof S30PacketWindowItems),
         "Waiting for menu to load"
     );
-    await ctx.waitFor("tick", null, 5);
 }
 
 async function rawClickSlot(

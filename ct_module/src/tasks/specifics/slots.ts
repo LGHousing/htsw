@@ -54,9 +54,11 @@ export function findItemSlot(
     check: ((slot: ItemSlot) => boolean) | string
 ): ItemSlot | null {
     if (typeof check === "string") {
-        const name = removedFormatting(check);
+        const name = normalizeLookup(check);
         check = (slot: ItemSlot) => {
-            return removedFormatting(slot.getItem().getName()) === name;
+            const item = slot.getItem();
+            const slotName = normalizeLookup(item.getName());
+            return slotName.startsWith(name);
         };
     }
 
@@ -68,4 +70,8 @@ export function findItemSlot(
         }
     }
     return null;
+}
+
+function normalizeLookup(value: string): string {
+    return removedFormatting(value).replace(/\s+\(#\d+\)\s*$/, "").trim();
 }

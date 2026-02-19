@@ -53,7 +53,9 @@ export default class TaskContext {
             }
             const remaining = end - Date.now();
             if (remaining <= 0) return;
-            await new Promise((resolve) => setTimeout(resolve, Math.min(100, remaining)));
+            await new Promise<void>((resolve) =>
+                setTimeout(() => resolve(), Math.min(100, remaining))
+            );
         }
     }
 

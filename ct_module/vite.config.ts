@@ -21,6 +21,8 @@ export default defineConfig({
                     {
                         targets: { ie: "11" },
                         loose: true,
+                        useBuiltIns: "usage",
+                        corejs: 3,
                     },
                 ],
                 "@babel/preset-typescript",

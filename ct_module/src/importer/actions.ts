@@ -14,7 +14,7 @@ import type {
     ActionGiveExperienceLevels,
     ActionGiveItem,
     ActionLaunch,
-    ActionSendMessage,
+    ActionMessage,
     ActionPauseExecution,
     ActionPlaySound,
     ActionRandom,
@@ -39,6 +39,9 @@ import {
     waitForMenuToLoad,
     setValue,
 } from "./helpers";
+import { MouseButton } from "../tasks/specifics/slots";
+import { removedFormatting } from "../helpers";
+import { importCondition } from "./conditions";
 
 const ACTION_DISPLAY_NAMES: Record<Action["type"], string> = {
     CHANGE_VAR: "Change Variable",
@@ -78,10 +81,74 @@ const ACTION_DISPLAY_NAMES: Record<Action["type"], string> = {
     CANCEL_EVENT: "Cancel Event",
 };
 
-export async function importAction(ctx: TaskContext, action: Action): Promise<void> {
-    await clickSlot(ctx, "Add Action");
-    await clickSlotPaginate(ctx, ACTION_DISPLAY_NAMES[action.type]);
+type ScannedAction = {
+    slot: number;
+    typeName: string;
+    lore: string[];
+};
 
+export function actionDisplayName(type: Action["type"]): string {
+    return ACTION_DISPLAY_NAMES[type];
+}
+
+function getCurrentActions(ctx: TaskContext): ScannedAction[] {
+    const slots = ctx.getItemSlots();
+    if (slots == null) {
+        throw new Error("No open container found");
+    }
+
+    const actions: ScannedAction[] = [];
+
+    for (const slot of slots) {
+        const rawName = removedFormatting(slot.getItem().getName()).trim();
+        const lore = slot.getItem().getLore?.() ?? [];
+        if (lore.length === 0) continue;
+
+        const cleanedLore = lore.map((line) => removedFormatting(String(line)).trim());
+        const isRemovableAction = cleanedLore.some((line) =>
+            line.toLowerCase().includes("right click to remove")
+        );
+        if (!isRemovableAction) continue;
+
+        const firstLore = cleanedLore[0] ?? rawName;
+        const typeName = firstLore.replace(/\s+\(#\d+\)\s*$/, "").trim();
+
+        actions.push({
+            slot: slot.getSlotId(),
+            typeName,
+            lore: cleanedLore,
+        });
+    }
+
+    actions.sort((a, b) => a.slot - b.slot);
+    return actions;
+}
+
+function actionAlreadyMatches(desired: Action, existing: ScannedAction): boolean {
+    if (desired.type === "MESSAGE") {
+        const expected = `Message: ${desired.message}`.trim();
+        return existing.lore.some((line) => line.trim() === expected);
+    }
+    return false;
+}
+
+async function clickSlotIndex(
+    ctx: TaskContext,
+    slotId: number,
+    button: MouseButton = MouseButton.LEFT,
+    waitForMenu: boolean = true
+): Promise<void> {
+    const container = Player.getContainer();
+    if (container == null) {
+        throw new Error("No open container found");
+    }
+
+    const wait = waitForMenu ? waitForMenuToLoad(ctx) : Promise.resolve();
+    container.click(slotId, false, button.valueOf());
+    await wait;
+}
+
+async function importActionSettings(ctx: TaskContext, action: Action): Promise<void> {
     switch (action.type) {
         case "CHANGE_VAR":
             return await importChangeVar(ctx, action);
@@ -158,6 +225,57 @@ export async function importAction(ctx: TaskContext, action: Action): Promise<vo
     }
 }
 
+export async function importAction(ctx: TaskContext, action: Action): Promise<void> {
+    await clickSlot(ctx, "Add Action");
+    await clickSlotPaginate(ctx, ACTION_DISPLAY_NAMES[action.type]);
+    await importActionSettings(ctx, action);
+}
+
+export async function importActionsDiff(
+    ctx: TaskContext,
+    desiredActions: Action[]
+): Promise<void> {
+    let index = 0;
+
+    while (true) {
+        const current = getCurrentActions(ctx);
+
+        if (index >= desiredActions.length) {
+            if (current.length <= index) {
+                return;
+            }
+
+            const trailing = current[current.length - 1];
+            await clickSlotIndex(ctx, trailing.slot, MouseButton.RIGHT);
+            continue;
+        }
+
+        const desired = desiredActions[index];
+        const expectedType = actionDisplayName(desired.type);
+        const existing = current[index];
+
+        if (!existing) {
+            await importAction(ctx, desired);
+            index++;
+            continue;
+        }
+
+        if (existing.typeName !== expectedType) {
+            await clickSlotIndex(ctx, existing.slot, MouseButton.RIGHT);
+            continue;
+        }
+
+        if (actionAlreadyMatches(desired, existing)) {
+            index++;
+            continue;
+        }
+
+        await clickSlotIndex(ctx, existing.slot, MouseButton.LEFT);
+        await importActionSettings(ctx, desired);
+        index++;
+    }
+}
+
 async function importChangeVar(
     ctx: TaskContext,
     action: ActionChangeVar
@@ -166,11 +284,31 @@ async function importChangeVar(
 async function importConditional(
     ctx: TaskContext,
     action: ActionConditional
-): Promise<void> {}
+): Promise<void> {
+    if (action.conditions.length > 0) {
+        await clickSlot(ctx, "Conditions");
+        for (const condition of action.conditions) {
+            await importCondition(ctx, condition);
+        }
+        await goBack(ctx);
+    }
+
+    await setValue(ctx, "Match Any Condition", action.matchAny);
+
+    await clickSlot(ctx, "If Actions");
+    await importActionsDiff(ctx, action.ifActions);
+    await goBack(ctx);
+
+    await clickSlot(ctx, "Else Actions");
+    await importActionsDiff(ctx, action.elseActions ?? []);
+    await goBack(ctx);
+
+    await goBack(ctx);
+}
 
 async function importSendMessage(
     ctx: TaskContext,
-    action: ActionSendMessage
+    action: ActionMessage
 ): Promise<void> {
     await setValue(ctx, "Message", action.message);
     await goBack(ctx);
