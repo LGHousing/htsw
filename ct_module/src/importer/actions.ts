@@ -79,8 +79,11 @@ const ACTION_DISPLAY_NAMES: Record<Action["type"], string> = {
 };
 
 export async function importAction(ctx: TaskContext, action: Action): Promise<void> {
-    await clickSlot(ctx, "Add Action");
+    clickSlot(ctx, "Add Action");
+    await waitForMenuToLoad(ctx);
+
     await clickSlotPaginate(ctx, ACTION_DISPLAY_NAMES[action.type]);
+    await waitForMenuToLoad(ctx);
 
     switch (action.type) {
         case "CHANGE_VAR":
@@ -173,7 +176,9 @@ async function importSendMessage(
     action: ActionSendMessage
 ): Promise<void> {
     await setValue(ctx, "Message", action.message);
-    await goBack(ctx);
+    
+    goBack(ctx);
+    await waitForMenuToLoad(ctx);
 }
 
 async function importActionBar(
