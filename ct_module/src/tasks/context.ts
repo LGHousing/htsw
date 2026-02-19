@@ -57,6 +57,20 @@ export default class TaskContext {
         }
     }
 
+    public async withTimeout<T>(
+        promise: Promise<T>,
+        reason: string,
+        duration: number = 2000
+    ): Promise<T> {
+        const timeoutPromise = new Promise<T>((_, reject) => {
+            setTimeout(() => {
+                reject(new Error(`Timeout after ${duration}ms: ${reason}`));
+            }, duration);
+        });
+
+        return Promise.race([promise, timeoutPromise]);
+    }
+
     getItemSlots = getItemSlots;
     findItemSlot = findItemSlot;
     waitFor = waitFor;

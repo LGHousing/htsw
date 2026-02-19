@@ -54,11 +54,9 @@ export function findItemSlot(
     check: ((slot: ItemSlot) => boolean) | string
 ): ItemSlot | null {
     if (typeof check === "string") {
-        const name = removedFormatting(check).toLowerCase();
+        const name = removedFormatting(check);
         check = (slot: ItemSlot) => {
-            return removedFormatting(slot.getItem().getName())
-                .toLowerCase()
-                .includes(name);
+            return removedFormatting(slot.getItem().getName()) === name;
         };
     }
 

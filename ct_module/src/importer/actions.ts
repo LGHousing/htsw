@@ -28,9 +28,17 @@ import type {
     ActionTeleport,
     ActionTitle,
     ActionEnchantHeldItem,
+    ActionDisplayMenu,
 } from "htsw/types";
 
 import TaskContext from "../tasks/context";
+import {
+    clickSlotPaginate,
+    clickSlot,
+    goBack,
+    waitForMenuToLoad,
+    setValue,
+} from "./helpers";
 
 const ACTION_DISPLAY_NAMES: Record<Action["type"], string> = {
     CHANGE_VAR: "Change Variable",
@@ -71,12 +79,15 @@ const ACTION_DISPLAY_NAMES: Record<Action["type"], string> = {
 };
 
 export async function importAction(ctx: TaskContext, action: Action): Promise<void> {
+    await clickSlot(ctx, "Add Action");
+    await clickSlotPaginate(ctx, ACTION_DISPLAY_NAMES[action.type]);
+
     switch (action.type) {
         case "CHANGE_VAR":
             return await importChangeVar(ctx, action);
         case "CONDITIONAL":
             return await importConditional(ctx, action);
-        case "SEND_MESSAGE":
+        case "MESSAGE":
             return await importSendMessage(ctx, action);
         case "PLAY_SOUND":
             return await importPlaySound(ctx, action);
@@ -101,7 +112,7 @@ export async function importAction(ctx: TaskContext, action: Action): Promise<vo
         case "APPLY_POTION_EFFECT":
             return await importApplyPotionEffect(ctx, action);
         case "SET_MENU":
-            return await importSetMenu(ctx, action);
+            return await importDisplayMenu(ctx, action);
         case "SET_TEAM":
             return await importSetTeam(ctx, action);
         case "PAUSE":
@@ -157,7 +168,13 @@ async function importConditional(
     action: ActionConditional
 ): Promise<void> {}
 
-async function importSendMessage(ctx: TaskContext, action: ActionSendMessage): Promise<void> {}
+async function importSendMessage(
+    ctx: TaskContext,
+    action: ActionSendMessage
+): Promise<void> {
+    await setValue(ctx, "Message", action.message);
+    await goBack(ctx);
+}
 
 async function importActionBar(
     ctx: TaskContext,
@@ -185,7 +202,10 @@ async function importApplyPotionEffect(
     action: ActionApplyPotionEffect
 ): Promise<void> {}
 
-async function importSetMenu(ctx: TaskContext, action: { menu: string }): Promise<void> {}
+async function importDisplayMenu(
+    ctx: TaskContext,
+    action: ActionDisplayMenu
+): Promise<void> {}
 
 async function importSetTeam(ctx: TaskContext, action: ActionSetTeam): Promise<void> {}
 

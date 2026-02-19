@@ -1,16 +1,19 @@
 import { ACTION_NAMES, Action, SOUNDS } from "htsw/types";
 import TaskContext from "../tasks/context";
+import { MouseButton } from "../tasks/specifics/slots";
+import { removedFormatting } from "../helpers";
+import { S2DPacketOpenWindow, S30PacketWindowItems } from "../utils/packets";
 
-export function booleanAsValue(value: boolean): string {
-    return value ? "Enabled" : "Disabled";
+function stringAsValue(value: string): string {
+    return value;
 }
 
-export function numberAsValue(value: number): string {
+function numberAsValue(value: number): string {
     return value.toString();
 }
 
-export function stringAsValue(value: string): string {
-    return value;
+function booleanAsValue(value: boolean): string {
+    return value ? "Enabled" : "Disabled";
 }
 
 // TODO export this if needed, else remove
@@ -22,54 +25,161 @@ function soundPathToName(path: string): string | null {
 }
 
 export async function waitForMenuToLoad(ctx: TaskContext): Promise<void> {
-    // TODO waitFor packetReceived with timeout
-    // await ctx.withTimeout(2000, "Waiting for menu to load", ctx.waitFor("packetReceived", (packet) => {
-    //     // TODO fill in this predicate or something similar
-    // }));
-    await ctx.sleep(500);
+    // TODO idfk if we can do this without the extra tick of waiting
+    await ctx.withTimeout(
+        ctx.waitFor("packetReceived", (packet) => packet instanceof S30PacketWindowItems),
+        "Waiting for menu to load"
+    );
+    await ctx.waitFor("tick", null, 5);
 }
 
-export function clickSlot(ctx: TaskContext, identifier: string): boolean {
-    const slot = ctx.findItemSlot(identifier);
+async function rawClickSlot(
+    ctx: TaskContext,
+    name: string,
+    button: MouseButton = MouseButton.LEFT,
+    waitForMenu: boolean = true
+): Promise<boolean> {
+    const slot = ctx.findItemSlot(name);
     if (slot === null) return false;
 
-    slot.click();
+    const wait = waitForMenu ? waitForMenuToLoad(ctx) : Promise.resolve();
+    slot.click(button);
+    await wait;
+
     return true;
 }
 
-export function clickSlotOrError(ctx: TaskContext, identifier: string): void {
-    const found = clickSlot(ctx, identifier);
+export async function clickSlot(
+    ctx: TaskContext,
+    name: string,
+    button: MouseButton = MouseButton.LEFT,
+    waitForMenu: boolean = true
+): Promise<void> {
+    const found = await rawClickSlot(ctx, name, button, waitForMenu);
     if (!found) {
-        throw new Error(`Could not find slot with identifier '${identifier}'`);
+        throw new Error(`Could not find slot with name '${name}'`);
     }
 }
 
-export async function clickSlotMaybePaginate(
+async function rawClickSlotPaginate(
     ctx: TaskContext,
-    identifier: string
+    name: string,
+    button: MouseButton = MouseButton.LEFT,
+    waitForMenu: boolean = true
 ): Promise<boolean> {
     do {
-        const found = clickSlot(ctx, identifier);
-        if (found) return true;
+        const found = await rawClickSlot(ctx, name, button, waitForMenu);
+        if (found) {
+            return true;
+        }
 
-        const wentToNextPage = clickSlot(ctx, "next page");
+        const wentToNextPage = await rawClickSlot(ctx, "Left-click for next page!");
         if (!wentToNextPage) break;
-        await waitForMenuToLoad(ctx);
     } while (true);
 
     return false;
 }
 
-export async function clickSlotMaybePaginateOrError(
+export async function clickSlotPaginate(
     ctx: TaskContext,
-    identifier: string
+    name: string,
+    button: MouseButton = MouseButton.LEFT,
+    waitForMenu: boolean = true
 ): Promise<void> {
-    const found = await clickSlotMaybePaginate(ctx, identifier);
+    const found = await rawClickSlotPaginate(ctx, name, button, waitForMenu);
     if (!found) {
-        throw new Error(`Could not find slot with identifier '${identifier}'`);
+        throw new Error(`Could not find slot with name '${name}'`);
     }
 }
 
-export function goBack(ctx: TaskContext): void {
-    clickSlot(ctx, "go back");
+export async function goBack(
+    ctx: TaskContext,
+    waitForMenu: boolean = true
+): Promise<void> {
+    await rawClickSlot(ctx, "Go Back", MouseButton.LEFT, waitForMenu);
+}
+
+export function setAnvilItemName(newName: string) {
+    const inventory = Player.getContainer();
+    if (inventory == null) {
+        throw new Error("No open container found");
+    }
+    const outputSlotField = inventory.container.class.getDeclaredField("field_82852_f");
+    // @ts-ignore
+    outputSlotField.setAccessible(true);
+    const outputSlot = outputSlotField.get(inventory.container);
+
+    const outputSlotItemField = outputSlot.class.getDeclaredField("field_70467_a");
+    outputSlotItemField.setAccessible(true);
+    let outputSlotItem = outputSlotItemField.get(outputSlot);
+
+    outputSlotItem[0] = new Item(339).setName(newName).itemStack;
+    outputSlotItemField.set(outputSlot, outputSlotItem);
+}
+
+export function acceptNewAnvilItem(): void {
+    const inventory = Player.getContainer();
+    if (inventory == null) {
+        throw new Error("No open container found");
+    }
+    inventory.click(2, false);
+}
+
+export async function setValue(
+    ctx: TaskContext,
+    itemName: string,
+    value: string | number | boolean,
+    waitForMenu: boolean = true
+): Promise<void> {
+    if (typeof value === "string") {
+        value = stringAsValue(value);
+    } else if (typeof value === "number") {
+        value = numberAsValue(value);
+    } else if (typeof value === "boolean") {
+        value = booleanAsValue(value);
+    } else {
+        const _exhaustiveCheck: never = value;
+    }
+
+    // TODO read item lore to check for values already the same, and early return
+
+    const inputModePromise = ctx.withTimeout(
+        Promise.race([
+            ctx
+                .waitFor("message", (message) => {
+                    return removedFormatting(message).includes(
+                        "Please use the chat to provide the value you wish to set."
+                    );
+                })
+                .then(() => "CHAT" as const),
+            ctx
+                .waitFor("packetReceived", (packet) => {
+                    return (
+                        packet instanceof S2DPacketOpenWindow &&
+                        packet
+                            .func_148902_e
+                            /*getGuiId*/
+                            () === "minecraft:anvil"
+                    );
+                })
+                .then(() => "ANVIL" as const),
+        ]),
+        "Waiting for input mode to be determined"
+    );
+    await clickSlot(ctx, itemName);
+    const inputMode = await inputModePromise;
+
+    const wait = waitForMenu ? waitForMenuToLoad(ctx) : Promise.resolve();
+    switch (inputMode) {
+        case "CHAT":
+            ctx.sendMessage(value);
+            break;
+        case "ANVIL":
+            setAnvilItemName(value);
+            acceptNewAnvilItem();
+            break;
+        default:
+            const _exhaustiveCheck: never = inputMode;
+    }
+    await wait;
 }

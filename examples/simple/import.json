@@ -1,0 +1,9 @@
+{
+    "functions": [
+        {
+            "name": "Simple Function",
+            "actions": "simple.htsl",
+            "repeatTicks": 67
+        }
+    ]
+}

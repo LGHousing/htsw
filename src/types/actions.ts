@@ -76,7 +76,7 @@ export type ActionRemoveItem = {
 };
 
 export type ActionSendMessage = {
-    type: "SEND_MESSAGE";
+    type: "MESSAGE";
     message: string;
 };
 

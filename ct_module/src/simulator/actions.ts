@@ -21,7 +21,7 @@ export function runAction(action: IrAction) {
     } else if (action.type === "FUNCTION") {
         runActionFunction(action);
     } else if (action.type === "MESSAGE") {
-        runActionMessage(action);
+        runActionSendChatMessage(action);
     } else if (action.type === "PAUSE") {
         runActionPauseExecution(action);
     } else if (action.type === "PLAY_SOUND") {
@@ -132,7 +132,7 @@ function runActionFunction(action: Ir<ActionFunction>) {
     }
 }
 
-function runActionMessage(action: Ir<ActionSendMessage>) {
+function runActionSendChatMessage(action: Ir<ActionSendMessage>) {
     if (!action.message) return;
 
     const message = replacePlaceholders(action.message.value);
