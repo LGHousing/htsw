@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import * as htsw from "htsw";
-import * as common from "htsl-editor-common";
+import * as common from "htsw-editor-common";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
