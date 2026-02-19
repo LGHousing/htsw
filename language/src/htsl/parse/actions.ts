@@ -29,6 +29,7 @@ export function parseAction(p: Parser): IrAction {
     let note: Note;
     if (p.check("doc_comment")) {
         note = p.spanned(p.parseDocComment);
+        p.eat("eol");
     }
 
     if (eatKw("actionBar")) {

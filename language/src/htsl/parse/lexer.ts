@@ -27,12 +27,20 @@ export class Lexer {
 
         if (c === "/" && this.peek() === "/") {
             if (this.peek(1) == "/") {
+                this.next();
+                this.next();
+
                 // parse doc comment
                 let value = "";
                 
                 do {
                     value += this.next();
                 } while (this.hasNext() && this.peek() !== "\n");
+
+                // this is so cringe
+                if (value.endsWith("\r")) {
+                    value = value.substring(0, value.length - 1);
+                }
                 
                 return token("doc_comment", new Span(lo, this.posWithOffset), { value });
             }

@@ -158,6 +158,11 @@ export async function importAction(ctx: TaskContext, action: Action): Promise<vo
     } else {
         const _exhaustiveCheck: never = action;
     }
+
+    if (action.note) {
+        await setValue(ctx, "Note", action.note);
+        await waitForMenuToLoad(ctx);
+    }
     
     goBack(ctx);
     await waitForMenuToLoad(ctx);

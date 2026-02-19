@@ -31,6 +31,7 @@ def main() -> None:
 
     DESTINATION.mkdir(parents=True, exist_ok=True)
     shutil.copy2(SOURCE / 'dist' / 'index.js', DESTINATION / 'index.js')
+    shutil.copy2(SOURCE / 'dist' / 'vendor.js', DESTINATION / 'vendor.js')
     shutil.copy2(SOURCE / 'metadata.json', DESTINATION / 'metadata.json')
     shutil.copy2(SOURCE / '.env', DESTINATION / '.env')
 

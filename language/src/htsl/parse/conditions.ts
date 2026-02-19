@@ -28,6 +28,7 @@ export function parseCondition(p: Parser): IrCondition {
     let note: Note;
     if (p.check("doc_comment")) {
         note = p.spanned(p.parseDocComment);
+        p.eat("eol");
     }
 
     const inverted = p.spanned(() => p.eat("exclamation"));

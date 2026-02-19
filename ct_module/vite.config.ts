@@ -6,8 +6,22 @@ export default defineConfig({
     build: {
         lib: {
             entry: "./src/index.ts",
-            formats: ["cjs"],
+            formats: ["es"],
             fileName: () => "index.js",
+        },
+        rollupOptions: {
+            input: "./src/index.ts",
+            output: {
+                format: "es",
+                dir: "dist",
+
+                entryFileNames: "[name].js",
+                chunkFileNames: "[name].js",
+
+                manualChunks(id) {
+                    if (id.includes("node_modules")) return "vendor";
+                }
+            },
         },
         outDir: "dist",
     },
