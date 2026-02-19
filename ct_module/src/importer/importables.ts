@@ -69,9 +69,8 @@ async function importImportableFunction(
         await waitForMenuToLoad(ctx);
 
         await setValue(ctx, "Automatic Execution", importable.repeatTicks);
+        await waitForMenuToLoad(ctx);
     }
-
-    // TODO repeat ticks
 }
 
 async function importImportableEvent(

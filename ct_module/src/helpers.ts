@@ -4,32 +4,6 @@ export function removedFormatting(str: string): string {
     return str.replace(/(?:§|&)[0-9a-fklmnor]/g, "");
 }
 
-export function setAnvilItemName(newName: string) {
-    const inventory = Player.getContainer();
-    if (inventory == null) {
-        throw new Error("No open container found");
-    }
-    const outputSlotField = inventory.container.class.getDeclaredField("field_82852_f");
-    // @ts-ignore
-    outputSlotField.setAccessible(true);
-    const outputSlot = outputSlotField.get(inventory.container);
-
-    const outputSlotItemField = outputSlot.class.getDeclaredField("field_70467_a");
-    outputSlotItemField.setAccessible(true);
-    let outputSlotItem = outputSlotItemField.get(outputSlot);
-
-    outputSlotItem[0] = new Item(339).setName(newName).itemStack;
-    outputSlotItemField.set(outputSlot, outputSlotItem);
-}
-
-export function acceptNewAnvilItem(): void {
-    const inventory = Player.getContainer();
-    if (inventory == null) {
-        throw new Error("No open container found");
-    }
-    inventory.click(2, false);
-}
-
 export function chatWidth(string: string): number {
     const raw = ChatLib.removeFormatting(ChatLib.replaceFormatting(string));
     return Client.getMinecraft().field_71466_p.func_78256_a(raw);

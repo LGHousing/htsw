@@ -30,17 +30,18 @@ export async function waitForMenuToLoad(ctx: TaskContext): Promise<void> {
         ctx.waitFor("packetReceived", (packet) => packet instanceof S30PacketWindowItems),
         "Waiting for menu to load"
     );
-    await ctx.waitFor("tick", null, 5);
+    await ctx.waitFor("tick", null, 10);
 }
 
-export async function waitForUnformattedMessage(ctx: TaskContext, message: string): Promise<void> {
+export async function waitForUnformattedMessage(
+    ctx: TaskContext,
+    message: string
+): Promise<void> {
     await ctx.withTimeout(
-        ctx
-            .waitFor(
-                "message",
-                (chatMessage) =>
-                    removedFormatting(chatMessage) === message
-            ),
+        ctx.waitFor(
+            "message",
+            (chatMessage) => removedFormatting(chatMessage) === message
+        ),
         "Waiting for message in chat"
     );
 }
@@ -48,7 +49,7 @@ export async function waitForUnformattedMessage(ctx: TaskContext, message: strin
 function rawClickSlot(
     ctx: TaskContext,
     name: string,
-    button: MouseButton = MouseButton.LEFT,
+    button: MouseButton = MouseButton.LEFT
 ): boolean {
     const slot = ctx.findItemSlot(name);
     if (slot === null) return false;
@@ -59,7 +60,7 @@ function rawClickSlot(
 export function clickSlot(
     ctx: TaskContext,
     name: string,
-    button: MouseButton = MouseButton.LEFT,
+    button: MouseButton = MouseButton.LEFT
 ) {
     const found = rawClickSlot(ctx, name, button);
     if (!found) {
@@ -67,19 +68,18 @@ export function clickSlot(
     }
 }
 
-function rawClickSlotPaginate(
+async function rawClickSlotPaginate(
     ctx: TaskContext,
     name: string,
-    button: MouseButton = MouseButton.LEFT,
-): boolean {
+    button: MouseButton = MouseButton.LEFT
+): Promise<boolean> {
     do {
         const found = rawClickSlot(ctx, name, button);
-        if (found) {
-            return true;
-        }
+        if (found) return true;
 
         const wentToNextPage = rawClickSlot(ctx, "Left-click for next page!");
         if (!wentToNextPage) break;
+        await waitForMenuToLoad(ctx);
     } while (true);
 
     return false;
@@ -96,10 +96,8 @@ export async function clickSlotPaginate(
     }
 }
 
-export function goBack(
-    ctx: TaskContext,
-): void {
-    rawClickSlot(ctx, "Go Back", MouseButton.LEFT);
+export function goBack(ctx: TaskContext): void {
+    rawClickSlot(ctx, "Go Back");
 }
 
 export function setAnvilItemName(newName: string) {
@@ -131,8 +129,7 @@ export function acceptNewAnvilItem(): void {
 export async function setValue(
     ctx: TaskContext,
     itemName: string,
-    value: string | number | boolean,
-    waitForMenu: boolean = true
+    value: string | number | boolean
 ): Promise<void> {
     if (typeof value === "string") {
         value = stringAsValue(value);
@@ -146,7 +143,8 @@ export async function setValue(
 
     // TODO read item lore to check for values already the same, and early return
 
-    const inputModePromise = ctx.withTimeout(
+    clickSlot(ctx, itemName);
+    const inputMode = await ctx.withTimeout(
         Promise.race([
             ctx
                 .waitFor("message", (message) => {
@@ -169,20 +167,17 @@ export async function setValue(
         ]),
         "Waiting for input mode to be determined"
     );
-    await clickSlot(ctx, itemName);
-    const inputMode = await inputModePromise;
 
-    const wait = waitForMenu ? waitForMenuToLoad(ctx) : Promise.resolve();
     switch (inputMode) {
         case "CHAT":
             ctx.sendMessage(value);
             break;
         case "ANVIL":
+            await waitForMenuToLoad(ctx);
             setAnvilItemName(value);
             acceptNewAnvilItem();
             break;
         default:
             const _exhaustiveCheck: never = inputMode;
     }
-    await wait;
 }

@@ -176,7 +176,8 @@ async function importSendMessage(
     action: ActionSendMessage
 ): Promise<void> {
     await setValue(ctx, "Message", action.message);
-    
+    await waitForMenuToLoad(ctx);
+
     goBack(ctx);
     await waitForMenuToLoad(ctx);
 }

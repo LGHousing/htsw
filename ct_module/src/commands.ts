@@ -52,7 +52,7 @@ function commandImport(args: string[]) {
 
     TaskManager.run(async (ctx) => {
         if (!result.gcx.isFailed()) {
-            ctx.displayMessage("&aImport started. Fear our aura...");
+            ctx.displayMessage("&aImport started.");
             const importables = unwrapIr<Importable[]>(result.value);
             for (const importable of importables) {
                 try {
