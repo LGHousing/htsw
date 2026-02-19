@@ -85,80 +85,82 @@ export async function importAction(ctx: TaskContext, action: Action): Promise<vo
     await clickSlotPaginate(ctx, ACTION_DISPLAY_NAMES[action.type]);
     await waitForMenuToLoad(ctx);
 
-    switch (action.type) {
-        case "CHANGE_VAR":
-            return await importChangeVar(ctx, action);
-        case "CONDITIONAL":
-            return await importConditional(ctx, action);
-        case "MESSAGE":
-            return await importSendMessage(ctx, action);
-        case "PLAY_SOUND":
-            return await importPlaySound(ctx, action);
-        case "GIVE_ITEM":
-            return await importGiveItem(ctx, action);
-        case "TITLE":
-            return await importTitle(ctx, action);
-        case "EXIT":
-            return;
-        case "SET_GROUP":
-            return await importSetGroup(ctx, action);
-        case "KILL":
-            return;
-        case "HEAL":
-            return;
-        case "ACTION_BAR":
-            return await importActionBar(ctx, action);
-        case "RESET_INVENTORY":
-            return;
-        case "REMOVE_ITEM":
-            return await importRemoveItem(ctx, action);
-        case "APPLY_POTION_EFFECT":
-            return await importApplyPotionEffect(ctx, action);
-        case "SET_MENU":
-            return await importDisplayMenu(ctx, action);
-        case "SET_TEAM":
-            return await importSetTeam(ctx, action);
-        case "PAUSE":
-            return await importPause(ctx, action);
-        case "ENCHANT_HELD_ITEM":
-            return await importEnchantHeldItem(ctx, action);
-        case "APPLY_INVENTORY_LAYOUT":
-            return await importApplyInventoryLayout(ctx, action);
-        case "FUNCTION":
-            return await importFunction(ctx, action);
-        case "RANDOM":
-            return await importRandom(ctx, action);
-        case "SET_GAMEMODE":
-            return await importSetGamemode(ctx, action);
-        case "SET_COMPASS_TARGET":
-            return await importSetCompassTarget(ctx, action);
-        case "FAIL_PARKOUR":
-            return await importFailParkour(ctx, action);
-        case "TELEPORT":
-            return await importTeleport(ctx, action);
-        case "SEND_TO_LOBBY":
-            return await importSendToLobby(ctx, action);
-        case "GIVE_EXPERIENCE_LEVELS":
-            return await importGiveExperienceLevels(ctx, action);
-        case "CLEAR_POTION_EFFECTS":
-            return;
-        case "CHANGE_MAX_HEALTH":
-            return await importChangeMaxHealth(ctx, action);
-        case "CHANGE_HEALTH":
-            return await importChangeHealth(ctx, action);
-        case "CHANGE_HUNGER":
-            return await importChangeHunger(ctx, action);
-        case "DROP_ITEM":
-            return await importDropItem(ctx, action);
-        case "SET_VELOCITY":
-            return await importSetVelocity(ctx, action);
-        case "LAUNCH":
-            return await importLaunch(ctx, action);
-        case "CANCEL_EVENT":
-            return;
-        default:
-            const _exhaustiveCheck: never = action;
+    if (action.type === "CHANGE_VAR") {
+        await importChangeVar(ctx, action);
+    } else if (action.type === "CONDITIONAL") {
+        await importConditional(ctx, action);
+    } else if (action.type === "MESSAGE") {
+        await importSendMessage(ctx, action);
+    } else if (action.type === "PLAY_SOUND") {
+        await importPlaySound(ctx, action);
+    } else if (action.type === "GIVE_ITEM") {
+        await importGiveItem(ctx, action);
+    } else if (action.type === "TITLE") {
+        await importTitle(ctx, action);
+    } else if (action.type === "EXIT") {
+        return;
+    } else if (action.type === "SET_GROUP") {
+        await importSetGroup(ctx, action);
+    } else if (action.type === "KILL") {
+        return;
+    } else if (action.type === "HEAL") {
+        return;
+    } else if (action.type === "ACTION_BAR") {
+        await importActionBar(ctx, action);
+    } else if (action.type === "RESET_INVENTORY") {
+        return;
+    } else if (action.type === "REMOVE_ITEM") {
+        await importRemoveItem(ctx, action);
+    } else if (action.type === "APPLY_POTION_EFFECT") {
+        await importApplyPotionEffect(ctx, action);
+    } else if (action.type === "SET_MENU") {
+        await importDisplayMenu(ctx, action);
+    } else if (action.type === "SET_TEAM") {
+        await importSetTeam(ctx, action);
+    } else if (action.type === "PAUSE") {
+        await importPause(ctx, action);
+    } else if (action.type === "ENCHANT_HELD_ITEM") {
+        await importEnchantHeldItem(ctx, action);
+    } else if (action.type === "APPLY_INVENTORY_LAYOUT") {
+        await importApplyInventoryLayout(ctx, action);
+    } else if (action.type === "FUNCTION") {
+        await importFunction(ctx, action);
+    } else if (action.type === "RANDOM") {
+        await importRandom(ctx, action);
+    } else if (action.type === "SET_GAMEMODE") {
+        await importSetGamemode(ctx, action);
+    } else if (action.type === "SET_COMPASS_TARGET") {
+        await importSetCompassTarget(ctx, action);
+    } else if (action.type === "FAIL_PARKOUR") {
+        await importFailParkour(ctx, action);
+    } else if (action.type === "TELEPORT") {
+        await importTeleport(ctx, action);
+    } else if (action.type === "SEND_TO_LOBBY") {
+        await importSendToLobby(ctx, action);
+    } else if (action.type === "GIVE_EXPERIENCE_LEVELS") {
+        await importGiveExperienceLevels(ctx, action);
+    } else if (action.type === "CLEAR_POTION_EFFECTS") {
+        return;
+    } else if (action.type === "CHANGE_MAX_HEALTH") {
+        await importChangeMaxHealth(ctx, action);
+    } else if (action.type === "CHANGE_HEALTH") {
+        await importChangeHealth(ctx, action);
+    } else if (action.type === "CHANGE_HUNGER") {
+        await importChangeHunger(ctx, action);
+    } else if (action.type === "DROP_ITEM") {
+        await importDropItem(ctx, action);
+    } else if (action.type === "SET_VELOCITY") {
+        await importSetVelocity(ctx, action);
+    } else if (action.type === "LAUNCH") {
+        await importLaunch(ctx, action);
+    } else if (action.type === "CANCEL_EVENT") {
+        return;
+    } else {
+        const _exhaustiveCheck: never = action;
     }
+    
+    goBack(ctx);
+    await waitForMenuToLoad(ctx);
 }
 
 async function importChangeVar(
@@ -176,9 +178,6 @@ async function importSendMessage(
     action: ActionSendMessage
 ): Promise<void> {
     await setValue(ctx, "Message", action.message);
-    await waitForMenuToLoad(ctx);
-
-    goBack(ctx);
     await waitForMenuToLoad(ctx);
 }
 
