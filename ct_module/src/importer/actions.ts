@@ -14,7 +14,7 @@ import type {
     ActionGiveExperienceLevels,
     ActionGiveItem,
     ActionLaunch,
-    ActionMessage,
+    ActionSendMessage,
     ActionPauseExecution,
     ActionPlaySound,
     ActionRandom,
@@ -76,8 +76,8 @@ export async function importAction(ctx: TaskContext, action: Action): Promise<vo
             return await importChangeVar(ctx, action);
         case "CONDITIONAL":
             return await importConditional(ctx, action);
-        case "MESSAGE":
-            return await importMessage(ctx, action);
+        case "SEND_MESSAGE":
+            return await importSendMessage(ctx, action);
         case "PLAY_SOUND":
             return await importPlaySound(ctx, action);
         case "GIVE_ITEM":
@@ -157,13 +157,7 @@ async function importConditional(
     action: ActionConditional
 ): Promise<void> {}
 
-async function importSubactions(
-    ctx: TaskContext,
-    slot: number,
-    actions: Action[]
-): Promise<void> {}
-
-async function importMessage(ctx: TaskContext, action: ActionMessage): Promise<void> {}
+async function importSendMessage(ctx: TaskContext, action: ActionSendMessage): Promise<void> {}
 
 async function importActionBar(
     ctx: TaskContext,

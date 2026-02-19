@@ -1,6 +1,6 @@
 import { Diagnostic, htsl } from "htsw";
 import type { Ir, IrAction } from "htsw/ir";
-import type { ActionActionBar, ActionChangeVar, ActionConditional, ActionFunction, ActionMessage, ActionPauseExecution, ActionPlaySound, ActionRandom, ActionSetVelocity, ActionTeleport, ActionTitle } from "htsw/types";
+import type { ActionActionBar, ActionChangeVar, ActionConditional, ActionFunction, ActionSendMessage, ActionPauseExecution, ActionPlaySound, ActionRandom, ActionSetVelocity, ActionTeleport, ActionTitle } from "htsw/types";
 
 import { ExitError, PauseError, Simulator } from "./simulator";
 import { VarHolder, VarLong, parseValue } from "./vars";
@@ -132,7 +132,7 @@ function runActionFunction(action: Ir<ActionFunction>) {
     }
 }
 
-function runActionMessage(action: Ir<ActionMessage>) {
+function runActionMessage(action: Ir<ActionSendMessage>) {
     if (!action.message) return;
 
     const message = replacePlaceholders(action.message.value);

@@ -1,5 +1,5 @@
 import { removedFormatting } from "../helpers";
-import { getItemSlot as findItemSlot, getItemSlots, ItemSlot } from "./specifics/slots";
+import { findItemSlot as findItemSlot, getItemSlots, ItemSlot } from "./specifics/slots";
 import { waitFor } from "./specifics/waitFor";
 
 export default class TaskContext {
