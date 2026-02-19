@@ -50,16 +50,14 @@ export function getItemSlots(): ItemSlot[] | null {
     return slots;
 }
 
-export function getItemSlot(
+export function findItemSlot(
     check: ((slot: ItemSlot) => boolean) | string
 ): ItemSlot | null {
     if (typeof check === "string") {
-        const name = removedFormatting(check).toLowerCase();
-        return getItemSlot((slot) => {
-            return removedFormatting(slot.getItem().getName())
-                .toLowerCase()
-                .includes(name);
-        });
+        const name = removedFormatting(check);
+        check = (slot: ItemSlot) => {
+            return removedFormatting(slot.getItem().getName()) === name;
+        };
     }
 
     const slots = getItemSlots();

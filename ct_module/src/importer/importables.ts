@@ -1,105 +1,80 @@
-import { Importable, ImportableEvent, ImportableFunction, ImportableRegion } from "htsw/types";
+import {
+    Importable,
+    ImportableEvent,
+    ImportableFunction,
+    ImportableRegion,
+} from "htsw/types";
 
-import { Step } from "./step";
-import { Importer } from "./importer";
-import { stepsForAction } from "./actions";
-import { stepSelectValue } from "./stepHelpers";
+import { importAction } from "./actions";
+import TaskContext from "../tasks/context";
+import { clickSlotPaginate, goBack, setValue, waitForMenuToLoad } from "./helpers";
+import { MouseButton } from "../tasks/specifics/slots";
+import { removedFormatting } from "../helpers";
 
-export function stepsForImportable(importable: Importable): Step[] {
+export async function importImportable(
+    ctx: TaskContext,
+    importable: Importable
+): Promise<void> {
     if (importable.type === "FUNCTION") {
-        return stepsforImportableFunction(importable);
+        return importImportableFunction(ctx, importable);
     }
     if (importable.type === "EVENT") {
-        return stepsForImportableEvent(importable);
+        return importImportableEvent(ctx, importable);
     }
     if (importable.type === "REGION") {
-        return stepsForImportableRegion(importable);
+        return importImportableRegion(ctx, importable);
     }
-    return [];
+    // TODO add the others idk and remove the ts ignore
+    // @ts-ignore
+    const _exhaustiveCheck: never = importable;
 }
 
-function stepsforImportableFunction(
+async function importImportableFunction(
+    ctx: TaskContext,
     importable: ImportableFunction
-): Step[] {
-    const steps: Step[] = [];
+): Promise<void> {
+    ctx.runCommand(`/function edit ${importable.name}`);
 
-    steps.push({
-        type: "RUN_COMMAND",
-        command: `/function edit ${importable.name}`,
-    }, {
-        type: "CONDITIONAL",
-        condition: () => {
-            // lol
-            // return chatHistoryContains(
-            //     "Could not find a function with that name!",
-            //     Importer.lastStepExecutedAt,
-            //     false,
-            //     false
-            // );
-            return false;
-        },
-        then: () => [
-            {
-                type: "RUN_COMMAND",
-                command: `/function create ${importable.name}`,
-            },
-        ],
-        else: () => [],
-    });
+    const alreadyExists = await ctx.withTimeout(
+        Promise.race([
+            waitForMenuToLoad(ctx).then(() => true),
+            ctx
+                .waitFor(
+                    "message",
+                    (message) =>
+                        removedFormatting(message) ===
+                        "Could not find a function with that name!"
+                )
+                .then(() => false),
+        ]),
+        "Waiting for function to open"
+    );
 
-    for (const action of importable.actions) {
-        steps.push(...stepsForAction(action));
+    if (!alreadyExists) {
+        ctx.runCommand(`/function create ${importable.name}`);
+        await waitForMenuToLoad(ctx);
     }
 
-    return steps;
+    // we have a function!!! open!!
+    for (const action of importable.actions) {
+        await importAction(ctx, action);
+    }
+
+    if (importable.repeatTicks) {
+        await goBack(ctx);
+        await clickSlotPaginate(ctx, importable.name, MouseButton.RIGHT);
+        await setValue(ctx, "Automatic Execution", importable.repeatTicks);
+    }
+
+    // TODO repeat ticks
 }
 
-function stepsForImportableEvent(
+async function importImportableEvent(
+    ctx: TaskContext,
     importable: ImportableEvent
-): Step[] {
-    const steps: Step[] = [];
+): Promise<void> {}
 
-    steps.push({
-        type: "RUN_COMMAND",
-        command: "/eventactions",
-    });
-
-    steps.push(stepSelectValue(importable.event));
-
-    for (const action of importable.actions) {
-        steps.push(...stepsForAction(action));
-    }
-
-    return steps;
-}
-
-function stepsForImportableRegion(
+async function importImportableRegion(
+    ctx: TaskContext,
     importable: ImportableRegion
-): Step[] {
-    const steps: Step[] = [];
-
-    steps.push({
-        type: "RUN_COMMAND",
-        command: `/region edit ${importable.name}`,
-    });
-
-    if (importable.onEnterActions && importable.onEnterActions.length > 0) {
-        steps.push(stepSelectValue("Entry Actions"));
-        for (const action of importable.onEnterActions) {
-            steps.push(...stepsForAction(action));
-        }
-        steps.push({
-            type: "CLICK_BUTTON",
-            key: "Go Back",
-        });
-    }
-
-    if (importable.onExitActions && importable.onExitActions.length > 0) {
-        steps.push(stepSelectValue("Exit Actions"));
-        for (const action of importable.onExitActions) {
-            steps.push(...stepsForAction(action));
-        }
-    }
-
-    return steps;
-}
+): Promise<void> {}

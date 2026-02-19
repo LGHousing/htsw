@@ -16,6 +16,7 @@ import {
     type Action,
 } from ".";
 
+export type ButtonType = "left" | "right" | "middle";
 export type Value = string;
 export type VarName = string;
 

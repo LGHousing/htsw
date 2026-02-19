@@ -64,9 +64,15 @@ export class FileSystemFileLoader implements FileLoader {
     fileExists(path: string): boolean {
         return FileLib.exists(this.normalizePath(path));
     }
+
     readFile(path: string): string {
-        return FileLib.read(this.normalizePath(path));
+        const content = FileLib.read(this.normalizePath(path));
+        if (content === null) {
+            throw new Error(`File at path ${path} does not exist`);
+        }
+        return content;
     }
+
     getParentPath(base: string): string {
         const Paths = Java.type("java.nio.file.Paths");
         const basePath = Paths.get(base);
@@ -76,6 +82,7 @@ export class FileSystemFileLoader implements FileLoader {
 
         return normalized.getParent().toAbsolutePath().toString();
     }
+
     resolvePath(base: string, other: string): string {
         const Paths = Java.type("java.nio.file.Paths");
         const basePath = Paths.get(base);

@@ -1,5 +1,5 @@
 import { removedFormatting } from "../helpers";
-import { getItemSlot, getItemSlots, ItemSlot } from "./specifics/slots";
+import { findItemSlot as findItemSlot, getItemSlots, ItemSlot } from "./specifics/slots";
 import { waitFor } from "./specifics/waitFor";
 
 export default class TaskContext {
@@ -57,7 +57,21 @@ export default class TaskContext {
         }
     }
 
+    public async withTimeout<T>(
+        promise: Promise<T>,
+        reason: string,
+        duration: number = 2000
+    ): Promise<T> {
+        const timeoutPromise = new Promise<T>((_, reject) => {
+            setTimeout(() => {
+                reject(new Error(`Timeout after ${duration}ms: ${reason}`));
+            }, duration);
+        });
+
+        return Promise.race([promise, timeoutPromise]);
+    }
+
     getItemSlots = getItemSlots;
-    getItemSlot = getItemSlot;
+    findItemSlot = findItemSlot;
     waitFor = waitFor;
 }

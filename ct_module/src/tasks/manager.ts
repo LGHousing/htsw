@@ -41,3 +41,15 @@ export default class TaskManager {
         this.runningContexts.clear();
     }
 }
+
+async function exampleTask(ctx: TaskContext, name: string) {
+    await ctx.waitFor("message", (message) => {
+        ChatLib.chat(`Received message: ${message}`);
+        return message.includes("Rfind");
+    });
+    ctx.displayMessage(`Hello, ${name}!`);
+}
+
+register("command", () => {
+    TaskManager.run(exampleTask, "World");
+}).setName("htswexamplewtf");

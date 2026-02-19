@@ -20,7 +20,7 @@ export const ACTION_NAMES: {
     CHANGE_MAX_HEALTH: "Change Max Health",
     CHANGE_VAR: "Change Variable",
     CHANGE_HEALTH: "Change Health",
-    MESSAGE: "Message",
+    MESSAGE: "Send a Chat Message",
     EXIT: "Exit",
     RANDOM: "Random",
     SET_VELOCITY: "Set Velocity",

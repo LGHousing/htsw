@@ -1,7 +1,7 @@
 type Packet = MCPacket<MCINetHandler>;
 
 // this is only important one, use like `waitFor(key, [value])`
-type PredicateMap = {
+type CheckPredicateMap = {
     tick: () => boolean;
     packetReceived: (packet: Packet) => boolean;
     packetSent: (packet: Packet) => boolean;
@@ -9,14 +9,14 @@ type PredicateMap = {
 };
 // ^^^
 
-type EventContainer<P extends (...args: any[]) => boolean> = {
-    predicate: P;
-    resolve: (value: Parameters<P>) => void;
+type EventContainer<C extends (...args: any[]) => boolean> = {
+    check: C;
+    resolve: (value: Parameters<C>) => void;
     remaining: number;
 };
 
 type EventContainers = {
-    [K in keyof PredicateMap]: EventContainer<PredicateMap[K]>[];
+    [K in keyof CheckPredicateMap]: EventContainer<CheckPredicateMap[K]>[];
 };
 
 const EVENT_CONTAINERS: EventContainers = {
@@ -34,7 +34,7 @@ function maybeResolve<E extends EventName>(event: E, ...args: ParametersFor<E>) 
         const container = containers[i];
 
         // @ts-ignore
-        if (container.predicate(...args)) {
+        if (container.check(...args)) {
             container.remaining--;
 
             if (container.remaining <= 0) {
@@ -63,23 +63,23 @@ register("chat", (event) => {
     maybeResolve("message", message);
 });
 
-type EventName = keyof PredicateMap;
+type EventName = keyof CheckPredicateMap;
 
 type ContainerFor<E extends EventName> = EventContainers[E][number];
-type ParametersFor<E extends EventName> = Parameters<PredicateMap[E]>;
+type ParametersFor<E extends EventName> = Parameters<CheckPredicateMap[E]>;
 
 export function waitFor<E extends EventName>(
     event: E,
-    predicate: PredicateMap[E] | null = null,
+    check: CheckPredicateMap[E] | null = null,
     amount: number = 1
 ): Promise<ParametersFor<E>> {
-    if (predicate === null) {
-        predicate = () => true;
+    if (check === null) {
+        check = () => true;
     }
 
     return new Promise<ParametersFor<E>>((resolve) => {
         const container: ContainerFor<E> = {
-            predicate,
+            check: check,
             resolve,
             remaining: amount,
         };

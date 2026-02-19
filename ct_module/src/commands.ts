@@ -7,6 +7,8 @@ import { Simulator } from "./simulator";
 import { Importer } from "./importer/importer";
 import { printDiagnostic, printDiagnostics } from "./tui/diagnostics";
 import { recompile } from "./recompile";
+import { importImportable } from "./importer/importables";
+import TaskManager from "./tasks/manager";
 
 export function registerCommands() {
     register("command", (...args) => commandHtsw(args)).setName("htsw");
@@ -45,18 +47,25 @@ function commandImport(args: string[]) {
     }
 
     const sm = new SourceMap(new FileSystemFileLoader());
-    const result = parseIrImportables(sm, args[0]);
+    const result = parseIrImportables(sm, args.join(" "));
 
     printDiagnostics(sm, result.diagnostics);
 
-    if (!result.gcx.isFailed()) {
-        Importer.import(unwrapIr<Importable[]>(result.value));
-        ChatLib.chat("&aImport started.");
-    } else {
-        ChatLib.chat("&cImport failed.");
-    }
-
-    return;
+    TaskManager.run(async (ctx) => {
+        if (!result.gcx.isFailed()) {
+            ctx.displayMessage("&aImport started. Fear our aura...");
+            const importables = unwrapIr<Importable[]>(result.value);
+            for (const importable of importables) {
+                try {
+                    await importImportable(ctx, importable);
+                } catch (e) {
+                    ctx.displayMessage(`&cFailed to import: ${e}`);
+                }
+            }
+        } else {
+            ctx.displayMessage("&cImport failed.");
+        }
+    });
 }
 
 function commandSimulator(args: string[]) {

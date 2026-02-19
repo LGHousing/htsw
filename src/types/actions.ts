@@ -75,7 +75,7 @@ export type ActionRemoveItem = {
     item?: Nbt;
 };
 
-export type ActionMessage = {
+export type ActionSendMessage = {
     type: "MESSAGE";
     message: string;
 };
@@ -231,7 +231,7 @@ export type Action = (
     | ActionChangeMaxHealth
     | ActionGiveItem
     | ActionRemoveItem
-    | ActionMessage
+    | ActionSendMessage
     | ActionApplyPotionEffect
     | ActionClearPotionEffects
     | ActionGiveExperienceLevels

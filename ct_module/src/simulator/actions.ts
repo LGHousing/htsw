@@ -1,6 +1,6 @@
 import { Diagnostic, htsl } from "htsw";
 import type { Ir, IrAction } from "htsw/ir";
-import type { ActionActionBar, ActionChangeVar, ActionConditional, ActionFunction, ActionMessage, ActionPauseExecution, ActionPlaySound, ActionRandom, ActionSetVelocity, ActionTeleport, ActionTitle } from "htsw/types";
+import type { ActionActionBar, ActionChangeVar, ActionConditional, ActionFunction, ActionSendMessage, ActionPauseExecution, ActionPlaySound, ActionRandom, ActionSetVelocity, ActionTeleport, ActionTitle } from "htsw/types";
 
 import { ExitError, PauseError, Simulator } from "./simulator";
 import { VarHolder, VarLong, parseValue } from "./vars";
@@ -21,7 +21,7 @@ export function runAction(action: IrAction) {
     } else if (action.type === "FUNCTION") {
         runActionFunction(action);
     } else if (action.type === "MESSAGE") {
-        runActionMessage(action);
+        runActionSendChatMessage(action);
     } else if (action.type === "PAUSE") {
         runActionPauseExecution(action);
     } else if (action.type === "PLAY_SOUND") {
@@ -132,7 +132,7 @@ function runActionFunction(action: Ir<ActionFunction>) {
     }
 }
 
-function runActionMessage(action: Ir<ActionMessage>) {
+function runActionSendChatMessage(action: Ir<ActionSendMessage>) {
     if (!action.message) return;
 
     const message = replacePlaceholders(action.message.value);
