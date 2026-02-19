@@ -3,11 +3,12 @@ import {
     ImportableEvent,
     ImportableFunction,
     ImportableRegion,
+    Pos,
 } from "htsw/types";
 
 import { importAction } from "./actions";
 import TaskContext from "../tasks/context";
-import { clickSlotPaginate, goBack, setValue, waitForMenuToLoad } from "./helpers";
+import { clickSlot, clickSlotPaginate, goBack, setValue, waitForMenuToLoad, waitForUnformattedMessage } from "./helpers";
 import { MouseButton } from "../tasks/specifics/slots";
 import { removedFormatting } from "../helpers";
 
@@ -61,8 +62,12 @@ async function importImportableFunction(
     }
 
     if (importable.repeatTicks) {
-        await goBack(ctx);
+        goBack(ctx);
+        await waitForMenuToLoad(ctx);
+
         await clickSlotPaginate(ctx, importable.name, MouseButton.RIGHT);
+        await waitForMenuToLoad(ctx);
+
         await setValue(ctx, "Automatic Execution", importable.repeatTicks);
     }
 
@@ -72,9 +77,85 @@ async function importImportableFunction(
 async function importImportableEvent(
     ctx: TaskContext,
     importable: ImportableEvent
-): Promise<void> {}
+): Promise<void> {
+    ctx.runCommand(`/eventactions`);
+    await waitForMenuToLoad(ctx);
+
+    clickSlot(ctx, importable.event, MouseButton.LEFT);
+    await waitForMenuToLoad(ctx);
+
+    // we have an event!!! open!!! :)
+    for (const action of importable.actions) {
+        await importAction(ctx, action);
+    }
+}
 
 async function importImportableRegion(
     ctx: TaskContext,
     importable: ImportableRegion
-): Promise<void> {}
+): Promise<void> {
+    const setPos = async (pos: Pos, corner: "A" | "B") => {
+        ctx.runCommand(`/tp ${pos.x} ${pos.y} ${pos.z}`);
+        await waitForUnformattedMessage(ctx, `Teleporting you to ${pos.x}, ${pos.y}, ${pos.z}.`);
+
+        ctx.runCommand(`//pos${corner}`);
+        await waitForUnformattedMessage(ctx, `Position ${corner} set to ${pos.x}, ${pos.y}, ${pos.z}.`)
+    }
+
+    await setPos(importable.bounds.from, "A");
+    await setPos(importable.bounds.to, "B");
+
+    ctx.runCommand(`/region edit ${importable.name}`);
+
+    const alreadyExists = await ctx.withTimeout(
+        Promise.race([
+            waitForMenuToLoad(ctx).then(() => true),
+            ctx
+                .waitFor(
+                    "message",
+                    (message) =>
+                        removedFormatting(message) ===
+                        "Could not find a region with that name!"
+                )
+                .then(() => false),
+        ]),
+        "Waiting for region to open"
+    );
+
+    if (!alreadyExists) {
+        ctx.runCommand(`/region create ${importable.name}`);
+        await waitForUnformattedMessage(ctx, `Created region ${importable.name}!`);
+
+        ctx.runCommand(`/region edit ${importable.name}`);
+        await waitForMenuToLoad(ctx);
+    } else {
+        clickSlot(ctx, "Move Region");
+        await waitForUnformattedMessage(ctx, "Updated region to your current selection!");
+
+        ctx.runCommand(`/region edit ${importable.name}`);
+        await waitForMenuToLoad(ctx);
+    }
+
+    if (importable.onEnterActions) {
+        clickSlot(ctx, "Entry Actions");
+        await waitForMenuToLoad(ctx);
+
+        for (const action of importable.onEnterActions) {
+            await importAction(ctx, action);
+        }
+
+        if (importable.onExitActions) {
+            goBack(ctx);
+            await waitForMenuToLoad(ctx);
+        }
+    }
+
+    if (importable.onExitActions) {
+        clickSlot(ctx, "Exit Actions");
+        await waitForMenuToLoad(ctx);
+
+        for (const action of importable.onExitActions) {
+            await importAction(ctx, action);
+        }
+    }
+}

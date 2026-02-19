@@ -33,47 +33,52 @@ export async function waitForMenuToLoad(ctx: TaskContext): Promise<void> {
     await ctx.waitFor("tick", null, 5);
 }
 
-async function rawClickSlot(
+export async function waitForUnformattedMessage(ctx: TaskContext, message: string): Promise<void> {
+    await ctx.withTimeout(
+        ctx
+            .waitFor(
+                "message",
+                (chatMessage) =>
+                    removedFormatting(chatMessage) === message
+            ),
+        "Waiting for message in chat"
+    );
+}
+
+function rawClickSlot(
     ctx: TaskContext,
     name: string,
     button: MouseButton = MouseButton.LEFT,
-    waitForMenu: boolean = true
-): Promise<boolean> {
+): boolean {
     const slot = ctx.findItemSlot(name);
     if (slot === null) return false;
-
-    const wait = waitForMenu ? waitForMenuToLoad(ctx) : Promise.resolve();
     slot.click(button);
-    await wait;
-
     return true;
 }
 
-export async function clickSlot(
+export function clickSlot(
     ctx: TaskContext,
     name: string,
     button: MouseButton = MouseButton.LEFT,
-    waitForMenu: boolean = true
-): Promise<void> {
-    const found = await rawClickSlot(ctx, name, button, waitForMenu);
+) {
+    const found = rawClickSlot(ctx, name, button);
     if (!found) {
         throw new Error(`Could not find slot with name '${name}'`);
     }
 }
 
-async function rawClickSlotPaginate(
+function rawClickSlotPaginate(
     ctx: TaskContext,
     name: string,
     button: MouseButton = MouseButton.LEFT,
-    waitForMenu: boolean = true
-): Promise<boolean> {
+): boolean {
     do {
-        const found = await rawClickSlot(ctx, name, button, waitForMenu);
+        const found = rawClickSlot(ctx, name, button);
         if (found) {
             return true;
         }
 
-        const wentToNextPage = await rawClickSlot(ctx, "Left-click for next page!");
+        const wentToNextPage = rawClickSlot(ctx, "Left-click for next page!");
         if (!wentToNextPage) break;
     } while (true);
 
@@ -83,20 +88,18 @@ async function rawClickSlotPaginate(
 export async function clickSlotPaginate(
     ctx: TaskContext,
     name: string,
-    button: MouseButton = MouseButton.LEFT,
-    waitForMenu: boolean = true
+    button: MouseButton = MouseButton.LEFT
 ): Promise<void> {
-    const found = await rawClickSlotPaginate(ctx, name, button, waitForMenu);
+    const found = await rawClickSlotPaginate(ctx, name, button);
     if (!found) {
         throw new Error(`Could not find slot with name '${name}'`);
     }
 }
 
-export async function goBack(
+export function goBack(
     ctx: TaskContext,
-    waitForMenu: boolean = true
-): Promise<void> {
-    await rawClickSlot(ctx, "Go Back", MouseButton.LEFT, waitForMenu);
+): void {
+    rawClickSlot(ctx, "Go Back", MouseButton.LEFT);
 }
 
 export function setAnvilItemName(newName: string) {

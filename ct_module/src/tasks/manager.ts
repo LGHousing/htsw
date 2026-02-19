@@ -11,7 +11,7 @@ type TaskCallback<A extends unknown[] = unknown[]> = (
     ...args: A
 ) => Promise<void>;
 
-export default class TaskManager {
+export class TaskManager {
     private static runningContexts: Set<TaskContext> = new Set();
 
     public static async run<A extends unknown[]>(

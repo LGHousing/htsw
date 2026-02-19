@@ -4,11 +4,10 @@ import { Importable } from "htsw/types";
 
 import { chatSeparator, FileSystemFileLoader } from "./helpers";
 import { Simulator } from "./simulator";
-import { Importer } from "./importer/importer";
 import { printDiagnostic, printDiagnostics } from "./tui/diagnostics";
 import { recompile } from "./recompile";
 import { importImportable } from "./importer/importables";
-import TaskManager from "./tasks/manager";
+import { TaskManager } from "./tasks/manager";
 
 export function registerCommands() {
     register("command", (...args) => commandHtsw(args)).setName("htsw");
