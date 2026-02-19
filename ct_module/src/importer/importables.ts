@@ -34,7 +34,6 @@ async function importImportableFunction(
     importable: ImportableFunction
 ): Promise<void> {
     ctx.runCommand(`/function edit ${importable.name}`);
-    ctx.displayMessage(`Importing function ${importable.name}...`);
 
     const alreadyExists = await ctx.withTimeout(
         Promise.race([
@@ -50,7 +49,6 @@ async function importImportableFunction(
         ]),
         "Waiting for function to open"
     );
-    ctx.displayMessage(`ALREADY EXISTS: ${alreadyExists}`);
 
     if (!alreadyExists) {
         ctx.runCommand(`/function create ${importable.name}`);
