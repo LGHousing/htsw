@@ -2,25 +2,26 @@ import { Importable, ImportableEvent, ImportableFunction, ImportableRegion } fro
 
 import { Step } from "./step";
 import { Importer } from "./importer";
-import { stepsForAction } from "./actions";
+import { importAction } from "./actions";
 import { stepSelectValue } from "./stepHelpers";
+import TaskContext from "../tasks/context";
 
-export function stepsForImportable(importable: Importable): Step[] {
+export async function importImportable(ctx: TaskContext, importable: Importable): Promise<void> {
     if (importable.type === "FUNCTION") {
-        return stepsforImportableFunction(importable);
+        return importImportableFunction(ctx, importable);
     }
     if (importable.type === "EVENT") {
-        return stepsForImportableEvent(importable);
+        return importImportableEvent(ctx, importable);
     }
     if (importable.type === "REGION") {
-        return stepsForImportableRegion(importable);
+        return importImportableRegion(ctx, importable);
     }
     return [];
 }
 
-function stepsforImportableFunction(
+async function importImportableFunction(ctx: TaskContext, 
     importable: ImportableFunction
-): Step[] {
+): Promise<void> {
     const steps: Step[] = [];
 
     steps.push({
@@ -48,15 +49,15 @@ function stepsforImportableFunction(
     });
 
     for (const action of importable.actions) {
-        steps.push(...stepsForAction(action));
+        steps.push(...importAction(action));
     }
 
     return steps;
 }
 
-function stepsForImportableEvent(
+async function importImportableEvent(ctx: TaskContext, 
     importable: ImportableEvent
-): Step[] {
+): Promise<void> {
     const steps: Step[] = [];
 
     steps.push({
@@ -67,15 +68,15 @@ function stepsForImportableEvent(
     steps.push(stepSelectValue(importable.event));
 
     for (const action of importable.actions) {
-        steps.push(...stepsForAction(action));
+        steps.push(...importAction(action));
     }
 
     return steps;
 }
 
-function stepsForImportableRegion(
+async function importImportableRegion(ctx: TaskContext, 
     importable: ImportableRegion
-): Step[] {
+): Promise<void> {
     const steps: Step[] = [];
 
     steps.push({
@@ -86,7 +87,7 @@ function stepsForImportableRegion(
     if (importable.onEnterActions && importable.onEnterActions.length > 0) {
         steps.push(stepSelectValue("Entry Actions"));
         for (const action of importable.onEnterActions) {
-            steps.push(...stepsForAction(action));
+            steps.push(...importAction(action));
         }
         steps.push({
             type: "CLICK_BUTTON",
@@ -97,7 +98,7 @@ function stepsForImportableRegion(
     if (importable.onExitActions && importable.onExitActions.length > 0) {
         steps.push(stepSelectValue("Exit Actions"));
         for (const action of importable.onExitActions) {
-            steps.push(...stepsForAction(action));
+            steps.push(...importAction(action));
         }
     }
 

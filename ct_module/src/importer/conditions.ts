@@ -18,9 +18,7 @@ import type {
     ConditionRequireTeam,
 } from "htsw/types";
 
-import type { Step } from "./step";
-import { stepsClickButtonThenSelectValue, stepGoBack } from "./helpers";
-import { stepsClickSlotThenSelect, stepsNumber, stepsString, stepsToggle } from "./stepHelpers";
+import TaskContext from "../tasks/context";
 
 const CONDITION_DISPLAY_NAMES: Record<Condition["type"], string> = {
     REQUIRE_GROUP: "Required Group",
@@ -41,7 +39,7 @@ const CONDITION_DISPLAY_NAMES: Record<Condition["type"], string> = {
     COMPARE_DAMAGE: "Damage Amount",
 };
 
-export function stepsForCondition(condition: Condition): Step[] {
+export async function importCondition(ctx: TaskContext, condition: Condition): Promise<void> {
     const steps: Step[] = [];
 
     steps.push(
@@ -51,52 +49,52 @@ export function stepsForCondition(condition: Condition): Step[] {
         )
     );
 
-    steps.push(...stepsForConditionSettings(condition));
+    steps.push(...importConditionSettings(ctx, condition));
     steps.push(stepGoBack());
 
     return steps;
 }
 
-function stepsForConditionSettings(condition: Condition): Step[] {
+async function importConditionSettings(ctx: TaskContext, condition: Condition): Promise<void> {
     switch (condition.type) {
         case "REQUIRE_GROUP":
-            return stepsForRequireGroup(condition);
+            return importRequireGroup(ctx, condition);
         case "COMPARE_VAR":
-            return stepsForCompareVar(condition);
+            return importCompareVar(ctx, condition);
         case "REQUIRE_PERMISSION":
-            return stepsForRequirePermission(condition);
+            return importRequirePermission(ctx, condition);
         case "IS_IN_REGION":
-            return stepsForIsInRegion(condition);
+            return importIsInRegion(ctx, condition);
         case "REQUIRE_ITEM":
-            return stepsForRequireItem(condition);
+            return importRequireItem(ctx, condition);
         case "IS_DOING_PARKOUR":
-            return stepsForIsDoingParkour(condition);
+            return importIsDoingParkour(ctx, condition);
         case "REQUIRE_POTION_EFFECT":
-            return stepsForRequirePotionEffect(condition);
+            return importRequirePotionEffect(ctx, condition);
         case "IS_SNEAKING":
-            return stepsForIsSneaking(condition);
+            return importIsSneaking(ctx, condition);
         case "IS_FLYING":
-            return stepsForIsFlying(condition);
+            return importIsFlying(ctx, condition);
         case "COMPARE_HEALTH":
-            return stepsForCompareHealth(condition);
+            return importCompareHealth(ctx, condition);
         case "COMPARE_MAX_HEALTH":
-            return stepsForCompareMaxHealth(condition);
+            return importCompareMaxHealth(ctx, condition);
         case "COMPARE_HUNGER":
-            return stepsForCompareHunger(condition);
+            return importCompareHunger(ctx, condition);
         case "REQUIRE_GAMEMODE":
-            return stepsForRequireGamemode(condition);
+            return importRequireGamemode(ctx, condition);
         case "COMPARE_PLACEHOLDER":
-            return stepsForComparePlaceholder(condition);
+            return importComparePlaceholder(ctx, condition);
         case "REQUIRE_TEAM":
-            return stepsForRequireTeam(condition);
+            return importRequireTeam(ctx, condition);
         case "COMPARE_DAMAGE":
-            return stepsForCompareDamage(condition);
+            return importCompareDamage(ctx, condition);
         default:
-            return [];
+            const _exhaustiveCheck: never = condition;
     }
 }
 
-function stepsForRequireGroup(condition: ConditionRequireGroup): Step[] {
+async function importRequireGroup(ctx: TaskContext, condition: ConditionRequireGroup): Promise<void> {
     const steps: Step[] = [];
 
     steps.push(...stepsClickSlotThenSelect(10, condition.group ?? ""));
@@ -105,7 +103,7 @@ function stepsForRequireGroup(condition: ConditionRequireGroup): Step[] {
     return steps;
 }
 
-function stepsForCompareVar(condition: ConditionCompareVar): Step[] {
+async function importCompareVar(ctx: TaskContext, condition: ConditionCompareVar): Promise<void> {
     const steps: Step[] = [];
 
     const holder = condition.holder?.type ?? "player";
@@ -129,7 +127,7 @@ function stepsForCompareVar(condition: ConditionCompareVar): Step[] {
     return steps;
 }
 
-function stepsForRequirePermission(condition: ConditionRequirePermission): Step[] {
+async function importRequirePermission(ctx: TaskContext, condition: ConditionRequirePermission): Promise<void> {
     const steps: Step[] = [];
 
     if (condition.permission) {
@@ -139,7 +137,7 @@ function stepsForRequirePermission(condition: ConditionRequirePermission): Step[
     return steps;
 }
 
-function stepsForIsInRegion(condition: ConditionIsInRegion): Step[] {
+async function importIsInRegion(ctx: TaskContext, condition: ConditionIsInRegion): Promise<void> {
     const steps: Step[] = [];
 
     if (condition.region) {
@@ -149,7 +147,7 @@ function stepsForIsInRegion(condition: ConditionIsInRegion): Step[] {
     return steps;
 }
 
-function stepsForRequireItem(condition: ConditionRequireItem): Step[] {
+async function importRequireItem(ctx: TaskContext, condition: ConditionRequireItem): Promise<void> {
     const steps: Step[] = [];
 
     if (condition.item) {
@@ -169,11 +167,11 @@ function stepsForRequireItem(condition: ConditionRequireItem): Step[] {
     return steps;
 }
 
-function stepsForIsDoingParkour(condition: ConditionIsDoingParkour): Step[] {
+async function importIsDoingParkour(ctx: TaskContext, condition: ConditionIsDoingParkour): Promise<void> {
     return [];
 }
 
-function stepsForRequirePotionEffect(condition: ConditionRequirePotionEffect): Step[] {
+async function importRequirePotionEffect(ctx: TaskContext, condition: ConditionRequirePotionEffect): Promise<void> {
     const steps: Step[] = [];
 
     if (condition.effect) {
@@ -183,27 +181,27 @@ function stepsForRequirePotionEffect(condition: ConditionRequirePotionEffect): S
     return steps;
 }
 
-function stepsForIsSneaking(condition: ConditionIsSneaking): Step[] {
+async function importIsSneaking(ctx: TaskContext, condition: ConditionIsSneaking): Promise<void> {
     return [];
 }
 
-function stepsForIsFlying(condition: ConditionIsFlying): Step[] {
+async function importIsFlying(ctx: TaskContext, condition: ConditionIsFlying): Promise<void> {
     return [];
 }
 
-function stepsForCompareHealth(condition: ConditionCompareHealth): Step[] {
-    return stepsForCompareNumberCondition(condition, 10, 11);
+async function importCompareHealth(ctx: TaskContext, condition: ConditionCompareHealth): Promise<void> {
+    return importCompareNumberCondition(ctx, condition, 10, 11);
 }
 
-function stepsForCompareMaxHealth(condition: ConditionCompareMaxHealth): Step[] {
-    return stepsForCompareNumberCondition(condition, 10, 11);
+async function importCompareMaxHealth(ctx: TaskContext, condition: ConditionCompareMaxHealth): Promise<void> {
+    return importCompareNumberCondition(ctx, condition, 10, 11);
 }
 
-function stepsForCompareHunger(condition: ConditionCompareHunger): Step[] {
-    return stepsForCompareNumberCondition(condition, 10, 11);
+async function importCompareHunger(ctx: TaskContext, condition: ConditionCompareHunger): Promise<void> {
+    return importCompareNumberCondition(ctx, condition, 10, 11);
 }
 
-function stepsForRequireGamemode(condition: ConditionRequireGamemode): Step[] {
+async function importRequireGamemode(ctx: TaskContext, condition: ConditionRequireGamemode): Promise<void> {
     const steps: Step[] = [];
 
     if (condition.gamemode) {
@@ -213,7 +211,7 @@ function stepsForRequireGamemode(condition: ConditionRequireGamemode): Step[] {
     return steps;
 }
 
-function stepsForComparePlaceholder(condition: ConditionComparePlaceholder): Step[] {
+async function importComparePlaceholder(ctx: TaskContext, condition: ConditionComparePlaceholder): Promise<void> {
     const steps: Step[] = [];
 
     steps.push(...stepsString(10, condition.placeholder));
@@ -225,7 +223,7 @@ function stepsForComparePlaceholder(condition: ConditionComparePlaceholder): Ste
     return steps;
 }
 
-function stepsForRequireTeam(condition: ConditionRequireTeam): Step[] {
+async function importRequireTeam(ctx: TaskContext, condition: ConditionRequireTeam): Promise<void> {
     const steps: Step[] = [];
 
     if (condition.team) {
@@ -235,15 +233,15 @@ function stepsForRequireTeam(condition: ConditionRequireTeam): Step[] {
     return steps;
 }
 
-function stepsForCompareDamage(condition: ConditionCompareDamage): Step[] {
-    return stepsForCompareNumberCondition(condition, 10, 11);
+async function importCompareDamage(ctx: TaskContext, condition: ConditionCompareDamage): Promise<void> {
+    return importCompareNumberCondition(ctx, condition, 10, 11);
 }
 
-function stepsForCompareNumberCondition(
+async function importCompareNumberCondition(ctx: TaskContext, 
     condition: { op?: string; amount?: string; inverted?: boolean },
     opSlot: number,
     valueSlot: number
-): Step[] {
+): Promise<void> {
     const steps: Step[] = [];
 
     if (condition.op) {
