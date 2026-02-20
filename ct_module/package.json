@@ -1,5 +1,5 @@
 {
-    "name": "htsw",
+    "name": "htsw-ct-module",
     "version": "1.1.1",
     "description": "HTSL but we don't take no Ls",
     "main": "dist/src/index.js",
@@ -7,7 +7,7 @@
     "scripts": {
         "dev": "npx tsx watch src/testing.ts",
         "build": "vite build --mode production",
-        "format": "npx prettier \"**/*.{ts,tsx,css,json}\" --write"
+        "format": "npx prettier \"**/*.{ts,json}\" --write"
     },
     "license": "MIT",
     "dependencies": {
@@ -15,11 +15,12 @@
         "promise-polyfill": "^8.3.0"
     },
     "devDependencies": {
+        "@babel/plugin-proposal-class-properties": "^7.0.0",
+        "@babel/plugin-transform-classes": "^7.0.0",
         "@babel/preset-env": "^7.0.0",
         "@babel/preset-typescript": "^7.0.0",
-        "@babel/plugin-transform-classes": "^7.0.0",
-        "@babel/plugin-proposal-class-properties": "^7.0.0",
         "@rollup/plugin-babel": "^6.0.0",
+        "typescript": "^5.9.3",
         "vite": "^7.0.0"
     }
 }
