@@ -3,6 +3,7 @@ import TaskContext from "../tasks/context";
 import { MouseButton } from "../tasks/specifics/slots";
 import { removedFormatting } from "../helpers";
 import { S2DPacketOpenWindow, S30PacketWindowItems } from "../utils/packets";
+import { lastWindowID___FromS30PacketWindowItemsPacketReceived } from "../tasks/specifics/waitFor";
 
 function stringAsValue(value: string): string {
     return value;
@@ -25,22 +26,18 @@ function soundPathToName(path: string): string | null {
 }
 
 export async function waitForMenuToLoad(ctx: TaskContext): Promise<void> {
-    await ctx.withTimeout(
-        ctx.waitFor("packetReceived", (packet) => {
+    await ctx.withTimeout(async () => {
+        await ctx.waitFor("packetReceived", (packet) => {
             return (
                 packet instanceof S30PacketWindowItems &&
-                // importantly, window items is occasionally sent a second time
-                // for the player's inventory before the actual window items for
-                // the container we are trying to load.
-
-                // func_148911_c returns the windowId which is 0 for the
-                // player's inventory.
-
-                packet.func_148911_c() != 0
+                // for some reason we need to do this LOLZ
+                packet.func_148911_c() >
+                    lastWindowID___FromS30PacketWindowItemsPacketReceived
             );
-        }),
-        "Waiting for menu to load",
-    );
+        });
+        // gotta wait one tick bc were NOT in the MAIN thread
+        await ctx.waitFor("tick");
+    }, "Waiting for menu to load");
 }
 
 export async function waitForUnformattedMessage(

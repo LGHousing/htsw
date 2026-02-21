@@ -1,3 +1,5 @@
+import { S30PacketWindowItems } from "../../utils/packets";
+
 type Packet = MCPacket<MCINetHandler>;
 
 // this is only important one, use like `waitFor(key, [value])`
@@ -54,12 +56,20 @@ function maybeResolve<E extends EventName>(
 register("tick", () => {
     maybeResolve("tick");
 });
+
+export let lastWindowID___FromS30PacketWindowItemsPacketReceived: number = -1;
+
 register("packetReceived", (packet) => {
     maybeResolve("packetReceived", packet);
+    if (packet instanceof S30PacketWindowItems) {
+        lastWindowID___FromS30PacketWindowItemsPacketReceived = packet.func_148911_c();
+    }
 });
+
 register("packetSent", (packet) => {
     maybeResolve("packetSent", packet);
 });
+
 register("chat", (event) => {
     // @ts-ignore
     const message = ChatLib.getChatMessage(event, true);

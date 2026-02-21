@@ -1,5 +1,9 @@
 import { removedFormatting } from "../helpers";
-import { findItemSlot as findItemSlot, getItemSlots, ItemSlot } from "./specifics/slots";
+import {
+    findItemSlot as findItemSlot,
+    getItemSlots,
+    ItemSlot,
+} from "./specifics/slots";
 import { waitFor } from "./specifics/waitFor";
 
 export default class TaskContext {
@@ -39,7 +43,7 @@ export default class TaskContext {
 
     public async sleep(
         duration: number | "forever", // duration in milliseconds
-        abortCheck?: () => boolean
+        abortCheck?: () => boolean,
     ): Promise<void> {
         if (duration === "forever") {
             duration = 315576000000;
@@ -53,14 +57,16 @@ export default class TaskContext {
             }
             const remaining = end - Date.now();
             if (remaining <= 0) return;
-            await new Promise((resolve) => setTimeout(resolve, Math.min(100, remaining)));
+            await new Promise((resolve) =>
+                setTimeout(resolve, Math.min(100, remaining)),
+            );
         }
     }
 
     public async withTimeout<T>(
-        promise: Promise<T>,
+        promise: Promise<T> | (() => Promise<T>),
         reason: string,
-        duration: number = 2000
+        duration: number = 2000,
     ): Promise<T> {
         const timeoutPromise = new Promise<T>((_, reject) => {
             setTimeout(() => {
@@ -68,7 +74,10 @@ export default class TaskContext {
             }, duration);
         });
 
-        return Promise.race([promise, timeoutPromise]);
+        return Promise.race([
+            typeof promise === "function" ? promise() : promise,
+            timeoutPromise,
+        ]);
     }
 
     getItemSlots = getItemSlots;
