@@ -25,12 +25,21 @@ function soundPathToName(path: string): string | null {
 }
 
 export async function waitForMenuToLoad(ctx: TaskContext): Promise<void> {
-    // TODO idfk if we can do this without the extra tick of waiting
     await ctx.withTimeout(
-        ctx.waitFor("packetReceived", (packet) => packet instanceof S30PacketWindowItems),
+        ctx.waitFor("packetReceived", (packet) => {
+            return packet instanceof S30PacketWindowItems
+
+                // importantly, window items is occasionally sent a second time
+                // for the player's inventory before the actual window items for
+                // the container we are trying to load.
+
+                // func_148911_c returns the windowId which is 0 for the
+                // player's inventory.
+                
+                && packet.func_148911_c() != 0
+        }),
         "Waiting for menu to load"
     );
-    await ctx.waitFor("tick", null, 10);
 }
 
 export async function waitForUnformattedMessage(
