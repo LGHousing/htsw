@@ -8,8 +8,10 @@ import { printDiagnostic, printDiagnostics } from "./tui/diagnostics";
 import { recompile } from "./recompile";
 import { importImportable } from "./importer/importables";
 import { TaskManager } from "./tasks/manager";
+import { clickSlot, waitForMenuToLoad } from "./importer/helpers";
 
 export function registerCommands() {
+    register("command", (...args) => commandFRICK(args)).setName("frick");
     register("command", (...args) => commandHtsw(args)).setName("htsw");
     register("command", (...args) => commandImport(args)).setName("import");
     register("command", (...args) => commandSimulator(args))
@@ -93,11 +95,11 @@ function commandSimulator(args: string[]) {
 
         if (result.gcx.isFailed()) {
             const errCount = result.diagnostics.filter(
-                (it) => it.level === "error"
+                (it) => it.level === "error",
             ).length;
             printDiagnostic(
                 sm,
-                Diagnostic.error(`Simulate failed with ${errCount} errors`)
+                Diagnostic.error(`Simulate failed with ${errCount} errors`),
             );
         } else {
             Simulator.start(sm, result.value);
@@ -122,4 +124,18 @@ function commandSimulator(args: string[]) {
         ChatLib.chat("&aSimulator stopped.");
         return;
     }
+}
+
+function commandFRICK(args: string[]) {
+    TaskManager.run(async (ctx) => {
+        ctx.runCommand("/hmenu");
+        await waitForMenuToLoad(ctx);
+        for (let i = 0; i < 10; i++) {
+            clickSlot(ctx, "Systems");
+            await waitForMenuToLoad(ctx);
+            clickSlot(ctx, "Go Back");
+            await waitForMenuToLoad(ctx);
+            await ctx.sleep(100);
+        }
+    });
 }

@@ -3,7 +3,7 @@ import TaskContext from "../tasks/context";
 import { MouseButton } from "../tasks/specifics/slots";
 import { removedFormatting } from "../helpers";
 import { S2DPacketOpenWindow, S30PacketWindowItems } from "../utils/packets";
-import { lastWindowID___FromS30PacketWindowItemsPacketReceived__ThisIsNecessary_sadly } from "../tasks/specifics/waitFor";
+import { lastWindowID___FromS30PacketWindowItemsPacketReceived__ThisIsNecessary_sadly_itIncrementsFrom1To100ThenItGoesBackAround_ButSometimesItSkipsOneOrMoreWeAreNotSureMaybeMore_AndItWillNeverBeZero } from "../tasks/specifics/waitFor";
 
 function stringAsValue(value: string): string {
     return value;
@@ -28,12 +28,12 @@ function soundPathToName(path: string): string | null {
 export async function waitForMenuToLoad(ctx: TaskContext): Promise<void> {
     await ctx.withTimeout(async () => {
         await ctx.waitFor("packetReceived", (packet) => {
+            if (!(packet instanceof S30PacketWindowItems)) return false;
+            const windowID = packet.func_148911_c();
             return (
-                packet instanceof S30PacketWindowItems &&
-
-                // Ensure this window items packet is for a new window
-                packet.func_148911_c() >
-                lastWindowID___FromS30PacketWindowItemsPacketReceived__ThisIsNecessary_sadly
+                windowID !== 0 &&
+                windowID !==
+                    lastWindowID___FromS30PacketWindowItemsPacketReceived__ThisIsNecessary_sadly_itIncrementsFrom1To100ThenItGoesBackAround_ButSometimesItSkipsOneOrMoreWeAreNotSureMaybeMore_AndItWillNeverBeZero
             );
         });
 
