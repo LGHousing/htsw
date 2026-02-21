@@ -37,6 +37,7 @@ import {
     waitForMenuToLoad,
     setValue,
     getSlotPaginate,
+    setBooleanValue,
 } from "./helpers";
 import { ItemSlot } from "../tasks/specifics/slots";
 import { removedFormatting } from "../helpers";
@@ -179,7 +180,7 @@ export async function importAction(
     }
 
     if (action.note) {
-        await setValue(ctx, "Note", action.note);
+        await setValue(ctx, ctx.getItemSlot("Note"), action.note);
         await waitForMenuToLoad(ctx);
     }
 
@@ -202,7 +203,11 @@ async function importConditional(
         }
     }
 
-    await setValue(ctx, "Match Any Condition", action.matchAny);
+    await setBooleanValue(
+        ctx,
+        ctx.getItemSlot("Match Any Condition"),
+        action.matchAny,
+    );
     await waitForMenuToLoad(ctx);
 
     if (action.ifActions) {
@@ -230,7 +235,7 @@ async function importSendMessage(
     ctx: TaskContext,
     action: ActionSendMessage,
 ): Promise<void> {
-    await setValue(ctx, "Message", action.message);
+    await setStringValue(ctx, "Message", action.message);
     await waitForMenuToLoad(ctx);
 }
 

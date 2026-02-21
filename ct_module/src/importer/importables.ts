@@ -74,7 +74,11 @@ async function importImportableFunction(
         (await getSlotPaginate(ctx, importable.name)).click(MouseButton.RIGHT);
         await waitForMenuToLoad(ctx);
 
-        await setValue(ctx, "Automatic Execution", importable.repeatTicks);
+        await setValue(
+            ctx,
+            ctx.getItemSlot("Automatic Execution"),
+            importable.repeatTicks,
+        );
         await waitForMenuToLoad(ctx);
     }
 }

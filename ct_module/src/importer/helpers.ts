@@ -1,21 +1,15 @@
-import { ACTION_NAMES, Action, SOUNDS } from "htsw/types";
+import {
+    ACTION_NAMES,
+    Action,
+    Condition,
+    Importable,
+    SOUNDS,
+} from "htsw/types";
 import TaskContext from "../tasks/context";
 import { ItemSlot, MouseButton } from "../tasks/specifics/slots";
 import { removedFormatting } from "../helpers";
 import { S2DPacketOpenWindow, S30PacketWindowItems } from "../utils/packets";
 import { lastWindowID___FromS30PacketWindowItemsPacketReceived__ThisIsNecessary_sadly_itIncrementsFrom1To100ThenItGoesBackAround_ButSometimesItSkipsOneOrMoreWeAreNotSureMaybeMore_AndItWillNeverBeZero } from "../tasks/specifics/waitFor";
-
-function stringAsValue(value: string): string {
-    return value;
-}
-
-function numberAsValue(value: number): string {
-    return value.toString();
-}
-
-function booleanAsValue(value: boolean): string {
-    return value ? "Enabled" : "Disabled";
-}
 
 // TODO export this if needed, else remove
 function soundPathToName(path: string): string | null {
@@ -120,31 +114,36 @@ function readCurrentValue(slot: ItemSlot): string | null {
     return lore[index + 1];
 }
 
-export async function setValue(
+// function stringAsValue(value: string): string {
+
+//     if (currentValue === newValue) {
+//         return;
+//     }
+//         return value;
+// }
+
+// function numberAsValue(value: number): string {
+//     return value.toString();
+//     if (currentValue === newValue) {
+//         return;
+//     }
+// }
+
+export async function setBooleanValue(
     ctx: TaskContext,
-    itemName: string,
-    value: string | number | boolean,
-): Promise<void> {
-    let formattedValue: string;
-    if (typeof value === "string") {
-        formattedValue = stringAsValue(value);
-    } else if (typeof value === "number") {
-        formattedValue = numberAsValue(value);
-    } else if (typeof value === "boolean") {
-        formattedValue = booleanAsValue(value);
-    } else {
-        const _exhaustiveCheck: never = value;
-        formattedValue = _exhaustiveCheck;
-    }
-
-    // TODO check item lore to see if already set yuh
-
-    const slot = ctx.getItemSlot(itemName);
-    slot.click();
-    if (typeof value === "boolean") {
+    slot: ItemSlot,
+    value: boolean,
+) {
+    const newValue = value ? "Enabled" : "Disabled";
+    const currentValue = readCurrentValue(slot);
+    if (currentValue !== null && removedFormatting(currentValue) === newValue) {
         return;
     }
 
+    slot.click();
+}
+
+async function enterValue(ctx: TaskContext, value: string) {
     const inputMode = await ctx.withTimeout(
         Promise.race([
             ctx
@@ -171,14 +170,44 @@ export async function setValue(
 
     switch (inputMode) {
         case "CHAT":
-            ctx.sendMessage(formattedValue);
+            ctx.sendMessage(value);
             break;
         case "ANVIL":
             await waitForMenuToLoad(ctx);
-            setAnvilItemName(formattedValue);
+            setAnvilItemName(value);
             acceptNewAnvilItem();
             break;
         default:
             const _exhaustiveCheck: never = inputMode;
     }
+}
+
+export async function setNumberValue(
+    ctx: TaskContext,
+    slot: ItemSlot,
+    value: number,
+) {
+    const newValue = value.toString();
+    const currentValue = readCurrentValue(slot);
+    if (currentValue === newValue) {
+        return;
+    }
+
+    slot.click();
+    await enterValue(ctx, newValue);
+}
+
+export async function setStringValue(
+    ctx: TaskContext,
+    slot: ItemSlot,
+    value: string,
+) {
+    const newValue = value.toString();
+    const currentValue = readCurrentValue(slot);
+    if (currentValue === newValue) {
+        return;
+    }
+
+    slot.click();
+    await enterValue(ctx, newValue);
 }
