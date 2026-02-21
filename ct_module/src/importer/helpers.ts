@@ -27,38 +27,39 @@ function soundPathToName(path: string): string | null {
 export async function waitForMenuToLoad(ctx: TaskContext): Promise<void> {
     await ctx.withTimeout(
         ctx.waitFor("packetReceived", (packet) => {
-            return packet instanceof S30PacketWindowItems
-
+            return (
+                packet instanceof S30PacketWindowItems &&
                 // importantly, window items is occasionally sent a second time
                 // for the player's inventory before the actual window items for
                 // the container we are trying to load.
 
                 // func_148911_c returns the windowId which is 0 for the
                 // player's inventory.
-                
-                && packet.func_148911_c() != 0
+
+                packet.func_148911_c() != 0
+            );
         }),
-        "Waiting for menu to load"
+        "Waiting for menu to load",
     );
 }
 
 export async function waitForUnformattedMessage(
     ctx: TaskContext,
-    message: string
+    message: string,
 ): Promise<void> {
     await ctx.withTimeout(
         ctx.waitFor(
             "message",
-            (chatMessage) => removedFormatting(chatMessage) === message
+            (chatMessage) => removedFormatting(chatMessage) === message,
         ),
-        "Waiting for message in chat"
+        "Waiting for message in chat",
     );
 }
 
 function rawClickSlot(
     ctx: TaskContext,
     name: string,
-    button: MouseButton = MouseButton.LEFT
+    button: MouseButton = MouseButton.LEFT,
 ): boolean {
     const slot = ctx.findItemSlot(name);
     if (slot === null) return false;
@@ -69,7 +70,7 @@ function rawClickSlot(
 export function clickSlot(
     ctx: TaskContext,
     name: string,
-    button: MouseButton = MouseButton.LEFT
+    button: MouseButton = MouseButton.LEFT,
 ) {
     const found = rawClickSlot(ctx, name, button);
     if (!found) {
@@ -80,7 +81,7 @@ export function clickSlot(
 async function rawClickSlotPaginate(
     ctx: TaskContext,
     name: string,
-    button: MouseButton = MouseButton.LEFT
+    button: MouseButton = MouseButton.LEFT,
 ): Promise<boolean> {
     do {
         const found = rawClickSlot(ctx, name, button);
@@ -97,7 +98,7 @@ async function rawClickSlotPaginate(
 export async function clickSlotPaginate(
     ctx: TaskContext,
     name: string,
-    button: MouseButton = MouseButton.LEFT
+    button: MouseButton = MouseButton.LEFT,
 ): Promise<void> {
     const found = await rawClickSlotPaginate(ctx, name, button);
     if (!found) {
@@ -114,12 +115,14 @@ export function setAnvilItemName(newName: string) {
     if (inventory == null) {
         throw new Error("No open container found");
     }
-    const outputSlotField = inventory.container.class.getDeclaredField("field_82852_f");
+    const outputSlotField =
+        inventory.container.class.getDeclaredField("field_82852_f");
     // @ts-ignore
     outputSlotField.setAccessible(true);
     const outputSlot = outputSlotField.get(inventory.container);
 
-    const outputSlotItemField = outputSlot.class.getDeclaredField("field_70467_a");
+    const outputSlotItemField =
+        outputSlot.class.getDeclaredField("field_70467_a");
     outputSlotItemField.setAccessible(true);
     let outputSlotItem = outputSlotItemField.get(outputSlot);
 
@@ -138,7 +141,7 @@ export function acceptNewAnvilItem(): void {
 export async function setValue(
     ctx: TaskContext,
     itemName: string,
-    value: string | number | boolean
+    value: string | number | boolean,
 ): Promise<void> {
     if (typeof value === "string") {
         value = stringAsValue(value);
@@ -158,7 +161,7 @@ export async function setValue(
             ctx
                 .waitFor("message", (message) => {
                     return removedFormatting(message).includes(
-                        "Please use the chat to provide the value you wish to set."
+                        "Please use the chat to provide the value you wish to set.",
                     );
                 })
                 .then(() => "CHAT" as const),
@@ -174,7 +177,7 @@ export async function setValue(
                 })
                 .then(() => "ANVIL" as const),
         ]),
-        "Waiting for input mode to be determined"
+        "Waiting for input mode to be determined",
     );
 
     switch (inputMode) {
