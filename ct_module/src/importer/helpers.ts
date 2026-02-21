@@ -1,21 +1,15 @@
-import { ACTION_NAMES, Action, SOUNDS } from "htsw/types";
+import {
+    ACTION_NAMES,
+    Action,
+    Condition,
+    Importable,
+    SOUNDS,
+} from "htsw/types";
 import TaskContext from "../tasks/context";
 import { ItemSlot, MouseButton } from "../tasks/specifics/slots";
 import { removedFormatting } from "../helpers";
 import { S2DPacketOpenWindow, S30PacketWindowItems } from "../utils/packets";
 import { lastWindowID___FromS30PacketWindowItemsPacketReceived__ThisIsNecessary_sadly_itIncrementsFrom1To100ThenItGoesBackAround_ButSometimesItSkipsOneOrMoreWeAreNotSureMaybeMore_AndItWillNeverBeZero } from "../tasks/specifics/waitFor";
-
-function stringAsValue(value: string): string {
-    return value;
-}
-
-function numberAsValue(value: number): string {
-    return value.toString();
-}
-
-function booleanAsValue(value: boolean): string {
-    return value ? "Enabled" : "Disabled";
-}
 
 // TODO export this if needed, else remove
 function soundPathToName(path: string): string | null {
@@ -58,79 +52,25 @@ export async function waitForUnformattedMessage(
     );
 }
 
-function rawClickSlot(
-    ctx: TaskContext,
-    name: string,
-    button: MouseButton = MouseButton.LEFT,
-): boolean {
-    const slot = ctx.findItemSlot(name);
-    if (slot === null) return false;
-    slot.click(button);
-    return true;
-}
-
-export function clickSlot(
-    ctx: TaskContext,
-    name: string,
-    button: MouseButton = MouseButton.LEFT,
-) {
-    const found = rawClickSlot(ctx, name, button);
-    if (!found) {
-        throw new Error(`Could not find "${name}"`);
-    }
-}
-
-export async function rawFindItemSlotPaginate(
-    ctx: TaskContext,
-    name: string,
-): Promise<ItemSlot | null> {
-    do {
-        const slot = ctx.findItemSlot(name);
-        if (slot !== null) return slot;
-
-        const wentToNextPage = rawClickSlot(ctx, "Left-click for next page!");
-        if (!wentToNextPage) break;
-        await waitForMenuToLoad(ctx);
-    } while (true);
-
-    return null;
-}
-
-export async function findItemSlotPaginate(
+export async function getSlotPaginate(
     ctx: TaskContext,
     name: string,
 ): Promise<ItemSlot> {
-    const slot = await rawFindItemSlotPaginate(ctx, name);
-    if (slot === null) {
-        throw new Error(`Could not find "${name}" on any page`);
-    }
-    return slot;
+    do {
+        const slot = ctx.tryGetItemSlot(name);
+        if (slot !== null) return slot;
+
+        const nextPageSlot = ctx.tryGetItemSlot("Left-click for next page!");
+        if (nextPageSlot === null) break;
+        nextPageSlot.click();
+        await waitForMenuToLoad(ctx);
+    } while (true);
+
+    throw new Error(`Could not find "${name}" on any page.`);
 }
 
-async function rawClickSlotPaginate(
-    ctx: TaskContext,
-    name: string,
-    button: MouseButton = MouseButton.LEFT,
-): Promise<boolean> {
-    const slot = await rawFindItemSlotPaginate(ctx, name);
-    if (slot === null) return false;
-    slot.click(button);
-    return true;
-}
-
-export async function clickSlotPaginate(
-    ctx: TaskContext,
-    name: string,
-    button: MouseButton = MouseButton.LEFT,
-): Promise<void> {
-    const found = await rawClickSlotPaginate(ctx, name, button);
-    if (!found) {
-        throw new Error(`Could not find "${name}" on any page`);
-    }
-}
-
-export function goBack(ctx: TaskContext): void {
-    rawClickSlot(ctx, "Go Back");
+export function clickGoBack(ctx: TaskContext): void {
+    ctx.getItemSlot("Go Back").click();
 }
 
 export function setAnvilItemName(newName: string) {
@@ -161,24 +101,49 @@ export function acceptNewAnvilItem(): void {
     inventory.click(2, false);
 }
 
-export async function setValue(
+function readCurrentValue(slot: ItemSlot): string | null {
+    const lore = slot.getItem().getLore();
+    const index = lore.findIndex(
+        (line, i) => removedFormatting(line) === "Current Value:",
+    );
+    if (index === -1) return null;
+
+    if (index + 1 >= lore.length) {
+        return null;
+    }
+    return lore[index + 1];
+}
+
+// function stringAsValue(value: string): string {
+
+//     if (currentValue === newValue) {
+//         return;
+//     }
+//         return value;
+// }
+
+// function numberAsValue(value: number): string {
+//     return value.toString();
+//     if (currentValue === newValue) {
+//         return;
+//     }
+// }
+
+export async function setBooleanValue(
     ctx: TaskContext,
-    itemName: string,
-    value: string | number | boolean,
-): Promise<void> {
-    if (typeof value === "string") {
-        value = stringAsValue(value);
-    } else if (typeof value === "number") {
-        value = numberAsValue(value);
-    } else if (typeof value === "boolean") {
-        value = booleanAsValue(value);
-    } else {
-        const _exhaustiveCheck: never = value;
+    slot: ItemSlot,
+    value: boolean,
+) {
+    const newValue = value ? "Enabled" : "Disabled";
+    const currentValue = readCurrentValue(slot);
+    if (currentValue !== null && removedFormatting(currentValue) === newValue) {
+        return;
     }
 
-    // TODO read item lore to check for values already the same, and early return
+    slot.click();
+}
 
-    clickSlot(ctx, itemName);
+async function enterValue(ctx: TaskContext, value: string) {
     const inputMode = await ctx.withTimeout(
         Promise.race([
             ctx
@@ -215,4 +180,34 @@ export async function setValue(
         default:
             const _exhaustiveCheck: never = inputMode;
     }
+}
+
+export async function setNumberValue(
+    ctx: TaskContext,
+    slot: ItemSlot,
+    value: number,
+) {
+    const newValue = value.toString();
+    const currentValue = readCurrentValue(slot);
+    if (currentValue === newValue) {
+        return;
+    }
+
+    slot.click();
+    await enterValue(ctx, newValue);
+}
+
+export async function setStringValue(
+    ctx: TaskContext,
+    slot: ItemSlot,
+    value: string,
+) {
+    const newValue = value.toString();
+    const currentValue = readCurrentValue(slot);
+    if (currentValue === newValue) {
+        return;
+    }
+
+    slot.click();
+    await enterValue(ctx, newValue);
 }

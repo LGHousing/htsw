@@ -23,7 +23,10 @@ export class ItemSlot {
         return this.item;
     }
 
-    public click(button: MouseButton = MouseButton.LEFT, shift: boolean = false): void {
+    public click(
+        button: MouseButton = MouseButton.LEFT,
+        shift: boolean = false,
+    ): void {
         const container = Player.getContainer();
         if (container == null) {
             throw new Error("No open container found");
@@ -32,7 +35,7 @@ export class ItemSlot {
     }
 }
 
-export function getItemSlots(): ItemSlot[] | null {
+export function getAllItemSlots(): ItemSlot[] | null {
     const container = Player.getContainer();
     if (container == null) {
         return null;
@@ -50,8 +53,8 @@ export function getItemSlots(): ItemSlot[] | null {
     return slots;
 }
 
-export function findItemSlot(
-    check: ((slot: ItemSlot) => boolean) | string
+export function tryGetItemSlot(
+    check: string | ((slot: ItemSlot) => boolean),
 ): ItemSlot | null {
     if (typeof check === "string") {
         const name = removedFormatting(check);
@@ -60,7 +63,7 @@ export function findItemSlot(
         };
     }
 
-    const slots = getItemSlots();
+    const slots = getAllItemSlots();
     if (slots == null) return null;
     for (const slot of slots) {
         if (check(slot)) {
@@ -68,4 +71,18 @@ export function findItemSlot(
         }
     }
     return null;
+}
+
+export function getItemSlot(
+    check: string | ((slot: ItemSlot) => boolean),
+): ItemSlot {
+    const slot = tryGetItemSlot(check);
+    if (slot === null) {
+        if (typeof check === "string") {
+            throw new Error(`Could not find "${check}"`);
+        } else {
+            throw new Error("Could not find item slot");
+        }
+    }
+    return slot;
 }

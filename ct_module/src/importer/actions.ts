@@ -33,16 +33,16 @@ import type {
 
 import TaskContext from "../tasks/context";
 import {
-    clickSlotPaginate,
-    clickSlot,
-    goBack,
+    clickGoBack,
     waitForMenuToLoad,
-    setValue,
-    findItemSlotPaginate,
+    getSlotPaginate,
+    setStringValue,
+    setBooleanValue,
 } from "./helpers";
 import { ItemSlot } from "../tasks/specifics/slots";
 import { removedFormatting } from "../helpers";
 import { Diagnostic } from "htsw";
+import { importCondition } from "./conditions";
 
 const ACTION_DISPLAY_NAMES: Record<Action["type"], string> = {
     CHANGE_VAR: "Change Variable",
@@ -94,12 +94,12 @@ export async function importAction(
     ctx: TaskContext,
     action: Action,
 ): Promise<void> {
-    clickSlot(ctx, "Add Action");
+    ctx.getItemSlot("Add Action").click();
     await waitForMenuToLoad(ctx);
 
     const displayName = ACTION_DISPLAY_NAMES[action.type];
 
-    const slot = await findItemSlotPaginate(ctx, displayName);
+    const slot = await getSlotPaginate(ctx, displayName);
 
     if (isLimitExceeded(slot)) {
         throw Diagnostic.error(`Maximum amount of ${displayName} actions exceeded`);
@@ -183,11 +183,11 @@ export async function importAction(
     }
 
     if (action.note) {
-        await setValue(ctx, "Note", action.note);
+        await setStringValue(ctx, ctx.getItemSlot("Note"), action.note);
         await waitForMenuToLoad(ctx);
     }
 
-    goBack(ctx);
+    clickGoBack(ctx);
     await waitForMenuToLoad(ctx);
 }
 
@@ -199,13 +199,46 @@ async function importChangeVar(
 async function importConditional(
     ctx: TaskContext,
     action: ActionConditional,
-): Promise<void> { }
+): Promise<void> {
+    if (action.conditions) {
+        for (const condition of action.conditions) {
+            await importCondition(ctx, condition);
+        }
+    }
+
+    await setBooleanValue(
+        ctx,
+        ctx.getItemSlot("Match Any Condition"),
+        action.matchAny,
+    );
+    await waitForMenuToLoad(ctx);
+
+    if (action.ifActions) {
+        ctx.getItemSlot("If Actions").click();
+        await waitForMenuToLoad(ctx);
+        for (const ifAction of action.ifActions) {
+            await importAction(ctx, ifAction);
+        }
+        clickGoBack(ctx);
+        await waitForMenuToLoad(ctx);
+    }
+
+    if (action.elseActions) {
+        ctx.getItemSlot("Else Actions").click();
+        await waitForMenuToLoad(ctx);
+        for (const elseAction of action.elseActions) {
+            await importAction(ctx, elseAction);
+        }
+        clickGoBack(ctx);
+        await waitForMenuToLoad(ctx);
+    }
+}
 
 async function importSendMessage(
     ctx: TaskContext,
     action: ActionSendMessage,
 ): Promise<void> {
-    await setValue(ctx, "Message", action.message);
+    await setStringValue(ctx, ctx.getItemSlot("Message"), action.message);
     await waitForMenuToLoad(ctx);
 }
 

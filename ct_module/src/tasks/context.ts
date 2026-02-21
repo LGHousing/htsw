@@ -1,8 +1,9 @@
 import { removedFormatting } from "../helpers";
 import {
-    findItemSlot as findItemSlot,
-    getItemSlots,
+    tryGetItemSlot,
+    getAllItemSlots,
     ItemSlot,
+    getItemSlot,
 } from "./specifics/slots";
 import { waitFor } from "./specifics/waitFor";
 
@@ -80,7 +81,9 @@ export default class TaskContext {
         ]);
     }
 
-    getItemSlots = getItemSlots;
-    findItemSlot = findItemSlot;
+    getAllItemSlots = getAllItemSlots;
+    tryGetItemSlot = tryGetItemSlot;
+    getItemSlot = getItemSlot;
+
     waitFor = waitFor;
 }
