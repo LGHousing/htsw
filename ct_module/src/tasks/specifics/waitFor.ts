@@ -35,7 +35,7 @@ function maybeResolve<E extends EventName>(
     const containers = EVENT_CONTAINERS[event];
 
     // FIFO
-    for (let i = 0; i < containers.length; ) {
+    for (let i = 0; i < containers.length;) {
         const container = containers[i];
 
         // @ts-ignore
@@ -57,12 +57,12 @@ register("tick", () => {
     maybeResolve("tick");
 });
 
-export let lastWindowID___FromS30PacketWindowItemsPacketReceived: number = -1;
+export let lastWindowID___FromS30PacketWindowItemsPacketReceived__ThisIsNecessary_sadly: number = -1;
 
 register("packetReceived", (packet) => {
     maybeResolve("packetReceived", packet);
     if (packet instanceof S30PacketWindowItems) {
-        lastWindowID___FromS30PacketWindowItemsPacketReceived = packet.func_148911_c();
+        lastWindowID___FromS30PacketWindowItemsPacketReceived__ThisIsNecessary_sadly = packet.func_148911_c();
     }
 });
 

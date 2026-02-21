@@ -3,7 +3,7 @@ import TaskContext from "../tasks/context";
 import { MouseButton } from "../tasks/specifics/slots";
 import { removedFormatting } from "../helpers";
 import { S2DPacketOpenWindow, S30PacketWindowItems } from "../utils/packets";
-import { lastWindowID___FromS30PacketWindowItemsPacketReceived } from "../tasks/specifics/waitFor";
+import { lastWindowID___FromS30PacketWindowItemsPacketReceived__ThisIsNecessary_sadly } from "../tasks/specifics/waitFor";
 
 function stringAsValue(value: string): string {
     return value;
@@ -30,12 +30,17 @@ export async function waitForMenuToLoad(ctx: TaskContext): Promise<void> {
         await ctx.waitFor("packetReceived", (packet) => {
             return (
                 packet instanceof S30PacketWindowItems &&
-                // for some reason we need to do this LOLZ
+
+                // Ensure this window items packet is for a new window
                 packet.func_148911_c() >
-                    lastWindowID___FromS30PacketWindowItemsPacketReceived
+                lastWindowID___FromS30PacketWindowItemsPacketReceived__ThisIsNecessary_sadly
             );
         });
-        // gotta wait one tick bc were NOT in the MAIN thread
+
+        // Netty handles packets from a worker thread but the packet is only
+        // actually handled by Minecraft once it is synchronized with the main
+        // thread. So we have to wait for the next tick so the packet will be
+        // processed and the window items will be in the container.
         await ctx.waitFor("tick");
     }, "Waiting for menu to load");
 }
