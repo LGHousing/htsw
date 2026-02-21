@@ -8,7 +8,7 @@ import { printDiagnostic, printDiagnostics } from "./tui/diagnostics";
 import { recompile } from "./recompile";
 import { importImportable } from "./importer/importables";
 import { TaskManager } from "./tasks/manager";
-import { clickSlot, waitForMenuToLoad } from "./importer/helpers";
+import { waitForMenuToLoad } from "./importer/helpers";
 
 export function registerCommands() {
     register("command", (...args) => commandFRICK(args)).setName("frick");
@@ -131,9 +131,9 @@ function commandFRICK(args: string[]) {
         ctx.runCommand("/hmenu");
         await waitForMenuToLoad(ctx);
         for (let i = 0; i < 10; i++) {
-            clickSlot(ctx, "Systems");
+            ctx.getItemSlot("Systems").click();
             await waitForMenuToLoad(ctx);
-            clickSlot(ctx, "Go Back");
+            ctx.getItemSlot("Go Back").click();
             await waitForMenuToLoad(ctx);
             await ctx.sleep(100);
         }

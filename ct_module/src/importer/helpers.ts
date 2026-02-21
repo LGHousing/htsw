@@ -58,79 +58,25 @@ export async function waitForUnformattedMessage(
     );
 }
 
-function rawClickSlot(
-    ctx: TaskContext,
-    name: string,
-    button: MouseButton = MouseButton.LEFT,
-): boolean {
-    const slot = ctx.findItemSlot(name);
-    if (slot === null) return false;
-    slot.click(button);
-    return true;
-}
-
-export function clickSlot(
-    ctx: TaskContext,
-    name: string,
-    button: MouseButton = MouseButton.LEFT,
-) {
-    const found = rawClickSlot(ctx, name, button);
-    if (!found) {
-        throw new Error(`Could not find "${name}"`);
-    }
-}
-
-export async function rawFindItemSlotPaginate(
-    ctx: TaskContext,
-    name: string,
-): Promise<ItemSlot | null> {
-    do {
-        const slot = ctx.findItemSlot(name);
-        if (slot !== null) return slot;
-
-        const wentToNextPage = rawClickSlot(ctx, "Left-click for next page!");
-        if (!wentToNextPage) break;
-        await waitForMenuToLoad(ctx);
-    } while (true);
-
-    return null;
-}
-
-export async function findItemSlotPaginate(
+export async function getSlotPaginate(
     ctx: TaskContext,
     name: string,
 ): Promise<ItemSlot> {
-    const slot = await rawFindItemSlotPaginate(ctx, name);
-    if (slot === null) {
-        throw new Error(`Could not find "${name}" on any page`);
-    }
-    return slot;
+    do {
+        const slot = ctx.tryGetItemSlot(name);
+        if (slot !== null) return slot;
+
+        const nextPageSlot = ctx.tryGetItemSlot("Left-click for next page!");
+        if (nextPageSlot === null) break;
+        nextPageSlot.click();
+        await waitForMenuToLoad(ctx);
+    } while (true);
+
+    throw new Error(`Could not find "${name}" on any page.`);
 }
 
-async function rawClickSlotPaginate(
-    ctx: TaskContext,
-    name: string,
-    button: MouseButton = MouseButton.LEFT,
-): Promise<boolean> {
-    const slot = await rawFindItemSlotPaginate(ctx, name);
-    if (slot === null) return false;
-    slot.click(button);
-    return true;
-}
-
-export async function clickSlotPaginate(
-    ctx: TaskContext,
-    name: string,
-    button: MouseButton = MouseButton.LEFT,
-): Promise<void> {
-    const found = await rawClickSlotPaginate(ctx, name, button);
-    if (!found) {
-        throw new Error(`Could not find "${name}" on any page`);
-    }
-}
-
-export function goBack(ctx: TaskContext): void {
-    rawClickSlot(ctx, "Go Back");
+export function clickGoBack(ctx: TaskContext): void {
+    ctx.getItemSlot("Go Back").click();
 }
 
 export function setAnvilItemName(newName: string) {
@@ -161,24 +107,44 @@ export function acceptNewAnvilItem(): void {
     inventory.click(2, false);
 }
 
+function readCurrentValue(slot: ItemSlot): string | null {
+    const lore = slot.getItem().getLore();
+    const index = lore.findIndex(
+        (line, i) => removedFormatting(line) === "Current Value:",
+    );
+    if (index === -1) return null;
+
+    if (index + 1 >= lore.length) {
+        return null;
+    }
+    return lore[index + 1];
+}
+
 export async function setValue(
     ctx: TaskContext,
     itemName: string,
     value: string | number | boolean,
 ): Promise<void> {
+    let formattedValue: string;
     if (typeof value === "string") {
-        value = stringAsValue(value);
+        formattedValue = stringAsValue(value);
     } else if (typeof value === "number") {
-        value = numberAsValue(value);
+        formattedValue = numberAsValue(value);
     } else if (typeof value === "boolean") {
-        value = booleanAsValue(value);
+        formattedValue = booleanAsValue(value);
     } else {
         const _exhaustiveCheck: never = value;
+        formattedValue = _exhaustiveCheck;
     }
 
-    // TODO read item lore to check for values already the same, and early return
+    // TODO check item lore to see if already set yuh
 
-    clickSlot(ctx, itemName);
+    const slot = ctx.getItemSlot(itemName);
+    slot.click();
+    if (typeof value === "boolean") {
+        return;
+    }
+
     const inputMode = await ctx.withTimeout(
         Promise.race([
             ctx
@@ -205,11 +171,11 @@ export async function setValue(
 
     switch (inputMode) {
         case "CHAT":
-            ctx.sendMessage(value);
+            ctx.sendMessage(formattedValue);
             break;
         case "ANVIL":
             await waitForMenuToLoad(ctx);
-            setAnvilItemName(value);
+            setAnvilItemName(formattedValue);
             acceptNewAnvilItem();
             break;
         default:
