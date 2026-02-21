@@ -1,6 +1,6 @@
 import { ACTION_NAMES, Action, SOUNDS } from "htsw/types";
 import TaskContext from "../tasks/context";
-import { MouseButton } from "../tasks/specifics/slots";
+import { ItemSlot, MouseButton } from "../tasks/specifics/slots";
 import { removedFormatting } from "../helpers";
 import { S2DPacketOpenWindow, S30PacketWindowItems } from "../utils/packets";
 import { lastWindowID___FromS30PacketWindowItemsPacketReceived__ThisIsNecessary_sadly_itIncrementsFrom1To100ThenItGoesBackAround_ButSometimesItSkipsOneOrMoreWeAreNotSureMaybeMore_AndItWillNeverBeZero } from "../tasks/specifics/waitFor";
@@ -76,8 +76,35 @@ export function clickSlot(
 ) {
     const found = rawClickSlot(ctx, name, button);
     if (!found) {
-        throw new Error(`Could not find slot with name '${name}'`);
+        throw new Error(`Could not find "${name}"`);
     }
+}
+
+export async function rawFindItemSlotPaginate(
+    ctx: TaskContext,
+    name: string,
+): Promise<ItemSlot | null> {
+    do {
+        const slot = ctx.findItemSlot(name);
+        if (slot !== null) return slot;
+
+        const wentToNextPage = rawClickSlot(ctx, "Left-click for next page!");
+        if (!wentToNextPage) break;
+        await waitForMenuToLoad(ctx);
+    } while (true);
+
+    return null;
+}
+
+export async function findItemSlotPaginate(
+    ctx: TaskContext,
+    name: string,
+): Promise<ItemSlot> {
+    const slot = await rawFindItemSlotPaginate(ctx, name);
+    if (slot === null) {
+        throw new Error(`Could not find "${name}" on any page`);
+    }
+    return slot;
 }
 
 async function rawClickSlotPaginate(
@@ -85,16 +112,10 @@ async function rawClickSlotPaginate(
     name: string,
     button: MouseButton = MouseButton.LEFT,
 ): Promise<boolean> {
-    do {
-        const found = rawClickSlot(ctx, name, button);
-        if (found) return true;
-
-        const wentToNextPage = rawClickSlot(ctx, "Left-click for next page!");
-        if (!wentToNextPage) break;
-        await waitForMenuToLoad(ctx);
-    } while (true);
-
-    return false;
+    const slot = await rawFindItemSlotPaginate(ctx, name);
+    if (slot === null) return false;
+    slot.click(button);
+    return true;
 }
 
 export async function clickSlotPaginate(
@@ -104,7 +125,7 @@ export async function clickSlotPaginate(
 ): Promise<void> {
     const found = await rawClickSlotPaginate(ctx, name, button);
     if (!found) {
-        throw new Error(`Could not find slot with name '${name}'`);
+        throw new Error(`Could not find "${name}" on any page`);
     }
 }
 
