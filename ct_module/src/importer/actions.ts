@@ -42,6 +42,7 @@ import {
 } from "./helpers";
 import { ItemSlot } from "../tasks/specifics/slots";
 import { removedFormatting } from "../helpers";
+import { Diagnostic } from "htsw";
 
 const ACTION_DISPLAY_NAMES: Record<Action["type"], string> = {
     CHANGE_VAR: "Change Variable",
@@ -81,13 +82,12 @@ const ACTION_DISPLAY_NAMES: Record<Action["type"], string> = {
     CANCEL_EVENT: "Cancel Event",
 };
 
-function canHaveMoreOfThisAction(slot: ItemSlot): boolean {
+function isLimitExceeded(slot: ItemSlot): boolean {
     const lore = slot.getItem().getLore();
-    if (lore.length === 0) return true;
+    if (lore.length === 0) return false;
     const lastLine = lore[lore.length - 1];
-    return (
-        removedFormatting(lastLine) !== "You can't have more of this action!"
-    );
+    console.log(removedFormatting(lastLine));
+    return removedFormatting(lastLine) === "You can't have more of this action!";
 }
 
 export async function importAction(
@@ -97,12 +97,12 @@ export async function importAction(
     clickSlot(ctx, "Add Action");
     await waitForMenuToLoad(ctx);
 
-    const slot = await findItemSlotPaginate(
-        ctx,
-        ACTION_DISPLAY_NAMES[action.type],
-    );
-    if (!canHaveMoreOfThisAction(slot)) {
-        throw new Error(`SANDY CHANGE THIS!!!`);
+    const displayName = ACTION_DISPLAY_NAMES[action.type];
+
+    const slot = await findItemSlotPaginate(ctx, displayName);
+
+    if (isLimitExceeded(slot)) {
+        throw Diagnostic.error(`Maximum amount of ${displayName} actions exceeded`);
     }
 
     slot.click();
@@ -194,12 +194,12 @@ export async function importAction(
 async function importChangeVar(
     ctx: TaskContext,
     action: ActionChangeVar,
-): Promise<void> {}
+): Promise<void> { }
 
 async function importConditional(
     ctx: TaskContext,
     action: ActionConditional,
-): Promise<void> {}
+): Promise<void> { }
 
 async function importSendMessage(
     ctx: TaskContext,
@@ -212,129 +212,129 @@ async function importSendMessage(
 async function importActionBar(
     ctx: TaskContext,
     action: ActionActionBar,
-): Promise<void> {}
+): Promise<void> { }
 
 async function importPlaySound(
     ctx: TaskContext,
     action: ActionPlaySound,
-): Promise<void> {}
+): Promise<void> { }
 
 async function importGiveItem(
     ctx: TaskContext,
     action: ActionGiveItem,
-): Promise<void> {}
+): Promise<void> { }
 
 async function importTitle(
     ctx: TaskContext,
     action: ActionTitle,
-): Promise<void> {}
+): Promise<void> { }
 
 async function importSetGroup(
     ctx: TaskContext,
     action: ActionSetGroup,
-): Promise<void> {}
+): Promise<void> { }
 
 async function importRemoveItem(
     ctx: TaskContext,
     action: ActionRemoveItem,
-): Promise<void> {}
+): Promise<void> { }
 
 async function importApplyPotionEffect(
     ctx: TaskContext,
     action: ActionApplyPotionEffect,
-): Promise<void> {}
+): Promise<void> { }
 
 async function importDisplayMenu(
     ctx: TaskContext,
     action: ActionDisplayMenu,
-): Promise<void> {}
+): Promise<void> { }
 
 async function importSetTeam(
     ctx: TaskContext,
     action: ActionSetTeam,
-): Promise<void> {}
+): Promise<void> { }
 
 async function importPause(
     ctx: TaskContext,
     action: ActionPauseExecution,
-): Promise<void> {}
+): Promise<void> { }
 
 async function importEnchantHeldItem(
     ctx: TaskContext,
     action: ActionEnchantHeldItem,
-): Promise<void> {}
+): Promise<void> { }
 
 async function importApplyInventoryLayout(
     ctx: TaskContext,
     action: ActionApplyInventoryLayout,
-): Promise<void> {}
+): Promise<void> { }
 
 async function importFunction(
     ctx: TaskContext,
     action: ActionFunction,
-): Promise<void> {}
+): Promise<void> { }
 
 async function importRandom(
     ctx: TaskContext,
     action: ActionRandom,
-): Promise<void> {}
+): Promise<void> { }
 
 async function importSetGamemode(
     ctx: TaskContext,
     action: ActionSetGamemode,
-): Promise<void> {}
+): Promise<void> { }
 
 async function importSetCompassTarget(
     ctx: TaskContext,
     action: ActionSetCompassTarget,
-): Promise<void> {}
+): Promise<void> { }
 
 async function importFailParkour(
     ctx: TaskContext,
     action: ActionFailParkour,
-): Promise<void> {}
+): Promise<void> { }
 
 async function importTeleport(
     ctx: TaskContext,
     action: ActionTeleport,
-): Promise<void> {}
+): Promise<void> { }
 
 async function importSendToLobby(
     ctx: TaskContext,
     action: ActionSendToLobby,
-): Promise<void> {}
+): Promise<void> { }
 
 async function importGiveExperienceLevels(
     ctx: TaskContext,
     action: ActionGiveExperienceLevels,
-): Promise<void> {}
+): Promise<void> { }
 
 async function importChangeMaxHealth(
     ctx: TaskContext,
     action: ActionChangeMaxHealth,
-): Promise<void> {}
+): Promise<void> { }
 
 async function importChangeHealth(
     ctx: TaskContext,
     action: ActionChangeHealth,
-): Promise<void> {}
+): Promise<void> { }
 
 async function importChangeHunger(
     ctx: TaskContext,
     action: ActionChangeHunger,
-): Promise<void> {}
+): Promise<void> { }
 
 async function importDropItem(
     ctx: TaskContext,
     action: ActionDropItem,
-): Promise<void> {}
+): Promise<void> { }
 
 async function importSetVelocity(
     ctx: TaskContext,
     action: ActionSetVelocity,
-): Promise<void> {}
+): Promise<void> { }
 
 async function importLaunch(
     ctx: TaskContext,
     action: ActionLaunch,
-): Promise<void> {}
+): Promise<void> { }

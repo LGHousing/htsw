@@ -60,7 +60,11 @@ function commandImport(args: string[]) {
                 try {
                     await importImportable(ctx, importable);
                 } catch (e) {
-                    ctx.displayMessage(`&cFailed to import: ${e}`);
+                    if (e instanceof Diagnostic) {
+                        printDiagnostic(sm, e);
+                    } else {
+                        ctx.displayMessage(`&cFailed to import: ${e}`);
+                    }
                 }
             }
         } else {
