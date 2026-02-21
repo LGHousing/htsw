@@ -26,7 +26,10 @@ const EVENT_CONTAINERS: EventContainers = {
     message: [],
 };
 
-function maybeResolve<E extends EventName>(event: E, ...args: ParametersFor<E>) {
+function maybeResolve<E extends EventName>(
+    event: E,
+    ...args: ParametersFor<E>
+) {
     const containers = EVENT_CONTAINERS[event];
 
     // FIFO
@@ -71,7 +74,7 @@ type ParametersFor<E extends EventName> = Parameters<CheckPredicateMap[E]>;
 export function waitFor<E extends EventName>(
     event: E,
     check: CheckPredicateMap[E] | null = null,
-    amount: number = 1
+    amount: number = 1,
 ): Promise<ParametersFor<E>> {
     if (check === null) {
         check = () => true;
