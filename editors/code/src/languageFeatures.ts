@@ -299,7 +299,7 @@ export class DiagnosticsAdapter {
     private collectDiagnostics(document: vscode.TextDocument): htsw.Diagnostic[] {
         if (document.languageId === "htsl") {
             const sourceMap = new htsw.SourceMap(new StringFileLoader(document.getText()));
-            return htsw.parseIrActions(sourceMap, "file.htsl").diagnostics;
+            return htsw.parseActionsResult(sourceMap, "file.htsl").diagnostics;
         }
 
         if (this.isImportJsonDocument(document)) {
@@ -307,7 +307,7 @@ export class DiagnosticsAdapter {
             const sourceMap = new htsw.SourceMap(
                 new HybridFileLoader(docPath, document.getText())
             );
-            const result = htsw.parseIrImportables(sourceMap, docPath);
+            const result = htsw.parseImportablesResult(sourceMap, docPath);
             return result.diagnostics.filter((diagnostic) =>
                 this.isDiagnosticForFile(diagnostic, sourceMap, docPath)
             );

@@ -13,10 +13,6 @@
             "import": "./dist/types/index.js",
             "types": "./dist/types/index.d.ts"
         },
-        "./ir": {
-            "import": "./dist/ir.js",
-            "types": "./dist/ir.d.ts"
-        },
         "./htsw": {
             "import": "./dist/htsw/index.js",
             "types": "./dist/htsw/index.d.ts"

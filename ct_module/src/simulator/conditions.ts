@@ -1,6 +1,15 @@
-import { Diagnostic, htsl } from "htsw";
-import type { Ir, IrCondition } from "htsw/ir";
-import type { ConditionCompareHealth, ConditionCompareHunger, ConditionCompareMaxHealth, ConditionComparePlaceholder, ConditionCompareVar, ConditionRequireGamemode, ConditionRequireItem, ConditionRequirePotionEffect } from "htsw/types";
+import { Diagnostic, Span } from "htsw";
+import type {
+    Condition,
+    ConditionCompareHealth,
+    ConditionCompareHunger,
+    ConditionCompareMaxHealth,
+    ConditionComparePlaceholder,
+    ConditionCompareVar,
+    ConditionRequireGamemode,
+    ConditionRequireItem,
+    ConditionRequirePotionEffect,
+} from "htsw/types";
 
 import { parseValue, VarHolder, VarLong } from "./vars";
 import { parsePlaceholder } from "./placeholders";
@@ -8,7 +17,13 @@ import { Simulator } from "./simulator";
 import { getGamemode } from "./helpers";
 import { printDiagnostic } from "../tui/diagnostics";
 
-export function runCondition(condition: IrCondition): boolean {
+function typeSpan(condition: object): Span {
+    return Simulator.getFieldSpan(condition, "type")
+        ?? Simulator.getNodeSpan(condition)
+        ?? Span.dummy();
+}
+
+export function runCondition(condition: Condition): boolean {
     if (condition.type === "COMPARE_HEALTH") {
         return runConditionCompareHealth(condition);
     } else if (condition.type === "COMPARE_HUNGER") {
@@ -32,7 +47,7 @@ export function runCondition(condition: IrCondition): boolean {
     }
 
     const warn = Diagnostic.warning("Condition cannot be run in Simulator mode")
-        .addPrimarySpan(condition.typeSpan);
+        .addPrimarySpan(typeSpan(condition as object));
 
     printDiagnostic(Simulator.sm, warn);
 
@@ -40,29 +55,29 @@ export function runCondition(condition: IrCondition): boolean {
 }
 
 function runConditionCompareHealth(
-    condition: Ir<ConditionCompareHealth>
+    condition: ConditionCompareHealth
 ): boolean {
     if (!condition.op || !condition.amount) return false;
 
     const lhs = VarLong.fromNumber(Player.getHP());
-    const rhs = parseValue(condition.amount.value);
+    const rhs = parseValue(condition.amount);
 
-    return lhs.cmpOp(rhs, condition.op.value);
+    return lhs.cmpOp(rhs, condition.op);
 }
 
 function runConditionCompareHunger(
-    condition: Ir<ConditionCompareHunger>
+    condition: ConditionCompareHunger
 ): boolean {
     if (!condition.op || !condition.amount) return false;
 
     const lhs = VarLong.fromNumber(Player.getHunger());
-    const rhs = parseValue(condition.amount.value);
+    const rhs = parseValue(condition.amount);
 
-    return lhs.cmpOp(rhs, condition.op.value);
+    return lhs.cmpOp(rhs, condition.op);
 }
 
 function runConditionCompareMaxHealth(
-    condition: Ir<ConditionCompareMaxHealth>
+    condition: ConditionCompareMaxHealth
 ): boolean {
     if (!condition.op || !condition.amount) return false;
 
@@ -71,34 +86,34 @@ function runConditionCompareMaxHealth(
             .func_110138_aP /*getMaxHealth*/
             ()
     );
-    const rhs = parseValue(condition.amount.value);
+    const rhs = parseValue(condition.amount);
 
-    return lhs.cmpOp(rhs, condition.op.value);
+    return lhs.cmpOp(rhs, condition.op);
 }
 
 function runConditionComparePlaceholder(
-    condition: Ir<ConditionComparePlaceholder>
+    condition: ConditionComparePlaceholder
 ): boolean {
     if (!condition.placeholder || !condition.op || !condition.amount) return false;
 
-    const lhs = parsePlaceholder(condition.placeholder.value);
-    const rhs = parseValue(condition.amount.value);
+    const lhs = parsePlaceholder(condition.placeholder);
+    const rhs = parseValue(condition.amount);
 
-    return lhs.cmpOp(rhs, condition.op.value);
+    return lhs.cmpOp(rhs, condition.op);
 }
 
 function runConditionCompareVar(
-    condition: Ir<ConditionCompareVar>
+    condition: ConditionCompareVar
 ): boolean {
     if (!condition.holder || !condition.var || !condition.op || !condition.amount)
         return false;
 
-    const holderType = condition.holder.value.type;
+    const holderType = condition.holder.type;
 
     const varKey =
         holderType === "team"
-            ? { team: condition.holder.value.team, key: condition.var.value }
-            : condition.var.value;
+            ? { team: condition.holder.team, key: condition.var }
+            : condition.var;
 
     const varHolder: VarHolder<any> =
         holderType === "team"
@@ -108,25 +123,25 @@ function runConditionCompareVar(
               : Simulator.playerVars;
 
     const fallback = condition.fallback
-        ? parseValue(condition.fallback.value)
+        ? parseValue(condition.fallback)
         : undefined;
 
     const lhs = varHolder.getVar(varKey, fallback);
-    const rhs = parseValue(condition.amount.value);
+    const rhs = parseValue(condition.amount);
 
-    return lhs.cmpOp(rhs, condition.op.value);
+    return lhs.cmpOp(rhs, condition.op);
 }
 
 function runConditionRequireGamemode(
-    condition: Ir<ConditionRequireGamemode>
+    condition: ConditionRequireGamemode
 ): boolean {
     if (!condition.gamemode) return false;
 
-    return getGamemode() == condition.gamemode.value;
+    return getGamemode() == condition.gamemode;
 }
 
 function runConditionRequireItem(
-    condition: Ir<ConditionRequireItem>
+    condition: ConditionRequireItem
 ): boolean {
     if (
         !condition.item ||
@@ -140,13 +155,13 @@ function runConditionRequireItem(
 }
 
 function runConditionRequirePotionEffect(
-    condition: Ir<ConditionRequirePotionEffect>
+    condition: ConditionRequirePotionEffect
 ): boolean {
     if (!condition.effect) return false;
 
     return (
         Player.getActivePotionEffects().find((effect) => {
-            return effect.getLocalizedName() == condition.effect!.value;
+            return effect.getLocalizedName() == condition.effect!;
         }) !== undefined
     );
 }

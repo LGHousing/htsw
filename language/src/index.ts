@@ -2,17 +2,17 @@ import { GlobalCtxt } from "./context";
 import type { Diagnostic } from "./diagnostic";
 import { parseHtsl } from "./htsl";
 import { parseImportJson } from "./importjson";
-import { unwrapIr, type IrAction, type IrImportable } from "./ir";
 import { SourceMap, type FileLoader } from "./sourceMap";
+import type { SpanTable } from "./spanTable";
 import type { Action, Importable } from "./types";
 
 export * from "./sourceMap";
 export * from "./context";
 export * from "./diagnostic";
 export * from "./span";
+export * from "./spanTable";
 
 export * as types from "./types";
-export * as ir from "./ir";
 export * as helpers from "./helpers"
 
 export * as htsl from "./htsl";
@@ -22,17 +22,23 @@ export const VERSION = "v0.0.1-beta";
 
 export type ParseResult<T> = {
     value: T;
+    spans: SpanTable;
     diagnostics: Diagnostic[];
     gcx: GlobalCtxt;
 };
 
-export function parseIrActions(
+export function parseActionsResult(
     sm: SourceMap,
     path: string,
-): ParseResult<IrAction[]> {
+): ParseResult<Action[]> {
     const gcx = new GlobalCtxt(sm, path);
     const actions = parseHtsl(gcx, path);
-    return { value: actions, diagnostics: gcx.diagnostics, gcx };
+    return {
+        value: actions,
+        spans: gcx.spanTable,
+        diagnostics: gcx.diagnostics,
+        gcx
+    };
 }
 
 export function parseActions(
@@ -40,18 +46,21 @@ export function parseActions(
     path: string,
 ): Action[] {
     const sm = new SourceMap(fileLoader);
-    return unwrapIr<Action[]>(
-        parseIrActions(sm, path).value
-    );
+    return parseActionsResult(sm, path).value;
 }
 
-export function parseIrImportables(
+export function parseImportablesResult(
     sm: SourceMap,
     path: string,
-): ParseResult<IrImportable[]> {
+): ParseResult<Importable[]> {
     const gcx = new GlobalCtxt(sm, path);
     parseImportJson(gcx, path);
-    return { value: gcx.importables, diagnostics: gcx.diagnostics, gcx };
+    return {
+        value: gcx.importables,
+        spans: gcx.spanTable,
+        diagnostics: gcx.diagnostics,
+        gcx
+    };
 }
 
 export function parseImportables(
@@ -59,7 +68,5 @@ export function parseImportables(
     path: string,
 ): Importable[] {
     const sm = new SourceMap(fileLoader);
-    return unwrapIr<Importable[]>(
-        parseIrImportables(sm, path).value
-    );
+    return parseImportablesResult(sm, path).value;
 }

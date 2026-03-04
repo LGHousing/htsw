@@ -1,5 +1,11 @@
-import { FileLoader, parseIrActions, SourceMap, Span } from "htsw";
-import { IrAction, IrCondition, irKeys } from "htsw/ir";
+import {
+    FileLoader,
+    parseActionsResult,
+    SourceMap,
+    Span,
+    SpanTable,
+    types,
+} from "htsw";
 
 type InlayHint = {
     label: string;
@@ -17,16 +23,16 @@ export class StringFileLoader implements FileLoader {
         this.src = src;
     }
 
-    fileExists(path: string): boolean {
+    fileExists(_path: string): boolean {
         return true;
     }
-    readFile(path: string): string {
+    readFile(_path: string): string {
         return this.src;
     }
-    getParentPath(base: string): string {
+    getParentPath(_base: string): string {
         return "";
     }
-    resolvePath(base: string, other: string): string {
+    resolvePath(_base: string, _other: string): string {
         return "";
     }
 }
@@ -34,74 +40,66 @@ export class StringFileLoader implements FileLoader {
 export function provideInlayHints(src: string): InlayHint[] {
     const fileLoader = new StringFileLoader(src);
     const sourceMap = new SourceMap(fileLoader);
-    const actions = parseIrActions(sourceMap, "file.htsl");
+    const result = parseActionsResult(sourceMap, "file.htsl");
 
-    const hints: InlayHint[] = [];
-
-    hints.push(...provideInlayHintsForActions(actions.value));
-
-    return hints;
+    return provideInlayHintsForActions(result.value, result.spans);
 }
 
-function provideInlayHintsForActions(actions: IrAction[]): InlayHint[] {
+function provideInlayHintsForActions(actions: types.Action[], spans: SpanTable): InlayHint[] {
     const hints: InlayHint[] = [];
 
     for (const action of actions) {
         if (action.type === "CONDITIONAL") {
-            hints.push(...provideInlayHintsForConditions(action.conditions?.value ?? []));
-
-            hints.push(...provideInlayHintsForActions(action.ifActions?.value ?? []));
-            hints.push(...provideInlayHintsForActions(action.elseActions?.value ?? []));
+            hints.push(...provideInlayHintsForConditions(action.conditions ?? [], spans));
+            hints.push(...provideInlayHintsForActions(action.ifActions ?? [], spans));
+            hints.push(...provideInlayHintsForActions(action.elseActions ?? [], spans));
         } else if (action.type === "RANDOM") {
-            hints.push(...provideInlayHintsForActions(action.actions?.value ?? []));
+            hints.push(...provideInlayHintsForActions(action.actions ?? [], spans));
         }
 
         if (
             action.type === "CHANGE_VAR" ||
             action.type === "CONDITIONAL" ||
             action.type === "RANDOM"
-        )
-            continue; // don't provide hints for these
+        ) continue;
 
-        for (const key of irKeys(action)) {
-            if (key === "function") continue; // skip these
-            if (key === "note") continue; // skip these
+        for (const key of Object.keys(action)) {
+            if (key === "type" || key === "function" || key === "note") continue;
 
-            // @ts-ignore
-            const element: { value: any; span: Span } = action[key];
+            const value = (action as any)[key];
+            if (value === null || value === undefined) continue;
 
-            // this element was skipped on purpose
-            if (element.value === null) continue;
+            const span = spans.getFieldSpan(action as object, key);
+            if (!span) continue;
 
-            if (element.value === undefined) break;
-
-            hints.push(hint(key, element.span));
+            hints.push(hint(key, span));
         }
     }
 
     return hints;
 }
 
-function provideInlayHintsForConditions(conditions: IrCondition[]): InlayHint[] {
+function provideInlayHintsForConditions(
+    conditions: types.Condition[],
+    spans: SpanTable,
+): InlayHint[] {
     const hints: InlayHint[] = [];
 
     for (const condition of conditions) {
-        if (condition.type === "COMPARE_VAR" || condition.type === "COMPARE_PLACEHOLDER")
-            continue; // don't provide hints for these
+        if (condition.type === "COMPARE_VAR" || condition.type === "COMPARE_PLACEHOLDER") {
+            continue;
+        }
 
-        for (const key of irKeys(condition)) {
-            if (key === "inverted") continue; // skip these
-            if (key === "note") continue; // skip these
+        for (const key of Object.keys(condition)) {
+            if (key === "type" || key === "inverted" || key === "note") continue;
 
-            // @ts-ignore
-            const element: { value: any; span: htsl.Span } = condition[key];
+            const value = (condition as any)[key];
+            if (value === null || value === undefined) continue;
 
-            // this element was skipped on purpose
-            if (element.value === null) continue;
+            const span = spans.getFieldSpan(condition as object, key);
+            if (!span) continue;
 
-            if (element.value === undefined) break;
-
-            hints.push(hint(key, element.span));
+            hints.push(hint(key, span));
         }
     }
 

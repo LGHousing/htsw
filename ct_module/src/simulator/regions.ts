@@ -1,5 +1,4 @@
-import { IrImportable, unwrapIr } from "htsw/ir";
-import { Bounds, Pos } from "htsw/types";
+import { type Bounds, type Importable, type Pos } from "htsw/types";
 import { Simulator } from "./simulator";
 
 export function registerRegionTriggers(): Trigger[] {
@@ -8,10 +7,10 @@ export function registerRegionTriggers(): Trigger[] {
     ];
 }
 
-type IrImportableRegion = Extract<IrImportable, { type: "REGION" }>;
+type ImportableRegion = Extract<Importable, { type: "REGION" }>;
 
 class RegionState {
-    static currentRegion: IrImportableRegion | undefined;
+    static currentRegion: ImportableRegion | undefined;
 }
 
 function tick() {
@@ -21,18 +20,18 @@ function tick() {
         z: Math.floor(Player.getZ())
     };
     
-    const regions: IrImportableRegion[] = [];
+    const regions: ImportableRegion[] = [];
     for (const importable of Simulator.importables) {
         if (importable.type === "REGION") regions.push(importable);
     }
     
-    const insideRegions = regions.filter(r => isInsideBounds(unwrapIr<Bounds>(r.bounds!.value), pos));
+    const insideRegions = regions.filter(r => r.bounds && isInsideBounds(r.bounds, pos));
     
-    let selectedRegion: IrImportableRegion | undefined;
+    let selectedRegion: ImportableRegion | undefined;
     if (insideRegions.length > 0) {
         selectedRegion = insideRegions.reduce((a, b) => {
-            const volA = computeBoundsVolume(unwrapIr<Bounds>(a.bounds!.value));
-            const volB = computeBoundsVolume(unwrapIr<Bounds>(b.bounds!.value));
+            const volA = computeBoundsVolume(a.bounds!);
+            const volB = computeBoundsVolume(b.bounds!);
             return volA < volB ? a : b;
         });
     }
@@ -42,11 +41,11 @@ function tick() {
     
     if (prev !== next) {
         if (prev && prev.onExitActions) {
-            Simulator.runActions(prev.onExitActions.value);
+            Simulator.runActions(prev.onExitActions);
         }
         
         if (next && next.onEnterActions) {
-            Simulator.runActions(next.onEnterActions.value);
+            Simulator.runActions(next.onEnterActions);
         }
         
         RegionState.currentRegion = next;

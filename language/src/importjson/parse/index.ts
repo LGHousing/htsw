@@ -2,11 +2,31 @@ import * as json from "jsonc-parser";
 
 import type { GlobalCtxt } from "../../context";
 import { Diagnostic } from "../../diagnostic";
-import type { Ir, IrAction, IrImportable, Spanned } from "../../ir";
-import { nodeSpan, parseArray, parseBoolean, parseBoundedNumber, parseIrBounds, parseIrPos, parseObject, parseOption, parseString, withNodeSpan } from "./helpers";
 import { parseActions } from "./actions";
-import { Span } from "../../span";
-import { EVENTS, type Bounds, type Event, type NpcEquipment, type NpcSkin, type Pos } from "../../types";
+import {
+    nodeSpan,
+    parseArray,
+    parseBoolean,
+    parseBoundedNumber,
+    parseBounds,
+    parseObject,
+    parseOption,
+    parsePos,
+    parseString,
+    setFieldSpan,
+    setNodeSpan,
+} from "./helpers";
+import {
+    EVENTS,
+    type Event,
+    type Importable,
+    type ImportableEvent,
+    type ImportableFunction,
+    type ImportableNpc,
+    type ImportableRegion,
+    type NpcEquipment,
+    type NpcSkin,
+} from "../../types";
 
 type IncludeOrigin = {
     includeNode: json.Node;
@@ -125,7 +145,7 @@ function parseIncludes(
 function parseAndAppendImportables(
     gcx: GlobalCtxt,
     node: json.Node,
-    parser: (gcx: GlobalCtxt, node: json.Node) => IrImportable
+    parser: (gcx: GlobalCtxt, node: json.Node) => Importable
 ) {
     gcx.importables.push(
         ...parseArray(gcx, node, (elementNode) => parser(gcx, elementNode))
@@ -195,223 +215,216 @@ function resolveImportJsonPath(gcx: GlobalCtxt, path: string): string {
     return gcx.resolvePath(path);
 }
 
-function parseImportableFunction(gcx: GlobalCtxt, node: json.Node): IrImportable {
-    let name: Spanned<string> | undefined;
-    let actions: Spanned<IrAction[]> | undefined;
-    let repeatTicks: Spanned<number> | undefined;
+function parseImportableFunction(gcx: GlobalCtxt, node: json.Node): ImportableFunction {
+    const importable = { type: "FUNCTION" } as ImportableFunction;
+    setNodeSpan(gcx, importable, node);
+    setFieldSpan(gcx, importable, "type", node);
 
     parseObject(gcx, node, {
         "name": {
             required: true,
-            parser: (node) => {
-                name = withNodeSpan(parseString(gcx, node), node);
+            parser: (child) => {
+                importable.name = parseString(gcx, child);
+                setFieldSpan(gcx, importable, "name", child);
             }
         },
         "actions": {
             required: true,
-            parser: (node) => {
-                actions = withNodeSpan(parseActions(gcx, node), node);
+            parser: (child) => {
+                importable.actions = parseActions(gcx, child);
+                setFieldSpan(gcx, importable, "actions", child);
             }
         },
         "repeatTicks": {
             required: false,
-            parser: (node) => {
-                repeatTicks = withNodeSpan(
-                    parseBoundedNumber(4, 18000)(gcx, node),
-                    node
-                );
+            parser: (child) => {
+                importable.repeatTicks = parseBoundedNumber(4, 18000)(gcx, child);
+                setFieldSpan(gcx, importable, "repeatTicks", child);
             }
         },
     });
 
-    return {
-        type: "FUNCTION",
-        typeSpan: Span.dummy(), span: nodeSpan(node),
-        name, actions, repeatTicks
-    };
+    return importable;
 }
 
-function parseImportableEvent(gcx: GlobalCtxt, node: json.Node): IrImportable {
-    let event: Spanned<Event> | undefined;
-    let actions: Spanned<IrAction[]> | undefined;
-    
+function parseImportableEvent(gcx: GlobalCtxt, node: json.Node): ImportableEvent {
+    const importable = { type: "EVENT" } as ImportableEvent;
+    setNodeSpan(gcx, importable, node);
+    setFieldSpan(gcx, importable, "type", node);
+
     parseObject(gcx, node, {
         "event": {
             required: true,
-            parser: (node) => {
-                event = withNodeSpan(
-                    parseOption(gcx, node, EVENTS, { singular: "event", plural: "events" }),
-                    node
-                );
+            parser: (child) => {
+                importable.event = parseOption(
+                    gcx, child, EVENTS, { singular: "event", plural: "events" }
+                ) as Event;
+                setFieldSpan(gcx, importable, "event", child);
             }
         },
         "actions": {
             required: true,
-            parser: (node) => {
-                actions = withNodeSpan(parseActions(gcx, node), node);
+            parser: (child) => {
+                importable.actions = parseActions(gcx, child);
+                setFieldSpan(gcx, importable, "actions", child);
             }
         },
     });
-    
-    return {
-        type: "EVENT",
-        typeSpan: Span.dummy(), span: nodeSpan(node),
-        event, actions
-    };
+
+    return importable;
 }
 
-function parseImportableRegion(gcx: GlobalCtxt, node: json.Node): IrImportable {
-    let name: Spanned<string> | undefined;
-    let bounds: Spanned<Ir<Bounds>> | undefined;
-    let onEnterActions: Spanned<IrAction[]> | undefined;
-    let onExitActions: Spanned<IrAction[]> | undefined;
-        
+function parseImportableRegion(gcx: GlobalCtxt, node: json.Node): ImportableRegion {
+    const importable = { type: "REGION" } as ImportableRegion;
+    setNodeSpan(gcx, importable, node);
+    setFieldSpan(gcx, importable, "type", node);
+
     parseObject(gcx, node, {
         "name": {
             required: true,
-            parser: (node) => {
-                name = withNodeSpan(parseString(gcx, node), node);
+            parser: (child) => {
+                importable.name = parseString(gcx, child);
+                setFieldSpan(gcx, importable, "name", child);
             }
         },
         "bounds": {
             required: false,
-            parser: (node) => {
-                bounds = withNodeSpan(parseIrBounds(gcx, node), node);
+            parser: (child) => {
+                importable.bounds = parseBounds(gcx, child);
+                setFieldSpan(gcx, importable, "bounds", child);
             }
         },
         "onEnterActions": {
             required: false,
-            parser: (node) => {
-                onEnterActions = withNodeSpan(parseActions(gcx, node), node);
+            parser: (child) => {
+                importable.onEnterActions = parseActions(gcx, child);
+                setFieldSpan(gcx, importable, "onEnterActions", child);
             }
         },
         "onExitActions": {
             required: false,
-            parser: (node) => {
-                onExitActions = withNodeSpan(parseActions(gcx, node), node);
+            parser: (child) => {
+                importable.onExitActions = parseActions(gcx, child);
+                setFieldSpan(gcx, importable, "onExitActions", child);
             }
         }
     });
-    
-    return {
-        type: "REGION",
-        typeSpan: Span.dummy(), span: nodeSpan(node),
-        name, bounds, onEnterActions, onExitActions
-    };
+
+    return importable;
 }
 
-function parseImportableNpc(gcx: GlobalCtxt, node: json.Node): IrImportable {
-    let name: Spanned<string> | undefined;
-    let pos: Spanned<Ir<Pos>> | undefined;
-    let leftClickActions: Spanned<IrAction[]> | undefined;
-    let rightClickActions: Spanned<IrAction[]> | undefined;
-    let lookAtPlayers: Spanned<boolean> | undefined;
-    let hideNameTag: Spanned<boolean> | undefined;
-    let skin: Spanned<NpcSkin> | undefined;
-    let equipment: Spanned<Ir<NpcEquipment>> | undefined;
+function parseImportableNpc(gcx: GlobalCtxt, node: json.Node): ImportableNpc {
+    const importable = { type: "NPC" } as ImportableNpc;
+    setNodeSpan(gcx, importable, node);
+    setFieldSpan(gcx, importable, "type", node);
 
     parseObject(gcx, node, {
         "name": {
             required: true,
-            parser: (node) => {
-                name = withNodeSpan(parseString(gcx, node), node);
+            parser: (child) => {
+                importable.name = parseString(gcx, child);
+                setFieldSpan(gcx, importable, "name", child);
             }
         },
         "pos": {
             required: true,
-            parser: (node) => {
-                pos = withNodeSpan(parseIrPos(gcx, node), node);
+            parser: (child) => {
+                importable.pos = parsePos(gcx, child);
+                setFieldSpan(gcx, importable, "pos", child);
             }
         },
         "leftClickActions": {
             required: false,
-            parser: (node) => {
-                leftClickActions = withNodeSpan(parseActions(gcx, node), node);
+            parser: (child) => {
+                importable.leftClickActions = parseActions(gcx, child);
+                setFieldSpan(gcx, importable, "leftClickActions", child);
             }
         },
         "rightClickActions": {
             required: false,
-            parser: (node) => {
-                rightClickActions = withNodeSpan(parseActions(gcx, node), node);
+            parser: (child) => {
+                importable.rightClickActions = parseActions(gcx, child);
+                setFieldSpan(gcx, importable, "rightClickActions", child);
             }
         },
         "lookAtPlayers": {
             required: false,
-            parser: (node) => {
-                lookAtPlayers = withNodeSpan(parseBoolean(gcx, node), node);
+            parser: (child) => {
+                importable.lookAtPlayers = parseBoolean(gcx, child);
+                setFieldSpan(gcx, importable, "lookAtPlayers", child);
             }
         },
         "hideNameTag": {
             required: false,
-            parser: (node) => {
-                hideNameTag = withNodeSpan(parseBoolean(gcx, node), node);
+            parser: (child) => {
+                importable.hideNameTag = parseBoolean(gcx, child);
+                setFieldSpan(gcx, importable, "hideNameTag", child);
             }
         },
         "skin": {
             required: false,
-            parser: (node) => {
-                skin = withNodeSpan(
-                    parseOption(gcx, node, NPC_SKINS, { singular: "skin", plural: "skins" }),
-                    node
-                );
+            parser: (child) => {
+                importable.skin = parseOption(
+                    gcx, child, NPC_SKINS, { singular: "skin", plural: "skins" }
+                ) as NpcSkin;
+                setFieldSpan(gcx, importable, "skin", child);
             }
         },
         "equipment": {
             required: false,
-            parser: (node) => {
-                equipment = withNodeSpan(parseIrNpcEquipment(gcx, node), node);
+            parser: (child) => {
+                importable.equipment = parseNpcEquipment(gcx, child);
+                setFieldSpan(gcx, importable, "equipment", child);
             }
         },
     });
 
-    return {
-        type: "NPC",
-        typeSpan: Span.dummy(), span: nodeSpan(node),
-        name, pos, leftClickActions, rightClickActions, lookAtPlayers, hideNameTag, skin, equipment,
-    };
+    return importable;
 }
 
-function parseIrNpcEquipment(gcx: GlobalCtxt, node: json.Node): Ir<NpcEquipment> {
-    let helmet: Spanned<string> | undefined;
-    let chestplate: Spanned<string> | undefined;
-    let leggings: Spanned<string> | undefined;
-    let boots: Spanned<string> | undefined;
-    let hand: Spanned<string> | undefined;
+function parseNpcEquipment(gcx: GlobalCtxt, node: json.Node): NpcEquipment {
+    const equipment = {} as NpcEquipment;
+    setNodeSpan(gcx, equipment, node);
 
     parseObject(gcx, node, {
         "helmet": {
             required: false,
-            parser: (node) => {
-                helmet = withNodeSpan(parseSnbtPath(gcx, node), node);
+            parser: (child) => {
+                equipment.helmet = parseSnbtPath(gcx, child);
+                setFieldSpan(gcx, equipment, "helmet", child);
             }
         },
         "chestplate": {
             required: false,
-            parser: (node) => {
-                chestplate = withNodeSpan(parseSnbtPath(gcx, node), node);
+            parser: (child) => {
+                equipment.chestplate = parseSnbtPath(gcx, child);
+                setFieldSpan(gcx, equipment, "chestplate", child);
             }
         },
         "leggings": {
             required: false,
-            parser: (node) => {
-                leggings = withNodeSpan(parseSnbtPath(gcx, node), node);
+            parser: (child) => {
+                equipment.leggings = parseSnbtPath(gcx, child);
+                setFieldSpan(gcx, equipment, "leggings", child);
             }
         },
         "boots": {
             required: false,
-            parser: (node) => {
-                boots = withNodeSpan(parseSnbtPath(gcx, node), node);
+            parser: (child) => {
+                equipment.boots = parseSnbtPath(gcx, child);
+                setFieldSpan(gcx, equipment, "boots", child);
             }
         },
         "hand": {
             required: false,
-            parser: (node) => {
-                hand = withNodeSpan(parseSnbtPath(gcx, node), node);
+            parser: (child) => {
+                equipment.hand = parseSnbtPath(gcx, child);
+                setFieldSpan(gcx, equipment, "hand", child);
             }
         },
     });
 
-    return { helmet, chestplate, leggings, boots, hand };
+    return equipment;
 }
 
 function parseSnbtPath(gcx: GlobalCtxt, node: json.Node): string {

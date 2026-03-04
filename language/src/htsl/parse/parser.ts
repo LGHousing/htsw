@@ -13,7 +13,7 @@ import {
 } from "./token";
 import { Span } from "../../span";
 import { Diagnostic } from "../../diagnostic";
-import type { IrAction } from "../../ir";
+import type { Action } from "../../types";
 import { parseAction } from "./actions";
 import Long from "long";
 import type { GlobalCtxt } from "../../context";
@@ -35,8 +35,8 @@ export class Parser {
         this.next();
     }
 
-    parseCompletely(): IrAction[] {
-        const actions: IrAction[] = [];
+    parseCompletely(): Action[] {
+        const actions: Action[] = [];
 
         while (true) {
             this.eatNewlines();
@@ -58,8 +58,8 @@ export class Parser {
         return actions;
     }
 
-    parseBlock(): IrAction[] {
-        const actions: IrAction[] = [];
+    parseBlock(): Action[] {
+        const actions: Action[] = [];
         this.expect({ kind: "open_delim", delim: "brace" });
         while (true) {
             this.eatNewlines();

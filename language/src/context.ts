@@ -1,12 +1,14 @@
 import type { Diagnostic } from "./diagnostic";
 import type { SourceMap } from "./sourceMap";
-import type { IrImportable } from "./ir";
+import type { Importable } from "./types";
+import { SpanTable } from "./spanTable";
 
 export class GlobalCtxt {
     path: string;
     
     sourceMap: SourceMap;
-    importables: IrImportable[];
+    spanTable: SpanTable;
+    importables: Importable[];
     diagnostics: Diagnostic[];
     activeImportJsonPaths: string[];
     loadedImportJsonPaths: Set<string>;
@@ -14,8 +16,10 @@ export class GlobalCtxt {
     constructor(
         sourceMap: SourceMap,
         path: string,
+        spanTable: SpanTable = new SpanTable(),
     ) {
         this.sourceMap = sourceMap;
+        this.spanTable = spanTable;
         this.path = path;
         this.importables = [];
         this.diagnostics = [];
@@ -49,7 +53,7 @@ export class GlobalCtxt {
     }
     
     subContext(path: string): GlobalCtxt {        
-        const gcx = new GlobalCtxt(this.sourceMap, this.resolvePath(path));
+        const gcx = new GlobalCtxt(this.sourceMap, this.resolvePath(path), this.spanTable);
         gcx.importables = this.importables;
         gcx.diagnostics = this.diagnostics;
         gcx.activeImportJsonPaths = this.activeImportJsonPaths;

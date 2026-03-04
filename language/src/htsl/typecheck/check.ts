@@ -1,11 +1,11 @@
 import { Diagnostic } from "../../diagnostic";
-import type { Ir, IrAction, IrCondition } from "../../ir";
-import type { ActionChangeVar, VarOperation } from "../../types";
+import type { Action, ActionChangeVar, Condition, VarOperation } from "../../types";
+import { Span } from "../../span";
 import { TyCtxt } from "./context";
 import { parseValue } from "./values";
 import { applyNumericOperation, type VarKey } from "./state";
 
-export function check(tcx: TyCtxt, actions: IrAction[]) {
+export function check(tcx: TyCtxt, actions: Action[]) {
     for (let i = 0; i < actions.length; i++) {
         const action = actions[i];
 
@@ -14,20 +14,20 @@ export function check(tcx: TyCtxt, actions: IrAction[]) {
         }
 
         else if (action.type === "CONDITIONAL") {
-            if (!action.conditions || !action.matchAny) continue;
+            if (!action.conditions || action.matchAny === undefined) continue;
 
             if (action.ifActions) {
-                for (const subCtxt of narrow(tcx, action.conditions.value, action.matchAny.value)) {
+                for (const subCtxt of narrow(tcx, action.conditions, action.matchAny)) {
                     // tcx.exploredConditionalBranches.add(action.ifActions.value);
-                    check(subCtxt, action.ifActions.value);
+                    check(subCtxt, action.ifActions);
                     check(subCtxt, actions.slice(i + 1));
                 }
             }
 
             if (action.elseActions) {
-                for (const subCtxt of narrow(tcx, action.conditions.value, action.matchAny.value, true)) {
+                for (const subCtxt of narrow(tcx, action.conditions, action.matchAny, true)) {
                     // tcx.exploredConditionalBranches.add(action.elseActions.value);
-                    check(subCtxt, action.elseActions.value);
+                    check(subCtxt, action.elseActions);
                     check(subCtxt, actions.slice(i + 1));
                 }
             }
@@ -36,7 +36,7 @@ export function check(tcx: TyCtxt, actions: IrAction[]) {
         else if (action.type === "RANDOM") {
             if (!action.actions) continue;
 
-            for (const subAction of action.actions.value) {
+            for (const subAction of action.actions) {
                 check(tcx, [subAction, ...actions.slice(i + 1)]);
             }
         }
@@ -68,57 +68,61 @@ const DISALLOWED_DOUBLE_OPERATIONS: VarOperation[] = [
     "Shift Left", "Shift Right", "And Assign", "Or Assign", "Xor Assign"
 ];
 
-function update(tcx: TyCtxt, action: Ir<ActionChangeVar>) {
+function update(tcx: TyCtxt, action: ActionChangeVar) {
     if (!action.holder || !action.key || !action.op || !action.value) return;
 
-    const key = { holder: action.holder.value, key: action.key.value } as VarKey;
+    const key = { holder: action.holder, key: action.key } as VarKey;
     const lhs = tcx.getState(key);
-    const rhs = parseValue(tcx, action.value.value);
+    const rhs = parseValue(tcx, action.value);
+    const actionSpan = tcx.gcx.spanTable.getNodeSpan(action as object) ?? Span.dummy();
+    const opSpan = tcx.gcx.spanTable.getFieldSpan(action as object, "op") ?? actionSpan;
+    const keySpan = tcx.gcx.spanTable.getFieldSpan(action as object, "key") ?? actionSpan;
+    const valueSpan = tcx.gcx.spanTable.getFieldSpan(action as object, "value") ?? actionSpan;
 
     if (!rhs) return;
 
-    if (action.op.value === "Set") {
-        tcx.setState(key, { ...rhs, declSpan: action.span });
+    if (action.op === "Set") {
+        tcx.setState(key, { ...rhs, declSpan: actionSpan });
         return;
     }
 
-    if (action.op.value === "Unset") {
+    if (action.op === "Unset") {
         tcx.removeState(key);
         return;
     }
 
     if (lhs && lhs.type === "string") {
         tcx.addDiagnostic(
-            Diagnostic.warning(`Strings cannot be ${OPERATION_NAMES[action.op.value]}`)
-                .addPrimarySpan(action.op.span, "Invalid operation")
-                .addSecondarySpan(action.key.span, `Type inferred as ${lhs.type}`)
+            Diagnostic.warning(`Strings cannot be ${OPERATION_NAMES[action.op]}`)
+                .addPrimarySpan(opSpan, "Invalid operation")
+                .addSecondarySpan(keySpan, `Type inferred as ${lhs.type}`)
                 .addSecondarySpan(lhs.declSpan, "Type originates from this statement")
         );
         return;
     }
 
-    if (lhs && lhs.type === "double" && action.op.value in DISALLOWED_DOUBLE_OPERATIONS) {
+    if (lhs && lhs.type === "double" && DISALLOWED_DOUBLE_OPERATIONS.includes(action.op)) {
         tcx.addDiagnostic(
-            Diagnostic.warning(`Doubles cannot be ${OPERATION_NAMES[action.op.value]}`)
-                .addPrimarySpan(action.op.span, "Invalid operation")
-                .addSecondarySpan(action.key.span, `Type inferred as ${lhs.type}`)
+            Diagnostic.warning(`Doubles cannot be ${OPERATION_NAMES[action.op]}`)
+                .addPrimarySpan(opSpan, "Invalid operation")
+                .addSecondarySpan(keySpan, `Type inferred as ${lhs.type}`)
                 .addSecondarySpan(lhs.declSpan, "Type originates from this statement")
         );
         return;
     }
 
     if (!lhs) {
-        tcx.setState(key, { type: rhs.type, isKnown: false, declSpan: action.span });
+        tcx.setState(key, { type: rhs.type, isKnown: false, declSpan: actionSpan });
         return;
     }
 
     if (lhs.type !== rhs.type) {
         tcx.addDiagnostic(
             Diagnostic.warning("Mismatched types")
-                .addPrimarySpan(action.op.span, "Mismatched types")
-                .addSecondarySpan(action.key.span, `Type is ${lhs.type}`)
-                .addSecondarySpan(action.value.span, `Type is ${rhs.type}`)
-                .addSecondarySpan(lhs.declSpan, `Type of ${action.key.value} inferred here`)
+                .addPrimarySpan(opSpan, "Mismatched types")
+                .addSecondarySpan(keySpan, `Type is ${lhs.type}`)
+                .addSecondarySpan(valueSpan, `Type is ${rhs.type}`)
+                .addSecondarySpan(lhs.declSpan, `Type of ${action.key} inferred here`)
         );
         return;
     }
@@ -131,7 +135,7 @@ function update(tcx: TyCtxt, action: Ir<ActionChangeVar>) {
         return;
     }
 
-    const newValue = applyNumericOperation(lhs, rhs, action.op.value);
+    const newValue = applyNumericOperation(lhs, rhs, action.op);
     tcx.setState(key, { ...lhs, ...newValue });
 }
 
@@ -141,7 +145,7 @@ function maybeInvert(value: boolean, inverted: boolean) {
 
 function narrow(
     tcx: TyCtxt,
-    conditions: IrCondition[],
+    conditions: Condition[],
     matchAny: boolean,
     inverted: boolean = false
 ): TyCtxt[] {
@@ -160,7 +164,7 @@ function narrow(
 
 function narrowCondition(
     tcx: TyCtxt,
-    condition: IrCondition,
+    condition: Condition,
 ) {
     // if (condition.)
 }

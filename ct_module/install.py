@@ -8,7 +8,7 @@ import dotenv
 HERE = Path(__file__).resolve().parent
 DOT_ENV = HERE / '.env'
 if not DOT_ENV.exists():
-    raise FileNotFoundError('Set your .env, loser!')
+    raise FileNotFoundError('Missing .env file in ct_module. Please create it first.')
 
 dotenv.load_dotenv(DOT_ENV)
 

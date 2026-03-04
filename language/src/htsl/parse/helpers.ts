@@ -1,4 +1,3 @@
-import { Span } from "../../span";
 import type { Action, Comparison, Condition, VarOperation } from "../../types";
 
 export const ACTION_KWS = [
@@ -190,13 +189,3 @@ export const SHORTHANDS = [
 ] as const;
 
 export type ShorthandKw = (typeof SHORTHANDS)[number];
-
-export function withDummyTypeSpans<T extends object>(
-    object: T
-): T & { typeSpan: Span, span: Span } {
-    return {
-        ...object,
-        typeSpan: Span.dummy(),
-        span: Span.dummy(),
-    } as const;
-}

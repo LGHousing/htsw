@@ -1,4 +1,4 @@
-import { parseIrActions, SourceMap } from "htsw";
+import { parseActionsResult, SourceMap } from "htsw";
 
 import { Simulator } from "./simulator";
 import { StringFileLoader } from "../helpers";
@@ -17,7 +17,6 @@ function commandFunction(args: string[]) {
     if (args[0] === "run") {
         const name = args.slice(1).join(" ");
         if (name !== "") {
-            console.log(name);
             Simulator.runFunction(name);
         } else {
             ChatLib.chat("&cInvalid usage: run <name>");
@@ -27,12 +26,10 @@ function commandFunction(args: string[]) {
 }
 
 function commandEval(args: string[]) {
-    console.log(args);
-
     const src = args.join(" ").replace("\r", "");
     const sm = new SourceMap(new StringFileLoader(src));
 
-    const result = parseIrActions(sm, "eval");
+    const result = parseActionsResult(sm, "eval");
 
     for (const diag of result.diagnostics) {
         printDiagnostic(sm, diag);

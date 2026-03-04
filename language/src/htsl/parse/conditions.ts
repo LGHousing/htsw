@@ -1,5 +1,5 @@
 import type { Parser } from "./parser";
-import type { IrCondition, Spanned } from "../../ir";
+import type { Condition } from "../../types";
 import { Diagnostic } from "../../diagnostic";
 import { Span } from "../../span";
 import {
@@ -15,12 +15,53 @@ import {
     parseItemAmount,
 } from "./arguments";
 import { parseNumericalPlaceholder } from "./placeholders";
-import { withDummyTypeSpans, type ConditionKw } from "./helpers";
+import { type ConditionKw } from "./helpers";
 
-type Inverted = Spanned<boolean>;
-type Note = Spanned<string> | undefined;
+type Inverted = { value: boolean; span: Span };
+type Note = { value: string; span: Span } | undefined;
 
-export function parseCondition(p: Parser): IrCondition {
+function setField<T extends object, K extends keyof T>(
+    p: Parser,
+    node: T,
+    key: K,
+    parser: ((p: Parser) => T[K]) | (() => T[K]),
+): T[K] {
+    const { value, span } = p.spanned(parser as any) as { value: T[K]; span: Span };
+    node[key] = value;
+    p.gcx.spanTable.setFieldSpan(node as object, key as string, span);
+    return value;
+}
+
+function setFieldWithSpan<T extends object, K extends keyof T>(
+    p: Parser,
+    node: T,
+    key: K,
+    value: T[K],
+    span: Span,
+) {
+    node[key] = value;
+    p.gcx.spanTable.setFieldSpan(node as object, key as string, span);
+}
+
+function setNodeSpan(p: Parser, node: object, span: Span) {
+    p.gcx.spanTable.setNodeSpan(node, span);
+}
+
+function setConditionMeta<T extends { inverted?: boolean; note?: string }>(
+    p: Parser,
+    condition: T,
+    inverted: Inverted,
+    note: Note,
+) {
+    if (inverted.value) {
+        setFieldWithSpan(p, condition, "inverted", true, inverted.span);
+    }
+    if (note) {
+        setFieldWithSpan(p, condition, "note", note.value, note.span);
+    }
+}
+
+export function parseCondition(p: Parser): Condition {
     function eatKw(kw: ConditionKw): boolean {
         return p.eatIdent(kw);
     }
@@ -31,7 +72,7 @@ export function parseCondition(p: Parser): IrCondition {
         p.eat("eol");
     }
 
-    const inverted = p.spanned(() => p.eat("exclamation"));
+    const inverted: Inverted = p.spanned(() => p.eat("exclamation"));
 
     if (eatKw("hasGroup")) {
         return parseConditionRequireGroup(p, inverted, note);
@@ -46,25 +87,13 @@ export function parseCondition(p: Parser): IrCondition {
     } else if (eatKw("hasItem")) {
         return parseConditionRequireItem(p, inverted, note);
     } else if (eatKw("doingParkour")) {
-        return {
-            type: "IS_DOING_PARKOUR",
-            typeSpan: p.prev.span,
-            span: p.prev.span,
-            inverted,
-            note,
-        };
+        return parseSimpleCondition(p, "IS_DOING_PARKOUR", inverted, note);
     } else if (eatKw("hasPotion")) {
         return parseConditionRequirePotionEffect(p, inverted, note);
     } else if (eatKw("isSneaking")) {
-        return {
-            type: "IS_SNEAKING",
-            typeSpan: p.prev.span,
-            span: p.prev.span,
-            inverted,
-            note,
-        };
+        return parseSimpleCondition(p, "IS_SNEAKING", inverted, note);
     } else if (eatKw("isFlying")) {
-        return { type: "IS_FLYING", inverted, typeSpan: p.prev.span, span: p.prev.span };
+        return parseSimpleCondition(p, "IS_FLYING", inverted, note);
     } else if (eatKw("health")) {
         return parseConditionCompareHealth(p, inverted, note);
     } else if (eatKw("maxHealth")) {
@@ -90,26 +119,37 @@ export function parseCondition(p: Parser): IrCondition {
     }
 }
 
-function parseConditionRecovering<T extends IrCondition["type"]>(
+function parseSimpleCondition<T extends Condition["type"]>(
     p: Parser,
     type: T,
     inverted: Inverted,
     note: Note,
-    parser: (condition: IrCondition & { type: T }) => void
-): IrCondition & { type: T } {
+): Extract<Condition, { type: T }> {
+    const condition = { type } as Extract<Condition, { type: T }>;
+    const typeSpan = p.prev.span;
+    p.gcx.spanTable.setFieldSpan(condition as object, "type", typeSpan);
+    setConditionMeta(p, condition, inverted, note);
+    setNodeSpan(p, condition, typeSpan);
+    return condition;
+}
+
+function parseConditionRecovering<T extends Condition["type"]>(
+    p: Parser,
+    type: T,
+    inverted: Inverted,
+    note: Note,
+    parser: (condition: Extract<Condition, { type: T }>) => void
+): Extract<Condition, { type: T }> {
     const start = p.prev.span.start;
-    const condition = {
-        type,
-        typeSpan: p.prev.span,
-        span: Span.dummy(), // placeholder
-        inverted,
-        note,
-    } as Extract<IrCondition, { type: T }>;
+    const typeSpan = p.prev.span;
+    const condition = { type } as Extract<Condition, { type: T }>;
+    p.gcx.spanTable.setFieldSpan(condition as object, "type", typeSpan);
+    setConditionMeta(p, condition, inverted, note);
 
     p.parseRecovering(["comma", { kind: "close_delim", delim: "parenthesis" }], () => {
         parser(condition);
     });
-    condition.span = new Span(start, p.prev.span.end);
+    setNodeSpan(p, condition, new Span(start, p.prev.span.end));
     return condition;
 }
 
@@ -121,11 +161,11 @@ function parseConditionRequireGroup(
     p: Parser,
     inverted: Inverted,
     note: Note
-): IrCondition {
+): Condition {
     return parseConditionRecovering(p, "REQUIRE_GROUP", inverted, note, (condition) => {
-        condition.group = p.spanned(p.parseName);
+        setField(p, condition, "group", p.parseName);
         if (checkEnd(p)) return;
-        condition.includeHigherGroups = p.spanned(p.parseBoolean);
+        setField(p, condition, "includeHigherGroups", p.parseBoolean);
     });
 }
 
@@ -133,16 +173,14 @@ function parseConditionCompareVar(
     p: Parser,
     inverted: Inverted,
     note: Note
-): IrCondition {
+): Condition {
     return parseConditionRecovering(p, "COMPARE_VAR", inverted, note, (condition) => {
-        condition.holder = p.spanned(() =>
-            withDummyTypeSpans({ type: "player" } as const)
-        );
-        condition.var = p.spanned(parseVarName);
-        condition.op = p.spanned(parseComparison);
-        condition.amount = p.spanned(parseValue);
-        if (checkEnd(p)) return; // shorthand
-        condition.fallback = p.spanned(parseValue);
+        setFieldWithSpan(p, condition, "holder", { type: "player" }, p.prev.span);
+        setField(p, condition, "var", parseVarName);
+        setField(p, condition, "op", parseComparison);
+        setField(p, condition, "amount", parseValue);
+        if (checkEnd(p)) return;
+        setField(p, condition, "fallback", parseValue);
     });
 }
 
@@ -150,16 +188,14 @@ function parseConditionCompareGlobalVar(
     p: Parser,
     inverted: Inverted,
     note: Note
-): IrCondition {
+): Condition {
     return parseConditionRecovering(p, "COMPARE_VAR", inverted, note, (condition) => {
-        condition.holder = p.spanned(() =>
-            withDummyTypeSpans({ type: "global" } as const)
-        );
-        condition.var = p.spanned(parseVarName);
-        condition.op = p.spanned(parseComparison);
-        condition.amount = p.spanned(parseValue);
-        if (checkEnd(p)) return; // shorthand
-        condition.fallback = p.spanned(parseValue);
+        setFieldWithSpan(p, condition, "holder", { type: "global" }, p.prev.span);
+        setField(p, condition, "var", parseVarName);
+        setField(p, condition, "op", parseComparison);
+        setField(p, condition, "amount", parseValue);
+        if (checkEnd(p)) return;
+        setField(p, condition, "fallback", parseValue);
     });
 }
 
@@ -167,14 +203,14 @@ function parseConditionRequirePermission(
     p: Parser,
     inverted: Inverted,
     note: Note
-): IrCondition {
+): Condition {
     return parseConditionRecovering(
         p,
         "REQUIRE_PERMISSION",
         inverted,
         note,
         (condition) => {
-            condition.permission = p.spanned(parsePermission);
+            setField(p, condition, "permission", parsePermission);
         }
     );
 }
@@ -183,9 +219,9 @@ function parseConditionIsInRegion(
     p: Parser,
     inverted: Inverted,
     note: Note
-): IrCondition {
+): Condition {
     return parseConditionRecovering(p, "IS_IN_REGION", inverted, note, (condition) => {
-        condition.region = p.spanned(p.parseName);
+        setField(p, condition, "region", p.parseName);
     });
 }
 
@@ -193,12 +229,12 @@ function parseConditionRequireItem(
     p: Parser,
     inverted: Inverted,
     note: Note
-): IrCondition {
+): Condition {
     return parseConditionRecovering(p, "REQUIRE_ITEM", inverted, note, (condition) => {
-        condition.item = p.spanned(p.parseName);
-        condition.whatToCheck = p.spanned(parseItemProperty);
-        condition.whereToCheck = p.spanned(parseItemLocation);
-        condition.amount = p.spanned(parseItemAmount);
+        setField(p, condition, "item", p.parseName);
+        setField(p, condition, "whatToCheck", parseItemProperty);
+        setField(p, condition, "whereToCheck", parseItemLocation);
+        setField(p, condition, "amount", parseItemAmount);
     });
 }
 
@@ -206,14 +242,14 @@ function parseConditionRequirePotionEffect(
     p: Parser,
     inverted: Inverted,
     note: Note
-): IrCondition {
+): Condition {
     return parseConditionRecovering(
         p,
         "REQUIRE_POTION_EFFECT",
         inverted,
         note,
         (condition) => {
-            condition.effect = p.spanned(parsePotionEffect);
+            setField(p, condition, "effect", parsePotionEffect);
         }
     );
 }
@@ -222,10 +258,10 @@ function parseConditionCompareHealth(
     p: Parser,
     inverted: Inverted,
     note: Note
-): IrCondition {
+): Condition {
     return parseConditionRecovering(p, "COMPARE_HEALTH", inverted, note, (condition) => {
-        condition.op = p.spanned(parseComparison);
-        condition.amount = p.spanned(parseNumericValue);
+        setField(p, condition, "op", parseComparison);
+        setField(p, condition, "amount", parseNumericValue);
     });
 }
 
@@ -233,15 +269,15 @@ function parseConditionCompareMaxHealth(
     p: Parser,
     inverted: Inverted,
     note: Note
-): IrCondition {
+): Condition {
     return parseConditionRecovering(
         p,
         "COMPARE_MAX_HEALTH",
         inverted,
         note,
         (condition) => {
-            condition.op = p.spanned(parseComparison);
-            condition.amount = p.spanned(parseNumericValue);
+            setField(p, condition, "op", parseComparison);
+            setField(p, condition, "amount", parseNumericValue);
         }
     );
 }
@@ -250,10 +286,10 @@ function parseConditionCompareHunger(
     p: Parser,
     inverted: Inverted,
     note: Note
-): IrCondition {
+): Condition {
     return parseConditionRecovering(p, "COMPARE_HUNGER", inverted, note, (condition) => {
-        condition.op = p.spanned(parseComparison);
-        condition.amount = p.spanned(parseNumericValue);
+        setField(p, condition, "op", parseComparison);
+        setField(p, condition, "amount", parseNumericValue);
     });
 }
 
@@ -261,14 +297,14 @@ function parseConditionRequireGamemode(
     p: Parser,
     inverted: Inverted,
     note: Note
-): IrCondition {
+): Condition {
     return parseConditionRecovering(
         p,
         "REQUIRE_GAMEMODE",
         inverted,
         note,
         (condition) => {
-            condition.gamemode = p.spanned(parseGamemode);
+            setField(p, condition, "gamemode", parseGamemode);
         }
     );
 }
@@ -277,16 +313,16 @@ function parseConditionComparePlaceholder(
     p: Parser,
     inverted: Inverted,
     note: Note
-): IrCondition {
+): Condition {
     return parseConditionRecovering(
         p,
         "COMPARE_PLACEHOLDER",
         inverted,
         note,
         (condition) => {
-            condition.placeholder = p.spanned(parseNumericalPlaceholder);
-            condition.op = p.spanned(parseComparison);
-            condition.amount = p.spanned(parseNumericValue);
+            setField(p, condition, "placeholder", parseNumericalPlaceholder);
+            setField(p, condition, "op", parseComparison);
+            setField(p, condition, "amount", parseNumericValue);
         }
     );
 }
@@ -295,9 +331,9 @@ function parseConditionRequireTeam(
     p: Parser,
     inverted: Inverted,
     note: Note
-): IrCondition {
+): Condition {
     return parseConditionRecovering(p, "REQUIRE_TEAM", inverted, note, (condition) => {
-        condition.team = p.spanned(p.parseName);
+        setField(p, condition, "team", p.parseName);
     });
 }
 
@@ -305,16 +341,17 @@ function parseConditionCompareTeamVar(
     p: Parser,
     inverted: Inverted,
     note: Note
-): IrCondition {
+): Condition {
     return parseConditionRecovering(p, "COMPARE_VAR", inverted, note, (condition) => {
-        condition.var = p.spanned(parseVarName);
-        condition.holder = p.spanned(() =>
-            withDummyTypeSpans({ type: "team", team: p.spanned(p.parseName) } as const)
-        );
-        condition.op = p.spanned(parseComparison);
-        condition.amount = p.spanned(parseValue);
-        if (checkEnd(p)) return; // shorthand
-        condition.fallback = p.spanned(parseValue);
+        setField(p, condition, "var", parseVarName);
+        const teamSpan = p.token.span;
+        const team = p.parseName();
+        const holder = { type: "team", team } as const;
+        setFieldWithSpan(p, condition, "holder", holder, teamSpan.to(p.prev.span));
+        setField(p, condition, "op", parseComparison);
+        setField(p, condition, "amount", parseValue);
+        if (checkEnd(p)) return;
+        setField(p, condition, "fallback", parseValue);
     });
 }
 
@@ -322,9 +359,9 @@ function parseConditionCompareDamage(
     p: Parser,
     inverted: Inverted,
     note: Note
-): IrCondition {
+): Condition {
     return parseConditionRecovering(p, "COMPARE_DAMAGE", inverted, note, (condition) => {
-        condition.op = p.spanned(parseComparison);
-        condition.amount = p.spanned(parseNumericValue);
+        setField(p, condition, "op", parseComparison);
+        setField(p, condition, "amount", parseNumericValue);
     });
 }

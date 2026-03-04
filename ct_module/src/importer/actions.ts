@@ -86,7 +86,6 @@ function isLimitExceeded(slot: ItemSlot): boolean {
     const lore = slot.getItem().getLore();
     if (lore.length === 0) return false;
     const lastLine = lore[lore.length - 1];
-    console.log(removedFormatting(lastLine));
     return removedFormatting(lastLine) === "You can't have more of this action!";
 }
 

@@ -38,22 +38,18 @@ import {
 import { Span } from "../../span";
 import { SHORTHANDS } from "./helpers";
 import Long from "long";
-import type { IrObject } from "../../ir";
 
-export function parseLocation(p: Parser): IrObject<Location> {
-    const start = p.token.span.start;
-
+export function parseLocation(p: Parser): Location {
     const type = p.parseOption(
         LOCATIONS,
         { singular: "location", plural: "locations" }
     );
-    const typeSpan = p.prev.span;
 
     if (type === "Custom Coordinates") {
-        const value = p.spanned(parseCoordinates);
-        return { type, value, typeSpan, span: typeSpan.to(value.span) };
+        const value = parseCoordinates(p);
+        return { type, value };
     } else {
-        return { type, typeSpan, span: typeSpan };
+        return { type };
     }
 }
 

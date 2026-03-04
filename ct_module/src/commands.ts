@@ -1,6 +1,4 @@
-import { VERSION, SourceMap, parseIrImportables, Diagnostic } from "htsw";
-import { unwrapIr } from "htsw/ir";
-import { Importable } from "htsw/types";
+import { VERSION, SourceMap, parseImportablesResult, Diagnostic } from "htsw";
 
 import { chatSeparator, FileSystemFileLoader } from "./helpers";
 import { Simulator } from "./simulator";
@@ -48,15 +46,14 @@ function commandImport(args: string[]) {
     }
 
     const sm = new SourceMap(new FileSystemFileLoader());
-    const result = parseIrImportables(sm, args.join(" "));
+    const result = parseImportablesResult(sm, args.join(" "));
 
     printDiagnostics(sm, result.diagnostics);
 
     TaskManager.run(async (ctx) => {
         if (!result.gcx.isFailed()) {
             ctx.displayMessage("&aImport started.");
-            const importables = unwrapIr<Importable[]>(result.value);
-            for (const importable of importables) {
+            for (const importable of result.value) {
                 try {
                     await importImportable(ctx, importable);
                 } catch (e) {
@@ -93,7 +90,7 @@ function commandSimulator(args: string[]) {
         }
 
         const sm = new SourceMap(new FileSystemFileLoader());
-        const result = parseIrImportables(sm, args[1]);
+        const result = parseImportablesResult(sm, args[1]);
 
         printDiagnostics(sm, result.diagnostics);
 
@@ -106,7 +103,7 @@ function commandSimulator(args: string[]) {
                 Diagnostic.error(`Simulate failed with ${errCount} errors`),
             );
         } else {
-            Simulator.start(sm, result.value);
+            Simulator.start(sm, result.value, result.spans);
             ChatLib.chat("&aSimulator started.");
         }
 

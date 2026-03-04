@@ -1,5 +1,4 @@
-import { Diagnostic, SourceMap } from "htsw";
-import { IrAction, IrImportable } from "htsw/ir";
+import { Diagnostic, SourceMap, Span, SpanTable, types } from "htsw";
 
 import { VarHolder, TeamVarKey } from "./vars";
 import {
@@ -17,7 +16,8 @@ export class Simulator {
     static isActive: boolean = false;
     
     static sm: SourceMap;
-    static importables: IrImportable[];
+    static spans: SpanTable;
+    static importables: types.Importable[];
 
     static playerVars: VarHolder<string>;
     static globalVars: VarHolder<string>;
@@ -28,10 +28,11 @@ export class Simulator {
 
     static triggers: Trigger[];
 
-    static start(sm: SourceMap, importables: IrImportable[]) {
+    static start(sm: SourceMap, importables: types.Importable[], spans: SpanTable) {
         this.isActive = true;
         
         this.sm = sm;
+        this.spans = spans;
         this.importables = importables;
         
         this.init();
@@ -68,15 +69,15 @@ export class Simulator {
 
     static runFunction(name: string): boolean {
         for (const importable of this.importables) {
-            if (importable.type === "FUNCTION" && importable.name?.value === name) {
-                this.runActions(importable.actions?.value ?? []);
+            if (importable.type === "FUNCTION" && importable.name === name) {
+                this.runActions(importable.actions ?? []);
                 return true;
             }
         }
         return false;
     }
 
-    static runActions(actions: IrAction[], childCtx: boolean = false) {
+    static runActions(actions: types.Action[], childCtx: boolean = false) {
         for (let i = 0; i < actions.length; i++) {
             try {
                 const action = actions[i];
@@ -102,6 +103,14 @@ export class Simulator {
         }
     }
 
+    static getNodeSpan(node: object): Span | undefined {
+        return this.spans.getNodeSpan(node);
+    }
+
+    static getFieldSpan(node: object, key: string | number): Span | undefined {
+        return this.spans.getFieldSpan(node, key);
+    }
+
     private static postinit() {
         this.runFunction("htsw:main");
 
@@ -109,8 +118,8 @@ export class Simulator {
             if (importable.type === "FUNCTION" && importable.actions && importable.repeatTicks) {
                 this.schedulers.push(
                     new RepeatingActionScheduler(
-                        importable.actions.value,
-                        importable.repeatTicks.value
+                        importable.actions,
+                        importable.repeatTicks
                     )
                 );
             }

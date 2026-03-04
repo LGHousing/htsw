@@ -33,20 +33,20 @@ class SimpleFileLoader implements htsw.FileLoader {
 }
 
 describe("Main API", () => {
-    it("parseIrActions parses simple source", () => {
+    it("parseActionsResult parses simple source", () => {
         const sourceMap = new htsw.SourceMap(
             new SimpleFileLoader({
                 "/project/test.htsl": "chat \"hello\"\n",
             })
         );
 
-        const result = htsw.parseIrActions(sourceMap, "/project/test.htsl");
+        const result = htsw.parseActionsResult(sourceMap, "/project/test.htsl");
 
         expect(result.value.length).toBeGreaterThan(0);
         expect(result.diagnostics.filter((it) => it.level === "error").length).toBe(0);
     });
 
-    it("parseIrImportables parses simple import.json", () => {
+    it("parseImportablesResult parses simple import.json", () => {
         const sourceMap = new htsw.SourceMap(
             new SimpleFileLoader({
                 "/project/import.json": JSON.stringify({
@@ -55,7 +55,7 @@ describe("Main API", () => {
             })
         );
 
-        const result = htsw.parseIrImportables(sourceMap, "/project/import.json");
+        const result = htsw.parseImportablesResult(sourceMap, "/project/import.json");
 
         expect(result.value.length).toBe(1);
         expect(result.value[0].type).toBe("REGION");

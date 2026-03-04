@@ -16,8 +16,8 @@ class EventState {
 
 function runEvent(event: Event) {
     for (const importable of Simulator.importables) {
-        if (importable.type === "EVENT" && importable.event?.value === event) {
-            Simulator.runActions(importable.actions?.value ?? []);
+        if (importable.type === "EVENT" && importable.event === event) {
+            Simulator.runActions(importable.actions ?? []);
         }
     }
 }

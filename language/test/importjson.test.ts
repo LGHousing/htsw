@@ -30,7 +30,7 @@ function hasHardErrors(diagnostics: htsw.Diagnostic[]): boolean {
 function parseImportables(path: string) {
     const fileLoader = new NodeFileLoader();
     const sourceMap = new htsw.SourceMap(fileLoader);
-    return htsw.parseIrImportables(sourceMap, path);
+    return htsw.parseImportablesResult(sourceMap, path);
 }
 
 function caseDirPath(name: string): string {
@@ -53,7 +53,7 @@ describe("import.json include", () => {
 
         const regionNames = result.value
             .filter((importable) => importable.type === "REGION")
-            .map((importable) => importable.name?.value)
+            .map((importable) => importable.name)
             .filter((name): name is string => name !== undefined);
 
         expect(regionNames).toEqual(expect.arrayContaining(["RootRegion", "SharedRegion"]));
@@ -65,7 +65,7 @@ describe("import.json include", () => {
 
         const regionNames = result.value
             .filter((importable) => importable.type === "REGION")
-            .map((importable) => importable.name?.value)
+            .map((importable) => importable.name)
             .filter((name): name is string => name !== undefined);
 
         expect(regionNames).toEqual(expect.arrayContaining(["RegionA", "RegionB"]));
@@ -121,7 +121,7 @@ describe("import.json basic passing behavior", () => {
 
         expect(result.value.length).toBe(1);
         expect(result.value[0].type).toBe("REGION");
-        expect(result.value[0].name?.value).toBe("SpawnRegion");
+        expect(result.value[0].name).toBe("SpawnRegion");
         expect(hasHardErrors(result.diagnostics)).toBe(false);
     });
 
@@ -130,8 +130,8 @@ describe("import.json basic passing behavior", () => {
 
         expect(result.value.length).toBe(1);
         expect(result.value[0].type).toBe("FUNCTION");
-        expect(result.value[0].name?.value).toBe("TickFn");
-        expect(result.value[0].repeatTicks?.value).toBe(20);
+        expect(result.value[0].name).toBe("TickFn");
+        expect(result.value[0].repeatTicks).toBe(20);
         expect(hasHardErrors(result.diagnostics)).toBe(false);
     });
 
@@ -140,7 +140,7 @@ describe("import.json basic passing behavior", () => {
 
         expect(result.value.length).toBe(1);
         expect(result.value[0].type).toBe("FUNCTION");
-        expect(result.value[0].name?.value).toBe("NoRepeatFn");
+        expect(result.value[0].name).toBe("NoRepeatFn");
         expect(result.value[0].repeatTicks).toBeUndefined();
         expect(hasHardErrors(result.diagnostics)).toBe(false);
     });
@@ -150,7 +150,7 @@ describe("import.json basic passing behavior", () => {
 
         expect(result.value.length).toBe(1);
         expect(result.value[0].type).toBe("EVENT");
-        expect(result.value[0].event?.value).toBe("Player Join");
+        expect(result.value[0].event).toBe("Player Join");
         expect(hasHardErrors(result.diagnostics)).toBe(false);
     });
 
@@ -159,15 +159,15 @@ describe("import.json basic passing behavior", () => {
 
         expect(result.value.length).toBe(1);
         expect(result.value[0].type).toBe("NPC");
-        expect(result.value[0].name?.value).toBe("Guide");
-        expect(result.value[0].pos?.value.x?.value).toBe(1);
-        expect(result.value[0].pos?.value.y?.value).toBe(2);
-        expect(result.value[0].pos?.value.z?.value).toBe(3);
-        expect(result.value[0].lookAtPlayers?.value).toBe(true);
-        expect(result.value[0].hideNameTag?.value).toBe(false);
-        expect(result.value[0].skin?.value).toBe("Steve");
-        expect(result.value[0].equipment?.value.helmet?.value).toBe("empty.snbt");
-        expect(result.value[0].equipment?.value.hand?.value).toBe("empty.snbt");
+        expect(result.value[0].name).toBe("Guide");
+        expect(result.value[0].pos?.x).toBe(1);
+        expect(result.value[0].pos?.y).toBe(2);
+        expect(result.value[0].pos?.z).toBe(3);
+        expect(result.value[0].lookAtPlayers).toBe(true);
+        expect(result.value[0].hideNameTag).toBe(false);
+        expect(result.value[0].skin).toBe("Steve");
+        expect(result.value[0].equipment?.helmet).toBe("empty.snbt");
+        expect(result.value[0].equipment?.hand).toBe("empty.snbt");
         expect(hasHardErrors(result.diagnostics)).toBe(false);
     });
 
@@ -176,7 +176,7 @@ describe("import.json basic passing behavior", () => {
 
         const regionNames = result.value
             .filter((importable) => importable.type === "REGION")
-            .map((importable) => importable.name?.value)
+            .map((importable) => importable.name)
             .filter((name): name is string => name !== undefined);
 
         expect(regionNames).toEqual(expect.arrayContaining(["RootRegion", "NamedImportJsonRegion"]));
@@ -225,3 +225,4 @@ describe("import.json diagnostics readability", () => {
         ).toBe(true);
     });
 });
+

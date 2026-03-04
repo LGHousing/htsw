@@ -3,15 +3,23 @@ import * as json from "jsonc-parser";
 import type { GlobalCtxt } from "../../context";
 import { Diagnostic } from "../../diagnostic";
 import { Span } from "../../span";
-import type { Ir, Spanned } from "../../ir";
 import type { Bounds, Pos } from "../../types";
 
 export function nodeSpan(node: json.Node): Span {
     return new Span(node.offset, node.offset + node.length);
 }
 
-export function withNodeSpan<T>(value: T, node: json.Node): Spanned<T> {
-    return { value, span: nodeSpan(node) };
+export function setNodeSpan(gcx: GlobalCtxt, value: object, node: json.Node): void {
+    gcx.spanTable.setNodeSpan(value, nodeSpan(node));
+}
+
+export function setFieldSpan(
+    gcx: GlobalCtxt,
+    owner: object,
+    key: string | number,
+    node: json.Node,
+): void {
+    gcx.spanTable.setFieldSpan(owner, key, nodeSpan(node));
 }
 
 export function parseString(gcx: GlobalCtxt, node: json.Node): string {
@@ -52,7 +60,7 @@ export function parseBoundedNumber(
         }
 
         return value;
-    }
+    };
 }
 
 export function parseArray<T>(
@@ -83,15 +91,6 @@ export function parseArray<T>(
     return res;
 }
 
-/**
- * Attempts to match and return a value from a list of valid options.
- *
- * Matching is case-insensitive.
- * 
- * @param options A list of valid option strings.
- * @param errorFormatting Terms used when generating error messages.
- * @returns The parsed option in its canonical form from the `options` list.
- */
 export function parseOption<T extends string>(
     gcx: GlobalCtxt,
     node: json.Node,
@@ -110,7 +109,7 @@ export function parseOption<T extends string>(
         err.addSubDiagnostic(Diagnostic.help(message));
     }
 
-    addHelp(`Valid ${errorTerms?.plural ?? "options"} are:`)
+    addHelp(`Valid ${errorTerms?.plural ?? "options"} are:`);
 
     const optionsToDisplay = Math.min(5, options.length);
     for (let i = 0; i < optionsToDisplay; i++) {
@@ -124,13 +123,13 @@ export function parseOption<T extends string>(
     throw err;
 }
 
-type NodeParseTree = { 
+type NodeParseTree = {
     [key: string]: NodeParseTreeElement;
 };
 
-type NodeParseTreeElement = { 
-    required: boolean,
-    parser: (node: json.Node) => void
+type NodeParseTreeElement = {
+    required: boolean;
+    parser: (node: json.Node) => void;
 };
 
 export function parseObject(
@@ -227,53 +226,57 @@ export function parseBoolean(gcx: GlobalCtxt, node: json.Node): boolean {
     return node.value as boolean;
 }
 
-export function parseIrBounds(gcx: GlobalCtxt, node: json.Node): Ir<Bounds> {
-    let from: Spanned<Ir<Pos>> | undefined;
-    let to: Spanned<Ir<Pos>> | undefined;
-    
+export function parseBounds(gcx: GlobalCtxt, node: json.Node): Bounds {
+    const bounds = {} as Bounds;
+    setNodeSpan(gcx, bounds as object, node);
+
     parseObject(gcx, node, {
-       "from": {
-           required: true,
-           parser: (node) => {
-               from = withNodeSpan(parseIrPos(gcx, node), node);
-           }
-       },
-       "to": {
-           required: true,
-           parser: (node) => {
-               to = withNodeSpan(parseIrPos(gcx, node), node);
-           }
-       }
+        "from": {
+            required: true,
+            parser: (child) => {
+                bounds.from = parsePos(gcx, child);
+                setFieldSpan(gcx, bounds as object, "from", child);
+            }
+        },
+        "to": {
+            required: true,
+            parser: (child) => {
+                bounds.to = parsePos(gcx, child);
+                setFieldSpan(gcx, bounds as object, "to", child);
+            }
+        }
     });
-    
-    return { from, to };
+
+    return bounds;
 }
 
-export function parseIrPos(gcx: GlobalCtxt, node: json.Node): Ir<Pos> {
-    let x: Spanned<number> | undefined;
-    let y: Spanned<number> | undefined;
-    let z: Spanned<number> | undefined;
-    
+export function parsePos(gcx: GlobalCtxt, node: json.Node): Pos {
+    const pos = {} as Pos;
+    setNodeSpan(gcx, pos as object, node);
+
     parseObject(gcx, node, {
-       "x": {
-           required: true,
-           parser: (node) => {
-               x = withNodeSpan(parseNumber(gcx, node), node);
-           }
-       },
-       "y": {
-           required: true,
-           parser: (node) => {
-               y = withNodeSpan(parseNumber(gcx, node), node);
-           }
-       },
-       "z": {
-           required: true,
-           parser: (node) => {
-               z = withNodeSpan(parseNumber(gcx, node), node);
-           }
-       }
+        "x": {
+            required: true,
+            parser: (child) => {
+                pos.x = parseNumber(gcx, child);
+                setFieldSpan(gcx, pos as object, "x", child);
+            }
+        },
+        "y": {
+            required: true,
+            parser: (child) => {
+                pos.y = parseNumber(gcx, child);
+                setFieldSpan(gcx, pos as object, "y", child);
+            }
+        },
+        "z": {
+            required: true,
+            parser: (child) => {
+                pos.z = parseNumber(gcx, child);
+                setFieldSpan(gcx, pos as object, "z", child);
+            }
+        }
     });
-    
-    return { x, y, z };
+
+    return pos;
 }

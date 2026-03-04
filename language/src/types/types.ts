@@ -23,7 +23,7 @@ export type VarName = string;
 export type VarHolder =
     | { type: "player" }
     | { type: "global" }
-    | { type: "team"; team?: string }; // TODO i changed team to optional bc thats how it is in housing idk if that breaks anything. heh.
+    | { type: "team"; team?: string }; // Team can be optional in some housing flows.
 
 export type Nbt = string;
 

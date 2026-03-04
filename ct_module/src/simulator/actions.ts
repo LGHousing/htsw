@@ -1,15 +1,33 @@
-import { Diagnostic, htsl } from "htsw";
-import type { Ir, IrAction } from "htsw/ir";
-import type { ActionActionBar, ActionChangeVar, ActionConditional, ActionFunction, ActionSendMessage, ActionPauseExecution, ActionPlaySound, ActionRandom, ActionSetVelocity, ActionTeleport, ActionTitle } from "htsw/types";
+import { Diagnostic, htsl, Span } from "htsw";
+import type {
+    Action,
+    ActionActionBar,
+    ActionChangeVar,
+    ActionConditional,
+    ActionFunction,
+    ActionPauseExecution,
+    ActionPlaySound,
+    ActionRandom,
+    ActionSendMessage,
+    ActionSetVelocity,
+    ActionTeleport,
+    ActionTitle,
+} from "htsw/types";
 
 import { ExitError, PauseError, Simulator } from "./simulator";
-import { VarHolder, VarLong, parseValue } from "./vars";
+import { VarHolder, parseValue } from "./vars";
 import { replacePlaceholders } from "./placeholders";
 import { runCondition } from "./conditions";
 import { coerceWithin } from "./helpers";
 import { printDiagnostic } from "../tui/diagnostics";
 
-export function runAction(action: IrAction) {
+function fieldSpan(action: object, key: string): Span {
+    return Simulator.getFieldSpan(action, key)
+        ?? Simulator.getNodeSpan(action)
+        ?? Span.dummy();
+}
+
+export function runAction(action: Action) {
     if (action.type === "ACTION_BAR") {
         runActionActionBar(action);
     } else if (action.type === "CHANGE_VAR") {
@@ -37,22 +55,22 @@ export function runAction(action: IrAction) {
     }
 }
 
-function runActionActionBar(action: Ir<ActionActionBar>) {
+function runActionActionBar(action: ActionActionBar) {
     if (!action.message) return;
 
-    const message = replacePlaceholders(action.message.value);
+    const message = replacePlaceholders(action.message);
     ChatLib.actionBar(message);
 }
 
-function runActionChangeVar(action: Ir<ActionChangeVar>) {
+function runActionChangeVar(action: ActionChangeVar) {
     if (!action.holder || !action.op || !action.key) return;
 
-    const holderType = action.holder.value.type;
+    const holderType = action.holder.type;
 
     const varKey =
         holderType === "team"
-            ? { team: action.holder.value.team, key: action.key.value }
-            : action.key.value;
+            ? { team: action.holder.team, key: action.key }
+            : action.key;
 
     const varHolder: VarHolder<any> =
         holderType === "team"
@@ -61,29 +79,28 @@ function runActionChangeVar(action: Ir<ActionChangeVar>) {
                 ? Simulator.globalVars
                 : Simulator.playerVars;
 
-    if (action.op.value === "Unset") {
+    if (action.op === "Unset") {
         varHolder.unsetVar(varKey);
         return;
     }
 
     if (!action.value) return;
 
-    const rhs = parseValue(action.value.value);
+    const rhs = parseValue(action.value);
     const lhs = varHolder.getVar(varKey, rhs.unsetValue());
     
-    if (action.op.value === "Set") {
+    if (action.op === "Set") {
         varHolder.setVar(varKey, rhs);
         return;
     }
 
-    const opStr = htsl.helpers.OPERATION_SYMBOLS[action.op.value];
-    
+    const opStr = htsl.helpers.OPERATION_SYMBOLS[action.op];
     const lhsType = varHolder.hasVar(varKey) ? "unknown" : lhs.type;
 
     const err = Diagnostic
         .error(`Operator ${opStr} cannot be applied to types ${lhsType} and ${rhs.type}`)
-        .addPrimarySpan(action.op.span)
-        .addSecondarySpan(action.key.span, `Value is ${lhs.toDisplayString()}`);
+        .addPrimarySpan(fieldSpan(action as object, "op"))
+        .addSecondarySpan(fieldSpan(action as object, "key"), `Value is ${lhs.toDisplayString()}`);
 
     if (lhs.type !== rhs.type || lhs.type === "string" || rhs.type === "string") {
         throw err;
@@ -91,98 +108,96 @@ function runActionChangeVar(action: Ir<ActionChangeVar>) {
 
     let result;
     try {
-        result = lhs.binOp(rhs, action.op.value);
-    } catch (e) {
+        result = lhs.binOp(rhs, action.op);
+    } catch (_e) {
         throw err;
     }
 
     varHolder.setVar(varKey, result);
 }
 
-function runActionConditional(action: Ir<ActionConditional>) {
-    if (!action.matchAny || !action.conditions || !action.ifActions) return;
-
-    const matchAny = action.matchAny.value;
+function runActionConditional(action: ActionConditional) {
+    if (action.matchAny === undefined || !action.conditions || !action.ifActions) return;
 
     let matches = 0;
-    for (const condition of action.conditions.value) {
+    for (const condition of action.conditions) {
         if (runCondition(condition)) matches++;
     }
 
     if (
-        (matchAny && matches > 0) ||
-        (!matchAny && matches === action.conditions.value.length)
+        (action.matchAny && matches > 0) ||
+        (!action.matchAny && matches === action.conditions.length)
     ) {
-        Simulator.runActions(action.ifActions.value, true);
+        Simulator.runActions(action.ifActions, true);
     } else if (action.elseActions) {
-        Simulator.runActions(action.elseActions.value, true);
+        Simulator.runActions(action.elseActions, true);
     }
 }
 
-function runActionFunction(action: Ir<ActionFunction>) {
+function runActionFunction(action: ActionFunction) {
     if (!action.function) return;
 
-    const result = Simulator.runFunction(action.function.value);
+    const result = Simulator.runFunction(action.function);
 
     if (!result) {
         const warn = Diagnostic.warning("Unknown function called")
-            .addPrimarySpan(action.function.span);
+            .addPrimarySpan(fieldSpan(action as object, "function"));
 
         printDiagnostic(Simulator.sm, warn);
     }
 }
 
-function runActionSendChatMessage(action: Ir<ActionSendMessage>) {
+function runActionSendChatMessage(action: ActionSendMessage) {
     if (!action.message) return;
 
-    const message = replacePlaceholders(action.message.value);
+    const message = replacePlaceholders(action.message);
     ChatLib.chat(`&7*&r ${message}`);
 }
 
-function runActionPauseExecution(action: Ir<ActionPauseExecution>) {
-    if (!action.ticks) return;
+function runActionPauseExecution(action: ActionPauseExecution) {
+    if (action.ticks === undefined) return;
 
-    throw new PauseError(action.ticks.value);
+    throw new PauseError(action.ticks);
 }
 
-function runActionPlaySound(action: Ir<ActionPlaySound>) {
+function runActionPlaySound(_action: ActionPlaySound) {
 
 }
 
-function runActionTeleport(action: Ir<ActionTeleport>) {
+function runActionTeleport(action: ActionTeleport) {
     if (!action.location) return;
 
-    if (action.location.value.type === "Invokers Location") {
+    if (action.location.type === "Invokers Location") {
         ChatLib.say("/tp ~ ~ ~");
-    } else if (action.location.value.type === "Custom Coordinates") {
-        ChatLib.say(`/tp ${replacePlaceholders(action.location.value.value?.value ?? "")}`);
+    } else if (action.location.type === "Custom Coordinates") {
+        ChatLib.say(`/tp ${replacePlaceholders(action.location.value ?? "")}`);
     } else {
         const warn = Diagnostic
             .warning("House spawn cannot be used in Simulator mode")
-            .addPrimarySpan(action.location.span);
+            .addPrimarySpan(fieldSpan(action as object, "location"));
 
         printDiagnostic(Simulator.sm, warn);
     }
 }
 
-function runActionRandom(action: Ir<ActionRandom>) {
-    if (!action.actions) return;
+function runActionRandom(action: ActionRandom) {
+    if (!action.actions || action.actions.length === 0) return;
 
-    const randIdx = Math.floor(Math.random() * action.actions.value.length);
+    const randIdx = Math.floor(Math.random() * action.actions.length);
 
-    runAction(action.actions.value[randIdx]);
+    runAction(action.actions[randIdx]);
 }
 
-function runActionSetVelocity(action: Ir<ActionSetVelocity>) {
-    if (!action.x || !action.y || !action.z) return;
+function runActionSetVelocity(action: ActionSetVelocity) {
+    if (action.x === undefined || action.y === undefined || action.z === undefined) return;
 
     function coerce(value: number): number {
         return coerceWithin(value, 0, 50);
     }
 
-    const x = coerce(parseValue(action.x.value).toDouble());
-    const y = coerce(parseValue(action.y.value).toDouble());
-    const z = coerce(parseValue(action.z.value).toDouble());
+    const x = coerce(parseValue(action.x).toDouble());
+    const y = coerce(parseValue(action.y).toDouble());
+    const z = coerce(parseValue(action.z).toDouble());
 
     const player = Player.getPlayer();
 
@@ -199,14 +214,14 @@ function runActionSetVelocity(action: Ir<ActionSetVelocity>) {
         ();
 }
 
-function runActionTitle(action: Ir<ActionTitle>) {
+function runActionTitle(action: ActionTitle) {
     if (!action.title) return;
 
     Client.showTitle(
-        replacePlaceholders(action.title.value),
-        replacePlaceholders(action.subtitle?.value ?? ""),
-        (action.fadein?.value ?? 1) * 20,
-        (action.stay?.value ?? 5) * 20,
-        (action.fadeout?.value ?? 1) * 20
+        replacePlaceholders(action.title),
+        replacePlaceholders(action.subtitle ?? ""),
+        (action.fadein ?? 1) * 20,
+        (action.stay ?? 5) * 20,
+        (action.fadeout ?? 1) * 20
     );
 }

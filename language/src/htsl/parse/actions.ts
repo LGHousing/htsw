@@ -1,6 +1,5 @@
 import { Diagnostic } from "../../diagnostic";
-import { withDummyTypeSpans, type ActionKw } from "./helpers";
-import type { IrAction, Spanned } from "../../ir";
+import type { Action } from "../../types";
 import { Span } from "../../span";
 import {
     parseEnchantment,
@@ -17,11 +16,44 @@ import {
     parseVarOperation,
 } from "./arguments";
 import { parseCondition } from "./conditions";
+import { type ActionKw } from "./helpers";
 import type { Parser } from "./parser";
 
-type Note = Spanned<string> | undefined;
+type Note = { value: string; span: Span } | undefined;
 
-export function parseAction(p: Parser): IrAction {
+function setField<T extends object, K extends keyof T>(
+    p: Parser,
+    node: T,
+    key: K,
+    parser: ((p: Parser) => T[K]) | (() => T[K]),
+): T[K] {
+    const { value, span } = p.spanned(parser as any) as { value: T[K]; span: Span };
+    node[key] = value;
+    p.gcx.spanTable.setFieldSpan(node as object, key as string, span);
+    return value;
+}
+
+function setFieldWithSpan<T extends object, K extends keyof T>(
+    p: Parser,
+    node: T,
+    key: K,
+    value: T[K],
+    span: Span,
+) {
+    node[key] = value;
+    p.gcx.spanTable.setFieldSpan(node as object, key as string, span);
+}
+
+function setNodeSpan(p: Parser, node: object, span: Span) {
+    p.gcx.spanTable.setNodeSpan(node, span);
+}
+
+function setNote<T extends { note?: string }>(p: Parser, node: T, note: Note) {
+    if (!note) return;
+    setFieldWithSpan(p, node, "note", note.value, note.span);
+}
+
+export function parseAction(p: Parser): Action {
     function eatKw(kw: ActionKw): boolean {
         return p.eatIdent(kw);
     }
@@ -39,7 +71,7 @@ export function parseAction(p: Parser): IrAction {
     } else if (eatKw("applyPotion")) {
         return parseActionApplyPotionEffect(p, note);
     } else if (eatKw("cancelEvent")) {
-        return { type: "CANCEL_EVENT", typeSpan: p.prev.span, span: p.prev.span, note };
+        return parseSimpleAction(p, "CANCEL_EVENT", note);
     } else if (eatKw("changeHealth")) {
         return parseActionChangeHealth(p, note);
     } else if (eatKw("changePlayerGroup")) {
@@ -49,7 +81,7 @@ export function parseAction(p: Parser): IrAction {
     } else if (eatKw("chat")) {
         return parseActionMessage(p, note);
     } else if (eatKw("clearEffects")) {
-        return { type: "CLEAR_POTION_EFFECTS", typeSpan: p.prev.span, span: p.prev.span, note };
+        return parseSimpleAction(p, "CLEAR_POTION_EFFECTS", note);
     } else if (eatKw("compassTarget")) {
         return parseActionSetCompassTarget(p, note);
     } else if (eatKw("displayMenu")) {
@@ -59,11 +91,11 @@ export function parseAction(p: Parser): IrAction {
     } else if (eatKw("enchant")) {
         return parseActionEnchantHeldItem(p, note);
     } else if (eatKw("exit")) {
-        return { type: "EXIT", typeSpan: p.prev.span, span: p.prev.span, note };
+        return parseSimpleAction(p, "EXIT", note);
     } else if (eatKw("failParkour")) {
         return parseActionFailParkour(p, note);
     } else if (eatKw("fullHeal")) {
-        return { type: "HEAL", typeSpan: p.prev.span, span: p.prev.span, note };
+        return parseSimpleAction(p, "HEAL", note);
     } else if (eatKw("function")) {
         return parseActionFunction(p, note);
     } else if (eatKw("gamemode")) {
@@ -77,7 +109,7 @@ export function parseAction(p: Parser): IrAction {
     } else if (eatKw("if")) {
         return parseActionConditional(p, note);
     } else if (eatKw("kill")) {
-        return { type: "KILL", typeSpan: p.prev.span, span: p.prev.span, note };
+        return parseSimpleAction(p, "KILL", note);
     } else if (eatKw("launch")) {
         return parseActionLaunch(p, note);
     } else if (eatKw("lobby")) {
@@ -91,7 +123,7 @@ export function parseAction(p: Parser): IrAction {
     } else if (eatKw("removeItem")) {
         return parseActionRemoveItem(p, note);
     } else if (eatKw("resetInventory")) {
-        return { type: "RESET_INVENTORY", typeSpan: p.prev.span, span: p.prev.span, note };
+        return parseSimpleAction(p, "RESET_INVENTORY", note);
     } else if (eatKw("setTeam")) {
         return parseActionSetTeam(p, note);
     } else if (eatKw("sound")) {
@@ -120,14 +152,12 @@ export function parseAction(p: Parser): IrAction {
                 err.addSubDiagnostic(Diagnostic.help(message));
             }
 
-            // TODO: resolve actual import.json and make exhaustive
             if (p.eatIdent("function"))
                 addHelp("Define this function separately in 'import.json'");
             else if (p.eatIdent("event"))
                 addHelp("Define this event separately in 'import.json'");
         }
 
-        // no need to recover to eol, parser already does this for actions
         throw err;
     }
 
@@ -136,145 +166,154 @@ export function parseAction(p: Parser): IrAction {
     throw Diagnostic.error("Expected action").addPrimarySpan(p.prev.span);
 }
 
-function parseActionRecovering<T extends IrAction["type"]>(
+function parseSimpleAction<T extends Action["type"]>(
     p: Parser,
     type: T,
     note: Note,
-    parser: (action: IrAction & { type: T }) => void
-): IrAction & { type: T } {
-    const start = p.prev.span.start;
-    const action = {
-        type,
-        typeSpan: p.prev.span,
-        span: Span.dummy(), // placeholder
-        note,
-    } as Extract<IrAction, { type: T }>;
-    p.parseRecovering(["eol"], () => {
-        parser(action);
-    });
-    action.span = new Span(start, p.prev.span.end);
+): Extract<Action, { type: T }> {
+    const action = { type } as Extract<Action, { type: T }>;
+    const typeSpan = p.prev.span;
+    setNote(p, action, note);
+    setNodeSpan(p, action, typeSpan);
+    p.gcx.spanTable.setFieldSpan(action as object, "type", typeSpan);
     return action;
 }
 
+function parseActionRecovering<T extends Action["type"]>(
+    p: Parser,
+    type: T,
+    note: Note,
+    parser: (action: Extract<Action, { type: T }>) => void
+): Extract<Action, { type: T }> {
+    const start = p.prev.span.start;
+    const typeSpan = p.prev.span;
+    const action = { type } as Extract<Action, { type: T }>;
 
-function parseActionActionBar(p: Parser, note: Note): IrAction {
+    p.gcx.spanTable.setFieldSpan(action as object, "type", typeSpan);
+    setNote(p, action, note);
+
+    p.parseRecovering(["eol"], () => {
+        parser(action);
+    });
+
+    setNodeSpan(p, action, new Span(start, p.prev.span.end));
+    return action;
+}
+
+function parseActionActionBar(p: Parser, note: Note): Action {
     return parseActionRecovering(p, "ACTION_BAR", note, (action) => {
-        action.message = p.spanned(p.parseString);
+        setField(p, action, "message", p.parseString);
     });
 }
 
-function parseActionApplyInventoryLayout(p: Parser, note: Note): IrAction {
+function parseActionApplyInventoryLayout(p: Parser, note: Note): Action {
     return parseActionRecovering(p, "APPLY_INVENTORY_LAYOUT", note, (action) => {
-        action.layout = p.spanned(p.parseString);
+        setField(p, action, "layout", p.parseString);
     });
 }
 
-function parseActionApplyPotionEffect(p: Parser, note: Note): IrAction {
+function parseActionApplyPotionEffect(p: Parser, note: Note): Action {
     return parseActionRecovering(p, "APPLY_POTION_EFFECT", note, (action) => {
-        action.effect = p.spanned(parsePotionEffect);
-        action.duration = p.spanned(() => p.parseBoundedNumber(1, 2592000));
-        action.level = p.spanned(() => p.parseBoundedNumber(1, 10));
-        action.override = p.spanned(p.parseBoolean);
-        if (p.checkEol()) return; // shorthand
-        action.showIcon = p.spanned(p.parseBoolean);
+        setField(p, action, "effect", parsePotionEffect);
+        setField(p, action, "duration", () => p.parseBoundedNumber(1, 2592000));
+        setField(p, action, "level", () => p.parseBoundedNumber(1, 10));
+        setField(p, action, "override", p.parseBoolean);
+        if (p.checkEol()) return;
+        setField(p, action, "showIcon", p.parseBoolean);
     });
 }
 
-function parseActionChangeGlobalVar(p: Parser, note: Note): IrAction {
+function parseActionChangeGlobalVar(p: Parser, note: Note): Action {
     return parseActionRecovering(p, "CHANGE_VAR", note, (action) => {
-        action.holder = p.spanned(
-            () =>
-                ({ type: "global", typeSpan: Span.dummy(), span: Span.dummy() }) as const
-        );
-        action.key = p.spanned(parseVarName);
-        action.op = p.spanned(parseVarOperation);
-        if (action.op?.value === "Unset") return;
-        action.value = p.spanned(parseValue);
-        if (p.checkEol()) return; // shorthand
-        action.unset = p.spanned(p.parseBoolean);
+        setFieldWithSpan(p, action, "holder", { type: "global" }, p.prev.span);
+        setField(p, action, "key", parseVarName);
+        const op = setField(p, action, "op", parseVarOperation);
+        if (op === "Unset") return;
+        setField(p, action, "value", parseValue);
+        if (p.checkEol()) return;
+        setField(p, action, "unset", p.parseBoolean);
     });
 }
 
-function parseActionChangeHealth(p: Parser, note: Note): IrAction {
+function parseActionChangeHealth(p: Parser, note: Note): Action {
     return parseActionRecovering(p, "CHANGE_HEALTH", note, (action) => {
-        action.op = p.spanned(parseOperation);
-        action.amount = p.spanned(parseNumericValue);
+        setField(p, action, "op", parseOperation);
+        setField(p, action, "amount", parseNumericValue);
     });
 }
 
-function parseActionChangeHunger(p: Parser, note: Note): IrAction {
+function parseActionChangeHunger(p: Parser, note: Note): Action {
     return parseActionRecovering(p, "CHANGE_HUNGER", note, (action) => {
-        action.op = p.spanned(parseOperation);
-        action.amount = p.spanned(parseNumericValue);
+        setField(p, action, "op", parseOperation);
+        setField(p, action, "amount", parseNumericValue);
     });
 }
 
-function parseActionChangeMaxHealth(p: Parser, note: Note): IrAction {
-    return parseActionRecovering(p, "CHANGE_HEALTH", note, (action) => {
-        action.op = p.spanned(parseOperation);
-        action.amount = p.spanned(parseNumericValue);
+function parseActionChangeMaxHealth(p: Parser, note: Note): Action {
+    return parseActionRecovering(p, "CHANGE_MAX_HEALTH", note, (action) => {
+        setField(p, action, "op", parseOperation);
+        setField(p, action, "amount", parseNumericValue);
     });
 }
 
-function parseActionChangeTeamVar(p: Parser, note: Note): IrAction {
+function parseActionChangeTeamVar(p: Parser, note: Note): Action {
     return parseActionRecovering(p, "CHANGE_VAR", note, (action) => {
-        action.key = p.spanned(parseVarName);
-        action.holder = p.spanned(() =>
-            withDummyTypeSpans({ type: "team", team: p.spanned(p.parseName) } as const)
-        );
-        action.op = p.spanned(parseVarOperation);
-        if (action.op?.value === "Unset") return;
-        action.value = p.spanned(parseValue);
-        if (p.checkEol()) return; // shorthand
-        action.unset = p.spanned(p.parseBoolean);
+        setField(p, action, "key", parseVarName);
+        const teamSpan = p.token.span;
+        const team = p.parseName();
+        const holder = { type: "team", team } as const;
+        setFieldWithSpan(p, action, "holder", holder, teamSpan.to(p.prev.span));
+        const op = setField(p, action, "op", parseVarOperation);
+        if (op === "Unset") return;
+        setField(p, action, "value", parseValue);
+        if (p.checkEol()) return;
+        setField(p, action, "unset", p.parseBoolean);
     });
 }
 
-function parseActionChangeVar(p: Parser, note: Note): IrAction {
+function parseActionChangeVar(p: Parser, note: Note): Action {
     return parseActionRecovering(p, "CHANGE_VAR", note, (action) => {
-        action.holder = p.spanned(() => withDummyTypeSpans({ type: "player" } as const));
-        action.key = p.spanned(parseVarName);
-        action.op = p.spanned(parseVarOperation);
-        if (action.op?.value === "Unset") return;
-        action.value = p.spanned(parseValue);
-        if (p.checkEol()) return; // shorthand
-        action.unset = p.spanned(p.parseBoolean);
+        setFieldWithSpan(p, action, "holder", { type: "player" }, p.prev.span);
+        setField(p, action, "key", parseVarName);
+        const op = setField(p, action, "op", parseVarOperation);
+        if (op === "Unset") return;
+        setField(p, action, "value", parseValue);
+        if (p.checkEol()) return;
+        setField(p, action, "unset", p.parseBoolean);
     });
 }
 
-function parseActionConditional(p: Parser, note: Note): IrAction {
+function parseActionConditional(p: Parser, note: Note): Action {
     return parseActionRecovering(p, "CONDITIONAL", note, (action) => {
-        action.matchAny = p.spanned(() => {
+        setField(p, action, "matchAny", () => {
             if (p.eatIdent("and") || p.eatIdent("false")) return false;
-            else if (p.eatIdent("or") || p.eatIdent("true")) return true;
-            else if (p.check("ident"))
+            if (p.eatIdent("or") || p.eatIdent("true")) return true;
+            if (p.check("ident")) {
                 throw Diagnostic.error("Expected conditional mode").addPrimarySpan(
                     p.token.span
                 );
-            else return false; // not null because :(
+            }
+            return false;
         });
 
-        action.conditions = p.spanned(() => {
+        setField(p, action, "conditions", () => {
             return p
                 .parseDelimitedCommaSeq("parenthesis", () => {
                     return p.parseRecovering(
                         ["comma", { kind: "close_delim", delim: "parenthesis" }],
-                        () => {
-                            return parseCondition(p);
-                        }
+                        () => parseCondition(p)
                     );
                 })
-                .filter((it) => it !== undefined);
+                .filter((it): it is NonNullable<typeof it> => it !== undefined);
         });
 
-        action.ifActions = p.spanned(p.parseBlock);
+        setField(p, action, "ifActions", p.parseBlock);
 
-        // the following is kind of hacky, but it's alright:
-        let token = p.token;
-        let hadNewline = p.eat("eol");
+        const token = p.token;
+        const hadNewline = p.eat("eol");
 
         if (p.eatIdent("else")) {
-            action.elseActions = p.spanned(p.parseBlock);
+            setField(p, action, "elseActions", p.parseBlock);
         } else if (hadNewline) {
             p.tokens.push(p.token);
             p.token = token;
@@ -282,154 +321,153 @@ function parseActionConditional(p: Parser, note: Note): IrAction {
     });
 }
 
-function parseActionDisplayMenu(p: Parser, note: Note): IrAction {
+function parseActionDisplayMenu(p: Parser, note: Note): Action {
     return parseActionRecovering(p, "SET_MENU", note, (action) => {
-        action.menu = p.spanned(p.parseName);
+        setField(p, action, "menu", p.parseName);
     });
 }
 
-function parseActionDropItem(p: Parser, note: Note): IrAction {
+function parseActionDropItem(p: Parser, note: Note): Action {
     return parseActionRecovering(p, "DROP_ITEM", note, (action) => {
-        action.item = p.spanned(p.parseName);
-        action.location = p.spanned(parseLocation);
-        action.dropNaturally = p.spanned(p.parseBoolean);
-        action.disableMerging = p.spanned(p.parseBoolean);
-        action.prioritizePlayer = p.spanned(p.parseBoolean);
-        action.inventoryFallback = p.spanned(p.parseBoolean);
+        setField(p, action, "item", p.parseName);
+        setField(p, action, "location", parseLocation);
+        setField(p, action, "dropNaturally", p.parseBoolean);
+        setField(p, action, "disableMerging", p.parseBoolean);
+        setField(p, action, "prioritizePlayer", p.parseBoolean);
+        setField(p, action, "inventoryFallback", p.parseBoolean);
     });
 }
 
-function parseActionEnchantHeldItem(p: Parser, note: Note): IrAction {
+function parseActionEnchantHeldItem(p: Parser, note: Note): Action {
     return parseActionRecovering(p, "ENCHANT_HELD_ITEM", note, (action) => {
-        action.enchant = p.spanned(parseEnchantment);
-        action.level = p.spanned(() => p.parseBoundedNumber(1, 10));
+        setField(p, action, "enchant", parseEnchantment);
+        setField(p, action, "level", () => p.parseBoundedNumber(1, 10));
     });
 }
 
-function parseActionFailParkour(p: Parser, note: Note): IrAction {
+function parseActionFailParkour(p: Parser, note: Note): Action {
     return parseActionRecovering(p, "FAIL_PARKOUR", note, (action) => {
-        action.message = p.spanned(p.parseString);
+        setField(p, action, "message", p.parseString);
     });
 }
 
-function parseActionFunction(p: Parser, note: Note): IrAction {
+function parseActionFunction(p: Parser, note: Note): Action {
     return parseActionRecovering(p, "FUNCTION", note, (action) => {
-        action.function = p.spanned(p.parseName);
-        if (p.checkEol()) return; // shorthand
-        action.global = p.spanned(p.parseBoolean);
-    });
-}
-
-function parseActionGiveExperienceLevels(p: Parser, note: Note): IrAction {
-    return parseActionRecovering(p, "GIVE_EXPERIENCE_LEVELS", note, (action) => {
-        action.amount = p.spanned(parseNumericValue);
-    });
-}
-
-function parseActionGiveItem(p: Parser, note: Note): IrAction {
-    return parseActionRecovering(p, "GIVE_ITEM", note, (action) => {
-        action.item = p.spanned(p.parseName);
-        action.allowMultiple = p.spanned(p.parseBoolean);
-        action.slot = p.spanned(parseInventorySlot);
-        action.replaceExisting = p.spanned(p.parseBoolean);
-    });
-}
-
-function parseActionLaunch(p: Parser, note: Note): IrAction {
-    return parseActionRecovering(p, "LAUNCH", note, (action) => {
-        action.location = p.spanned(parseLocation);
-        action.strength = p.spanned(() => p.parseBoundedNumber(1, 10));
-    });
-}
-
-function parseActionMessage(p: Parser, note: Note): IrAction {
-    return parseActionRecovering(p, "MESSAGE", note, (action) => {
-        action.message = p.spanned(p.parseString);
-    });
-}
-
-function parseActionPause(p: Parser, note: Note): IrAction {
-    return parseActionRecovering(p, "PAUSE", note, (action) => {
-        action.ticks = p.spanned(() => p.parseBoundedNumber(1, 1000));
-    });
-}
-
-function parseActionPlaySound(p: Parser, note: Note): IrAction {
-    return parseActionRecovering(p, "PLAY_SOUND", note, (action) => {
-        action.sound = p.spanned(parseSound);
-        action.volume = p.spanned(p.parseDouble);
-        action.pitch = p.spanned(p.parseDouble);
-        action.location = p.spanned(parseLocation);
-    });
-}
-
-function parseActionRandom(p: Parser, note: Note): IrAction {
-    return parseActionRecovering(p, "RANDOM", note, (action) => {
-        action.actions = p.spanned(p.parseBlock);
-    });
-}
-
-function parseActionRemoveItem(p: Parser, note: Note): IrAction {
-    return parseActionRecovering(p, "REMOVE_ITEM", note, (action) => {
-        action.item = p.spanned(p.parseName);
-    });
-}
-
-function parseActionSendToLobby(p: Parser, note: Note): IrAction {
-    return parseActionRecovering(p, "SEND_TO_LOBBY", note, (action) => {
-        action.lobby = p.spanned(parseLobby);
-    });
-}
-
-function parseActionSetCompassTarget(p: Parser, note: Note): IrAction {
-    return parseActionRecovering(p, "SET_COMPASS_TARGET", note, (action) => {
-        action.location = p.spanned(parseLocation);
-    });
-}
-
-function parseActionSetGamemode(p: Parser, note: Note): IrAction {
-    return parseActionRecovering(p, "SET_GAMEMODE", note, (action) => {
-        action.gamemode = p.spanned(parseGamemode);
-    });
-}
-
-function parseActionSetGroup(p: Parser, note: Note): IrAction {
-    return parseActionRecovering(p, "SET_GROUP", note, (action) => {
-        action.group = p.spanned(p.parseString);
+        setField(p, action, "function", p.parseName);
         if (p.checkEol()) return;
-        action.demotionProtection = p.spanned(p.parseBoolean);
+        setField(p, action, "global", p.parseBoolean);
     });
 }
 
-function parseActionSetTeam(p: Parser, note: Note): IrAction {
+function parseActionGiveExperienceLevels(p: Parser, note: Note): Action {
+    return parseActionRecovering(p, "GIVE_EXPERIENCE_LEVELS", note, (action) => {
+        setField(p, action, "amount", parseNumericValue);
+    });
+}
+
+function parseActionGiveItem(p: Parser, note: Note): Action {
+    return parseActionRecovering(p, "GIVE_ITEM", note, (action) => {
+        setField(p, action, "item", p.parseName);
+        setField(p, action, "allowMultiple", p.parseBoolean);
+        setField(p, action, "slot", parseInventorySlot);
+        setField(p, action, "replaceExisting", p.parseBoolean);
+    });
+}
+
+function parseActionLaunch(p: Parser, note: Note): Action {
+    return parseActionRecovering(p, "LAUNCH", note, (action) => {
+        setField(p, action, "location", parseLocation);
+        setField(p, action, "strength", () => p.parseBoundedNumber(1, 10));
+    });
+}
+
+function parseActionMessage(p: Parser, note: Note): Action {
+    return parseActionRecovering(p, "MESSAGE", note, (action) => {
+        setField(p, action, "message", p.parseString);
+    });
+}
+
+function parseActionPause(p: Parser, note: Note): Action {
+    return parseActionRecovering(p, "PAUSE", note, (action) => {
+        setField(p, action, "ticks", () => p.parseBoundedNumber(1, 1000));
+    });
+}
+
+function parseActionPlaySound(p: Parser, note: Note): Action {
+    return parseActionRecovering(p, "PLAY_SOUND", note, (action) => {
+        setField(p, action, "sound", parseSound);
+        setField(p, action, "volume", p.parseDouble);
+        setField(p, action, "pitch", p.parseDouble);
+        setField(p, action, "location", parseLocation);
+    });
+}
+
+function parseActionRandom(p: Parser, note: Note): Action {
+    return parseActionRecovering(p, "RANDOM", note, (action) => {
+        setField(p, action, "actions", p.parseBlock);
+    });
+}
+
+function parseActionRemoveItem(p: Parser, note: Note): Action {
+    return parseActionRecovering(p, "REMOVE_ITEM", note, (action) => {
+        setField(p, action, "item", p.parseName);
+    });
+}
+
+function parseActionSendToLobby(p: Parser, note: Note): Action {
+    return parseActionRecovering(p, "SEND_TO_LOBBY", note, (action) => {
+        setField(p, action, "lobby", parseLobby);
+    });
+}
+
+function parseActionSetCompassTarget(p: Parser, note: Note): Action {
+    return parseActionRecovering(p, "SET_COMPASS_TARGET", note, (action) => {
+        setField(p, action, "location", parseLocation);
+    });
+}
+
+function parseActionSetGamemode(p: Parser, note: Note): Action {
+    return parseActionRecovering(p, "SET_GAMEMODE", note, (action) => {
+        setField(p, action, "gamemode", parseGamemode);
+    });
+}
+
+function parseActionSetGroup(p: Parser, note: Note): Action {
+    return parseActionRecovering(p, "SET_GROUP", note, (action) => {
+        setField(p, action, "group", p.parseString);
+        if (p.checkEol()) return;
+        setField(p, action, "demotionProtection", p.parseBoolean);
+    });
+}
+
+function parseActionSetTeam(p: Parser, note: Note): Action {
     return parseActionRecovering(p, "SET_TEAM", note, (action) => {
-        action.team = p.spanned(p.parseName);
+        setField(p, action, "team", p.parseName);
     });
 }
 
-function parseActionSetVelocity(p: Parser, note: Note): IrAction {
+function parseActionSetVelocity(p: Parser, note: Note): Action {
     return parseActionRecovering(p, "SET_VELOCITY", note, (action) => {
-        action.x = p.spanned(parseNumericValue);
-        action.y = p.spanned(parseNumericValue);
-        action.z = p.spanned(parseNumericValue);
+        setField(p, action, "x", parseNumericValue);
+        setField(p, action, "y", parseNumericValue);
+        setField(p, action, "z", parseNumericValue);
     });
 }
 
-function parseActionTeleport(p: Parser, note: Note): IrAction {
+function parseActionTeleport(p: Parser, note: Note): Action {
     return parseActionRecovering(p, "TELEPORT", note, (action) => {
-        action.location = p.spanned(parseLocation);
+        setField(p, action, "location", parseLocation);
     });
 }
 
-function parseActionTitle(p: Parser, note: Note): IrAction {
+function parseActionTitle(p: Parser, note: Note): Action {
     return parseActionRecovering(p, "TITLE", note, (action) => {
-        action.title = p.spanned(p.parseString);
-        if (p.checkEol()) return; // shorthand
-        action.subtitle = p.spanned(p.parseString);
-        if (p.checkEol()) return; // shorthand
-
-        action.fadein = p.spanned(() => p.parseBoundedNumber(0, 5));
-        action.stay = p.spanned(() => p.parseBoundedNumber(0, 10));
-        action.fadeout = p.spanned(() => p.parseBoundedNumber(0, 5));
+        setField(p, action, "title", p.parseString);
+        if (p.checkEol()) return;
+        setField(p, action, "subtitle", p.parseString);
+        if (p.checkEol()) return;
+        setField(p, action, "fadein", () => p.parseBoundedNumber(0, 5));
+        setField(p, action, "stay", () => p.parseBoundedNumber(0, 10));
+        setField(p, action, "fadeout", () => p.parseBoundedNumber(0, 5));
     });
 }
