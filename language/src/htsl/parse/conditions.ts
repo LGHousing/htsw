@@ -28,7 +28,7 @@ function setField<T extends object, K extends keyof T>(
 ): T[K] {
     const { value, span } = p.spanned(parser as any) as { value: T[K]; span: Span };
     node[key] = value;
-    p.gcx.spanTable.setFieldSpan(node as object, key as string, span);
+    p.gcx.spans.setField(node, key, span);
     return value;
 }
 
@@ -40,11 +40,11 @@ function setFieldWithSpan<T extends object, K extends keyof T>(
     span: Span,
 ) {
     node[key] = value;
-    p.gcx.spanTable.setFieldSpan(node as object, key as string, span);
+    p.gcx.spans.setField(node, key, span);
 }
 
 function setNodeSpan(p: Parser, node: object, span: Span) {
-    p.gcx.spanTable.setNodeSpan(node, span);
+    p.gcx.spans.set(node, span);
 }
 
 function setConditionMeta<T extends { inverted?: boolean; note?: string }>(
@@ -127,7 +127,7 @@ function parseSimpleCondition<T extends Condition["type"]>(
 ): Extract<Condition, { type: T }> {
     const condition = { type } as Extract<Condition, { type: T }>;
     const typeSpan = p.prev.span;
-    p.gcx.spanTable.setFieldSpan(condition as object, "type", typeSpan);
+    p.gcx.spans.setField(condition, "type", typeSpan);
     setConditionMeta(p, condition, inverted, note);
     setNodeSpan(p, condition, typeSpan);
     return condition;
@@ -143,7 +143,7 @@ function parseConditionRecovering<T extends Condition["type"]>(
     const start = p.prev.span.start;
     const typeSpan = p.prev.span;
     const condition = { type } as Extract<Condition, { type: T }>;
-    p.gcx.spanTable.setFieldSpan(condition as object, "type", typeSpan);
+    p.gcx.spans.setField(condition, "type", typeSpan);
     setConditionMeta(p, condition, inverted, note);
 
     p.parseRecovering(["comma", { kind: "close_delim", delim: "parenthesis" }], () => {

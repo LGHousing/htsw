@@ -51,18 +51,7 @@ const defaultBehaviorComparePlaceholder: ConditionBehavior<"COMPARE_PLACEHOLDER"
 
     const lhs = rt.runPlaceholder(condition.placeholder);
     if (!lhs) return false;
-
-    let rhs: Var<any>;
-    try {
-        rhs = parseValue(rt, condition.amount);
-    } catch (error) {
-        rt.addDiagnostic(
-            Diagnostic.warning((error as Error).message),
-            condition,
-            "amount",
-        );
-        return false;
-    }
+    const rhs: Var<any> = parseValue(rt, condition.amount);
 
     return lhs.cmpOp(rhs, condition.op);
 };

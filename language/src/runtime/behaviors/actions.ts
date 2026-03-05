@@ -69,12 +69,10 @@ const defaultBehaviorChangeVar: ActionBehavior<"CHANGE_VAR"> = (rt, action) => {
     }
 
     if (lhs.type !== rhs.type || lhs.type === "string" || rhs.type === "string") {
-        rt.addDiagnostic(
+        rt.emitDiagnostic(
             Diagnostic.warning(
                 `Operator ${action.op} cannot be applied to ${lhs.type} and ${rhs.type}`,
-            ),
-            action,
-            "op",
+            ).addPrimarySpan(rt.spans.getField(action, "op"))
         );
         return;
     }

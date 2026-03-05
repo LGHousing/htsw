@@ -9,17 +9,17 @@ export function nodeSpan(node: json.Node): Span {
     return new Span(node.offset, node.offset + node.length);
 }
 
-export function setNodeSpan(gcx: GlobalCtxt, value: object, node: json.Node): void {
-    gcx.spanTable.setNodeSpan(value, nodeSpan(node));
+export function setSpan<T extends object>(gcx: GlobalCtxt, value: T, node: json.Node): void {
+    gcx.spans.set(value, nodeSpan(node));
 }
 
-export function setFieldSpan(
+export function setFieldSpan<T extends object>(
     gcx: GlobalCtxt,
-    owner: object,
-    key: string | number,
+    owner: T,
+    key: keyof T,
     node: json.Node,
 ): void {
-    gcx.spanTable.setFieldSpan(owner, key, nodeSpan(node));
+    gcx.spans.setField(owner, key, nodeSpan(node));
 }
 
 export function parseString(gcx: GlobalCtxt, node: json.Node): string {
@@ -228,21 +228,21 @@ export function parseBoolean(gcx: GlobalCtxt, node: json.Node): boolean {
 
 export function parseBounds(gcx: GlobalCtxt, node: json.Node): Bounds {
     const bounds = {} as Bounds;
-    setNodeSpan(gcx, bounds as object, node);
+    setSpan(gcx, bounds as object, node);
 
     parseObject(gcx, node, {
         "from": {
             required: true,
             parser: (child) => {
                 bounds.from = parsePos(gcx, child);
-                setFieldSpan(gcx, bounds as object, "from", child);
+                setFieldSpan(gcx, bounds, "from", child);
             }
         },
         "to": {
             required: true,
             parser: (child) => {
                 bounds.to = parsePos(gcx, child);
-                setFieldSpan(gcx, bounds as object, "to", child);
+                setFieldSpan(gcx, bounds, "to", child);
             }
         }
     });
@@ -252,28 +252,28 @@ export function parseBounds(gcx: GlobalCtxt, node: json.Node): Bounds {
 
 export function parsePos(gcx: GlobalCtxt, node: json.Node): Pos {
     const pos = {} as Pos;
-    setNodeSpan(gcx, pos as object, node);
+    setSpan(gcx, pos as object, node);
 
     parseObject(gcx, node, {
         "x": {
             required: true,
             parser: (child) => {
                 pos.x = parseNumber(gcx, child);
-                setFieldSpan(gcx, pos as object, "x", child);
+                setFieldSpan(gcx, pos, "x", child);
             }
         },
         "y": {
             required: true,
             parser: (child) => {
                 pos.y = parseNumber(gcx, child);
-                setFieldSpan(gcx, pos as object, "y", child);
+                setFieldSpan(gcx, pos, "y", child);
             }
         },
         "z": {
             required: true,
             parser: (child) => {
                 pos.z = parseNumber(gcx, child);
-                setFieldSpan(gcx, pos as object, "z", child);
+                setFieldSpan(gcx, pos, "z", child);
             }
         }
     });

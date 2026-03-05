@@ -36,7 +36,7 @@ export function parseActionsResult(
     const actions = parseHtsl(gcx, path);
     return {
         value: actions,
-        spans: gcx.spanTable,
+        spans: gcx.spans,
         diagnostics: gcx.diagnostics,
         gcx
     };
@@ -58,7 +58,7 @@ export function parseImportablesResult(
     parseImportJson(gcx, path);
     return {
         value: gcx.importables,
-        spans: gcx.spanTable,
+        spans: gcx.spans,
         diagnostics: gcx.diagnostics,
         gcx
     };

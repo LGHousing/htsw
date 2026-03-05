@@ -14,12 +14,6 @@ import { replacePlaceholders } from "./placeholders";
 import { coerceWithin } from "./helpers";
 import { printDiagnostic } from "../tui/diagnostics";
 
-function fieldSpan(action: object, key: string): Span {
-    return Simulator.getFieldSpan(action, key)
-        ?? Simulator.getNodeSpan(action)
-        ?? Span.dummy();
-}
-
 export function createActionBehaviors(): runtime.ActionBehaviors {
     return runtime.ActionBehaviors.default()
         .with("FUNCTION", behaviorFunction)
@@ -42,11 +36,11 @@ function behaviorFunction(rt: runtime.Runtime, action: ActionFunction) {
         return;
     }
 
-    rt.addDiagnostic(
-        Diagnostic.warning(`Unknown function '${action.function}'`),
-        action,
-        "function",
-    );
+    const err = Diagnostic
+        .warning(`Unknown function '${action.function}'`)
+        .addPrimarySpan(rt.spans.getField(action, "function"));
+
+    rt.emitDiagnostic(err);
 }
 
 function behaviorActionBar(_rt: runtime.Runtime, action: ActionActionBar) {
@@ -63,7 +57,7 @@ function behaviorPlaySound(_rt: runtime.Runtime, _action: ActionPlaySound) {
 
 }
 
-function behaviorTeleport(_rt: runtime.Runtime, action: ActionTeleport) {
+function behaviorTeleport(rt: runtime.Runtime, action: ActionTeleport) {
     if (action.location.type === "Invokers Location") {
         ChatLib.say("/tp ~ ~ ~");
     } else if (action.location.type === "Custom Coordinates") {
@@ -71,9 +65,9 @@ function behaviorTeleport(_rt: runtime.Runtime, action: ActionTeleport) {
     } else {
         const warn = Diagnostic
             .warning("House spawn cannot be used in Simulator mode")
-            .addPrimarySpan(fieldSpan(action as object, "location"));
+            .addPrimarySpan(rt.spans.getField(action, "location"));
 
-        printDiagnostic(Simulator.sm, warn);
+        rt.emitDiagnostic(warn);
     }
 }
 

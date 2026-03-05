@@ -10,7 +10,7 @@ import { createPlaceholderBehaviors } from "./placeholders";
 
 export class Simulator {
     static isActive: boolean = false;
-    
+
     static sm: SourceMap;
     static importables: types.Importable[];
     static runtime: runtime.Runtime;
@@ -19,13 +19,13 @@ export class Simulator {
 
     static start(sm: SourceMap, importables: types.Importable[], spans: SpanTable) {
         this.isActive = true;
-        
+
         this.sm = sm;
         this.importables = importables;
         this.runtime = this.createRuntime(spans);
         this.registerTriggers();
     }
-    
+
     static restart(): void {
         this.stop();
         this.runtime = this.createRuntime(this.runtime.spans);
@@ -79,14 +79,6 @@ export class Simulator {
             }
             throw err;
         }
-    }
-
-    static getNodeSpan(node: object): Span | undefined {
-        return this.runtime.spans.getNodeSpan(node);
-    }
-
-    static getFieldSpan(node: object, key: string | number): Span | undefined {
-        return this.runtime.spans.getFieldSpan(node, key);
     }
 
     private static tick(): void {

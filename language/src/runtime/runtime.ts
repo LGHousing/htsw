@@ -14,7 +14,7 @@ import { VarHolder, type TeamVarKey, type Var } from "./vars";
 
 export type RuntimeConfig = {
     spans: SpanTable;
-    
+
     actionBehaviors?: ActionBehaviors;
     conditionBehaviors?: ConditionBehaviors;
     placeholderBehaviors?: PlaceholderBehaviors;
@@ -86,10 +86,9 @@ export class Runtime {
     runAction<T extends Action>(action: T): void {
         const result = this.actionBehaviors.dispatch(this, action);
         if (result === undefined && !this.actionBehaviors.get(action.type)) {
-            this.addDiagnostic(
-                Diagnostic.warning(`No runtime behavior for action '${action.type}'`),
-                action,
-                "type"
+            this.emitDiagnostic(
+                Diagnostic.warning(`No runtime behavior for action '${action.type}'`)
+                    .addPrimarySpan(this.spans.getField(action, "type"))
             );
             return;
         }
@@ -98,10 +97,9 @@ export class Runtime {
     runCondition<T extends Condition>(condition: T): boolean {
         const result = this.conditionBehaviors.dispatch(this, condition);
         if (result === undefined && !this.conditionBehaviors.get(condition.type)) {
-            this.addDiagnostic(
-                Diagnostic.warning(`No runtime behavior for condition '${condition.type}'`),
-                condition,
-                "type"
+            this.emitDiagnostic(
+                Diagnostic.warning(`No runtime behavior for condition '${condition.type}'`)
+                    .addPrimarySpan(this.spans.getField(condition, "type"))
             );
             return false;
         }
@@ -113,29 +111,7 @@ export class Runtime {
         return this.placeholderBehaviors.dispatch(this, invocation);
     }
 
-    addDiagnostic(diagnostic: Diagnostic, node?: object, field?: string): void {
-        this.attachSpan(diagnostic, node, field);
-        this.pushDiagnostic(diagnostic);
-    }
-
-    getNodeSpan(node: object) {
-        return this.spans.getNodeSpan(node);
-    }
-
-    getFieldSpan(node: object, key: string | number) {
-        return this.spans.getFieldSpan(node, key);
-    }
-
-    private attachSpan(diagnostic: Diagnostic, node?: object, field?: string) {
-        if (!node) return;
-        const span = (field ? this.getFieldSpan(node, field) : undefined)
-            ?? this.getNodeSpan(node);
-        if (span) {
-            diagnostic.addPrimarySpan(span);
-        }
-    }
-
-    private pushDiagnostic(diagnostic: Diagnostic) {
+    emitDiagnostic(diagnostic: Diagnostic) {
         this.diagnostics.push(diagnostic);
         this.onDiagnostic?.(diagnostic);
     }

@@ -14,7 +14,7 @@ import {
     parsePos,
     parseString,
     setFieldSpan,
-    setNodeSpan,
+    setSpan,
 } from "./helpers";
 import {
     EVENTS,
@@ -217,7 +217,7 @@ function resolveImportJsonPath(gcx: GlobalCtxt, path: string): string {
 
 function parseImportableFunction(gcx: GlobalCtxt, node: json.Node): ImportableFunction {
     const importable = { type: "FUNCTION" } as ImportableFunction;
-    setNodeSpan(gcx, importable, node);
+    setSpan(gcx, importable, node);
     setFieldSpan(gcx, importable, "type", node);
 
     parseObject(gcx, node, {
@@ -249,7 +249,7 @@ function parseImportableFunction(gcx: GlobalCtxt, node: json.Node): ImportableFu
 
 function parseImportableEvent(gcx: GlobalCtxt, node: json.Node): ImportableEvent {
     const importable = { type: "EVENT" } as ImportableEvent;
-    setNodeSpan(gcx, importable, node);
+    setSpan(gcx, importable, node);
     setFieldSpan(gcx, importable, "type", node);
 
     parseObject(gcx, node, {
@@ -276,7 +276,7 @@ function parseImportableEvent(gcx: GlobalCtxt, node: json.Node): ImportableEvent
 
 function parseImportableRegion(gcx: GlobalCtxt, node: json.Node): ImportableRegion {
     const importable = { type: "REGION" } as ImportableRegion;
-    setNodeSpan(gcx, importable, node);
+    setSpan(gcx, importable, node);
     setFieldSpan(gcx, importable, "type", node);
 
     parseObject(gcx, node, {
@@ -315,7 +315,7 @@ function parseImportableRegion(gcx: GlobalCtxt, node: json.Node): ImportableRegi
 
 function parseImportableNpc(gcx: GlobalCtxt, node: json.Node): ImportableNpc {
     const importable = { type: "NPC" } as ImportableNpc;
-    setNodeSpan(gcx, importable, node);
+    setSpan(gcx, importable, node);
     setFieldSpan(gcx, importable, "type", node);
 
     parseObject(gcx, node, {
@@ -384,7 +384,7 @@ function parseImportableNpc(gcx: GlobalCtxt, node: json.Node): ImportableNpc {
 
 function parseNpcEquipment(gcx: GlobalCtxt, node: json.Node): NpcEquipment {
     const equipment = {} as NpcEquipment;
-    setNodeSpan(gcx, equipment, node);
+    setSpan(gcx, equipment, node);
 
     parseObject(gcx, node, {
         "helmet": {

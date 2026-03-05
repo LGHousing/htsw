@@ -1,20 +1,22 @@
 import type { Span } from "./span";
 
-export type SpanTableFieldKey = string | number;
+type Key = string | number | symbol;
 
 export class SpanTable {
     private readonly nodeSpans = new WeakMap<object, Span>();
-    private readonly fieldSpans = new WeakMap<object, Map<SpanTableFieldKey, Span>>();
+    private readonly fieldSpans = new WeakMap<object, Map<Key, Span>>();
 
-    setNodeSpan(node: object, span: Span): void {
+    set<T extends object>(node: T, span: Span): void {
         this.nodeSpans.set(node, span);
     }
 
-    getNodeSpan(node: object): Span | undefined {
-        return this.nodeSpans.get(node);
+    get<T extends object>(node: T): Span {
+        const span = this.nodeSpans.get(node);
+        if (!span) throw Error(`Missing span for reference: ${node}`);
+        return span;
     }
 
-    setFieldSpan(node: object, key: SpanTableFieldKey, span: Span): void {
+    setField<T extends object>(node: T, key: keyof T, span: Span): void {
         let map = this.fieldSpans.get(node);
         if (!map) {
             map = new Map();
@@ -23,7 +25,9 @@ export class SpanTable {
         map.set(key, span);
     }
 
-    getFieldSpan(node: object, key: SpanTableFieldKey): Span | undefined {
-        return this.fieldSpans.get(node)?.get(key);
+    getField<T extends object>(node: T, key: keyof T): Span {
+        const span = this.fieldSpans.get(node)?.get(key);
+        if (!span) throw Error(`Missing span for field ${String(key)} of reference: ${node}`);
+        return span;
     }
 }
