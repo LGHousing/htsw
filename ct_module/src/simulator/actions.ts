@@ -1,23 +1,16 @@
-import { Diagnostic, htsl, Span } from "htsw";
+import { Diagnostic, runtime, Span } from "htsw";
 import type {
-    Action,
     ActionActionBar,
-    ActionChangeVar,
-    ActionConditional,
     ActionFunction,
-    ActionPauseExecution,
     ActionPlaySound,
-    ActionRandom,
     ActionSendMessage,
     ActionSetVelocity,
     ActionTeleport,
     ActionTitle,
 } from "htsw/types";
 
-import { ExitError, PauseError, Simulator } from "./simulator";
-import { VarHolder, parseValue } from "./vars";
+import { Simulator } from "./simulator";
 import { replacePlaceholders } from "./placeholders";
-import { runCondition } from "./conditions";
 import { coerceWithin } from "./helpers";
 import { printDiagnostic } from "../tui/diagnostics";
 
@@ -27,146 +20,50 @@ function fieldSpan(action: object, key: string): Span {
         ?? Span.dummy();
 }
 
-export function runAction(action: Action) {
-    if (action.type === "ACTION_BAR") {
-        runActionActionBar(action);
-    } else if (action.type === "CHANGE_VAR") {
-        runActionChangeVar(action);
-    } else if (action.type === "CONDITIONAL") {
-        runActionConditional(action);
-    } else if (action.type === "EXIT") {
-        throw new ExitError();
-    } else if (action.type === "FUNCTION") {
-        runActionFunction(action);
-    } else if (action.type === "MESSAGE") {
-        runActionSendChatMessage(action);
-    } else if (action.type === "PAUSE") {
-        runActionPauseExecution(action);
-    } else if (action.type === "PLAY_SOUND") {
-
-    } else if (action.type === "RANDOM") {
-        runActionRandom(action);
-    } else if (action.type === "SET_VELOCITY") {
-        runActionSetVelocity(action);
-    } else if (action.type === "TELEPORT") {
-        runActionTeleport(action);
-    } else if (action.type === "TITLE") {
-        runActionTitle(action);
-    }
+export function createActionBehaviors(): runtime.ActionBehaviors {
+    return runtime.ActionBehaviors.default()
+        .with("FUNCTION", behaviorFunction)
+        .with("ACTION_BAR", behaviorActionBar)
+        .with("MESSAGE", behaviorSendChatMessage)
+        .with("PLAY_SOUND", behaviorPlaySound)
+        .with("SET_VELOCITY", behaviorSetVelocity)
+        .with("TELEPORT", behaviorTeleport)
+        .with("TITLE", behaviorTitle);
 }
 
-function runActionActionBar(action: ActionActionBar) {
-    if (!action.message) return;
+function behaviorFunction(rt: runtime.Runtime, action: ActionFunction) {
+    if (!action.function) return;
 
+    for (const importable of Simulator.importables) {
+        if (importable.type !== "FUNCTION") continue;
+        if (importable.name !== action.function) continue;
+
+        rt.runActions(importable.actions ?? []);
+        return;
+    }
+
+    rt.addDiagnostic(
+        Diagnostic.warning(`Unknown function '${action.function}'`),
+        action,
+        "function",
+    );
+}
+
+function behaviorActionBar(_rt: runtime.Runtime, action: ActionActionBar) {
     const message = replacePlaceholders(action.message);
     ChatLib.actionBar(message);
 }
 
-function runActionChangeVar(action: ActionChangeVar) {
-    if (!action.holder || !action.op || !action.key) return;
-
-    const holderType = action.holder.type;
-
-    const varKey =
-        holderType === "team"
-            ? { team: action.holder.team, key: action.key }
-            : action.key;
-
-    const varHolder: VarHolder<any> =
-        holderType === "team"
-            ? Simulator.teamVars
-            : holderType === "global"
-                ? Simulator.globalVars
-                : Simulator.playerVars;
-
-    if (action.op === "Unset") {
-        varHolder.unsetVar(varKey);
-        return;
-    }
-
-    if (!action.value) return;
-
-    const rhs = parseValue(action.value);
-    const lhs = varHolder.getVar(varKey, rhs.unsetValue());
-    
-    if (action.op === "Set") {
-        varHolder.setVar(varKey, rhs);
-        return;
-    }
-
-    const opStr = htsl.helpers.OPERATION_SYMBOLS[action.op];
-    const lhsType = varHolder.hasVar(varKey) ? "unknown" : lhs.type;
-
-    const err = Diagnostic
-        .error(`Operator ${opStr} cannot be applied to types ${lhsType} and ${rhs.type}`)
-        .addPrimarySpan(fieldSpan(action as object, "op"))
-        .addSecondarySpan(fieldSpan(action as object, "key"), `Value is ${lhs.toDisplayString()}`);
-
-    if (lhs.type !== rhs.type || lhs.type === "string" || rhs.type === "string") {
-        throw err;
-    }
-
-    let result;
-    try {
-        result = lhs.binOp(rhs, action.op);
-    } catch (_e) {
-        throw err;
-    }
-
-    varHolder.setVar(varKey, result);
-}
-
-function runActionConditional(action: ActionConditional) {
-    if (action.matchAny === undefined || !action.conditions || !action.ifActions) return;
-
-    let matches = 0;
-    for (const condition of action.conditions) {
-        if (runCondition(condition)) matches++;
-    }
-
-    if (
-        (action.matchAny && matches > 0) ||
-        (!action.matchAny && matches === action.conditions.length)
-    ) {
-        Simulator.runActions(action.ifActions, true);
-    } else if (action.elseActions) {
-        Simulator.runActions(action.elseActions, true);
-    }
-}
-
-function runActionFunction(action: ActionFunction) {
-    if (!action.function) return;
-
-    const result = Simulator.runFunction(action.function);
-
-    if (!result) {
-        const warn = Diagnostic.warning("Unknown function called")
-            .addPrimarySpan(fieldSpan(action as object, "function"));
-
-        printDiagnostic(Simulator.sm, warn);
-    }
-}
-
-function runActionSendChatMessage(action: ActionSendMessage) {
-    if (!action.message) return;
-
+function behaviorSendChatMessage(_rt: runtime.Runtime, action: ActionSendMessage) {
     const message = replacePlaceholders(action.message);
     ChatLib.chat(`&7*&r ${message}`);
 }
 
-function runActionPauseExecution(action: ActionPauseExecution) {
-    if (action.ticks === undefined) return;
-
-    throw new PauseError(action.ticks);
-}
-
-function runActionPlaySound(_action: ActionPlaySound) {
+function behaviorPlaySound(_rt: runtime.Runtime, _action: ActionPlaySound) {
 
 }
 
-function runActionTeleport(action: ActionTeleport) {
-    if (!action.location) return;
-
+function behaviorTeleport(_rt: runtime.Runtime, action: ActionTeleport) {
     if (action.location.type === "Invokers Location") {
         ChatLib.say("/tp ~ ~ ~");
     } else if (action.location.type === "Custom Coordinates") {
@@ -180,24 +77,14 @@ function runActionTeleport(action: ActionTeleport) {
     }
 }
 
-function runActionRandom(action: ActionRandom) {
-    if (!action.actions || action.actions.length === 0) return;
-
-    const randIdx = Math.floor(Math.random() * action.actions.length);
-
-    runAction(action.actions[randIdx]);
-}
-
-function runActionSetVelocity(action: ActionSetVelocity) {
-    if (action.x === undefined || action.y === undefined || action.z === undefined) return;
-
+function behaviorSetVelocity(rt: runtime.Runtime, action: ActionSetVelocity) {
     function coerce(value: number): number {
         return coerceWithin(value, 0, 50);
     }
 
-    const x = coerce(parseValue(action.x).toDouble());
-    const y = coerce(parseValue(action.y).toDouble());
-    const z = coerce(parseValue(action.z).toDouble());
+    const x = coerce(runtime.parseValue(rt, action.x).toDouble());
+    const y = coerce(runtime.parseValue(rt, action.y).toDouble());
+    const z = coerce(runtime.parseValue(rt, action.z).toDouble());
 
     const player = Player.getPlayer();
 
@@ -214,9 +101,7 @@ function runActionSetVelocity(action: ActionSetVelocity) {
         ();
 }
 
-function runActionTitle(action: ActionTitle) {
-    if (!action.title) return;
-
+function behaviorTitle(_rt: runtime.Runtime, action: ActionTitle) {
     Client.showTitle(
         replacePlaceholders(action.title),
         replacePlaceholders(action.subtitle ?? ""),

@@ -1,9 +1,7 @@
-import { VERSION } from "htsw";
+import { VERSION, runtime } from "htsw";
 
-import { getDate, getGamemode, randomLong } from "./helpers";
-import { Var, VarString, VarLong, VarDouble, parseValue } from "./vars";
+import { getDate, getGamemode } from "./helpers";
 import { Simulator } from "./simulator";
-import Long from "long";
 
 const MOCK_DATA = {
     server: {
@@ -44,266 +42,121 @@ const MOCK_DATA = {
 
 const PLACEHOLDER_REGEX = /%([^%]+?)%/g;
 
-/**
- * Replaces placeholders in a string.
- */
 export function replacePlaceholders(value: string): string {
     const placeholders = value.match(PLACEHOLDER_REGEX);
-
-    if (!placeholders) {
-        return value;
-    }
+    if (!placeholders) return value;
 
     for (const placeholder of placeholders) {
         const placeholderContent = placeholder.substring(1, placeholder.length - 1);
         try {
-            const evaluatedVar = parsePlaceholder(placeholderContent);
-
+            const evaluatedVar = Simulator.runtime.runPlaceholder(placeholderContent);
+            if (!evaluatedVar) continue;
             value = value.replace(placeholder, evaluatedVar.toString());
-        } catch (error) {
-            /* Ignore */
+        } catch (_error) {
+            // Ignore unresolved placeholders in UI strings.
         }
     }
 
     return value;
 }
 
-/**
- * Parses a placeholder string into its components and evaluates it using
- * runPlaceholder.
- *
- * @param placeholderContent - The raw undelimited placeholder
- * @throws An error if a placeholder evaluates to undefined
- * (the parser should prevent this, if it doesn't, it's a bug).
- */
-export function parsePlaceholder(placeholder: string): Var<any> {
-    const pivotIndex = placeholder.indexOf("/");
-    const name = placeholder.substring(0, pivotIndex);
-    const argsString = placeholder.substring(pivotIndex + 1);
-    
-    let args: string[] = [];
-    if (argsString) {
-        args = argsString.split(" ").filter((arg) => arg != "");
-        if (args.length === 0) args = [""]; // Fixes weird parsing by hypixles :)
-    }
-    
-    const result = runPlaceholder(name, ...args);
-    
-    if (result === undefined) {
-        throw new Error(`Placeholder "${name}" could not be resolved.`);
-    }
-    
-    return result;
+export function createPlaceholderBehaviors(): runtime.PlaceholderBehaviors {
+    return runtime.PlaceholderBehaviors.default()
+        .with("server.name", () => new runtime.VarString(MOCK_DATA.server.name))
+        .with("server.shortname", () => new runtime.VarString(MOCK_DATA.server.shortname))
+        .with("player.name", () => new runtime.VarString(Player.getName()))
+        .with("player.ping", () => runtime.VarLong.fromNumber(Server.getPing()))
+        .with("player.health", () => runtime.VarLong.fromNumber(Player.getHP()))
+        .with(
+            "player.maxhealth",
+            () => runtime.VarLong.fromNumber(Player.getPlayer().func_110138_aP /*getMaxHealth*/()),
+        )
+        .with("player.hunger", () => runtime.VarLong.fromNumber(Player.getHunger()))
+        .with("player.experience", () => runtime.VarLong.fromNumber(Player.getXPProgress()))
+        .with("player.level", () => runtime.VarLong.fromNumber(Player.getXPLevel()))
+        .with("player.version", () => new runtime.VarString(MOCK_DATA.player.version))
+        .with("player.protocol", () => runtime.VarLong.fromNumber(MOCK_DATA.player.protocol))
+        .with("player.gamemode", () => new runtime.VarString(getGamemode().toUpperCase()))
+        .with("player.region.name", () => new runtime.VarString(MOCK_DATA.player.region.name))
+        .with("player.pos.x", () => new runtime.VarDouble(Player.getX()))
+        .with("player.pos.y", () => new runtime.VarDouble(Player.getY()))
+        .with("player.pos.z", () => new runtime.VarDouble(Player.getZ()))
+        .with("player.pos.pitch", () => new runtime.VarDouble(Player.getPitch()))
+        .with("player.pos.yaw", () => new runtime.VarDouble(Player.getYaw()))
+        .with("player.block.x", () => runtime.VarLong.fromNumber(Math.floor(Player.getX())))
+        .with("player.block.y", () => runtime.VarLong.fromNumber(Math.floor(Player.getY())))
+        .with("player.block.z", () => runtime.VarLong.fromNumber(Math.floor(Player.getZ())))
+        .with("player.group.name", () => new runtime.VarString(MOCK_DATA.player.group.name))
+        .with("player.group.tag", () => new runtime.VarString(MOCK_DATA.player.group.tag))
+        .with("player.group.priority", () => runtime.VarLong.fromNumber(MOCK_DATA.player.group.priority))
+        .with("player.group.color", () => new runtime.VarString(MOCK_DATA.player.group.color))
+        .with("player.team.name", () => new runtime.VarString(MOCK_DATA.player.team.name))
+        .with("player.team.tag", () => new runtime.VarString(MOCK_DATA.player.team.tag))
+        .with("player.team.color", () => new runtime.VarString(MOCK_DATA.player.team.color))
+        .with("player.team.players", behaviorPlayerTeamPlayers)
+        .with("player.parkour.ticks", () => runtime.VarLong.fromNumber(MOCK_DATA.player.parkour.ticks))
+        .with("player.parkour.formatted", () => new runtime.VarString(MOCK_DATA.player.parkour.formatted))
+        .with("house.name", () => new runtime.VarString(MOCK_DATA.house.name))
+        .with("house.guests", () => runtime.VarLong.fromNumber(MOCK_DATA.house.guests))
+        .with("house.cookies", () => runtime.VarLong.fromNumber(MOCK_DATA.house.cookies))
+        .with("house.visitingrules", () => new runtime.VarString(MOCK_DATA.house.visitingrules))
+        .with("house.players", () => runtime.VarLong.fromNumber(MOCK_DATA.house.players))
+        .with("date.day", behaviorDateDay)
+        .with("date.month", behaviorDateMonth)
+        .with("date.year", behaviorDateYear)
+        .with("date.hour", behaviorDateHour)
+        .with("date.minute", behaviorDateMinute)
+        .with("date.seconds", behaviorDateSeconds)
+        .with("date.unix", () => runtime.VarLong.fromNumber(Math.floor(Date.now() / 1000)))
+        .with("date.unix.ms", () => runtime.VarLong.fromNumber(Date.now()));
 }
 
-export function runPlaceholder(name: string, ...args: string[]): Var<any> | undefined {
-    switch (name) {
-        case "server.name":
-            return new VarString(MOCK_DATA.server.name);
-        case "server.shortname":
-            return new VarString(MOCK_DATA.server.name);
-
-        case "player.name":
-            return new VarString(Player.getName());
-        case "player.ping":
-            return VarLong.fromNumber(Server.getPing());
-        case "player.health":
-            return VarLong.fromNumber(Player.getHP());
-        case "player.maxhealth":
-            return VarLong.fromNumber(
-                Player.getPlayer().func_110138_aP/*getMaxHealth*/()
-            );
-        case "player.hunger":
-            return VarLong.fromNumber(Player.getHunger());
-        case "player.experience":
-            return VarLong.fromNumber(Player.getXPProgress());
-        case "player.level":
-            return VarLong.fromNumber(Player.getXPLevel());
-        case "player.version":
-            return new VarString(MOCK_DATA.player.version);
-        case "player.protocol":
-            return VarLong.fromNumber(MOCK_DATA.player.protocol);
-        case "player.gamemode":
-            return new VarString(getGamemode().toUpperCase());
-        case "player.region.name":
-            return new VarString(MOCK_DATA.player.region.name);
-        case "player.pos.x":
-            return new VarDouble(Player.getX());
-        case "player.pos.y":
-            return new VarDouble(Player.getY());
-        case "player.pos.z":
-            return new VarDouble(Player.getZ());
-        case "player.pos.pitch":
-            return new VarDouble(Player.getPitch());
-        case "player.pos.yaw":
-            return new VarDouble(Player.getYaw());
-        case "player.block.x":
-            return VarLong.fromNumber(Math.floor(Player.getX()));
-        case "player.block.y":
-            return VarLong.fromNumber(Math.floor(Player.getY()));
-        case "player.block.z":
-            return VarLong.fromNumber(Math.floor(Player.getZ()));
-        case "player.group.name":
-            return new VarString(MOCK_DATA.player.group.name);
-        case "player.group.tag":
-            return new VarString(MOCK_DATA.player.group.tag);
-        case "player.group.priority":
-            return VarLong.fromNumber(MOCK_DATA.player.group.priority);
-        case "player.group.color":
-            return new VarString(MOCK_DATA.player.group.color);
-        case "player.team.name":
-            return new VarString(MOCK_DATA.player.team.name);
-        case "player.team.tag":
-            return new VarString(MOCK_DATA.player.team.tag);
-        case "player.team.color":
-            return new VarString(MOCK_DATA.player.team.color);
-        case "player.team.players":
-            return runPlaceholderPlayerTeamPlayers(args);
-        case "player.parkour.ticks":
-            return VarLong.fromNumber(MOCK_DATA.player.parkour.ticks);
-        case "player.parkour.formatted":
-            return new VarString(MOCK_DATA.player.parkour.formatted);
-
-        case "house.name":
-            return new VarString(MOCK_DATA.house.name);
-        case "house.guests":
-            return VarLong.fromNumber(MOCK_DATA.house.guests);
-        case "house.cookies":
-            return VarLong.fromNumber(MOCK_DATA.house.cookies);
-        case "house.visitingrules":
-            return new VarString(MOCK_DATA.house.visitingrules);
-        case "house.players":
-            return VarLong.fromNumber(MOCK_DATA.house.players);
-
-        case "date.day":
-            return runPlaceholderDateDay(args);
-        case "date.month":
-            return runPlaceholderDateMonth(args);
-        case "date.year":
-            return runPlaceholderDateYear(args);
-        case "date.hour":
-            return runPlaceholderDateHour(args);
-        case "date.minute":
-            return runPlaceholderDateMinute(args);
-        case "date.seconds":
-            return runPlaceholderDateSeconds(args);
-        case "date.unix":
-            return VarLong.fromNumber(Math.floor(Date.now() / 1000));
-        case "date.unix.ms":
-            return VarLong.fromNumber(Date.now());
-
-        case "random.whole":
-            return runPlaceholderRandomWhole(args);
-        case "random.decimal":
-            return runPlaceholderRandomDecimal(args);
-
-        case "stat.player":
-        case "var.player":
-            return runPlaceholderVarPlayer(args);
-        case "stat.global":
-        case "var.global":
-            return runPlaceholderVarGlobal(args);
-        case "stat.team":
-        case "var.team":
-            return runPlaceholderVarTeam(args);
-    }
+function behaviorPlayerTeamPlayers(
+    _rt: runtime.Runtime,
+    invocation: runtime.PlaceholderInvocation,
+): runtime.Var<any> {
+    if (invocation.args.length > 1) return runtime.VarLong.fromNumber(0);
+    return runtime.VarLong.fromNumber(MOCK_DATA.player.team.players);
 }
 
-function runPlaceholderPlayerTeamPlayers(args: string[]): Var<any> | undefined {
-    if (args.length > 1) return VarLong.fromNumber(0);
-    return VarLong.fromNumber(MOCK_DATA.player.team.players);
+function behaviorDateDay(
+    _rt: runtime.Runtime,
+    invocation: runtime.PlaceholderInvocation,
+): runtime.Var<any> {
+    return runtime.VarLong.fromNumber(getDate(invocation.args[0]).getDate());
 }
 
-function runPlaceholderDateDay(args: string[]): Var<any> | undefined {
-    const date = getDate(args[0]);
-    return VarLong.fromNumber(date.getDate());
+function behaviorDateMonth(
+    _rt: runtime.Runtime,
+    invocation: runtime.PlaceholderInvocation,
+): runtime.Var<any> {
+    return runtime.VarLong.fromNumber(getDate(invocation.args[0]).getMonth());
 }
 
-function runPlaceholderDateMonth(args: string[]): Var<any> | undefined {
-    const date = getDate(args[0]);
-    return VarLong.fromNumber(date.getMonth());
+function behaviorDateYear(
+    _rt: runtime.Runtime,
+    invocation: runtime.PlaceholderInvocation,
+): runtime.Var<any> {
+    return runtime.VarLong.fromNumber(getDate(invocation.args[0]).getFullYear());
 }
 
-function runPlaceholderDateYear(args: string[]): Var<any> | undefined {
-    const date = getDate(args[0]);
-    return VarLong.fromNumber(date.getFullYear());
+function behaviorDateHour(
+    _rt: runtime.Runtime,
+    invocation: runtime.PlaceholderInvocation,
+): runtime.Var<any> {
+    return runtime.VarLong.fromNumber(getDate(invocation.args[0]).getHours());
 }
 
-function runPlaceholderDateHour(args: string[]): Var<any> | undefined {
-    const date = getDate(args[0]);
-    return VarLong.fromNumber(date.getHours());
+function behaviorDateMinute(
+    _rt: runtime.Runtime,
+    invocation: runtime.PlaceholderInvocation,
+): runtime.Var<any> {
+    return runtime.VarLong.fromNumber(getDate(invocation.args[0]).getMinutes());
 }
 
-function runPlaceholderDateMinute(args: string[]): Var<any> | undefined {
-    const date = getDate(args[0]);
-    return VarLong.fromNumber(date.getMinutes());
-}
-
-function runPlaceholderDateSeconds(args: string[]): Var<any> | undefined {
-    const date = getDate(args[0]);
-    return VarLong.fromNumber(date.getSeconds());
-}
-
-function runPlaceholderRandomWhole(args: string[]): Var<any> | undefined {
-    if (args.length === 0) {
-        // default random, which is there for some reason
-        return VarLong.fromNumber(Math.floor(Math.random() * 100_000));
-    }
-    if (args.length !== 2) return VarLong.fromNumber(0);
-
-    if (!/^-?\d+$/.test(args[0]) || !/^-?\d+$/.test(args[1])) {
-        return VarLong.fromNumber(0);
-    }
-
-    const min = Long.fromString(args[0]);
-    const max = Long.fromString(args[1]);
-
-    if (max.lte(min)) {
-        return VarLong.fromNumber(0);
-    }
-
-    const range = max.subtract(min).add(1);
-    let rand;
-    do {
-        rand = randomLong().mod(range).add(min);
-    } while (rand.lessThan(min) || rand.greaterThan(max));
-
-    return new VarLong(rand);
-}
-
-function runPlaceholderRandomDecimal(args: string[]): Var<any> | undefined {
-    if (args.length === 0) return new VarDouble(Math.random());
-    if (args.length !== 2) return new VarDouble(0);
-
-    if (
-        !(args[0].includes(".") && !isNaN(Number(args[0]))) ||
-        !(args[1].includes(".") && !isNaN(Number(args[1])))
-    ) {
-        return new VarDouble(0);
-    }
-
-    const min = Number(args[0]);
-    const max = Number(args[1]);
-
-    if (max <= min) {
-        return new VarDouble(0);
-    }
-
-    return new VarDouble(Math.random() * (max - min) + min);
-}
-
-function runPlaceholderVarPlayer(args: string[]): Var<any> | undefined {
-    const key = args[0];
-    return Simulator.playerVars.getVar(key, parseValue(args[1] ?? '""'));
-}
-
-function runPlaceholderVarGlobal(args: string[]): Var<any> | undefined {
-    const key = args[0];
-    return Simulator.globalVars.getVar(key, parseValue(args[1] ?? '""'));
-}
-
-function runPlaceholderVarTeam(args: string[]): Var<any> | undefined {
-    const key = args[0];
-    const team = args[1];
-    return Simulator.teamVars.getVar({ key, team }, parseValue(args[2] ?? '""'));
+function behaviorDateSeconds(
+    _rt: runtime.Runtime,
+    invocation: runtime.PlaceholderInvocation,
+): runtime.Var<any> {
+    return runtime.VarLong.fromNumber(getDate(invocation.args[0]).getSeconds());
 }

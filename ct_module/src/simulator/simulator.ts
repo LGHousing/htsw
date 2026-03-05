@@ -1,30 +1,19 @@
-import { Diagnostic, SourceMap, Span, SpanTable, types } from "htsw";
+import { Diagnostic, SourceMap, Span, SpanTable, runtime, types } from "htsw";
 
-import { VarHolder, TeamVarKey } from "./vars";
-import {
-    ActionScheduler,
-    DelayedActionScheduler,
-    RepeatingActionScheduler,
-} from "./schedulers";
 import { registerCommandTriggers } from "./commands";
-import { runAction } from "./actions";
+import { createActionBehaviors } from "./actions";
 import { printDiagnostic } from "../tui/diagnostics";
 import { registerEventTriggers } from "./events";
 import { registerRegionTriggers } from "./regions";
+import { createConditionBehaviors } from "./conditions";
+import { createPlaceholderBehaviors } from "./placeholders";
 
 export class Simulator {
     static isActive: boolean = false;
     
     static sm: SourceMap;
-    static spans: SpanTable;
     static importables: types.Importable[];
-
-    static playerVars: VarHolder<string>;
-    static globalVars: VarHolder<string>;
-    static teamVars: VarHolder<TeamVarKey>;
-
-    static schedulers: ActionScheduler[];
-    static cooldowns: Map<string, number>;
+    static runtime: runtime.Runtime;
 
     static triggers: Trigger[];
 
@@ -32,114 +21,75 @@ export class Simulator {
         this.isActive = true;
         
         this.sm = sm;
-        this.spans = spans;
         this.importables = importables;
-        
-        this.init();
+        this.runtime = this.createRuntime(spans);
+        this.registerTriggers();
     }
     
     static restart(): void {
         this.stop();
-        this.init();
+        this.runtime = this.createRuntime(this.runtime.spans);
+        this.registerTriggers();
     }
 
-    static stop(): void {        
+    static stop(): void {
+        this.isActive = false;
         for (const trigger of this.triggers) {
             trigger.unregister();
         }
     }
-    
-    static init(): void {
-        this.playerVars = new VarHolder();
-        this.globalVars = new VarHolder();
-        this.teamVars = new VarHolder();
 
-        this.schedulers = [];
-        this.cooldowns = new Map();
+    private static createRuntime(spans: SpanTable): runtime.Runtime {
+        const rt = new runtime.Runtime({
+            spans,
+            actionBehaviors: createActionBehaviors(),
+            conditionBehaviors: createConditionBehaviors(),
+            placeholderBehaviors: createPlaceholderBehaviors(),
+            onDiagnostic: (diag) => printDiagnostic(this.sm, diag),
+        });
 
+        for (const importable of this.importables) {
+            if (importable.type !== "FUNCTION") continue;
+            if (!importable.actions || !importable.repeatTicks) continue;
+
+            rt.schedulers.push(
+                new runtime.RepeatingActionScheduler(importable.actions, importable.repeatTicks),
+            );
+        }
+
+        return rt;
+    }
+
+    private static registerTriggers(): void {
         this.triggers = [
             register("tick", this.tick.bind(this)),
             ...registerCommandTriggers(),
             ...registerEventTriggers(),
             ...registerRegionTriggers(),
         ];
-
-        this.postinit();
-    }
-
-    static runFunction(name: string): boolean {
-        for (const importable of this.importables) {
-            if (importable.type === "FUNCTION" && importable.name === name) {
-                this.runActions(importable.actions ?? []);
-                return true;
-            }
-        }
-        return false;
     }
 
     static runActions(actions: types.Action[], childCtx: boolean = false) {
-        for (let i = 0; i < actions.length; i++) {
-            try {
-                const action = actions[i];
-
-                runAction(action);
-            } catch (err) {
-                if (err instanceof Diagnostic) {
-                    // We have encountered a known runtime issue
-                    printDiagnostic(this.sm, err);
-                } else if (err instanceof ExitError) {
-                    // Exit action
-                } else if (err instanceof PauseError) {
-                    // Pause action
-                    const slice = actions.slice(i + 1);
-                    this.schedulers.push(new DelayedActionScheduler(slice, err.ticks));
-                }
-
-                if (childCtx) {
-                    throw err;
-                }
+        try {
+            this.runtime.runActions(actions, childCtx);
+        } catch (err) {
+            if (err instanceof Diagnostic) {
+                printDiagnostic(this.sm, err);
                 return;
             }
+            throw err;
         }
     }
 
     static getNodeSpan(node: object): Span | undefined {
-        return this.spans.getNodeSpan(node);
+        return this.runtime.spans.getNodeSpan(node);
     }
 
     static getFieldSpan(node: object, key: string | number): Span | undefined {
-        return this.spans.getFieldSpan(node, key);
-    }
-
-    private static postinit() {
-        this.runFunction("htsw:main");
-
-        for (const importable of this.importables) {
-            if (importable.type === "FUNCTION" && importable.actions && importable.repeatTicks) {
-                this.schedulers.push(
-                    new RepeatingActionScheduler(
-                        importable.actions,
-                        importable.repeatTicks
-                    )
-                );
-            }
-        }
+        return this.runtime.spans.getFieldSpan(node, key);
     }
 
     private static tick(): void {
-        for (const scheduler of this.schedulers) {
-            const actions = scheduler.tick();
-            if (actions) this.runActions(actions);
-        }
-    }
-}
-
-export class ExitError {}
-
-export class PauseError {
-    ticks: number;
-
-    constructor(ticks: number) {
-        this.ticks = ticks;
+        this.runtime.tick();
     }
 }

@@ -1,8 +1,7 @@
-import type { Comparison, Operation, VarOperation } from "htsw/types";
+import type { Comparison, Operation, VarOperation } from "../types";
+import type { Runtime } from "./runtime";
 
 import Long from "long";
-import { parsePlaceholder } from "./placeholders";
-import { formatNumber, isLong, parseLong } from "./helpers";
 
 export interface Var<T> {
     value: T;
@@ -17,7 +16,7 @@ export interface Var<T> {
     toLong(): Long;
     toDouble(): number;
     toString(): string;
-    
+
     toDisplayString(): string;
 }
 
@@ -82,7 +81,7 @@ export class VarLong implements Var<Long> {
     shouldUnset(): boolean {
         return this.value.equals(Long.ZERO);
     }
-    
+
     unsetValue(): Var<Long> {
         return new VarLong(Long.ZERO);
     }
@@ -98,7 +97,7 @@ export class VarLong implements Var<Long> {
     toString(): string {
         return formatNumber(this.value.toString());
     }
-    
+
     toDisplayString(): string {
         return this.toString();
     }
@@ -166,7 +165,7 @@ export class VarDouble implements Var<number> {
     shouldUnset(): boolean {
         return this.value === 0.0;
     }
-    
+
     unsetValue(): Var<number> {
         return new VarDouble(0.0);
     }
@@ -182,7 +181,7 @@ export class VarDouble implements Var<number> {
     toString(): string {
         return formatNumber(this.value.toFixed(4));
     }
-    
+
     toDisplayString(): string {
         return this.toString();
     }
@@ -202,6 +201,7 @@ export class VarString implements Var<string> {
         }
         throw new Error("Not implemented");
     }
+
     cmpOp(other: Var<any>, op: Comparison): boolean {
         if (op === "Equal") {
             return this.value === other.value;
@@ -212,7 +212,7 @@ export class VarString implements Var<string> {
     shouldUnset(): boolean {
         return this.value === "";
     }
-    
+
     unsetValue(): Var<string> {
         return new VarString("");
     }
@@ -228,7 +228,7 @@ export class VarString implements Var<string> {
     toString(): string {
         return this.value;
     }
-    
+
     toDisplayString(): string {
         return `"${this.value}"`;
     }
@@ -237,47 +237,53 @@ export class VarString implements Var<string> {
 export type TeamVarKey = { team: string; key: string };
 
 export class VarHolder<T> {
-    private vars: Map<T, Var<any>>;
+    private vars: Map<string, { raw: T; value: Var<any> }>;
 
     constructor() {
         this.vars = new Map();
     }
-    
+
     hasVar(key: T): boolean {
-        return this.vars.has(key);
+        return this.vars.has(this.keyFor(key));
     }
 
     getVar(key: T, fallback: Var<any> = new VarString("")): Var<any> {
-        return this.vars.get(key) ?? fallback;
+        return this.vars.get(this.keyFor(key))?.value ?? fallback;
     }
 
     setVar(key: T, value: Var<any>): void {
-        this.vars.set(key, value);
+        this.vars.set(this.keyFor(key), { raw: key, value });
     }
 
     unsetVar(key: T): void {
-        this.vars.delete(key);
+        this.vars.delete(this.keyFor(key));
     }
 
     keys(): Set<T> {
         const set = new Set<T>();
-        for (const key of this.vars.keys()) {
-            set.add(key);
+        for (const entry of this.vars.values()) {
+            set.add(entry.raw);
         }
         return set;
+    }
+
+    private keyFor(key: T): string {
+        if (typeof key === "object" && key !== null) {
+            if ("team" in key && "key" in key) {
+                const teamKey = key as { team: unknown; key: unknown };
+                return `team:${String(teamKey.team)}\u0000key:${String(teamKey.key)}`;
+            }
+            return JSON.stringify(key);
+        }
+
+        return String(key);
     }
 }
 
 const PLACEHOLDER_REGEX = /%([^%]+?)%/g;
 const EXPLICIT_DOUBLE_REGEX = /^(0|[1-9]\d*)(\.\d+)$/;
 
-/**
- * Parses a string literal, which may contain placeholders.
- * It resolves placeholders and performs type casting.
- *
- * @param value - The raw unquoted string
- */
-function parseString(value: string): Var<any> {
+function parseString(runtime: Runtime, value: string): Var<any> {
     const placeholders = value.match(PLACEHOLDER_REGEX);
 
     if (!placeholders) {
@@ -288,7 +294,8 @@ function parseString(value: string): Var<any> {
     for (const placeholder of placeholders) {
         const placeholderContent = placeholder.substring(1, placeholder.length - 1);
         try {
-            const evaluatedVar = parsePlaceholder(placeholderContent);
+            const evaluatedVar = runtime.runPlaceholder(placeholderContent);
+            if (evaluatedVar === undefined) throw new Error("Unresolved placeholder");
 
             _value = _value.replace(placeholder, evaluatedVar.toString());
         } catch (error) {
@@ -300,7 +307,7 @@ function parseString(value: string): Var<any> {
     if (_value.length <= 32) {
         value = _value;
     }
-    
+
     if (isLong(value)) {
         return VarLong.fromString(value);
     } else if (EXPLICIT_DOUBLE_REGEX.test(value)) {
@@ -310,15 +317,8 @@ function parseString(value: string): Var<any> {
     const lastChar = value.slice(-1).toUpperCase();
     if (lastChar !== "L" && lastChar !== "D") return new VarString(value);
 
-    // We are now trying to cast
     const baseValue = value.slice(0, -1).replace(/,/g, "");
-
-    if (
-        // Number is a long within 64-bit integer limit
-        isLong(baseValue) ||
-        // Or number is a double (that has a decimal place)
-        EXPLICIT_DOUBLE_REGEX.test(baseValue)
-    ) {
+    if (isLong(baseValue) || EXPLICIT_DOUBLE_REGEX.test(baseValue)) {
         if (lastChar === "L") {
             const maybeTruncated = baseValue.split(".")[0];
             return VarLong.fromString(maybeTruncated);
@@ -329,28 +329,26 @@ function parseString(value: string): Var<any> {
         }
     }
 
-    // Cast failed
     return new VarString(value);
 }
 
-/**
- * Parses a variable from a string.
- *
- * @throws An error when the value is invalid.
- */
-export function parseValue(value: string): Var<any> {
+export function parseValue(runtime: Runtime, value: string): Var<any> {
     if (!value) {
         throw new Error("Input value cannot be null or empty.");
     }
 
     if (value.startsWith("%") && value.endsWith("%") && value.length > 2) {
         const content = value.substring(1, value.length - 1);
-        return parsePlaceholder(content);
+        const resolved = runtime.runPlaceholder(content);
+        if (!resolved) {
+            throw new Error(`Placeholder "${content}" could not be resolved.`);
+        }
+        return resolved;
     }
 
     if (value.startsWith('"') && value.endsWith('"')) {
         const content = value.substring(1, value.length - 1);
-        return parseString(content);
+        return parseString(runtime, content);
     }
 
     if (value.includes(".") && !isNaN(Number(value))) {
@@ -362,4 +360,40 @@ export function parseValue(value: string): Var<any> {
     }
 
     throw Error("Invalid value");
+}
+
+export function formatNumber(number: string): string {
+    const [whole, decimal = ""] = number.split(".");
+
+    let formattedWhole = "";
+    for (let i = whole.length - 1, count = 0; i >= 0; i--, count++) {
+        formattedWhole = whole[i] + formattedWhole;
+        if (count === 2 && i !== 0) {
+            formattedWhole = "," + formattedWhole;
+            count = -1;
+        }
+    }
+
+    if (!decimal) return formattedWhole;
+
+    let roundedDecimal = Math.floor((+(decimal + "0000").slice(0, 4) + 5) / 10).toString();
+    while (roundedDecimal.length < 3) roundedDecimal = "0" + roundedDecimal;
+
+    return formattedWhole + "." + roundedDecimal.replace(/0+$/, "");
+}
+
+export function isLong(value: string): boolean {
+    return value == Long.fromString(value).toString();
+}
+
+export function parseLong(value: string): Long {
+    const long = Long.fromString(value);
+
+    if (value !== long.toString()) {
+        return value.startsWith("-")
+            ? Long.fromString("9223372036854775807")
+            : Long.fromString("-9223372036854775808");
+    } else {
+        return long;
+    }
 }

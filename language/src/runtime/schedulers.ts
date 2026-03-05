@@ -1,4 +1,4 @@
-import type { Action } from "htsw/types";
+import type { Action } from "../types";
 
 export interface ActionScheduler {
     tick(): Action[] | undefined;
@@ -6,8 +6,8 @@ export interface ActionScheduler {
 }
 
 export class DelayedActionScheduler implements ActionScheduler {
-    actions: Action[];
-    delay: number;
+    private readonly actions: Action[];
+    private delay: number;
 
     constructor(actions: Action[], delay: number) {
         this.actions = actions;
@@ -16,8 +16,8 @@ export class DelayedActionScheduler implements ActionScheduler {
 
     tick(): Action[] | undefined {
         this.delay -= 1;
-
-        if (this.delay == 0) return this.actions;
+        if (this.delay === 0) return this.actions;
+        return undefined;
     }
 
     hasNext(): boolean {
@@ -26,9 +26,9 @@ export class DelayedActionScheduler implements ActionScheduler {
 }
 
 export class RepeatingActionScheduler implements ActionScheduler {
-    actions: Action[];
-    initialDelay: number;
-    delay: number;
+    private readonly actions: Action[];
+    private readonly initialDelay: number;
+    private delay: number;
 
     constructor(actions: Action[], delay: number) {
         this.actions = actions;
@@ -38,11 +38,11 @@ export class RepeatingActionScheduler implements ActionScheduler {
 
     tick(): Action[] | undefined {
         this.delay -= 1;
-
-        if (this.delay == 0) {
+        if (this.delay === 0) {
             this.delay = this.initialDelay;
             return this.actions;
         }
+        return undefined;
     }
 
     hasNext(): boolean {

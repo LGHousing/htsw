@@ -1,0 +1,10 @@
+var x = 5
+globalvar y = 10
+teamvar z team = 15
+
+/// @expect "5"
+chat "%var.player/x%"
+/// @expect "10"
+chat "%var.global/y%"
+/// @expect "15"
+chat "%var.team/z team%"

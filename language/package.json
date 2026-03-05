@@ -16,6 +16,10 @@
         "./htsw": {
             "import": "./dist/htsw/index.js",
             "types": "./dist/htsw/index.d.ts"
+        },
+        "./runtime": {
+            "import": "./dist/runtime/index.js",
+            "types": "./dist/runtime/index.d.ts"
         }
     },
     "scripts": {
