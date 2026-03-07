@@ -30,8 +30,10 @@ def main() -> None:
             raise RuntimeError(f'Build failed with error code: {status}')
 
     DESTINATION.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(SOURCE / 'dist' / 'index.js', DESTINATION / 'index.js')
-    shutil.copy2(SOURCE / 'dist' / 'vendor.js', DESTINATION / 'vendor.js')
+    dist_dir = SOURCE / 'dist'
+    for source_file in dist_dir.iterdir():
+        if source_file.is_file():
+            shutil.copy2(source_file, DESTINATION / source_file.name)
     shutil.copy2(SOURCE / 'metadata.json', DESTINATION / 'metadata.json')
     shutil.copy2(SOURCE / '.env', DESTINATION / '.env')
 

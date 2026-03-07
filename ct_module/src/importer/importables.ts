@@ -2,6 +2,7 @@ import {
     Importable,
     ImportableEvent,
     ImportableFunction,
+    ImportableItem,
     ImportableRegion,
     Pos,
 } from "htsw/types";
@@ -11,12 +12,14 @@ import TaskContext from "../tasks/context";
 import {
     getSlotPaginate,
     clickGoBack,
-    waitForMenuToLoad,
+    waitForMenu,
     waitForUnformattedMessage,
     setNumberValue,
 } from "./helpers";
 import { MouseButton } from "../tasks/specifics/slots";
-import { removedFormatting } from "../helpers";
+import { cyrb53, removedFormatting } from "../utils/helpers";
+import { getItemFromNbt } from "../utils/nbt";
+import { C09PacketHeldItemChange, C10PacketCreativeInventoryAction } from "../utils/packets";
 
 export async function importImportable(
     ctx: TaskContext,
@@ -31,6 +34,9 @@ export async function importImportable(
     if (importable.type === "REGION") {
         return importImportableRegion(ctx, importable);
     }
+    if (importable.type === "ITEM") {
+        return importImportableItem(ctx, importable);
+    }
     // TODO add the others idk and remove the ts ignore
     // @ts-ignore
     const _exhaustiveCheck: never = importable;
@@ -44,7 +50,7 @@ async function importImportableFunction(
 
     const alreadyExists = await ctx.withTimeout(
         Promise.race([
-            waitForMenuToLoad(ctx).then(() => true),
+            waitForMenu(ctx).then(() => true),
             ctx
                 .waitFor(
                     "message",
@@ -59,7 +65,7 @@ async function importImportableFunction(
 
     if (!alreadyExists) {
         ctx.runCommand(`/function create ${importable.name}`);
-        await waitForMenuToLoad(ctx);
+        await waitForMenu(ctx);
     }
 
     // we have a function!!! open!!
@@ -69,17 +75,17 @@ async function importImportableFunction(
 
     if (importable.repeatTicks) {
         clickGoBack(ctx);
-        await waitForMenuToLoad(ctx);
+        await waitForMenu(ctx);
 
         (await getSlotPaginate(ctx, importable.name)).click(MouseButton.RIGHT);
-        await waitForMenuToLoad(ctx);
+        await waitForMenu(ctx);
 
         await setNumberValue(
             ctx,
             ctx.getItemSlot("Automatic Execution"),
             importable.repeatTicks,
         );
-        await waitForMenuToLoad(ctx);
+        await waitForMenu(ctx);
     }
 }
 
@@ -88,10 +94,10 @@ async function importImportableEvent(
     importable: ImportableEvent,
 ): Promise<void> {
     ctx.runCommand(`/eventactions`);
-    await waitForMenuToLoad(ctx);
+    await waitForMenu(ctx);
 
     ctx.getItemSlot(importable.event).click();
-    await waitForMenuToLoad(ctx);
+    await waitForMenu(ctx);
 
     // we have an event!!! open!!! :)
     for (const action of importable.actions) {
@@ -124,7 +130,7 @@ async function importImportableRegion(
 
     const alreadyExists = await ctx.withTimeout(
         Promise.race([
-            waitForMenuToLoad(ctx).then(() => true),
+            waitForMenu(ctx).then(() => true),
             ctx
                 .waitFor(
                     "message",
@@ -145,7 +151,7 @@ async function importImportableRegion(
         );
 
         ctx.runCommand(`/region edit ${importable.name}`);
-        await waitForMenuToLoad(ctx);
+        await waitForMenu(ctx);
     } else {
         ctx.getItemSlot("Move Region").click();
         await waitForUnformattedMessage(
@@ -154,12 +160,12 @@ async function importImportableRegion(
         );
 
         ctx.runCommand(`/region edit ${importable.name}`);
-        await waitForMenuToLoad(ctx);
+        await waitForMenu(ctx);
     }
 
     if (importable.onEnterActions) {
         ctx.getItemSlot("Entry Actions").click();
-        await waitForMenuToLoad(ctx);
+        await waitForMenu(ctx);
 
         for (const action of importable.onEnterActions) {
             await importAction(ctx, action);
@@ -167,16 +173,90 @@ async function importImportableRegion(
 
         if (importable.onExitActions) {
             clickGoBack(ctx);
-            await waitForMenuToLoad(ctx);
+            await waitForMenu(ctx);
         }
     }
 
     if (importable.onExitActions) {
         ctx.getItemSlot("Exit Actions").click();
-        await waitForMenuToLoad(ctx);
+        await waitForMenu(ctx);
 
         for (const action of importable.onExitActions) {
             await importAction(ctx, action);
         }
     }
+}
+
+async function importImportableItem(
+    ctx: TaskContext,
+    importable: ImportableItem
+): Promise<void> {
+    if (!importable.leftClickActions && !importable.rightClickActions) return;
+
+    ctx.runCommand("/wtfmap");
+
+    let message: string = "";
+    await ctx.withTimeout(
+        ctx.waitFor(
+            "message",
+            (chatMessage) =>
+                removedFormatting(chatMessage).startsWith("You are currently playing on") &&
+                (() => { message = removedFormatting(chatMessage); return true })(), // This is fine I guess....
+        ),
+        "Waiting for message in chat",
+    );
+
+    const uuid = message.substring(29, 65);
+    const hash = cyrb53(JSON.stringify(importable));
+    if (FileLib.exists(`./htsw/.cache/${uuid}/items/${hash}.snbt`)) {
+        return;
+    }
+
+    const item = getItemFromNbt(importable.nbt);
+
+    Client.sendPacket(
+        new C10PacketCreativeInventoryAction(
+            36,
+            item.getItemStack()
+        )
+    );
+    Client.sendPacket(new C09PacketHeldItemChange(0));
+
+    await ctx.sleep(1000);
+
+    ctx.runCommand("/edit");
+    await waitForMenu(ctx);
+
+    ctx.getItemSlot("Edit Actions").click();
+    await waitForMenu(ctx);
+
+    if (importable.leftClickActions) {
+        ctx.getItemSlot("Left Click Actions").click();
+        await waitForMenu(ctx);
+
+        for (const action of importable.leftClickActions) {
+            await importAction(ctx, action);
+        }
+
+        if (importable.rightClickActions) {
+            clickGoBack(ctx);
+            await waitForMenu(ctx);
+        }
+    }
+
+    if (importable.rightClickActions) {
+        ctx.getItemSlot("Right Click Actions").click();
+        await waitForMenu(ctx);
+
+        for (const action of importable.rightClickActions) {
+            await importAction(ctx, action);
+        }
+    }
+
+    await ctx.sleep(1000);
+
+    const snbt = Player.getInventory()?.getStackInSlot(0)?.getRawNBT();
+    if (!snbt) throw Error("Why don't we have the item?");
+
+    FileLib.write(`./htsw/.cache/${uuid}/items/${hash}.snbt`, snbt, true);
 }

@@ -6,7 +6,6 @@ import type {
     InventorySlot,
     Lobby,
     Location,
-    Nbt,
     Operation,
     PotionEffect,
     Sound,
@@ -64,7 +63,7 @@ export type ActionChangeMaxHealth = {
 
 export type ActionGiveItem = {
     type: "GIVE_ITEM";
-    item?: Nbt;
+    itemName: string;
     allowMultiple?: boolean;
     slot?: InventorySlot;
     replaceExisting?: boolean;
@@ -72,7 +71,7 @@ export type ActionGiveItem = {
 
 export type ActionRemoveItem = {
     type: "REMOVE_ITEM";
-    item?: Nbt;
+    itemName?: string;
 };
 
 export type ActionSendMessage = {
@@ -191,7 +190,7 @@ export type ActionDisplayMenu = {
 
 export type ActionDropItem = {
     type: "DROP_ITEM";
-    item: Nbt;
+    itemName: string;
     location?: Location;
     dropNaturally?: boolean;
     disableMerging?: boolean;

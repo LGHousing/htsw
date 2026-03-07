@@ -74,15 +74,16 @@ function update(tcx: TyCtxt, action: ActionChangeVar) {
     const key = { holder: action.holder, key: action.key } as VarKey;
     const lhs = tcx.getState(key);
     const rhs = parseValue(tcx, action.value);
-    const actionSpan = tcx.gcx.spans.get(action as object) ?? Span.dummy();
-    const opSpan = tcx.gcx.spans.getField(action, "op") ?? actionSpan;
-    const keySpan = tcx.gcx.spans.getField(action, "key") ?? actionSpan;
-    const valueSpan = tcx.gcx.spans.getField(action, "value") ?? actionSpan;
+
+    const span = tcx.gcx.spans.get(action);
+    const opSpan = tcx.gcx.spans.getField(action, "op");
+    const keySpan = tcx.gcx.spans.getField(action, "key");
+    const valueSpan = tcx.gcx.spans.getField(action, "value");
 
     if (!rhs) return;
 
     if (action.op === "Set") {
-        tcx.setState(key, { ...rhs, declSpan: actionSpan });
+        tcx.setState(key, { ...rhs, declSpan: span });
         return;
     }
 
@@ -112,7 +113,7 @@ function update(tcx: TyCtxt, action: ActionChangeVar) {
     }
 
     if (!lhs) {
-        tcx.setState(key, { type: rhs.type, isKnown: false, declSpan: actionSpan });
+        tcx.setState(key, { type: rhs.type, isKnown: false, declSpan: span });
         return;
     }
 

@@ -1,4 +1,4 @@
-import { chatWidth, spaceWidth } from "../helpers";
+import { chatWidth, spaceWidth } from "../utils/helpers";
 
 export interface UIElement {
 

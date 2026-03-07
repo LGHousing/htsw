@@ -1,25 +1,10 @@
-import {
-    ACTION_NAMES,
-    Action,
-    Condition,
-    Importable,
-    SOUNDS,
-} from "htsw/types";
 import TaskContext from "../tasks/context";
-import { ItemSlot, MouseButton } from "../tasks/specifics/slots";
-import { removedFormatting } from "../helpers";
+import { ItemSlot } from "../tasks/specifics/slots";
+import { removedFormatting } from "../utils/helpers";
 import { S2DPacketOpenWindow, S30PacketWindowItems } from "../utils/packets";
 import { lastWindowID___FromS30PacketWindowItemsPacketReceived__ThisIsNecessary_sadly_itIncrementsFrom1To100ThenItGoesBackAround_ButSometimesItSkipsOneOrMoreWeAreNotSureMaybeMore_AndItWillNeverBeZero } from "../tasks/specifics/waitFor";
 
-// TODO export this if needed, else remove
-function soundPathToName(path: string): string | null {
-    for (const sound of SOUNDS) {
-        if (sound.path === path) return sound.name;
-    }
-    return null;
-}
-
-export async function waitForMenuToLoad(ctx: TaskContext): Promise<void> {
+export async function waitForMenu(ctx: TaskContext): Promise<void> {
     await ctx.withTimeout(async () => {
         await ctx.waitFor("packetReceived", (packet) => {
             if (!(packet instanceof S30PacketWindowItems)) return false;
@@ -27,7 +12,7 @@ export async function waitForMenuToLoad(ctx: TaskContext): Promise<void> {
             return (
                 windowID !== 0 &&
                 windowID !==
-                    lastWindowID___FromS30PacketWindowItemsPacketReceived__ThisIsNecessary_sadly_itIncrementsFrom1To100ThenItGoesBackAround_ButSometimesItSkipsOneOrMoreWeAreNotSureMaybeMore_AndItWillNeverBeZero
+                lastWindowID___FromS30PacketWindowItemsPacketReceived__ThisIsNecessary_sadly_itIncrementsFrom1To100ThenItGoesBackAround_ButSometimesItSkipsOneOrMoreWeAreNotSureMaybeMore_AndItWillNeverBeZero
             );
         });
 
@@ -63,7 +48,7 @@ export async function getSlotPaginate(
         const nextPageSlot = ctx.tryGetItemSlot("Left-click for next page!");
         if (nextPageSlot === null) break;
         nextPageSlot.click();
-        await waitForMenuToLoad(ctx);
+        await waitForMenu(ctx);
     } while (true);
 
     throw new Error(`Could not find "${name}" on any page.`);
@@ -173,7 +158,7 @@ async function enterValue(ctx: TaskContext, value: string) {
             ctx.sendMessage(value);
             break;
         case "ANVIL":
-            await waitForMenuToLoad(ctx);
+            await waitForMenu(ctx);
             setAnvilItemName(value);
             acceptNewAnvilItem();
             break;

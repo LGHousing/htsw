@@ -15,6 +15,7 @@ import {
     VAR_OPERATIONS,
     type Action,
 } from ".";
+import type { Tag } from "../nbt";
 
 export type ButtonType = "left" | "right" | "middle";
 export type Value = string;
@@ -24,8 +25,6 @@ export type VarHolder =
     | { type: "player" }
     | { type: "global" }
     | { type: "team"; team?: string }; // Team can be optional in some housing flows.
-
-export type Nbt = string;
 
 export type Operation = (typeof OPERATIONS)[number];
 export type VarOperation = Operation | (typeof VAR_OPERATIONS)[number];
@@ -64,6 +63,6 @@ export type Pos = {
 
 export type MenuSlot = {
     slot: number;
-    snbt: string;
+    nbt: Tag;
     actions?: Action[];
 };

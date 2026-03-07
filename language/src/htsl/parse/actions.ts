@@ -331,7 +331,7 @@ function parseActionDisplayMenu(p: Parser, note: Note): Action {
 
 function parseActionDropItem(p: Parser, note: Note): Action {
     return parseActionRecovering(p, "DROP_ITEM", note, (action) => {
-        setField(p, action, "item", p.parseName);
+        setField(p, action, "itemName", p.parseName);
         setField(p, action, "location", parseLocation);
         setField(p, action, "dropNaturally", p.parseBoolean);
         setField(p, action, "disableMerging", p.parseBoolean);
@@ -369,7 +369,7 @@ function parseActionGiveExperienceLevels(p: Parser, note: Note): Action {
 
 function parseActionGiveItem(p: Parser, note: Note): Action {
     return parseActionRecovering(p, "GIVE_ITEM", note, (action) => {
-        setField(p, action, "item", p.parseName);
+        setField(p, action, "itemName", p.parseName);
         setField(p, action, "allowMultiple", p.parseBoolean);
         setField(p, action, "slot", parseInventorySlot);
         setField(p, action, "replaceExisting", p.parseBoolean);
@@ -412,7 +412,7 @@ function parseActionRandom(p: Parser, note: Note): Action {
 
 function parseActionRemoveItem(p: Parser, note: Note): Action {
     return parseActionRecovering(p, "REMOVE_ITEM", note, (action) => {
-        setField(p, action, "item", p.parseName);
+        setField(p, action, "itemName", p.parseName);
     });
 }
 

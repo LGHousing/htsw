@@ -1,15 +1,15 @@
 import { VERSION, SourceMap, parseImportablesResult, Diagnostic } from "htsw";
 
-import { chatSeparator, FileSystemFileLoader } from "./helpers";
+import { chatSeparator } from "./utils/helpers";
 import { Simulator } from "./simulator";
 import { printDiagnostic, printDiagnostics } from "./tui/diagnostics";
 import { recompile } from "./recompile";
 import { importImportable } from "./importer/importables";
 import { TaskManager } from "./tasks/manager";
-import { waitForMenuToLoad } from "./importer/helpers";
+import { waitForMenu } from "./importer/helpers";
+import { FileSystemFileLoader } from "./utils/files";
 
 export function registerCommands() {
-    register("command", (...args) => commandFRICK(args)).setName("frick");
     register("command", (...args) => commandHtsw(args)).setName("htsw");
     register("command", (...args) => commandImport(args)).setName("import");
     register("command", (...args) => commandSimulator(args))
@@ -125,18 +125,4 @@ function commandSimulator(args: string[]) {
         ChatLib.chat("&aSimulator stopped.");
         return;
     }
-}
-
-function commandFRICK(args: string[]) {
-    TaskManager.run(async (ctx) => {
-        ctx.runCommand("/hmenu");
-        await waitForMenuToLoad(ctx);
-        for (let i = 0; i < 10; i++) {
-            ctx.getItemSlot("Systems").click();
-            await waitForMenuToLoad(ctx);
-            ctx.getItemSlot("Go Back").click();
-            await waitForMenuToLoad(ctx);
-            await ctx.sleep(100);
-        }
-    });
 }

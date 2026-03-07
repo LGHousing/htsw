@@ -7,12 +7,16 @@ export class Span {
         this.end = end;
     }
 
-    static single(pos: number): Span {
+    static at(pos: number): Span {
         return new Span(pos, pos);
     }
 
+    static single(pos: number): Span {
+        return new Span(pos, pos + 1);
+    }
+
     static dummy(): Span {
-        return Span.single(-1);
+        return Span.at(-1);
     }
 
     startSpan(): Span {
@@ -20,7 +24,7 @@ export class Span {
     }
 
     endSpan(): Span {
-        return Span.single(this.end);
+        return Span.single(this.end - 1);
     }
 
     to(other: Span) {

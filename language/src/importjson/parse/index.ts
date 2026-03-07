@@ -16,17 +16,20 @@ import {
     setFieldSpan,
     setSpan,
 } from "./helpers";
+import { parseSnbt, type Tag } from "../../nbt";
 import {
     EVENTS,
     type Event,
     type Importable,
     type ImportableEvent,
     type ImportableFunction,
+    type ImportableItem,
     type ImportableNpc,
     type ImportableRegion,
     type NpcEquipment,
     type NpcSkin,
 } from "../../types";
+import { parseNbt } from "./nbt";
 
 type IncludeOrigin = {
     includeNode: json.Node;
@@ -94,9 +97,9 @@ function parseImportJsonObject(gcx: GlobalCtxt, node: json.Node, currentPath: st
             required: false,
             parser: (regionsNode) => parseAndAppendImportables(gcx, regionsNode, parseImportableRegion),
         },
-        "npcs": {
+        "items": {
             required: false,
-            parser: (npcsNode) => parseAndAppendImportables(gcx, npcsNode, parseImportableNpc),
+            parser: (itemsNode) => parseAndAppendImportables(gcx, itemsNode, parseImportableItem),
         }
     });
 }
@@ -313,8 +316,8 @@ function parseImportableRegion(gcx: GlobalCtxt, node: json.Node): ImportableRegi
     return importable;
 }
 
-function parseImportableNpc(gcx: GlobalCtxt, node: json.Node): ImportableNpc {
-    const importable = { type: "NPC" } as ImportableNpc;
+function parseImportableItem(gcx: GlobalCtxt, node: json.Node): ImportableItem {
+    const importable = { type: "ITEM" } as ImportableItem;
     setSpan(gcx, importable, node);
     setFieldSpan(gcx, importable, "type", node);
 
@@ -326,11 +329,11 @@ function parseImportableNpc(gcx: GlobalCtxt, node: json.Node): ImportableNpc {
                 setFieldSpan(gcx, importable, "name", child);
             }
         },
-        "pos": {
+        "nbt": {
             required: true,
             parser: (child) => {
-                importable.pos = parsePos(gcx, child);
-                setFieldSpan(gcx, importable, "pos", child);
+                importable.nbt = parseNbt(gcx, child);
+                setFieldSpan(gcx, importable, "nbt", child);
             }
         },
         "leftClickActions": {
@@ -347,98 +350,7 @@ function parseImportableNpc(gcx: GlobalCtxt, node: json.Node): ImportableNpc {
                 setFieldSpan(gcx, importable, "rightClickActions", child);
             }
         },
-        "lookAtPlayers": {
-            required: false,
-            parser: (child) => {
-                importable.lookAtPlayers = parseBoolean(gcx, child);
-                setFieldSpan(gcx, importable, "lookAtPlayers", child);
-            }
-        },
-        "hideNameTag": {
-            required: false,
-            parser: (child) => {
-                importable.hideNameTag = parseBoolean(gcx, child);
-                setFieldSpan(gcx, importable, "hideNameTag", child);
-            }
-        },
-        "skin": {
-            required: false,
-            parser: (child) => {
-                importable.skin = parseOption(
-                    gcx, child, NPC_SKINS, { singular: "skin", plural: "skins" }
-                ) as NpcSkin;
-                setFieldSpan(gcx, importable, "skin", child);
-            }
-        },
-        "equipment": {
-            required: false,
-            parser: (child) => {
-                importable.equipment = parseNpcEquipment(gcx, child);
-                setFieldSpan(gcx, importable, "equipment", child);
-            }
-        },
     });
 
     return importable;
-}
-
-function parseNpcEquipment(gcx: GlobalCtxt, node: json.Node): NpcEquipment {
-    const equipment = {} as NpcEquipment;
-    setSpan(gcx, equipment, node);
-
-    parseObject(gcx, node, {
-        "helmet": {
-            required: false,
-            parser: (child) => {
-                equipment.helmet = parseSnbtPath(gcx, child);
-                setFieldSpan(gcx, equipment, "helmet", child);
-            }
-        },
-        "chestplate": {
-            required: false,
-            parser: (child) => {
-                equipment.chestplate = parseSnbtPath(gcx, child);
-                setFieldSpan(gcx, equipment, "chestplate", child);
-            }
-        },
-        "leggings": {
-            required: false,
-            parser: (child) => {
-                equipment.leggings = parseSnbtPath(gcx, child);
-                setFieldSpan(gcx, equipment, "leggings", child);
-            }
-        },
-        "boots": {
-            required: false,
-            parser: (child) => {
-                equipment.boots = parseSnbtPath(gcx, child);
-                setFieldSpan(gcx, equipment, "boots", child);
-            }
-        },
-        "hand": {
-            required: false,
-            parser: (child) => {
-                equipment.hand = parseSnbtPath(gcx, child);
-                setFieldSpan(gcx, equipment, "hand", child);
-            }
-        },
-    });
-
-    return equipment;
-}
-
-function parseSnbtPath(gcx: GlobalCtxt, node: json.Node): string {
-    const filePath = parseString(gcx, node);
-
-    if (!filePath.endsWith(".snbt")) {
-        throw Diagnostic.error("Expected SNBT file")
-            .addPrimarySpan(nodeSpan(node), "Invalid extension");
-    }
-
-    if (!gcx.fileExists(filePath)) {
-        throw Diagnostic.error("SNBT file does not exist")
-            .addPrimarySpan(nodeSpan(node), "Not found");
-    }
-
-    return filePath;
 }

@@ -22,7 +22,6 @@ export class Lexer {
             return token("eof", new Span(this.posWithOffset, this.posWithOffset));
 
         const lo = this.posWithOffset;
-        const singleSpan = new Span(lo, lo + 1);
         const c = this.next();
 
         if (c === "/" && this.peek() === "/") {
@@ -73,8 +72,8 @@ export class Lexer {
             return this.advanceToken();
         }
 
-        if (c === ",") return token("comma", singleSpan);
-        if (c === "!") return token("exclamation", singleSpan);
+        if (c === ",") return token("comma", Span.single(lo));
+        if (c === "!") return token("exclamation", Span.single(lo));
 
         // binary operators
         if (c === "+") {
@@ -82,21 +81,21 @@ export class Lexer {
                 this.next();
                 return token("bin_op_eq", new Span(lo, lo + 2), { op: "plus" });
             }
-            return token("bin_op", singleSpan, { op: "plus" });
+            return token("bin_op", Span.single(lo), { op: "plus" });
         }
         if (c === "-") {
             if (this.peek() === "=") {
                 this.next();
                 return token("bin_op_eq", new Span(lo, lo + 2), { op: "minus" });
             }
-            return token("bin_op", singleSpan, { op: "minus" });
+            return token("bin_op", Span.single(lo), { op: "minus" });
         }
         if (c === "*") {
             if (this.peek() === "=") {
                 this.next();
                 return token("bin_op_eq", new Span(lo, lo + 2), { op: "star" });
             }
-            return token("bin_op", singleSpan, { op: "star" });
+            return token("bin_op", Span.single(lo), { op: "star" });
         }
         if (c === "/") {
             if (this.peek() === "/") this.next();
@@ -112,7 +111,7 @@ export class Lexer {
                 this.next();
                 return token("bin_op_eq", new Span(lo, lo + 3), { op: "lt_lt" });
             }
-            return token("bin_op", singleSpan, { op: "lt_lt" });
+            return token("bin_op", Span.single(lo), { op: "lt_lt" });
         }
         if (c === ">" && this.peek(0) == ">") {
             this.next();
@@ -120,28 +119,28 @@ export class Lexer {
                 this.next();
                 return token("bin_op_eq", new Span(lo, lo + 3), { op: "gt_gt" });
             }
-            return token("bin_op", singleSpan, { op: "gt_gt" });
+            return token("bin_op", Span.single(lo), { op: "gt_gt" });
         }
         if (c === "&") {
             if (this.peek() === "=") {
                 this.next();
                 return token("bin_op_eq", new Span(lo, lo + 2), { op: "ampersand" });
             }
-            return token("bin_op", singleSpan, { op: "ampersand" });
+            return token("bin_op", Span.single(lo), { op: "ampersand" });
         }
         if (c === "|") {
             if (this.peek() === "=") {
                 this.next();
                 return token("bin_op_eq", new Span(lo, lo + 2), { op: "vertical_bar" });
             }
-            return token("bin_op", singleSpan, { op: "vertical_bar" });
+            return token("bin_op", Span.single(lo), { op: "vertical_bar" });
         }
         if (c === "^") {
             if (this.peek() === "=") {
                 this.next();
                 return token("bin_op_eq", new Span(lo, lo + 2), { op: "caret" });
             }
-            return token("bin_op", singleSpan, { op: "caret" });
+            return token("bin_op", Span.single(lo), { op: "caret" });
         }
 
         // comparison operators
@@ -150,30 +149,30 @@ export class Lexer {
                 this.next();
                 return token("cmp_op_eq", new Span(lo, lo + 2), { op: "equals" });
             }
-            return token("cmp_op", singleSpan, { op: "equals" });
+            return token("cmp_op", Span.single(lo), { op: "equals" });
         }
         if (c === "<") {
             if (this.peek(0) === "=") {
                 this.next();
                 return token("cmp_op_eq", new Span(lo, lo + 2), { op: "less_than" });
             }
-            return token("cmp_op", singleSpan, { op: "less_than" });
+            return token("cmp_op", Span.single(lo), { op: "less_than" });
         }
         if (c === ">") {
             if (this.peek(0) === "=") {
                 this.next();
                 return token("cmp_op_eq", new Span(lo, lo + 2), { op: "greater_than" });
             }
-            return token("cmp_op", singleSpan, { op: "greater_than" });
+            return token("cmp_op", Span.single(lo), { op: "greater_than" });
         }
 
         // delimiters
-        if (c === "(") return token("open_delim", singleSpan, { delim: "parenthesis" });
-        if (c === ")") return token("close_delim", singleSpan, { delim: "parenthesis" });
-        if (c === "{") return token("open_delim", singleSpan, { delim: "brace" });
-        if (c === "}") return token("close_delim", singleSpan, { delim: "brace" });
-        if (c === "[") return token("open_delim", singleSpan, { delim: "bracket" });
-        if (c === "]") return token("close_delim", singleSpan, { delim: "bracket" });
+        if (c === "(") return token("open_delim", Span.single(lo), { delim: "parenthesis" });
+        if (c === ")") return token("close_delim", Span.single(lo), { delim: "parenthesis" });
+        if (c === "{") return token("open_delim", Span.single(lo), { delim: "brace" });
+        if (c === "}") return token("close_delim", Span.single(lo), { delim: "brace" });
+        if (c === "[") return token("open_delim", Span.single(lo), { delim: "bracket" });
+        if (c === "]") return token("close_delim", Span.single(lo), { delim: "bracket" });
 
         // literals
         if (c === '"') {
@@ -231,9 +230,9 @@ export class Lexer {
             return token("ident", new Span(lo, this.posWithOffset), { value });
         }
 
-        if (c === "\n") return token("eol", singleSpan);
+        if (c === "\n") return token("eol", Span.single(lo));
 
-        return token("unknown", singleSpan, { value: c });
+        return token("unknown", Span.single(lo), { value: c });
     }
 
     get posWithOffset() {

@@ -76,7 +76,7 @@ function behaviorRequireItem(
     condition: ConditionRequireItem
 ): boolean {
     if (
-        !condition.item ||
+        !condition.itemName ||
         !condition.whatToCheck ||
         !condition.whereToCheck ||
         !condition.amount

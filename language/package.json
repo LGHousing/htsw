@@ -20,6 +20,10 @@
         "./runtime": {
             "import": "./dist/runtime/index.js",
             "types": "./dist/runtime/index.d.ts"
+        },
+        "./nbt": {
+            "import": "./dist/nbt/index.js",
+            "types": "./dist/nbt/index.d.ts"
         }
     },
     "scripts": {
@@ -39,11 +43,5 @@
         "tsx": "^4.19.2",
         "typescript": "^5.7.3",
         "vitest": "3.0.5"
-    },
-    "workspaces": [
-        "ct_module",
-        "editors/common",
-        "editors/code",
-        "editors/monaco"
-    ]
+    }
 }

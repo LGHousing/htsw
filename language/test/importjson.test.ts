@@ -171,6 +171,22 @@ describe("import.json basic passing behavior", () => {
         expect(hasHardErrors(result.diagnostics)).toBe(false);
     });
 
+    it("parses a single item importable", () => {
+        const result = parseImportables(caseFilePath("item"));
+
+        expect(result.value.length).toBe(1);
+        expect(result.value[0].type).toBe("ITEM");
+        expect(result.value[0].name).toBe("Stone Item");
+        expect(result.value[0].nbt.type).toBe("compound");
+        if (result.value[0].nbt.type === "compound") {
+            expect(result.value[0].nbt.value.id).toEqual({
+                type: "string",
+                value: "stone",
+            });
+        }
+        expect(hasHardErrors(result.diagnostics)).toBe(false);
+    });
+
     it("supports include using import.json filename", () => {
         const result = parseImportables(caseDirPath("include_import_json_name"));
 

@@ -3,7 +3,7 @@ import type { Action } from "htsw/types";
 import type { VarOperation } from "htsw/types";
 
 import { Simulator } from "./simulator";
-import { StringFileLoader } from "../helpers";
+import { StringFileLoader } from "../utils/files";
 import { printDiagnostic } from "../tui/diagnostics";
 
 export function registerCommandTriggers(): CommandTrigger[] {

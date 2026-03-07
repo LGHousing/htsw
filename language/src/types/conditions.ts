@@ -4,7 +4,6 @@ import type {
     Gamemode,
     VarName,
     Permission,
-    Nbt,
     ItemLocation,
     PotionEffect,
     ItemProperty,
@@ -39,7 +38,7 @@ export type ConditionIsInRegion = {
 
 export type ConditionRequireItem = {
     type: "REQUIRE_ITEM";
-    item?: Nbt;
+    itemName?: string;
     whatToCheck?: ItemProperty;
     whereToCheck?: ItemLocation;
     amount?: ItemAmount;

@@ -1,7 +1,7 @@
 import { Diagnostic, DiagnosticLevel, DiagnosticSpan, SourceFile, SourceMap } from "htsw";
 
 import { printUI, UIElementCanvas, UIElementHLine, UIElementText, UIElementTruncate, UIElementVLine, UIElementVStack } from ".";
-import { chatWidth, spaceWidth } from "../helpers";
+import { chatWidth, spaceWidth } from "../utils/helpers";
 
 export function printDiagnostics(sm: SourceMap, diags: Diagnostic[]) {
     for (let i = 0; i < diags.length; i++) {

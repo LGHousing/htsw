@@ -14,6 +14,14 @@
 //     "net.minecraft.network.play.client.C0FPacketConfirmTransaction"
 // );
 
+export const C09PacketHeldItemChange = Java.type(
+    "net.minecraft.network.play.client.C09PacketHeldItemChange"
+);
+
+export const C10PacketCreativeInventoryAction = Java.type(
+    "net.minecraft.network.play.client.C10PacketCreativeInventoryAction"
+);
+
 export const S30PacketWindowItems = Java.type(
     "net.minecraft.network.play.server.S30PacketWindowItems"
 );

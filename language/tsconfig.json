@@ -5,6 +5,7 @@
         "isolatedModules": true,
         "verbatimModuleSyntax": true,
         "allowSyntheticDefaultImports": true,
+        "resolveJsonModule": true,
 
         "outDir": "dist",
         "declaration": true,

@@ -1,0 +1,23 @@
+{
+    "name": "htsw-cli",
+    "version": "1.1.1",
+    "description": "CLI for checking and running HTSW/HTSL files",
+    "type": "module",
+    "bin": {
+        "htsw": "dist/htsw-cli.js"
+    },
+    "scripts": {
+        "build": "vite build --mode production"
+    },
+    "engines": {
+        "node": ">=20"
+    },
+    "devDependencies": {
+        "@types/node": "latest",
+        "typescript": "latest",
+        "vite": "^6.1.0"
+    },
+    "dependencies": {
+        "htsw": "file:../language"
+    }
+}

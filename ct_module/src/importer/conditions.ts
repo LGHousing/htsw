@@ -84,79 +84,79 @@ export async function importCondition(
 async function importRequireGroup(
     ctx: TaskContext,
     condition: ConditionRequireGroup
-): Promise<void> {}
+): Promise<void> { }
 
 async function importCompareVar(
     ctx: TaskContext,
     condition: ConditionCompareVar
-): Promise<void> {}
+): Promise<void> { }
 
 async function importRequirePermission(
     ctx: TaskContext,
     condition: ConditionRequirePermission
-): Promise<void> {}
+): Promise<void> { }
 
 async function importIsInRegion(
     ctx: TaskContext,
     condition: ConditionIsInRegion
-): Promise<void> {}
+): Promise<void> { }
 
 async function importRequireItem(
     ctx: TaskContext,
     condition: ConditionRequireItem
-): Promise<void> {}
+): Promise<void> { }
 
 async function importIsDoingParkour(
     ctx: TaskContext,
     condition: ConditionIsDoingParkour
-): Promise<void> {}
+): Promise<void> { }
 
 async function importRequirePotionEffect(
     ctx: TaskContext,
     condition: ConditionRequirePotionEffect
-): Promise<void> {}
+): Promise<void> { }
 
 async function importIsSneaking(
     ctx: TaskContext,
     condition: ConditionIsSneaking
-): Promise<void> {}
+): Promise<void> { }
 
 async function importIsFlying(
     ctx: TaskContext,
     condition: ConditionIsFlying
-): Promise<void> {}
+): Promise<void> { }
 
 async function importCompareHealth(
     ctx: TaskContext,
     condition: ConditionCompareHealth
-): Promise<void> {}
+): Promise<void> { }
 
 async function importCompareMaxHealth(
     ctx: TaskContext,
     condition: ConditionCompareMaxHealth
-): Promise<void> {}
+): Promise<void> { }
 
 async function importCompareHunger(
     ctx: TaskContext,
     condition: ConditionCompareHunger
-): Promise<void> {}
+): Promise<void> { }
 
 async function importRequireGamemode(
     ctx: TaskContext,
     condition: ConditionRequireGamemode
-): Promise<void> {}
+): Promise<void> { }
 
 async function importComparePlaceholder(
     ctx: TaskContext,
     condition: ConditionComparePlaceholder
-): Promise<void> {}
+): Promise<void> { }
 
 async function importRequireTeam(
     ctx: TaskContext,
     condition: ConditionRequireTeam
-): Promise<void> {}
+): Promise<void> { }
 
 async function importCompareDamage(
     ctx: TaskContext,
     condition: ConditionCompareDamage
-): Promise<void> {}
+): Promise<void> { }

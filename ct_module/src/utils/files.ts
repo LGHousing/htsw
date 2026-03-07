@@ -1,25 +1,5 @@
 import { FileLoader } from "htsw";
 
-export function removedFormatting(str: string): string {
-    return str.replace(/(?:§|&)[0-9a-fklmnor]/g, "");
-}
-
-export function chatWidth(string: string): number {
-    const raw = ChatLib.removeFormatting(ChatLib.replaceFormatting(string));
-    return Client.getMinecraft().field_71466_p.func_78256_a(raw);
-}
-
-export function spaceWidth() {
-    return chatWidth(" ");
-}
-
-export function chatSeparator(): string {
-    const totalWidth = ChatLib.getChatWidth();
-    const sepWidth = chatWidth("-");
-
-    return "-".repeat(totalWidth / sepWidth);
-}
-
 export class FileSystemFileLoader implements FileLoader {
     private rootPath(): any {
         return Java.type("java.nio.file.Paths")

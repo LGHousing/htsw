@@ -231,7 +231,7 @@ function parseConditionRequireItem(
     note: Note
 ): Condition {
     return parseConditionRecovering(p, "REQUIRE_ITEM", inverted, note, (condition) => {
-        setField(p, condition, "item", p.parseName);
+        setField(p, condition, "itemName", p.parseName);
         setField(p, condition, "whatToCheck", parseItemProperty);
         setField(p, condition, "whereToCheck", parseItemLocation);
         setField(p, condition, "amount", parseItemAmount);

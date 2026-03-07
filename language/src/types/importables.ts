@@ -1,3 +1,4 @@
+import type { Tag } from "../nbt";
 import type { Action } from "./actions";
 import type { Bounds, Event, MenuSlot } from "./types";
 
@@ -24,7 +25,8 @@ export type ImportableMenu = {
 
 export type ImportableItem = {
     type: "ITEM";
-    snbt: string;
+    name: string;
+    nbt: Tag;
     leftClickActions?: Action[];
     rightClickActions?: Action[];
 };

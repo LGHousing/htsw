@@ -6,28 +6,22 @@ export default defineConfig({
     build: {
         lib: {
             entry: "./src/index.ts",
-            formats: ["es"],
+            formats: ["cjs"],
             fileName: () => "index.js",
         },
         rollupOptions: {
             input: "./src/index.ts",
             output: {
-                format: "es",
+                format: "cjs",
                 dir: "dist",
-
-                entryFileNames: "[name].js",
-                chunkFileNames: "[name].js",
-
-                manualChunks(id) {
-                    if (id.includes("node_modules")) return "vendor";
-                }
+                preserveModules: true,
             },
         },
         outDir: "dist",
     },
     plugins: [
         babel({
-            babelHelpers: "bundled",
+            babelHelpers: "inline",
             extensions: [".ts", ".tsx", ".js"],
             presets: [
                 [

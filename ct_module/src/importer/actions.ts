@@ -34,13 +34,13 @@ import type {
 import TaskContext from "../tasks/context";
 import {
     clickGoBack,
-    waitForMenuToLoad,
+    waitForMenu,
     getSlotPaginate,
     setStringValue,
     setBooleanValue,
 } from "./helpers";
 import { ItemSlot } from "../tasks/specifics/slots";
-import { removedFormatting } from "../helpers";
+import { removedFormatting } from "../utils/helpers";
 import { Diagnostic } from "htsw";
 import { importCondition } from "./conditions";
 
@@ -94,7 +94,7 @@ export async function importAction(
     action: Action,
 ): Promise<void> {
     ctx.getItemSlot("Add Action").click();
-    await waitForMenuToLoad(ctx);
+    await waitForMenu(ctx);
 
     const displayName = ACTION_DISPLAY_NAMES[action.type];
 
@@ -105,7 +105,7 @@ export async function importAction(
     }
 
     slot.click();
-    await waitForMenuToLoad(ctx);
+    await waitForMenu(ctx);
 
     if (action.type === "CHANGE_VAR") {
         await importChangeVar(ctx, action);
@@ -183,11 +183,11 @@ export async function importAction(
 
     if (action.note) {
         await setStringValue(ctx, ctx.getItemSlot("Note"), action.note);
-        await waitForMenuToLoad(ctx);
+        await waitForMenu(ctx);
     }
 
     clickGoBack(ctx);
-    await waitForMenuToLoad(ctx);
+    await waitForMenu(ctx);
 }
 
 async function importChangeVar(
@@ -210,26 +210,26 @@ async function importConditional(
         ctx.getItemSlot("Match Any Condition"),
         action.matchAny,
     );
-    await waitForMenuToLoad(ctx);
+    await waitForMenu(ctx);
 
     if (action.ifActions) {
         ctx.getItemSlot("If Actions").click();
-        await waitForMenuToLoad(ctx);
+        await waitForMenu(ctx);
         for (const ifAction of action.ifActions) {
             await importAction(ctx, ifAction);
         }
         clickGoBack(ctx);
-        await waitForMenuToLoad(ctx);
+        await waitForMenu(ctx);
     }
 
     if (action.elseActions) {
         ctx.getItemSlot("Else Actions").click();
-        await waitForMenuToLoad(ctx);
+        await waitForMenu(ctx);
         for (const elseAction of action.elseActions) {
             await importAction(ctx, elseAction);
         }
         clickGoBack(ctx);
-        await waitForMenuToLoad(ctx);
+        await waitForMenu(ctx);
     }
 }
 
@@ -238,7 +238,7 @@ async function importSendMessage(
     action: ActionSendMessage,
 ): Promise<void> {
     await setStringValue(ctx, ctx.getItemSlot("Message"), action.message);
-    await waitForMenuToLoad(ctx);
+    await waitForMenu(ctx);
 }
 
 async function importActionBar(

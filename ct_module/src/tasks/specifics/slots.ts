@@ -1,4 +1,4 @@
-import { removedFormatting } from "../../helpers";
+import { removedFormatting } from "../../utils/helpers";
 
 export enum MouseButton {
     LEFT = "LEFT",
