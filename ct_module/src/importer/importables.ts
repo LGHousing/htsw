@@ -220,8 +220,10 @@ async function importImportableItem(
             item.getItemStack()
         )
     );
-    Client.sendPacket(new C09PacketHeldItemChange(0));
-
+    if (Player.getPlayer().field_71071_by.field_70461_c !== 0) {
+        Client.sendPacket(new C09PacketHeldItemChange(0));
+        Player.getPlayer().field_71071_by.field_70461_c = 0;
+    };
     await ctx.sleep(1000);
 
     ctx.runCommand("/edit");
