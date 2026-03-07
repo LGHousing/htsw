@@ -16,6 +16,18 @@ function hint(label: string, span: Span): InlayHint {
     return { label, span };
 }
 
+function tryGetFieldSpan(
+    spans: SpanTable,
+    node: object,
+    key: string,
+): Span | undefined {
+    try {
+        return spans.getField(node as any, key as any);
+    } catch {
+        return undefined;
+    }
+}
+
 export class StringFileLoader implements FileLoader {
     src: string;
 
@@ -69,7 +81,7 @@ function provideInlayHintsForActions(actions: types.Action[], spans: SpanTable):
             const value = (action as any)[key];
             if (value === null || value === undefined) continue;
 
-            const span = spans.getFieldSpan(action as object, key);
+            const span = tryGetFieldSpan(spans, action as object, key);
             if (!span) continue;
 
             hints.push(hint(key, span));
@@ -96,7 +108,7 @@ function provideInlayHintsForConditions(
             const value = (condition as any)[key];
             if (value === null || value === undefined) continue;
 
-            const span = spans.getFieldSpan(condition as object, key);
+            const span = tryGetFieldSpan(spans, condition as object, key);
             if (!span) continue;
 
             hints.push(hint(key, span));

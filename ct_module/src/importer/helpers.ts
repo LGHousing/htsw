@@ -101,7 +101,7 @@ export function acceptNewAnvilItem(): void {
     inventory.click(2, false);
 }
 
-function readCurrentValue(slot: ItemSlot): string | null {
+export function readCurrentValue(slot: ItemSlot): string | null {
     const lore = slot.getItem().getLore();
     const index = lore.findIndex(
         (line, i) => removedFormatting(line) === "Current Value:",

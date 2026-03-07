@@ -16,5 +16,7 @@
 			"path": "editors"
 		}
 	],
-	"settings": {}
+	"settings": {
+		"git.ignoreLimitWarning": true
+	}
 }

@@ -4,26 +4,21 @@ import { babel } from "@rollup/plugin-babel";
 export default defineConfig({
     esbuild: false,
     build: {
-        lib: {
-            entry: "./src/index.ts",
-            formats: ["es"],
-            fileName: () => "index.js",
-        },
         rollupOptions: {
             input: "./src/index.ts",
+            preserveEntrySignatures: "strict",
             output: {
                 format: "es",
                 dir: "dist",
+                preserveModules: true,
+                preserveModulesRoot: "src",
 
                 entryFileNames: "[name].js",
                 chunkFileNames: "[name].js",
-
-                manualChunks(id) {
-                    if (id.includes("node_modules")) return "vendor";
-                }
             },
         },
         outDir: "dist",
+        emptyOutDir: true,
     },
     plugins: [
         babel({

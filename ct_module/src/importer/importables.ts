@@ -17,13 +17,19 @@ import {
 } from "./helpers";
 import { MouseButton } from "../tasks/specifics/slots";
 import { removedFormatting } from "../helpers";
+import { onFunctionImported } from "../exporter";
+
+type ImportImportableOptions = {
+    importJsonPath?: string;
+};
 
 export async function importImportable(
     ctx: TaskContext,
     importable: Importable,
+    options?: ImportImportableOptions,
 ): Promise<void> {
     if (importable.type === "FUNCTION") {
-        return importImportableFunction(ctx, importable);
+        return importImportableFunction(ctx, importable, options);
     }
     if (importable.type === "EVENT") {
         return importImportableEvent(ctx, importable);
@@ -39,6 +45,7 @@ export async function importImportable(
 async function importImportableFunction(
     ctx: TaskContext,
     importable: ImportableFunction,
+    options?: ImportImportableOptions,
 ): Promise<void> {
     ctx.runCommand(`/function edit ${importable.name}`);
 
@@ -80,6 +87,17 @@ async function importImportableFunction(
             importable.repeatTicks,
         );
         await waitForMenuToLoad(ctx);
+    }
+
+    if (options?.importJsonPath) {
+        const warnings = await onFunctionImported(
+            ctx,
+            options.importJsonPath,
+            importable,
+        );
+        for (const warning of warnings) {
+            ctx.displayMessage(`&e${warning}`);
+        }
     }
 }
 
