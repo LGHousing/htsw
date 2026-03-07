@@ -1,4 +1,4 @@
-import type Long from "long";
+import type { Long } from "../long";
 
 export type TagByte = { type: "byte"; value: number };
 export type TagShort = { type: "short"; value: number };

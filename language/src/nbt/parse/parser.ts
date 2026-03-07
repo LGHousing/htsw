@@ -1,4 +1,4 @@
-import Long from "long";
+import { Long } from "../../long";
 
 import type { GlobalCtxt } from "../../context";
 import { partialEq } from "../../helpers";
@@ -390,7 +390,7 @@ function parseLong(raw: string, span: Span): Long {
             .addPrimarySpan(span);
     }
 
-    const long = Long.fromString(raw, false, 10);
+    const long = Long.fromString(raw);
     if (long.toString() !== normalizeIntegerString(raw)) {
         throw Diagnostic.error("long literal out of 64-bit range")
             .addPrimarySpan(span);

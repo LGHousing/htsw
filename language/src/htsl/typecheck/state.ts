@@ -1,4 +1,4 @@
-import Long from "long";
+import { Long } from "../../long";
 import type { Span } from "../../span";
 import type { VarHolder, VarOperation } from "../../types";
 
@@ -257,20 +257,20 @@ function shlLongStates(
     const rval = rhs.value;
 
     if (lval.type === "constant" && rval.type === "constant") {
-        return knownConst(lval.constant.shl(rval.constant.toInt()));
+        return knownConst(lval.constant.shl(rval.constant.toNumber()));
     } else if (lval.type === "range" && rval.type === "range") {
         const candidates = [
-            lval.start.shl(rval.start.toInt()),
-            lval.start.shl(rval.end.toInt()),
-            lval.end.shl(rval.start.toInt()),
-            lval.end.shl(rval.end.toInt()),
+            lval.start.shl(rval.start.toNumber()),
+            lval.start.shl(rval.end.toNumber()),
+            lval.end.shl(rval.start.toNumber()),
+            lval.end.shl(rval.end.toNumber()),
         ];
         return knownRange(longArrayMin(candidates), longArrayMax(candidates));
     } else if (lval.type === "range" && rval.type === "constant") {
-        const candidates = [lval.start.shl(rval.constant.toInt()), lval.end.shl(rval.constant.toInt())];
+        const candidates = [lval.start.shl(rval.constant.toNumber()), lval.end.shl(rval.constant.toNumber())];
         return knownRange(longArrayMin(candidates), longArrayMax(candidates));
     } else if (lval.type === "constant" && rval.type === "range") {
-        const candidates = [lval.constant.shl(rval.start.toInt()), lval.constant.shl(rval.end.toInt())];
+        const candidates = [lval.constant.shl(rval.start.toNumber()), lval.constant.shl(rval.end.toNumber())];
         return knownRange(longArrayMin(candidates), longArrayMax(candidates));
     }
     throw Error("Unreachable");
@@ -284,20 +284,20 @@ function shrLongStates(
     const rval = rhs.value;
 
     if (lval.type === "constant" && rval.type === "constant") {
-        return knownConst(lval.constant.shr(rval.constant.toInt()));
+        return knownConst(lval.constant.shr(rval.constant.toNumber()));
     } else if (lval.type === "range" && rval.type === "range") {
         const candidates = [
-            lval.start.shr(rval.start.toInt()),
-            lval.start.shr(rval.end.toInt()),
-            lval.end.shr(rval.start.toInt()),
-            lval.end.shr(rval.end.toInt()),
+            lval.start.shr(rval.start.toNumber()),
+            lval.start.shr(rval.end.toNumber()),
+            lval.end.shr(rval.start.toNumber()),
+            lval.end.shr(rval.end.toNumber()),
         ];
         return knownRange(longArrayMin(candidates), longArrayMax(candidates));
     } else if (lval.type === "range" && rval.type === "constant") {
-        const candidates = [lval.start.shr(rval.constant.toInt()), lval.end.shr(rval.constant.toInt())];
+        const candidates = [lval.start.shr(rval.constant.toNumber()), lval.end.shr(rval.constant.toNumber())];
         return knownRange(longArrayMin(candidates), longArrayMax(candidates));
     } else if (lval.type === "constant" && rval.type === "range") {
-        const candidates = [lval.constant.shr(rval.start.toInt()), lval.constant.shr(rval.end.toInt())];
+        const candidates = [lval.constant.shr(rval.start.toNumber()), lval.constant.shr(rval.end.toNumber())];
         return knownRange(longArrayMin(candidates), longArrayMax(candidates));
     }
     throw Error("Unreachable");
@@ -318,20 +318,20 @@ function shrULongStates(
     const rval = rhs.value;
 
     if (lval.type === "constant" && rval.type === "constant") {
-        return knownConst(lval.constant.shiftRightUnsigned(rval.constant.toInt()));
+        return knownConst(lval.constant.shru(rval.constant.toNumber()));
     } else if (lval.type === "range" && rval.type === "range") {
         const candidates = [
-            lval.start.shiftRightUnsigned(rval.start.toInt()),
-            lval.start.shiftRightUnsigned(rval.end.toInt()),
-            lval.end.shiftRightUnsigned(rval.start.toInt()),
-            lval.end.shiftRightUnsigned(rval.end.toInt()),
+            lval.start.shru(rval.start.toNumber()),
+            lval.start.shru(rval.end.toNumber()),
+            lval.end.shru(rval.start.toNumber()),
+            lval.end.shru(rval.end.toNumber()),
         ];
         return knownRange(longArrayMin(candidates), longArrayMax(candidates));
     } else if (lval.type === "range" && rval.type === "constant") {
-        const candidates = [lval.start.shiftRightUnsigned(rval.constant.toInt()), lval.end.shiftRightUnsigned(rval.constant.toInt())];
+        const candidates = [lval.start.shru(rval.constant.toNumber()), lval.end.shru(rval.constant.toNumber())];
         return knownRange(longArrayMin(candidates), longArrayMax(candidates));
     } else if (lval.type === "constant" && rval.type === "range") {
-        const candidates = [lval.constant.shiftRightUnsigned(rval.start.toInt()), lval.constant.shiftRightUnsigned(rval.end.toInt())];
+        const candidates = [lval.constant.shru(rval.start.toNumber()), lval.constant.shru(rval.end.toNumber())];
         return knownRange(longArrayMin(candidates), longArrayMax(candidates));
     }
     throw Error("Unreachable");

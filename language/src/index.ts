@@ -11,6 +11,7 @@ export * from "./context";
 export * from "./diagnostic";
 export * from "./span";
 export * from "./spanTable";
+export * from "./long";
 
 export * as types from "./types";
 export * as helpers from "./helpers"

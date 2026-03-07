@@ -1,6 +1,6 @@
 import { Gamemode, Location } from "htsw/types";
 
-import Long from "long";
+import { Long } from "htsw";
 
 export type BlockPos = { x: number; y: number; z: number };
 

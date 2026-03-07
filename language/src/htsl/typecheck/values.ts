@@ -1,4 +1,4 @@
-import Long from "long";
+import { Long } from "../../long";
 import type { TyCtxt } from "./context";
 import { doubleConst, doubleRange, longConst, longRange, string, unknownDouble, unknownLong, unknownString, type VarState } from "./state";
 

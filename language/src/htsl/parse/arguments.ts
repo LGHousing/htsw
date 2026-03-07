@@ -37,7 +37,7 @@ import {
 } from "../../types/constants";
 import { Span } from "../../span";
 import { SHORTHANDS } from "./helpers";
-import Long from "long";
+import { Long } from "../../long";
 
 export function parseLocation(p: Parser): Location {
     const type = p.parseOption(

@@ -1,4 +1,4 @@
-import Long from "long";
+import { Long } from "../../long";
 
 import { Behaviors, type Behavior } from "./behaviors";
 import { VarDouble, VarLong, parseValue, type TeamVarKey, type Var, type VarHolder } from "../vars";
@@ -66,11 +66,11 @@ const defaultBehaviorRandomWhole: PlaceholderBehavior = (_rt, invocation) => {
         return VarLong.fromNumber(0);
     }
 
-    const range = max.subtract(min).add(1);
+    const range = max.sub(min).add(1);
     let rand: Long;
     do {
         rand = randomLong().mod(range).add(min);
-    } while (rand.lessThan(min) || rand.greaterThan(max));
+    } while (rand.lt(min) || rand.gt(max));
 
     return new VarLong(rand);
 };
@@ -99,5 +99,5 @@ const defaultBehaviorRandomDecimal: PlaceholderBehavior = (_rt, invocation) => {
 function randomLong(): Long {
     const lo = Math.floor(Math.random() * 0x100000000);
     const hi = Math.floor(Math.random() * 0x100000000);
-    return Long.fromBits(lo, hi, false);
+    return Long.fromBits(lo, hi);
 }

@@ -15,7 +15,7 @@ import { Span } from "../../span";
 import { Diagnostic } from "../../diagnostic";
 import type { Action } from "../../types";
 import { parseAction } from "./actions";
-import Long from "long";
+import { Long } from "../../long";
 import type { GlobalCtxt } from "../../context";
 
 export class Parser {

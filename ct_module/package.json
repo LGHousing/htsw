@@ -4,9 +4,11 @@
     "description": "HTSL but we don't take no Ls",
     "main": "dist/src/index.js",
     "types": "dist/src/index.d.ts",
+    "type": "module",
     "scripts": {
         "dev": "npx tsx watch src/testing.ts",
-        "build": "vite build --mode production",
+        "build:java": "node --experimental-strip-types ./scripts/compileJava.ts",
+        "build": "vite build --mode production && npm run build:java",
         "format": "npx prettier \"**/*.{ts,json}\" --write"
     },
     "license": "MIT",

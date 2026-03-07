@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import * as htsw from "../src";
-import Long from "long";
+import { Long } from "../src/long";
 
 class StringFileLoader implements htsw.FileLoader {
     private readonly files = new Map<string, string>();

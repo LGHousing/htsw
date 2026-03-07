@@ -1,7 +1,7 @@
 import type { Comparison, Operation, VarOperation } from "../types";
 import type { Runtime } from "./runtime";
 
-import Long from "long";
+import { Long } from "../long";
 
 export interface Var<T> {
     value: T;
@@ -49,9 +49,9 @@ export class VarLong implements Var<Long> {
             case "Divide":
                 return new VarLong(this.value.div(other.value));
             case "Shift Left":
-                return new VarLong(this.value.shiftLeft(other.value));
+                return new VarLong(this.value.shl(other.value));
             case "Shift Right":
-                return new VarLong(this.value.shiftRight(other.value));
+                return new VarLong(this.value.shr(other.value));
             case "And Assign":
                 return new VarLong(this.value.and(other.value));
             case "Or Assign":
@@ -79,7 +79,7 @@ export class VarLong implements Var<Long> {
     }
 
     shouldUnset(): boolean {
-        return this.value.equals(Long.ZERO);
+        return this.value.eq(Long.ZERO);
     }
 
     unsetValue(): Var<Long> {
