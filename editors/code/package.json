@@ -61,6 +61,19 @@
                 "fileMatch": "*.import.json",
                 "url": "./schemas/import.schema.json"
             }
-        ]
+        ],
+        "configuration": {
+            "title": "HTSW++",
+            "properties": {
+                "htsw.diagnostics.excludeFolders": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "default": [],
+                    "description": "Workspace-relative folder prefixes to exclude from HTSW diagnostics."
+                }
+            }
+        }
     }
 }

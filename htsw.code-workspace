@@ -19,5 +19,9 @@
 			"path": "cli"
 		}
 	],
-	"settings": {}
+	"settings": {
+		"htsw.diagnostics.excludeFolders": [
+			"language/test/cases"
+		]
+	}
 }
