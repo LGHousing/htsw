@@ -1,0 +1,8 @@
+{
+    "functions": [
+        {
+            "name": "Sin Function",
+            "actions": "sin.htsl"
+        }
+    ]
+}
