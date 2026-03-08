@@ -109,6 +109,17 @@ export class DiagnosticsAdapter {
                 void this.refreshWorkspaceDiagnostics();
             })
         );
+        this.disposables.push(
+            vscode.workspace.onDidChangeConfiguration((event) => {
+                if (!event.affectsConfiguration("htsw.diagnostics.excludeFolders")) return;
+
+                this.diagnosticCollection.clear();
+                vscode.workspace.textDocuments.forEach((document) =>
+                    this.scheduleValidate(document, 0)
+                );
+                void this.refreshWorkspaceDiagnostics();
+            })
+        );
 
         this.addWorkspaceWatcher("**/*.htsl");
         this.addWorkspaceWatcher("**/import.json");
@@ -144,6 +155,10 @@ export class DiagnosticsAdapter {
 
     private scheduleValidate(document: vscode.TextDocument, delayMs = 250) {
         if (!this.isSupportedDocument(document)) return;
+        if (this.isExcludedUri(document.uri)) {
+            this.diagnosticCollection.set(document.uri, []);
+            return;
+        }
 
         const key = document.uri.toString();
         const existing = this.pendingValidations.get(key);
@@ -170,11 +185,20 @@ export class DiagnosticsAdapter {
             const key = uri.toString();
             if (seen.has(key)) continue;
             seen.add(key);
+            if (this.isExcludedUri(uri)) {
+                this.diagnosticCollection.set(uri, []);
+                continue;
+            }
             await this.validateUriFromDisk(uri);
         }
     }
 
     private async validateUriFromDisk(uri: vscode.Uri) {
+        if (this.isExcludedUri(uri)) {
+            this.diagnosticCollection.set(uri, []);
+            return;
+        }
+
         try {
             const document = await vscode.workspace.openTextDocument(uri);
             this.validate(document);
@@ -339,10 +363,46 @@ export class DiagnosticsAdapter {
         return document.languageId === "htsl" || this.isImportJsonDocument(document);
     }
 
+    private isExcludedUri(uri: vscode.Uri): boolean {
+        if (uri.scheme !== "file") return false;
+
+        return this.getContainingWorkspaceFolders(uri).some((workspaceFolder) => {
+            const relativePath = this.normalizePath(
+                path.relative(workspaceFolder.uri.fsPath, uri.fsPath)
+            );
+            if (!relativePath || relativePath.startsWith("../")) return false;
+
+            return this.getExcludedFolders(workspaceFolder.uri).some(
+                (folder) => relativePath === folder || relativePath.startsWith(`${folder}/`)
+            );
+        });
+    }
+
     private isImportJsonDocument(document: vscode.TextDocument): boolean {
         if (document.languageId !== "json" && document.languageId !== "jsonc") return false;
         const filePath = document.uri.fsPath.toLowerCase();
         return filePath.endsWith("import.json") || filePath.endsWith(".import.json");
+    }
+
+    private getExcludedFolders(uri: vscode.Uri): string[] {
+        return vscode.workspace
+            .getConfiguration("htsw", uri)
+            .get<string[]>("diagnostics.excludeFolders", [])
+            .map((folder) => this.normalizePath(folder).replace(/^\/+|\/+$/g, ""))
+            .filter(Boolean);
+    }
+
+    private getContainingWorkspaceFolders(uri: vscode.Uri): vscode.WorkspaceFolder[] {
+        return (vscode.workspace.workspaceFolders ?? [])
+            .filter((workspaceFolder) => {
+                const relativePath = path.relative(workspaceFolder.uri.fsPath, uri.fsPath);
+                return relativePath === "" || !relativePath.startsWith("..");
+            })
+            .sort((left, right) => right.uri.fsPath.length - left.uri.fsPath.length);
+    }
+
+    private normalizePath(filePath: string): string {
+        return filePath.replace(/\\/g, "/").toLowerCase();
     }
 
     private htslDiagnosticLevelToMarkerSeverity(
