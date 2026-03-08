@@ -6,11 +6,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { ansi } from "./ansi";
 import { printDiagnostic } from "./diagnostics";
-
-type ParseOutput = {
-    sourceMap: htsw.SourceMap;
-    diagnostics: htsw.Diagnostic[];
-};
+import { Importable } from "htsw/types";
+import { run } from "./runtime";
 
 class NodeFileLoader {
     fileExists(filePath: string): boolean {
@@ -44,6 +41,11 @@ function main(): void {
         return;
     }
 
+    if (cmd === "run") {
+        runRun(args.slice(1));
+        return;
+    }
+
     console.error(`Unknown command '${cmd}'.`);
     printCheckHelp();
     process.exit(2);
@@ -55,70 +57,67 @@ function runCheck(args: string[]): void {
         process.exit(0);
     }
 
-    const rawPath = args[0] ?? defaultImportJsonPath();
-    const filePath = path.resolve(rawPath);
-    const parse = parseFile(filePath);
-    const diagnostics = parse.diagnostics;
+    const filePath = args[0] ?? path.resolve("import.json");
+    const sm = new htsw.SourceMap(new NodeFileLoader());
+    const result = parseAndPrintDiagnostics(sm, filePath);
+
+    if (hasErrors(result.diagnostics)) {
+        process.exit(0);
+    }
+
+    console.log(ansi("green", "OK"));
+}
+
+function runRun(args: string[]): void {
+    if (args[0] === "--help" || args[0] === "-h") {
+        printRunHelp();
+        process.exit(0);
+    }
+
+    const filePath = args[0] ?? path.resolve("import.json");
+    const sm = new htsw.SourceMap(new NodeFileLoader());
+    const result = parseAndPrintDiagnostics(sm, filePath);
+
+    if (hasErrors(result.diagnostics)) {
+        process.exit(0);
+    }
+
+    run(sm, result);
+}
+
+function parseAndPrintDiagnostics(sm: htsw.SourceMap, filePath: string): htsw.ParseResult<Importable[]> {
+    const parsed = htsw.parseImportablesResult(sm, filePath);
+    const diagnostics = parsed.diagnostics;
 
     for (let i = 0; i < diagnostics.length; i++) {
         if (i !== 0) console.error("");
         const diagnostic = diagnostics[i];
-        printDiagnostic(parse.sourceMap, diagnostic);
+        printDiagnostic(sm, diagnostic);
     }
 
-    if (hasHardErrors(diagnostics)) {
-        process.exit(1);
-    }
-
-    if (diagnostics.length === 0) {
-        console.log(`${ansi("green", "OK")}: ${filePath}`);
-    } else {
-        console.log(
-            `${ansi("green", "OK")}: ${filePath} (${diagnostics.length} diagnostic${diagnostics.length === 1 ? "" : "s"})`,
-        );
-    }
-    process.exit(0);
+    return parsed;
 }
 
-function parseFile(filePath: string): ParseOutput {
-    const sourceMap = new htsw.SourceMap(new NodeFileLoader());
-
-    if (isImportJsonPath(filePath)) {
-        const parsed = htsw.parseImportablesResult(sourceMap, filePath);
-        return {
-            sourceMap,
-            diagnostics: parsed.diagnostics,
-        };
-    }
-
-    const parsed = htsw.parseActionsResult(sourceMap, filePath);
-    return {
-        sourceMap,
-        diagnostics: parsed.diagnostics,
-    };
-}
-
-function isImportJsonPath(filePath: string): boolean {
-    const lower = filePath.toLowerCase();
-    return lower.endsWith("import.json") || lower.endsWith(".import.json");
-}
-
-function hasHardErrors(diagnostics: htsw.Diagnostic[]): boolean {
+function hasErrors(diagnostics: htsw.Diagnostic[]): boolean {
     return diagnostics.some((diagnostic) => {
         return diagnostic.level === "error" || diagnostic.level === "bug";
     });
-}
-
-function defaultImportJsonPath(): string {
-    return path.resolve("import.json");
 }
 
 function printCheckHelp(): void {
     console.log("Usage: htsw check [path]");
     console.log("");
     console.log("Parses the given file and prints diagnostics.");
-    console.log("Supported files: .htsl, import.json, *.import.json");
-    console.log(`Default path: ${defaultImportJsonPath()}`);
+    console.log("Supported files: import.json, *.import.json");
+    console.log(`Default path: ${path.resolve("import.json") }`);
+}
+
+function printRunHelp(): void {
+    console.log("Usage: htsw run [path]");
+    console.log("");
+    console.log("Parses the given file and runs function `htsw:main`");
+    console.log("Supported files: import.json, *.import.json");
+    console.log(`Default path: ${path.resolve("import.json")}`);
 }
 
 main();
