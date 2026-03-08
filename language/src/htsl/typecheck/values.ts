@@ -61,8 +61,8 @@ function parseString(tcx: TyCtxt, value: string): VarState | undefined {
 
 function parsePlaceholder(tcx: TyCtxt, placeholder: string): VarState | undefined {
     const pivotIndex = placeholder.indexOf("/");
-    const name = placeholder.substring(0, pivotIndex);
-    const argsString = placeholder.substring(pivotIndex + 1);
+    const name = pivotIndex === -1 ? placeholder : placeholder.substring(0, pivotIndex);
+    const argsString = pivotIndex === -1 ? "" : placeholder.substring(pivotIndex + 1);
 
     let args: string[] = [];
     if (argsString) {
@@ -191,7 +191,7 @@ export function runPlaceholder(tcx: TyCtxt, name: string, ...args: string[]): Va
             if (tcx.hasState(pkey)) {
                 return tcx.getState(pkey)!;
             } else {
-                return parseValue(tcx, args[1] ?? '""');
+                return undefined;
             }
         case "var.global":
             const gkey = { holder: { type: "global" }, key: args[0] } as const;
@@ -199,15 +199,15 @@ export function runPlaceholder(tcx: TyCtxt, name: string, ...args: string[]): Va
             if (tcx.hasState(gkey)) {
                 return tcx.getState(gkey)!;
             } else {
-                return parseValue(tcx, args[1] ?? '""');
-            }        
+                return undefined;
+            }
         case "var.team":
             const tkey = { holder: { type: "team", team: args[1] }, key: args[0] } as const;
             
             if (tcx.hasState(tkey)) {
                 return tcx.getState(tkey)!;
             } else {
-                return parseValue(tcx, args[2] ?? '""');
+                return undefined;
             }
         default:
             return unknownString(); // Just a raw placeholder, I guess
