@@ -4,29 +4,23 @@ A refined HTSL parser, LSP framework, generator, and more.
 
 ---
 
-### Table of contents
+## Table of contents
 
 <!--- TOC -->
 
-- [Usage](#usage)
 - [Developers](#developers)
-   - [Language Documentation](#language-documentation)
-   - [VSCode Extension](#vscode-extension)
+      - [Language Documentation](#language-documentation)
+      - [VSCode Extension](#vscode-extension)
 - [Credits](#credits)
 - [License](#license)
 
 <!--- END -->
 
-### Usage
-
-HTSL is distributed with the [HousingEditor 2](https://github.com/ImaDoofus/HousingEditor)
- CT module.
-
 ### Developers
 
 #### Language Documentation
 
-Documentation can be found [here](/docs/getting-started/basic-syntax.md).
+Documentation can be found here: [basic-syntax](/docs/getting-started/basic-syntax.md).
 
 #### VSCode Extension
 
