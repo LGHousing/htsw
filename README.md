@@ -1,6 +1,6 @@
 # HTSW
 
-A refined HTSL parser, LSP framework, generator, and more.
+A refined HTS(W) parser, LSP framework, generator, and more.
 
 ---
 
@@ -9,8 +9,8 @@ A refined HTSL parser, LSP framework, generator, and more.
 <!--- TOC -->
 
 - [Developers](#developers)
-      - [Language Documentation](#language-documentation)
-      - [VSCode Extension](#vscode-extension)
+  - [Language Documentation](#language-documentation)
+  - [VSCode Extension](#vscode-extension)
 - [Credits](#credits)
 - [License](#license)
 
@@ -35,5 +35,6 @@ This project is a continuation of [BusterBrown1218's](https://github.com/BusterB
 
 ## License
 
-HTSL is distributed under the terms of the MIT license. See
+HTSW is distributed under the terms of the MIT license. See
 [LICENSE.txt](LICENSE.txt) for the full license.
+
