@@ -2,9 +2,8 @@ import { Lexer } from "./lexer";
 import { Parser } from "./parser";
 import type { GlobalCtxt } from "../../context";
 import { Diagnostic } from "../../diagnostic";
-import { check } from "../typecheck/check";
-import { TyCtxt } from "../typecheck/context";
 import type { Action } from "../../types";
+import { check } from "../check";
 
 export function parseHtsl(gcx: GlobalCtxt, path: string): Action[] {
     try {
@@ -13,8 +12,7 @@ export function parseHtsl(gcx: GlobalCtxt, path: string): Action[] {
         const parser = new Parser(gcx, lexer);
 
         const actions = parser.parseCompletely();
-        const tcx = TyCtxt.fromGlobalCtxt(gcx);
-        check(tcx, actions);
+        check(gcx, actions);
         return actions;
     } catch (e) {
         if (e instanceof Error) {

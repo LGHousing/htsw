@@ -1,6 +1,5 @@
 import { Diagnostic } from "../../diagnostic";
 import type { Action, ActionChangeVar, Condition, VarOperation } from "../../types";
-import { Span } from "../../span";
 import { TyCtxt } from "./context";
 import { parseValue } from "./values";
 import { applyNumericOperation, type VarKey } from "./state";
