@@ -29,7 +29,7 @@ export function randomLong(): Long {
     const lo = Math.floor(Math.random() * 0x100000000);
     const hi = Math.floor(Math.random() * 0x100000000);
 
-    return Long.fromBits(lo, hi, false);
+    return Long.fromBits(lo, hi);
 }
 
 export function getBlockPos(location: Location): BlockPos | undefined {
