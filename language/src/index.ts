@@ -1,3 +1,4 @@
+import { check } from "./check";
 import { GlobalCtxt } from "./context";
 import type { Diagnostic } from "./diagnostic";
 import { parseHtsl } from "./htsl";
@@ -58,6 +59,7 @@ export function parseImportablesResult(
 ): ParseResult<Importable[]> {
     const gcx = new GlobalCtxt(sm, path);
     parseImportJson(gcx, path);
+    check(gcx);
     return {
         value: gcx.importables,
         spans: gcx.spans,

@@ -1,12 +1,19 @@
-import items from "../assets/items.json";
+import items from "../../assets/items.json";
 
-import type { GlobalCtxt } from "../context";
-import { Diagnostic } from "../diagnostic";
-import type { Tag, TagCompound } from "./types";
+import type { GlobalCtxt } from "../../context";
+import { Diagnostic } from "../../diagnostic";
+import type { Tag, TagCompound } from "../../nbt";
+import { getTags } from "../helpers";
 
-// TODO: move this into ../check/passes/checkNbt probably
+export function checkNbt(gcx: GlobalCtxt) {
+    const tags = getTags(gcx);
 
-export function checkNbt(gcx: GlobalCtxt, tag: Tag) {
+    for (const tag of tags) {
+        checkTag(gcx, tag);
+    }
+}
+
+function checkTag(gcx: GlobalCtxt, tag: Tag) {
     if (tag.type !== "compound") {
         gcx.addDiagnostic(
             Diagnostic.error("Expected NBT tag compound")

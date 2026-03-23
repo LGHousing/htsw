@@ -4,6 +4,8 @@ import { TyCtxt } from "./context";
 import { parseValue } from "./values";
 import { applyNumericOperation, type VarKey } from "./state";
 
+// TODO: move this over to ../../check/passed/checkTypeflow probably
+
 export function check(tcx: TyCtxt, actions: Action[]) {
     for (let i = 0; i < actions.length; i++) {
         const action = actions[i];
