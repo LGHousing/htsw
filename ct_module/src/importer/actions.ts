@@ -186,8 +186,7 @@ export async function importAction(
         await waitForMenu(ctx);
     }
 
-    clickGoBack(ctx);
-    await waitForMenu(ctx);
+    await clickGoBack(ctx);
 }
 
 async function importChangeVar(
@@ -200,6 +199,9 @@ async function importConditional(
     action: ActionConditional,
 ): Promise<void> {
     if (action.conditions) {
+        ctx.getItemSlot("Conditions").click();
+        await waitForMenu(ctx);
+        
         for (const condition of action.conditions) {
             await importCondition(ctx, condition);
         }
@@ -218,8 +220,7 @@ async function importConditional(
         for (const ifAction of action.ifActions) {
             await importAction(ctx, ifAction);
         }
-        clickGoBack(ctx);
-        await waitForMenu(ctx);
+        await clickGoBack(ctx);
     }
 
     if (action.elseActions) {
@@ -228,8 +229,7 @@ async function importConditional(
         for (const elseAction of action.elseActions) {
             await importAction(ctx, elseAction);
         }
-        clickGoBack(ctx);
-        await waitForMenu(ctx);
+        await clickGoBack(ctx);
     }
 }
 

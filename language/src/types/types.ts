@@ -22,9 +22,9 @@ export type Value = string;
 export type VarName = string;
 
 export type VarHolder =
-    | { type: "player" }
-    | { type: "global" }
-    | { type: "team"; team?: string }; // Team can be optional in some housing flows.
+    | { type: "Player" }
+    | { type: "Global" }
+    | { type: "Team"; team?: string }; // Team can be optional in some housing flows.
 
 export type Operation = (typeof OPERATIONS)[number];
 export type VarOperation = Operation | (typeof VAR_OPERATIONS)[number];

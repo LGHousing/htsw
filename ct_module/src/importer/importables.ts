@@ -74,8 +74,7 @@ async function importImportableFunction(
     }
 
     if (importable.repeatTicks) {
-        clickGoBack(ctx);
-        await waitForMenu(ctx);
+        await clickGoBack(ctx);
 
         (await getSlotPaginate(ctx, importable.name)).click(MouseButton.RIGHT);
         await waitForMenu(ctx);
@@ -172,8 +171,7 @@ async function importImportableRegion(
         }
 
         if (importable.onExitActions) {
-            clickGoBack(ctx);
-            await waitForMenu(ctx);
+            await clickGoBack(ctx);
         }
     }
 
@@ -241,8 +239,7 @@ async function importImportableItem(
         }
 
         if (importable.rightClickActions) {
-            clickGoBack(ctx);
-            await waitForMenu(ctx);
+            await clickGoBack(ctx);
         }
     }
 

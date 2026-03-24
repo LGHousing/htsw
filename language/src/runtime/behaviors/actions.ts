@@ -44,12 +44,12 @@ const defaultBehaviorChangeVar: ActionBehavior<"CHANGE_VAR"> = (rt, action) => {
     if (!action.holder || !action.op || !action.key) return;
 
     const holderType = action.holder.type;
-    const key: string | TeamVarKey = holderType === "team"
+    const key: string | TeamVarKey = holderType === "Team"
         ? { team: action.holder.team ?? "", key: action.key }
         : action.key;
-    const varHolder: VarHolder<any> = holderType === "team"
+    const varHolder: VarHolder<any> = holderType === "Team"
         ? rt.teamVars
-        : holderType === "global"
+        : holderType === "Global"
             ? rt.globalVars
             : rt.playerVars;
 

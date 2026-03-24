@@ -1,0 +1,60 @@
+// Input:
+//   var trig/input -> angle in degrees, expected range 0..360
+//
+// Output:
+//   var trig/sin -> sin(angle)
+//   var trig/cos -> cos(angle)
+//
+// Example:
+//   var "trig/input" = 45.0 false
+//   function "Trig:SinCos 0-360"
+//   chat "sin=%var.player/trig/sin% cos=%var.player/trig/cos%"
+
+if () {
+    var "trig/angle" = "%var.player/trig/input 0.0%D" false
+}
+
+if and (var "trig/angle" >= 360.0 0.0) {
+    var "trig/angle" -= 360.0 false
+}
+
+var "trig/reduced" = "%var.player/trig/angle 0.0%D" false
+var "trig/reduced" += 90.0 false
+
+if and (var "trig/reduced" >= 180.0 0.0) {
+    var "trig/reduced" -= 180.0 false
+}
+
+if and (var "trig/reduced" >= 180.0 0.0) {
+    var "trig/reduced" -= 270.0 false
+} else {
+    var "trig/reduced" -= 90.0 false
+}
+
+if () {
+    var "trig/sin" = "%var.player/trig/reduced 0.0%D" false
+    var "trig/reduced" *= "%var.player/trig/reduced 0.0%D" false
+    var "trig/work" = 32400.0 false
+    var "trig/work" += "%var.player/trig/reduced 0.0%D" false
+    var "trig/cos" = 32400.0 false
+    var "trig/reduced" *= 4.0 false
+    var "trig/cos" -= "%var.player/trig/reduced 0.0%D" false
+    var "trig/cos" /= "%var.player/trig/work 0.0%D" false
+    var "trig/reduced" *= "%var.player/trig/sin 0.0%D" false
+    var "trig/reduced" /= 5508000.0 false
+    var "trig/sin" *= -0.017 false
+    var "trig/sin" += "%var.player/trig/reduced 0.0%D" false
+}
+
+if and (var "trig/angle" >= 90.0 0.0, var "trig/angle" < 270.0 0.0) {
+    var "trig/sin" *= -1.0 false
+    var "trig/cos" *= -1.0 false
+}
+
+if () {
+    var "trig/angle" unset
+    var "trig/reduced" unset
+    var "trig/work" unset
+}
+
+chat "%var.player/trig/sin% %var.player/trig/cos%"

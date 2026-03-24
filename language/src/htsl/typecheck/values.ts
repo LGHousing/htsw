@@ -186,7 +186,7 @@ export function runPlaceholder(tcx: TyCtxt, name: string, ...args: string[]): Va
 
             return doubleRange(Number(args[0]), Number(args[1]));
         case "var.player":
-            const pkey = { holder: { type: "player" }, key: args[0] } as const;
+            const pkey = { holder: { type: "Player" }, key: args[0] } as const;
 
             if (tcx.hasState(pkey)) {
                 return tcx.getState(pkey)!;
@@ -194,7 +194,7 @@ export function runPlaceholder(tcx: TyCtxt, name: string, ...args: string[]): Va
                 return undefined;
             }
         case "var.global":
-            const gkey = { holder: { type: "global" }, key: args[0] } as const;
+            const gkey = { holder: { type: "Global" }, key: args[0] } as const;
 
             if (tcx.hasState(gkey)) {
                 return tcx.getState(gkey)!;
@@ -202,7 +202,7 @@ export function runPlaceholder(tcx: TyCtxt, name: string, ...args: string[]): Va
                 return undefined;
             }
         case "var.team":
-            const tkey = { holder: { type: "team", team: args[1] }, key: args[0] } as const;
+            const tkey = { holder: { type: "Team", team: args[1] }, key: args[0] } as const;
             
             if (tcx.hasState(tkey)) {
                 return tcx.getState(tkey)!;

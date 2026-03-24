@@ -175,7 +175,7 @@ function parseConditionCompareVar(
     note: Note
 ): Condition {
     return parseConditionRecovering(p, "COMPARE_VAR", inverted, note, (condition) => {
-        setFieldWithSpan(p, condition, "holder", { type: "player" }, p.prev.span);
+        setFieldWithSpan(p, condition, "holder", { type: "Player" }, p.prev.span);
         setField(p, condition, "var", parseVarName);
         setField(p, condition, "op", parseComparison);
         setField(p, condition, "amount", parseValue);
@@ -190,7 +190,7 @@ function parseConditionCompareGlobalVar(
     note: Note
 ): Condition {
     return parseConditionRecovering(p, "COMPARE_VAR", inverted, note, (condition) => {
-        setFieldWithSpan(p, condition, "holder", { type: "global" }, p.prev.span);
+        setFieldWithSpan(p, condition, "holder", { type: "Global" }, p.prev.span);
         setField(p, condition, "var", parseVarName);
         setField(p, condition, "op", parseComparison);
         setField(p, condition, "amount", parseValue);
@@ -346,7 +346,7 @@ function parseConditionCompareTeamVar(
         setField(p, condition, "var", parseVarName);
         const teamSpan = p.token.span;
         const team = p.parseName();
-        const holder = { type: "team", team } as const;
+        const holder = { type: "Team", team } as const;
         setFieldWithSpan(p, condition, "holder", holder, teamSpan.to(p.prev.span));
         setField(p, condition, "op", parseComparison);
         setField(p, condition, "amount", parseValue);

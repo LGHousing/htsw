@@ -227,7 +227,7 @@ function parseActionApplyPotionEffect(p: Parser, note: Note): Action {
 
 function parseActionChangeGlobalVar(p: Parser, note: Note): Action {
     return parseActionRecovering(p, "CHANGE_VAR", note, (action) => {
-        setFieldWithSpan(p, action, "holder", { type: "global" }, p.prev.span);
+        setFieldWithSpan(p, action, "holder", { type: "Global" }, p.prev.span);
         setField(p, action, "key", parseVarName);
         const op = setField(p, action, "op", parseVarOperation);
         if (op === "Unset") return;
@@ -263,7 +263,7 @@ function parseActionChangeTeamVar(p: Parser, note: Note): Action {
         setField(p, action, "key", parseVarName);
         const teamSpan = p.token.span;
         const team = p.parseName();
-        const holder = { type: "team", team } as const;
+        const holder = { type: "Team", team } as const;
         setFieldWithSpan(p, action, "holder", holder, teamSpan.to(p.prev.span));
         const op = setField(p, action, "op", parseVarOperation);
         if (op === "Unset") return;
@@ -275,7 +275,7 @@ function parseActionChangeTeamVar(p: Parser, note: Note): Action {
 
 function parseActionChangeVar(p: Parser, note: Note): Action {
     return parseActionRecovering(p, "CHANGE_VAR", note, (action) => {
-        setFieldWithSpan(p, action, "holder", { type: "player" }, p.prev.span);
+        setFieldWithSpan(p, action, "holder", { type: "Player" }, p.prev.span);
         setField(p, action, "key", parseVarName);
         const op = setField(p, action, "op", parseVarOperation);
         if (op === "Unset") return;
