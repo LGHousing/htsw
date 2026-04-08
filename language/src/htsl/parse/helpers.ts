@@ -127,16 +127,22 @@ export const ACTIONS_TO_KWS: {
 export const CONDITIONS_TO_KWS: {
     [key in Condition["type"]]: ConditionKw;
 } = {
+    BLOCK_TYPE: "blockType",
     COMPARE_DAMAGE: "damageAmount",
     COMPARE_HEALTH: "health",
     COMPARE_HUNGER: "hunger",
     COMPARE_MAX_HEALTH: "maxHealth",
     COMPARE_PLACEHOLDER: "placeholder",
     COMPARE_VAR: "var",
+    DAMAGE_CAUSE: "damageCause",
+    FISHING_ENVIRONMENT: "fishingEnv",
     IS_DOING_PARKOUR: "doingParkour",
     IS_FLYING: "isFlying",
     IS_IN_REGION: "inRegion",
+    IS_ITEM: "isItem",
     IS_SNEAKING: "isSneaking",
+    PORTAL_TYPE: "portal",
+    PVP_ENABLED: "canPvp",
     REQUIRE_GAMEMODE: "gamemode",
     REQUIRE_GROUP: "hasGroup",
     REQUIRE_ITEM: "hasItem",
@@ -189,3 +195,4 @@ export const SHORTHANDS = [
 ] as const;
 
 export type ShorthandKw = (typeof SHORTHANDS)[number];
+

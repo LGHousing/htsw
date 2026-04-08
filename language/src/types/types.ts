@@ -37,6 +37,9 @@ export type Lobby = (typeof LOBBIES)[number];
 export type Enchantment = (typeof ENCHANTMENTS)[number];
 export type Sound = (typeof SOUNDS)[number]["path"];
 export type Permission = (typeof PERMISSIONS)[number];
+export type DamageCause = string;
+export type FishingEnvironment = string;
+export type PortalType = string;
 
 export type InventorySlot = (typeof INVENTORY_SLOTS)[number] | number; // -1 to 39
 

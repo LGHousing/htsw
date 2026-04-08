@@ -90,6 +90,8 @@ export function parseCondition(p: Parser): Condition {
         return parseSimpleCondition(p, "IS_DOING_PARKOUR", inverted, note);
     } else if (eatKw("hasPotion")) {
         return parseConditionRequirePotionEffect(p, inverted, note);
+    } else if (eatKw("isItem")) {
+        return parseConditionIsItem(p, inverted, note);
     } else if (eatKw("isSneaking")) {
         return parseSimpleCondition(p, "IS_SNEAKING", inverted, note);
     } else if (eatKw("isFlying")) {
@@ -100,6 +102,10 @@ export function parseCondition(p: Parser): Condition {
         return parseConditionCompareMaxHealth(p, inverted, note);
     } else if (eatKw("hunger")) {
         return parseConditionCompareHunger(p, inverted, note);
+    } else if (eatKw("portal")) {
+        return parseConditionPortalType(p, inverted, note);
+    } else if (eatKw("canPvp")) {
+        return parseSimpleCondition(p, "PVP_ENABLED", inverted, note);
     } else if (eatKw("gamemode")) {
         return parseConditionRequireGamemode(p, inverted, note);
     } else if (eatKw("placeholder")) {
@@ -108,8 +114,14 @@ export function parseCondition(p: Parser): Condition {
         return parseConditionRequireTeam(p, inverted, note);
     } else if (eatKw("teamvar") || eatKw("teamstat")) {
         return parseConditionCompareTeamVar(p, inverted, note);
+    } else if (eatKw("blockType")) {
+        return parseConditionBlockType(p, inverted, note);
     } else if (eatKw("damageAmount")) {
         return parseConditionCompareDamage(p, inverted, note);
+    } else if (eatKw("damageCause")) {
+        return parseConditionDamageCause(p, inverted, note);
+    } else if (eatKw("fishingEnv")) {
+        return parseConditionFishingEnvironment(p, inverted, note);
     }
 
     if (p.check("ident")) {
@@ -355,6 +367,62 @@ function parseConditionCompareTeamVar(
     });
 }
 
+function parseConditionBlockType(
+    p: Parser,
+    inverted: Inverted,
+    note: Note
+): Condition {
+    return parseConditionRecovering(p, "BLOCK_TYPE", inverted, note, (condition) => {
+        setField(p, condition, "itemName", p.parseName);
+    });
+}
+
+function parseConditionDamageCause(
+    p: Parser,
+    inverted: Inverted,
+    note: Note
+): Condition {
+    return parseConditionRecovering(p, "DAMAGE_CAUSE", inverted, note, (condition) => {
+        setField(p, condition, "cause", p.parseName);
+    });
+}
+
+function parseConditionFishingEnvironment(
+    p: Parser,
+    inverted: Inverted,
+    note: Note
+): Condition {
+    return parseConditionRecovering(
+        p,
+        "FISHING_ENVIRONMENT",
+        inverted,
+        note,
+        (condition) => {
+            setField(p, condition, "environment", p.parseName);
+        }
+    );
+}
+
+function parseConditionIsItem(
+    p: Parser,
+    inverted: Inverted,
+    note: Note
+): Condition {
+    return parseConditionRecovering(p, "IS_ITEM", inverted, note, (condition) => {
+        setField(p, condition, "itemName", p.parseName);
+    });
+}
+
+function parseConditionPortalType(
+    p: Parser,
+    inverted: Inverted,
+    note: Note
+): Condition {
+    return parseConditionRecovering(p, "PORTAL_TYPE", inverted, note, (condition) => {
+        setField(p, condition, "portalType", p.parseName);
+    });
+}
+
 function parseConditionCompareDamage(
     p: Parser,
     inverted: Inverted,
@@ -365,3 +433,6 @@ function parseConditionCompareDamage(
         setField(p, condition, "amount", parseNumericValue);
     });
 }
+
+
+

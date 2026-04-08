@@ -58,7 +58,13 @@ export const CONDITION_NAMES: {
     REQUIRE_GAMEMODE: "Required Gamemode",
     COMPARE_PLACEHOLDER: "Placeholder Number Requirement",
     REQUIRE_TEAM: "Required Team",
-    COMPARE_DAMAGE: "Damage Requirement",
+    DAMAGE_CAUSE: "Damage Cause",
+    PVP_ENABLED: "PvP Enabled",
+    FISHING_ENVIRONMENT: "Fishing Environment",
+    PORTAL_TYPE: "Portal Type",
+    BLOCK_TYPE: "Block Type",
+    IS_ITEM: "Is Item",
+    COMPARE_DAMAGE: "Damage Amount",
 };
 
 export const OPERATIONS = [
@@ -491,3 +497,4 @@ export const ITEM_AMOUNTS = [
     "Any Amount",
     "Equal or Greater Amount"
 ] as const;
+

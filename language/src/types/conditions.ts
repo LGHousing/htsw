@@ -9,6 +9,9 @@ import type {
     ItemProperty,
     VarHolder,
     ItemAmount,
+    DamageCause,
+    FishingEnvironment,
+    PortalType,
 } from "./types";
 
 export type ConditionRequireGroup = {
@@ -96,6 +99,35 @@ export type ConditionRequireTeam = {
     team?: string;
 };
 
+export type ConditionDamageCause = {
+    type: "DAMAGE_CAUSE";
+    cause?: DamageCause;
+};
+
+export type ConditionPvpEnabled = {
+    type: "PVP_ENABLED";
+};
+
+export type ConditionFishingEnvironment = {
+    type: "FISHING_ENVIRONMENT";
+    environment?: FishingEnvironment;
+};
+
+export type ConditionPortalType = {
+    type: "PORTAL_TYPE";
+    portalType?: PortalType;
+};
+
+export type ConditionBlockType = {
+    type: "BLOCK_TYPE";
+    itemName?: string;
+};
+
+export type ConditionIsItem = {
+    type: "IS_ITEM";
+    itemName?: string;
+};
+
 export type ConditionCompareDamage = {
     type: "COMPARE_DAMAGE";
     op?: Comparison;
@@ -118,6 +150,12 @@ export type Condition = (
     | ConditionRequireGamemode
     | ConditionComparePlaceholder
     | ConditionRequireTeam
+    | ConditionDamageCause
+    | ConditionPvpEnabled
+    | ConditionFishingEnvironment
+    | ConditionPortalType
+    | ConditionBlockType
+    | ConditionIsItem
     | ConditionCompareDamage
 ) & {
     inverted?: boolean;
