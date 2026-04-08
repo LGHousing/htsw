@@ -469,6 +469,30 @@ export const PERMISSIONS = [
     "Item: Biome Stick",
 ] as const;
 
+export const DAMAGE_CAUSES = [
+    "Entity Attack",
+    "Projectile",
+    "Suffocation",
+    "Fall",
+    "Lava",
+    "Fire",
+    "Fire Tick",
+    "Drowning",
+    "Starvation",
+    "Poison",
+    "Thorns",
+] as const;
+
+export const FISHING_ENVIRONMENTS = [
+    "Water",
+    "Lava",
+] as const;
+
+export const PORTAL_TYPES = [
+    "Nether Portal",
+    "End Portal",
+] as const;
+
 export const INVENTORY_SLOTS = [
     "First Available Slot",
     "Hand Slot",

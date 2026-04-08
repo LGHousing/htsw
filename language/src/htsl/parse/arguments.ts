@@ -3,6 +3,8 @@ import type {
     Value,
     Location,
     Comparison,
+    DamageCause,
+    FishingEnvironment,
     Gamemode,
     InventorySlot,
     PotionEffect,
@@ -13,6 +15,7 @@ import type {
     ItemProperty,
     ItemLocation,
     ItemAmount,
+    PortalType,
     VarOperation,
 } from "../../types";
 import type { Parser } from "./parser";
@@ -21,7 +24,9 @@ import type { F64Kind, I64Kind, StrKind, Token } from "./token";
 import { parseNumericalPlaceholder } from "./placeholders";
 import {
     COMPARISONS,
+    DAMAGE_CAUSES,
     ENCHANTMENTS,
+    FISHING_ENVIRONMENTS,
     GAMEMODES,
     INVENTORY_SLOTS,
     ITEM_AMOUNTS,
@@ -31,6 +36,7 @@ import {
     LOCATIONS,
     OPERATIONS,
     PERMISSIONS,
+    PORTAL_TYPES,
     POTION_EFFECTS,
     SOUNDS,
     VAR_OPERATIONS,
@@ -372,6 +378,30 @@ export function parsePermission(p: Parser): Permission {
     return p.parseOption(
         PERMISSIONS,
         { singular: "permission", plural: "permissions" }
+    );
+}
+
+export function parseDamageCause(p: Parser): DamageCause {
+    return p.parseOption(
+        DAMAGE_CAUSES,
+        { singular: "damage cause", plural: "damage causes" }
+    );
+}
+
+export function parseFishingEnvironment(p: Parser): FishingEnvironment {
+    return p.parseOption(
+        FISHING_ENVIRONMENTS,
+        {
+            singular: "fishing environment",
+            plural: "fishing environments",
+        }
+    );
+}
+
+export function parsePortalType(p: Parser): PortalType {
+    return p.parseOption(
+        PORTAL_TYPES,
+        { singular: "portal type", plural: "portal types" }
     );
 }
 

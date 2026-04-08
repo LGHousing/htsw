@@ -1,8 +1,22 @@
 import type { GlobalCtxt } from "../../context";
 import { Diagnostic } from "../../diagnostic";
-import type { Action, Event } from "../../types";
+import type { Action, Condition, Event } from "../../types";
 
 type Check = (gcx: GlobalCtxt, action: Action) => void;
+
+const EVENT_SCOPED_CONDITIONS: Partial<Record<Condition["type"], Event[]>> = {
+    COMPARE_DAMAGE: ["Player Damage"],
+    DAMAGE_CAUSE: ["Player Damage"],
+    PVP_ENABLED: ["PvP State Change"],
+    FISHING_ENVIRONMENT: ["Fish Caught"],
+    PORTAL_TYPE: ["Player Enter Portal"],
+    BLOCK_TYPE: ["Player Block Break"],
+    IS_ITEM: [
+        "Player Drop Item",
+        "Player Pick Up Item",
+        "Player Change Held Item",
+    ],
+};
 
 export function checkActionContext(gcx: GlobalCtxt) {
     for (const importable of gcx.importables) {
@@ -43,6 +57,7 @@ function checkAll(gcx: GlobalCtxt, check: Check, actions: Action[]) {
 
 function checkActionInFunction(gcx: GlobalCtxt, action: Action) {
     checkNotCancelEvent(gcx, action, "functions");
+    checkConditionScopes(gcx, action, undefined);
 }
 
 const CANCELLABLE_EVENTS: Event[] = [
@@ -60,21 +75,25 @@ function checkActionInEvent(event: Event) {
             );
         }
 
-        if (!(event in CANCELLABLE_EVENTS) && action.type === "CANCEL_EVENT") {
+        if (!CANCELLABLE_EVENTS.includes(event) && action.type === "CANCEL_EVENT") {
             gcx.addDiagnostic(
                 Diagnostic.error(`${event} event cannot be cancelled.`)
                     .addPrimarySpan(gcx.spans.getField(action, "type"))
             );
         }
-    }
+
+        checkConditionScopes(gcx, action, event);
+    };
 }
 
 function checkActionInRegion(gcx: GlobalCtxt, action: Action) {
     checkNotCancelEvent(gcx, action, "regions");
+    checkConditionScopes(gcx, action, undefined);
 }
 
 function checkActionInItem(gcx: GlobalCtxt, action: Action) {
     checkNotCancelEvent(gcx, action, "items");
+    checkConditionScopes(gcx, action, undefined);
 
     if (action.type === "CONDITIONAL") {
         gcx.addDiagnostic(
@@ -89,6 +108,36 @@ function checkNotCancelEvent(gcx: GlobalCtxt, action: Action, context: string) {
         gcx.addDiagnostic(
             Diagnostic.error(`Cancel Event action cannot be used inside ${context}`)
                 .addPrimarySpan(gcx.spans.getField(action, "type"))
+        );
+    }
+}
+
+function checkConditionScopes(
+    gcx: GlobalCtxt,
+    action: Action,
+    event: Event | undefined,
+) {
+    if (action.type !== "CONDITIONAL") {
+        return;
+    }
+
+    for (const condition of action.conditions) {
+        const allowedEvents = EVENT_SCOPED_CONDITIONS[condition.type];
+        if (!allowedEvents) {
+            continue;
+        }
+
+        if (event && allowedEvents.includes(event)) {
+            continue;
+        }
+
+        const context = event ? `${event} event` : "this context";
+        const allowed = allowedEvents.join(", ");
+
+        gcx.addDiagnostic(
+            Diagnostic.error(
+                `${condition.type} condition can only be used inside: ${allowed}. It cannot be used in ${context}.`
+            ).addPrimarySpan(gcx.spans.getField(condition, "type"))
         );
     }
 }

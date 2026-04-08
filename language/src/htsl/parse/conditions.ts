@@ -5,10 +5,13 @@ import { Span } from "../../span";
 import {
     parseNumericValue,
     parseComparison,
+    parseDamageCause,
+    parseFishingEnvironment,
     parseGamemode,
     parseItemLocation,
     parseItemProperty,
     parsePermission,
+    parsePortalType,
     parsePotionEffect,
     parseVarName,
     parseValue,
@@ -383,7 +386,7 @@ function parseConditionDamageCause(
     note: Note
 ): Condition {
     return parseConditionRecovering(p, "DAMAGE_CAUSE", inverted, note, (condition) => {
-        setField(p, condition, "cause", p.parseName);
+        setField(p, condition, "cause", parseDamageCause);
     });
 }
 
@@ -398,7 +401,7 @@ function parseConditionFishingEnvironment(
         inverted,
         note,
         (condition) => {
-            setField(p, condition, "environment", p.parseName);
+            setField(p, condition, "environment", parseFishingEnvironment);
         }
     );
 }
@@ -419,7 +422,7 @@ function parseConditionPortalType(
     note: Note
 ): Condition {
     return parseConditionRecovering(p, "PORTAL_TYPE", inverted, note, (condition) => {
-        setField(p, condition, "portalType", p.parseName);
+        setField(p, condition, "portalType", parsePortalType);
     });
 }
 
