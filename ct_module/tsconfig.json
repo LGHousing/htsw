@@ -6,7 +6,6 @@
         "isolatedModules": true,
         "strict": true,
         "moduleResolution": "bundler",
-        "baseUrl": ".",
         "paths": {
             "htsw": ["../language/dist/index.d.ts"],
             "htsw/types": ["../language/dist/types/index.d.ts"],
