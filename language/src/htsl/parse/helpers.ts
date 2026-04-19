@@ -172,9 +172,9 @@ export const COMPARISON_SYMBOLS: {
 } = {
     Equal: "==",
     "Less Than": "<",
-    "Less Than Or Equal": "<=",
+    "Less Than or Equal": "<=",
     "Greater Than": ">",
-    "Greater Than Or Equal": ">=",
+    "Greater Than or Equal": ">=",
 };
 
 export const SHORTHANDS = [
