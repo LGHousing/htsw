@@ -77,13 +77,13 @@ export function parseComparison(p: Parser): Comparison {
         return "Less Than";
     }
     if (p.eat({ kind: "cmp_op_eq", op: "less_than" })) {
-        return "Less Than Or Equal";
+        return "Less Than or Equal";
     }
     if (p.eat({ kind: "cmp_op", op: "greater_than" })) {
         return "Greater Than";
     }
     if (p.eat({ kind: "cmp_op_eq", op: "greater_than" })) {
-        return "Greater Than Or Equal";
+        return "Greater Than or Equal";
     }
 
     if (p.check("ident") || p.check("str")) {
