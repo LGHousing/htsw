@@ -87,9 +87,9 @@ export const VAR_OPERATIONS = [
 export const COMPARISONS = [
     "Equal",
     "Less Than",
-    "Less Than Or Equal",
+    "Less Than or Equal",
     "Greater Than",
-    "Greater Than Or Equal",
+    "Greater Than or Equal",
 ] as const;
 
 export const GAMEMODES = [
