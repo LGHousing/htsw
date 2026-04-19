@@ -3,16 +3,16 @@ import { FileLoader } from "htsw";
 export class FileSystemFileLoader implements FileLoader {
     private rootPath(): any {
         return Java.type("java.nio.file.Paths")
-            .get("./config/ChatTriggers/modules/HTSW")
+            .get(String("./config/ChatTriggers/modules/HTSW"))
             .toAbsolutePath()
             .normalize();
     }
 
     private normalizePath(path: string): string {
         const Paths = Java.type("java.nio.file.Paths");
-        const p = Paths.get(path);
-        if (p.isAbsolute()) return p.normalize().toString();
-        return this.rootPath().resolve(p).normalize().toString();
+        const p = Paths.get(String(path));
+        if (p.isAbsolute()) return String(p.normalize().toString());
+        return String(this.rootPath().resolve(p).normalize().toString());
     }
 
     fileExists(path: string): boolean {
@@ -24,28 +24,28 @@ export class FileSystemFileLoader implements FileLoader {
         if (content === null) {
             throw new Error(`File at path ${path} does not exist`);
         }
-        return content;
+        return String(content);
     }
 
     getParentPath(base: string): string {
         const Paths = Java.type("java.nio.file.Paths");
-        const basePath = Paths.get(base);
+        const basePath = Paths.get(String(base));
         const normalized = basePath.isAbsolute()
             ? basePath.normalize()
             : this.rootPath().resolve(basePath).normalize();
 
-        return normalized.getParent().toAbsolutePath().toString();
+        return String(normalized.getParent().toAbsolutePath().toString());
     }
 
     resolvePath(base: string, other: string): string {
         const Paths = Java.type("java.nio.file.Paths");
-        const basePath = Paths.get(base);
-        const otherPath = Paths.get(other);
+        const basePath = Paths.get(String(base));
+        const otherPath = Paths.get(String(other));
         const normalizedBase = basePath.isAbsolute()
             ? basePath.normalize()
             : this.rootPath().resolve(basePath).normalize();
 
-        return normalizedBase.resolve(otherPath).normalize().toAbsolutePath().toString();
+        return String(normalizedBase.resolve(otherPath).normalize().toAbsolutePath().toString());
     }
 }
 

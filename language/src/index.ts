@@ -59,7 +59,9 @@ export function parseImportablesResult(
 ): ParseResult<Importable[]> {
     const gcx = new GlobalCtxt(sm, path);
     parseImportJson(gcx, path);
-    check(gcx);
+    if (!gcx.isFailed()) {
+        check(gcx);
+    }
     return {
         value: gcx.importables,
         spans: gcx.spans,
