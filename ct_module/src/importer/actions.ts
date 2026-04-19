@@ -42,7 +42,7 @@ import {
 import { ItemSlot } from "../tasks/specifics/slots";
 import { removedFormatting } from "../utils/helpers";
 import { Diagnostic } from "htsw";
-import { importCondition } from "./conditions";
+import { syncConditionList } from "./conditions";
 
 const ACTION_DISPLAY_NAMES: Record<Action["type"], string> = {
     CHANGE_VAR: "Change Variable",
@@ -86,7 +86,9 @@ function isLimitExceeded(slot: ItemSlot): boolean {
     const lore = slot.getItem().getLore();
     if (lore.length === 0) return false;
     const lastLine = lore[lore.length - 1];
-    return removedFormatting(lastLine) === "You can't have more of this action!";
+    return (
+        removedFormatting(lastLine) === "You can't have more of this action!"
+    );
 }
 
 export async function importAction(
@@ -101,7 +103,9 @@ export async function importAction(
     const slot = await getSlotPaginate(ctx, displayName);
 
     if (isLimitExceeded(slot)) {
-        throw Diagnostic.error(`Maximum amount of ${displayName} actions exceeded`);
+        throw Diagnostic.error(
+            `Maximum amount of ${displayName} actions exceeded`,
+        );
     }
 
     slot.click();
@@ -180,10 +184,8 @@ export async function importAction(
     } else {
         const _exhaustiveCheck: never = action;
     }
-
     if (action.note) {
         await setStringValue(ctx, ctx.getItemSlot("Note"), action.note);
-        await waitForMenu(ctx);
     }
 
     await clickGoBack(ctx);
@@ -192,27 +194,23 @@ export async function importAction(
 async function importChangeVar(
     ctx: TaskContext,
     action: ActionChangeVar,
-): Promise<void> { }
+): Promise<void> {}
 
 async function importConditional(
     ctx: TaskContext,
     action: ActionConditional,
 ): Promise<void> {
-    if (action.conditions) {
-        ctx.getItemSlot("Conditions").click();
-        await waitForMenu(ctx);
-        
-        for (const condition of action.conditions) {
-            await importCondition(ctx, condition);
-        }
-    }
+    ctx.getItemSlot("Conditions").click();
+    await waitForMenu(ctx);
+
+    await syncConditionList(ctx, action.conditions);
+    await clickGoBack(ctx);
 
     await setBooleanValue(
         ctx,
         ctx.getItemSlot("Match Any Condition"),
         action.matchAny,
     );
-    await waitForMenu(ctx);
 
     if (action.ifActions) {
         ctx.getItemSlot("If Actions").click();
@@ -238,135 +236,134 @@ async function importSendMessage(
     action: ActionSendMessage,
 ): Promise<void> {
     await setStringValue(ctx, ctx.getItemSlot("Message"), action.message);
-    await waitForMenu(ctx);
 }
 
 async function importActionBar(
     ctx: TaskContext,
     action: ActionActionBar,
-): Promise<void> { }
+): Promise<void> {}
 
 async function importPlaySound(
     ctx: TaskContext,
     action: ActionPlaySound,
-): Promise<void> { }
+): Promise<void> {}
 
 async function importGiveItem(
     ctx: TaskContext,
     action: ActionGiveItem,
-): Promise<void> { }
+): Promise<void> {}
 
 async function importTitle(
     ctx: TaskContext,
     action: ActionTitle,
-): Promise<void> { }
+): Promise<void> {}
 
 async function importSetGroup(
     ctx: TaskContext,
     action: ActionSetGroup,
-): Promise<void> { }
+): Promise<void> {}
 
 async function importRemoveItem(
     ctx: TaskContext,
     action: ActionRemoveItem,
-): Promise<void> { }
+): Promise<void> {}
 
 async function importApplyPotionEffect(
     ctx: TaskContext,
     action: ActionApplyPotionEffect,
-): Promise<void> { }
+): Promise<void> {}
 
 async function importDisplayMenu(
     ctx: TaskContext,
     action: ActionDisplayMenu,
-): Promise<void> { }
+): Promise<void> {}
 
 async function importSetTeam(
     ctx: TaskContext,
     action: ActionSetTeam,
-): Promise<void> { }
+): Promise<void> {}
 
 async function importPause(
     ctx: TaskContext,
     action: ActionPauseExecution,
-): Promise<void> { }
+): Promise<void> {}
 
 async function importEnchantHeldItem(
     ctx: TaskContext,
     action: ActionEnchantHeldItem,
-): Promise<void> { }
+): Promise<void> {}
 
 async function importApplyInventoryLayout(
     ctx: TaskContext,
     action: ActionApplyInventoryLayout,
-): Promise<void> { }
+): Promise<void> {}
 
 async function importFunction(
     ctx: TaskContext,
     action: ActionFunction,
-): Promise<void> { }
+): Promise<void> {}
 
 async function importRandom(
     ctx: TaskContext,
     action: ActionRandom,
-): Promise<void> { }
+): Promise<void> {}
 
 async function importSetGamemode(
     ctx: TaskContext,
     action: ActionSetGamemode,
-): Promise<void> { }
+): Promise<void> {}
 
 async function importSetCompassTarget(
     ctx: TaskContext,
     action: ActionSetCompassTarget,
-): Promise<void> { }
+): Promise<void> {}
 
 async function importFailParkour(
     ctx: TaskContext,
     action: ActionFailParkour,
-): Promise<void> { }
+): Promise<void> {}
 
 async function importTeleport(
     ctx: TaskContext,
     action: ActionTeleport,
-): Promise<void> { }
+): Promise<void> {}
 
 async function importSendToLobby(
     ctx: TaskContext,
     action: ActionSendToLobby,
-): Promise<void> { }
+): Promise<void> {}
 
 async function importGiveExperienceLevels(
     ctx: TaskContext,
     action: ActionGiveExperienceLevels,
-): Promise<void> { }
+): Promise<void> {}
 
 async function importChangeMaxHealth(
     ctx: TaskContext,
     action: ActionChangeMaxHealth,
-): Promise<void> { }
+): Promise<void> {}
 
 async function importChangeHealth(
     ctx: TaskContext,
     action: ActionChangeHealth,
-): Promise<void> { }
+): Promise<void> {}
 
 async function importChangeHunger(
     ctx: TaskContext,
     action: ActionChangeHunger,
-): Promise<void> { }
+): Promise<void> {}
 
 async function importDropItem(
     ctx: TaskContext,
     action: ActionDropItem,
-): Promise<void> { }
+): Promise<void> {}
 
 async function importSetVelocity(
     ctx: TaskContext,
     action: ActionSetVelocity,
-): Promise<void> { }
+): Promise<void> {}
 
 async function importLaunch(
     ctx: TaskContext,
     action: ActionLaunch,
-): Promise<void> { }
+): Promise<void> {}
