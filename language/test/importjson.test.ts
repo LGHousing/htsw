@@ -240,5 +240,21 @@ describe("import.json diagnostics readability", () => {
             )
         ).toBe(true);
     });
+
+    it("reports malformed action files without crashing checker passes", () => {
+        let result: ReturnType<typeof parseImportables> | undefined;
+
+        expect(() => {
+            result = parseImportables(caseFilePath("malformed_actions"));
+        }).not.toThrow();
+
+        expect(result).toBeDefined();
+        expect(hasHardErrors(result!.diagnostics)).toBe(true);
+        expect(
+            result!.diagnostics.some((diagnostic) =>
+                diagnostic.message.includes("Expected condition")
+            )
+        ).toBe(true);
+    });
 });
 
