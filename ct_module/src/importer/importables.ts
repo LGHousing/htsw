@@ -84,7 +84,6 @@ async function importImportableFunction(
             ctx.getItemSlot("Automatic Execution"),
             importable.repeatTicks,
         );
-        await waitForMenu(ctx);
     }
 }
 
