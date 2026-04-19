@@ -1,6 +1,6 @@
 /// This is an important chat message.
 chat "hello"
 
-if () {
+if (!var diddy <= 67 0) {
     chat "world"
 }
