@@ -3,6 +3,7 @@ import { ItemSlot, MouseButton } from "../tasks/specifics/slots";
 import { removedFormatting } from "../utils/helpers";
 import { S2DPacketOpenWindow, S30PacketWindowItems } from "../utils/packets";
 import { lastWindowID___FromS30PacketWindowItemsPacketReceived__ThisIsNecessary_sadly_itIncrementsFrom1To100ThenItGoesBackAround_ButSometimesItSkipsOneOrMoreWeAreNotSureMaybeMore_AndItWillNeverBeZero } from "../tasks/specifics/waitFor";
+import type { UiFieldKind } from "./types";
 
 export async function waitForMenu(ctx: TaskContext): Promise<void> {
     await ctx.withTimeout(async () => {
@@ -64,6 +65,15 @@ export async function openSubmenu(ctx: TaskContext, slotName: string): Promise<v
     await waitForMenu(ctx);
 }
 
+function readSelectedMenuItemName(slot: ItemSlot | null): string | undefined {
+    if (slot === null) {
+        return undefined;
+    }
+
+    const name = removedFormatting(slot.getItem().getName()).trim();
+    return name === "" ? undefined : name;
+}
+
 export function setAnvilItemName(newName: string) {
     const inventory = Player.getContainer();
     if (inventory == null) {
@@ -90,6 +100,84 @@ export function acceptNewAnvilItem(): void {
         throw new Error("No open container found");
     }
     inventory.click(2, false);
+}
+
+export function parseLoreKeyValueLine(
+    line: string,
+): { label: string; value: string } | null {
+    const separatorIndex = line.indexOf(":");
+    if (separatorIndex === -1) {
+        return null;
+    }
+
+    const label = removedFormatting(line.slice(0, separatorIndex)).trim();
+    const rawValue = line.slice(separatorIndex + 1);
+    const value = rawValue.startsWith(" ") ? rawValue.slice(1) : rawValue;
+    if (label === "") {
+        return null;
+    }
+
+    return { label, value };
+}
+
+export function parseBooleanText(value: string): boolean | undefined {
+    const normalized = removedFormatting(value).trim();
+    if (normalized === "Enabled") {
+        return true;
+    }
+    if (normalized === "Disabled") {
+        return false;
+    }
+    return undefined;
+}
+
+
+
+export function parseFieldValue(
+    kind: UiFieldKind,
+    value: string,
+): string | boolean | undefined {
+    switch (kind) {
+        case "value":
+            return value;
+        case "cycle":
+        case "select":
+        case "item":
+            return removedFormatting(value).trim();
+        case "boolean":
+            return parseBooleanText(value);
+        default:
+            const _exhaustiveCheck: never = kind;
+            return _exhaustiveCheck;
+    }
+}
+
+export function parseLoreFields<TProp extends string>(
+    slot: ItemSlot,
+    loreFields: Record<string, { prop: TProp; kind: UiFieldKind }>,
+): Partial<Record<TProp, string | boolean>> {
+    const parsed: Partial<Record<TProp, string | boolean>> = {};
+
+    for (const line of slot.getItem().getLore()) {
+        const keyValue = parseLoreKeyValueLine(line);
+        if (keyValue === null) {
+            continue;
+        }
+
+        const field = loreFields[keyValue.label];
+        if (!field) {
+            continue;
+        }
+
+        const value = parseFieldValue(field.kind, keyValue.value);
+        if (value === undefined) {
+            continue;
+        }
+
+        parsed[field.prop] = value;
+    }
+
+    return parsed;
 }
 
 export function readCurrentValue(slot: ItemSlot): string | null {
@@ -167,20 +255,17 @@ export function findMenuOptionByLore(
     );
 }
 
-// function stringAsValue(value: string): string {
-
-//     if (currentValue === newValue) {
-//         return;
-//     }
-//         return value;
-// }
-
-// function numberAsValue(value: number): string {
-//     return value.toString();
-//     if (currentValue === newValue) {
-//         return;
-//     }
-// }
+function isAlreadySelectedOption(slot: ItemSlot): boolean {
+    return slot
+        .getItem()
+        .getLore()
+        .some((line) =>
+            removedFormatting(line)
+                .trim()
+                .toLowerCase()
+                .includes("already selected"),
+        );
+}
 
 export async function setBooleanValue(
     ctx: TaskContext,
@@ -194,6 +279,30 @@ export async function setBooleanValue(
     }
 
     slot.click();
+    await waitForMenu(ctx);
+}
+
+export async function setSelectValue(
+    ctx: TaskContext,
+    slotName: string,
+    value: string,
+): Promise<void> {
+    await openSubmenu(ctx, slotName);
+
+    const optionSlot = await getSlotPaginate(ctx, value);
+    if (isAlreadySelectedOption(optionSlot)) {
+        await clickGoBack(ctx);
+        return;
+    }
+
+    optionSlot.click();
+    await waitForMenu(ctx);
+
+    if (ctx.tryGetItemSlot(slotName) !== null) {
+        return;
+    }
+
+    await clickGoBack(ctx);
 }
 
 export async function setCycleValue(
@@ -310,7 +419,7 @@ export async function setStringValue(
     ctx: TaskContext,
     slot: ItemSlot,
     value: string,
-) {
+): Promise<void> {
     const newValue = value.toString();
     const currentValue = readCurrentValue(slot);
     if (currentValue === newValue) {
@@ -319,4 +428,5 @@ export async function setStringValue(
 
     slot.click();
     await enterValue(ctx, newValue);
+    await waitForMenu(ctx);
 }

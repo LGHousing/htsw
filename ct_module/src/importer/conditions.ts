@@ -1,21 +1,27 @@
-import type {
-    Condition,
-    ConditionCompareDamage,
-    ConditionCompareHealth,
-    ConditionCompareHunger,
-    ConditionCompareMaxHealth,
-    ConditionComparePlaceholder,
-    ConditionCompareVar,
-    ConditionIsDoingParkour,
-    ConditionIsFlying,
-    ConditionIsInRegion,
-    ConditionIsSneaking,
-    ConditionRequireGamemode,
-    ConditionRequireGroup,
-    ConditionRequireItem,
-    ConditionRequirePermission,
-    ConditionRequirePotionEffect,
-    ConditionRequireTeam,
+import {
+    type Condition,
+    type ConditionBlockType,
+    type ConditionCompareDamage,
+    type ConditionCompareHealth,
+    type ConditionCompareHunger,
+    type ConditionCompareMaxHealth,
+    type ConditionComparePlaceholder,
+    type ConditionCompareVar,
+    type ConditionDamageCause,
+    type ConditionFishingEnvironment,
+    type ConditionIsDoingParkour,
+    type ConditionIsFlying,
+    type ConditionIsInRegion,
+    type ConditionIsItem,
+    type ConditionIsSneaking,
+    type ConditionPortalType,
+    type ConditionPvpEnabled,
+    type ConditionRequireGamemode,
+    type ConditionRequireGroup,
+    type ConditionRequireItem,
+    type ConditionRequirePermission,
+    type ConditionRequirePotionEffect,
+    type ConditionRequireTeam,
 } from "htsw/types";
 
 import TaskContext from "../tasks/context";
@@ -25,11 +31,18 @@ import {
     openSubmenu,
     readBooleanValue,
     readStringValue,
+    setBooleanValue,
     setCycleValue,
+    setSelectValue,
+    setStringValue,
     waitForMenu,
 } from "./helpers";
-import { ItemSlot } from "../tasks/specifics/slots";
+import { ItemSlot, MouseButton } from "../tasks/specifics/slots";
 import { removedFormatting } from "../utils/helpers";
+import {
+    parseConditionListItem,
+    tryGetConditionTypeFromDisplayName,
+} from "./conditionMappings";
 import { Diagnostic } from "htsw";
 
 // Shape of Conditions w/ read & write methods
@@ -43,7 +56,35 @@ type ConditionSpecMap = {
     [K in Condition["type"]]: ConditionSpec<Extract<Condition, { type: K }>>;
 };
 
+type ConditionListDiff = {
+    edits: Array<{
+        observed: ObservedCondition;
+        desired: Condition;
+    }>;
+    deletes: ObservedCondition[];
+    adds: Condition[];
+}
+
+type ObservedCondition = {
+    index: number;
+    slotId: number;
+    slot: ItemSlot;
+    condition: Condition;
+};
+
 const VAR_HOLDER_OPTIONS = ["Player", "Global", "Team"] as const;
+const GAMEMODE_OPTIONS = ["Adventure", "Survival", "Creative"] as const;
+const FISHING_ENVIRONMENT_OPTIONS = ["Water", "Lava"] as const;
+const ITEM_PROPERTY_OPTIONS = ["Item Type", "Metadata"] as const;
+const ITEM_AMOUNT_OPTIONS = ["Any Amount", "Equal or Greater Amount"] as const;
+
+async function setConditionStringValue(
+    ctx: TaskContext,
+    slotName: string,
+    value: string,
+): Promise<void> {
+    await setStringValue(ctx, ctx.getItemSlot(slotName), value);
+}
 
 // Getter for the generic importCondition function to get
 // the correct spec with type safety (annoying runtime thing)
@@ -77,6 +118,41 @@ function readSelectedMenuItemName(slot: ItemSlot | null): string | undefined {
     return name === "" ? undefined : name;
 }
 
+function normalizeForConditionCompare(value: unknown): unknown {
+    if (Array.isArray(value)) {
+        return value.map(normalizeForConditionCompare);
+    }
+
+    if (typeof value !== "object" || value === null) {
+        return value;
+    }
+
+    const normalized: Record<string, unknown> = {};
+    for (const key of Object.keys(value).sort()) {
+        if (key === "note") {
+            continue;
+        }
+
+        const fieldValue = (value as Record<string, unknown>)[key];
+        if (fieldValue !== undefined) {
+            normalized[key] = normalizeForConditionCompare(fieldValue);
+        }
+    }
+
+    return normalized;
+}
+
+function conditionsEqual(a: Condition, b: Condition): boolean {
+    return (
+        JSON.stringify(normalizeForConditionCompare(a)) ===
+        JSON.stringify(normalizeForConditionCompare(b))
+    );
+}
+
+// TODO: Optionally implement (in-menu) read functions for the rest of the conditons.
+// This is NOT NECESSARY for conditions specifically because we can infer all data from the
+// lore in the conditions list. Diff importer defaults to relying on the Condition object data
+// passed in from the conditions list but can fallback to reading from the menu if read fxns are impl'd
 async function readRequireGroup(
     ctx: TaskContext,
 ): Promise<ConditionRequireGroup> {
@@ -99,6 +175,7 @@ async function readRequireGroup(
     if (group) {
         condition.group = group;
     }
+
     if (includeHigherGroups) {
         condition.includeHigherGroups = true;
     }
@@ -135,13 +212,14 @@ async function writeRequireGroup(
             : (readBooleanValue(ctx.getItemSlot("Include Higher Groups")) ??
               false);
 
-    if (desiredIncludeHigherGroups !== currentIncludeHigherGroups) {
-        ctx.getItemSlot("Include Higher Groups").click();
-        await waitForMenu(ctx);
-    }
+    await setBooleanValue(
+        ctx,
+        ctx.getItemSlot("Include Higher Groups"),
+        desiredIncludeHigherGroups,
+    );
 }
 
-async function importCompareVar(
+async function writeCompareVar(
     ctx: TaskContext,
     condition: ConditionCompareVar,
 ): Promise<void> {
@@ -153,77 +231,249 @@ async function importCompareVar(
             condition.holder.type,
         );
     }
+
+    if (condition.var) {
+        await setConditionStringValue(ctx, "Variable", condition.var);
+    }
+
+    if (condition.op) {
+        await setSelectValue(ctx, "Comparator", condition.op);
+    }
+
+    if (condition.amount) {
+        await setConditionStringValue(ctx, "Compare Value", condition.amount);
+    }
+
+    if (condition.fallback) {
+        await setConditionStringValue(ctx, "Fallback Value", condition.fallback);
+    }
 }
 
-async function importRequirePermission(
-    _ctx: TaskContext,
-    _condition: ConditionRequirePermission,
-): Promise<void> {}
+async function writeRequirePermission(
+    ctx: TaskContext,
+    condition: ConditionRequirePermission,
+): Promise<void> {
+    if (condition.permission) {
+        await setSelectValue(ctx, "Required Permission", condition.permission);
+    }
+}
 
-async function importIsInRegion(
-    _ctx: TaskContext,
-    _condition: ConditionIsInRegion,
-): Promise<void> {}
+async function writeIsInRegion(
+    ctx: TaskContext,
+    condition: ConditionIsInRegion,
+): Promise<void> {
+    if (condition.region) {
+        await setSelectValue(ctx, "Region", condition.region);
+    }
+}
 
-async function importRequireItem(
-    _ctx: TaskContext,
-    _condition: ConditionRequireItem,
-): Promise<void> {}
+async function writeRequireItem(
+    ctx: TaskContext,
+    condition: ConditionRequireItem,
+): Promise<void> {
+    if (condition.itemName) {
+        throw Diagnostic.error(
+            "Writing REQUIRE_ITEM item selection is not implemented yet.",
+        );
+    }
 
-async function importIsDoingParkour(
+    if (condition.whatToCheck) {
+        await setCycleValue(
+            ctx,
+            "What To Check",
+            ITEM_PROPERTY_OPTIONS,
+            condition.whatToCheck,
+        );
+    }
+
+    if (condition.whereToCheck) {
+        await setSelectValue(ctx, "Where To Check", condition.whereToCheck);
+    }
+
+    if (condition.amount) {
+        await setCycleValue(
+            ctx,
+            "Required Amount",
+            ITEM_AMOUNT_OPTIONS,
+            condition.amount,
+        );
+    }
+}
+
+async function writeIsDoingParkour(
     _ctx: TaskContext,
     _condition: ConditionIsDoingParkour,
 ): Promise<void> {}
 
-async function importRequirePotionEffect(
-    _ctx: TaskContext,
-    _condition: ConditionRequirePotionEffect,
-): Promise<void> {}
+async function writeRequirePotionEffect(
+    ctx: TaskContext,
+    condition: ConditionRequirePotionEffect,
+): Promise<void> {
+    if (condition.effect) {
+        await setSelectValue(ctx, "Effect", condition.effect);
+    }
+}
 
-async function importIsSneaking(
+async function writeIsSneaking(
     _ctx: TaskContext,
     _condition: ConditionIsSneaking,
 ): Promise<void> {}
 
-async function importIsFlying(
+async function writeIsFlying(
     _ctx: TaskContext,
     _condition: ConditionIsFlying,
 ): Promise<void> {}
 
-async function importCompareHealth(
+async function writeCompareHealth(
+    ctx: TaskContext,
+    condition: ConditionCompareHealth,
+): Promise<void> {
+    if (condition.op) {
+        await setSelectValue(ctx, "Comparator", condition.op);
+    }
+
+    if (condition.amount) {
+        await setConditionStringValue(ctx, "Compare Value", condition.amount);
+    }
+}
+
+async function writeCompareMaxHealth(
+    ctx: TaskContext,
+    condition: ConditionCompareMaxHealth,
+): Promise<void> {
+    if (condition.op) {
+        await setSelectValue(ctx, "Comparator", condition.op);
+    }
+
+    if (condition.amount) {
+        await setConditionStringValue(ctx, "Compare Value", condition.amount);
+    }
+}
+
+async function writeCompareHunger(
+    ctx: TaskContext,
+    condition: ConditionCompareHunger,
+): Promise<void> {
+    if (condition.op) {
+        await setSelectValue(ctx, "Comparator", condition.op);
+    }
+
+    if (condition.amount) {
+        await setConditionStringValue(ctx, "Compare Value", condition.amount);
+    }
+}
+
+async function writeRequireGamemode(
+    ctx: TaskContext,
+    condition: ConditionRequireGamemode,
+): Promise<void> {
+    if (condition.gamemode) {
+        await setCycleValue(
+            ctx,
+            "Required Gamemode",
+            GAMEMODE_OPTIONS,
+            condition.gamemode,
+        );
+    }
+}
+
+async function writeComparePlaceholder(
+    ctx: TaskContext,
+    condition: ConditionComparePlaceholder,
+): Promise<void> {
+    if (condition.placeholder) {
+        await setConditionStringValue(ctx, "Placeholder", condition.placeholder);
+    }
+
+    if (condition.op) {
+        await setSelectValue(ctx, "Comparator", condition.op);
+    }
+
+    if (condition.amount) {
+        await setConditionStringValue(ctx, "Compare Value", condition.amount);
+    }
+}
+
+async function writeRequireTeam(
+    ctx: TaskContext,
+    condition: ConditionRequireTeam,
+): Promise<void> {
+    if (condition.team) {
+        await setSelectValue(ctx, "Required Team", condition.team);
+    }
+}
+
+async function writeDamageCause(
+    ctx: TaskContext,
+    condition: ConditionDamageCause,
+): Promise<void> {
+    if (condition.cause) {
+        await setSelectValue(ctx, "Cause", condition.cause);
+    }
+}
+
+async function writePvpEnabled(
     _ctx: TaskContext,
-    _condition: ConditionCompareHealth,
+    _condition: ConditionPvpEnabled,
 ): Promise<void> {}
 
-async function importCompareMaxHealth(
-    _ctx: TaskContext,
-    _condition: ConditionCompareMaxHealth,
-): Promise<void> {}
+async function writeFishingEnvironment(
+    ctx: TaskContext,
+    condition: ConditionFishingEnvironment,
+): Promise<void> {
+    if (condition.environment) {
+        await setCycleValue(
+            ctx,
+            "Environment",
+            FISHING_ENVIRONMENT_OPTIONS,
+            condition.environment,
+        );
+    }
+}
 
-async function importCompareHunger(
-    _ctx: TaskContext,
-    _condition: ConditionCompareHunger,
-): Promise<void> {}
+async function writePortalType(
+    ctx: TaskContext,
+    condition: ConditionPortalType,
+): Promise<void> {
+    if (condition.portalType) {
+        await setSelectValue(ctx, "Type", condition.portalType);
+    }
+}
 
-async function importRequireGamemode(
+async function writeBlockType(
     _ctx: TaskContext,
-    _condition: ConditionRequireGamemode,
-): Promise<void> {}
+    condition: ConditionBlockType,
+): Promise<void> {
+    if (condition.itemName) {
+        throw Diagnostic.error(
+            "Writing BLOCK_TYPE item selection is not implemented yet.",
+        );
+    }
+}
 
-async function importComparePlaceholder(
+async function writeIsItem(
     _ctx: TaskContext,
-    _condition: ConditionComparePlaceholder,
-): Promise<void> {}
+    condition: ConditionIsItem,
+): Promise<void> {
+    if (condition.itemName) {
+        throw Diagnostic.error(
+            "Writing IS_ITEM item selection is not implemented yet.",
+        );
+    }
+}
 
-async function importRequireTeam(
-    _ctx: TaskContext,
-    _condition: ConditionRequireTeam,
-): Promise<void> {}
+async function writeCompareDamage(
+    ctx: TaskContext,
+    condition: ConditionCompareDamage,
+): Promise<void> {
+    if (condition.op) {
+        await setSelectValue(ctx, "Comparator", condition.op);
+    }
 
-async function importCompareDamage(
-    _ctx: TaskContext,
-    _condition: ConditionCompareDamage,
-): Promise<void> {}
+    if (condition.amount) {
+        await setConditionStringValue(ctx, "Compare Value", condition.amount);
+    }
+}
 
 const CONDITION_SPECS = {
     REQUIRE_GROUP: {
@@ -233,75 +483,230 @@ const CONDITION_SPECS = {
     },
     COMPARE_VAR: {
         displayName: "Variable Requirement",
-        write: importCompareVar,
+        write: writeCompareVar,
     },
     REQUIRE_PERMISSION: {
         displayName: "Required Permission",
-        write: importRequirePermission,
+        write: writeRequirePermission,
     },
     IS_IN_REGION: {
         displayName: "Within Region",
-        write: importIsInRegion,
+        write: writeIsInRegion,
     },
     REQUIRE_ITEM: {
         displayName: "Has Item",
-        write: importRequireItem,
+        write: writeRequireItem,
     },
     IS_DOING_PARKOUR: {
         displayName: "Doing Parkour",
-        write: importIsDoingParkour,
+        write: writeIsDoingParkour,
     },
     REQUIRE_POTION_EFFECT: {
         displayName: "Has Potion Effect",
-        write: importRequirePotionEffect,
+        write: writeRequirePotionEffect,
     },
     IS_SNEAKING: {
         displayName: "Player Sneaking",
-        write: importIsSneaking,
+        write: writeIsSneaking,
     },
     IS_FLYING: {
         displayName: "Player Flying",
-        write: importIsFlying,
+        write: writeIsFlying,
     },
     COMPARE_HEALTH: {
         displayName: "Player Health",
-        write: importCompareHealth,
+        write: writeCompareHealth,
     },
     COMPARE_MAX_HEALTH: {
         displayName: "Max Player Health",
-        write: importCompareMaxHealth,
+        write: writeCompareMaxHealth,
     },
     COMPARE_HUNGER: {
         displayName: "Player Hunger",
-        write: importCompareHunger,
+        write: writeCompareHunger,
     },
     REQUIRE_GAMEMODE: {
         displayName: "Required Gamemode",
-        write: importRequireGamemode,
+        write: writeRequireGamemode,
     },
     COMPARE_PLACEHOLDER: {
         displayName: "Placeholder Number Requirement",
-        write: importComparePlaceholder,
+        write: writeComparePlaceholder,
     },
     REQUIRE_TEAM: {
         displayName: "Required Team",
-        write: importRequireTeam,
+        write: writeRequireTeam,
+    },
+    DAMAGE_CAUSE: {
+        displayName: "Damage Cause",
+        write: writeDamageCause,
+    },
+    PVP_ENABLED: {
+        displayName: "PvP Enabled",
+        write: writePvpEnabled,
+    },
+    FISHING_ENVIRONMENT: {
+        displayName: "Fishing Environment",
+        write: writeFishingEnvironment,
+    },
+    PORTAL_TYPE: {
+        displayName: "Portal Type",
+        write: writePortalType,
+    },
+    BLOCK_TYPE: {
+        displayName: "Block Type",
+        write: writeBlockType,
+    },
+    IS_ITEM: {
+        displayName: "Is Item",
+        write: writeIsItem,
     },
     COMPARE_DAMAGE: {
         displayName: "Damage Amount",
-        write: importCompareDamage,
+        write: writeCompareDamage,
     },
 } satisfies ConditionSpecMap;
 
-// Diff-Importer by default, if read is impl'd just read and then apply
-async function runConditionSpec<T extends Condition["type"]>(
+
+function isConditionListItemInverted(slot: ItemSlot): boolean {
+    return slot
+        .getItem()
+        .getLore()
+        .some((line) => removedFormatting(line).trim() === "Inverted");
+}
+
+export async function readConditionList(
+    ctx: TaskContext,
+): Promise<ObservedCondition[]> {
+    const slots = ctx.getAllItemSlots();
+    if (slots === null) {
+        throw new Error("No open container found");
+    }
+
+    const conditions: ObservedCondition[] = slots
+        .map((slot) => ({
+            slot,
+            type: tryGetConditionTypeFromDisplayName(slot.getItem().getName()),
+        }))
+        .filter(
+            (entry): entry is { slot: ItemSlot; type: Condition["type"] } =>
+                entry.type !== undefined,
+        )
+        .map((entry, index) => {
+            const condition = parseConditionListItem(entry.slot, entry.type);
+
+            if (isConditionListItemInverted(entry.slot)) {
+                condition.inverted = true;
+            }
+
+            return {
+                index,
+                slotId: entry.slot.getSlotId(),
+                slot: entry.slot,
+                condition,
+            };
+        });
+
+    return conditions;
+}
+
+export function diffConditionList(
+    observed: ObservedCondition[],
+    desired: Condition[],
+): ConditionListDiff {
+    const unmatchedObserved = [...observed];
+    const unmatchedDesired = [...desired];
+    const edits: ConditionListDiff["edits"] = [];
+    const adds: Condition[] = [];
+
+    // Remove matching conditions
+    for (let desiredIndex = unmatchedDesired.length - 1; desiredIndex >= 0; desiredIndex--) {
+        const desiredCondition = unmatchedDesired[desiredIndex];
+        const observedIndex = unmatchedObserved.findIndex((entry) =>
+            conditionsEqual(entry.condition, desiredCondition),
+        );
+
+        if (observedIndex === -1) {
+            continue;
+        }
+
+        unmatchedObserved.splice(observedIndex, 1);
+        unmatchedDesired.splice(desiredIndex, 1);
+    }
+
+    for (const desiredCondition of unmatchedDesired) {
+        const observedIndex = unmatchedObserved.findIndex(
+            (entry) => entry.condition.type === desiredCondition.type,
+        );
+
+        if (observedIndex === -1) {
+            adds.push(desiredCondition);
+            continue;
+        }
+
+        const [observedCondition] = unmatchedObserved.splice(observedIndex, 1);
+        edits.push({
+            observed: observedCondition,
+            desired: desiredCondition,
+        });
+    }
+
+    return {
+        edits,
+        deletes: unmatchedObserved,
+        adds,
+    };
+}
+
+async function openObservedCondition(
+    observed: ObservedCondition,
+    ctx: TaskContext,
+): Promise<void> {
+    observed.slot.click();
+    await waitForMenu(ctx);
+}
+
+async function deleteObservedCondition(
+    observed: ObservedCondition,
+    ctx: TaskContext,
+): Promise<void> {
+    observed.slot.click(MouseButton.RIGHT);
+    await waitForMenu(ctx);
+}
+
+function getInvertSlot(ctx: TaskContext): ItemSlot {
+    return ctx.getItemSlot((slot) => {
+        const name = removedFormatting(slot.getItem().getName())
+            .trim()
+            .toLowerCase();
+        return name === "invert" || name === "inverted";
+    });
+}
+
+async function setOpenConditionInverted(
+    ctx: TaskContext,
+    desiredInverted: boolean,
+    knownCurrentInverted?: boolean,
+): Promise<void> {
+    const invertSlot = getInvertSlot(ctx);
+    const currentInverted =
+        knownCurrentInverted ?? readBooleanValue(invertSlot) ?? false;
+
+    if (currentInverted === desiredInverted) {
+        return;
+    }
+
+    invertSlot.click();
+    await waitForMenu(ctx);
+}
+
+
+
+async function selectConditionType<T extends Condition["type"]>(
     ctx: TaskContext,
     condition: Extract<Condition, { type: T }>,
-) {
+): Promise<void> {
     const spec = getConditionSpec(condition.type);
-
-    const current = spec.read ? await spec.read(ctx) : undefined;
-
     const slot = ctx.getItemSlot(spec.displayName);
 
     if (isLimitExceeded(slot)) {
@@ -309,7 +714,26 @@ async function runConditionSpec<T extends Condition["type"]>(
             `Maximum amount of ${spec.displayName} conditions exceeded`,
         );
     }
-    await spec.write(ctx, condition, current);
+
+    slot.click();
+    await waitForMenu(ctx);
+}
+
+// Writes the fields for the condition editor that is currently open.
+async function writeOpenCondition<T extends Condition["type"]>(
+    ctx: TaskContext,
+    condition: Extract<Condition, { type: T }>,
+    current?: Extract<Condition, { type: T }>,
+): Promise<void> {
+    const spec = getConditionSpec(condition.type);
+
+    let resolvedCurrent = current;
+
+    if (resolvedCurrent === undefined && spec.read) {
+        resolvedCurrent = await spec.read(ctx);
+    }
+
+    await spec.write(ctx, condition, resolvedCurrent);
 }
 
 export async function readOpenCondition<T extends Condition["type"]>(
@@ -332,10 +756,65 @@ export async function importCondition(
     ctx.getItemSlot("Add Condition").click();
     await waitForMenu(ctx);
 
-    await runConditionSpec(ctx, condition);
+    await selectConditionType(
+        ctx,
+        condition as Extract<Condition, { type: typeof condition.type }>,
+    );
+    await writeOpenCondition(
+        ctx,
+        condition as Extract<Condition, { type: typeof condition.type }>,
+    );
 
-    if (condition.inverted) {
-        ctx.getItemSlot("Invert").click();
-        await waitForMenu(ctx);
+    await setOpenConditionInverted(ctx, condition.inverted === true);
+    await clickGoBack(ctx);
+}
+
+async function applyConditionListDiff(
+    ctx: TaskContext,
+    diff: ConditionListDiff,
+): Promise<void> {
+    for (const entry of diff.edits) {
+        await openObservedCondition(entry.observed, ctx);
+        await writeOpenCondition(
+            ctx,
+            entry.desired as Extract<
+                Condition,
+                { type: typeof entry.desired.type }
+            >,
+            entry.observed.condition as Extract<
+                Condition,
+                { type: typeof entry.desired.type }
+            >,
+        );
+
+        const currentInverted = entry.observed.condition.inverted === true;
+        const desiredInverted = entry.desired.inverted === true;
+        await setOpenConditionInverted(
+            ctx,
+            desiredInverted,
+            currentInverted,
+        );
+
+        await clickGoBack(ctx);
     }
+
+    const deletesDescending = [...diff.deletes].sort(
+        (a, b) => b.index - a.index,
+    );
+    for (const observed of deletesDescending) {
+        await deleteObservedCondition(observed, ctx);
+    }
+
+    for (const condition of diff.adds) {
+        await importCondition(ctx, condition);
+    }
+}
+
+export async function syncConditionList(
+    ctx: TaskContext,
+    desired: Condition[],
+): Promise<void> {
+    const observed = await readConditionList(ctx);
+    const diff = diffConditionList(observed, desired);
+    await applyConditionListDiff(ctx, diff);
 }
