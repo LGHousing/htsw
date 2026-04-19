@@ -69,11 +69,11 @@ export class VarLong implements Var<Long> {
                 return this.value.eq(other.value);
             case "Less Than":
                 return this.value.lt(other.value);
-            case "Less Than Or Equal":
+            case "Less Than or Equal":
                 return this.value.lte(other.value);
             case "Greater Than":
                 return this.value.gt(other.value);
-            case "Greater Than Or Equal":
+            case "Greater Than or Equal":
                 return this.value.gte(other.value);
         }
     }
@@ -140,11 +140,11 @@ export class VarDouble implements Var<number> {
                     return other.value.eq(this.value);
                 case "Less Than":
                     return other.value.gte(this.value);
-                case "Less Than Or Equal":
+                case "Less Than or Equal":
                     return other.value.gt(this.value);
                 case "Greater Than":
                     return other.value.lte(this.value);
-                case "Greater Than Or Equal":
+                case "Greater Than or Equal":
                     return other.value.lt(this.value);
             }
         }
@@ -153,11 +153,11 @@ export class VarDouble implements Var<number> {
                 return this.value == other.value;
             case "Less Than":
                 return this.value < other.value;
-            case "Less Than Or Equal":
+            case "Less Than or Equal":
                 return this.value <= other.value;
             case "Greater Than":
                 return this.value > other.value;
-            case "Greater Than Or Equal":
+            case "Greater Than or Equal":
                 return this.value >= other.value;
         }
     }
