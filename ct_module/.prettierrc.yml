@@ -1,0 +1,7 @@
+singleQuote: false
+trailingComma: es5
+semi: true
+printWidth: 90
+endOfLine: auto
+tabWidth: 4
+quoteProps: preserve
