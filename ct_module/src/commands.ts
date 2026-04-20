@@ -6,7 +6,17 @@ import {
 } from "htsw";
 import type { Condition } from "htsw/types";
 
-import { chatSeparator } from "./utils/helpers";
+import {
+    ACTION_MAPPINGS,
+    tryGetActionTypeFromDisplayName,
+} from "./importer/actionMappings";
+import { CONDITION_LORE_MAPPINGS, tryGetConditionTypeFromDisplayName } from "./importer/conditionMappings";
+import { parseFieldValue, parseLoreKeyValueLine } from "./importer/helpers";
+import {
+    chatSeparator,
+    normalizeFormattingCodes,
+    removedFormatting,
+} from "./utils/helpers";
 import { Simulator } from "./simulator";
 import { printDiagnostic, printDiagnostics } from "./tui/diagnostics";
 import { recompile } from "./recompile";
@@ -18,6 +28,12 @@ import { FileSystemFileLoader } from "./utils/files";
 // Temporary debug hook; safe to delete once condition reading is stable.
 const DEBUG_CONDITION_TYPE: Condition["type"] = "REQUIRE_GROUP";
 const DEBUG_READ_CONDITION_KEY = Keyboard.KEY_NUMPAD0;
+const DEBUG_DUMP_MENU_KEY = Keyboard.KEY_NUMPAD1;
+const DEBUG_DUMP_MENU_FALLBACK_KEYS = [
+    Keyboard.KEY_NUMPAD1,
+    Keyboard.KEY_END,
+] as const;
+let wasDebugDumpMenuKeyDown = false;
 const DEBUG_DESIRED_CONDITIONS: Condition[] = [
     {
         type: "REQUIRE_GROUP",
@@ -92,6 +108,105 @@ function printConditionDiff(diff: DebugConditionDiff): void {
     }
 }
 
+function dumpCurrentMenu(): void {
+    const container = Player.getContainer();
+    if (container == null) {
+        ChatLib.chat("&cNo open container.");
+        return;
+    }
+
+    ChatLib.chat(`&aMenu dump (${container.getSize()} slots):`);
+    for (let slotId = 0; slotId < container.getSize(); slotId++) {
+        const item = container.getStackInSlot(slotId);
+        if (item == null) {
+            continue;
+        }
+
+        const rawName = item.getName();
+        ChatLib.chat(
+            `&7[slot ${slotId}] &f${removedFormatting(rawName)} &8(raw: ${rawName}&8)`,
+        );
+
+        const mappedFields = getMappedLoreFieldsForDump(rawName);
+        const lore = item.getLore();
+        for (const line of lore) {
+            const unformattedLine = removedFormatting(line);
+            ChatLib.chat(`&8  lore: &7${unformattedLine}`);
+
+            const keyValue = parseLoreKeyValueLine(line);
+            if (keyValue === null) {
+                continue;
+            }
+
+            const field = mappedFields[keyValue.label];
+            if (!field) {
+                continue;
+            }
+
+            const parsedValue = parseFieldValue(field.kind, keyValue.value);
+            ChatLib.chat(
+                `&8  field: &b${keyValue.label} &8-> &b${field.prop}`,
+            );
+            chatLiteral(
+                "&8    raw: &7",
+                normalizeFormattingCodes(keyValue.value),
+            );
+            if (parsedValue === undefined) {
+                ChatLib.chat("&8    parsed: &7(summary only; open submenu)");
+            } else {
+                ChatLib.chat(`&8    parsed: &7${String(parsedValue)}`);
+            }
+        }
+    }
+}
+
+function chatLiteral(prefix: string, text: string): void {
+    new Message([prefix, new TextComponent(text).setFormatted(false)]).chat();
+}
+
+function getMappedLoreFieldsForDump(
+    displayName: string,
+): Record<string, { prop: string; kind: Parameters<typeof parseFieldValue>[0] }> {
+    const actionType = tryGetActionTypeFromDisplayName(displayName);
+    if (actionType !== undefined) {
+        return ACTION_MAPPINGS[actionType].loreFields ?? {};
+    }
+
+    const conditionType = tryGetConditionTypeFromDisplayName(displayName);
+    if (conditionType !== undefined) {
+        return CONDITION_LORE_MAPPINGS[conditionType]?.loreFields ?? {};
+    }
+
+    return {};
+}
+
+function dumpDebugKeyCodes(): void {
+    ChatLib.chat(
+        `&7NUMPAD1=${Keyboard.KEY_NUMPAD1}, END=${Keyboard.KEY_END}`,
+    );
+    ChatLib.chat(
+        `&7NUMPAD1 down=${Keyboard.isKeyDown(Keyboard.KEY_NUMPAD1)}, END down=${Keyboard.isKeyDown(Keyboard.KEY_END)}`,
+    );
+    ChatLib.chat(
+        `&7inGui=${Client.isInGui()}, container=${Player.getContainer() == null ? "none" : "open"}`,
+    );
+}
+
+function isDebugDumpMenuKey(keyCode: number): boolean {
+    return DEBUG_DUMP_MENU_FALLBACK_KEYS.indexOf(keyCode) !== -1;
+}
+
+function isDebugDumpMenuKeyDown(): boolean {
+    for (let i = 0; i < DEBUG_DUMP_MENU_FALLBACK_KEYS.length; i++) {
+        const keyCode = DEBUG_DUMP_MENU_FALLBACK_KEYS[i];
+        if (Keyboard.isKeyDown(keyCode)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 export function registerCommands() {
     register("command", (...args) => commandHtsw(args)).setName("htsw");
     register("command", (...args) => commandImport(args)).setName("import");
@@ -99,7 +214,43 @@ export function registerCommands() {
         .setName("simulator")
         .setAliases("sim");
 
+    register("tick", () => {
+        const isDown = isDebugDumpMenuKeyDown();
+        if (!isDown) {
+            wasDebugDumpMenuKeyDown = false;
+            return;
+        }
+
+        if (wasDebugDumpMenuKeyDown || !Client.isInGui()) {
+            return;
+        }
+
+        wasDebugDumpMenuKeyDown = true;
+        dumpCurrentMenu();
+    });
+
+    register("guiRender", () => {
+        const isDown = isDebugDumpMenuKeyDown();
+        if (!isDown) {
+            wasDebugDumpMenuKeyDown = false;
+            return;
+        }
+
+        if (wasDebugDumpMenuKeyDown || Player.getContainer() == null) {
+            return;
+        }
+
+        wasDebugDumpMenuKeyDown = true;
+        dumpCurrentMenu();
+    });
+
     register("guiKey", (_char, keyCode, _gui, event) => {
+        if (isDebugDumpMenuKey(keyCode)) {
+            cancel(event);
+            dumpCurrentMenu();
+            return;
+        }
+
         if (keyCode !== DEBUG_READ_CONDITION_KEY) {
             return;
         }
@@ -128,6 +279,16 @@ export function registerCommands() {
 }
 
 function commandHtsw(args: string[]) {
+    if (args.length >= 2 && args[0] === "debug" && args[1] === "dump-menu") {
+        dumpCurrentMenu();
+        return;
+    }
+
+    if (args.length >= 2 && args[0] === "debug" && args[1] === "key-codes") {
+        dumpDebugKeyCodes();
+        return;
+    }
+
     if (args.length > 0 && args[0] === "recompile") {
         recompile();
         return;
