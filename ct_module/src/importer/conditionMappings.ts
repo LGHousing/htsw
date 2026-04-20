@@ -1,37 +1,17 @@
 import {
     CONDITION_NAMES,
     type Condition,
-    type ConditionBlockType,
-    type ConditionCompareDamage,
-    type ConditionCompareHealth,
-    type ConditionCompareHunger,
-    type ConditionCompareMaxHealth,
-    type ConditionComparePlaceholder,
     type ConditionCompareVar,
-    type ConditionDamageCause,
-    type ConditionFishingEnvironment,
-    type ConditionIsDoingParkour,
-    type ConditionIsItem,
-    type ConditionIsFlying,
-    type ConditionIsInRegion,
-    type ConditionIsSneaking,
-    type ConditionRequireGroup,
-    type ConditionPortalType,
-    type ConditionPvpEnabled,
-    type ConditionRequireGamemode,
-    type ConditionRequireItem,
-    type ConditionRequirePermission,
-    type ConditionRequirePotionEffect,
-    type ConditionRequireTeam,
 } from "htsw/types";
 
 import { ItemSlot } from "../tasks/specifics/slots";
 import { removedFormatting } from "../utils/helpers";
-import { parseLoreFields } from "./helpers";
+import { parseLoreFields, readListItemNote } from "./helpers";
 import type { ConditionLoreSpec } from "./types";
 
 export const CONDITION_LORE_MAPPINGS = {
     REQUIRE_GROUP: {
+        displayName: "Required Group",
         loreFields: {
             "Required Group": { prop: "group", kind: "value" },
             "Include Higher Groups": {
@@ -42,6 +22,7 @@ export const CONDITION_LORE_MAPPINGS = {
     },
 
     COMPARE_VAR: {
+        displayName: "Variable Requirement",
         loreFields: {
             Holder: { prop: "holder", kind: "cycle" },
             Variable: { prop: "var", kind: "value" },
@@ -52,18 +33,21 @@ export const CONDITION_LORE_MAPPINGS = {
     },
 
     REQUIRE_PERMISSION: {
+        displayName: "Required Permission",
         loreFields: {
             "Required Permission": { prop: "permission", kind: "select" },
         },
     },
 
     IS_IN_REGION: {
+        displayName: "Within Region",
         loreFields: {
             Region: { prop: "region", kind: "select" },
         },
     },
 
     REQUIRE_ITEM: {
+        displayName: "Has Item",
         loreFields: {
             Item: { prop: "itemName", kind: "item" },
             "What To Check": { prop: "whatToCheck", kind: "cycle" },
@@ -73,24 +57,29 @@ export const CONDITION_LORE_MAPPINGS = {
     },
 
     IS_DOING_PARKOUR: {
+        displayName: "Doing Parkour",
         loreFields: {},
     },
 
     REQUIRE_POTION_EFFECT: {
+        displayName: "Has Potion Effect",
         loreFields: {
             Effect: { prop: "effect", kind: "select" },
         },
     },
 
     IS_SNEAKING: {
+        displayName: "Player Sneaking",
         loreFields: {},
     },
 
     IS_FLYING: {
+        displayName: "Player Flying",
         loreFields: {},
     },
 
     COMPARE_HEALTH: {
+        displayName: "Player Health",
         loreFields: {
             Comparator: { prop: "op", kind: "select" },
             "Compare Value": { prop: "amount", kind: "value" },
@@ -98,6 +87,7 @@ export const CONDITION_LORE_MAPPINGS = {
     },
 
     COMPARE_MAX_HEALTH: {
+        displayName: "Max Player Health",
         loreFields: {
             Comparator: { prop: "op", kind: "select" },
             "Compare Value": { prop: "amount", kind: "value" },
@@ -105,6 +95,7 @@ export const CONDITION_LORE_MAPPINGS = {
     },
 
     COMPARE_HUNGER: {
+        displayName: "Player Hunger",
         loreFields: {
             Comparator: { prop: "op", kind: "select" },
             "Compare Value": { prop: "amount", kind: "value" },
@@ -112,12 +103,14 @@ export const CONDITION_LORE_MAPPINGS = {
     },
 
     REQUIRE_GAMEMODE: {
+        displayName: "Required Gamemode",
         loreFields: {
             "Required Gamemode": { prop: "gamemode", kind: "cycle" },
         },
     },
 
     COMPARE_PLACEHOLDER: {
+        displayName: "Placeholder Number Requirement",
         loreFields: {
             Placeholder: { prop: "placeholder", kind: "value" },
             Comparator: { prop: "op", kind: "select" },
@@ -126,46 +119,54 @@ export const CONDITION_LORE_MAPPINGS = {
     },
 
     REQUIRE_TEAM: {
+        displayName: "Required Team",
         loreFields: {
             "Required Team": { prop: "team", kind: "select" },
         },
     },
 
     DAMAGE_CAUSE: {
+        displayName: "Damage Cause",
         loreFields: {
             Cause: { prop: "cause", kind: "select" },
         },
     },
 
     PVP_ENABLED: {
+        displayName: "PvP Enabled",
         loreFields: {},
     },
 
     FISHING_ENVIRONMENT: {
+        displayName: "Fishing Environment",
         loreFields: {
             Environment: { prop: "environment", kind: "cycle" },
         },
     },
 
     PORTAL_TYPE: {
+        displayName: "Portal Type",
         loreFields: {
             Type: { prop: "portalType", kind: "select" },
         },
     },
 
     BLOCK_TYPE: {
+        displayName: "Block Type",
         loreFields: {
             Item: { prop: "itemName", kind: "item" },
         },
     },
 
     IS_ITEM: {
+        displayName: "Is Item",
         loreFields: {
             Item: { prop: "itemName", kind: "item" },
         },
     },
 
     COMPARE_DAMAGE: {
+        displayName: "Damage Amount",
         loreFields: {
             Comparator: { prop: "op", kind: "select" },
             "Compare Value": { prop: "amount", kind: "value" },
@@ -193,315 +194,27 @@ export function tryGetConditionTypeFromDisplayName(
     return undefined;
 }
 
-type ConditionListBuilder<T extends Condition> = (slot: ItemSlot) => T;
-
-type ConditionListBuilderMap = {
-    [K in Condition["type"]]?: ConditionListBuilder<
-        Extract<Condition, { type: K }>
-    >;
-};
-
-function readStringField(
-    fields: Partial<Record<string, string | boolean>>,
-    key: string,
-): string | undefined {
-    const value = fields[key];
-    return typeof value === "string" ? value : undefined;
-}
-
-function readBooleanField(
-    fields: Partial<Record<string, string | boolean>>,
-    key: string,
-): boolean | undefined {
-    const value = fields[key];
-    return typeof value === "boolean" ? value : undefined;
-}
-
-const CONDITION_LIST_BUILDERS: ConditionListBuilderMap = {
-    REQUIRE_GROUP: (slot) => {
-        const fields = parseLoreFields(
-            slot,
-            CONDITION_LORE_MAPPINGS.REQUIRE_GROUP.loreFields,
-        );
-        const group = readStringField(fields, "group");
-        const includeHigherGroups = readBooleanField(
-            fields,
-            "includeHigherGroups",
-        );
-
-        const condition: ConditionRequireGroup = {
-            type: "REQUIRE_GROUP",
-        };
-
-        if (group) {
-            condition.group = group;
-        }
-
-        if (includeHigherGroups) {
-            condition.includeHigherGroups = true;
-        }
-
-        return condition satisfies ConditionRequireGroup;
-    },
-    COMPARE_VAR: (slot) => {
-        const fields = parseLoreFields(
-            slot,
-            CONDITION_LORE_MAPPINGS.COMPARE_VAR.loreFields,
-        );
-        const holderType = readStringField(fields, "holder");
-        let holder: ConditionCompareVar["holder"];
-
-        if (holderType === "Player") {
-            holder = { type: "Player" };
-        } else if (holderType === "Global") {
-            holder = { type: "Global" };
-        } else if (holderType === "Team") {
-            holder = { type: "Team" };
-        }
-
-        return {
-            type: "COMPARE_VAR",
-            holder,
-            var: readStringField(fields, "var"),
-            op: readStringField(fields, "op") as ConditionCompareVar["op"],
-            amount: readStringField(fields, "amount"),
-            fallback: readStringField(fields, "fallback"),
-        } satisfies ConditionCompareVar;
-    },
-    REQUIRE_PERMISSION: (slot) => {
-        const fields = parseLoreFields(
-            slot,
-            CONDITION_LORE_MAPPINGS.REQUIRE_PERMISSION.loreFields,
-        );
-
-        return {
-            type: "REQUIRE_PERMISSION",
-            permission: readStringField(
-                fields,
-                "permission",
-            ) as ConditionRequirePermission["permission"],
-        } satisfies ConditionRequirePermission;
-    },
-    IS_IN_REGION: (slot) => {
-        const fields = parseLoreFields(
-            slot,
-            CONDITION_LORE_MAPPINGS.IS_IN_REGION.loreFields,
-        );
-
-        return {
-            type: "IS_IN_REGION",
-            region: readStringField(fields, "region"),
-        } satisfies ConditionIsInRegion;
-    },
-    REQUIRE_ITEM: (slot) => {
-        const fields = parseLoreFields(
-            slot,
-            CONDITION_LORE_MAPPINGS.REQUIRE_ITEM.loreFields,
-        );
-
-        return {
-            type: "REQUIRE_ITEM",
-            itemName: readStringField(fields, "itemName"),
-            whatToCheck: readStringField(
-                fields,
-                "whatToCheck",
-            ) as ConditionRequireItem["whatToCheck"],
-            whereToCheck: readStringField(
-                fields,
-                "whereToCheck",
-            ) as ConditionRequireItem["whereToCheck"],
-            amount: readStringField(
-                fields,
-                "amount",
-            ) as ConditionRequireItem["amount"],
-        } satisfies ConditionRequireItem;
-    },
-    IS_DOING_PARKOUR: () =>
-        ({ type: "IS_DOING_PARKOUR" }) satisfies ConditionIsDoingParkour,
-    REQUIRE_POTION_EFFECT: (slot) => {
-        const fields = parseLoreFields(
-            slot,
-            CONDITION_LORE_MAPPINGS.REQUIRE_POTION_EFFECT.loreFields,
-        );
-
-        return {
-            type: "REQUIRE_POTION_EFFECT",
-            effect: readStringField(
-                fields,
-                "effect",
-            ) as ConditionRequirePotionEffect["effect"],
-        } satisfies ConditionRequirePotionEffect;
-    },
-    IS_SNEAKING: () => ({ type: "IS_SNEAKING" }) satisfies ConditionIsSneaking,
-    IS_FLYING: () => ({ type: "IS_FLYING" }) satisfies ConditionIsFlying,
-    COMPARE_HEALTH: (slot) => {
-        const fields = parseLoreFields(
-            slot,
-            CONDITION_LORE_MAPPINGS.COMPARE_HEALTH.loreFields,
-        );
-
-        return {
-            type: "COMPARE_HEALTH",
-            op: readStringField(fields, "op") as ConditionCompareHealth["op"],
-            amount: readStringField(fields, "amount"),
-        } satisfies ConditionCompareHealth;
-    },
-    COMPARE_MAX_HEALTH: (slot) => {
-        const fields = parseLoreFields(
-            slot,
-            CONDITION_LORE_MAPPINGS.COMPARE_MAX_HEALTH.loreFields,
-        );
-
-        return {
-            type: "COMPARE_MAX_HEALTH",
-            op: readStringField(
-                fields,
-                "op",
-            ) as ConditionCompareMaxHealth["op"],
-            amount: readStringField(fields, "amount"),
-        } satisfies ConditionCompareMaxHealth;
-    },
-    COMPARE_HUNGER: (slot) => {
-        const fields = parseLoreFields(
-            slot,
-            CONDITION_LORE_MAPPINGS.COMPARE_HUNGER.loreFields,
-        );
-
-        return {
-            type: "COMPARE_HUNGER",
-            op: readStringField(fields, "op") as ConditionCompareHunger["op"],
-            amount: readStringField(fields, "amount"),
-        } satisfies ConditionCompareHunger;
-    },
-    REQUIRE_GAMEMODE: (slot) => {
-        const fields = parseLoreFields(
-            slot,
-            CONDITION_LORE_MAPPINGS.REQUIRE_GAMEMODE.loreFields,
-        );
-
-        return {
-            type: "REQUIRE_GAMEMODE",
-            gamemode: readStringField(
-                fields,
-                "gamemode",
-            ) as ConditionRequireGamemode["gamemode"],
-        } satisfies ConditionRequireGamemode;
-    },
-    COMPARE_PLACEHOLDER: (slot) => {
-        const fields = parseLoreFields(
-            slot,
-            CONDITION_LORE_MAPPINGS.COMPARE_PLACEHOLDER.loreFields,
-        );
-
-        return {
-            type: "COMPARE_PLACEHOLDER",
-            placeholder: readStringField(fields, "placeholder"),
-            op: readStringField(
-                fields,
-                "op",
-            ) as ConditionComparePlaceholder["op"],
-            amount: readStringField(fields, "amount"),
-        } satisfies ConditionComparePlaceholder;
-    },
-    REQUIRE_TEAM: (slot) => {
-        const fields = parseLoreFields(
-            slot,
-            CONDITION_LORE_MAPPINGS.REQUIRE_TEAM.loreFields,
-        );
-
-        return {
-            type: "REQUIRE_TEAM",
-            team: readStringField(fields, "team"),
-        } satisfies ConditionRequireTeam;
-    },
-    DAMAGE_CAUSE: (slot) => {
-        const fields = parseLoreFields(
-            slot,
-            CONDITION_LORE_MAPPINGS.DAMAGE_CAUSE.loreFields,
-        );
-
-        return {
-            type: "DAMAGE_CAUSE",
-            cause: readStringField(
-                fields,
-                "cause",
-            ) as ConditionDamageCause["cause"],
-        } satisfies ConditionDamageCause;
-    },
-    PVP_ENABLED: () => ({ type: "PVP_ENABLED" }) satisfies ConditionPvpEnabled,
-    FISHING_ENVIRONMENT: (slot) => {
-        const fields = parseLoreFields(
-            slot,
-            CONDITION_LORE_MAPPINGS.FISHING_ENVIRONMENT.loreFields,
-        );
-
-        return {
-            type: "FISHING_ENVIRONMENT",
-            environment: readStringField(
-                fields,
-                "environment",
-            ) as ConditionFishingEnvironment["environment"],
-        } satisfies ConditionFishingEnvironment;
-    },
-    PORTAL_TYPE: (slot) => {
-        const fields = parseLoreFields(
-            slot,
-            CONDITION_LORE_MAPPINGS.PORTAL_TYPE.loreFields,
-        );
-
-        return {
-            type: "PORTAL_TYPE",
-            portalType: readStringField(
-                fields,
-                "portalType",
-            ) as ConditionPortalType["portalType"],
-        } satisfies ConditionPortalType;
-    },
-    BLOCK_TYPE: (slot) => {
-        const fields = parseLoreFields(
-            slot,
-            CONDITION_LORE_MAPPINGS.BLOCK_TYPE.loreFields,
-        );
-
-        return {
-            type: "BLOCK_TYPE",
-            itemName: readStringField(fields, "itemName"),
-        } satisfies ConditionBlockType;
-    },
-    IS_ITEM: (slot) => {
-        const fields = parseLoreFields(
-            slot,
-            CONDITION_LORE_MAPPINGS.IS_ITEM.loreFields,
-        );
-
-        return {
-            type: "IS_ITEM",
-            itemName: readStringField(fields, "itemName"),
-        } satisfies ConditionIsItem;
-    },
-    COMPARE_DAMAGE: (slot) => {
-        const fields = parseLoreFields(
-            slot,
-            CONDITION_LORE_MAPPINGS.COMPARE_DAMAGE.loreFields,
-        );
-
-        return {
-            type: "COMPARE_DAMAGE",
-            op: readStringField(fields, "op") as ConditionCompareDamage["op"],
-            amount: readStringField(fields, "amount"),
-        } satisfies ConditionCompareDamage;
-    },
-};
-
 export function parseConditionListItem(
     slot: ItemSlot,
     type: Condition["type"],
 ): Condition {
-    const builder = CONDITION_LIST_BUILDERS[type];
+    const note = readListItemNote(slot);
+    const commonFields = note === undefined ? {} : { note };
+    const mapping = CONDITION_LORE_MAPPINGS[type];
 
-    if (!builder) {
-        throw new Error(`List parsing not implemented for "${type}" yet.`);
+    const condition = {
+        type,
+        ...commonFields,
+        ...parseLoreFields(slot, mapping.loreFields),
+    } as Condition;
+
+    // COMPARE_VAR holder is parsed as a string from lore but the type expects { type: string }
+    if (condition.type === "COMPARE_VAR") {
+        const holder = (condition as any).holder as string | undefined;
+        if (holder === "Player" || holder === "Global" || holder === "Team") {
+            (condition as ConditionCompareVar).holder = { type: holder };
+        }
     }
 
-    return builder(slot);
+    return condition;
 }
