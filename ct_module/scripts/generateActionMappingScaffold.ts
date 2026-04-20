@@ -61,6 +61,7 @@ const ACTION_TYPE_ORDER = [
     "PAUSE",
     "SET_TEAM",
     "SET_MENU",
+    "CLOSE_MENU",
     "DROP_ITEM",
     "SET_VELOCITY",
     "LAUNCH",
@@ -113,7 +114,7 @@ function guessKind(fieldName: string, typeText: string): string {
     }
 
     if (fieldName === "layout") return "select";
-    if (fieldName === "weather") return "cycle";
+    if (fieldName === "weather") return "select";
     if (fieldName === "time") return "cycle";
     if (fieldName === "itemName") return "item";
     if (normalized === "string") return "value";
