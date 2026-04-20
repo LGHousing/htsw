@@ -10,6 +10,7 @@
         "build:java": "node --experimental-strip-types ./scripts/compileJava.ts",
         "build": "vite build --mode production && npm run build:java",
         "generate:condition-mappings": "node --experimental-strip-types ./scripts/generateConditionMappingScaffold.ts",
+        "generate:action-mappings": "node --experimental-strip-types ./scripts/generateActionMappingScaffold.ts",
         "format": "npx prettier \"**/*.{ts,json}\" --write"
     },
     "license": "MIT",
@@ -25,6 +26,7 @@
         "@babel/preset-typescript": "^7.0.0",
         "@rollup/plugin-babel": "^6.0.0",
         "@types/node": "^25.6.0",
+        "prettier": "^3.8.3",
         "typescript": "^5.9.3",
         "vite": "^7.0.0"
     }
