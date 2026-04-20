@@ -35,11 +35,13 @@ import {
     setCycleValue,
     setSelectValue,
     setStringValue,
+    normalizeNoteText,
     waitForMenu,
 } from "./helpers";
 import { ItemSlot, MouseButton } from "../tasks/specifics/slots";
 import { removedFormatting } from "../utils/helpers";
 import {
+    CONDITION_LORE_MAPPINGS,
     parseConditionListItem,
     tryGetConditionTypeFromDisplayName,
 } from "./conditionMappings";
@@ -78,14 +80,6 @@ const FISHING_ENVIRONMENT_OPTIONS = ["Water", "Lava"] as const;
 const ITEM_PROPERTY_OPTIONS = ["Item Type", "Metadata"] as const;
 const ITEM_AMOUNT_OPTIONS = ["Any Amount", "Equal or Greater Amount"] as const;
 
-async function setConditionStringValue(
-    ctx: TaskContext,
-    slotName: string,
-    value: string,
-): Promise<void> {
-    await setStringValue(ctx, ctx.getItemSlot(slotName), value);
-}
-
 // Getter for the generic importCondition function to get
 // the correct spec with type safety (annoying runtime thing)
 function getConditionSpec<T extends Condition["type"]>(
@@ -109,13 +103,8 @@ function normalizeOptionalBoolean(value: boolean | undefined): boolean {
     return value === true;
 }
 
-function readSelectedMenuItemName(slot: ItemSlot | null): string | undefined {
-    if (slot === null) {
-        return undefined;
-    }
-
-    const name = removedFormatting(slot.getItem().getName()).trim();
-    return name === "" ? undefined : name;
+function displayNameForSlot(slot: ItemSlot): string {
+    return removedFormatting(slot.getItem().getName()).trim();
 }
 
 function normalizeForConditionCompare(value: unknown): unknown {
@@ -129,13 +118,12 @@ function normalizeForConditionCompare(value: unknown): unknown {
 
     const normalized: Record<string, unknown> = {};
     for (const key of Object.keys(value).sort()) {
-        if (key === "note") {
-            continue;
-        }
-
         const fieldValue = (value as Record<string, unknown>)[key];
         if (fieldValue !== undefined) {
-            normalized[key] = normalizeForConditionCompare(fieldValue);
+            normalized[key] =
+                key === "note" && typeof fieldValue === "string"
+                    ? normalizeNoteText(fieldValue)
+                    : normalizeForConditionCompare(fieldValue);
         }
     }
 
@@ -162,9 +150,8 @@ async function readRequireGroup(
     let group = readStringValue(ctx.getItemSlot("Required Group")) ?? undefined;
     if (!group) {
         await openSubmenu(ctx, "Required Group");
-        group = readSelectedMenuItemName(
-            findMenuOptionByLore(ctx, "Already Selected"),
-        );
+        const selectedSlot = findMenuOptionByLore(ctx, "Already Selected");
+        group = selectedSlot ? displayNameForSlot(selectedSlot) : undefined;
         await clickGoBack(ctx);
     }
 
@@ -191,9 +178,8 @@ async function writeRequireGroup(
     if (condition.group && condition.group !== current?.group) {
         await openSubmenu(ctx, "Required Group");
 
-        const selectedGroup = readSelectedMenuItemName(
-            findMenuOptionByLore(ctx, "Already Selected"),
-        );
+        const selectedSlot = findMenuOptionByLore(ctx, "Already Selected");
+        const selectedGroup = selectedSlot ? displayNameForSlot(selectedSlot) : undefined;
 
         if (selectedGroup !== condition.group) {
             ctx.getItemSlot(condition.group).click();
@@ -233,7 +219,7 @@ async function writeCompareVar(
     }
 
     if (condition.var) {
-        await setConditionStringValue(ctx, "Variable", condition.var);
+        await setStringValue(ctx, ctx.getItemSlot("Variable"), condition.var);
     }
 
     if (condition.op) {
@@ -241,11 +227,11 @@ async function writeCompareVar(
     }
 
     if (condition.amount) {
-        await setConditionStringValue(ctx, "Compare Value", condition.amount);
+        await setStringValue(ctx, ctx.getItemSlot("Compare Value"), condition.amount);
     }
 
     if (condition.fallback) {
-        await setConditionStringValue(ctx, "Fallback Value", condition.fallback);
+        await setStringValue(ctx, ctx.getItemSlot("Fallback Value"), condition.fallback);
     }
 }
 
@@ -333,7 +319,7 @@ async function writeCompareHealth(
     }
 
     if (condition.amount) {
-        await setConditionStringValue(ctx, "Compare Value", condition.amount);
+        await setStringValue(ctx, ctx.getItemSlot("Compare Value"), condition.amount);
     }
 }
 
@@ -346,7 +332,7 @@ async function writeCompareMaxHealth(
     }
 
     if (condition.amount) {
-        await setConditionStringValue(ctx, "Compare Value", condition.amount);
+        await setStringValue(ctx, ctx.getItemSlot("Compare Value"), condition.amount);
     }
 }
 
@@ -359,7 +345,7 @@ async function writeCompareHunger(
     }
 
     if (condition.amount) {
-        await setConditionStringValue(ctx, "Compare Value", condition.amount);
+        await setStringValue(ctx, ctx.getItemSlot("Compare Value"), condition.amount);
     }
 }
 
@@ -382,7 +368,7 @@ async function writeComparePlaceholder(
     condition: ConditionComparePlaceholder,
 ): Promise<void> {
     if (condition.placeholder) {
-        await setConditionStringValue(ctx, "Placeholder", condition.placeholder);
+        await setStringValue(ctx, ctx.getItemSlot("Placeholder"), condition.placeholder);
     }
 
     if (condition.op) {
@@ -390,7 +376,7 @@ async function writeComparePlaceholder(
     }
 
     if (condition.amount) {
-        await setConditionStringValue(ctx, "Compare Value", condition.amount);
+        await setStringValue(ctx, ctx.getItemSlot("Compare Value"), condition.amount);
     }
 }
 
@@ -471,98 +457,98 @@ async function writeCompareDamage(
     }
 
     if (condition.amount) {
-        await setConditionStringValue(ctx, "Compare Value", condition.amount);
+        await setStringValue(ctx, ctx.getItemSlot("Compare Value"), condition.amount);
     }
 }
 
 const CONDITION_SPECS = {
     REQUIRE_GROUP: {
-        displayName: "Required Group",
+        displayName: CONDITION_LORE_MAPPINGS.REQUIRE_GROUP.displayName,
         read: readRequireGroup,
         write: writeRequireGroup,
     },
     COMPARE_VAR: {
-        displayName: "Variable Requirement",
+        displayName: CONDITION_LORE_MAPPINGS.COMPARE_VAR.displayName,
         write: writeCompareVar,
     },
     REQUIRE_PERMISSION: {
-        displayName: "Required Permission",
+        displayName: CONDITION_LORE_MAPPINGS.REQUIRE_PERMISSION.displayName,
         write: writeRequirePermission,
     },
     IS_IN_REGION: {
-        displayName: "Within Region",
+        displayName: CONDITION_LORE_MAPPINGS.IS_IN_REGION.displayName,
         write: writeIsInRegion,
     },
     REQUIRE_ITEM: {
-        displayName: "Has Item",
+        displayName: CONDITION_LORE_MAPPINGS.REQUIRE_ITEM.displayName,
         write: writeRequireItem,
     },
     IS_DOING_PARKOUR: {
-        displayName: "Doing Parkour",
+        displayName: CONDITION_LORE_MAPPINGS.IS_DOING_PARKOUR.displayName,
         write: writeIsDoingParkour,
     },
     REQUIRE_POTION_EFFECT: {
-        displayName: "Has Potion Effect",
+        displayName: CONDITION_LORE_MAPPINGS.REQUIRE_POTION_EFFECT.displayName,
         write: writeRequirePotionEffect,
     },
     IS_SNEAKING: {
-        displayName: "Player Sneaking",
+        displayName: CONDITION_LORE_MAPPINGS.IS_SNEAKING.displayName,
         write: writeIsSneaking,
     },
     IS_FLYING: {
-        displayName: "Player Flying",
+        displayName: CONDITION_LORE_MAPPINGS.IS_FLYING.displayName,
         write: writeIsFlying,
     },
     COMPARE_HEALTH: {
-        displayName: "Player Health",
+        displayName: CONDITION_LORE_MAPPINGS.COMPARE_HEALTH.displayName,
         write: writeCompareHealth,
     },
     COMPARE_MAX_HEALTH: {
-        displayName: "Max Player Health",
+        displayName: CONDITION_LORE_MAPPINGS.COMPARE_MAX_HEALTH.displayName,
         write: writeCompareMaxHealth,
     },
     COMPARE_HUNGER: {
-        displayName: "Player Hunger",
+        displayName: CONDITION_LORE_MAPPINGS.COMPARE_HUNGER.displayName,
         write: writeCompareHunger,
     },
     REQUIRE_GAMEMODE: {
-        displayName: "Required Gamemode",
+        displayName: CONDITION_LORE_MAPPINGS.REQUIRE_GAMEMODE.displayName,
         write: writeRequireGamemode,
     },
     COMPARE_PLACEHOLDER: {
-        displayName: "Placeholder Number Requirement",
+        displayName: CONDITION_LORE_MAPPINGS.COMPARE_PLACEHOLDER.displayName,
         write: writeComparePlaceholder,
     },
     REQUIRE_TEAM: {
-        displayName: "Required Team",
+        displayName: CONDITION_LORE_MAPPINGS.REQUIRE_TEAM.displayName,
         write: writeRequireTeam,
     },
     DAMAGE_CAUSE: {
-        displayName: "Damage Cause",
+        displayName: CONDITION_LORE_MAPPINGS.DAMAGE_CAUSE.displayName,
         write: writeDamageCause,
     },
     PVP_ENABLED: {
-        displayName: "PvP Enabled",
+        displayName: CONDITION_LORE_MAPPINGS.PVP_ENABLED.displayName,
         write: writePvpEnabled,
     },
     FISHING_ENVIRONMENT: {
-        displayName: "Fishing Environment",
+        displayName: CONDITION_LORE_MAPPINGS.FISHING_ENVIRONMENT.displayName,
         write: writeFishingEnvironment,
     },
     PORTAL_TYPE: {
-        displayName: "Portal Type",
+        displayName: CONDITION_LORE_MAPPINGS.PORTAL_TYPE.displayName,
         write: writePortalType,
     },
     BLOCK_TYPE: {
-        displayName: "Block Type",
+        displayName: CONDITION_LORE_MAPPINGS.BLOCK_TYPE.displayName,
         write: writeBlockType,
     },
     IS_ITEM: {
-        displayName: "Is Item",
+        displayName: CONDITION_LORE_MAPPINGS.IS_ITEM.displayName,
         write: writeIsItem,
     },
     COMPARE_DAMAGE: {
-        displayName: "Damage Amount",
+        displayName: CONDITION_LORE_MAPPINGS.COMPARE_DAMAGE.displayName,
         write: writeCompareDamage,
     },
 } satisfies ConditionSpecMap;
@@ -702,11 +688,11 @@ async function setOpenConditionInverted(
 
 
 
-async function selectConditionType<T extends Condition["type"]>(
+async function selectConditionType(
     ctx: TaskContext,
-    condition: Extract<Condition, { type: T }>,
+    type: Condition["type"],
 ): Promise<void> {
-    const spec = getConditionSpec(condition.type);
+    const spec = getConditionSpec(type);
     const slot = ctx.getItemSlot(spec.displayName);
 
     if (isLimitExceeded(slot)) {
@@ -720,10 +706,10 @@ async function selectConditionType<T extends Condition["type"]>(
 }
 
 // Writes the fields for the condition editor that is currently open.
-async function writeOpenCondition<T extends Condition["type"]>(
+async function writeOpenCondition(
     ctx: TaskContext,
-    condition: Extract<Condition, { type: T }>,
-    current?: Extract<Condition, { type: T }>,
+    condition: Condition,
+    current?: Condition,
 ): Promise<void> {
     const spec = getConditionSpec(condition.type);
 
@@ -733,16 +719,24 @@ async function writeOpenCondition<T extends Condition["type"]>(
         resolvedCurrent = await spec.read(ctx);
     }
 
-    await spec.write(ctx, condition, resolvedCurrent);
+    await (spec.write as (ctx: TaskContext, desired: Condition, current?: Condition) => Promise<void>)(
+        ctx, condition, resolvedCurrent,
+    );
+
+    if (condition.note) {
+        await setStringValue(
+            ctx,
+            ctx.getItemSlot("Note"),
+            normalizeNoteText(condition.note),
+        );
+    }
 }
 
-export async function readOpenCondition<T extends Condition["type"]>(
+export async function readOpenCondition(
     ctx: TaskContext,
-    type: T,
-): Promise<Extract<Condition, { type: T }>> {
-    const spec = CONDITION_SPECS[type] as ConditionSpec<
-        Extract<Condition, { type: T }>
-    >;
+    type: Condition["type"],
+): Promise<Condition> {
+    const spec = getConditionSpec(type);
     if (!spec.read) {
         throw new Error(`Reading condition "${type}" is not implemented.`);
     }
@@ -756,14 +750,8 @@ export async function importCondition(
     ctx.getItemSlot("Add Condition").click();
     await waitForMenu(ctx);
 
-    await selectConditionType(
-        ctx,
-        condition as Extract<Condition, { type: typeof condition.type }>,
-    );
-    await writeOpenCondition(
-        ctx,
-        condition as Extract<Condition, { type: typeof condition.type }>,
-    );
+    await selectConditionType(ctx, condition.type);
+    await writeOpenCondition(ctx, condition);
 
     await setOpenConditionInverted(ctx, condition.inverted === true);
     await clickGoBack(ctx);
@@ -777,14 +765,8 @@ async function applyConditionListDiff(
         await openObservedCondition(entry.observed, ctx);
         await writeOpenCondition(
             ctx,
-            entry.desired as Extract<
-                Condition,
-                { type: typeof entry.desired.type }
-            >,
-            entry.observed.condition as Extract<
-                Condition,
-                { type: typeof entry.desired.type }
-            >,
+            entry.desired,
+            entry.observed.condition,
         );
 
         const currentInverted = entry.observed.condition.inverted === true;
@@ -810,11 +792,39 @@ async function applyConditionListDiff(
     }
 }
 
+function formatConditionSummary(condition: Condition): string {
+    const spec = getConditionSpec(condition.type);
+    const fields = JSON.stringify(condition);
+    return `${spec.displayName} [${condition.type}] ${fields}`;
+}
+
 export async function syncConditionList(
     ctx: TaskContext,
     desired: Condition[],
 ): Promise<void> {
     const observed = await readConditionList(ctx);
+
+    ctx.displayMessage(`&7[cond-sync] &eObserved ${observed.length} condition(s):`);
+    for (const entry of observed) {
+        ctx.displayMessage(`&7  [${entry.index}] &e${formatConditionSummary(entry.condition)}`);
+    }
+    ctx.displayMessage(`&7[cond-sync] &bDesired ${desired.length} condition(s):`);
+    for (let i = 0; i < desired.length; i++) {
+        ctx.displayMessage(`&7  [${i}] &b${formatConditionSummary(desired[i])}`);
+    }
+
     const diff = diffConditionList(observed, desired);
+
+    ctx.displayMessage(`&7[cond-sync] &dDiff: ${diff.edits.length} edit(s), ${diff.deletes.length} delete(s), ${diff.adds.length} add(s)`);
+    for (const entry of diff.edits) {
+        ctx.displayMessage(`&7  &6[EDIT] ${formatConditionSummary(entry.observed.condition)} &7-> &6${formatConditionSummary(entry.desired)}`);
+    }
+    for (const entry of diff.deletes) {
+        ctx.displayMessage(`&7  &c[DELETE] ${formatConditionSummary(entry.condition)}`);
+    }
+    for (const entry of diff.adds) {
+        ctx.displayMessage(`&7  &a[ADD] ${formatConditionSummary(entry)}`);
+    }
+
     await applyConditionListDiff(ctx, diff);
 }
