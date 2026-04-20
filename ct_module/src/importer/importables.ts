@@ -7,7 +7,7 @@ import {
     Pos,
 } from "htsw/types";
 
-import { importAction } from "./actions";
+import { syncActionList } from "./actions";
 import TaskContext from "../tasks/context";
 import {
     getSlotPaginate,
@@ -69,9 +69,7 @@ async function importImportableFunction(
     }
 
     // we have a function!!! open!!
-    for (const action of importable.actions) {
-        await importAction(ctx, action);
-    }
+    await syncActionList(ctx, importable.actions);
 
     if (importable.repeatTicks) {
         await clickGoBack(ctx);
@@ -98,9 +96,7 @@ async function importImportableEvent(
     await waitForMenu(ctx);
 
     // we have an event!!! open!!! :)
-    for (const action of importable.actions) {
-        await importAction(ctx, action);
-    }
+    await syncActionList(ctx, importable.actions);
 }
 
 async function importImportableRegion(
@@ -165,9 +161,7 @@ async function importImportableRegion(
         ctx.getItemSlot("Entry Actions").click();
         await waitForMenu(ctx);
 
-        for (const action of importable.onEnterActions) {
-            await importAction(ctx, action);
-        }
+        await syncActionList(ctx, importable.onEnterActions);
 
         if (importable.onExitActions) {
             await clickGoBack(ctx);
@@ -178,9 +172,7 @@ async function importImportableRegion(
         ctx.getItemSlot("Exit Actions").click();
         await waitForMenu(ctx);
 
-        for (const action of importable.onExitActions) {
-            await importAction(ctx, action);
-        }
+        await syncActionList(ctx, importable.onExitActions);
     }
 }
 
@@ -233,9 +225,7 @@ async function importImportableItem(
         ctx.getItemSlot("Left Click Actions").click();
         await waitForMenu(ctx);
 
-        for (const action of importable.leftClickActions) {
-            await importAction(ctx, action);
-        }
+        await syncActionList(ctx, importable.leftClickActions);
 
         if (importable.rightClickActions) {
             await clickGoBack(ctx);
@@ -246,9 +236,7 @@ async function importImportableItem(
         ctx.getItemSlot("Right Click Actions").click();
         await waitForMenu(ctx);
 
-        for (const action of importable.rightClickActions) {
-            await importAction(ctx, action);
-        }
+        await syncActionList(ctx, importable.rightClickActions);
     }
 
     await ctx.sleep(1000);
