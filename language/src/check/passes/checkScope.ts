@@ -33,6 +33,12 @@ export function checkActionContext(gcx: GlobalCtxt) {
             checkAll(gcx, checkActionInItem, importable.rightClickActions ?? []);
         }
 
+        else if (importable.type === "MENU") {
+            for (const slot of importable.slots) {
+                checkAll(gcx, checkActionInMenu, slot.actions ?? []);
+            }
+        }
+
         else if (importable.type === "REGION") {
             checkAll(gcx, checkActionInRegion, importable.onEnterActions ?? []);
             checkAll(gcx, checkActionInRegion, importable.onExitActions ?? []);
@@ -58,6 +64,8 @@ function checkAll(gcx: GlobalCtxt, check: Check, actions: Action[]) {
 function checkActionInFunction(gcx: GlobalCtxt, action: Action) {
     checkNotCancelEvent(gcx, action, "functions");
     checkConditionScopes(gcx, action, undefined);
+    checkNotItemOnly(gcx, action, "functions");
+    checkNotMenuOnly(gcx, action, "functions");
 }
 
 const CANCELLABLE_EVENTS: Event[] = [
@@ -65,6 +73,14 @@ const CANCELLABLE_EVENTS: Event[] = [
     "Player Pick Up Item",  "Player Change Held Item", "Player Toggle Sneak",
     "Player Toggle Flight"
 ];
+
+const ITEM_ONLY_ACTIONS: Partial<Record<Action["type"], string>> = {
+    USE_HELD_ITEM: "Use/Remove Held Item",
+};
+
+const MENU_ONLY_ACTIONS: Partial<Record<Action["type"], string>> = {
+    CLOSE_MENU: "Close Menu",
+};
 
 function checkActionInEvent(event: Event) {
     return (gcx: GlobalCtxt, action: Action) => {
@@ -83,17 +99,22 @@ function checkActionInEvent(event: Event) {
         }
 
         checkConditionScopes(gcx, action, event);
+        checkNotItemOnly(gcx, action, "events");
+        checkNotMenuOnly(gcx, action, "events");
     };
 }
 
 function checkActionInRegion(gcx: GlobalCtxt, action: Action) {
     checkNotCancelEvent(gcx, action, "regions");
     checkConditionScopes(gcx, action, undefined);
+    checkNotItemOnly(gcx, action, "regions");
+    checkNotMenuOnly(gcx, action, "regions");
 }
 
 function checkActionInItem(gcx: GlobalCtxt, action: Action) {
     checkNotCancelEvent(gcx, action, "items");
     checkConditionScopes(gcx, action, undefined);
+    checkNotMenuOnly(gcx, action, "items");
 
     if (action.type === "CONDITIONAL") {
         gcx.addDiagnostic(
@@ -103,11 +124,39 @@ function checkActionInItem(gcx: GlobalCtxt, action: Action) {
     }
 }
 
+function checkActionInMenu(gcx: GlobalCtxt, action: Action) {
+    checkNotCancelEvent(gcx, action, "menus");
+    checkConditionScopes(gcx, action, undefined);
+    checkNotItemOnly(gcx, action, "menus");
+}
+
 function checkNotCancelEvent(gcx: GlobalCtxt, action: Action, context: string) {
     if (action.type === "CANCEL_EVENT") {
         gcx.addDiagnostic(
             Diagnostic.error(`Cancel Event action cannot be used inside ${context}`)
                 .addPrimarySpan(gcx.spans.getField(action, "type"))
+        );
+    }
+}
+
+function checkNotItemOnly(gcx: GlobalCtxt, action: Action, context: string) {
+    const displayName = ITEM_ONLY_ACTIONS[action.type];
+    if (displayName) {
+        gcx.addDiagnostic(
+            Diagnostic.error(`${displayName} action can only be used inside items`)
+                .addPrimarySpan(gcx.spans.getField(action, "type"))
+                .addSecondarySpan(gcx.spans.getField(action, "type"), context)
+        );
+    }
+}
+
+function checkNotMenuOnly(gcx: GlobalCtxt, action: Action, context: string) {
+    const displayName = MENU_ONLY_ACTIONS[action.type];
+    if (displayName) {
+        gcx.addDiagnostic(
+            Diagnostic.error(`${displayName} action can only be used inside menus`)
+                .addPrimarySpan(gcx.spans.getField(action, "type"))
+                .addSecondarySpan(gcx.spans.getField(action, "type"), context)
         );
     }
 }
