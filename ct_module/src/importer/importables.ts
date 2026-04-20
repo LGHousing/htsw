@@ -15,6 +15,7 @@ import {
     waitForMenu,
     waitForUnformattedMessage,
     setNumberValue,
+    parseLoreKeyValueLine,
 } from "./helpers";
 import { MouseButton } from "../tasks/specifics/slots";
 import { cyrb53, removedFormatting } from "../utils/helpers";
@@ -77,11 +78,20 @@ async function importImportableFunction(
         (await getSlotPaginate(ctx, importable.name)).click(MouseButton.RIGHT);
         await waitForMenu(ctx);
 
-        await setNumberValue(
-            ctx,
-            ctx.getItemSlot("Automatic Execution"),
-            importable.repeatTicks,
-        );
+        const autoExecSlot = ctx.getItemSlot("Automatic Execution");
+        const targetStr = importable.repeatTicks.toString();
+
+        // Lore shows "Current: §a67 Ticks (00m03s)"
+        // Check if it's already correct 
+        const alreadyCorrect = autoExecSlot.getItem().getLore().some((line) => {
+            const kv = parseLoreKeyValueLine(line);
+            if (!kv || kv.label !== "Current") return false;
+            return parseInt(removedFormatting(kv.value).trim(), 10).toString() === targetStr;
+        });
+
+        if (!alreadyCorrect) {
+            await setNumberValue(ctx, autoExecSlot, importable.repeatTicks);
+        }
     }
 }
 
