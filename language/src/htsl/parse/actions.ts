@@ -50,7 +50,7 @@ function setNodeSpan(p: Parser, node: object, span: Span) {
 
 function setNote<T extends { note?: string }>(p: Parser, node: T, note: Note) {
     if (!note) return;
-    setFieldWithSpan(p, node, "note", note.value, note.span);
+    setFieldWithSpan(p, node, "note", note.value.trim(), note.span);
 }
 
 export function parseAction(p: Parser): Action {
@@ -82,6 +82,8 @@ export function parseAction(p: Parser): Action {
         return parseActionMessage(p, note);
     } else if (eatKw("clearEffects")) {
         return parseSimpleAction(p, "CLEAR_POTION_EFFECTS", note);
+    } else if (eatKw("closeMenu")) {
+        return parseSimpleAction(p, "CLOSE_MENU", note);
     } else if (eatKw("compassTarget")) {
         return parseActionSetCompassTarget(p, note);
     } else if (eatKw("displayMenu")) {
@@ -96,6 +98,8 @@ export function parseAction(p: Parser): Action {
         return parseActionFailParkour(p, note);
     } else if (eatKw("fullHeal")) {
         return parseSimpleAction(p, "HEAL", note);
+    } else if (eatKw("parkCheck")) {
+        return parseSimpleAction(p, "PARKOUR_CHECKPOINT", note);
     } else if (eatKw("function")) {
         return parseActionFunction(p, note);
     } else if (eatKw("gamemode")) {
@@ -110,7 +114,7 @@ export function parseAction(p: Parser): Action {
         return parseActionConditional(p, note);
     } else if (eatKw("kill")) {
         return parseSimpleAction(p, "KILL", note);
-    } else if (eatKw("launch")) {
+    } else if (eatKw("launchTarget")) {
         return parseActionLaunch(p, note);
     } else if (eatKw("lobby")) {
         return parseActionSendToLobby(p, note);
@@ -134,8 +138,16 @@ export function parseAction(p: Parser): Action {
         return parseActionTitle(p, note);
     } else if (eatKw("tp")) {
         return parseActionTeleport(p, note);
+    } else if (eatKw("consumeItem")) {
+        return parseSimpleAction(p, "USE_HELD_ITEM", note);
     } else if (eatKw("var") || eatKw("stat")) {
         return parseActionChangeVar(p, note);
+    } else if (eatKw("playerWeather")) {
+        return parseActionSetPlayerWeather(p, note);
+    } else if (eatKw("playerTime")) {
+        return parseActionSetPlayerTime(p, note);
+    } else if (eatKw("displayNametag")) {
+        return parseActionToggleNametagDisplay(p, note);
     } else if (eatKw("xpLevel")) {
         return parseActionGiveExperienceLevels(p, note);
     }
@@ -337,6 +349,8 @@ function parseActionDropItem(p: Parser, note: Note): Action {
         setField(p, action, "disableMerging", p.parseBoolean);
         setField(p, action, "prioritizePlayer", p.parseBoolean);
         setField(p, action, "inventoryFallback", p.parseBoolean);
+        setField(p, action, "despawnDurationTicks", parseNumericValue);
+        setField(p, action, "pickupDelayTicks", parseNumericValue);
     });
 }
 
@@ -448,6 +462,24 @@ function parseActionSetTeam(p: Parser, note: Note): Action {
     });
 }
 
+function parseActionSetPlayerWeather(p: Parser, note: Note): Action {
+    return parseActionRecovering(p, "SET_PLAYER_WEATHER", note, (action) => {
+        setField(p, action, "weather", p.parseString);
+    });
+}
+
+function parseActionSetPlayerTime(p: Parser, note: Note): Action {
+    return parseActionRecovering(p, "SET_PLAYER_TIME", note, (action) => {
+        setField(p, action, "time", p.parseString);
+    });
+}
+
+function parseActionToggleNametagDisplay(p: Parser, note: Note): Action {
+    return parseActionRecovering(p, "TOGGLE_NAMETAG_DISPLAY", note, (action) => {
+        setField(p, action, "displayNametag", p.parseBoolean);
+    });
+}
+
 function parseActionSetVelocity(p: Parser, note: Note): Action {
     return parseActionRecovering(p, "SET_VELOCITY", note, (action) => {
         setField(p, action, "x", parseNumericValue);
@@ -459,6 +491,8 @@ function parseActionSetVelocity(p: Parser, note: Note): Action {
 function parseActionTeleport(p: Parser, note: Note): Action {
     return parseActionRecovering(p, "TELEPORT", note, (action) => {
         setField(p, action, "location", parseLocation);
+        if (p.checkEol()) return;
+        setField(p, action, "preventTeleportInsideBlocks", p.parseBoolean);
     });
 }
 

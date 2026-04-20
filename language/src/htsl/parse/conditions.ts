@@ -60,7 +60,7 @@ function setConditionMeta<T extends { inverted?: boolean; note?: string }>(
         setFieldWithSpan(p, condition, "inverted", true, inverted.span);
     }
     if (note) {
-        setFieldWithSpan(p, condition, "note", note.value, note.span);
+        setFieldWithSpan(p, condition, "note", note.value.trim(), note.span);
     }
 }
 

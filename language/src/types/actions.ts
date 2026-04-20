@@ -114,11 +114,16 @@ export type ActionChangeVar = {
 export type ActionTeleport = {
     type: "TELEPORT";
     location: Location;
+    preventTeleportInsideBlocks?: boolean;
 };
 
 export type ActionFailParkour = {
     type: "FAIL_PARKOUR";
     message?: string;
+};
+
+export type ActionParkourCheckpoint = {
+    type: "PARKOUR_CHECKPOINT";
 };
 
 export type ActionPlaySound = {
@@ -188,12 +193,37 @@ export type ActionDisplayMenu = {
     menu: string;
 };
 
+export type ActionCloseMenu = {
+    type: "CLOSE_MENU";
+};
+
+export type ActionSetPlayerWeather = {
+    type: "SET_PLAYER_WEATHER";
+    weather: string;
+};
+
+export type ActionSetPlayerTime = {
+    type: "SET_PLAYER_TIME";
+    time: string;
+};
+
+export type ActionToggleNametagDisplay = {
+    type: "TOGGLE_NAMETAG_DISPLAY";
+    displayNametag: boolean;
+};
+
+export type ActionUseHeldItem = {
+    type: "USE_HELD_ITEM";
+};
+
 export type ActionDropItem = {
     type: "DROP_ITEM";
     itemName: string;
     location?: Location;
     dropNaturally?: boolean;
     disableMerging?: boolean;
+    despawnDurationTicks?: Value;
+    pickupDelayTicks?: Value;
     prioritizePlayer?: boolean;
     inventoryFallback?: boolean;
 };
@@ -238,6 +268,7 @@ export type Action = (
     | ActionChangeVar
     | ActionTeleport
     | ActionFailParkour
+    | ActionParkourCheckpoint
     | ActionPlaySound
     | ActionSetCompassTarget
     | ActionSetGamemode
@@ -250,6 +281,11 @@ export type Action = (
     | ActionPauseExecution
     | ActionSetTeam
     | ActionDisplayMenu
+    | ActionCloseMenu
+    | ActionSetPlayerWeather
+    | ActionSetPlayerTime
+    | ActionToggleNametagDisplay
+    | ActionUseHeldItem
     | ActionDropItem
     | ActionSetVelocity
     | ActionLaunch
