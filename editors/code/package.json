@@ -42,7 +42,8 @@
                 "aliases": [
                     "HTSL",
                     "htsl"
-                ]
+                ],
+                "configuration": "./language-configuration.json"
             }
         ],
         "grammars": [
