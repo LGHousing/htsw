@@ -1,7 +1,8 @@
 import type { Action, Condition } from "htsw/types";
 
-import { getNestedListFields } from "../actionMappings";
-import { normalizeForImporterCompare } from "../compare";
+import { ACTION_MAPPINGS } from "../actionMappings";
+import { normalizeActionCompare, normalizeConditionCompare } from "../compare";
+import { CONDITION_LORE_MAPPINGS } from "../conditionMappings";
 import type { ActionListDiff, ActionListOperation, ObservedAction } from "./types";
 
 type MatchableAction = Pick<ObservedAction, "index" | "type" | "action">;
@@ -30,48 +31,32 @@ const NOTE_ONLY_COST = 1;
 
 function actionsEqual(a: Action, b: Action): boolean {
     return (
-        JSON.stringify(normalizeForImporterCompare(a)) ===
-        JSON.stringify(normalizeForImporterCompare(b))
+        JSON.stringify(normalizeActionCompare(a)) ===
+        JSON.stringify(normalizeActionCompare(b))
     );
 }
 
 function conditionsEqualForAction(a: Condition, b: Condition): boolean {
     return (
-        JSON.stringify(normalizeForImporterCompare(a)) ===
-        JSON.stringify(normalizeForImporterCompare(b))
+        JSON.stringify(normalizeConditionCompare(a)) ===
+        JSON.stringify(normalizeConditionCompare(b))
     );
-}
-
-function objectKeys(value: object): string[] {
-    return Object.keys(value);
 }
 
 function getFieldValue(value: object, key: string): unknown {
     return (value as { [key: string]: unknown })[key];
 }
 
-function fieldEqual(observed: unknown, desired: unknown): boolean {
-    return (
-        JSON.stringify(normalizeForImporterCompare(observed)) ===
-        JSON.stringify(normalizeForImporterCompare(desired))
-    );
-}
-
 function fieldDifferenceCount(
     observed: object,
     desired: object,
-    ignoredKeys: Set<string> = new Set()
+    props: string[]
 ): number {
     let cost = 0;
-    const keys = new Set([...objectKeys(observed), ...objectKeys(desired)]);
 
-    for (const key of keys) {
-        if (ignoredKeys.has(key)) {
-            continue;
-        }
-
+    for (const key of props) {
         if (
-            !fieldEqual(getFieldValue(observed, key), getFieldValue(desired, key))
+            getFieldValue(observed, key) !== getFieldValue(desired, key)
         ) {
             cost += 1;
         }
@@ -81,12 +66,18 @@ function fieldDifferenceCount(
 }
 
 function onlyNoteDiffers(desired: Action, current: Action): boolean {
+    const stripNote = (action: Action): Action => {
+        const copy = { ...action };
+        delete copy.note;
+        return copy;
+    };
+
     return (
-        desired.type === current.type &&
-        fieldDifferenceCount(desired, current, new Set(["note"])) === 0 &&
-        !fieldEqual(desired.note, current.note)
+        JSON.stringify(normalizeActionCompare(stripNote(desired))) ===
+        JSON.stringify(normalizeActionCompare(stripNote(current)))
     );
 }
+
 
 function circularMoveDistance(from: number, to: number, listLength: number): number {
     if (listLength <= 1) {
@@ -102,7 +93,20 @@ function conditionCost(observed: Condition, desired: Condition): number {
         return 0;
     }
 
-    return fieldDifferenceCount(observed, desired);
+    const loreFields = CONDITION_LORE_MAPPINGS[observed.type].loreFields as Record<
+        string,
+        { prop: string; kind: string }
+    >;
+    const mappedProps: string[] = [];
+    for (const label in loreFields) {
+        mappedProps.push(loreFields[label].prop);
+    }
+
+    return (
+        fieldDifferenceCount(observed, desired, mappedProps) +
+        (observed.inverted === desired.inverted ? 0 : 1) +
+        (observed.note === desired.note ? 0 : 1)
+    );
 }
 
 function conditionListCost(observed: Condition[], desired: Condition[]): number {
@@ -196,21 +200,33 @@ function actionCost(
         return NOTE_ONLY_COST;
     }
 
-    const nestedProps = new Set(
-        getNestedListFields(observed.action.type).map((field) => field.prop)
-    );
+    const loreFields = ACTION_MAPPINGS[observed.action.type].loreFields as Record<
+        string,
+        { prop: string; kind: string }
+    >;
+    const nestedProps: string[] = [];
+    const scalarProps: string[] = [];
+    for (const label in loreFields) {
+        const field = loreFields[label];
+        if (field.kind === "nestedList") {
+            nestedProps.push(field.prop);
+        } else {
+            scalarProps.push(field.prop);
+        }
+    }
 
     let cost =
         circularMoveDistance(observed.index, desired.index, listLength);
 
-    cost += fieldDifferenceCount(observed.action, desired.action, nestedProps);
+    cost += fieldDifferenceCount(observed.action, desired.action, scalarProps);
+    cost += observed.action.note === desired.action.note ? 0 : 1;
 
     for (const prop of nestedProps) {
         const observedValue = getFieldValue(observed.action, prop);
         const desiredValue = getFieldValue(desired.action, prop);
 
         if (!Array.isArray(observedValue) || !Array.isArray(desiredValue)) {
-            if (!fieldEqual(observedValue, desiredValue)) {
+            if (observedValue !== desiredValue) {
                 cost += 1;
             }
             continue;

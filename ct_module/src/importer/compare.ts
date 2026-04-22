@@ -1,8 +1,13 @@
+import type { Action, Condition } from "htsw/types";
 import { normalizeNoteText } from "./helpers";
 
 // Sad
-export function normalizeForImporterCompare<T>(value: T): T {
-    return normalizeValue(value) as T;
+export function normalizeConditionCompare(value: Condition): Condition {
+    return normalizeValue(value) as Condition;
+}
+
+export function normalizeActionCompare(value: Action): Action {
+    return normalizeValue(value) as Action;
 }
 
 function normalizeValue(value: unknown): unknown {

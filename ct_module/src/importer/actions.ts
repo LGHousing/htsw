@@ -52,7 +52,7 @@ import { ItemSlot, MouseButton } from "../tasks/specifics/slots";
 import { removedFormatting } from "../utils/helpers";
 import { Diagnostic } from "htsw";
 import { readConditionList, syncConditionList } from "./conditions";
-import { normalizeForImporterCompare } from "./compare";
+import { normalizeActionCompare } from "./compare";
 import {
     ACTION_MAPPINGS,
     getNestedListFields,
@@ -101,10 +101,6 @@ function isLimitExceeded(slot: ItemSlot): boolean {
     if (lore.length === 0) return false;
     const lastLine = lore[lore.length - 1];
     return removedFormatting(lastLine) === "You can't have more of this action!";
-}
-
-function normalizeForActionCompare(value: unknown): unknown {
-    return normalizeForImporterCompare(value);
 }
 
 function readActionSlots(ctx: TaskContext): ItemSlot[] {
@@ -556,19 +552,6 @@ function fillEmptyNestedListProps(
     return toRead;
 }
 
-function onlyNoteDiffers(desired: Action, current: Action): boolean {
-    const stripNote = (a: Action): Record<string, unknown> => {
-        const copy: Record<string, unknown> = {};
-        for (const key of Object.keys(a)) {
-            if (key !== "note") copy[key] = (a as Record<string, unknown>)[key];
-        }
-        return copy;
-    };
-    return (
-        JSON.stringify(normalizeForActionCompare(stripNote(desired))) ===
-        JSON.stringify(normalizeForActionCompare(stripNote(current)))
-    );
-}
 
 export async function readActionList(ctx: TaskContext): Promise<ObservedAction[]> {
     const slots = ctx.getAllItemSlots();
@@ -635,11 +618,6 @@ async function writeOpenAction(
     desired: Action,
     current?: Action
 ): Promise<void> {
-    // Notes are written from the list item, not the editor.
-    if (current && onlyNoteDiffers(desired, current)) {
-        return;
-    }
-
     const spec = getActionSpec(desired.type);
     // When adding new actions, read the current values to avoid
     // unnecessarily overwriting fields that aren't changing.
@@ -793,15 +771,19 @@ async function applyActionListDiff(
     // become stale after moves shift actions around. Moves re-read slots
     // internally so they're unaffected by prior edits.
     for (const op of edits) {
-        if (onlyNoteDiffers(op.desired, op.observed.action)) {
+        if (op.desired.note !== op.observed.action.note) {
             await setListItemNote(ctx, op.observed.slot, op.desired.note);
             continue;
         }
-
-        op.observed.slot.click();
-        await waitForMenu(ctx);
-        await writeOpenAction(ctx, op.desired, op.observed.action);
-        await clickGoBack(ctx);
+        const spec = getActionSpec(op.desired.type);
+        if (spec.write) {
+            op.observed.slot.click();
+            await waitForMenu(ctx);
+        
+            await writeOpenAction(ctx, op.desired, op.observed.action);
+            await clickGoBack(ctx);
+        }
+    
 
         await setListItemNote(ctx, op.observed.slot, op.desired.note);
     }

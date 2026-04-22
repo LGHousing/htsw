@@ -40,7 +40,7 @@ import {
 } from "./helpers";
 import { ItemSlot, MouseButton } from "../tasks/specifics/slots";
 import { removedFormatting } from "../utils/helpers";
-import { normalizeForImporterCompare } from "./compare";
+import { normalizeConditionCompare } from "./compare";
 import {
     CONDITION_LORE_MAPPINGS,
     parseConditionListItem,
@@ -100,14 +100,10 @@ function isLimitExceeded(slot: ItemSlot): boolean {
     );
 }
 
-function normalizeForConditionCompare(value: unknown): unknown {
-    return normalizeForImporterCompare(value);
-}
-
 function conditionsEqual(a: Condition, b: Condition): boolean {
     return (
-        JSON.stringify(normalizeForConditionCompare(a)) ===
-        JSON.stringify(normalizeForConditionCompare(b))
+        JSON.stringify(normalizeConditionCompare(a)) ===
+        JSON.stringify(normalizeConditionCompare(b))
     );
 }
 
@@ -517,16 +513,14 @@ const CONDITION_SPECS = {
 
 // Writes the fields for the condition editor that is currently open.
 function onlyNoteDiffers(desired: Condition, current: Condition): boolean {
-    const stripNote = (c: Condition): Record<string, unknown> => {
-        const copy: Record<string, unknown> = {};
-        for (const key of Object.keys(c)) {
-            if (key !== "note") copy[key] = (c as Record<string, unknown>)[key];
-        }
+    const stripNote = (condition: Condition): Condition => {
+        const copy = { ...condition };
+        delete copy.note;
         return copy;
     };
     return (
-        JSON.stringify(normalizeForConditionCompare(stripNote(desired))) ===
-        JSON.stringify(normalizeForConditionCompare(stripNote(current)))
+        JSON.stringify(normalizeConditionCompare(stripNote(desired))) ===
+        JSON.stringify(normalizeConditionCompare(stripNote(current)))
     );
 }
 
