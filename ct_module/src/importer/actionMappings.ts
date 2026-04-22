@@ -3,14 +3,9 @@ import type { Action, ActionChangeVar } from "htsw/types";
 import { ItemSlot } from "../tasks/specifics/slots";
 import { removedFormatting } from "../utils/helpers";
 import { parseLoreFields, readListItemNote } from "./helpers";
-import type { UiFieldKind } from "./types";
+import type { ActionLoreSpec, UiFieldKind } from "./types";
 
-type ActionMapping = {
-    displayName: string;
-    loreFields: Record<string, { prop: string; kind: UiFieldKind }>;
-};
-
-export const ACTION_MAPPINGS: Record<Action["type"], ActionMapping> = {
+export const ACTION_MAPPINGS = {
     CONDITIONAL: {
         displayName: "Conditional",
         loreFields: {
@@ -339,23 +334,37 @@ export const ACTION_MAPPINGS: Record<Action["type"], ActionMapping> = {
         displayName: "Cancel Event",
         loreFields: {},
     },
+} satisfies {
+    [K in Action["type"]]?: ActionLoreSpec<
+        Extract<Action, { type: K }>
+    >;
 };
 
-const ACTION_TYPES_BY_DISPLAY_NAME: Record<string, Action["type"]> = {};
-for (const type in ACTION_MAPPINGS) {
-    const actionType = type as Action["type"];
-    ACTION_TYPES_BY_DISPLAY_NAME[ACTION_MAPPINGS[actionType].displayName] = actionType;
-}
-
-export function getActionDisplayName(type: Action["type"]): string {
-    return ACTION_MAPPINGS[type].displayName;
+export function getNestedListFields(type: Action["type"]): { label: string; prop: string }[] {
+    const loreFields: Record<string, { prop: string; kind: UiFieldKind }> = ACTION_MAPPINGS[type].loreFields;
+    const result: { label: string; prop: string }[] = [];
+    for (const label in loreFields) {
+        if (loreFields[label].kind === "nestedList") {
+            result.push({ label, prop: loreFields[label].prop });
+        }
+    }
+    return result;
 }
 
 export function tryGetActionTypeFromDisplayName(
     displayName: string
 ): Action["type"] | undefined {
-    const unformatted = removedFormatting(displayName).trim();
-    return ACTION_TYPES_BY_DISPLAY_NAME[unformatted];
+    const normalizedDisplayName = removedFormatting(displayName).trim();
+    
+        for (const type in ACTION_MAPPINGS) {
+            if (
+                ACTION_MAPPINGS[type as Action["type"]].displayName === normalizedDisplayName
+            ) {
+                return type as Action["type"];
+            }
+        }
+    
+        return undefined;
 }
 
 export function parseActionListItem(
@@ -381,12 +390,4 @@ export function parseActionListItem(
     }
 
     return action;
-}
-
-export function isActionFullyReadableFromList(type: Action["type"]): boolean {
-    const mapping = ACTION_MAPPINGS[type];
-
-    return Object.keys(mapping.loreFields).every(
-        (key) => mapping.loreFields[key].kind !== "nestedList"
-    );
 }

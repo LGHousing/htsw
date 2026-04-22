@@ -52,7 +52,7 @@ function provideInlayHintsForActions(actions: types.Action[], spans: SpanTable):
         if (action.type === "CONDITIONAL") {
             hints.push(...provideInlayHintsForConditions(action.conditions ?? [], spans));
             hints.push(...provideInlayHintsForActions(action.ifActions ?? [], spans));
-            hints.push(...provideInlayHintsForActions(action.elseActions ?? [], spans));
+            hints.push(...provideInlayHintsForActions(action.elseActions, spans));
         } else if (action.type === "RANDOM") {
             hints.push(...provideInlayHintsForActions(action.actions ?? [], spans));
         }

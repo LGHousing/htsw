@@ -33,6 +33,14 @@ export class ItemSlot {
         }
         container.click(this.slotId, shift, button.valueOf());
     }
+
+    public drop(ctrl: boolean = false): void {
+        const container = Player.getContainer();
+        if (container == null) {
+            throw new Error("No open container found");
+        }
+        container.drop(this.slotId, ctrl);
+    }
 }
 
 export function getAllItemSlots(): ItemSlot[] | null {

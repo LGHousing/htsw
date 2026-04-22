@@ -328,9 +328,12 @@ function parseActionConditional(p: Parser, note: Note): Action {
 
         if (p.eatIdent("else")) {
             setField(p, action, "elseActions", p.parseBlock);
-        } else if (hadNewline) {
-            p.tokens.push(p.token);
-            p.token = token;
+        } else {
+            action.elseActions = [];
+            if (hadNewline) {
+                p.tokens.push(p.token);
+                p.token = token;
+            }
         }
     });
 }

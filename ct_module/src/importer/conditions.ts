@@ -35,11 +35,12 @@ import {
     setCycleValue,
     setSelectValue,
     setStringValue,
-    normalizeNoteText,
+    setListItemNote,
     waitForMenu,
 } from "./helpers";
 import { ItemSlot, MouseButton } from "../tasks/specifics/slots";
 import { removedFormatting } from "../utils/helpers";
+import { normalizeForImporterCompare } from "./compare";
 import {
     CONDITION_LORE_MAPPINGS,
     parseConditionListItem,
@@ -51,7 +52,7 @@ import { Diagnostic } from "htsw";
 type ConditionSpec<T extends Condition> = {
     displayName: string;
     read?: (ctx: TaskContext) => Promise<T>;
-    write: (ctx: TaskContext, desired: T, current?: T) => Promise<void>;
+    write?: (ctx: TaskContext, desired: T, current?: T) => Promise<void>;
 };
 
 type ConditionSpecMap = {
@@ -99,41 +100,23 @@ function isLimitExceeded(slot: ItemSlot): boolean {
     );
 }
 
-function normalizeOptionalBoolean(value: boolean | undefined): boolean {
-    return value === true;
-}
-
-function displayNameForSlot(slot: ItemSlot): string {
-    return removedFormatting(slot.getItem().getName()).trim();
-}
-
 function normalizeForConditionCompare(value: unknown): unknown {
-    if (Array.isArray(value)) {
-        return value.map(normalizeForConditionCompare);
-    }
-
-    if (typeof value !== "object" || value === null) {
-        return value;
-    }
-
-    const normalized: Record<string, unknown> = {};
-    for (const key of Object.keys(value).sort()) {
-        const fieldValue = (value as Record<string, unknown>)[key];
-        if (fieldValue !== undefined) {
-            normalized[key] =
-                key === "note" && typeof fieldValue === "string"
-                    ? normalizeNoteText(fieldValue)
-                    : normalizeForConditionCompare(fieldValue);
-        }
-    }
-
-    return normalized;
+    return normalizeForImporterCompare(value);
 }
 
 function conditionsEqual(a: Condition, b: Condition): boolean {
     return (
         JSON.stringify(normalizeForConditionCompare(a)) ===
         JSON.stringify(normalizeForConditionCompare(b))
+    );
+}
+
+function readConditionSlots(ctx: TaskContext): ItemSlot[] {
+    const slots = ctx.getAllItemSlots();
+    if (slots === null) return [];
+    return slots.filter(
+        (slot) =>
+            tryGetConditionTypeFromDisplayName(slot.getItem().getName()) !== undefined,
     );
 }
 
@@ -151,7 +134,9 @@ async function readRequireGroup(
     if (!group) {
         await openSubmenu(ctx, "Required Group");
         const selectedSlot = findMenuOptionByLore(ctx, "Already Selected");
-        group = selectedSlot ? displayNameForSlot(selectedSlot) : undefined;
+        group = selectedSlot
+            ? removedFormatting(selectedSlot.getItem().getName()).trim()
+            : undefined;
         await clickGoBack(ctx);
     }
 
@@ -179,7 +164,9 @@ async function writeRequireGroup(
         await openSubmenu(ctx, "Required Group");
 
         const selectedSlot = findMenuOptionByLore(ctx, "Already Selected");
-        const selectedGroup = selectedSlot ? displayNameForSlot(selectedSlot) : undefined;
+        const selectedGroup = selectedSlot
+            ? removedFormatting(selectedSlot.getItem().getName()).trim()
+            : undefined;
 
         if (selectedGroup !== condition.group) {
             ctx.getItemSlot(condition.group).click();
@@ -189,12 +176,10 @@ async function writeRequireGroup(
         }
     }
 
-    const desiredIncludeHigherGroups = normalizeOptionalBoolean(
-        condition.includeHigherGroups,
-    );
+    const desiredIncludeHigherGroups = condition.includeHigherGroups === true;
     const currentIncludeHigherGroups =
         current !== undefined
-            ? normalizeOptionalBoolean(current.includeHigherGroups)
+            ? current.includeHigherGroups === true
             : (readBooleanValue(ctx.getItemSlot("Include Higher Groups")) ??
               false);
 
@@ -286,11 +271,6 @@ async function writeRequireItem(
     }
 }
 
-async function writeIsDoingParkour(
-    _ctx: TaskContext,
-    _condition: ConditionIsDoingParkour,
-): Promise<void> {}
-
 async function writeRequirePotionEffect(
     ctx: TaskContext,
     condition: ConditionRequirePotionEffect,
@@ -299,16 +279,6 @@ async function writeRequirePotionEffect(
         await setSelectValue(ctx, "Effect", condition.effect);
     }
 }
-
-async function writeIsSneaking(
-    _ctx: TaskContext,
-    _condition: ConditionIsSneaking,
-): Promise<void> {}
-
-async function writeIsFlying(
-    _ctx: TaskContext,
-    _condition: ConditionIsFlying,
-): Promise<void> {}
 
 async function writeCompareHealth(
     ctx: TaskContext,
@@ -398,11 +368,6 @@ async function writeDamageCause(
     }
 }
 
-async function writePvpEnabled(
-    _ctx: TaskContext,
-    _condition: ConditionPvpEnabled,
-): Promise<void> {}
-
 async function writeFishingEnvironment(
     ctx: TaskContext,
     condition: ConditionFishingEnvironment,
@@ -485,7 +450,6 @@ const CONDITION_SPECS = {
     },
     IS_DOING_PARKOUR: {
         displayName: CONDITION_LORE_MAPPINGS.IS_DOING_PARKOUR.displayName,
-        write: writeIsDoingParkour,
     },
     REQUIRE_POTION_EFFECT: {
         displayName: CONDITION_LORE_MAPPINGS.REQUIRE_POTION_EFFECT.displayName,
@@ -493,11 +457,9 @@ const CONDITION_SPECS = {
     },
     IS_SNEAKING: {
         displayName: CONDITION_LORE_MAPPINGS.IS_SNEAKING.displayName,
-        write: writeIsSneaking,
     },
     IS_FLYING: {
         displayName: CONDITION_LORE_MAPPINGS.IS_FLYING.displayName,
-        write: writeIsFlying,
     },
     COMPARE_HEALTH: {
         displayName: CONDITION_LORE_MAPPINGS.COMPARE_HEALTH.displayName,
@@ -529,7 +491,6 @@ const CONDITION_SPECS = {
     },
     PVP_ENABLED: {
         displayName: CONDITION_LORE_MAPPINGS.PVP_ENABLED.displayName,
-        write: writePvpEnabled,
     },
     FISHING_ENVIRONMENT: {
         displayName: CONDITION_LORE_MAPPINGS.FISHING_ENVIRONMENT.displayName,
@@ -552,6 +513,22 @@ const CONDITION_SPECS = {
         write: writeCompareDamage,
     },
 } satisfies ConditionSpecMap;
+
+
+// Writes the fields for the condition editor that is currently open.
+function onlyNoteDiffers(desired: Condition, current: Condition): boolean {
+    const stripNote = (c: Condition): Record<string, unknown> => {
+        const copy: Record<string, unknown> = {};
+        for (const key of Object.keys(c)) {
+            if (key !== "note") copy[key] = (c as Record<string, unknown>)[key];
+        }
+        return copy;
+    };
+    return (
+        JSON.stringify(normalizeForConditionCompare(stripNote(desired))) ===
+        JSON.stringify(normalizeForConditionCompare(stripNote(current)))
+    );
+}
 
 
 function isConditionListItemInverted(slot: ItemSlot): boolean {
@@ -596,6 +573,31 @@ export async function readConditionList(
     return conditions;
 }
 
+
+async function writeOpenCondition(
+    ctx: TaskContext,
+    condition: Condition,
+    current?: Condition
+): Promise<void> {
+    // Notes are written from the list item, not the editor.
+    if (current && onlyNoteDiffers(condition, current)) {
+        return;
+    }
+    
+    const spec = getConditionSpec(condition.type);
+    // When adding new conditions, read the current values to avoid
+    // unnecessarily overwriting fields that aren't changing.
+    let resolvedCurrent = current;
+
+    if (resolvedCurrent === undefined && spec.read) {
+        resolvedCurrent = await spec.read(ctx);
+    }
+
+    if (spec.write) {
+        await spec.write(ctx, condition, resolvedCurrent);
+    }
+
+}
 export function diffConditionList(
     observed: ObservedCondition[],
     desired: Condition[],
@@ -644,14 +646,6 @@ export function diffConditionList(
     };
 }
 
-async function openObservedCondition(
-    observed: ObservedCondition,
-    ctx: TaskContext,
-): Promise<void> {
-    observed.slot.click();
-    await waitForMenu(ctx);
-}
-
 async function deleteObservedCondition(
     observed: ObservedCondition,
     ctx: TaskContext,
@@ -687,62 +681,6 @@ async function setOpenConditionInverted(
 }
 
 
-
-async function selectConditionType(
-    ctx: TaskContext,
-    type: Condition["type"],
-): Promise<void> {
-    const spec = getConditionSpec(type);
-    const slot = ctx.getItemSlot(spec.displayName);
-
-    if (isLimitExceeded(slot)) {
-        throw Diagnostic.error(
-            `Maximum amount of ${spec.displayName} conditions exceeded`,
-        );
-    }
-
-    slot.click();
-    await waitForMenu(ctx);
-}
-
-// Writes the fields for the condition editor that is currently open.
-async function writeOpenCondition(
-    ctx: TaskContext,
-    condition: Condition,
-    current?: Condition,
-): Promise<void> {
-    const spec = getConditionSpec(condition.type);
-
-    let resolvedCurrent = current;
-
-    if (resolvedCurrent === undefined && spec.read) {
-        resolvedCurrent = await spec.read(ctx);
-    }
-
-    await (spec.write as (ctx: TaskContext, desired: Condition, current?: Condition) => Promise<void>)(
-        ctx, condition, resolvedCurrent,
-    );
-
-    if (condition.note) {
-        await setStringValue(
-            ctx,
-            ctx.getItemSlot("Note"),
-            normalizeNoteText(condition.note),
-        );
-    }
-}
-
-export async function readOpenCondition(
-    ctx: TaskContext,
-    type: Condition["type"],
-): Promise<Condition> {
-    const spec = getConditionSpec(type);
-    if (!spec.read) {
-        throw new Error(`Reading condition "${type}" is not implemented.`);
-    }
-    return spec.read(ctx);
-}
-
 export async function importCondition(
     ctx: TaskContext,
     condition: Condition,
@@ -750,11 +688,31 @@ export async function importCondition(
     ctx.getItemSlot("Add Condition").click();
     await waitForMenu(ctx);
 
-    await selectConditionType(ctx, condition.type);
+    const spec = getConditionSpec(condition.type);
+    const slot = ctx.getItemSlot(spec.displayName);
+
+    if (isLimitExceeded(slot)) {
+        throw Diagnostic.error(
+            `Maximum amount of ${spec.displayName} conditions exceeded`
+        );
+    }
+
+    slot.click();
+    await waitForMenu(ctx);
     await writeOpenCondition(ctx, condition);
 
     await setOpenConditionInverted(ctx, condition.inverted === true);
+    // we ALWAYS click go back because every single condition has
+    // the invert toggle so opens a submenu, this is not the case for actions
     await clickGoBack(ctx);
+
+    if (condition.note) {
+        const conditionSlots = readConditionSlots(ctx);
+        const addedSlot = conditionSlots[conditionSlots.length - 1];
+        if (addedSlot) {
+            await setListItemNote(ctx, addedSlot, condition.note);
+        }
+    }
 }
 
 async function applyConditionListDiff(
@@ -762,7 +720,13 @@ async function applyConditionListDiff(
     diff: ConditionListDiff,
 ): Promise<void> {
     for (const entry of diff.edits) {
-        await openObservedCondition(entry.observed, ctx);
+        if (onlyNoteDiffers(entry.desired, entry.observed.condition)) {
+            await setListItemNote(ctx, entry.observed.slot, entry.desired.note);
+            continue;
+        }
+
+        entry.observed.slot.click();
+        await waitForMenu(ctx);
         await writeOpenCondition(
             ctx,
             entry.desired,
@@ -778,6 +742,8 @@ async function applyConditionListDiff(
         );
 
         await clickGoBack(ctx);
+
+        await setListItemNote(ctx, entry.observed.slot, entry.desired.note);
     }
 
     const deletesDescending = [...diff.deletes].sort(
@@ -792,10 +758,27 @@ async function applyConditionListDiff(
     }
 }
 
-function formatConditionSummary(condition: Condition): string {
-    const spec = getConditionSpec(condition.type);
-    const fields = JSON.stringify(condition);
-    return `${spec.displayName} [${condition.type}] ${fields}`;
+function logConditionSyncState(
+    ctx: TaskContext,
+    diff: ConditionListDiff,
+): void {
+    const totalOps = diff.edits.length + diff.deletes.length + diff.adds.length;
+
+    if (totalOps === 0) {
+        ctx.displayMessage(`&7[cond-sync] &aUp to date.`);
+        return;
+    }
+
+    ctx.displayMessage(`&7[cond-sync] &d${totalOps} operation(s):`);
+    for (const entry of diff.edits) {
+        ctx.displayMessage(`&7  &6~ ${CONDITION_LORE_MAPPINGS[entry.observed.condition.type].displayName} &7-> &6${CONDITION_LORE_MAPPINGS[entry.desired.type].displayName}`);
+    }
+    for (const entry of diff.deletes) {
+        ctx.displayMessage(`&7  &c- ${CONDITION_LORE_MAPPINGS[entry.condition.type].displayName}`);
+    }
+    for (const entry of diff.adds) {
+        ctx.displayMessage(`&7  &a+ ${CONDITION_LORE_MAPPINGS[entry.type].displayName}`);
+    }
 }
 
 export async function syncConditionList(
@@ -803,28 +786,8 @@ export async function syncConditionList(
     desired: Condition[],
 ): Promise<void> {
     const observed = await readConditionList(ctx);
-
-    ctx.displayMessage(`&7[cond-sync] &eObserved ${observed.length} condition(s):`);
-    for (const entry of observed) {
-        ctx.displayMessage(`&7  [${entry.index}] &e${formatConditionSummary(entry.condition)}`);
-    }
-    ctx.displayMessage(`&7[cond-sync] &bDesired ${desired.length} condition(s):`);
-    for (let i = 0; i < desired.length; i++) {
-        ctx.displayMessage(`&7  [${i}] &b${formatConditionSummary(desired[i])}`);
-    }
-
     const diff = diffConditionList(observed, desired);
-
-    ctx.displayMessage(`&7[cond-sync] &dDiff: ${diff.edits.length} edit(s), ${diff.deletes.length} delete(s), ${diff.adds.length} add(s)`);
-    for (const entry of diff.edits) {
-        ctx.displayMessage(`&7  &6[EDIT] ${formatConditionSummary(entry.observed.condition)} &7-> &6${formatConditionSummary(entry.desired)}`);
-    }
-    for (const entry of diff.deletes) {
-        ctx.displayMessage(`&7  &c[DELETE] ${formatConditionSummary(entry.condition)}`);
-    }
-    for (const entry of diff.adds) {
-        ctx.displayMessage(`&7  &a[ADD] ${formatConditionSummary(entry)}`);
-    }
+    logConditionSyncState(ctx, diff);
 
     await applyConditionListDiff(ctx, diff);
 }

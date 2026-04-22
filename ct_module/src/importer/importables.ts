@@ -20,11 +20,14 @@ import {
 import { MouseButton } from "../tasks/specifics/slots";
 import { cyrb53, removedFormatting } from "../utils/helpers";
 import { getItemFromNbt } from "../utils/nbt";
-import { C09PacketHeldItemChange, C10PacketCreativeInventoryAction } from "../utils/packets";
+import {
+    C09PacketHeldItemChange,
+    C10PacketCreativeInventoryAction,
+} from "../utils/packets";
 
 export async function importImportable(
     ctx: TaskContext,
-    importable: Importable,
+    importable: Importable
 ): Promise<void> {
     if (importable.type === "FUNCTION") {
         return importImportableFunction(ctx, importable);
@@ -45,7 +48,7 @@ export async function importImportable(
 
 async function importImportableFunction(
     ctx: TaskContext,
-    importable: ImportableFunction,
+    importable: ImportableFunction
 ): Promise<void> {
     ctx.runCommand(`/function edit ${importable.name}`);
 
@@ -57,11 +60,11 @@ async function importImportableFunction(
                     "message",
                     (message) =>
                         removedFormatting(message) ===
-                        "Could not find a function with that name!",
+                        "Could not find a function with that name!"
                 )
                 .then(() => false),
         ]),
-        "Waiting for function to open",
+        "Waiting for function to open"
     );
 
     if (!alreadyExists) {
@@ -82,22 +85,29 @@ async function importImportableFunction(
         const targetStr = importable.repeatTicks.toString();
 
         // Lore shows "Current: §a67 Ticks (00m03s)"
-        // Check if it's already correct 
-        const alreadyCorrect = autoExecSlot.getItem().getLore().some((line) => {
-            const kv = parseLoreKeyValueLine(line);
-            if (!kv || kv.label !== "Current") return false;
-            return parseInt(removedFormatting(kv.value).trim(), 10).toString() === targetStr;
-        });
+        // Check if it's already correct
+        const alreadyCorrect = autoExecSlot
+            .getItem()
+            .getLore()
+            .some((line) => {
+                const kv = parseLoreKeyValueLine(line);
+                if (!kv || kv.label !== "Current") return false;
+                return (
+                    parseInt(removedFormatting(kv.value).trim(), 10).toString() ===
+                    targetStr
+                );
+            });
 
         if (!alreadyCorrect) {
             await setNumberValue(ctx, autoExecSlot, importable.repeatTicks);
         }
+        await clickGoBack(ctx);
     }
 }
 
 async function importImportableEvent(
     ctx: TaskContext,
-    importable: ImportableEvent,
+    importable: ImportableEvent
 ): Promise<void> {
     ctx.runCommand(`/eventactions`);
     await waitForMenu(ctx);
@@ -111,19 +121,19 @@ async function importImportableEvent(
 
 async function importImportableRegion(
     ctx: TaskContext,
-    importable: ImportableRegion,
+    importable: ImportableRegion
 ): Promise<void> {
     const setPos = async (pos: Pos, corner: "A" | "B") => {
         ctx.runCommand(`/tp ${pos.x} ${pos.y} ${pos.z}`);
         await waitForUnformattedMessage(
             ctx,
-            `Teleporting you to ${pos.x}, ${pos.y}, ${pos.z}.`,
+            `Teleporting you to ${pos.x}, ${pos.y}, ${pos.z}.`
         );
 
         ctx.runCommand(`//pos${corner}`);
         await waitForUnformattedMessage(
             ctx,
-            `Position ${corner} set to ${pos.x}, ${pos.y}, ${pos.z}.`,
+            `Position ${corner} set to ${pos.x}, ${pos.y}, ${pos.z}.`
         );
     };
 
@@ -140,28 +150,22 @@ async function importImportableRegion(
                     "message",
                     (message) =>
                         removedFormatting(message) ===
-                        "Could not find a region with that name!",
+                        "Could not find a region with that name!"
                 )
                 .then(() => false),
         ]),
-        "Waiting for region to open",
+        "Waiting for region to open"
     );
 
     if (!alreadyExists) {
         ctx.runCommand(`/region create ${importable.name}`);
-        await waitForUnformattedMessage(
-            ctx,
-            `Created region ${importable.name}!`,
-        );
+        await waitForUnformattedMessage(ctx, `Created region ${importable.name}!`);
 
         ctx.runCommand(`/region edit ${importable.name}`);
         await waitForMenu(ctx);
     } else {
         ctx.getItemSlot("Move Region").click();
-        await waitForUnformattedMessage(
-            ctx,
-            "Updated region to your current selection!",
-        );
+        await waitForUnformattedMessage(ctx, "Updated region to your current selection!");
 
         ctx.runCommand(`/region edit ${importable.name}`);
         await waitForMenu(ctx);
@@ -199,10 +203,15 @@ async function importImportableItem(
         ctx.waitFor(
             "message",
             (chatMessage) =>
-                removedFormatting(chatMessage).startsWith("You are currently playing on") &&
-                (() => { message = removedFormatting(chatMessage); return true })(), // This is fine I guess....
+                removedFormatting(chatMessage).startsWith(
+                    "You are currently playing on"
+                ) &&
+                (() => {
+                    message = removedFormatting(chatMessage);
+                    return true;
+                })() // This is fine I guess....
         ),
-        "Waiting for message in chat",
+        "Waiting for message in chat"
     );
 
     const uuid = message.substring(29, 65);
@@ -213,16 +222,11 @@ async function importImportableItem(
 
     const item = getItemFromNbt(importable.nbt);
 
-    Client.sendPacket(
-        new C10PacketCreativeInventoryAction(
-            36,
-            item.getItemStack()
-        )
-    );
+    Client.sendPacket(new C10PacketCreativeInventoryAction(36, item.getItemStack()));
     if (Player.getPlayer().field_71071_by.field_70461_c !== 0) {
         Client.sendPacket(new C09PacketHeldItemChange(0));
         Player.getPlayer().field_71071_by.field_70461_c = 0;
-    };
+    }
     await ctx.sleep(1000);
 
     ctx.runCommand("/edit");

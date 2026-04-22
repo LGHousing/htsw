@@ -52,7 +52,7 @@ function checkAll(gcx: GlobalCtxt, check: Check, actions: Action[]) {
 
         if (action.type === "CONDITIONAL") {
             checkAll(gcx, check, action.ifActions);
-            checkAll(gcx, check, action.elseActions ?? []);
+            checkAll(gcx, check, action.elseActions);
         }
 
         else if (action.type === "RANDOM") {

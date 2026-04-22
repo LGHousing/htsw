@@ -100,7 +100,7 @@ const defaultBehaviorConditional: ActionBehavior<"CONDITIONAL"> = (rt, action) =
 
     if (passed) {
         rt.runActions(action.ifActions, true);
-    } else if (action.elseActions) {
+    } else {
         rt.runActions(action.elseActions, true);
     }
 };

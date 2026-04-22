@@ -255,6 +255,31 @@ export function normalizeNoteText(note: string): string {
         .trim();
 }
 
+export async function setListItemNote(
+    ctx: TaskContext,
+    slot: ItemSlot,
+    note: string | undefined,
+): Promise<void> {
+    const normalizedNote =
+        note === undefined ? undefined : normalizeNoteText(note);
+    const currentNote = readListItemNote(slot);
+    if (currentNote === undefined && normalizedNote === undefined) {
+        return;
+    }
+
+    if (
+        currentNote !== undefined &&
+        normalizedNote !== undefined &&
+        normalizeNoteText(currentNote) === normalizedNote
+    ) {
+        return;
+    }
+
+    slot.drop();
+    await enterValue(ctx, normalizedNote ?? "");
+    await waitForMenu(ctx);
+}
+
 export function readCurrentValue(slot: ItemSlot): string | null {
     const lore = slot.getItem().getLore();
     const index = lore.findIndex(

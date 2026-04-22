@@ -3,8 +3,31 @@ chat "hello"
 
 /// HTSW WILL CHANGE LIVES!
 if (
-    /// I love Sandy
+    /// I love Clalan
     !var diddy >= 67 0
     ) {
     chat "world"
+}
+
+
+if (
+
+    !var diddy >= 67 0
+    ) {
+    chat "fuck"
+}
+
+if (
+
+    !var diddy >= 67 0
+    ) {
+    chat "shit"
+}
+
+
+if (
+
+    !var diddy >= 67 0
+    ) {
+    chat "cock"
 }

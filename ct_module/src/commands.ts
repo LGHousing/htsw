@@ -21,7 +21,7 @@ import { Simulator } from "./simulator";
 import { printDiagnostic, printDiagnostics } from "./tui/diagnostics";
 import { recompile } from "./recompile";
 import { importImportable } from "./importer/importables";
-import { diffConditionList, readConditionList, readOpenCondition } from "./importer/conditions";
+import { diffConditionList, readConditionList } from "./importer/conditions";
 import { TaskManager } from "./tasks/manager";
 import { FileSystemFileLoader } from "./utils/files";
 
@@ -260,18 +260,10 @@ export function registerCommands() {
 
         TaskManager.run(async (ctx) => {
             const conditions = await readConditionList(ctx);
-            if (conditions.length > 0) {
-                const diff = diffConditionList(conditions, DEBUG_DESIRED_CONDITIONS);
+            const diff = diffConditionList(conditions, DEBUG_DESIRED_CONDITIONS);
 
-                printObservedConditions(conditions);
-                printConditionDiff(diff);
-                return;
-            }
-
-            const condition = await readOpenCondition(ctx, DEBUG_CONDITION_TYPE);
-            ChatLib.chat(
-                `&aRead ${DEBUG_CONDITION_TYPE}: &f${JSON.stringify(condition)}`,
-            );
+            printObservedConditions(conditions);
+            printConditionDiff(diff);
         }).catch((err) => {
             ChatLib.chat(`&cHTSW debug failed: ${String(err)}`);
         });

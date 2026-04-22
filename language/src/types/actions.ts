@@ -19,7 +19,7 @@ export type ActionConditional = {
     matchAny: boolean;
     conditions: Condition[];
     ifActions: Action[];
-    elseActions?: Action[];
+    elseActions: Action[];
 };
 
 export type ActionSetGroup = {
