@@ -1,13 +1,18 @@
 import type { Action, Condition } from "htsw/types";
+import type { Observed } from "./actions/types";
 import { normalizeNoteText } from "./helpers";
 
 // Sad
-export function normalizeConditionCompare(value: Condition): Condition {
-    return normalizeValue(value) as Condition;
+export function normalizeConditionCompare(
+    value: Condition | Observed<Condition> | null
+): Condition | Observed<Condition> | null {
+    return normalizeValue(value) as Condition | Observed<Condition> | null;
 }
 
-export function normalizeActionCompare(value: Action): Action {
-    return normalizeValue(value) as Action;
+export function normalizeActionCompare(
+    value: Action | Observed<Action>
+): Action | Observed<Action> {
+    return normalizeValue(value) as Action | Observed<Action>;
 }
 
 function normalizeValue(value: unknown): unknown {
