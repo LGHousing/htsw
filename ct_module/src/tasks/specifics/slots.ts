@@ -43,7 +43,7 @@ export class ItemSlot {
     }
 }
 
-export function getAllItemSlots(): ItemSlot[] | null {
+export function getAllItemSlots(check: null | ((slot: ItemSlot) => boolean) = null): ItemSlot[] | null {
     const container = Player.getContainer();
     if (container == null) {
         return null;
@@ -55,7 +55,11 @@ export function getAllItemSlots(): ItemSlot[] | null {
         if (item == null) {
             continue;
         }
-        slots.push(new ItemSlot(slotId, item));
+        const slot = new ItemSlot(slotId, item);
+        if (check !== null && !check(slot)) {
+            continue;
+        }
+        slots.push(slot);
     }
 
     return slots;
