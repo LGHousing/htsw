@@ -3,9 +3,11 @@ import type { Action, Condition } from "htsw/types";
 import { ACTION_MAPPINGS } from "../actionMappings";
 import { normalizeActionCompare, normalizeConditionCompare } from "../compare";
 import { CONDITION_LORE_MAPPINGS } from "../conditionMappings";
-import type { ActionListDiff, ActionListOperation, ObservedAction } from "./types";
+import type { ActionListDiff, ActionListOperation, Observed, ObservedActionSlot } from "./types";
 
-type MatchableAction = Pick<ObservedAction, "index" | "type" | "action">;
+type KnownObservedAction = Omit<ObservedActionSlot, "action"> & {
+    action: NonNullable<ObservedActionSlot["action"]>;
+};
 
 type DesiredActionEntry = {
     index: number;
@@ -14,8 +16,8 @@ type DesiredActionEntry = {
 
 type ActionMatchKind = "exact" | "note_only" | "same_type";
 
-type ActionMatch<TObserved extends MatchableAction = ObservedAction> = {
-    observed: TObserved;
+type ActionMatch = {
+    observed: KnownObservedAction;
     desiredIndex: number;
     desired: Action;
     kind: ActionMatchKind;
@@ -29,17 +31,23 @@ type ConditionEntry = {
 
 const NOTE_ONLY_COST = 1;
 
-function actionsEqual(a: Action, b: Action): boolean {
+function actionsEqual(
+    observed: Action | Observed<Action>,
+    desired: Action | Observed<Action>
+): boolean {
     return (
-        JSON.stringify(normalizeActionCompare(a)) ===
-        JSON.stringify(normalizeActionCompare(b))
+        JSON.stringify(normalizeActionCompare(observed)) ===
+        JSON.stringify(normalizeActionCompare(desired))
     );
 }
 
-function conditionsEqualForAction(a: Condition, b: Condition): boolean {
+function conditionsEqual(
+    observed: Condition | Observed<Condition> | null,
+    desired: Condition | Observed<Condition> | null
+): boolean {
     return (
-        JSON.stringify(normalizeConditionCompare(a)) ===
-        JSON.stringify(normalizeConditionCompare(b))
+        JSON.stringify(normalizeConditionCompare(observed)) ===
+        JSON.stringify(normalizeConditionCompare(desired))
     );
 }
 
@@ -55,9 +63,7 @@ function fieldDifferenceCount(
     let cost = 0;
 
     for (const key of props) {
-        if (
-            getFieldValue(observed, key) !== getFieldValue(desired, key)
-        ) {
+        if (getFieldValue(observed, key) !== getFieldValue(desired, key)) {
             cost += 1;
         }
     }
@@ -65,19 +71,22 @@ function fieldDifferenceCount(
     return cost;
 }
 
-function onlyNoteDiffers(desired: Action, current: Action): boolean {
-    const stripNote = (action: Action): Action => {
-        const copy = { ...action };
-        delete copy.note;
-        return copy;
-    };
-
-    return (
-        JSON.stringify(normalizeActionCompare(stripNote(desired))) ===
-        JSON.stringify(normalizeActionCompare(stripNote(current)))
-    );
+function stripActionNote(action: Action | Observed<Action>): Action | Observed<Action> {
+    const { note: _note, ...withoutNote } = action;
+    return withoutNote as Action | Observed<Action>;
 }
 
+function onlyNoteDiffers(
+    desired: Action,
+    current: NonNullable<ObservedActionSlot["action"]>
+): boolean {
+    return (
+        desired.type === current.type &&
+        JSON.stringify(normalizeActionCompare(stripActionNote(desired))) ===
+            JSON.stringify(normalizeActionCompare(stripActionNote(current))) &&
+        desired.note !== current.note
+    );
+}
 
 function circularMoveDistance(from: number, to: number, listLength: number): number {
     if (listLength <= 1) {
@@ -89,13 +98,13 @@ function circularMoveDistance(from: number, to: number, listLength: number): num
 }
 
 function conditionCost(observed: Condition, desired: Condition): number {
-    if (conditionsEqualForAction(observed, desired)) {
+    if (conditionsEqual(observed, desired)) {
         return 0;
     }
 
     const loreFields = CONDITION_LORE_MAPPINGS[observed.type].loreFields as Record<
         string,
-        { prop: string; kind: string }
+        { prop: string }
     >;
     const mappedProps: string[] = [];
     for (const label in loreFields) {
@@ -109,14 +118,17 @@ function conditionCost(observed: Condition, desired: Condition): number {
     );
 }
 
-function conditionListCost(observed: Condition[], desired: Condition[]): number {
+function conditionListCost(
+    observed: Array<Condition | null>,
+    desired: Condition[]
+): number {
     const unmatchedObserved = observed.map((condition, index) => ({ index, condition }));
     const unmatchedDesired = desired.map((condition, index) => ({ index, condition }));
 
     for (let desiredIndex = unmatchedDesired.length - 1; desiredIndex >= 0; desiredIndex--) {
         const desiredEntry = unmatchedDesired[desiredIndex];
         const observedIndex = unmatchedObserved.findIndex((entry) =>
-            conditionsEqualForAction(entry.condition, desiredEntry.condition)
+            conditionsEqual(entry.condition, desiredEntry.condition)
         );
 
         if (observedIndex === -1) {
@@ -127,14 +139,21 @@ function conditionListCost(observed: Condition[], desired: Condition[]): number 
         unmatchedDesired.splice(desiredIndex, 1);
     }
 
+    let cost = 0;
+    for (const entry of unmatchedObserved) {
+        if (entry.condition === null) {
+            cost += 1;
+        }
+    }
+
     const remainingTypes = new Set(
         unmatchedDesired.map((entry) => entry.condition.type)
     );
 
-    let cost = 0;
     for (const type of remainingTypes) {
         const observedBucket = unmatchedObserved.filter(
-            (entry) => entry.condition.type === type
+            (entry): entry is ConditionEntry =>
+                entry.condition !== null && entry.condition.type === type
         );
         const desiredBucket = unmatchedDesired.filter(
             (entry) => entry.condition.type === type
@@ -184,7 +203,7 @@ function conditionListCost(observed: Condition[], desired: Condition[]): number 
 }
 
 function actionCost(
-    observed: MatchableAction,
+    observed: KnownObservedAction,
     desired: DesiredActionEntry,
     listLength: number
 ): number {
@@ -215,9 +234,7 @@ function actionCost(
         }
     }
 
-    let cost =
-        circularMoveDistance(observed.index, desired.index, listLength);
-
+    let cost = circularMoveDistance(observed.index, desired.index, listLength);
     cost += fieldDifferenceCount(observed.action, desired.action, scalarProps);
     cost += observed.action.note === desired.action.note ? 0 : 1;
 
@@ -233,164 +250,139 @@ function actionCost(
         }
 
         if (prop === "conditions") {
-            cost += conditionListCost(observedValue as Condition[], desiredValue as Condition[]);
-            continue;
+            cost += conditionListCost(
+                observedValue as Array<Condition | null>,
+                desiredValue as Condition[]
+            );
+        } else {
+            cost += actionListCost(
+                observedValue as Array<Observed<Action> | null>,
+                desiredValue as Action[]
+            );
         }
-
-        cost += actionListCost(observedValue as Action[], desiredValue as Action[]);
     }
 
     return cost;
 }
 
-function takeMatches<TObserved extends MatchableAction>(
-    unmatchedObserved: TObserved[],
-    unmatchedDesired: DesiredActionEntry[],
-    predicate: (observed: TObserved, desired: DesiredActionEntry) => boolean,
-    kind: ActionMatchKind,
-    costForMatch: (observed: TObserved, desired: DesiredActionEntry) => number
-): ActionMatch<TObserved>[] {
-    const matches: ActionMatch<TObserved>[] = [];
-
-    for (let desiredIndex = unmatchedDesired.length - 1; desiredIndex >= 0; desiredIndex--) {
-        const desiredEntry = unmatchedDesired[desiredIndex];
-        const observedIndex = unmatchedObserved.findIndex((entry) =>
-            predicate(entry, desiredEntry)
-        );
-
-        if (observedIndex === -1) {
-            continue;
-        }
-
-        const [observed] = unmatchedObserved.splice(observedIndex, 1);
-        unmatchedDesired.splice(desiredIndex, 1);
-        matches.push({
-            observed,
-            desiredIndex: desiredEntry.index,
-            desired: desiredEntry.action,
-            kind,
-            cost: costForMatch(observed, desiredEntry),
-        });
-    }
-
-    return matches;
-}
-
-function matchSameTypeBucketGreedy<TObserved extends MatchableAction>(
-    observed: TObserved[],
-    desired: DesiredActionEntry[],
-    listLength: number
-): ActionMatch<TObserved>[] {
-    const candidates: Array<{
-        observed: TObserved;
-        desired: DesiredActionEntry;
-        cost: number;
-    }> = [];
-
-    for (const desiredEntry of desired) {
-        for (const observedEntry of observed) {
-            candidates.push({
-                observed: observedEntry,
-                desired: desiredEntry,
-                cost: actionCost(observedEntry, desiredEntry, listLength),
-            });
-        }
-    }
-
-    candidates.sort(
-        (a, b) =>
-            a.cost - b.cost ||
-            a.observed.index - b.observed.index ||
-            a.desired.index - b.desired.index
-    );
-
-    const usedObserved = new Set<TObserved>();
-    const usedDesired = new Set<number>();
-    const matches: ActionMatch<TObserved>[] = [];
-
-    for (const candidate of candidates) {
-        if (
-            usedObserved.has(candidate.observed) ||
-            usedDesired.has(candidate.desired.index)
-        ) {
-            continue;
-        }
-
-        usedObserved.add(candidate.observed);
-        usedDesired.add(candidate.desired.index);
-        matches.push({
-            observed: candidate.observed,
-            desiredIndex: candidate.desired.index,
-            desired: candidate.desired.action,
-            kind: "same_type",
-            cost: candidate.cost,
-        });
-    }
-
-    return matches;
-}
-
-function matchActions<TObserved extends MatchableAction>(
-    observed: TObserved[],
+function matchActions(
+    observed: KnownObservedAction[],
     desired: Action[],
     listLength: number
 ): {
-    matches: ActionMatch<TObserved>[];
-    unmatchedObserved: TObserved[];
+    matches: ActionMatch[];
+    unmatchedObserved: KnownObservedAction[];
     unmatchedDesired: DesiredActionEntry[];
 } {
     const unmatchedObserved = [...observed];
     const unmatchedDesired = desired.map((action, index) => ({ index, action }));
-    const matches: ActionMatch<TObserved>[] = [];
+    const matches: ActionMatch[] = [];
 
-    matches.push(
-        ...takeMatches(
-            unmatchedObserved,
-            unmatchedDesired,
-            (entry, desiredEntry) => actionsEqual(entry.action, desiredEntry.action),
-            "exact",
-            () => 0
-        )
-    );
+    for (let desiredIndex = unmatchedDesired.length - 1; desiredIndex >= 0; desiredIndex--) {
+        const desiredEntry = unmatchedDesired[desiredIndex];
+        const observedIndex = unmatchedObserved.findIndex((entry) =>
+            actionsEqual(entry.action, desiredEntry.action)
+        );
+        if (observedIndex === -1) {
+            continue;
+        }
 
-    matches.push(
-        ...takeMatches(
-            unmatchedObserved,
-            unmatchedDesired,
-            (entry, desiredEntry) => onlyNoteDiffers(desiredEntry.action, entry.action),
-            "note_only",
-            () => NOTE_ONLY_COST
-        )
-    );
+        const [matchedObserved] = unmatchedObserved.splice(observedIndex, 1);
+        unmatchedDesired.splice(desiredIndex, 1);
+        matches.push({
+            observed: matchedObserved,
+            desiredIndex: desiredEntry.index,
+            desired: desiredEntry.action,
+            kind: "exact",
+            cost: 0,
+        });
+    }
+
+    for (let desiredIndex = unmatchedDesired.length - 1; desiredIndex >= 0; desiredIndex--) {
+        const desiredEntry = unmatchedDesired[desiredIndex];
+        const observedIndex = unmatchedObserved.findIndex((entry) =>
+            onlyNoteDiffers(desiredEntry.action, entry.action)
+        );
+        if (observedIndex === -1) {
+            continue;
+        }
+
+        const [matchedObserved] = unmatchedObserved.splice(observedIndex, 1);
+        unmatchedDesired.splice(desiredIndex, 1);
+        matches.push({
+            observed: matchedObserved,
+            desiredIndex: desiredEntry.index,
+            desired: desiredEntry.action,
+            kind: "note_only",
+            cost: NOTE_ONLY_COST,
+        });
+    }
 
     const remainingTypes = new Set(unmatchedDesired.map((entry) => entry.action.type));
     for (const type of remainingTypes) {
-        const observedBucket = unmatchedObserved.filter((entry) => entry.action.type === type);
-        const desiredBucket = unmatchedDesired.filter((entry) => entry.action.type === type);
+        const observedBucket = unmatchedObserved.filter(
+            (entry) => entry.action.type === type
+        );
+        const desiredBucket = unmatchedDesired.filter(
+            (entry) => entry.action.type === type
+        );
         if (observedBucket.length === 0 || desiredBucket.length === 0) {
             continue;
         }
 
-        const bucketMatches = matchSameTypeBucketGreedy(
-            observedBucket,
-            desiredBucket,
-            listLength
-        );
-        matches.push(...bucketMatches);
+        const candidates: Array<{
+            observed: KnownObservedAction;
+            desired: DesiredActionEntry;
+            cost: number;
+        }> = [];
 
-        const matchedObserved = new Set(bucketMatches.map((match) => match.observed));
-        const matchedDesiredIndices = new Set(
-            bucketMatches.map((match) => match.desiredIndex)
+        for (const desiredEntry of desiredBucket) {
+            for (const observedEntry of observedBucket) {
+                candidates.push({
+                    observed: observedEntry,
+                    desired: desiredEntry,
+                    cost: actionCost(observedEntry, desiredEntry, listLength),
+                });
+            }
+        }
+
+        candidates.sort(
+            (a, b) =>
+                a.cost - b.cost ||
+                a.observed.index - b.observed.index ||
+                a.desired.index - b.desired.index
         );
+
+        const usedObserved = new Set<KnownObservedAction>();
+        const usedDesired = new Set<number>();
+
+        for (const candidate of candidates) {
+            if (
+                usedObserved.has(candidate.observed) ||
+                usedDesired.has(candidate.desired.index)
+            ) {
+                continue;
+            }
+
+            usedObserved.add(candidate.observed);
+            usedDesired.add(candidate.desired.index);
+            matches.push({
+                observed: candidate.observed,
+                desiredIndex: candidate.desired.index,
+                desired: candidate.desired.action,
+                kind: "same_type",
+                cost: candidate.cost,
+            });
+        }
 
         for (let index = unmatchedObserved.length - 1; index >= 0; index--) {
-            if (matchedObserved.has(unmatchedObserved[index])) {
+            if (usedObserved.has(unmatchedObserved[index])) {
                 unmatchedObserved.splice(index, 1);
             }
         }
 
         for (let index = unmatchedDesired.length - 1; index >= 0; index--) {
-            if (matchedDesiredIndices.has(unmatchedDesired[index].index)) {
+            if (usedDesired.has(unmatchedDesired[index].index)) {
                 unmatchedDesired.splice(index, 1);
             }
         }
@@ -398,33 +390,49 @@ function matchActions<TObserved extends MatchableAction>(
 
     matches.sort((a, b) => a.desiredIndex - b.desiredIndex);
 
-    return {
-        matches,
-        unmatchedObserved,
-        unmatchedDesired,
-    };
+    return { matches, unmatchedObserved, unmatchedDesired };
 }
 
-function actionListCost(observed: Action[], desired: Action[]): number {
-    const matchResult = matchActions(
-        observed.map((action, index) => ({
-            index,
-            type: action.type,
-            action,
-        })),
-        desired,
-        observed.length
-    );
+function actionListCost(
+    observed: Array<Observed<Action> | null>,
+    desired: Action[]
+): number {
+    const knownObserved = observed
+        .map((action, index) => (action === null ? null : { index, action }))
+        .filter(
+            (
+                entry
+            ): entry is { index: number; action: NonNullable<ObservedActionSlot["action"]> } =>
+                entry !== null
+        )
+        .map((entry) => ({
+            index: entry.index,
+            slotId: -1,
+            slot: null as never,
+            action: entry.action,
+        }));
 
-    return matchResult.matches.reduce((total, match) => total + match.cost, 0);
+    const matchResult = matchActions(knownObserved, desired, observed.length);
+
+    let cost = matchResult.matches.reduce((total, match) => total + match.cost, 0);
+    cost += observed.filter((entry) => entry === null).length;
+    return cost;
 }
 
 export function diffActionList(
-    readActions: ObservedAction[],
+    readActions: ObservedActionSlot[],
     desired: Action[]
 ): ActionListDiff {
-    const matchResult = matchActions(readActions, desired, readActions.length);
+    const knownObserved = readActions.filter(
+        (entry): entry is KnownObservedAction => entry.action !== null
+    );
+    const unknownObserved = readActions.filter((entry) => entry.action === null);
+    const matchResult = matchActions(knownObserved, desired, readActions.length);
     const operations: ActionListOperation[] = [];
+
+    for (const observed of unknownObserved) {
+        operations.push({ kind: "delete", observed });
+    }
 
     for (const observed of matchResult.unmatchedObserved) {
         operations.push({ kind: "delete", observed });
@@ -445,7 +453,7 @@ export function diffActionList(
                 kind: "move",
                 observed: match.observed,
                 toIndex: targetIndex,
-                action: match.observed.action,
+                action: match.desired,
             });
         }
 
