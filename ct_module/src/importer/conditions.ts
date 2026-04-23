@@ -47,6 +47,7 @@ import {
     tryGetConditionTypeFromDisplayName,
 } from "./conditionMappings";
 import { Diagnostic } from "htsw";
+import { Observed, ObservedConditionSlot } from "./actions/types";
 
 // Shape of Conditions w/ read & write methods
 type ConditionSpec<T extends Condition> = {
@@ -61,19 +62,12 @@ type ConditionSpecMap = {
 
 type ConditionListDiff = {
     edits: Array<{
-        observed: ObservedCondition;
+        observed: ObservedConditionSlot;
         desired: Condition;
     }>;
-    deletes: ObservedCondition[];
+    deletes: ObservedConditionSlot[];
     adds: Condition[];
 }
-
-type ObservedCondition = {
-    index: number;
-    slotId: number;
-    slot: ItemSlot;
-    condition: Condition;
-};
 
 const VAR_HOLDER_OPTIONS = ["Player", "Global", "Team"] as const;
 const GAMEMODE_OPTIONS = ["Adventure", "Survival", "Creative"] as const;
@@ -100,7 +94,7 @@ function isLimitExceeded(slot: ItemSlot): boolean {
     );
 }
 
-function conditionsEqual(a: Condition, b: Condition): boolean {
+function conditionsEqual(a: Condition | null, b: Condition | null): boolean {
     return (
         JSON.stringify(normalizeConditionCompare(a)) ===
         JSON.stringify(normalizeConditionCompare(b))
@@ -512,11 +506,14 @@ const CONDITION_SPECS = {
 
 
 // Writes the fields for the condition editor that is currently open.
-function onlyNoteDiffers(desired: Condition, current: Condition): boolean {
+function onlyNoteDiffers(desired: Condition, current: Condition | null): boolean {
+    if (current === null) {
+        return false;
+    }
+
     const stripNote = (condition: Condition): Condition => {
-        const copy = { ...condition };
-        delete copy.note;
-        return copy;
+        const { note: _note, ...withoutNote } = condition;
+        return withoutNote as Condition;
     };
     return (
         JSON.stringify(normalizeConditionCompare(stripNote(desired))) ===
@@ -534,36 +531,33 @@ function isConditionListItemInverted(slot: ItemSlot): boolean {
 
 export async function readConditionList(
     ctx: TaskContext,
-): Promise<ObservedCondition[]> {
+): Promise<ObservedConditionSlot[]> {
     const slots = ctx.getAllItemSlots();
     if (slots === null) {
         throw new Error("No open container found");
     }
 
-    const conditions: ObservedCondition[] = slots
+    const conditions: ObservedConditionSlot[] = slots
         .map((slot) => ({
             slot,
             type: tryGetConditionTypeFromDisplayName(slot.getItem().getName()),
         }))
-        .filter(
-            (entry): entry is { slot: ItemSlot; type: Condition["type"] } =>
-                entry.type !== undefined,
-        )
         .map((entry, index) => {
-            const condition = parseConditionListItem(entry.slot, entry.type);
-
-            if (isConditionListItemInverted(entry.slot)) {
-                condition.inverted = true;
-            }
-
-            return {
-                index,
-                slotId: entry.slot.getSlotId(),
-                slot: entry.slot,
-                condition,
-            };
-        });
-
+                    const observed: ObservedConditionSlot = {
+                        index,
+                        slotId: entry.slot.getSlotId(),
+                        slot: entry.slot,
+                        condition: null,
+                    };
+                    if (!entry.type) {
+                        return observed;
+                    }
+        
+                    const condition = parseConditionListItem(entry.slot, entry.type);
+        
+                    observed.condition = condition;
+                    return observed;
+                });    
     return conditions;
 }
 
@@ -593,7 +587,7 @@ async function writeOpenCondition(
 
 }
 export function diffConditionList(
-    observed: ObservedCondition[],
+    observed: ObservedConditionSlot[],
     desired: Condition[],
 ): ConditionListDiff {
     const unmatchedObserved = [...observed];
@@ -605,7 +599,7 @@ export function diffConditionList(
     for (let desiredIndex = unmatchedDesired.length - 1; desiredIndex >= 0; desiredIndex--) {
         const desiredCondition = unmatchedDesired[desiredIndex];
         const observedIndex = unmatchedObserved.findIndex((entry) =>
-            conditionsEqual(entry.condition, desiredCondition),
+            conditionsEqual(entry?.condition, desiredCondition),
         );
 
         if (observedIndex === -1) {
@@ -618,7 +612,7 @@ export function diffConditionList(
 
     for (const desiredCondition of unmatchedDesired) {
         const observedIndex = unmatchedObserved.findIndex(
-            (entry) => entry.condition.type === desiredCondition.type,
+            (entry) => entry.condition?.type === desiredCondition.type,
         );
 
         if (observedIndex === -1) {
@@ -641,7 +635,7 @@ export function diffConditionList(
 }
 
 async function deleteObservedCondition(
-    observed: ObservedCondition,
+    observed: ObservedConditionSlot,
     ctx: TaskContext,
 ): Promise<void> {
     observed.slot.click(MouseButton.RIGHT);
@@ -714,13 +708,20 @@ async function applyConditionListDiff(
     diff: ConditionListDiff,
 ): Promise<void> {
     for (const entry of diff.edits) {
-        if (onlyNoteDiffers(entry.desired, entry.observed.condition)) {
+        if (onlyNoteDiffers(entry.desired, entry.observed?.condition)) {
             await setListItemNote(ctx, entry.observed.slot, entry.desired.note);
             continue;
         }
 
         entry.observed.slot.click();
         await waitForMenu(ctx);
+
+        if (!entry.observed.condition) {
+                throw new Error(
+                    "Observed condition should always be present for edit operations."
+                );
+            }
+        
         await writeOpenCondition(
             ctx,
             entry.desired,
@@ -765,10 +766,18 @@ function logConditionSyncState(
 
     ctx.displayMessage(`&7[cond-sync] &d${totalOps} operation(s):`);
     for (const entry of diff.edits) {
-        ctx.displayMessage(`&7  &6~ ${CONDITION_LORE_MAPPINGS[entry.observed.condition.type].displayName} &7-> &6${CONDITION_LORE_MAPPINGS[entry.desired.type].displayName}`);
+        const observedName =
+            entry.observed.condition === null
+                ? "Unknown Condition"
+                : CONDITION_LORE_MAPPINGS[entry.observed.condition.type].displayName;
+        ctx.displayMessage(`&7  &6~ ${observedName} &7-> &6${CONDITION_LORE_MAPPINGS[entry.desired.type].displayName}`);
     }
     for (const entry of diff.deletes) {
-        ctx.displayMessage(`&7  &c- ${CONDITION_LORE_MAPPINGS[entry.condition.type].displayName}`);
+        const deleteName =
+            entry.condition === null
+                ? "Unknown Condition"
+                : CONDITION_LORE_MAPPINGS[entry.condition.type].displayName;
+        ctx.displayMessage(`&7  &c- ${deleteName}`);
     }
     for (const entry of diff.adds) {
         ctx.displayMessage(`&7  &a+ ${CONDITION_LORE_MAPPINGS[entry.type].displayName}`);
