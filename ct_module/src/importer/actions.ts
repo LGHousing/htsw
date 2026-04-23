@@ -65,7 +65,8 @@ import type {
     ActionListOperation,
     NestedListProp,
     NestedPropsToRead,
-    ObservedAction,
+    Observed,
+    ObservedActionSlot,
 } from "./actions/types";
 
 export { diffActionList };
@@ -74,14 +75,14 @@ export type {
     ActionListOperation,
     NestedListProp,
     NestedPropsToRead,
-    ObservedAction,
+    ObservedActionSlot as ObservedAction,
 } from "./actions/types";
 
 // Shape of Actions
 type ActionSpec<T extends Action = Action> = {
     displayName: string;
-    read?: (ctx: TaskContext, propsToRead: NestedPropsToRead) => Promise<T>;
-    write?: (ctx: TaskContext, desired: T, current?: T) => Promise<void>;
+    read?: (ctx: TaskContext, propsToRead: NestedPropsToRead) => Promise<Observed<T>>;
+    write?: (ctx: TaskContext, desired: T, current?: Observed<T>) => Promise<void>;
 };
 
 type ActionSpecMap = {
@@ -103,19 +104,24 @@ function isLimitExceeded(slot: ItemSlot): boolean {
     return removedFormatting(lastLine) === "You can't have more of this action!";
 }
 
-function readActionSlots(ctx: TaskContext): ItemSlot[] {
-    const slots = ctx.getAllItemSlots();
-    if (slots === null) return [];
-    return slots.filter(
-        (slot) => tryGetActionTypeFromDisplayName(slot.getItem().getName()) !== undefined
-    );
+function getAllActionItemSlots(ctx: TaskContext): ItemSlot[] {
+    const slots = ctx.getAllItemSlots((slot) => {
+        const slotId = slot.getSlotId();
+        const row = Math.floor(slotId / 9);
+        const col = slotId % 9;
+        return row >= 1 && row <= 3 && col >= 1 && col <= 7;
+    });
+    if (slots === null) {
+        throw new Error("No open container found");
+    }
+    return slots;
 }
 
 async function readOpenConditional(
     ctx: TaskContext,
     propsToRead: NestedPropsToRead
-): Promise<ActionConditional> {
-    let conditions: Condition[] = [];
+): Promise<Observed<ActionConditional>> {
+    let conditions: (Condition | null)[] = [];
     if (propsToRead.has("conditions")) {
         ctx.getItemSlot("Conditions").click();
         await waitForMenu(ctx);
@@ -125,7 +131,7 @@ async function readOpenConditional(
 
     const matchAny = readBooleanValue(ctx.getItemSlot("Match Any Condition")) ?? false;
 
-    const ifActions: Action[] = [];
+    const ifActions: (Observed<Action> | null)[] = [];
     if (propsToRead.has("ifActions")) {
         ctx.getItemSlot("If Actions").click();
         await waitForMenu(ctx);
@@ -135,7 +141,7 @@ async function readOpenConditional(
         await clickGoBack(ctx);
     }
 
-    const elseActions: Action[] = [];
+    const elseActions: (Observed<Action> | null)[] = [];
     if (propsToRead.has("elseActions")) {
         ctx.getItemSlot("Else Actions").click();
         await waitForMenu(ctx);
@@ -283,8 +289,8 @@ async function writeChangeHunger(
 async function readOpenRandom(
     ctx: TaskContext,
     propsToRead: NestedPropsToRead
-): Promise<ActionRandom> {
-    const actions: Action[] = [];
+): Promise<Observed<ActionRandom>> {
+    const actions: (Observed<Action> | null)[] = [];
     ctx.getItemSlot("Actions").click();
     await waitForMenu(ctx);
     for (const entry of await readActionList(ctx)) {
@@ -518,12 +524,11 @@ const ACTION_SPECS = {
  * Checks nested-list lore fields for "None" markers, fills empty ones
  * with `[]`, and returns the set of nested props that still need reading.
  */
-function fillEmptyNestedListProps(
-    action: Action,
-    slot: ItemSlot,
-    type: Action["type"]
+function nonEmptyNestedListProps(
+    action: Observed<Action>,
+    slot: ItemSlot
 ): NestedPropsToRead {
-    const nestedFields = getNestedListFields(type);
+    const nestedFields = getNestedListFields(action.type);
     const lore = slot.getItem().getLore();
     const toRead: NestedPropsToRead = new Set();
 
@@ -552,53 +557,56 @@ function fillEmptyNestedListProps(
     return toRead;
 }
 
-
-export async function readActionList(ctx: TaskContext): Promise<ObservedAction[]> {
-    const slots = ctx.getAllItemSlots();
+export async function readActionsListPage(
+    ctx: TaskContext
+): Promise<ObservedActionSlot[]> {
+    const slots = getAllActionItemSlots(ctx);
     if (slots === null) {
         throw new Error("No open container found");
     }
 
-    const observed: ObservedAction[] = slots
+    const observed: ObservedActionSlot[] = slots
         .map((slot) => ({
             slot,
             type: tryGetActionTypeFromDisplayName(slot.getItem().getName()),
         }))
-        .filter(
-            (entry): entry is { slot: ItemSlot; type: Action["type"] } =>
-                entry.type !== undefined
-        )
-        .map((entry, index) => {
-            const parsed = parseActionListItem(entry.slot, entry.type);
-            // For actions with nested lists (e.g. Conditional), check if the lore indicates
-            // the nested list is empty (e.g. "Conditions: - None").
-            const propsToRead = fillEmptyNestedListProps(parsed, entry.slot, entry.type);
 
-            return {
+        .map((entry, index) => {
+            const observed: ObservedActionSlot = {
                 index,
                 slotId: entry.slot.getSlotId(),
                 slot: entry.slot,
-                type: entry.type,
-                action: parsed,
-                propsToRead: propsToRead.size > 0 ? propsToRead : undefined,
+                action: null,
             };
+            if (!entry.type) {
+                return observed;
+            }
+
+            const action = parseActionListItem(entry.slot, entry.type);
+
+            observed.action = action;
+            return observed;
         });
 
     // Actions with non-empty nested lists need clicking in to read.
     for (const entry of observed) {
-        if (!entry.propsToRead) continue;
+        if (entry.action === null) continue;
+        const propsToRead = nonEmptyNestedListProps(entry.action, entry.slot);
+        if (!propsToRead) continue;
 
         // preserve note
         const note = entry.action.note;
         try {
             entry.slot.click();
             await waitForMenu(ctx);
-            const spec = getActionSpec(entry.type);
+            const spec = getActionSpec(entry.action.type);
             if (!spec.read) {
-                throw new Error(`Reading action "${entry.type}" is not implemented.`);
+                throw new Error(
+                    `Reading action "${entry.action.type}" is not implemented.`
+                );
             }
             // Read nested list action data
-            entry.action = await spec.read(ctx, entry.propsToRead);
+            entry.action = await spec.read(ctx, propsToRead);
             if (note) {
                 entry.action.note = note;
             }
@@ -613,10 +621,34 @@ export async function readActionList(ctx: TaskContext): Promise<ObservedAction[]
     return observed;
 }
 
+export async function readActionList(ctx: TaskContext): Promise<ObservedActionSlot[]> {
+    let pages = 0;
+    const observed: ObservedActionSlot[] = [];
+    while (true) {
+        pages += 1;
+        const pageObserved = await readActionsListPage(ctx);
+        observed.push(...pageObserved);
+
+        const nextPageSlot = ctx.tryGetItemSlot((slot) => slot.getSlotId() === 53);
+        if (nextPageSlot === null) {
+            break;
+        }
+
+        nextPageSlot.click();
+        await waitForMenu(ctx);
+    }
+    for (let i = 0; i < pages - 1; i++) {
+        // previous page arrow
+        ctx.getItemSlot((slot) => slot.getSlotId() === 45).click();
+        await waitForMenu(ctx);
+    }
+    return observed;
+}
+
 async function writeOpenAction(
     ctx: TaskContext,
     desired: Action,
-    current?: Action
+    current?: Observed<Action>
 ): Promise<void> {
     const spec = getActionSpec(desired.type);
     // When adding new actions, read the current values to avoid
@@ -632,20 +664,17 @@ async function writeOpenAction(
     }
 
     await spec.write(ctx, desired, resolvedCurrent);
-
 }
 
 async function deleteObservedAction(
-    observed: ObservedAction,
+    observed: ObservedActionSlot,
     ctx: TaskContext
 ): Promise<void> {
     const currentType = tryGetActionTypeFromDisplayName(
         observed.slot.getItem().getName()
     );
-    if (currentType !== observed.type) {
-        ctx.displayMessage(
-            `&c[sync] WARNING: Expected ${observed.type} but slot contains ${currentType || "unknown"}. Slot ref may be stale.`
-        );
+    if (currentType !== observed.action?.type) {
+        throw new Error("Observed action type does not match slot display.");
     }
     observed.slot.click(MouseButton.RIGHT);
     await waitForMenu(ctx);
@@ -656,9 +685,8 @@ async function moveActionToIndex(
     fromIndex: number,
     toIndex: number
 ): Promise<void> {
-    const actionSlots = readActionSlots(ctx);
-    const listLength = actionSlots.length;
-    if (listLength <= 1) return;
+    const itemSlots = getAllActionItemSlots(ctx);
+    const listLength = itemSlots.length;
 
     const targetIndex = ((toIndex % listLength) + listLength) % listLength;
     let currentIndex = ((fromIndex % listLength) + listLength) % listLength;
@@ -670,7 +698,7 @@ async function moveActionToIndex(
             leftDistance <= rightDistance ? MouseButton.LEFT : MouseButton.RIGHT;
 
         // Re-read slots each iteration — the slot refs shift after each swap.
-        const currentSlots = readActionSlots(ctx);
+        const currentSlots = getAllActionItemSlots(ctx);
         currentSlots[currentIndex].click(button, true);
         await waitForMenu(ctx);
 
@@ -706,8 +734,8 @@ export async function importAction(ctx: TaskContext, action: Action): Promise<vo
     }
 
     if (action.note) {
-        const actionSlots = readActionSlots(ctx);
-        const addedSlot = actionSlots[actionSlots.length - 1];
+        const itemSlots = getAllActionItemSlots(ctx);
+        const addedSlot = itemSlots[itemSlots.length - 1];
         if (addedSlot) {
             await setListItemNote(ctx, addedSlot, action.note);
         }
@@ -716,7 +744,7 @@ export async function importAction(ctx: TaskContext, action: Action): Promise<vo
 
 async function applyActionListDiff(
     ctx: TaskContext,
-    observed: ObservedAction[],
+    observed: ObservedActionSlot[],
     diff: ActionListDiff
 ): Promise<void> {
     if (diff.operations.length === 0) return;
@@ -771,7 +799,7 @@ async function applyActionListDiff(
     // become stale after moves shift actions around. Moves re-read slots
     // internally so they're unaffected by prior edits.
     for (const op of edits) {
-        if (op.desired.note !== op.observed.action.note) {
+        if (op.desired.note !== op.observed.action?.note) {
             await setListItemNote(ctx, op.observed.slot, op.desired.note);
             continue;
         }
@@ -779,11 +807,16 @@ async function applyActionListDiff(
         if (spec.write) {
             op.observed.slot.click();
             await waitForMenu(ctx);
-        
+
+            if (!op.observed.action) {
+                throw new Error(
+                    "Observed action should always be present for edit operations."
+                );
+            }
+
             await writeOpenAction(ctx, op.desired, op.observed.action);
             await clickGoBack(ctx);
         }
-    
 
         await setListItemNote(ctx, op.observed.slot, op.desired.note);
     }
@@ -804,7 +837,7 @@ async function applyActionListDiff(
     adds.sort((a, b) => a.toIndex - b.toIndex);
     for (const op of adds) {
         await importAction(ctx, op.desired);
-        const lastIndex = readActionSlots(ctx).length - 1;
+        const lastIndex = getAllActionItemSlots(ctx).length - 1;
         await moveActionToIndex(ctx, lastIndex, op.toIndex);
     }
 }
@@ -819,11 +852,11 @@ function logSyncState(ctx: TaskContext, diff: ActionListDiff): void {
     for (const op of diff.operations) {
         switch (op.kind) {
             case "delete":
-                ctx.displayMessage(`&7  &c- ${op.observed.type}`);
+                ctx.displayMessage(`&7  &c- ${op.observed.action?.type}`);
                 break;
             case "edit":
                 ctx.displayMessage(
-                    `&7  &6~ ${op.observed.type} &7-> &6${op.desired.type}`
+                    `&7  &6~ ${op.observed.action?.type} &7-> &6${op.desired.type}`
                 );
                 break;
             case "add":
