@@ -68,8 +68,8 @@ function printCommandError(sm: SourceMap, err: unknown): void {
     ChatLib.chat(`&c${String(err)}`);
 }
 
-function formatDebugCondition(condition: Condition): string {
-    return JSON.stringify(condition);
+function formatDebugCondition(condition: Condition | null): string {
+    return condition === null ? "null" : JSON.stringify(condition);
 }
 
 function printObservedConditions(conditions: DebugObservedConditions): void {
