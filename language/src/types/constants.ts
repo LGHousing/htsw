@@ -587,6 +587,6 @@ export const PLACEHOLDER_SPECS = [
 ] as const;
 
 export const PLACEHOLDER_COMPLETIONS = PLACEHOLDER_SPECS.map(
-    (placeholder) => placeholder.completion ?? placeholder.name
+    (placeholder) => "completion" in placeholder ? placeholder.completion : placeholder.name
 );
 
