@@ -5,3 +5,6 @@ dist/
 
 # extension
 *.vsix
+
+# local import dumps
+examples/imports/
