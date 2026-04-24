@@ -347,12 +347,19 @@ function parseActionDisplayMenu(p: Parser, note: Note): Action {
 function parseActionDropItem(p: Parser, note: Note): Action {
     return parseActionRecovering(p, "DROP_ITEM", note, (action) => {
         setField(p, action, "itemName", p.parseName);
+        if (p.checkEol()) return;
         setField(p, action, "location", parseLocation);
+        if (p.checkEol()) return;
         setField(p, action, "dropNaturally", p.parseBoolean);
+        if (p.checkEol()) return;
         setField(p, action, "disableMerging", p.parseBoolean);
+        if (p.checkEol()) return;
         setField(p, action, "prioritizePlayer", p.parseBoolean);
+        if (p.checkEol()) return;
         setField(p, action, "inventoryFallback", p.parseBoolean);
+        if (p.checkEol()) return;
         setField(p, action, "despawnDurationTicks", parseNumericValue);
+        if (p.checkEol()) return;
         setField(p, action, "pickupDelayTicks", parseNumericValue);
     });
 }
@@ -387,8 +394,11 @@ function parseActionGiveExperienceLevels(p: Parser, note: Note): Action {
 function parseActionGiveItem(p: Parser, note: Note): Action {
     return parseActionRecovering(p, "GIVE_ITEM", note, (action) => {
         setField(p, action, "itemName", p.parseName);
+        if (p.checkEol()) return;
         setField(p, action, "allowMultiple", p.parseBoolean);
+        if (p.checkEol()) return;
         setField(p, action, "slot", parseInventorySlot);
+        if (p.checkEol()) return;
         setField(p, action, "replaceExisting", p.parseBoolean);
     });
 }
@@ -415,8 +425,12 @@ function parseActionPause(p: Parser, note: Note): Action {
 function parseActionPlaySound(p: Parser, note: Note): Action {
     return parseActionRecovering(p, "PLAY_SOUND", note, (action) => {
         setField(p, action, "sound", parseSound);
+        if (p.checkEol()) return;
         setField(p, action, "volume", p.parseDouble);
+        if (p.checkEol()) return;
         setField(p, action, "pitch", p.parseDouble);
+        if (p.checkEol()) return;
+        if (p.eatIdent("null") || p.eatString("null")) return;
         setField(p, action, "location", parseLocation);
     });
 }

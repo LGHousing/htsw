@@ -111,6 +111,7 @@ export const CONDITION_LORE_MAPPINGS = {
             Placeholder: { prop: "placeholder", kind: "value" },
             Comparator: { prop: "op", kind: "select" },
             "Compare Value": { prop: "amount", kind: "value" },
+            "Fallback Value": { prop: "fallback", kind: "value" },
         },
     },
 

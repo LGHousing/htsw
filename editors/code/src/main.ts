@@ -16,6 +16,18 @@ export function activate() {
             )
         );
 
+        providers.push(
+            languages.registerCompletionItemProvider(
+                "htsl",
+                new languageFeatures.CompletionAdapter(),
+                " ",
+                "\"",
+                "%",
+                ".",
+                "/"
+            )
+        );
+
         providers.push(new languageFeatures.DiagnosticsAdapter());
     }
 

@@ -3,6 +3,7 @@ import { Diagnostic } from "../../diagnostic";
 import { parseValue, parseVarName } from "./arguments";
 import { Span } from "../../span";
 import type { ShorthandKw } from "./helpers";
+import { PLACEHOLDER_SPECS } from "../../types";
 
 export function parseNumericalPlaceholder(p: Parser): string {
     function eatKw(kw: ShorthandKw): boolean {
@@ -78,8 +79,16 @@ export function parseNumericalPlaceholder(p: Parser): string {
         value = value.substring(1, value.length - 1);
     }
 
+    return validateNumericalPlaceholder(p, value, span);
+}
+
+export function validateNumericalPlaceholder(
+    p: Parser,
+    value: string,
+    span: Span,
+): string {
     const index = value.indexOf("/");
-    const name = value.substring(0, index == -1 ? value.length : index);
+    const name = value.substring(0, index == -1 ? value.length : index).toLowerCase();
     const args = index == -1 ? [] : value.substring(index + 1).split(" ");
 
     function addIssueInvalidPlaceholder() {
@@ -93,53 +102,14 @@ export function parseNumericalPlaceholder(p: Parser): string {
             .addPrimarySpan(new Span(span.start + lo, span.end)));
     }
 
+    const spec = PLACEHOLDER_SPECS.find((placeholder) => placeholder.name === name);
+    if (spec?.args === "none") {
+        if (args.length > 0) addIssueInvalidArgument("No arguments expected");
+        if (spec.valueType !== "number") addIssueInvalidPlaceholder();
+        return `%${value}%`;
+    }
+
     switch (name) {
-        case "server.name":
-        case "server.shortname":
-        case "player.name":
-        case "player.version":
-        case "player.gamemode":
-        case "player.region.name":
-        case "player.group.name":
-        case "player.group.tag":
-        case "player.group.color":
-        case "player.team.name":
-        case "player.team.tag":
-        case "player.team.color":
-        case "player.parkour.formatted":
-        case "house.name":
-        case "house.visitingrules":
-            if (args.length > 0) addIssueInvalidArgument("No arguments expected");
-            addIssueInvalidPlaceholder();
-            break;
-        case "player.ping":
-        case "player.health":
-        case "player.maxhealth":
-        case "player.hunger":
-        case "player.experience":
-        case "player.level":
-        case "player.protocol":
-        case "player.location.x":
-        case "player.location.y":
-        case "player.location.z":
-        case "player.location.pitch":
-        case "player.location.yaw":
-        case "player.pos.x":
-        case "player.pos.y":
-        case "player.pos.z":
-        case "player.pos.pitch":
-        case "player.pos.yaw":
-        case "player.block.x":
-        case "player.block.y":
-        case "player.block.z":
-        case "player.group.priority":
-        case "player.parkour.ticks":
-        case "house.guests":
-        case "house.cookies":
-        case "house.players":
-        case "date.unix":
-            if (args.length > 0) addIssueInvalidArgument("No arguments expected");
-            break;
         case "var.player":
         case "var.global":
             if (args.length == 0) addIssueInvalidArgument("Expected stat key");
@@ -150,18 +120,19 @@ export function parseNumericalPlaceholder(p: Parser): string {
             if (args.length > 2)
                 addIssueInvalidArgument("Team stat key cannot contain spaces");
             break;
+        case "random.int":
         case "random.whole":
             if (args.length == 0) addIssueInvalidArgument("Expected lower bound");
             else if (args.length == 1) addIssueInvalidArgument("Expected upper bound");
             else if (args.length > 2) addIssueInvalidArgument("Unknown argument");
-            else if (!parseInt(args[0]) || !parseInt(args[1]))
+            else if (!/^-?\d+$/.test(args[0]) || !/^-?\d+$/.test(args[1]))
                 addIssueInvalidArgument("Bounds must be integers");
             break;
         case "random.decimal":
             if (args.length == 0) addIssueInvalidArgument("Expected lower bound");
             else if (args.length == 1) addIssueInvalidArgument("Expected upper bound");
             else if (args.length > 2) addIssueInvalidArgument("Unknown argument");
-            else if (!parseFloat(args[0]) || !parseFloat(args[1]))
+            else if (isNaN(Number(args[0])) || isNaN(Number(args[1])))
                 addIssueInvalidArgument("Bounds must be numbers");
             break;
         default:

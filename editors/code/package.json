@@ -12,7 +12,7 @@
         "vscode": "^1.97.2"
     },
     "scripts": {
-        "build": "vite build --mode production",
+        "build": "tsc --noEmit && vite build --mode production",
         "package": "npx @vscode/vsce package --no-dependencies"
     },
     "dependencies": {

@@ -247,8 +247,11 @@ function parseConditionRequireItem(
 ): Condition {
     return parseConditionRecovering(p, "REQUIRE_ITEM", inverted, note, (condition) => {
         setField(p, condition, "itemName", p.parseName);
+        if (checkEnd(p)) return;
         setField(p, condition, "whatToCheck", parseItemProperty);
+        if (checkEnd(p)) return;
         setField(p, condition, "whereToCheck", parseItemLocation);
+        if (checkEnd(p)) return;
         setField(p, condition, "amount", parseItemAmount);
     });
 }
@@ -338,6 +341,8 @@ function parseConditionComparePlaceholder(
             setField(p, condition, "placeholder", parseNumericalPlaceholder);
             setField(p, condition, "op", parseComparison);
             setField(p, condition, "amount", parseNumericValue);
+            if (checkEnd(p)) return;
+            setField(p, condition, "fallback", parseValue);
         }
     );
 }

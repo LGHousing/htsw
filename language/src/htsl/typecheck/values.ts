@@ -61,7 +61,7 @@ function parseString(tcx: TyCtxt, value: string): VarState | undefined {
 
 function parsePlaceholder(tcx: TyCtxt, placeholder: string): VarState | undefined {
     const pivotIndex = placeholder.indexOf("/");
-    const name = pivotIndex === -1 ? placeholder : placeholder.substring(0, pivotIndex);
+    const name = (pivotIndex === -1 ? placeholder : placeholder.substring(0, pivotIndex)).toLowerCase();
     const argsString = pivotIndex === -1 ? "" : placeholder.substring(pivotIndex + 1);
 
     let args: string[] = [];
@@ -163,6 +163,7 @@ export function runPlaceholder(tcx: TyCtxt, name: string, ...args: string[]): Va
             return unknownLong();
         case "date.unix.ms":
             return unknownLong();
+        case "random.int":
         case "random.whole":
             if (args.length === 0) {
                 return longRange(Long.fromNumber(0), Long.fromNumber(100000));

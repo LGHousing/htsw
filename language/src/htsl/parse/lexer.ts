@@ -206,14 +206,14 @@ export class Lexer {
         if (/[0-9]/.test(c)) {
             let value = c;
             while (this.hasNext()) {
-                if (!/[0-9]/.test(this.peek())) break;
+                if (!/[0-9_]/.test(this.peek())) break;
                 value += this.next();
             }
             if (this.peek() === ".") {
                 value += ".";
                 this.next();
                 while (this.hasNext()) {
-                    if (!/[0-9]/.test(this.peek())) break;
+                    if (!/[0-9_]/.test(this.peek())) break;
                     value += this.next();
                 }
                 return token("f64", new Span(lo, this.posWithOffset), { value });

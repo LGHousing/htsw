@@ -46,6 +46,44 @@ describe("Main API", () => {
         expect(result.diagnostics.filter((it) => it.level === "error").length).toBe(0);
     });
 
+    it("parseActionsResult accepts placeholder numeric forms", () => {
+        const sourceMap = new htsw.SourceMap(
+            new SimpleFileLoader({
+                "/project/test.htsl": [
+                    "stat t20ms = %date.unix.ms%",
+                    "stat random = %random.int/1 10%",
+                    "stat existing = %var.player/random%",
+                    "if and (placeholder \"%player.pos.yaw%\" >= 0.0 0.0) {",
+                    "    changeVelocity \"%var.player/car/vx%\" \"-8\" \"%var.player/car/vz%\"",
+                    "}",
+                    "",
+                ].join("\n"),
+            })
+        );
+
+        const result = htsw.parseActionsResult(sourceMap, "/project/test.htsl");
+
+        expect(result.diagnostics.filter((it) => it.level === "error")).toEqual([]);
+    });
+
+    it("parseActionsResult accepts underscore numeric separators", () => {
+        const sourceMap = new htsw.SourceMap(
+            new SimpleFileLoader({
+                "/project/test.htsl": [
+                    "stat x = 2_001",
+                    "stat y += -2_001",
+                    "stat z = 2_001.5",
+                    "tp custom_coordinates \"~2_001 ~0 ~-2_001 90 0\"",
+                    "",
+                ].join("\n"),
+            })
+        );
+
+        const result = htsw.parseActionsResult(sourceMap, "/project/test.htsl");
+
+        expect(result.diagnostics.filter((it) => it.level === "error")).toEqual([]);
+    });
+
     it("parseImportablesResult parses simple import.json", () => {
         const sourceMap = new htsw.SourceMap(
             new SimpleFileLoader({
