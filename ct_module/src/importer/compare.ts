@@ -1,5 +1,5 @@
 import type { Action, Condition } from "htsw/types";
-import type { Observed } from "./actions/types";
+import type { Observed } from "./types";
 import { normalizeNoteText } from "./helpers";
 
 // Sad

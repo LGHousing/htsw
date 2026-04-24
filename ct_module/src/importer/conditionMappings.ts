@@ -1,8 +1,4 @@
-import {
-    CONDITION_NAMES,
-    type Condition,
-    type ConditionCompareVar,
-} from "htsw/types";
+import { CONDITION_NAMES, type Condition, type ConditionCompareVar } from "htsw/types";
 
 import { ItemSlot } from "../tasks/specifics/slots";
 import { removedFormatting } from "../utils/helpers";
@@ -173,20 +169,16 @@ export const CONDITION_LORE_MAPPINGS = {
         },
     },
 } satisfies {
-    [K in Condition["type"]]?: ConditionLoreSpec<
-        Extract<Condition, { type: K }>
-    >;
+    [K in Condition["type"]]?: ConditionLoreSpec<Extract<Condition, { type: K }>>;
 };
 
 export function tryGetConditionTypeFromDisplayName(
-    displayName: string,
+    displayName: string
 ): Condition["type"] | undefined {
     const normalizedDisplayName = removedFormatting(displayName).trim();
 
     for (const type in CONDITION_NAMES) {
-        if (
-            CONDITION_NAMES[type as Condition["type"]] === normalizedDisplayName
-        ) {
+        if (CONDITION_NAMES[type as Condition["type"]] === normalizedDisplayName) {
             return type as Condition["type"];
         }
     }
@@ -196,7 +188,7 @@ export function tryGetConditionTypeFromDisplayName(
 
 export function parseConditionListItem(
     slot: ItemSlot,
-    type: Condition["type"],
+    type: Condition["type"]
 ): Condition {
     const note = readListItemNote(slot);
     const commonFields = note === undefined ? {} : { note };

@@ -40,10 +40,13 @@ import {
     clickGoBack,
     waitForMenu,
     getSlotPaginate,
+    openSubmenu,
+    enterValue,
     setStringValue,
     setBooleanValue,
     setSelectValue,
     setCycleValue,
+    setNumberValue,
     readBooleanValue,
     setListItemNote,
     parseLoreKeyValueLine,
@@ -67,7 +70,7 @@ import type {
     NestedPropsToRead,
     Observed,
     ObservedActionSlot,
-} from "./actions/types";
+} from "./types";
 
 export { diffActionList };
 export type {
@@ -76,7 +79,7 @@ export type {
     NestedListProp,
     NestedPropsToRead,
     ObservedActionSlot as ObservedAction,
-} from "./actions/types";
+} from "./types";
 
 // Shape of Actions
 type ActionSpec<T extends Action = Action> = {
@@ -104,7 +107,11 @@ function isLimitExceeded(slot: ItemSlot): boolean {
     return removedFormatting(lastLine) === "You can't have more of this action!";
 }
 
-function getAllActionItemSlots(ctx: TaskContext): ItemSlot[] {
+const ACTION_ITEMS_PER_PAGE = 21;
+const ACTION_PREV_PAGE_SLOT_ID = 45;
+const ACTION_NEXT_PAGE_SLOT_ID = 53;
+
+function getVisibleActionItemSlots(ctx: TaskContext): ItemSlot[] {
     const slots = ctx.getAllItemSlots((slot) => {
         const slotId = slot.getSlotId();
         const row = Math.floor(slotId / 9);
@@ -114,7 +121,160 @@ function getAllActionItemSlots(ctx: TaskContext): ItemSlot[] {
     if (slots === null) {
         throw new Error("No open container found");
     }
-    return slots;
+    return slots.sort((a, b) => a.getSlotId() - b.getSlotId());
+}
+
+function isNoActionsPlaceholder(slot: ItemSlot): boolean {
+    return removedFormatting(slot.getItem().getName()).trim() === "No Actions!";
+}
+
+function parsePaginatedTitlePage(
+    title: string
+): { currentPage: number; totalPages: number } | null {
+    const trimmedTitle = title.trim();
+    const exactMatch = trimmedTitle.match(/^\((\d+)\/(\d+)\)\s+/);
+    if (exactMatch) {
+        const currentPage = Number(exactMatch[1]);
+        const totalPages = Number(exactMatch[2]);
+        if (
+            !Number.isInteger(currentPage) ||
+            !Number.isInteger(totalPages) ||
+            currentPage < 1 ||
+            totalPages < 1 ||
+            currentPage > totalPages
+        ) {
+            throw new Error(`Invalid paginated action title: "${title}"`);
+        }
+        return { currentPage, totalPages };
+    }
+
+    if (/\([^)]*\)\s*$/.test(trimmedTitle) || /^\([^)]*\)\s+/.test(trimmedTitle)) {
+        throw new Error(`Malformed paginated action title: "${title}"`);
+    }
+
+    return null;
+}
+
+function hasActionNextPage(ctx: TaskContext): boolean {
+    return (
+        ctx.tryGetItemSlot((slot) => slot.getSlotId() === ACTION_NEXT_PAGE_SLOT_ID) !==
+        null
+    );
+}
+
+function hasActionPrevPage(ctx: TaskContext): boolean {
+    return (
+        ctx.tryGetItemSlot((slot) => slot.getSlotId() === ACTION_PREV_PAGE_SLOT_ID) !==
+        null
+    );
+}
+
+function getCurrentActionPageState(ctx: TaskContext): {
+    currentPage: number;
+    totalPages: number | null;
+    hasNext: boolean;
+    hasPrev: boolean;
+} {
+    const title = ctx.getOpenContainerTitle();
+    if (title === null) {
+        throw new Error("No open container found");
+    }
+
+    const parsedTitle = parsePaginatedTitlePage(title);
+    const hasNext = hasActionNextPage(ctx);
+    if (parsedTitle === null) {
+        return {
+            currentPage: 1,
+            totalPages: hasNext ? null : 1,
+            hasNext,
+            hasPrev: false,
+        };
+    }
+
+    return {
+        currentPage: parsedTitle.currentPage,
+        totalPages: parsedTitle.totalPages,
+        hasNext,
+        hasPrev: hasActionPrevPage(ctx),
+    };
+}
+
+function getActionPageForIndex(index: number): number {
+    return Math.floor(index / ACTION_ITEMS_PER_PAGE) + 1;
+}
+
+function getActionLocalIndex(index: number): number {
+    return index % ACTION_ITEMS_PER_PAGE;
+}
+
+async function goToActionPage(ctx: TaskContext, targetPage: number): Promise<void> {
+    if (!Number.isInteger(targetPage) || targetPage < 1) {
+        throw new Error(`Invalid target action page: ${targetPage}`);
+    }
+
+    while (true) {
+        const state = getCurrentActionPageState(ctx);
+        if (state.currentPage === targetPage) {
+            return;
+        }
+
+        if (state.currentPage < targetPage) {
+            if (!state.hasNext) {
+                throw new Error(
+                    `Cannot move to action page ${targetPage}; no next page from ${state.currentPage}.`
+                );
+            }
+
+            ctx.getItemSlot(
+                (slot) => slot.getSlotId() === ACTION_NEXT_PAGE_SLOT_ID
+            ).click();
+            await waitForMenu(ctx);
+
+            const nextState = getCurrentActionPageState(ctx);
+            if (nextState.currentPage <= state.currentPage) {
+                throw new Error("Action page did not advance after clicking next page.");
+            }
+            continue;
+        }
+
+        if (!state.hasPrev) {
+            throw new Error(
+                `Cannot move to action page ${targetPage}; no previous page from ${state.currentPage}.`
+            );
+        }
+
+        ctx.getItemSlot((slot) => slot.getSlotId() === ACTION_PREV_PAGE_SLOT_ID).click();
+        await waitForMenu(ctx);
+
+        const prevState = getCurrentActionPageState(ctx);
+        if (prevState.currentPage >= state.currentPage) {
+            throw new Error("Action page did not go back after clicking previous page.");
+        }
+    }
+}
+
+async function getActionSlotAtIndex(
+    ctx: TaskContext,
+    index: number,
+    listLength: number
+): Promise<ItemSlot> {
+    if (listLength <= 0 || index < 0 || index >= listLength) {
+        throw new Error(
+            `Action index ${index} is out of bounds for list length ${listLength}.`
+        );
+    }
+
+    await goToActionPage(ctx, getActionPageForIndex(index));
+    const visibleSlots = getVisibleActionItemSlots(ctx);
+    const localIndex = getActionLocalIndex(index);
+    const slot = visibleSlots[localIndex];
+    if (!slot) {
+        throw new Error(
+            `Could not resolve visible action slot ${localIndex} for global index ${index}.`
+        );
+    }
+
+    return slot;
 }
 
 async function readOpenConditional(
@@ -193,23 +353,70 @@ async function writeConditional(
     }
 }
 
-async function writeSetGroup(ctx: TaskContext, action: ActionSetGroup): Promise<void> {}
+async function writeSetGroup(ctx: TaskContext, action: ActionSetGroup): Promise<void> {
+    await setSelectValue(ctx, "Group", action.group);
 
-async function writeTitle(ctx: TaskContext, action: ActionTitle): Promise<void> {}
+    if (action.demotionProtection !== undefined) {
+        await setBooleanValue(
+            ctx,
+            ctx.getItemSlot("Demotion Protection"),
+            action.demotionProtection
+        );
+    }
+}
 
-async function writeActionBar(ctx: TaskContext, action: ActionActionBar): Promise<void> {}
+async function writeTitle(ctx: TaskContext, action: ActionTitle): Promise<void> {
+    await setStringValue(ctx, ctx.getItemSlot("Title"), action.title);
+
+    if (action.subtitle !== undefined) {
+        await setStringValue(ctx, ctx.getItemSlot("Subtitle"), action.subtitle);
+    }
+
+    if (action.fadein !== undefined) {
+        await setNumberValue(ctx, ctx.getItemSlot("Fadein"), action.fadein);
+    }
+
+    if (action.stay !== undefined) {
+        await setNumberValue(ctx, ctx.getItemSlot("Stay"), action.stay);
+    }
+
+    if (action.fadeout !== undefined) {
+        await setNumberValue(ctx, ctx.getItemSlot("Fadeout"), action.fadeout);
+    }
+}
+
+async function writeActionBar(ctx: TaskContext, action: ActionActionBar): Promise<void> {
+    await setStringValue(ctx, ctx.getItemSlot("Message"), action.message);
+}
 
 async function writeChangeMaxHealth(
     ctx: TaskContext,
     action: ActionChangeMaxHealth
-): Promise<void> {}
+): Promise<void> {
+    await setSelectValue(ctx, "Mode", action.op);
+    await setStringValue(ctx, ctx.getItemSlot("Max Health"), action.amount);
 
-async function writeGiveItem(ctx: TaskContext, action: ActionGiveItem): Promise<void> {}
+    if (action.heal !== undefined) {
+        await setBooleanValue(ctx, ctx.getItemSlot("Heal On Change"), action.heal);
+    }
+}
+
+async function writeGiveItem(ctx: TaskContext, action: ActionGiveItem): Promise<void> {
+    throw new Error(
+        `Writing Give Item item selection is not implemented; cannot set item "${action.itemName}".`
+    );
+}
 
 async function writeRemoveItem(
     ctx: TaskContext,
     action: ActionRemoveItem
-): Promise<void> {}
+): Promise<void> {
+    if (action.itemName !== undefined) {
+        throw new Error(
+            `Writing Remove Item item selection is not implemented; cannot set item "${action.itemName}".`
+        );
+    }
+}
 
 async function writeSendMessage(
     ctx: TaskContext,
@@ -221,17 +428,42 @@ async function writeSendMessage(
 async function writeApplyPotionEffect(
     ctx: TaskContext,
     action: ActionApplyPotionEffect
-): Promise<void> {}
+): Promise<void> {
+    await setSelectValue(ctx, "Effect", action.effect);
+    await setNumberValue(ctx, ctx.getItemSlot("Duration"), action.duration);
+
+    if (action.level !== undefined) {
+        await setNumberValue(ctx, ctx.getItemSlot("Level"), action.level);
+    }
+
+    if (action.override !== undefined) {
+        await setBooleanValue(
+            ctx,
+            ctx.getItemSlot("Override Existing Effects"),
+            action.override
+        );
+    }
+
+    if (action.showIcon !== undefined) {
+        await setBooleanValue(ctx, ctx.getItemSlot("Show Potion Icon"), action.showIcon);
+    }
+}
 
 async function writeGiveExperienceLevels(
     ctx: TaskContext,
     action: ActionGiveExperienceLevels
-): Promise<void> {}
+): Promise<void> {
+    await setStringValue(ctx, ctx.getItemSlot("Levels"), action.amount);
+}
 
 async function writeSendToLobby(
     ctx: TaskContext,
     action: ActionSendToLobby
-): Promise<void> {}
+): Promise<void> {
+    if (action.lobby !== undefined) {
+        await setSelectValue(ctx, "Location", action.lobby);
+    }
+}
 
 const VAR_HOLDER_OPTIONS = ["Player", "Global", "Team"] as const;
 
@@ -257,34 +489,96 @@ async function writeChangeVar(ctx: TaskContext, action: ActionChangeVar): Promis
     }
 }
 
-async function writeTeleport(ctx: TaskContext, action: ActionTeleport): Promise<void> {}
+async function writeTeleport(ctx: TaskContext, action: ActionTeleport): Promise<void> {
+    if (action.location.type === "Custom Coordinates") {
+        await openSubmenu(ctx, "Location");
+        const optionSlot = await getSlotPaginate(ctx, "Custom Coordinates");
+        optionSlot.click();
+        await enterValue(ctx, action.location.value);
+        await waitForMenu(ctx);
+    } else {
+        await setSelectValue(ctx, "Location", action.location.type);
+    }
+
+    if (action.preventTeleportInsideBlocks !== undefined) {
+        await setBooleanValue(
+            ctx,
+            ctx.getItemSlot("Prevent Teleport Inside Blocks"),
+            action.preventTeleportInsideBlocks
+        );
+    }
+}
 
 async function writeFailParkour(
     ctx: TaskContext,
     action: ActionFailParkour
-): Promise<void> {}
+): Promise<void> {
+    if (action.message !== undefined) {
+        await setStringValue(ctx, ctx.getItemSlot("Reason"), action.message);
+    }
+}
 
-async function writePlaySound(ctx: TaskContext, action: ActionPlaySound): Promise<void> {}
+async function writePlaySound(ctx: TaskContext, action: ActionPlaySound): Promise<void> {
+    await setSelectValue(ctx, "Sound", action.sound);
+
+    if (action.volume !== undefined) {
+        await setNumberValue(ctx, ctx.getItemSlot("Volume"), action.volume);
+    }
+
+    if (action.pitch !== undefined) {
+        await setNumberValue(ctx, ctx.getItemSlot("Pitch"), action.pitch);
+    }
+
+    if (action.location !== undefined) {
+        if (action.location.type === "Custom Coordinates") {
+            await openSubmenu(ctx, "Location");
+            const optionSlot = await getSlotPaginate(ctx, "Custom Coordinates");
+            optionSlot.click();
+            await enterValue(ctx, action.location.value);
+            await waitForMenu(ctx);
+        } else {
+            await setSelectValue(ctx, "Location", action.location.type);
+        }
+    }
+}
 
 async function writeSetCompassTarget(
     ctx: TaskContext,
     action: ActionSetCompassTarget
-): Promise<void> {}
+): Promise<void> {
+    if (action.location.type === "Custom Coordinates") {
+        await openSubmenu(ctx, "Location");
+        const optionSlot = await getSlotPaginate(ctx, "Custom Coordinates");
+        optionSlot.click();
+        await enterValue(ctx, action.location.value);
+        await waitForMenu(ctx);
+    } else {
+        await setSelectValue(ctx, "Location", action.location.type);
+    }
+}
 
 async function writeSetGamemode(
     ctx: TaskContext,
     action: ActionSetGamemode
-): Promise<void> {}
+): Promise<void> {
+    await setSelectValue(ctx, "Gamemode", action.gamemode);
+}
 
 async function writeChangeHealth(
     ctx: TaskContext,
     action: ActionChangeHealth
-): Promise<void> {}
+): Promise<void> {
+    await setSelectValue(ctx, "Mode", action.op);
+    await setStringValue(ctx, ctx.getItemSlot("Health"), action.amount);
+}
 
 async function writeChangeHunger(
     ctx: TaskContext,
     action: ActionChangeHunger
-): Promise<void> {}
+): Promise<void> {
+    await setSelectValue(ctx, "Mode", action.op);
+    await setStringValue(ctx, ctx.getItemSlot("Level"), action.amount);
+}
 
 async function readOpenRandom(
     ctx: TaskContext,
@@ -312,53 +606,99 @@ async function writeRandom(ctx: TaskContext, action: ActionRandom): Promise<void
     await clickGoBack(ctx);
 }
 
-async function writeFunction(ctx: TaskContext, action: ActionFunction): Promise<void> {}
+async function writeFunction(ctx: TaskContext, action: ActionFunction): Promise<void> {
+    await setStringValue(ctx, ctx.getItemSlot("Function"), action.function);
+
+    if (action.global !== undefined) {
+        await setBooleanValue(
+            ctx,
+            ctx.getItemSlot("Trigger For All Players"),
+            action.global
+        );
+    }
+}
 
 async function writeApplyInventoryLayout(
     ctx: TaskContext,
     action: ActionApplyInventoryLayout
-): Promise<void> {}
+): Promise<void> {
+    await setSelectValue(ctx, "Layout", action.layout);
+}
 
 async function writeEnchantHeldItem(
     ctx: TaskContext,
     action: ActionEnchantHeldItem
-): Promise<void> {}
+): Promise<void> {
+    await setSelectValue(ctx, "Enchantment", action.enchant);
+    await setNumberValue(ctx, ctx.getItemSlot("Level"), action.level);
+}
 
 async function writePause(
     ctx: TaskContext,
     action: ActionPauseExecution
-): Promise<void> {}
+): Promise<void> {
+    await setNumberValue(ctx, ctx.getItemSlot("Ticks To Wait"), action.ticks);
+}
 
-async function writeSetTeam(ctx: TaskContext, action: ActionSetTeam): Promise<void> {}
+async function writeSetTeam(ctx: TaskContext, action: ActionSetTeam): Promise<void> {
+    await setSelectValue(ctx, "Team", action.team);
+}
 
 async function writeDisplayMenu(
     ctx: TaskContext,
     action: ActionDisplayMenu
-): Promise<void> {}
+): Promise<void> {
+    await setSelectValue(ctx, "Menu", action.menu);
+}
 
-async function writeDropItem(ctx: TaskContext, action: ActionDropItem): Promise<void> {}
+async function writeDropItem(ctx: TaskContext, action: ActionDropItem): Promise<void> {
+    throw new Error(
+        `Writing Drop Item item selection is not implemented; cannot set item "${action.itemName}".`
+    );
+}
 
 async function writeSetVelocity(
     ctx: TaskContext,
     action: ActionSetVelocity
-): Promise<void> {}
+): Promise<void> {
+    await setStringValue(ctx, ctx.getItemSlot("X Direction"), action.x);
+    await setStringValue(ctx, ctx.getItemSlot("Y Direction"), action.y);
+    await setStringValue(ctx, ctx.getItemSlot("Z Direction"), action.z);
+}
 
-async function writeLaunch(ctx: TaskContext, action: ActionLaunch): Promise<void> {}
+async function writeLaunch(ctx: TaskContext, action: ActionLaunch): Promise<void> {
+    if (action.location.type === "Custom Coordinates") {
+        await openSubmenu(ctx, "Target Location");
+        const optionSlot = await getSlotPaginate(ctx, "Custom Coordinates");
+        optionSlot.click();
+        await enterValue(ctx, action.location.value);
+        await waitForMenu(ctx);
+    } else {
+        await setSelectValue(ctx, "Target Location", action.location.type);
+    }
+    await setNumberValue(ctx, ctx.getItemSlot("Launch Strength"), action.strength);
+}
 
 async function writeSetPlayerWeather(
     ctx: TaskContext,
     action: ActionSetPlayerWeather
-): Promise<void> {}
+): Promise<void> {
+    await setSelectValue(ctx, "Weather", action.weather);
+}
 
 async function writeSetPlayerTime(
     ctx: TaskContext,
     action: ActionSetPlayerTime
-): Promise<void> {}
+): Promise<void> {
+    await setCycleValue(ctx, "Time", [action.time], action.time);
+}
 
 async function writeToggleNametagDisplay(
     ctx: TaskContext,
     action: ActionToggleNametagDisplay
-): Promise<void> {}
+): Promise<void> {
+    await setBooleanValue(ctx, ctx.getItemSlot("Display Nametag"), action.displayNametag);
+}
 
 const ACTION_SPECS = {
     CONDITIONAL: {
@@ -560,11 +900,9 @@ function nonEmptyNestedListProps(
 export async function readActionsListPage(
     ctx: TaskContext
 ): Promise<ObservedActionSlot[]> {
-    const slots = getAllActionItemSlots(ctx);
-    if (slots === null) {
-        throw new Error("No open container found");
-    }
-
+    const slots = getVisibleActionItemSlots(ctx).filter(
+        (slot) => !isNoActionsPlaceholder(slot)
+    );
     const observed: ObservedActionSlot[] = slots
         .map((slot) => ({
             slot,
@@ -592,7 +930,7 @@ export async function readActionsListPage(
     for (const entry of observed) {
         if (entry.action === null) continue;
         const propsToRead = nonEmptyNestedListProps(entry.action, entry.slot);
-        if (!propsToRead) continue;
+        if (propsToRead.size === 0) continue;
 
         // preserve note
         const note = entry.action.note;
@@ -611,7 +949,10 @@ export async function readActionsListPage(
                 entry.action.note = note;
             }
             await clickGoBack(ctx);
-        } catch {
+        } catch (error) {
+            ctx.displayMessage(
+                `&7[action-read] &cFailed to read nested action at index ${entry.index} (${entry.action.type}): ${error}`
+            );
             if (ctx.tryGetItemSlot("Go Back") !== null) {
                 await clickGoBack(ctx);
             }
@@ -622,26 +963,25 @@ export async function readActionsListPage(
 }
 
 export async function readActionList(ctx: TaskContext): Promise<ObservedActionSlot[]> {
-    let pages = 0;
+    await goToActionPage(ctx, 1);
     const observed: ObservedActionSlot[] = [];
-    while (true) {
-        pages += 1;
-        const pageObserved = await readActionsListPage(ctx);
-        observed.push(...pageObserved);
 
-        const nextPageSlot = ctx.tryGetItemSlot((slot) => slot.getSlotId() === 53);
-        if (nextPageSlot === null) {
+    while (true) {
+        const pageObserved = await readActionsListPage(ctx);
+        for (const entry of pageObserved) {
+            entry.index = observed.length;
+            observed.push(entry);
+        }
+
+        const state = getCurrentActionPageState(ctx);
+        if (!state.hasNext) {
             break;
         }
 
-        nextPageSlot.click();
+        ctx.getItemSlot((slot) => slot.getSlotId() === ACTION_NEXT_PAGE_SLOT_ID).click();
         await waitForMenu(ctx);
     }
-    for (let i = 0; i < pages - 1; i++) {
-        // previous page arrow
-        ctx.getItemSlot((slot) => slot.getSlotId() === 45).click();
-        await waitForMenu(ctx);
-    }
+    await goToActionPage(ctx, 1);
     return observed;
 }
 
@@ -667,26 +1007,24 @@ async function writeOpenAction(
 }
 
 async function deleteObservedAction(
-    observed: ObservedActionSlot,
-    ctx: TaskContext
+    ctx: TaskContext,
+    index: number,
+    listLength: number
 ): Promise<void> {
-    const currentType = tryGetActionTypeFromDisplayName(
-        observed.slot.getItem().getName()
-    );
-    if (currentType !== observed.action?.type) {
-        throw new Error("Observed action type does not match slot display.");
-    }
-    observed.slot.click(MouseButton.RIGHT);
+    const slot = await getActionSlotAtIndex(ctx, index, listLength);
+    slot.click(MouseButton.RIGHT);
     await waitForMenu(ctx);
 }
 
 async function moveActionToIndex(
     ctx: TaskContext,
     fromIndex: number,
-    toIndex: number
+    toIndex: number,
+    listLength: number
 ): Promise<void> {
-    const itemSlots = getAllActionItemSlots(ctx);
-    const listLength = itemSlots.length;
+    if (listLength <= 1) {
+        return;
+    }
 
     const targetIndex = ((toIndex % listLength) + listLength) % listLength;
     let currentIndex = ((fromIndex % listLength) + listLength) % listLength;
@@ -697,9 +1035,8 @@ async function moveActionToIndex(
         const button =
             leftDistance <= rightDistance ? MouseButton.LEFT : MouseButton.RIGHT;
 
-        // Re-read slots each iteration — the slot refs shift after each swap.
-        const currentSlots = getAllActionItemSlots(ctx);
-        currentSlots[currentIndex].click(button, true);
+        const currentSlot = await getActionSlotAtIndex(ctx, currentIndex, listLength);
+        currentSlot.click(button, true);
         await waitForMenu(ctx);
 
         if (button === MouseButton.LEFT) {
@@ -707,6 +1044,12 @@ async function moveActionToIndex(
         } else {
             currentIndex = (currentIndex + 1) % listLength;
         }
+    }
+
+    if (currentIndex !== targetIndex) {
+        throw new Error(
+            `Failed to move action from index ${fromIndex} to ${toIndex} within ${listLength} item(s).`
+        );
     }
 }
 
@@ -734,7 +1077,7 @@ export async function importAction(ctx: TaskContext, action: Action): Promise<vo
     }
 
     if (action.note) {
-        const itemSlots = getAllActionItemSlots(ctx);
+        const itemSlots = getVisibleActionItemSlots(ctx);
         const addedSlot = itemSlots[itemSlots.length - 1];
         if (addedSlot) {
             await setListItemNote(ctx, addedSlot, action.note);
@@ -774,38 +1117,51 @@ async function applyActionListDiff(
     // Deletes first (reverse order so indices stay valid), then refresh slot refs.
     if (deletes.length > 0) {
         deletes.sort((a, b) => b.observed.index - a.observed.index);
-        for (const op of deletes) {
-            await deleteObservedAction(op.observed, ctx);
-        }
+        const currentObserved = [...observed];
 
-        const deletedIndices = new Set(deletes.map((op) => op.observed.index));
-        const freshSlots = (ctx.getAllItemSlots() ?? []).filter(
-            (slot) =>
-                tryGetActionTypeFromDisplayName(slot.getItem().getName()) !== undefined
-        );
-        const remaining = observed.filter((o) => !deletedIndices.has(o.index));
-        for (let i = 0; i < remaining.length && i < freshSlots.length; i++) {
-            remaining[i].slot = freshSlots[i];
-            remaining[i].slotId = freshSlots[i].getSlotId();
-            remaining[i].index = i;
+        for (const op of deletes) {
+            const index = currentObserved.indexOf(op.observed);
+            if (index === -1) {
+                continue;
+            }
+
+            await deleteObservedAction(ctx, index, currentObserved.length);
+            currentObserved.splice(index, 1);
         }
     }
 
     const remainingObserved = observed.filter(
         (entry) => !deletes.some((op) => op.observed === entry)
     );
+    for (let i = 0; i < remainingObserved.length; i++) {
+        remainingObserved[i].index = i;
+    }
 
     // Edits before moves: edits use slot refs from readActionList which
     // become stale after moves shift actions around. Moves re-read slots
     // internally so they're unaffected by prior edits.
     for (const op of edits) {
-        if (op.desired.note !== op.observed.action?.note) {
-            await setListItemNote(ctx, op.observed.slot, op.desired.note);
+        const currentIndex = remainingObserved.indexOf(op.observed);
+        if (currentIndex === -1) {
             continue;
         }
+
+        const actionSlot = await getActionSlotAtIndex(
+            ctx,
+            currentIndex,
+            remainingObserved.length
+        );
+        op.observed.slot = actionSlot;
+        op.observed.slotId = actionSlot.getSlotId();
+
+        if (op.noteOnly) {
+            await setListItemNote(ctx, actionSlot, op.desired.note);
+            continue;
+        }
+
         const spec = getActionSpec(op.desired.type);
         if (spec.write) {
-            op.observed.slot.click();
+            actionSlot.click();
             await waitForMenu(ctx);
 
             if (!op.observed.action) {
@@ -818,7 +1174,7 @@ async function applyActionListDiff(
             await clickGoBack(ctx);
         }
 
-        await setListItemNote(ctx, op.observed.slot, op.desired.note);
+        await setListItemNote(ctx, actionSlot, op.desired.note);
     }
 
     moves.sort((a, b) => a.toIndex - b.toIndex);
@@ -828,18 +1184,61 @@ async function applyActionListDiff(
             continue;
         }
 
-        await moveActionToIndex(ctx, fromIndex, op.toIndex);
+        await moveActionToIndex(ctx, fromIndex, op.toIndex, remainingObserved.length);
 
         remainingObserved.splice(fromIndex, 1);
         remainingObserved.splice(op.toIndex, 0, op.observed);
+        for (let i = 0; i < remainingObserved.length; i++) {
+            remainingObserved[i].index = i;
+        }
     }
 
     adds.sort((a, b) => a.toIndex - b.toIndex);
+    let currentLength = remainingObserved.length;
     for (const op of adds) {
-        await importAction(ctx, op.desired);
-        const lastIndex = getAllActionItemSlots(ctx).length - 1;
-        await moveActionToIndex(ctx, lastIndex, op.toIndex);
+        const actionToImport =
+            op.desired.note === undefined
+                ? op.desired
+                : ({ ...op.desired, note: undefined } as Action);
+
+        await importAction(ctx, actionToImport);
+        await moveActionToIndex(ctx, currentLength, op.toIndex, currentLength + 1);
+
+        const insertedAction: ObservedActionSlot = {
+            index: op.toIndex,
+            slotId: -1,
+            slot: null as never,
+            action: op.desired as Observed<Action>,
+        };
+        remainingObserved.splice(op.toIndex, 0, insertedAction);
+        currentLength += 1;
+        for (let i = 0; i < remainingObserved.length; i++) {
+            remainingObserved[i].index = i;
+        }
+
+        if (op.desired.note !== undefined) {
+            const addedSlot = await getActionSlotAtIndex(ctx, op.toIndex, currentLength);
+            await setListItemNote(ctx, addedSlot, op.desired.note);
+        }
     }
+
+    await goToActionPage(ctx, 1);
+}
+
+function actionLogLabel(action: Action | Observed<Action> | null | undefined): string {
+    if (action === null || action === undefined) {
+        return "Unknown Action";
+    }
+
+    if (action.type === "CONDITIONAL") {
+        return `CONDITIONAL (${action.conditions.length}/${action.ifActions.length}/${action.elseActions.length})`;
+    }
+
+    if (action.type === "RANDOM") {
+        return `RANDOM (${action.actions.length})`;
+    }
+
+    return action.type;
 }
 
 function logSyncState(ctx: TaskContext, diff: ActionListDiff): void {
@@ -852,19 +1251,23 @@ function logSyncState(ctx: TaskContext, diff: ActionListDiff): void {
     for (const op of diff.operations) {
         switch (op.kind) {
             case "delete":
-                ctx.displayMessage(`&7  &c- ${op.observed.action?.type}`);
+                ctx.displayMessage(
+                    `&7  &c- [${op.observed.index}] ${actionLogLabel(op.observed.action)}`
+                );
                 break;
             case "edit":
                 ctx.displayMessage(
-                    `&7  &6~ ${op.observed.action?.type} &7-> &6${op.desired.type}`
+                    `&7  &6~ [${op.observed.index}] ${actionLogLabel(op.observed.action)} &7-> &6${actionLogLabel(op.desired)}`
                 );
                 break;
             case "add":
-                ctx.displayMessage(`&7  &a+ ${op.desired.type} &7at ${op.toIndex}`);
+                ctx.displayMessage(
+                    `&7  &a+ [${op.toIndex}] ${actionLogLabel(op.desired)}`
+                );
                 break;
             case "move":
                 ctx.displayMessage(
-                    `&7  &e> ${op.action.type} &7${op.observed.index} -> ${op.toIndex}`
+                    `&7  &e> [${op.observed.index} -> ${op.toIndex}] ${actionLogLabel(op.action)}`
                 );
                 break;
         }

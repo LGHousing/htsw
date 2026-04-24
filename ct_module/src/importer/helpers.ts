@@ -276,7 +276,12 @@ export async function setListItemNote(
     }
 
     slot.drop();
-    await enterValue(ctx, normalizedNote ?? "");
+    if (normalizedNote === undefined) {
+        await waitForChatInputPrompt(ctx);
+        ctx.runCommand("/chatinput cancel");
+    } else {
+        await enterValue(ctx, normalizedNote);
+    }
     await waitForMenu(ctx);
 }
 
@@ -461,16 +466,10 @@ export async function setCycleValue(
     throw new Error(`Could not set "${slotName}" to "${value}".`);
 }
 
-async function enterValue(ctx: TaskContext, value: string) {
+export async function enterValue(ctx: TaskContext, value: string) {
     const inputMode = await ctx.withTimeout(
         Promise.race([
-            ctx
-                .waitFor("message", (message) => {
-                    return removedFormatting(message).includes(
-                        "Please use the chat to provide the value you wish to set.",
-                    );
-                })
-                .then(() => "CHAT" as const),
+            waitForChatInputPrompt(ctx).then(() => "CHAT" as const),
             ctx
                 .waitFor("packetReceived", (packet) => {
                     return (
@@ -498,6 +497,14 @@ async function enterValue(ctx: TaskContext, value: string) {
         default:
             const _exhaustiveCheck: never = inputMode;
     }
+}
+
+function waitForChatInputPrompt(ctx: TaskContext): Promise<unknown> {
+    return ctx.waitFor("message", (message) => {
+        return removedFormatting(message).includes(
+            "Please use the chat to provide the value you wish to set.",
+        );
+    });
 }
 
 export async function setNumberValue(

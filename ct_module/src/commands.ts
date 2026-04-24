@@ -1,16 +1,14 @@
-import {
-    VERSION,
-    SourceMap,
-    parseImportablesResult,
-    Diagnostic,
-} from "htsw";
+import { VERSION, SourceMap, parseImportablesResult, Diagnostic } from "htsw";
 import type { Condition } from "htsw/types";
 
 import {
     ACTION_MAPPINGS,
     tryGetActionTypeFromDisplayName,
 } from "./importer/actionMappings";
-import { CONDITION_LORE_MAPPINGS, tryGetConditionTypeFromDisplayName } from "./importer/conditionMappings";
+import {
+    CONDITION_LORE_MAPPINGS,
+    tryGetConditionTypeFromDisplayName,
+} from "./importer/conditionMappings";
 import { parseFieldValue, parseLoreKeyValueLine } from "./importer/helpers";
 import {
     chatSeparator,
@@ -29,10 +27,7 @@ import { FileSystemFileLoader } from "./utils/files";
 const DEBUG_CONDITION_TYPE: Condition["type"] = "REQUIRE_GROUP";
 const DEBUG_READ_CONDITION_KEY = Keyboard.KEY_NUMPAD0;
 const DEBUG_DUMP_MENU_KEY = Keyboard.KEY_NUMPAD1;
-const DEBUG_DUMP_MENU_FALLBACK_KEYS = [
-    Keyboard.KEY_NUMPAD1,
-    Keyboard.KEY_END,
-] as const;
+const DEBUG_DUMP_MENU_FALLBACK_KEYS = [Keyboard.KEY_NUMPAD1, Keyboard.KEY_END] as const;
 let wasDebugDumpMenuKeyDown = false;
 const DEBUG_DESIRED_CONDITIONS: Condition[] = [
     {
@@ -76,7 +71,7 @@ function printObservedConditions(conditions: DebugObservedConditions): void {
     ChatLib.chat(`&aObserved conditions (${conditions.length}):`);
     for (const entry of conditions) {
         ChatLib.chat(
-            `&7[${entry.index} | slot ${entry.slotId}] &f${formatDebugCondition(entry.condition)}`,
+            `&7[${entry.index} | slot ${entry.slotId}] &f${formatDebugCondition(entry.condition)}`
         );
     }
 }
@@ -90,7 +85,7 @@ function printConditionDiff(diff: DebugConditionDiff): void {
     ChatLib.chat(`&bEdits (${diff.edits.length}):`);
     for (const entry of diff.edits) {
         ChatLib.chat(
-            `&eedit [${entry.observed.index} | slot ${entry.observed.slotId}] &7from &f${formatDebugCondition(entry.observed.condition)}`,
+            `&eedit [${entry.observed.index} | slot ${entry.observed.slotId}] &7from &f${formatDebugCondition(entry.observed.condition)}`
         );
         ChatLib.chat(`&7       to   &f${formatDebugCondition(entry.desired)}`);
     }
@@ -98,7 +93,7 @@ function printConditionDiff(diff: DebugConditionDiff): void {
     ChatLib.chat(`&bDeletes (${diff.deletes.length}):`);
     for (const entry of diff.deletes) {
         ChatLib.chat(
-            `&cdelete [${entry.index} | slot ${entry.slotId}] &f${formatDebugCondition(entry.condition)}`,
+            `&cdelete [${entry.index} | slot ${entry.slotId}] &f${formatDebugCondition(entry.condition)}`
         );
     }
 
@@ -124,7 +119,7 @@ function dumpCurrentMenu(): void {
 
         const rawName = item.getName();
         ChatLib.chat(
-            `&7[slot ${slotId}] &f${removedFormatting(rawName)} &8(raw: ${rawName}&8)`,
+            `&7[slot ${slotId}] &f${removedFormatting(rawName)} &8(raw: ${rawName}&8)`
         );
 
         const mappedFields = getMappedLoreFieldsForDump(rawName);
@@ -144,13 +139,8 @@ function dumpCurrentMenu(): void {
             }
 
             const parsedValue = parseFieldValue(field.kind, keyValue.value);
-            ChatLib.chat(
-                `&8  field: &b${keyValue.label} &8-> &b${field.prop}`,
-            );
-            chatLiteral(
-                "&8    raw: &7",
-                normalizeFormattingCodes(keyValue.value),
-            );
+            ChatLib.chat(`&8  field: &b${keyValue.label} &8-> &b${field.prop}`);
+            chatLiteral("&8    raw: &7", normalizeFormattingCodes(keyValue.value));
             if (parsedValue === undefined) {
                 ChatLib.chat("&8    parsed: &7(summary only; open submenu)");
             } else {
@@ -165,7 +155,7 @@ function chatLiteral(prefix: string, text: string): void {
 }
 
 function getMappedLoreFieldsForDump(
-    displayName: string,
+    displayName: string
 ): Record<string, { prop: string; kind: Parameters<typeof parseFieldValue>[0] }> {
     const actionType = tryGetActionTypeFromDisplayName(displayName);
     if (actionType !== undefined) {
@@ -181,14 +171,12 @@ function getMappedLoreFieldsForDump(
 }
 
 function dumpDebugKeyCodes(): void {
+    ChatLib.chat(`&7NUMPAD1=${Keyboard.KEY_NUMPAD1}, END=${Keyboard.KEY_END}`);
     ChatLib.chat(
-        `&7NUMPAD1=${Keyboard.KEY_NUMPAD1}, END=${Keyboard.KEY_END}`,
+        `&7NUMPAD1 down=${Keyboard.isKeyDown(Keyboard.KEY_NUMPAD1)}, END down=${Keyboard.isKeyDown(Keyboard.KEY_END)}`
     );
     ChatLib.chat(
-        `&7NUMPAD1 down=${Keyboard.isKeyDown(Keyboard.KEY_NUMPAD1)}, END down=${Keyboard.isKeyDown(Keyboard.KEY_END)}`,
-    );
-    ChatLib.chat(
-        `&7inGui=${Client.isInGui()}, container=${Player.getContainer() == null ? "none" : "open"}`,
+        `&7inGui=${Client.isInGui()}, container=${Player.getContainer() == null ? "none" : "open"}`
     );
 }
 
@@ -370,11 +358,11 @@ function commandSimulator(args: string[]) {
 
         if (result.gcx.isFailed()) {
             const errCount = result.diagnostics.filter(
-                (it) => it.level === "error",
+                (it) => it.level === "error"
             ).length;
             printDiagnostic(
                 sm,
-                Diagnostic.error(`Simulate failed with ${errCount} errors`),
+                Diagnostic.error(`Simulate failed with ${errCount} errors`)
             );
         } else {
             Simulator.start(sm, result.value, result.spans);

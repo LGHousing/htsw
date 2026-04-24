@@ -3,7 +3,12 @@ import type { Action, Condition } from "htsw/types";
 import { ACTION_MAPPINGS } from "../actionMappings";
 import { normalizeActionCompare, normalizeConditionCompare } from "../compare";
 import { CONDITION_LORE_MAPPINGS } from "../conditionMappings";
-import type { ActionListDiff, ActionListOperation, Observed, ObservedActionSlot } from "./types";
+import type {
+    ActionListDiff,
+    ActionListOperation,
+    Observed,
+    ObservedActionSlot,
+} from "../types";
 
 type KnownObservedAction = Omit<ObservedActionSlot, "action"> & {
     action: NonNullable<ObservedActionSlot["action"]>;
@@ -125,7 +130,11 @@ function conditionListCost(
     const unmatchedObserved = observed.map((condition, index) => ({ index, condition }));
     const unmatchedDesired = desired.map((condition, index) => ({ index, condition }));
 
-    for (let desiredIndex = unmatchedDesired.length - 1; desiredIndex >= 0; desiredIndex--) {
+    for (
+        let desiredIndex = unmatchedDesired.length - 1;
+        desiredIndex >= 0;
+        desiredIndex--
+    ) {
         const desiredEntry = unmatchedDesired[desiredIndex];
         const observedIndex = unmatchedObserved.findIndex((entry) =>
             conditionsEqual(entry.condition, desiredEntry.condition)
@@ -146,9 +155,7 @@ function conditionListCost(
         }
     }
 
-    const remainingTypes = new Set(
-        unmatchedDesired.map((entry) => entry.condition.type)
-    );
+    const remainingTypes = new Set(unmatchedDesired.map((entry) => entry.condition.type));
 
     for (const type of remainingTypes) {
         const observedBucket = unmatchedObserved.filter(
@@ -278,7 +285,11 @@ function matchActions(
     const unmatchedDesired = desired.map((action, index) => ({ index, action }));
     const matches: ActionMatch[] = [];
 
-    for (let desiredIndex = unmatchedDesired.length - 1; desiredIndex >= 0; desiredIndex--) {
+    for (
+        let desiredIndex = unmatchedDesired.length - 1;
+        desiredIndex >= 0;
+        desiredIndex--
+    ) {
         const desiredEntry = unmatchedDesired[desiredIndex];
         const observedIndex = unmatchedObserved.findIndex((entry) =>
             actionsEqual(entry.action, desiredEntry.action)
@@ -298,7 +309,11 @@ function matchActions(
         });
     }
 
-    for (let desiredIndex = unmatchedDesired.length - 1; desiredIndex >= 0; desiredIndex--) {
+    for (
+        let desiredIndex = unmatchedDesired.length - 1;
+        desiredIndex >= 0;
+        desiredIndex--
+    ) {
         const desiredEntry = unmatchedDesired[desiredIndex];
         const observedIndex = unmatchedObserved.findIndex((entry) =>
             onlyNoteDiffers(desiredEntry.action, entry.action)
@@ -402,8 +417,10 @@ function actionListCost(
         .filter(
             (
                 entry
-            ): entry is { index: number; action: NonNullable<ObservedActionSlot["action"]> } =>
-                entry !== null
+            ): entry is {
+                index: number;
+                action: NonNullable<ObservedActionSlot["action"]>;
+            } => entry !== null
         )
         .map((entry) => ({
             index: entry.index,
@@ -462,6 +479,7 @@ export function diffActionList(
                 kind: "edit",
                 observed: match.observed,
                 desired: match.desired,
+                noteOnly: match.kind === "note_only",
             });
         }
     }

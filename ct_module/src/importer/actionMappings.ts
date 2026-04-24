@@ -335,13 +335,14 @@ export const ACTION_MAPPINGS = {
         loreFields: {},
     },
 } satisfies {
-    [K in Action["type"]]?: ActionLoreSpec<
-        Extract<Action, { type: K }>
-    >;
+    [K in Action["type"]]?: ActionLoreSpec<Extract<Action, { type: K }>>;
 };
 
-export function getNestedListFields(type: Action["type"]): { label: string; prop: string }[] {
-    const loreFields: Record<string, { prop: string; kind: UiFieldKind }> = ACTION_MAPPINGS[type].loreFields;
+export function getNestedListFields(
+    type: Action["type"]
+): { label: string; prop: string }[] {
+    const loreFields: Record<string, { prop: string; kind: UiFieldKind }> =
+        ACTION_MAPPINGS[type].loreFields;
     const result: { label: string; prop: string }[] = [];
     for (const label in loreFields) {
         if (loreFields[label].kind === "nestedList") {
@@ -355,22 +356,19 @@ export function tryGetActionTypeFromDisplayName(
     displayName: string
 ): Action["type"] | undefined {
     const normalizedDisplayName = removedFormatting(displayName).trim();
-    
-        for (const type in ACTION_MAPPINGS) {
-            if (
-                ACTION_MAPPINGS[type as Action["type"]].displayName === normalizedDisplayName
-            ) {
-                return type as Action["type"];
-            }
+
+    for (const type in ACTION_MAPPINGS) {
+        if (
+            ACTION_MAPPINGS[type as Action["type"]].displayName === normalizedDisplayName
+        ) {
+            return type as Action["type"];
         }
-    
-        return undefined;
+    }
+
+    return undefined;
 }
 
-export function parseActionListItem(
-    slot: ItemSlot,
-    type: Action["type"]
-): Action {
+export function parseActionListItem(slot: ItemSlot, type: Action["type"]): Action {
     const note = readListItemNote(slot);
     const commonFields = note === undefined ? {} : { note };
     const mapping = ACTION_MAPPINGS[type];

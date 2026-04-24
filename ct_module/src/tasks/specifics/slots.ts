@@ -98,3 +98,12 @@ export function getItemSlot(
     }
     return slot;
 }
+
+export function getOpenContainerTitle(): string | null {
+    const container = Player.getContainer();
+    if (container == null) {
+        return null;
+    }
+
+    return removedFormatting(container.getName());
+}
