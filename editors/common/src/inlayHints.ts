@@ -52,7 +52,7 @@ function provideInlayHintsForActions(actions: types.Action[], spans: SpanTable):
         if (action.type === "CONDITIONAL") {
             hints.push(...provideInlayHintsForConditions(action.conditions ?? [], spans));
             hints.push(...provideInlayHintsForActions(action.ifActions ?? [], spans));
-            hints.push(...provideInlayHintsForActions(action.elseActions, spans));
+            hints.push(...provideInlayHintsForActions(action.elseActions ?? [], spans));
         } else if (action.type === "RANDOM") {
             hints.push(...provideInlayHintsForActions(action.actions ?? [], spans));
         }
@@ -69,7 +69,7 @@ function provideInlayHintsForActions(actions: types.Action[], spans: SpanTable):
             const value = (action as any)[key];
             if (value === null || value === undefined) continue;
 
-            const span = spans.getFieldSpan(action as object, key);
+            const span = getOptionalFieldSpan(spans, action as object, key);
             if (!span) continue;
 
             hints.push(hint(key, span));
@@ -96,7 +96,7 @@ function provideInlayHintsForConditions(
             const value = (condition as any)[key];
             if (value === null || value === undefined) continue;
 
-            const span = spans.getFieldSpan(condition as object, key);
+            const span = getOptionalFieldSpan(spans, condition as object, key);
             if (!span) continue;
 
             hints.push(hint(key, span));
@@ -104,4 +104,16 @@ function provideInlayHintsForConditions(
     }
 
     return hints;
+}
+
+function getOptionalFieldSpan(
+    spans: SpanTable,
+    node: object,
+    key: string,
+): Span | undefined {
+    try {
+        return spans.getField(node, key as never);
+    } catch {
+        return undefined;
+    }
 }
