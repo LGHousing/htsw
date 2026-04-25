@@ -48,6 +48,7 @@ import {
     setCycleValue,
     setNumberValue,
     readBooleanValue,
+    readStringValue,
     setListItemNote,
 } from "./helpers";
 import { ItemSlot, MouseButton } from "../tasks/specifics/slots";
@@ -327,30 +328,27 @@ async function readOpenConditional(
 
 async function writeConditional(
     ctx: TaskContext,
-    action: ActionConditional
+    action: ActionConditional,
+    current?: Observed<ActionConditional>
 ): Promise<void> {
-    if (action.conditions.length > 0) {
+    if (action.conditions.length > 0 || (current?.conditions?.length ?? 0) > 0) {
         ctx.getItemSlot("Conditions").click();
         await waitForMenu(ctx);
 
         await syncConditionList(ctx, action.conditions);
         await clickGoBack(ctx);
-
-        await setBooleanValue(
-            ctx,
-            ctx.getItemSlot("Match Any Condition"),
-            action.matchAny
-        );
     }
 
-    if (action.ifActions.length > 0) {
+    await setBooleanValue(ctx, ctx.getItemSlot("Match Any Condition"), action.matchAny);
+
+    if (action.ifActions.length > 0 || (current?.ifActions?.length ?? 0) > 0) {
         ctx.getItemSlot("If Actions").click();
         await waitForMenu(ctx);
         await syncActionList(ctx, action.ifActions);
         await clickGoBack(ctx);
     }
 
-    if (action.elseActions.length > 0) {
+    if (action.elseActions.length > 0 || (current?.elseActions?.length ?? 0) > 0) {
         ctx.getItemSlot("Else Actions").click();
         await waitForMenu(ctx);
         await syncActionList(ctx, action.elseActions);
@@ -428,6 +426,13 @@ async function writeSendMessage(
     action: ActionSendMessage
 ): Promise<void> {
     await setStringValue(ctx, ctx.getItemSlot("Message"), action.message);
+}
+
+async function readOpenMessage(ctx: TaskContext): Promise<Observed<ActionSendMessage>> {
+    return {
+        type: "MESSAGE",
+        message: readStringValue(ctx.getItemSlot("Message")) ?? "",
+    };
 }
 
 async function writeApplyPotionEffect(
@@ -749,6 +754,7 @@ const ACTION_SPECS = {
     },
     MESSAGE: {
         displayName: ACTION_MAPPINGS.MESSAGE.displayName,
+        read: readOpenMessage,
         write: writeSendMessage,
     },
     APPLY_POTION_EFFECT: {
@@ -998,10 +1004,34 @@ export async function readActionList(
         mode.kind === "full"
             ? buildFullHydrationPlan(observed)
             : createNestedHydrationPlan(observed, mode.desired);
+    addScalarHydrationEntries(plan, observed);
     await hydrateNestedActions(ctx, plan, observed.length);
 
     await goToActionPage(ctx, 1);
     return observed;
+}
+
+function addScalarHydrationEntries(
+    plan: NestedHydrationPlan,
+    observed: readonly ObservedActionSlot[]
+): void {
+    for (const entry of observed) {
+        if (entry.action === null || plan.has(entry)) {
+            continue;
+        }
+
+        if (shouldHydrateScalarAction(entry.action)) {
+            plan.set(entry, new Set());
+        }
+    }
+}
+
+function shouldHydrateScalarAction(action: Observed<Action>): boolean {
+    if (action.type === "MESSAGE") {
+        return removedFormatting(action.message).trim().endsWith("...");
+    }
+
+    return false;
 }
 
 function buildFullHydrationPlan(
@@ -1022,7 +1052,6 @@ async function hydrateNestedActions(
     listLength: number
 ): Promise<void> {
     for (const [entry, propsToRead] of plan) {
-        if (propsToRead.size === 0) continue;
         await hydrateNestedAction(ctx, entry, propsToRead, listLength);
     }
 }
@@ -1323,16 +1352,77 @@ function actionLogLabel(action: Action | Observed<Action> | null | undefined): s
     return action.type;
 }
 
-function chatJsonLines(ctx: TaskContext, prefix: string, value: unknown): void {
-    const json = JSON.stringify(value, null, 2);
-    if (json === undefined) {
-        ctx.displayMessage(`${prefix} undefined`);
-        return;
+const MAX_SYNC_DEBUG_DIFF_LINES = 40;
+
+function formatDebugValue(value: unknown): string {
+    if (value === undefined) return "<missing>";
+    return JSON.stringify(value);
+}
+
+function pathForDiff(path: string): string {
+    return path === "" ? "$" : path;
+}
+
+function collectDebugDiffLines(
+    observed: unknown,
+    desired: unknown,
+    path: string = ""
+): string[] {
+    if (JSON.stringify(observed) === JSON.stringify(desired)) {
+        return [];
     }
 
-    for (const line of json.split("\n")) {
-        ctx.displayMessage(`${prefix} ${line}`);
+    if (Array.isArray(observed) || Array.isArray(desired)) {
+        if (!Array.isArray(observed) || !Array.isArray(desired)) {
+            return [
+                `${pathForDiff(path)}: ${formatDebugValue(observed)} -> ${formatDebugValue(desired)}`,
+            ];
+        }
+
+        const lines: string[] = [];
+        if (observed.length !== desired.length) {
+            lines.push(
+                `${pathForDiff(path)}.length: ${observed.length} -> ${desired.length}`
+            );
+        }
+
+        const length = Math.max(observed.length, desired.length);
+        for (let i = 0; i < length; i++) {
+            lines.push(
+                ...collectDebugDiffLines(observed[i], desired[i], `${path}[${i}]`)
+            );
+        }
+        return lines;
     }
+
+    if (
+        typeof observed === "object" &&
+        observed !== null &&
+        typeof desired === "object" &&
+        desired !== null
+    ) {
+        const lines: string[] = [];
+        const keys = new Set([
+            ...Object.keys(observed as Record<string, unknown>),
+            ...Object.keys(desired as Record<string, unknown>),
+        ]);
+
+        for (const key of [...keys].sort()) {
+            const childPath = path === "" ? key : `${path}.${key}`;
+            lines.push(
+                ...collectDebugDiffLines(
+                    (observed as Record<string, unknown>)[key],
+                    (desired as Record<string, unknown>)[key],
+                    childPath
+                )
+            );
+        }
+        return lines;
+    }
+
+    return [
+        `${pathForDiff(path)}: ${formatDebugValue(observed)} -> ${formatDebugValue(desired)}`,
+    ];
 }
 
 function logSyncDebug(ctx: TaskContext, diff: ActionListDiff): void {
@@ -1348,12 +1438,18 @@ function logSyncDebug(ctx: TaskContext, diff: ActionListDiff): void {
         ctx.displayMessage(
             `&8[sync-debug] edit [${op.observed.index}] ${actionLogLabel(op.observed.action)}`
         );
-        chatJsonLines(
-            ctx,
-            "&8  observed:",
-            normalizeActionCompare(op.observed.action as Observed<Action>)
+        const lines = collectDebugDiffLines(
+            normalizeActionCompare(op.observed.action as Observed<Action>),
+            normalizeActionCompare(op.desired)
         );
-        chatJsonLines(ctx, "&8  desired: ", normalizeActionCompare(op.desired));
+        for (const line of lines.slice(0, MAX_SYNC_DEBUG_DIFF_LINES)) {
+            ctx.displayMessage(`&8  ${line}`);
+        }
+        if (lines.length > MAX_SYNC_DEBUG_DIFF_LINES) {
+            ctx.displayMessage(
+                `&8  ... ${lines.length - MAX_SYNC_DEBUG_DIFF_LINES} more difference(s)`
+            );
+        }
     }
 }
 
