@@ -34,6 +34,10 @@ function normalizeValue(value: unknown): unknown {
         return value.map((entry) => normalizeValue(entry));
     }
 
+    if (typeof value === "string") {
+        return normalizeComparableString(value);
+    }
+
     if (typeof value !== "object" || value === null) {
         return value;
     }
@@ -54,6 +58,29 @@ function normalizeValue(value: unknown): unknown {
             key === "note" && typeof fieldValue === "string"
                 ? normalizeNoteText(fieldValue)
                 : normalizeValue(fieldValue);
+    }
+
+    return normalized;
+}
+
+const INTEGER_DISPLAY_VALUE_PATTERN = /^[+-]?(?:(?:\d{1,3}(?:,\d{3})+)|\d+)$/;
+const DECIMAL_DISPLAY_VALUE_PATTERN =
+    /^[+-]?(?:(?:\d{1,3}(?:,\d{3})+)|\d+)\.\d+$/;
+
+function normalizeComparableString(value: string): string {
+    const isIntegerDisplay = INTEGER_DISPLAY_VALUE_PATTERN.test(value);
+    const isDecimalDisplay = DECIMAL_DISPLAY_VALUE_PATTERN.test(value);
+    if (!isIntegerDisplay && !isDecimalDisplay) return value;
+
+    const withoutCommas = value.replace(/,/g, "");
+    const numericValue = Number(withoutCommas);
+    if (!Number.isFinite(numericValue)) {
+        return value;
+    }
+
+    const normalized = Object.is(numericValue, -0) ? "0" : String(numericValue);
+    if (isDecimalDisplay && !normalized.includes(".")) {
+        return `${normalized}.0`;
     }
 
     return normalized;
