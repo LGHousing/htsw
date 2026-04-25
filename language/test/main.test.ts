@@ -102,6 +102,28 @@ describe("Main API", () => {
         expect(result.diagnostics.filter((it) => it.level === "error")).toEqual([]);
     });
 
+    it("parseActionsResult preserves decimal value type without precision padding", () => {
+        const sourceMap = new htsw.SourceMap(
+            new SimpleFileLoader({
+                "/project/test.htsl": [
+                    "stat whole = 360",
+                    "stat decimal = 360.00000000000000000000",
+                    "stat small = -0.01700000000000000122",
+                    "",
+                ].join("\n"),
+            })
+        );
+
+        const result = htsw.parseActionsResult(sourceMap, "/project/test.htsl");
+
+        expect(result.diagnostics.filter((it) => it.level === "error")).toEqual([]);
+        expect(result.value).toMatchObject([
+            { type: "CHANGE_VAR", key: "whole", value: "360" },
+            { type: "CHANGE_VAR", key: "decimal", value: "360.0" },
+            { type: "CHANGE_VAR", key: "small", value: "-0.017" },
+        ]);
+    });
+
     it("parseActionsResult accepts tp custom_coordinates with optional yaw/pitch", () => {
         const sourceMap = new htsw.SourceMap(
             new SimpleFileLoader({
