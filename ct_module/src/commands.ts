@@ -9,7 +9,7 @@ import {
     CONDITION_LORE_MAPPINGS,
     tryGetConditionTypeFromDisplayName,
 } from "./importer/conditionMappings";
-import { parseFieldValue, parseLoreKeyValueLine } from "./importer/helpers";
+import { parseFieldValue, parseLoreKeyValueLine } from "./importer/loreParsing";
 import {
     chatSeparator,
     normalizeFormattingCodes,
