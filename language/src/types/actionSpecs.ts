@@ -1,14 +1,5 @@
-// Per-action argument metadata. Single source of truth that drives editor
-// completions, snippet detail strings, and (eventually) hover/inlay tooling.
-//
-// One row per action keyword (the surface form a user types in `.htsl`).
-// Fields are listed in the same order the parser consumes them, so the
-// `argCount` an editor has after tokenizing the line directly indexes into
-// `fields`.
-//
-// `kind` tells the editor what kind of suggestions to offer at that position.
-// Several action keywords share the same shape but reuse this table verbatim
-// (e.g. `var`/`stat`, `globalvar`/`globalstat`).
+// Per-action and per-condition argument metadata. Drives editor completions,
+// snippets, and signature tooltips. Fields listed in parser order.
 
 export type ActionFieldKind =
     | "boolean"
@@ -34,7 +25,6 @@ export type ActionFieldKind =
     | "time"
     | "ifMode"
     | "block" // nested action block — no inline suggestions
-    // condition-only kinds
     | "itemProperty"
     | "itemLocation"
     | "itemAmount"
@@ -44,15 +34,12 @@ export type ActionFieldKind =
     | "portal";
 
 export type ActionFieldSpec = {
-    /** display name shown to the user — usually the Housing GUI label */
     name: string;
     kind: ActionFieldKind;
-    /** true if the field can be omitted */
     optional?: boolean;
 };
 
 export type ActionSpec = {
-    /** the keyword the user types (e.g. `var`, `giveItem`) */
     kw: string;
     fields: readonly ActionFieldSpec[];
 };
@@ -62,8 +49,6 @@ const f = (name: string, kind: ActionFieldKind, optional = false): ActionFieldSp
     kind,
     optional,
 });
-
-// --- shared field shapes ---
 
 const VAR_FIELDS = [
     f("name", "varName"),
@@ -79,8 +64,6 @@ const TEAM_VAR_FIELDS = [
     f("value", "value"),
     f("automaticUnset", "boolean", true),
 ] as const;
-
-// --- per-action specs ---
 
 export const ACTION_SPECS: readonly ActionSpec[] = [
     { kw: "actionBar", fields: [f("message", "string")] },
@@ -242,10 +225,7 @@ export function getActionSpec(kw: string): ActionSpec | undefined {
     return ACTION_SPECS_BY_KW.get(kw.toLowerCase());
 }
 
-/**
- * Render an action's signature for use as the `detail` text on an action
- * completion item — e.g. `var <name> <op> <value> [automaticUnset]`.
- */
+// e.g. `var <name> <op> <value> [automaticUnset]`
 export function renderActionSignature(spec: ActionSpec): string {
     if (spec.fields.length === 0) return spec.kw;
     const args = spec.fields
@@ -254,20 +234,13 @@ export function renderActionSignature(spec: ActionSpec): string {
     return `${spec.kw} ${args}`;
 }
 
-// --- conditions ---
-//
-// Same shape as actions, but the surface form is a condition keyword that
-// appears inside `if (... )`. `var`/`globalvar`/`teamvar` are intentionally
-// omitted from this table — those go through `conditionVarCompletions`
-// because they have a fallback-arg shape the spec format can't express.
-
+// var/globalvar/teamvar are handled separately — fallback-arg shape doesn't fit.
 const COMPARE_HEALTH_FIELDS = [
     f("op", "comparison"),
     f("amount", "value"),
 ] as const;
 
 export type ConditionSpec = {
-    /** the keyword the user types (e.g. `hasItem`, `placeholder`) */
     kw: string;
     fields: readonly ActionFieldSpec[];
 };
