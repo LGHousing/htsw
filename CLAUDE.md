@@ -100,6 +100,21 @@ This is the package most future agents will need to understand before making cha
 
 `ct_module/vite.config.ts` intentionally outputs CommonJS and preserves modules because ChatTriggers/Rhino-like environments are restrictive.
 
+### Runtime / Library Target — Read Before Writing Code
+
+`ct_module/tsconfig.json` sets `"lib": ["ES5", "DOM"]` even though `target` is `ESNext`. The `lib` is what matters for what built-in methods you can call: ChatTriggers runs on a Rhino-like JS engine where modern `String`/`Array`/`Object` prototype methods are missing or unreliable, so the type system is deliberately constrained to ES5 to surface this in the editor.
+
+The language package is built separately with `lib: ["es2022"]`, but its emitted JS is consumed by `ct_module` and runs in the same Rhino runtime — so the ES5 constraint applies to **anything that ends up in the ChatTriggers bundle**, not just files under `ct_module/src/`.
+
+In practice:
+
+- **Avoid newer prototype methods.** `String.prototype.padStart` / `padEnd` / `replaceAll` / `matchAll` / `at`, `Array.prototype.flat` / `flatMap` / `at`, `Object.entries` / `values` / `fromEntries` are the common offenders. Use the obvious ES5 equivalents: a `while` loop for padding, `split(...).join(...)` for `replaceAll`, `Object.keys(o).map(k => [k, o[k]])` for entries.
+- **Syntax features are fine.** `??`, `?.`, async/await, template literals, classes, spread, destructuring, etc. are all transpiled by Vite/Babel before reaching Rhino. ct_module already uses `??` and `?.` extensively.
+- **`tsc --noEmit` may not catch this.** `@types/node` and other transitive type packages can pull in lib defs that hide the missing-method problem from the CLI typechecker. The IDE (VS Code language server) honors the project's `lib` setting more strictly and will flag these — trust the squiggle. Bundling with Vite/Rollup also won't catch this, since the methods exist on the build host's V8.
+- **Reach for existing patterns.** Search ct_module for analogous needs before reinventing — e.g. `simulator/helpers.ts` already uses the `while (s.length < n) s = "0" + s` pad pattern.
+
+If you genuinely need a modern method, polyfill it locally in `ct_module/src/polyfills/` and import the polyfill module before first use.
+
 ## `ct_module` Deep Dive
 
 ### Entry And Bootstrap

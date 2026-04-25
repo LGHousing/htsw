@@ -1,7 +1,7 @@
 # HTSW Agent Guide
 
 This repository contains a small monorepo around the HTSL language and its tooling.
-HTSL stands for Housing Text Scripting Language and is the syntax for transforming Hypixel Housing GUI-based programming 
+HTSL stands for Housing Text Scripting Language and is the syntax for transforming Hypixel Housing GUI-based programming
 into text via a scripting language. HTSW, a self-referential naming "HTSL but we don't take Ls" is a refined version of this system-
 especially a new Importer ChatTriggers module that is intelligent. The important packages are:
 
@@ -78,16 +78,16 @@ This is the package most future agents will need to understand before making cha
 - There is no single top-level workspace script.
 - Each package has its own `package.json`.
 
-### `language/`
+`language/`
 
 - Build: `npm run build`
 - Test: `npm test`
 
-### `cli/`
+`cli/`
 
 - Build: `npm run build`
 
-### `ct_module/`
+`ct_module/`
 
 - Build: `npm run build`
 - Java helper build is part of the CT module build through `npm run build:java`.
