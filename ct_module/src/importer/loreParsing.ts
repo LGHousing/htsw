@@ -65,13 +65,28 @@ export function normalizeLoreValueFormatting(value: string): string {
     return normalized.slice(index);
 }
 
+const INTEGER_DISPLAY_VALUE_PATTERN = /^[+-]?(?:(?:\d{1,3}(?:,\d{3})+)|\d+)$/;
+const DECIMAL_DISPLAY_VALUE_PATTERN =
+    /^[+-]?(?:(?:\d{1,3}(?:,\d{3})+)|\d+)\.\d+$/;
+
+function stripNumericGroupingCommas(value: string): string {
+    if (value.indexOf(",") === -1) return value;
+    if (
+        !INTEGER_DISPLAY_VALUE_PATTERN.test(value) &&
+        !DECIMAL_DISPLAY_VALUE_PATTERN.test(value)
+    ) {
+        return value;
+    }
+    return value.replace(/,/g, "");
+}
+
 export function parseFieldValue(
     kind: UiFieldKind,
     value: string
 ): string | boolean | undefined {
     switch (kind) {
         case "value":
-            return normalizeLoreValueFormatting(value);
+            return stripNumericGroupingCommas(normalizeLoreValueFormatting(value));
         case "cycle":
         case "select":
         case "item":
