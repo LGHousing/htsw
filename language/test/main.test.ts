@@ -124,6 +124,53 @@ describe("Main API", () => {
         ]);
     });
 
+    it("parseActionsResult canonicalizes decimals even when Number.toString bloats (Rhino guard)", () => {
+        // Vitest runs on V8, where `Number.prototype.toString()` emits the
+        // shortest round-trip form ("5508000"). The Rhino engine that
+        // ChatTriggers uses emits 20-digit fixed precision instead
+        // ("5508000.00000000000000000000"). The parser must canonicalize
+        // identically on both engines, so it can't depend on toString.
+        // We simulate the Rhino quirk by replacing toString with toFixed(20)
+        // and assert the canonical output is unchanged.
+        const originalToString = Number.prototype.toString;
+        try {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (Number.prototype as any).toString = function (this: number) {
+                // Pass through 0 and non-finite values so unrelated code
+                // (e.g. error formatting) doesn't break under the mock.
+                if (this === 0 || !Number.isFinite(this)) {
+                    return originalToString.call(this);
+                }
+                return this.toFixed(20);
+            };
+
+            const sourceMap = new htsw.SourceMap(
+                new SimpleFileLoader({
+                    "/project/test.htsl": [
+                        "stat a = 5508000.0",
+                        "stat b = -0.017",
+                        "stat c = 360.00000000000000000000",
+                        "stat d = -0.01700000000000000122",
+                        "stat e = -0.0",
+                        "",
+                    ].join("\n"),
+                })
+            );
+            const result = htsw.parseActionsResult(sourceMap, "/project/test.htsl");
+
+            expect(result.diagnostics.filter((it) => it.level === "error")).toEqual([]);
+            expect(result.value).toMatchObject([
+                { type: "CHANGE_VAR", key: "a", value: "5508000.0" },
+                { type: "CHANGE_VAR", key: "b", value: "-0.017" },
+                { type: "CHANGE_VAR", key: "c", value: "360.0" },
+                { type: "CHANGE_VAR", key: "d", value: "-0.017" },
+                { type: "CHANGE_VAR", key: "e", value: "0.0" },
+            ]);
+        } finally {
+            Number.prototype.toString = originalToString;
+        }
+    });
+
     it("parseActionsResult accepts tp custom_coordinates with optional yaw/pitch", () => {
         const sourceMap = new htsw.SourceMap(
             new SimpleFileLoader({

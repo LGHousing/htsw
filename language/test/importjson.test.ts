@@ -181,7 +181,7 @@ describe("import.json basic passing behavior", () => {
         if (result.value[0].nbt.type === "compound") {
             expect(result.value[0].nbt.value.id).toEqual({
                 type: "string",
-                value: "stone",
+                value: "minecraft:stone",
             });
         }
         expect(hasHardErrors(result.diagnostics)).toBe(false);
