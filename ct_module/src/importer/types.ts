@@ -41,6 +41,16 @@ export type NestedListProp = "conditions" | "ifActions" | "elseActions" | "actio
 /** Nested list properties that still need to be read by clicking in. */
 export type NestedPropsToRead = Set<NestedListProp>;
 
+export type NestedReadState = "none" | "summary" | "full";
+
+export type NestedSummaries = Partial<Record<NestedListProp, string[]>>;
+
+export type ActionListReadMode =
+    | { kind: "full" }
+    | { kind: "sync"; desired: readonly Action[] };
+
+export type NestedHydrationPlan = Map<ObservedActionSlot, NestedPropsToRead>;
+
 export type Observed<T> = {
     [K in keyof T]: T[K] extends Action[]
         ? Array<Observed<Action> | null>
@@ -54,6 +64,9 @@ export type ObservedActionSlot = {
     slotId: number;
     slot: ItemSlot;
     action: Observed<Action> | null;
+    nestedReadState?: NestedReadState;
+    nestedSummaries?: NestedSummaries;
+    nestedPropsToRead?: NestedPropsToRead;
 };
 
 export type ObservedConditionSlot = {
