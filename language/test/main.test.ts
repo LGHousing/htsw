@@ -66,6 +66,24 @@ describe("Main API", () => {
         expect(result.diagnostics.filter((it) => it.level === "error")).toEqual([]);
     });
 
+    it("parseActionsResult accepts bare placeholders as string arguments", () => {
+        const sourceMap = new htsw.SourceMap(
+            new SimpleFileLoader({
+                "/project/test.htsl": [
+                    "chat %player.name%",
+                    "actionBar %date.unix.ms%",
+                    "title %player.name% %date.unix.ms%",
+                    "stat fallback = var missing %date.unix.ms%",
+                    "",
+                ].join("\n"),
+            })
+        );
+
+        const result = htsw.parseActionsResult(sourceMap, "/project/test.htsl");
+
+        expect(result.diagnostics.filter((it) => it.level === "error")).toEqual([]);
+    });
+
     it("parseActionsResult accepts underscore numeric separators", () => {
         const sourceMap = new htsw.SourceMap(
             new SimpleFileLoader({
@@ -82,6 +100,40 @@ describe("Main API", () => {
         const result = htsw.parseActionsResult(sourceMap, "/project/test.htsl");
 
         expect(result.diagnostics.filter((it) => it.level === "error")).toEqual([]);
+    });
+
+    it("parseActionsResult accepts tp custom_coordinates with optional yaw/pitch", () => {
+        const sourceMap = new htsw.SourceMap(
+            new SimpleFileLoader({
+                "/project/test.htsl": [
+                    "tp custom_coordinates \"54.5 81 113\"",
+                    "tp custom_coordinates \"54.5 81 113 -90\"",
+                    "tp custom_coordinates \"54.5 81 113 -90 0\"",
+                    "",
+                ].join("\n"),
+            })
+        );
+
+        const result = htsw.parseActionsResult(sourceMap, "/project/test.htsl");
+
+        expect(result.diagnostics.filter((it) => it.level === "error")).toEqual([]);
+    });
+
+    it("parseActionsResult rejects tp custom_coordinates with too many components", () => {
+        const sourceMap = new htsw.SourceMap(
+            new SimpleFileLoader({
+                "/project/test.htsl": [
+                    "tp custom_coordinates \"54.5 81 113 -90 0 5\"",
+                    "",
+                ].join("\n"),
+            })
+        );
+
+        const result = htsw.parseActionsResult(sourceMap, "/project/test.htsl");
+
+        const errors = result.diagnostics.filter((it) => it.level === "error");
+        expect(errors.length).toBe(1);
+        expect(errors[0].message).toContain("at most 5 components");
     });
 
     it("parseImportablesResult parses simple import.json", () => {
