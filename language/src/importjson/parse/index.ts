@@ -100,6 +100,10 @@ function parseImportJsonObject(gcx: GlobalCtxt, node: json.Node, currentPath: st
         "items": {
             required: false,
             parser: (itemsNode) => parseAndAppendImportables(gcx, itemsNode, parseImportableItem),
+        },
+        "npcs": {
+            required: false,
+            parser: (npcsNode) => parseAndAppendImportables(gcx, npcsNode, parseImportableNpc),
         }
     });
 }
@@ -314,6 +318,120 @@ function parseImportableRegion(gcx: GlobalCtxt, node: json.Node): ImportableRegi
     });
 
     return importable;
+}
+
+function parseImportableNpc(gcx: GlobalCtxt, node: json.Node): ImportableNpc {
+    const importable = { type: "NPC" } as ImportableNpc;
+    setSpan(gcx, importable, node);
+    setFieldSpan(gcx, importable, "type", node);
+
+    parseObject(gcx, node, {
+        "name": {
+            required: true,
+            parser: (child) => {
+                importable.name = parseString(gcx, child);
+                setFieldSpan(gcx, importable, "name", child);
+            }
+        },
+        "pos": {
+            required: true,
+            parser: (child) => {
+                importable.pos = parsePos(gcx, child);
+                setFieldSpan(gcx, importable, "pos", child);
+            }
+        },
+        "leftClickActions": {
+            required: false,
+            parser: (child) => {
+                importable.leftClickActions = parseActions(gcx, child);
+                setFieldSpan(gcx, importable, "leftClickActions", child);
+            }
+        },
+        "rightClickActions": {
+            required: false,
+            parser: (child) => {
+                importable.rightClickActions = parseActions(gcx, child);
+                setFieldSpan(gcx, importable, "rightClickActions", child);
+            }
+        },
+        "lookAtPlayers": {
+            required: false,
+            parser: (child) => {
+                importable.lookAtPlayers = parseBoolean(gcx, child);
+                setFieldSpan(gcx, importable, "lookAtPlayers", child);
+            }
+        },
+        "hideNameTag": {
+            required: false,
+            parser: (child) => {
+                importable.hideNameTag = parseBoolean(gcx, child);
+                setFieldSpan(gcx, importable, "hideNameTag", child);
+            }
+        },
+        "skin": {
+            required: false,
+            parser: (child) => {
+                importable.skin = parseOption(
+                    gcx, child, NPC_SKINS, { singular: "skin", plural: "skins" }
+                ) as NpcSkin;
+                setFieldSpan(gcx, importable, "skin", child);
+            }
+        },
+        "equipment": {
+            required: false,
+            parser: (child) => {
+                importable.equipment = parseNpcEquipment(gcx, child);
+                setFieldSpan(gcx, importable, "equipment", child);
+            }
+        },
+    });
+
+    return importable;
+}
+
+function parseNpcEquipment(gcx: GlobalCtxt, node: json.Node): NpcEquipment {
+    const equipment: NpcEquipment = {};
+    setSpan(gcx, equipment as object, node);
+
+    parseObject(gcx, node, {
+        "helmet": {
+            required: false,
+            parser: (child) => {
+                equipment.helmet = parseString(gcx, child);
+                setFieldSpan(gcx, equipment, "helmet", child);
+            }
+        },
+        "chestplate": {
+            required: false,
+            parser: (child) => {
+                equipment.chestplate = parseString(gcx, child);
+                setFieldSpan(gcx, equipment, "chestplate", child);
+            }
+        },
+        "leggings": {
+            required: false,
+            parser: (child) => {
+                equipment.leggings = parseString(gcx, child);
+                setFieldSpan(gcx, equipment, "leggings", child);
+            }
+        },
+        "boots": {
+            required: false,
+            parser: (child) => {
+                equipment.boots = parseString(gcx, child);
+                setFieldSpan(gcx, equipment, "boots", child);
+            }
+        },
+        "hand": {
+            required: false,
+            parser: (child) => {
+                equipment.hand = parseString(gcx, child);
+                setFieldSpan(gcx, equipment, "hand", child);
+            }
+        },
+    });
+
+    return equipment;
 }
 
 function parseImportableItem(gcx: GlobalCtxt, node: json.Node): ImportableItem {
