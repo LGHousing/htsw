@@ -1,35 +1,7 @@
 /// This is an important chat message.
 chat "hello"
 
-/// HTSW WILL CHANGE LIVES!
-if (
-    /// I love Clalan
-    !var diddy >= 67 0
-    ) {
-    chat "chicken sucks penis"
-}
+chat "world"
 
-
-if (
-
-    !var diddy >= 67 0
-    ) {
-    chat "fuck"
-}
-
-if (
-
-    !var diddy >= 67 0
-    ) {
-    chat "shit"
-}
-
-
-if (
-
-    !var diddy >= 67 0
-    ) {
-    chat "cock"
-}
-
- 
+chat "Jessica mogs sandy zero diff"
+var callan = 1
