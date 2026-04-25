@@ -129,6 +129,15 @@ export async function setListItemNote(
 }
 
 export function readCurrentValue(slot: ItemSlot): string | null {
+    const lines = readCurrentValueLines(slot);
+    if (lines === null) {
+        return null;
+    }
+
+    return lines[0] ?? null;
+}
+
+function readCurrentValueLines(slot: ItemSlot): string[] | null {
     const lore = slot.getItem().getLore();
     const index = lore.findIndex(
         (line, _i) => removedFormatting(line) === "Current Value:",
@@ -138,7 +147,29 @@ export function readCurrentValue(slot: ItemSlot): string | null {
     if (index + 1 >= lore.length) {
         return null;
     }
-    return lore[index + 1];
+
+    const lines: string[] = [];
+    for (let i = index + 1; i < lore.length; i++) {
+        const rawLine = lore[i];
+        const line = removedFormatting(rawLine).trim();
+
+        if (line === "") break;
+        if (line.startsWith("minecraft:") || line.startsWith("NBT:")) break;
+        if (
+            line === "Left Click to edit!" ||
+            line === "Right Click to remove!" ||
+            line === "Click to edit!" ||
+            line.startsWith("Use shift ") ||
+            line.startsWith("LSHIFT ") ||
+            line.startsWith("SHIFT ")
+        ) {
+            break;
+        }
+
+        lines.push(rawLine);
+    }
+
+    return lines.length === 0 ? null : lines;
 }
 
 export function normalizeSelectedOption(line: string): string {
@@ -183,12 +214,18 @@ export function readBooleanValue(slot: ItemSlot): boolean | null {
 }
 
 export function readStringValue(slot: ItemSlot): string | null {
-    const currentValue = readCurrentValue(slot);
-    if (currentValue === null) {
+    const currentValueLines = readCurrentValueLines(slot);
+    if (currentValueLines === null) {
         return null;
     }
 
-    return normalizeLoreValueFormatting(currentValue);
+    return currentValueLines
+        .map((line) => stripLeadingFormattingCodes(normalizeLoreValueFormatting(line)).trim())
+        .join(" ");
+}
+
+function stripLeadingFormattingCodes(value: string): string {
+    return value.replace(/^(?:&[0-9a-fklmnor])+/i, "");
 }
 
 export function findMenuOptionByLore(
@@ -374,10 +411,10 @@ export async function setStringValue(
     value: string,
 ): Promise<void> {
     const newValue = value.toString();
-    const currentValue = readCurrentValue(slot);
+    const currentValue = readStringValue(slot);
     if (
         currentValue !== null &&
-        normalizeLoreValueFormatting(currentValue) === newValue
+        currentValue === newValue
     ) {
         return;
     }
