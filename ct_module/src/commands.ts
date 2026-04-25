@@ -293,7 +293,7 @@ function commandHtsw(args: string[]) {
     ChatLib.chat(`&7${chatSeparator()}`);
     const title = `&e&lHTSW &f&l${VERSION}`;
     ChatLib.chat(`${ChatLib.getCenteredText(title)}`);
-    const subtitle = `&fCreated by @sndyx and @j_sse`;
+    const subtitle = `&fCreated by @sndyx, @j_sse, and @callanftw`;
     ChatLib.chat(`${ChatLib.getCenteredText(subtitle)}`);
     ChatLib.chat("");
     ChatLib.chat("&f/import &7- Import actions from HTSL files");
