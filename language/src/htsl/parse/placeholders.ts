@@ -13,7 +13,7 @@ export function parseNumericalPlaceholder(p: Parser): string {
     if (eatKw("var") || eatKw("stat")) {
         const name = parseVarName(p);
 
-        if (p.check("i64") || p.check("f64") || p.check("str")) {
+        if (p.check("i64") || p.check("f64") || p.check("str") || p.check("placeholder")) {
             const fallback = parseValue(p);
             return `%var.player/${name} ${fallback}%`;
         } else {
@@ -23,7 +23,7 @@ export function parseNumericalPlaceholder(p: Parser): string {
     if (eatKw("globalvar") || eatKw("globalstat")) {
         const name = parseVarName(p);
 
-        if (p.check("i64") || p.check("f64") || p.check("str")) {
+        if (p.check("i64") || p.check("f64") || p.check("str") || p.check("placeholder")) {
             const fallback = parseValue(p);
             return `%var.global/${name} ${fallback}%`;
         } else {
@@ -39,7 +39,7 @@ export function parseNumericalPlaceholder(p: Parser): string {
         }
         const team = parseVarName(p);
 
-        if (p.check("i64") || p.check("f64") || p.check("str")) {
+        if (p.check("i64") || p.check("f64") || p.check("str") || p.check("placeholder")) {
             const fallback = parseValue(p);
             return `%var.team/${name} ${team} ${fallback}%`;
         } else {

@@ -7,6 +7,7 @@ import {
     type F64Kind,
     type I64Kind,
     type IdentKind,
+    type PlaceholderKind,
     type StrKind,
     type Token,
     tokenToString,
@@ -191,6 +192,10 @@ export class Parser {
     }
 
     parseString(): string {
+        if (this.eat("placeholder")) {
+            return `%${(this.prev as PlaceholderKind).value}%`;
+        }
+
         this.expect("str");
         return (this.prev as StrKind).value;
     }

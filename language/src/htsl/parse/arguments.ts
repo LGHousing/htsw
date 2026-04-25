@@ -536,16 +536,23 @@ export function parseCoordinates(p: Parser) {
         addDiagnostic("All components must be directional", sp);
     }
 
-    const requiresPitchYaw = components.length === 5;
-    if (components.length > 3 && !requiresPitchYaw) {
-        addDiagnostic("Expected yaw", components[3].span);
+    if (components.length > 5) {
+        const extra = components.slice(5);
+        const span = new Span(
+            extra[0].span.start,
+            extra[extra.length - 1].span.end,
+        );
+        addDiagnostic("Expected at most 5 components", span);
     }
 
-    if (requiresPitchYaw) {
+    if (components.length >= 4) {
         const yaw = components[3];
         if (!isNumericOrPlaceholder(yaw.token, yaw.span)) {
             addDiagnostic("Invalid yaw", yaw.span);
         }
+    }
+
+    if (components.length >= 5) {
         const pitch = components[4];
         if (!isNumericOrPlaceholder(pitch.token, pitch.span)) {
             addDiagnostic("Invalid pitch", pitch.span);
