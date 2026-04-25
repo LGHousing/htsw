@@ -28,7 +28,6 @@
     },
     "main": "./dist/extension.cjs",
     "activationEvents": [
-        "onLanguage:htsl",
         "onLanguage:json",
         "onLanguage:jsonc"
     ],
