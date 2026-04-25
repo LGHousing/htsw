@@ -17,6 +17,13 @@ type ConditionDataKey<T extends Condition> = Exclude<
 export type ConditionLoreFieldSpec<T extends Condition> = {
     prop: ConditionDataKey<T>;
     kind: UiFieldKind;
+    /**
+     * Value that the Housing UI presents when the field is unset on the
+     * desired side. Used by normalizeConditionCompare to treat an explicit
+     * default-valued read as equivalent to an omitted field, which prevents
+     * spurious diffs between parsed source and observed GUI state.
+     */
+    default?: unknown;
 };
 
 export type ConditionLoreSpec<T extends Condition> = {
@@ -29,6 +36,13 @@ type ActionDataKey<T extends Action> = Exclude<keyof T, "type" | "note">;
 export type ActionLoreFieldSpec<T extends Action> = {
     prop: ActionDataKey<T>;
     kind: UiFieldKind;
+    /**
+     * Value that the Housing UI presents when the field is unset on the
+     * desired side. Used by normalizeActionCompare to treat an explicit
+     * default-valued read as equivalent to an omitted field, which prevents
+     * spurious diffs between parsed source and observed GUI state.
+     */
+    default?: unknown;
 };
 
 export type ActionLoreSpec<T extends Action> = {
