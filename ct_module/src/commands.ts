@@ -19,6 +19,7 @@ import { Simulator } from "./simulator";
 import { printDiagnostic, printDiagnostics } from "./tui/diagnostics";
 import { recompile } from "./recompile";
 import { importImportable } from "./importer/importables";
+import { isSyncDebugLoggingEnabled, setSyncDebugLoggingEnabled } from "./importer/debug";
 import { diffConditionList, readConditionList } from "./importer/conditions";
 import { TaskManager } from "./tasks/manager";
 import { FileSystemFileLoader } from "./utils/files";
@@ -259,6 +260,21 @@ export function registerCommands() {
 }
 
 function commandHtsw(args: string[]) {
+    if (args.length >= 2 && args[0] === "debug" && args[1] === "sync") {
+        const value = args[2]?.toLowerCase();
+        if (value === "on" || value === "true") {
+            setSyncDebugLoggingEnabled(true);
+        } else if (value === "off" || value === "false") {
+            setSyncDebugLoggingEnabled(false);
+        }
+
+        ChatLib.chat(
+            `&7HTSW sync debug: ${isSyncDebugLoggingEnabled() ? "&aon" : "&coff"}`
+        );
+        ChatLib.chat("&8Usage: &7/htsw debug sync on|off");
+        return;
+    }
+
     if (args.length >= 2 && args[0] === "debug" && args[1] === "dump-menu") {
         dumpCurrentMenu();
         return;
