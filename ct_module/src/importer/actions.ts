@@ -49,13 +49,13 @@ import {
     setNumberValue,
     readBooleanValue,
     setListItemNote,
-    parseLoreKeyValueLine,
 } from "./helpers";
 import { ItemSlot, MouseButton } from "../tasks/specifics/slots";
 import { removedFormatting } from "../utils/helpers";
 import { Diagnostic } from "htsw";
 import { readConditionList, syncConditionList } from "./conditions";
 import { normalizeActionCompare } from "./compare";
+import { isSyncDebugLoggingEnabled } from "./debug";
 import {
     ACTION_MAPPINGS,
     getNestedListFields,
@@ -65,12 +65,17 @@ import {
 import { diffActionList } from "./actions/diff";
 import type {
     ActionListDiff,
+    ActionListReadMode,
     ActionListOperation,
+    NestedHydrationPlan,
     NestedListProp,
     NestedPropsToRead,
+    NestedSummaries,
     Observed,
     ObservedActionSlot,
 } from "./types";
+import { createNestedHydrationPlan } from "./actions/hydrationPlan";
+import { tryGetConditionTypeFromDisplayName } from "./conditionMappings";
 
 export { diffActionList };
 export type {
@@ -295,7 +300,7 @@ async function readOpenConditional(
     if (propsToRead.has("ifActions")) {
         ctx.getItemSlot("If Actions").click();
         await waitForMenu(ctx);
-        for (const entry of await readActionList(ctx)) {
+        for (const entry of await readActionList(ctx, { kind: "full" })) {
             ifActions.push(entry.action);
         }
         await clickGoBack(ctx);
@@ -305,7 +310,7 @@ async function readOpenConditional(
     if (propsToRead.has("elseActions")) {
         ctx.getItemSlot("Else Actions").click();
         await waitForMenu(ctx);
-        for (const entry of await readActionList(ctx)) {
+        for (const entry of await readActionList(ctx, { kind: "full" })) {
             elseActions.push(entry.action);
         }
         await clickGoBack(ctx);
@@ -587,7 +592,7 @@ async function readOpenRandom(
     const actions: (Observed<Action> | null)[] = [];
     ctx.getItemSlot("Actions").click();
     await waitForMenu(ctx);
-    for (const entry of await readActionList(ctx)) {
+    for (const entry of await readActionList(ctx, { kind: "full" })) {
         actions.push(entry.action);
     }
     await clickGoBack(ctx);
@@ -860,41 +865,70 @@ const ACTION_SPECS = {
     },
 } satisfies ActionSpecMap;
 
-/**
- * Checks nested-list lore fields for "None" markers, fills empty ones
- * with `[]`, and returns the set of nested props that still need reading.
- */
-function nonEmptyNestedListProps(
+function readNestedSummaries(
     action: Observed<Action>,
     slot: ItemSlot
-): NestedPropsToRead {
+): { summaries: NestedSummaries; propsToRead: NestedPropsToRead } {
     const nestedFields = getNestedListFields(action.type);
     const lore = slot.getItem().getLore();
-    const toRead: NestedPropsToRead = new Set();
+    const summaries: NestedSummaries = {};
+    const propsToRead: NestedPropsToRead = new Set();
+    const labels = new Set(nestedFields.map((field) => field.label));
 
-    // Nested list lore uses two lines:
-    //   Label:
-    //    - None
-    // Find the label line, then check if the next line is "- None".
     for (const { label, prop } of nestedFields) {
-        let isEmpty = false;
-        for (let i = 0; i < lore.length - 1; i++) {
-            const lineText = removedFormatting(lore[i]).trim();
-            if (lineText === label + ":") {
-                const nextLineText = removedFormatting(lore[i + 1]).trim();
-                isEmpty = nextLineText === "- None";
+        const itemTypes: string[] = [];
+        let labelIndex = -1;
+        for (let i = 0; i < lore.length; i++) {
+            if (removedFormatting(lore[i]).trim() === label + ":") {
+                labelIndex = i;
                 break;
             }
         }
 
-        if (isEmpty) {
+        if (labelIndex === -1) {
+            continue;
+        }
+
+        for (let i = labelIndex + 1; i < lore.length; i++) {
+            const text = removedFormatting(lore[i]).trim();
+            if (text === "") break;
+            if (text.startsWith("minecraft:") || text.startsWith("NBT:")) break;
+            if (
+                text === "Left Click to edit!" ||
+                text === "Right Click to remove!" ||
+                text === "Click to edit!" ||
+                text.startsWith("Use shift ")
+            ) {
+                break;
+            }
+            if (text.endsWith(":") && labels.has(text.slice(0, -1))) {
+                break;
+            }
+            if (!text.startsWith("- ")) {
+                break;
+            }
+
+            const displayName = text.slice(2).trim();
+            if (displayName === "None") {
+                continue;
+            }
+
+            const type =
+                prop === "conditions"
+                    ? tryGetConditionTypeFromDisplayName(displayName)
+                    : tryGetActionTypeFromDisplayName(displayName);
+            itemTypes.push(type ?? "UNKNOWN");
+        }
+
+        summaries[prop as NestedListProp] = itemTypes;
+        if (itemTypes.length === 0) {
             Object.assign(action, { [prop]: [] });
         } else {
-            toRead.add(prop as NestedListProp);
+            propsToRead.add(prop as NestedListProp);
         }
     }
 
-    return toRead;
+    return { summaries, propsToRead };
 }
 
 export async function readActionsListPage(
@@ -915,54 +949,31 @@ export async function readActionsListPage(
                 slotId: entry.slot.getSlotId(),
                 slot: entry.slot,
                 action: null,
+                nestedReadState: "none",
+                nestedSummaries: {},
+                nestedPropsToRead: new Set(),
             };
             if (!entry.type) {
                 return observed;
             }
 
             const action = parseActionListItem(entry.slot, entry.type);
-
+            const nested = readNestedSummaries(action, entry.slot);
             observed.action = action;
+            observed.nestedReadState =
+                getNestedListFields(action.type).length === 0 ? "none" : "summary";
+            observed.nestedSummaries = nested.summaries;
+            observed.nestedPropsToRead = nested.propsToRead;
             return observed;
         });
-
-    // Actions with non-empty nested lists need clicking in to read.
-    for (const entry of observed) {
-        if (entry.action === null) continue;
-        const propsToRead = nonEmptyNestedListProps(entry.action, entry.slot);
-        if (propsToRead.size === 0) continue;
-
-        // preserve note
-        const note = entry.action.note;
-        try {
-            entry.slot.click();
-            await waitForMenu(ctx);
-            const spec = getActionSpec(entry.action.type);
-            if (!spec.read) {
-                throw new Error(
-                    `Reading action "${entry.action.type}" is not implemented.`
-                );
-            }
-            // Read nested list action data
-            entry.action = await spec.read(ctx, propsToRead);
-            if (note) {
-                entry.action.note = note;
-            }
-            await clickGoBack(ctx);
-        } catch (error) {
-            ctx.displayMessage(
-                `&7[action-read] &cFailed to read nested action at index ${entry.index} (${entry.action.type}): ${error}`
-            );
-            if (ctx.tryGetItemSlot("Go Back") !== null) {
-                await clickGoBack(ctx);
-            }
-        }
-    }
 
     return observed;
 }
 
-export async function readActionList(ctx: TaskContext): Promise<ObservedActionSlot[]> {
+export async function readActionList(
+    ctx: TaskContext,
+    mode: ActionListReadMode = { kind: "full" }
+): Promise<ObservedActionSlot[]> {
     await goToActionPage(ctx, 1);
     const observed: ObservedActionSlot[] = [];
 
@@ -981,8 +992,79 @@ export async function readActionList(ctx: TaskContext): Promise<ObservedActionSl
         ctx.getItemSlot((slot) => slot.getSlotId() === ACTION_NEXT_PAGE_SLOT_ID).click();
         await waitForMenu(ctx);
     }
+
+    await goToActionPage(ctx, 1);
+    const plan: NestedHydrationPlan =
+        mode.kind === "full"
+            ? buildFullHydrationPlan(observed)
+            : createNestedHydrationPlan(observed, mode.desired);
+    await hydrateNestedActions(ctx, plan, observed.length);
+
     await goToActionPage(ctx, 1);
     return observed;
+}
+
+function buildFullHydrationPlan(
+    observed: readonly ObservedActionSlot[]
+): NestedHydrationPlan {
+    const plan: NestedHydrationPlan = new Map();
+    for (const entry of observed) {
+        if (entry.nestedPropsToRead && entry.nestedPropsToRead.size > 0) {
+            plan.set(entry, entry.nestedPropsToRead);
+        }
+    }
+    return plan;
+}
+
+async function hydrateNestedActions(
+    ctx: TaskContext,
+    plan: NestedHydrationPlan,
+    listLength: number
+): Promise<void> {
+    for (const [entry, propsToRead] of plan) {
+        if (propsToRead.size === 0) continue;
+        await hydrateNestedAction(ctx, entry, propsToRead, listLength);
+    }
+}
+
+async function hydrateNestedAction(
+    ctx: TaskContext,
+    entry: ObservedActionSlot,
+    propsToRead: NestedPropsToRead,
+    listLength: number
+): Promise<void> {
+    if (entry.action === null) {
+        return;
+    }
+
+    const note = entry.action.note;
+    try {
+        await goToActionPage(ctx, getActionPageForIndex(entry.index));
+        const actionSlot = await getActionSlotAtIndex(ctx, entry.index, listLength);
+        entry.slot = actionSlot;
+        entry.slotId = actionSlot.getSlotId();
+
+        actionSlot.click();
+        await waitForMenu(ctx);
+        const spec = getActionSpec(entry.action.type);
+        if (!spec.read) {
+            throw new Error(`Reading action "${entry.action.type}" is not implemented.`);
+        }
+
+        entry.action = await spec.read(ctx, propsToRead);
+        entry.nestedReadState = "full";
+        if (note) {
+            entry.action.note = note;
+        }
+        await clickGoBack(ctx);
+    } catch (error) {
+        ctx.displayMessage(
+            `&7[action-read] &cFailed to read nested action at index ${entry.index} (${entry.action.type}): ${error}`
+        );
+        if (ctx.tryGetItemSlot("Go Back") !== null) {
+            await clickGoBack(ctx);
+        }
+    }
 }
 
 async function writeOpenAction(
@@ -1241,6 +1323,40 @@ function actionLogLabel(action: Action | Observed<Action> | null | undefined): s
     return action.type;
 }
 
+function chatJsonLines(ctx: TaskContext, prefix: string, value: unknown): void {
+    const json = JSON.stringify(value, null, 2);
+    if (json === undefined) {
+        ctx.displayMessage(`${prefix} undefined`);
+        return;
+    }
+
+    for (const line of json.split("\n")) {
+        ctx.displayMessage(`${prefix} ${line}`);
+    }
+}
+
+function logSyncDebug(ctx: TaskContext, diff: ActionListDiff): void {
+    if (!isSyncDebugLoggingEnabled()) {
+        return;
+    }
+
+    for (const op of diff.operations) {
+        if (op.kind !== "edit") {
+            continue;
+        }
+
+        ctx.displayMessage(
+            `&8[sync-debug] edit [${op.observed.index}] ${actionLogLabel(op.observed.action)}`
+        );
+        chatJsonLines(
+            ctx,
+            "&8  observed:",
+            normalizeActionCompare(op.observed.action as Observed<Action>)
+        );
+        chatJsonLines(ctx, "&8  desired: ", normalizeActionCompare(op.desired));
+    }
+}
+
 function logSyncState(ctx: TaskContext, diff: ActionListDiff): void {
     if (diff.operations.length === 0) {
         ctx.displayMessage(`&7[sync] &aUp to date.`);
@@ -1275,8 +1391,9 @@ function logSyncState(ctx: TaskContext, diff: ActionListDiff): void {
 }
 
 export async function syncActionList(ctx: TaskContext, desired: Action[]): Promise<void> {
-    const observed = await readActionList(ctx);
+    const observed = await readActionList(ctx, { kind: "sync", desired });
     const diff = diffActionList(observed, desired);
     logSyncState(ctx, diff);
+    logSyncDebug(ctx, diff);
     await applyActionListDiff(ctx, observed, diff);
 }
