@@ -3,3 +3,4 @@ export * from "./actions";
 export * from "./conditions";
 export * from "./constants";
 export * from "./importables";
+export * from "./actionSpecs";
