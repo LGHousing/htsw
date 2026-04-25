@@ -2,7 +2,7 @@ import { CONDITION_NAMES, type Condition, type ConditionCompareVar } from "htsw/
 
 import { ItemSlot } from "../tasks/specifics/slots";
 import { removedFormatting } from "../utils/helpers";
-import { parseLoreFields, readListItemNote } from "./helpers";
+import { parseLoreFields, readListItemNote } from "./loreParsing";
 import type { ConditionLoreSpec } from "./types";
 
 export const CONDITION_LORE_MAPPINGS = {
