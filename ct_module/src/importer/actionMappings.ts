@@ -335,7 +335,7 @@ export const ACTION_MAPPINGS = {
         loreFields: {},
     },
 } satisfies {
-    [K in Action["type"]]?: ActionLoreSpec<Extract<Action, { type: K }>>;
+    [K in Action["type"]]: ActionLoreSpec<Extract<Action, { type: K }>>;
 };
 
 export function getActionLoreFields(

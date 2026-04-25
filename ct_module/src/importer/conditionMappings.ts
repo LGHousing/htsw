@@ -170,7 +170,7 @@ export const CONDITION_LORE_MAPPINGS = {
         },
     },
 } satisfies {
-    [K in Condition["type"]]?: ConditionLoreSpec<Extract<Condition, { type: K }>>;
+    [K in Condition["type"]]: ConditionLoreSpec<Extract<Condition, { type: K }>>;
 };
 
 /**
