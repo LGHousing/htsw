@@ -2,7 +2,8 @@
     "functions": [
         {
             "name": "sincos",
-            "actions": "sincos.htsl"
+            "actions": "sincos.htsl",
+            "repeatTicks": 4
         }
     ]
 }

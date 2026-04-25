@@ -9,7 +9,6 @@
 //   var "trig/input" = 45.0 false
 //   function "Trig:SinCos 0-360"
 //   chat "sin=%var.player/trig/sin% cos=%var.player/trig/cos%"
-
 if () {
     var "trig/angle" = "%var.player/trig/input 0.0%D" false
 }
