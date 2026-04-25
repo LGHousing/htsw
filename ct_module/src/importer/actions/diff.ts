@@ -6,6 +6,7 @@ import { CONDITION_LORE_MAPPINGS } from "../conditionMappings";
 import type {
     ActionListDiff,
     ActionListOperation,
+    NestedListProp,
     Observed,
     ObservedActionSlot,
 } from "../types";
@@ -35,6 +36,7 @@ type ConditionEntry = {
 };
 
 const NOTE_ONLY_COST = 1;
+const UNREAD_NESTED_ACTION_COST = 1000;
 
 function actionsEqual(
     observed: Action | Observed<Action>,
@@ -230,18 +232,24 @@ function actionCost(
         string,
         { prop: string; kind: string }
     >;
-    const nestedProps: string[] = [];
+    const nestedProps: NestedListProp[] = [];
     const scalarProps: string[] = [];
     for (const label in loreFields) {
         const field = loreFields[label];
         if (field.kind === "nestedList") {
-            nestedProps.push(field.prop);
+            nestedProps.push(field.prop as NestedListProp);
         } else {
             scalarProps.push(field.prop);
         }
     }
 
     let cost = circularMoveDistance(observed.index, desired.index, listLength);
+    if (
+        observed.nestedReadState === "summary" &&
+        nestedProps.some((prop) => (observed.nestedSummaries?.[prop] ?? []).length > 0)
+    ) {
+        cost += UNREAD_NESTED_ACTION_COST;
+    }
     cost += fieldDifferenceCount(observed.action, desired.action, scalarProps);
     cost += observed.action.note === desired.action.note ? 0 : 1;
 
