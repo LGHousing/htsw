@@ -45,6 +45,15 @@ export function provideInlayHints(src: string): InlayHint[] {
     return provideInlayHintsForActions(result.value, result.spans);
 }
 
+// Fields we never want to label, regardless of action type:
+// - `type` is internal classification (e.g. "GIVE_ITEM"), not user-typed.
+// - `note` is rendered as a /* doc comment */ above the action and isn't an
+//   inline arg.
+// - `holder` for CHANGE_VAR is set with the same span as the action keyword
+//   (`var` / `globalvar` / etc.), so labeling it would just decorate the
+//   action keyword itself with `holder:` — confusing rather than helpful.
+const SKIP_INLAY_FIELDS = new Set(["type", "note"]);
+
 function provideInlayHintsForActions(actions: types.Action[], spans: SpanTable): InlayHint[] {
     const hints: InlayHint[] = [];
 
@@ -53,18 +62,24 @@ function provideInlayHintsForActions(actions: types.Action[], spans: SpanTable):
             hints.push(...provideInlayHintsForConditions(action.conditions ?? [], spans));
             hints.push(...provideInlayHintsForActions(action.ifActions ?? [], spans));
             hints.push(...provideInlayHintsForActions(action.elseActions ?? [], spans));
-        } else if (action.type === "RANDOM") {
+            // `if` already reads cleanly with `and (...)` / `or (...)` and
+            // braces — labeling `matchAny:`/`conditions:`/`ifActions:` would
+            // just add noise on every conditional.
+            continue;
+        }
+        if (action.type === "RANDOM") {
             hints.push(...provideInlayHintsForActions(action.actions ?? [], spans));
+            continue;
         }
 
-        if (
-            action.type === "CHANGE_VAR" ||
-            action.type === "CONDITIONAL" ||
-            action.type === "RANDOM"
-        ) continue;
-
         for (const key of Object.keys(action)) {
-            if (key === "type" || key === "function" || key === "note") continue;
+            if (SKIP_INLAY_FIELDS.has(key)) continue;
+            // CHANGE_VAR's `holder` shares the action-keyword span; skip it
+            // so we don't decorate `var`/`globalvar`/`teamvar` with `holder:`.
+            if (action.type === "CHANGE_VAR" && key === "holder") continue;
+            // FUNCTION action's `function` field collides with the keyword
+            // `function`, so labeling it produces `function function:"Foo"`.
+            if (action.type === "FUNCTION" && key === "function") continue;
 
             const value = (action as any)[key];
             if (value === null || value === undefined) continue;
@@ -79,6 +94,9 @@ function provideInlayHintsForActions(actions: types.Action[], spans: SpanTable):
     return hints;
 }
 
+// Same skip rules as actions, plus condition-specific ones.
+const SKIP_INLAY_CONDITION_FIELDS = new Set(["type", "inverted", "note"]);
+
 function provideInlayHintsForConditions(
     conditions: types.Condition[],
     spans: SpanTable,
@@ -86,12 +104,12 @@ function provideInlayHintsForConditions(
     const hints: InlayHint[] = [];
 
     for (const condition of conditions) {
-        if (condition.type === "COMPARE_VAR" || condition.type === "COMPARE_PLACEHOLDER") {
-            continue;
-        }
-
         for (const key of Object.keys(condition)) {
-            if (key === "type" || key === "inverted" || key === "note") continue;
+            if (SKIP_INLAY_CONDITION_FIELDS.has(key)) continue;
+            // COMPARE_VAR's `holder` shares the condition-keyword span (the
+            // `var` / `globalvar` / `teamvar` keyword), so labeling it would
+            // just decorate that keyword with `holder:`.
+            if (condition.type === "COMPARE_VAR" && key === "holder") continue;
 
             const value = (condition as any)[key];
             if (value === null || value === undefined) continue;
