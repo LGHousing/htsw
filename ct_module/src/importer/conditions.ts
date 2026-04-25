@@ -886,13 +886,27 @@ function logConditionSyncState(ctx: TaskContext, diff: ConditionListDiff): void 
     }
 }
 
+export type SyncConditionListOptions = {
+    /**
+     * Pre-read observed list to use instead of reading from the menu.
+     * Mirrors `SyncActionListOptions.observed`.
+     */
+    observed?: ObservedConditionSlot[];
+};
+
+export type SyncConditionListResult = {
+    usedObserved: ObservedConditionSlot[];
+};
+
 export async function syncConditionList(
     ctx: TaskContext,
-    desired: Condition[]
-): Promise<void> {
-    const observed = await readConditionList(ctx);
+    desired: Condition[],
+    options?: SyncConditionListOptions
+): Promise<SyncConditionListResult> {
+    const observed = options?.observed ?? (await readConditionList(ctx));
     const diff = diffConditionList(observed, desired);
     logConditionSyncState(ctx, diff);
 
     await applyConditionListDiff(ctx, observed, diff);
+    return { usedObserved: observed };
 }

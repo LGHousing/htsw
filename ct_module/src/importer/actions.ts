@@ -1390,10 +1390,38 @@ function logSyncState(ctx: TaskContext, diff: ActionListDiff): void {
     }
 }
 
-export async function syncActionList(ctx: TaskContext, desired: Action[]): Promise<void> {
-    const observed = await readActionList(ctx, { kind: "sync", desired });
+export type SyncActionListOptions = {
+    /**
+     * Pre-read observed list to use instead of reading from the menu.
+     *
+     * The exporter and (future) trust-mode hand the importer a known-good
+     * observation so a second `readActionList` round trip can be avoided.
+     * If absent, the menu is read in `{ kind: "sync", desired }` mode as
+     * before.
+     */
+    observed?: ObservedActionSlot[];
+};
+
+export type SyncActionListResult = {
+    /**
+     * The observed list the diff was computed against — either the one
+     * passed in via `options.observed`, or a fresh read. Returned so
+     * callers can hand it to the knowledge writer without re-reading.
+     */
+    usedObserved: ObservedActionSlot[];
+};
+
+export async function syncActionList(
+    ctx: TaskContext,
+    desired: Action[],
+    options?: SyncActionListOptions
+): Promise<SyncActionListResult> {
+    const observed =
+        options?.observed ??
+        (await readActionList(ctx, { kind: "sync", desired }));
     const diff = diffActionList(observed, desired);
     logSyncState(ctx, diff);
     logSyncDebug(ctx, diff);
     await applyActionListDiff(ctx, observed, diff);
+    return { usedObserved: observed };
 }

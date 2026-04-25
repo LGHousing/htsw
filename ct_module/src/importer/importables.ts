@@ -24,26 +24,56 @@ import {
     C09PacketHeldItemChange,
     C10PacketCreativeInventoryAction,
 } from "../utils/packets";
+import { getCurrentHousingUuid, writeKnowledge } from "../knowledge";
 
 export async function importImportable(
     ctx: TaskContext,
     importable: Importable
 ): Promise<void> {
     if (importable.type === "FUNCTION") {
-        return importImportableFunction(ctx, importable);
+        await importImportableFunction(ctx, importable);
+        await maybeWriteKnowledge(ctx, importable);
+        return;
     }
     if (importable.type === "EVENT") {
-        return importImportableEvent(ctx, importable);
+        await importImportableEvent(ctx, importable);
+        await maybeWriteKnowledge(ctx, importable);
+        return;
     }
     if (importable.type === "REGION") {
-        return importImportableRegion(ctx, importable);
+        await importImportableRegion(ctx, importable);
+        await maybeWriteKnowledge(ctx, importable);
+        return;
     }
     if (importable.type === "ITEM") {
-        return importImportableItem(ctx, importable);
+        // Item handles its own UUID resolution because it needs the UUID
+        // for both the existing SNBT cache and the new knowledge cache.
+        await importImportableItem(ctx, importable);
+        return;
     }
     // TODO add the others idk and remove the ts ignore
     // @ts-ignore
     const _exhaustiveCheck: never = importable;
+}
+
+/**
+ * Resolve the housing UUID and persist a knowledge entry for the just-
+ * imported importable. Best-effort: any failure (no /wtfmap reply,
+ * filesystem error) is logged and swallowed — the cache is a hint, not
+ * a contract, so it must not abort a successful import.
+ */
+async function maybeWriteKnowledge(
+    ctx: TaskContext,
+    importable: Importable
+): Promise<void> {
+    try {
+        const housingUuid = await getCurrentHousingUuid(ctx);
+        writeKnowledge(ctx, housingUuid, importable, "importer");
+    } catch (error) {
+        ctx.displayMessage(
+            `&7[knowledge] &eSkipped cache write for ${importable.type}: ${error}`
+        );
+    }
 }
 
 async function importImportableFunction(
@@ -196,27 +226,17 @@ async function importImportableItem(
 ): Promise<void> {
     if (!importable.leftClickActions && !importable.rightClickActions) return;
 
-    ctx.runCommand("/wtfmap");
-
-    let message: string = "";
-    await ctx.withTimeout(
-        ctx.waitFor(
-            "message",
-            (chatMessage) =>
-                removedFormatting(chatMessage).startsWith(
-                    "You are currently playing on"
-                ) &&
-                (() => {
-                    message = removedFormatting(chatMessage);
-                    return true;
-                })() // This is fine I guess....
-        ),
-        "Waiting for message in chat"
-    );
-
-    const uuid = message.substring(29, 65);
+    const uuid = await getCurrentHousingUuid(ctx);
     const hash = cyrb53(JSON.stringify(importable));
     if (FileLib.exists(`./htsw/.cache/${uuid}/items/${hash}.snbt`)) {
+        // SNBT cache hit — actions already in sync. Refresh the knowledge
+        // cache too so future trust-mode has an entry even when no GUI
+        // round trip happened on this run.
+        try {
+            writeKnowledge(ctx, uuid, importable, "importer");
+        } catch {
+            // best-effort
+        }
         return;
     }
 
@@ -259,4 +279,11 @@ async function importImportableItem(
     if (!snbt) throw Error("Why don't we have the item?");
 
     FileLib.write(`./htsw/.cache/${uuid}/items/${hash}.snbt`, snbt, true);
+    try {
+        writeKnowledge(ctx, uuid, importable, "importer");
+    } catch (error) {
+        ctx.displayMessage(
+            `&7[knowledge] &eSkipped cache write for ITEM: ${error}`
+        );
+    }
 }

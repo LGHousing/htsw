@@ -173,6 +173,21 @@ export const CONDITION_LORE_MAPPINGS = {
     [K in Condition["type"]]?: ConditionLoreSpec<Extract<Condition, { type: K }>>;
 };
 
+/**
+ * Returns the GUI default for a single condition lore field, or undefined
+ * if the type/prop combination doesn't exist or has no declared default.
+ * Mirrors getActionFieldDefault for conditions.
+ */
+export function getConditionFieldDefault(type: string, prop: string): unknown {
+    const mapping = (CONDITION_LORE_MAPPINGS as Record<string, { loreFields: Record<string, { prop: string; kind: string; default?: unknown }> } | undefined>)[type];
+    if (!mapping) return undefined;
+    for (const label in mapping.loreFields) {
+        const field = mapping.loreFields[label];
+        if (field.prop === prop) return field.default;
+    }
+    return undefined;
+}
+
 export function tryGetConditionTypeFromDisplayName(
     displayName: string
 ): Condition["type"] | undefined {

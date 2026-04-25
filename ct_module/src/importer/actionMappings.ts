@@ -138,7 +138,7 @@ export const ACTION_MAPPINGS = {
             Variable: { prop: "key", kind: "value" },
             Operation: { prop: "op", kind: "select" },
             Value: { prop: "value", kind: "value" },
-            "Automatic Unset": { prop: "unset", kind: "boolean" },
+            "Automatic Unset": { prop: "unset", kind: "boolean", default: false },
         },
     },
 
@@ -340,11 +340,27 @@ export const ACTION_MAPPINGS = {
 
 export function getActionLoreFields(
     type: Action["type"]
-): Record<string, { prop: string; kind: UiFieldKind }> {
+): Record<string, { prop: string; kind: UiFieldKind; default?: unknown }> {
     return ACTION_MAPPINGS[type].loreFields as Record<
         string,
-        { prop: string; kind: UiFieldKind }
+        { prop: string; kind: UiFieldKind; default?: unknown }
     >;
+}
+
+/**
+ * Returns the GUI default for a single action lore field, or undefined if
+ * the type/prop combination doesn't exist or has no declared default.
+ * Used by normalizeActionCompare to treat a default-valued observed field
+ * as equivalent to an omitted field in desired source.
+ */
+export function getActionFieldDefault(type: string, prop: string): unknown {
+    const mapping = (ACTION_MAPPINGS as Record<string, { loreFields: Record<string, { prop: string; kind: UiFieldKind; default?: unknown }> } | undefined>)[type];
+    if (!mapping) return undefined;
+    for (const label in mapping.loreFields) {
+        const field = mapping.loreFields[label];
+        if (field.prop === prop) return field.default;
+    }
+    return undefined;
 }
 
 export function getNestedListFields(
