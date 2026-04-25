@@ -301,6 +301,13 @@ function commandHtsw(args: string[]) {
     ChatLib.chat(`&7${chatSeparator()}`);
 }
 
+function stripSurroundingQuotes(s: string): string {
+    if (s.length >= 2 && s.charAt(0) === "\"" && s.charAt(s.length - 1) === "\"") {
+        return s.slice(1, s.length - 1);
+    }
+    return s;
+}
+
 function commandImport(args: string[]) {
     if (args.length === 0) {
         ChatLib.chat(`&7${chatSeparator()}`);
@@ -313,9 +320,13 @@ function commandImport(args: string[]) {
     }
 
     const sm = new SourceMap(new FileSystemFileLoader());
+    // Strip a single pair of surrounding quotes — users naturally type
+    // `/import "C:\path with spaces\import.json"` and ChatTriggers passes
+    // those quotes through verbatim, which Java's Paths.get rejects.
+    const importPath = stripSurroundingQuotes(args.join(" "));
     let result: ReturnType<typeof parseImportablesResult>;
     try {
-        result = parseImportablesResult(sm, args.join(" "));
+        result = parseImportablesResult(sm, importPath);
     } catch (err) {
         ChatLib.chat("&cImport failed while parsing.");
         printCommandError(sm, err);
