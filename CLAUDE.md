@@ -697,8 +697,10 @@ This matters for `ImportableItem`, which creates a real item stack and edits its
 
 If you need to extend the CT module, keep these invariants in mind:
 
-- Add or update mappings in `actionMappings.ts` / `conditionMappings.ts` first. They drive parsing and diff cost behavior.
-- If a new action has nested lists, make sure `getNestedListFields(...)` can see them and add a `read` implementation if lore alone is insufficient.
+- Add or update action mapping data in `actionMappings.ts` and condition mappings in `conditionMappings.ts` first. They drive parsing, list-item observation, and diff cost behavior.
+- Prefer typed helper accessors for mapping/spec tables instead of inline casts or indexing exact union objects with arbitrary strings. Examples: use `getActionSpec(...)` for `ACTION_SPECS`, `getActionLoreFields(...)` for action lore mappings, and `getNestedListFields(...)` for nested-list metadata.
+- If a new action has nested lists, make sure `getNestedListFields(...)` can see them, make list-item lore summaries parse correctly, and add a `read` implementation if lore alone is insufficient.
+- Action-list sync uses selective nested hydration: first shallow-read list items and nested summary types from lore, then use `createNestedHydrationPlan(...)` to choose which nested actions to open before final diffing. Full reads/export-style flows should use full action-list read mode so they hydrate everything.
 - Preserve `normalizeActionCompare` / `normalizeConditionCompare` semantics unless you want widespread diff churn.
 - For GUI interactions, use `TaskContext`, `waitForMenu`, and existing setter helpers. Do not hardcode sleeps unless there is no event-based alternative.
 - Prefer direct, inline importer code for small one-off GUI flows. Do not extract tiny helpers just to avoid a few repeated lines when the call-site behavior is clearer inline.
