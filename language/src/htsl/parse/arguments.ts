@@ -49,6 +49,12 @@ function normalizeNumberLiteral(value: string): string {
     return value.replaceAll("_", "");
 }
 
+function parseDecimalValueString(value: string): string {
+    const parsed = parseFloat(value);
+    const formatted = Object.is(parsed, -0) ? "0" : parsed.toString();
+    return formatted.includes(".") ? formatted : `${formatted}.0`;
+}
+
 export function parseLocation(p: Parser): Location {
     const type = p.parseOption(
         LOCATIONS,
@@ -252,9 +258,8 @@ export function parseNumericValue(p: Parser): Value {
     } else if (p.eat("f64")) {
         const value = normalizeNumberLiteral((p.prev as F64Kind).value);
         const withNegative = negative ? `-${value}` : value;
-        const double = parseFloat(withNegative);
 
-        return double.toFixed(20);
+        return parseDecimalValueString(withNegative);
     } else if (negative) {
         throw maybeErr.addPrimarySpan(p.token.span, "Expected number");
     }
@@ -277,7 +282,7 @@ export function parseNumericValue(p: Parser): Value {
 
         if (normalizedValue.includes(".") && !isNaN(Number(normalizedValue))) {
             p.next();
-            return parseFloat(normalizedValue).toFixed(20);
+            return parseDecimalValueString(normalizedValue);
         }
 
         const castMatch = value.match(/^(%(.+)%)\s*([LD])$/i);
