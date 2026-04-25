@@ -15,8 +15,8 @@ import {
     waitForMenu,
     waitForUnformattedMessage,
     setNumberValue,
-    parseLoreKeyValueLine,
 } from "./helpers";
+import { parseLoreKeyValueLine } from "./loreParsing";
 import { MouseButton } from "../tasks/specifics/slots";
 import { cyrb53, removedFormatting } from "../utils/helpers";
 import { getItemFromNbt } from "../utils/nbt";
