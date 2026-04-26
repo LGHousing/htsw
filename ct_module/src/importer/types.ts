@@ -1,5 +1,6 @@
 import type { Action, Condition } from "htsw/types";
 import type { ItemSlot } from "../tasks/specifics/slots";
+import type { ImportContext } from "../importables/context";
 
 export type UiFieldKind =
     | "boolean"
@@ -60,8 +61,8 @@ export type NestedReadState = "none" | "summary" | "full";
 export type NestedSummaries = Partial<Record<NestedListProp, string[]>>;
 
 export type ActionListReadMode =
-    | { kind: "full" }
-    | { kind: "sync"; desired: readonly Action[] };
+    | { kind: "full"; importContext?: ImportContext }
+    | { kind: "sync"; desired: readonly Action[]; importContext?: ImportContext };
 
 export type NestedHydrationPlan = Map<ObservedActionSlot, NestedPropsToRead>;
 

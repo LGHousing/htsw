@@ -32,7 +32,6 @@ export class Button {
         this.shouldBeVisible = shouldBeVisible;
         this.onClick = onClick;
         this.triggers = [];
-        console.log(this.triggers.length);
     }
 
     public getX(): number {

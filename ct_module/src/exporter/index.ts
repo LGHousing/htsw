@@ -3,6 +3,7 @@ import { exportImportable } from "./importables";
 import { canonicalSlug, defaultExportRoot } from "./paths";
 import { getCurrentHousingUuid } from "../knowledge";
 import { chatSeparator } from "../utils/helpers";
+import { stripSurroundingQuotes } from "../utils/strings";
 import { VERSION } from "htsw";
 
 export { exportImportable } from "./importables";
@@ -24,13 +25,6 @@ function printExportHelp(): void {
         "&7  Default path: ./htsw/exports/<housingUuid>/"
     );
     ChatLib.chat(`&7${chatSeparator()}`);
-}
-
-function stripSurroundingQuotes(s: string): string {
-    if (s.length >= 2 && s.charAt(0) === "\"" && s.charAt(s.length - 1) === "\"") {
-        return s.slice(1, s.length - 1);
-    }
-    return s;
 }
 
 /**
