@@ -4,13 +4,11 @@ import * as htsw from "htsw";
 import TaskContext from "../tasks/context";
 import { readActionList } from "../importer/actions";
 import {
-    clickGoBack,
-    getSlotPaginate,
-    waitForMenu,
-} from "../importer/helpers";
-import { parseLoreKeyValueLine } from "../importer/loreParsing";
-import { MouseButton } from "../tasks/specifics/slots";
-import { removedFormatting } from "../utils/helpers";
+    openFunctionEditor,
+    openFunctionSettings,
+    readAutomaticExecutionTicks,
+} from "../importables/functions";
+import { clickGoBack } from "../importer/helpers";
 
 import { observedSlotsToActions } from "./sanitize";
 import { upsertImportableEntry } from "./importJsonWriter";
@@ -47,24 +45,7 @@ async function readFunction(
     ctx: TaskContext,
     name: string
 ): Promise<{ actions: Action[]; repeatTicks?: number }> {
-    ctx.runCommand(`/function edit ${name}`);
-
-    const exists = await ctx.withTimeout(
-        Promise.race([
-            waitForMenu(ctx).then(() => true),
-            ctx
-                .waitFor(
-                    "message",
-                    (message) =>
-                        removedFormatting(message) ===
-                        "Could not find a function with that name!"
-                )
-                .then(() => false),
-        ]),
-        "Waiting for function to open"
-    );
-
-    if (!exists) {
+    if ((await openFunctionEditor(ctx, name)) === "missing") {
         throw new Error(`No function named "${name}" exists in this housing.`);
     }
 
@@ -76,24 +57,9 @@ async function readFunction(
     // The function-list right-click menu owns repeatTicks. Mirrors the
     // importer's write path at importables.ts function flow.
     await clickGoBack(ctx);
-    const listSlot = await getSlotPaginate(ctx, name);
-    listSlot.click(MouseButton.RIGHT);
-    await waitForMenu(ctx);
+    await openFunctionSettings(ctx, name);
 
-    let repeatTicks: number | undefined;
-    const autoExecSlot = ctx.tryGetItemSlot("Automatic Execution");
-    if (autoExecSlot !== null) {
-        for (const line of autoExecSlot.getItem().getLore()) {
-            const kv = parseLoreKeyValueLine(line);
-            if (!kv || kv.label !== "Current") continue;
-            const ticks = parseInt(removedFormatting(kv.value).trim(), 10);
-            if (!isNaN(ticks) && ticks > 0) {
-                repeatTicks = ticks;
-            }
-            break;
-        }
-    }
-
+    const repeatTicks = readAutomaticExecutionTicks(ctx);
     await clickGoBack(ctx);
     return repeatTicks !== undefined ? { actions, repeatTicks } : { actions };
 }
