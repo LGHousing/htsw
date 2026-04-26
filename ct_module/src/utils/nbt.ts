@@ -1,4 +1,5 @@
-import type { Tag } from "htsw/nbt";
+import type { Tag, TagCompound } from "htsw/nbt";
+import { removedFormatting } from "./helpers";
 
 const NBTTagByte = Java.type("net.minecraft.nbt.NBTTagByte");
 const NBTTagShort = Java.type("net.minecraft.nbt.NBTTagShort");
@@ -77,10 +78,131 @@ export function toMinecraftTag(tag: Tag): any {
 const ItemStack = Java.type("net.minecraft.item.ItemStack");
 
 export function getItemFromNbt(nbt: Tag): Item {
-    const mcTag = toMinecraftTag(nbt);
+    const mcTag = toMinecraftTag(normalizeItemNbtColorCodes(nbt));
 
     // @ts-ignore STUPID TYPEDEF!
-    const itemStack = ItemStack.func_77949_a/*loadItemStackFromNBT*/(mcTag);
+    const itemStack = ItemStack.func_77949_a(/*loadItemStackFromNBT*/ mcTag);
 
     return new Item(itemStack);
+}
+
+export function readItemDisplayAliases(nbt: Tag): string[] {
+    const name = getNestedString(nbt, ["tag", "display", "Name"]);
+    if (name === undefined) {
+        return [];
+    }
+
+    const normalized = normalizeFormattingForMinecraft(name);
+    const stripped = removedFormatting(normalized).trim();
+    return stripped === "" ? [normalized] : [normalized, stripped];
+}
+
+function normalizeItemNbtColorCodes(tag: Tag): Tag {
+    if (tag.type !== "compound") {
+        return tag;
+    }
+
+    const display = getNestedCompound(tag, ["tag", "display"]);
+    if (display === undefined) {
+        return tag;
+    }
+
+    const normalized = cloneTag(tag);
+    const normalizedDisplay = getNestedCompound(normalized, ["tag", "display"]);
+    if (normalizedDisplay === undefined) {
+        return normalized;
+    }
+
+    for (const key of Object.keys(normalizedDisplay.value)) {
+        const child = normalizedDisplay.value[key];
+        if (child === undefined) {
+            continue;
+        }
+
+        normalizedDisplay.value[key] = normalizeFormattingStringTags(child);
+    }
+
+    return normalized;
+}
+
+function normalizeFormattingStringTags(tag: Tag): Tag {
+    if (tag.type === "string") {
+        return { type: "string", value: normalizeFormattingForMinecraft(tag.value) };
+    }
+
+    if (tag.type === "list") {
+        return {
+            type: "list",
+            value: {
+                type: tag.value.type,
+                value:
+                    tag.value.type === "string"
+                        ? tag.value.value.map((value) =>
+                              typeof value === "string"
+                                  ? normalizeFormattingForMinecraft(value)
+                                  : value
+                          )
+                        : tag.value.value,
+            },
+        };
+    }
+
+    return tag;
+}
+
+function normalizeFormattingForMinecraft(value: string): string {
+    return value.replace(/&([0-9a-fklmnor])/gi, "\u00a7$1");
+}
+
+function getNestedString(tag: Tag, path: string[]): string | undefined {
+    const nested = getNestedTag(tag, path);
+    return nested?.type === "string" ? nested.value : undefined;
+}
+
+function getNestedCompound(tag: Tag, path: string[]): TagCompound | undefined {
+    const nested = getNestedTag(tag, path);
+    return nested?.type === "compound" ? nested : undefined;
+}
+
+function getNestedTag(tag: Tag, path: string[]): Tag | undefined {
+    let current: Tag | undefined = tag;
+    for (const segment of path) {
+        if (current?.type !== "compound") {
+            return undefined;
+        }
+        current = current.value[segment];
+    }
+    return current;
+}
+
+function cloneTag(tag: Tag): Tag {
+    if (tag.type === "compound") {
+        const value: Record<string, Tag | undefined> = {};
+        for (const key of Object.keys(tag.value)) {
+            const child = tag.value[key];
+            value[key] = child === undefined ? undefined : cloneTag(child);
+        }
+        return { type: "compound", value };
+    }
+
+    if (tag.type === "list") {
+        return {
+            type: "list",
+            value: {
+                type: tag.value.type,
+                value: tag.value.value.slice(),
+            },
+        };
+    }
+
+    if (
+        tag.type === "byte_array" ||
+        tag.type === "short_array" ||
+        tag.type === "int_array" ||
+        tag.type === "long_array"
+    ) {
+        return { type: tag.type, value: tag.value.slice() } as Tag;
+    }
+
+    return tag;
 }

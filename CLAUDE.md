@@ -263,7 +263,7 @@ This file is the lowest-level generic GUI API. Most higher-level importer work i
 
 ## Importable-Level Import Logic
 
-`ct_module/src/importer/importables.ts` handles top-level importables.
+`ct_module/src/importables/index.ts` handles top-level importables.
 
 Supported importable types right now:
 
@@ -645,28 +645,30 @@ This matches the current condition UI manipulation approach, which edits/deletes
 
 ## Exporter Status
 
-There is currently no true `ct_module` exporter implementation.
+There is now a narrow `ct_module` exporter implementation for functions.
 
 What exists:
 
-- readers for action lists and condition lists,
-- parsing of visible GUI lore into HTSW-shaped objects,
-- diff logic that treats the GUI as the source of observed state before syncing.
+- `ct_module/src/exporter/`,
+- a registered `/export function <name> [path]` command,
+- full action-list reads through `readActionList(ctx, { kind: "full" })`,
+- `.htsl` writing plus `import.json` upserts,
+- best-effort knowledge-cache writes after export.
 
 What does not exist:
 
-- a module that walks Housing objects and emits canonical HTSW `import.json` or HTSL source files,
-- a top-level `/export` command,
-- file serialization of observed Housing state back into project source.
+- event, region, item, NPC, or menu export,
+- full-project Housing export,
+- canonical source generation for every importable type.
 
-If future work refers to an “exporter”, the closest starting points are:
+If future work extends the exporter, the closest starting points are:
 
+- `ct_module/src/exporter/exportFunction.ts`
+- `ct_module/src/exporter/importJsonWriter.ts`
 - `readActionList(...)`
 - `readConditionList(...)`
 - `parseActionListItem(...)`
 - `parseConditionListItem(...)`
-
-But today those are importer-side observation helpers, not a finished export pipeline.
 
 ## Simulator
 
@@ -735,9 +737,8 @@ The biggest unfinished areas in `ct_module` are:
 
 - action writer coverage for most action types,
 - condition item-selection writing,
-- a real exporter,
+- broader exporter coverage beyond functions,
 - stronger simulator parity with Housing behavior,
-- removal of temporary debug hooks from `commands.ts`,
 - tests for diff/sync behavior inside `ct_module` itself.
 
 If you are picking a place to improve the project, `ct_module/src/importer/actions.ts` and `ct_module/src/importer/actions/diff.ts` are the highest leverage files.

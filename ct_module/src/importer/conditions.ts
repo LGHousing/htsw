@@ -25,6 +25,7 @@ import {
 } from "htsw/types";
 
 import TaskContext from "../tasks/context";
+import type { ImportContext } from "../importables/context";
 import {
     clickGoBack,
     findMenuOptionByLore,
@@ -52,6 +53,16 @@ import {
     diffConditionList,
     onlyNoteDiffers,
 } from "./conditions/diff";
+import {
+    clickPaginatedNextPage,
+    getCurrentPaginatedListPageState,
+    getPaginatedListSlotAtIndex,
+    getVisiblePaginatedItemSlots,
+    goToPaginatedListPage,
+    isEmptyPaginatedPlaceholder,
+    type PaginatedListConfig,
+} from "./paginatedList";
+import { setItemValue } from "./items";
 
 export { diffConditionList };
 
@@ -59,7 +70,12 @@ export { diffConditionList };
 type ConditionSpec<T extends Condition> = {
     displayName: string;
     read?: (ctx: TaskContext) => Promise<T>;
-    write?: (ctx: TaskContext, desired: T, current?: T) => Promise<void>;
+    write?: (
+        ctx: TaskContext,
+        desired: T,
+        current?: T,
+        importContext?: ImportContext
+    ) => Promise<void>;
 };
 
 type ConditionSpecMap = {
@@ -87,67 +103,38 @@ function isLimitExceeded(slot: ItemSlot): boolean {
     return removedFormatting(lastLine) === "You can't have more of this condition!";
 }
 
-const CONDITION_ITEMS_PER_PAGE = 21;
-const CONDITION_PREV_PAGE_SLOT_ID = 45;
-const CONDITION_NEXT_PAGE_SLOT_ID = 53;
-
-function getVisibleConditionItemSlots(ctx: TaskContext): ItemSlot[] {
-    const slots = ctx.getAllItemSlots((slot) => {
-        const slotId = slot.getSlotId();
-        const row = Math.floor(slotId / 9);
-        const col = slotId % 9;
-        return row >= 1 && row <= 3 && col >= 1 && col <= 7;
-    });
-    if (slots === null) {
-        throw new Error("No open container found");
+function resolveConditionItem(
+    importContext: ImportContext | undefined,
+    conditionType: Condition["type"],
+    itemName: string
+): Item {
+    if (importContext === undefined) {
+        throw Diagnostic.error(
+            `Cannot set item "${itemName}" for ${conditionType}: no import context is available.`
+        );
     }
 
-    return slots.sort((a, b) => a.getSlotId() - b.getSlotId());
+    const entry = importContext.items.resolve(itemName);
+    if (entry === undefined) {
+        throw Diagnostic.error(
+            `Cannot set item "${itemName}" for ${conditionType}: item fields resolve against top-level items[].name.`
+        );
+    }
+
+    return entry.item;
+}
+
+const CONDITION_LIST_CONFIG: PaginatedListConfig = {
+    label: "condition",
+    emptyPlaceholderName: "No Conditions!",
+};
+
+function getVisibleConditionItemSlots(ctx: TaskContext): ItemSlot[] {
+    return getVisiblePaginatedItemSlots(ctx);
 }
 
 function isNoConditionsPlaceholder(slot: ItemSlot): boolean {
-    return removedFormatting(slot.getItem().getName()).trim() === "No Conditions!";
-}
-
-function parsePaginatedConditionTitlePage(
-    title: string
-): { currentPage: number; totalPages: number } | null {
-    const trimmedTitle = title.trim();
-    const exactMatch = trimmedTitle.match(/^\((\d+)\/(\d+)\)\s+/);
-    if (exactMatch) {
-        const currentPage = Number(exactMatch[1]);
-        const totalPages = Number(exactMatch[2]);
-        if (
-            !Number.isInteger(currentPage) ||
-            !Number.isInteger(totalPages) ||
-            currentPage < 1 ||
-            totalPages < 1 ||
-            currentPage > totalPages
-        ) {
-            throw new Error(`Invalid paginated condition title: "${title}"`);
-        }
-        return { currentPage, totalPages };
-    }
-
-    if (/\([^)]*\)\s*$/.test(trimmedTitle) || /^\([^)]*\)\s+/.test(trimmedTitle)) {
-        throw new Error(`Malformed paginated condition title: "${title}"`);
-    }
-
-    return null;
-}
-
-function hasConditionNextPage(ctx: TaskContext): boolean {
-    return (
-        ctx.tryGetItemSlot((slot) => slot.getSlotId() === CONDITION_NEXT_PAGE_SLOT_ID) !==
-        null
-    );
-}
-
-function hasConditionPrevPage(ctx: TaskContext): boolean {
-    return (
-        ctx.tryGetItemSlot((slot) => slot.getSlotId() === CONDITION_PREV_PAGE_SLOT_ID) !==
-        null
-    );
+    return isEmptyPaginatedPlaceholder(slot, CONDITION_LIST_CONFIG);
 }
 
 function getCurrentConditionPageState(ctx: TaskContext): {
@@ -156,88 +143,11 @@ function getCurrentConditionPageState(ctx: TaskContext): {
     hasNext: boolean;
     hasPrev: boolean;
 } {
-    const title = ctx.getOpenContainerTitle();
-    if (title === null) {
-        throw new Error("No open container found");
-    }
-
-    const parsedTitle = parsePaginatedConditionTitlePage(title);
-    const hasNext = hasConditionNextPage(ctx);
-    if (parsedTitle === null) {
-        return {
-            currentPage: 1,
-            totalPages: hasNext ? null : 1,
-            hasNext,
-            hasPrev: false,
-        };
-    }
-
-    return {
-        currentPage: parsedTitle.currentPage,
-        totalPages: parsedTitle.totalPages,
-        hasNext,
-        hasPrev: hasConditionPrevPage(ctx),
-    };
-}
-
-function getConditionPageForIndex(index: number): number {
-    return Math.floor(index / CONDITION_ITEMS_PER_PAGE) + 1;
-}
-
-function getConditionLocalIndex(index: number): number {
-    return index % CONDITION_ITEMS_PER_PAGE;
+    return getCurrentPaginatedListPageState(ctx, CONDITION_LIST_CONFIG);
 }
 
 async function goToConditionPage(ctx: TaskContext, targetPage: number): Promise<void> {
-    if (!Number.isInteger(targetPage) || targetPage < 1) {
-        throw new Error(`Invalid target condition page: ${targetPage}`);
-    }
-
-    while (true) {
-        const state = getCurrentConditionPageState(ctx);
-        if (state.currentPage === targetPage) {
-            return;
-        }
-
-        if (state.currentPage < targetPage) {
-            if (!state.hasNext) {
-                throw new Error(
-                    `Cannot move to condition page ${targetPage}; no next page from ${state.currentPage}.`
-                );
-            }
-
-            ctx.getItemSlot(
-                (slot) => slot.getSlotId() === CONDITION_NEXT_PAGE_SLOT_ID
-            ).click();
-            await waitForMenu(ctx);
-
-            const nextState = getCurrentConditionPageState(ctx);
-            if (nextState.currentPage <= state.currentPage) {
-                throw new Error(
-                    "Condition page did not advance after clicking next page."
-                );
-            }
-            continue;
-        }
-
-        if (!state.hasPrev) {
-            throw new Error(
-                `Cannot move to condition page ${targetPage}; no previous page from ${state.currentPage}.`
-            );
-        }
-
-        ctx.getItemSlot(
-            (slot) => slot.getSlotId() === CONDITION_PREV_PAGE_SLOT_ID
-        ).click();
-        await waitForMenu(ctx);
-
-        const prevState = getCurrentConditionPageState(ctx);
-        if (prevState.currentPage >= state.currentPage) {
-            throw new Error(
-                "Condition page did not go back after clicking previous page."
-            );
-        }
-    }
+    await goToPaginatedListPage(ctx, targetPage, CONDITION_LIST_CONFIG);
 }
 
 async function getConditionSlotAtIndex(
@@ -245,23 +155,7 @@ async function getConditionSlotAtIndex(
     index: number,
     listLength: number
 ): Promise<ItemSlot> {
-    if (listLength <= 0 || index < 0 || index >= listLength) {
-        throw new Error(
-            `Condition index ${index} is out of bounds for list length ${listLength}.`
-        );
-    }
-
-    await goToConditionPage(ctx, getConditionPageForIndex(index));
-    const visibleSlots = getVisibleConditionItemSlots(ctx);
-    const localIndex = getConditionLocalIndex(index);
-    const slot = visibleSlots[localIndex];
-    if (!slot) {
-        throw new Error(
-            `Could not resolve visible condition slot ${localIndex} for global index ${index}.`
-        );
-    }
-
-    return slot;
+    return getPaginatedListSlotAtIndex(ctx, index, listLength, CONDITION_LIST_CONFIG);
 }
 
 export async function readConditionsListPage(
@@ -398,11 +292,15 @@ async function writeIsInRegion(
 
 async function writeRequireItem(
     ctx: TaskContext,
-    condition: ConditionRequireItem
+    condition: ConditionRequireItem,
+    _current?: ConditionRequireItem,
+    importContext?: ImportContext
 ): Promise<void> {
     if (condition.itemName) {
-        throw Diagnostic.error(
-            "Writing REQUIRE_ITEM item selection is not implemented yet."
+        await setItemValue(
+            ctx,
+            "Item",
+            resolveConditionItem(importContext, condition.type, condition.itemName)
         );
     }
 
@@ -550,19 +448,32 @@ async function writePortalType(
 }
 
 async function writeBlockType(
-    _ctx: TaskContext,
-    condition: ConditionBlockType
+    ctx: TaskContext,
+    condition: ConditionBlockType,
+    _current?: ConditionBlockType,
+    importContext?: ImportContext
 ): Promise<void> {
     if (condition.itemName) {
-        throw Diagnostic.error(
-            "Writing BLOCK_TYPE item selection is not implemented yet."
+        await setItemValue(
+            ctx,
+            "Item",
+            resolveConditionItem(importContext, condition.type, condition.itemName)
         );
     }
 }
 
-async function writeIsItem(_ctx: TaskContext, condition: ConditionIsItem): Promise<void> {
+async function writeIsItem(
+    ctx: TaskContext,
+    condition: ConditionIsItem,
+    _current?: ConditionIsItem,
+    importContext?: ImportContext
+): Promise<void> {
     if (condition.itemName) {
-        throw Diagnostic.error("Writing IS_ITEM item selection is not implemented yet.");
+        await setItemValue(
+            ctx,
+            "Item",
+            resolveConditionItem(importContext, condition.type, condition.itemName)
+        );
     }
 }
 
@@ -674,8 +585,13 @@ function isConditionListItemInverted(slot: ItemSlot): boolean {
         .some((line) => removedFormatting(line).trim() === "Inverted");
 }
 
+export type ReadConditionListOptions = {
+    importContext?: ImportContext;
+};
+
 export async function readConditionList(
-    ctx: TaskContext
+    ctx: TaskContext,
+    options?: ReadConditionListOptions
 ): Promise<ObservedConditionSlot[]> {
     await goToConditionPage(ctx, 1);
     const observed: ObservedConditionSlot[] = [];
@@ -688,24 +604,24 @@ export async function readConditionList(
             observed.push(entry);
         }
 
-        if (!hasConditionNextPage(ctx)) {
+        if (!getCurrentConditionPageState(ctx).hasNext) {
             break;
         }
 
-        ctx.getItemSlot(
-            (slot) => slot.getSlotId() === CONDITION_NEXT_PAGE_SLOT_ID
-        ).click();
+        clickPaginatedNextPage(ctx);
         await waitForMenu(ctx);
     }
 
     await goToConditionPage(ctx, 1);
+    canonicalizeObservedConditionSlots(observed, options?.importContext);
     return observed;
 }
 
 async function writeOpenCondition(
     ctx: TaskContext,
     condition: Condition,
-    current?: Condition
+    current?: Condition,
+    importContext?: ImportContext
 ): Promise<void> {
     // Notes are written from the list item, not the editor.
     if (current && onlyNoteDiffers(condition, current)) {
@@ -722,7 +638,56 @@ async function writeOpenCondition(
     }
 
     if (spec.write) {
-        await spec.write(ctx, condition, resolvedCurrent);
+        await spec.write(ctx, condition, resolvedCurrent, importContext);
+    }
+}
+
+function canonicalizeObservedConditionSlots(
+    observed: readonly ObservedConditionSlot[],
+    importContext?: ImportContext
+): void {
+    if (importContext === undefined) {
+        return;
+    }
+
+    for (const entry of observed) {
+        if (entry.condition !== null) {
+            canonicalizeConditionItemName(entry.condition, importContext);
+        }
+    }
+}
+
+export function canonicalizeObservedConditionItemNames(
+    conditions: readonly (Condition | null)[],
+    importContext?: ImportContext
+): void {
+    if (importContext === undefined) {
+        return;
+    }
+
+    for (const condition of conditions) {
+        if (condition !== null) {
+            canonicalizeConditionItemName(condition, importContext);
+        }
+    }
+}
+
+function canonicalizeConditionItemName(
+    condition: Condition,
+    importContext: ImportContext
+): void {
+    if (
+        condition.type !== "REQUIRE_ITEM" &&
+        condition.type !== "BLOCK_TYPE" &&
+        condition.type !== "IS_ITEM"
+    ) {
+        return;
+    }
+
+    if (condition.itemName !== undefined) {
+        condition.itemName = importContext.items.canonicalizeObservedName(
+            condition.itemName
+        );
     }
 }
 async function deleteObservedCondition(
@@ -760,7 +725,8 @@ async function setOpenConditionInverted(
 
 export async function importCondition(
     ctx: TaskContext,
-    condition: Condition
+    condition: Condition,
+    importContext?: ImportContext
 ): Promise<void> {
     ctx.getItemSlot("Add Condition").click();
     await waitForMenu(ctx);
@@ -776,7 +742,7 @@ export async function importCondition(
 
     slot.click();
     await waitForMenu(ctx);
-    await writeOpenCondition(ctx, condition);
+    await writeOpenCondition(ctx, condition, undefined, importContext);
 
     await setOpenConditionInverted(ctx, condition.inverted === true);
     // we ALWAYS click go back because every single condition has
@@ -795,7 +761,8 @@ export async function importCondition(
 async function applyConditionListDiff(
     ctx: TaskContext,
     observed: ObservedConditionSlot[],
-    diff: ConditionListDiff
+    diff: ConditionListDiff,
+    importContext?: ImportContext
 ): Promise<void> {
     const currentObserved = [...observed];
 
@@ -827,7 +794,12 @@ async function applyConditionListDiff(
             );
         }
 
-        await writeOpenCondition(ctx, entry.desired, entry.observed.condition);
+        await writeOpenCondition(
+            ctx,
+            entry.desired,
+            entry.observed.condition,
+            importContext
+        );
 
         const currentInverted = entry.observed.condition.inverted === true;
         const desiredInverted = entry.desired.inverted === true;
@@ -850,7 +822,7 @@ async function applyConditionListDiff(
     }
 
     for (const condition of diff.adds) {
-        await importCondition(ctx, condition);
+        await importCondition(ctx, condition, importContext);
     }
 }
 
@@ -892,6 +864,7 @@ export type SyncConditionListOptions = {
      * Mirrors `SyncActionListOptions.observed`.
      */
     observed?: ObservedConditionSlot[];
+    importContext?: ImportContext;
 };
 
 export type SyncConditionListResult = {
@@ -903,10 +876,13 @@ export async function syncConditionList(
     desired: Condition[],
     options?: SyncConditionListOptions
 ): Promise<SyncConditionListResult> {
-    const observed = options?.observed ?? (await readConditionList(ctx));
+    const observed =
+        options?.observed ??
+        (await readConditionList(ctx, { importContext: options?.importContext }));
+    canonicalizeObservedConditionSlots(observed, options?.importContext);
     const diff = diffConditionList(observed, desired);
     logConditionSyncState(ctx, diff);
 
-    await applyConditionListDiff(ctx, observed, diff);
+    await applyConditionListDiff(ctx, observed, diff, options?.importContext);
     return { usedObserved: observed };
 }

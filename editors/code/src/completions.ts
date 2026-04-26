@@ -335,17 +335,6 @@ function tokenize(input: string): TokenInfo[] {
     return tokens;
 }
 
-function isInsideIfCondition(linePrefix: string): boolean {
-    const ifIndex = linePrefix.search(/\bif\b/i);
-    if (ifIndex < 0) return false;
-
-    const openIndex = linePrefix.indexOf("(", ifIndex);
-    if (openIndex < 0) return false;
-
-    const closeIndex = linePrefix.indexOf(")", openIndex);
-    return closeIndex < 0 || closeIndex >= linePrefix.length;
-}
-
 function getOpenIfConditionPrefix(documentPrefix: string): string | undefined {
     const parens: number[] = [];
     let inString = false;
@@ -410,11 +399,6 @@ function getOpenIfConditionPrefix(documentPrefix: string): string | undefined {
 function isActionKeyword(value: string): boolean {
     const normalized = unquote(value);
     return htsw.htsl.helpers.ACTION_KWS.some((kw) => kw === normalized);
-}
-
-function isSameLineConditionStartContext(linePrefix: string, tokens: TokenInfo[]): boolean {
-    if (!isInsideIfCondition(linePrefix)) return false;
-    return isConditionStartContext(linePrefix.slice(linePrefix.indexOf("(") + 1), tokens);
 }
 
 function isConditionStartContext(conditionPrefix: string, tokens: TokenInfo[]): boolean {
@@ -506,11 +490,6 @@ function last<T>(values: T[]): T | undefined {
     return values.length === 0 ? undefined : values[values.length - 1];
 }
 
-function nthFromEnd<T>(values: T[], offset: number): T | undefined {
-    const index = values.length - offset;
-    return index < 0 ? undefined : values[index];
-}
-
 // `filterText` includes the field name so snippet-placeholder text (e.g. `op`)
 // fuzzy-matches every item — operator symbols have no chars in common with field
 // names and would otherwise filter to empty + "No suggestions".
@@ -575,6 +554,11 @@ function snippetForField(field: htsw.types.ActionFieldSpec, n: number): string {
             return `"\${${n}:${field.name}}"`;
         case "block":
             return `{\n\t\${${n}}\n}`;
+        case "placeholder":
+            // Wrap in `%...%` so the grammar styles the default as a placeholder
+            // string (distinct from the `placeholder` keyword) and so the dropdown
+            // that opens on this stop naturally surfaces placeholder completions.
+            return `\${${n}:%${field.name}%}`;
         default:
             return `\${${n}:${field.name}}`;
     }

@@ -1,4 +1,5 @@
 import type { Importable } from "htsw/types";
+import { encodeFilesystemComponent } from "../utils/filesystem";
 
 export const KNOWLEDGE_ROOT = "./htsw/.cache";
 
@@ -34,32 +35,12 @@ export function importableIdentity(importable: Importable): string {
  * characters in function/region names that some filesystems do not (e.g.
  * `:` on Windows), so we normalize them rather than gambling on the host.
  *
- * Rules:
- *   - lowercase ASCII letters/digits/`-`/`_` pass through verbatim,
- *   - everything else becomes `_<hex>` of the UTF-16 unit (so the encoding
- *     is bijective and collision-resistant).
+ * Cache filenames escape dots too, reserving `.` for `.knowledge.json` and
+ * avoiding odd path segment edge cases. Export filenames use the same encoder
+ * with dots preserved for readability.
  */
 export function slug(identity: string): string {
-    let out = "";
-    for (let i = 0; i < identity.length; i++) {
-        const ch = identity.charAt(i);
-        const code = identity.charCodeAt(i);
-        const safe =
-            (code >= 0x30 && code <= 0x39) || // 0-9
-            (code >= 0x41 && code <= 0x5a) || // A-Z
-            (code >= 0x61 && code <= 0x7a) || // a-z
-            ch === "-" || ch === "_";
-        if (safe) {
-            out += ch;
-        } else {
-            // ES5 lib — no String.prototype.padStart. Manual pad to 4 hex
-            // digits so every code point produces a fixed-width escape.
-            let hex = code.toString(16);
-            while (hex.length < 4) hex = "0" + hex;
-            out += "_" + hex;
-        }
-    }
-    return out;
+    return encodeFilesystemComponent(identity, { escapeDots: true });
 }
 
 /** Full path to the knowledge JSON file for a (housing, importable) pair. */

@@ -28,7 +28,7 @@
     },
     "scripts": {
         "build": "tsc",
-        "test": "vitest",
+        "test": "vitest run",
         "format": "npx prettier \"**/*.{ts,tsx,css,json}\" --write",
         "prepare": "npm run build"
     },
