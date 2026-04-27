@@ -14,7 +14,7 @@
 
         "strict": true,
         "noImplicitOverride": true,
-
+        "types": ["node"],
         "moduleResolution": "bundler",
         "module": "es2022",
         "target": "es2022",

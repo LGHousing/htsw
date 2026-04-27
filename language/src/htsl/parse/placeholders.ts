@@ -6,6 +6,19 @@ import type { ShorthandKw } from "./helpers";
 import { PLACEHOLDER_SPECS } from "../../types";
 
 export function parseNumericalPlaceholder(p: Parser): string {
+    return parsePlaceholder(p, { requireNumeric: true });
+}
+
+// Like parseNumericalPlaceholder, but also accepts string-valued placeholders
+// (e.g. `%player.name%`). Used for fields that accept either a numeric or
+// string placeholder, like the placeholder-side of COMPARE_PLACEHOLDER.
+export function parseAnyPlaceholder(p: Parser): string {
+    return parsePlaceholder(p, { requireNumeric: false });
+}
+
+type PlaceholderParseOpts = { requireNumeric: boolean };
+
+function parsePlaceholder(p: Parser, opts: PlaceholderParseOpts): string {
     function eatKw(kw: ShorthandKw): boolean {
         return p.eatIdent(kw);
     }
@@ -79,13 +92,22 @@ export function parseNumericalPlaceholder(p: Parser): string {
         value = value.substring(1, value.length - 1);
     }
 
-    return validateNumericalPlaceholder(p, value, span);
+    return validatePlaceholder(p, value, span, opts);
 }
 
 export function validateNumericalPlaceholder(
     p: Parser,
     value: string,
     span: Span,
+): string {
+    return validatePlaceholder(p, value, span, { requireNumeric: true });
+}
+
+function validatePlaceholder(
+    p: Parser,
+    value: string,
+    span: Span,
+    opts: PlaceholderParseOpts,
 ): string {
     const index = value.indexOf("/");
     const name = value.substring(0, index == -1 ? value.length : index).toLowerCase();
@@ -105,7 +127,11 @@ export function validateNumericalPlaceholder(
     const spec = PLACEHOLDER_SPECS.find((placeholder) => placeholder.name === name);
     if (spec?.args === "none") {
         if (args.length > 0) addIssueInvalidArgument("No arguments expected");
-        if (spec.valueType !== "number") addIssueInvalidPlaceholder();
+        if (opts.requireNumeric && spec.valueType !== "number") {
+            p.gcx.addDiagnostic(Diagnostic.error(
+                `Expected a numeric placeholder; \`%${name}%\` returns a string`,
+            ).addPrimarySpan(span));
+        }
         return `%${value}%`;
     }
 

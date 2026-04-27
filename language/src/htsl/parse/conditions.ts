@@ -17,7 +17,8 @@ import {
     parseValue,
     parseItemAmount,
 } from "./arguments";
-import { parseNumericalPlaceholder } from "./placeholders";
+import { parseAnyPlaceholder } from "./placeholders";
+import { getPlaceholderValueTypeFromValue } from "../../types";
 import { type ConditionKw } from "./helpers";
 
 type Inverted = { value: boolean; span: Span };
@@ -338,9 +339,40 @@ function parseConditionComparePlaceholder(
         inverted,
         note,
         (condition) => {
-            setField(p, condition, "placeholder", parseNumericalPlaceholder);
+            setField(p, condition, "placeholder", parseAnyPlaceholder);
+
+            // Look up the placeholder's value type so we can drive amount
+            // parsing and validate the comparison op. Unknown placeholders
+            // (yields undefined) fall back to numeric behaviour.
+            const placeholderType = condition.placeholder
+                ? getPlaceholderValueTypeFromValue(condition.placeholder)
+                : undefined;
+
             setField(p, condition, "op", parseComparison);
-            setField(p, condition, "amount", parseNumericValue);
+
+            // Cross-field validation: string placeholders only support equality.
+            // Non-fatal so we keep parsing the remaining fields.
+            if (
+                placeholderType === "string" &&
+                condition.op !== undefined &&
+                condition.op !== "Equal"
+            ) {
+                p.gcx.addDiagnostic(
+                    Diagnostic.error("String placeholders can only be compared with ==")
+                        .addPrimarySpan(p.gcx.spans.getField(condition, "op"), "Use ==")
+                        .addSecondarySpan(
+                            p.gcx.spans.getField(condition, "placeholder"),
+                            "Returns a string",
+                        ),
+                );
+            }
+
+            // String placeholders allow string/placeholder amounts; numeric
+            // (and unknown) placeholders fall through to the numeric parser.
+            const amountParser =
+                placeholderType === "string" ? parseValue : parseNumericValue;
+            setField(p, condition, "amount", amountParser);
+
             if (checkEnd(p)) return;
             setField(p, condition, "fallback", parseValue);
         }

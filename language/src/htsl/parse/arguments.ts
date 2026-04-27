@@ -324,6 +324,15 @@ export function parseNumericValue(p: Parser): Value {
             validateNumericalPlaceholder(p, castMatch[2], token.span);
             return `"${value}"`;
         }
+
+        // The string isn't numeric, isn't a `%var%L`/`%var%D` cast, and below
+        // we'd fall through to `parseNumericalPlaceholder`, which would emit
+        // the misleading "Expected placeholder" error. Bail out here with a
+        // clearer message unless the string is actually placeholder-shaped.
+        if (!value.startsWith("%")) {
+            throw Diagnostic.error("Expected number or numeric placeholder")
+                .addPrimarySpan(token.span, `\`"${value}"\` is not a number`);
+        }
     }
 
     let isShorthand = false;
