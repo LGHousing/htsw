@@ -1,4 +1,11 @@
 import type { Action, Condition } from ".";
+import minecraftItems from "../assets/items.json";
+
+export const MINECRAFT_ITEMS: readonly {
+    id: number;
+    displayName: string;
+    name: string;
+}[] = minecraftItems;
 
 export const ACTION_NAMES: {
     [key in Action["type"]]: string;
@@ -589,4 +596,22 @@ export const PLACEHOLDER_SPECS = [
 export const PLACEHOLDER_COMPLETIONS = PLACEHOLDER_SPECS.map(
     (placeholder) => "completion" in placeholder ? placeholder.completion : placeholder.name
 );
+
+export function getPlaceholderSpec(name: string) {
+    const lower = name.toLowerCase();
+    return PLACEHOLDER_SPECS.find((spec) => spec.name === lower);
+}
+
+// Takes a parsed Value like `%player.health%` or `%var.player/k 0%` and returns
+// the placeholder's value type. Returns undefined for unknown placeholders or
+// non-placeholder values.
+export function getPlaceholderValueTypeFromValue(
+    value: string,
+): "number" | "string" | undefined {
+    if (!value.startsWith("%") || !value.endsWith("%")) return undefined;
+    const inner = value.slice(1, -1);
+    const slash = inner.indexOf("/");
+    const name = slash === -1 ? inner : inner.slice(0, slash);
+    return getPlaceholderSpec(name)?.valueType;
+}
 
