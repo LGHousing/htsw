@@ -4,7 +4,7 @@ import { chatSeparator } from "./utils/helpers";
 import { Simulator } from "./simulator";
 import { printDiagnostic, printDiagnostics } from "./tui/diagnostics";
 import { recompile } from "./recompile";
-import { importImportable } from "./importables";
+import { importImportable } from "./importables/imports";
 import { createImportContext } from "./importables/context";
 import { TaskManager } from "./tasks/manager";
 import { FileSystemFileLoader } from "./utils/files";
@@ -93,7 +93,7 @@ function commandImport(args: string[]) {
 
     TaskManager.run(async (ctx) => {
         ctx.displayMessage("&aImport started.");
-        const importContext = createImportContext(result.value);
+        const importContext = createImportContext(result.value, result.gcx);
         for (const importable of result.value) {
             try {
                 await importImportable(ctx, importable, importContext);

@@ -1,5 +1,5 @@
 import TaskContext from "../tasks/context";
-import { exportFunction } from "./exportFunction";
+import { exportFunction } from "../exporter/exportFunction";
 
 /**
  * Discriminated union over the importable types the exporter knows how

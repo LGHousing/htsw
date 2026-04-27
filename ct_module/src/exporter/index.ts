@@ -1,12 +1,12 @@
 import { TaskManager } from "../tasks/manager";
-import { exportImportable } from "./importables";
+import { exportImportable } from "../importables/exports";
 import { canonicalSlug, defaultExportRoot } from "./paths";
 import { getCurrentHousingUuid } from "../knowledge";
 import { chatSeparator } from "../utils/helpers";
 import { stripSurroundingQuotes } from "../utils/strings";
 import { VERSION } from "htsw";
 
-export { exportImportable } from "./importables";
+export { exportImportable } from "../importables/exports";
 
 /**
  * Print a short usage block to chat. Mirrors the `/import` and
