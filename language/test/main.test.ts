@@ -66,6 +66,83 @@ describe("Main API", () => {
         expect(result.diagnostics.filter((it) => it.level === "error")).toEqual([]);
     });
 
+    it("compare-placeholder accepts string placeholders with == ", () => {
+        const sourceMap = new htsw.SourceMap(
+            new SimpleFileLoader({
+                "/project/test.htsl": [
+                    "if and (placeholder \"%player.name%\" == \"Notch\") {",
+                    "    chat \"hi Notch\"",
+                    "}",
+                    "",
+                ].join("\n"),
+            })
+        );
+
+        const result = htsw.parseActionsResult(sourceMap, "/project/test.htsl");
+
+        expect(result.diagnostics.filter((it) => it.level === "error")).toEqual([]);
+    });
+
+    it("compare-placeholder accepts numeric placeholders with ordering ops", () => {
+        const sourceMap = new htsw.SourceMap(
+            new SimpleFileLoader({
+                "/project/test.htsl": [
+                    "if and (placeholder \"%player.health%\" >= 10) {",
+                    "    chat \"healthy\"",
+                    "}",
+                    "",
+                ].join("\n"),
+            })
+        );
+
+        const result = htsw.parseActionsResult(sourceMap, "/project/test.htsl");
+
+        expect(result.diagnostics.filter((it) => it.level === "error")).toEqual([]);
+    });
+
+    it("compare-placeholder rejects ordering ops on string placeholders", () => {
+        const sourceMap = new htsw.SourceMap(
+            new SimpleFileLoader({
+                "/project/test.htsl": [
+                    "if and (placeholder \"%player.name%\" > \"Notch\") {",
+                    "    chat \"hi\"",
+                    "}",
+                    "",
+                ].join("\n"),
+            })
+        );
+
+        const result = htsw.parseActionsResult(sourceMap, "/project/test.htsl");
+
+        const errors = result.diagnostics.filter((it) => it.level === "error");
+        expect(errors.length).toBeGreaterThan(0);
+        expect(errors.some((d) =>
+            d.message.includes("String placeholders can only be compared with =="),
+        )).toBe(true);
+    });
+
+    it("compare-placeholder amount surfaces a clearer error for non-numeric strings", () => {
+        const sourceMap = new htsw.SourceMap(
+            new SimpleFileLoader({
+                "/project/test.htsl": [
+                    "if and (placeholder \"%date.day%\" >= \"six\") {",
+                    "    chat \"hi\"",
+                    "}",
+                    "",
+                ].join("\n"),
+            })
+        );
+
+        const result = htsw.parseActionsResult(sourceMap, "/project/test.htsl");
+
+        const errors = result.diagnostics.filter((it) => it.level === "error");
+        expect(errors.some((d) =>
+            d.message.includes("Expected number or numeric placeholder"),
+        )).toBe(true);
+        // The old misleading message must no longer fire on this input.
+        expect(errors.every((d) => d.message !== "Expected placeholder")).toBe(true);
+    });
+
     it("parseActionsResult accepts bare placeholders as string arguments", () => {
         const sourceMap = new htsw.SourceMap(
             new SimpleFileLoader({
