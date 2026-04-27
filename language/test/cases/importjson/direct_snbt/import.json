@@ -1,0 +1,8 @@
+{
+    "functions": [
+        {
+            "name": "DirectItems",
+            "actions": "actions/main.htsl"
+        }
+    ]
+}
