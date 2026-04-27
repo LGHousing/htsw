@@ -1,0 +1,170 @@
+{
+    "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+    "name": "SNBT",
+    "scopeName": "source.snbt",
+    "patterns": [
+        { "include": "#value" }
+    ],
+    "repository": {
+        "value": {
+            "patterns": [
+                { "include": "#compound" },
+                { "include": "#array" },
+                { "include": "#string-double" },
+                { "include": "#string-single" },
+                { "include": "#constant" },
+                { "include": "#number" }
+            ]
+        },
+        "compound": {
+            "begin": "\\{",
+            "end": "\\}",
+            "beginCaptures": {
+                "0": { "name": "punctuation.definition.dictionary.begin.snbt" }
+            },
+            "endCaptures": {
+                "0": { "name": "punctuation.definition.dictionary.end.snbt" }
+            },
+            "patterns": [
+                {
+                    "comment": "Double-quoted key followed by colon",
+                    "match": "(\"(?:[^\"\\\\]|\\\\.)*\")\\s*(:)",
+                    "captures": {
+                        "1": { "name": "support.type.property-name.snbt string.quoted.double.snbt" },
+                        "2": { "name": "punctuation.separator.dictionary.key-value.snbt" }
+                    }
+                },
+                {
+                    "comment": "Single-quoted key followed by colon",
+                    "match": "('(?:[^'\\\\]|\\\\.)*')\\s*(:)",
+                    "captures": {
+                        "1": { "name": "support.type.property-name.snbt string.quoted.single.snbt" },
+                        "2": { "name": "punctuation.separator.dictionary.key-value.snbt" }
+                    }
+                },
+                {
+                    "comment": "Unquoted key followed by colon. Matches the unquoted-token char set the HTSW SNBT lexer accepts.",
+                    "match": "([A-Za-z0-9+\\-._]+)\\s*(:)",
+                    "captures": {
+                        "1": { "name": "support.type.property-name.snbt" },
+                        "2": { "name": "punctuation.separator.dictionary.key-value.snbt" }
+                    }
+                },
+                {
+                    "name": "punctuation.separator.dictionary.pair.snbt",
+                    "match": ","
+                },
+                { "include": "#value" }
+            ]
+        },
+        "array": {
+            "begin": "\\[",
+            "end": "\\]",
+            "beginCaptures": {
+                "0": { "name": "punctuation.definition.array.begin.snbt" }
+            },
+            "endCaptures": {
+                "0": { "name": "punctuation.definition.array.end.snbt" }
+            },
+            "patterns": [
+                {
+                    "comment": "Typed-array prefix (B; S; I; L;) — only at the start of the array body",
+                    "match": "\\G\\s*([BbSsIiLl])\\s*(;)",
+                    "captures": {
+                        "1": { "name": "storage.type.array.snbt" },
+                        "2": { "name": "punctuation.separator.array.type.snbt" }
+                    }
+                },
+                {
+                    "name": "punctuation.separator.array.snbt",
+                    "match": ","
+                },
+                { "include": "#value" }
+            ]
+        },
+        "string-double": {
+            "name": "string.quoted.double.snbt",
+            "begin": "\"",
+            "end": "\"",
+            "beginCaptures": {
+                "0": { "name": "punctuation.definition.string.begin.snbt" }
+            },
+            "endCaptures": {
+                "0": { "name": "punctuation.definition.string.end.snbt" }
+            },
+            "patterns": [
+                { "include": "#string-escape" },
+                { "include": "#format-code" }
+            ]
+        },
+        "string-single": {
+            "name": "string.quoted.single.snbt",
+            "begin": "'",
+            "end": "'",
+            "beginCaptures": {
+                "0": { "name": "punctuation.definition.string.begin.snbt" }
+            },
+            "endCaptures": {
+                "0": { "name": "punctuation.definition.string.end.snbt" }
+            },
+            "patterns": [
+                { "include": "#string-escape" },
+                { "include": "#format-code" }
+            ]
+        },
+        "string-escape": {
+            "name": "constant.character.escape.snbt",
+            "match": "\\\\."
+        },
+        "format-code": {
+            "comment": "Minecraft chat formatting codes. Each pattern claims the code itself plus all following text up to the next code or end-of-string, so the entire span is themed in the matching color. Patterns are unique per code so the configurationDefaults block in package.json can map each scope to its Minecraft hex color (or font style for k-o).",
+            "patterns": [
+                { "name": "constant.character.format-code.color.black.snbt",        "match": "[&§][0][^&§\"']*" },
+                { "name": "constant.character.format-code.color.dark-blue.snbt",    "match": "[&§][1][^&§\"']*" },
+                { "name": "constant.character.format-code.color.dark-green.snbt",   "match": "[&§][2][^&§\"']*" },
+                { "name": "constant.character.format-code.color.dark-aqua.snbt",    "match": "[&§][3][^&§\"']*" },
+                { "name": "constant.character.format-code.color.dark-red.snbt",     "match": "[&§][4][^&§\"']*" },
+                { "name": "constant.character.format-code.color.dark-purple.snbt",  "match": "[&§][5][^&§\"']*" },
+                { "name": "constant.character.format-code.color.gold.snbt",         "match": "[&§][6][^&§\"']*" },
+                { "name": "constant.character.format-code.color.gray.snbt",         "match": "[&§][7][^&§\"']*" },
+                { "name": "constant.character.format-code.color.dark-gray.snbt",    "match": "[&§][8][^&§\"']*" },
+                { "name": "constant.character.format-code.color.blue.snbt",         "match": "[&§][9][^&§\"']*" },
+                { "name": "constant.character.format-code.color.green.snbt",        "match": "[&§][aA][^&§\"']*" },
+                { "name": "constant.character.format-code.color.aqua.snbt",         "match": "[&§][bB][^&§\"']*" },
+                { "name": "constant.character.format-code.color.red.snbt",          "match": "[&§][cC][^&§\"']*" },
+                { "name": "constant.character.format-code.color.light-purple.snbt", "match": "[&§][dD][^&§\"']*" },
+                { "name": "constant.character.format-code.color.yellow.snbt",       "match": "[&§][eE][^&§\"']*" },
+                { "name": "constant.character.format-code.color.white.snbt",        "match": "[&§][fF][^&§\"']*" },
+                { "name": "constant.character.format-code.style.obfuscated.snbt",   "match": "[&§][kK][^&§\"']*" },
+                { "name": "constant.character.format-code.style.bold.snbt",         "match": "[&§][lL][^&§\"']*" },
+                { "name": "constant.character.format-code.style.strikethrough.snbt","match": "[&§][mM][^&§\"']*" },
+                { "name": "constant.character.format-code.style.underline.snbt",    "match": "[&§][nN][^&§\"']*" },
+                { "name": "constant.character.format-code.style.italic.snbt",       "match": "[&§][oO][^&§\"']*" },
+                { "name": "constant.character.format-code.style.reset.snbt",        "match": "[&§][rR][^&§\"']*" }
+            ]
+        },
+        "constant": {
+            "name": "constant.language.snbt",
+            "match": "\\b(true|false)\\b"
+        },
+        "number": {
+            "patterns": [
+                {
+                    "comment": "Float/double with explicit f/F/d/D suffix",
+                    "name": "constant.numeric.float.snbt",
+                    "match": "-?\\b\\d+(?:\\.\\d+)?(?:[eE][+-]?\\d+)?[fFdD]\\b"
+                },
+                {
+                    "comment": "Float-form number (decimal or exponent), no explicit suffix — defaults to double",
+                    "name": "constant.numeric.float.snbt",
+                    "match": "-?\\b\\d+(?:\\.\\d+(?:[eE][+-]?\\d+)?|[eE][+-]?\\d+)\\b"
+                },
+                {
+                    "comment": "Integer with optional byte/short/int/long type suffix",
+                    "name": "constant.numeric.integer.snbt",
+                    "match": "-?\\b\\d+[bBsSiIlL]?\\b"
+                }
+            ]
+        }
+    }
+}
