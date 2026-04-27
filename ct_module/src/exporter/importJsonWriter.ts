@@ -65,9 +65,6 @@ export function upsertImportableEntry(
     let next = existing;
     const tree = json.parseTree(next);
 
-    // Malformed input — fall back to a clean rewrite preserving nothing.
-    // The user's prior file contents will be lost; we accept that over
-    // emitting a structurally broken document.
     if (!tree) {
         const fresh = `${JSON.stringify({ [section]: [entry] }, null, 4)}\n`;
         FileLib.write(importJsonPath, fresh, true);
@@ -77,15 +74,11 @@ export function upsertImportableEntry(
     const sectionNode = json.findNodeAtLocation(tree, [section]);
 
     if (!sectionNode) {
-        // Section doesn't exist yet — create it with the new entry as
-        // its sole member. `modify` handles inserting a property at the
-        // top level when given a one-element path.
         const edits = json.modify(next, [section], [entry], {
             formattingOptions: FORMATTING,
         });
         next = json.applyEdits(next, edits);
     } else if (sectionNode.type !== "array") {
-        // Existing value isn't an array — overwrite with one.
         const edits = json.modify(next, [section], [entry], {
             formattingOptions: FORMATTING,
         });
@@ -102,15 +95,12 @@ export function upsertImportableEntry(
         }
 
         if (matchIndex === -1) {
-            // Append at the end of the array.
             const edits = json.modify(next, [section, items.length], entry, {
                 formattingOptions: FORMATTING,
                 isArrayInsertion: true,
             });
             next = json.applyEdits(next, edits);
         } else {
-            // Overwrite the entry. Without `isArrayInsertion`, `modify`
-            // replaces the value at the given index in place.
             const edits = json.modify(next, [section, matchIndex], entry, {
                 formattingOptions: FORMATTING,
             });
@@ -118,7 +108,6 @@ export function upsertImportableEntry(
         }
     }
 
-    // Ensure trailing newline.
     if (!next.endsWith("\n")) next += "\n";
     FileLib.write(importJsonPath, next, true);
 }

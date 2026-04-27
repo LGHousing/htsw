@@ -72,7 +72,6 @@ import { setItemValue } from "./items";
 
 export { diffConditionList };
 
-// Shape of Conditions w/ read & write methods
 type ConditionSpec<T extends Condition> = {
     displayName: string;
     read?: (ctx: TaskContext) => Promise<T>;
@@ -94,8 +93,6 @@ const FISHING_ENVIRONMENT_OPTIONS = ["Water", "Lava"] as const;
 const ITEM_PROPERTY_OPTIONS = ["Item Type", "Metadata"] as const;
 const ITEM_AMOUNT_OPTIONS = ["Any Amount", "Equal or Greater Amount"] as const;
 
-// Getter for the generic importCondition function to get
-// the correct spec with type safety (annoying runtime thing)
 function getConditionSpec<T extends Condition["type"]>(
     type: T
 ): ConditionSpec<Extract<Condition, { type: T }>> {
@@ -128,9 +125,6 @@ async function resolveConditionItem(
         );
     }
 
-    // See action's resolveActionItem for the reasoning. Items with click
-    // actions only carry their housing-tagged NBT after a /edit round-
-    // trip on the item itself, which lives in the SNBT cache.
     const importable = entry.importable;
     const hasActions =
         importable !== undefined &&
@@ -218,10 +212,6 @@ export async function readConditionsListPage(
         });
 }
 
-// TODO: Optionally implement (in-menu) read functions for the rest of the conditons.
-// This is NOT NECESSARY for conditions specifically because we can infer all data from the
-// lore in the conditions list. Diff importer defaults to relying on the Condition object data
-// passed in from the conditions list but can fallback to reading from the menu if read fxns are impl'd
 async function readRequireGroup(ctx: TaskContext): Promise<ConditionRequireGroup> {
     const groupLabel = getConditionFieldLabel("REQUIRE_GROUP", "group");
     const includeHigherGroupsLabel = getConditionFieldLabel(

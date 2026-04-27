@@ -109,7 +109,6 @@ export type {
     ObservedActionSlot as ObservedAction,
 } from "./types";
 
-// Shape of Actions
 type ActionSpec<T extends Action = Action> = {
     displayName: string;
     read?: (
@@ -129,8 +128,6 @@ type ActionSpecMap = {
     [K in Action["type"]]: ActionSpec<Extract<Action, { type: K }>>;
 };
 
-// Getter for the generic importAction function to get
-// the correct spec with type safety (annoying runtime thing)
 function getActionSpec<T extends Action["type"]>(
     type: T
 ): ActionSpec<Extract<Action, { type: T }>> {
@@ -163,14 +160,6 @@ async function resolveActionItem(
         );
     }
 
-    // Items that carry click-actions only have their housing-tagged NBT
-    // after a `/edit` round-trip on the item itself, which lives in the
-    // post-import SNBT cache. The raw source NBT in import.json doesn't
-    // include those tags, so spawning that and stuffing it into a
-    // GIVE_ITEM/REMOVE_ITEM/DROP_ITEM field would silently drop the
-    // item's actions. Pull from the cache instead, and refuse if it isn't
-    // there yet — see commandImport which orders ITEM importables first
-    // so this is satisfied by default.
     const importable = entry.importable;
     const hasActions =
         importable !== undefined &&

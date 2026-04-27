@@ -16,19 +16,12 @@ export class FileSystemFileLoader implements FileLoader {
     }
 
     fileExists(path: string): boolean {
-        // CT's FileLib.exists is unreliable for absolute paths (it interprets
-        // its input relative to the modules folder and silently returns false
-        // for paths it can't reconcile). Java NIO handles both absolute and
-        // relative inputs cleanly because we've already normalized them.
         const Files = Java.type("java.nio.file.Files");
         const Paths = Java.type("java.nio.file.Paths");
         return Files.exists(Paths.get(this.normalizePath(path)));
     }
 
     readFile(path: string): string {
-        // FileLib.read has the same absolute-path issue as FileLib.exists,
-        // so fall back to Java NIO when FileLib returns null on a path we
-        // know is absolute and normalized.
         const normalized = this.normalizePath(path);
         let content: string | null = FileLib.read(normalized);
         if (content === null) {

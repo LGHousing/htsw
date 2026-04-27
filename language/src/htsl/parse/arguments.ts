@@ -51,23 +51,11 @@ function normalizeNumberLiteral(value: string): string {
 
 function parseDecimalValueString(value: string): string {
     const parsed = parseFloat(value);
-    // -0 / -0.0 collapses to "0.0" — there's no signed zero in canonical
-    // form. (Avoiding Object.is here to keep the function engine-portable.)
     if (parsed === 0 && value.startsWith("-")) return "0.0";
 
-    // Find the shortest decimal representation that round-trips to the
-    // same double. We can't trust `Number.prototype.toString()` here:
-    // V8 emits the shortest round-trip form ("5508000"), but the Rhino
-    // engine ChatTriggers runs on emits 20-digit fixed precision instead,
-    // so "5508000.0" → "5508000.00000000000000000000" and "-0.017" →
-    // "-0.01700000000000000122". `toPrecision` is spec-defined and stable
-    // across engines, so we drive the formatting from there.
     let formatted: string | null = null;
     for (let p = 1; p <= 17; p++) {
         const candidate = parsed.toPrecision(p);
-        // toPrecision returns exponential form for values outside roughly
-        // [1e-6, 1e21); skip those and fall through to the toFixed path
-        // below so we always emit a plain decimal.
         if (candidate.indexOf("e") !== -1 || candidate.indexOf("E") !== -1) {
             continue;
         }
@@ -77,8 +65,6 @@ function parseDecimalValueString(value: string): string {
         }
     }
     if (formatted === null) {
-        // Fallback for extreme values: 20-digit fixed precision with
-        // insignificant trailing zeros stripped.
         formatted = parsed.toFixed(20).replace(/(\.\d*?)0+$/, "$1");
         if (formatted.charAt(formatted.length - 1) === ".") {
             formatted = formatted + "0";

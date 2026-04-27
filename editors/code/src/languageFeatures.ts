@@ -60,8 +60,6 @@ class HybridFileLoader implements htsw.FileLoader {
     }
 }
 
-// --- inlay hints ---
-
 export class InlayHintsAdapter implements vscode.InlayHintsProvider {
     public provideInlayHints(
         document: vscode.TextDocument
@@ -79,8 +77,6 @@ export class InlayHintsAdapter implements vscode.InlayHintsProvider {
         });
     }
 }
-
-// --- diagnostics ---
 
 export class DiagnosticsAdapter {
     private disposables: vscode.Disposable[] = [];
@@ -426,8 +422,6 @@ export class DiagnosticsAdapter {
     }
 }
 
-// --- code actions ---
-
 export class SnbtCodeActionAdapter implements vscode.CodeActionProvider {
     public static readonly providedCodeActionKinds = [
         vscode.CodeActionKind.RefactorRewrite,
@@ -464,11 +458,6 @@ export class SnbtCodeActionAdapter implements vscode.CodeActionProvider {
             document.positionAt(target.end),
         );
 
-        // If the original string sits alone on its own line (only whitespace
-        // before, only optional comma + whitespace after), put each split
-        // entry on its own line at the same indent — matches how
-        // multi-entry Lore arrays are typically formatted by hand. Otherwise
-        // fall back to inline `, ` so we don't mangle a one-liner Lore.
         const startLineText = document.lineAt(editRange.start.line).text;
         const endLineText = document.lineAt(editRange.end.line).text;
         const prefixBeforeString = startLineText.slice(0, editRange.start.character);
@@ -496,19 +485,12 @@ function pickTarget(
     matches: LoreStringMatch[],
     cursorOffset: number,
 ): LoreStringMatch | undefined {
-    // Prefer the string the cursor is actually inside (between the quotes,
-    // inclusive of the quote chars themselves so a click on the opening
-    // quote still triggers the action).
     return matches.find(
         (m) => cursorOffset >= m.start && cursorOffset <= m.end,
     );
 }
 
 function quoteSnbtString(text: string, quote: '"' | "'"): string {
-    // Re-escape the same way the SNBT lexer reads it: backslash and the
-    // chosen quote char need a leading backslash; control chars get the
-    // standard \n / \r / \t shorthands so the output stays human-readable
-    // and round-trips through the lexer's decodeEscape.
     let escaped = "";
     for (const ch of text) {
         if (ch === "\\") escaped += "\\\\";
@@ -520,9 +502,3 @@ function quoteSnbtString(text: string, quote: '"' | "'"): string {
     }
     return quote + escaped + quote;
 }
-
-// --- hover ---
-
-// --- rename ---
-
-// --- references ---

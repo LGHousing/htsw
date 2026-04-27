@@ -27,7 +27,6 @@
             },
             "patterns": [
                 {
-                    "comment": "Double-quoted key followed by colon",
                     "match": "(\"(?:[^\"\\\\]|\\\\.)*\")\\s*(:)",
                     "captures": {
                         "1": { "name": "support.type.property-name.snbt string.quoted.double.snbt" },
@@ -35,7 +34,6 @@
                     }
                 },
                 {
-                    "comment": "Single-quoted key followed by colon",
                     "match": "('(?:[^'\\\\]|\\\\.)*')\\s*(:)",
                     "captures": {
                         "1": { "name": "support.type.property-name.snbt string.quoted.single.snbt" },
@@ -43,7 +41,6 @@
                     }
                 },
                 {
-                    "comment": "Unquoted key followed by colon. Matches the unquoted-token char set the HTSW SNBT lexer accepts.",
                     "match": "([A-Za-z0-9+\\-._]+)\\s*(:)",
                     "captures": {
                         "1": { "name": "support.type.property-name.snbt" },
@@ -68,7 +65,6 @@
             },
             "patterns": [
                 {
-                    "comment": "Typed-array prefix (B; S; I; L;) — only at the start of the array body",
                     "match": "\\G\\s*([BbSsIiLl])\\s*(;)",
                     "captures": {
                         "1": { "name": "storage.type.array.snbt" },
@@ -108,8 +104,7 @@
                 "0": { "name": "punctuation.definition.string.end.snbt" }
             },
             "patterns": [
-                { "include": "#string-escape" },
-                { "include": "#format-code" }
+                { "include": "#string-escape" }
             ]
         },
         "string-escape": {
@@ -117,30 +112,29 @@
             "match": "\\\\."
         },
         "format-code": {
-            "comment": "Minecraft chat formatting codes. Each pattern claims the code itself plus all following text up to the next code or end-of-string, so the entire span is themed in the matching color. Patterns are unique per code so the configurationDefaults block in package.json can map each scope to its Minecraft hex color (or font style for k-o).",
             "patterns": [
-                { "name": "constant.character.format-code.color.black.snbt",        "match": "[&§][0][^&§\"']*" },
-                { "name": "constant.character.format-code.color.dark-blue.snbt",    "match": "[&§][1][^&§\"']*" },
-                { "name": "constant.character.format-code.color.dark-green.snbt",   "match": "[&§][2][^&§\"']*" },
-                { "name": "constant.character.format-code.color.dark-aqua.snbt",    "match": "[&§][3][^&§\"']*" },
-                { "name": "constant.character.format-code.color.dark-red.snbt",     "match": "[&§][4][^&§\"']*" },
-                { "name": "constant.character.format-code.color.dark-purple.snbt",  "match": "[&§][5][^&§\"']*" },
-                { "name": "constant.character.format-code.color.gold.snbt",         "match": "[&§][6][^&§\"']*" },
-                { "name": "constant.character.format-code.color.gray.snbt",         "match": "[&§][7][^&§\"']*" },
-                { "name": "constant.character.format-code.color.dark-gray.snbt",    "match": "[&§][8][^&§\"']*" },
-                { "name": "constant.character.format-code.color.blue.snbt",         "match": "[&§][9][^&§\"']*" },
-                { "name": "constant.character.format-code.color.green.snbt",        "match": "[&§][aA][^&§\"']*" },
-                { "name": "constant.character.format-code.color.aqua.snbt",         "match": "[&§][bB][^&§\"']*" },
-                { "name": "constant.character.format-code.color.red.snbt",          "match": "[&§][cC][^&§\"']*" },
-                { "name": "constant.character.format-code.color.light-purple.snbt", "match": "[&§][dD][^&§\"']*" },
-                { "name": "constant.character.format-code.color.yellow.snbt",       "match": "[&§][eE][^&§\"']*" },
-                { "name": "constant.character.format-code.color.white.snbt",        "match": "[&§][fF][^&§\"']*" },
-                { "name": "constant.character.format-code.style.obfuscated.snbt",   "match": "[&§][kK][^&§\"']*" },
-                { "name": "constant.character.format-code.style.bold.snbt",         "match": "[&§][lL][^&§\"']*" },
-                { "name": "constant.character.format-code.style.strikethrough.snbt","match": "[&§][mM][^&§\"']*" },
-                { "name": "constant.character.format-code.style.underline.snbt",    "match": "[&§][nN][^&§\"']*" },
-                { "name": "constant.character.format-code.style.italic.snbt",       "match": "[&§][oO][^&§\"']*" },
-                { "name": "constant.character.format-code.style.reset.snbt",        "match": "[&§][rR][^&§\"']*" }
+                { "name": "constant.character.format-code.color.black.snbt",         "begin": "[&§][0]",   "end": "(?=[&§][0-9a-fA-Fk-oK-OrR]|\")", "patterns": [{ "include": "#string-escape" }] },
+                { "name": "constant.character.format-code.color.dark-blue.snbt",     "begin": "[&§][1]",   "end": "(?=[&§][0-9a-fA-Fk-oK-OrR]|\")", "patterns": [{ "include": "#string-escape" }] },
+                { "name": "constant.character.format-code.color.dark-green.snbt",    "begin": "[&§][2]",   "end": "(?=[&§][0-9a-fA-Fk-oK-OrR]|\")", "patterns": [{ "include": "#string-escape" }] },
+                { "name": "constant.character.format-code.color.dark-aqua.snbt",     "begin": "[&§][3]",   "end": "(?=[&§][0-9a-fA-Fk-oK-OrR]|\")", "patterns": [{ "include": "#string-escape" }] },
+                { "name": "constant.character.format-code.color.dark-red.snbt",      "begin": "[&§][4]",   "end": "(?=[&§][0-9a-fA-Fk-oK-OrR]|\")", "patterns": [{ "include": "#string-escape" }] },
+                { "name": "constant.character.format-code.color.dark-purple.snbt",   "begin": "[&§][5]",   "end": "(?=[&§][0-9a-fA-Fk-oK-OrR]|\")", "patterns": [{ "include": "#string-escape" }] },
+                { "name": "constant.character.format-code.color.gold.snbt",          "begin": "[&§][6]",   "end": "(?=[&§][0-9a-fA-Fk-oK-OrR]|\")", "patterns": [{ "include": "#string-escape" }] },
+                { "name": "constant.character.format-code.color.gray.snbt",          "begin": "[&§][7]",   "end": "(?=[&§][0-9a-fA-Fk-oK-OrR]|\")", "patterns": [{ "include": "#string-escape" }] },
+                { "name": "constant.character.format-code.color.dark-gray.snbt",     "begin": "[&§][8]",   "end": "(?=[&§][0-9a-fA-Fk-oK-OrR]|\")", "patterns": [{ "include": "#string-escape" }] },
+                { "name": "constant.character.format-code.color.blue.snbt",          "begin": "[&§][9]",   "end": "(?=[&§][0-9a-fA-Fk-oK-OrR]|\")", "patterns": [{ "include": "#string-escape" }] },
+                { "name": "constant.character.format-code.color.green.snbt",         "begin": "[&§][aA]",  "end": "(?=[&§][0-9a-fA-Fk-oK-OrR]|\")", "patterns": [{ "include": "#string-escape" }] },
+                { "name": "constant.character.format-code.color.aqua.snbt",          "begin": "[&§][bB]",  "end": "(?=[&§][0-9a-fA-Fk-oK-OrR]|\")", "patterns": [{ "include": "#string-escape" }] },
+                { "name": "constant.character.format-code.color.red.snbt",           "begin": "[&§][cC]",  "end": "(?=[&§][0-9a-fA-Fk-oK-OrR]|\")", "patterns": [{ "include": "#string-escape" }] },
+                { "name": "constant.character.format-code.color.light-purple.snbt",  "begin": "[&§][dD]",  "end": "(?=[&§][0-9a-fA-Fk-oK-OrR]|\")", "patterns": [{ "include": "#string-escape" }] },
+                { "name": "constant.character.format-code.color.yellow.snbt",        "begin": "[&§][eE]",  "end": "(?=[&§][0-9a-fA-Fk-oK-OrR]|\")", "patterns": [{ "include": "#string-escape" }] },
+                { "name": "constant.character.format-code.color.white.snbt",         "begin": "[&§][fF]",  "end": "(?=[&§][0-9a-fA-Fk-oK-OrR]|\")", "patterns": [{ "include": "#string-escape" }] },
+                { "name": "constant.character.format-code.style.obfuscated.snbt",    "begin": "[&§][kK]",  "end": "(?=[&§][0-9a-fA-Fk-oK-OrR]|\")", "patterns": [{ "include": "#string-escape" }] },
+                { "name": "constant.character.format-code.style.bold.snbt",          "begin": "[&§][lL]",  "end": "(?=[&§][0-9a-fA-Fk-oK-OrR]|\")", "patterns": [{ "include": "#string-escape" }] },
+                { "name": "constant.character.format-code.style.strikethrough.snbt", "begin": "[&§][mM]",  "end": "(?=[&§][0-9a-fA-Fk-oK-OrR]|\")", "patterns": [{ "include": "#string-escape" }] },
+                { "name": "constant.character.format-code.style.underline.snbt",     "begin": "[&§][nN]",  "end": "(?=[&§][0-9a-fA-Fk-oK-OrR]|\")", "patterns": [{ "include": "#string-escape" }] },
+                { "name": "constant.character.format-code.style.italic.snbt",        "begin": "[&§][oO]",  "end": "(?=[&§][0-9a-fA-Fk-oK-OrR]|\")", "patterns": [{ "include": "#string-escape" }] },
+                { "name": "constant.character.format-code.style.reset.snbt",         "begin": "[&§][rR]",  "end": "(?=[&§][0-9a-fA-Fk-oK-OrR]|\")", "patterns": [{ "include": "#string-escape" }] }
             ]
         },
         "constant": {
@@ -150,17 +144,14 @@
         "number": {
             "patterns": [
                 {
-                    "comment": "Float/double with explicit f/F/d/D suffix",
                     "name": "constant.numeric.float.snbt",
                     "match": "-?\\b\\d+(?:\\.\\d+)?(?:[eE][+-]?\\d+)?[fFdD]\\b"
                 },
                 {
-                    "comment": "Float-form number (decimal or exponent), no explicit suffix — defaults to double",
                     "name": "constant.numeric.float.snbt",
                     "match": "-?\\b\\d+(?:\\.\\d+(?:[eE][+-]?\\d+)?|[eE][+-]?\\d+)\\b"
                 },
                 {
-                    "comment": "Integer with optional byte/short/int/long type suffix",
                     "name": "constant.numeric.integer.snbt",
                     "match": "-?\\b\\d+[bBsSiIlL]?\\b"
                 }

@@ -68,12 +68,6 @@ export function activate() {
             })
         );
 
-        // Auto-popup at each snippet placeholder. Hide any stale popup first
-        // so Tab can't accept a leftover suggestion from the previous stop
-        // into the new position. We DELETE the selected snippet default before
-        // triggering so (a) the dropdown's search filter is empty, and (b)
-        // typing into the now-empty slot inserts cleanly instead of appending
-        // alongside the placeholder text.
         providers.push(
             window.onDidChangeTextEditorSelection((event) => {
                 if (Date.now() - lastSelectionMutationAt < 100) return;
@@ -86,9 +80,6 @@ export function activate() {
                 if (sel.end.character - sel.start.character > 30) return;
                 if (Date.now() - lastTextChangeAt < 50) return;
 
-                // Probe at the selection start with an empty typed prefix —
-                // the snippet default text (e.g. `%placeholder%`) would
-                // otherwise over-filter the gate and bail here.
                 const linePrefix = doc.lineAt(sel.start.line).text.slice(0, sel.start.character);
                 const documentPrefix = doc.getText(new Range(new Position(0, 0), sel.start));
                 if (provideHtslCompletions(linePrefix, documentPrefix, "").length === 0) return;

@@ -43,16 +43,11 @@ function commandExport(args: string[]): void {
             ChatLib.chat("&cUsage: /export function <name> [path]");
             return;
         }
-        // Anything past `function <name>` is the destination path. Re-join
-        // with spaces in case the user's path contained one, and strip a
-        // single pair of surrounding quotes — same UX as /import.
         const pathParts = args.slice(2);
         const rawPath = pathParts.length > 0 ? pathParts.join(" ") : "";
         const explicitPath = rawPath.length > 0 ? stripSurroundingQuotes(rawPath) : undefined;
 
         TaskManager.run(async (ctx) => {
-            // Resolve the destination directory. Default = a per-housing
-            // tree under ./htsw/exports so multiple housings stay isolated.
             let rootDir: string;
             if (explicitPath) {
                 rootDir = explicitPath.replace(/[\\/]+$/, "");
@@ -64,9 +59,6 @@ function commandExport(args: string[]): void {
             const importJsonPath = `${rootDir}/import.json`;
             const filename = `${canonicalSlug(name)}.htsl`;
             const htslPath = `${rootDir}/${filename}`;
-            // Reference is relative to the import.json directory, so just
-            // the filename — Importer's resolver joins paths against the
-            // import.json's parent.
             const htslReference = filename;
 
             ctx.displayMessage(`&aExporting function '${name}'...`);

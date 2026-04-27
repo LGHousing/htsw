@@ -1,20 +1,3 @@
-// Knuth–Plass-style line breaking for Minecraft Lore strings.
-//
-// Strips Minecraft formatting codes (`&[0-9a-fk-orR]` and `§[...]`) before
-// layout, then re-applies them after, so a split lore line keeps its coloring
-// and styling on every line. Placeholders (`%foo%`) are treated as fixed-width
-// tokens — the laid-out text contains the original `%...%` text, but width
-// calculations use a configurable `placeholderLength` (default 4).
-//
-// Direct port of the Python implementation supplied by the user, with two
-// hardening tweaks: (1) defensive bail when the placeholder-attachment logic
-// would produce mismatched lengths, (2) a greedy fallback when a single word
-// is wider than `maxLength` so the action still produces output instead of
-// raising.
-//
-// This file is consumed only by `editors/code` (Node + Electron / modern V8)
-// — the ES5/Rhino constraint from `ct_module/` does NOT apply here.
-
 const COLOR_CODES = new Set("0123456789abcdef".split(""));
 const ADDITIVE_CODES = new Set("klmno".split(""));
 const RESET_CODES = new Set("r".split(""));
@@ -23,9 +6,7 @@ const ALL_CODES = new Set<string>([...COLOR_CODES, ...ADDITIVE_CODES, ...RESET_C
 const PLACEHOLDER_REGEX = /%([^%]+?)%/g;
 
 export interface LayoutOptions {
-    /** Max unformatted character width per laid-out line. Default 40. */
     maxLength?: number;
-    /** Fixed width assigned to every `%...%` placeholder. Default 4. */
     placeholderLength?: number;
 }
 
@@ -45,7 +26,6 @@ export function computeBestLayout(text: string, options: LayoutOptions = {}): st
     const unformatted = removeFormatting(text);
     if (unformatted.length === 0) return text;
 
-    // Algorithm requires no leading/trailing whitespace and no double spaces.
     if (
         unformatted.startsWith(" ") ||
         unformatted.endsWith(" ") ||
@@ -60,17 +40,10 @@ export function computeBestLayout(text: string, options: LayoutOptions = {}): st
     const layoutRaw = computeBestLayoutRaw(words, lengths, maxLength);
     const codes = getFormattingCodes(text);
 
-    // Defensive: if our placeholder-attachment logic produced a layout that
-    // doesn't align char-for-char with the format-code stream, bail rather
-    // than emit broken output. (Rare adjacent-placeholder edge case.)
     if (layoutRaw.length !== codes.length) return text;
 
     return addFormattingCodes(layoutRaw, codes);
 }
-
-// ---------------------------------------------------------------------------
-// Format-code stripping
-// ---------------------------------------------------------------------------
 
 function removeFormatting(text: string): string {
     let out = "";
@@ -90,14 +63,7 @@ function removeFormatting(text: string): string {
     return out;
 }
 
-// ---------------------------------------------------------------------------
-// Placeholder-aware word splitting
-// ---------------------------------------------------------------------------
-
 function getPlaceholderParts(text: string): string[] {
-    // Even-indexed parts are literal text, odd-indexed parts are full
-    // `%...%` placeholder tokens (delimiters included so total length
-    // matches the input).
     const parts: string[] = [];
     let lastEnd = 0;
     PLACEHOLDER_REGEX.lastIndex = 0;
@@ -123,20 +89,14 @@ function wordsAndLengths(
     for (let i = 0; i < parts.length; i++) {
         const part = parts[i];
         if (i % 2 === 0) {
-            // Literal text segment
             if (part === "") continue;
             const split = part.split(" ");
 
-            // Attach the leading word fragment to whatever's already in `words`
-            // (a placeholder from the previous odd-index part) so we don't get
-            // a phantom space between e.g. `%a%hello` → ["%a%", "hello"].
-            let first = split.shift() as string;
+            const first = split.shift() as string;
             if (first !== "" && i > 0 && words.length > 0) {
                 words[words.length - 1] += first;
                 lengths[lengths.length - 1] += first.length;
                 if (split.length === 0 && i < parts.length - 1) {
-                    // No more words in this part — also absorb the next
-                    // placeholder so it sticks to the same word.
                     words[words.length - 1] += parts[i + 1];
                     lengths[lengths.length - 1] += placeholderLength;
                     parts[i + 1] = "";
@@ -148,7 +108,6 @@ function wordsAndLengths(
 
             if (split.length === 0) continue;
 
-            // Attach the trailing word fragment to the next placeholder.
             const last = split.pop() as string;
             if (last !== "" && i < parts.length - 1) {
                 parts[i + 1] = last + parts[i + 1];
@@ -158,12 +117,11 @@ function wordsAndLengths(
             }
 
             for (const word of split) {
-                if (word === "") continue; // defensive — caller guards against double spaces
+                if (word === "") continue;
                 words.push(word);
                 lengths.push(word.length);
             }
         } else {
-            // Placeholder
             if (part === "") continue;
             words.push(part);
             lengths.push(placeholderLength + (lengthsIncrements[i] ?? 0));
@@ -173,12 +131,8 @@ function wordsAndLengths(
     return { words, lengths };
 }
 
-// ---------------------------------------------------------------------------
-// DP line-breaker
-// ---------------------------------------------------------------------------
-
 function getWidth(i: number, j: number, lengths: number[]): number {
-    let sum = j - i; // one space per gap
+    let sum = j - i;
     for (let k = i; k <= j; k++) sum += lengths[k];
     return sum;
 }
@@ -217,9 +171,6 @@ function computeBestLayoutRaw(
 
     const lineStartIndexes = computeLineStartIndexes(lengths, maxLength);
 
-    // If even a single word at the end overflows, the DP can't produce a
-    // valid layout — fall back to greedy hard-split so we still return
-    // something sensible.
     const overflow = lengths.some((l) => l > maxLength);
     if (overflow) return greedyHardSplit(words, lengths, maxLength);
 
@@ -255,10 +206,6 @@ function greedyHardSplit(
     return lines.map((line) => line.join(" ")).join("\n");
 }
 
-// ---------------------------------------------------------------------------
-// Format-code reapplication
-// ---------------------------------------------------------------------------
-
 function getFormattingCodes(text: string): string[][] {
     const result: string[][] = [];
     let active: string[] = [];
@@ -270,10 +217,6 @@ function getFormattingCodes(text: string): string[][] {
             const next = text[i + 1].toLowerCase();
 
             if (COLOR_CODES.has(next)) {
-                // Reset, then reapply this color (even if it's the same as
-                // before). Encoded by repeating the code N+1 times so a
-                // repeated color still produces a "change" in the active
-                // list and triggers a re-emission downstream.
                 let count = 0;
                 for (const code of active) if (code === next) count++;
                 active = new Array<string>(count + 1).fill(next);
@@ -320,9 +263,6 @@ function addFormattingCodes(unformattedText: string, formatting: string[][]): st
             if (codes.length === 0) {
                 out.push("&r");
             } else {
-                // Emit only the prefix that's different from `prev`. The
-                // count-based encoding in getFormattingCodes guarantees that
-                // every color/style transition shows up here.
                 for (let i = 0; i < codes.length; i++) {
                     if (i < prev.length && codes[i] === prev[i]) continue;
                     out.push("&" + codes[i]);

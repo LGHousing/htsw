@@ -7,6 +7,7 @@ import { recompile } from "./recompile";
 import { importImportable } from "./importables/imports";
 import { createItemRegistry } from "./importables/itemRegistry";
 import { TaskManager } from "./tasks/manager";
+import { S2FPacketSetSlot } from "./utils/packets";
 import { FileSystemFileLoader } from "./utils/files";
 import { stripSurroundingQuotes } from "./utils/strings";
 
@@ -48,6 +49,11 @@ function commandHtsw(args: string[]) {
         return;
     }
 
+    if (args.length > 0 && args[0] === "probe-item") {
+        probeItem();
+        return;
+    }
+
     ChatLib.chat(`&7${chatSeparator()}`);
     const title = `&e&lHTSW &f&l${VERSION}`;
     ChatLib.chat(`${ChatLib.getCenteredText(title)}`);
@@ -57,6 +63,98 @@ function commandHtsw(args: string[]) {
     ChatLib.chat("&f/import &7- Import actions from HTSL files");
     ChatLib.chat("&f/simulator &7- Simulate actions from HTSL files");
     ChatLib.chat(`&7${chatSeparator()}`);
+}
+
+/**
+ * Diagnostic: dump the "Current Item" slot's overlay NBT, then click it
+ * to copy the real item into the inventory and dump the inventory copy's
+ * NBT.
+ *
+ * Used to validate the assumption that the slot's rendered NBT is the
+ * Hypixel UI overlay, while the inventory copy carries the real housing-
+ * tagged NBT we need to compare against the source/cache.
+ *
+ * Pre-armed: run the command in chat, then manually open a GIVE_ITEM /
+ * REMOVE_ITEM / etc. action's Item field. The task waits up to 30s for a
+ * container with a "Current Item" slot to appear, then probes it.
+ *
+ * Output goes to chat and also to `./htsw/probe-item-<timestamp>.txt`
+ * because raw SNBT lines are usually too long for chat to render legibly.
+ */
+function probeItem() {
+    TaskManager.run(async (ctx) => {
+        const lines: string[] = [];
+        const log = (line: string) => {
+            lines.push(line);
+            ctx.displayMessage(`&7[probe] &f${line}`);
+        };
+
+        ctx.displayMessage(
+            "&e[probe] Open a GIVE_ITEM action's Item field within 30s. " +
+                "Waiting for a \"Current Item\" slot to appear…"
+        );
+
+        const slot = await ctx.withTimeout(
+            (async () => {
+                while (true) {
+                    const found = ctx.tryGetItemSlot("Current Item");
+                    if (found !== null) return found;
+                    await ctx.waitFor("tick");
+                }
+            })(),
+            "Select an Item menu open",
+            30000
+        );
+
+        const overlay = slot.getItem();
+        log(`overlay name: ${overlay.getName()}`);
+        const overlayLore = overlay.getLore();
+        for (let i = 0; i < overlayLore.length; i++) {
+            log(`overlay lore[${i}]: ${overlayLore[i]}`);
+        }
+        log(`overlay rawNBT: ${overlay.getRawNBT()}`);
+
+        slot.click();
+
+        let ackedSlotId: number | null = null;
+        let ackedWindowId: number | null = null;
+        try {
+            await ctx.withTimeout(
+                ctx.waitFor("packetReceived", (packet) => {
+                    if (!(packet instanceof S2FPacketSetSlot)) return false;
+                    ackedWindowId = packet.func_149175_c();
+                    ackedSlotId = packet.func_149173_d();
+                    return true;
+                }),
+                "current-item copy ack",
+                3000
+            );
+            log(`copy ack: windowId=${ackedWindowId} slotId=${ackedSlotId}`);
+        } catch (e) {
+            log(`no S2FPacketSetSlot ack within 3s: ${e}`);
+        }
+        await ctx.waitFor("tick");
+
+        const inv = Player.getInventory();
+        for (let i = 0; i < 36; i++) {
+            const stack = inv?.getStackInSlot(i);
+            if (stack === null || stack === undefined) continue;
+            const name = stack.getName();
+            if (name === null || name === undefined) continue;
+            log(`inv[${i}] name: ${name}`);
+            log(`inv[${i}] rawNBT: ${stack.getRawNBT()}`);
+        }
+
+        const path = `./htsw/probe-item-${Date.now()}.txt`;
+        try {
+            FileLib.write(path, lines.join("\n"), true);
+            ctx.displayMessage(`&a[probe] wrote ${path}`);
+        } catch (e) {
+            ctx.displayMessage(`&c[probe] failed to write ${path}: ${e}`);
+        }
+    }).catch((err) => {
+        ChatLib.chat(`&c[probe] task failed: ${err}`);
+    });
 }
 
 function commandImport(args: string[]) {
@@ -71,9 +169,6 @@ function commandImport(args: string[]) {
     }
 
     const sm = new SourceMap(new FileSystemFileLoader());
-    // Strip a single pair of surrounding quotes — users naturally type
-    // `/import "C:\path with spaces\import.json"` and ChatTriggers passes
-    // those quotes through verbatim, which Java's Paths.get rejects.
     const importPath = stripSurroundingQuotes(args.join(" "));
     let result: ReturnType<typeof parseImportablesResult>;
     try {
