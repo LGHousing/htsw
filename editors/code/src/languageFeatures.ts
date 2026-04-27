@@ -4,7 +4,6 @@ import * as common from "htsw-editor-common";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { computeBestLayout } from "./loreLineLayout";
-import { findLoreStrings, type LoreStringMatch } from "./snbtLoreScanner";
 
 export { CompletionAdapter, SnbtCompletionAdapter } from "./completions";
 
@@ -440,11 +439,8 @@ export class SnbtCodeActionAdapter implements vscode.CodeActionProvider {
         const maxWidth = Math.max(8, config.get<number>("snbt.loreLineMaxWidth", 40));
 
         const text = document.getText();
-        const matches = findLoreStrings(text);
-        if (matches.length === 0) return [];
-
         const cursorOffset = document.offsetAt(range.start);
-        const target = pickTarget(matches, cursorOffset);
+        const target = findStringAtOffset(text, cursorOffset);
         if (!target) return [];
 
         const layout = computeBestLayout(target.value, { maxLength: maxWidth });
@@ -481,13 +477,19 @@ export class SnbtCodeActionAdapter implements vscode.CodeActionProvider {
     }
 }
 
-function pickTarget(
-    matches: LoreStringMatch[],
-    cursorOffset: number,
-): LoreStringMatch | undefined {
-    return matches.find(
-        (m) => cursorOffset >= m.start && cursorOffset <= m.end,
-    );
+function findStringAtOffset(
+    text: string,
+    offset: number,
+): { start: number; end: number; value: string; quote: '"' | "'" } | undefined {
+    const lexer = new htsw.nbt.Lexer(text);
+    while (true) {
+        const tok = lexer.advanceToken();
+        if (tok.kind === "eof" || tok.kind === "unknown") return undefined;
+        if (tok.kind === "str" && offset >= tok.span.start && offset <= tok.span.end) {
+            const quote: '"' | "'" = text[tok.span.start] === "'" ? "'" : '"';
+            return { start: tok.span.start, end: tok.span.end, value: tok.value, quote };
+        }
+    }
 }
 
 function quoteSnbtString(text: string, quote: '"' | "'"): string {
