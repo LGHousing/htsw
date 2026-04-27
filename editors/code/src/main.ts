@@ -32,6 +32,14 @@ export function activate() {
                 ...HTSL_COMPLETION_TRIGGER_CHARACTERS
             )
         );
+        providers.push(
+            languages.registerCompletionItemProvider(
+                "snbt",
+                new languageFeatures.SnbtCompletionAdapter(),
+                ...HTSL_COMPLETION_TRIGGER_CHARACTERS,
+                ":"
+            )
+        );
 
         let lastTextChangeAt = 0;
         let lastSelectionMutationAt = 0;
