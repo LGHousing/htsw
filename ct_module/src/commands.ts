@@ -5,7 +5,7 @@ import { Simulator } from "./simulator";
 import { printDiagnostic, printDiagnostics } from "./tui/diagnostics";
 import { recompile } from "./recompile";
 import { importImportable } from "./importables/imports";
-import { createImportContext } from "./importables/context";
+import { createItemRegistry } from "./importables/itemRegistry";
 import { TaskManager } from "./tasks/manager";
 import { FileSystemFileLoader } from "./utils/files";
 import { stripSurroundingQuotes } from "./utils/strings";
@@ -93,10 +93,14 @@ function commandImport(args: string[]) {
 
     TaskManager.run(async (ctx) => {
         ctx.displayMessage("&aImport started.");
-        const importContext = createImportContext(result.value, result.gcx);
-        for (const importable of result.value) {
+        const itemRegistry = createItemRegistry(result.value, result.gcx);
+        const ordered = [
+            ...result.value.filter((i) => i.type === "ITEM"),
+            ...result.value.filter((i) => i.type !== "ITEM"),
+        ];
+        for (const importable of ordered) {
             try {
-                await importImportable(ctx, importable, importContext);
+                await importImportable(ctx, importable, itemRegistry);
             } catch (e) {
                 if (e instanceof Diagnostic) {
                     printDiagnostic(sm, e);
