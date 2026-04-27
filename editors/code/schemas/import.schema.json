@@ -20,6 +20,11 @@
       "type": "array",
       "items": { "$ref": "#/definitions/regionImportable" }
     },
+    "items": {
+      "type": "array",
+      "description": "Reusable item definitions. HTSL item fields may reference these by name, or may reference .snbt files directly.",
+      "items": { "$ref": "#/definitions/itemImportable" }
+    },
     "npcs": {
       "type": "array",
       "items": { "$ref": "#/definitions/npcImportable" }
@@ -40,6 +45,29 @@
       "type": "string",
       "pattern": "\\.snbt$",
       "description": "Relative SNBT file path ending in .snbt"
+    },
+    "itemImportable": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "nbt"],
+      "description": "A reusable item. The name is the stable reference used by HTSL item fields; nbt points to the SNBT file that defines the Minecraft item stack.",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Stable item reference name used from HTSL, for example: giveItem \"Activator Bail\""
+        },
+        "nbt": {
+          "$ref": "#/definitions/snbtPath"
+        },
+        "leftClickActions": {
+          "$ref": "#/definitions/htslPath",
+          "description": "Optional actions synced into this item's left-click action list."
+        },
+        "rightClickActions": {
+          "$ref": "#/definitions/htslPath",
+          "description": "Optional actions synced into this item's right-click action list."
+        }
+      }
     },
     "functionImportable": {
       "type": "object",
