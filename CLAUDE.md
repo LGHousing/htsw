@@ -263,7 +263,7 @@ This file is the lowest-level generic GUI API. Most higher-level importer work i
 
 ## Importable-Level Import Logic
 
-`ct_module/src/importables/index.ts` handles top-level importables.
+`ct_module/src/importables/imports.ts` handles top-level importables. Its export-side counterpart `ct_module/src/importables/exports.ts` mirrors the same per-type dispatch shape for `/export`.
 
 Supported importable types right now:
 
