@@ -25,7 +25,10 @@ import {
 } from "htsw/types";
 
 import TaskContext from "../tasks/context";
-import type { ImportContext } from "../importables/context";
+import {
+    type ItemRegistry,
+    getMemoizedHousingUuid,
+} from "../importables/itemRegistry";
 import {
     clickGoBack,
     findMenuOptionByLore,
@@ -41,6 +44,8 @@ import {
 } from "./helpers";
 import { ItemSlot, MouseButton } from "../tasks/specifics/slots";
 import { removedFormatting } from "../utils/helpers";
+import { getItemFromSnbt } from "../utils/nbt";
+import { importableHash } from "../knowledge";
 import {
     CONDITION_LORE_MAPPINGS,
     getConditionFieldLabel,
@@ -75,7 +80,7 @@ type ConditionSpec<T extends Condition> = {
         ctx: TaskContext,
         desired: T,
         current?: T,
-        importContext?: ImportContext
+        itemRegistry?: ItemRegistry
     ) => Promise<void>;
 };
 
@@ -104,25 +109,51 @@ function isLimitExceeded(slot: ItemSlot): boolean {
     return removedFormatting(lastLine) === "You can't have more of this condition!";
 }
 
-function resolveConditionItem(
-    importContext: ImportContext | undefined,
+async function resolveConditionItem(
+    ctx: TaskContext,
+    itemRegistry: ItemRegistry | undefined,
     condition: Condition,
     itemName: string
-): Item {
-    if (importContext === undefined) {
+): Promise<Item> {
+    if (itemRegistry === undefined) {
         throw Diagnostic.error(
-            `Cannot set item "${itemName}" for ${condition.type}: no import context is available.`
+            `Cannot set item "${itemName}" for ${condition.type}: no item registry is available.`
         );
     }
 
-    const entry = importContext.items.resolve(itemName, condition);
+    const entry = itemRegistry.resolve(itemName, condition);
     if (entry === undefined) {
         throw Diagnostic.error(
             `Cannot set item "${itemName}" for ${condition.type}: item fields resolve against top-level items[].name or direct .snbt paths.`
         );
     }
 
-    return entry.item;
+    // See action's resolveActionItem for the reasoning. Items with click
+    // actions only carry their housing-tagged NBT after a /edit round-
+    // trip on the item itself, which lives in the SNBT cache.
+    const importable = entry.importable;
+    const hasActions =
+        importable !== undefined &&
+        ((importable.leftClickActions !== undefined &&
+            importable.leftClickActions.length > 0) ||
+            (importable.rightClickActions !== undefined &&
+                importable.rightClickActions.length > 0));
+    if (!hasActions) {
+        return entry.item;
+    }
+
+    const uuid = await getMemoizedHousingUuid(ctx, itemRegistry);
+    const hash = importableHash(importable);
+    const cachePath = `./htsw/.cache/${uuid}/items/${hash}.snbt`;
+    if (!FileLib.exists(cachePath)) {
+        throw Diagnostic.error(
+            `Cannot set item "${itemName}" for ${condition.type}: it has click actions but isn't cached at ${cachePath}. ` +
+                `Declare the item as a top-level importable in the same import.json so it imports first, ` +
+                `or run /import on it before whatever references it.`
+        );
+    }
+    const snbt = String(FileLib.read(cachePath));
+    return getItemFromSnbt(snbt);
 }
 
 const CONDITION_LIST_CONFIG: PaginatedListConfig = {
@@ -330,13 +361,13 @@ async function writeRequireItem(
     ctx: TaskContext,
     condition: ConditionRequireItem,
     _current?: ConditionRequireItem,
-    importContext?: ImportContext
+    itemRegistry?: ItemRegistry
 ): Promise<void> {
     if (condition.itemName) {
         await setItemValue(
             ctx,
             getConditionFieldLabel("REQUIRE_ITEM", "itemName"),
-            resolveConditionItem(importContext, condition, condition.itemName)
+            await resolveConditionItem(ctx, itemRegistry, condition, condition.itemName)
         );
     }
 
@@ -543,13 +574,13 @@ async function writeBlockType(
     ctx: TaskContext,
     condition: ConditionBlockType,
     _current?: ConditionBlockType,
-    importContext?: ImportContext
+    itemRegistry?: ItemRegistry
 ): Promise<void> {
     if (condition.itemName) {
         await setItemValue(
             ctx,
             getConditionFieldLabel("BLOCK_TYPE", "itemName"),
-            resolveConditionItem(importContext, condition, condition.itemName)
+            await resolveConditionItem(ctx, itemRegistry, condition, condition.itemName)
         );
     }
 }
@@ -558,13 +589,13 @@ async function writeIsItem(
     ctx: TaskContext,
     condition: ConditionIsItem,
     _current?: ConditionIsItem,
-    importContext?: ImportContext
+    itemRegistry?: ItemRegistry
 ): Promise<void> {
     if (condition.itemName) {
         await setItemValue(
             ctx,
             getConditionFieldLabel("IS_ITEM", "itemName"),
-            resolveConditionItem(importContext, condition, condition.itemName)
+            await resolveConditionItem(ctx, itemRegistry, condition, condition.itemName)
         );
     }
 }
@@ -686,7 +717,7 @@ function isConditionListItemInverted(slot: ItemSlot): boolean {
 }
 
 export type ReadConditionListOptions = {
-    importContext?: ImportContext;
+    itemRegistry?: ItemRegistry;
 };
 
 export async function readConditionList(
@@ -713,7 +744,7 @@ export async function readConditionList(
     }
 
     await goToConditionPage(ctx, 1);
-    canonicalizeObservedConditionSlots(observed, options?.importContext);
+    canonicalizeObservedConditionSlots(observed, options?.itemRegistry);
     return observed;
 }
 
@@ -721,7 +752,7 @@ async function writeOpenCondition(
     ctx: TaskContext,
     condition: Condition,
     current?: Condition,
-    importContext?: ImportContext
+    itemRegistry?: ItemRegistry
 ): Promise<void> {
     // Notes are written from the list item, not the editor.
     if (current && onlyNoteDiffers(condition, current)) {
@@ -738,43 +769,43 @@ async function writeOpenCondition(
     }
 
     if (spec.write) {
-        await spec.write(ctx, condition, resolvedCurrent, importContext);
+        await spec.write(ctx, condition, resolvedCurrent, itemRegistry);
     }
 }
 
 function canonicalizeObservedConditionSlots(
     observed: readonly ObservedConditionSlot[],
-    importContext?: ImportContext
+    itemRegistry?: ItemRegistry
 ): void {
-    if (importContext === undefined) {
+    if (itemRegistry === undefined) {
         return;
     }
 
     for (const entry of observed) {
         if (entry.condition !== null) {
-            canonicalizeConditionItemName(entry.condition, importContext);
+            canonicalizeConditionItemName(entry.condition, itemRegistry);
         }
     }
 }
 
 export function canonicalizeObservedConditionItemNames(
     conditions: readonly (Condition | null)[],
-    importContext?: ImportContext
+    itemRegistry?: ItemRegistry
 ): void {
-    if (importContext === undefined) {
+    if (itemRegistry === undefined) {
         return;
     }
 
     for (const condition of conditions) {
         if (condition !== null) {
-            canonicalizeConditionItemName(condition, importContext);
+            canonicalizeConditionItemName(condition, itemRegistry);
         }
     }
 }
 
 function canonicalizeConditionItemName(
     condition: Condition,
-    importContext: ImportContext
+    itemRegistry: ItemRegistry
 ): void {
     if (
         condition.type !== "REQUIRE_ITEM" &&
@@ -785,7 +816,7 @@ function canonicalizeConditionItemName(
     }
 
     if (condition.itemName !== undefined) {
-        condition.itemName = importContext.items.canonicalizeObservedName(
+        condition.itemName = itemRegistry.canonicalizeObservedName(
             condition.itemName
         );
     }
@@ -826,7 +857,7 @@ async function setOpenConditionInverted(
 export async function importCondition(
     ctx: TaskContext,
     condition: Condition,
-    importContext?: ImportContext
+    itemRegistry?: ItemRegistry
 ): Promise<void> {
     ctx.getItemSlot("Add Condition").click();
     await waitForMenu(ctx);
@@ -842,7 +873,7 @@ export async function importCondition(
 
     slot.click();
     await waitForMenu(ctx);
-    await writeOpenCondition(ctx, condition, undefined, importContext);
+    await writeOpenCondition(ctx, condition, undefined, itemRegistry);
 
     await setOpenConditionInverted(ctx, condition.inverted === true);
     // we ALWAYS click go back because every single condition has
@@ -862,7 +893,7 @@ async function applyConditionListDiff(
     ctx: TaskContext,
     observed: ObservedConditionSlot[],
     diff: ConditionListDiff,
-    importContext?: ImportContext
+    itemRegistry?: ItemRegistry
 ): Promise<void> {
     const currentObserved = [...observed];
 
@@ -898,7 +929,7 @@ async function applyConditionListDiff(
             ctx,
             entry.desired,
             entry.observed.condition,
-            importContext
+            itemRegistry
         );
 
         const currentInverted = entry.observed.condition.inverted === true;
@@ -922,7 +953,7 @@ async function applyConditionListDiff(
     }
 
     for (const condition of diff.adds) {
-        await importCondition(ctx, condition, importContext);
+        await importCondition(ctx, condition, itemRegistry);
     }
 }
 
@@ -964,7 +995,7 @@ export type SyncConditionListOptions = {
      * Mirrors `SyncActionListOptions.observed`.
      */
     observed?: ObservedConditionSlot[];
-    importContext?: ImportContext;
+    itemRegistry?: ItemRegistry;
 };
 
 export type SyncConditionListResult = {
@@ -978,11 +1009,11 @@ export async function syncConditionList(
 ): Promise<SyncConditionListResult> {
     const observed =
         options?.observed ??
-        (await readConditionList(ctx, { importContext: options?.importContext }));
-    canonicalizeObservedConditionSlots(observed, options?.importContext);
+        (await readConditionList(ctx, { itemRegistry: options?.itemRegistry }));
+    canonicalizeObservedConditionSlots(observed, options?.itemRegistry);
     const diff = diffConditionList(observed, desired);
     logConditionSyncState(ctx, diff);
 
-    await applyConditionListDiff(ctx, observed, diff, options?.importContext);
+    await applyConditionListDiff(ctx, observed, diff, options?.itemRegistry);
     return { usedObserved: observed };
 }
