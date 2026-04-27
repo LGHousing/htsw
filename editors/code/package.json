@@ -53,7 +53,8 @@
                 "aliases": [
                     "SNBT",
                     "snbt"
-                ]
+                ],
+                "configuration": "./snbt-language-configuration.json"
             }
         ],
         "grammars": [
@@ -61,6 +62,11 @@
                 "language": "htsl",
                 "scopeName": "source.htsl",
                 "path": "./htsl.tmGrammar.json"
+            },
+            {
+                "language": "snbt",
+                "scopeName": "source.snbt",
+                "path": "./snbt.tmGrammar.json"
             }
         ],
         "jsonValidation": [
@@ -84,6 +90,32 @@
                     "default": [],
                     "description": "Workspace-relative folder prefixes to exclude from HTSW diagnostics."
                 }
+            }
+        },
+        "configurationDefaults": {
+            "editor.tokenColorCustomizations": {
+                "textMateRules": [
+                    { "scope": "constant.character.format-code.color.black.snbt",         "settings": { "foreground": "#000000" } },
+                    { "scope": "constant.character.format-code.color.dark-blue.snbt",     "settings": { "foreground": "#0000AA" } },
+                    { "scope": "constant.character.format-code.color.dark-green.snbt",    "settings": { "foreground": "#00AA00" } },
+                    { "scope": "constant.character.format-code.color.dark-aqua.snbt",     "settings": { "foreground": "#00AAAA" } },
+                    { "scope": "constant.character.format-code.color.dark-red.snbt",      "settings": { "foreground": "#AA0000" } },
+                    { "scope": "constant.character.format-code.color.dark-purple.snbt",   "settings": { "foreground": "#AA00AA" } },
+                    { "scope": "constant.character.format-code.color.gold.snbt",          "settings": { "foreground": "#FFAA00" } },
+                    { "scope": "constant.character.format-code.color.gray.snbt",          "settings": { "foreground": "#AAAAAA" } },
+                    { "scope": "constant.character.format-code.color.dark-gray.snbt",     "settings": { "foreground": "#555555" } },
+                    { "scope": "constant.character.format-code.color.blue.snbt",          "settings": { "foreground": "#5555FF" } },
+                    { "scope": "constant.character.format-code.color.green.snbt",         "settings": { "foreground": "#55FF55" } },
+                    { "scope": "constant.character.format-code.color.aqua.snbt",          "settings": { "foreground": "#55FFFF" } },
+                    { "scope": "constant.character.format-code.color.red.snbt",           "settings": { "foreground": "#FF5555" } },
+                    { "scope": "constant.character.format-code.color.light-purple.snbt",  "settings": { "foreground": "#FF55FF" } },
+                    { "scope": "constant.character.format-code.color.yellow.snbt",        "settings": { "foreground": "#FFFF55" } },
+                    { "scope": "constant.character.format-code.color.white.snbt",         "settings": { "foreground": "#FFFFFF" } },
+                    { "scope": "constant.character.format-code.style.bold.snbt",          "settings": { "fontStyle": "bold" } },
+                    { "scope": "constant.character.format-code.style.italic.snbt",        "settings": { "fontStyle": "italic" } },
+                    { "scope": "constant.character.format-code.style.underline.snbt",     "settings": { "fontStyle": "underline" } },
+                    { "scope": "constant.character.format-code.style.strikethrough.snbt", "settings": { "fontStyle": "strikethrough" } }
+                ]
             }
         }
     }
