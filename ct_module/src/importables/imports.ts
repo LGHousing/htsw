@@ -10,44 +10,44 @@ import {
 import { syncActionList } from "../importer/actions";
 import TaskContext from "../tasks/context";
 import { clickGoBack, waitForMenu, waitForUnformattedMessage } from "../importer/helpers";
-import { cyrb53, removedFormatting } from "../utils/helpers";
+import { removedFormatting } from "../utils/helpers";
 import { getItemFromNbt } from "../utils/nbt";
 import {
     C09PacketHeldItemChange,
     C10PacketCreativeInventoryAction,
 } from "../utils/packets";
-import { getCurrentHousingUuid, writeKnowledge } from "../knowledge";
+import { getCurrentHousingUuid, importableHash, writeKnowledge } from "../knowledge";
 import {
     openFunctionEditor,
     openFunctionSettings,
     setAutomaticExecutionTicksIfNeeded,
 } from "./functions";
-import type { ImportContext } from "./context";
+import type { ItemRegistry } from "./itemRegistry";
 
 export async function importImportable(
     ctx: TaskContext,
     importable: Importable,
-    importContext: ImportContext
+    itemRegistry: ItemRegistry
 ): Promise<void> {
     if (importable.type === "FUNCTION") {
-        await importImportableFunction(ctx, importable, importContext);
+        await importImportableFunction(ctx, importable, itemRegistry);
         await maybeWriteKnowledge(ctx, importable);
         return;
     }
     if (importable.type === "EVENT") {
-        await importImportableEvent(ctx, importable, importContext);
+        await importImportableEvent(ctx, importable, itemRegistry);
         await maybeWriteKnowledge(ctx, importable);
         return;
     }
     if (importable.type === "REGION") {
-        await importImportableRegion(ctx, importable, importContext);
+        await importImportableRegion(ctx, importable, itemRegistry);
         await maybeWriteKnowledge(ctx, importable);
         return;
     }
     if (importable.type === "ITEM") {
         // Item handles its own UUID resolution because it needs the UUID
         // for both the existing SNBT cache and the new knowledge cache.
-        await importImportableItem(ctx, importable, importContext);
+        await importImportableItem(ctx, importable, itemRegistry);
         return;
     }
     // TODO add the others idk and remove the ts ignore
@@ -78,7 +78,7 @@ async function maybeWriteKnowledge(
 async function importImportableFunction(
     ctx: TaskContext,
     importable: ImportableFunction,
-    importContext: ImportContext
+    itemRegistry: ItemRegistry
 ): Promise<void> {
     const alreadyExists = (await openFunctionEditor(ctx, importable.name)) === "opened";
 
@@ -88,7 +88,7 @@ async function importImportableFunction(
     }
 
     // we have a function!!! open!!
-    await syncActionList(ctx, importable.actions, { importContext });
+    await syncActionList(ctx, importable.actions, { itemRegistry });
 
     if (importable.repeatTicks) {
         await clickGoBack(ctx);
@@ -102,7 +102,7 @@ async function importImportableFunction(
 async function importImportableEvent(
     ctx: TaskContext,
     importable: ImportableEvent,
-    importContext: ImportContext
+    itemRegistry: ItemRegistry
 ): Promise<void> {
     ctx.runCommand(`/eventactions`);
     await waitForMenu(ctx);
@@ -111,13 +111,13 @@ async function importImportableEvent(
     await waitForMenu(ctx);
 
     // we have an event!!! open!!! :)
-    await syncActionList(ctx, importable.actions, { importContext });
+    await syncActionList(ctx, importable.actions, { itemRegistry });
 }
 
 async function importImportableRegion(
     ctx: TaskContext,
     importable: ImportableRegion,
-    importContext: ImportContext
+    itemRegistry: ItemRegistry
 ): Promise<void> {
     const setPos = async (pos: Pos, corner: "A" | "B") => {
         ctx.runCommand(`/tp ${pos.x} ${pos.y} ${pos.z}`);
@@ -171,7 +171,7 @@ async function importImportableRegion(
         ctx.getItemSlot("Entry Actions").click();
         await waitForMenu(ctx);
 
-        await syncActionList(ctx, importable.onEnterActions, { importContext });
+        await syncActionList(ctx, importable.onEnterActions, { itemRegistry });
 
         if (importable.onExitActions) {
             await clickGoBack(ctx);
@@ -182,19 +182,19 @@ async function importImportableRegion(
         ctx.getItemSlot("Exit Actions").click();
         await waitForMenu(ctx);
 
-        await syncActionList(ctx, importable.onExitActions, { importContext });
+        await syncActionList(ctx, importable.onExitActions, { itemRegistry });
     }
 }
 
 async function importImportableItem(
     ctx: TaskContext,
     importable: ImportableItem,
-    importContext: ImportContext
+    itemRegistry: ItemRegistry
 ): Promise<void> {
     if (!importable.leftClickActions && !importable.rightClickActions) return;
 
     const uuid = await getCurrentHousingUuid(ctx);
-    const hash = cyrb53(JSON.stringify(importable));
+    const hash = importableHash(importable);
     if (FileLib.exists(`./htsw/.cache/${uuid}/items/${hash}.snbt`)) {
         // SNBT cache hit — actions already in sync. Refresh the knowledge
         // cache too so future trust-mode has an entry even when no GUI
@@ -226,7 +226,7 @@ async function importImportableItem(
         ctx.getItemSlot("Left Click Actions").click();
         await waitForMenu(ctx);
 
-        await syncActionList(ctx, importable.leftClickActions, { importContext });
+        await syncActionList(ctx, importable.leftClickActions, { itemRegistry });
 
         if (importable.rightClickActions) {
             await clickGoBack(ctx);
@@ -237,7 +237,7 @@ async function importImportableItem(
         ctx.getItemSlot("Right Click Actions").click();
         await waitForMenu(ctx);
 
-        await syncActionList(ctx, importable.rightClickActions, { importContext });
+        await syncActionList(ctx, importable.rightClickActions, { itemRegistry });
     }
 
     await ctx.sleep(1000);
