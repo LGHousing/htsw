@@ -64,6 +64,7 @@ import { normalizeActionCompare } from "./compare";
 import { isSyncDebugLoggingEnabled } from "./debug";
 import {
     ACTION_MAPPINGS,
+    getActionFieldLabel,
     getNestedListFields,
     parseActionListItem,
     tryGetActionTypeFromDisplayName,
@@ -140,19 +141,19 @@ function isLimitExceeded(slot: ItemSlot): boolean {
 
 function resolveActionItem(
     importContext: ImportContext | undefined,
-    actionType: Action["type"],
+    action: Action,
     itemName: string
 ): Item {
     if (importContext === undefined) {
         throw new Error(
-            `Cannot set item "${itemName}" for ${actionType}: no import context is available.`
+            `Cannot set item "${itemName}" for ${action.type}: no import context is available.`
         );
     }
 
-    const entry = importContext.items.resolve(itemName);
+    const entry = importContext.items.resolve(itemName, action);
     if (entry === undefined) {
         throw new Error(
-            `Cannot set item "${itemName}" for ${actionType}: item fields resolve against top-level items[].name.`
+            `Cannot set item "${itemName}" for ${action.type}: item fields resolve against top-level items[].name or direct .snbt paths.`
         );
     }
 
@@ -202,9 +203,14 @@ async function readOpenConditional(
     propsToRead: NestedPropsToRead,
     importContext?: ImportContext
 ): Promise<Observed<ActionConditional>> {
+    const conditionsLabel = getActionFieldLabel("CONDITIONAL", "conditions");
+    const matchAnyLabel = getActionFieldLabel("CONDITIONAL", "matchAny");
+    const ifActionsLabel = getActionFieldLabel("CONDITIONAL", "ifActions");
+    const elseActionsLabel = getActionFieldLabel("CONDITIONAL", "elseActions");
+
     let conditions: (Condition | null)[] = [];
     if (propsToRead.has("conditions")) {
-        ctx.getItemSlot("Conditions").click();
+        ctx.getItemSlot(conditionsLabel).click();
         await waitForMenu(ctx);
         conditions = (await readConditionList(ctx, { importContext })).map(
             (entry) => entry.condition
@@ -212,11 +218,11 @@ async function readOpenConditional(
         await clickGoBack(ctx);
     }
 
-    const matchAny = readBooleanValue(ctx.getItemSlot("Match Any Condition")) ?? false;
+    const matchAny = readBooleanValue(ctx.getItemSlot(matchAnyLabel)) ?? false;
 
     const ifActions: (Observed<Action> | null)[] = [];
     if (propsToRead.has("ifActions")) {
-        ctx.getItemSlot("If Actions").click();
+        ctx.getItemSlot(ifActionsLabel).click();
         await waitForMenu(ctx);
         for (const entry of await readActionList(ctx, {
             kind: "full",
@@ -229,7 +235,7 @@ async function readOpenConditional(
 
     const elseActions: (Observed<Action> | null)[] = [];
     if (propsToRead.has("elseActions")) {
-        ctx.getItemSlot("Else Actions").click();
+        ctx.getItemSlot(elseActionsLabel).click();
         await waitForMenu(ctx);
         for (const entry of await readActionList(ctx, {
             kind: "full",
@@ -256,24 +262,28 @@ async function writeConditional(
     importContext?: ImportContext
 ): Promise<void> {
     if (action.conditions.length > 0 || (current?.conditions?.length ?? 0) > 0) {
-        ctx.getItemSlot("Conditions").click();
+        ctx.getItemSlot(getActionFieldLabel("CONDITIONAL", "conditions")).click();
         await waitForMenu(ctx);
 
         await syncConditionList(ctx, action.conditions, { importContext });
         await clickGoBack(ctx);
     }
 
-    await setBooleanValue(ctx, ctx.getItemSlot("Match Any Condition"), action.matchAny);
+    await setBooleanValue(
+        ctx,
+        ctx.getItemSlot(getActionFieldLabel("CONDITIONAL", "matchAny")),
+        action.matchAny
+    );
 
     if (action.ifActions.length > 0 || (current?.ifActions?.length ?? 0) > 0) {
-        ctx.getItemSlot("If Actions").click();
+        ctx.getItemSlot(getActionFieldLabel("CONDITIONAL", "ifActions")).click();
         await waitForMenu(ctx);
         await syncActionList(ctx, action.ifActions, { importContext });
         await clickGoBack(ctx);
     }
 
     if (action.elseActions.length > 0 || (current?.elseActions?.length ?? 0) > 0) {
-        ctx.getItemSlot("Else Actions").click();
+        ctx.getItemSlot(getActionFieldLabel("CONDITIONAL", "elseActions")).click();
         await waitForMenu(ctx);
         await syncActionList(ctx, action.elseActions, { importContext });
         await clickGoBack(ctx);
@@ -281,50 +291,82 @@ async function writeConditional(
 }
 
 async function writeSetGroup(ctx: TaskContext, action: ActionSetGroup): Promise<void> {
-    await setSelectValue(ctx, "Group", action.group);
+    await setSelectValue(ctx, getActionFieldLabel("SET_GROUP", "group"), action.group);
 
     if (action.demotionProtection !== undefined) {
         await setBooleanValue(
             ctx,
-            ctx.getItemSlot("Demotion Protection"),
+            ctx.getItemSlot(getActionFieldLabel("SET_GROUP", "demotionProtection")),
             action.demotionProtection
         );
     }
 }
 
 async function writeTitle(ctx: TaskContext, action: ActionTitle): Promise<void> {
-    await setStringValue(ctx, ctx.getItemSlot("Title"), action.title);
+    await setStringValue(
+        ctx,
+        ctx.getItemSlot(getActionFieldLabel("TITLE", "title")),
+        action.title
+    );
 
     if (action.subtitle !== undefined) {
-        await setStringValue(ctx, ctx.getItemSlot("Subtitle"), action.subtitle);
+        await setStringValue(
+            ctx,
+            ctx.getItemSlot(getActionFieldLabel("TITLE", "subtitle")),
+            action.subtitle
+        );
     }
 
     if (action.fadein !== undefined) {
-        await setNumberValue(ctx, ctx.getItemSlot("Fadein"), action.fadein);
+        await setNumberValue(
+            ctx,
+            ctx.getItemSlot(getActionFieldLabel("TITLE", "fadein")),
+            action.fadein
+        );
     }
 
     if (action.stay !== undefined) {
-        await setNumberValue(ctx, ctx.getItemSlot("Stay"), action.stay);
+        await setNumberValue(
+            ctx,
+            ctx.getItemSlot(getActionFieldLabel("TITLE", "stay")),
+            action.stay
+        );
     }
 
     if (action.fadeout !== undefined) {
-        await setNumberValue(ctx, ctx.getItemSlot("Fadeout"), action.fadeout);
+        await setNumberValue(
+            ctx,
+            ctx.getItemSlot(getActionFieldLabel("TITLE", "fadeout")),
+            action.fadeout
+        );
     }
 }
 
 async function writeActionBar(ctx: TaskContext, action: ActionActionBar): Promise<void> {
-    await setStringValue(ctx, ctx.getItemSlot("Message"), action.message);
+    await setStringValue(
+        ctx,
+        ctx.getItemSlot(getActionFieldLabel("ACTION_BAR", "message")),
+        action.message
+    );
 }
 
 async function writeChangeMaxHealth(
     ctx: TaskContext,
     action: ActionChangeMaxHealth
 ): Promise<void> {
-    await setSelectValue(ctx, "Mode", action.op);
-    await setStringValue(ctx, ctx.getItemSlot("Max Health"), action.amount);
+    await setSelectValue(ctx, getActionFieldLabel("CHANGE_MAX_HEALTH", "op"), action.op);
+    await setStringValue(
+        ctx,
+        ctx.getItemSlot(getActionFieldLabel("CHANGE_MAX_HEALTH", "amount")),
+        action.amount
+    );
 
     if (action.heal !== undefined) {
-        await setBooleanValue(ctx, ctx.getItemSlot("Heal On Change"), action.heal);
+        await setBooleanValue(
+            ctx,
+            ctx.getItemSlot(getActionFieldLabel("CHANGE_MAX_HEALTH", "heal")),
+            action.heal
+        );
     }
 }
 
@@ -336,26 +378,30 @@ async function writeGiveItem(
 ): Promise<void> {
     await setItemValue(
         ctx,
-        "Item",
-        resolveActionItem(importContext, action.type, action.itemName)
+        getActionFieldLabel("GIVE_ITEM", "itemName"),
+        resolveActionItem(importContext, action, action.itemName)
     );
 
     if (action.allowMultiple !== undefined) {
         await setBooleanValue(
             ctx,
-            ctx.getItemSlot("Allow Multiple"),
+            ctx.getItemSlot(getActionFieldLabel("GIVE_ITEM", "allowMultiple")),
             action.allowMultiple
         );
     }
 
     if (action.slot !== undefined) {
-        await setSelectValue(ctx, "Inventory Slot", String(action.slot));
+        await setSelectValue(
+            ctx,
+            getActionFieldLabel("GIVE_ITEM", "slot"),
+            String(action.slot)
+        );
     }
 
     if (action.replaceExisting !== undefined) {
         await setBooleanValue(
             ctx,
-            ctx.getItemSlot("Replace Existing Item"),
+            ctx.getItemSlot(getActionFieldLabel("GIVE_ITEM", "replaceExisting")),
             action.replaceExisting
         );
     }
@@ -370,8 +416,8 @@ async function writeRemoveItem(
     if (action.itemName !== undefined) {
         await setItemValue(
             ctx,
-            "Item",
-            resolveActionItem(importContext, action.type, action.itemName)
+            getActionFieldLabel("REMOVE_ITEM", "itemName"),
+            resolveActionItem(importContext, action, action.itemName)
         );
     }
 }
@@ -380,13 +426,19 @@ async function writeSendMessage(
     ctx: TaskContext,
     action: ActionSendMessage
 ): Promise<void> {
-    await setStringValue(ctx, ctx.getItemSlot("Message"), action.message);
+    await setStringValue(
+        ctx,
+        ctx.getItemSlot(getActionFieldLabel("MESSAGE", "message")),
+        action.message
+    );
 }
 
 async function readOpenMessage(ctx: TaskContext): Promise<Observed<ActionSendMessage>> {
     return {
         type: "MESSAGE",
-        message: readStringValue(ctx.getItemSlot("Message")) ?? "",
+        message:
+            readStringValue(ctx.getItemSlot(getActionFieldLabel("MESSAGE", "message"))) ??
+            "",
     };
 }
 
@@ -394,23 +446,39 @@ async function writeApplyPotionEffect(
     ctx: TaskContext,
     action: ActionApplyPotionEffect
 ): Promise<void> {
-    await setSelectValue(ctx, "Effect", action.effect);
-    await setNumberValue(ctx, ctx.getItemSlot("Duration"), action.duration);
+    await setSelectValue(
+        ctx,
+        getActionFieldLabel("APPLY_POTION_EFFECT", "effect"),
+        action.effect
+    );
+    await setNumberValue(
+        ctx,
+        ctx.getItemSlot(getActionFieldLabel("APPLY_POTION_EFFECT", "duration")),
+        action.duration
+    );
 
     if (action.level !== undefined) {
-        await setNumberValue(ctx, ctx.getItemSlot("Level"), action.level);
+        await setNumberValue(
+            ctx,
+            ctx.getItemSlot(getActionFieldLabel("APPLY_POTION_EFFECT", "level")),
+            action.level
+        );
     }
 
     if (action.override !== undefined) {
         await setBooleanValue(
             ctx,
-            ctx.getItemSlot("Override Existing Effects"),
+            ctx.getItemSlot(getActionFieldLabel("APPLY_POTION_EFFECT", "override")),
             action.override
         );
     }
 
     if (action.showIcon !== undefined) {
-        await setBooleanValue(ctx, ctx.getItemSlot("Show Potion Icon"), action.showIcon);
+        await setBooleanValue(
+            ctx,
+            ctx.getItemSlot(getActionFieldLabel("APPLY_POTION_EFFECT", "showIcon")),
+            action.showIcon
+        );
     }
 }
 
@@ -418,7 +486,11 @@ async function writeGiveExperienceLevels(
     ctx: TaskContext,
     action: ActionGiveExperienceLevels
 ): Promise<void> {
-    await setStringValue(ctx, ctx.getItemSlot("Levels"), action.amount);
+    await setStringValue(
+        ctx,
+        ctx.getItemSlot(getActionFieldLabel("GIVE_EXPERIENCE_LEVELS", "amount")),
+        action.amount
+    );
 }
 
 async function writeSendToLobby(
@@ -426,7 +498,11 @@ async function writeSendToLobby(
     action: ActionSendToLobby
 ): Promise<void> {
     if (action.lobby !== undefined) {
-        await setSelectValue(ctx, "Location", action.lobby);
+        await setSelectValue(
+            ctx,
+            getActionFieldLabel("SEND_TO_LOBBY", "lobby"),
+            action.lobby
+        );
     }
 }
 
@@ -434,41 +510,61 @@ const VAR_HOLDER_OPTIONS = ["Player", "Global", "Team"] as const;
 
 async function writeChangeVar(ctx: TaskContext, action: ActionChangeVar): Promise<void> {
     if (action.holder) {
-        await setCycleValue(ctx, "Holder", VAR_HOLDER_OPTIONS, action.holder.type);
+        await setCycleValue(
+            ctx,
+            getActionFieldLabel("CHANGE_VAR", "holder"),
+            VAR_HOLDER_OPTIONS,
+            action.holder.type
+        );
     }
 
     if (action.key) {
-        await setStringValue(ctx, ctx.getItemSlot("Variable"), action.key);
+        await setStringValue(
+            ctx,
+            ctx.getItemSlot(getActionFieldLabel("CHANGE_VAR", "key")),
+            action.key
+        );
     }
 
     if (action.op) {
-        await setSelectValue(ctx, "Operation", action.op);
+        await setSelectValue(ctx, getActionFieldLabel("CHANGE_VAR", "op"), action.op);
     }
 
     if (action.value) {
-        await setStringValue(ctx, ctx.getItemSlot("Value"), action.value);
+        await setStringValue(
+            ctx,
+            ctx.getItemSlot(getActionFieldLabel("CHANGE_VAR", "value")),
+            action.value
+        );
     }
 
     if (action.unset !== undefined) {
-        await setBooleanValue(ctx, ctx.getItemSlot("Automatic Unset"), action.unset);
+        await setBooleanValue(
+            ctx,
+            ctx.getItemSlot(getActionFieldLabel("CHANGE_VAR", "unset")),
+            action.unset
+        );
     }
 }
 
 async function writeTeleport(ctx: TaskContext, action: ActionTeleport): Promise<void> {
+    const locationLabel = getActionFieldLabel("TELEPORT", "location");
     if (action.location.type === "Custom Coordinates") {
-        await openSubmenu(ctx, "Location");
+        await openSubmenu(ctx, locationLabel);
         const optionSlot = await getSlotPaginate(ctx, "Custom Coordinates");
         optionSlot.click();
         await enterValue(ctx, action.location.value);
         await waitForMenu(ctx);
     } else {
-        await setSelectValue(ctx, "Location", action.location.type);
+        await setSelectValue(ctx, locationLabel, action.location.type);
     }
 
     if (action.preventTeleportInsideBlocks !== undefined) {
         await setBooleanValue(
             ctx,
-            ctx.getItemSlot("Prevent Teleport Inside Blocks"),
+            ctx.getItemSlot(
+                getActionFieldLabel("TELEPORT", "preventTeleportInsideBlocks")
+            ),
             action.preventTeleportInsideBlocks
         );
     }
@@ -479,30 +575,47 @@ async function writeFailParkour(
     action: ActionFailParkour
 ): Promise<void> {
     if (action.message !== undefined) {
-        await setStringValue(ctx, ctx.getItemSlot("Reason"), action.message);
+        await setStringValue(
+            ctx,
+            ctx.getItemSlot(getActionFieldLabel("FAIL_PARKOUR", "message")),
+            action.message
+        );
     }
 }
 
 async function writePlaySound(ctx: TaskContext, action: ActionPlaySound): Promise<void> {
-    await setSelectValue(ctx, "Sound", action.sound);
+    await setSelectValue(
+        ctx,
+        getActionFieldLabel("PLAY_SOUND", "sound"),
+        action.sound
+    );
 
     if (action.volume !== undefined) {
-        await setNumberValue(ctx, ctx.getItemSlot("Volume"), action.volume);
+        await setNumberValue(
+            ctx,
+            ctx.getItemSlot(getActionFieldLabel("PLAY_SOUND", "volume")),
+            action.volume
+        );
     }
 
     if (action.pitch !== undefined) {
-        await setNumberValue(ctx, ctx.getItemSlot("Pitch"), action.pitch);
+        await setNumberValue(
+            ctx,
+            ctx.getItemSlot(getActionFieldLabel("PLAY_SOUND", "pitch")),
+            action.pitch
+        );
     }
 
     if (action.location !== undefined) {
+        const locationLabel = getActionFieldLabel("PLAY_SOUND", "location");
         if (action.location.type === "Custom Coordinates") {
-            await openSubmenu(ctx, "Location");
+            await openSubmenu(ctx, locationLabel);
             const optionSlot = await getSlotPaginate(ctx, "Custom Coordinates");
             optionSlot.click();
             await enterValue(ctx, action.location.value);
             await waitForMenu(ctx);
         } else {
-            await setSelectValue(ctx, "Location", action.location.type);
+            await setSelectValue(ctx, locationLabel, action.location.type);
         }
     }
 }
@@ -511,14 +624,15 @@ async function writeSetCompassTarget(
     ctx: TaskContext,
     action: ActionSetCompassTarget
 ): Promise<void> {
+    const locationLabel = getActionFieldLabel("SET_COMPASS_TARGET", "location");
     if (action.location.type === "Custom Coordinates") {
-        await openSubmenu(ctx, "Location");
+        await openSubmenu(ctx, locationLabel);
         const optionSlot = await getSlotPaginate(ctx, "Custom Coordinates");
         optionSlot.click();
         await enterValue(ctx, action.location.value);
         await waitForMenu(ctx);
     } else {
-        await setSelectValue(ctx, "Location", action.location.type);
+        await setSelectValue(ctx, locationLabel, action.location.type);
     }
 }
 
@@ -526,23 +640,35 @@ async function writeSetGamemode(
     ctx: TaskContext,
     action: ActionSetGamemode
 ): Promise<void> {
-    await setSelectValue(ctx, "Gamemode", action.gamemode);
+    await setSelectValue(
+        ctx,
+        getActionFieldLabel("SET_GAMEMODE", "gamemode"),
+        action.gamemode
+    );
 }
 
 async function writeChangeHealth(
     ctx: TaskContext,
     action: ActionChangeHealth
 ): Promise<void> {
-    await setSelectValue(ctx, "Mode", action.op);
-    await setStringValue(ctx, ctx.getItemSlot("Health"), action.amount);
+    await setSelectValue(ctx, getActionFieldLabel("CHANGE_HEALTH", "op"), action.op);
+    await setStringValue(
+        ctx,
+        ctx.getItemSlot(getActionFieldLabel("CHANGE_HEALTH", "amount")),
+        action.amount
+    );
 }
 
 async function writeChangeHunger(
     ctx: TaskContext,
     action: ActionChangeHunger
 ): Promise<void> {
-    await setSelectValue(ctx, "Mode", action.op);
-    await setStringValue(ctx, ctx.getItemSlot("Level"), action.amount);
+    await setSelectValue(ctx, getActionFieldLabel("CHANGE_HUNGER", "op"), action.op);
+    await setStringValue(
+        ctx,
+        ctx.getItemSlot(getActionFieldLabel("CHANGE_HUNGER", "amount")),
+        action.amount
+    );
 }
 
 async function readOpenRandom(
@@ -551,7 +677,7 @@ async function readOpenRandom(
     importContext?: ImportContext
 ): Promise<Observed<ActionRandom>> {
     const actions: (Observed<Action> | null)[] = [];
-    ctx.getItemSlot("Actions").click();
+    ctx.getItemSlot(getActionFieldLabel("RANDOM", "actions")).click();
     await waitForMenu(ctx);
     for (const entry of await readActionList(ctx, { kind: "full", importContext })) {
         actions.push(entry.action);
@@ -571,19 +697,23 @@ async function writeRandom(
 ): Promise<void> {
     if (action.actions.length === 0) return;
 
-    ctx.getItemSlot("Actions").click();
+    ctx.getItemSlot(getActionFieldLabel("RANDOM", "actions")).click();
     await waitForMenu(ctx);
     await syncActionList(ctx, action.actions, { importContext });
     await clickGoBack(ctx);
 }
 
 async function writeFunction(ctx: TaskContext, action: ActionFunction): Promise<void> {
-    await setStringValue(ctx, ctx.getItemSlot("Function"), action.function);
+    await setStringValue(
+        ctx,
+        ctx.getItemSlot(getActionFieldLabel("FUNCTION", "function")),
+        action.function
+    );
 
     if (action.global !== undefined) {
         await setBooleanValue(
             ctx,
-            ctx.getItemSlot("Trigger For All Players"),
+            ctx.getItemSlot(getActionFieldLabel("FUNCTION", "global")),
             action.global
         );
     }
@@ -593,30 +723,46 @@ async function writeApplyInventoryLayout(
     ctx: TaskContext,
     action: ActionApplyInventoryLayout
 ): Promise<void> {
-    await setSelectValue(ctx, "Layout", action.layout);
+    await setSelectValue(
+        ctx,
+        getActionFieldLabel("APPLY_INVENTORY_LAYOUT", "layout"),
+        action.layout
+    );
 }
 
 async function writeEnchantHeldItem(
     ctx: TaskContext,
     action: ActionEnchantHeldItem
 ): Promise<void> {
-    await setSelectValue(ctx, "Enchantment", action.enchant);
-    await setNumberValue(ctx, ctx.getItemSlot("Level"), action.level);
+    await setSelectValue(
+        ctx,
+        getActionFieldLabel("ENCHANT_HELD_ITEM", "enchant"),
+        action.enchant
+    );
+    await setNumberValue(
+        ctx,
+        ctx.getItemSlot(getActionFieldLabel("ENCHANT_HELD_ITEM", "level")),
+        action.level
+    );
 }
 
 async function writePause(ctx: TaskContext, action: ActionPauseExecution): Promise<void> {
-    await setNumberValue(ctx, ctx.getItemSlot("Ticks To Wait"), action.ticks);
+    await setNumberValue(
+        ctx,
+        ctx.getItemSlot(getActionFieldLabel("PAUSE", "ticks")),
+        action.ticks
+    );
 }
 
 async function writeSetTeam(ctx: TaskContext, action: ActionSetTeam): Promise<void> {
-    await setSelectValue(ctx, "Team", action.team);
+    await setSelectValue(ctx, getActionFieldLabel("SET_TEAM", "team"), action.team);
 }
 
 async function writeDisplayMenu(
     ctx: TaskContext,
     action: ActionDisplayMenu
 ): Promise<void> {
-    await setSelectValue(ctx, "Menu", action.menu);
+    await setSelectValue(ctx, getActionFieldLabel("SET_MENU", "menu"), action.menu);
 }
 
 async function writeDropItem(
@@ -627,26 +773,27 @@ async function writeDropItem(
 ): Promise<void> {
     await setItemValue(
         ctx,
-        "Item",
-        resolveActionItem(importContext, action.type, action.itemName)
+        getActionFieldLabel("DROP_ITEM", "itemName"),
+        resolveActionItem(importContext, action, action.itemName)
     );
 
     if (action.location !== undefined) {
+        const locationLabel = getActionFieldLabel("DROP_ITEM", "location");
         if (action.location.type === "Custom Coordinates") {
-            await openSubmenu(ctx, "Drop Location");
+            await openSubmenu(ctx, locationLabel);
             const optionSlot = await getSlotPaginate(ctx, "Custom Coordinates");
             optionSlot.click();
             await enterValue(ctx, action.location.value);
             await waitForMenu(ctx);
         } else {
-            await setSelectValue(ctx, "Drop Location", action.location.type);
+            await setSelectValue(ctx, locationLabel, action.location.type);
         }
     }
 
     if (action.dropNaturally !== undefined) {
         await setBooleanValue(
             ctx,
-            ctx.getItemSlot("Drop Naturally"),
+            ctx.getItemSlot(getActionFieldLabel("DROP_ITEM", "dropNaturally")),
             action.dropNaturally
         );
     }
@@ -654,7 +801,7 @@ async function writeDropItem(
     if (action.disableMerging !== undefined) {
         await setBooleanValue(
             ctx,
-            ctx.getItemSlot("Disable Merging"),
+            ctx.getItemSlot(getActionFieldLabel("DROP_ITEM", "disableMerging")),
             action.disableMerging
         );
     }
@@ -662,7 +809,7 @@ async function writeDropItem(
     if (action.despawnDurationTicks !== undefined) {
         await setStringValue(
             ctx,
-            ctx.getItemSlot("Despawn Duration"),
+            ctx.getItemSlot(getActionFieldLabel("DROP_ITEM", "despawnDurationTicks")),
             action.despawnDurationTicks
         );
     }
@@ -670,7 +817,7 @@ async function writeDropItem(
     if (action.pickupDelayTicks !== undefined) {
         await setStringValue(
             ctx,
-            ctx.getItemSlot("Pickup Delay"),
+            ctx.getItemSlot(getActionFieldLabel("DROP_ITEM", "pickupDelayTicks")),
             action.pickupDelayTicks
         );
     }
@@ -678,7 +825,7 @@ async function writeDropItem(
     if (action.prioritizePlayer !== undefined) {
         await setBooleanValue(
             ctx,
-            ctx.getItemSlot("Prioritize Player"),
+            ctx.getItemSlot(getActionFieldLabel("DROP_ITEM", "prioritizePlayer")),
             action.prioritizePlayer
         );
     }
@@ -686,7 +833,7 @@ async function writeDropItem(
     if (action.inventoryFallback !== undefined) {
         await setBooleanValue(
             ctx,
-            ctx.getItemSlot("Inventory Fallback"),
+            ctx.getItemSlot(getActionFieldLabel("DROP_ITEM", "inventoryFallback")),
             action.inventoryFallback
         );
     }
@@ -696,43 +843,73 @@ async function writeSetVelocity(
     ctx: TaskContext,
     action: ActionSetVelocity
 ): Promise<void> {
-    await setStringValue(ctx, ctx.getItemSlot("X Direction"), action.x);
-    await setStringValue(ctx, ctx.getItemSlot("Y Direction"), action.y);
-    await setStringValue(ctx, ctx.getItemSlot("Z Direction"), action.z);
+    await setStringValue(
+        ctx,
+        ctx.getItemSlot(getActionFieldLabel("SET_VELOCITY", "x")),
+        action.x
+    );
+    await setStringValue(
+        ctx,
+        ctx.getItemSlot(getActionFieldLabel("SET_VELOCITY", "y")),
+        action.y
+    );
+    await setStringValue(
+        ctx,
+        ctx.getItemSlot(getActionFieldLabel("SET_VELOCITY", "z")),
+        action.z
+    );
 }
 
 async function writeLaunch(ctx: TaskContext, action: ActionLaunch): Promise<void> {
+    const locationLabel = getActionFieldLabel("LAUNCH", "location");
     if (action.location.type === "Custom Coordinates") {
-        await openSubmenu(ctx, "Target Location");
+        await openSubmenu(ctx, locationLabel);
         const optionSlot = await getSlotPaginate(ctx, "Custom Coordinates");
         optionSlot.click();
         await enterValue(ctx, action.location.value);
         await waitForMenu(ctx);
     } else {
-        await setSelectValue(ctx, "Target Location", action.location.type);
+        await setSelectValue(ctx, locationLabel, action.location.type);
     }
-    await setNumberValue(ctx, ctx.getItemSlot("Launch Strength"), action.strength);
+    await setNumberValue(
+        ctx,
+        ctx.getItemSlot(getActionFieldLabel("LAUNCH", "strength")),
+        action.strength
+    );
 }
 
 async function writeSetPlayerWeather(
     ctx: TaskContext,
     action: ActionSetPlayerWeather
 ): Promise<void> {
-    await setSelectValue(ctx, "Weather", action.weather);
+    await setSelectValue(
+        ctx,
+        getActionFieldLabel("SET_PLAYER_WEATHER", "weather"),
+        action.weather
+    );
 }
 
 async function writeSetPlayerTime(
     ctx: TaskContext,
     action: ActionSetPlayerTime
 ): Promise<void> {
-    await setCycleValue(ctx, "Time", [action.time], action.time);
+    await setCycleValue(
+        ctx,
+        getActionFieldLabel("SET_PLAYER_TIME", "time"),
+        [action.time],
+        action.time
+    );
 }
 
 async function writeToggleNametagDisplay(
     ctx: TaskContext,
     action: ActionToggleNametagDisplay
 ): Promise<void> {
-    await setBooleanValue(ctx, ctx.getItemSlot("Display Nametag"), action.displayNametag);
+    await setBooleanValue(
+        ctx,
+        ctx.getItemSlot(getActionFieldLabel("TOGGLE_NAMETAG_DISPLAY", "displayNametag")),
+        action.displayNametag
+    );
 }
 
 const ACTION_SPECS = {

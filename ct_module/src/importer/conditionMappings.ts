@@ -188,6 +188,24 @@ export function getConditionFieldDefault(type: string, prop: string): unknown {
     return undefined;
 }
 
+/**
+ * Returns the Housing GUI slot label for the given condition type +
+ * property. Mirrors getActionFieldLabel — see that helper for rationale.
+ */
+export function getConditionFieldLabel<T extends Condition["type"]>(
+    type: T,
+    prop: Exclude<keyof Extract<Condition, { type: T }>, "type" | "note" | "inverted">
+): string {
+    const mapping = CONDITION_LORE_MAPPINGS[type];
+    const loreFields = mapping.loreFields as Record<string, { prop: string }>;
+    for (const label in loreFields) {
+        if (loreFields[label].prop === prop) return label;
+    }
+    throw new Error(
+        `No GUI label found for ${type}.${String(prop)} in CONDITION_LORE_MAPPINGS`
+    );
+}
+
 export function tryGetConditionTypeFromDisplayName(
     displayName: string
 ): Condition["type"] | undefined {

@@ -43,6 +43,7 @@ import { ItemSlot, MouseButton } from "../tasks/specifics/slots";
 import { removedFormatting } from "../utils/helpers";
 import {
     CONDITION_LORE_MAPPINGS,
+    getConditionFieldLabel,
     parseConditionListItem,
     tryGetConditionTypeFromDisplayName,
 } from "./conditionMappings";
@@ -105,19 +106,19 @@ function isLimitExceeded(slot: ItemSlot): boolean {
 
 function resolveConditionItem(
     importContext: ImportContext | undefined,
-    conditionType: Condition["type"],
+    condition: Condition,
     itemName: string
 ): Item {
     if (importContext === undefined) {
         throw Diagnostic.error(
-            `Cannot set item "${itemName}" for ${conditionType}: no import context is available.`
+            `Cannot set item "${itemName}" for ${condition.type}: no import context is available.`
         );
     }
 
-    const entry = importContext.items.resolve(itemName);
+    const entry = importContext.items.resolve(itemName, condition);
     if (entry === undefined) {
         throw Diagnostic.error(
-            `Cannot set item "${itemName}" for ${conditionType}: item fields resolve against top-level items[].name.`
+            `Cannot set item "${itemName}" for ${condition.type}: item fields resolve against top-level items[].name or direct .snbt paths.`
         );
     }
 
@@ -191,12 +192,18 @@ export async function readConditionsListPage(
 // lore in the conditions list. Diff importer defaults to relying on the Condition object data
 // passed in from the conditions list but can fallback to reading from the menu if read fxns are impl'd
 async function readRequireGroup(ctx: TaskContext): Promise<ConditionRequireGroup> {
-    const includeHigherGroups =
-        readBooleanValue(ctx.getItemSlot("Include Higher Groups")) ?? false;
+    const groupLabel = getConditionFieldLabel("REQUIRE_GROUP", "group");
+    const includeHigherGroupsLabel = getConditionFieldLabel(
+        "REQUIRE_GROUP",
+        "includeHigherGroups"
+    );
 
-    let group = readStringValue(ctx.getItemSlot("Required Group")) ?? undefined;
+    const includeHigherGroups =
+        readBooleanValue(ctx.getItemSlot(includeHigherGroupsLabel)) ?? false;
+
+    let group = readStringValue(ctx.getItemSlot(groupLabel)) ?? undefined;
     if (!group) {
-        await openSubmenu(ctx, "Required Group");
+        await openSubmenu(ctx, groupLabel);
         const selectedSlot = findMenuOptionByLore(ctx, "Already Selected");
         group = selectedSlot
             ? removedFormatting(selectedSlot.getItem().getName()).trim()
@@ -225,7 +232,7 @@ async function writeRequireGroup(
     current?: ConditionRequireGroup
 ): Promise<void> {
     if (condition.group && condition.group !== current?.group) {
-        await openSubmenu(ctx, "Required Group");
+        await openSubmenu(ctx, getConditionFieldLabel("REQUIRE_GROUP", "group"));
 
         const selectedSlot = findMenuOptionByLore(ctx, "Already Selected");
         const selectedGroup = selectedSlot
@@ -242,7 +249,7 @@ async function writeRequireGroup(
 
     await setBooleanValue(
         ctx,
-        ctx.getItemSlot("Include Higher Groups"),
+        ctx.getItemSlot(getConditionFieldLabel("REQUIRE_GROUP", "includeHigherGroups")),
         condition.includeHigherGroups === true
     );
 }
@@ -252,23 +259,44 @@ async function writeCompareVar(
     condition: ConditionCompareVar
 ): Promise<void> {
     if (condition.holder) {
-        await setCycleValue(ctx, "Holder", VAR_HOLDER_OPTIONS, condition.holder.type);
+        await setCycleValue(
+            ctx,
+            getConditionFieldLabel("COMPARE_VAR", "holder"),
+            VAR_HOLDER_OPTIONS,
+            condition.holder.type
+        );
     }
 
     if (condition.var) {
-        await setStringValue(ctx, ctx.getItemSlot("Variable"), condition.var);
+        await setStringValue(
+            ctx,
+            ctx.getItemSlot(getConditionFieldLabel("COMPARE_VAR", "var")),
+            condition.var
+        );
     }
 
     if (condition.op) {
-        await setSelectValue(ctx, "Comparator", condition.op);
+        await setSelectValue(
+            ctx,
+            getConditionFieldLabel("COMPARE_VAR", "op"),
+            condition.op
+        );
     }
 
     if (condition.amount) {
-        await setStringValue(ctx, ctx.getItemSlot("Compare Value"), condition.amount);
+        await setStringValue(
+            ctx,
+            ctx.getItemSlot(getConditionFieldLabel("COMPARE_VAR", "amount")),
+            condition.amount
+        );
     }
 
     if (condition.fallback) {
-        await setStringValue(ctx, ctx.getItemSlot("Fallback Value"), condition.fallback);
+        await setStringValue(
+            ctx,
+            ctx.getItemSlot(getConditionFieldLabel("COMPARE_VAR", "fallback")),
+            condition.fallback
+        );
     }
 }
 
@@ -277,7 +305,11 @@ async function writeRequirePermission(
     condition: ConditionRequirePermission
 ): Promise<void> {
     if (condition.permission) {
-        await setSelectValue(ctx, "Required Permission", condition.permission);
+        await setSelectValue(
+            ctx,
+            getConditionFieldLabel("REQUIRE_PERMISSION", "permission"),
+            condition.permission
+        );
     }
 }
 
@@ -286,7 +318,11 @@ async function writeIsInRegion(
     condition: ConditionIsInRegion
 ): Promise<void> {
     if (condition.region) {
-        await setSelectValue(ctx, "Region", condition.region);
+        await setSelectValue(
+            ctx,
+            getConditionFieldLabel("IS_IN_REGION", "region"),
+            condition.region
+        );
     }
 }
 
@@ -299,28 +335,32 @@ async function writeRequireItem(
     if (condition.itemName) {
         await setItemValue(
             ctx,
-            "Item",
-            resolveConditionItem(importContext, condition.type, condition.itemName)
+            getConditionFieldLabel("REQUIRE_ITEM", "itemName"),
+            resolveConditionItem(importContext, condition, condition.itemName)
         );
     }
 
     if (condition.whatToCheck) {
         await setCycleValue(
             ctx,
-            "What To Check",
+            getConditionFieldLabel("REQUIRE_ITEM", "whatToCheck"),
             ITEM_PROPERTY_OPTIONS,
             condition.whatToCheck
         );
     }
 
     if (condition.whereToCheck) {
-        await setSelectValue(ctx, "Where To Check", condition.whereToCheck);
+        await setSelectValue(
+            ctx,
+            getConditionFieldLabel("REQUIRE_ITEM", "whereToCheck"),
+            condition.whereToCheck
+        );
     }
 
     if (condition.amount) {
         await setCycleValue(
             ctx,
-            "Required Amount",
+            getConditionFieldLabel("REQUIRE_ITEM", "amount"),
             ITEM_AMOUNT_OPTIONS,
             condition.amount
         );
@@ -332,7 +372,11 @@ async function writeRequirePotionEffect(
     condition: ConditionRequirePotionEffect
 ): Promise<void> {
     if (condition.effect) {
-        await setSelectValue(ctx, "Effect", condition.effect);
+        await setSelectValue(
+            ctx,
+            getConditionFieldLabel("REQUIRE_POTION_EFFECT", "effect"),
+            condition.effect
+        );
     }
 }
 
@@ -341,11 +385,19 @@ async function writeCompareHealth(
     condition: ConditionCompareHealth
 ): Promise<void> {
     if (condition.op) {
-        await setSelectValue(ctx, "Comparator", condition.op);
+        await setSelectValue(
+            ctx,
+            getConditionFieldLabel("COMPARE_HEALTH", "op"),
+            condition.op
+        );
     }
 
     if (condition.amount) {
-        await setStringValue(ctx, ctx.getItemSlot("Compare Value"), condition.amount);
+        await setStringValue(
+            ctx,
+            ctx.getItemSlot(getConditionFieldLabel("COMPARE_HEALTH", "amount")),
+            condition.amount
+        );
     }
 }
 
@@ -354,11 +406,19 @@ async function writeCompareMaxHealth(
     condition: ConditionCompareMaxHealth
 ): Promise<void> {
     if (condition.op) {
-        await setSelectValue(ctx, "Comparator", condition.op);
+        await setSelectValue(
+            ctx,
+            getConditionFieldLabel("COMPARE_MAX_HEALTH", "op"),
+            condition.op
+        );
     }
 
     if (condition.amount) {
-        await setStringValue(ctx, ctx.getItemSlot("Compare Value"), condition.amount);
+        await setStringValue(
+            ctx,
+            ctx.getItemSlot(getConditionFieldLabel("COMPARE_MAX_HEALTH", "amount")),
+            condition.amount
+        );
     }
 }
 
@@ -367,11 +427,19 @@ async function writeCompareHunger(
     condition: ConditionCompareHunger
 ): Promise<void> {
     if (condition.op) {
-        await setSelectValue(ctx, "Comparator", condition.op);
+        await setSelectValue(
+            ctx,
+            getConditionFieldLabel("COMPARE_HUNGER", "op"),
+            condition.op
+        );
     }
 
     if (condition.amount) {
-        await setStringValue(ctx, ctx.getItemSlot("Compare Value"), condition.amount);
+        await setStringValue(
+            ctx,
+            ctx.getItemSlot(getConditionFieldLabel("COMPARE_HUNGER", "amount")),
+            condition.amount
+        );
     }
 }
 
@@ -382,7 +450,7 @@ async function writeRequireGamemode(
     if (condition.gamemode) {
         await setCycleValue(
             ctx,
-            "Required Gamemode",
+            getConditionFieldLabel("REQUIRE_GAMEMODE", "gamemode"),
             GAMEMODE_OPTIONS,
             condition.gamemode
         );
@@ -394,15 +462,27 @@ async function writeComparePlaceholder(
     condition: ConditionComparePlaceholder
 ): Promise<void> {
     if (condition.placeholder) {
-        await setStringValue(ctx, ctx.getItemSlot("Placeholder"), condition.placeholder);
+        await setStringValue(
+            ctx,
+            ctx.getItemSlot(getConditionFieldLabel("COMPARE_PLACEHOLDER", "placeholder")),
+            condition.placeholder
+        );
     }
 
     if (condition.op) {
-        await setSelectValue(ctx, "Comparator", condition.op);
+        await setSelectValue(
+            ctx,
+            getConditionFieldLabel("COMPARE_PLACEHOLDER", "op"),
+            condition.op
+        );
     }
 
     if (condition.amount) {
-        await setStringValue(ctx, ctx.getItemSlot("Compare Value"), condition.amount);
+        await setStringValue(
+            ctx,
+            ctx.getItemSlot(getConditionFieldLabel("COMPARE_PLACEHOLDER", "amount")),
+            condition.amount
+        );
     }
 }
 
@@ -411,7 +491,11 @@ async function writeRequireTeam(
     condition: ConditionRequireTeam
 ): Promise<void> {
     if (condition.team) {
-        await setSelectValue(ctx, "Required Team", condition.team);
+        await setSelectValue(
+            ctx,
+            getConditionFieldLabel("REQUIRE_TEAM", "team"),
+            condition.team
+        );
     }
 }
 
@@ -420,7 +504,11 @@ async function writeDamageCause(
     condition: ConditionDamageCause
 ): Promise<void> {
     if (condition.cause) {
-        await setSelectValue(ctx, "Cause", condition.cause);
+        await setSelectValue(
+            ctx,
+            getConditionFieldLabel("DAMAGE_CAUSE", "cause"),
+            condition.cause
+        );
     }
 }
 
@@ -431,7 +519,7 @@ async function writeFishingEnvironment(
     if (condition.environment) {
         await setCycleValue(
             ctx,
-            "Environment",
+            getConditionFieldLabel("FISHING_ENVIRONMENT", "environment"),
             FISHING_ENVIRONMENT_OPTIONS,
             condition.environment
         );
@@ -443,7 +531,11 @@ async function writePortalType(
     condition: ConditionPortalType
 ): Promise<void> {
     if (condition.portalType) {
-        await setSelectValue(ctx, "Type", condition.portalType);
+        await setSelectValue(
+            ctx,
+            getConditionFieldLabel("PORTAL_TYPE", "portalType"),
+            condition.portalType
+        );
     }
 }
 
@@ -456,8 +548,8 @@ async function writeBlockType(
     if (condition.itemName) {
         await setItemValue(
             ctx,
-            "Item",
-            resolveConditionItem(importContext, condition.type, condition.itemName)
+            getConditionFieldLabel("BLOCK_TYPE", "itemName"),
+            resolveConditionItem(importContext, condition, condition.itemName)
         );
     }
 }
@@ -471,8 +563,8 @@ async function writeIsItem(
     if (condition.itemName) {
         await setItemValue(
             ctx,
-            "Item",
-            resolveConditionItem(importContext, condition.type, condition.itemName)
+            getConditionFieldLabel("IS_ITEM", "itemName"),
+            resolveConditionItem(importContext, condition, condition.itemName)
         );
     }
 }
@@ -482,11 +574,19 @@ async function writeCompareDamage(
     condition: ConditionCompareDamage
 ): Promise<void> {
     if (condition.op) {
-        await setSelectValue(ctx, "Comparator", condition.op);
+        await setSelectValue(
+            ctx,
+            getConditionFieldLabel("COMPARE_DAMAGE", "op"),
+            condition.op
+        );
     }
 
     if (condition.amount) {
-        await setStringValue(ctx, ctx.getItemSlot("Compare Value"), condition.amount);
+        await setStringValue(
+            ctx,
+            ctx.getItemSlot(getConditionFieldLabel("COMPARE_DAMAGE", "amount")),
+            condition.amount
+        );
     }
 }
 

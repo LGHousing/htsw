@@ -363,6 +363,30 @@ export function getActionFieldDefault(type: string, prop: string): unknown {
     return undefined;
 }
 
+/**
+ * Returns the Housing GUI slot label for the given action type + property.
+ * Writers should use this instead of hardcoding labels so the mapping
+ * stays the single source of truth for both reads and writes.
+ *
+ * Throws if the property has no matching label in the mapping — that
+ * almost always means the mapping is missing a field, not that the
+ * caller passed a bad prop, since `prop` is type-checked against the
+ * action's data keys.
+ */
+export function getActionFieldLabel<T extends Action["type"]>(
+    type: T,
+    prop: Exclude<keyof Extract<Action, { type: T }>, "type" | "note">
+): string {
+    const mapping = ACTION_MAPPINGS[type];
+    const loreFields = mapping.loreFields as Record<string, { prop: string }>;
+    for (const label in loreFields) {
+        if (loreFields[label].prop === prop) return label;
+    }
+    throw new Error(
+        `No GUI label found for ${type}.${String(prop)} in ACTION_MAPPINGS`
+    );
+}
+
 export function getNestedListFields(
     type: Action["type"]
 ): { label: string; prop: string }[] {
