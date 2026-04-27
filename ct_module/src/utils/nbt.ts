@@ -76,6 +76,7 @@ export function toMinecraftTag(tag: Tag): any {
 }
 
 const ItemStack = Java.type("net.minecraft.item.ItemStack");
+const JsonToNBT = Java.type("net.minecraft.nbt.JsonToNBT");
 
 export function getItemFromNbt(nbt: Tag): Item {
     const mcTag = toMinecraftTag(normalizeItemNbtColorCodes(nbt));
@@ -83,6 +84,20 @@ export function getItemFromNbt(nbt: Tag): Item {
     // @ts-ignore STUPID TYPEDEF!
     const itemStack = ItemStack.func_77949_a(/*loadItemStackFromNBT*/ mcTag);
 
+    return new Item(itemStack);
+}
+
+/**
+ * Parse a Minecraft SNBT string (the format `Item.getRawNBT()` returns) into
+ * a spawnable Item. Used to materialize cached, post-/edit item snapshots
+ * from `./htsw/.cache/<uuid>/items/<hash>.snbt` for fields like GIVE_ITEM
+ * that need the housing-tagged version of an item, not its raw source NBT.
+ */
+export function getItemFromSnbt(snbt: string): Item {
+    // @ts-ignore STUPID TYPEDEF!
+    const compound = JsonToNBT.func_180713_a(/*parseStringIntoCompound*/ snbt);
+    // @ts-ignore STUPID TYPEDEF!
+    const itemStack = ItemStack.func_77949_a(/*loadItemStackFromNBT*/ compound);
     return new Item(itemStack);
 }
 
