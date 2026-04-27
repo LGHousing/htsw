@@ -4,7 +4,7 @@ import * as common from "htsw-editor-common";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-export { CompletionAdapter } from "./completions";
+export { CompletionAdapter, SnbtCompletionAdapter } from "./completions";
 
 class StringFileLoader implements htsw.FileLoader {
     constructor(private readonly src: string) {}
