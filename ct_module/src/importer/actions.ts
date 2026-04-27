@@ -36,7 +36,10 @@ import type {
 } from "htsw/types";
 
 import TaskContext from "../tasks/context";
-import type { ImportContext } from "../importables/context";
+import {
+    type ItemRegistry,
+    getMemoizedHousingUuid,
+} from "../importables/itemRegistry";
 import {
     clickGoBack,
     waitForMenu,
@@ -54,6 +57,8 @@ import {
 } from "./helpers";
 import { ItemSlot, MouseButton } from "../tasks/specifics/slots";
 import { removedFormatting } from "../utils/helpers";
+import { getItemFromSnbt } from "../utils/nbt";
+import { importableHash } from "../knowledge";
 import { Diagnostic } from "htsw";
 import {
     canonicalizeObservedConditionItemNames,
@@ -110,13 +115,13 @@ type ActionSpec<T extends Action = Action> = {
     read?: (
         ctx: TaskContext,
         propsToRead: NestedPropsToRead,
-        importContext?: ImportContext
+        itemRegistry?: ItemRegistry
     ) => Promise<Observed<T>>;
     write?: (
         ctx: TaskContext,
         desired: T,
         current?: Observed<T>,
-        importContext?: ImportContext
+        itemRegistry?: ItemRegistry
     ) => Promise<void>;
 };
 
@@ -139,25 +144,56 @@ function isLimitExceeded(slot: ItemSlot): boolean {
     return removedFormatting(lastLine) === "You can't have more of this action!";
 }
 
-function resolveActionItem(
-    importContext: ImportContext | undefined,
+async function resolveActionItem(
+    ctx: TaskContext,
+    itemRegistry: ItemRegistry | undefined,
     action: Action,
     itemName: string
-): Item {
-    if (importContext === undefined) {
+): Promise<Item> {
+    if (itemRegistry === undefined) {
         throw new Error(
-            `Cannot set item "${itemName}" for ${action.type}: no import context is available.`
+            `Cannot set item "${itemName}" for ${action.type}: no item registry is available.`
         );
     }
 
-    const entry = importContext.items.resolve(itemName, action);
+    const entry = itemRegistry.resolve(itemName, action);
     if (entry === undefined) {
         throw new Error(
             `Cannot set item "${itemName}" for ${action.type}: item fields resolve against top-level items[].name or direct .snbt paths.`
         );
     }
 
-    return entry.item;
+    // Items that carry click-actions only have their housing-tagged NBT
+    // after a `/edit` round-trip on the item itself, which lives in the
+    // post-import SNBT cache. The raw source NBT in import.json doesn't
+    // include those tags, so spawning that and stuffing it into a
+    // GIVE_ITEM/REMOVE_ITEM/DROP_ITEM field would silently drop the
+    // item's actions. Pull from the cache instead, and refuse if it isn't
+    // there yet — see commandImport which orders ITEM importables first
+    // so this is satisfied by default.
+    const importable = entry.importable;
+    const hasActions =
+        importable !== undefined &&
+        ((importable.leftClickActions !== undefined &&
+            importable.leftClickActions.length > 0) ||
+            (importable.rightClickActions !== undefined &&
+                importable.rightClickActions.length > 0));
+    if (!hasActions) {
+        return entry.item;
+    }
+
+    const uuid = await getMemoizedHousingUuid(ctx, itemRegistry);
+    const hash = importableHash(importable);
+    const cachePath = `./htsw/.cache/${uuid}/items/${hash}.snbt`;
+    if (!FileLib.exists(cachePath)) {
+        throw new Error(
+            `Cannot set item "${itemName}" for ${action.type}: it has click actions but isn't cached at ${cachePath}. ` +
+                `Declare the item as a top-level importable in the same import.json so it imports first, ` +
+                `or run /import on it before whatever references it.`
+        );
+    }
+    const snbt = String(FileLib.read(cachePath));
+    return getItemFromSnbt(snbt);
 }
 
 const ACTION_LIST_CONFIG: PaginatedListConfig = {
@@ -201,7 +237,7 @@ async function getActionSlotAtIndex(
 async function readOpenConditional(
     ctx: TaskContext,
     propsToRead: NestedPropsToRead,
-    importContext?: ImportContext
+    itemRegistry?: ItemRegistry
 ): Promise<Observed<ActionConditional>> {
     const conditionsLabel = getActionFieldLabel("CONDITIONAL", "conditions");
     const matchAnyLabel = getActionFieldLabel("CONDITIONAL", "matchAny");
@@ -212,7 +248,7 @@ async function readOpenConditional(
     if (propsToRead.has("conditions")) {
         ctx.getItemSlot(conditionsLabel).click();
         await waitForMenu(ctx);
-        conditions = (await readConditionList(ctx, { importContext })).map(
+        conditions = (await readConditionList(ctx, { itemRegistry })).map(
             (entry) => entry.condition
         );
         await clickGoBack(ctx);
@@ -226,7 +262,7 @@ async function readOpenConditional(
         await waitForMenu(ctx);
         for (const entry of await readActionList(ctx, {
             kind: "full",
-            importContext,
+            itemRegistry,
         })) {
             ifActions.push(entry.action);
         }
@@ -239,7 +275,7 @@ async function readOpenConditional(
         await waitForMenu(ctx);
         for (const entry of await readActionList(ctx, {
             kind: "full",
-            importContext,
+            itemRegistry,
         })) {
             elseActions.push(entry.action);
         }
@@ -259,13 +295,13 @@ async function writeConditional(
     ctx: TaskContext,
     action: ActionConditional,
     current?: Observed<ActionConditional>,
-    importContext?: ImportContext
+    itemRegistry?: ItemRegistry
 ): Promise<void> {
     if (action.conditions.length > 0 || (current?.conditions?.length ?? 0) > 0) {
         ctx.getItemSlot(getActionFieldLabel("CONDITIONAL", "conditions")).click();
         await waitForMenu(ctx);
 
-        await syncConditionList(ctx, action.conditions, { importContext });
+        await syncConditionList(ctx, action.conditions, { itemRegistry });
         await clickGoBack(ctx);
     }
 
@@ -278,14 +314,14 @@ async function writeConditional(
     if (action.ifActions.length > 0 || (current?.ifActions?.length ?? 0) > 0) {
         ctx.getItemSlot(getActionFieldLabel("CONDITIONAL", "ifActions")).click();
         await waitForMenu(ctx);
-        await syncActionList(ctx, action.ifActions, { importContext });
+        await syncActionList(ctx, action.ifActions, { itemRegistry });
         await clickGoBack(ctx);
     }
 
     if (action.elseActions.length > 0 || (current?.elseActions?.length ?? 0) > 0) {
         ctx.getItemSlot(getActionFieldLabel("CONDITIONAL", "elseActions")).click();
         await waitForMenu(ctx);
-        await syncActionList(ctx, action.elseActions, { importContext });
+        await syncActionList(ctx, action.elseActions, { itemRegistry });
         await clickGoBack(ctx);
     }
 }
@@ -374,12 +410,12 @@ async function writeGiveItem(
     ctx: TaskContext,
     action: ActionGiveItem,
     _current?: Observed<ActionGiveItem>,
-    importContext?: ImportContext
+    itemRegistry?: ItemRegistry
 ): Promise<void> {
     await setItemValue(
         ctx,
         getActionFieldLabel("GIVE_ITEM", "itemName"),
-        resolveActionItem(importContext, action, action.itemName)
+        await resolveActionItem(ctx, itemRegistry, action, action.itemName)
     );
 
     if (action.allowMultiple !== undefined) {
@@ -411,13 +447,13 @@ async function writeRemoveItem(
     ctx: TaskContext,
     action: ActionRemoveItem,
     _current?: Observed<ActionRemoveItem>,
-    importContext?: ImportContext
+    itemRegistry?: ItemRegistry
 ): Promise<void> {
     if (action.itemName !== undefined) {
         await setItemValue(
             ctx,
             getActionFieldLabel("REMOVE_ITEM", "itemName"),
-            resolveActionItem(importContext, action, action.itemName)
+            await resolveActionItem(ctx, itemRegistry, action, action.itemName)
         );
     }
 }
@@ -674,12 +710,12 @@ async function writeChangeHunger(
 async function readOpenRandom(
     ctx: TaskContext,
     propsToRead: NestedPropsToRead,
-    importContext?: ImportContext
+    itemRegistry?: ItemRegistry
 ): Promise<Observed<ActionRandom>> {
     const actions: (Observed<Action> | null)[] = [];
     ctx.getItemSlot(getActionFieldLabel("RANDOM", "actions")).click();
     await waitForMenu(ctx);
-    for (const entry of await readActionList(ctx, { kind: "full", importContext })) {
+    for (const entry of await readActionList(ctx, { kind: "full", itemRegistry })) {
         actions.push(entry.action);
     }
     await clickGoBack(ctx);
@@ -693,13 +729,13 @@ async function writeRandom(
     ctx: TaskContext,
     action: ActionRandom,
     _current?: Observed<ActionRandom>,
-    importContext?: ImportContext
+    itemRegistry?: ItemRegistry
 ): Promise<void> {
     if (action.actions.length === 0) return;
 
     ctx.getItemSlot(getActionFieldLabel("RANDOM", "actions")).click();
     await waitForMenu(ctx);
-    await syncActionList(ctx, action.actions, { importContext });
+    await syncActionList(ctx, action.actions, { itemRegistry });
     await clickGoBack(ctx);
 }
 
@@ -769,12 +805,12 @@ async function writeDropItem(
     ctx: TaskContext,
     action: ActionDropItem,
     _current?: Observed<ActionDropItem>,
-    importContext?: ImportContext
+    itemRegistry?: ItemRegistry
 ): Promise<void> {
     await setItemValue(
         ctx,
         getActionFieldLabel("DROP_ITEM", "itemName"),
-        resolveActionItem(importContext, action, action.itemName)
+        await resolveActionItem(ctx, itemRegistry, action, action.itemName)
     );
 
     if (action.location !== undefined) {
@@ -1207,8 +1243,8 @@ export async function readActionList(
             ? buildFullHydrationPlan(observed)
             : createNestedHydrationPlan(observed, mode.desired);
     addScalarHydrationEntries(plan, observed);
-    await hydrateNestedActions(ctx, plan, observed.length, mode.importContext);
-    canonicalizeObservedActionItemNames(observed, mode.importContext);
+    await hydrateNestedActions(ctx, plan, observed.length, mode.itemRegistry);
+    canonicalizeObservedActionItemNames(observed, mode.itemRegistry);
 
     await goToActionPage(ctx, 1);
     return observed;
@@ -1251,22 +1287,22 @@ function buildFullHydrationPlan(
 
 function canonicalizeObservedActionItemNames(
     observed: readonly ObservedActionSlot[],
-    importContext?: ImportContext
+    itemRegistry?: ItemRegistry
 ): void {
-    if (importContext === undefined) {
+    if (itemRegistry === undefined) {
         return;
     }
 
     for (const entry of observed) {
         if (entry.action !== null) {
-            canonicalizeActionItemName(entry.action, importContext);
+            canonicalizeActionItemName(entry.action, itemRegistry);
         }
     }
 }
 
 function canonicalizeActionItemName(
     action: Observed<Action> | Action,
-    importContext: ImportContext
+    itemRegistry: ItemRegistry
 ): void {
     if (
         action.type === "GIVE_ITEM" ||
@@ -1274,22 +1310,22 @@ function canonicalizeActionItemName(
         action.type === "DROP_ITEM"
     ) {
         if (action.itemName !== undefined) {
-            action.itemName = importContext.items.canonicalizeObservedName(
+            action.itemName = itemRegistry.canonicalizeObservedName(
                 action.itemName
             );
         }
     }
 
     if (action.type === "CONDITIONAL") {
-        canonicalizeObservedConditionItemNames(action.conditions, importContext);
+        canonicalizeObservedConditionItemNames(action.conditions, itemRegistry);
         for (const nested of action.ifActions) {
             if (nested !== null) {
-                canonicalizeActionItemName(nested, importContext);
+                canonicalizeActionItemName(nested, itemRegistry);
             }
         }
         for (const nested of action.elseActions) {
             if (nested !== null) {
-                canonicalizeActionItemName(nested, importContext);
+                canonicalizeActionItemName(nested, itemRegistry);
             }
         }
     }
@@ -1297,7 +1333,7 @@ function canonicalizeActionItemName(
     if (action.type === "RANDOM") {
         for (const nested of action.actions) {
             if (nested !== null) {
-                canonicalizeActionItemName(nested, importContext);
+                canonicalizeActionItemName(nested, itemRegistry);
             }
         }
     }
@@ -1307,10 +1343,10 @@ async function hydrateNestedActions(
     ctx: TaskContext,
     plan: NestedHydrationPlan,
     listLength: number,
-    importContext?: ImportContext
+    itemRegistry?: ItemRegistry
 ): Promise<void> {
     for (const [entry, propsToRead] of plan) {
-        await hydrateNestedAction(ctx, entry, propsToRead, listLength, importContext);
+        await hydrateNestedAction(ctx, entry, propsToRead, listLength, itemRegistry);
     }
 }
 
@@ -1319,7 +1355,7 @@ async function hydrateNestedAction(
     entry: ObservedActionSlot,
     propsToRead: NestedPropsToRead,
     listLength: number,
-    importContext?: ImportContext
+    itemRegistry?: ItemRegistry
 ): Promise<void> {
     if (entry.action === null) {
         return;
@@ -1339,7 +1375,7 @@ async function hydrateNestedAction(
             throw new Error(`Reading action "${entry.action.type}" is not implemented.`);
         }
 
-        entry.action = await spec.read(ctx, propsToRead, importContext);
+        entry.action = await spec.read(ctx, propsToRead, itemRegistry);
         entry.nestedReadState = "full";
         if (note) {
             entry.action.note = note;
@@ -1359,7 +1395,7 @@ async function writeOpenAction(
     ctx: TaskContext,
     desired: Action,
     current?: Observed<Action>,
-    importContext?: ImportContext
+    itemRegistry?: ItemRegistry
 ): Promise<void> {
     const spec = getActionSpec(desired.type);
     // When adding new actions, read the current values to avoid
@@ -1367,14 +1403,14 @@ async function writeOpenAction(
     let resolvedCurrent = current;
 
     if (resolvedCurrent === undefined && spec.read) {
-        resolvedCurrent = await spec.read(ctx, new Set(), importContext);
+        resolvedCurrent = await spec.read(ctx, new Set(), itemRegistry);
     }
 
     if (!spec.write) {
         throw new Error(`Writing action "${desired.type}" is not implemented.`);
     }
 
-    await spec.write(ctx, desired, resolvedCurrent, importContext);
+    await spec.write(ctx, desired, resolvedCurrent, itemRegistry);
 }
 
 async function deleteObservedAction(
@@ -1427,7 +1463,7 @@ async function moveActionToIndex(
 export async function importAction(
     ctx: TaskContext,
     action: Action,
-    importContext?: ImportContext
+    itemRegistry?: ItemRegistry
 ): Promise<void> {
     ctx.getItemSlot("Add Action").click();
     await waitForMenu(ctx);
@@ -1447,7 +1483,7 @@ export async function importAction(
     // No-field actions (e.g. Kill Player, Exit) add directly to the list
     // without opening an editor.
     if (spec.write) {
-        await writeOpenAction(ctx, action, undefined, importContext);
+        await writeOpenAction(ctx, action, undefined, itemRegistry);
         await clickGoBack(ctx);
     }
 
@@ -1464,7 +1500,7 @@ async function applyActionListDiff(
     ctx: TaskContext,
     observed: ObservedActionSlot[],
     diff: ActionListDiff,
-    importContext?: ImportContext
+    itemRegistry?: ItemRegistry
 ): Promise<void> {
     if (diff.operations.length === 0) return;
 
@@ -1546,7 +1582,7 @@ async function applyActionListDiff(
                 );
             }
 
-            await writeOpenAction(ctx, op.desired, op.observed.action, importContext);
+            await writeOpenAction(ctx, op.desired, op.observed.action, itemRegistry);
             await clickGoBack(ctx);
         }
 
@@ -1577,7 +1613,7 @@ async function applyActionListDiff(
                 ? op.desired
                 : ({ ...op.desired, note: undefined } as Action);
 
-        await importAction(ctx, actionToImport, importContext);
+        await importAction(ctx, actionToImport, itemRegistry);
         await moveActionToIndex(ctx, currentLength, op.toIndex, currentLength + 1);
 
         const insertedAction: ObservedActionSlot = {
@@ -1761,7 +1797,7 @@ export type SyncActionListOptions = {
      * before.
      */
     observed?: ObservedActionSlot[];
-    importContext?: ImportContext;
+    itemRegistry?: ItemRegistry;
 };
 
 export type SyncActionListResult = {
@@ -1783,12 +1819,12 @@ export async function syncActionList(
         (await readActionList(ctx, {
             kind: "sync",
             desired,
-            importContext: options?.importContext,
+            itemRegistry: options?.itemRegistry,
         }));
-    canonicalizeObservedActionItemNames(observed, options?.importContext);
+    canonicalizeObservedActionItemNames(observed, options?.itemRegistry);
     const diff = diffActionList(observed, desired);
     logSyncState(ctx, diff);
     logSyncDebug(ctx, diff);
-    await applyActionListDiff(ctx, observed, diff, options?.importContext);
+    await applyActionListDiff(ctx, observed, diff, options?.itemRegistry);
     return { usedObserved: observed };
 }
