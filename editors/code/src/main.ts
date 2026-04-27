@@ -41,6 +41,16 @@ export function activate() {
             )
         );
 
+        providers.push(
+            languages.registerCodeActionsProvider(
+                "snbt",
+                new languageFeatures.SnbtCodeActionAdapter(),
+                {
+                    providedCodeActionKinds: languageFeatures.SnbtCodeActionAdapter.providedCodeActionKinds,
+                }
+            )
+        );
+
         let lastTextChangeAt = 0;
         let lastSelectionMutationAt = 0;
         providers.push(

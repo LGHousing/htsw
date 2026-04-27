@@ -3,6 +3,8 @@ import * as htsw from "htsw";
 import * as common from "htsw-editor-common";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { computeBestLayout } from "./loreLineLayout";
+import { findLoreStrings, type LoreStringMatch } from "./snbtLoreScanner";
 
 export { CompletionAdapter, SnbtCompletionAdapter } from "./completions";
 
@@ -422,6 +424,101 @@ export class DiagnosticsAdapter {
                 return vscode.DiagnosticSeverity.Hint;
         }
     }
+}
+
+// --- code actions ---
+
+export class SnbtCodeActionAdapter implements vscode.CodeActionProvider {
+    public static readonly providedCodeActionKinds = [
+        vscode.CodeActionKind.RefactorRewrite,
+    ];
+
+    public provideCodeActions(
+        document: vscode.TextDocument,
+        range: vscode.Range | vscode.Selection,
+        _context: vscode.CodeActionContext,
+        _token: vscode.CancellationToken,
+    ): vscode.ProviderResult<vscode.CodeAction[]> {
+        if (document.languageId !== "snbt") return [];
+
+        const config = vscode.workspace.getConfiguration("htsw", document.uri);
+        if (!config.get<boolean>("snbt.suggestLoreSplitting", false)) return [];
+        const maxWidth = Math.max(8, config.get<number>("snbt.loreLineMaxWidth", 40));
+
+        const text = document.getText();
+        const matches = findLoreStrings(text);
+        if (matches.length === 0) return [];
+
+        const cursorOffset = document.offsetAt(range.start);
+        const target = pickTarget(matches, cursorOffset);
+        if (!target) return [];
+
+        const layout = computeBestLayout(target.value, { maxLength: maxWidth });
+        if (!layout.includes("\n")) return [];
+
+        const lines = layout.split("\n");
+        const quoted = lines.map((line) => quoteSnbtString(line, target.quote));
+
+        const editRange = new vscode.Range(
+            document.positionAt(target.start),
+            document.positionAt(target.end),
+        );
+
+        // If the original string sits alone on its own line (only whitespace
+        // before, only optional comma + whitespace after), put each split
+        // entry on its own line at the same indent — matches how
+        // multi-entry Lore arrays are typically formatted by hand. Otherwise
+        // fall back to inline `, ` so we don't mangle a one-liner Lore.
+        const startLineText = document.lineAt(editRange.start.line).text;
+        const endLineText = document.lineAt(editRange.end.line).text;
+        const prefixBeforeString = startLineText.slice(0, editRange.start.character);
+        const suffixAfterString = endLineText.slice(editRange.end.character);
+        const stringIsAlone =
+            editRange.start.line === editRange.end.line &&
+            /^\s*$/.test(prefixBeforeString) &&
+            /^\s*,?\s*$/.test(suffixAfterString);
+
+        const separator = stringIsAlone ? `,\n${prefixBeforeString}` : ", ";
+        const replacement = quoted.join(separator);
+
+        const action = new vscode.CodeAction(
+            `Split lore line for optimal display (→ ${lines.length} lines)`,
+            vscode.CodeActionKind.RefactorRewrite,
+        );
+        action.edit = new vscode.WorkspaceEdit();
+        action.edit.replace(document.uri, editRange, replacement);
+
+        return [action];
+    }
+}
+
+function pickTarget(
+    matches: LoreStringMatch[],
+    cursorOffset: number,
+): LoreStringMatch | undefined {
+    // Prefer the string the cursor is actually inside (between the quotes,
+    // inclusive of the quote chars themselves so a click on the opening
+    // quote still triggers the action).
+    return matches.find(
+        (m) => cursorOffset >= m.start && cursorOffset <= m.end,
+    );
+}
+
+function quoteSnbtString(text: string, quote: '"' | "'"): string {
+    // Re-escape the same way the SNBT lexer reads it: backslash and the
+    // chosen quote char need a leading backslash; control chars get the
+    // standard \n / \r / \t shorthands so the output stays human-readable
+    // and round-trips through the lexer's decodeEscape.
+    let escaped = "";
+    for (const ch of text) {
+        if (ch === "\\") escaped += "\\\\";
+        else if (ch === quote) escaped += "\\" + quote;
+        else if (ch === "\n") escaped += "\\n";
+        else if (ch === "\r") escaped += "\\r";
+        else if (ch === "\t") escaped += "\\t";
+        else escaped += ch;
+    }
+    return quote + escaped + quote;
 }
 
 // --- hover ---

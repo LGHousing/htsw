@@ -89,6 +89,17 @@
                     },
                     "default": [],
                     "description": "Workspace-relative folder prefixes to exclude from HTSW diagnostics."
+                },
+                "htsw.snbt.suggestLoreSplitting": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Offer a code action to split long Lore strings into optimally-sized lines for Minecraft tooltips. When the cursor is on a string inside a Lore: [...] list, a 'Split lore line for optimal display' refactor becomes available."
+                },
+                "htsw.snbt.loreLineMaxWidth": {
+                    "type": "number",
+                    "default": 40,
+                    "minimum": 8,
+                    "description": "Max unformatted character width per Lore line when applying 'Split lore line for optimal display'. Format codes (&a, &7, etc.) are not counted; placeholders like %player.name% are treated as 4-character tokens."
                 }
             }
         },
