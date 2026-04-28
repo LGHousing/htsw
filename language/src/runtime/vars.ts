@@ -339,9 +339,12 @@ export function parseValue(runtime: Runtime, value: string): Var<any> {
 
     if (value.startsWith("%") && value.endsWith("%") && value.length > 2) {
         const content = value.substring(1, value.length - 1);
-        const resolved = runtime.runPlaceholder(content);
+        let resolved = runtime.runPlaceholder(content);
         if (!resolved) {
             throw new Error(`Placeholder "${content}" could not be resolved.`);
+        }
+        if (resolved instanceof VarString) {
+            resolved = parseString(runtime, resolved.value);
         }
         return resolved;
     }
