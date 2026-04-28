@@ -89,6 +89,12 @@ const defaultBehaviorRandom: ActionBehavior<"RANDOM"> = (rt, action) => {
 const defaultBehaviorConditional: ActionBehavior<"CONDITIONAL"> = (rt, action) => {
     if (!action.conditions || action.matchAny === undefined || !action.ifActions) return;
 
+    // We always run ifActions if there are no conditions.
+    if (action.conditions.length === 0) {
+        rt.runActions(action.ifActions, true);
+        return;
+    }
+    
     let matches = 0;
     for (const condition of action.conditions) {
         if (rt.runCondition(condition)) matches++;
