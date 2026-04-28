@@ -5,16 +5,20 @@ import { Span } from "../../span";
 import {
     parseNumericValue,
     parseComparison,
+    parseDamageCause,
+    parseFishingEnvironment,
     parseGamemode,
     parseItemLocation,
     parseItemProperty,
     parsePermission,
+    parsePortalType,
     parsePotionEffect,
     parseVarName,
     parseValue,
     parseItemAmount,
 } from "./arguments";
-import { parseNumericalPlaceholder } from "./placeholders";
+import { parseAnyPlaceholder } from "./placeholders";
+import { getPlaceholderValueTypeFromValue } from "../../types";
 import { type ConditionKw } from "./helpers";
 
 type Inverted = { value: boolean; span: Span };
@@ -57,7 +61,7 @@ function setConditionMeta<T extends { inverted?: boolean; note?: string }>(
         setFieldWithSpan(p, condition, "inverted", true, inverted.span);
     }
     if (note) {
-        setFieldWithSpan(p, condition, "note", note.value, note.span);
+        setFieldWithSpan(p, condition, "note", note.value.trim(), note.span);
     }
 }
 
@@ -90,6 +94,8 @@ export function parseCondition(p: Parser): Condition {
         return parseSimpleCondition(p, "IS_DOING_PARKOUR", inverted, note);
     } else if (eatKw("hasPotion")) {
         return parseConditionRequirePotionEffect(p, inverted, note);
+    } else if (eatKw("isItem")) {
+        return parseConditionIsItem(p, inverted, note);
     } else if (eatKw("isSneaking")) {
         return parseSimpleCondition(p, "IS_SNEAKING", inverted, note);
     } else if (eatKw("isFlying")) {
@@ -100,6 +106,10 @@ export function parseCondition(p: Parser): Condition {
         return parseConditionCompareMaxHealth(p, inverted, note);
     } else if (eatKw("hunger")) {
         return parseConditionCompareHunger(p, inverted, note);
+    } else if (eatKw("portal")) {
+        return parseConditionPortalType(p, inverted, note);
+    } else if (eatKw("canPvp")) {
+        return parseSimpleCondition(p, "PVP_ENABLED", inverted, note);
     } else if (eatKw("gamemode")) {
         return parseConditionRequireGamemode(p, inverted, note);
     } else if (eatKw("placeholder")) {
@@ -108,8 +118,14 @@ export function parseCondition(p: Parser): Condition {
         return parseConditionRequireTeam(p, inverted, note);
     } else if (eatKw("teamvar") || eatKw("teamstat")) {
         return parseConditionCompareTeamVar(p, inverted, note);
+    } else if (eatKw("blockType")) {
+        return parseConditionBlockType(p, inverted, note);
     } else if (eatKw("damageAmount")) {
         return parseConditionCompareDamage(p, inverted, note);
+    } else if (eatKw("damageCause")) {
+        return parseConditionDamageCause(p, inverted, note);
+    } else if (eatKw("fishingEnv")) {
+        return parseConditionFishingEnvironment(p, inverted, note);
     }
 
     if (p.check("ident")) {
@@ -175,7 +191,7 @@ function parseConditionCompareVar(
     note: Note
 ): Condition {
     return parseConditionRecovering(p, "COMPARE_VAR", inverted, note, (condition) => {
-        setFieldWithSpan(p, condition, "holder", { type: "player" }, p.prev.span);
+        setFieldWithSpan(p, condition, "holder", { type: "Player" }, p.prev.span);
         setField(p, condition, "var", parseVarName);
         setField(p, condition, "op", parseComparison);
         setField(p, condition, "amount", parseValue);
@@ -190,7 +206,7 @@ function parseConditionCompareGlobalVar(
     note: Note
 ): Condition {
     return parseConditionRecovering(p, "COMPARE_VAR", inverted, note, (condition) => {
-        setFieldWithSpan(p, condition, "holder", { type: "global" }, p.prev.span);
+        setFieldWithSpan(p, condition, "holder", { type: "Global" }, p.prev.span);
         setField(p, condition, "var", parseVarName);
         setField(p, condition, "op", parseComparison);
         setField(p, condition, "amount", parseValue);
@@ -232,8 +248,11 @@ function parseConditionRequireItem(
 ): Condition {
     return parseConditionRecovering(p, "REQUIRE_ITEM", inverted, note, (condition) => {
         setField(p, condition, "itemName", p.parseName);
+        if (checkEnd(p)) return;
         setField(p, condition, "whatToCheck", parseItemProperty);
+        if (checkEnd(p)) return;
         setField(p, condition, "whereToCheck", parseItemLocation);
+        if (checkEnd(p)) return;
         setField(p, condition, "amount", parseItemAmount);
     });
 }
@@ -320,9 +339,42 @@ function parseConditionComparePlaceholder(
         inverted,
         note,
         (condition) => {
-            setField(p, condition, "placeholder", parseNumericalPlaceholder);
+            setField(p, condition, "placeholder", parseAnyPlaceholder);
+
+            // Look up the placeholder's value type so we can drive amount
+            // parsing and validate the comparison op. Unknown placeholders
+            // (yields undefined) fall back to numeric behaviour.
+            const placeholderType = condition.placeholder
+                ? getPlaceholderValueTypeFromValue(condition.placeholder)
+                : undefined;
+
             setField(p, condition, "op", parseComparison);
-            setField(p, condition, "amount", parseNumericValue);
+
+            // Cross-field validation: string placeholders only support equality.
+            // Non-fatal so we keep parsing the remaining fields.
+            if (
+                placeholderType === "string" &&
+                condition.op !== undefined &&
+                condition.op !== "Equal"
+            ) {
+                p.gcx.addDiagnostic(
+                    Diagnostic.error("String placeholders can only be compared with ==")
+                        .addPrimarySpan(p.gcx.spans.getField(condition, "op"), "Use ==")
+                        .addSecondarySpan(
+                            p.gcx.spans.getField(condition, "placeholder"),
+                            "Returns a string",
+                        ),
+                );
+            }
+
+            // String placeholders allow string/placeholder amounts; numeric
+            // (and unknown) placeholders fall through to the numeric parser.
+            const amountParser =
+                placeholderType === "string" ? parseValue : parseNumericValue;
+            setField(p, condition, "amount", amountParser);
+
+            if (checkEnd(p)) return;
+            setField(p, condition, "fallback", parseValue);
         }
     );
 }
@@ -346,12 +398,68 @@ function parseConditionCompareTeamVar(
         setField(p, condition, "var", parseVarName);
         const teamSpan = p.token.span;
         const team = p.parseName();
-        const holder = { type: "team", team } as const;
+        const holder = { type: "Team", team } as const;
         setFieldWithSpan(p, condition, "holder", holder, teamSpan.to(p.prev.span));
         setField(p, condition, "op", parseComparison);
         setField(p, condition, "amount", parseValue);
         if (checkEnd(p)) return;
         setField(p, condition, "fallback", parseValue);
+    });
+}
+
+function parseConditionBlockType(
+    p: Parser,
+    inverted: Inverted,
+    note: Note
+): Condition {
+    return parseConditionRecovering(p, "BLOCK_TYPE", inverted, note, (condition) => {
+        setField(p, condition, "itemName", p.parseName);
+    });
+}
+
+function parseConditionDamageCause(
+    p: Parser,
+    inverted: Inverted,
+    note: Note
+): Condition {
+    return parseConditionRecovering(p, "DAMAGE_CAUSE", inverted, note, (condition) => {
+        setField(p, condition, "cause", parseDamageCause);
+    });
+}
+
+function parseConditionFishingEnvironment(
+    p: Parser,
+    inverted: Inverted,
+    note: Note
+): Condition {
+    return parseConditionRecovering(
+        p,
+        "FISHING_ENVIRONMENT",
+        inverted,
+        note,
+        (condition) => {
+            setField(p, condition, "environment", parseFishingEnvironment);
+        }
+    );
+}
+
+function parseConditionIsItem(
+    p: Parser,
+    inverted: Inverted,
+    note: Note
+): Condition {
+    return parseConditionRecovering(p, "IS_ITEM", inverted, note, (condition) => {
+        setField(p, condition, "itemName", p.parseName);
+    });
+}
+
+function parseConditionPortalType(
+    p: Parser,
+    inverted: Inverted,
+    note: Note
+): Condition {
+    return parseConditionRecovering(p, "PORTAL_TYPE", inverted, note, (condition) => {
+        setField(p, condition, "portalType", parsePortalType);
     });
 }
 
@@ -365,3 +473,6 @@ function parseConditionCompareDamage(
         setField(p, condition, "amount", parseNumericValue);
     });
 }
+
+
+

@@ -61,7 +61,7 @@ function parseString(tcx: TyCtxt, value: string): VarState | undefined {
 
 function parsePlaceholder(tcx: TyCtxt, placeholder: string): VarState | undefined {
     const pivotIndex = placeholder.indexOf("/");
-    const name = pivotIndex === -1 ? placeholder : placeholder.substring(0, pivotIndex);
+    const name = (pivotIndex === -1 ? placeholder : placeholder.substring(0, pivotIndex)).toLowerCase();
     const argsString = pivotIndex === -1 ? "" : placeholder.substring(pivotIndex + 1);
 
     let args: string[] = [];
@@ -163,6 +163,7 @@ export function runPlaceholder(tcx: TyCtxt, name: string, ...args: string[]): Va
             return unknownLong();
         case "date.unix.ms":
             return unknownLong();
+        case "random.int":
         case "random.whole":
             if (args.length === 0) {
                 return longRange(Long.fromNumber(0), Long.fromNumber(100000));
@@ -186,7 +187,7 @@ export function runPlaceholder(tcx: TyCtxt, name: string, ...args: string[]): Va
 
             return doubleRange(Number(args[0]), Number(args[1]));
         case "var.player":
-            const pkey = { holder: { type: "player" }, key: args[0] } as const;
+            const pkey = { holder: { type: "Player" }, key: args[0] } as const;
 
             if (tcx.hasState(pkey)) {
                 return tcx.getState(pkey)!;
@@ -194,7 +195,7 @@ export function runPlaceholder(tcx: TyCtxt, name: string, ...args: string[]): Va
                 return undefined;
             }
         case "var.global":
-            const gkey = { holder: { type: "global" }, key: args[0] } as const;
+            const gkey = { holder: { type: "Global" }, key: args[0] } as const;
 
             if (tcx.hasState(gkey)) {
                 return tcx.getState(gkey)!;
@@ -202,7 +203,7 @@ export function runPlaceholder(tcx: TyCtxt, name: string, ...args: string[]): Va
                 return undefined;
             }
         case "var.team":
-            const tkey = { holder: { type: "team", team: args[1] }, key: args[0] } as const;
+            const tkey = { holder: { type: "Team", team: args[1] }, key: args[0] } as const;
             
             if (tcx.hasState(tkey)) {
                 return tcx.getState(tkey)!;

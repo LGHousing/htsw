@@ -20,6 +20,7 @@ export * as helpers from "./helpers"
 export * as htsl from "./htsl";
 export * as importjson from "./importjson";
 export * as nbt from "./nbt";
+export * as items from "./items";
 export * as runtime from "./runtime";
 
 export const VERSION = "v0.0.1-beta";
@@ -59,7 +60,9 @@ export function parseImportablesResult(
 ): ParseResult<Importable[]> {
     const gcx = new GlobalCtxt(sm, path);
     parseImportJson(gcx, path);
-    check(gcx);
+    if (!gcx.isFailed()) {
+        check(gcx);
+    }
     return {
         value: gcx.importables,
         spans: gcx.spans,

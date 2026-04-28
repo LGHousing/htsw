@@ -1,0 +1,1037 @@
+import * as vscode from "vscode";
+import * as htsw from "htsw";
+import { basename, dirname, relative } from "node:path";
+
+type CompletionKind =
+    | "action"
+    | "condition"
+    | "constant"
+    | "operator"
+    | "placeholder"
+    | "item"
+    | "sound"
+    | "snippet";
+
+const ITEM_COMPLETION_PROBE = "__htsw_item_completion_probe__";
+const ITEM_COMPLETION_CACHE_TTL_MS = 10000;
+
+const itemCompletionCache = new Map<
+    string,
+    { expiresAt: number; completions: CompletionSpec[] }
+>();
+
+const ACTION_SNIPPETS: Record<string, string> = {
+    if: "if ${1|and,or,true,false|} (${2}) {\n\t${3}\n}",
+    tp: "tp custom_coordinates \"${1}\"",
+};
+
+export class CompletionAdapter implements vscode.CompletionItemProvider {
+    public async provideCompletionItems(
+        document: vscode.TextDocument,
+        position: vscode.Position
+    ): Promise<vscode.CompletionItem[]> {
+        if (document.languageId !== "htsl") return [];
+
+        const linePrefix = document.lineAt(position.line).text.slice(0, position.character);
+        const range = this.getReplacementRange(document, position);
+        const documentPrefix = document.getText(
+            new vscode.Range(new vscode.Position(0, 0), position)
+        );
+        const typedPrefix = this.getTypedPrefix(document, range, position);
+        const probeCompletions = provideHtslCompletions(
+            linePrefix,
+            documentPrefix,
+            "",
+            { items: [itemCompletionProbe()] }
+        );
+        const needsItems = probeCompletions.some(
+            (completion) => completion.label === ITEM_COMPLETION_PROBE
+        );
+        const completions = needsItems
+            ? provideHtslCompletions(linePrefix, documentPrefix, typedPrefix, {
+                  items: await collectItemCompletions(document),
+              })
+            : probeCompletions;
+
+        return completions.map((completion) => {
+            const item = new vscode.CompletionItem(
+                completion.label,
+                this.toVscodeCompletionKind(completion.kind)
+            );
+            item.detail = completion.detail;
+            item.range = range;
+            item.insertText = completion.snippet
+                ? new vscode.SnippetString(completion.insertText)
+                : completion.insertText;
+            if (completion.filterText) item.filterText = completion.filterText;
+            if (completion.sortText) item.sortText = completion.sortText;
+            return item;
+        });
+    }
+
+    private getReplacementRange(
+        document: vscode.TextDocument,
+        position: vscode.Position
+    ): vscode.Range | undefined {
+        return document.getWordRangeAtPosition(position, /[%\w./-]+/);
+    }
+
+    private getTypedPrefix(
+        document: vscode.TextDocument,
+        range: vscode.Range | undefined,
+        position: vscode.Position
+    ): string {
+        if (!range) return "";
+        // Use range.start..position so chars after the caret don't poison the prefix.
+        const prefixRange = new vscode.Range(range.start, position);
+        return document.getText(prefixRange).replace(/^%/, "").toLowerCase();
+    }
+
+    private toVscodeCompletionKind(kind: CompletionKind): vscode.CompletionItemKind {
+        switch (kind) {
+            case "action":
+                return vscode.CompletionItemKind.Function;
+            case "condition":
+                return vscode.CompletionItemKind.Event;
+            case "operator":
+                return vscode.CompletionItemKind.Operator;
+            case "placeholder":
+                return vscode.CompletionItemKind.Variable;
+            case "item":
+                return vscode.CompletionItemKind.File;
+            case "sound":
+                return vscode.CompletionItemKind.Value;
+            case "snippet":
+                return vscode.CompletionItemKind.Snippet;
+            case "constant":
+                return vscode.CompletionItemKind.Constant;
+        }
+    }
+}
+
+export class SnbtCompletionAdapter implements vscode.CompletionItemProvider {
+    public provideCompletionItems(
+        document: vscode.TextDocument,
+        position: vscode.Position
+    ): vscode.CompletionItem[] {
+        if (document.languageId !== "snbt") return [];
+
+        const linePrefix = document.lineAt(position.line).text.slice(0, position.character);
+        const range = document.getWordRangeAtPosition(position, /[%\w:./-]+/);
+        const completions = provideSnbtCompletions(linePrefix);
+
+        return completions.map((completion) => {
+            const item = new vscode.CompletionItem(
+                completion.label,
+                this.toVscodeCompletionKind(completion.kind)
+            );
+            item.detail = completion.detail;
+            item.range = range;
+            item.insertText = completion.snippet
+                ? new vscode.SnippetString(completion.insertText)
+                : completion.insertText;
+            if (completion.filterText) item.filterText = completion.filterText;
+            if (completion.sortText) item.sortText = completion.sortText;
+            return item;
+        });
+    }
+
+    private toVscodeCompletionKind(kind: CompletionKind): vscode.CompletionItemKind {
+        if (kind === "snippet") return vscode.CompletionItemKind.Snippet;
+        if (kind === "item") return vscode.CompletionItemKind.Value;
+        return vscode.CompletionItemKind.Property;
+    }
+}
+
+export function provideHtslCompletions(
+    linePrefix: string,
+    documentPrefix: string,
+    typedPrefix: string,
+    context: CompletionContext = {}
+): CompletionSpec[] {
+    const provider = new HtslCompletionProvider(context);
+    return provider.complete(linePrefix, documentPrefix, typedPrefix);
+}
+
+class HtslCompletionProvider {
+    public constructor(private readonly context: CompletionContext) {}
+
+    complete(linePrefix: string, documentPrefix: string, typedPrefix: string): CompletionSpec[] {
+        return this.filterCompletions(
+            this.completeForContext(linePrefix, documentPrefix),
+            typedPrefix,
+        );
+    }
+
+    private completeForContext(linePrefix: string, documentPrefix: string): CompletionSpec[] {
+        const conditionPrefix = getOpenIfConditionPrefix(documentPrefix);
+        const completionPrefix = conditionPrefix ?? linePrefix;
+        const tokens = tokenize(completionPrefix);
+        const trimmed = linePrefix.trimStart();
+        const lastToken = last(tokens)?.text ?? "";
+        const firstToken = tokens[0]?.text ?? "";
+        const quoteMode = getQuoteMode(last(tokens));
+        const hasTrailingWhitespace = /\s$/.test(linePrefix);
+
+        if (this.isPlaceholderContext(linePrefix, lastToken)) {
+            return placeholderCompletions();
+        }
+
+        if (/^\s*if\s+\w*$/i.test(linePrefix)) {
+            return ifModeCompletions();
+        }
+
+        if (conditionPrefix !== undefined) {
+            if (isConditionStartContext(conditionPrefix, tokens)) {
+                return this.conditionCompletions();
+            }
+
+            return this.conditionValueCompletions(tokens, quoteMode, /\s$/.test(conditionPrefix));
+        }
+
+        if (trimmed.length === 0) {
+            return this.actionCompletions();
+        }
+
+        if (tokens.length === 1 && /\s$/.test(linePrefix) && isActionKeyword(firstToken)) {
+            return this.actionValueCompletions(firstToken, tokens, quoteMode, hasTrailingWhitespace);
+        }
+
+        if (tokens.length <= 1) {
+            return this.actionCompletions();
+        }
+
+        return this.actionValueCompletions(firstToken, tokens, quoteMode, hasTrailingWhitespace);
+    }
+
+    private actionCompletions(): CompletionSpec[] {
+        return htsw.htsl.helpers.ACTION_KWS.map((kw) => {
+            const spec = htsw.types.getActionSpec(kw);
+            const overrideSnippet = ACTION_SNIPPETS[kw];
+            const generatedSnippet = spec ? generateActionSnippet(spec) : undefined;
+            const insertText = overrideSnippet ?? generatedSnippet ?? kw;
+            const isSnippet = Boolean(overrideSnippet) || Boolean(generatedSnippet && spec && spec.fields.length > 0);
+            const detail = spec
+                ? htsw.types.renderActionSignature(spec)
+                : "HTSL action";
+            return {
+                label: kw,
+                insertText,
+                kind: "action",
+                detail,
+                snippet: isSnippet,
+                sortText: isSnippet ? `0_${kw}` : `1_${kw}`,
+            };
+        });
+    }
+
+    private conditionCompletions(): CompletionSpec[] {
+        return htsw.htsl.helpers.CONDITION_KWS.map((kw) => {
+            const spec = htsw.types.getConditionSpec(kw);
+            const generated = spec ? generateActionSnippet(spec) : undefined;
+            const insertText = generated ?? kw;
+            const isSnippet = Boolean(generated && spec && spec.fields.length > 0);
+            const detail = spec ? htsw.types.renderActionSignature(spec) : "HTSL condition";
+            return {
+                label: kw,
+                insertText,
+                kind: "condition",
+                detail,
+                snippet: isSnippet,
+                sortText: isSnippet ? `0_${kw}` : `1_${kw}`,
+            };
+        });
+    }
+
+    private actionValueCompletions(
+        firstToken: string,
+        tokens: TokenInfo[],
+        quoteMode: QuoteMode,
+        hasTrailingWhitespace: boolean,
+    ): CompletionSpec[] {
+        const action = unquote(firstToken).toLowerCase();
+        const argCount = Math.max(0, tokens.length - 1);
+        const lastToken = unquote(last(tokens)?.text ?? "");
+
+        if (action === "sound" && argCount <= 1) {
+            return soundCompletions(quoteMode);
+        }
+
+        if (["var", "globalvar", "teamvar", "stat", "globalstat", "teamstat"].includes(action)) {
+            return actionVarCompletions(action, argCount, lastToken, hasTrailingWhitespace);
+        }
+
+        const spec = htsw.types.getActionSpec(action);
+        if (spec) {
+            return actionFieldCompletionsFromSpec(spec, argCount, hasTrailingWhitespace, quoteMode, this.context);
+        }
+
+        return [];
+    }
+
+    private conditionValueCompletions(
+        tokens: TokenInfo[],
+        quoteMode: QuoteMode,
+        hasTrailingWhitespace: boolean,
+    ): CompletionSpec[] {
+        const currentCondition = getCurrentConditionTokens(tokens);
+        const condition = unquote(currentCondition[0]?.text ?? "").replace(/^!/, "").toLowerCase();
+        const argCount = Math.max(0, currentCondition.length - 1);
+
+        if (currentCondition.length === 0 || condition === "") {
+            return this.conditionCompletions();
+        }
+
+        if (["var", "globalvar", "teamvar", "stat", "globalstat", "teamstat"].includes(condition)) {
+            return conditionVarCompletions(
+                condition,
+                argCount,
+                unquote(last(currentCondition)?.text ?? ""),
+                hasTrailingWhitespace,
+            );
+        }
+
+        if (condition === "placeholder") {
+            const narrowed = comparePlaceholderTypedCompletions(
+                currentCondition,
+                argCount,
+                hasTrailingWhitespace,
+            );
+            if (narrowed) return narrowed;
+        }
+
+        const spec = htsw.types.getConditionSpec(condition);
+        if (spec) {
+            return actionFieldCompletionsFromSpec(spec, argCount, hasTrailingWhitespace, quoteMode, this.context);
+        }
+
+        return this.conditionCompletions();
+    }
+
+    private isPlaceholderContext(_linePrefix: string, lastToken: string): boolean {
+        if (!lastToken) return false;
+        let count = 0;
+        for (let i = 0; i < lastToken.length; i++) {
+            if (lastToken[i] === "%") count++;
+        }
+        return count % 2 === 1;
+    }
+
+    private filterCompletions(
+        completions: CompletionSpec[],
+        typedPrefix: string,
+    ): CompletionSpec[] {
+        const normalized = typedPrefix.replace(/^"|"$/g, "");
+        if (!normalized) return completions;
+
+        return completions.flatMap((completion) => {
+            const haystack = [
+                completion.label,
+                completion.insertText,
+                completion.filterText ?? "",
+            ].join(" ").toLowerCase();
+
+            const candidates = haystack
+                .split(/\s+/)
+                .map((candidate) => candidate.replace(/^%/, ""));
+            const bestCandidate = candidates
+                .filter((candidate) => candidate.startsWith(normalized))
+                .sort((left, right) => left.length - right.length)[0];
+
+            if (!bestCandidate) return [];
+
+            const rank = bestCandidate === normalized ? 0 : 1;
+            return [{
+                ...completion,
+                sortText: `${rank}_${bestCandidate.length.toString().padStart(3, "0")}_${completion.label}`,
+            }];
+        });
+    }
+
+}
+
+type CompletionSpec = {
+    label: string;
+    insertText: string;
+    kind: CompletionKind;
+    detail?: string;
+    filterText?: string;
+    sortText?: string;
+    snippet?: boolean;
+};
+
+type CompletionContext = {
+    items?: CompletionSpec[];
+};
+
+type TokenInfo = {
+    text: string;
+    quoted: boolean;
+};
+
+type QuoteMode = "none" | "closed" | "open";
+
+function tokenize(input: string): TokenInfo[] {
+    const tokens: TokenInfo[] = [];
+    let current = "";
+    let quoted = false;
+    let inString = false;
+
+    for (let i = 0; i < input.length; i++) {
+        const char = input[i];
+        if (char === "\"" && input[i - 1] !== "\\") {
+            if (!inString && current.length === 0) quoted = true;
+            inString = !inString;
+            current += char;
+            continue;
+        }
+
+        if (/\s/.test(char) && !inString) {
+            if (current.length > 0) {
+                tokens.push({ text: current, quoted });
+                current = "";
+                quoted = false;
+            }
+            continue;
+        }
+
+        current += char;
+    }
+
+    if (current.length > 0) {
+        tokens.push({ text: current, quoted });
+    }
+
+    return tokens;
+}
+
+function getOpenIfConditionPrefix(documentPrefix: string): string | undefined {
+    const parens: number[] = [];
+    let inString = false;
+    let inLineComment = false;
+    let inBlockComment = false;
+
+    for (let i = 0; i < documentPrefix.length; i++) {
+        const char = documentPrefix[i];
+        const next = documentPrefix[i + 1];
+
+        if (inLineComment) {
+            if (char === "\n") inLineComment = false;
+            continue;
+        }
+
+        if (inBlockComment) {
+            if (char === "*" && next === "/") {
+                inBlockComment = false;
+                i++;
+            }
+            continue;
+        }
+
+        if (inString) {
+            if (char === "\"" && documentPrefix[i - 1] !== "\\") inString = false;
+            continue;
+        }
+
+        if (char === "/" && next === "/") {
+            inLineComment = true;
+            i++;
+            continue;
+        }
+
+        if (char === "/" && next === "*") {
+            inBlockComment = true;
+            i++;
+            continue;
+        }
+
+        if (char === "\"") {
+            inString = true;
+            continue;
+        }
+
+        if (char === "(") {
+            parens.push(i);
+        } else if (char === ")") {
+            parens.pop();
+        }
+    }
+
+    const openParen = last(parens);
+    if (openParen === undefined) return undefined;
+
+    const beforeOpenParen = documentPrefix.slice(0, openParen).trimEnd();
+    if (!/\bif\s*(?:and|or|true|false)?\s*$/i.test(beforeOpenParen)) return undefined;
+
+    return documentPrefix.slice(openParen + 1);
+}
+
+function isActionKeyword(value: string): boolean {
+    const normalized = unquote(value);
+    return htsw.htsl.helpers.ACTION_KWS.some((kw) => kw === normalized);
+}
+
+function isConditionStartContext(conditionPrefix: string, tokens: TokenInfo[]): boolean {
+    const trimmed = conditionPrefix.trimEnd();
+    if (trimmed.length === 0 || trimmed.endsWith(",")) return true;
+    return last(tokens)?.text === "!" || Boolean(last(tokens)?.text.endsWith("(!"));
+}
+
+function getCurrentConditionTokens(tokens: TokenInfo[]): TokenInfo[] {
+    let start = 0;
+    for (let i = tokens.length - 1; i >= 0; i--) {
+        const text = tokens[i].text;
+        if (text.includes("(")) {
+            start = text.endsWith("(") ? i + 1 : i;
+            break;
+        }
+        if (text.endsWith(",")) {
+            start = i + 1;
+            break;
+        }
+    }
+
+    return tokens.slice(start).map((token, index) => {
+        let text = token.text;
+        if (index === 0) text = text.replace(/^[,(]+/, "");
+        return { ...token, text: text.replace(/,$/, "") };
+    }).filter((token) => token.text.length > 0);
+}
+
+async function collectItemCompletions(
+    document: vscode.TextDocument
+): Promise<CompletionSpec[]> {
+    const cacheKey = document.uri.fsPath;
+    const cached = itemCompletionCache.get(cacheKey);
+    if (cached !== undefined && cached.expiresAt > Date.now()) {
+        return cached.completions;
+    }
+
+    const completions: CompletionSpec[] = [];
+    const seen = new Set<string>();
+
+    for (const name of await collectTopLevelItemNames()) {
+        if (seen.has(`name:${name}`)) continue;
+        seen.add(`name:${name}`);
+        completions.push({
+            label: name,
+            insertText: quoteIfNeeded(name),
+            filterText: `${name} ${name.split(" ").join("_")}`,
+            kind: "item",
+            detail: "import.json item",
+            sortText: `0_${name}`,
+        });
+    }
+
+    for (const file of await vscode.workspace.findFiles(
+        "**/*.snbt",
+        "**/{node_modules,dist,out,build,.git}/**"
+    )) {
+        const value = relativePathForCompletion(document.uri, file);
+        if (seen.has(`path:${value}`)) continue;
+        seen.add(`path:${value}`);
+        const detail = await describeSnbtFile(file);
+        completions.push({
+            label: value,
+            insertText: quoteNameForCompletion(value),
+            filterText: `${value} ${basename(value)} ${detail ?? ""}`,
+            kind: "item",
+            detail: detail ?? "SNBT item",
+            sortText: `1_${value}`,
+        });
+    }
+
+    itemCompletionCache.set(cacheKey, {
+        expiresAt: Date.now() + ITEM_COMPLETION_CACHE_TTL_MS,
+        completions,
+    });
+    return completions;
+}
+
+function itemCompletionProbe(): CompletionSpec {
+    return {
+        label: ITEM_COMPLETION_PROBE,
+        insertText: ITEM_COMPLETION_PROBE,
+        kind: "item",
+    };
+}
+
+async function collectTopLevelItemNames(): Promise<string[]> {
+    const names: string[] = [];
+    const files = await vscode.workspace.findFiles("**/{import.json,*.import.json}");
+    for (const file of files) {
+        const text = await readWorkspaceText(file);
+        if (text === undefined) continue;
+        for (const name of parseTopLevelItemNames(text)) {
+            if (names.indexOf(name) === -1) names.push(name);
+        }
+    }
+    return names;
+}
+
+function parseTopLevelItemNames(text: string): string[] {
+    const names: string[] = [];
+    const itemsMatch = /"items"\s*:\s*\[([\s\S]*?)\]\s*(?:,|\})/.exec(text);
+    if (!itemsMatch) return names;
+
+    const itemObjectRegex = /\{[\s\S]*?\}/g;
+    for (const match of itemsMatch[1].matchAll(itemObjectRegex)) {
+        const nameMatch = /"name"\s*:\s*"((?:\\"|[^"])*)"/.exec(match[0]);
+        if (nameMatch) names.push(nameMatch[1].replace(/\\"/g, "\""));
+    }
+    return names;
+}
+
+function relativePathForCompletion(
+    fromDocument: vscode.Uri,
+    targetFile: vscode.Uri
+): string {
+    const fromDirectory = dirname(fromDocument.fsPath);
+    return relative(fromDirectory, targetFile.fsPath).replace(/\\/g, "/");
+}
+
+async function describeSnbtFile(file: vscode.Uri): Promise<string | undefined> {
+    const text = await readWorkspaceText(file);
+    if (text === undefined) return undefined;
+
+    const id = /(?:^|[,{]\s*)id\s*:\s*"([^"]+)"/.exec(text)?.[1];
+    const count = /(?:^|[,{]\s*)Count\s*:\s*(\d+)b/.exec(text)?.[1];
+    const name = /(?:^|[,{]\s*)Name\s*:\s*"([^"]+)"/.exec(text)?.[1];
+
+    const parts = [name, id, count ? `x${count}` : undefined].filter(
+        (part): part is string => part !== undefined && part.length > 0
+    );
+    return parts.length === 0 ? "SNBT item" : parts.join(" ");
+}
+
+async function readWorkspaceText(file: vscode.Uri): Promise<string | undefined> {
+    try {
+        const data = await vscode.workspace.fs.readFile(file);
+        return Buffer.from(data).toString("utf8");
+    } catch {
+        return undefined;
+    }
+}
+
+function quoteNameForCompletion(value: string): string {
+    return /^[a-zA-Z_][a-zA-Z_/0-9.\-]*$/.test(value)
+        ? value
+        : `"${value.replace(/\\/g, "\\\\").replace(/"/g, "\\\"")}"`;
+}
+
+export function provideSnbtCompletions(linePrefix: string): CompletionSpec[] {
+    const trimmed = linePrefix.trimStart();
+    if (trimmed.length === 0) {
+        return [
+            {
+                label: "item",
+                insertText: "{id: \"minecraft:${1:stone}\", Count: ${2:1}b}",
+                kind: "snippet",
+                detail: "SNBT item",
+                snippet: true,
+            },
+        ];
+    }
+
+    const currentToken = /[A-Za-z0-9_:.-]*$/.exec(linePrefix)?.[0] ?? "";
+    if (currentToken.startsWith("minecraft:") || /id\s*:\s*"?minecraft:[\w.-]*$/i.test(linePrefix)) {
+        return htsw.types.MINECRAFT_ITEMS.map((item) => ({
+            label: `minecraft:${item.name}`,
+            insertText: `minecraft:${item.name}`,
+            filterText: `minecraft:${item.name} ${item.displayName}`,
+            kind: "item" as const,
+            detail: item.displayName,
+        }));
+    }
+
+    return [
+        "id",
+        "Count",
+        "tag",
+        "display",
+        "Name",
+        "Lore",
+        "Enchantments",
+        "HideFlags",
+        "Unbreakable",
+    ].map((key) => ({
+        label: key,
+        insertText: key,
+        kind: "constant" as const,
+        detail: "SNBT key",
+    }));
+}
+
+function optionCompletions(
+    values: readonly string[],
+    kind: CompletionKind,
+    quoteMode: QuoteMode = "none",
+    detail?: string,
+): CompletionSpec[] {
+    return values.map((value) => ({
+        label: value,
+        insertText: formatQuotedCompletion(value, quoteMode),
+        filterText: detail
+            ? `${value} ${value.split(" ").join("_")} ${detail}`
+            : `${value} ${value.split(" ").join("_")}`,
+        kind,
+        detail,
+    }));
+}
+
+function inventorySlotCompletions(quoteMode: QuoteMode = "none", detail?: string): CompletionSpec[] {
+    const slots = [
+        ...htsw.types.INVENTORY_SLOTS,
+        ...Array.from({ length: 9 }, (_, index) => `Hotbar Slot ${index + 1}`),
+        ...Array.from({ length: 27 }, (_, index) => `Inventory Slot ${index + 1}`),
+    ];
+
+    return optionCompletions(slots, "constant", quoteMode, detail);
+}
+
+function soundCompletions(quoteMode: QuoteMode = "none"): CompletionSpec[] {
+    return htsw.types.SOUNDS.flatMap((sound) => [
+        {
+            label: sound.name,
+            insertText: formatQuotedCompletion(sound.name, quoteMode),
+            filterText: `${sound.name} ${sound.name.split(" ").join("_")} ${sound.path}`,
+            detail: sound.path,
+            kind: "sound" as const,
+        },
+        {
+            label: sound.path,
+            insertText: formatQuotedCompletion(sound.path, quoteMode),
+            filterText: `${sound.path} ${sound.name}`,
+            detail: sound.name,
+            kind: "sound" as const,
+        },
+    ]);
+}
+
+function placeholderCompletions(detail?: string): CompletionSpec[] {
+    return htsw.types.PLACEHOLDER_COMPLETIONS.map((placeholder) => ({
+        label: `%${placeholder}%`,
+        insertText: `%${placeholder}%`,
+        // Leading `%` so the typed `%pl` matches; trailing detail so a snippet
+        // placeholder like `value` also matches.
+        filterText: detail ? `%${placeholder} ${detail}` : `%${placeholder}`,
+        kind: "placeholder",
+        detail,
+    }));
+}
+
+function placeholderCompletionsByType(
+    valueType: "number" | "string",
+    detail?: string,
+): CompletionSpec[] {
+    return htsw.types.PLACEHOLDER_SPECS
+        .filter((spec) => spec.valueType === valueType)
+        .map((spec) => {
+            const placeholder = "completion" in spec ? spec.completion : spec.name;
+            return {
+                label: `%${placeholder}%`,
+                insertText: `%${placeholder}%`,
+                filterText: detail ? `%${placeholder} ${detail}` : `%${placeholder}`,
+                kind: "placeholder" as const,
+                detail,
+            };
+        });
+}
+
+function comparePlaceholderTypedCompletions(
+    currentCondition: TokenInfo[],
+    argCount: number,
+    hasTrailingWhitespace: boolean,
+): CompletionSpec[] | undefined {
+    const placeholderText = unquote(currentCondition[1]?.text ?? "");
+    const valueType = htsw.types.getPlaceholderValueTypeFromValue(placeholderText);
+    if (valueType !== "string") return undefined;
+
+    const fieldIndex = hasTrailingWhitespace ? argCount : argCount - 1;
+    if (fieldIndex === 1) {
+        return equalityComparisonCompletions("op");
+    }
+    if (fieldIndex === 2 || fieldIndex === 3) {
+        return placeholderCompletionsByType("string", fieldIndex === 2 ? "amount" : "fallback");
+    }
+    return undefined;
+}
+
+function last<T>(values: T[]): T | undefined {
+    return values.length === 0 ? undefined : values[values.length - 1];
+}
+
+function comparisonCompletions(detail?: string): CompletionSpec[] {
+    return [
+        ...Object.values(htsw.htsl.helpers.COMPARISON_SYMBOLS),
+        ...htsw.types.COMPARISONS.map(quoteIfNeeded),
+    ].map((value) => ({
+        label: value,
+        insertText: value,
+        filterText: detail ? `${value} ${detail}` : value,
+        kind: "operator",
+        detail,
+    }));
+}
+
+// String placeholders only support equality (Hypixel rejects ordering ops).
+function equalityComparisonCompletions(detail?: string): CompletionSpec[] {
+    return [
+        htsw.htsl.helpers.COMPARISON_SYMBOLS.Equal,
+        quoteIfNeeded("Equal"),
+    ].map((value) => ({
+        label: value,
+        insertText: value,
+        filterText: detail ? `${value} ${detail}` : value,
+        kind: "operator",
+        detail,
+    }));
+}
+
+function operatorCompletions(detail?: string): CompletionSpec[] {
+    return [
+        ...Object.values(htsw.htsl.helpers.OPERATION_SYMBOLS),
+        ...Object.values(htsw.htsl.helpers.COMPARISON_SYMBOLS),
+    ].map((value) => ({
+        label: value,
+        insertText: value,
+        filterText: detail ? `${value} ${detail}` : value,
+        kind: "operator",
+        detail,
+    }));
+}
+
+function varOperationCompletions(detail?: string): CompletionSpec[] {
+    return Object.values(htsw.htsl.helpers.OPERATION_SYMBOLS).map((value) => ({
+        label: value,
+        insertText: value,
+        filterText: detail ? `${value} ${detail}` : value,
+        kind: "operator",
+        detail,
+    }));
+}
+
+function generateActionSnippet(spec: htsw.types.ActionSpec): string {
+    const required = spec.fields.filter((field) => !field.optional);
+    if (required.length === 0) return spec.kw;
+    const args = required.map((field, i) => snippetForField(field, i + 1));
+    return `${spec.kw} ${args.join(" ")}`;
+}
+
+function snippetForField(field: htsw.types.ActionFieldSpec, n: number): string {
+    switch (field.kind) {
+        case "boolean":
+            return `\${${n}|false,true|}`;
+        case "ifMode":
+            return `\${${n}|and,or,true,false|}`;
+        case "string":
+        case "item":
+        case "team":
+        case "function":
+        case "group":
+            return `"\${${n}:${field.name}}"`;
+        case "block":
+            return `{\n\t\${${n}}\n}`;
+        case "placeholder":
+            return `\${${n}:%${field.name}%}`;
+        default:
+            return `\${${n}:${field.name}}`;
+    }
+}
+
+// Spec-driven per-position completions. Field index = argCount with trailing
+// whitespace, else argCount - 1 (still typing the current arg).
+function actionFieldCompletionsFromSpec(
+    spec: htsw.types.ActionSpec,
+    argCount: number,
+    hasTrailingWhitespace: boolean,
+    quoteMode: QuoteMode,
+    context: CompletionContext = {},
+): CompletionSpec[] {
+    const fieldIndex = hasTrailingWhitespace ? argCount : argCount - 1;
+    const field = spec.fields[fieldIndex];
+    if (!field) return [];
+    return completionsForFieldKind(field.kind, field.name, quoteMode, context);
+}
+
+function completionsForFieldKind(
+    kind: htsw.types.ActionFieldKind,
+    fieldName: string,
+    quoteMode: QuoteMode,
+    context: CompletionContext = {},
+): CompletionSpec[] {
+    const d = fieldName; // shown as `detail` on every item
+    switch (kind) {
+        case "boolean":
+            return booleanCompletions(d);
+        case "value":
+            return placeholderCompletions(d);
+        case "placeholder":
+            return placeholderCompletions(d);
+        case "gamemode":
+            return optionCompletions(htsw.types.GAMEMODES, "constant", quoteMode, d);
+        case "lobby":
+            return optionCompletions(htsw.types.LOBBIES, "constant", quoteMode, d);
+        case "potion":
+            return optionCompletions(htsw.types.POTION_EFFECTS, "constant", quoteMode, d);
+        case "enchant":
+            return optionCompletions(htsw.types.ENCHANTMENTS, "constant", quoteMode, d);
+        case "location":
+            return optionCompletions(htsw.types.LOCATIONS, "constant", quoteMode, d);
+        case "slot":
+            return inventorySlotCompletions(quoteMode, d);
+        case "varOp":
+            return varOperationCompletions(d);
+        case "operation":
+            return operatorCompletions(d);
+        case "comparison":
+            return comparisonCompletions(d);
+        case "ifMode":
+            return ifModeCompletions(d);
+        case "itemProperty":
+            return optionCompletions(htsw.types.ITEM_PROPERTIES, "constant", quoteMode, d);
+        case "itemLocation":
+            return optionCompletions(htsw.types.ITEM_LOCATIONS, "constant", quoteMode, d);
+        case "itemAmount":
+            return optionCompletions(htsw.types.ITEM_AMOUNTS, "constant", quoteMode, d);
+        case "permission":
+            return optionCompletions(htsw.types.PERMISSIONS, "constant", quoteMode, d);
+        case "damageCause":
+            return optionCompletions(htsw.types.DAMAGE_CAUSES, "constant", quoteMode, d);
+        case "fishingEnv":
+            return optionCompletions(htsw.types.FISHING_ENVIRONMENTS, "constant", quoteMode, d);
+        case "portal":
+            return optionCompletions(htsw.types.PORTAL_TYPES, "constant", quoteMode, d);
+        // Free-form fields — no suggestions, but inlay hints still label them.
+        case "string":
+        case "number":
+        case "varName":
+        case "team":
+        case "function":
+        case "group":
+        case "item":
+            return (context.items ?? []).map((completion) => ({
+                ...completion,
+                insertText: formatQuotedCompletion(
+                    unquote(completion.insertText),
+                    quoteMode
+                ),
+            }));
+        case "weather":
+        case "time":
+        case "block":
+            return [];
+    }
+}
+
+// Field positions:
+//   non-team:  0=name  1=op  2=value  3=automaticUnset
+//   team:      0=name  1=team  2=op  3=value  4=automaticUnset
+function actionVarCompletions(
+    action: string,
+    argCount: number,
+    lastToken: string,
+    hasTrailingWhitespace: boolean,
+): CompletionSpec[] {
+    const isTeamVar = action === "teamvar" || action === "teamstat";
+    const fieldIndex = hasTrailingWhitespace ? argCount : argCount - 1;
+    const opIdx = isTeamVar ? 2 : 1;
+    const valueIdx = opIdx + 1;
+    const unsetIdx = valueIdx + 1;
+
+    if (fieldIndex <= 0) return [];
+    if (isTeamVar && fieldIndex === 1) return [];
+    if (fieldIndex === opIdx) return varOperationCompletions("op");
+    if (fieldIndex === valueIdx) {
+        if (isUnsetOperation(lastToken)) return []; // op === unset → no value
+        return placeholderCompletions("value");
+    }
+    if (fieldIndex === unsetIdx) return booleanCompletions("automaticUnset");
+    return [];
+}
+
+// Field positions:
+//   non-team:  0=var  1=op  2=amount  3=fallback
+//   team:      0=var  1=team  2=op  3=amount  4=fallback
+function conditionVarCompletions(
+    condition: string,
+    argCount: number,
+    lastToken: string,
+    hasTrailingWhitespace: boolean,
+): CompletionSpec[] {
+    const isTeamVar = condition === "teamvar" || condition === "teamstat";
+    const fieldIndex = hasTrailingWhitespace ? argCount : argCount - 1;
+    const opIdx = isTeamVar ? 2 : 1;
+    const amountIdx = opIdx + 1;
+    const fallbackIdx = amountIdx + 1;
+
+    if (fieldIndex <= 0) return [];
+    if (isTeamVar && fieldIndex === 1) return [];
+    if (fieldIndex === opIdx) return comparisonCompletions("op");
+    if (fieldIndex === amountIdx) {
+        return [...valueCompletions("amount"), ...placeholderCompletions("amount")];
+    }
+    if (fieldIndex === fallbackIdx) {
+        return [...valueCompletions("fallback"), ...placeholderCompletions("fallback")];
+    }
+    return [];
+}
+
+function isUnsetOperation(value: string): boolean {
+    return value.toLowerCase() === "unset";
+}
+
+function valueCompletions(detail?: string): CompletionSpec[] {
+    return ["true", "false", "null", "unset"].map((value) => ({
+        label: value,
+        insertText: value,
+        filterText: detail ? `${value} ${detail}` : value,
+        kind: "constant",
+        detail,
+    }));
+}
+
+function booleanCompletions(detail?: string): CompletionSpec[] {
+    // Shared filterText so both items survive VS Code's fuzzy filter when the
+    // cursor sits on either value (otherwise picking the *other* value isn't
+    // possible without deleting first).
+    return ["true", "false"].map((value) => ({
+        label: value,
+        insertText: value,
+        filterText: "true false",
+        kind: "constant",
+        detail,
+    }));
+}
+
+function ifModeCompletions(detail?: string): CompletionSpec[] {
+    // Shared filterText (same trick as booleanCompletions).
+    const all = "and or true false";
+    return ["and", "or", "true", "false"].map((value) => ({
+        label: value,
+        insertText: value,
+        filterText: all,
+        kind: "constant",
+        detail: detail ?? "Conditional match mode",
+    }));
+}
+
+function quoteIfNeeded(value: string): string {
+    return /\s/.test(value) ? `"${value}"` : value;
+}
+
+function formatQuotedCompletion(value: string, quoteMode: QuoteMode): string {
+    if (quoteMode === "closed") return value;
+    if (quoteMode === "open") return `${value}"`;
+    return quoteIfNeeded(value);
+}
+
+function getQuoteMode(token: TokenInfo | undefined): QuoteMode {
+    if (!token?.quoted) return "none";
+    return token.text.length > 1 && token.text.endsWith("\"") ? "closed" : "open";
+}
+
+function unquote(value: string): string {
+    return value.replace(/^"|"$/g, "");
+}
+

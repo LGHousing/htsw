@@ -12,7 +12,7 @@ export function checkNestedConditionals(gcx: GlobalCtxt) {
 function checkAction(gcx: GlobalCtxt, action: Action) {
     if (action.type === "CONDITIONAL") {
 
-        const subActions = action.ifActions.concat(action.elseActions ?? []);
+        const subActions = action.ifActions.concat(action.elseActions);
 
         // Check for nested conditionals.
         for (const subAction of subActions) {

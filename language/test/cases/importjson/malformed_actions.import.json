@@ -1,0 +1,8 @@
+{
+  "functions": [
+    {
+      "name": "BrokenFn",
+      "actions": "malformed_actions.htsl"
+    }
+  ]
+}

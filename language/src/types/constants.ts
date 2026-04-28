@@ -1,4 +1,11 @@
 import type { Action, Condition } from ".";
+import minecraftItems from "../assets/items.json";
+
+export const MINECRAFT_ITEMS: readonly {
+    id: number;
+    displayName: string;
+    name: string;
+}[] = minecraftItems;
 
 export const ACTION_NAMES: {
     [key in Action["type"]]: string;
@@ -6,25 +13,26 @@ export const ACTION_NAMES: {
     APPLY_POTION_EFFECT: "Apply Potion Effect",
     CLEAR_POTION_EFFECTS: "Clear All Potion Effects",
     FAIL_PARKOUR: "Fail Parkour",
+    PARKOUR_CHECKPOINT: "Parkour Checkpoint",
     GIVE_EXPERIENCE_LEVELS: "Give Experience Levels",
     GIVE_ITEM: "Give Item",
     REMOVE_ITEM: "Remove Item",
     SEND_TO_LOBBY: "Send to Lobby",
     CONDITIONAL: "Conditional",
-    SET_GROUP: "Set Group",
-    KILL: "Kill",
-    HEAL: "Heal",
+    SET_GROUP: "Change Player's Group",
+    KILL: "Kill Player",
+    HEAL: "Full Heal",
     TITLE: "Display Title",
-    ACTION_BAR: "Action Bar",
+    ACTION_BAR: "Display Action Bar",
     RESET_INVENTORY: "Reset Inventory",
     CHANGE_MAX_HEALTH: "Change Max Health",
     CHANGE_VAR: "Change Variable",
     CHANGE_HEALTH: "Change Health",
     MESSAGE: "Send a Chat Message",
     EXIT: "Exit",
-    RANDOM: "Random",
-    SET_VELOCITY: "Set Velocity",
-    TELEPORT: "Teleport",
+    RANDOM: "Random Action",
+    SET_VELOCITY: "Change Velocity",
+    TELEPORT: "Teleport Player",
     CANCEL_EVENT: "Cancel Event",
     PLAY_SOUND: "Play Sound",
     SET_COMPASS_TARGET: "Set Compass Target",
@@ -36,15 +44,20 @@ export const ACTION_NAMES: {
     PAUSE: "Pause Execution",
     SET_TEAM: "Set Player Team",
     SET_MENU: "Display Menu",
+    CLOSE_MENU: "Close Menu",
+    USE_HELD_ITEM: "Use/Remove Held Item",
     DROP_ITEM: "Drop Item",
     LAUNCH: "Launch to Target",
+    SET_PLAYER_WEATHER: "Set Player Weather",
+    SET_PLAYER_TIME: "Set Player Time",
+    TOGGLE_NAMETAG_DISPLAY: "Toggle Nametag Display",
 };
 
 export const CONDITION_NAMES: {
     [key in Condition["type"]]: string;
 } = {
     REQUIRE_GROUP: "Required Group",
-    COMPARE_VAR: "Required Variable",
+    COMPARE_VAR: "Variable Requirement",
     REQUIRE_PERMISSION: "Required Permission",
     IS_IN_REGION: "Within Region",
     REQUIRE_ITEM: "Has Item",
@@ -58,7 +71,13 @@ export const CONDITION_NAMES: {
     REQUIRE_GAMEMODE: "Required Gamemode",
     COMPARE_PLACEHOLDER: "Placeholder Number Requirement",
     REQUIRE_TEAM: "Required Team",
-    COMPARE_DAMAGE: "Damage Requirement",
+    DAMAGE_CAUSE: "Damage Cause",
+    PVP_ENABLED: "PvP Enabled",
+    FISHING_ENVIRONMENT: "Fishing Environment",
+    PORTAL_TYPE: "Portal Type",
+    BLOCK_TYPE: "Block Type",
+    IS_ITEM: "Is Item",
+    COMPARE_DAMAGE: "Damage Amount",
 };
 
 export const OPERATIONS = [
@@ -81,9 +100,9 @@ export const VAR_OPERATIONS = [
 export const COMPARISONS = [
     "Equal",
     "Less Than",
-    "Less Than Or Equal",
+    "Less Than or Equal",
     "Greater Than",
-    "Greater Than Or Equal",
+    "Greater Than or Equal",
 ] as const;
 
 export const GAMEMODES = [
@@ -463,6 +482,30 @@ export const PERMISSIONS = [
     "Item: Biome Stick",
 ] as const;
 
+export const DAMAGE_CAUSES = [
+    "Entity Attack",
+    "Projectile",
+    "Suffocation",
+    "Fall",
+    "Lava",
+    "Fire",
+    "Fire Tick",
+    "Drowning",
+    "Starvation",
+    "Poison",
+    "Thorns",
+] as const;
+
+export const FISHING_ENVIRONMENTS = [
+    "Water",
+    "Lava",
+] as const;
+
+export const PORTAL_TYPES = [
+    "Nether Portal",
+    "End Portal",
+] as const;
+
 export const INVENTORY_SLOTS = [
     "First Available Slot",
     "Hand Slot",
@@ -491,3 +534,84 @@ export const ITEM_AMOUNTS = [
     "Any Amount",
     "Equal or Greater Amount"
 ] as const;
+
+export const PLACEHOLDER_SPECS = [
+    { name: "server.name", valueType: "string", args: "none" },
+    { name: "server.shortname", valueType: "string", args: "none" },
+    { name: "player.name", valueType: "string", args: "none" },
+    { name: "player.ping", valueType: "number", args: "none" },
+    { name: "player.health", valueType: "number", args: "none" },
+    { name: "player.maxhealth", valueType: "number", args: "none" },
+    { name: "player.hunger", valueType: "number", args: "none" },
+    { name: "player.experience", valueType: "number", args: "none" },
+    { name: "player.level", valueType: "number", args: "none" },
+    { name: "player.version", valueType: "string", args: "none" },
+    { name: "player.protocol", valueType: "number", args: "none" },
+    { name: "player.gamemode", valueType: "string", args: "none" },
+    { name: "player.region.name", valueType: "string", args: "none" },
+    { name: "player.location.x", valueType: "number", args: "none" },
+    { name: "player.location.y", valueType: "number", args: "none" },
+    { name: "player.location.z", valueType: "number", args: "none" },
+    { name: "player.location.pitch", valueType: "number", args: "none" },
+    { name: "player.location.yaw", valueType: "number", args: "none" },
+    { name: "player.pos.x", valueType: "number", args: "none" },
+    { name: "player.pos.y", valueType: "number", args: "none" },
+    { name: "player.pos.z", valueType: "number", args: "none" },
+    { name: "player.pos.pitch", valueType: "number", args: "none" },
+    { name: "player.pos.yaw", valueType: "number", args: "none" },
+    { name: "player.block.x", valueType: "number", args: "none" },
+    { name: "player.block.y", valueType: "number", args: "none" },
+    { name: "player.block.z", valueType: "number", args: "none" },
+    { name: "player.group.name", valueType: "string", args: "none" },
+    { name: "player.group.tag", valueType: "string", args: "none" },
+    { name: "player.group.priority", valueType: "number", args: "none" },
+    { name: "player.group.color", valueType: "string", args: "none" },
+    { name: "player.team.name", valueType: "string", args: "none" },
+    { name: "player.team.tag", valueType: "string", args: "none" },
+    { name: "player.team.color", valueType: "string", args: "none" },
+    { name: "player.team.players", valueType: "number", args: "team", completion: "player.team.players/Team Name" },
+    { name: "player.parkour.ticks", valueType: "number", args: "none" },
+    { name: "player.parkour.formatted", valueType: "string", args: "none" },
+    { name: "house.name", valueType: "string", args: "none" },
+    { name: "house.guests", valueType: "number", args: "none" },
+    { name: "house.cookies", valueType: "number", args: "none" },
+    { name: "house.visitingrules", valueType: "string", args: "none" },
+    { name: "house.players", valueType: "number", args: "none" },
+    { name: "date.day", valueType: "number", args: "none" },
+    { name: "date.month", valueType: "number", args: "none" },
+    { name: "date.year", valueType: "number", args: "none" },
+    { name: "date.hour", valueType: "number", args: "none" },
+    { name: "date.minute", valueType: "number", args: "none" },
+    { name: "date.seconds", valueType: "number", args: "none" },
+    { name: "date.unix", valueType: "number", args: "none" },
+    { name: "date.unix.ms", valueType: "number", args: "none" },
+    { name: "var.player", valueType: "number", args: "var", completion: "var.player/name" },
+    { name: "var.global", valueType: "number", args: "var", completion: "var.global/name" },
+    { name: "var.team", valueType: "number", args: "teamVar", completion: "var.team/name Team Name" },
+    { name: "random.int", valueType: "number", args: "integerBounds", completion: "random.int/1 10" },
+    { name: "random.whole", valueType: "number", args: "integerBounds", completion: "random.whole/1 10" },
+    { name: "random.decimal", valueType: "number", args: "numberBounds", completion: "random.decimal/0 1" },
+] as const;
+
+export const PLACEHOLDER_COMPLETIONS = PLACEHOLDER_SPECS.map(
+    (placeholder) => "completion" in placeholder ? placeholder.completion : placeholder.name
+);
+
+export function getPlaceholderSpec(name: string) {
+    const lower = name.toLowerCase();
+    return PLACEHOLDER_SPECS.find((spec) => spec.name === lower);
+}
+
+// Takes a parsed Value like `%player.health%` or `%var.player/k 0%` and returns
+// the placeholder's value type. Returns undefined for unknown placeholders or
+// non-placeholder values.
+export function getPlaceholderValueTypeFromValue(
+    value: string,
+): "number" | "string" | undefined {
+    if (!value.startsWith("%") || !value.endsWith("%")) return undefined;
+    const inner = value.slice(1, -1);
+    const slash = inner.indexOf("/");
+    const name = slash === -1 ? inner : inner.slice(0, slash);
+    return getPlaceholderSpec(name)?.valueType;
+}
+

@@ -46,7 +46,7 @@ describe("SNBT parser tags", () => {
         expect(parseSnbt("1b").value).toEqual({ type: "byte", value: 1 });
         expect(parseSnbt("2s").value).toEqual({ type: "short", value: 2 });
         expect(parseSnbt("3").value).toEqual({ type: "int", value: 3 });
-        expect(parseSnbt("4l").value).toEqual({ type: "long", value: Long.fromInt(4) });
+        expect(parseSnbt("4l").value).toEqual({ type: "long", value: Long.fromNumber(4) });
         expect(parseSnbt("1.5f").value).toEqual({ type: "float", value: 1.5 });
         expect(parseSnbt("2.5").value).toEqual({ type: "double", value: 2.5 });
         expect(parseSnbt('"x"').value).toEqual({ type: "string", value: "x" });
@@ -86,8 +86,8 @@ describe("SNBT parser tags", () => {
         expect(parseSnbt("[L;1l,2l]").value).toEqual({
             type: "long_array",
             value: [
-                Long.fromInt(1),
-                Long.fromInt(2),
+                Long.fromNumber(1),
+                Long.fromNumber(2),
             ],
         });
     });

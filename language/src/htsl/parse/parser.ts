@@ -7,6 +7,7 @@ import {
     type F64Kind,
     type I64Kind,
     type IdentKind,
+    type PlaceholderKind,
     type StrKind,
     type Token,
     tokenToString,
@@ -17,6 +18,10 @@ import type { Action } from "../../types";
 import { parseAction } from "./actions";
 import { Long } from "../../long";
 import type { GlobalCtxt } from "../../context";
+
+function normalizeNumberLiteral(value: string): string {
+    return value.replaceAll("_", "");
+}
 
 export class Parser {
     readonly gcx: GlobalCtxt;
@@ -130,8 +135,15 @@ export class Parser {
         options: readonly T[],
         errorTerms?: { singular: string, plural: string },
     ): T {
+        const normalize = (value: string) =>
+            value.replaceAll(" ", "").replaceAll("_", "").toLowerCase();
+
         for (const option of options) {
-            if (this.eatIdent(option.replaceAll(" ", "_"), true)) {
+            if (
+                this.check("ident") &&
+                normalize((this.token as IdentKind).value) === normalize(option)
+            ) {
+                this.next();
                 return option;
             }
         }
@@ -157,16 +169,11 @@ export class Parser {
             }
         }
 
-        // check for incorrectly formatted options
         else if (this.check("str")) {
             for (const option of options) {
-                if (this.eatString(option) || this.eatString(option.replaceAll(" ", "_"))) {
-
-                    err.addSubDiagnostic(
-                        Diagnostic.help("Convert this string to an identifier")
-                            .addEdit(this.prev.span, option.replaceAll(" ", "_"))
-                    )
-                    break;
+                if (normalize((this.token as StrKind).value) === normalize(option)) {
+                    this.next();
+                    return option;
                 }
             }
         }
@@ -185,6 +192,10 @@ export class Parser {
     }
 
     parseString(): string {
+        if (this.eat("placeholder")) {
+            return `%${(this.prev as PlaceholderKind).value}%`;
+        }
+
         this.expect("str");
         return (this.prev as StrKind).value;
     }
@@ -210,7 +221,7 @@ export class Parser {
         const negative = this.eat({ kind: "bin_op", op: "minus" });
         this.expect("i64");
 
-        const value = (this.prev as I64Kind).value;
+        const value = normalizeNumberLiteral((this.prev as I64Kind).value);
         const withNegative = negative ? `-${value}` : value;
         const long = Long.fromString(withNegative);
 
@@ -231,7 +242,7 @@ export class Parser {
         }
         this.next();
 
-        const value = (this.prev as F64Kind | I64Kind).value;
+        const value = normalizeNumberLiteral((this.prev as F64Kind | I64Kind).value);
         const withNegative = negative ? `-${value}` : value;
         const double = parseFloat(withNegative);
 

@@ -29,3 +29,7 @@ export const S30PacketWindowItems = Java.type(
 export const S2DPacketOpenWindow = Java.type(
     "net.minecraft.network.play.server.S2DPacketOpenWindow"
 );
+
+export const S2FPacketSetSlot = Java.type(
+    "net.minecraft.network.play.server.S2FPacketSetSlot"
+);

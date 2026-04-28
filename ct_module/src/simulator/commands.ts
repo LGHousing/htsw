@@ -59,11 +59,11 @@ function commandVariable(args: string[]) {
         return;
     }
 
-    let holder: { type: "player" } | { type: "global" } | { type: "team"; team?: string };
+    let holder: { type: "Player" } | { type: "Global" } | { type: "Team"; team?: string };
     let key: string;
 
     if (target.startsWith("global:")) {
-        holder = { type: "global" };
+        holder = { type: "Global" };
         key = target.slice("global:".length);
     } else if (target.startsWith("team:")) {
         const parts = target.split(":");
@@ -71,10 +71,10 @@ function commandVariable(args: string[]) {
             ChatLib.chat("&cInvalid team var target. Use team:<team>:<var>");
             return;
         }
-        holder = { type: "team", team: parts[1] };
+        holder = { type: "Team", team: parts[1] };
         key = parts.slice(2).join(":");
     } else {
-        holder = { type: "player" };
+        holder = { type: "Player" };
         key = target;
     }
 

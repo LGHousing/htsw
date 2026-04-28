@@ -4,6 +4,9 @@ import type { Tag } from "../types";
 import { Lexer } from "./lexer";
 import { Parser } from "./parser";
 
+export { Lexer } from "./lexer";
+export * from "./token";
+
 export function parseSnbt(gcx: GlobalCtxt, path: string): Tag | undefined {
     try {
         const file = gcx.sourceMap.getFile(path);

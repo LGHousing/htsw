@@ -25,12 +25,10 @@ export function check(tcx: TyCtxt, actions: Action[]) {
                 }
             }
 
-            if (action.elseActions) {
-                for (const subCtxt of narrow(tcx, action.conditions, action.matchAny, true)) {
-                    // tcx.exploredConditionalBranches.add(action.elseActions.value);
-                    check(subCtxt, action.elseActions);
-                    check(subCtxt, actions.slice(i + 1));
-                }
+            for (const subCtxt of narrow(tcx, action.conditions, action.matchAny, true)) {
+                // tcx.exploredConditionalBranches.add(action.elseActions.value);
+                check(subCtxt, action.elseActions);
+                check(subCtxt, actions.slice(i + 1));
             }
         }
 

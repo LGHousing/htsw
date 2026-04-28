@@ -1,0 +1,14 @@
+{
+    "items": [
+        {
+            "name": "missing.snbt",
+            "nbt": "stone.snbt"
+        }
+    ],
+    "functions": [
+        {
+            "name": "NamedItemWins",
+            "actions": "item_name_wins_over_snbt_path.htsl"
+        }
+    ]
+}

@@ -6,6 +6,13 @@
         "isolatedModules": true,
         "strict": true,
         "moduleResolution": "bundler",
+        "paths": {
+            "htsw": ["../language/dist/index.d.ts"],
+            "htsw/types": ["../language/dist/types/index.d.ts"],
+            "htsw/runtime": ["../language/dist/runtime/index.d.ts"],
+            "htsw/htsw": ["../language/dist/htsw/index.d.ts"],
+            "htsw/nbt": ["../language/dist/nbt/index.d.ts"]
+        },
         "esModuleInterop": true,
         "skipLibCheck": true,
         "noEmit": true 

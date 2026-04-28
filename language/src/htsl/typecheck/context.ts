@@ -4,7 +4,7 @@ import type { Span } from "../../span";
 import { type DeclaredVarState, type VarKey } from "./state";
 
 function varKeyToString(key: VarKey) {
-    if (key.holder.type === "team") {
+    if (key.holder.type === "Team") {
         return `${key.holder.type} ${key.holder.team} ${key.key}`;
     } else {
         return `${key.holder.type} ${key.key}`;

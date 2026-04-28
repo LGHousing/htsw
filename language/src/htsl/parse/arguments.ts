@@ -3,6 +3,8 @@ import type {
     Value,
     Location,
     Comparison,
+    DamageCause,
+    FishingEnvironment,
     Gamemode,
     InventorySlot,
     PotionEffect,
@@ -13,15 +15,18 @@ import type {
     ItemProperty,
     ItemLocation,
     ItemAmount,
+    PortalType,
     VarOperation,
 } from "../../types";
 import type { Parser } from "./parser";
 import { Diagnostic } from "../../diagnostic";
-import type { F64Kind, I64Kind, StrKind, Token } from "./token";
-import { parseNumericalPlaceholder } from "./placeholders";
+import type { F64Kind, I64Kind, PlaceholderKind, StrKind, Token } from "./token";
+import { parseNumericalPlaceholder, validateNumericalPlaceholder } from "./placeholders";
 import {
     COMPARISONS,
+    DAMAGE_CAUSES,
     ENCHANTMENTS,
+    FISHING_ENVIRONMENTS,
     GAMEMODES,
     INVENTORY_SLOTS,
     ITEM_AMOUNTS,
@@ -31,6 +36,7 @@ import {
     LOCATIONS,
     OPERATIONS,
     PERMISSIONS,
+    PORTAL_TYPES,
     POTION_EFFECTS,
     SOUNDS,
     VAR_OPERATIONS,
@@ -38,6 +44,35 @@ import {
 import { Span } from "../../span";
 import { SHORTHANDS } from "./helpers";
 import { Long } from "../../long";
+
+function normalizeNumberLiteral(value: string): string {
+    return value.replaceAll("_", "");
+}
+
+function parseDecimalValueString(value: string): string {
+    const parsed = parseFloat(value);
+    if (parsed === 0 && value.startsWith("-")) return "0.0";
+
+    let formatted: string | null = null;
+    for (let p = 1; p <= 17; p++) {
+        const candidate = parsed.toPrecision(p);
+        if (candidate.indexOf("e") !== -1 || candidate.indexOf("E") !== -1) {
+            continue;
+        }
+        if (parseFloat(candidate) === parsed) {
+            formatted = candidate;
+            break;
+        }
+    }
+    if (formatted === null) {
+        formatted = parsed.toFixed(20).replace(/(\.\d*?)0+$/, "$1");
+        if (formatted.charAt(formatted.length - 1) === ".") {
+            formatted = formatted + "0";
+        }
+    }
+
+    return formatted.indexOf(".") !== -1 ? formatted : `${formatted}.0`;
+}
 
 export function parseLocation(p: Parser): Location {
     const type = p.parseOption(
@@ -71,13 +106,13 @@ export function parseComparison(p: Parser): Comparison {
         return "Less Than";
     }
     if (p.eat({ kind: "cmp_op_eq", op: "less_than" })) {
-        return "Less Than Or Equal";
+        return "Less Than or Equal";
     }
     if (p.eat({ kind: "cmp_op", op: "greater_than" })) {
         return "Greater Than";
     }
     if (p.eat({ kind: "cmp_op_eq", op: "greater_than" })) {
-        return "Greater Than Or Equal";
+        return "Greater Than or Equal";
     }
 
     if (p.check("ident") || p.check("str")) {
@@ -230,7 +265,7 @@ export function parseNumericValue(p: Parser): Value {
     const maybeErr = Diagnostic.error("Invalid amount");
 
     if (p.eat("i64")) {
-        const value = (p.prev as I64Kind).value;
+        const value = normalizeNumberLiteral((p.prev as I64Kind).value);
         const withNegative = negative ? `-${value}` : value;
         const long = Long.fromString(withNegative);
 
@@ -240,13 +275,50 @@ export function parseNumericValue(p: Parser): Value {
 
         return long.toString();
     } else if (p.eat("f64")) {
-        const value = (p.prev as F64Kind).value;
+        const value = normalizeNumberLiteral((p.prev as F64Kind).value);
         const withNegative = negative ? `-${value}` : value;
-        const double = parseFloat(withNegative);
 
-        return double.toFixed(20);
+        return parseDecimalValueString(withNegative);
     } else if (negative) {
         throw maybeErr.addPrimarySpan(p.token.span, "Expected number");
+    }
+
+    if (p.check("str")) {
+        const token = p.token as Extract<Token, { kind: "str" }>;
+        const value = token.value;
+        const normalizedValue = normalizeNumberLiteral(value);
+
+        if (/^-?\d+$/.test(normalizedValue)) {
+            p.next();
+            const long = Long.fromString(normalizedValue);
+
+            if (normalizedValue != long.toString()) {
+                throw maybeErr.addPrimarySpan(token.span, "Number exceeds 64-bit integer limit");
+            }
+
+            return long.toString();
+        }
+
+        if (normalizedValue.includes(".") && !isNaN(Number(normalizedValue))) {
+            p.next();
+            return parseDecimalValueString(normalizedValue);
+        }
+
+        const castMatch = value.match(/^(%(.+)%)\s*([LD])$/i);
+        if (castMatch) {
+            p.next();
+            validateNumericalPlaceholder(p, castMatch[2], token.span);
+            return `"${value}"`;
+        }
+
+        // The string isn't numeric, isn't a `%var%L`/`%var%D` cast, and below
+        // we'd fall through to `parseNumericalPlaceholder`, which would emit
+        // the misleading "Expected placeholder" error. Bail out here with a
+        // clearer message unless the string is actually placeholder-shaped.
+        if (!value.startsWith("%")) {
+            throw Diagnostic.error("Expected number or numeric placeholder")
+                .addPrimarySpan(token.span, `\`"${value}"\` is not a number`);
+        }
     }
 
     let isShorthand = false;
@@ -269,6 +341,10 @@ export function parseValue(p: Parser): Value {
         return `"${p.parseString()}"`;
     }
 
+    if (p.eat("placeholder")) {
+        return `%${(p.prev as PlaceholderKind).value}%`;
+    }
+
     return parseNumericValue(p);
 }
 
@@ -280,6 +356,29 @@ export function parseInventorySlot(p: Parser): InventorySlot {
 
     if (p.check("i64")) {
         return p.parseBoundedNumber(-1, 39);
+    }
+
+    if (p.eatString("First Slot") || p.eatIdent("first_slot", true)) {
+        return "First Available Slot";
+    }
+
+    if (p.eatString("Hand") || p.eatIdent("hand", true)) {
+        return "Hand Slot";
+    }
+
+    if (p.check("str")) {
+        const value = (p.token as StrKind).value;
+        const hotbarMatch = value.match(/^hotbar slot ([1-9])$/i);
+        if (hotbarMatch) {
+            p.next();
+            return Number(hotbarMatch[1]) - 1;
+        }
+
+        const inventoryMatch = value.match(/^inventory slot ([1-9]|1[0-9]|2[0-7])$/i);
+        if (inventoryMatch) {
+            p.next();
+            return Number(inventoryMatch[1]) + 8;
+        }
     }
 
     return p.parseOption(
@@ -337,27 +436,21 @@ export function parseSound(p: Parser): Sound {
         }
     } else if (p.check("str")) {
         const value = (p.token as StrKind).value;
-        if (
-            value.includes(" ") ||
-            // this is technically wrong but if your sound key contains no
-            // periods you don't deserve to have your code parse correctly
-            !value.includes(".")
-        ) {
-            const err = Diagnostic.error("Invalid sound key")
-                .addPrimarySpan(p.token.span);
-
-            for (const { name } of SOUNDS) {
-                if (p.eatString(name) || p.eatString(name.replaceAll(" ", "_"))) {
-
-                    err.addSubDiagnostic(
-                        Diagnostic.help("Convert this string to an identifier")
-                            .addEdit(p.prev.span, name.replaceAll(" ", "_"))
-                    );
-                    break;
-                }
+        for (const sound of SOUNDS) {
+            if (
+                value.toLowerCase() === sound.name.toLowerCase() ||
+                value.toLowerCase() === sound.name.replaceAll(" ", "_").toLowerCase()
+            ) {
+                p.next();
+                return sound.path;
             }
+        }
 
-            p.gcx.addDiagnostic(err);
+        if (value.includes(" ") || !value.includes(".")) {
+            p.gcx.addDiagnostic(
+                Diagnostic.error("Invalid sound key")
+                    .addPrimarySpan(p.token.span)
+            );
         }
 
         p.next();
@@ -372,6 +465,30 @@ export function parsePermission(p: Parser): Permission {
     return p.parseOption(
         PERMISSIONS,
         { singular: "permission", plural: "permissions" }
+    );
+}
+
+export function parseDamageCause(p: Parser): DamageCause {
+    return p.parseOption(
+        DAMAGE_CAUSES,
+        { singular: "damage cause", plural: "damage causes" }
+    );
+}
+
+export function parseFishingEnvironment(p: Parser): FishingEnvironment {
+    return p.parseOption(
+        FISHING_ENVIRONMENTS,
+        {
+            singular: "fishing environment",
+            plural: "fishing environments",
+        }
+    );
+}
+
+export function parsePortalType(p: Parser): PortalType {
+    return p.parseOption(
+        PORTAL_TYPES,
+        { singular: "portal type", plural: "portal types" }
     );
 }
 
@@ -413,10 +530,18 @@ export function parseCoordinates(p: Parser) {
             .addPrimarySpan(span));
     }
 
-    const isRelative = (s: string) =>
+    const isNumeric = (s: string) => !isNaN(Number(normalizeNumberLiteral(s)));
+    const isPlaceholder = (s: string, span: Span) => {
+        const match = s.match(/^%(.+)%[LD]?$/i);
+        if (!match) return false;
+        validateNumericalPlaceholder(p, match[1], span);
+        return true;
+    };
+    const isNumericOrPlaceholder = (s: string, span: Span) =>
+        isNumeric(s) || isPlaceholder(s, span);
+    const isRelative = (s: string, span: Span) =>
         (s.startsWith("~") || s.startsWith("^")) &&
-        (s.length == 1 || isNumeric(s.substring(1)));
-    const isNumeric = (s: string) => !isNaN(parseFloat(s));
+        (s.length == 1 || isNumericOrPlaceholder(s.substring(1), span));
 
     let offset = 0;
     const components = tokens.map((token, index) => {
@@ -425,11 +550,11 @@ export function parseCoordinates(p: Parser) {
         const end = start + token.length;
 
         const tokenSpan = new Span(sp.start + start, sp.start + end);
-        const isValid = isRelative(token) || isNumeric(token);
+        const isValid = isRelative(token, tokenSpan) || isNumericOrPlaceholder(token, tokenSpan);
         if (!isValid) {
             addDiagnostic("Invalid component", tokenSpan);
         }
-        return { token, isRelative: isRelative(token), index, span: tokenSpan };
+        return { token, isRelative: isRelative(token, tokenSpan), index, span: tokenSpan };
     });
 
     if (components.length < 3) {
@@ -437,25 +562,33 @@ export function parseCoordinates(p: Parser) {
         return "";
     }
 
-    const allDirectional = components.every(c => c.token.startsWith("^"));
-    const anyDirectional = components.some(c => c.token.startsWith("^"));
+    const coordinateComponents = components.slice(0, 3);
+    const allDirectional = coordinateComponents.every(c => c.token.startsWith("^"));
+    const anyDirectional = coordinateComponents.some(c => c.token.startsWith("^"));
     if (anyDirectional && !allDirectional) {
         addDiagnostic("All components must be directional", sp);
     }
 
-    const requiresPitchYaw = components.length === 5;
-    if (components.length > 3 && !requiresPitchYaw) {
-        addDiagnostic("Expected yaw", components[3].span);
+    if (components.length > 5) {
+        const extra = components.slice(5);
+        const span = new Span(
+            extra[0].span.start,
+            extra[extra.length - 1].span.end,
+        );
+        addDiagnostic("Expected at most 5 components", span);
     }
 
-    if (requiresPitchYaw) {
-        const pitch = components[4];
-        if (!isNumeric(pitch.token)) {
-            addDiagnostic("Invalid pitch", pitch.span);
+    if (components.length >= 4) {
+        const yaw = components[3];
+        if (!isNumericOrPlaceholder(yaw.token, yaw.span)) {
+            addDiagnostic("Invalid yaw", yaw.span);
         }
-        const yaw = components[4];
-        if (!isNumeric(yaw.token)) {
-            addDiagnostic("Invalid pitch", yaw.span);
+    }
+
+    if (components.length >= 5) {
+        const pitch = components[4];
+        if (!isNumericOrPlaceholder(pitch.token, pitch.span)) {
+            addDiagnostic("Invalid pitch", pitch.span);
         }
     }
 

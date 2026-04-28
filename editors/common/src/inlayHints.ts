@@ -45,31 +45,34 @@ export function provideInlayHints(src: string): InlayHint[] {
     return provideInlayHintsForActions(result.value, result.spans);
 }
 
+const SKIP_INLAY_FIELDS = new Set(["type", "note"]);
+
 function provideInlayHintsForActions(actions: types.Action[], spans: SpanTable): InlayHint[] {
     const hints: InlayHint[] = [];
 
     for (const action of actions) {
+        // `if` reads cleanly already; just recurse into its branches.
         if (action.type === "CONDITIONAL") {
             hints.push(...provideInlayHintsForConditions(action.conditions ?? [], spans));
             hints.push(...provideInlayHintsForActions(action.ifActions ?? [], spans));
             hints.push(...provideInlayHintsForActions(action.elseActions ?? [], spans));
-        } else if (action.type === "RANDOM") {
+            continue;
+        }
+        if (action.type === "RANDOM") {
             hints.push(...provideInlayHintsForActions(action.actions ?? [], spans));
+            continue;
         }
 
-        if (
-            action.type === "CHANGE_VAR" ||
-            action.type === "CONDITIONAL" ||
-            action.type === "RANDOM"
-        ) continue;
-
         for (const key of Object.keys(action)) {
-            if (key === "type" || key === "function" || key === "note") continue;
+            if (SKIP_INLAY_FIELDS.has(key)) continue;
+            // `holder` shares the keyword span; `function` collides with the keyword.
+            if (action.type === "CHANGE_VAR" && key === "holder") continue;
+            if (action.type === "FUNCTION" && key === "function") continue;
 
             const value = (action as any)[key];
             if (value === null || value === undefined) continue;
 
-            const span = spans.getFieldSpan(action as object, key);
+            const span = getOptionalFieldSpan(spans, action as object, key);
             if (!span) continue;
 
             hints.push(hint(key, span));
@@ -79,6 +82,8 @@ function provideInlayHintsForActions(actions: types.Action[], spans: SpanTable):
     return hints;
 }
 
+const SKIP_INLAY_CONDITION_FIELDS = new Set(["type", "inverted", "note"]);
+
 function provideInlayHintsForConditions(
     conditions: types.Condition[],
     spans: SpanTable,
@@ -86,17 +91,14 @@ function provideInlayHintsForConditions(
     const hints: InlayHint[] = [];
 
     for (const condition of conditions) {
-        if (condition.type === "COMPARE_VAR" || condition.type === "COMPARE_PLACEHOLDER") {
-            continue;
-        }
-
         for (const key of Object.keys(condition)) {
-            if (key === "type" || key === "inverted" || key === "note") continue;
+            if (SKIP_INLAY_CONDITION_FIELDS.has(key)) continue;
+            if (condition.type === "COMPARE_VAR" && key === "holder") continue;
 
             const value = (condition as any)[key];
             if (value === null || value === undefined) continue;
 
-            const span = spans.getFieldSpan(condition as object, key);
+            const span = getOptionalFieldSpan(spans, condition as object, key);
             if (!span) continue;
 
             hints.push(hint(key, span));
@@ -104,4 +106,16 @@ function provideInlayHintsForConditions(
     }
 
     return hints;
+}
+
+function getOptionalFieldSpan(
+    spans: SpanTable,
+    node: object,
+    key: string,
+): Span | undefined {
+    try {
+        return spans.getField(node, key as never);
+    } catch {
+        return undefined;
+    }
 }

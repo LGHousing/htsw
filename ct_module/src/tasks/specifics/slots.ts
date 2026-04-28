@@ -33,9 +33,17 @@ export class ItemSlot {
         }
         container.click(this.slotId, shift, button.valueOf());
     }
+
+    public drop(ctrl: boolean = false): void {
+        const container = Player.getContainer();
+        if (container == null) {
+            throw new Error("No open container found");
+        }
+        container.drop(this.slotId, ctrl);
+    }
 }
 
-export function getAllItemSlots(): ItemSlot[] | null {
+export function getAllItemSlots(check: null | ((slot: ItemSlot) => boolean) = null): ItemSlot[] | null {
     const container = Player.getContainer();
     if (container == null) {
         return null;
@@ -47,7 +55,11 @@ export function getAllItemSlots(): ItemSlot[] | null {
         if (item == null) {
             continue;
         }
-        slots.push(new ItemSlot(slotId, item));
+        const slot = new ItemSlot(slotId, item);
+        if (check !== null && !check(slot)) {
+            continue;
+        }
+        slots.push(slot);
     }
 
     return slots;
@@ -85,4 +97,13 @@ export function getItemSlot(
         }
     }
     return slot;
+}
+
+export function getOpenContainerTitle(): string | null {
+    const container = Player.getContainer();
+    if (container == null) {
+        return null;
+    }
+
+    return removedFormatting(container.getName());
 }

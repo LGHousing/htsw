@@ -1,7 +1,9 @@
 import {
     COMPARISONS,
+    DAMAGE_CAUSES,
     ENCHANTMENTS,
     EVENTS,
+    FISHING_ENVIRONMENTS,
     GAMEMODES,
     INVENTORY_SLOTS,
     ITEM_AMOUNTS,
@@ -10,6 +12,7 @@ import {
     LOBBIES,
     OPERATIONS,
     PERMISSIONS,
+    PORTAL_TYPES,
     POTION_EFFECTS,
     SOUNDS,
     VAR_OPERATIONS,
@@ -22,9 +25,9 @@ export type Value = string;
 export type VarName = string;
 
 export type VarHolder =
-    | { type: "player" }
-    | { type: "global" }
-    | { type: "team"; team?: string }; // Team can be optional in some housing flows.
+    | { type: "Player" }
+    | { type: "Global" }
+    | { type: "Team"; team?: string }; // Team can be optional in some housing flows.
 
 export type Operation = (typeof OPERATIONS)[number];
 export type VarOperation = Operation | (typeof VAR_OPERATIONS)[number];
@@ -37,6 +40,9 @@ export type Lobby = (typeof LOBBIES)[number];
 export type Enchantment = (typeof ENCHANTMENTS)[number];
 export type Sound = (typeof SOUNDS)[number]["path"];
 export type Permission = (typeof PERMISSIONS)[number];
+export type DamageCause = (typeof DAMAGE_CAUSES)[number];
+export type FishingEnvironment = (typeof FISHING_ENVIRONMENTS)[number];
+export type PortalType = (typeof PORTAL_TYPES)[number];
 
 export type InventorySlot = (typeof INVENTORY_SLOTS)[number] | number; // -1 to 39
 

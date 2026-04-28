@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import * as htsw from "../src";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
+import { assertImportable } from "./helpers";
 
 class NodeFileLoader implements htsw.FileLoader {
     fileExists(path: string): boolean {
@@ -43,7 +44,13 @@ function caseFilePath(name: string): string {
 
 describe("import.json include", () => {
     it("multi_file fixture cases have an entry import.json", () => {
-        for (const dir of ["merge", "nested", "cycle", "duplicate", "include_import_json_name"]) {
+        for (const dir of [
+            "merge",
+            "nested",
+            "cycle",
+            "duplicate",
+            "include_import_json_name",
+        ]) {
             expect(existsSync(caseDirPath(dir))).toBe(true);
         }
     });
@@ -52,11 +59,15 @@ describe("import.json include", () => {
         const result = parseImportables(caseDirPath("merge"));
 
         const regionNames = result.value
-            .filter((importable) => importable.type === "REGION")
-            .map((importable) => importable.name)
-            .filter((name): name is string => name !== undefined);
+            .filter(
+                (importable): importable is htsw.types.ImportableRegion =>
+                    importable.type === "REGION"
+            )
+            .map((importable) => importable.name);
 
-        expect(regionNames).toEqual(expect.arrayContaining(["RootRegion", "SharedRegion"]));
+        expect(regionNames).toEqual(
+            expect.arrayContaining(["RootRegion", "SharedRegion"])
+        );
         expect(hasHardErrors(result.diagnostics)).toBe(false);
     });
 
@@ -64,9 +75,11 @@ describe("import.json include", () => {
         const result = parseImportables(caseDirPath("nested"));
 
         const regionNames = result.value
-            .filter((importable) => importable.type === "REGION")
-            .map((importable) => importable.name)
-            .filter((name): name is string => name !== undefined);
+            .filter(
+                (importable): importable is htsw.types.ImportableRegion =>
+                    importable.type === "REGION"
+            )
+            .map((importable) => importable.name);
 
         expect(regionNames).toEqual(expect.arrayContaining(["RegionA", "RegionB"]));
         expect(hasHardErrors(result.diagnostics)).toBe(false);
@@ -98,8 +111,10 @@ describe("import.json include", () => {
         const result = parseImportables(caseDirPath("duplicate"));
 
         const duplicateWarningCount = result.diagnostics.filter((diagnostic) => {
-            return diagnostic.level === "warning"
-                && diagnostic.message.includes("Duplicate include path");
+            return (
+                diagnostic.level === "warning" &&
+                diagnostic.message.includes("Duplicate include path")
+            );
         }).length;
 
         expect(duplicateWarningCount).toBe(1);
@@ -120,8 +135,9 @@ describe("import.json basic passing behavior", () => {
         const result = parseImportables(caseFilePath("region"));
 
         expect(result.value.length).toBe(1);
-        expect(result.value[0].type).toBe("REGION");
-        expect(result.value[0].name).toBe("SpawnRegion");
+        const region = result.value[0];
+        assertImportable(region, "REGION");
+        expect(region.name).toBe("SpawnRegion");
         expect(hasHardErrors(result.diagnostics)).toBe(false);
     });
 
@@ -129,9 +145,10 @@ describe("import.json basic passing behavior", () => {
         const result = parseImportables(caseFilePath("function"));
 
         expect(result.value.length).toBe(1);
-        expect(result.value[0].type).toBe("FUNCTION");
-        expect(result.value[0].name).toBe("TickFn");
-        expect(result.value[0].repeatTicks).toBe(20);
+        const fn = result.value[0];
+        assertImportable(fn, "FUNCTION");
+        expect(fn.name).toBe("TickFn");
+        expect(fn.repeatTicks).toBe(20);
         expect(hasHardErrors(result.diagnostics)).toBe(false);
     });
 
@@ -139,9 +156,10 @@ describe("import.json basic passing behavior", () => {
         const result = parseImportables(caseFilePath("function_no_repeat"));
 
         expect(result.value.length).toBe(1);
-        expect(result.value[0].type).toBe("FUNCTION");
-        expect(result.value[0].name).toBe("NoRepeatFn");
-        expect(result.value[0].repeatTicks).toBeUndefined();
+        const fn = result.value[0];
+        assertImportable(fn, "FUNCTION");
+        expect(fn.name).toBe("NoRepeatFn");
+        expect(fn.repeatTicks).toBeUndefined();
         expect(hasHardErrors(result.diagnostics)).toBe(false);
     });
 
@@ -149,8 +167,9 @@ describe("import.json basic passing behavior", () => {
         const result = parseImportables(caseFilePath("event"));
 
         expect(result.value.length).toBe(1);
-        expect(result.value[0].type).toBe("EVENT");
-        expect(result.value[0].event).toBe("Player Join");
+        const event = result.value[0];
+        assertImportable(event, "EVENT");
+        expect(event.event).toBe("Player Join");
         expect(hasHardErrors(result.diagnostics)).toBe(false);
     });
 
@@ -158,16 +177,17 @@ describe("import.json basic passing behavior", () => {
         const result = parseImportables(caseFilePath("npc"));
 
         expect(result.value.length).toBe(1);
-        expect(result.value[0].type).toBe("NPC");
-        expect(result.value[0].name).toBe("Guide");
-        expect(result.value[0].pos?.x).toBe(1);
-        expect(result.value[0].pos?.y).toBe(2);
-        expect(result.value[0].pos?.z).toBe(3);
-        expect(result.value[0].lookAtPlayers).toBe(true);
-        expect(result.value[0].hideNameTag).toBe(false);
-        expect(result.value[0].skin).toBe("Steve");
-        expect(result.value[0].equipment?.helmet).toBe("empty.snbt");
-        expect(result.value[0].equipment?.hand).toBe("empty.snbt");
+        const npc = result.value[0];
+        assertImportable(npc, "NPC");
+        expect(npc.name).toBe("Guide");
+        expect(npc.pos?.x).toBe(1);
+        expect(npc.pos?.y).toBe(2);
+        expect(npc.pos?.z).toBe(3);
+        expect(npc.lookAtPlayers).toBe(true);
+        expect(npc.hideNameTag).toBe(false);
+        expect(npc.skin).toBe("Steve");
+        expect(npc.equipment?.helmet).toBe("empty.snbt");
+        expect(npc.equipment?.hand).toBe("empty.snbt");
         expect(hasHardErrors(result.diagnostics)).toBe(false);
     });
 
@@ -175,13 +195,14 @@ describe("import.json basic passing behavior", () => {
         const result = parseImportables(caseFilePath("item"));
 
         expect(result.value.length).toBe(1);
-        expect(result.value[0].type).toBe("ITEM");
-        expect(result.value[0].name).toBe("Stone Item");
-        expect(result.value[0].nbt.type).toBe("compound");
-        if (result.value[0].nbt.type === "compound") {
-            expect(result.value[0].nbt.value.id).toEqual({
+        const item = result.value[0];
+        assertImportable(item, "ITEM");
+        expect(item.name).toBe("Stone Item");
+        expect(item.nbt.type).toBe("compound");
+        if (item.nbt.type === "compound") {
+            expect(item.nbt.value.id).toEqual({
                 type: "string",
-                value: "stone",
+                value: "minecraft:stone",
             });
         }
         expect(hasHardErrors(result.diagnostics)).toBe(false);
@@ -191,11 +212,15 @@ describe("import.json basic passing behavior", () => {
         const result = parseImportables(caseDirPath("include_import_json_name"));
 
         const regionNames = result.value
-            .filter((importable) => importable.type === "REGION")
-            .map((importable) => importable.name)
-            .filter((name): name is string => name !== undefined);
+            .filter(
+                (importable): importable is htsw.types.ImportableRegion =>
+                    importable.type === "REGION"
+            )
+            .map((importable) => importable.name);
 
-        expect(regionNames).toEqual(expect.arrayContaining(["RootRegion", "NamedImportJsonRegion"]));
+        expect(regionNames).toEqual(
+            expect.arrayContaining(["RootRegion", "NamedImportJsonRegion"])
+        );
         expect(hasHardErrors(result.diagnostics)).toBe(false);
     });
 });
@@ -210,20 +235,22 @@ describe("import.json diagnostics readability", () => {
         expect(diag).toBeDefined();
         expect(
             diag!.subDiagnostics.some((it) =>
-                it.message.includes("Check the include path and verify the target file exists")
+                it.message.includes(
+                    "Check the include path and verify the target file exists"
+                )
             )
         ).toBe(true);
     });
 
     it("includes valid keys help for unknown keys", () => {
         const result = parseImportables(caseFilePath("unknown_key"));
-        const diag = result.diagnostics.find((it) => it.message.includes("Unknown key 'oops'"));
+        const diag = result.diagnostics.find((it) =>
+            it.message.includes("Unknown key 'oops'")
+        );
 
         expect(diag).toBeDefined();
         expect(
-            diag!.subDiagnostics.some((it) =>
-                it.message.includes("Valid keys are:")
-            )
+            diag!.subDiagnostics.some((it) => it.message.includes("Valid keys are:"))
         ).toBe(true);
     });
 
@@ -235,10 +262,75 @@ describe("import.json diagnostics readability", () => {
 
         expect(diag).toBeDefined();
         expect(
-            diag!.subDiagnostics.some((it) =>
-                it.message.includes("Allowed keys here:")
+            diag!.subDiagnostics.some((it) => it.message.includes("Allowed keys here:"))
+        ).toBe(true);
+    });
+
+    it("reports malformed action files without crashing checker passes", () => {
+        let result: ReturnType<typeof parseImportables> | undefined;
+
+        expect(() => {
+            result = parseImportables(caseFilePath("malformed_actions"));
+        }).not.toThrow();
+
+        expect(result).toBeDefined();
+        expect(hasHardErrors(result!.diagnostics)).toBe(true);
+        expect(
+            result!.diagnostics.some((diagnostic) =>
+                diagnostic.message.includes("Expected condition")
             )
         ).toBe(true);
     });
-});
 
+    it("reports duplicate top-level item names", () => {
+        const result = parseImportables(caseFilePath("duplicate_items"));
+
+        expect(hasHardErrors(result.diagnostics)).toBe(true);
+        expect(
+            result.diagnostics.some((diagnostic) =>
+                diagnostic.message.includes("Duplicate item name 'Token'")
+            )
+        ).toBe(true);
+    });
+
+    it("reports item references that do not match top-level item names", () => {
+        const result = parseImportables(caseFilePath("unknown_item_reference"));
+
+        expect(hasHardErrors(result.diagnostics)).toBe(true);
+        expect(
+            result.diagnostics.some((diagnostic) =>
+                diagnostic.message.includes("Unknown item 'Token Display Name'")
+            )
+        ).toBe(true);
+    });
+
+    it("supports direct SNBT item paths relative to the containing HTSL file", () => {
+        const result = parseImportables(caseDirPath("direct_snbt"));
+
+        expect(hasHardErrors(result.diagnostics)).toBe(false);
+        expect(result.value.length).toBe(1);
+    });
+
+    it("reports missing direct SNBT item paths", () => {
+        const result = parseImportables(caseFilePath("missing_direct_snbt"));
+
+        expect(hasHardErrors(result.diagnostics)).toBe(true);
+        expect(
+            result.diagnostics.some((diagnostic) =>
+                diagnostic.message.includes("SNBT item file does not exist")
+            )
+        ).toBe(true);
+    });
+
+    it("reports invalid direct SNBT item paths", () => {
+        const result = parseImportables(caseFilePath("invalid_direct_snbt"));
+
+        expect(hasHardErrors(result.diagnostics)).toBe(true);
+    });
+
+    it("keeps top-level item names authoritative over direct SNBT paths", () => {
+        const result = parseImportables(caseFilePath("item_name_wins_over_snbt_path"));
+
+        expect(hasHardErrors(result.diagnostics)).toBe(false);
+    });
+});

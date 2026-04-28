@@ -22,13 +22,13 @@ const defaultBehaviorCompareVar: ConditionBehavior<"COMPARE_VAR"> = (rt, conditi
     }
 
     const holderType = condition.holder.type;
-    const key: string | TeamVarKey = holderType === "team"
+    const key: string | TeamVarKey = holderType === "Team"
         ? { team: condition.holder.team ?? "", key: condition.var }
         : condition.var;
 
-    const varHolder: VarHolder<any> = holderType === "team"
+    const varHolder: VarHolder<any> = holderType === "Team"
         ? rt.teamVars
-        : holderType === "global"
+        : holderType === "Global"
             ? rt.globalVars
             : rt.playerVars;
 

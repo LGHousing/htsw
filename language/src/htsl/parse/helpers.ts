@@ -34,10 +34,13 @@ export const ACTION_KWS = [
     "setTeam",
     "tp",
     "consumeItem",
+    "playerWeather",
+    "playerTime",
+    "displayNametag",
     "stat",
     "globalstat",
     "teamstat",
-    "launch",
+    "launchTarget",
     "changeVelocity",
     "dropItem",
     "function",
@@ -96,17 +99,19 @@ export const ACTIONS_TO_KWS: {
     CHANGE_MAX_HEALTH: "maxHealth",
     CHANGE_VAR: "var",
     CLEAR_POTION_EFFECTS: "clearEffects",
+    CLOSE_MENU: "closeMenu",
     CONDITIONAL: "if",
     DROP_ITEM: "dropItem",
     ENCHANT_HELD_ITEM: "enchant",
     EXIT: "exit",
     FAIL_PARKOUR: "failParkour",
+    PARKOUR_CHECKPOINT: "parkCheck",
     FUNCTION: "function",
     GIVE_EXPERIENCE_LEVELS: "xpLevel",
     GIVE_ITEM: "giveItem",
     HEAL: "fullHeal",
     KILL: "kill",
-    LAUNCH: "launch",
+    LAUNCH: "launchTarget",
     MESSAGE: "chat",
     PAUSE: "pause",
     PLAY_SOUND: "sound",
@@ -118,25 +123,35 @@ export const ACTIONS_TO_KWS: {
     SET_GAMEMODE: "gamemode",
     SET_GROUP: "changePlayerGroup",
     SET_MENU: "displayMenu",
+    SET_PLAYER_TIME: "playerTime",
+    SET_PLAYER_WEATHER: "playerWeather",
     SET_TEAM: "setTeam",
     SET_VELOCITY: "changeVelocity",
     TELEPORT: "tp",
     TITLE: "title",
+    TOGGLE_NAMETAG_DISPLAY: "displayNametag",
+    USE_HELD_ITEM: "consumeItem",
 };
 
 export const CONDITIONS_TO_KWS: {
     [key in Condition["type"]]: ConditionKw;
 } = {
+    BLOCK_TYPE: "blockType",
     COMPARE_DAMAGE: "damageAmount",
     COMPARE_HEALTH: "health",
     COMPARE_HUNGER: "hunger",
     COMPARE_MAX_HEALTH: "maxHealth",
     COMPARE_PLACEHOLDER: "placeholder",
     COMPARE_VAR: "var",
+    DAMAGE_CAUSE: "damageCause",
+    FISHING_ENVIRONMENT: "fishingEnv",
     IS_DOING_PARKOUR: "doingParkour",
     IS_FLYING: "isFlying",
     IS_IN_REGION: "inRegion",
+    IS_ITEM: "isItem",
     IS_SNEAKING: "isSneaking",
+    PORTAL_TYPE: "portal",
+    PVP_ENABLED: "canPvp",
     REQUIRE_GAMEMODE: "gamemode",
     REQUIRE_GROUP: "hasGroup",
     REQUIRE_ITEM: "hasItem",
@@ -166,9 +181,9 @@ export const COMPARISON_SYMBOLS: {
 } = {
     Equal: "==",
     "Less Than": "<",
-    "Less Than Or Equal": "<=",
+    "Less Than or Equal": "<=",
     "Greater Than": ">",
-    "Greater Than Or Equal": ">=",
+    "Greater Than or Equal": ">=",
 };
 
 export const SHORTHANDS = [
@@ -189,3 +204,4 @@ export const SHORTHANDS = [
 ] as const;
 
 export type ShorthandKw = (typeof SHORTHANDS)[number];
+

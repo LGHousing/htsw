@@ -3,6 +3,9 @@ import * as htsw from "htsw";
 import * as common from "htsw-editor-common";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { computeBestLayout } from "./loreLineLayout";
+
+export { CompletionAdapter, SnbtCompletionAdapter } from "./completions";
 
 class StringFileLoader implements htsw.FileLoader {
     constructor(private readonly src: string) {}
@@ -56,8 +59,6 @@ class HybridFileLoader implements htsw.FileLoader {
     }
 }
 
-// --- inlay hints ---
-
 export class InlayHintsAdapter implements vscode.InlayHintsProvider {
     public provideInlayHints(
         document: vscode.TextDocument
@@ -75,8 +76,6 @@ export class InlayHintsAdapter implements vscode.InlayHintsProvider {
         });
     }
 }
-
-// --- diagnostics ---
 
 export class DiagnosticsAdapter {
     private disposables: vscode.Disposable[] = [];
@@ -422,8 +421,86 @@ export class DiagnosticsAdapter {
     }
 }
 
-// --- hover ---
+export class SnbtCodeActionAdapter implements vscode.CodeActionProvider {
+    public static readonly providedCodeActionKinds = [
+        vscode.CodeActionKind.RefactorRewrite,
+    ];
 
-// --- rename ---
+    public provideCodeActions(
+        document: vscode.TextDocument,
+        range: vscode.Range | vscode.Selection,
+        _context: vscode.CodeActionContext,
+        _token: vscode.CancellationToken,
+    ): vscode.ProviderResult<vscode.CodeAction[]> {
+        if (document.languageId !== "snbt") return [];
 
-// --- references ---
+        const config = vscode.workspace.getConfiguration("htsw", document.uri);
+        if (!config.get<boolean>("snbt.suggestLoreSplitting", false)) return [];
+        const maxWidth = Math.max(8, config.get<number>("snbt.loreLineMaxWidth", 40));
+
+        const text = document.getText();
+        const cursorOffset = document.offsetAt(range.start);
+        const target = findStringAtOffset(text, cursorOffset);
+        if (!target) return [];
+
+        const layout = computeBestLayout(target.value, { maxLength: maxWidth });
+        if (!layout.includes("\n")) return [];
+
+        const lines = layout.split("\n");
+        const quoted = lines.map((line) => quoteSnbtString(line, target.quote));
+
+        const editRange = new vscode.Range(
+            document.positionAt(target.start),
+            document.positionAt(target.end),
+        );
+
+        const startLineText = document.lineAt(editRange.start.line).text;
+        const endLineText = document.lineAt(editRange.end.line).text;
+        const prefixBeforeString = startLineText.slice(0, editRange.start.character);
+        const suffixAfterString = endLineText.slice(editRange.end.character);
+        const stringIsAlone =
+            editRange.start.line === editRange.end.line &&
+            /^\s*$/.test(prefixBeforeString) &&
+            /^\s*,?\s*$/.test(suffixAfterString);
+
+        const separator = stringIsAlone ? `,\n${prefixBeforeString}` : ", ";
+        const replacement = quoted.join(separator);
+
+        const action = new vscode.CodeAction(
+            `Split lore line for optimal display (→ ${lines.length} lines)`,
+            vscode.CodeActionKind.RefactorRewrite,
+        );
+        action.edit = new vscode.WorkspaceEdit();
+        action.edit.replace(document.uri, editRange, replacement);
+
+        return [action];
+    }
+}
+
+function findStringAtOffset(
+    text: string,
+    offset: number,
+): { start: number; end: number; value: string; quote: '"' | "'" } | undefined {
+    const lexer = new htsw.nbt.Lexer(text);
+    while (true) {
+        const tok = lexer.advanceToken();
+        if (tok.kind === "eof" || tok.kind === "unknown") return undefined;
+        if (tok.kind === "str" && offset >= tok.span.start && offset <= tok.span.end) {
+            const quote: '"' | "'" = text[tok.span.start] === "'" ? "'" : '"';
+            return { start: tok.span.start, end: tok.span.end, value: tok.value, quote };
+        }
+    }
+}
+
+function quoteSnbtString(text: string, quote: '"' | "'"): string {
+    let escaped = "";
+    for (const ch of text) {
+        if (ch === "\\") escaped += "\\\\";
+        else if (ch === quote) escaped += "\\" + quote;
+        else if (ch === "\n") escaped += "\\n";
+        else if (ch === "\r") escaped += "\\r";
+        else if (ch === "\t") escaped += "\\t";
+        else escaped += ch;
+    }
+    return quote + escaped + quote;
+}

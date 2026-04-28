@@ -50,7 +50,7 @@ function setNodeSpan(p: Parser, node: object, span: Span) {
 
 function setNote<T extends { note?: string }>(p: Parser, node: T, note: Note) {
     if (!note) return;
-    setFieldWithSpan(p, node, "note", note.value, note.span);
+    setFieldWithSpan(p, node, "note", note.value.trim(), note.span);
 }
 
 export function parseAction(p: Parser): Action {
@@ -82,6 +82,8 @@ export function parseAction(p: Parser): Action {
         return parseActionMessage(p, note);
     } else if (eatKw("clearEffects")) {
         return parseSimpleAction(p, "CLEAR_POTION_EFFECTS", note);
+    } else if (eatKw("closeMenu")) {
+        return parseSimpleAction(p, "CLOSE_MENU", note);
     } else if (eatKw("compassTarget")) {
         return parseActionSetCompassTarget(p, note);
     } else if (eatKw("displayMenu")) {
@@ -96,6 +98,8 @@ export function parseAction(p: Parser): Action {
         return parseActionFailParkour(p, note);
     } else if (eatKw("fullHeal")) {
         return parseSimpleAction(p, "HEAL", note);
+    } else if (eatKw("parkCheck")) {
+        return parseSimpleAction(p, "PARKOUR_CHECKPOINT", note);
     } else if (eatKw("function")) {
         return parseActionFunction(p, note);
     } else if (eatKw("gamemode")) {
@@ -110,7 +114,7 @@ export function parseAction(p: Parser): Action {
         return parseActionConditional(p, note);
     } else if (eatKw("kill")) {
         return parseSimpleAction(p, "KILL", note);
-    } else if (eatKw("launch")) {
+    } else if (eatKw("launchTarget")) {
         return parseActionLaunch(p, note);
     } else if (eatKw("lobby")) {
         return parseActionSendToLobby(p, note);
@@ -134,8 +138,16 @@ export function parseAction(p: Parser): Action {
         return parseActionTitle(p, note);
     } else if (eatKw("tp")) {
         return parseActionTeleport(p, note);
+    } else if (eatKw("consumeItem")) {
+        return parseSimpleAction(p, "USE_HELD_ITEM", note);
     } else if (eatKw("var") || eatKw("stat")) {
         return parseActionChangeVar(p, note);
+    } else if (eatKw("playerWeather")) {
+        return parseActionSetPlayerWeather(p, note);
+    } else if (eatKw("playerTime")) {
+        return parseActionSetPlayerTime(p, note);
+    } else if (eatKw("displayNametag")) {
+        return parseActionToggleNametagDisplay(p, note);
     } else if (eatKw("xpLevel")) {
         return parseActionGiveExperienceLevels(p, note);
     }
@@ -227,7 +239,7 @@ function parseActionApplyPotionEffect(p: Parser, note: Note): Action {
 
 function parseActionChangeGlobalVar(p: Parser, note: Note): Action {
     return parseActionRecovering(p, "CHANGE_VAR", note, (action) => {
-        setFieldWithSpan(p, action, "holder", { type: "global" }, p.prev.span);
+        setFieldWithSpan(p, action, "holder", { type: "Global" }, p.prev.span);
         setField(p, action, "key", parseVarName);
         const op = setField(p, action, "op", parseVarOperation);
         if (op === "Unset") return;
@@ -263,7 +275,7 @@ function parseActionChangeTeamVar(p: Parser, note: Note): Action {
         setField(p, action, "key", parseVarName);
         const teamSpan = p.token.span;
         const team = p.parseName();
-        const holder = { type: "team", team } as const;
+        const holder = { type: "Team", team } as const;
         setFieldWithSpan(p, action, "holder", holder, teamSpan.to(p.prev.span));
         const op = setField(p, action, "op", parseVarOperation);
         if (op === "Unset") return;
@@ -275,7 +287,7 @@ function parseActionChangeTeamVar(p: Parser, note: Note): Action {
 
 function parseActionChangeVar(p: Parser, note: Note): Action {
     return parseActionRecovering(p, "CHANGE_VAR", note, (action) => {
-        setFieldWithSpan(p, action, "holder", { type: "player" }, p.prev.span);
+        setFieldWithSpan(p, action, "holder", { type: "Player" }, p.prev.span);
         setField(p, action, "key", parseVarName);
         const op = setField(p, action, "op", parseVarOperation);
         if (op === "Unset") return;
@@ -316,9 +328,12 @@ function parseActionConditional(p: Parser, note: Note): Action {
 
         if (p.eatIdent("else")) {
             setField(p, action, "elseActions", p.parseBlock);
-        } else if (hadNewline) {
-            p.tokens.push(p.token);
-            p.token = token;
+        } else {
+            action.elseActions = [];
+            if (hadNewline) {
+                p.tokens.push(p.token);
+                p.token = token;
+            }
         }
     });
 }
@@ -332,11 +347,20 @@ function parseActionDisplayMenu(p: Parser, note: Note): Action {
 function parseActionDropItem(p: Parser, note: Note): Action {
     return parseActionRecovering(p, "DROP_ITEM", note, (action) => {
         setField(p, action, "itemName", p.parseName);
+        if (p.checkEol()) return;
         setField(p, action, "location", parseLocation);
+        if (p.checkEol()) return;
         setField(p, action, "dropNaturally", p.parseBoolean);
+        if (p.checkEol()) return;
         setField(p, action, "disableMerging", p.parseBoolean);
+        if (p.checkEol()) return;
         setField(p, action, "prioritizePlayer", p.parseBoolean);
+        if (p.checkEol()) return;
         setField(p, action, "inventoryFallback", p.parseBoolean);
+        if (p.checkEol()) return;
+        setField(p, action, "despawnDurationTicks", parseNumericValue);
+        if (p.checkEol()) return;
+        setField(p, action, "pickupDelayTicks", parseNumericValue);
     });
 }
 
@@ -370,8 +394,11 @@ function parseActionGiveExperienceLevels(p: Parser, note: Note): Action {
 function parseActionGiveItem(p: Parser, note: Note): Action {
     return parseActionRecovering(p, "GIVE_ITEM", note, (action) => {
         setField(p, action, "itemName", p.parseName);
+        if (p.checkEol()) return;
         setField(p, action, "allowMultiple", p.parseBoolean);
+        if (p.checkEol()) return;
         setField(p, action, "slot", parseInventorySlot);
+        if (p.checkEol()) return;
         setField(p, action, "replaceExisting", p.parseBoolean);
     });
 }
@@ -398,8 +425,12 @@ function parseActionPause(p: Parser, note: Note): Action {
 function parseActionPlaySound(p: Parser, note: Note): Action {
     return parseActionRecovering(p, "PLAY_SOUND", note, (action) => {
         setField(p, action, "sound", parseSound);
+        if (p.checkEol()) return;
         setField(p, action, "volume", p.parseDouble);
+        if (p.checkEol()) return;
         setField(p, action, "pitch", p.parseDouble);
+        if (p.checkEol()) return;
+        if (p.eatIdent("null") || p.eatString("null")) return;
         setField(p, action, "location", parseLocation);
     });
 }
@@ -448,6 +479,24 @@ function parseActionSetTeam(p: Parser, note: Note): Action {
     });
 }
 
+function parseActionSetPlayerWeather(p: Parser, note: Note): Action {
+    return parseActionRecovering(p, "SET_PLAYER_WEATHER", note, (action) => {
+        setField(p, action, "weather", p.parseString);
+    });
+}
+
+function parseActionSetPlayerTime(p: Parser, note: Note): Action {
+    return parseActionRecovering(p, "SET_PLAYER_TIME", note, (action) => {
+        setField(p, action, "time", p.parseString);
+    });
+}
+
+function parseActionToggleNametagDisplay(p: Parser, note: Note): Action {
+    return parseActionRecovering(p, "TOGGLE_NAMETAG_DISPLAY", note, (action) => {
+        setField(p, action, "displayNametag", p.parseBoolean);
+    });
+}
+
 function parseActionSetVelocity(p: Parser, note: Note): Action {
     return parseActionRecovering(p, "SET_VELOCITY", note, (action) => {
         setField(p, action, "x", parseNumericValue);
@@ -459,6 +508,8 @@ function parseActionSetVelocity(p: Parser, note: Note): Action {
 function parseActionTeleport(p: Parser, note: Note): Action {
     return parseActionRecovering(p, "TELEPORT", note, (action) => {
         setField(p, action, "location", parseLocation);
+        if (p.checkEol()) return;
+        setField(p, action, "preventTeleportInsideBlocks", p.parseBoolean);
     });
 }
 

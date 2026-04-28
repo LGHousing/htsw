@@ -17,10 +17,8 @@ export class PlaceholderBehaviors extends Behaviors<PlaceholderInvocation, Var<a
             .with("var.player", defaultBehaviorVarPlayer)
             .with("var.global", defaultBehaviorVarGlobal)
             .with("var.team", defaultBehaviorVarTeam)
-            .with("stat.player", defaultBehaviorVarPlayer)
-            .with("stat.global", defaultBehaviorVarGlobal)
-            .with("stat.team", defaultBehaviorVarTeam)
             
+            .with("random.int", defaultBehaviorRandomWhole)
             .with("random.whole", defaultBehaviorRandomWhole)
             .with("random.decimal", defaultBehaviorRandomDecimal);
     }

@@ -34,6 +34,19 @@ monaco.languages.setLanguageConfiguration("htsl", {
         ["[", "]"],
         ["{", "}"],
     ],
+    onEnterRules: [
+        {
+            beforeText:
+                /^\s*if(?:\s+(?:and|or|true|false))?\s*\(\s*(?:\/\/.*)?$/,
+            action: {
+                indentAction: monaco.languages.IndentAction.Indent,
+            },
+        },
+    ],
+    indentationRules: {
+        increaseIndentPattern: /^\s*.*\{\s*(?:\/\/.*)?$/,
+        decreaseIndentPattern: /^\s*\}\s*(?:\/\/.*)?$/,
+    },
 });
 
 monaco.languages.setMonarchTokensProvider("htsl", HTSL_MONARCH_DEFINITION);

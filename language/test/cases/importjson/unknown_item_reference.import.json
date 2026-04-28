@@ -1,0 +1,14 @@
+{
+  "items": [
+    {
+      "name": "Token",
+      "nbt": "stone.snbt"
+    }
+  ],
+  "functions": [
+    {
+      "name": "GiveToken",
+      "actions": "unknown_item_reference.htsl"
+    }
+  ]
+}

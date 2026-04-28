@@ -7,61 +7,80 @@ import {
     Pos,
 } from "htsw/types";
 
-import { importAction } from "./actions";
+import { syncActionList } from "../importer/actions";
 import TaskContext from "../tasks/context";
-import {
-    getSlotPaginate,
-    clickGoBack,
-    waitForMenu,
-    waitForUnformattedMessage,
-    setNumberValue,
-} from "./helpers";
-import { MouseButton } from "../tasks/specifics/slots";
-import { cyrb53, removedFormatting } from "../utils/helpers";
+import { clickGoBack, waitForMenu, waitForUnformattedMessage } from "../importer/helpers";
+import { removedFormatting } from "../utils/helpers";
 import { getItemFromNbt } from "../utils/nbt";
-import { C09PacketHeldItemChange, C10PacketCreativeInventoryAction } from "../utils/packets";
+import {
+    C09PacketHeldItemChange,
+    C10PacketCreativeInventoryAction,
+} from "../utils/packets";
+import { getCurrentHousingUuid, importableHash, writeKnowledge } from "../knowledge";
+import {
+    openFunctionEditor,
+    openFunctionSettings,
+    setAutomaticExecutionTicksIfNeeded,
+} from "./functions";
+import type { ItemRegistry } from "./itemRegistry";
 
 export async function importImportable(
     ctx: TaskContext,
     importable: Importable,
+    itemRegistry: ItemRegistry
 ): Promise<void> {
     if (importable.type === "FUNCTION") {
-        return importImportableFunction(ctx, importable);
+        await importImportableFunction(ctx, importable, itemRegistry);
+        await maybeWriteKnowledge(ctx, importable);
+        return;
     }
     if (importable.type === "EVENT") {
-        return importImportableEvent(ctx, importable);
+        await importImportableEvent(ctx, importable, itemRegistry);
+        await maybeWriteKnowledge(ctx, importable);
+        return;
     }
     if (importable.type === "REGION") {
-        return importImportableRegion(ctx, importable);
+        await importImportableRegion(ctx, importable, itemRegistry);
+        await maybeWriteKnowledge(ctx, importable);
+        return;
     }
     if (importable.type === "ITEM") {
-        return importImportableItem(ctx, importable);
+        // Item handles its own UUID resolution because it needs the UUID
+        // for both the existing SNBT cache and the new knowledge cache.
+        await importImportableItem(ctx, importable, itemRegistry);
+        return;
     }
     // TODO add the others idk and remove the ts ignore
     // @ts-ignore
     const _exhaustiveCheck: never = importable;
 }
 
+/**
+ * Resolve the housing UUID and persist a knowledge entry for the just-
+ * imported importable. Best-effort: any failure (no /wtfmap reply,
+ * filesystem error) is logged and swallowed — the cache is a hint, not
+ * a contract, so it must not abort a successful import.
+ */
+async function maybeWriteKnowledge(
+    ctx: TaskContext,
+    importable: Importable
+): Promise<void> {
+    try {
+        const housingUuid = await getCurrentHousingUuid(ctx);
+        writeKnowledge(ctx, housingUuid, importable, "importer");
+    } catch (error) {
+        ctx.displayMessage(
+            `&7[knowledge] &eSkipped cache write for ${importable.type}: ${error}`
+        );
+    }
+}
+
 async function importImportableFunction(
     ctx: TaskContext,
     importable: ImportableFunction,
+    itemRegistry: ItemRegistry
 ): Promise<void> {
-    ctx.runCommand(`/function edit ${importable.name}`);
-
-    const alreadyExists = await ctx.withTimeout(
-        Promise.race([
-            waitForMenu(ctx).then(() => true),
-            ctx
-                .waitFor(
-                    "message",
-                    (message) =>
-                        removedFormatting(message) ===
-                        "Could not find a function with that name!",
-                )
-                .then(() => false),
-        ]),
-        "Waiting for function to open",
-    );
+    const alreadyExists = (await openFunctionEditor(ctx, importable.name)) === "opened";
 
     if (!alreadyExists) {
         ctx.runCommand(`/function create ${importable.name}`);
@@ -69,29 +88,21 @@ async function importImportableFunction(
     }
 
     // we have a function!!! open!!
-    for (const action of importable.actions) {
-        await importAction(ctx, action);
-    }
+    await syncActionList(ctx, importable.actions, { itemRegistry });
 
     if (importable.repeatTicks) {
-        clickGoBack(ctx);
-        await waitForMenu(ctx);
+        await clickGoBack(ctx);
 
-        (await getSlotPaginate(ctx, importable.name)).click(MouseButton.RIGHT);
-        await waitForMenu(ctx);
-
-        await setNumberValue(
-            ctx,
-            ctx.getItemSlot("Automatic Execution"),
-            importable.repeatTicks,
-        );
-        await waitForMenu(ctx);
+        await openFunctionSettings(ctx, importable.name);
+        await setAutomaticExecutionTicksIfNeeded(ctx, importable.repeatTicks);
+        await clickGoBack(ctx);
     }
 }
 
 async function importImportableEvent(
     ctx: TaskContext,
     importable: ImportableEvent,
+    itemRegistry: ItemRegistry
 ): Promise<void> {
     ctx.runCommand(`/eventactions`);
     await waitForMenu(ctx);
@@ -100,26 +111,25 @@ async function importImportableEvent(
     await waitForMenu(ctx);
 
     // we have an event!!! open!!! :)
-    for (const action of importable.actions) {
-        await importAction(ctx, action);
-    }
+    await syncActionList(ctx, importable.actions, { itemRegistry });
 }
 
 async function importImportableRegion(
     ctx: TaskContext,
     importable: ImportableRegion,
+    itemRegistry: ItemRegistry
 ): Promise<void> {
     const setPos = async (pos: Pos, corner: "A" | "B") => {
         ctx.runCommand(`/tp ${pos.x} ${pos.y} ${pos.z}`);
         await waitForUnformattedMessage(
             ctx,
-            `Teleporting you to ${pos.x}, ${pos.y}, ${pos.z}.`,
+            `Teleporting you to ${pos.x}, ${pos.y}, ${pos.z}.`
         );
 
         ctx.runCommand(`//pos${corner}`);
         await waitForUnformattedMessage(
             ctx,
-            `Position ${corner} set to ${pos.x}, ${pos.y}, ${pos.z}.`,
+            `Position ${corner} set to ${pos.x}, ${pos.y}, ${pos.z}.`
         );
     };
 
@@ -136,28 +146,22 @@ async function importImportableRegion(
                     "message",
                     (message) =>
                         removedFormatting(message) ===
-                        "Could not find a region with that name!",
+                        "Could not find a region with that name!"
                 )
                 .then(() => false),
         ]),
-        "Waiting for region to open",
+        "Waiting for region to open"
     );
 
     if (!alreadyExists) {
         ctx.runCommand(`/region create ${importable.name}`);
-        await waitForUnformattedMessage(
-            ctx,
-            `Created region ${importable.name}!`,
-        );
+        await waitForUnformattedMessage(ctx, `Created region ${importable.name}!`);
 
         ctx.runCommand(`/region edit ${importable.name}`);
         await waitForMenu(ctx);
     } else {
         ctx.getItemSlot("Move Region").click();
-        await waitForUnformattedMessage(
-            ctx,
-            "Updated region to your current selection!",
-        );
+        await waitForUnformattedMessage(ctx, "Updated region to your current selection!");
 
         ctx.runCommand(`/region edit ${importable.name}`);
         await waitForMenu(ctx);
@@ -167,13 +171,10 @@ async function importImportableRegion(
         ctx.getItemSlot("Entry Actions").click();
         await waitForMenu(ctx);
 
-        for (const action of importable.onEnterActions) {
-            await importAction(ctx, action);
-        }
+        await syncActionList(ctx, importable.onEnterActions, { itemRegistry });
 
         if (importable.onExitActions) {
-            clickGoBack(ctx);
-            await waitForMenu(ctx);
+            await clickGoBack(ctx);
         }
     }
 
@@ -181,49 +182,38 @@ async function importImportableRegion(
         ctx.getItemSlot("Exit Actions").click();
         await waitForMenu(ctx);
 
-        for (const action of importable.onExitActions) {
-            await importAction(ctx, action);
-        }
+        await syncActionList(ctx, importable.onExitActions, { itemRegistry });
     }
 }
 
 async function importImportableItem(
     ctx: TaskContext,
-    importable: ImportableItem
+    importable: ImportableItem,
+    itemRegistry: ItemRegistry
 ): Promise<void> {
     if (!importable.leftClickActions && !importable.rightClickActions) return;
 
-    ctx.runCommand("/wtfmap");
-
-    let message: string = "";
-    await ctx.withTimeout(
-        ctx.waitFor(
-            "message",
-            (chatMessage) =>
-                removedFormatting(chatMessage).startsWith("You are currently playing on") &&
-                (() => { message = removedFormatting(chatMessage); return true })(), // This is fine I guess....
-        ),
-        "Waiting for message in chat",
-    );
-
-    const uuid = message.substring(29, 65);
-    const hash = cyrb53(JSON.stringify(importable));
+    const uuid = await getCurrentHousingUuid(ctx);
+    const hash = importableHash(importable);
     if (FileLib.exists(`./htsw/.cache/${uuid}/items/${hash}.snbt`)) {
+        // SNBT cache hit — actions already in sync. Refresh the knowledge
+        // cache too so future trust-mode has an entry even when no GUI
+        // round trip happened on this run.
+        try {
+            writeKnowledge(ctx, uuid, importable, "importer");
+        } catch {
+            // best-effort
+        }
         return;
     }
 
     const item = getItemFromNbt(importable.nbt);
 
-    Client.sendPacket(
-        new C10PacketCreativeInventoryAction(
-            36,
-            item.getItemStack()
-        )
-    );
+    Client.sendPacket(new C10PacketCreativeInventoryAction(36, item.getItemStack()));
     if (Player.getPlayer().field_71071_by.field_70461_c !== 0) {
         Client.sendPacket(new C09PacketHeldItemChange(0));
         Player.getPlayer().field_71071_by.field_70461_c = 0;
-    };
+    }
     await ctx.sleep(1000);
 
     ctx.runCommand("/edit");
@@ -236,13 +226,10 @@ async function importImportableItem(
         ctx.getItemSlot("Left Click Actions").click();
         await waitForMenu(ctx);
 
-        for (const action of importable.leftClickActions) {
-            await importAction(ctx, action);
-        }
+        await syncActionList(ctx, importable.leftClickActions, { itemRegistry });
 
         if (importable.rightClickActions) {
-            clickGoBack(ctx);
-            await waitForMenu(ctx);
+            await clickGoBack(ctx);
         }
     }
 
@@ -250,9 +237,7 @@ async function importImportableItem(
         ctx.getItemSlot("Right Click Actions").click();
         await waitForMenu(ctx);
 
-        for (const action of importable.rightClickActions) {
-            await importAction(ctx, action);
-        }
+        await syncActionList(ctx, importable.rightClickActions, { itemRegistry });
     }
 
     await ctx.sleep(1000);
@@ -261,4 +246,9 @@ async function importImportableItem(
     if (!snbt) throw Error("Why don't we have the item?");
 
     FileLib.write(`./htsw/.cache/${uuid}/items/${hash}.snbt`, snbt, true);
+    try {
+        writeKnowledge(ctx, uuid, importable, "importer");
+    } catch (error) {
+        ctx.displayMessage(`&7[knowledge] &eSkipped cache write for ITEM: ${error}`);
+    }
 }
