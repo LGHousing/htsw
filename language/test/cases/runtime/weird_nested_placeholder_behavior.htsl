@@ -1,0 +1,23 @@
+var arr/0 = 5
+var arr/1 = 10
+var arr/2 = 3
+
+var p = "%var.player/s"
+
+var i = 0
+var value = "%var.player/p%%var.player/i%%"
+var value = %var.player/value%
+/// @expect "5"
+chat "%var.player/value%"
+
+var i = 1
+var value = "%var.player/p%%var.player/i%%"
+var value = %var.player/value%
+/// @expect "10"
+chat "%var.player/value%"
+
+var i = 2
+var value = "%var.player/p%%var.player/i%%"
+var value = %var.player/value%
+/// @expect "3"
+chat "%var.player/value%"
