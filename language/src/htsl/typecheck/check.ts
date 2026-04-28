@@ -17,12 +17,10 @@ export function check(tcx: TyCtxt, actions: Action[]) {
         else if (action.type === "CONDITIONAL") {
             if (!action.conditions || action.matchAny === undefined) continue;
 
-            if (action.ifActions) {
-                for (const subCtxt of narrow(tcx, action.conditions, action.matchAny)) {
-                    // tcx.exploredConditionalBranches.add(action.ifActions.value);
-                    check(subCtxt, action.ifActions);
-                    check(subCtxt, actions.slice(i + 1));
-                }
+            for (const subCtxt of narrow(tcx, action.conditions, action.matchAny)) {
+                // tcx.exploredConditionalBranches.add(action.ifActions.value);
+                check(subCtxt, action.ifActions);
+                check(subCtxt, actions.slice(i + 1));
             }
 
             for (const subCtxt of narrow(tcx, action.conditions, action.matchAny, true)) {
@@ -30,6 +28,9 @@ export function check(tcx: TyCtxt, actions: Action[]) {
                 check(subCtxt, action.elseActions);
                 check(subCtxt, actions.slice(i + 1));
             }
+            
+            // We have already taken responsibility for exploring all branches. Checking is done.
+            return;
         }
 
         else if (action.type === "RANDOM") {
@@ -38,6 +39,8 @@ export function check(tcx: TyCtxt, actions: Action[]) {
             for (const subAction of action.actions) {
                 check(tcx, [subAction, ...actions.slice(i + 1)]);
             }
+            
+            return;
         }
 
         else if (action.type === "PAUSE") {
@@ -149,7 +152,13 @@ function narrow(
     matchAny: boolean,
     inverted: boolean = false
 ): TyCtxt[] {
-    if (conditions.length === 0) return [tcx]; // Just use the owning ctxt
+    if (conditions.length === 0) {
+        return inverted
+            ? []     // Never true
+            : [tcx]; // Always true, just use owning context
+    }
+    
+    return inverted ? [] : [tcx]; // For now
 
     if (maybeInvert(matchAny, inverted)) {
         const res: TyCtxt[] = [];
