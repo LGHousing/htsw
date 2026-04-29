@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import * as htsw from "../src";
+import { checkLimits } from "../src/check/passes/checkLimits";
 
 class SimpleFileLoader implements htsw.FileLoader {
     private readonly files: Map<string, string>;
@@ -30,6 +31,62 @@ class SimpleFileLoader implements htsw.FileLoader {
         if (!base) return other;
         return `${base}/${other}`;
     }
+}
+
+function makeLines(line: string, count: number): string {
+    return Array.from({ length: count }, () => line).join("\n") + "\n";
+}
+
+function parseFunctionWithActions(source: string) {
+    const sourceMap = new htsw.SourceMap(
+        new SimpleFileLoader({
+            "/project/import.json": JSON.stringify({
+                functions: [{ name: "test", actions: "main.htsl" }],
+            }),
+            "/project/main.htsl": source,
+        })
+    );
+
+    return htsw.parseImportablesResult(sourceMap, "/project/import.json");
+}
+
+function parseEventWithActions(event: string, source: string) {
+    const sourceMap = new htsw.SourceMap(
+        new SimpleFileLoader({
+            "/project/import.json": JSON.stringify({
+                events: [{ event, actions: "main.htsl" }],
+            }),
+            "/project/main.htsl": source,
+        })
+    );
+
+    return htsw.parseImportablesResult(sourceMap, "/project/import.json");
+}
+
+function parseItemWithActions(source: string) {
+    const sourceMap = new htsw.SourceMap(
+        new SimpleFileLoader({
+            "/project/import.json": JSON.stringify({
+                items: [
+                    {
+                        name: "Test Item",
+                        nbt: "stone.snbt",
+                        leftClickActions: "main.htsl",
+                    },
+                ],
+            }),
+            "/project/stone.snbt": "{id: \"minecraft:stone\", Count: 1b}",
+            "/project/main.htsl": source,
+        })
+    );
+
+    return htsw.parseImportablesResult(sourceMap, "/project/import.json");
+}
+
+function errorMessages(result: htsw.ParseResult<unknown>) {
+    return result.diagnostics
+        .filter((it) => it.level === "error")
+        .map((it) => it.message);
 }
 
 describe("Main API", () => {
@@ -151,6 +208,23 @@ describe("Main API", () => {
                     "actionBar %date.unix.ms%",
                     "title %player.name% %date.unix.ms%",
                     "stat fallback = var missing %date.unix.ms%",
+                    "",
+                ].join("\n"),
+            })
+        );
+
+        const result = htsw.parseActionsResult(sourceMap, "/project/test.htsl");
+
+        expect(result.diagnostics.filter((it) => it.level === "error")).toEqual([]);
+    });
+
+    it("parseActionsResult accepts literal percent signs inside strings", () => {
+        const sourceMap = new htsw.SourceMap(
+            new SimpleFileLoader({
+                "/project/test.htsl": [
+                    "chat \"96%\"",
+                    "chat \"100% real\"",
+                    "chat \"%player.name% is at 96%\"",
                     "",
                 ].join("\n"),
             })
@@ -295,5 +369,122 @@ describe("Main API", () => {
 
         expect(result.value.length).toBe(1);
         expect(result.value[0].type).toBe("REGION");
+    });
+
+    it("parseImportablesResult enforces action limits in function scopes", () => {
+        const valid = parseFunctionWithActions(makeLines("title \"Title\"", 5));
+        expect(errorMessages(valid)).toEqual([]);
+
+        const invalid = parseFunctionWithActions(makeLines("title \"Title\"", 6));
+        expect(errorMessages(invalid).some((message) =>
+            message.includes("Maximum amount of Display Title actions exceeded in Function \"test\": 6/5."),
+        )).toBe(true);
+    });
+
+    it("parseImportablesResult enforces conditional limits with event override", () => {
+        const conditional = "if and (doingParkour) {}\n";
+        const validFunction = parseFunctionWithActions(makeLines(conditional.trim(), 25));
+        expect(errorMessages(validFunction)).toEqual([]);
+
+        const invalidFunction = parseFunctionWithActions(makeLines(conditional.trim(), 26));
+        expect(errorMessages(invalidFunction).some((message) =>
+            message.includes("Maximum amount of Conditional actions exceeded in Function \"test\": 26/25."),
+        )).toBe(true);
+
+        const validEvent = parseEventWithActions("Player Join", makeLines(conditional.trim(), 40));
+        expect(errorMessages(validEvent)).toEqual([]);
+
+        const invalidEvent = parseEventWithActions("Player Join", makeLines(conditional.trim(), 41));
+        expect(errorMessages(invalidEvent).some((message) =>
+            message.includes("Maximum amount of Conditional actions exceeded in Player Join event: 41/40."),
+        )).toBe(true);
+    });
+
+    it("parseImportablesResult enforces nested action limits per container", () => {
+        const valid = parseFunctionWithActions([
+            "random {",
+            makeLines("    pause 1", 30),
+            "}",
+            "",
+        ].join("\n"));
+        expect(errorMessages(valid)).toEqual([]);
+
+        const invalid = parseFunctionWithActions([
+            "random {",
+            makeLines("    pause 1", 31),
+            "}",
+            "",
+        ].join("\n"));
+        expect(errorMessages(invalid).some((message) =>
+            message.includes("Maximum amount of Pause Execution actions exceeded in Function \"test\" Random actions: 31/30."),
+        )).toBe(true);
+    });
+
+    it("parseImportablesResult enforces item consumeItem limits", () => {
+        const valid = parseItemWithActions("consumeItem\n");
+        expect(errorMessages(valid)).toEqual([]);
+
+        const invalid = parseItemWithActions("consumeItem\nconsumeItem\n");
+        expect(errorMessages(invalid).some((message) =>
+            message.includes("Maximum amount of Use/Remove Held Item actions exceeded in Item \"Test Item\" left-click actions: 2/1."),
+        )).toBe(true);
+    });
+
+    it("checkLimits enforces menu closeMenu limits", () => {
+        const sourceMap = new htsw.SourceMap(
+            new SimpleFileLoader({
+                "/project/menu.htsl": "closeMenu\ncloseMenu\n",
+            })
+        );
+        const result = htsw.parseActionsResult(sourceMap, "/project/menu.htsl");
+        expect(errorMessages(result)).toEqual([]);
+
+        result.gcx.importables.push({
+            type: "MENU",
+            name: "main",
+            slots: [
+                {
+                    slot: 1,
+                    nbt: { type: "compound", value: {} },
+                    actions: result.value,
+                },
+            ],
+        });
+
+        checkLimits(result.gcx);
+
+        expect(errorMessages(result).some((message) =>
+            message.includes("Maximum amount of Close Menu actions exceeded in Menu \"main\" slot 1: 2/1."),
+        )).toBe(true);
+    });
+
+    it("parseImportablesResult enforces condition limits", () => {
+        const validParkour = parseFunctionWithActions([
+            "if and (doingParkour) {",
+            "    exit",
+            "}",
+            "",
+        ].join("\n"));
+        expect(errorMessages(validParkour)).toEqual([]);
+
+        const invalidParkour = parseFunctionWithActions([
+            "if and (doingParkour, doingParkour) {",
+            "    exit",
+            "}",
+            "",
+        ].join("\n"));
+        expect(errorMessages(invalidParkour).some((message) =>
+            message.includes("Maximum amount of Doing Parkour conditions exceeded in Conditional: 2/1."),
+        )).toBe(true);
+
+        const potionConditions = Array.from({ length: 22 }, () => "hasPotion Speed").join(", ");
+        const validPotion = parseFunctionWithActions(`if and (${potionConditions}) {\n    exit\n}\n`);
+        expect(errorMessages(validPotion)).toEqual([]);
+
+        const tooManyPotionConditions = Array.from({ length: 23 }, () => "hasPotion Speed").join(", ");
+        const invalidPotion = parseFunctionWithActions(`if and (${tooManyPotionConditions}) {\n    exit\n}\n`);
+        expect(errorMessages(invalidPotion).some((message) =>
+            message.includes("Maximum amount of Has Potion Effect conditions exceeded in Conditional: 23/22."),
+        )).toBe(true);
     });
 });
