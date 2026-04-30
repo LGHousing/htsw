@@ -181,8 +181,9 @@ function commandImport(args: string[]) {
 
     printDiagnostics(sm, result.diagnostics);
 
-    if (result.gcx.isFailed()) {
-        ChatLib.chat("&cImport failed.");
+    const errorCount = countBlockingDiagnostics(result.diagnostics);
+    if (errorCount > 0) {
+        ChatLib.chat(`&cImport failed with ${errorCount} error${errorCount === 1 ? "" : "s"}.`);
         return;
     }
 
@@ -234,10 +235,8 @@ function commandSimulator(args: string[]) {
 
         printDiagnostics(sm, result.diagnostics);
 
-        if (result.gcx.isFailed()) {
-            const errCount = result.diagnostics.filter(
-                (it) => it.level === "error"
-            ).length;
+        const errCount = countBlockingDiagnostics(result.diagnostics);
+        if (errCount > 0) {
             printDiagnostic(
                 sm,
                 Diagnostic.error(`Simulate failed with ${errCount} errors`)
@@ -265,4 +264,8 @@ function commandSimulator(args: string[]) {
         ChatLib.chat("&aSimulator stopped.");
         return;
     }
+}
+
+function countBlockingDiagnostics(diagnostics: Diagnostic[]): number {
+    return diagnostics.filter((it) => it.level === "error" || it.level === "bug").length;
 }
