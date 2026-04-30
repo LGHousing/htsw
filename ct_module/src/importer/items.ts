@@ -4,9 +4,7 @@ import {
     C10PacketCreativeInventoryAction,
     S2FPacketSetSlot,
 } from "../utils/packets";
-import { clickGoBack, waitForMenu } from "./helpers";
-
-const NBTTagCompound = Java.type("net.minecraft.nbt.NBTTagCompound");
+import { waitForMenu } from "./helpers";
 
 const HOTBAR_PACKET_SLOT = 36;
 const HOTBAR_INDEX = 0;
@@ -33,15 +31,6 @@ export async function setItemValue(
 ): Promise<void> {
     ctx.getItemSlot(fieldName).click();
     await waitForMenu(ctx);
-
-    const currentItemSlot = ctx.tryGetItemSlot("Current Item");
-    if (
-        currentItemSlot !== null &&
-        getRawItemNbt(currentItemSlot.getItem()) === getRawItemNbt(item)
-    ) {
-        await clickGoBack(ctx);
-        return;
-    }
 
     const container = Player.getContainer();
     if (container == null) {
@@ -92,26 +81,4 @@ export async function setItemValue(
 
     slot.click();
     await waitForMenu(ctx);
-}
-
-function getRawItemNbt(item: Item): string | null {
-    try {
-        const raw = (item as any).getRawNBT?.();
-        if (raw !== undefined && raw !== null) {
-            return String(raw);
-        }
-    } catch {
-        // fall through to ItemStack serialization
-    }
-
-    try {
-        const stack = item.getItemStack();
-        if (stack === undefined || stack === null) {
-            return null;
-        }
-
-        return String(stack.func_77955_b(new NBTTagCompound()));
-    } catch {
-        return null;
-    }
 }
