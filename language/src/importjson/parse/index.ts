@@ -19,7 +19,9 @@ import {
 import { parseSnbt, type Tag } from "../../nbt";
 import {
     EVENTS,
+    MINECRAFT_ITEMS,
     type Event,
+    type FunctionIcon,
     type Importable,
     type ImportableEvent,
     type ImportableFunction,
@@ -249,9 +251,66 @@ function parseImportableFunction(gcx: GlobalCtxt, node: json.Node): ImportableFu
                 setFieldSpan(gcx, importable, "repeatTicks", child);
             }
         },
+        "icon": {
+            required: false,
+            parser: (child) => {
+                importable.icon = parseFunctionIcon(gcx, child);
+                setFieldSpan(gcx, importable, "icon", child);
+            }
+        },
     });
 
     return importable;
+}
+
+function parseFunctionIcon(gcx: GlobalCtxt, node: json.Node): FunctionIcon {
+    const icon = {} as FunctionIcon;
+    setSpan(gcx, icon, node);
+
+    parseObject(gcx, node, {
+        "item": {
+            required: true,
+            parser: (child) => {
+                icon.item = parseMinecraftItemId(gcx, child);
+                setFieldSpan(gcx, icon, "item", child);
+            }
+        },
+        "count": {
+            required: false,
+            parser: (child) => {
+                const count = parseBoundedNumber(1, 64)(gcx, child);
+                if (!Number.isInteger(count)) {
+                    gcx.addDiagnostic(
+                        Diagnostic.error("Item count must be an integer")
+                            .addPrimarySpan(nodeSpan(child))
+                    );
+                }
+                icon.count = count;
+                setFieldSpan(gcx, icon, "count", child);
+            }
+        },
+    });
+
+    return icon;
+}
+
+function parseMinecraftItemId(gcx: GlobalCtxt, node: json.Node): string {
+    const raw = parseString(gcx, node);
+    const normalized = raw.toLowerCase();
+    const itemName = normalized.startsWith("minecraft:")
+        ? normalized.slice("minecraft:".length)
+        : normalized;
+
+    const match = MINECRAFT_ITEMS.find((item) => item.name === itemName);
+    if (match === undefined) {
+        gcx.addDiagnostic(
+            Diagnostic.error(`Invalid item id '${raw}'`)
+                .addPrimarySpan(nodeSpan(node))
+        );
+        return normalized;
+    }
+
+    return `minecraft:${match.name}`;
 }
 
 function parseImportableEvent(gcx: GlobalCtxt, node: json.Node): ImportableEvent {
