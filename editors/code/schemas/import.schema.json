@@ -84,6 +84,26 @@
           "type": "number",
           "minimum": 4,
           "maximum": 18000
+        },
+        "icon": {
+          "$ref": "#/definitions/functionIcon"
+        }
+      }
+    },
+    "functionIcon": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["item"],
+      "properties": {
+        "item": {
+          "type": "string",
+          "description": "Minecraft item id for the function icon, for example: minecraft:map"
+        },
+        "count": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 64,
+          "multipleOf": 1
         }
       }
     },
