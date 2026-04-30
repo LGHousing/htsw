@@ -23,6 +23,7 @@ export const ACTION_MAPPINGS = {
             "Demotion Protection": {
                 prop: "demotionProtection",
                 kind: "boolean",
+                default: true,            
             },
         },
     },
@@ -41,10 +42,10 @@ export const ACTION_MAPPINGS = {
         displayName: "Display Title",
         loreFields: {
             Title: { prop: "title", kind: "value" },
-            Subtitle: { prop: "subtitle", kind: "value" },
-            Fadein: { prop: "fadein", kind: "value" },
-            Stay: { prop: "stay", kind: "value" },
-            Fadeout: { prop: "fadeout", kind: "value" },
+            Subtitle: { prop: "subtitle", kind: "value", default: "" },
+            Fadein: { prop: "fadein", kind: "value", default: 1 },
+            Stay: { prop: "stay", kind: "value", default: 5 },
+            Fadeout: { prop: "fadeout", kind: "value", default: 1 },
         },
     },
 
@@ -78,11 +79,12 @@ export const ACTION_MAPPINGS = {
         displayName: "Give Item",
         loreFields: {
             Item: { prop: "itemName", kind: "item" },
-            "Allow Multiple": { prop: "allowMultiple", kind: "boolean" },
-            "Inventory Slot": { prop: "slot", kind: "select" },
+            "Allow Multiple": { prop: "allowMultiple", kind: "boolean", default: false },
+            "Inventory Slot": { prop: "slot", kind: "select", default: "First Available Slot" },
             "Replace Existing Item": {
                 prop: "replaceExisting",
                 kind: "boolean",
+                default: false,
             },
         },
     },
@@ -105,10 +107,10 @@ export const ACTION_MAPPINGS = {
         displayName: "Apply Potion Effect",
         loreFields: {
             Effect: { prop: "effect", kind: "select" },
-            Duration: { prop: "duration", kind: "value" },
-            Level: { prop: "level", kind: "value" },
-            "Override Existing Effects": { prop: "override", kind: "boolean" },
-            "Show Potion Icon": { prop: "showIcon", kind: "boolean" },
+            Duration: { prop: "duration", kind: "value", default: 60 },
+            Level: { prop: "level", kind: "value", default: 1 },
+            "Override Existing Effects": { prop: "override", kind: "boolean", default: false },
+            "Show Potion Icon": { prop: "showIcon", kind: "boolean", default: true },
         },
     },
 
@@ -149,6 +151,7 @@ export const ACTION_MAPPINGS = {
             "Prevent Teleport Inside Blocks": {
                 prop: "preventTeleportInsideBlocks",
                 kind: "boolean",
+                default: false,
             },
         },
     },
@@ -164,9 +167,9 @@ export const ACTION_MAPPINGS = {
         displayName: "Play Sound",
         loreFields: {
             Sound: { prop: "sound", kind: "select" },
-            Volume: { prop: "volume", kind: "value" },
-            Pitch: { prop: "pitch", kind: "value" },
-            Location: { prop: "location", kind: "select" },
+            Volume: { prop: "volume", kind: "value", default: 0.7 },
+            Pitch: { prop: "pitch", kind: "value", default: 1.0 },
+            Location: { prop: "location", kind: "select", default: "Not Set" },
         },
     },
 
@@ -211,7 +214,7 @@ export const ACTION_MAPPINGS = {
         displayName: "Trigger Function",
         loreFields: {
             Function: { prop: "function", kind: "value" },
-            "Trigger For All Players": { prop: "global", kind: "boolean" },
+            "Trigger For All Players": { prop: "global", kind: "boolean", default: false },
         },
     },
 
@@ -260,21 +263,24 @@ export const ACTION_MAPPINGS = {
         displayName: "Drop Item",
         loreFields: {
             "Item": { prop: "itemName", kind: "item" },
-            "Location": { prop: "location", kind: "select" },
-            "Drop Naturally": { prop: "dropNaturally", kind: "boolean" },
-            "Prevent Item Merging": { prop: "disableMerging", kind: "boolean" },
+            "Location": { prop: "location", kind: "select", default: "Not Set" },
+            "Drop Naturally": { prop: "dropNaturally", kind: "boolean", default: true },
+            "Prevent Item Merging": { prop: "disableMerging", kind: "boolean", default: false },
             "Despawn Duration Ticks": {
                 prop: "despawnDurationTicks",
                 kind: "value",
+                default: 6000,
             },
-            "Pickup Delay Ticks": { prop: "pickupDelayTicks", kind: "value" },
+            "Pickup Delay Ticks": { prop: "pickupDelayTicks", kind: "value", default: 10 },
             "Prioritize Player": {
                 prop: "prioritizePlayer",
                 kind: "boolean",
+                default: false,
             },
             "Fallback To Inventory": {
                 prop: "inventoryFallback",
                 kind: "boolean",
+                default: false,
             },
         },
     },

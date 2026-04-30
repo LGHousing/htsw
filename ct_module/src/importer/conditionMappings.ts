@@ -13,6 +13,7 @@ export const CONDITION_LORE_MAPPINGS = {
             "Include Higher Groups": {
                 prop: "includeHigherGroups",
                 kind: "boolean",
+                default: "false",
             },
         },
     },
@@ -46,9 +47,13 @@ export const CONDITION_LORE_MAPPINGS = {
         displayName: "Has Item",
         loreFields: {
             Item: { prop: "itemName", kind: "item" },
-            "What To Check": { prop: "whatToCheck", kind: "cycle" },
-            "Where To Check": { prop: "whereToCheck", kind: "select" },
-            "Required Amount": { prop: "amount", kind: "cycle" },
+            "What To Check": { prop: "whatToCheck", kind: "cycle", default: "Metadata" },
+            "Where To Check": {
+                prop: "whereToCheck",
+                kind: "select",
+                default: "Anywhere",
+            },
+            "Required Amount": { prop: "amount", kind: "cycle", default: "Any Amount" },
         },
     },
 
@@ -111,7 +116,6 @@ export const CONDITION_LORE_MAPPINGS = {
             Placeholder: { prop: "placeholder", kind: "value" },
             Comparator: { prop: "op", kind: "select" },
             "Compare Value": { prop: "amount", kind: "value" },
-            "Fallback Value": { prop: "fallback", kind: "value" },
         },
     },
 
@@ -179,7 +183,18 @@ export const CONDITION_LORE_MAPPINGS = {
  * Mirrors getActionFieldDefault for conditions.
  */
 export function getConditionFieldDefault(type: string, prop: string): unknown {
-    const mapping = (CONDITION_LORE_MAPPINGS as Record<string, { loreFields: Record<string, { prop: string; kind: string; default?: unknown }> } | undefined>)[type];
+    const mapping = (
+        CONDITION_LORE_MAPPINGS as Record<
+            string,
+            | {
+                  loreFields: Record<
+                      string,
+                      { prop: string; kind: string; default?: unknown }
+                  >;
+              }
+            | undefined
+        >
+    )[type];
     if (!mapping) return undefined;
     for (const label in mapping.loreFields) {
         const field = mapping.loreFields[label];
