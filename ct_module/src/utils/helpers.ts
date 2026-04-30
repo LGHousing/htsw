@@ -6,8 +6,10 @@ export function normalizeFormattingCodes(str: string): string {
     return str.replace(/§([0-9a-fklmnor])/gi, "&$1");
 }
 
-export function chatWidth(string: string): number {
-    const raw = ChatLib.removeFormatting(ChatLib.replaceFormatting(string));
+export function chatWidth(string: string, removeFormatting: boolean = true): number {
+    const raw = removeFormatting
+        ? ChatLib.removeFormatting(ChatLib.replaceFormatting(string))
+        : string;
     return Client.getMinecraft().field_71466_p.func_78256_a(raw);
 }
 

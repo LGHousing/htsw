@@ -152,27 +152,34 @@ export class UIElementSnippetLines extends UIElementCanvas {
 
 export class UIElementSnippetLine extends UIElementCanvas {
     constructor(
-        lineContent: string,
+        _FuckingStupidlineContent: string,
         lineStartPos: number,
         spans: DiagnosticSpan[],
         level: DiagnosticLevel
     ) {
         super();
+        
+        const lineContent = _FuckingStupidlineContent
+            .replace(/§/g, "&")
+            .replace(/\r/g, "");
 
         const color = DIAGNOSTIC_LEVEL_COLORS[level];
         const ulChar = DIAGNOSTIC_LEVEL_UNDERLINE_CHARS[level];
+        
+        const escapedLineContent = lineContent
+            .replace(/&/g, "&&7");
 
-        this.addElement(0, 0, new UIElementText("&7" + lineContent));
+        this.addElement(0, 0, new UIElementText("&7" + escapedLineContent));
 
         const occupation: number[] = [];
         const getLastX = (line: number) => occupation[line] ?? Infinity;
 
         spans.sort((a, b) => a.span.start - b.span.start);
         for (const ds of [...spans].reverse()) {
-            const underlineX = chatWidth(lineContent.slice(0, ds.span.start - lineStartPos));
+            const underlineX = chatWidth(lineContent.slice(0, ds.span.start - lineStartPos), false);
             const underlineWidth = chatWidth(lineContent.slice(
                 ds.span.start - lineStartPos, ds.span.end - lineStartPos
-            ));
+            ), false);
             const underlineChar = ds.kind === "primary" ? `${color}${ulChar}` : "&9-";
             const vLineChar = ds.kind === "primary" ? `${color}|` : "&9|";
             const labelColor = ds.kind === "primary" ? color : "&9";
