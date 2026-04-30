@@ -1,6 +1,5 @@
 import * as vscode from "vscode";
 import * as htsw from "htsw";
-import { basename, dirname, relative } from "node:path";
 
 type CompletionKind =
     | "action"
@@ -60,9 +59,14 @@ export class CompletionAdapter implements vscode.CompletionItemProvider {
             );
             item.detail = completion.detail;
             item.range = range;
+            const insertText = this.trimDuplicateClosingQuote(
+                document,
+                position,
+                completion.insertText
+            );
             item.insertText = completion.snippet
                 ? new vscode.SnippetString(completion.insertText)
-                : completion.insertText;
+                : insertText;
             if (completion.filterText) item.filterText = completion.filterText;
             if (completion.sortText) item.sortText = completion.sortText;
             return item;
@@ -106,6 +110,17 @@ export class CompletionAdapter implements vscode.CompletionItemProvider {
             case "constant":
                 return vscode.CompletionItemKind.Constant;
         }
+    }
+
+    private trimDuplicateClosingQuote(
+        document: vscode.TextDocument,
+        position: vscode.Position,
+        insertText: string
+    ): string {
+        if (!insertText.endsWith("\"")) return insertText;
+        const line = document.lineAt(position.line).text;
+        if (line[position.character] !== "\"") return insertText;
+        return insertText.slice(0, -1);
     }
 }
 
@@ -263,7 +278,7 @@ class HtslCompletionProvider {
 
         const spec = htsw.types.getActionSpec(action);
         if (spec) {
-            return actionFieldCompletionsFromSpec(spec, argCount, hasTrailingWhitespace, quoteMode, this.context);
+            return actionFieldCompletionsFromSpec(spec, tokens.slice(1), hasTrailingWhitespace, quoteMode, this.context);
         }
 
         return [];
@@ -302,7 +317,7 @@ class HtslCompletionProvider {
 
         const spec = htsw.types.getConditionSpec(condition);
         if (spec) {
-            return actionFieldCompletionsFromSpec(spec, argCount, hasTrailingWhitespace, quoteMode, this.context);
+            return actionFieldCompletionsFromSpec(spec, currentCondition.slice(1), hasTrailingWhitespace, quoteMode, this.context);
         }
 
         return this.conditionCompletions();
@@ -523,24 +538,6 @@ async function collectItemCompletions(
         });
     }
 
-    for (const file of await vscode.workspace.findFiles(
-        "**/*.snbt",
-        "**/{node_modules,dist,out,build,.git}/**"
-    )) {
-        const value = relativePathForCompletion(document.uri, file);
-        if (seen.has(`path:${value}`)) continue;
-        seen.add(`path:${value}`);
-        const detail = await describeSnbtFile(file);
-        completions.push({
-            label: value,
-            insertText: quoteNameForCompletion(value),
-            filterText: `${value} ${basename(value)} ${detail ?? ""}`,
-            kind: "item",
-            detail: detail ?? "SNBT item",
-            sortText: `1_${value}`,
-        });
-    }
-
     itemCompletionCache.set(cacheKey, {
         expiresAt: Date.now() + ITEM_COMPLETION_CACHE_TTL_MS,
         completions,
@@ -582,28 +579,6 @@ function parseTopLevelItemNames(text: string): string[] {
     return names;
 }
 
-function relativePathForCompletion(
-    fromDocument: vscode.Uri,
-    targetFile: vscode.Uri
-): string {
-    const fromDirectory = dirname(fromDocument.fsPath);
-    return relative(fromDirectory, targetFile.fsPath).replace(/\\/g, "/");
-}
-
-async function describeSnbtFile(file: vscode.Uri): Promise<string | undefined> {
-    const text = await readWorkspaceText(file);
-    if (text === undefined) return undefined;
-
-    const id = /(?:^|[,{]\s*)id\s*:\s*"([^"]+)"/.exec(text)?.[1];
-    const count = /(?:^|[,{]\s*)Count\s*:\s*(\d+)b/.exec(text)?.[1];
-    const name = /(?:^|[,{]\s*)Name\s*:\s*"([^"]+)"/.exec(text)?.[1];
-
-    const parts = [name, id, count ? `x${count}` : undefined].filter(
-        (part): part is string => part !== undefined && part.length > 0
-    );
-    return parts.length === 0 ? "SNBT item" : parts.join(" ");
-}
-
 async function readWorkspaceText(file: vscode.Uri): Promise<string | undefined> {
     try {
         const data = await vscode.workspace.fs.readFile(file);
@@ -611,12 +586,6 @@ async function readWorkspaceText(file: vscode.Uri): Promise<string | undefined> 
     } catch {
         return undefined;
     }
-}
-
-function quoteNameForCompletion(value: string): string {
-    return /^[a-zA-Z_][a-zA-Z_/0-9.\-]*$/.test(value)
-        ? value
-        : `"${value.replace(/\\/g, "\\\\").replace(/"/g, "\\\"")}"`;
 }
 
 export function provideSnbtCompletions(linePrefix: string): CompletionSpec[] {
@@ -843,15 +812,61 @@ function snippetForField(field: htsw.types.ActionFieldSpec, n: number): string {
 // whitespace, else argCount - 1 (still typing the current arg).
 function actionFieldCompletionsFromSpec(
     spec: htsw.types.ActionSpec,
-    argCount: number,
+    args: TokenInfo[],
     hasTrailingWhitespace: boolean,
     quoteMode: QuoteMode,
     context: CompletionContext = {},
 ): CompletionSpec[] {
-    const fieldIndex = hasTrailingWhitespace ? argCount : argCount - 1;
+    const fieldIndex = currentFieldIndex(spec, args, hasTrailingWhitespace);
     const field = spec.fields[fieldIndex];
     if (!field) return [];
     return completionsForFieldKind(field.kind, field.name, quoteMode, context);
+}
+
+function currentFieldIndex(
+    spec: htsw.types.ActionSpec,
+    args: TokenInfo[],
+    hasTrailingWhitespace: boolean,
+): number {
+    let fieldIndex = 0;
+    let argIndex = 0;
+
+    while (fieldIndex < spec.fields.length) {
+        const field = spec.fields[fieldIndex];
+        const arg = args[argIndex];
+        if (!arg) return fieldIndex;
+
+        const isLastArg = argIndex === args.length - 1;
+        if (field.kind === "location") {
+            const location = normalizeOptionToken(arg.text);
+            if (location === "customcoordinates") {
+                const coordinates = args[argIndex + 1];
+                if (!coordinates) return fieldIndex;
+                const coordinatesAreLast = argIndex + 1 === args.length - 1;
+                if (!hasTrailingWhitespace && coordinatesAreLast && !coordinates.text.endsWith("\"")) {
+                    return fieldIndex;
+                }
+                argIndex += 2;
+                fieldIndex++;
+                continue;
+            }
+
+            if (!hasTrailingWhitespace && isLastArg) return fieldIndex;
+            argIndex++;
+            fieldIndex++;
+            continue;
+        }
+
+        if (!hasTrailingWhitespace && isLastArg) return fieldIndex;
+        argIndex++;
+        fieldIndex++;
+    }
+
+    return fieldIndex;
+}
+
+function normalizeOptionToken(value: string): string {
+    return unquote(value).replace(/[\s_]/g, "").toLowerCase();
 }
 
 function completionsForFieldKind(
@@ -902,13 +917,16 @@ function completionsForFieldKind(
             return optionCompletions(htsw.types.FISHING_ENVIRONMENTS, "constant", quoteMode, d);
         case "portal":
             return optionCompletions(htsw.types.PORTAL_TYPES, "constant", quoteMode, d);
-        // Free-form fields — no suggestions, but inlay hints still label them.
         case "string":
         case "number":
         case "varName":
         case "team":
         case "function":
         case "group":
+        case "weather":
+        case "time":
+        case "block":
+            return [];
         case "item":
             return (context.items ?? []).map((completion) => ({
                 ...completion,
@@ -917,10 +935,6 @@ function completionsForFieldKind(
                     quoteMode
                 ),
             }));
-        case "weather":
-        case "time":
-        case "block":
-            return [];
     }
 }
 
