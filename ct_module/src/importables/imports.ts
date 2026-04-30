@@ -1,4 +1,5 @@
 import {
+    Action,
     Importable,
     ImportableEvent,
     ImportableFunction,
@@ -18,9 +19,11 @@ import {
 } from "../utils/packets";
 import { getCurrentHousingUuid, importableHash, writeKnowledge } from "../knowledge";
 import {
-    openFunctionEditor,
+    ensureFunctionExists,
+    ensureFunctionNamesExist,
     openFunctionSettings,
     setAutomaticExecutionTicksIfNeeded,
+    setFunctionIconIfNeeded,
 } from "./functions";
 import type { ItemRegistry } from "./itemRegistry";
 
@@ -80,21 +83,22 @@ async function importImportableFunction(
     importable: ImportableFunction,
     itemRegistry: ItemRegistry
 ): Promise<void> {
-    const alreadyExists = (await openFunctionEditor(ctx, importable.name)) === "opened";
-
-    if (!alreadyExists) {
-        ctx.runCommand(`/function create ${importable.name}`);
-        await waitForMenu(ctx);
-    }
+    await ensureReferencedFunctionsExist(ctx, importable);
+    await ensureFunctionExists(ctx, importable.name);
 
     // we have a function!!! open!!
     await syncActionList(ctx, importable.actions, { itemRegistry });
 
-    if (importable.repeatTicks) {
+    if (importable.repeatTicks || importable.icon) {
         await clickGoBack(ctx);
 
         await openFunctionSettings(ctx, importable.name);
-        await setAutomaticExecutionTicksIfNeeded(ctx, importable.repeatTicks);
+        if (importable.icon) {
+            await setFunctionIconIfNeeded(ctx, importable.icon);
+        }
+        if (importable.repeatTicks) {
+            await setAutomaticExecutionTicksIfNeeded(ctx, importable.repeatTicks);
+        }
         await clickGoBack(ctx);
     }
 }
@@ -104,6 +108,8 @@ async function importImportableEvent(
     importable: ImportableEvent,
     itemRegistry: ItemRegistry
 ): Promise<void> {
+    await ensureReferencedFunctionsExist(ctx, importable);
+
     ctx.runCommand(`/eventactions`);
     await waitForMenu(ctx);
 
@@ -119,6 +125,8 @@ async function importImportableRegion(
     importable: ImportableRegion,
     itemRegistry: ItemRegistry
 ): Promise<void> {
+    await ensureReferencedFunctionsExist(ctx, importable);
+
     const setPos = async (pos: Pos, corner: "A" | "B") => {
         ctx.runCommand(`/tp ${pos.x} ${pos.y} ${pos.z}`);
         await waitForUnformattedMessage(
@@ -193,6 +201,8 @@ async function importImportableItem(
 ): Promise<void> {
     if (!importable.leftClickActions && !importable.rightClickActions) return;
 
+    await ensureReferencedFunctionsExist(ctx, importable);
+
     const uuid = await getCurrentHousingUuid(ctx);
     const hash = importableHash(importable);
     if (FileLib.exists(`./htsw/.cache/${uuid}/items/${hash}.snbt`)) {
@@ -250,5 +260,48 @@ async function importImportableItem(
         writeKnowledge(ctx, uuid, importable, "importer");
     } catch (error) {
         ctx.displayMessage(`&7[knowledge] &eSkipped cache write for ITEM: ${error}`);
+    }
+}
+
+async function ensureReferencedFunctionsExist(
+    ctx: TaskContext,
+    importable: Importable
+): Promise<void> {
+    await ensureFunctionNamesExist(ctx, collectReferencedFunctionNames(importable));
+}
+
+function collectReferencedFunctionNames(importable: Importable): string[] {
+    const names: string[] = [];
+
+    if (importable.type === "FUNCTION") {
+        collectActionFunctionNames(importable.actions, names);
+    } else if (importable.type === "EVENT") {
+        collectActionFunctionNames(importable.actions, names);
+    } else if (importable.type === "REGION") {
+        collectActionFunctionNames(importable.onEnterActions, names);
+        collectActionFunctionNames(importable.onExitActions, names);
+    } else if (importable.type === "ITEM") {
+        collectActionFunctionNames(importable.leftClickActions, names);
+        collectActionFunctionNames(importable.rightClickActions, names);
+    }
+
+    return names;
+}
+
+function collectActionFunctionNames(
+    actions: readonly Action[] | undefined,
+    names: string[]
+): void {
+    if (!actions) return;
+
+    for (const action of actions) {
+        if (action.type === "FUNCTION") {
+            names.push(action.function);
+        } else if (action.type === "CONDITIONAL") {
+            collectActionFunctionNames(action.ifActions, names);
+            collectActionFunctionNames(action.elseActions, names);
+        } else if (action.type === "RANDOM") {
+            collectActionFunctionNames(action.actions, names);
+        }
     }
 }
