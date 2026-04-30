@@ -104,7 +104,8 @@
                 "0": { "name": "punctuation.definition.string.end.snbt" }
             },
             "patterns": [
-                { "include": "#string-escape" }
+                { "include": "#string-escape" },
+                { "include": "#format-code" }
             ]
         },
         "string-escape": {
@@ -113,28 +114,28 @@
         },
         "format-code": {
             "patterns": [
-                { "name": "constant.character.format-code.color.black.snbt",         "begin": "[&§][0]",   "end": "(?=[&§][0-9a-fA-Fk-oK-OrR]|\")", "patterns": [{ "include": "#string-escape" }] },
-                { "name": "constant.character.format-code.color.dark-blue.snbt",     "begin": "[&§][1]",   "end": "(?=[&§][0-9a-fA-Fk-oK-OrR]|\")", "patterns": [{ "include": "#string-escape" }] },
-                { "name": "constant.character.format-code.color.dark-green.snbt",    "begin": "[&§][2]",   "end": "(?=[&§][0-9a-fA-Fk-oK-OrR]|\")", "patterns": [{ "include": "#string-escape" }] },
-                { "name": "constant.character.format-code.color.dark-aqua.snbt",     "begin": "[&§][3]",   "end": "(?=[&§][0-9a-fA-Fk-oK-OrR]|\")", "patterns": [{ "include": "#string-escape" }] },
-                { "name": "constant.character.format-code.color.dark-red.snbt",      "begin": "[&§][4]",   "end": "(?=[&§][0-9a-fA-Fk-oK-OrR]|\")", "patterns": [{ "include": "#string-escape" }] },
-                { "name": "constant.character.format-code.color.dark-purple.snbt",   "begin": "[&§][5]",   "end": "(?=[&§][0-9a-fA-Fk-oK-OrR]|\")", "patterns": [{ "include": "#string-escape" }] },
-                { "name": "constant.character.format-code.color.gold.snbt",          "begin": "[&§][6]",   "end": "(?=[&§][0-9a-fA-Fk-oK-OrR]|\")", "patterns": [{ "include": "#string-escape" }] },
-                { "name": "constant.character.format-code.color.gray.snbt",          "begin": "[&§][7]",   "end": "(?=[&§][0-9a-fA-Fk-oK-OrR]|\")", "patterns": [{ "include": "#string-escape" }] },
-                { "name": "constant.character.format-code.color.dark-gray.snbt",     "begin": "[&§][8]",   "end": "(?=[&§][0-9a-fA-Fk-oK-OrR]|\")", "patterns": [{ "include": "#string-escape" }] },
-                { "name": "constant.character.format-code.color.blue.snbt",          "begin": "[&§][9]",   "end": "(?=[&§][0-9a-fA-Fk-oK-OrR]|\")", "patterns": [{ "include": "#string-escape" }] },
-                { "name": "constant.character.format-code.color.green.snbt",         "begin": "[&§][aA]",  "end": "(?=[&§][0-9a-fA-Fk-oK-OrR]|\")", "patterns": [{ "include": "#string-escape" }] },
-                { "name": "constant.character.format-code.color.aqua.snbt",          "begin": "[&§][bB]",  "end": "(?=[&§][0-9a-fA-Fk-oK-OrR]|\")", "patterns": [{ "include": "#string-escape" }] },
-                { "name": "constant.character.format-code.color.red.snbt",           "begin": "[&§][cC]",  "end": "(?=[&§][0-9a-fA-Fk-oK-OrR]|\")", "patterns": [{ "include": "#string-escape" }] },
-                { "name": "constant.character.format-code.color.light-purple.snbt",  "begin": "[&§][dD]",  "end": "(?=[&§][0-9a-fA-Fk-oK-OrR]|\")", "patterns": [{ "include": "#string-escape" }] },
-                { "name": "constant.character.format-code.color.yellow.snbt",        "begin": "[&§][eE]",  "end": "(?=[&§][0-9a-fA-Fk-oK-OrR]|\")", "patterns": [{ "include": "#string-escape" }] },
-                { "name": "constant.character.format-code.color.white.snbt",         "begin": "[&§][fF]",  "end": "(?=[&§][0-9a-fA-Fk-oK-OrR]|\")", "patterns": [{ "include": "#string-escape" }] },
-                { "name": "constant.character.format-code.style.obfuscated.snbt",    "begin": "[&§][kK]",  "end": "(?=[&§][0-9a-fA-Fk-oK-OrR]|\")", "patterns": [{ "include": "#string-escape" }] },
-                { "name": "constant.character.format-code.style.bold.snbt",          "begin": "[&§][lL]",  "end": "(?=[&§][0-9a-fA-Fk-oK-OrR]|\")", "patterns": [{ "include": "#string-escape" }] },
-                { "name": "constant.character.format-code.style.strikethrough.snbt", "begin": "[&§][mM]",  "end": "(?=[&§][0-9a-fA-Fk-oK-OrR]|\")", "patterns": [{ "include": "#string-escape" }] },
-                { "name": "constant.character.format-code.style.underline.snbt",     "begin": "[&§][nN]",  "end": "(?=[&§][0-9a-fA-Fk-oK-OrR]|\")", "patterns": [{ "include": "#string-escape" }] },
-                { "name": "constant.character.format-code.style.italic.snbt",        "begin": "[&§][oO]",  "end": "(?=[&§][0-9a-fA-Fk-oK-OrR]|\")", "patterns": [{ "include": "#string-escape" }] },
-                { "name": "constant.character.format-code.style.reset.snbt",         "begin": "[&§][rR]",  "end": "(?=[&§][0-9a-fA-Fk-oK-OrR]|\")", "patterns": [{ "include": "#string-escape" }] }
+                { "name": "constant.character.format-code.color.black.snbt",         "begin": "§0",   "end": "(?=§[0-9a-fr]|\")", "patterns": [{ "include": "#string-escape" }, { "include": "#format-code" }] },
+                { "name": "constant.character.format-code.color.dark-blue.snbt",     "begin": "§1",   "end": "(?=§[0-9a-fr]|\")", "patterns": [{ "include": "#string-escape" }, { "include": "#format-code" }] },
+                { "name": "constant.character.format-code.color.dark-green.snbt",    "begin": "§2",   "end": "(?=§[0-9a-fr]|\")", "patterns": [{ "include": "#string-escape" }, { "include": "#format-code" }] },
+                { "name": "constant.character.format-code.color.dark-aqua.snbt",     "begin": "§3",   "end": "(?=§[0-9a-fr]|\")", "patterns": [{ "include": "#string-escape" }, { "include": "#format-code" }] },
+                { "name": "constant.character.format-code.color.dark-red.snbt",      "begin": "§4",   "end": "(?=§[0-9a-fr]|\")", "patterns": [{ "include": "#string-escape" }, { "include": "#format-code" }] },
+                { "name": "constant.character.format-code.color.dark-purple.snbt",   "begin": "§5",   "end": "(?=§[0-9a-fr]|\")", "patterns": [{ "include": "#string-escape" }, { "include": "#format-code" }] },
+                { "name": "constant.character.format-code.color.gold.snbt",          "begin": "§6",   "end": "(?=§[0-9a-fr]|\")", "patterns": [{ "include": "#string-escape" }, { "include": "#format-code" }] },
+                { "name": "constant.character.format-code.color.gray.snbt",          "begin": "§7",   "end": "(?=§[0-9a-fr]|\")", "patterns": [{ "include": "#string-escape" }, { "include": "#format-code" }] },
+                { "name": "constant.character.format-code.color.dark-gray.snbt",     "begin": "§8",   "end": "(?=§[0-9a-fr]|\")", "patterns": [{ "include": "#string-escape" }, { "include": "#format-code" }] },
+                { "name": "constant.character.format-code.color.blue.snbt",          "begin": "§9",   "end": "(?=§[0-9a-fr]|\")", "patterns": [{ "include": "#string-escape" }, { "include": "#format-code" }] },
+                { "name": "constant.character.format-code.color.green.snbt",         "begin": "§a",   "end": "(?=§[0-9a-fr]|\")", "patterns": [{ "include": "#string-escape" }, { "include": "#format-code" }] },
+                { "name": "constant.character.format-code.color.aqua.snbt",          "begin": "§b",   "end": "(?=§[0-9a-fr]|\")", "patterns": [{ "include": "#string-escape" }, { "include": "#format-code" }] },
+                { "name": "constant.character.format-code.color.red.snbt",           "begin": "§c",   "end": "(?=§[0-9a-fr]|\")", "patterns": [{ "include": "#string-escape" }, { "include": "#format-code" }] },
+                { "name": "constant.character.format-code.color.light-purple.snbt",  "begin": "§d",   "end": "(?=§[0-9a-fr]|\")", "patterns": [{ "include": "#string-escape" }, { "include": "#format-code" }] },
+                { "name": "constant.character.format-code.color.yellow.snbt",        "begin": "§e",   "end": "(?=§[0-9a-fr]|\")", "patterns": [{ "include": "#string-escape" }, { "include": "#format-code" }] },
+                { "name": "constant.character.format-code.color.white.snbt",         "begin": "§f",   "end": "(?=§[0-9a-fr]|\")", "patterns": [{ "include": "#string-escape" }, { "include": "#format-code" }] },
+                { "name": "meta.format-code.style.obfuscated.snbt",     "begin": "§k",  "end": "(?=§[0-9a-fr]|\")", "patterns": [{ "include": "#string-escape" }, { "include": "#format-code" }] },
+                { "name": "meta.format-code.style.bold.snbt",           "begin": "§l",  "end": "(?=§[0-9a-fr]|\")", "patterns": [{ "include": "#string-escape" }, { "include": "#format-code" }] },
+                { "name": "meta.format-code.style.strikethrough.snbt",  "begin": "§m",  "end": "(?=§[0-9a-fr]|\")", "patterns": [{ "include": "#string-escape" }, { "include": "#format-code" }] },
+                { "name": "meta.format-code.style.underline.snbt",      "begin": "§n",  "end": "(?=§[0-9a-fr]|\")", "patterns": [{ "include": "#string-escape" }, { "include": "#format-code" }] },
+                { "name": "meta.format-code.style.italic.snbt",         "begin": "§o",  "end": "(?=§[0-9a-fr]|\")", "patterns": [{ "include": "#string-escape" }, { "include": "#format-code" }] },
+                { "name": "constant.character.format-code.style.reset.snbt",         "begin": "§r",  "end": "(?=§[0-9a-fk-or]|\")", "patterns": [{ "include": "#string-escape" }, { "include": "#format-code" }] }
             ]
         },
         "constant": {
