@@ -1,0 +1,12 @@
+{
+  "functions": [
+    {
+      "name": "IconFn",
+      "actions": "empty.htsl",
+      "icon": {
+        "item": "minecraft:map",
+        "count": 3
+      }
+    }
+  ]
+}
