@@ -222,16 +222,16 @@ function streamToChat(stream: any, prefix: string): any {
  *
  * @returns The process exit code.
  */
-function runOSCommandStreaming(command: string): number {
-    ChatLib.chat("&aRunning: &7" + command);
+function runOSCommandStreaming(command: string[]): number {
+    ChatLib.chat("&aRunning: &7" + command.map(quoteCommandArg).join(" "));
 
     const ProcessBuilder = Java.type("java.lang.ProcessBuilder");
     const ArrayList = Java.type("java.util.ArrayList");
 
     const args = new ArrayList();
-    args.add("cmd");
-    args.add("/c");
-    args.add(command);
+    for (const arg of command) {
+        args.add(arg);
+    }
 
     const pb = new ProcessBuilder(args);
     const process = pb.start();
@@ -253,6 +253,10 @@ function runOSCommandStreaming(command: string): number {
     return exitCode;
 }
 
+function quoteCommandArg(arg: string): string {
+    return /\s/.test(arg) ? `"${arg}"` : arg;
+}
+
 export function recompile() {
     const repoPath = readDotEnv("HTSW_REPOSITORY_PATH");
     if (!repoPath) {
@@ -266,9 +270,10 @@ export function recompile() {
     const task = new Runnable({
         run: function () {
             ChatLib.chat("&aRecompiling...");
-            const exitCode = runOSCommandStreaming(
-                `python "${repoPath}\\ct_module\\install.py"`
-            );
+            const exitCode = runOSCommandStreaming([
+                "python",
+                `${repoPath}\\ct_module\\install.py`,
+            ]);
             if (exitCode !== 0) {
                 ChatLib.chat(`&cRecompilation failed (exit code ${exitCode})`);
                 return;
