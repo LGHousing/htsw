@@ -28,6 +28,7 @@
     },
     "main": "./dist/extension.cjs",
     "activationEvents": [
+        "onLanguage:htsl",
         "onLanguage:json",
         "onLanguage:jsonc",
         "onLanguage:snbt"
@@ -125,7 +126,11 @@
                     { "scope": "constant.character.format-code.style.bold.snbt",          "settings": { "fontStyle": "bold" } },
                     { "scope": "constant.character.format-code.style.italic.snbt",        "settings": { "fontStyle": "italic" } },
                     { "scope": "constant.character.format-code.style.underline.snbt",     "settings": { "fontStyle": "underline" } },
-                    { "scope": "constant.character.format-code.style.strikethrough.snbt", "settings": { "fontStyle": "strikethrough" } }
+                    { "scope": "constant.character.format-code.style.strikethrough.snbt", "settings": { "fontStyle": "strikethrough" } },
+                    { "scope": "meta.format-code.style.bold.snbt",                      "settings": { "fontStyle": "bold" } },
+                    { "scope": "meta.format-code.style.italic.snbt",                    "settings": { "fontStyle": "italic" } },
+                    { "scope": "meta.format-code.style.underline.snbt",                 "settings": { "fontStyle": "underline" } },
+                    { "scope": "meta.format-code.style.strikethrough.snbt",             "settings": { "fontStyle": "strikethrough" } }
                 ]
             }
         }
