@@ -7,6 +7,12 @@ export type ImportableFunction = {
     name: string;
     actions: Action[];
     repeatTicks?: number;
+    icon?: FunctionIcon;
+};
+
+export type FunctionIcon = {
+    item: string;
+    count?: number;
 };
 
 export type ImportableRegion = {
