@@ -47,17 +47,48 @@ export async function getSlotPaginate(
     ctx: TaskContext,
     name: string,
 ): Promise<ItemSlot> {
-    do {
+    await goToFirstPaginatedOptionPage(ctx);
+
+    for (let page = 0; page < 100; page++) {
         const slot = ctx.tryGetItemSlot(name);
         if (slot !== null) return slot;
 
-        const nextPageSlot = ctx.tryGetItemSlot("Left-click for next page!");
+        const nextPageSlot = findPaginationControl(ctx, "next");
         if (nextPageSlot === null) break;
         nextPageSlot.click();
         await waitForMenu(ctx);
-    } while (true);
+    }
 
     throw new Error(`Could not find "${name}" on any page.`);
+}
+
+async function goToFirstPaginatedOptionPage(ctx: TaskContext): Promise<void> {
+    for (let page = 0; page < 100; page++) {
+        const prevPageSlot = findPaginationControl(ctx, "previous");
+        if (prevPageSlot === null) return;
+        prevPageSlot.click();
+        await waitForMenu(ctx);
+    }
+
+    throw new Error("Could not find the first page of this paginated menu.");
+}
+
+function findPaginationControl(
+    ctx: TaskContext,
+    direction: "next" | "previous",
+): ItemSlot | null {
+    const exactText = `Left-click for ${direction} page!`;
+    const exactSlot = ctx.tryGetItemSlot(exactText);
+    if (exactSlot !== null) return exactSlot;
+
+    const needle = `${direction} page`;
+    return ctx.tryGetItemSlot((slot) => {
+        const item = slot.getItem();
+        const lines = [item.getName(), ...item.getLore()];
+        return lines.some((line) =>
+            removedFormatting(line).trim().toLowerCase().includes(needle),
+        );
+    });
 }
 
 export async function clickGoBack(ctx: TaskContext): Promise<void> {
@@ -422,4 +453,70 @@ export async function setStringValue(
     slot.click();
     await enterValue(ctx, newValue);
     await waitForMenu(ctx);
+}
+
+export async function setStringOrPaginatedOptionValue(
+    ctx: TaskContext,
+    slot: ItemSlot,
+    value: string,
+): Promise<void> {
+    const newValue = value.toString();
+    const currentValue = readStringValue(slot);
+    if (currentValue !== null && currentValue === newValue) {
+        return;
+    }
+
+    const slotName = removedFormatting(slot.getItem().getName()).trim();
+    slot.click();
+
+    const inputMode = await ctx.withTimeout(
+        Promise.race([
+            waitForChatInputPrompt(ctx).then(() => "CHAT" as const),
+            ctx
+                .waitFor("packetReceived", (packet) => {
+                    return (
+                        packet instanceof S2DPacketOpenWindow &&
+                        packet
+                            .func_148902_e
+                            /*getGuiId*/
+                            () === "minecraft:anvil"
+                    );
+                })
+                .then(() => "ANVIL" as const),
+            waitForMenu(ctx).then(() => "MENU" as const),
+        ]),
+        `Waiting to edit "${slotName}"`,
+    );
+
+    switch (inputMode) {
+        case "CHAT":
+            ctx.sendMessage(newValue);
+            await waitForMenu(ctx);
+            return;
+        case "ANVIL":
+            await waitForMenu(ctx);
+            setAnvilItemName(newValue);
+            acceptNewAnvilItem();
+            await waitForMenu(ctx);
+            return;
+        case "MENU": {
+            const optionSlot = await getSlotPaginate(ctx, newValue);
+            if (isAlreadySelectedOption(optionSlot)) {
+                await clickGoBack(ctx);
+                return;
+            }
+
+            optionSlot.click();
+            await waitForMenu(ctx);
+            if (ctx.tryGetItemSlot(slotName) !== null) {
+                return;
+            }
+
+            await clickGoBack(ctx);
+            return;
+        }
+        default:
+            const _exhaustiveCheck: never = inputMode;
+            return _exhaustiveCheck;
+    }
 }

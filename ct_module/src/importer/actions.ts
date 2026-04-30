@@ -47,6 +47,7 @@ import {
     openSubmenu,
     enterValue,
     setStringValue,
+    setStringOrPaginatedOptionValue,
     setBooleanValue,
     setSelectValue,
     setCycleValue,
@@ -609,11 +610,15 @@ async function writeFailParkour(
 }
 
 async function writePlaySound(ctx: TaskContext, action: ActionPlaySound): Promise<void> {
-    await setSelectValue(
-        ctx,
-        getActionFieldLabel("PLAY_SOUND", "sound"),
-        action.sound
-    );
+    const soundLabel = getActionFieldLabel("PLAY_SOUND", "sound");
+    const currentSound = readStringValue(ctx.getItemSlot(soundLabel));
+    if (currentSound !== action.sound) {
+        await openSubmenu(ctx, soundLabel);
+        const customSoundSlot = await getSlotPaginate(ctx, "Custom Sound");
+        customSoundSlot.click();
+        await enterValue(ctx, action.sound);
+        await waitForMenu(ctx);
+    }
 
     if (action.volume !== undefined) {
         await setNumberValue(
@@ -729,7 +734,7 @@ async function writeRandom(
 }
 
 async function writeFunction(ctx: TaskContext, action: ActionFunction): Promise<void> {
-    await setStringValue(
+    await setStringOrPaginatedOptionValue(
         ctx,
         ctx.getItemSlot(getActionFieldLabel("FUNCTION", "function")),
         action.function

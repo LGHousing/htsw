@@ -32,6 +32,7 @@ import {
 import {
     clickGoBack,
     findMenuOptionByLore,
+    getSlotPaginate,
     openSubmenu,
     readBooleanValue,
     readStringValue,
@@ -261,7 +262,8 @@ async function writeRequireGroup(
             : undefined;
 
         if (selectedGroup !== condition.group) {
-            ctx.getItemSlot(condition.group).click();
+            const groupSlot = await getSlotPaginate(ctx, condition.group);
+            groupSlot.click();
             await waitForMenu(ctx);
         } else {
             await clickGoBack(ctx);
