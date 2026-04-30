@@ -430,6 +430,29 @@ describe("Main API", () => {
         )).toBe(true);
     });
 
+    it("parseImportablesResult rejects setTeam in Player Quit events", () => {
+        const valid = parseEventWithActions("Player Join", "setTeam \"team\"\n");
+        expect(errorMessages(valid)).toEqual([]);
+
+        const invalid = parseEventWithActions("Player Quit", "setTeam \"team\"\n");
+        expect(errorMessages(invalid).some((message) =>
+            message.includes("Set Player Team action cannot be used inside Player Quit events"),
+        )).toBe(true);
+    });
+
+    it("parseImportablesResult rejects Player Quit-only action restrictions in nested event actions", () => {
+        const invalid = parseEventWithActions("Player Quit", [
+            "if and () {",
+            "    setTeam \"team\"",
+            "}",
+            "",
+        ].join("\n"));
+
+        expect(errorMessages(invalid).some((message) =>
+            message.includes("Set Player Team action cannot be used inside Player Quit events"),
+        )).toBe(true);
+    });
+
     it("checkLimits enforces menu closeMenu limits", () => {
         const sourceMap = new htsw.SourceMap(
             new SimpleFileLoader({

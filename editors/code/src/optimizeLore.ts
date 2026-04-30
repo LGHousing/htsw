@@ -43,7 +43,7 @@ function removeFormatting(text: string): string {
     let i = 0;
     while (i < text.length) {
         const c = text[i];
-        if ((c === "&" || c === "§") && i + 1 < text.length) {
+        if (c === "§" && i + 1 < text.length) {
             const next = text[i + 1].toLowerCase();
             if (ALL_CODES.has(next)) {
                 i += 2;
@@ -206,18 +206,19 @@ function getFormattingCodes(text: string): string[][] {
 
     while (i < text.length) {
         const c = text[i];
-        if ((c === "&" || c === "§") && i + 1 < text.length) {
+        if (c === "§" && i + 1 < text.length) {
             const next = text[i + 1].toLowerCase();
 
             if (COLOR_CODES.has(next)) {
-                let count = 0;
-                for (const code of active) if (code === next) count++;
-                active = new Array<string>(count + 1).fill(next);
+                active = [
+                    next,
+                    ...active.filter((code) => !COLOR_CODES.has(code)),
+                ];
                 i += 2;
                 continue;
             }
             if (ADDITIVE_CODES.has(next)) {
-                active = [...active, next];
+                if (!active.includes(next)) active = [...active, next];
                 i += 2;
                 continue;
             }
@@ -254,11 +255,11 @@ function addFormattingCodes(unformattedText: string, formatting: string[][]): st
 
         if (!arraysEqual(codes, prev)) {
             if (codes.length === 0) {
-                out.push("&r");
+                    out.push("§r");
             } else {
                 for (let i = 0; i < codes.length; i++) {
                     if (i < prev.length && codes[i] === prev[i]) continue;
-                    out.push("&" + codes[i]);
+                    out.push("§" + codes[i]);
                 }
             }
         }

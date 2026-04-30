@@ -1,0 +1,108 @@
+// =============================================
+// COMPASS — Momica read + target cycling
+// =============================================
+
+// --- Compass Update: read target coords via Momica (every 5t) ---
+if (var tm/cpt < 0) {
+    exit
+}
+if (var s < 0) {
+    exit
+}
+// Save own key, swap in compass target key for Momica lookup
+var tm/m = %var.player/k%
+var k = %var.player/tm/cpt%
+chat "96%"
+// Read target X
+teamvar r None = "%var.global/p%d%var.player/k%x%"
+teamvar r None = %var.team/r%
+var tm/tx = %var.team/r%
+
+// Read target Y
+teamvar r None = "%var.global/p%d%var.player/k%y%"
+teamvar r None = %var.team/r%
+var tm/ty = %var.team/r%
+
+// Read target Z
+teamvar r None = "%var.global/p%d%var.player/k%z%"
+teamvar r None = %var.team/r%
+var tm/tz = %var.team/r%
+
+// Restore own key
+var k = %var.player/tm/m%
+
+// Set compass target to the resolved coordinates
+compassTarget Custom_Coordinates "%var.player/tm/tx% %var.player/tm/ty% %var.player/tm/tz%"
+
+compassTarget "Custom Coordinates" "1 2 3"
+
+// --- Compass Cycle: right-click compass item to switch target ---
+// This would be attached to a right-click item action.
+
+if (var s < 0) {
+    chat "&8[&9&lTEAM&8] &7You're not on a team!"
+    exit
+}
+
+// Read member count for our sub
+var tm/m = 0
+if (var s == 0) {
+    var tm/m = %var.team/s0c%
+}
+if (var s == 1) {
+    var tm/m = %var.team/s1c%
+}
+if (var s == 2) {
+    var tm/m = %var.team/s2c%
+}
+if (var s == 3) {
+    var tm/m = %var.team/s3c%
+}
+if (var s == 4) {
+    var tm/m = %var.team/s4c%
+}
+
+// If solo team, nothing to track
+if (var tm/m <= 1) {
+    chat "&8[&9&lTEAM&8] &7No teammates to track!"
+    var tm/cpt = -1
+    exit
+}
+
+// Advance cycle index
+var tm/ci += 1
+
+// Wrap around (if ci >= m, reset to 0)
+if (var tm/ci >= %var.player/tm/m%) {
+    var tm/ci = 0
+}
+
+// Compute target key: sub*10 + ci
+var tm/cpt = %var.player/s%
+var tm/cpt *= 10
+var tm/cpt += %var.player/tm/ci%
+
+// Skip self: if target key == own key, advance once more
+if (var tm/cpt == %var.player/k%) {
+    var tm/ci += 1
+}
+// Wrap again after skip-self increment
+if (var tm/cpt == %var.player/k%, var tm/ci >= %var.player/tm/m%) {
+    var tm/ci = 0
+}
+// Recompute target key after skip-self
+if (var tm/cpt == %var.player/k%) {
+    var tm/cpt = %var.player/s%
+    var tm/cpt *= 10
+    var tm/cpt += %var.player/tm/ci%
+}
+
+// Read target IGN via Momica for the chat message
+var tm/m = %var.player/k%
+var k = %var.player/tm/cpt%
+teamvar r None = "%var.global/p%d%var.player/k%n%"
+teamvar r None = %var.team/r%
+var k = %var.player/tm/m%
+
+chat "&8[&9&lTEAM&8] &7Now tracking: &b%var.team/r%"
+sound Note_Pling 1.0 2.0 Invokers_Location

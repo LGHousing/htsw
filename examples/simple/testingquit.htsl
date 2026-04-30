@@ -1,0 +1,2 @@
+setTeam "team"
+tp custom_coordinates "1 2 3" false

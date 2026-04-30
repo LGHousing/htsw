@@ -1,0 +1,25 @@
+{
+    id: "minecraft:stone",
+    Count: 2b,
+    tag: {
+        display: {
+            Name: "§aIm hard",
+            Lore: [
+                "§7Example lore line",
+                "§eI love jessica",
+                "§aBut you're saying the list-level",
+                "§a\"Item: X\" §e§kstring isn't trustworthy",
+                "pee§callan",
+                "i've been enjoying this mod §clately,",
+                "§ci think making the lore compatible",
+                "§cwith hypixel's color formatting",
+                "§c(th hypixel's color §rformatting",
+                "§c(th hypixel's color formatting",
+                "§c(th hypixel's color f§ormatting (th",
+                "§chypixel's color formatting (or just",
+                "§cmore color options in general, the",
+                "§cmod has limited choices) will be good"
+            ]
+        }
+    }
+}

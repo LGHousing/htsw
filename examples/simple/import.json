@@ -3,7 +3,23 @@
         {
             "name": "Simple Function",
             "actions": "simple.htsl",
-            "repeatTicks": 67
+            "repeatTicks": 67,
+            "icon": {
+                "item": "minecraft:clock",
+                "count": 4
+            }
+        }
+    ],
+    "items": [
+        {
+            "name": "coolItem",
+            "nbt": "./stone.snbt"
+        }
+    ],
+    "events": [
+        {
+            "event": "Player Quit",
+            "actions": "testingquit.htsl"
         }
     ]
 }
