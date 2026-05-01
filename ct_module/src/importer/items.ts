@@ -4,6 +4,7 @@ import {
     S2FPacketSetSlot,
 } from "../utils/packets";
 import { waitForMenu } from "./helpers";
+import { getAllItemSlots } from "../tasks/specifics/slots";
 
 const INV_PACKET_SLOT = 26; // inventory row 2, column 9 (rightmost, out of the way — matches BHTSL)
 const SET_SLOT_ACK_TIMEOUT_MS = 2000;
@@ -11,18 +12,13 @@ const SET_SLOT_ACK_TIMEOUT_MS = 2000;
 /**
  * Set the value of a Housing "Item" field (GIVE_ITEM, REMOVE_ITEM, IS_ITEM, ...).
  *
- * The Hypixel UX is: clicking the field opens a sub-menu that contains the
- * player's inventory at the bottom; clicking an inventory slot picks that
- * slot's item as the field value. So the strategy is to inject the desired
- * item into inventory slot 26 (row 2, col 9) via creative-inventory packet,
- * wait for the server to ack the slot update, then click the matching slot
- * inside the open container.
+ * Strategy:
+ * 1. Click the field to open the item-selection submenu (shows player inventory)
+ * 2. Scan the player inventory area for a matching item (via ItemStack equality)
+ * 3. If found, click it directly — no injection needed
+ * 4. If not found, inject into slot 26 via creative packet, wait for ack, click
  *
- * Uses slot 26 (out of the way) to avoid clobbering hotbar items.
- *
- * Caller is responsible for handing in a spawnable Item — for items that
- * carry click-actions (Housing-tagged NBT) that means the post-/edit
- * cached SNBT, not the raw source NBT.
+ * Uses slot 26 (row 2, col 9) to avoid clobbering hotbar items (matches BHTSL).
  */
 export async function setItemValue(
     ctx: TaskContext,
@@ -38,41 +34,44 @@ export async function setItemValue(
             `No open container after clicking "${fieldName}" — cannot inject item.`
         );
     }
-    // In a chest-style container, player main inventory (packet slots 9-35)
-    // starts at containerSize - 36. Packet slot 26 maps to:
-    // containerSize - 36 + (26 - 9) = containerSize - 19
+
+    const playerInvStart = container.getSize() - 36;
+    const desiredStack = item.getItemStack();
+
+    // Scan player inventory slots in the container for a matching item
+    const existingSlot = ctx.tryGetItemSlot((s) => {
+        if (s.getSlotId() < playerInvStart) return false;
+        const slotStack = s.getItem().getItemStack();
+        return slotStack.func_179549_c(desiredStack);
+    });
+
+    if (existingSlot !== null) {
+        existingSlot.click();
+        await waitForMenu(ctx);
+        return;
+    }
+
+    // Item not in inventory — inject via creative packet
     const targetSlotInContainer = container.getSize() - 36 + (INV_PACKET_SLOT - 9);
 
     Client.sendPacket(
-        new C10PacketCreativeInventoryAction(INV_PACKET_SLOT, item.getItemStack())
+        new C10PacketCreativeInventoryAction(INV_PACKET_SLOT, desiredStack)
     );
 
-    // Wait a tick for the creative packet to be processed, then check if
-    // the item is already at the target slot (e.g. player already had it).
-    // Hypixel won't send an ack packet for duplicate items.
+    await ctx.withTimeout(
+        ctx.waitFor("packetReceived", (packet) => {
+            if (!(packet instanceof S2FPacketSetSlot)) return false;
+            const windowId = packet.func_149175_c();
+            const slotIdx = packet.func_149173_d();
+            return (
+                (windowId !== 0 && slotIdx === targetSlotInContainer) ||
+                (windowId === 0 && slotIdx === INV_PACKET_SLOT)
+            );
+        }),
+        `creative-inventory ack for "${fieldName}"`,
+        SET_SLOT_ACK_TIMEOUT_MS
+    );
     await ctx.waitFor("tick");
-
-    const alreadyThere = ctx.tryGetItemSlot(
-        (s) => s.getSlotId() === targetSlotInContainer && s.getItem() != null && s.getItem().getName() != null
-    );
-
-    if (alreadyThere === null) {
-        // Item wasn't instant — wait for server ack
-        await ctx.withTimeout(
-            ctx.waitFor("packetReceived", (packet) => {
-                if (!(packet instanceof S2FPacketSetSlot)) return false;
-                const windowId = packet.func_149175_c();
-                const slotIdx = packet.func_149173_d();
-                return (
-                    (windowId !== 0 && slotIdx === targetSlotInContainer) ||
-                    (windowId === 0 && slotIdx === INV_PACKET_SLOT)
-                );
-            }),
-            `creative-inventory ack for "${fieldName}"`,
-            SET_SLOT_ACK_TIMEOUT_MS
-        );
-        await ctx.waitFor("tick");
-    }
 
     const slot = ctx.tryGetItemSlot(
         (s) => s.getSlotId() === targetSlotInContainer
