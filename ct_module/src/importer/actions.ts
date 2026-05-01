@@ -66,7 +66,7 @@ import {
     readConditionList,
     syncConditionList,
 } from "./conditions";
-import { normalizeActionCompare } from "./compare";
+import { normalizeActionCompare, normalizeConditionCompare } from "./compare";
 import { isSyncDebugLoggingEnabled } from "./debug";
 import {
     ACTION_MAPPINGS,
@@ -78,6 +78,7 @@ import {
 import { diffActionList } from "./actions/diff";
 import type {
     ActionListDiff,
+    ActionListTrust,
     ActionListReadMode,
     ActionListOperation,
     NestedHydrationPlan,
@@ -88,6 +89,7 @@ import type {
     ObservedActionSlot,
 } from "./types";
 import { createNestedHydrationPlan } from "./actions/hydrationPlan";
+import { applyActionListTrust } from "./actions/trustHydration";
 import { tryGetConditionTypeFromDisplayName } from "./conditionMappings";
 import {
     clickPaginatedNextPage,
@@ -108,6 +110,7 @@ export type {
     NestedListProp,
     NestedPropsToRead,
     ObservedActionSlot as ObservedAction,
+    ActionListTrust,
 } from "./types";
 
 type ActionSpec<T extends Action = Action> = {
@@ -287,7 +290,10 @@ async function writeConditional(
     current?: Observed<ActionConditional>,
     itemRegistry?: ItemRegistry
 ): Promise<void> {
-    if (action.conditions.length > 0 || (current?.conditions?.length ?? 0) > 0) {
+    if (
+        !conditionListsEqual(current?.conditions, action.conditions) &&
+        (action.conditions.length > 0 || (current?.conditions?.length ?? 0) > 0)
+    ) {
         ctx.getItemSlot(getActionFieldLabel("CONDITIONAL", "conditions")).click();
         await waitForMenu(ctx);
 
@@ -301,19 +307,61 @@ async function writeConditional(
         action.matchAny
     );
 
-    if (action.ifActions.length > 0 || (current?.ifActions?.length ?? 0) > 0) {
+    if (
+        !observedActionListsEqual(current?.ifActions, action.ifActions) &&
+        (action.ifActions.length > 0 || (current?.ifActions?.length ?? 0) > 0)
+    ) {
         ctx.getItemSlot(getActionFieldLabel("CONDITIONAL", "ifActions")).click();
         await waitForMenu(ctx);
         await syncActionList(ctx, action.ifActions, { itemRegistry });
         await clickGoBack(ctx);
     }
 
-    if (action.elseActions.length > 0 || (current?.elseActions?.length ?? 0) > 0) {
+    if (
+        !observedActionListsEqual(current?.elseActions, action.elseActions) &&
+        (action.elseActions.length > 0 || (current?.elseActions?.length ?? 0) > 0)
+    ) {
         ctx.getItemSlot(getActionFieldLabel("CONDITIONAL", "elseActions")).click();
         await waitForMenu(ctx);
         await syncActionList(ctx, action.elseActions, { itemRegistry });
         await clickGoBack(ctx);
     }
+}
+
+function observedActionListsEqual(
+    observed: Array<Observed<Action> | null> | undefined,
+    desired: readonly Action[]
+): boolean {
+    if (observed === undefined || observed.length !== desired.length) return false;
+    for (let i = 0; i < desired.length; i++) {
+        const observedAction = observed[i];
+        if (observedAction === null) return false;
+        if (
+            JSON.stringify(normalizeActionCompare(observedAction)) !==
+            JSON.stringify(normalizeActionCompare(desired[i]))
+        ) {
+            return false;
+        }
+    }
+    return true;
+}
+
+function conditionListsEqual(
+    observed: Array<Condition | null> | undefined,
+    desired: readonly Condition[]
+): boolean {
+    if (observed === undefined || observed.length !== desired.length) return false;
+    for (let i = 0; i < desired.length; i++) {
+        const observedCondition = observed[i];
+        if (observedCondition === null) return false;
+        if (
+            JSON.stringify(normalizeConditionCompare(observedCondition)) !==
+            JSON.stringify(normalizeConditionCompare(desired[i]))
+        ) {
+            return false;
+        }
+    }
+    return true;
 }
 
 async function writeSetGroup(ctx: TaskContext, action: ActionSetGroup): Promise<void> {
@@ -722,10 +770,11 @@ async function readOpenRandom(
 async function writeRandom(
     ctx: TaskContext,
     action: ActionRandom,
-    _current?: Observed<ActionRandom>,
+    current?: Observed<ActionRandom>,
     itemRegistry?: ItemRegistry
 ): Promise<void> {
-    if (action.actions.length === 0) return;
+    if (observedActionListsEqual(current?.actions, action.actions)) return;
+    if (action.actions.length === 0 && (current?.actions?.length ?? 0) === 0) return;
 
     ctx.getItemSlot(getActionFieldLabel("RANDOM", "actions")).click();
     await waitForMenu(ctx);
@@ -1237,6 +1286,9 @@ export async function readActionList(
             ? buildFullHydrationPlan(observed)
             : createNestedHydrationPlan(observed, mode.desired);
     addScalarHydrationEntries(plan, observed);
+    if (mode.kind === "sync" && mode.trust !== undefined) {
+        applyActionListTrust(observed, mode.desired, plan, mode.trust);
+    }
     await hydrateNestedActions(ctx, plan, observed.length, mode.itemRegistry);
     canonicalizeObservedActionItemNames(observed, mode.itemRegistry);
 
@@ -1792,6 +1844,7 @@ export type SyncActionListOptions = {
      */
     observed?: ObservedActionSlot[];
     itemRegistry?: ItemRegistry;
+    trust?: ActionListTrust;
 };
 
 export type SyncActionListResult = {
@@ -1814,6 +1867,7 @@ export async function syncActionList(
             kind: "sync",
             desired,
             itemRegistry: options?.itemRegistry,
+            trust: options?.trust,
         }));
     canonicalizeObservedActionItemNames(observed, options?.itemRegistry);
     const diff = diffActionList(observed, desired);

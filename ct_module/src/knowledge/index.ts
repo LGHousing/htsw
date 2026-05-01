@@ -35,3 +35,22 @@ export {
 } from "./paths";
 
 export { getCurrentHousingUuid } from "./housingId";
+
+export {
+    buildKnowledgeStatusRows,
+    sameHashList,
+} from "./status";
+export type {
+    KnowledgeState,
+    KnowledgeStatusRow,
+} from "./status";
+
+export {
+    buildKnowledgeTrustPlan,
+    trustPlanKey,
+} from "./trust";
+export type {
+    KnowledgeTrustPlan,
+    ImportableTrustPlan,
+    TrustedListPath,
+} from "./trust";

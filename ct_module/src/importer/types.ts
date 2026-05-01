@@ -56,13 +56,25 @@ export type NestedListProp = "conditions" | "ifActions" | "elseActions" | "actio
 /** Nested list properties that still need to be read by clicking in. */
 export type NestedPropsToRead = Set<NestedListProp>;
 
-export type NestedReadState = "none" | "summary" | "full";
+export type NestedReadState = "none" | "summary" | "full" | "trusted";
 
 export type NestedSummaries = Partial<Record<NestedListProp, string[]>>;
 
 export type ActionListReadMode =
     | { kind: "full"; itemRegistry?: ItemRegistry }
-    | { kind: "sync"; desired: readonly Action[]; itemRegistry?: ItemRegistry };
+    | {
+          kind: "sync";
+          desired: readonly Action[];
+          itemRegistry?: ItemRegistry;
+          trust?: ActionListTrust;
+      };
+
+export type ActionListTrust = {
+    basePath: string;
+    cachedActions: readonly Action[];
+    desiredActions: readonly Action[];
+    trustedListPaths: ReadonlySet<string>;
+};
 
 export type NestedHydrationPlan = Map<ObservedActionSlot, NestedPropsToRead>;
 

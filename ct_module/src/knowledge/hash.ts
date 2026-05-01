@@ -106,6 +106,7 @@ function collectActionListHashes(
     for (let i = 0; i < actions.length; i++) {
         const action = actions[i];
         if (action.type === "CONDITIONAL") {
+            out[`${path}[${i}].conditions`] = action.conditions.map(conditionHash);
             collectActionListHashes(out, `${path}[${i}].ifActions`, action.ifActions);
             collectActionListHashes(out, `${path}[${i}].elseActions`, action.elseActions);
         } else if (action.type === "RANDOM") {

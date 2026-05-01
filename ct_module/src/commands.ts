@@ -11,6 +11,7 @@ import { S2FPacketSetSlot } from "./utils/packets";
 import { FileSystemFileLoader } from "./utils/files";
 import { stripSurroundingQuotes } from "./utils/strings";
 import { commandKnowledge } from "./knowledge/commands";
+import { openHtswDashboard } from "./gui/dashboard";
 
 function printCommandError(sm: SourceMap, err: unknown): void {
     if (err instanceof Diagnostic) {
@@ -60,6 +61,11 @@ function commandHtsw(args: string[]) {
         return;
     }
 
+    if (args.length > 0 && args[0] === "gui") {
+        openHtswDashboard(args.length > 1 ? args.slice(1).join(" ") : undefined);
+        return;
+    }
+
     ChatLib.chat(`&7${chatSeparator()}`);
     const title = `&e&lHTSW &f&l${VERSION}`;
     ChatLib.chat(`${ChatLib.getCenteredText(title)}`);
@@ -69,6 +75,7 @@ function commandHtsw(args: string[]) {
     ChatLib.chat("&f/import &7- Import actions from HTSL files");
     ChatLib.chat("&f/simulator &7- Simulate actions from HTSL files");
     ChatLib.chat("&f/htsw knowledge &7- Inspect local import/export knowledge");
+    ChatLib.chat("&f/htsw gui &7- Open the in-game HTSW dashboard");
     ChatLib.chat(`&7${chatSeparator()}`);
 }
 
@@ -210,8 +217,11 @@ function commandImport(args: string[]) {
                 } else {
                     ctx.displayMessage(`&cFailed to import: ${e}`);
                 }
+                ctx.displayMessage("&cImport aborted.");
+                return;
             }
         }
+        ctx.displayMessage("&aImport complete.");
     }).catch((err) => {
         ChatLib.chat("&cImport failed.");
         printCommandError(sm, err);

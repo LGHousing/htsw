@@ -8,7 +8,7 @@ import {
     Pos,
 } from "htsw/types";
 
-import { syncActionList } from "../importer/actions";
+import { syncActionList, type ActionListTrust } from "../importer/actions";
 import TaskContext from "../tasks/context";
 import { clickGoBack, waitForMenu, waitForUnformattedMessage } from "../importer/helpers";
 import { removedFormatting } from "../utils/helpers";
@@ -17,7 +17,12 @@ import {
     C09PacketHeldItemChange,
     C10PacketCreativeInventoryAction,
 } from "../utils/packets";
-import { getCurrentHousingUuid, importableHash, writeKnowledge } from "../knowledge";
+import {
+    getCurrentHousingUuid,
+    importableHash,
+    writeKnowledge,
+    type ImportableTrustPlan,
+} from "../knowledge";
 import {
     ensureFunctionExists,
     ensureFunctionNamesExist,
@@ -27,23 +32,34 @@ import {
 } from "./functions";
 import type { ItemRegistry } from "./itemRegistry";
 
+export type ImportTrustOptions = {
+    plan?: ImportableTrustPlan;
+};
+
 export async function importImportable(
     ctx: TaskContext,
     importable: Importable,
-    itemRegistry: ItemRegistry
+    itemRegistry: ItemRegistry,
+    options?: ImportTrustOptions
 ): Promise<void> {
+    if (options?.plan?.wholeImportableTrusted) {
+        await maybeWriteKnowledge(ctx, importable);
+        ctx.displayMessage(`&7[knowledge] trusted ${importable.type}; skipped import.`);
+        return;
+    }
+
     if (importable.type === "FUNCTION") {
-        await importImportableFunction(ctx, importable, itemRegistry);
+        await importImportableFunction(ctx, importable, itemRegistry, options?.plan);
         await maybeWriteKnowledge(ctx, importable);
         return;
     }
     if (importable.type === "EVENT") {
-        await importImportableEvent(ctx, importable, itemRegistry);
+        await importImportableEvent(ctx, importable, itemRegistry, options?.plan);
         await maybeWriteKnowledge(ctx, importable);
         return;
     }
     if (importable.type === "REGION") {
-        await importImportableRegion(ctx, importable, itemRegistry);
+        await importImportableRegion(ctx, importable, itemRegistry, options?.plan);
         await maybeWriteKnowledge(ctx, importable);
         return;
     }
@@ -81,15 +97,23 @@ async function maybeWriteKnowledge(
 async function importImportableFunction(
     ctx: TaskContext,
     importable: ImportableFunction,
-    itemRegistry: ItemRegistry
+    itemRegistry: ItemRegistry,
+    trustPlan?: ImportableTrustPlan
 ): Promise<void> {
     await ensureReferencedFunctionsExist(ctx, importable);
     await ensureFunctionExists(ctx, importable.name);
 
-    // we have a function!!! open!!
-    await syncActionList(ctx, importable.actions, { itemRegistry });
+    const actionsTrust = actionListTrustFor(trustPlan, "actions", importable.actions);
+    const actionsTrusted = actionsTrust !== undefined && trustPlan?.trustedListPaths.has("actions");
+    if (!actionsTrusted) {
+        // we have a function!!! open!!
+        await syncActionList(ctx, importable.actions, {
+            itemRegistry,
+            trust: actionsTrust,
+        });
+    }
 
-    if (importable.repeatTicks || importable.icon) {
+    if ((importable.repeatTicks || importable.icon) && !functionSettingsTrusted(importable, trustPlan)) {
         await clickGoBack(ctx);
 
         await openFunctionSettings(ctx, importable.name);
@@ -106,7 +130,8 @@ async function importImportableFunction(
 async function importImportableEvent(
     ctx: TaskContext,
     importable: ImportableEvent,
-    itemRegistry: ItemRegistry
+    itemRegistry: ItemRegistry,
+    trustPlan?: ImportableTrustPlan
 ): Promise<void> {
     await ensureReferencedFunctionsExist(ctx, importable);
 
@@ -117,13 +142,17 @@ async function importImportableEvent(
     await waitForMenu(ctx);
 
     // we have an event!!! open!!! :)
-    await syncActionList(ctx, importable.actions, { itemRegistry });
+    await syncActionList(ctx, importable.actions, {
+        itemRegistry,
+        trust: actionListTrustFor(trustPlan, "actions", importable.actions),
+    });
 }
 
 async function importImportableRegion(
     ctx: TaskContext,
     importable: ImportableRegion,
-    itemRegistry: ItemRegistry
+    itemRegistry: ItemRegistry,
+    trustPlan?: ImportableTrustPlan
 ): Promise<void> {
     await ensureReferencedFunctionsExist(ctx, importable);
 
@@ -175,23 +204,103 @@ async function importImportableRegion(
         await waitForMenu(ctx);
     }
 
-    if (importable.onEnterActions) {
+    if (
+        importable.onEnterActions &&
+        !trustPlan?.trustedListPaths.has("onEnterActions")
+    ) {
         ctx.getItemSlot("Entry Actions").click();
         await waitForMenu(ctx);
 
-        await syncActionList(ctx, importable.onEnterActions, { itemRegistry });
+        await syncActionList(ctx, importable.onEnterActions, {
+            itemRegistry,
+            trust: actionListTrustFor(
+                trustPlan,
+                "onEnterActions",
+                importable.onEnterActions
+            ),
+        });
 
-        if (importable.onExitActions) {
+        if (
+            importable.onExitActions &&
+            !trustPlan?.trustedListPaths.has("onExitActions")
+        ) {
             await clickGoBack(ctx);
         }
     }
 
-    if (importable.onExitActions) {
+    if (
+        importable.onExitActions &&
+        !trustPlan?.trustedListPaths.has("onExitActions")
+    ) {
         ctx.getItemSlot("Exit Actions").click();
         await waitForMenu(ctx);
 
-        await syncActionList(ctx, importable.onExitActions, { itemRegistry });
+        await syncActionList(ctx, importable.onExitActions, {
+            itemRegistry,
+            trust: actionListTrustFor(
+                trustPlan,
+                "onExitActions",
+                importable.onExitActions
+            ),
+        });
     }
+}
+
+function actionListTrustFor(
+    plan: ImportableTrustPlan | undefined,
+    basePath: string,
+    desiredActions: readonly Action[]
+): ActionListTrust | undefined {
+    if (plan === undefined || plan.entry === null) {
+        return undefined;
+    }
+
+    const cachedActions = readCachedActionList(plan.entry.importable, basePath);
+    return {
+        basePath,
+        cachedActions: cachedActions ?? [],
+        desiredActions,
+        trustedListPaths: plan.trustedListPaths,
+    };
+}
+
+function readCachedActionList(
+    importable: Importable,
+    basePath: string
+): readonly Action[] | undefined {
+    if (
+        (importable.type === "FUNCTION" || importable.type === "EVENT") &&
+        basePath === "actions"
+    ) {
+        return importable.actions;
+    }
+    if (importable.type === "REGION") {
+        if (basePath === "onEnterActions") return importable.onEnterActions;
+        if (basePath === "onExitActions") return importable.onExitActions;
+    }
+    if (importable.type === "ITEM") {
+        if (basePath === "leftClickActions") return importable.leftClickActions;
+        if (basePath === "rightClickActions") return importable.rightClickActions;
+    }
+    if (importable.type === "NPC") {
+        if (basePath === "leftClickActions") return importable.leftClickActions;
+        if (basePath === "rightClickActions") return importable.rightClickActions;
+    }
+    return undefined;
+}
+
+function functionSettingsTrusted(
+    importable: ImportableFunction,
+    plan: ImportableTrustPlan | undefined
+): boolean {
+    if (plan?.entry?.importable.type !== "FUNCTION") {
+        return false;
+    }
+    const cached = plan.entry.importable;
+    return (
+        cached.repeatTicks === importable.repeatTicks &&
+        JSON.stringify(cached.icon ?? null) === JSON.stringify(importable.icon ?? null)
+    );
 }
 
 async function importImportableItem(

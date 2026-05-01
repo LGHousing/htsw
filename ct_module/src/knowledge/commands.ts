@@ -12,8 +12,7 @@ import { chatSeparator } from "../utils/helpers";
 import { stripSurroundingQuotes } from "../utils/strings";
 import {
     getCurrentHousingUuid,
-    importableHash,
-    importableIdentity,
+    buildKnowledgeStatusRows,
     readKnowledge,
     deleteKnowledge,
 } from ".";
@@ -76,10 +75,8 @@ function knowledgeStatus(args: string[]): void {
 
     TaskManager.run(async (ctx) => {
         const housingUuid = await getCurrentHousingUuid(ctx);
-        const rows = result.value.map((importable) =>
-            buildStatusRow(housingUuid, importable)
-        );
-        const hits = rows.filter((row) => row.state === "hit").length;
+        const rows = buildKnowledgeStatusRows(housingUuid, result.value);
+        const hits = rows.filter((row) => row.state === "current").length;
         const stale = rows.filter((row) => row.state === "stale").length;
         const missing = rows.filter((row) => row.state === "missing").length;
 
@@ -147,48 +144,14 @@ function knowledgeForget(args: string[]): void {
     });
 }
 
-type StatusRow = {
-    state: "hit" | "stale" | "missing";
-    importable: Importable;
-    hash: string;
-    cachedHash?: string;
-    writer?: string;
-};
-
-function buildStatusRow(housingUuid: string, importable: Importable): StatusRow {
-    const identity = importableIdentity(importable);
-    const hash = importableHash(importable);
-    const entry = readKnowledge(housingUuid, importable.type, identity);
-    if (entry === null) {
-        return { state: "missing", importable, hash };
-    }
-    if (entry.hash !== hash) {
-        return {
-            state: "stale",
-            importable,
-            hash,
-            cachedHash: entry.hash,
-            writer: entry.writer,
-        };
-    }
-    return {
-        state: "hit",
-        importable,
-        hash,
-        cachedHash: entry.hash,
-        writer: entry.writer,
-    };
-}
-
-function formatStatusRow(row: StatusRow): string {
-    const identity = importableIdentity(row.importable);
-    if (row.state === "hit") {
-        return `&aOK &f${row.importable.type} &7${identity} &8${row.hash} &7${row.writer}`;
+function formatStatusRow(row: ReturnType<typeof buildKnowledgeStatusRows>[number]): string {
+    if (row.state === "current") {
+        return `&aOK &f${row.importable.type} &7${row.identity} &8${row.hash} &7${row.entry?.writer}`;
     }
     if (row.state === "stale") {
-        return `&e! &f${row.importable.type} &7${identity} &8${row.cachedHash} -> ${row.hash}`;
+        return `&e! &f${row.importable.type} &7${row.identity} &8${row.entry?.hash} -> ${row.hash}`;
     }
-    return `&c- &f${row.importable.type} &7${identity} &8${row.hash}`;
+    return `&c- &f${row.importable.type} &7${row.identity} &8${row.hash}`;
 }
 
 function parseTypeAndIdentity(
