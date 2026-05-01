@@ -77,13 +77,13 @@ function knowledgeStatus(args: string[]): void {
         const housingUuid = await getCurrentHousingUuid(ctx);
         const rows = buildKnowledgeStatusRows(housingUuid, result.value);
         const hits = rows.filter((row) => row.state === "current").length;
-        const stale = rows.filter((row) => row.state === "stale").length;
-        const missing = rows.filter((row) => row.state === "missing").length;
+        const modified = rows.filter((row) => row.state === "modified").length;
+        const unknown = rows.filter((row) => row.state === "unknown").length;
 
         ctx.displayMessage(`&7${chatSeparator()}`);
         ctx.displayMessage(`&eKnowledge for &f${housingUuid}`);
         ctx.displayMessage(
-            `&7${rows.length} importables: &a${hits} current &e${stale} stale &c${missing} missing`
+            `&7${rows.length} importables: &a${hits} current &e${modified} modified &c${unknown} unknown`
         );
         for (const row of rows) {
             ctx.displayMessage(formatStatusRow(row));
@@ -148,7 +148,7 @@ function formatStatusRow(row: ReturnType<typeof buildKnowledgeStatusRows>[number
     if (row.state === "current") {
         return `&aOK &f${row.importable.type} &7${row.identity} &8${row.hash} &7${row.entry?.writer}`;
     }
-    if (row.state === "stale") {
+    if (row.state === "modified") {
         return `&e! &f${row.importable.type} &7${row.identity} &8${row.entry?.hash} -> ${row.hash}`;
     }
     return `&c- &f${row.importable.type} &7${row.identity} &8${row.hash}`;

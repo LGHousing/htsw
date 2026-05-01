@@ -26,8 +26,10 @@ import {
     type ImportableEvent,
     type ImportableFunction,
     type ImportableItem,
+    type ImportableMenu,
     type ImportableNpc,
     type ImportableRegion,
+    type MenuSlot,
     type NpcEquipment,
     type NpcSkin,
 } from "../../types";
@@ -106,6 +108,10 @@ function parseImportJsonObject(gcx: GlobalCtxt, node: json.Node, currentPath: st
         "npcs": {
             required: false,
             parser: (npcsNode) => parseAndAppendImportables(gcx, npcsNode, parseImportableNpc),
+        },
+        "menus": {
+            required: false,
+            parser: (menusNode) => parseAndAppendImportables(gcx, menusNode, parseImportableMenu),
         }
     });
 }
@@ -530,4 +536,83 @@ function parseImportableItem(gcx: GlobalCtxt, node: json.Node): ImportableItem {
     });
 
     return importable;
+}
+
+function parseImportableMenu(gcx: GlobalCtxt, node: json.Node): ImportableMenu {
+    const importable = { type: "MENU", slots: [] as MenuSlot[] } as ImportableMenu;
+    setSpan(gcx, importable, node);
+    setFieldSpan(gcx, importable, "type", node);
+
+    parseObject(gcx, node, {
+        "name": {
+            required: true,
+            parser: (child) => {
+                importable.name = parseString(gcx, child);
+                setFieldSpan(gcx, importable, "name", child);
+            }
+        },
+        "size": {
+            required: false,
+            parser: (child) => {
+                const size = parseBoundedNumber(1, 6)(gcx, child);
+                if (!Number.isInteger(size)) {
+                    gcx.addDiagnostic(
+                        Diagnostic.error("Menu size (in lines) must be an integer")
+                            .addPrimarySpan(nodeSpan(child))
+                    );
+                }
+                importable.size = size;
+                setFieldSpan(gcx, importable, "size", child);
+            }
+        },
+        "slots": {
+            required: true,
+            parser: (child) => {
+                importable.slots = parseArray(gcx, child, (slotNode) =>
+                    parseMenuSlot(gcx, slotNode)
+                );
+                setFieldSpan(gcx, importable, "slots", child);
+            }
+        },
+    });
+
+    return importable;
+}
+
+function parseMenuSlot(gcx: GlobalCtxt, node: json.Node): MenuSlot {
+    const slot = {} as MenuSlot;
+    setSpan(gcx, slot as object, node);
+
+    parseObject(gcx, node, {
+        "slot": {
+            required: true,
+            parser: (child) => {
+                const slotIndex = parseBoundedNumber(0, 53)(gcx, child);
+                if (!Number.isInteger(slotIndex)) {
+                    gcx.addDiagnostic(
+                        Diagnostic.error("Menu slot index must be an integer")
+                            .addPrimarySpan(nodeSpan(child))
+                    );
+                }
+                slot.slot = slotIndex;
+                setFieldSpan(gcx, slot, "slot", child);
+            }
+        },
+        "nbt": {
+            required: true,
+            parser: (child) => {
+                slot.nbt = parseNbt(gcx, child);
+                setFieldSpan(gcx, slot, "nbt", child);
+            }
+        },
+        "actions": {
+            required: false,
+            parser: (child) => {
+                slot.actions = parseActions(gcx, child);
+                setFieldSpan(gcx, slot, "actions", child);
+            }
+        },
+    });
+
+    return slot;
 }

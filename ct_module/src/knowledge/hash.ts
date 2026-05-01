@@ -152,7 +152,16 @@ export function listHashes(importable: Importable): Record<string, string[]> {
             }
             break;
         case "MENU":
-            // Menu slots don't carry action lists in the current type model.
+            for (let i = 0; i < importable.slots.length; i++) {
+                const slot = importable.slots[i];
+                if (slot.actions && slot.actions.length > 0) {
+                    collectActionListHashes(
+                        out,
+                        `slots[${i}].actions`,
+                        slot.actions
+                    );
+                }
+            }
             break;
     }
     return out;
@@ -184,9 +193,36 @@ export function importableHash(importable: Importable): string {
             Array.isArray(value)
         ) {
             canonical[key] = (value as Action[]).map((a) => normalizeActionCompare(a));
+        } else if (
+            importable.type === "MENU" &&
+            key === "slots" &&
+            Array.isArray(value)
+        ) {
+            // Menu slots embed action lists; normalize them so the hash
+            // tracks the same canonical form the diff sees.
+            canonical[key] = (value as Array<Record<string, unknown>>).map(
+                (slot) => normalizeMenuSlotForHash(slot)
+            );
         } else {
             canonical[key] = value;
         }
     }
     return hashHex(stableStringify(canonical));
+}
+
+function normalizeMenuSlotForHash(
+    slot: Record<string, unknown>
+): Record<string, unknown> {
+    const result: Record<string, unknown> = {};
+    for (const key of Object.keys(slot).sort()) {
+        const value = slot[key];
+        if (value === undefined) continue;
+        if (Array.isArray(value) && value.length === 0) continue;
+        if (key === "actions" && Array.isArray(value)) {
+            result[key] = (value as Action[]).map((a) => normalizeActionCompare(a));
+        } else {
+            result[key] = value;
+        }
+    }
+    return result;
 }

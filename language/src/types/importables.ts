@@ -26,6 +26,12 @@ export type ImportableRegion = {
 export type ImportableMenu = {
     type: "MENU";
     name: string;
+    /**
+     * Number of LINES (1..6). Total slot count = size * 9.
+     * Optional — when omitted the importer leaves the menu's existing
+     * size untouched (and on creation Housing's default applies).
+     */
+    size?: number;
     slots: MenuSlot[];
 };
 

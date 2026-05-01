@@ -70,16 +70,16 @@ export default class TaskContext {
         reason: string,
         duration: number = 2000,
     ): Promise<T> {
+        const pending = typeof promise === "function" ? promise() : promise;
+        const cleanup = (pending as Promise<T> & { cleanupWaiter?: () => void }).cleanupWaiter;
         const timeoutPromise = new Promise<T>((_, reject) => {
             setTimeout(() => {
+                cleanup?.();
                 reject(new Error(`Timeout after ${duration}ms: ${reason}`));
             }, duration);
         });
 
-        return Promise.race([
-            typeof promise === "function" ? promise() : promise,
-            timeoutPromise,
-        ]);
+        return Promise.race([pending, timeoutPromise]);
     }
 
     getAllItemSlots = getAllItemSlots;

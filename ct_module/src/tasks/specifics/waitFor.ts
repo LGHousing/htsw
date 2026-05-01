@@ -91,22 +91,38 @@ type EventName = keyof CheckPredicateMap;
 type ContainerFor<E extends EventName> = EventContainers[E][number];
 type ParametersFor<E extends EventName> = Parameters<CheckPredicateMap[E]>;
 
+export type WaitForPromise<T> = Promise<T> & {
+    cleanupWaiter?: () => void;
+};
+
 export function waitFor<E extends EventName>(
     event: E,
     check: CheckPredicateMap[E] | null = null,
     amount: number = 1,
-): Promise<ParametersFor<E>> {
+): WaitForPromise<ParametersFor<E>> {
     if (check === null) {
         check = () => true;
     }
 
-    return new Promise<ParametersFor<E>>((resolve) => {
-        const container: ContainerFor<E> = {
-            check: check,
+    let container: ContainerFor<E> | null = null;
+    const promise = new Promise<ParametersFor<E>>((resolve) => {
+        container = {
+            check,
             resolve,
             remaining: amount,
-        };
+        } as ContainerFor<E>;
 
         EVENT_CONTAINERS[event].push(container);
-    });
+    }) as WaitForPromise<ParametersFor<E>>;
+
+    function cleanup(): void {
+        if (container === null) return;
+        const containers = EVENT_CONTAINERS[event];
+        const index = containers.indexOf(container);
+        if (index !== -1) containers.splice(index, 1);
+        container = null;
+    }
+
+    promise.cleanupWaiter = cleanup;
+    return promise;
 }

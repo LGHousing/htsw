@@ -5,7 +5,7 @@ import { importableHash } from "./hash";
 import { importableIdentity } from "./paths";
 import { readKnowledge } from "./cache";
 
-export type KnowledgeState = "current" | "stale" | "missing";
+export type KnowledgeState = "current" | "modified" | "unknown";
 
 export type KnowledgeStatusRow = {
     importable: Importable;
@@ -36,7 +36,7 @@ export function buildKnowledgeStatusRows(
         const hash = importableHash(importable);
         const entry = readKnowledge(housingUuid, importable.type, identity);
         const state =
-            entry === null ? "missing" : entry.hash === hash ? "current" : "stale";
+            entry === null ? "unknown" : entry.hash === hash ? "current" : "modified";
         return {
             importable,
             identity,
