@@ -434,6 +434,7 @@ export async function setNumberValue(
 
     slot.click();
     await enterValue(ctx, newValue);
+    await waitForMenu(ctx);
 }
 
 export async function setStringValue(
