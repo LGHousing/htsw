@@ -137,7 +137,8 @@ export function LeftPanel(): Element {
                                 anchor: rect,
                                 content: filterPopoverContent(),
                                 width: 140,
-                                height: Math.min(160, ALL_TYPES.length * 20 + 10),
+                                // padding(4+4) + n rows of 18 + (n-1) gaps of 2 = 20n + 6
+                                height: Math.min(160, ALL_TYPES.length * 20 + 6),
                             });
                         },
                     }),
