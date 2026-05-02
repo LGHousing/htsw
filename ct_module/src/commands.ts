@@ -11,7 +11,7 @@ import { S2FPacketSetSlot } from "./utils/packets";
 import { FileSystemFileLoader } from "./utils/files";
 import { stripSurroundingQuotes } from "./utils/strings";
 import { commandKnowledge } from "./knowledge/commands";
-import { openHtswDashboard } from "./gui/dashboard";
+import { toggleHtswGui, armHtswGuiDebug } from "./gui/overlay";
 
 function printCommandError(sm: SourceMap, err: unknown): void {
     if (err instanceof Diagnostic) {
@@ -62,7 +62,13 @@ function commandHtsw(args: string[]) {
     }
 
     if (args.length > 0 && args[0] === "gui") {
-        openHtswDashboard(args.length > 1 ? args.slice(1).join(" ") : undefined);
+        if (args.length > 1 && args[1] === "debug") {
+            const frames = args.length > 2 ? parseInt(args[2], 10) : 30;
+            armHtswGuiDebug(Number.isFinite(frames) && frames > 0 ? frames : 30);
+            return;
+        }
+        const nowEnabled = toggleHtswGui();
+        ChatLib.chat(`&e[htsw] gui ${nowEnabled ? "&aenabled" : "&cdisabled"}`);
         return;
     }
 

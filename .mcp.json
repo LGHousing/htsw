@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "htsw-bridge": {
+      "command": "node",
+      "args": ["mcp/server.js"]
+    }
+  }
+}

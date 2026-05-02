@@ -1,0 +1,14 @@
+{
+  "name": "htsw-mcp",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "description": "MCP bridge server between Claude Code and the HTSW ChatTriggers module.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.4"
+  }
+}
