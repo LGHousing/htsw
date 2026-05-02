@@ -180,10 +180,16 @@ export function initHtswGui(): void {
         cancel(event);
     });
 
-    // Keep GuiTextField cursor blink animated and external focus state in sync.
+    // Keep GuiTextField cursor blink animated and external focus state in sync. Also drop
+    // popovers + focus whenever the underlying inventory GUI is no longer open, so they don't
+    // linger across opens/closes.
     register("tick", () => {
         tickAllFields();
         applyFocus(getFocusedInput());
+        if (getContainerBounds() === null) {
+            if (popoverIsOpen()) closeAllPopovers();
+            if (getFocusedInput() !== null) setFocusedInput(null);
+        }
     });
 
     // Per-frame state snapshot, ~once per second to avoid log spam.
