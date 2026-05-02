@@ -145,7 +145,15 @@ export function startExport(runtime: DashboardRuntime): void {
     runtime.state.activeTask = { kind: "export", label: `Exporting ${name}` };
     runtime.gui.close();
     startProgressOverlay(runtime, `Exporting ${name}`);
-    updateProgress(runtime, { completed: 0, total: 1, currentLabel: name, failed: 0 });
+    updateProgress(runtime, {
+        completed: 0,
+        total: 1,
+        weightCompleted: 0,
+        weightTotal: 1,
+        weightCurrent: 1,
+        currentLabel: name,
+        failed: 0,
+    });
     TaskManager.run(async (ctx) => {
         await exportImportable(ctx, {
             type: "FUNCTION",
@@ -154,7 +162,15 @@ export function startExport(runtime: DashboardRuntime): void {
             htslPath: `${rootDir}/${filename}`,
             htslReference: filename,
         });
-        updateProgress(runtime, { completed: 1, total: 1, currentLabel: "done", failed: 0 });
+        updateProgress(runtime, {
+            completed: 1,
+            total: 1,
+            weightCompleted: 1,
+            weightTotal: 1,
+            weightCurrent: 0,
+            currentLabel: "done",
+            failed: 0,
+        });
         stopProgressOverlay(runtime, `Exported ${name}.`);
         runtime.state.activeTask = null;
     }).catch((error) => {

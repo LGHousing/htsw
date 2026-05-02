@@ -74,6 +74,13 @@ function chooseItemStart(
     trustPlan: ImportableTrustPlan | undefined
 ): ItemStart {
     const cachedEntry = trustPlan?.entry;
+    if (cachedEntry === undefined || cachedEntry === null) {
+        return {
+            item: getItemFromNbt(importable.nbt),
+            mode: "source",
+        };
+    }
+
     const cachedImportable = cachedEntry?.importable;
     if (
         cachedImportable?.type === "ITEM" &&

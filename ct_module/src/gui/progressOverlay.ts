@@ -31,6 +31,9 @@ export function startProgressOverlay(
         label,
         completed: 0,
         total: 0,
+        weightCompleted: 0,
+        weightTotal: 1,
+        weightCurrent: 0,
         failed: 0,
         currentLabel: "starting...",
         startedAtMs: Date.now(),
@@ -109,6 +112,9 @@ export function updateProgress(
     if (runtime.progress === null) return;
     runtime.progress.completed = progress.completed;
     runtime.progress.total = progress.total;
+    runtime.progress.weightCompleted = progress.weightCompleted;
+    runtime.progress.weightTotal = Math.max(1, progress.weightTotal);
+    runtime.progress.weightCurrent = progress.weightCurrent;
     runtime.progress.failed = progress.failed;
     runtime.progress.currentLabel = progress.currentLabel;
 }
@@ -156,14 +162,29 @@ function drawOverlayPanel(runtime: DashboardRuntime): void {
 
     const elapsed = Math.max(0, Date.now() - progress.startedAtMs);
     const elapsedSec = Math.floor(elapsed / 1000);
-    const ratio = progress.total > 0 ? progress.completed / progress.total : 0;
+    // Use weighted progress for the bar so importables of different sizes
+    // advance the bar by an amount proportional to how much work they are.
+    const ratio =
+        progress.weightTotal > 0
+            ? Math.max(0, Math.min(1, progress.weightCompleted / progress.weightTotal))
+            : 0;
+    const inFlightRatio =
+        progress.weightTotal > 0 && progress.weightCurrent > 0
+            ? Math.max(
+                  0,
+                  Math.min(
+                      1 - ratio,
+                      progress.weightCurrent / progress.weightTotal
+                  )
+              )
+            : 0;
     const etaSec =
-        progress.completed > 0 && progress.total > 0
+        progress.weightCompleted > 0
             ? Math.max(
                   0,
                   Math.floor(
-                      (elapsed / progress.completed) *
-                          (progress.total - progress.completed) /
+                      (elapsed / progress.weightCompleted) *
+                          (progress.weightTotal - progress.weightCompleted) /
                           1000
                   )
               )
@@ -181,19 +202,25 @@ function drawOverlayPanel(runtime: DashboardRuntime): void {
             : progress.currentLabel;
     Renderer.drawString(label, x + 8, y + 30);
 
-    // Progress bar.
+    // Progress bar — solid for completed weight, semi-transparent stripe for
+    // the importable currently in flight.
     const barX = x + 8;
     const barY = y + 44;
     const barW = PANEL_W - 16;
     const barH = 6;
     Renderer.drawRect(0xff2d333d, barX, barY, barW, barH);
+    const completedW = Math.max(0, Math.floor(barW * ratio));
     Renderer.drawRect(
         progress.failed > 0 ? 0xffe5bc4b : 0xff62d26f,
         barX,
         barY,
-        Math.max(0, Math.floor(barW * ratio)),
+        completedW,
         barH
     );
+    if (inFlightRatio > 0 && progress.finishedAtMs === null) {
+        const flightW = Math.max(1, Math.floor(barW * inFlightRatio));
+        Renderer.drawRect(0x9962d26f, barX + completedW, barY, flightW, barH);
+    }
 
     const eta =
         etaSec !== null ? `eta ~${etaSec}s` : progress.finishedAtMs ? "done" : "...";

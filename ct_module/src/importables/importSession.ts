@@ -28,6 +28,20 @@ export type ImportSelection = {
 export type ImportProgress = {
     completed: number;
     total: number;
+    /**
+     * Cumulative "weight" of work completed (sum of estimated step counts of
+     * importables that have finished). Better signal for the progress bar
+     * than `completed/total` because importables vary wildly in size — a
+     * function with 50 actions is much more work than one with 2.
+     */
+    weightCompleted: number;
+    weightTotal: number;
+    /**
+     * Estimated weight of the importable currently being processed. The UI
+     * can render an in-flight indicator between weightCompleted and
+     * weightCompleted + weightCurrent for nicer mid-importable feedback.
+     */
+    weightCurrent: number;
     currentLabel: string;
     failed: number;
 };
@@ -66,8 +80,16 @@ export async function importSelectedImportables(
         failed: 0,
     };
 
+    const weights: number[] = ordered.map(estimateImportableWeight);
+    let weightTotal = 0;
+    for (let i = 0; i < weights.length; i++) weightTotal += weights[i];
+    if (weightTotal === 0) weightTotal = 1;
+
     let completed = 0;
-    for (const importable of ordered) {
+    let weightCompleted = 0;
+    for (let i = 0; i < ordered.length; i++) {
+        const importable = ordered[i];
+        const weightCurrent = weights[i];
         const key = trustPlanKey(importable.type, importableIdentity(importable));
         const plan = trustPlan?.importables.get(key);
         const label = `${importable.type} ${importableIdentity(importable)}`;
@@ -75,6 +97,9 @@ export async function importSelectedImportables(
             selection.onProgress({
                 completed,
                 total: ordered.length,
+                weightCompleted,
+                weightTotal,
+                weightCurrent,
                 currentLabel: label,
                 failed: result.failed,
             });
@@ -98,16 +123,86 @@ export async function importSelectedImportables(
             }
         }
         completed++;
+        weightCompleted += weightCurrent;
     }
 
     if (selection.onProgress) {
         selection.onProgress({
             completed,
             total: ordered.length,
+            weightCompleted,
+            weightTotal,
+            weightCurrent: 0,
             currentLabel: "done",
             failed: result.failed,
         });
     }
 
     return result;
+}
+
+/**
+ * Rough work estimate for an importable. Used to weight the progress bar so
+ * a function with 50 actions advances the bar much more than a function
+ * with 2 actions. Numbers are heuristic — they don't need to be accurate,
+ * just monotonic with how long the import will take.
+ */
+function estimateImportableWeight(importable: Importable): number {
+    if (importable.type === "FUNCTION") {
+        return 2 + countActionWeight(importable.actions);
+    }
+    if (importable.type === "EVENT") {
+        return 1 + countActionWeight(importable.actions);
+    }
+    if (importable.type === "REGION") {
+        return (
+            3 +
+            countActionWeight(importable.onEnterActions ?? []) +
+            countActionWeight(importable.onExitActions ?? [])
+        );
+    }
+    if (importable.type === "ITEM") {
+        return (
+            3 +
+            countActionWeight(importable.leftClickActions ?? []) +
+            countActionWeight(importable.rightClickActions ?? [])
+        );
+    }
+    if (importable.type === "NPC") {
+        return (
+            5 +
+            countActionWeight(importable.leftClickActions ?? []) +
+            countActionWeight(importable.rightClickActions ?? [])
+        );
+    }
+    if (importable.type === "MENU") {
+        return 2 + (importable.slots?.length ?? 0) * 4;
+    }
+    return 1;
+}
+
+function countActionWeight(actions: readonly any[]): number {
+    let total = 0;
+    for (let i = 0; i < actions.length; i++) {
+        const action = actions[i];
+        // Each action is at least one Housing GUI list-add, plus its field
+        // edits. Nested CONDITIONAL/RANDOM bodies recurse so their nested
+        // actions count too.
+        total += 2;
+        if (action && typeof action === "object") {
+            if (Array.isArray(action.ifActions)) {
+                total += countActionWeight(action.ifActions);
+            }
+            if (Array.isArray(action.elseActions)) {
+                total += countActionWeight(action.elseActions);
+            }
+            if (Array.isArray(action.conditions)) {
+                total += action.conditions.length;
+            }
+            if (Array.isArray(action.actions)) {
+                total += countActionWeight(action.actions);
+            }
+        }
+    }
+    return total;
 }

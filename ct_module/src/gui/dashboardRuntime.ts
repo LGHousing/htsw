@@ -43,6 +43,9 @@ export type ProgressTracker = {
     label: string;
     completed: number;
     total: number;
+    weightCompleted: number;
+    weightTotal: number;
+    weightCurrent: number;
     failed: number;
     currentLabel: string;
     startedAtMs: number;
