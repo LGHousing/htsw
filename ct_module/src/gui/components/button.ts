@@ -1,9 +1,9 @@
-import { Element, Style } from "../layout";
+import { Element, Rect, Style } from "../layout";
 import { Extractable } from "../extractable";
 
 export type ButtonProps = {
     text: Extractable<string>;
-    onClick: () => void;
+    onClick: (rect: Rect) => void;
     style?: Style;
 };
 
