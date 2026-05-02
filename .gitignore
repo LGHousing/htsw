@@ -8,3 +8,4 @@ dist/
 
 # local import dumps
 examples/imports/
+.claude/settings.local.json
