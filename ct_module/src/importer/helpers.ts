@@ -6,7 +6,6 @@ import { lastWindowID___FromS30PacketWindowItemsPacketReceived__ThisIsNecessary_
 import {
     normalizeLoreValueFormatting,
     normalizeNoteText,
-    parseLoreKeyValueLine,
     readListItemNote,
 } from "./loreParsing";
 
@@ -152,7 +151,7 @@ export async function setListItemNote(
     slot.drop();
     if (normalizedNote === undefined) {
         await waitForChatInputPrompt(ctx);
-        ctx.runCommand("/chatinput cancel");
+        await ctx.runCommand("/chatinput cancel");
     } else {
         await enterValue(ctx, normalizedNote);
     }

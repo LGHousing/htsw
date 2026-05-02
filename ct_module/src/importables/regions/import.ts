@@ -22,13 +22,13 @@ export async function importImportableRegion(
     await ensureReferencedImportablesExist(ctx, importable);
 
     const setPos = async (pos: Pos, corner: "A" | "B") => {
-        ctx.runCommand(`/tp ${pos.x} ${pos.y} ${pos.z}`);
+        await ctx.runCommand(`/tp ${pos.x} ${pos.y} ${pos.z}`);
         await waitForUnformattedMessage(
             ctx,
             `Teleporting you to ${pos.x}, ${pos.y}, ${pos.z}.`
         );
 
-        ctx.runCommand(`//pos${corner}`);
+        await ctx.runCommand(`//pos${corner}`);
         await waitForUnformattedMessage(
             ctx,
             `Position ${corner} set to ${pos.x}, ${pos.y}, ${pos.z}.`
@@ -41,7 +41,7 @@ export async function importImportableRegion(
     const alreadyExists = (await openRegionEditor(ctx, importable.name)) === "opened";
 
     if (!alreadyExists) {
-        ctx.runCommand(`/region create ${importable.name}`);
+        await ctx.runCommand(`/region create ${importable.name}`);
         await waitForUnformattedMessage(ctx, `Created region ${importable.name}!`);
 
         await openRegionEditor(ctx, importable.name);

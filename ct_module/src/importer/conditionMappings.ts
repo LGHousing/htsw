@@ -5,7 +5,7 @@ import { removedFormatting } from "../utils/helpers";
 import { parseLoreFields, readListItemNote } from "./loreParsing";
 import type { ConditionLoreSpec } from "./types";
 
-export const CONDITION_LORE_MAPPINGS = {
+export const CONDITION_MAPPINGS = {
     REQUIRE_GROUP: {
         displayName: "Required Group",
         loreFields: {
@@ -184,7 +184,7 @@ export const CONDITION_LORE_MAPPINGS = {
  */
 export function getConditionFieldDefault(type: string, prop: string): unknown {
     const mapping = (
-        CONDITION_LORE_MAPPINGS as Record<
+        CONDITION_MAPPINGS as Record<
             string,
             | {
                   loreFields: Record<
@@ -211,13 +211,13 @@ export function getConditionFieldLabel<T extends Condition["type"]>(
     type: T,
     prop: Exclude<keyof Extract<Condition, { type: T }>, "type" | "note" | "inverted">
 ): string {
-    const mapping = CONDITION_LORE_MAPPINGS[type];
+    const mapping = CONDITION_MAPPINGS[type];
     const loreFields = mapping.loreFields as Record<string, { prop: string }>;
     for (const label in loreFields) {
         if (loreFields[label].prop === prop) return label;
     }
     throw new Error(
-        `No GUI label found for ${type}.${String(prop)} in CONDITION_LORE_MAPPINGS`
+        `No GUI label found for ${type}.${String(prop)} in CONDITION_MAPPINGS`
     );
 }
 
@@ -241,7 +241,7 @@ export function parseConditionListItem(
 ): Condition {
     const note = readListItemNote(slot);
     const commonFields = note === undefined ? {} : { note };
-    const mapping = CONDITION_LORE_MAPPINGS[type];
+    const mapping = CONDITION_MAPPINGS[type];
 
     const condition = {
         type,

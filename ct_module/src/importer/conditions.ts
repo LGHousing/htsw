@@ -9,13 +9,9 @@ import {
     type ConditionCompareVar,
     type ConditionDamageCause,
     type ConditionFishingEnvironment,
-    type ConditionIsDoingParkour,
-    type ConditionIsFlying,
     type ConditionIsInRegion,
     type ConditionIsItem,
-    type ConditionIsSneaking,
     type ConditionPortalType,
-    type ConditionPvpEnabled,
     type ConditionRequireGamemode,
     type ConditionRequireGroup,
     type ConditionRequireItem,
@@ -48,7 +44,7 @@ import { removedFormatting } from "../utils/helpers";
 import { getItemFromSnbt } from "../utils/nbt";
 import { importableHash } from "../knowledge";
 import {
-    CONDITION_LORE_MAPPINGS,
+    CONDITION_MAPPINGS,
     getConditionFieldLabel,
     parseConditionListItem,
     tryGetConditionTypeFromDisplayName,
@@ -70,8 +66,6 @@ import {
     type PaginatedListConfig,
 } from "./paginatedList";
 import { setItemValue } from "./items";
-
-export { diffConditionList };
 
 type ConditionSpec<T extends Condition> = {
     displayName: string;
@@ -615,88 +609,88 @@ async function writeCompareDamage(
 
 const CONDITION_SPECS = {
     REQUIRE_GROUP: {
-        displayName: CONDITION_LORE_MAPPINGS.REQUIRE_GROUP.displayName,
+        displayName: CONDITION_MAPPINGS.REQUIRE_GROUP.displayName,
         read: readRequireGroup,
         write: writeRequireGroup,
     },
     COMPARE_VAR: {
-        displayName: CONDITION_LORE_MAPPINGS.COMPARE_VAR.displayName,
+        displayName: CONDITION_MAPPINGS.COMPARE_VAR.displayName,
         write: writeCompareVar,
     },
     REQUIRE_PERMISSION: {
-        displayName: CONDITION_LORE_MAPPINGS.REQUIRE_PERMISSION.displayName,
+        displayName: CONDITION_MAPPINGS.REQUIRE_PERMISSION.displayName,
         write: writeRequirePermission,
     },
     IS_IN_REGION: {
-        displayName: CONDITION_LORE_MAPPINGS.IS_IN_REGION.displayName,
+        displayName: CONDITION_MAPPINGS.IS_IN_REGION.displayName,
         write: writeIsInRegion,
     },
     REQUIRE_ITEM: {
-        displayName: CONDITION_LORE_MAPPINGS.REQUIRE_ITEM.displayName,
+        displayName: CONDITION_MAPPINGS.REQUIRE_ITEM.displayName,
         write: writeRequireItem,
     },
     IS_DOING_PARKOUR: {
-        displayName: CONDITION_LORE_MAPPINGS.IS_DOING_PARKOUR.displayName,
+        displayName: CONDITION_MAPPINGS.IS_DOING_PARKOUR.displayName,
     },
     REQUIRE_POTION_EFFECT: {
-        displayName: CONDITION_LORE_MAPPINGS.REQUIRE_POTION_EFFECT.displayName,
+        displayName: CONDITION_MAPPINGS.REQUIRE_POTION_EFFECT.displayName,
         write: writeRequirePotionEffect,
     },
     IS_SNEAKING: {
-        displayName: CONDITION_LORE_MAPPINGS.IS_SNEAKING.displayName,
+        displayName: CONDITION_MAPPINGS.IS_SNEAKING.displayName,
     },
     IS_FLYING: {
-        displayName: CONDITION_LORE_MAPPINGS.IS_FLYING.displayName,
+        displayName: CONDITION_MAPPINGS.IS_FLYING.displayName,
     },
     COMPARE_HEALTH: {
-        displayName: CONDITION_LORE_MAPPINGS.COMPARE_HEALTH.displayName,
+        displayName: CONDITION_MAPPINGS.COMPARE_HEALTH.displayName,
         write: writeCompareHealth,
     },
     COMPARE_MAX_HEALTH: {
-        displayName: CONDITION_LORE_MAPPINGS.COMPARE_MAX_HEALTH.displayName,
+        displayName: CONDITION_MAPPINGS.COMPARE_MAX_HEALTH.displayName,
         write: writeCompareMaxHealth,
     },
     COMPARE_HUNGER: {
-        displayName: CONDITION_LORE_MAPPINGS.COMPARE_HUNGER.displayName,
+        displayName: CONDITION_MAPPINGS.COMPARE_HUNGER.displayName,
         write: writeCompareHunger,
     },
     REQUIRE_GAMEMODE: {
-        displayName: CONDITION_LORE_MAPPINGS.REQUIRE_GAMEMODE.displayName,
+        displayName: CONDITION_MAPPINGS.REQUIRE_GAMEMODE.displayName,
         write: writeRequireGamemode,
     },
     COMPARE_PLACEHOLDER: {
-        displayName: CONDITION_LORE_MAPPINGS.COMPARE_PLACEHOLDER.displayName,
+        displayName: CONDITION_MAPPINGS.COMPARE_PLACEHOLDER.displayName,
         write: writeComparePlaceholder,
     },
     REQUIRE_TEAM: {
-        displayName: CONDITION_LORE_MAPPINGS.REQUIRE_TEAM.displayName,
+        displayName: CONDITION_MAPPINGS.REQUIRE_TEAM.displayName,
         write: writeRequireTeam,
     },
     DAMAGE_CAUSE: {
-        displayName: CONDITION_LORE_MAPPINGS.DAMAGE_CAUSE.displayName,
+        displayName: CONDITION_MAPPINGS.DAMAGE_CAUSE.displayName,
         write: writeDamageCause,
     },
     PVP_ENABLED: {
-        displayName: CONDITION_LORE_MAPPINGS.PVP_ENABLED.displayName,
+        displayName: CONDITION_MAPPINGS.PVP_ENABLED.displayName,
     },
     FISHING_ENVIRONMENT: {
-        displayName: CONDITION_LORE_MAPPINGS.FISHING_ENVIRONMENT.displayName,
+        displayName: CONDITION_MAPPINGS.FISHING_ENVIRONMENT.displayName,
         write: writeFishingEnvironment,
     },
     PORTAL_TYPE: {
-        displayName: CONDITION_LORE_MAPPINGS.PORTAL_TYPE.displayName,
+        displayName: CONDITION_MAPPINGS.PORTAL_TYPE.displayName,
         write: writePortalType,
     },
     BLOCK_TYPE: {
-        displayName: CONDITION_LORE_MAPPINGS.BLOCK_TYPE.displayName,
+        displayName: CONDITION_MAPPINGS.BLOCK_TYPE.displayName,
         write: writeBlockType,
     },
     IS_ITEM: {
-        displayName: CONDITION_LORE_MAPPINGS.IS_ITEM.displayName,
+        displayName: CONDITION_MAPPINGS.IS_ITEM.displayName,
         write: writeIsItem,
     },
     COMPARE_DAMAGE: {
-        displayName: CONDITION_LORE_MAPPINGS.COMPARE_DAMAGE.displayName,
+        displayName: CONDITION_MAPPINGS.COMPARE_DAMAGE.displayName,
         write: writeCompareDamage,
     },
 } satisfies ConditionSpecMap;
@@ -962,21 +956,21 @@ function logConditionSyncState(ctx: TaskContext, diff: ConditionListDiff): void 
         const observedName =
             entry.observed.condition === null
                 ? "Unknown Condition"
-                : CONDITION_LORE_MAPPINGS[entry.observed.condition.type].displayName;
+                : CONDITION_MAPPINGS[entry.observed.condition.type].displayName;
         ctx.displayMessage(
-            `&7  &6~ [${entry.observed.index}] ${observedName} &7-> &6${CONDITION_LORE_MAPPINGS[entry.desired.type].displayName}`
+            `&7  &6~ [${entry.observed.index}] ${observedName} &7-> &6${CONDITION_MAPPINGS[entry.desired.type].displayName}`
         );
     }
     for (const entry of diff.deletes) {
         const deleteName =
             entry.condition === null
                 ? "Unknown Condition"
-                : CONDITION_LORE_MAPPINGS[entry.condition.type].displayName;
+                : CONDITION_MAPPINGS[entry.condition.type].displayName;
         ctx.displayMessage(`&7  &c- [${entry.index}] ${deleteName}`);
     }
     for (const [index, entry] of diff.adds.entries()) {
         ctx.displayMessage(
-            `&7  &a+ [${index}] ${CONDITION_LORE_MAPPINGS[entry.type].displayName}`
+            `&7  &a+ [${index}] ${CONDITION_MAPPINGS[entry.type].displayName}`
         );
     }
 }

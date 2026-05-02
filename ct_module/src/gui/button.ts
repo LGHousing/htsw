@@ -106,7 +106,7 @@ export class Button {
         }
         const guiRenderTrigger = register(
             "guiRender",
-            (x: number, y: number, gui: MCTGuiScreen) => {
+            (x: number, y: number, _gui: MCTGuiScreen) => {
                 if (!this.shouldBeVisible()) return;
                 this.render(x, y);
             }

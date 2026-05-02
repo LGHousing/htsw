@@ -14,7 +14,7 @@ import { removedFormatting } from "../utils/helpers";
  * a task — the value is stable while the player stays in the same housing.
  */
 export async function getCurrentHousingUuid(ctx: TaskContext): Promise<string> {
-    ctx.runCommand("/wtfmap");
+    await ctx.runCommand("/wtfmap");
 
     let message: string = "";
     await ctx.withTimeout(

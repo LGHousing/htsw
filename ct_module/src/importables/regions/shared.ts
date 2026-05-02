@@ -10,7 +10,7 @@ export async function openRegionEditor(
     ctx: TaskContext,
     name: string
 ): Promise<"opened" | "missing"> {
-    ctx.runCommand(`/region edit ${name}`);
+    await ctx.runCommand(`/region edit ${name}`);
 
     const opened = await ctx.withTimeout(
         Promise.race([
@@ -34,7 +34,7 @@ export async function ensureRegionNamesExist(
     ctx: TaskContext,
     regionNames: readonly string[]
 ): Promise<void> {
-    const names = unique(regionNames);
+    const names = Array.from(new Set(regionNames));
     if (names.length === 0) return;
 
     ctx.displayMessage(`&7Ensuring ${names.length} region shell(s) exist.`);
@@ -45,19 +45,10 @@ export async function ensureRegionNamesExist(
             await clickGoBack(ctx);
             continue;
         }
+        await ctx.runCommand(`/pos1`);
+        await ctx.runCommand(`/pos2`);
 
-        ctx.runCommand(`/region create ${name}`);
+        await ctx.runCommand(`/region create ${name}`);
         await waitForUnformattedMessage(ctx, `Created region ${name}!`);
     }
-}
-
-function unique(values: readonly string[]): string[] {
-    const seen: Record<string, boolean> = {};
-    const result: string[] = [];
-    for (const value of values) {
-        if (seen[value]) continue;
-        seen[value] = true;
-        result.push(value);
-    }
-    return result;
 }

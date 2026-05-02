@@ -2,7 +2,7 @@ import type { Action, Condition } from "htsw/types";
 
 import { ACTION_MAPPINGS } from "../actionMappings";
 import { normalizeActionCompare, normalizeConditionCompare } from "../compare";
-import { CONDITION_LORE_MAPPINGS } from "../conditionMappings";
+import { CONDITION_MAPPINGS } from "../conditionMappings";
 import type {
     ActionListDiff,
     ActionListOperation,
@@ -80,7 +80,7 @@ function fieldDifferenceCount(
 
 function stripActionNote(action: Action | Observed<Action>): Action | Observed<Action> {
     const { note: _note, ...withoutNote } = action;
-    return withoutNote as Action | Observed<Action>;
+    return withoutNote;
 }
 
 function onlyNoteDiffers(
@@ -109,7 +109,7 @@ function conditionCost(observed: Condition, desired: Condition): number {
         return 0;
     }
 
-    const loreFields = CONDITION_LORE_MAPPINGS[observed.type].loreFields as Record<
+    const loreFields = CONDITION_MAPPINGS[observed.type].loreFields as Record<
         string,
         { prop: string }
     >;

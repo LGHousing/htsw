@@ -30,8 +30,8 @@ function tick() {
     let selectedRegion: ImportableRegion | undefined;
     if (insideRegions.length > 0) {
         selectedRegion = insideRegions.reduce((a, b) => {
-            const volA = computeBoundsVolume(a.bounds!);
-            const volB = computeBoundsVolume(b.bounds!);
+            const volA = computeBoundsVolume(a.bounds);
+            const volB = computeBoundsVolume(b.bounds);
             return volA < volB ? a : b;
         });
     }

@@ -1,7 +1,7 @@
 import { VERSION, SourceMap, parseImportablesResult, Diagnostic } from "htsw";
 
 import { chatSeparator } from "./utils/helpers";
-import { Simulator } from "./simulator";
+import { Simulator } from "./simulator/simulator";
 import { printDiagnostic, printDiagnostics } from "./tui/diagnostics";
 import { recompile } from "./recompile";
 import { importImportable } from "./importables/imports";

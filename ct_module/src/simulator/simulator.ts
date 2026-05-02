@@ -1,4 +1,4 @@
-import { Diagnostic, SourceMap, Span, SpanTable, runtime, types } from "htsw";
+import { Diagnostic, SourceMap, SpanTable, runtime, types } from "htsw";
 
 import { registerCommandTriggers } from "./commands";
 import { createActionBehaviors } from "./actions";

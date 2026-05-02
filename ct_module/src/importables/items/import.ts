@@ -17,8 +17,22 @@ import {
 import { actionListTrustFor } from "../actionListTrust";
 import type { ItemRegistry } from "../itemRegistry";
 import { ensureReferencedImportablesExist } from "../references";
-import { itemSnbtCachePath, readCachedItemSnbt } from "./cache";
 import { hasItemClickActions, itemShellMatchesCached } from "./shared";
+
+function itemSnbtCachePath(housingUuid: string, hash: string): string {
+    return `./htsw/.cache/${housingUuid}/items/${hash}.snbt`;
+}
+
+function readCachedItemSnbt(
+    housingUuid: string,
+    hash: string
+): string | undefined {
+    const path = itemSnbtCachePath(housingUuid, hash);
+    if (!FileLib.exists(path)) return undefined;
+
+    const raw = FileLib.read(path);
+    return raw === null ? undefined : String(raw);
+}
 
 type ItemStart = {
     item: Item;
@@ -51,7 +65,7 @@ export async function importImportableItem(
     const start = chooseItemStart(uuid, importable, trustPlan);
     await injectHeldItem(ctx, start.item);
 
-    ctx.runCommand("/edit");
+    await ctx.runCommand("/edit");
     await waitForMenu(ctx);
 
     ctx.getItemSlot("Edit Actions").click();

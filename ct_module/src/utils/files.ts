@@ -68,16 +68,16 @@ export class StringFileLoader implements FileLoader {
         this.src = src;
     }
 
-    fileExists(path: string): boolean {
+    fileExists(_path: string): boolean {
         return true;
     }
-    readFile(path: string): string {
+    readFile(_path: string): string {
         return this.src;
     }
-    getParentPath(base: string): string {
+    getParentPath(_base: string): string {
         return "";
     }
-    resolvePath(base: string, other: string): string {
+    resolvePath(_base: string, _other: string): string {
         return "";
     }
 }

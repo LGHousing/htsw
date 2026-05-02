@@ -1,4 +1,4 @@
-import { Diagnostic, runtime, Span } from "htsw";
+import { Diagnostic, runtime } from "htsw";
 import type {
     ActionActionBar,
     ActionFunction,
@@ -12,7 +12,6 @@ import type {
 import { Simulator } from "./simulator";
 import { replacePlaceholders } from "./placeholders";
 import { coerceWithin } from "./helpers";
-import { printDiagnostic } from "../tui/diagnostics";
 
 export function createActionBehaviors(): runtime.ActionBehaviors {
     return runtime.ActionBehaviors.default()

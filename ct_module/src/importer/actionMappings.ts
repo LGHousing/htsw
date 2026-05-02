@@ -347,10 +347,7 @@ export const ACTION_MAPPINGS = {
 export function getActionLoreFields(
     type: Action["type"]
 ): Record<string, { prop: string; kind: UiFieldKind; default?: unknown }> {
-    return ACTION_MAPPINGS[type].loreFields as Record<
-        string,
-        { prop: string; kind: UiFieldKind; default?: unknown }
-    >;
+    return ACTION_MAPPINGS[type].loreFields;
 }
 
 /**

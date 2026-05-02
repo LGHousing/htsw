@@ -57,5 +57,5 @@ function observedActionToAction(observed: Observed<Action>): Action {
     // No nested lists — `Observed<T>` is structurally identical to T for
     // these. The cast is safe because we've handled every type with
     // nested lists above.
-    return observed as Action;
+    return observed;
 }

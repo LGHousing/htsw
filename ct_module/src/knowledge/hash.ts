@@ -1,6 +1,6 @@
 import type { Action, Condition, Importable } from "htsw/types";
 
-import { cyrb53 } from "../utils/helpers";
+import { cyrb53, stableStringify } from "../utils/helpers";
 import {
     normalizeActionCompare,
     normalizeConditionCompare,
@@ -24,32 +24,6 @@ import {
 /** Hex-encoded 53-bit cyrb53 digest, prefixed with "0x" for clarity in JSON. */
 function hashHex(input: string): string {
     return "0x" + cyrb53(input).toString(16);
-}
-
-/**
- * Stable JSON: keys sorted, undefined dropped, empty arrays dropped.
- *
- * The normalizer already does most of this for objects we know are
- * actions or conditions, but the surrounding importable shell
- * (`{ type, name, actions: [...] }`) hasn't been normalized — we still
- * need a deterministic stringify for it.
- */
-function stableStringify(value: unknown): string {
-    if (value === null) return "null";
-    if (typeof value !== "object") return JSON.stringify(value);
-    if (Array.isArray(value)) {
-        return "[" + value.map(stableStringify).join(",") + "]";
-    }
-    const record = value as Record<string, unknown>;
-    const keys = Object.keys(record).sort();
-    const parts: string[] = [];
-    for (const key of keys) {
-        const v = record[key];
-        if (v === undefined) continue;
-        if (Array.isArray(v) && v.length === 0) continue;
-        parts.push(JSON.stringify(key) + ":" + stableStringify(v));
-    }
-    return "{" + parts.join(",") + "}";
 }
 
 /** Hash a single normalized action. */

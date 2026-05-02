@@ -38,3 +38,28 @@ export function cyrb53(str: string, seed: number = 0) {
 
     return 4294967296 * (2097151 & h2) + (h1 >>> 0);
 };
+
+/**
+ * Deterministic JSON stringify: sorts object keys, drops `undefined` fields,
+ * and drops empty arrays. Used by importable hashing (`knowledge/hash.ts`)
+ * and item shell comparison (`importables/items/shared.ts`) so identical
+ * importables always serialize to identical strings regardless of insertion
+ * order or incidental empty-array fields.
+ */
+export function stableStringify(value: unknown): string {
+    if (value === null) return "null";
+    if (typeof value !== "object") return JSON.stringify(value);
+    if (Array.isArray(value)) {
+        return "[" + value.map(stableStringify).join(",") + "]";
+    }
+    const record = value as Record<string, unknown>;
+    const keys = Object.keys(record).sort();
+    const parts: string[] = [];
+    for (const key of keys) {
+        const v = record[key];
+        if (v === undefined) continue;
+        if (Array.isArray(v) && v.length === 0) continue;
+        parts.push(JSON.stringify(key) + ":" + stableStringify(v));
+    }
+    return "{" + parts.join(",") + "}";
+}

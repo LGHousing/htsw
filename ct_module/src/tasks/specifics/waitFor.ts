@@ -110,7 +110,7 @@ export function waitFor<E extends EventName>(
             check,
             resolve,
             remaining: amount,
-        } as ContainerFor<E>;
+        };
 
         EVENT_CONTAINERS[event].push(container);
     }) as WaitForPromise<ParametersFor<E>>;

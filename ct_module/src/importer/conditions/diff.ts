@@ -29,7 +29,7 @@ export function onlyNoteDiffers(
 
     const stripNote = (condition: Condition): Condition => {
         const { note: _note, ...withoutNote } = condition;
-        return withoutNote as Condition;
+        return withoutNote;
     };
 
     return (

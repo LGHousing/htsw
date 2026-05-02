@@ -1,15 +1,16 @@
-import { removedFormatting } from "../utils/helpers";
 import {
     tryGetItemSlot,
     getAllItemSlots,
-    ItemSlot,
     getItemSlot,
     getOpenContainerTitle,
 } from "./specifics/slots";
 import { waitFor } from "./specifics/waitFor";
 
+const COMMAND_INTERVAL_MS = 250;
+
 export default class TaskContext {
     private cancelled: boolean = false;
+    private nextCommandAt: number = 0;
 
     public cancel() {
         this.cancelled = true;
@@ -25,10 +26,15 @@ export default class TaskContext {
         }
     }
 
-    public runCommand(command: string) {
+    public async runCommand(command: string): Promise<void> {
         if (!command.startsWith("/")) {
             throw new Error(`Invalid command: ${command}`);
         }
+        const waitMs = this.nextCommandAt - Date.now();
+        if (waitMs > 0) {
+            await this.sleep(waitMs);
+        }
+        this.nextCommandAt = Date.now() + COMMAND_INTERVAL_MS;
         ChatLib.say(command);
     }
 

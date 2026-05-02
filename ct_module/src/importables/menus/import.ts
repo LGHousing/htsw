@@ -29,7 +29,7 @@ export async function importImportableMenu(
     const alreadyExists = (await openMenuEditor(ctx, importable.name)) === "opened";
 
     if (!alreadyExists) {
-        ctx.runCommand(`/menu create ${importable.name}`);
+        await ctx.runCommand(`/menu create ${importable.name}`);
         await waitForUnformattedMessage(ctx, `Created menu ${importable.name}!`);
 
         await openMenuEditor(ctx, importable.name);

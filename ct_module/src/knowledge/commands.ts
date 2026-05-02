@@ -5,7 +5,6 @@ import {
 } from "htsw";
 import type { Importable } from "htsw/types";
 
-import TaskContext from "../tasks/context";
 import { TaskManager } from "../tasks/manager";
 import { FileSystemFileLoader } from "../utils/files";
 import { chatSeparator } from "../utils/helpers";

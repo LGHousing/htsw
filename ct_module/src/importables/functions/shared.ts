@@ -15,19 +15,11 @@ import { removedFormatting } from "../../utils/helpers";
 const McItem = Java.type("net.minecraft.item.Item");
 const ItemStack = Java.type("net.minecraft.item.ItemStack");
 
-const REFERENCED_FUNCTION_COMMAND_INTERVAL_MS = 250;
-
-interface FunctionCommandGate {
-    beforeFunctionCommand(): Promise<void>;
-}
-
 export async function openFunctionEditor(
     ctx: TaskContext,
-    name: string,
-    commandGate?: FunctionCommandGate
+    name: string
 ): Promise<"opened" | "missing"> {
-    await commandGate?.beforeFunctionCommand();
-    ctx.runCommand(`/function edit ${name}`);
+    await ctx.runCommand(`/function edit ${name}`);
 
     const exists = await ctx.withTimeout(
         Promise.race([
@@ -49,14 +41,12 @@ export async function openFunctionEditor(
 
 export async function ensureFunctionExists(
     ctx: TaskContext,
-    name: string,
-    commandGate?: FunctionCommandGate
+    name: string
 ): Promise<void> {
-    const status = await openFunctionEditor(ctx, name, commandGate);
+    const status = await openFunctionEditor(ctx, name);
     if (status === "opened") return;
 
-    await commandGate?.beforeFunctionCommand();
-    ctx.runCommand(`/function create ${name}`);
+    await ctx.runCommand(`/function create ${name}`);
     await waitForMenu(ctx);
 }
 
@@ -69,25 +59,10 @@ export async function ensureFunctionNamesExist(
 
     ctx.displayMessage(`&7Ensuring ${names.length} function shell(s) exist.`);
 
-    const commandGate = createFunctionCommandGate(ctx);
     for (const name of names) {
-        await ensureFunctionExists(ctx, name, commandGate);
+        await ensureFunctionExists(ctx, name);
         await clickGoBack(ctx);
     }
-}
-
-function createFunctionCommandGate(ctx: TaskContext): FunctionCommandGate {
-    let nextCommandAt = 0;
-
-    return {
-        async beforeFunctionCommand(): Promise<void> {
-            const waitMs = nextCommandAt - Date.now();
-            if (waitMs > 0) {
-                await ctx.sleep(waitMs);
-            }
-            nextCommandAt = Date.now() + REFERENCED_FUNCTION_COMMAND_INTERVAL_MS;
-        },
-    };
 }
 
 export async function openFunctionSettings(

@@ -10,7 +10,7 @@ export async function openMenuEditor(
     ctx: TaskContext,
     name: string
 ): Promise<"opened" | "missing"> {
-    ctx.runCommand(`/menu edit ${name}`);
+    await ctx.runCommand(`/menu edit ${name}`);
 
     const opened = await ctx.withTimeout(
         Promise.race([
@@ -34,7 +34,7 @@ export async function ensureMenuNamesExist(
     ctx: TaskContext,
     menuNames: readonly string[]
 ): Promise<void> {
-    const names = unique(menuNames);
+    const names = Array.from(new Set(menuNames));
     if (names.length === 0) return;
 
     ctx.displayMessage(`&7Ensuring ${names.length} menu shell(s) exist.`);
@@ -46,18 +46,7 @@ export async function ensureMenuNamesExist(
             continue;
         }
 
-        ctx.runCommand(`/menu create ${name}`);
+        await ctx.runCommand(`/menu create ${name}`);
         await waitForUnformattedMessage(ctx, `Created menu ${name}!`);
     }
-}
-
-function unique(values: readonly string[]): string[] {
-    const seen: Record<string, boolean> = {};
-    const result: string[] = [];
-    for (const value of values) {
-        if (seen[value]) continue;
-        seen[value] = true;
-        result.push(value);
-    }
-    return result;
 }

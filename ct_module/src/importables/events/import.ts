@@ -16,7 +16,7 @@ export async function importImportableEvent(
 ): Promise<void> {
     await ensureReferencedImportablesExist(ctx, importable);
 
-    ctx.runCommand(`/eventactions`);
+    await ctx.runCommand(`/eventactions`);
     await waitForMenu(ctx);
 
     ctx.getItemSlot(importable.event).click();

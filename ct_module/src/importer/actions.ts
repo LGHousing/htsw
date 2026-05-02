@@ -67,7 +67,6 @@ import {
     syncConditionList,
 } from "./conditions";
 import { normalizeActionCompare, normalizeConditionCompare } from "./compare";
-import { isSyncDebugLoggingEnabled } from "./debug";
 import {
     ACTION_MAPPINGS,
     getActionFieldLabel,
@@ -1666,7 +1665,7 @@ async function applyActionListDiff(
             index: op.toIndex,
             slotId: -1,
             slot: null as never,
-            action: op.desired as Observed<Action>,
+            action: op.desired,
         };
         remainingObserved.splice(op.toIndex, 0, insertedAction);
         currentLength += 1;
@@ -1750,8 +1749,8 @@ function collectDebugDiffLines(
     ) {
         const lines: string[] = [];
         const keys = new Set([
-            ...Object.keys(observed as Record<string, unknown>),
-            ...Object.keys(desired as Record<string, unknown>),
+            ...Object.keys(observed),
+            ...Object.keys(desired),
         ]);
 
         for (const key of [...keys].sort()) {
@@ -1772,8 +1771,10 @@ function collectDebugDiffLines(
     ];
 }
 
+const SYNC_DEBUG_LOGGING_ENABLED = true;
+
 function logSyncDebug(ctx: TaskContext, diff: ActionListDiff): void {
-    if (!isSyncDebugLoggingEnabled()) {
+    if (!SYNC_DEBUG_LOGGING_ENABLED) {
         return;
     }
 
