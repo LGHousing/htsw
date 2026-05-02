@@ -98,21 +98,25 @@ Scroll({
 
 ## Popovers
 
-`openPopover({anchor, content, width, height, onClose?})` pushes a popover onto a stack. They render last (LOWEST guiRender priority) so they appear on top. Position auto-flips: anchored *below* the trigger when the trigger is in the top half of the screen, *above* otherwise.
+`openPopover({anchor, content, width, height, key?, onClose?})` pushes a popover onto a stack. They render last (LOWEST guiRender priority) so they appear on top. Position auto-flips: anchored *below* the trigger when the trigger is in the top half of the screen, *above* otherwise.
+
+`togglePopover({key, ...})` is the toggle-style helper for re-clickable triggers (e.g. a Filter button that reopens-or-dismisses): if a popover with the same `key` is open it closes it; otherwise it opens a new one.
 
 Click flow when a popover is open:
-- Panel handler runs, sees `popoverIsOpen()`, and calls `tryDispatchPopoverClick(x,y)` (guarded so it runs once per click).
-- Click inside popover rect → dispatch into popover content.
-- Click outside any popover → close stale popovers (older than `OPEN_GRACE_MS = 250ms` — protects the click that just opened them).
-- Either way the panel cancels the event so the inventory below doesn't see it.
+- Panel handler runs, sees `popoverIsOpen()`, and calls `tryDispatchPopoverClick(x,y)` (guarded so it runs once per click via `claimPopoverClick`).
+- Click inside popover rect → dispatch into popover content, panel cancels the event, returns.
+- Click outside every popover → auto-close stale popovers and **fall through** to the panel's normal `dispatchClick`. This is intentional: the same click that closes a popover should also focus an input or hit a button under the cursor.
+- "Stale" = older than `OPEN_GRACE_MS = 250ms` (protects the click that just opened them) **and** not on the popover's own anchor (skipping the anchor avoids a race with `togglePopover` where auto-close fires first, then the trigger's `onClick` reopens a fresh popover, requiring a second click to dismiss).
 
-Hover suppression: `mouseIsOverPopover` is exposed but the easier hook is the `interactive` flag panels pass to `renderElement` — when a popover is open, the panel passes `false` and no panel element shows hover.
+Hover follows click propagation: panels pass `interactive = !mouseIsOverPopover(x, y)` to `renderElement`, so panel elements light up on hover anywhere a click would still reach them — only positions actually under a popover suppress panel hover.
+
+When the inventory closes (`getContainerBounds() === null`), the tick handler in `overlay.ts` calls `closeAllPopovers()` and clears focus so popovers don't linger across opens.
 
 Scrollbar hover suppression: items whose rect is under a visible scrollbar track *and* live inside that scroll's viewport do not show hover (the click would land on the scrollbar, not the item). Tracks are precomputed once per `renderElement` call — see `collectScrollbarTracks` in `render.ts`.
 
 ## Focus + keyboard
 
-Single global focused-input id (`focus.ts`). `dispatchClick` sets it when an `input` is clicked, clears it when anything else clickable is clicked.
+Single global focused-input id (`focus.ts`). `dispatchClick` sets it when an `input` is clicked, clears it on any other click — including clicks on inert panel space (the dispatch's no-hit fallthrough also calls `setFocusedInput(null)`). A separate `guiMouseClick` handler in `overlay.ts` clears focus when the click misses every visible panel entirely.
 
 Inputs delegate to vanilla MC's `GuiTextField`. We keep one instance per input id in `inputState.ts`; it handles cursor placement, drag-select, arrow keys, home/end, shift-select, Ctrl+A/C/V/X, backspace/delete, and the blinking cursor. We disable its built-in background drawing (`setEnableBackgroundDrawing(false)`) and `setCanLoseFocus(false)` so external focus state is the source of truth. Width/height are final on the field, so we recreate the field if the laid-out size changes (text + cursor are copied across); xPosition/yPosition are mutable and updated each frame.
 
