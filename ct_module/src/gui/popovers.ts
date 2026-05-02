@@ -5,6 +5,7 @@ import { renderElement, dispatchClick } from "./render";
 
 export type PopoverHandle = {
     id: number;
+    key?: string;
     anchor: Rect;
     content: Element;
     width: number;
@@ -24,10 +25,12 @@ export function openPopover(opts: {
     content: Element;
     width: number;
     height: number;
+    key?: string;
     onClose?: () => void;
 }): PopoverHandle {
     const handle: PopoverHandle = {
         id: nextId++,
+        key: opts.key,
         anchor: opts.anchor,
         content: opts.content,
         width: opts.width,
@@ -37,6 +40,25 @@ export function openPopover(opts: {
     };
     openPopovers.push(handle);
     return handle;
+}
+
+// Open a popover keyed by `key`; if one with the same key is already open, close it instead.
+// Use this for toggle-style triggers (e.g. a Filter button that re-clicks to dismiss).
+export function togglePopover(opts: {
+    key: string;
+    anchor: Rect;
+    content: Element;
+    width: number;
+    height: number;
+    onClose?: () => void;
+}): PopoverHandle | null {
+    for (let i = 0; i < openPopovers.length; i++) {
+        if (openPopovers[i].key === opts.key) {
+            closePopover(openPopovers[i]);
+            return null;
+        }
+    }
+    return openPopover(opts);
 }
 
 export function closePopover(handle: PopoverHandle): void {
@@ -84,13 +106,18 @@ export function tryDispatchPopoverClick(mouseX: number, mouseY: number): boolean
             return true;
         }
     }
-    // Outside all popovers: close stale ones.
+    // Outside all popovers: close stale ones, EXCEPT when the click is on the popover's own
+    // anchor (the trigger). Auto-closing in that case races with togglePopover and you'd need
+    // to click the trigger twice to dismiss.
     const now = Date.now();
     const fresh: PopoverHandle[] = [];
     const stale: PopoverHandle[] = [];
     for (let i = 0; i < openPopovers.length; i++) {
-        if (now - openPopovers[i].openedAt < OPEN_GRACE_MS) fresh.push(openPopovers[i]);
-        else stale.push(openPopovers[i]);
+        const p = openPopovers[i];
+        const tooYoung = now - p.openedAt < OPEN_GRACE_MS;
+        const onAnchor = pointInRect(p.anchor, mouseX, mouseY);
+        if (tooYoung || onAnchor) fresh.push(p);
+        else stale.push(p);
     }
     if (stale.length > 0) {
         openPopovers = fresh;

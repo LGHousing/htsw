@@ -2,7 +2,7 @@
 
 import { Element } from "../layout";
 import { Button, Col, Container, Input, Row, Scroll, Text } from "../components";
-import { openPopover } from "../popovers";
+import { togglePopover } from "../popovers";
 
 export type ResultType = "import" | "script" | "item";
 export type Result = { type: ResultType; name: string };
@@ -133,7 +133,8 @@ export function LeftPanel(): Element {
                         text: "Filter",
                         style: { width: { kind: "px", value: 48 }, height: { kind: "grow" } },
                         onClick: (rect) => {
-                            openPopover({
+                            togglePopover({
+                                key: "left-filter",
                                 anchor: rect,
                                 content: filterPopoverContent(),
                                 width: 140,
