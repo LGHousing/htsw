@@ -194,6 +194,9 @@ export function dispatchClick(laid: LaidOut[], mouseX: number, mouseY: number): 
         }
     }
     dbgLog(`  no hit`);
+    // Click landed on the panel but didn't hit anything clickable — still drop focus,
+    // matching the behavior of clicking outside the panel entirely.
+    setFocusedInput(null);
     return false;
 }
 
