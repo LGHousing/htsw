@@ -38,7 +38,7 @@ const TYPE_COLORS: { [k: string]: number } = {
 let searchQuery = "";
 let selectedTypes: { [k: string]: boolean } = {};
 
-type SortDir = "ASC" | "DSC";
+type SortDir = "ASC" | "DESC";
 type SortFieldId = "alphabetical" | "type";
 
 type SortField = {
@@ -117,7 +117,7 @@ const ACTIVE_HOVER_BG = 0xff3a5d3a | 0;
 
 function selectSort(id: SortFieldId): void {
     if (activeSort.id === id) {
-        activeSort.direction = activeSort.direction === "ASC" ? "DSC" : "ASC";
+        activeSort.direction = activeSort.direction === "ASC" ? "DESC" : "ASC";
     } else {
         activeSort = { id, direction: getSortField(id).fallbackDir };
     }
