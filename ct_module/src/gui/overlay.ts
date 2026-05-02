@@ -13,12 +13,15 @@ const ScaledResolutionClass = net.minecraft.client.gui.ScaledResolution;
 // Forge inner-class path uses $ separators with Java.type.
 // @ts-ignore
 const ForgeMouseInputEventPre = Java.type("net.minecraftforge.client.event.GuiScreenEvent$MouseInputEvent$Pre");
+// @ts-ignore
+const ForgeKeyboardInputEventPre = Java.type("net.minecraftforge.client.event.GuiScreenEvent$KeyboardInputEvent$Pre");
 import { LeftPanel } from "./left-panel";
 import { RightPanel } from "./right-panel";
 import { getContainerBounds, leftPanelRect, rightPanelRect } from "./bounds";
 import { initPopoverRendering, popoverIsOpen, closeAllPopovers } from "./popovers";
 import { dispatchWheel, isDraggingScrollbar, updateScrollbarDrag, endScrollbarDrag, setRenderDebugLog } from "./render";
 import { getFocusedInput, setFocusedInput } from "./focus";
+import { applyFocus, getRecord, readAndSync, tickAllFields } from "./inputState";
 
 let enabled = true;
 let initialized = false;
@@ -132,22 +135,32 @@ export function initHtswGui(): void {
     });
     register("guiMouseRelease", () => { endScrollbarDrag(); });
 
-    // Keyboard: CT's char arg is unreliable in this version, translate keyCode -> char ourselves.
-    register("guiKey", (_char: string, keyCode: number, _gui: MCTGuiScreen, event: CancellableEvent) => {
+    // Clear focus when the user clicks anywhere outside every visible panel.
+    register("guiMouseClick", (x: number, y: number) => {
+        if (getFocusedInput() === null) return;
+        for (let i = 0; i < activePanels.length; i++) {
+            if (!activePanels[i].isVisible()) continue;
+            if (pointInRect(activePanels[i].getBounds(), x, y)) return;
+        }
+        setFocusedInput(null);
+    });
+
+    // Keyboard: hook Forge's GuiScreenEvent.KeyboardInputEvent.Pre and forward to the focused
+    // input's GuiTextField. This gives us cursor movement, selection (shift+arrows), home/end,
+    // Ctrl+A/C/V/X, backspace/delete, and the real LWJGL char (CT's guiKey char is undefined).
+    // Cancelling stops MC from reacting to e.g. "e" closing the inventory.
+    register(ForgeKeyboardInputEventPre, (event: any) => {
+        if (!KeyboardClass.getEventKeyState()) return; // key-up — ignore
         const focusedId = getFocusedInput();
         if (focusedId === null) return;
         const inputEl = findInput(focusedId);
         if (inputEl === null) { setFocusedInput(null); return; }
-        const current = typeof inputEl.value === "function" ? inputEl.value() : inputEl.value;
+        const keyCode = KeyboardClass.getEventKey();
+        const charCode = KeyboardClass.getEventCharacter();
+        // Esc: clear focus + close popovers, but don't cancel — let MC also close the GUI.
         if (keyCode === 1) {
             setFocusedInput(null);
             if (popoverIsOpen()) closeAllPopovers();
-            cancel(event);
-            return;
-        }
-        if (keyCode === 14) {
-            inputEl.onChange(current.slice(0, -1));
-            cancel(event);
             return;
         }
         if (keyCode === 28) {
@@ -155,11 +168,22 @@ export function initHtswGui(): void {
             cancel(event);
             return;
         }
-        const ch = keyCodeToChar(keyCode);
-        if (ch !== null) {
-            inputEl.onChange(current + ch);
-            cancel(event);
+        const rec = getRecord(focusedId);
+        if (rec === null) { cancel(event); return; }
+        rec.field.func_146195_b(true); // setFocused — required for textboxKeyTyped to accept input
+        rec.field.func_146201_a(charCode, keyCode); // textboxKeyTyped(char, key)
+        const newText = readAndSync(focusedId);
+        if (newText !== null) {
+            const current = typeof inputEl.value === "function" ? inputEl.value() : inputEl.value;
+            if (newText !== current) inputEl.onChange(newText);
         }
+        cancel(event);
+    });
+
+    // Keep GuiTextField cursor blink animated and external focus state in sync.
+    register("tick", () => {
+        tickAllFields();
+        applyFocus(getFocusedInput());
     });
 
     // Per-frame state snapshot, ~once per second to avoid log spam.
@@ -178,29 +202,6 @@ export function initHtswGui(): void {
 
     // Register popover rendering LAST so it paints on top of all panels.
     initPopoverRendering();
-}
-
-// LWJGL keyCode -> [unshifted, shifted] character
-const KEY_TO_CHAR: { [code: number]: [string, string] } = {
-    16: ["q", "Q"], 17: ["w", "W"], 18: ["e", "E"], 19: ["r", "R"], 20: ["t", "T"],
-    21: ["y", "Y"], 22: ["u", "U"], 23: ["i", "I"], 24: ["o", "O"], 25: ["p", "P"],
-    30: ["a", "A"], 31: ["s", "S"], 32: ["d", "D"], 33: ["f", "F"], 34: ["g", "G"],
-    35: ["h", "H"], 36: ["j", "J"], 37: ["k", "K"], 38: ["l", "L"],
-    44: ["z", "Z"], 45: ["x", "X"], 46: ["c", "C"], 47: ["v", "V"], 48: ["b", "B"],
-    49: ["n", "N"], 50: ["m", "M"],
-    2: ["1", "!"], 3: ["2", "@"], 4: ["3", "#"], 5: ["4", "$"], 6: ["5", "%"],
-    7: ["6", "^"], 8: ["7", "&"], 9: ["8", "*"], 10: ["9", "("], 11: ["0", ")"],
-    12: ["-", "_"], 13: ["=", "+"], 26: ["[", "{"], 27: ["]", "}"],
-    39: [";", ":"], 40: ["'", '"'], 41: ["`", "~"], 43: ["\\", "|"],
-    51: [",", "<"], 52: [".", ">"], 53: ["/", "?"], 57: [" ", " "],
-};
-
-function keyCodeToChar(keyCode: number): string | null {
-    const pair = KEY_TO_CHAR[keyCode];
-    if (!pair) return null;
-    // LWJGL Keyboard.KEY_LSHIFT = 42, KEY_RSHIFT = 54
-    const shift = KeyboardClass.isKeyDown(42) || KeyboardClass.isKeyDown(54);
-    return shift ? pair[1] : pair[0];
 }
 
 function findInput(id: string): Extract<Element, { kind: "input" }> | null {

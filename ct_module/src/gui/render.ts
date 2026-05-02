@@ -7,6 +7,7 @@ import {
 import { extract } from "./extractable";
 import { isInputFocused, setFocusedInput } from "./focus";
 import { pushScissor, popScissor } from "./scissor";
+import { getInputField } from "./inputState";
 
 let dbgLog: ((m: string) => void) = () => {};
 export function setRenderDebugLog(fn: (m: string) => void): void { dbgLog = fn; }
@@ -16,16 +17,12 @@ const COLOR_BUTTON_HOVER = 0xf03a4350 | 0;
 const COLOR_INPUT_BG = 0xff000000 | 0;
 const COLOR_INPUT_BORDER = 0xff444444 | 0;
 const COLOR_INPUT_BORDER_FOCUS = 0xff67a7e8 | 0;
-const COLOR_TEXT = 0xffffff;
-const COLOR_PLACEHOLDER = 0xff666666 | 0;
 const COLOR_SCROLLBAR_TRACK = 0x40000000 | 0;
 const COLOR_SCROLLBAR_THUMB = 0xff888888 | 0;
 const COLOR_SCROLLBAR_THUMB_HOVER = 0xffaaaaaa | 0;
 
 const LINE_H = 8;
 
-let blinkCounter = 0;
-register("tick", () => { blinkCounter++; });
 
 export function renderElement(root: Element, x: number, y: number, w: number, h: number, mouseX: number, mouseY: number, interactive: boolean): LaidOut[] {
     const laid = layoutElement(root, x, y, w, h);
@@ -101,21 +98,21 @@ function renderItem(item: LaidOut, mouseX: number, mouseY: number, interactive: 
     } else if (e.kind === "input") {
         const focused = isInputFocused(e.id);
         const value = extract(e.value);
+        // Background + border drawn by us (GuiTextField's own background is disabled).
         Renderer.drawRect(COLOR_INPUT_BG, r.x, r.y, r.w, r.h);
         const borderCol = focused ? COLOR_INPUT_BORDER_FOCUS : COLOR_INPUT_BORDER;
         Renderer.drawRect(borderCol, r.x, r.y, r.w, 1);
         Renderer.drawRect(borderCol, r.x, r.y + r.h - 1, r.w, 1);
         Renderer.drawRect(borderCol, r.x, r.y, 1, r.h);
         Renderer.drawRect(borderCol, r.x + r.w - 1, r.y, 1, r.h);
-        const display = value.length === 0 && e.placeholder ? e.placeholder : value;
-        const ty = r.y + Math.max(2, Math.floor((r.h - LINE_H) / 2));
-        const showColor = value.length === 0 && e.placeholder ? COLOR_PLACEHOLDER : COLOR_TEXT;
-        Renderer.drawStringWithShadow(`§r§${value.length === 0 ? "8" : "f"}${display}`, r.x + 4, ty);
-        // unused but kept for future: showColor
-        if (showColor === showColor) { /* noop */ }
-        if (focused && Math.floor(blinkCounter / 8) % 2 === 0) {
-            const cx = r.x + 4 + Renderer.getStringWidth(value);
-            Renderer.drawRect(COLOR_TEXT | 0xff000000, cx, ty, 1, LINE_H);
+        if (value.length === 0 && e.placeholder && !focused) {
+            const ty = r.y + Math.max(2, Math.floor((r.h - LINE_H) / 2));
+            Renderer.drawStringWithShadow(`§r§8${e.placeholder}`, r.x + 4, ty);
+        } else {
+            // Inset the field so cursor/text don't paint over our 1px border.
+            const innerY = r.y + Math.max(2, Math.floor((r.h - LINE_H) / 2));
+            const field = getInputField(e.id, r.x + 4, innerY, r.w - 8, LINE_H, value);
+            field.func_146194_f(); // drawTextBox
         }
     } else if (e.kind === "scroll") {
         const bg = e.style.background;
@@ -185,6 +182,11 @@ export function dispatchClick(laid: LaidOut[], mouseX: number, mouseY: number): 
         if (e.kind === "input") {
             dbgLog(`  -> focusing input id=${e.id}`);
             setFocusedInput(e.id);
+            // Forward click to the GuiTextField for cursor placement / drag-select start.
+            // The field must already be marked focused for mouseClicked to set the cursor.
+            const rec = getInputField(e.id, item.rect.x + 4, item.rect.y, item.rect.w - 8, item.rect.h, extract(e.value));
+            rec.func_146195_b(true); // setFocused
+            rec.func_146192_a(mouseX, mouseY, 0); // mouseClicked
             return true;
         }
     }

@@ -17,6 +17,7 @@ The HTSW in-game overlay is a small declarative UI framework that runs inside Ch
 - `panel.ts` — `Panel` class: bounds, visibility, click trigger, render trigger.
 - `popovers.ts` — global popover stack, anchored render, click dispatch helper, hover-suppression query.
 - `focus.ts` — single global focused-input id.
+- `inputState.ts` — per-input `GuiTextField` instances (cursor, selection, clipboard, arrow keys).
 - `scissor.ts` — GL scissor stack (uses ScaledResolution to convert MC scaled coords → real pixels).
 - `bounds.ts` — reads the open Minecraft `GuiContainer`'s bounds via Java reflection on protected fields.
 - `overlay.ts` — wires everything: registers triggers (guiRender, guiMouseClick, guiKey, guiMouseRelease), builds left/right panels, owns global state.
@@ -113,9 +114,11 @@ Scrollbar hover suppression: items whose rect is under a visible scrollbar track
 
 Single global focused-input id (`focus.ts`). `dispatchClick` sets it when an `input` is clicked, clears it when anything else clickable is clicked.
 
-`overlay.ts` registers `guiKey` and routes key events to the focused input. **CT's `char` argument is unreliable in this version — it is `undefined` for every key.** Translate `keyCode` → character ourselves using the `KEY_TO_CHAR` map, considering shift via `KeyboardClass.isKeyDown(42|54)`. Esc/Backspace/Enter are special-cased on `keyCode` (1 / 14 / 28).
+Inputs delegate to vanilla MC's `GuiTextField`. We keep one instance per input id in `inputState.ts`; it handles cursor placement, drag-select, arrow keys, home/end, shift-select, Ctrl+A/C/V/X, backspace/delete, and the blinking cursor. We disable its built-in background drawing (`setEnableBackgroundDrawing(false)`) and `setCanLoseFocus(false)` so external focus state is the source of truth. Width/height are final on the field, so we recreate the field if the laid-out size changes (text + cursor are copied across); xPosition/yPosition are mutable and updated each frame.
 
-When focused, the handler calls `cancel(event)` for any printable key — this is what stops `e` from closing the inventory. Without focus, the handler returns early and MC processes the key normally.
+Keyboard input is routed via Forge's `GuiScreenEvent$KeyboardInputEvent$Pre` (registered via `register(ForgeClass, cb)`). Inside the handler we read the real char with `Keyboard.getEventCharacter()` and the keycode with `Keyboard.getEventKey()` — **CT's `guiKey` `char` argument is `undefined`**, which is why we don't use that trigger. Esc/Enter are handled by us (clear focus); everything else is forwarded to `GuiTextField.textboxKeyTyped(char, key)`. After forwarding, we read `getText()` and call `onChange` if the text changed. We always `cancel(event)` when an input is focused — this is what stops `e` from closing the inventory.
+
+`tickAllFields()` calls `updateCursorCounter` on every field each tick (cursor blink); `applyFocus(focusedId)` syncs our focus state into each field's `setFocused`.
 
 ## Mouse wheel
 
