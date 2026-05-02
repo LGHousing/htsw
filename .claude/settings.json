@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "mcp__htsw-bridge"
+      "mcp__htsw-bridge",
+      "Bash(npx tsc *)"
     ]
   }
 }
