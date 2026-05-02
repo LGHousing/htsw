@@ -119,9 +119,13 @@ When focused, the handler calls `cancel(event)` for any printable key — this i
 
 ## Mouse wheel
 
-CT's `register("scrolled", ...)` and `register(ForgeMouseEventClass, ...)` did **not** fire reliably in this CT/Forge build (no events came through). The working approach is **polling `MouseClass.getDWheel()` from inside a `guiRender` trigger**, but only when the cursor is over a scroll viewport. `getDWheel()` consumes the wheel buffer, so calling it suppresses the inventory's own scroll handling. Skipping the call when the cursor is not over our scroll leaves vanilla wheel scroll (e.g. creative tab change) intact.
+We hook Forge's `GuiScreenEvent$MouseInputEvent$Pre` (registered via `register(ForgeClass, cb)`). It fires per `Mouse.next()` event *before* `GuiScreen.handleMouseInput` runs. In the handler we read `Mouse.getEventDWheel()` (per-event wheel), compute scaled mouse coords from `Mouse.getEventX/Y` + `ScaledResolution`, and if the cursor is over one of our scroll viewports we dispatch the scroll AND `cancel(event)` to suppress MC's reaction.
 
-`MouseClass = Java.type("org.lwjgl.input.Mouse")`. `KeyboardClass = Java.type("org.lwjgl.input.Keyboard")`. Both are defined at the top of `overlay.ts`.
+**Important:** an earlier approach polled `Mouse.getDWheel()` from `guiRender`. That is too late — MC processes mouse events in `runTick` before rendering. It also doesn't suppress: `getDWheel()` is the accumulator, while `GuiContainer`/`GuiContainerCreative` read per-event via `Mouse.getEventDWheel()`, and the two are independent. Cancelling the Pre event is the only thing that actually stops creative-inventory scroll/tab change.
+
+CT's `register("scrolled", ...)` exists but doesn't pass the underlying event, so it can't cancel. CT's `register(ForgeClass, ...)` *does* fire for `GuiScreenEvent$MouseInputEvent$Pre` despite earlier docs claiming Forge events were unreliable in this build.
+
+`MouseClass = Java.type("org.lwjgl.input.Mouse")`. `KeyboardClass = Java.type("org.lwjgl.input.Keyboard")`. `ForgeMouseInputEventPre = Java.type("net.minecraftforge.client.event.GuiScreenEvent$MouseInputEvent$Pre")`. All defined at the top of `overlay.ts`.
 
 ## Bounds reading (Hypixel inventory anchoring)
 
@@ -151,8 +155,8 @@ If you add a new trigger that needs to fire before/after others, prefer `setPrio
 
 These bit us; they will bite you again. Read these before touching CT trigger code.
 
-- `register("scrolled", ...)` does not fire in inventory contexts in this build. Use `Mouse.getDWheel()` polling.
-- `register(ForgeEventClass, ...)` did not fire either despite the d.ts comment claiming it works. Stick to named string triggers + polling.
+- `register("scrolled", ...)` doesn't expose the event so you can't cancel it — useless for suppressing vanilla wheel handling. Use Forge `GuiScreenEvent$MouseInputEvent$Pre` instead (see Mouse wheel section).
+- `register(ForgeEventClass, ...)` *does* work for at least `GuiScreenEvent$MouseInputEvent$Pre`. Earlier notes claiming it didn't fire were wrong (or specific to a different event class).
 - `guiKey` fires (good), but its `char` argument is `undefined`. Use `keyCode` and translate manually.
 - `cancel(event)` cancels the underlying Forge event but does **not** stop other CT handlers from firing — those handlers must check `event.isCanceled()` themselves.
 - CT's chat trigger does **not** fire for messages we display via `ChatLib.chat()`. The MCP bridge can't see our own debug chat, so the diagnostic loop writes to a file (`gui-debug.log`) instead. See `armHtswGuiDebug` and `debug()` in `overlay.ts`.

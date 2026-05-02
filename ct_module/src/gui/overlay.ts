@@ -8,6 +8,11 @@ import { Element, Rect, layoutElement, pointInRect, getScrollState } from "./lay
 const MouseClass = Java.type("org.lwjgl.input.Mouse");
 // @ts-ignore
 const KeyboardClass = Java.type("org.lwjgl.input.Keyboard");
+// @ts-ignore
+const ScaledResolutionClass = net.minecraft.client.gui.ScaledResolution;
+// Forge inner-class path uses $ separators with Java.type.
+// @ts-ignore
+const ForgeMouseInputEventPre = Java.type("net.minecraftforge.client.event.GuiScreenEvent$MouseInputEvent$Pre");
 import { LeftPanel } from "./left-panel";
 import { RightPanel } from "./right-panel";
 import { getContainerBounds, leftPanelRect, rightPanelRect } from "./bounds";
@@ -86,31 +91,44 @@ export function initHtswGui(): void {
     activePanels.push({ panel: left, getBounds: leftBounds, getRoot: () => left.getRoot(), isVisible: leftVisible });
     activePanels.push({ panel: right, getBounds: rightBounds, getRoot: () => right.getRoot(), isVisible: rightVisible });
 
-    // Mouse wheel: poll Mouse.getDWheel() each frame, but only consume when the cursor is inside
-    // a scroll viewport. Polling consumes the wheel so MC's GuiContainer won't see it; skipping
-    // the call leaves the buffer alone so vanilla scroll behavior (creative tab change) still works.
-    register("guiRender", (mouseX: number, mouseY: number) => {
-        if (isDraggingScrollbar()) updateScrollbarDrag(mouseY);
+    // Mouse wheel: hook Forge's GuiScreenEvent.MouseInputEvent.Pre, which fires per Mouse.next()
+    // event BEFORE GuiScreen.handleMouseInput runs. Cancelling here suppresses both vanilla
+    // GuiContainer scroll AND GuiContainerCreative tab/item-list scrolling when the cursor is
+    // over one of our scroll viewports. Polling Mouse.getDWheel() in guiRender does NOT suppress
+    // MC's reaction because MC reads per-event wheel via Mouse.getEventDWheel() during runTick,
+    // which happens before guiRender; the accumulator and the per-event wheel are independent.
+    register(ForgeMouseInputEventPre, (event: any) => {
+        const dwheel = MouseClass.getEventDWheel();
+        if (dwheel === 0) return;
+        const mc = Client.getMinecraft();
+        const screen = (mc as any).field_71462_r;
+        if (screen === null || screen === undefined) return;
+        const sr = new ScaledResolutionClass(mc);
+        const sw = sr.func_78326_a();
+        const sh = sr.func_78328_b();
+        const dw = (mc as any).field_71443_c;
+        const dh = (mc as any).field_71440_d;
+        const mx = Math.floor(MouseClass.getEventX() * sw / dw);
+        const my = sh - Math.floor(MouseClass.getEventY() * sh / dh) - 1;
         const trees = laidOutTrees();
         for (let i = 0; i < trees.length; i++) {
             const t = trees[i];
             const laid = layoutElement(t.root, t.rect.x, t.rect.y, t.rect.w, t.rect.h);
-            // Quick check: is mouse over any scroll viewport in this tree?
-            let overScroll = false;
             for (let j = 0; j < laid.length; j++) {
                 const el = laid[j].element;
                 if (el.kind !== "scroll") continue;
                 const s = getScrollState(el.id);
-                if (pointInRect(s.viewportRect, mouseX, mouseY)) { overScroll = true; break; }
+                if (!pointInRect(s.viewportRect, mx, my)) continue;
+                const dir = dwheel > 0 ? 1 : -1;
+                debug(`wheel dwheel=${dwheel} dir=${dir} cancelled+dispatched`);
+                dispatchWheel(laid, mx, my, dir);
+                cancel(event);
+                return;
             }
-            if (!overScroll) continue;
-            const dwheel = MouseClass.getDWheel();
-            if (dwheel === 0) return;
-            const dir = dwheel > 0 ? 1 : -1;
-            debug(`wheel dwheel=${dwheel} dir=${dir} consumed`);
-            dispatchWheel(laid, mouseX, mouseY, dir);
-            return;
         }
+    });
+    register("guiRender", (_mouseX: number, mouseY: number) => {
+        if (isDraggingScrollbar()) updateScrollbarDrag(mouseY);
     });
     register("guiMouseRelease", () => { endScrollbarDrag(); });
 
