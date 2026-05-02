@@ -1,122 +1,71 @@
 /// <reference types="../../CTAutocomplete" />
 
-import { Element, LaidOut, Rect, layoutElement, pointInRect } from "./layout";
-import { extract } from "./extractable";
+import { Element, Rect, layoutElement, pointInRect } from "./layout";
+import { Extractable, extract } from "./extractable";
+import { renderElement, dispatchClick } from "./render";
+import { tryDispatchPopoverClick, popoverIsOpen } from "./popovers";
+
 
 const COLOR_PANEL = 0xf0242931 | 0;
-const COLOR_BUTTON = 0xe02d333d | 0;
-const COLOR_BUTTON_HOVER = 0xf03a4350 | 0;
-const CHAR_W = 6;
-const LINE_H = 8;
 
 export class Panel {
-    private x: number;
-    private y: number;
-    private width: number;
-    private height: number;
+    private bounds: Extractable<Rect>;
     private root: Element;
-    private shouldBeVisible: () => boolean;
-    private layoutCache: LaidOut[] | null;
+    private shouldBeVisible: Extractable<boolean>;
     private renderTrigger: Trigger | null;
     private clickTrigger: Trigger | null;
 
     constructor(
-        x: number,
-        y: number,
-        width: number,
-        height: number,
+        bounds: Extractable<Rect>,
         root: Element,
-        shouldBeVisible: () => boolean
+        shouldBeVisible: Extractable<boolean>
     ) {
-        this.x = x;
-        this.y = y;
-        this.width = width;
-        this.height = height;
+        this.bounds = bounds;
         this.root = root;
         this.shouldBeVisible = shouldBeVisible;
-        this.layoutCache = null;
         this.renderTrigger = null;
         this.clickTrigger = null;
     }
 
-    public getX(): number { return this.x; }
-    public getY(): number { return this.y; }
-    public getWidth(): number { return this.width; }
-    public getHeight(): number { return this.height; }
-
-    public setX(v: number): void { this.x = v; this.layoutCache = null; }
-    public setY(v: number): void { this.y = v; this.layoutCache = null; }
-    public setWidth(v: number): void { this.width = v; this.layoutCache = null; }
-    public setHeight(v: number): void { this.height = v; this.layoutCache = null; }
-    public setRoot(root: Element): void { this.root = root; this.layoutCache = null; }
-    public invalidate(): void { this.layoutCache = null; }
-
-    private ensureLayout(): LaidOut[] {
-        if (this.layoutCache === null) {
-            this.layoutCache = layoutElement(this.root, this.x, this.y, this.width, this.height);
-        }
-        return this.layoutCache;
-    }
-
-    private renderTree(mouseX: number, mouseY: number): void {
-        Renderer.drawRect(COLOR_PANEL, this.x, this.y, this.width, this.height);
-        const laid = this.ensureLayout();
-        // Pre-order: parents first, children paint on top.
-        for (let i = 0; i < laid.length; i++) {
-            const item = laid[i];
-            const r = item.rect;
-            if (item.element === this.root) continue; // panel bg already drawn
-            if (item.element.kind === "container") {
-                const bg = item.element.style.background;
-                if (bg !== undefined) Renderer.drawRect(bg, r.x, r.y, r.w, r.h);
-            } else {
-                const hovered = pointInRect(r, mouseX, mouseY);
-                Renderer.drawRect(hovered ? COLOR_BUTTON_HOVER : COLOR_BUTTON, r.x, r.y, r.w, r.h);
-                const text = extract(item.element.text);
-                const textWidth = text.length * CHAR_W;
-                const tx = r.x + Math.max(2, Math.floor((r.w - textWidth) / 2));
-                const ty = r.y + Math.max(2, Math.floor((r.h - LINE_H) / 2));
-                Renderer.drawString(text, tx, ty);
-            }
-        }
-    }
-
-    private dispatchClick(mouseX: number, mouseY: number): boolean {
-        const laid = this.ensureLayout();
-        // Topmost-first hit test.
-        for (let i = laid.length - 1; i >= 0; i--) {
-            const item = laid[i];
-            if (item.element.kind !== "button") continue;
-            if (!pointInRect(item.rect, mouseX, mouseY)) continue;
-            item.element.onClick();
-            return true;
-        }
-        return false;
-    }
+    public setRoot(root: Element): void { this.root = root; }
+    public setBounds(bounds: Extractable<Rect>): void { this.bounds = bounds; }
+    public getBounds(): Rect { return extract(this.bounds); }
+    public isVisible(): boolean { return extract(this.shouldBeVisible); }
+    public getRoot(): Element { return this.root; }
 
     public register(): void {
         if (this.renderTrigger !== null) {
             throw new Error("Panel is already registered");
         }
         this.renderTrigger = register("guiRender", (x: number, y: number, _gui: MCTGuiScreen) => {
-            if (!this.shouldBeVisible()) return;
-            this.renderTree(x, y);
+            if (!extract(this.shouldBeVisible)) return;
+            const b = extract(this.bounds);
+            Renderer.drawRect(COLOR_PANEL, b.x, b.y, b.w, b.h);
+            // When a popover is open, panels are not clickable — suppress hover so visual feedback
+            // matches click propagation.
+            const interactive = !popoverIsOpen();
+            renderElement(this.root, b.x, b.y, b.w, b.h, x, y, interactive);
         });
         this.clickTrigger = register(
             "guiMouseClick",
-            (
-                x: number,
-                y: number,
-                _mouseButton: number,
-                _gui: MCTGuiScreen,
-                event: CancellableEvent
-            ) => {
-                if (!this.shouldBeVisible()) return;
-                const panelRect: Rect = { x: this.x, y: this.y, w: this.width, h: this.height };
-                if (!pointInRect(panelRect, x, y)) return;
-                if (this.dispatchClick(x, y)) {
-                    cancel(event);
+            (x: number, y: number, _btn: number, _gui: MCTGuiScreen, event: CancellableEvent) => {
+                if (event.isCanceled()) return;
+                // Popover takes priority. Only one panel should actually run the popover dispatch
+                // (since it mutates state and runs onClick once); we use a per-frame guard.
+                if (popoverIsOpen()) {
+                    if (claimPopoverClick(x, y)) {
+                        if (tryDispatchPopoverClick(x, y)) cancel(event);
+                        else cancel(event); // outside-click consumed (closes / no-op)
+                    } else {
+                        cancel(event);
+                    }
+                    return;
                 }
+                if (!extract(this.shouldBeVisible)) return;
+                const b = extract(this.bounds);
+                if (!pointInRect(b, x, y)) return;
+                const laid = layoutElement(this.root, b.x, b.y, b.w, b.h);
+                if (dispatchClick(laid, x, y)) cancel(event);
             }
         );
     }
@@ -130,4 +79,14 @@ export class Panel {
         this.renderTrigger = null;
         this.clickTrigger = null;
     }
+}
+
+// Per-click guard so popover dispatch fires once even when multiple panel handlers see the same
+// click event (each panel registers its own guiMouseClick trigger).
+let lastClaimedClickKey = "";
+function claimPopoverClick(x: number, y: number): boolean {
+    const key = `${Date.now()}|${x}|${y}`;
+    if (key === lastClaimedClickKey) return false;
+    lastClaimedClickKey = key;
+    return true;
 }
