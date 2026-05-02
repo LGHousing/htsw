@@ -52,14 +52,13 @@ export class Panel {
                 if (event.isCanceled()) return;
                 // Popover takes priority. Only one panel should actually run the popover dispatch
                 // (since it mutates state and runs onClick once); we use a per-frame guard.
-                if (popoverIsOpen()) {
-                    if (claimPopoverClick(x, y)) {
-                        if (tryDispatchPopoverClick(x, y)) cancel(event);
-                        else cancel(event); // outside-click consumed (closes / no-op)
-                    } else {
+                // Inside-popover click → dispatch + cancel + return. Outside-popover click → close
+                // stale popovers but fall through so the click still focuses inputs / hits buttons.
+                if (popoverIsOpen() && claimPopoverClick(x, y)) {
+                    if (tryDispatchPopoverClick(x, y)) {
                         cancel(event);
+                        return;
                     }
-                    return;
                 }
                 if (!extract(this.shouldBeVisible)) return;
                 const b = extract(this.bounds);
