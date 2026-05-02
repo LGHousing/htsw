@@ -4,10 +4,10 @@ import { Element } from "../layout";
 import { Button, Col, Container, Input, Row, Scroll, Text } from "../components";
 import { togglePopover } from "../popovers";
 
-export type ResultType = "import" | "script" | "item";
-export type Result = { type: ResultType; name: string };
+const ALL_TYPES = ["import", "script", "item"] as const;
 
-const ALL_TYPES: ResultType[] = ["import", "script", "item"];
+export type ResultType = typeof ALL_TYPES[number];
+export type Result = { type: ResultType; name: string };
 
 const DUMMY_RESULTS: Result[] = [
     { type: "import", name: "spawn_function" },
@@ -29,14 +29,18 @@ const DUMMY_RESULTS: Result[] = [
     { type: "import", name: "shop_keeper" },
 ];
 
-const TYPE_COLORS: { [k: string]: number } = {
+const TYPE_COLORS: { [k in ResultType]: number } = {
     import: 0xff67a7e8 | 0,
     script: 0xff62d26f | 0,
     item: 0xffe5bc4b | 0,
 };
 
 let searchQuery = "";
-let selectedTypes: { [k: string]: boolean } = {};
+let selectedTypes: { [k in ResultType]: boolean } = {
+    import: true,
+    script: true,
+    item: true
+};
 
 type SortDir = "ASC" | "DESC";
 type SortFieldId = "alphabetical" | "type";
@@ -108,8 +112,7 @@ function isSortDefault(): boolean {
 }
 
 function isFilterDefault(): boolean {
-    for (const k in selectedTypes) if (selectedTypes[k]) return false;
-    return true;
+    return ALL_TYPES.every((t) => selectedTypes[t] === true);
 }
 
 const ACTIVE_BG = 0xff2d4d2d | 0;
@@ -124,13 +127,6 @@ function selectSort(id: SortFieldId): void {
 }
 
 function isTypeActive(t: ResultType): boolean {
-    let anySelected = false;
-    for (const k in selectedTypes)
-        if (selectedTypes[k]) {
-            anySelected = true;
-            break;
-        }
-    if (!anySelected) return true; // none selected => all active
     return selectedTypes[t] === true;
 }
 
