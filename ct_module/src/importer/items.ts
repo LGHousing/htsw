@@ -4,7 +4,6 @@ import {
     S2FPacketSetSlot,
 } from "../utils/packets";
 import { waitForMenu } from "./helpers";
-import { getAllItemSlots } from "../tasks/specifics/slots";
 
 const INV_PACKET_SLOT = 26; // inventory row 2, column 9 (rightmost, out of the way — matches BHTSL)
 const SET_SLOT_ACK_TIMEOUT_MS = 2000;
@@ -28,10 +27,23 @@ export async function setItemValue(
     ctx.getItemSlot(fieldName).click();
     await waitForMenu(ctx);
 
+    await selectItemFromOpenInventory(ctx, item, fieldName);
+}
+
+/**
+ * Select `item` from the player-inventory area of the currently open
+ * item-selection menu. If the item is not already visible in inventory,
+ * inject it into a scratch inventory slot first, then click it.
+ */
+export async function selectItemFromOpenInventory(
+    ctx: TaskContext,
+    item: Item,
+    label: string
+): Promise<void> {
     const container = Player.getContainer();
     if (container == null) {
         throw new Error(
-            `No open container after clicking "${fieldName}" — cannot inject item.`
+            `No open container for "${label}" item selection — cannot inject item.`
         );
     }
 
@@ -68,7 +80,7 @@ export async function setItemValue(
                 (windowId === 0 && slotIdx === INV_PACKET_SLOT)
             );
         }),
-        `creative-inventory ack for "${fieldName}"`,
+        `creative-inventory ack for "${label}"`,
         SET_SLOT_ACK_TIMEOUT_MS
     );
     await ctx.waitFor("tick");
@@ -78,7 +90,7 @@ export async function setItemValue(
     );
     if (slot === null) {
         throw new Error(
-            `Could not find injected item for "${fieldName}" selection at container slot ${targetSlotInContainer}.`
+            `Could not find injected item for "${label}" selection at container slot ${targetSlotInContainer}.`
         );
     }
 

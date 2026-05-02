@@ -17,6 +17,19 @@ export type ImportSelection = {
     trustMode: boolean;
     housingUuid: string;
     sourcePath: string;
+    /**
+     * Optional progress callback fired *before* each importable is processed
+     * and once on completion. Lets a UI (e.g. the dashboard overlay) reflect
+     * how far through the import we are.
+     */
+    onProgress?: (progress: ImportProgress) => void;
+};
+
+export type ImportProgress = {
+    completed: number;
+    total: number;
+    currentLabel: string;
+    failed: number;
 };
 
 export type ImportSessionResult = {
@@ -53,9 +66,20 @@ export async function importSelectedImportables(
         failed: 0,
     };
 
+    let completed = 0;
     for (const importable of ordered) {
         const key = trustPlanKey(importable.type, importableIdentity(importable));
         const plan = trustPlan?.importables.get(key);
+        const label = `${importable.type} ${importableIdentity(importable)}`;
+        if (selection.onProgress) {
+            selection.onProgress({
+                completed,
+                total: ordered.length,
+                currentLabel: label,
+                failed: result.failed,
+            });
+        }
+
         if (plan?.wholeImportableTrusted) {
             result.skippedTrusted++;
         }
@@ -73,6 +97,16 @@ export async function importSelectedImportables(
                 ctx.displayMessage(`&cFailed to import ${importable.type}: ${error}`);
             }
         }
+        completed++;
+    }
+
+    if (selection.onProgress) {
+        selection.onProgress({
+            completed,
+            total: ordered.length,
+            currentLabel: "done",
+            failed: result.failed,
+        });
     }
 
     return result;

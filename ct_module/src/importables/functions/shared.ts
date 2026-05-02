@@ -1,7 +1,5 @@
-import TaskContext from "../../tasks/context";
 import type { FunctionIcon } from "htsw/types";
-import { MouseButton } from "../../tasks/specifics/slots";
-import { removedFormatting } from "../../utils/helpers";
+
 import {
     clickGoBack,
     getSlotPaginate,
@@ -10,6 +8,9 @@ import {
 } from "../../importer/helpers";
 import { setItemValue } from "../../importer/items";
 import { parseLoreKeyValueLine } from "../../importer/loreParsing";
+import TaskContext from "../../tasks/context";
+import { MouseButton } from "../../tasks/specifics/slots";
+import { removedFormatting } from "../../utils/helpers";
 
 const McItem = Java.type("net.minecraft.item.Item");
 const ItemStack = Java.type("net.minecraft.item.ItemStack");
