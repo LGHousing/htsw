@@ -18,16 +18,10 @@ function printExportHelp(): void {
     ChatLib.chat(`${ChatLib.getCenteredText(title)}`);
     ChatLib.chat("");
     ChatLib.chat("&f/export function <name> [path]");
-    ChatLib.chat(
-        "&7  Reads a Hypixel function and writes a .htsl + import.json."
-    );
+    ChatLib.chat("&7  Reads a Hypixel function and writes a .htsl + import.json.");
     ChatLib.chat("&f/export menu <name> [path]");
-    ChatLib.chat(
-        "&7  Reads a Hypixel menu and writes per-slot .snbt + import.json."
-    );
-    ChatLib.chat(
-        "&7  Default path: ./htsw/exports/<housingUuid>/"
-    );
+    ChatLib.chat("&7  Reads a Hypixel menu and writes per-slot .snbt + import.json.");
+    ChatLib.chat("&7  Default path: ./htsw/exports/<housingUuid>/");
     ChatLib.chat(`&7${chatSeparator()}`);
 }
 
@@ -49,7 +43,8 @@ function commandExport(args: string[]): void {
         }
         const pathParts = args.slice(2);
         const rawPath = pathParts.length > 0 ? pathParts.join(" ") : "";
-        const explicitPath = rawPath.length > 0 ? stripSurroundingQuotes(rawPath) : undefined;
+        const explicitPath =
+            rawPath.length > 0 ? stripSurroundingQuotes(rawPath) : undefined;
 
         TaskManager.run(async (ctx) => {
             let rootDir: string;
@@ -87,7 +82,8 @@ function commandExport(args: string[]): void {
         }
         const pathParts = args.slice(2);
         const rawPath = pathParts.length > 0 ? pathParts.join(" ") : "";
-        const explicitPath = rawPath.length > 0 ? stripSurroundingQuotes(rawPath) : undefined;
+        const explicitPath =
+            rawPath.length > 0 ? stripSurroundingQuotes(rawPath) : undefined;
 
         TaskManager.run(async (ctx) => {
             let rootDir: string;
@@ -121,7 +117,5 @@ function commandExport(args: string[]): void {
  * Wire up `/export` with ChatTriggers. Called once during module init.
  */
 export function registerExportCommands(): void {
-    register("command", (...args: string[]) => commandExport(args)).setName(
-        "export"
-    );
+    register("command", (...args: string[]) => commandExport(args)).setName("export");
 }

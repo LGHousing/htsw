@@ -1,9 +1,6 @@
 import type { Action, Condition } from "htsw/types";
 
-import {
-    getActionLoreFields,
-    getNestedListFields,
-} from "../actionMappings";
+import { getActionLoreFields, getNestedListFields } from "../actionMappings";
 import type {
     ActionListTrust,
     NestedHydrationPlan,
@@ -141,8 +138,7 @@ function shallowNestedActionCost(
             const observedTypes = observed.nestedSummaries?.[prop] ?? [];
             const desiredTypes = desiredNestedTypes(desired.action, prop);
             cost +=
-                sequenceTypeCost(observedTypes, desiredTypes) *
-                NESTED_LIST_COST_WEIGHT;
+                sequenceTypeCost(observedTypes, desiredTypes) * NESTED_LIST_COST_WEIGHT;
             continue;
         }
 

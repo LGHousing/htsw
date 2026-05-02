@@ -32,7 +32,7 @@ const DUMMY_RESULTS: Result[] = [
 const TYPE_COLORS: { [k: string]: number } = {
     import: 0xff67a7e8 | 0,
     script: 0xff62d26f | 0,
-    item:   0xffe5bc4b | 0,
+    item: 0xffe5bc4b | 0,
 };
 
 let searchQuery = "";
@@ -66,11 +66,15 @@ const SORT_FIELDS: SortField[] = [
     },
 ];
 
-const DEFAULT_SORT: { id: SortFieldId; direction: SortDir } = { id: "alphabetical", direction: "ASC" };
+const DEFAULT_SORT: { id: SortFieldId; direction: SortDir } = {
+    id: "alphabetical",
+    direction: "ASC",
+};
 let activeSort: { id: SortFieldId; direction: SortDir } = DEFAULT_SORT;
 
 function getSortField(id: SortFieldId): SortField {
-    for (let i = 0; i < SORT_FIELDS.length; i++) if (SORT_FIELDS[i].id === id) return SORT_FIELDS[i];
+    for (let i = 0; i < SORT_FIELDS.length; i++)
+        if (SORT_FIELDS[i].id === id) return SORT_FIELDS[i];
     return SORT_FIELDS[0];
 }
 
@@ -82,7 +86,8 @@ function sortResults(rs: Result[]): Result[] {
     const primary = getSortField(activeSort.id);
     // fallbacks: every other field, ordered by precedence (higher first)
     const fallbacks: SortField[] = [];
-    for (let i = 0; i < SORT_FIELDS.length; i++) if (SORT_FIELDS[i].id !== primary.id) fallbacks.push(SORT_FIELDS[i]);
+    for (let i = 0; i < SORT_FIELDS.length; i++)
+        if (SORT_FIELDS[i].id !== primary.id) fallbacks.push(SORT_FIELDS[i]);
     fallbacks.sort((a, b) => b.precedence - a.precedence);
     return rs.slice().sort((a, b) => {
         const c = applyDir(primary.compare(a, b), activeSort.direction);
@@ -96,7 +101,10 @@ function sortResults(rs: Result[]): Result[] {
 }
 
 function isSortDefault(): boolean {
-    return activeSort.id === DEFAULT_SORT.id && activeSort.direction === DEFAULT_SORT.direction;
+    return (
+        activeSort.id === DEFAULT_SORT.id &&
+        activeSort.direction === DEFAULT_SORT.direction
+    );
 }
 
 function isFilterDefault(): boolean {
@@ -117,7 +125,11 @@ function selectSort(id: SortFieldId): void {
 
 function isTypeActive(t: ResultType): boolean {
     let anySelected = false;
-    for (const k in selectedTypes) if (selectedTypes[k]) { anySelected = true; break; }
+    for (const k in selectedTypes)
+        if (selectedTypes[k]) {
+            anySelected = true;
+            break;
+        }
     if (!anySelected) return true; // none selected => all active
     return selectedTypes[t] === true;
 }
@@ -142,25 +154,29 @@ function sortPopoverContent(): Element {
     return Scroll({
         id: "left-sort-popover-scroll",
         style: { padding: 4, gap: 2 },
-        children: () => SORT_FIELDS.map(f => {
-            const on = activeSort.id === f.id;
-            return Container({
-                style: {
-                    direction: "row",
-                    align: "center",
-                    padding: { side: "x", value: 6 },
-                    gap: 6,
-                    height: { kind: "px", value: 18 },
-                    background: on ? (0xff2d4d2d | 0) : (0xff2d333d | 0),
-                    hoverBackground: on ? (0xff3a5d3a | 0) : (0xff3a4350 | 0),
-                },
-                onClick: () => selectSort(f.id),
-                children: [
-                    Text({ text: f.label, style: { width: { kind: "grow" } } }),
-                    Text({ text: on ? `[${activeSort.direction}]` : "", color: 0xff888888 | 0 }),
-                ],
-            });
-        }),
+        children: () =>
+            SORT_FIELDS.map((f) => {
+                const on = activeSort.id === f.id;
+                return Container({
+                    style: {
+                        direction: "row",
+                        align: "center",
+                        padding: { side: "x", value: 6 },
+                        gap: 6,
+                        height: { kind: "px", value: 18 },
+                        background: on ? 0xff2d4d2d | 0 : 0xff2d333d | 0,
+                        hoverBackground: on ? 0xff3a5d3a | 0 : 0xff3a4350 | 0,
+                    },
+                    onClick: () => selectSort(f.id),
+                    children: [
+                        Text({ text: f.label, style: { width: { kind: "grow" } } }),
+                        Text({
+                            text: on ? `[${activeSort.direction}]` : "",
+                            color: 0xff888888 | 0,
+                        }),
+                    ],
+                });
+            }),
     });
 }
 
@@ -179,7 +195,11 @@ function resultRow(r: Result): Element {
         children: [
             // type badge: small colored swatch
             Container({
-                style: { width: { kind: "px", value: 6 }, height: { kind: "px", value: 12 }, background: TYPE_COLORS[r.type] },
+                style: {
+                    width: { kind: "px", value: 6 },
+                    height: { kind: "px", value: 12 },
+                    background: TYPE_COLORS[r.type],
+                },
                 children: [],
             }),
             Text({ text: r.name, style: { width: { kind: "grow" } } }),
@@ -192,29 +212,34 @@ function filterPopoverContent(): Element {
     return Scroll({
         id: "left-filter-popover-scroll",
         style: { padding: 4, gap: 2 },
-        children: () => ALL_TYPES.map(t => {
-            const on = selectedTypes[t] === true;
-            return Container({
-                style: {
-                    direction: "row",
-                    align: "center",
-                    padding: { side: "x", value: 6 },
-                    gap: 6,
-                    height: { kind: "px", value: 18 },
-                    background: on ? (0xff2d4d2d | 0) : (0xff2d333d | 0),
-                    hoverBackground: on ? (0xff3a5d3a | 0) : (0xff3a4350 | 0),
-                },
-                onClick: () => toggleType(t),
-                children: [
-                    Container({
-                        style: { width: { kind: "px", value: 6 }, height: { kind: "px", value: 12 }, background: TYPE_COLORS[t] },
-                        children: [],
-                    }),
-                    Text({ text: t, style: { width: { kind: "grow" } } }),
-                    Text({ text: on ? "[x]" : "[ ]" }),
-                ],
-            });
-        }),
+        children: () =>
+            ALL_TYPES.map((t) => {
+                const on = selectedTypes[t] === true;
+                return Container({
+                    style: {
+                        direction: "row",
+                        align: "center",
+                        padding: { side: "x", value: 6 },
+                        gap: 6,
+                        height: { kind: "px", value: 18 },
+                        background: on ? 0xff2d4d2d | 0 : 0xff2d333d | 0,
+                        hoverBackground: on ? 0xff3a5d3a | 0 : 0xff3a4350 | 0,
+                    },
+                    onClick: () => toggleType(t),
+                    children: [
+                        Container({
+                            style: {
+                                width: { kind: "px", value: 6 },
+                                height: { kind: "px", value: 12 },
+                                background: TYPE_COLORS[t],
+                            },
+                            children: [],
+                        }),
+                        Text({ text: t, style: { width: { kind: "grow" } } }),
+                        Text({ text: on ? "[x]" : "[ ]" }),
+                    ],
+                });
+            }),
     });
 }
 
@@ -228,7 +253,9 @@ export function LeftPanel(): Element {
                     Input({
                         id: "left-search",
                         value: () => searchQuery,
-                        onChange: v => { searchQuery = v; },
+                        onChange: (v) => {
+                            searchQuery = v;
+                        },
                         placeholder: "Search...",
                         style: { width: { kind: "grow" }, height: { kind: "grow" } },
                     }),
@@ -237,8 +264,9 @@ export function LeftPanel(): Element {
                         style: {
                             width: { kind: "px", value: 48 },
                             height: { kind: "grow" },
-                            background: () => isSortDefault() ? undefined : ACTIVE_BG,
-                            hoverBackground: () => isSortDefault() ? undefined : ACTIVE_HOVER_BG,
+                            background: () => (isSortDefault() ? undefined : ACTIVE_BG),
+                            hoverBackground: () =>
+                                isSortDefault() ? undefined : ACTIVE_HOVER_BG,
                         },
                         onClick: (rect) => {
                             togglePopover({
@@ -255,8 +283,9 @@ export function LeftPanel(): Element {
                         style: {
                             width: { kind: "px", value: 48 },
                             height: { kind: "grow" },
-                            background: () => isFilterDefault() ? undefined : ACTIVE_BG,
-                            hoverBackground: () => isFilterDefault() ? undefined : ACTIVE_HOVER_BG,
+                            background: () => (isFilterDefault() ? undefined : ACTIVE_BG),
+                            hoverBackground: () =>
+                                isFilterDefault() ? undefined : ACTIVE_HOVER_BG,
                         },
                         onClick: (rect) => {
                             togglePopover({

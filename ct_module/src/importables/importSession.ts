@@ -3,11 +3,7 @@ import type { Importable } from "htsw/types";
 
 import TaskContext from "../tasks/context";
 import { FileSystemFileLoader } from "../utils/files";
-import {
-    buildKnowledgeTrustPlan,
-    importableIdentity,
-    trustPlanKey,
-} from "../knowledge";
+import { buildKnowledgeTrustPlan, importableIdentity, trustPlanKey } from "../knowledge";
 import { printDiagnostic } from "../tui/diagnostics";
 import { createItemRegistry } from "./itemRegistry";
 import { importImportable } from "./imports";

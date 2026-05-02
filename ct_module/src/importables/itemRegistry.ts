@@ -38,10 +38,7 @@ class DefaultItemRegistry implements ItemRegistry {
 
     public cachedHousingUuid: string | undefined = undefined;
 
-    public constructor(
-        importables: readonly Importable[],
-        gcx?: GlobalCtxt
-    ) {
+    public constructor(importables: readonly Importable[], gcx?: GlobalCtxt) {
         this.gcx = gcx;
 
         for (const importable of importables) {

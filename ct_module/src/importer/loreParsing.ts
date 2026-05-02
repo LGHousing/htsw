@@ -66,8 +66,7 @@ export function normalizeLoreValueFormatting(value: string): string {
 }
 
 const INTEGER_DISPLAY_VALUE_PATTERN = /^[+-]?(?:(?:\d{1,3}(?:,\d{3})+)|\d+)$/;
-const DECIMAL_DISPLAY_VALUE_PATTERN =
-    /^[+-]?(?:(?:\d{1,3}(?:,\d{3})+)|\d+)\.\d+$/;
+const DECIMAL_DISPLAY_VALUE_PATTERN = /^[+-]?(?:(?:\d{1,3}(?:,\d{3})+)|\d+)\.\d+$/;
 
 function stripNumericGroupingCommas(value: string): string {
     if (value.indexOf(",") === -1) return value;

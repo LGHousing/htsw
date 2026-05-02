@@ -6,11 +6,21 @@ export type BlockPos = { x: number; y: number; z: number };
 
 export function getGamemode(): Gamemode {
     const player = Player.getPlayer();
-    const gameType = player.func_178889_l/*getCurrentGameType*/();
+    const gameType = player
+        .func_178889_l /*getCurrentGameType*/
+        ();
 
-    if (gameType.func_77145_d/*isCreative*/()) {
+    if (
+        gameType
+            .func_77145_d /*isCreative*/
+            ()
+    ) {
         return "Creative";
-    } else if (gameType.func_82752_c/*isAdventure*/()) {
+    } else if (
+        gameType
+            .func_82752_c /*isAdventure*/
+            ()
+    ) {
         return "Adventure";
     } else {
         return "Survival";
@@ -54,7 +64,9 @@ export function formatNumber(number: string): string {
 
     if (!decimal) return formattedWhole;
 
-    let roundedDecimal = Math.floor((+(decimal + "0000").slice(0, 4) + 5) / 10).toString();
+    let roundedDecimal = Math.floor(
+        (+(decimal + "0000").slice(0, 4) + 5) / 10
+    ).toString();
     while (roundedDecimal.length < 3) roundedDecimal = "0" + roundedDecimal;
 
     return formattedWhole + "." + roundedDecimal.replace(/0+$/, "");

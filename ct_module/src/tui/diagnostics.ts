@@ -1,6 +1,14 @@
 import { Diagnostic, DiagnosticLevel, DiagnosticSpan, SourceFile, SourceMap } from "htsw";
 
-import { printUI, UIElementCanvas, UIElementHLine, UIElementText, UIElementTruncate, UIElementVLine, UIElementVStack } from ".";
+import {
+    printUI,
+    UIElementCanvas,
+    UIElementHLine,
+    UIElementText,
+    UIElementTruncate,
+    UIElementVLine,
+    UIElementVStack,
+} from ".";
 import { chatWidth, spaceWidth } from "../utils/helpers";
 
 export function printDiagnostics(sm: SourceMap, diags: Diagnostic[]) {
@@ -41,8 +49,8 @@ export const DIAGNOSTIC_LEVEL_UNDERLINE_CHARS: {
     error: "^",
     warning: "~",
     note: "-",
-    help: "+"
-}
+    help: "+",
+};
 
 export class UIElementDiagnostic extends UIElementVStack {
     constructor(sm: SourceMap, diag: Diagnostic, isPrimary: boolean = true) {
@@ -53,11 +61,17 @@ export class UIElementDiagnostic extends UIElementVStack {
 
         const messageColor = isPrimary ? "&f&l" : "&f";
 
-        this.add(new UIElementText(`${diagLevelColor}&l${diagLevelName}&7: ${messageColor}${diag.message}`));
-        this.add(new UIElementTruncate(
-            new UIElementSnippet(sm, diag.spans, diag.level),
-            ChatLib.getChatWidth(),
-        ));
+        this.add(
+            new UIElementText(
+                `${diagLevelColor}&l${diagLevelName}&7: ${messageColor}${diag.message}`
+            )
+        );
+        this.add(
+            new UIElementTruncate(
+                new UIElementSnippet(sm, diag.spans, diag.level),
+                ChatLib.getChatWidth()
+            )
+        );
 
         for (const subDiag of diag.subDiagnostics) {
             this.add(new UIElementDiagnostic(sm, subDiag, false));
@@ -66,11 +80,7 @@ export class UIElementDiagnostic extends UIElementVStack {
 }
 
 export class UIElementSnippet extends UIElementVStack {
-    constructor(
-        sm: SourceMap,
-        spans: DiagnosticSpan[],
-        level: DiagnosticLevel
-    ) {
+    constructor(sm: SourceMap, spans: DiagnosticSpan[], level: DiagnosticLevel) {
         super();
 
         const files = new Map<SourceFile, DiagnosticSpan[]>();
@@ -84,9 +94,9 @@ export class UIElementSnippet extends UIElementVStack {
         }
 
         for (const [file, spans] of files.entries()) {
-            const startPos = spans.find(
-                it => it.kind === "primary"
-            )?.span.start ?? spans[0].span.start;
+            const startPos =
+                spans.find((it) => it.kind === "primary")?.span.start ??
+                spans[0].span.start;
 
             const { line, column } = file.getPosition(startPos);
 
@@ -97,11 +107,7 @@ export class UIElementSnippet extends UIElementVStack {
 }
 
 export class UIElementSnippetLines extends UIElementCanvas {
-    constructor(
-        file: SourceFile,
-        spans: DiagnosticSpan[],
-        level: DiagnosticLevel,
-    ) {
+    constructor(file: SourceFile, spans: DiagnosticSpan[], level: DiagnosticLevel) {
         super();
 
         const lines = new Map<number, DiagnosticSpan[]>();
@@ -115,14 +121,14 @@ export class UIElementSnippetLines extends UIElementCanvas {
         }
 
         // Have to do this restarted stuff cuz of CT
-        let lineNumbers: number[] = []
+        let lineNumbers: number[] = [];
         for (const lineNumber of lines.keys()) {
             lineNumbers.push(lineNumber);
         }
 
         // fill in small gaps
         for (const lineNumber of lineNumbers) {
-            if (lineNumbers.find(it => it === lineNumber - 2)) {
+            if (lineNumbers.find((it) => it === lineNumber - 2)) {
                 lineNumbers.push(lineNumber - 1);
             }
         }
@@ -140,13 +146,18 @@ export class UIElementSnippetLines extends UIElementCanvas {
 
             this.addElement(0, lineY, new UIElementText("&9" + lineNumber.toString()));
             this.addElement(
-                lineNumberWidth + vLineWidth + spaceWidth() * 2, lineY,
+                lineNumberWidth + vLineWidth + spaceWidth() * 2,
+                lineY,
                 new UIElementSnippetLine(lineContent, lineStartPos, lineSpans, level)
             );
         }
 
         // divider
-        this.addElement(lineNumberWidth + spaceWidth(), 0, new UIElementVLine(this.getHeight(), "&7|"));
+        this.addElement(
+            lineNumberWidth + spaceWidth(),
+            0,
+            new UIElementVLine(this.getHeight(), "&7|")
+        );
     }
 }
 
@@ -158,16 +169,15 @@ export class UIElementSnippetLine extends UIElementCanvas {
         level: DiagnosticLevel
     ) {
         super();
-        
+
         const lineContent = _FuckingStupidlineContent
             .replace(/§/g, "&")
             .replace(/\r/g, "");
 
         const color = DIAGNOSTIC_LEVEL_COLORS[level];
         const ulChar = DIAGNOSTIC_LEVEL_UNDERLINE_CHARS[level];
-        
-        const escapedLineContent = lineContent
-            .replace(/&/g, "&&7");
+
+        const escapedLineContent = lineContent.replace(/&/g, "&&7");
 
         this.addElement(0, 0, new UIElementText("&7" + escapedLineContent));
 
@@ -176,10 +186,17 @@ export class UIElementSnippetLine extends UIElementCanvas {
 
         spans.sort((a, b) => a.span.start - b.span.start);
         for (const ds of [...spans].reverse()) {
-            const underlineX = chatWidth(lineContent.slice(0, ds.span.start - lineStartPos), false);
-            const underlineWidth = chatWidth(lineContent.slice(
-                ds.span.start - lineStartPos, ds.span.end - lineStartPos
-            ), false);
+            const underlineX = chatWidth(
+                lineContent.slice(0, ds.span.start - lineStartPos),
+                false
+            );
+            const underlineWidth = chatWidth(
+                lineContent.slice(
+                    ds.span.start - lineStartPos,
+                    ds.span.end - lineStartPos
+                ),
+                false
+            );
             const underlineChar = ds.kind === "primary" ? `${color}${ulChar}` : "&9-";
             const vLineChar = ds.kind === "primary" ? `${color}|` : "&9|";
             const labelColor = ds.kind === "primary" ? color : "&9";
@@ -187,7 +204,11 @@ export class UIElementSnippetLine extends UIElementCanvas {
             // console.log(underlineWidth, chatWidth(underlineChar));
 
             // add underline
-            this.addElement(underlineX, 1, new UIElementHLine(underlineWidth, underlineChar, labelColor));
+            this.addElement(
+                underlineX,
+                1,
+                new UIElementHLine(underlineWidth, underlineChar, labelColor)
+            );
             if (!ds.label) {
                 occupation[0] = underlineX;
                 continue;
@@ -197,7 +218,11 @@ export class UIElementSnippetLine extends UIElementCanvas {
 
             // see if we can fit the label inline
             if (underlineX + underlineWidth + spaceWidth() + labelWidth < getLastX(0)) {
-                this.addElement(underlineX + underlineWidth + spaceWidth(), 1, new UIElementText(labelColor + ds.label));
+                this.addElement(
+                    underlineX + underlineWidth + spaceWidth(),
+                    1,
+                    new UIElementText(labelColor + ds.label)
+                );
                 occupation[0] = underlineX;
                 continue;
             }
@@ -211,7 +236,11 @@ export class UIElementSnippetLine extends UIElementCanvas {
             for (let i = 0; i <= line; i++) occupation[i] = underlineX;
 
             this.addElement(underlineX, 2, new UIElementVLine(line, vLineChar));
-            this.addElement(underlineX, 2 + line, new UIElementText(labelColor + ds.label));
+            this.addElement(
+                underlineX,
+                2 + line,
+                new UIElementText(labelColor + ds.label)
+            );
         }
     }
 }

@@ -131,9 +131,7 @@ export async function exportMenu(
         // Left-click the slot to open its per-slot editor.
         const container = Player.getContainer();
         if (container == null) {
-            throw new Error(
-                "No open container while reading menu slot " + slotId
-            );
+            throw new Error("No open container while reading menu slot " + slotId);
         }
         container.click(slotId, false, "LEFT");
         await waitForMenu(ctx);

@@ -25,7 +25,8 @@ export function chatSeparator(): string {
 }
 
 export function cyrb53(str: string, seed: number = 0) {
-    let h1 = 0xdeadbeef ^ seed, h2 = 0x41c6ce57 ^ seed;
+    let h1 = 0xdeadbeef ^ seed,
+        h2 = 0x41c6ce57 ^ seed;
     for (let i = 0, ch; i < str.length; i++) {
         ch = str.charCodeAt(i);
         h1 = Math.imul(h1 ^ ch, 2654435761);
@@ -37,7 +38,7 @@ export function cyrb53(str: string, seed: number = 0) {
     h2 ^= Math.imul(h1 ^ (h1 >>> 13), 3266489909);
 
     return 4294967296 * (2097151 & h2) + (h1 >>> 0);
-};
+}
 
 /**
  * Deterministic JSON stringify: sorts object keys, drops `undefined` fields,

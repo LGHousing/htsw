@@ -1,8 +1,4 @@
-import {
-    Diagnostic,
-    SourceMap,
-    parseImportablesResult,
-} from "htsw";
+import { Diagnostic, SourceMap, parseImportablesResult } from "htsw";
 import type { Importable } from "htsw/types";
 
 import { TaskManager } from "../tasks/manager";
@@ -135,15 +131,15 @@ function knowledgeForget(args: string[]): void {
     TaskManager.run(async (ctx) => {
         const housingUuid = await getCurrentHousingUuid(ctx);
         deleteKnowledge(housingUuid, parsed.type, parsed.identity);
-        ctx.displayMessage(
-            `&aDeleted knowledge for ${parsed.type} ${parsed.identity}`
-        );
+        ctx.displayMessage(`&aDeleted knowledge for ${parsed.type} ${parsed.identity}`);
     }).catch((err) => {
         ChatLib.chat(`&cKnowledge forget failed: ${err}`);
     });
 }
 
-function formatStatusRow(row: ReturnType<typeof buildKnowledgeStatusRows>[number]): string {
+function formatStatusRow(
+    row: ReturnType<typeof buildKnowledgeStatusRows>[number]
+): string {
     if (row.state === "current") {
         return `&aOK &f${row.importable.type} &7${row.identity} &8${row.hash} &7${row.entry?.writer}`;
     }

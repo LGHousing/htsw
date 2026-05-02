@@ -12,10 +12,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, "..");
 const conditionsPath = path.resolve(repoRoot, "../language/src/types/conditions.ts");
-const outputPath = path.resolve(
-    repoRoot,
-    "src/importer/conditionMappings.generated.ts",
-);
+const outputPath = path.resolve(repoRoot, "src/importer/conditionMappings.generated.ts");
 
 function guessKind(fieldName: string, typeText: string): string {
     const normalized = typeText.replace(/\s+/g, " ").trim();
@@ -80,7 +77,7 @@ function parseConditionTypeDefs(source: string): ConditionTypeDef[] {
 function renderMappingEntry(def: ConditionTypeDef): string {
     const fieldLines = def.fields.map(
         (field) =>
-            `            "TODO ${field.name}": { prop: "${field.name}", kind: "${guessKind(field.name, field.typeText)}" },`,
+            `            "TODO ${field.name}": { prop: "${field.name}", kind: "${guessKind(field.name, field.typeText)}" },`
     );
 
     return [
@@ -105,11 +102,3 @@ async function main(): Promise<void> {
 }
 
 await main();
-
-
-
-
-
-
-
-

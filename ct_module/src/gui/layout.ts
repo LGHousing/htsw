@@ -2,8 +2,7 @@
 
 import { Extractable, extract } from "./extractable";
 
-export type PaddingSide =
-    | "all" | "x" | "y" | "top" | "right" | "bottom" | "left";
+export type PaddingSide = "all" | "x" | "y" | "top" | "right" | "bottom" | "left";
 
 export type PaddingEntry = { side: PaddingSide; value: number };
 export type Padding = number | PaddingEntry | PaddingEntry[];
@@ -28,11 +27,38 @@ export type ContainerStyle = Style & {
 };
 
 export type Element =
-    | { kind: "container"; style: ContainerStyle; children: Extractable<Element[]>; onClick?: (rect: Rect) => void }
-    | { kind: "button"; style: Style; text: Extractable<string>; onClick: (rect: Rect) => void }
-    | { kind: "text"; style: Style; text: Extractable<string>; color?: Extractable<number | undefined> }
-    | { kind: "input"; style: Style; id: string; value: Extractable<string>; onChange: (v: string) => void; placeholder?: string }
-    | { kind: "scroll"; style: ContainerStyle; id: string; children: Extractable<Element[]> };
+    | {
+          kind: "container";
+          style: ContainerStyle;
+          children: Extractable<Element[]>;
+          onClick?: (rect: Rect) => void;
+      }
+    | {
+          kind: "button";
+          style: Style;
+          text: Extractable<string>;
+          onClick: (rect: Rect) => void;
+      }
+    | {
+          kind: "text";
+          style: Style;
+          text: Extractable<string>;
+          color?: Extractable<number | undefined>;
+      }
+    | {
+          kind: "input";
+          style: Style;
+          id: string;
+          value: Extractable<string>;
+          onChange: (v: string) => void;
+          placeholder?: string;
+      }
+    | {
+          kind: "scroll";
+          style: ContainerStyle;
+          id: string;
+          children: Extractable<Element[]>;
+      };
 
 export type Rect = { x: number; y: number; w: number; h: number };
 export type LaidOut = { element: Element; rect: Rect; clipRect?: Rect };
@@ -57,13 +83,27 @@ export function resolvePadding(p: Padding | undefined): ResolvedPadding {
     for (let i = 0; i < entries.length; i++) {
         const v = entries[i].value;
         switch (entries[i].side) {
-            case "all": out.t = out.r = out.b = out.l = v; break;
-            case "x":   out.l = out.r = v; break;
-            case "y":   out.t = out.b = v; break;
-            case "top": out.t = v; break;
-            case "right": out.r = v; break;
-            case "bottom": out.b = v; break;
-            case "left": out.l = v; break;
+            case "all":
+                out.t = out.r = out.b = out.l = v;
+                break;
+            case "x":
+                out.l = out.r = v;
+                break;
+            case "y":
+                out.t = out.b = v;
+                break;
+            case "top":
+                out.t = v;
+                break;
+            case "right":
+                out.r = v;
+                break;
+            case "bottom":
+                out.b = v;
+                break;
+            case "left":
+                out.l = v;
+                break;
         }
     }
     return out;
@@ -74,7 +114,10 @@ function isPaddingEntry(p: PaddingEntry | PaddingEntry[]): p is PaddingEntry {
 }
 
 function buttonContent(text: string): { w: number; h: number } {
-    return { w: Renderer.getStringWidth(text) + BUTTON_PAD_X * 2, h: LINE_H + BUTTON_PAD_Y * 2 };
+    return {
+        w: Renderer.getStringWidth(text) + BUTTON_PAD_X * 2,
+        h: LINE_H + BUTTON_PAD_Y * 2,
+    };
 }
 
 function textContent(text: string): { w: number; h: number } {
@@ -85,7 +128,10 @@ function inputContent(_: string): { w: number; h: number } {
     return { w: 80, h: LINE_H + INPUT_PAD_Y * 2 };
 }
 
-function containerContent(c: { style: ContainerStyle; children: Extractable<Element[]> }): { w: number; h: number } {
+function containerContent(c: {
+    style: ContainerStyle;
+    children: Extractable<Element[]>;
+}): { w: number; h: number } {
     const pad = resolvePadding(c.style.padding);
     const dir = c.style.direction ?? "col";
     const gap = c.style.gap ?? 0;
@@ -154,13 +200,19 @@ export function getScrollState(id: string): ScrollState {
 
 export function scrollBy(id: string, delta: number): void {
     const s = getScrollState(id);
-    s.offset = Math.max(0, Math.min(s.contentHeight - s.viewportRect.h, s.offset + delta));
+    s.offset = Math.max(
+        0,
+        Math.min(s.contentHeight - s.viewportRect.h, s.offset + delta)
+    );
     if (s.offset < 0) s.offset = 0;
 }
 
 export function setScrollOffset(id: string, offset: number): void {
     const s = getScrollState(id);
-    s.offset = Math.max(0, Math.min(Math.max(0, s.contentHeight - s.viewportRect.h), offset));
+    s.offset = Math.max(
+        0,
+        Math.min(Math.max(0, s.contentHeight - s.viewportRect.h), offset)
+    );
 }
 
 export function getAllScrollIds(): string[] {
@@ -171,7 +223,13 @@ export function getAllScrollIds(): string[] {
 
 export const SCROLLBAR_WIDTH = SCROLLBAR_W;
 
-export function layoutElement(root: Element, x: number, y: number, w: number, h: number): LaidOut[] {
+export function layoutElement(
+    root: Element,
+    x: number,
+    y: number,
+    w: number,
+    h: number
+): LaidOut[] {
     const out: LaidOut[] = [];
     out.push({ element: root, rect: { x, y, w, h } });
     if (root.kind === "container") layoutContainer(root, x, y, w, h, out, undefined);
@@ -181,11 +239,16 @@ export function layoutElement(root: Element, x: number, y: number, w: number, h:
 
 function layoutContainer(
     c: { kind: "container"; style: ContainerStyle; children: Extractable<Element[]> },
-    x: number, y: number, w: number, h: number,
-    out: LaidOut[], clipRect: Rect | undefined
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    out: LaidOut[],
+    clipRect: Rect | undefined
 ): void {
     const pad = resolvePadding(c.style.padding);
-    const innerX = x + pad.l, innerY = y + pad.t;
+    const innerX = x + pad.l,
+        innerY = y + pad.t;
     const innerW = Math.max(0, w - pad.l - pad.r);
     const innerH = Math.max(0, h - pad.t - pad.b);
     const dir = c.style.direction ?? "col";
@@ -216,7 +279,8 @@ function layoutContainer(
         if (mainSizes[i] === null) growTotal += growFactorOf(children[i], mainAxis);
     }
     if (growTotal > 0) {
-        let assigned = 0, lastGrowIdx = -1;
+        let assigned = 0,
+            lastGrowIdx = -1;
         for (let i = 0; i < n; i++) {
             if (mainSizes[i] === null) {
                 const f = growFactorOf(children[i], mainAxis);
@@ -227,7 +291,8 @@ function layoutContainer(
             }
         }
         if (lastGrowIdx >= 0) {
-            mainSizes[lastGrowIdx] = (mainSizes[lastGrowIdx] as number) + (leftover - assigned);
+            mainSizes[lastGrowIdx] =
+                (mainSizes[lastGrowIdx] as number) + (leftover - assigned);
         }
     } else {
         for (let i = 0; i < n; i++) if (mainSizes[i] === null) mainSizes[i] = 0;
@@ -242,12 +307,14 @@ function layoutContainer(
         const crossResolved = resolveAxis(ch, crossAxis);
         let cSize: number;
         if (crossResolved === null) cSize = crossLen;
-        else if (align === "stretch" && (!explicitCross || explicitCross.kind === "auto")) cSize = crossLen;
+        else if (align === "stretch" && (!explicitCross || explicitCross.kind === "auto"))
+            cSize = crossLen;
         else cSize = Math.min(crossResolved, crossLen);
 
         const crossOriginIn = isRow ? innerY : innerX;
         let crossOff = crossOriginIn;
-        if (align === "center") crossOff = crossOriginIn + Math.floor((crossLen - cSize) / 2);
+        if (align === "center")
+            crossOff = crossOriginIn + Math.floor((crossLen - cSize) / 2);
         else if (align === "end") crossOff = crossOriginIn + (crossLen - cSize);
 
         const rect: Rect = isRow
@@ -255,17 +322,28 @@ function layoutContainer(
             : { x: crossOff, y: cursor, w: cSize, h: mSize };
 
         out.push({ element: ch, rect, clipRect });
-        if (ch.kind === "container") layoutContainer(ch, rect.x, rect.y, rect.w, rect.h, out, clipRect);
-        else if (ch.kind === "scroll") layoutScroll(ch, rect.x, rect.y, rect.w, rect.h, out, clipRect);
+        if (ch.kind === "container")
+            layoutContainer(ch, rect.x, rect.y, rect.w, rect.h, out, clipRect);
+        else if (ch.kind === "scroll")
+            layoutScroll(ch, rect.x, rect.y, rect.w, rect.h, out, clipRect);
 
         cursor += mSize + gap;
     }
 }
 
 function layoutScroll(
-    s: { kind: "scroll"; style: ContainerStyle; id: string; children: Extractable<Element[]> },
-    x: number, y: number, w: number, h: number,
-    out: LaidOut[], _parentClip: Rect | undefined
+    s: {
+        kind: "scroll";
+        style: ContainerStyle;
+        id: string;
+        children: Extractable<Element[]>;
+    },
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    out: LaidOut[],
+    _parentClip: Rect | undefined
 ): void {
     const pad = resolvePadding(s.style.padding);
     const innerX = x + pad.l;
@@ -299,7 +377,7 @@ function layoutScroll(
     if (state.offset < 0) state.offset = 0;
 
     // Place children with offset applied. Cross-axis = stretch into innerW (no scrollbar reservation).
-    let cursor = (y + pad.t) - state.offset;
+    let cursor = y + pad.t - state.offset;
     for (let i = 0; i < n; i++) {
         const ch = children[i];
         const mSize = sizes[i];
@@ -308,7 +386,8 @@ function layoutScroll(
         const crossResolved = resolveAxis(ch, "w");
         let cSize: number;
         if (crossResolved === null) cSize = innerW;
-        else if (align === "stretch" && (!explicitCross || explicitCross.kind === "auto")) cSize = innerW;
+        else if (align === "stretch" && (!explicitCross || explicitCross.kind === "auto"))
+            cSize = innerW;
         else cSize = Math.min(crossResolved, innerW);
 
         let crossOff = innerX;
@@ -317,8 +396,10 @@ function layoutScroll(
 
         const rect: Rect = { x: crossOff, y: cursor, w: cSize, h: mSize };
         out.push({ element: ch, rect, clipRect: viewportRect });
-        if (ch.kind === "container") layoutContainer(ch, rect.x, rect.y, rect.w, rect.h, out, viewportRect);
-        else if (ch.kind === "scroll") layoutScroll(ch, rect.x, rect.y, rect.w, rect.h, out, viewportRect);
+        if (ch.kind === "container")
+            layoutContainer(ch, rect.x, rect.y, rect.w, rect.h, out, viewportRect);
+        else if (ch.kind === "scroll")
+            layoutScroll(ch, rect.x, rect.y, rect.w, rect.h, out, viewportRect);
         cursor += mSize + gap;
     }
 }

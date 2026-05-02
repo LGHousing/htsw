@@ -12,7 +12,7 @@
 const GuiTextFieldClass = Java.type("net.minecraft.client.gui.GuiTextField");
 
 type Record = {
-    field: any;       // GuiTextField
+    field: any; // GuiTextField
     w: number;
     h: number;
     lastSyncedText: string;
@@ -25,17 +25,20 @@ function newField(x: number, y: number, w: number, h: number, text: string): any
     const fr = Renderer.getFontRenderer();
     // GuiTextField(int componentId, FontRenderer, int x, int y, int width, int height)
     const f = new GuiTextFieldClass(nextComponentId++, fr, x, y, w, h);
-    f.func_146203_f(256);             // setMaxStringLength
-    f.func_146185_a(false);           // setEnableBackgroundDrawing(false) — we draw our own bg
-    f.func_146205_d(false);           // setCanLoseFocus(false) — focus controlled externally
-    f.func_146180_a(text);            // setText
+    f.func_146203_f(256); // setMaxStringLength
+    f.func_146185_a(false); // setEnableBackgroundDrawing(false) — we draw our own bg
+    f.func_146205_d(false); // setCanLoseFocus(false) — focus controlled externally
+    f.func_146180_a(text); // setText
     return f;
 }
 
 export function getInputField(
     id: string,
-    x: number, y: number, w: number, h: number,
-    propText: string,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    propText: string
 ): any {
     let r = records[id];
     if (!r || r.w !== w || r.h !== h) {

@@ -10,9 +10,10 @@ const ScaledResolutionClass = net.minecraft.client.gui.ScaledResolution;
 const scissorStack: Rect[] = [];
 
 export function pushScissor(rect: Rect): void {
-    const effective = scissorStack.length === 0
-        ? rect
-        : intersectRect(scissorStack[scissorStack.length - 1], rect);
+    const effective =
+        scissorStack.length === 0
+            ? rect
+            : intersectRect(scissorStack[scissorStack.length - 1], rect);
     scissorStack.push(effective);
     applyScissor(effective);
 }

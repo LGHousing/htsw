@@ -64,8 +64,7 @@ function normalizeValue(value: unknown): unknown {
 }
 
 const INTEGER_DISPLAY_VALUE_PATTERN = /^[+-]?(?:(?:\d{1,3}(?:,\d{3})+)|\d+)$/;
-const DECIMAL_DISPLAY_VALUE_PATTERN =
-    /^[+-]?(?:(?:\d{1,3}(?:,\d{3})+)|\d+)\.\d+$/;
+const DECIMAL_DISPLAY_VALUE_PATTERN = /^[+-]?(?:(?:\d{1,3}(?:,\d{3})+)|\d+)\.\d+$/;
 
 function normalizeComparableString(value: string): string {
     const isIntegerDisplay = INTEGER_DISPLAY_VALUE_PATTERN.test(value);

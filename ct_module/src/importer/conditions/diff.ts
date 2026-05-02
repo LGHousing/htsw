@@ -19,10 +19,7 @@ function conditionsEqual(a: Condition | null, b: Condition | null): boolean {
     );
 }
 
-export function onlyNoteDiffers(
-    desired: Condition,
-    current: Condition | null,
-): boolean {
+export function onlyNoteDiffers(desired: Condition, current: Condition | null): boolean {
     if (current === null) {
         return false;
     }
@@ -41,7 +38,7 @@ export function onlyNoteDiffers(
 
 export function diffConditionList(
     observed: ObservedConditionSlot[],
-    desired: Condition[],
+    desired: Condition[]
 ): ConditionListDiff {
     const unmatchedObserved = [...observed];
     const unmatchedDesired = [...desired];
@@ -56,7 +53,7 @@ export function diffConditionList(
     ) {
         const desiredCondition = unmatchedDesired[desiredIndex];
         const observedIndex = unmatchedObserved.findIndex((entry) =>
-            conditionsEqual(entry.condition, desiredCondition),
+            conditionsEqual(entry.condition, desiredCondition)
         );
 
         if (observedIndex === -1) {
@@ -69,7 +66,7 @@ export function diffConditionList(
 
     for (const desiredCondition of unmatchedDesired) {
         const observedIndex = unmatchedObserved.findIndex(
-            (entry) => entry.condition?.type === desiredCondition.type,
+            (entry) => entry.condition?.type === desiredCondition.type
         );
 
         if (observedIndex === -1) {

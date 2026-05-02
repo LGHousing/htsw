@@ -12,14 +12,24 @@ const KeyboardClass = Java.type("org.lwjgl.input.Keyboard");
 const ScaledResolutionClass = net.minecraft.client.gui.ScaledResolution;
 // Forge inner-class path uses $ separators with Java.type.
 // @ts-ignore
-const ForgeMouseInputEventPre = Java.type("net.minecraftforge.client.event.GuiScreenEvent$MouseInputEvent$Pre");
+const ForgeMouseInputEventPre = Java.type(
+    "net.minecraftforge.client.event.GuiScreenEvent$MouseInputEvent$Pre"
+);
 // @ts-ignore
-const ForgeKeyboardInputEventPre = Java.type("net.minecraftforge.client.event.GuiScreenEvent$KeyboardInputEvent$Pre");
+const ForgeKeyboardInputEventPre = Java.type(
+    "net.minecraftforge.client.event.GuiScreenEvent$KeyboardInputEvent$Pre"
+);
 import { LeftPanel } from "./left-panel";
 import { RightPanel } from "./right-panel";
 import { getContainerBounds, leftPanelRect, rightPanelRect } from "./bounds";
 import { initPopoverRendering, popoverIsOpen, closeAllPopovers } from "./popovers";
-import { dispatchWheel, isDraggingScrollbar, updateScrollbarDrag, endScrollbarDrag, setRenderDebugLog } from "./render";
+import {
+    dispatchWheel,
+    isDraggingScrollbar,
+    updateScrollbarDrag,
+    endScrollbarDrag,
+    setRenderDebugLog,
+} from "./render";
 import { getFocusedInput, setFocusedInput } from "./focus";
 import { applyFocus, getRecord, readAndSync, tickAllFields } from "./inputState";
 
@@ -41,8 +51,12 @@ function debug(msg: string): void {
     FileLib.write(DEBUG_LOG_PATH, debugBuffer);
 }
 
-export function debugLog(msg: string): void { debug(msg); }
-export function debugIsActive(): boolean { return debugActive(); }
+export function debugLog(msg: string): void {
+    debug(msg);
+}
+export function debugIsActive(): boolean {
+    return debugActive();
+}
 
 function leftBounds(): Rect {
     const b = getContainerBounds();
@@ -69,7 +83,12 @@ function rightVisible(): boolean {
 }
 
 // Track active panels so global handlers (wheel, key) can locate the laid-out trees.
-type ActivePanel = { panel: Panel; getBounds: () => Rect; getRoot: () => Element; isVisible: () => boolean };
+type ActivePanel = {
+    panel: Panel;
+    getBounds: () => Rect;
+    getRoot: () => Element;
+    isVisible: () => boolean;
+};
 const activePanels: ActivePanel[] = [];
 
 function laidOutTrees(): { root: Element; rect: Rect }[] {
@@ -91,8 +110,18 @@ export function initHtswGui(): void {
     const right = new Panel(rightBounds, RightPanel(), rightVisible);
     left.register();
     right.register();
-    activePanels.push({ panel: left, getBounds: leftBounds, getRoot: () => left.getRoot(), isVisible: leftVisible });
-    activePanels.push({ panel: right, getBounds: rightBounds, getRoot: () => right.getRoot(), isVisible: rightVisible });
+    activePanels.push({
+        panel: left,
+        getBounds: leftBounds,
+        getRoot: () => left.getRoot(),
+        isVisible: leftVisible,
+    });
+    activePanels.push({
+        panel: right,
+        getBounds: rightBounds,
+        getRoot: () => right.getRoot(),
+        isVisible: rightVisible,
+    });
 
     // Mouse wheel: hook Forge's GuiScreenEvent.MouseInputEvent.Pre, which fires per Mouse.next()
     // event BEFORE GuiScreen.handleMouseInput runs. Cancelling here suppresses both vanilla
@@ -111,8 +140,8 @@ export function initHtswGui(): void {
         const sh = sr.func_78328_b();
         const dw = (mc as any).field_71443_c;
         const dh = (mc as any).field_71440_d;
-        const mx = Math.floor(MouseClass.getEventX() * sw / dw);
-        const my = sh - Math.floor(MouseClass.getEventY() * sh / dh) - 1;
+        const mx = Math.floor((MouseClass.getEventX() * sw) / dw);
+        const my = sh - Math.floor((MouseClass.getEventY() * sh) / dh) - 1;
         const trees = laidOutTrees();
         for (let i = 0; i < trees.length; i++) {
             const t = trees[i];
@@ -133,7 +162,9 @@ export function initHtswGui(): void {
     register("guiRender", (_mouseX: number, mouseY: number) => {
         if (isDraggingScrollbar()) updateScrollbarDrag(mouseY);
     });
-    register("guiMouseRelease", () => { endScrollbarDrag(); });
+    register("guiMouseRelease", () => {
+        endScrollbarDrag();
+    });
 
     // Clear focus when the user clicks anywhere outside every visible panel.
     register("guiMouseClick", (x: number, y: number) => {
@@ -154,7 +185,10 @@ export function initHtswGui(): void {
         const focusedId = getFocusedInput();
         if (focusedId === null) return;
         const inputEl = findInput(focusedId);
-        if (inputEl === null) { setFocusedInput(null); return; }
+        if (inputEl === null) {
+            setFocusedInput(null);
+            return;
+        }
         const keyCode = KeyboardClass.getEventKey();
         const charCode = KeyboardClass.getEventCharacter();
         // Esc: clear focus + close popovers, but don't cancel — let MC also close the GUI.
@@ -169,12 +203,16 @@ export function initHtswGui(): void {
             return;
         }
         const rec = getRecord(focusedId);
-        if (rec === null) { cancel(event); return; }
+        if (rec === null) {
+            cancel(event);
+            return;
+        }
         rec.field.func_146195_b(true); // setFocused — required for textboxKeyTyped to accept input
         rec.field.func_146201_a(charCode, keyCode); // textboxKeyTyped(char, key)
         const newText = readAndSync(focusedId);
         if (newText !== null) {
-            const current = typeof inputEl.value === "function" ? inputEl.value() : inputEl.value;
+            const current =
+                typeof inputEl.value === "function" ? inputEl.value() : inputEl.value;
             if (newText !== current) inputEl.onChange(newText);
         }
         cancel(event);
@@ -202,7 +240,7 @@ export function initHtswGui(): void {
         const b = getContainerBounds();
         debug(
             `state focused=${getFocusedInput()} popoverOpen=${popoverIsOpen()} ` +
-            `bounds=${b === null ? "null" : `${b.screenW}x${b.screenH}`}`
+                `bounds=${b === null ? "null" : `${b.screenW}x${b.screenH}`}`
         );
     });
 
@@ -219,7 +257,10 @@ function findInput(id: string): Extract<Element, { kind: "input" }> | null {
     return null;
 }
 
-function walkForInput(e: Element, id: string): Extract<Element, { kind: "input" }> | null {
+function walkForInput(
+    e: Element,
+    id: string
+): Extract<Element, { kind: "input" }> | null {
     if (e.kind === "input" && e.id === id) return e;
     if (e.kind === "container" || e.kind === "scroll") {
         const children = typeof e.children === "function" ? e.children() : e.children;

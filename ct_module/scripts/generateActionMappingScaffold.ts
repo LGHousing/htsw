@@ -20,14 +20,8 @@ const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, "..");
 const actionsPath = path.resolve(repoRoot, "../language/src/types/actions.ts");
 const constantsPath = path.resolve(repoRoot, "../language/src/types/constants.ts");
-const actionMappingsPath = path.resolve(
-    repoRoot,
-    "src/importer/actionMappings.ts",
-);
-const outputPath = path.resolve(
-    repoRoot,
-    "src/importer/actionMappings.generated.ts",
-);
+const actionMappingsPath = path.resolve(repoRoot, "src/importer/actionMappings.ts");
+const outputPath = path.resolve(repoRoot, "src/importer/actionMappings.generated.ts");
 
 const ACTION_TYPE_ORDER = [
     "CONDITIONAL",
@@ -74,7 +68,7 @@ const ACTION_TYPE_ORDER = [
 ] as const;
 
 const ACTION_TYPE_ORDER_INDEX = new Map<string, number>(
-    ACTION_TYPE_ORDER.map((type, index) => [type, index]),
+    ACTION_TYPE_ORDER.map((type, index) => [type, index])
 );
 
 const DEFAULT_ACTION_LORE_FIELD_LABELS: Record<string, Record<string, string>> = {
@@ -147,7 +141,9 @@ function guessKind(fieldName: string, typeText: string): string {
 
 function parseActionNames(source: string): Record<string, string> {
     const names: Record<string, string> = {};
-    const block = source.match(/export const ACTION_NAMES:[\s\S]*?= \{([\s\S]*?)\n\};/)?.[1];
+    const block = source.match(
+        /export const ACTION_NAMES:[\s\S]*?= \{([\s\S]*?)\n\};/
+    )?.[1];
     if (!block) {
         return names;
     }
@@ -173,13 +169,13 @@ function findMatchingBrace(source: string, openBraceIndex: number): number {
                 escaped = false;
             } else if (char === "\\") {
                 escaped = true;
-            } else if (char === "\"") {
+            } else if (char === '"') {
                 inString = false;
             }
             continue;
         }
 
-        if (char === "\"") {
+        if (char === '"') {
             inString = true;
             continue;
         }
@@ -197,9 +193,7 @@ function findMatchingBrace(source: string, openBraceIndex: number): number {
     return -1;
 }
 
-function parseExistingActionMappingEntries(
-    source: string,
-): Record<string, string> {
+function parseExistingActionMappingEntries(source: string): Record<string, string> {
     const entries: Record<string, string> = {};
     const entryRegex = /^\s*([A-Z_]+):\s*\{/gm;
 
@@ -217,9 +211,7 @@ function parseExistingActionMappingEntries(
     return entries;
 }
 
-function parseExistingActionMappingDisplayNames(
-    source: string,
-): Record<string, string> {
+function parseExistingActionMappingDisplayNames(source: string): Record<string, string> {
     const names: Record<string, string> = {};
     const entries = parseExistingActionMappingEntries(source);
 
@@ -234,7 +226,7 @@ function parseExistingActionMappingDisplayNames(
 }
 
 function parseExistingActionMappingLoreFields(
-    source: string,
+    source: string
 ): Record<string, Record<string, ExistingLoreField>> {
     const mappings: Record<string, Record<string, ExistingLoreField>> = {};
     const entries = parseExistingActionMappingEntries(source);
@@ -258,11 +250,10 @@ function parseExistingActionMappingLoreFields(
         const fieldRegex = /^\s*("[^"]+"|[A-Za-z][A-Za-z0-9 ]*):\s*\{/gm;
         for (const fieldMatch of loreFieldsBlock.matchAll(fieldRegex)) {
             const [raw, rawLabel] = fieldMatch;
-            const fieldOpenBraceIndex =
-                (fieldMatch.index ?? 0) + raw.lastIndexOf("{");
+            const fieldOpenBraceIndex = (fieldMatch.index ?? 0) + raw.lastIndexOf("{");
             const fieldCloseBraceIndex = findMatchingBrace(
                 loreFieldsBlock,
-                fieldOpenBraceIndex,
+                fieldOpenBraceIndex
             );
             if (fieldCloseBraceIndex === -1) {
                 continue;
@@ -270,7 +261,7 @@ function parseExistingActionMappingLoreFields(
 
             const fieldBody = loreFieldsBlock.slice(
                 fieldOpenBraceIndex + 1,
-                fieldCloseBraceIndex,
+                fieldCloseBraceIndex
             );
             const prop = fieldBody.match(/prop:\s*"([^"]+)"/)?.[1];
             const kind = fieldBody.match(/kind:\s*"([^"]+)"/)?.[1];
@@ -278,9 +269,7 @@ function parseExistingActionMappingLoreFields(
                 continue;
             }
 
-            const label = rawLabel.startsWith("\"")
-                ? rawLabel.slice(1, -1)
-                : rawLabel;
+            const label = rawLabel.startsWith('"') ? rawLabel.slice(1, -1) : rawLabel;
             fields[prop] = { label, prop, kind };
         }
 
@@ -293,7 +282,7 @@ function parseExistingActionMappingLoreFields(
 function parseActionTypeDefs(
     source: string,
     actionNames: Record<string, string>,
-    existingLoreFields: Record<string, Record<string, ExistingLoreField>>,
+    existingLoreFields: Record<string, Record<string, ExistingLoreField>>
 ): ActionTypeDef[] {
     const defs: ActionTypeDef[] = [];
     const typeBlockRegex = /export type (Action\w+) = \{([\s\S]*?)\n\};/g;
@@ -321,8 +310,7 @@ function parseActionTypeDefs(
             fields: fields.map((field) => ({
                 ...field,
                 typeText:
-                    existingLoreFields[typeLiteral]?.[field.name]?.kind ??
-                    field.typeText,
+                    existingLoreFields[typeLiteral]?.[field.name]?.kind ?? field.typeText,
             })),
         });
     }
@@ -345,19 +333,17 @@ function sortActionTypeDefs(defs: ActionTypeDef[]): ActionTypeDef[] {
 
 function renderMappingEntry(
     def: ActionTypeDef,
-    existingLoreFields: Record<string, Record<string, ExistingLoreField>>,
+    existingLoreFields: Record<string, Record<string, ExistingLoreField>>
 ): string {
-    const fieldLines = def.fields.map(
-        (field) => {
-            const existing = existingLoreFields[def.type]?.[field.name];
-            const label =
-                existing?.label ??
-                DEFAULT_ACTION_LORE_FIELD_LABELS[def.type]?.[field.name] ??
-                `TODO ${field.name}`;
-            const kind = existing?.kind ?? guessKind(field.name, field.typeText);
-            return `            "${label}": { prop: "${field.name}", kind: "${kind}" },`;
-        },
-    );
+    const fieldLines = def.fields.map((field) => {
+        const existing = existingLoreFields[def.type]?.[field.name];
+        const label =
+            existing?.label ??
+            DEFAULT_ACTION_LORE_FIELD_LABELS[def.type]?.[field.name] ??
+            `TODO ${field.name}`;
+        const kind = existing?.kind ?? guessKind(field.name, field.typeText);
+        return `            "${label}": { prop: "${field.name}", kind: "${kind}" },`;
+    });
 
     return [
         `    ${def.type}: {`,
@@ -370,8 +356,7 @@ function renderMappingEntry(
 }
 
 async function main(): Promise<void> {
-    const [actionsSource, constantsSource, actionMappingsSource] =
-        await Promise.all([
+    const [actionsSource, constantsSource, actionMappingsSource] = await Promise.all([
         readFile(actionsPath, "utf8"),
         readFile(constantsPath, "utf8"),
         readFile(actionMappingsPath, "utf8"),
@@ -380,10 +365,9 @@ async function main(): Promise<void> {
         ...parseActionNames(constantsSource),
         ...parseExistingActionMappingDisplayNames(actionMappingsSource),
     };
-    const existingLoreFields =
-        parseExistingActionMappingLoreFields(actionMappingsSource);
+    const existingLoreFields = parseExistingActionMappingLoreFields(actionMappingsSource);
     const defs = sortActionTypeDefs(
-        parseActionTypeDefs(actionsSource, actionNames, existingLoreFields),
+        parseActionTypeDefs(actionsSource, actionNames, existingLoreFields)
     );
 
     const renderedEntries = defs

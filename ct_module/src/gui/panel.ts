@@ -5,7 +5,6 @@ import { Extractable, extract } from "./extractable";
 import { renderElement, dispatchClick } from "./render";
 import { tryDispatchPopoverClick, popoverIsOpen, mouseIsOverPopover } from "./popovers";
 
-
 const COLOR_PANEL = 0xf0242931 | 0;
 
 export class Panel {
@@ -27,28 +26,47 @@ export class Panel {
         this.clickTrigger = null;
     }
 
-    public setRoot(root: Element): void { this.root = root; }
-    public setBounds(bounds: Extractable<Rect>): void { this.bounds = bounds; }
-    public getBounds(): Rect { return extract(this.bounds); }
-    public isVisible(): boolean { return extract(this.shouldBeVisible); }
-    public getRoot(): Element { return this.root; }
+    public setRoot(root: Element): void {
+        this.root = root;
+    }
+    public setBounds(bounds: Extractable<Rect>): void {
+        this.bounds = bounds;
+    }
+    public getBounds(): Rect {
+        return extract(this.bounds);
+    }
+    public isVisible(): boolean {
+        return extract(this.shouldBeVisible);
+    }
+    public getRoot(): Element {
+        return this.root;
+    }
 
     public register(): void {
         if (this.renderTrigger !== null) {
             throw new Error("Panel is already registered");
         }
-        this.renderTrigger = register("guiRender", (x: number, y: number, _gui: MCTGuiScreen) => {
-            if (!extract(this.shouldBeVisible)) return;
-            const b = extract(this.bounds);
-            Renderer.drawRect(COLOR_PANEL, b.x, b.y, b.w, b.h);
-            // Hover follows click propagation: panels stay interactive unless the cursor is
-            // actually over a popover (in which case the popover absorbs the click).
-            const interactive = !mouseIsOverPopover(x, y);
-            renderElement(this.root, b.x, b.y, b.w, b.h, x, y, interactive);
-        });
+        this.renderTrigger = register(
+            "guiRender",
+            (x: number, y: number, _gui: MCTGuiScreen) => {
+                if (!extract(this.shouldBeVisible)) return;
+                const b = extract(this.bounds);
+                Renderer.drawRect(COLOR_PANEL, b.x, b.y, b.w, b.h);
+                // Hover follows click propagation: panels stay interactive unless the cursor is
+                // actually over a popover (in which case the popover absorbs the click).
+                const interactive = !mouseIsOverPopover(x, y);
+                renderElement(this.root, b.x, b.y, b.w, b.h, x, y, interactive);
+            }
+        );
         this.clickTrigger = register(
             "guiMouseClick",
-            (x: number, y: number, _btn: number, _gui: MCTGuiScreen, event: CancellableEvent) => {
+            (
+                x: number,
+                y: number,
+                _btn: number,
+                _gui: MCTGuiScreen,
+                event: CancellableEvent
+            ) => {
                 if (event.isCanceled()) return;
                 // Popover takes priority. Only one panel should actually run the popover dispatch
                 // (since it mutates state and runs onClick once); we use a per-frame guard.

@@ -7,9 +7,18 @@ const languageDistPath = fileURLToPath(new URL("../language/dist/", import.meta.
 
 const htswAliases = [
     { find: /^htsw$/, replacement: path.resolve(languageDistPath, "index.js") },
-    { find: /^htsw\/types$/, replacement: path.resolve(languageDistPath, "types/index.js") },
-    { find: /^htsw\/runtime$/, replacement: path.resolve(languageDistPath, "runtime/index.js") },
-    { find: /^htsw\/htsw$/, replacement: path.resolve(languageDistPath, "htsw/index.js") },
+    {
+        find: /^htsw\/types$/,
+        replacement: path.resolve(languageDistPath, "types/index.js"),
+    },
+    {
+        find: /^htsw\/runtime$/,
+        replacement: path.resolve(languageDistPath, "runtime/index.js"),
+    },
+    {
+        find: /^htsw\/htsw$/,
+        replacement: path.resolve(languageDistPath, "htsw/index.js"),
+    },
     { find: /^htsw\/nbt$/, replacement: path.resolve(languageDistPath, "nbt/index.js") },
 ];
 

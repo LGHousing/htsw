@@ -29,7 +29,9 @@ export function isEmptyPaginatedPlaceholder(
     slot: ItemSlot,
     config: PaginatedListConfig
 ): boolean {
-    return removedFormatting(slot.getItem().getName()).trim() === config.emptyPlaceholderName;
+    return (
+        removedFormatting(slot.getItem().getName()).trim() === config.emptyPlaceholderName
+    );
 }
 
 function parsePaginatedTitlePage(
@@ -61,15 +63,11 @@ function parsePaginatedTitlePage(
 }
 
 function hasNextPage(ctx: TaskContext): boolean {
-    return (
-        ctx.tryGetItemSlot((slot) => slot.getSlotId() === NEXT_PAGE_SLOT_ID) !== null
-    );
+    return ctx.tryGetItemSlot((slot) => slot.getSlotId() === NEXT_PAGE_SLOT_ID) !== null;
 }
 
 function hasPrevPage(ctx: TaskContext): boolean {
-    return (
-        ctx.tryGetItemSlot((slot) => slot.getSlotId() === PREV_PAGE_SLOT_ID) !== null
-    );
+    return ctx.tryGetItemSlot((slot) => slot.getSlotId() === PREV_PAGE_SLOT_ID) !== null;
 }
 
 export function getCurrentPaginatedListPageState(
@@ -177,11 +175,7 @@ export async function getPaginatedListSlotAtIndex(
         );
     }
 
-    await goToPaginatedListPage(
-        ctx,
-        getPaginatedListPageForIndex(index),
-        config
-    );
+    await goToPaginatedListPage(ctx, getPaginatedListPageForIndex(index), config);
     const visibleSlots = getVisiblePaginatedItemSlots(ctx);
     const localIndex = getPaginatedListLocalIndex(index);
     const slot = visibleSlots[localIndex];

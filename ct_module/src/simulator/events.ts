@@ -3,10 +3,8 @@ import { Simulator } from "./simulator";
 
 export function registerEventTriggers(): Trigger[] {
     runEvent("Player Join");
-    
-    return [
-        register("tick", tick),
-    ];
+
+    return [register("tick", tick)];
 }
 
 class EventState {
@@ -27,7 +25,7 @@ function tick() {
         runEvent("Player Toggle Sneak");
         EventState.isSneaking = !EventState.isSneaking;
     }
-    
+
     if (EventState.isFlying !== Player.isFlying()) {
         runEvent("Player Toggle Flight");
         EventState.isFlying = !EventState.isFlying;

@@ -1,10 +1,7 @@
 import type { Action, Condition, Importable } from "htsw/types";
 
 import { cyrb53, stableStringify } from "../utils/helpers";
-import {
-    normalizeActionCompare,
-    normalizeConditionCompare,
-} from "../importer/compare";
+import { normalizeActionCompare, normalizeConditionCompare } from "../importer/compare";
 
 /**
  * Knowledge-cache hashing.
@@ -46,9 +43,7 @@ export function actionListHash(actions: readonly Action[]): string {
 
 /** Hash an entire normalized condition list. */
 export function conditionListHash(conditions: readonly Condition[]): string {
-    const parts = conditions.map((c) =>
-        stableStringify(normalizeConditionCompare(c))
-    );
+    const parts = conditions.map((c) => stableStringify(normalizeConditionCompare(c)));
     return hashHex("[" + parts.join(",") + "]");
 }
 
@@ -111,29 +106,41 @@ export function listHashes(importable: Importable): Record<string, string[]> {
             break;
         case "ITEM":
             if (importable.leftClickActions) {
-                collectActionListHashes(out, "leftClickActions", importable.leftClickActions);
+                collectActionListHashes(
+                    out,
+                    "leftClickActions",
+                    importable.leftClickActions
+                );
             }
             if (importable.rightClickActions) {
-                collectActionListHashes(out, "rightClickActions", importable.rightClickActions);
+                collectActionListHashes(
+                    out,
+                    "rightClickActions",
+                    importable.rightClickActions
+                );
             }
             break;
         case "NPC":
             if (importable.leftClickActions) {
-                collectActionListHashes(out, "leftClickActions", importable.leftClickActions);
+                collectActionListHashes(
+                    out,
+                    "leftClickActions",
+                    importable.leftClickActions
+                );
             }
             if (importable.rightClickActions) {
-                collectActionListHashes(out, "rightClickActions", importable.rightClickActions);
+                collectActionListHashes(
+                    out,
+                    "rightClickActions",
+                    importable.rightClickActions
+                );
             }
             break;
         case "MENU":
             for (let i = 0; i < importable.slots.length; i++) {
                 const slot = importable.slots[i];
                 if (slot.actions && slot.actions.length > 0) {
-                    collectActionListHashes(
-                        out,
-                        `slots[${i}].actions`,
-                        slot.actions
-                    );
+                    collectActionListHashes(out, `slots[${i}].actions`, slot.actions);
                 }
             }
             break;
@@ -174,8 +181,8 @@ export function importableHash(importable: Importable): string {
         ) {
             // Menu slots embed action lists; normalize them so the hash
             // tracks the same canonical form the diff sees.
-            canonical[key] = (value as Array<Record<string, unknown>>).map(
-                (slot) => normalizeMenuSlotForHash(slot)
+            canonical[key] = (value as Array<Record<string, unknown>>).map((slot) =>
+                normalizeMenuSlotForHash(slot)
             );
         } else {
             canonical[key] = value;

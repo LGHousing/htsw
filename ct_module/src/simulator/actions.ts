@@ -35,9 +35,9 @@ function behaviorFunction(rt: runtime.Runtime, action: ActionFunction) {
         return;
     }
 
-    const err = Diagnostic
-        .warning(`Unknown function '${action.function}'`)
-        .addPrimarySpan(rt.spans.getField(action, "function"));
+    const err = Diagnostic.warning(
+        `Unknown function '${action.function}'`
+    ).addPrimarySpan(rt.spans.getField(action, "function"));
 
     rt.emitDiagnostic(err);
 }
@@ -52,9 +52,7 @@ function behaviorSendChatMessage(_rt: runtime.Runtime, action: ActionSendMessage
     ChatLib.chat(`&7*&r ${message}`);
 }
 
-function behaviorPlaySound(_rt: runtime.Runtime, _action: ActionPlaySound) {
-
-}
+function behaviorPlaySound(_rt: runtime.Runtime, _action: ActionPlaySound) {}
 
 function behaviorTeleport(rt: runtime.Runtime, action: ActionTeleport) {
     if (action.location.type === "Invokers Location") {
@@ -62,9 +60,9 @@ function behaviorTeleport(rt: runtime.Runtime, action: ActionTeleport) {
     } else if (action.location.type === "Custom Coordinates") {
         ChatLib.say(`/tp ${replacePlaceholders(action.location.value ?? "")}`);
     } else {
-        const warn = Diagnostic
-            .warning("House spawn cannot be used in Simulator mode")
-            .addPrimarySpan(rt.spans.getField(action, "location"));
+        const warn = Diagnostic.warning(
+            "House spawn cannot be used in Simulator mode"
+        ).addPrimarySpan(rt.spans.getField(action, "location"));
 
         rt.emitDiagnostic(warn);
     }

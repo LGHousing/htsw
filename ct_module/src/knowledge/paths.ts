@@ -11,12 +11,18 @@ export const KNOWLEDGE_ROOT = "./htsw/.cache";
  */
 function dirFor(type: Importable["type"]): string {
     switch (type) {
-        case "FUNCTION": return "function";
-        case "EVENT": return "event";
-        case "REGION": return "region";
-        case "ITEM": return "item";
-        case "MENU": return "menu";
-        case "NPC": return "npc";
+        case "FUNCTION":
+            return "function";
+        case "EVENT":
+            return "event";
+        case "REGION":
+            return "region";
+        case "ITEM":
+            return "item";
+        case "MENU":
+            return "menu";
+        case "NPC":
+            return "npc";
     }
 }
 

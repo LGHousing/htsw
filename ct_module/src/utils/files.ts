@@ -57,7 +57,9 @@ export class FileSystemFileLoader implements FileLoader {
             ? basePath.normalize()
             : this.rootPath().resolve(basePath).normalize();
 
-        return String(normalizedBase.resolve(otherPath).normalize().toAbsolutePath().toString());
+        return String(
+            normalizedBase.resolve(otherPath).normalize().toAbsolutePath().toString()
+        );
     }
 }
 

@@ -10,9 +10,7 @@ import type { Observed, ObservedActionSlot } from "../importer/types";
  *   - top-level slots whose action couldn't be parsed (`entry.action === null`),
  *   - nested action-list entries that are null (same reason).
  */
-export function observedSlotsToActions(
-    slots: readonly ObservedActionSlot[]
-): Action[] {
+export function observedSlotsToActions(slots: readonly ObservedActionSlot[]): Action[] {
     const result: Action[] = [];
     for (const slot of slots) {
         if (slot.action === null) continue;

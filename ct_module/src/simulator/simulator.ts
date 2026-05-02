@@ -53,7 +53,10 @@ export class Simulator {
             if (!importable.actions || !importable.repeatTicks) continue;
 
             rt.schedulers.push(
-                new runtime.RepeatingActionScheduler(importable.actions, importable.repeatTicks),
+                new runtime.RepeatingActionScheduler(
+                    importable.actions,
+                    importable.repeatTicks
+                )
             );
         }
 

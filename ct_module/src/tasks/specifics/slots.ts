@@ -23,10 +23,7 @@ export class ItemSlot {
         return this.item;
     }
 
-    public click(
-        button: MouseButton = MouseButton.LEFT,
-        shift: boolean = false,
-    ): void {
+    public click(button: MouseButton = MouseButton.LEFT, shift: boolean = false): void {
         const container = Player.getContainer();
         if (container == null) {
             throw new Error("No open container found");
@@ -43,7 +40,9 @@ export class ItemSlot {
     }
 }
 
-export function getAllItemSlots(check: null | ((slot: ItemSlot) => boolean) = null): ItemSlot[] | null {
+export function getAllItemSlots(
+    check: null | ((slot: ItemSlot) => boolean) = null
+): ItemSlot[] | null {
     const container = Player.getContainer();
     if (container == null) {
         return null;
@@ -66,7 +65,7 @@ export function getAllItemSlots(check: null | ((slot: ItemSlot) => boolean) = nu
 }
 
 export function tryGetItemSlot(
-    check: string | ((slot: ItemSlot) => boolean),
+    check: string | ((slot: ItemSlot) => boolean)
 ): ItemSlot | null {
     if (typeof check === "string") {
         const name = removedFormatting(check);
@@ -85,9 +84,7 @@ export function tryGetItemSlot(
     return null;
 }
 
-export function getItemSlot(
-    check: string | ((slot: ItemSlot) => boolean),
-): ItemSlot {
+export function getItemSlot(check: string | ((slot: ItemSlot) => boolean)): ItemSlot {
     const slot = tryGetItemSlot(check);
     if (slot === null) {
         if (typeof check === "string") {

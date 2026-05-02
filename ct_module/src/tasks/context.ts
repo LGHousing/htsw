@@ -51,7 +51,7 @@ export default class TaskContext {
 
     public async sleep(
         duration: number | "forever", // duration in milliseconds
-        abortCheck?: () => boolean,
+        abortCheck?: () => boolean
     ): Promise<void> {
         if (duration === "forever") {
             duration = 315576000000;
@@ -65,19 +65,18 @@ export default class TaskContext {
             }
             const remaining = end - Date.now();
             if (remaining <= 0) return;
-            await new Promise((resolve) =>
-                setTimeout(resolve, Math.min(100, remaining)),
-            );
+            await new Promise((resolve) => setTimeout(resolve, Math.min(100, remaining)));
         }
     }
 
     public async withTimeout<T>(
         promise: Promise<T> | (() => Promise<T>),
         reason: string,
-        duration: number = 2000,
+        duration: number = 2000
     ): Promise<T> {
         const pending = typeof promise === "function" ? promise() : promise;
-        const cleanup = (pending as Promise<T> & { cleanupWaiter?: () => void }).cleanupWaiter;
+        const cleanup = (pending as Promise<T> & { cleanupWaiter?: () => void })
+            .cleanupWaiter;
         const timeoutPromise = new Promise<T>((_, reject) => {
             setTimeout(() => {
                 cleanup?.();

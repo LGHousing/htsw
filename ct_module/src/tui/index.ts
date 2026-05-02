@@ -1,11 +1,9 @@
 import { chatWidth } from "../utils/helpers";
 
 export interface UIElement {
-
     getWidth(): number;
     getHeight(): number;
     render(): string[];
-
 }
 
 export function printUI(element: UIElement) {
@@ -52,7 +50,7 @@ export class UIElementVStack implements UIElement {
     }
 
     getWidth(): number {
-        return Math.max(...this.elements.map(it => it.getWidth()));
+        return Math.max(...this.elements.map((it) => it.getWidth()));
     }
 
     getHeight(): number {
@@ -85,12 +83,12 @@ export class UIElementCanvas implements UIElement {
 
     getWidth(): number {
         if (this.elements.length === 0) return 0;
-        return Math.max(...this.elements.map(e => e.x + e.element.getWidth()));
+        return Math.max(...this.elements.map((e) => e.x + e.element.getWidth()));
     }
 
     getHeight(): number {
         if (this.elements.length === 0) return 0;
-        return Math.max(...this.elements.map(e => e.y + e.element.getHeight()));
+        return Math.max(...this.elements.map((e) => e.y + e.element.getHeight()));
     }
 
     private tokenizeFormatting(text: string): { token: string; width: number }[] {
@@ -132,7 +130,12 @@ export class UIElementCanvas implements UIElement {
             const spans = lineMap.get(y) ?? [];
             spans.sort((a, b) => a.order - b.order);
 
-            const fragments: { start: number; end: number; char: string; width: number }[] = [];
+            const fragments: {
+                start: number;
+                end: number;
+                char: string;
+                width: number;
+            }[] = [];
 
             for (const span of spans) {
                 let pos = span.x;
@@ -183,9 +186,9 @@ export class UIElementCanvas implements UIElement {
 
 export class UIElementHLine extends UIElementText {
     constructor(width: number, char: string = "-", color?: string) {
-        super((color ?? "") + char.repeat(Math.max(1,
-            Math.round(width / chatWidth(char))
-        )));
+        super(
+            (color ?? "") + char.repeat(Math.max(1, Math.round(width / chatWidth(char))))
+        );
 
         console.log(this.text);
     }
@@ -222,7 +225,7 @@ export class UIElementTruncate implements UIElement {
         const ellipsis = "...";
         const ellipsisWidth = chatWidth(ellipsis);
 
-        return lines.map(line => {
+        return lines.map((line) => {
             const width = chatWidth(line);
             if (width <= this.maxWidth) return line;
 
@@ -231,8 +234,7 @@ export class UIElementTruncate implements UIElement {
             let currentWidth = 0;
             for (const ch of line) {
                 const chWidth = chatWidth(ch);
-                if (currentWidth + chWidth + ellipsisWidth > this.maxWidth)
-                    break;
+                if (currentWidth + chWidth + ellipsisWidth > this.maxWidth) break;
                 truncated += ch;
                 currentWidth += chWidth;
             }

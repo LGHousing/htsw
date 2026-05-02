@@ -36,21 +36,8 @@ export {
 
 export { getCurrentHousingUuid } from "./housingId";
 
-export {
-    buildKnowledgeStatusRows,
-    sameHashList,
-} from "./status";
-export type {
-    KnowledgeState,
-    KnowledgeStatusRow,
-} from "./status";
+export { buildKnowledgeStatusRows, sameHashList } from "./status";
+export type { KnowledgeState, KnowledgeStatusRow } from "./status";
 
-export {
-    buildKnowledgeTrustPlan,
-    trustPlanKey,
-} from "./trust";
-export type {
-    KnowledgeTrustPlan,
-    ImportableTrustPlan,
-    TrustedListPath,
-} from "./trust";
+export { buildKnowledgeTrustPlan, trustPlanKey } from "./trust";
+export type { KnowledgeTrustPlan, ImportableTrustPlan, TrustedListPath } from "./trust";

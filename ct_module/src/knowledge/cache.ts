@@ -66,9 +66,7 @@ export function writeKnowledge(
     try {
         FileLib.write(path, JSON.stringify(entry, null, 4), true);
     } catch (error) {
-        ctx.displayMessage(
-            `&7[knowledge] &eFailed to write cache at ${path}: ${error}`
-        );
+        ctx.displayMessage(`&7[knowledge] &eFailed to write cache at ${path}: ${error}`);
     }
 }
 
@@ -103,8 +101,7 @@ export function readKnowledge(
     if (
         !parsed ||
         typeof parsed !== "object" ||
-        (parsed as { schemaVersion?: unknown }).schemaVersion !==
-            KNOWLEDGE_SCHEMA_VERSION
+        (parsed as { schemaVersion?: unknown }).schemaVersion !== KNOWLEDGE_SCHEMA_VERSION
     ) {
         return null;
     }

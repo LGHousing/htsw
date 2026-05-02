@@ -23,10 +23,7 @@ function itemSnbtCachePath(housingUuid: string, hash: string): string {
     return `./htsw/.cache/${housingUuid}/items/${hash}.snbt`;
 }
 
-function readCachedItemSnbt(
-    housingUuid: string,
-    hash: string
-): string | undefined {
+function readCachedItemSnbt(housingUuid: string, hash: string): string | undefined {
     const path = itemSnbtCachePath(housingUuid, hash);
     if (!FileLib.exists(path)) return undefined;
 
@@ -152,11 +149,7 @@ async function syncItemActionLists(
 
         await syncActionList(ctx, leftDesired, {
             itemRegistry,
-            trust: actionListTrustFor(
-                trustPlan,
-                "leftClickActions",
-                leftDesired
-            ),
+            trust: actionListTrustFor(trustPlan, "leftClickActions", leftDesired),
         });
 
         if (
@@ -176,11 +169,7 @@ async function syncItemActionLists(
 
         await syncActionList(ctx, rightDesired, {
             itemRegistry,
-            trust: actionListTrustFor(
-                trustPlan,
-                "rightClickActions",
-                rightDesired
-            ),
+            trust: actionListTrustFor(trustPlan, "rightClickActions", rightDesired),
         });
     }
 }

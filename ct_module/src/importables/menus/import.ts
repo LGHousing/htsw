@@ -35,10 +35,7 @@ export async function importImportableMenu(
         await openMenuEditor(ctx, importable.name);
     }
 
-    if (
-        importable.size !== undefined &&
-        !menuTopLevelTrusted(importable, trustPlan)
-    ) {
+    if (importable.size !== undefined && !menuTopLevelTrusted(importable, trustPlan)) {
         await setCycleValue(
             ctx,
             "Change Size",
@@ -53,10 +50,7 @@ export async function importImportableMenu(
 
         const container = Player.getContainer();
         if (container == null) {
-            throw new Error(
-                "No open container while opening menu slot " +
-                    slot.slot
-            );
+            throw new Error("No open container while opening menu slot " + slot.slot);
         }
         container.click(slot.slot, false, "LEFT");
         await waitForMenu(ctx);
@@ -74,11 +68,7 @@ export async function importImportableMenu(
 
             await syncActionList(ctx, slot.actions!, {
                 itemRegistry,
-                trust: actionListTrustFor(
-                    trustPlan,
-                    slotActionsPath,
-                    slot.actions!
-                ),
+                trust: actionListTrustFor(trustPlan, slotActionsPath, slot.actions!),
             });
 
             await clickGoBack(ctx);

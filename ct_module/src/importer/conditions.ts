@@ -21,10 +21,7 @@ import {
 } from "htsw/types";
 
 import TaskContext from "../tasks/context";
-import {
-    type ItemRegistry,
-    getMemoizedHousingUuid,
-} from "../importables/itemRegistry";
+import { type ItemRegistry, getMemoizedHousingUuid } from "../importables/itemRegistry";
 import {
     clickGoBack,
     findMenuOptionByLore,
@@ -802,9 +799,7 @@ function canonicalizeConditionItemName(
     }
 
     if (condition.itemName !== undefined) {
-        condition.itemName = itemRegistry.canonicalizeObservedName(
-            condition.itemName
-        );
+        condition.itemName = itemRegistry.canonicalizeObservedName(condition.itemName);
     }
 }
 async function deleteObservedCondition(

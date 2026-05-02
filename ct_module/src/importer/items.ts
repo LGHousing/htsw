@@ -1,8 +1,5 @@
 import TaskContext from "../tasks/context";
-import {
-    C10PacketCreativeInventoryAction,
-    S2FPacketSetSlot,
-} from "../utils/packets";
+import { C10PacketCreativeInventoryAction, S2FPacketSetSlot } from "../utils/packets";
 import { waitForMenu } from "./helpers";
 
 const INV_PACKET_SLOT = 26; // inventory row 2, column 9 (rightmost, out of the way — matches BHTSL)
@@ -85,9 +82,7 @@ export async function selectItemFromOpenInventory(
     );
     await ctx.waitFor("tick");
 
-    const slot = ctx.tryGetItemSlot(
-        (s) => s.getSlotId() === targetSlotInContainer
-    );
+    const slot = ctx.tryGetItemSlot((s) => s.getSlotId() === targetSlotInContainer);
     if (slot === null) {
         throw new Error(
             `Could not find injected item for "${label}" selection at container slot ${targetSlotInContainer}.`

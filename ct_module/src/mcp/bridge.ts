@@ -123,7 +123,11 @@ function pollAndExecute(): void {
         const commands = Array.isArray(parsed.commands) ? parsed.commands : [];
         for (let i = 0; i < commands.length; i++) {
             const entry = commands[i];
-            if (entry !== null && typeof entry === "object" && typeof entry.command === "string") {
+            if (
+                entry !== null &&
+                typeof entry === "object" &&
+                typeof entry.command === "string"
+            ) {
                 const clientSide = entry.clientSide !== false; // default true
                 executeBridgeCommand(entry.command, clientSide);
             }

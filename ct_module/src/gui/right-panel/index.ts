@@ -17,7 +17,10 @@ export function RightPanel(): Element {
                 children: [
                     Button({
                         text: "A",
-                        style: { width: { kind: "px", value: 24 }, height: { kind: "grow" } },
+                        style: {
+                            width: { kind: "px", value: 24 },
+                            height: { kind: "grow" },
+                        },
                         onClick: () => ChatLib.chat("&a[htsw] Right A clicked"),
                     }),
                     Button({

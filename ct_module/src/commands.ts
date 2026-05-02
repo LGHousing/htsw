@@ -111,7 +111,7 @@ function probeItem() {
 
         ctx.displayMessage(
             "&e[probe] Open a GIVE_ITEM action's Item field within 30s. " +
-                "Waiting for a \"Current Item\" slot to appear…"
+                'Waiting for a "Current Item" slot to appear…'
         );
 
         const slot = await ctx.withTimeout(
@@ -203,7 +203,9 @@ function commandImport(args: string[]) {
 
     const errorCount = countBlockingDiagnostics(result.diagnostics);
     if (errorCount > 0) {
-        ChatLib.chat(`&cImport failed with ${errorCount} error${errorCount === 1 ? "" : "s"}.`);
+        ChatLib.chat(
+            `&cImport failed with ${errorCount} error${errorCount === 1 ? "" : "s"}.`
+        );
         return;
     }
 

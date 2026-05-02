@@ -17,7 +17,7 @@ export async function waitForMenu(ctx: TaskContext): Promise<void> {
             return (
                 windowID !== 0 &&
                 windowID !==
-                lastWindowID___FromS30PacketWindowItemsPacketReceived__ThisIsNecessary_sadly_itIncrementsFrom1To100ThenItGoesBackAround_ButSometimesItSkipsOneOrMoreWeAreNotSureMaybeMore_AndItWillNeverBeZero
+                    lastWindowID___FromS30PacketWindowItemsPacketReceived__ThisIsNecessary_sadly_itIncrementsFrom1To100ThenItGoesBackAround_ButSometimesItSkipsOneOrMoreWeAreNotSureMaybeMore_AndItWillNeverBeZero
             );
         });
 
@@ -31,21 +31,18 @@ export async function waitForMenu(ctx: TaskContext): Promise<void> {
 
 export async function waitForUnformattedMessage(
     ctx: TaskContext,
-    message: string,
+    message: string
 ): Promise<void> {
     await ctx.withTimeout(
         ctx.waitFor(
             "message",
-            (chatMessage) => removedFormatting(chatMessage) === message,
+            (chatMessage) => removedFormatting(chatMessage) === message
         ),
-        "Waiting for message in chat",
+        "Waiting for message in chat"
     );
 }
 
-export async function getSlotPaginate(
-    ctx: TaskContext,
-    name: string,
-): Promise<ItemSlot> {
+export async function getSlotPaginate(ctx: TaskContext, name: string): Promise<ItemSlot> {
     await goToFirstPaginatedOptionPage(ctx);
 
     for (let page = 0; page < 100; page++) {
@@ -74,7 +71,7 @@ async function goToFirstPaginatedOptionPage(ctx: TaskContext): Promise<void> {
 
 function findPaginationControl(
     ctx: TaskContext,
-    direction: "next" | "previous",
+    direction: "next" | "previous"
 ): ItemSlot | null {
     const exactText = `Left-click for ${direction} page!`;
     const exactSlot = ctx.tryGetItemSlot(exactText);
@@ -85,7 +82,7 @@ function findPaginationControl(
         const item = slot.getItem();
         const lines = [item.getName(), ...item.getLore()];
         return lines.some((line) =>
-            removedFormatting(line).trim().toLowerCase().includes(needle),
+            removedFormatting(line).trim().toLowerCase().includes(needle)
         );
     });
 }
@@ -105,14 +102,12 @@ export function setAnvilItemName(newName: string) {
     if (inventory == null) {
         throw new Error("No open container found");
     }
-    const outputSlotField =
-        inventory.container.class.getDeclaredField("field_82852_f");
+    const outputSlotField = inventory.container.class.getDeclaredField("field_82852_f");
     // @ts-ignore
     outputSlotField.setAccessible(true);
     const outputSlot = outputSlotField.get(inventory.container);
 
-    const outputSlotItemField =
-        outputSlot.class.getDeclaredField("field_70467_a");
+    const outputSlotItemField = outputSlot.class.getDeclaredField("field_70467_a");
     outputSlotItemField.setAccessible(true);
     let outputSlotItem = outputSlotItemField.get(outputSlot);
 
@@ -131,10 +126,9 @@ export function acceptNewAnvilItem(): void {
 export async function setListItemNote(
     ctx: TaskContext,
     slot: ItemSlot,
-    note: string | undefined,
+    note: string | undefined
 ): Promise<void> {
-    const normalizedNote =
-        note === undefined ? undefined : normalizeNoteText(note);
+    const normalizedNote = note === undefined ? undefined : normalizeNoteText(note);
     const currentNote = readListItemNote(slot);
     if (currentNote === undefined && normalizedNote === undefined) {
         return;
@@ -170,7 +164,7 @@ export function readCurrentValue(slot: ItemSlot): string | null {
 function readCurrentValueLines(slot: ItemSlot): string[] | null {
     const lore = slot.getItem().getLore();
     const index = lore.findIndex(
-        (line, _i) => removedFormatting(line) === "Current Value:",
+        (line, _i) => removedFormatting(line) === "Current Value:"
     );
     if (index === -1) return null;
 
@@ -211,7 +205,7 @@ export function normalizeSelectedOption(line: string): string {
 
 export function readSelectedOption(
     slot: ItemSlot,
-    options: readonly string[],
+    options: readonly string[]
 ): string | null {
     const optionSet = new Set(options);
 
@@ -250,7 +244,9 @@ export function readStringValue(slot: ItemSlot): string | null {
     }
 
     return currentValueLines
-        .map((line) => stripLeadingFormattingCodes(normalizeLoreValueFormatting(line)).trim())
+        .map((line) =>
+            stripLeadingFormattingCodes(normalizeLoreValueFormatting(line)).trim()
+        )
         .join(" ");
 }
 
@@ -260,13 +256,13 @@ function stripLeadingFormattingCodes(value: string): string {
 
 export function findMenuOptionByLore(
     ctx: TaskContext,
-    loreLine: string,
+    loreLine: string
 ): ItemSlot | null {
     return ctx.tryGetItemSlot((slot) =>
         slot
             .getItem()
             .getLore()
-            .some((line) => removedFormatting(line).trim() === loreLine),
+            .some((line) => removedFormatting(line).trim() === loreLine)
     );
 }
 
@@ -275,18 +271,11 @@ function isAlreadySelectedOption(slot: ItemSlot): boolean {
         .getItem()
         .getLore()
         .some((line) =>
-            removedFormatting(line)
-                .trim()
-                .toLowerCase()
-                .includes("already selected"),
+            removedFormatting(line).trim().toLowerCase().includes("already selected")
         );
 }
 
-export async function setBooleanValue(
-    ctx: TaskContext,
-    slot: ItemSlot,
-    value: boolean,
-) {
+export async function setBooleanValue(ctx: TaskContext, slot: ItemSlot, value: boolean) {
     const newValue = value ? "Enabled" : "Disabled";
     const currentValue = readCurrentValue(slot);
     if (currentValue !== null && removedFormatting(currentValue) === newValue) {
@@ -300,7 +289,7 @@ export async function setBooleanValue(
 export async function setSelectValue(
     ctx: TaskContext,
     slotName: string,
-    value: string,
+    value: string
 ): Promise<void> {
     await openSubmenu(ctx, slotName);
 
@@ -324,7 +313,7 @@ export async function setCycleValue(
     ctx: TaskContext,
     slotName: string,
     options: readonly string[],
-    value: string,
+    value: string
 ): Promise<void> {
     if (options.indexOf(value) === -1) {
         throw new Error(`"${value}" is not a valid option for "${slotName}".`);
@@ -339,7 +328,7 @@ export async function setCycleValue(
 
     async function clickUntilMatch(
         button: MouseButton,
-        maxClicks: number,
+        maxClicks: number
     ): Promise<boolean> {
         for (let i = 0; i < maxClicks; i++) {
             getSlot().click(button);
@@ -356,8 +345,7 @@ export async function setCycleValue(
     if (currentValue !== null) {
         const currentIndex = options.indexOf(currentValue);
         const targetIndex = options.indexOf(value);
-        const leftClicks =
-            (targetIndex - currentIndex + options.length) % options.length;
+        const leftClicks = (targetIndex - currentIndex + options.length) % options.length;
         const rightClicks =
             (currentIndex - targetIndex + options.length) % options.length;
         const preferredButton =
@@ -392,7 +380,7 @@ export async function enterValue(ctx: TaskContext, value: string) {
                 })
                 .then(() => "ANVIL" as const),
         ]),
-        "Waiting for input mode to be determined",
+        "Waiting for input mode to be determined"
     );
 
     switch (inputMode) {
@@ -412,22 +400,15 @@ export async function enterValue(ctx: TaskContext, value: string) {
 function waitForChatInputPrompt(ctx: TaskContext): Promise<unknown> {
     return ctx.waitFor("message", (message) => {
         return removedFormatting(message).includes(
-            "Please use the chat to provide the value you wish to set.",
+            "Please use the chat to provide the value you wish to set."
         );
     });
 }
 
-export async function setNumberValue(
-    ctx: TaskContext,
-    slot: ItemSlot,
-    value: number,
-) {
+export async function setNumberValue(ctx: TaskContext, slot: ItemSlot, value: number) {
     const newValue = value.toString();
     const currentValue = readCurrentValue(slot);
-    if (
-        currentValue !== null &&
-        removedFormatting(currentValue).trim() === newValue
-    ) {
+    if (currentValue !== null && removedFormatting(currentValue).trim() === newValue) {
         return;
     }
 
@@ -439,14 +420,11 @@ export async function setNumberValue(
 export async function setStringValue(
     ctx: TaskContext,
     slot: ItemSlot,
-    value: string,
+    value: string
 ): Promise<void> {
     const newValue = value.toString();
     const currentValue = readStringValue(slot);
-    if (
-        currentValue !== null &&
-        currentValue === newValue
-    ) {
+    if (currentValue !== null && currentValue === newValue) {
         return;
     }
 
@@ -458,7 +436,7 @@ export async function setStringValue(
 export async function setStringOrPaginatedOptionValue(
     ctx: TaskContext,
     slot: ItemSlot,
-    value: string,
+    value: string
 ): Promise<void> {
     const newValue = value.toString();
     const currentValue = readStringValue(slot);
@@ -485,7 +463,7 @@ export async function setStringOrPaginatedOptionValue(
                 .then(() => "ANVIL" as const),
             waitForMenu(ctx).then(() => "MENU" as const),
         ]),
-        `Waiting to edit "${slotName}"`,
+        `Waiting to edit "${slotName}"`
     );
 
     switch (inputMode) {

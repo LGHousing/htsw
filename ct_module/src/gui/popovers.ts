@@ -76,7 +76,9 @@ export function closeAllPopovers(): void {
     }
 }
 
-export function popoverIsOpen(): boolean { return openPopovers.length > 0; }
+export function popoverIsOpen(): boolean {
+    return openPopovers.length > 0;
+}
 
 function computePopoverRect(p: PopoverHandle): Rect {
     const screenH = Renderer.screen.getHeight();
@@ -136,7 +138,16 @@ export function initPopoverRendering(): void {
             const p = openPopovers[i];
             const rect = computePopoverRect(p);
             Renderer.drawRect(0xf0242931 | 0, rect.x, rect.y, rect.w, rect.h);
-            renderElement(p.content, rect.x, rect.y, rect.w, rect.h, mouseX, mouseY, true);
+            renderElement(
+                p.content,
+                rect.x,
+                rect.y,
+                rect.w,
+                rect.h,
+                mouseX,
+                mouseY,
+                true
+            );
         }
     }).setPriority(OnTrigger.Priority.LOWEST);
 }

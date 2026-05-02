@@ -23,7 +23,7 @@ export const ACTION_MAPPINGS = {
             "Demotion Protection": {
                 prop: "demotionProtection",
                 kind: "boolean",
-                default: true,            
+                default: true,
             },
         },
     },
@@ -80,7 +80,11 @@ export const ACTION_MAPPINGS = {
         loreFields: {
             Item: { prop: "itemName", kind: "item" },
             "Allow Multiple": { prop: "allowMultiple", kind: "boolean", default: false },
-            "Inventory Slot": { prop: "slot", kind: "select", default: "First Available Slot" },
+            "Inventory Slot": {
+                prop: "slot",
+                kind: "select",
+                default: "First Available Slot",
+            },
             "Replace Existing Item": {
                 prop: "replaceExisting",
                 kind: "boolean",
@@ -109,7 +113,11 @@ export const ACTION_MAPPINGS = {
             Effect: { prop: "effect", kind: "select" },
             Duration: { prop: "duration", kind: "value", default: 60 },
             Level: { prop: "level", kind: "value", default: 1 },
-            "Override Existing Effects": { prop: "override", kind: "boolean", default: false },
+            "Override Existing Effects": {
+                prop: "override",
+                kind: "boolean",
+                default: false,
+            },
             "Show Potion Icon": { prop: "showIcon", kind: "boolean", default: true },
         },
     },
@@ -214,7 +222,11 @@ export const ACTION_MAPPINGS = {
         displayName: "Trigger Function",
         loreFields: {
             Function: { prop: "function", kind: "value" },
-            "Trigger For All Players": { prop: "global", kind: "boolean", default: false },
+            "Trigger For All Players": {
+                prop: "global",
+                kind: "boolean",
+                default: false,
+            },
         },
     },
 
@@ -265,13 +277,21 @@ export const ACTION_MAPPINGS = {
             "Item": { prop: "itemName", kind: "item" },
             "Location": { prop: "location", kind: "select", default: "Not Set" },
             "Drop Naturally": { prop: "dropNaturally", kind: "boolean", default: true },
-            "Prevent Item Merging": { prop: "disableMerging", kind: "boolean", default: false },
+            "Prevent Item Merging": {
+                prop: "disableMerging",
+                kind: "boolean",
+                default: false,
+            },
             "Despawn Duration Ticks": {
                 prop: "despawnDurationTicks",
                 kind: "value",
                 default: 6000,
             },
-            "Pickup Delay Ticks": { prop: "pickupDelayTicks", kind: "value", default: 10 },
+            "Pickup Delay Ticks": {
+                prop: "pickupDelayTicks",
+                kind: "value",
+                default: 10,
+            },
             "Prioritize Player": {
                 prop: "prioritizePlayer",
                 kind: "boolean",
@@ -357,7 +377,18 @@ export function getActionLoreFields(
  * as equivalent to an omitted field in desired source.
  */
 export function getActionFieldDefault(type: string, prop: string): unknown {
-    const mapping = (ACTION_MAPPINGS as Record<string, { loreFields: Record<string, { prop: string; kind: UiFieldKind; default?: unknown }> } | undefined>)[type];
+    const mapping = (
+        ACTION_MAPPINGS as Record<
+            string,
+            | {
+                  loreFields: Record<
+                      string,
+                      { prop: string; kind: UiFieldKind; default?: unknown }
+                  >;
+              }
+            | undefined
+        >
+    )[type];
     if (!mapping) return undefined;
     for (const label in mapping.loreFields) {
         const field = mapping.loreFields[label];
@@ -385,9 +416,7 @@ export function getActionFieldLabel<T extends Action["type"]>(
     for (const label in loreFields) {
         if (loreFields[label].prop === prop) return label;
     }
-    throw new Error(
-        `No GUI label found for ${type}.${String(prop)} in ACTION_MAPPINGS`
-    );
+    throw new Error(`No GUI label found for ${type}.${String(prop)} in ACTION_MAPPINGS`);
 }
 
 export function getNestedListFields(
@@ -410,8 +439,7 @@ export function tryGetActionTypeFromDisplayName(
 
     for (const type in ACTION_MAPPINGS) {
         if (
-            ACTION_MAPPINGS[type as Action["type"]].displayName ===
-            normalizedDisplayName
+            ACTION_MAPPINGS[type as Action["type"]].displayName === normalizedDisplayName
         ) {
             return type as Action["type"];
         }

@@ -1,16 +1,22 @@
 /// <reference types="../../CTAutocomplete" />
 
 import {
-    Element, LaidOut, layoutElement, pointInRect,
-    getScrollState, SCROLLBAR_WIDTH,
+    Element,
+    LaidOut,
+    layoutElement,
+    pointInRect,
+    getScrollState,
+    SCROLLBAR_WIDTH,
 } from "./layout";
 import { extract } from "./extractable";
 import { isInputFocused, setFocusedInput } from "./focus";
 import { pushScissor, popScissor } from "./scissor";
 import { getInputField } from "./inputState";
 
-let dbgLog: ((m: string) => void) = () => {};
-export function setRenderDebugLog(fn: (m: string) => void): void { dbgLog = fn; }
+let dbgLog: (m: string) => void = () => {};
+export function setRenderDebugLog(fn: (m: string) => void): void {
+    dbgLog = fn;
+}
 
 const COLOR_BUTTON = 0xe02d333d | 0;
 const COLOR_BUTTON_HOVER = 0xf03a4350 | 0;
@@ -24,8 +30,16 @@ const COLOR_SCROLLBAR_THUMB_HOVER = 0xffaaaaaa | 0;
 
 const LINE_H = 8;
 
-
-export function renderElement(root: Element, x: number, y: number, w: number, h: number, mouseX: number, mouseY: number, interactive: boolean): LaidOut[] {
+export function renderElement(
+    root: Element,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    mouseX: number,
+    mouseY: number,
+    interactive: boolean
+): LaidOut[] {
     const laid = layoutElement(root, x, y, w, h);
 
     // A click here would be intercepted by the scrollbar thumb (it starts a drag) — suppress hover
@@ -53,7 +67,11 @@ export function renderElement(root: Element, x: number, y: number, w: number, h:
 // dispatch — currently only the scrollbar THUMB does this. Hover suppression and click dispatch
 // share this predicate so the two are always consistent: anywhere a click would still reach the
 // underlying element (e.g. the empty part of a scrollbar track), hover also lights up.
-function getClickInterceptor(laid: LaidOut[], mx: number, my: number): { x: number; y: number; w: number; h: number } | null {
+function getClickInterceptor(
+    laid: LaidOut[],
+    mx: number,
+    my: number
+): { x: number; y: number; w: number; h: number } | null {
     for (let i = 0; i < laid.length; i++) {
         const item = laid[i];
         if (item.element.kind !== "scroll") continue;
@@ -61,7 +79,7 @@ function getClickInterceptor(laid: LaidOut[], mx: number, my: number): { x: numb
         if (s.contentHeight <= s.viewportRect.h) continue;
         const v = s.viewportRect;
         const trackX = v.x + v.w - SCROLLBAR_WIDTH;
-        const thumbH = Math.max(8, Math.floor(v.h * v.h / s.contentHeight));
+        const thumbH = Math.max(8, Math.floor((v.h * v.h) / s.contentHeight));
         const maxOffset = s.contentHeight - v.h;
         const thumbY = v.y + Math.floor((v.h - thumbH) * (s.offset / maxOffset));
         const thumbRect = { x: trackX, y: thumbY, w: SCROLLBAR_WIDTH, h: thumbH };
@@ -70,22 +88,37 @@ function getClickInterceptor(laid: LaidOut[], mx: number, my: number): { x: numb
     return null;
 }
 
-function renderItem(item: LaidOut, mouseX: number, mouseY: number, interactive: boolean, intercepted: boolean): void {
+function renderItem(
+    item: LaidOut,
+    mouseX: number,
+    mouseY: number,
+    interactive: boolean,
+    intercepted: boolean
+): void {
     const r = item.rect;
     const e = item.element;
     const inClip = !item.clipRect || pointInRect(item.clipRect, mouseX, mouseY);
-    const hovered = interactive && inClip && !intercepted && pointInRect(r, mouseX, mouseY);
+    const hovered =
+        interactive && inClip && !intercepted && pointInRect(r, mouseX, mouseY);
 
     if (item.clipRect) pushScissor(item.clipRect);
 
     if (e.kind === "container") {
-        const hoverBg = e.style.hoverBackground !== undefined ? extract(e.style.hoverBackground) : undefined;
-        const baseBg = e.style.background !== undefined ? extract(e.style.background) : undefined;
-        const bg = (hovered && e.onClick && hoverBg !== undefined) ? hoverBg : baseBg;
+        const hoverBg =
+            e.style.hoverBackground !== undefined
+                ? extract(e.style.hoverBackground)
+                : undefined;
+        const baseBg =
+            e.style.background !== undefined ? extract(e.style.background) : undefined;
+        const bg = hovered && e.onClick && hoverBg !== undefined ? hoverBg : baseBg;
         if (bg !== undefined) Renderer.drawRect(bg, r.x, r.y, r.w, r.h);
     } else if (e.kind === "button") {
-        const baseBg = e.style.background !== undefined ? extract(e.style.background) : undefined;
-        const hoverBg = e.style.hoverBackground !== undefined ? extract(e.style.hoverBackground) : undefined;
+        const baseBg =
+            e.style.background !== undefined ? extract(e.style.background) : undefined;
+        const hoverBg =
+            e.style.hoverBackground !== undefined
+                ? extract(e.style.hoverBackground)
+                : undefined;
         const bg = baseBg !== undefined ? baseBg : COLOR_BUTTON;
         const hBg = hoverBg !== undefined ? hoverBg : COLOR_BUTTON_HOVER;
         Renderer.drawRect(hovered ? hBg : bg, r.x, r.y, r.w, r.h);
@@ -105,7 +138,9 @@ function renderItem(item: LaidOut, mouseX: number, mouseY: number, interactive: 
         Renderer.drawRect(COLOR_INPUT_BG, r.x, r.y, r.w, r.h);
         const borderCol = focused
             ? COLOR_INPUT_BORDER_FOCUS
-            : (hovered ? COLOR_INPUT_BORDER_HOVER : COLOR_INPUT_BORDER);
+            : hovered
+              ? COLOR_INPUT_BORDER_HOVER
+              : COLOR_INPUT_BORDER;
         Renderer.drawRect(borderCol, r.x, r.y, r.w, 1);
         Renderer.drawRect(borderCol, r.x, r.y + r.h - 1, r.w, 1);
         Renderer.drawRect(borderCol, r.x, r.y, 1, r.h);
@@ -120,7 +155,8 @@ function renderItem(item: LaidOut, mouseX: number, mouseY: number, interactive: 
             field.func_146194_f(); // drawTextBox
         }
     } else if (e.kind === "scroll") {
-        const bg = e.style.background !== undefined ? extract(e.style.background) : undefined;
+        const bg =
+            e.style.background !== undefined ? extract(e.style.background) : undefined;
         if (bg !== undefined) Renderer.drawRect(bg, r.x, r.y, r.w, r.h);
     }
 
@@ -133,12 +169,18 @@ function renderScrollbar(id: string, mouseX: number, mouseY: number): void {
     const v = s.viewportRect;
     const trackX = v.x + v.w - SCROLLBAR_WIDTH;
     Renderer.drawRect(COLOR_SCROLLBAR_TRACK, trackX, v.y, SCROLLBAR_WIDTH, v.h);
-    const thumbH = Math.max(8, Math.floor(v.h * v.h / s.contentHeight));
+    const thumbH = Math.max(8, Math.floor((v.h * v.h) / s.contentHeight));
     const maxOffset = s.contentHeight - v.h;
     const thumbY = v.y + Math.floor((v.h - thumbH) * (s.offset / maxOffset));
     const thumbRect = { x: trackX, y: thumbY, w: SCROLLBAR_WIDTH, h: thumbH };
     const hovered = pointInRect(thumbRect, mouseX, mouseY);
-    Renderer.drawRect(hovered ? COLOR_SCROLLBAR_THUMB_HOVER : COLOR_SCROLLBAR_THUMB, thumbRect.x, thumbRect.y, thumbRect.w, thumbRect.h);
+    Renderer.drawRect(
+        hovered ? COLOR_SCROLLBAR_THUMB_HOVER : COLOR_SCROLLBAR_THUMB,
+        thumbRect.x,
+        thumbRect.y,
+        thumbRect.w,
+        thumbRect.h
+    );
 }
 
 export type ClickResult = "consumed" | "passthrough" | "miss";
@@ -157,10 +199,16 @@ export function dispatchClick(laid: LaidOut[], mouseX: number, mouseY: number): 
             if (s.contentHeight <= s.viewportRect.h) continue;
             const v = s.viewportRect;
             const trackX = v.x + v.w - SCROLLBAR_WIDTH;
-            const thumbH = Math.max(8, Math.floor(v.h * v.h / s.contentHeight));
+            const thumbH = Math.max(8, Math.floor((v.h * v.h) / s.contentHeight));
             const maxOffset = s.contentHeight - v.h;
             const thumbY = v.y + Math.floor((v.h - thumbH) * (s.offset / maxOffset));
-            if (pointInRect({ x: trackX, y: thumbY, w: SCROLLBAR_WIDTH, h: thumbH }, mouseX, mouseY)) {
+            if (
+                pointInRect(
+                    { x: trackX, y: thumbY, w: SCROLLBAR_WIDTH, h: thumbH },
+                    mouseX,
+                    mouseY
+                )
+            ) {
                 startScrollbarDrag(item.element.id, mouseY);
                 return true;
             }
@@ -173,7 +221,9 @@ export function dispatchClick(laid: LaidOut[], mouseX: number, mouseY: number): 
         if (item.clipRect && !pointInRect(item.clipRect, mouseX, mouseY)) continue;
         if (!pointInRect(item.rect, mouseX, mouseY)) continue;
         const e = item.element;
-        dbgLog(`  hit kind=${e.kind} rect=(${item.rect.x},${item.rect.y} ${item.rect.w}x${item.rect.h})`);
+        dbgLog(
+            `  hit kind=${e.kind} rect=(${item.rect.x},${item.rect.y} ${item.rect.w}x${item.rect.h})`
+        );
         if (e.kind === "button") {
             setFocusedInput(null);
             e.onClick(item.rect);
@@ -189,7 +239,14 @@ export function dispatchClick(laid: LaidOut[], mouseX: number, mouseY: number): 
             setFocusedInput(e.id);
             // Forward click to the GuiTextField for cursor placement / drag-select start.
             // The field must already be marked focused for mouseClicked to set the cursor.
-            const rec = getInputField(e.id, item.rect.x + 4, item.rect.y, item.rect.w - 8, item.rect.h, extract(e.value));
+            const rec = getInputField(
+                e.id,
+                item.rect.x + 4,
+                item.rect.y,
+                item.rect.w - 8,
+                item.rect.h,
+                extract(e.value)
+            );
             rec.func_146195_b(true); // setFocused
             rec.func_146192_a(mouseX, mouseY, 0); // mouseClicked
             return true;
@@ -213,32 +270,50 @@ function startScrollbarDrag(id: string, mouseY: number): void {
     dragStartOffset = getScrollState(id).offset;
 }
 
-export function isDraggingScrollbar(): boolean { return dragScrollId !== null; }
+export function isDraggingScrollbar(): boolean {
+    return dragScrollId !== null;
+}
 
 export function updateScrollbarDrag(mouseY: number): void {
     if (dragScrollId === null) return;
     const s = getScrollState(dragScrollId);
-    if (s.contentHeight <= s.viewportRect.h) { dragScrollId = null; return; }
+    if (s.contentHeight <= s.viewportRect.h) {
+        dragScrollId = null;
+        return;
+    }
     const v = s.viewportRect;
-    const thumbH = Math.max(8, Math.floor(v.h * v.h / s.contentHeight));
+    const thumbH = Math.max(8, Math.floor((v.h * v.h) / s.contentHeight));
     const trackPx = v.h - thumbH;
     if (trackPx <= 0) return;
     const dy = mouseY - dragStartMouseY;
     const maxOffset = s.contentHeight - v.h;
-    s.offset = Math.max(0, Math.min(maxOffset, dragStartOffset + Math.floor(dy * (maxOffset / trackPx))));
+    s.offset = Math.max(
+        0,
+        Math.min(maxOffset, dragStartOffset + Math.floor(dy * (maxOffset / trackPx)))
+    );
 }
 
-export function endScrollbarDrag(): void { dragScrollId = null; }
+export function endScrollbarDrag(): void {
+    dragScrollId = null;
+}
 
 // --- Wheel scroll dispatch: find topmost scroll under cursor, scroll it ---
-export function dispatchWheel(laid: LaidOut[], mouseX: number, mouseY: number, delta: number): boolean {
+export function dispatchWheel(
+    laid: LaidOut[],
+    mouseX: number,
+    mouseY: number,
+    delta: number
+): boolean {
     for (let i = laid.length - 1; i >= 0; i--) {
         const item = laid[i];
         if (item.element.kind !== "scroll") continue;
         const s = getScrollState(item.element.id);
         if (!pointInRect(s.viewportRect, mouseX, mouseY)) continue;
         if (s.contentHeight <= s.viewportRect.h) return true;
-        s.offset = Math.max(0, Math.min(s.contentHeight - s.viewportRect.h, s.offset - delta * 20));
+        s.offset = Math.max(
+            0,
+            Math.min(s.contentHeight - s.viewportRect.h, s.offset - delta * 20)
+        );
         return true;
     }
     return false;

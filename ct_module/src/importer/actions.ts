@@ -36,10 +36,7 @@ import type {
 } from "htsw/types";
 
 import TaskContext from "../tasks/context";
-import {
-    type ItemRegistry,
-    getMemoizedHousingUuid,
-} from "../importables/itemRegistry";
+import { type ItemRegistry, getMemoizedHousingUuid } from "../importables/itemRegistry";
 import {
     clickGoBack,
     waitForMenu,
@@ -1355,9 +1352,7 @@ function canonicalizeActionItemName(
         action.type === "DROP_ITEM"
     ) {
         if (action.itemName !== undefined) {
-            action.itemName = itemRegistry.canonicalizeObservedName(
-                action.itemName
-            );
+            action.itemName = itemRegistry.canonicalizeObservedName(action.itemName);
         }
     }
 
@@ -1748,10 +1743,7 @@ function collectDebugDiffLines(
         desired !== null
     ) {
         const lines: string[] = [];
-        const keys = new Set([
-            ...Object.keys(observed),
-            ...Object.keys(desired),
-        ]);
+        const keys = new Set([...Object.keys(observed), ...Object.keys(desired)]);
 
         for (const key of [...keys].sort()) {
             const childPath = path === "" ? key : `${path}.${key}`;
