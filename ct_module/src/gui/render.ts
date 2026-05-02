@@ -16,6 +16,7 @@ const COLOR_BUTTON = 0xe02d333d | 0;
 const COLOR_BUTTON_HOVER = 0xf03a4350 | 0;
 const COLOR_INPUT_BG = 0xff000000 | 0;
 const COLOR_INPUT_BORDER = 0xff444444 | 0;
+const COLOR_INPUT_BORDER_HOVER = 0xffa2a2a2 | 0;
 const COLOR_INPUT_BORDER_FOCUS = 0xff67a7e8 | 0;
 const COLOR_SCROLLBAR_TRACK = 0x40000000 | 0;
 const COLOR_SCROLLBAR_THUMB = 0xff888888 | 0;
@@ -100,7 +101,9 @@ function renderItem(item: LaidOut, mouseX: number, mouseY: number, interactive: 
         const value = extract(e.value);
         // Background + border drawn by us (GuiTextField's own background is disabled).
         Renderer.drawRect(COLOR_INPUT_BG, r.x, r.y, r.w, r.h);
-        const borderCol = focused ? COLOR_INPUT_BORDER_FOCUS : COLOR_INPUT_BORDER;
+        const borderCol = focused
+            ? COLOR_INPUT_BORDER_FOCUS
+            : (hovered ? COLOR_INPUT_BORDER_HOVER : COLOR_INPUT_BORDER);
         Renderer.drawRect(borderCol, r.x, r.y, r.w, 1);
         Renderer.drawRect(borderCol, r.x, r.y + r.h - 1, r.w, 1);
         Renderer.drawRect(borderCol, r.x, r.y, 1, r.h);

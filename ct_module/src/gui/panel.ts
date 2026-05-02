@@ -3,7 +3,7 @@
 import { Element, Rect, layoutElement, pointInRect } from "./layout";
 import { Extractable, extract } from "./extractable";
 import { renderElement, dispatchClick } from "./render";
-import { tryDispatchPopoverClick, popoverIsOpen } from "./popovers";
+import { tryDispatchPopoverClick, popoverIsOpen, mouseIsOverPopover } from "./popovers";
 
 
 const COLOR_PANEL = 0xf0242931 | 0;
@@ -41,9 +41,9 @@ export class Panel {
             if (!extract(this.shouldBeVisible)) return;
             const b = extract(this.bounds);
             Renderer.drawRect(COLOR_PANEL, b.x, b.y, b.w, b.h);
-            // When a popover is open, panels are not clickable — suppress hover so visual feedback
-            // matches click propagation.
-            const interactive = !popoverIsOpen();
+            // Hover follows click propagation: panels stay interactive unless the cursor is
+            // actually over a popover (in which case the popover absorbs the click).
+            const interactive = !mouseIsOverPopover(x, y);
             renderElement(this.root, b.x, b.y, b.w, b.h, x, y, interactive);
         });
         this.clickTrigger = register(
