@@ -17,8 +17,8 @@ export type Style = {
     width?: Size;
     height?: Size;
     padding?: Padding;
-    background?: number;
-    hoverBackground?: number;
+    background?: Extractable<number | undefined>;
+    hoverBackground?: Extractable<number | undefined>;
 };
 
 export type ContainerStyle = Style & {
@@ -30,7 +30,7 @@ export type ContainerStyle = Style & {
 export type Element =
     | { kind: "container"; style: ContainerStyle; children: Extractable<Element[]>; onClick?: (rect: Rect) => void }
     | { kind: "button"; style: Style; text: Extractable<string>; onClick: (rect: Rect) => void }
-    | { kind: "text"; style: Style; text: Extractable<string>; color?: number }
+    | { kind: "text"; style: Style; text: Extractable<string>; color?: Extractable<number | undefined> }
     | { kind: "input"; style: Style; id: string; value: Extractable<string>; onChange: (v: string) => void; placeholder?: string }
     | { kind: "scroll"; style: ContainerStyle; id: string; children: Extractable<Element[]> };
 

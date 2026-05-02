@@ -79,14 +79,16 @@ function renderItem(item: LaidOut, mouseX: number, mouseY: number, interactive: 
     if (item.clipRect) pushScissor(item.clipRect);
 
     if (e.kind === "container") {
-        const bg = (hovered && e.onClick && e.style.hoverBackground !== undefined)
-            ? e.style.hoverBackground
-            : e.style.background;
+        const hoverBg = e.style.hoverBackground !== undefined ? extract(e.style.hoverBackground) : undefined;
+        const baseBg = e.style.background !== undefined ? extract(e.style.background) : undefined;
+        const bg = (hovered && e.onClick && hoverBg !== undefined) ? hoverBg : baseBg;
         if (bg !== undefined) Renderer.drawRect(bg, r.x, r.y, r.w, r.h);
     } else if (e.kind === "button") {
-        const bg = e.style.background ?? COLOR_BUTTON;
-        const hoverBg = e.style.hoverBackground ?? COLOR_BUTTON_HOVER;
-        Renderer.drawRect(hovered ? hoverBg : bg, r.x, r.y, r.w, r.h);
+        const baseBg = e.style.background !== undefined ? extract(e.style.background) : undefined;
+        const hoverBg = e.style.hoverBackground !== undefined ? extract(e.style.hoverBackground) : undefined;
+        const bg = baseBg !== undefined ? baseBg : COLOR_BUTTON;
+        const hBg = hoverBg !== undefined ? hoverBg : COLOR_BUTTON_HOVER;
+        Renderer.drawRect(hovered ? hBg : bg, r.x, r.y, r.w, r.h);
         const text = extract(e.text);
         const tw = Renderer.getStringWidth(text);
         const tx = r.x + Math.max(2, Math.floor((r.w - tw) / 2));
@@ -118,7 +120,7 @@ function renderItem(item: LaidOut, mouseX: number, mouseY: number, interactive: 
             field.func_146194_f(); // drawTextBox
         }
     } else if (e.kind === "scroll") {
-        const bg = e.style.background;
+        const bg = e.style.background !== undefined ? extract(e.style.background) : undefined;
         if (bg !== undefined) Renderer.drawRect(bg, r.x, r.y, r.w, r.h);
     }
 

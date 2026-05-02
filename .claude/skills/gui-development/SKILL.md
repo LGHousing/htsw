@@ -58,7 +58,7 @@ Layout algorithm (per container):
 
 `Extractable<T>` is `T | (() => T)`. `extract(v)` calls the function or returns the value.
 
-Extractable today: `button.text`, `input.value`, `text.text`, `container.children`, `scroll.children`, `Panel.bounds`, `Panel.shouldBeVisible`. Anything else is static.
+Extractable today: `button.text`, `input.value`, `text.text`, `container.children`, `scroll.children`, `style.background`, `style.hoverBackground`, `Panel.bounds`, `Panel.shouldBeVisible`. Anything else is static.
 
 Pattern: keep a module-level mutable, expose it via `() => state` and mutate it via the `onChange`/onClick callback.
 
