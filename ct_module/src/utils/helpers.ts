@@ -46,6 +46,17 @@ export function cyrb53(str: string, seed: number = 0) {
  * importables always serialize to identical strings regardless of insertion
  * order or incidental empty-array fields.
  */
+export function unique(values: readonly string[]): string[] {
+    const seen: Record<string, boolean> = {};
+    const result: string[] = [];
+    for (const value of values) {
+        if (seen[value]) continue;
+        seen[value] = true;
+        result.push(value);
+    }
+    return result;
+}
+
 export function stableStringify(value: unknown): string {
     if (value === null) return "null";
     if (typeof value !== "object") return JSON.stringify(value);

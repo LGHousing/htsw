@@ -1,6 +1,7 @@
 import type { Action, Condition, Importable } from "htsw/types";
 
 import TaskContext from "../tasks/context";
+import { unique } from "../utils/helpers";
 import { ensureFunctionNamesExist } from "./functions/shared";
 import { ensureMenuNamesExist } from "./menus/shared";
 import { ensureRegionNamesExist } from "./regions/shared";
@@ -96,13 +97,3 @@ function collectConditionReferences(
     }
 }
 
-function unique(values: readonly string[]): string[] {
-    const seen: Record<string, boolean> = {};
-    const result: string[] = [];
-    for (const value of values) {
-        if (seen[value]) continue;
-        seen[value] = true;
-        result.push(value);
-    }
-    return result;
-}

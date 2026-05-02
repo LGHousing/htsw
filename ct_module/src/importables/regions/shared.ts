@@ -4,7 +4,7 @@ import {
     waitForUnformattedMessage,
 } from "../../importer/helpers";
 import TaskContext from "../../tasks/context";
-import { removedFormatting } from "../../utils/helpers";
+import { removedFormatting, unique } from "../../utils/helpers";
 
 export async function openRegionEditor(
     ctx: TaskContext,
@@ -34,7 +34,7 @@ export async function ensureRegionNamesExist(
     ctx: TaskContext,
     regionNames: readonly string[]
 ): Promise<void> {
-    const names = Array.from(new Set(regionNames));
+    const names = unique(regionNames);
     if (names.length === 0) return;
 
     ctx.displayMessage(`&7Ensuring ${names.length} region shell(s) exist.`);

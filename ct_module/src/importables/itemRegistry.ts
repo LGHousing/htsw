@@ -3,7 +3,7 @@ import type { Importable, ImportableItem } from "htsw/types";
 
 import TaskContext from "../tasks/context";
 import { getCurrentHousingUuid } from "../knowledge";
-import { removedFormatting } from "../utils/helpers";
+import { removedFormatting, unique } from "../utils/helpers";
 import { getItemFromNbt, readItemDisplayAliases } from "../utils/nbt";
 
 export interface ItemRegistryEntry {
@@ -164,12 +164,10 @@ export async function getMemoizedHousingUuid(
 }
 
 function uniqueAliases(values: readonly string[]): string[] {
-    const aliases: string[] = [];
+    const trimmed: string[] = [];
     for (const value of values) {
-        const trimmed = value.trim();
-        if (trimmed !== "" && aliases.indexOf(trimmed) === -1) {
-            aliases.push(trimmed);
-        }
+        const t = value.trim();
+        if (t !== "") trimmed.push(t);
     }
-    return aliases;
+    return unique(trimmed);
 }

@@ -144,6 +144,10 @@ Spec-driven invariants:
 - Action sync order is **delete → edit → move → add** by design.
 - Item cache is stateful and map-specific — be careful when debugging "why didn't this re-import?"
 
+## Code Style
+
+- No unnecessary comments. Docstrings on exported APIs and non-obvious internals are fine, but don't overuse them — let well-named code carry the meaning. Drop noise like `// increment i` or restating what the next line obviously does.
+
 ## Working Style
 
 - Short progress updates before edits, builds, installs, and when findings change the plan.

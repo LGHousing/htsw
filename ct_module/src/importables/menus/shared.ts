@@ -4,7 +4,7 @@ import {
     waitForUnformattedMessage,
 } from "../../importer/helpers";
 import TaskContext from "../../tasks/context";
-import { removedFormatting } from "../../utils/helpers";
+import { removedFormatting, unique } from "../../utils/helpers";
 
 export async function openMenuEditor(
     ctx: TaskContext,
@@ -34,7 +34,7 @@ export async function ensureMenuNamesExist(
     ctx: TaskContext,
     menuNames: readonly string[]
 ): Promise<void> {
-    const names = Array.from(new Set(menuNames));
+    const names = unique(menuNames);
     if (names.length === 0) return;
 
     ctx.displayMessage(`&7Ensuring ${names.length} menu shell(s) exist.`);
