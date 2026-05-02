@@ -1,11 +1,7 @@
 import TaskContext from "../tasks/context";
-import { exportFunction } from "../exporter/exportFunction";
+import { exportFunction } from "./functions/export";
+import { exportMenu } from "./menus/export";
 
-/**
- * Discriminated union over the importable types the exporter knows how
- * to produce. v1 only handles functions; the others will be added
- * incrementally and will reuse the same dispatch shape.
- */
 export type ExportRequest =
     | {
           type: "FUNCTION";
@@ -13,6 +9,12 @@ export type ExportRequest =
           importJsonPath: string;
           htslPath: string;
           htslReference: string;
+      }
+    | {
+          type: "MENU";
+          name: string;
+          importJsonPath: string;
+          rootDir: string;
       };
 
 /**
@@ -33,7 +35,15 @@ export async function exportImportable(
         });
         return;
     }
+    if (request.type === "MENU") {
+        await exportMenu(ctx, {
+            name: request.name,
+            importJsonPath: request.importJsonPath,
+            rootDir: request.rootDir,
+        });
+        return;
+    }
     // exhaustive
-    const _check: never = request.type;
+    const _check: never = request;
     void _check;
 }

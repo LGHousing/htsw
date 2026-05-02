@@ -21,6 +21,10 @@ function printExportHelp(): void {
     ChatLib.chat(
         "&7  Reads a Hypixel function and writes a .htsl + import.json."
     );
+    ChatLib.chat("&f/export menu <name> [path]");
+    ChatLib.chat(
+        "&7  Reads a Hypixel menu and writes per-slot .snbt + import.json."
+    );
     ChatLib.chat(
         "&7  Default path: ./htsw/exports/<housingUuid>/"
     );
@@ -68,6 +72,40 @@ function commandExport(args: string[]): void {
                 importJsonPath,
                 htslPath,
                 htslReference,
+            });
+        }).catch((err) => {
+            ChatLib.chat(`&cExport failed: ${err}`);
+        });
+        return;
+    }
+
+    if (args[0] === "menu") {
+        const name = args[1];
+        if (!name) {
+            ChatLib.chat("&cUsage: /export menu <name> [path]");
+            return;
+        }
+        const pathParts = args.slice(2);
+        const rawPath = pathParts.length > 0 ? pathParts.join(" ") : "";
+        const explicitPath = rawPath.length > 0 ? stripSurroundingQuotes(rawPath) : undefined;
+
+        TaskManager.run(async (ctx) => {
+            let rootDir: string;
+            if (explicitPath) {
+                rootDir = explicitPath.replace(/[\\/]+$/, "");
+            } else {
+                const uuid = await getCurrentHousingUuid(ctx);
+                rootDir = defaultExportRoot(uuid);
+            }
+
+            const importJsonPath = `${rootDir}/import.json`;
+
+            ctx.displayMessage(`&aExporting menu '${name}'...`);
+            await exportImportable(ctx, {
+                type: "MENU",
+                name,
+                importJsonPath,
+                rootDir,
             });
         }).catch((err) => {
             ChatLib.chat(`&cExport failed: ${err}`);
