@@ -24,7 +24,7 @@ const FORMATTING: json.FormattingOptions = {
     eol: "\n",
 };
 
-type Section = "functions" | "events" | "regions" | "items";
+type Section = "functions" | "events" | "regions" | "items" | "menus";
 
 /**
  * The field that uniquely identifies an entry within its section.
