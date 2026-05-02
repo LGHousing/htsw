@@ -1,63 +1,219 @@
 /// <reference types="../../CTAutocomplete" />
 
 import { Panel } from "./panel";
-import { Element } from "./layout";
-import { Button, Col, Row } from "./components";
+import { Element, Rect, layoutElement, pointInRect, getScrollState } from "./layout";
 
-const PANEL_WIDTH = 100;
-const PANEL_HEIGHT = 70;
-
-const LEFT_PANEL_X = 10;
-const LEFT_PANEL_Y = 40;
-const RIGHT_PANEL_X = 120;
-const RIGHT_PANEL_Y = 40;
+// LWJGL globals not in CT autocomplete.
+// @ts-ignore
+const MouseClass = Java.type("org.lwjgl.input.Mouse");
+// @ts-ignore
+const KeyboardClass = Java.type("org.lwjgl.input.Keyboard");
+import { LeftPanel } from "./left-panel";
+import { RightPanel } from "./right-panel";
+import { getContainerBounds, leftPanelRect, rightPanelRect } from "./bounds";
+import { initPopoverRendering, popoverIsOpen, closeAllPopovers } from "./popovers";
+import { dispatchWheel, isDraggingScrollbar, updateScrollbarDrag, endScrollbarDrag, setRenderDebugLog } from "./render";
+import { getFocusedInput, setFocusedInput } from "./focus";
 
 let enabled = true;
 let initialized = false;
+let debugUntilMs = 0;
 
-function isVisible(): boolean { return enabled; }
+const ZERO_RECT: Rect = { x: 0, y: 0, w: 0, h: 0 };
+const DEBUG_LOG_PATH = "./config/ChatTriggers/modules/HTSW/gui-debug.log";
+let debugBuffer = "";
 
-function buildRoot(label: string): Element {
-    return Col({
-        style: { padding: 6, gap: 4 },
-        children: [
-            Button({
-                text: label,
-                style: { width: { kind: "grow" }, height: { kind: "px", value: 16 } },
-                onClick: () => ChatLib.chat(`&a[htsw] ${label} header clicked`),
-            }),
-            Row({
-                style: { gap: 4, height: { kind: "grow" }, padding: { side: "y", value: 2 } },
-                children: [
-                    Button({
-                        text: "A",
-                        style: { width: { kind: "px", value: 24 }, height: { kind: "grow" } },
-                        onClick: () => ChatLib.chat(`&a[htsw] ${label} A clicked`),
-                    }),
-                    Button({
-                        text: "fill",
-                        style: { width: { kind: "grow" }, height: { kind: "grow" } },
-                        onClick: () => ChatLib.chat(`&a[htsw] ${label} fill clicked`),
-                    }),
-                ],
-            }),
-        ],
-    });
+function debugActive(): boolean {
+    return Date.now() < debugUntilMs;
 }
 
-function ensureInitialized(): void {
+function debug(msg: string): void {
+    if (!debugActive()) return;
+    debugBuffer += `[${Date.now()}] ${msg}\n`;
+    FileLib.write(DEBUG_LOG_PATH, debugBuffer);
+}
+
+export function debugLog(msg: string): void { debug(msg); }
+export function debugIsActive(): boolean { return debugActive(); }
+
+function leftBounds(): Rect {
+    const b = getContainerBounds();
+    if (b === null) return ZERO_RECT;
+    return leftPanelRect(b) ?? ZERO_RECT;
+}
+
+function rightBounds(): Rect {
+    const b = getContainerBounds();
+    if (b === null) return ZERO_RECT;
+    return rightPanelRect(b) ?? ZERO_RECT;
+}
+
+function leftVisible(): boolean {
+    if (!enabled) return false;
+    const b = getContainerBounds();
+    return b !== null && leftPanelRect(b) !== null;
+}
+
+function rightVisible(): boolean {
+    if (!enabled) return false;
+    const b = getContainerBounds();
+    return b !== null && rightPanelRect(b) !== null;
+}
+
+// Track active panels so global handlers (wheel, key) can locate the laid-out trees.
+type ActivePanel = { panel: Panel; getBounds: () => Rect; getRoot: () => Element; isVisible: () => boolean };
+const activePanels: ActivePanel[] = [];
+
+function laidOutTrees(): { root: Element; rect: Rect }[] {
+    const out: { root: Element; rect: Rect }[] = [];
+    for (let i = 0; i < activePanels.length; i++) {
+        if (!activePanels[i].isVisible()) continue;
+        out.push({ root: activePanels[i].getRoot(), rect: activePanels[i].getBounds() });
+    }
+    return out;
+}
+
+export function initHtswGui(): void {
     if (initialized) return;
     initialized = true;
-    new Panel(LEFT_PANEL_X, LEFT_PANEL_Y, PANEL_WIDTH, PANEL_HEIGHT, buildRoot("Left"), isVisible).register();
-    new Panel(RIGHT_PANEL_X, RIGHT_PANEL_Y, PANEL_WIDTH, PANEL_HEIGHT, buildRoot("Right"), isVisible).register();
+
+    setRenderDebugLog(debug);
+
+    const left = new Panel(leftBounds, LeftPanel(), leftVisible);
+    const right = new Panel(rightBounds, RightPanel(), rightVisible);
+    left.register();
+    right.register();
+    activePanels.push({ panel: left, getBounds: leftBounds, getRoot: () => left.getRoot(), isVisible: leftVisible });
+    activePanels.push({ panel: right, getBounds: rightBounds, getRoot: () => right.getRoot(), isVisible: rightVisible });
+
+    // Mouse wheel: poll Mouse.getDWheel() each frame, but only consume when the cursor is inside
+    // a scroll viewport. Polling consumes the wheel so MC's GuiContainer won't see it; skipping
+    // the call leaves the buffer alone so vanilla scroll behavior (creative tab change) still works.
+    register("guiRender", (mouseX: number, mouseY: number) => {
+        if (isDraggingScrollbar()) updateScrollbarDrag(mouseY);
+        const trees = laidOutTrees();
+        for (let i = 0; i < trees.length; i++) {
+            const t = trees[i];
+            const laid = layoutElement(t.root, t.rect.x, t.rect.y, t.rect.w, t.rect.h);
+            // Quick check: is mouse over any scroll viewport in this tree?
+            let overScroll = false;
+            for (let j = 0; j < laid.length; j++) {
+                const el = laid[j].element;
+                if (el.kind !== "scroll") continue;
+                const s = getScrollState(el.id);
+                if (pointInRect(s.viewportRect, mouseX, mouseY)) { overScroll = true; break; }
+            }
+            if (!overScroll) continue;
+            const dwheel = MouseClass.getDWheel();
+            if (dwheel === 0) return;
+            const dir = dwheel > 0 ? 1 : -1;
+            debug(`wheel dwheel=${dwheel} dir=${dir} consumed`);
+            dispatchWheel(laid, mouseX, mouseY, dir);
+            return;
+        }
+    });
+    register("guiMouseRelease", () => { endScrollbarDrag(); });
+
+    // Keyboard: CT's char arg is unreliable in this version, translate keyCode -> char ourselves.
+    register("guiKey", (_char: string, keyCode: number, _gui: MCTGuiScreen, event: CancellableEvent) => {
+        const focusedId = getFocusedInput();
+        if (focusedId === null) return;
+        const inputEl = findInput(focusedId);
+        if (inputEl === null) { setFocusedInput(null); return; }
+        const current = typeof inputEl.value === "function" ? inputEl.value() : inputEl.value;
+        if (keyCode === 1) {
+            setFocusedInput(null);
+            if (popoverIsOpen()) closeAllPopovers();
+            cancel(event);
+            return;
+        }
+        if (keyCode === 14) {
+            inputEl.onChange(current.slice(0, -1));
+            cancel(event);
+            return;
+        }
+        if (keyCode === 28) {
+            setFocusedInput(null);
+            cancel(event);
+            return;
+        }
+        const ch = keyCodeToChar(keyCode);
+        if (ch !== null) {
+            inputEl.onChange(current + ch);
+            cancel(event);
+        }
+    });
+
+    // Per-frame state snapshot, ~once per second to avoid log spam.
+    let lastFrameLog = 0;
+    register("guiRender", () => {
+        if (!debugActive()) return;
+        const now = Date.now();
+        if (now - lastFrameLog < 500) return;
+        lastFrameLog = now;
+        const b = getContainerBounds();
+        debug(
+            `state focused=${getFocusedInput()} popoverOpen=${popoverIsOpen()} ` +
+            `bounds=${b === null ? "null" : `${b.screenW}x${b.screenH}`}`
+        );
+    });
+
+    // Register popover rendering LAST so it paints on top of all panels.
+    initPopoverRendering();
+}
+
+// LWJGL keyCode -> [unshifted, shifted] character
+const KEY_TO_CHAR: { [code: number]: [string, string] } = {
+    16: ["q", "Q"], 17: ["w", "W"], 18: ["e", "E"], 19: ["r", "R"], 20: ["t", "T"],
+    21: ["y", "Y"], 22: ["u", "U"], 23: ["i", "I"], 24: ["o", "O"], 25: ["p", "P"],
+    30: ["a", "A"], 31: ["s", "S"], 32: ["d", "D"], 33: ["f", "F"], 34: ["g", "G"],
+    35: ["h", "H"], 36: ["j", "J"], 37: ["k", "K"], 38: ["l", "L"],
+    44: ["z", "Z"], 45: ["x", "X"], 46: ["c", "C"], 47: ["v", "V"], 48: ["b", "B"],
+    49: ["n", "N"], 50: ["m", "M"],
+    2: ["1", "!"], 3: ["2", "@"], 4: ["3", "#"], 5: ["4", "$"], 6: ["5", "%"],
+    7: ["6", "^"], 8: ["7", "&"], 9: ["8", "*"], 10: ["9", "("], 11: ["0", ")"],
+    12: ["-", "_"], 13: ["=", "+"], 26: ["[", "{"], 27: ["]", "}"],
+    39: [";", ":"], 40: ["'", '"'], 41: ["`", "~"], 43: ["\\", "|"],
+    51: [",", "<"], 52: [".", ">"], 53: ["/", "?"], 57: [" ", " "],
+};
+
+function keyCodeToChar(keyCode: number): string | null {
+    const pair = KEY_TO_CHAR[keyCode];
+    if (!pair) return null;
+    // LWJGL Keyboard.KEY_LSHIFT = 42, KEY_RSHIFT = 54
+    const shift = KeyboardClass.isKeyDown(42) || KeyboardClass.isKeyDown(54);
+    return shift ? pair[1] : pair[0];
+}
+
+function findInput(id: string): Extract<Element, { kind: "input" }> | null {
+    const trees = laidOutTrees();
+    for (let i = 0; i < trees.length; i++) {
+        const found = walkForInput(trees[i].root, id);
+        if (found !== null) return found;
+    }
+    return null;
+}
+
+function walkForInput(e: Element, id: string): Extract<Element, { kind: "input" }> | null {
+    if (e.kind === "input" && e.id === id) return e;
+    if (e.kind === "container" || e.kind === "scroll") {
+        const children = typeof e.children === "function" ? e.children() : e.children;
+        for (let i = 0; i < children.length; i++) {
+            const f = walkForInput(children[i], id);
+            if (f !== null) return f;
+        }
+    }
+    return null;
 }
 
 export function toggleHtswGui(): boolean {
-    ensureInitialized();
     enabled = !enabled;
     return enabled;
 }
 
-export function armHtswGuiDebug(_frames: number): void {
-    ensureInitialized();
+export function armHtswGuiDebug(seconds: number): void {
+    debugUntilMs = Date.now() + seconds * 1000;
+    debugBuffer = `[${Date.now()}] armed for ${seconds}s\n`;
+    FileLib.write(DEBUG_LOG_PATH, debugBuffer);
+    ChatLib.chat(`&7[htsw-gui] armed for ${seconds}s`);
 }
