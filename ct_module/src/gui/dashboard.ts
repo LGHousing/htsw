@@ -1,85 +1,66 @@
-import { Diagnostic } from "htsw";
-
 import { TaskManager } from "../tasks/manager";
-import {
-    buildKnowledgeTrustPlan,
-    getCurrentHousingUuid,
-    deleteKnowledge,
-    importableIdentity,
-    trustPlanKey,
-} from "../knowledge";
-import { importSelectedImportables } from "../importables/importSession";
-import { exportImportable } from "../importables/exports";
-import { canonicalSlug, defaultExportRoot } from "../exporter/paths";
 import { stripSurroundingQuotes } from "../utils/strings";
+import { getItemFromNbt } from "../utils/nbt";
 
-import { Colors, stateColor } from "./colors";
+import { readGuiConfig } from "./config";
 import {
-    defaultGuiConfig,
-    readGuiConfig,
-    rememberImportPath,
-    setHouseAlias,
-    writeGuiConfig,
-    type HtswGuiConfig,
-} from "./config";
-import {
+    createDirectory,
+    createFile,
+    defaultImportJsonPath,
+    deletePathRecursive,
     directoryForPath,
-    listBrowserEntries,
-    normalizePathForDisplay,
+    joinPath,
+    minecraftHtswRoot,
+    openDirectoryInOSFileExplorer,
     parentDirectory,
-    type BrowserEntry,
 } from "./files";
+import { createInitialDashboardState, type DashboardFilter } from "./model";
+import type {
+    ContextMenuItem,
+    DashboardRuntime,
+    PromptState,
+} from "./dashboardRuntime";
 import {
-    createInitialDashboardState,
-    isImportableSupported,
-    loadImportProject,
-    rowsFromImportables,
-    visibleRows,
-    type DashboardFilter,
-    type DashboardRow,
-    type DashboardState,
-    type LoadedProject,
-} from "./model";
+    closeTab,
+    commitAlias,
+    ensureJsonTabForActiveImport,
+    focusAlias,
+    getFieldValue,
+    modifiedOrUnknownRows,
+    openHtslTab,
+    openImportableTab,
+    pinTab,
+    refreshBrowser,
+    selectedRows,
+    selectVisible,
+    setActiveTab,
+    setFieldValue,
+    setPreviewRow,
+    toggleRow,
+} from "./dashboardState";
 import {
-    contains,
-    drawButton,
-    drawPanel,
-    drawTextField,
-    drawToggle,
-    shortHash,
-    trimText,
-    type Rect,
-    type TextField,
-} from "./widgets";
+    forgetRows,
+    loadPath,
+    resolveHousing,
+    startExport,
+    startImport,
+} from "./dashboardTasks";
+import {
+    buildBrowserBackgroundContextMenuItems,
+    buildBrowserEntryContextMenuItems,
+    drawDashboard,
+    normalizeMousePoint,
+} from "./dashboardView";
+import { contains } from "./widgets";
 
-type ClickTarget =
-    | { kind: "button"; id: string; rect: Rect; enabled: boolean }
-    | { kind: "row"; id: string; rect: Rect }
-    | { kind: "recent"; path: string; rect: Rect }
-    | { kind: "browser"; entry: BrowserEntry; rect: Rect }
-    | { kind: "field"; id: string; rect: Rect };
-
-type DashboardRuntime = {
-    gui: Gui;
-    state: DashboardState;
-    config: HtswGuiConfig;
-    project: LoadedProject | null;
-    clickTargets: ClickTarget[];
-    fields: TextField[];
-    focusedField: string | null;
-    rowScroll: number;
-    browserOpen: boolean;
-    browserDir: string;
-    browserEntries: BrowserEntry[];
-    pendingForget: boolean;
-};
+const INIT_IMPORT_JSON = '{\n    "functions": []\n}\n';
 
 export function openHtswDashboard(initialPath?: string): void {
     const config = readGuiConfig();
     const importPath =
         initialPath && initialPath.length > 0
             ? stripSurroundingQuotes(initialPath)
-            : config.recentImportJsonPaths[0] ?? defaultGuiConfig().recentImportJsonPaths[0];
+            : (config.recentImportJsonPaths[0] ?? defaultImportJsonPath());
 
     const runtime: DashboardRuntime = {
         gui: new Gui(),
@@ -91,16 +72,34 @@ export function openHtswDashboard(initialPath?: string): void {
         focusedField: null,
         rowScroll: 0,
         browserOpen: false,
-        browserDir: directoryForPath(importPath),
+        browserDir: minecraftHtswRoot(),
         browserEntries: [],
         pendingForget: false,
+        renderErrorReported: false,
+        mouseX: 0,
+        mouseY: 0,
+        tooltips: [],
+        contextMenu: null,
+        pendingPrompt: null,
+        progress: null,
+        overlayTrigger: null,
+        lastClick: null,
     };
 
     runtime.gui.setDoesPauseGame(false);
-    runtime.gui.registerDraw((mouseX, mouseY) => drawDashboard(runtime, mouseX, mouseY));
+    runtime.gui.registerDraw((mouseX, mouseY) => {
+        try {
+            drawDashboard(runtime, mouseX, mouseY);
+        } catch (error) {
+            if (!runtime.renderErrorReported) {
+                runtime.renderErrorReported = true;
+                ChatLib.chat(`&c[gui] render failed: ${error}`);
+            }
+        }
+    });
     runtime.gui.registerClicked((mouseX, mouseY, button) => {
-        if (button !== 0) return;
-        handleClick(runtime, mouseX, mouseY);
+        if (button === 0) handleClick(runtime, mouseX, mouseY);
+        else if (button === 1) handleRightClick(runtime, mouseX, mouseY);
     });
     runtime.gui.registerScrolled((_mouseX, _mouseY, scroll) => {
         runtime.rowScroll = Math.max(0, runtime.rowScroll + (scroll < 0 ? 1 : -1));
@@ -109,198 +108,43 @@ export function openHtswDashboard(initialPath?: string): void {
     runtime.gui.open();
 
     loadPath(runtime, importPath);
+    if (runtime.project?.kind === "error") {
+        runtime.browserOpen = true;
+        runtime.browserDir = minecraftHtswRoot();
+        refreshBrowser(runtime);
+    }
     resolveHousing(runtime);
 }
 
-function drawDashboard(runtime: DashboardRuntime, mouseX: number, mouseY: number): void {
-    runtime.clickTargets = [];
-    runtime.fields = [];
-
-    const width = Renderer.screen.getWidth();
-    const height = Renderer.screen.getHeight();
-    Renderer.drawRect(Colors.bg, 0, 0, width, height);
-
-    drawTopBar(runtime, width);
-    drawLeftRail(runtime, height);
-    drawTable(runtime, width, height);
-    drawBottomBar(runtime, width, height);
-    if (runtime.browserOpen) {
-        drawBrowser(runtime, width, height);
-    }
-
-    if (runtime.pendingForget) {
-        drawConfirm(runtime, width, height);
-    }
-
-    void mouseX;
-    void mouseY;
-}
-
-function drawTopBar(runtime: DashboardRuntime, width: number): void {
-    drawPanel({ x: 8, y: 8, w: width - 16, h: 42 });
-    runtime.gui.drawString("HTSW", 18, 17, Colors.accent);
-    runtime.gui.drawString(
-        houseLabel(runtime),
-        18,
-        31,
-        runtime.state.housingUuid ? Colors.text : Colors.muted
-    );
-
-    const pathField = field(runtime, "importPath", "import.json", runtime.state.importPath, {
-        x: 120,
-        y: 12,
-        w: Math.max(160, width - 520),
-        h: 32,
-    });
-    drawTextField(runtime.gui, pathField, runtime.focusedField === "importPath");
-    if (runtime.focusedField === "aliasValue") {
-        const aliasField = field(runtime, "aliasValue", "house alias", runtime.state.houseAlias ?? "", {
-            x: 120,
-            y: 12,
-            w: Math.max(160, width - 520),
-            h: 32,
-        });
-        drawTextField(runtime.gui, aliasField, true);
-    }
-
-    button(runtime, "load", "Load", { x: width - 390, y: 14, w: 54, h: 24 });
-    button(runtime, "browse", "Browse", { x: width - 330, y: 14, w: 64, h: 24 });
-    toggle(runtime, "trust", "Trust", runtime.state.trustModeEnabled, {
-        x: width - 258,
-        y: 14,
-        w: 74,
-        h: 24,
-    });
-    button(runtime, "refresh", "Refresh", { x: width - 176, y: 14, w: 70, h: 24 });
-    button(runtime, "alias", "Alias", { x: width - 98, y: 14, w: 70, h: 24 }, runtime.state.housingUuid !== null);
-}
-
-function drawLeftRail(runtime: DashboardRuntime, height: number): void {
-    drawPanel({ x: 8, y: 58, w: 150, h: height - 108 });
-    runtime.gui.drawString("Recent", 18, 68, Colors.muted);
-    let y = 84;
-    for (const path of runtime.config.recentImportJsonPaths.slice(0, 8)) {
-        const rect = { x: 14, y, w: 138, h: 18 };
-        Renderer.drawRect(path === runtime.state.importPath ? Colors.rowSelected : Colors.row, rect.x, rect.y, rect.w, rect.h);
-        runtime.gui.drawString(trimText(path, 20), rect.x + 5, rect.y + 5, Colors.text);
-        runtime.clickTargets.push({ kind: "recent", path, rect });
-        y += 21;
-    }
-
-    y += 8;
-    runtime.gui.drawString("Filter", 18, y, Colors.muted);
-    y += 16;
-    for (const filter of ["all", "current", "stale", "missing", "selected"] as DashboardFilter[]) {
-        button(runtime, `filter:${filter}`, filter, { x: 14, y, w: 138, h: 18 });
-        y += 21;
-    }
-}
-
-function drawTable(runtime: DashboardRuntime, width: number, height: number): void {
-    const x = 166;
-    const y = 58;
-    const w = width - 174;
-    const h = height - 108;
-    drawPanel({ x, y, w, h });
-
-    runtime.gui.drawString("Sel", x + 8, y + 8, Colors.muted);
-    runtime.gui.drawString("Type", x + 44, y + 8, Colors.muted);
-    runtime.gui.drawString("Name", x + 118, y + 8, Colors.muted);
-    runtime.gui.drawString("Knowledge", x + Math.max(260, w - 300), y + 8, Colors.muted);
-    runtime.gui.drawString("Hash", x + Math.max(360, w - 190), y + 8, Colors.muted);
-    runtime.gui.drawString("Writer", x + Math.max(450, w - 90), y + 8, Colors.muted);
-
-    const rows = visibleRows(runtime.state);
-    const rowHeight = 19;
-    const maxRows = Math.max(1, Math.floor((h - 34) / rowHeight));
-    if (runtime.rowScroll > Math.max(0, rows.length - maxRows)) {
-        runtime.rowScroll = Math.max(0, rows.length - maxRows);
-    }
-    const shown = rows.slice(runtime.rowScroll, runtime.rowScroll + maxRows);
-
-    let rowY = y + 28;
-    for (const row of shown) {
-        const rect = { x: x + 6, y: rowY, w: w - 12, h: rowHeight - 2 };
-        Renderer.drawRect(row.selected ? Colors.rowSelected : Colors.row, rect.x, rect.y, rect.w, rect.h);
-        runtime.gui.drawString(row.selected ? "[x]" : "[ ]", rect.x + 4, rect.y + 5, Colors.text);
-        runtime.gui.drawString(row.type, rect.x + 40, rect.y + 5, Colors.text);
-        runtime.gui.drawString(trimText(row.identity, 34), rect.x + 112, rect.y + 5, isImportableSupported(row.importable) ? Colors.text : Colors.muted);
-        const state = isImportableSupported(row.importable) ? row.knowledgeState : "unsupported";
-        runtime.gui.drawString(state, x + Math.max(260, w - 300), rect.y + 5, stateColor(state));
-        runtime.gui.drawString(shortHash(row.sourceHash), x + Math.max(360, w - 190), rect.y + 5, Colors.muted);
-        runtime.gui.drawString(row.writer ?? "-", x + Math.max(450, w - 90), rect.y + 5, Colors.muted);
-        runtime.clickTargets.push({ kind: "row", id: row.id, rect });
-        rowY += rowHeight;
-    }
-
-    if (rows.length === 0) {
-        runtime.gui.drawString(emptyTableText(runtime), x + 12, y + 36, Colors.muted);
-    }
-}
-
-function drawBottomBar(runtime: DashboardRuntime, width: number, height: number): void {
-    drawPanel({ x: 8, y: height - 42, w: width - 16, h: 34 });
-    button(runtime, "importSelected", "Import Selected", { x: 18, y: height - 34, w: 112, h: 20 }, canMutate(runtime));
-    button(runtime, "importDirty", "Import Stale/Missing", { x: 136, y: height - 34, w: 132, h: 20 }, canMutate(runtime));
-    button(runtime, "forget", runtime.pendingForget ? "Confirm Forget" : "Forget Selected", { x: 274, y: height - 34, w: 114, h: 20 }, runtime.state.housingUuid !== null && selectedRows(runtime).length > 0);
-
-    const nameField = field(runtime, "exportName", "function", runtime.state.exportFunctionName, {
-        x: 402,
-        y: height - 38,
-        w: 122,
-        h: 28,
-    });
-    drawTextField(runtime.gui, nameField, runtime.focusedField === "exportName");
-    const rootField = field(runtime, "exportRoot", "export root", runtime.state.exportRoot, {
-        x: 530,
-        y: height - 38,
-        w: Math.max(120, width - 774),
-        h: 28,
-    });
-    drawTextField(runtime.gui, rootField, runtime.focusedField === "exportRoot");
-    button(runtime, "exportFunction", "Export Function", { x: width - 226, y: height - 34, w: 112, h: 20 }, canMutate(runtime) && runtime.state.exportFunctionName.trim().length > 0);
-    button(runtime, "selectVisible", "Select Visible", { x: width - 108, y: height - 34, w: 92, h: 20 });
-
-    runtime.gui.drawString(runtime.state.statusMessage ?? statusSummary(runtime), 18, height - 52, Colors.muted);
-}
-
-function drawBrowser(runtime: DashboardRuntime, width: number, height: number): void {
-    const rect = { x: 52, y: 60, w: width - 104, h: height - 118 };
-    Renderer.drawRect(0xf4111419, rect.x, rect.y, rect.w, rect.h);
-    runtime.gui.drawString("Browser", rect.x + 10, rect.y + 9, Colors.accent);
-    button(runtime, "browserClose", "Close", { x: rect.x + rect.w - 62, y: rect.y + 7, w: 50, h: 18 });
-    button(runtime, "browserUp", "Up", { x: rect.x + rect.w - 118, y: rect.y + 7, w: 46, h: 18 });
-
-    const pathField = field(runtime, "browserPath", "directory", runtime.browserDir, {
-        x: rect.x + 10,
-        y: rect.y + 30,
-        w: rect.w - 20,
-        h: 30,
-    });
-    drawTextField(runtime.gui, pathField, runtime.focusedField === "browserPath");
-
-    let y = rect.y + 68;
-    for (const entry of runtime.browserEntries.slice(0, Math.floor((rect.h - 76) / 19))) {
-        const entryRect = { x: rect.x + 10, y, w: rect.w - 20, h: 17 };
-        Renderer.drawRect(entry.kind === "directory" ? Colors.rowSelected : Colors.row, entryRect.x, entryRect.y, entryRect.w, entryRect.h);
-        runtime.gui.drawString(`${entry.kind === "directory" ? "/" : ""}${trimText(entry.name, 70)}`, entryRect.x + 5, entryRect.y + 5, entry.kind === "file" ? Colors.muted : Colors.text);
-        runtime.clickTargets.push({ kind: "browser", entry, rect: entryRect });
-        y += 19;
-    }
-}
-
-function drawConfirm(runtime: DashboardRuntime, width: number, height: number): void {
-    const rect = { x: width / 2 - 130, y: height / 2 - 36, w: 260, h: 72 };
-    Renderer.drawRect(0xf2202026, rect.x, rect.y, rect.w, rect.h);
-    runtime.gui.drawString(`Forget ${selectedRows(runtime).length} selected knowledge entries?`, rect.x + 12, rect.y + 14, Colors.text);
-    button(runtime, "forgetConfirm", "Forget", { x: rect.x + 52, y: rect.y + 42, w: 66, h: 20 });
-    button(runtime, "forgetCancel", "Cancel", { x: rect.x + 140, y: rect.y + 42, w: 66, h: 20 });
-}
-
 function handleClick(runtime: DashboardRuntime, x: number, y: number): void {
-    const target = runtime.clickTargets.find((entry) => contains(entry.rect, x, y));
+    const point = normalizeMousePoint(x, y);
+    const target = [...runtime.clickTargets]
+        .reverse()
+        .find(
+            (entry) =>
+                entry.kind !== "tooltipSource" &&
+                contains(entry.rect, point.x, point.y)
+        );
+
+    // If a context menu is open, close it unless we're clicking one of its items.
+    if (runtime.contextMenu !== null && (!target || target.kind !== "contextItem")) {
+        runtime.contextMenu = null;
+    }
+
     runtime.focusedField = null;
-    if (!target) return;
+    if (!target) {
+        runtime.lastClick = null;
+        return;
+    }
+
+    // Double-click detection — used by row/tab targets to upgrade to "pinned".
+    const targetKey = clickTargetKey(target);
+    const now = Date.now();
+    const isDouble =
+        runtime.lastClick !== null &&
+        runtime.lastClick.key === targetKey &&
+        now - runtime.lastClick.t < 400;
+    runtime.lastClick = { key: targetKey, t: now };
 
     if (target.kind === "field") {
         runtime.focusedField = target.id;
@@ -308,10 +152,27 @@ function handleClick(runtime: DashboardRuntime, x: number, y: number): void {
     }
     if (target.kind === "row") {
         toggleRow(runtime, target.id);
+        openImportableTab(runtime, target.id, isDouble);
+        return;
+    }
+    if (target.kind === "tab") {
+        if (isDouble) {
+            pinTab(runtime, target.tabId);
+        }
+        setActiveTab(runtime, target.tabId);
+        return;
+    }
+    if (target.kind === "tabClose") {
+        closeTab(runtime, target.tabId);
+        return;
+    }
+    if (target.kind === "openHtslTab") {
+        openHtslTab(runtime, target.rowId, isDouble);
         return;
     }
     if (target.kind === "recent") {
         loadPath(runtime, target.path);
+        ensureJsonTabForActiveImport(runtime);
         return;
     }
     if (target.kind === "browser") {
@@ -324,8 +185,123 @@ function handleClick(runtime: DashboardRuntime, x: number, y: number): void {
         }
         return;
     }
+    if (target.kind === "browserBackground") {
+        // Left click on background does nothing; right click opens directory menu.
+        return;
+    }
+    if (target.kind === "previewCmd") {
+        ChatLib.command(target.cmd.replace(/^\//, ""));
+        return;
+    }
+    if (target.kind === "previewCopyNbt") {
+        copyRowNbt(runtime, target.rowId);
+        return;
+    }
+    if (target.kind === "previewGiveItem") {
+        giveRowItem(runtime, target.rowId);
+        return;
+    }
+    if (target.kind === "contextItem") {
+        if (target.enabled) handleContextItem(runtime, target.id, target.payload);
+        runtime.contextMenu = null;
+        return;
+    }
     if (target.kind === "button" && target.enabled) {
         handleButton(runtime, target.id);
+    }
+}
+
+function handleRightClick(runtime: DashboardRuntime, x: number, y: number): void {
+    const point = normalizeMousePoint(x, y);
+
+    // Right-clicking anywhere closes an open prompt or context menu first.
+    if (runtime.contextMenu !== null) {
+        runtime.contextMenu = null;
+        return;
+    }
+
+    // Find the topmost interactive target under the cursor.
+    const target = [...runtime.clickTargets]
+        .reverse()
+        .find(
+            (entry) =>
+                entry.kind !== "tooltipSource" &&
+                contains(entry.rect, point.x, point.y)
+        );
+
+    if (!target) return;
+
+    if (target.kind === "browser") {
+        runtime.contextMenu = {
+            x: point.x,
+            y: point.y,
+            items: buildBrowserEntryContextMenuItems(target.entry),
+        };
+        return;
+    }
+    if (target.kind === "browserBackground") {
+        runtime.contextMenu = {
+            x: point.x,
+            y: point.y,
+            items: buildBrowserBackgroundContextMenuItems(runtime),
+        };
+        return;
+    }
+    if (target.kind === "row") {
+        // Right-click also sets the preview without toggling selection.
+        setPreviewRow(runtime, target.id);
+        return;
+    }
+}
+
+function handleContextItem(
+    runtime: DashboardRuntime,
+    id: string,
+    payload: string | undefined
+): void {
+    switch (id) {
+        case "ctx.delete":
+            if (payload) {
+                const result = deletePathRecursive(payload);
+                if (!result.ok) {
+                    runtime.state.statusMessage = `Delete failed: ${result.error}`;
+                } else {
+                    runtime.state.statusMessage = `Deleted ${payload}.`;
+                }
+                refreshBrowser(runtime);
+            }
+            return;
+        case "ctx.openInOS":
+            if (payload) {
+                const result = openDirectoryInOSFileExplorer(payload);
+                if (!result.ok) {
+                    runtime.state.statusMessage = `Open in OS failed: ${result.error}`;
+                }
+            }
+            return;
+        case "ctx.newFile":
+            openPrompt(runtime, "newFile", payload ?? runtime.browserDir);
+            return;
+        case "ctx.newFolder":
+            openPrompt(runtime, "newFolder", payload ?? runtime.browserDir);
+            return;
+        case "ctx.initImport":
+            if (payload) initImportJson(runtime, payload);
+            return;
+        case "ctx.openEntry":
+            if (payload) {
+                const fileEntry = runtime.browserEntries.find(
+                    (entry) => entry.absolutePath === payload
+                );
+                if (fileEntry && fileEntry.kind === "directory") {
+                    runtime.browserDir = payload;
+                    refreshBrowser(runtime);
+                } else {
+                    loadPath(runtime, payload);
+                    runtime.browserOpen = false;
+                }
+            }
+            return;
     }
 }
 
@@ -335,49 +311,211 @@ function handleButton(runtime: DashboardRuntime, id: string): void {
         runtime.rowScroll = 0;
         return;
     }
-    if (id === "load") loadPath(runtime, runtime.state.importPath);
-    if (id === "browse") {
-        runtime.browserOpen = true;
-        runtime.browserDir = directoryForPath(runtime.state.importPath);
-        refreshBrowser(runtime);
-    }
-    if (id === "refresh") {
-        loadPath(runtime, runtime.state.importPath);
-        resolveHousing(runtime);
-    }
-    if (id === "trust") runtime.state.trustModeEnabled = !runtime.state.trustModeEnabled;
-    if (id === "alias") focusAlias(runtime);
-    if (id === "browserClose") runtime.browserOpen = false;
-    if (id === "browserUp") {
-        const parent = parentDirectory(runtime.browserDir);
-        if (parent !== null) {
-            runtime.browserDir = parent;
+
+    switch (id) {
+        case "load":
+            loadPath(runtime, runtime.state.importPath);
+            return;
+        case "browse":
+            runtime.browserOpen = true;
+            runtime.browserDir =
+                runtime.project?.kind === "error"
+                    ? minecraftHtswRoot()
+                    : directoryForPath(runtime.state.importPath);
             refreshBrowser(runtime);
+            return;
+        case "refresh":
+            loadPath(runtime, runtime.state.importPath);
+            resolveHousing(runtime);
+            return;
+        case "trust":
+            runtime.state.trustModeEnabled = !runtime.state.trustModeEnabled;
+            runtime.state.statusMessage = runtime.state.trustModeEnabled
+                ? "Trust on: current Knowledge can skip live GUI reads this import run."
+                : "Trust off: imports will verify through live Housing GUI reads.";
+            return;
+        case "alias":
+            focusAlias(runtime);
+            return;
+        case "browserClose":
+            runtime.browserOpen = false;
+            return;
+        case "browserUp":
+            openParentBrowserDirectory(runtime);
+            return;
+        case "browserRefresh":
+            refreshBrowser(runtime);
+            return;
+        case "browserOpenInOS": {
+            const result = openDirectoryInOSFileExplorer(runtime.browserDir);
+            if (!result.ok) {
+                runtime.state.statusMessage = `Open in OS failed: ${result.error}`;
+            }
+            return;
         }
+        case "browserNewFile":
+            openPrompt(runtime, "newFile", runtime.browserDir);
+            return;
+        case "browserNewFolder":
+            openPrompt(runtime, "newFolder", runtime.browserDir);
+            return;
+        case "browserInitImport":
+            initImportJson(runtime, runtime.browserDir);
+            return;
+        case "promptOk":
+            commitPrompt(runtime);
+            return;
+        case "promptCancel":
+            runtime.pendingPrompt = null;
+            runtime.focusedField = null;
+            return;
+        case "selectVisible":
+            selectVisible(runtime);
+            return;
+        case "importSelected":
+            startImport(runtime, selectedRows(runtime));
+            return;
+        case "importDirty":
+            startImport(runtime, modifiedOrUnknownRows(runtime));
+            return;
+        case "forget":
+            requestForget(runtime);
+            return;
+        case "forgetConfirm":
+            forgetRows(runtime, selectedRows(runtime));
+            return;
+        case "forgetCancel":
+            runtime.pendingForget = false;
+            return;
+        case "exportFunction":
+            startExport(runtime);
+            return;
+        case "cancelTask":
+            if (runtime.state.activeTask !== null) {
+                TaskManager.cancelAll();
+                runtime.state.statusMessage = "Cancellation requested.";
+            }
+            return;
     }
-    if (id === "selectVisible") selectVisible(runtime);
-    if (id === "importSelected") startImport(runtime, selectedRows(runtime));
-    if (id === "importDirty") {
-        startImport(
-            runtime,
-            runtime.state.rows.filter(
-                (row) =>
-                    row.knowledgeState !== "current" && isImportableSupported(row.importable)
-            )
-        );
+}
+
+function openPrompt(
+    runtime: DashboardRuntime,
+    kind: "newFile" | "newFolder",
+    parentDir: string
+): void {
+    runtime.pendingPrompt = {
+        kind,
+        title: kind === "newFile" ? "New file name:" : "New folder name:",
+        value: "",
+        parentDir,
+    };
+    runtime.focusedField = "promptValue";
+}
+
+function commitPrompt(runtime: DashboardRuntime): void {
+    const prompt = runtime.pendingPrompt;
+    if (prompt === null) return;
+    const name = prompt.value.trim();
+    if (name.length === 0) {
+        runtime.pendingPrompt = null;
+        runtime.focusedField = null;
+        return;
     }
-    if (id === "forget") {
-        const rows = selectedRows(runtime);
-        if (rows.length > 1) runtime.pendingForget = true;
-        else forgetRows(runtime, rows);
+    const target = joinPath(prompt.parentDir, name);
+    if (prompt.kind === "newFile") {
+        const result = createFile(target, "");
+        runtime.state.statusMessage = result.ok
+            ? `Created file ${name}.`
+            : `Create file failed: ${result.error}`;
+    } else {
+        const result = createDirectory(target);
+        runtime.state.statusMessage = result.ok
+            ? `Created folder ${name}.`
+            : `Create folder failed: ${result.error}`;
     }
-    if (id === "forgetConfirm") forgetRows(runtime, selectedRows(runtime));
-    if (id === "forgetCancel") runtime.pendingForget = false;
-    if (id === "exportFunction") startExport(runtime);
+    runtime.pendingPrompt = null;
+    runtime.focusedField = null;
+    refreshBrowser(runtime);
+}
+
+function initImportJson(runtime: DashboardRuntime, directory: string): void {
+    const target = joinPath(directory, "import.json");
+    const result = createFile(target, INIT_IMPORT_JSON);
+    if (!result.ok) {
+        runtime.state.statusMessage = `Init import.json failed: ${result.error}`;
+        return;
+    }
+    runtime.state.statusMessage = `Created import.json in ${directory}.`;
+    refreshBrowser(runtime);
+    loadPath(runtime, target);
+    runtime.browserOpen = false;
+}
+
+function giveRowItem(runtime: DashboardRuntime, rowId: string): void {
+    const row = runtime.state.rows.find((entry) => entry.id === rowId);
+    if (row === undefined || row.importable.type !== "ITEM") {
+        runtime.state.statusMessage = "Selected row is not an item.";
+        return;
+    }
+    try {
+        const C10 = Java.type("net.minecraft.network.play.client.C10PacketCreativeInventoryAction");
+        const C09 = Java.type("net.minecraft.network.play.client.C09PacketHeldItemChange");
+        const item = getItemFromNbt(row.importable.nbt);
+        Client.sendPacket(new C10(36, item.getItemStack()));
+        const player = Player.getPlayer();
+        if (player.field_71071_by.field_70461_c !== 0) {
+            Client.sendPacket(new C09(0));
+            player.field_71071_by.field_70461_c = 0;
+        }
+        runtime.state.statusMessage = `Gave item ${row.importable.name} (slot 0).`;
+    } catch (error) {
+        runtime.state.statusMessage = `Give item failed: ${error}`;
+    }
+}
+
+function copyRowNbt(runtime: DashboardRuntime, rowId: string): void {
+    const row = runtime.state.rows.find((entry) => entry.id === rowId);
+    if (row === undefined || row.importable.type !== "ITEM") {
+        runtime.state.statusMessage = "No item selected for copy.";
+        return;
+    }
+    try {
+        const StringSelection = Java.type("java.awt.datatransfer.StringSelection");
+        const Toolkit = Java.type("java.awt.Toolkit");
+        const text = JSON.stringify(row.importable.nbt);
+        const selection = new StringSelection(text);
+        Toolkit.getDefaultToolkit().getSystemClipboard().setContents(selection, null);
+        runtime.state.statusMessage = "Copied item NBT (JSON) to clipboard.";
+    } catch (error) {
+        runtime.state.statusMessage = `Copy failed: ${error}`;
+    }
+}
+
+function openParentBrowserDirectory(runtime: DashboardRuntime): void {
+    const parent = parentDirectory(runtime.browserDir);
+    if (parent === null) return;
+    runtime.browserDir = parent;
+    refreshBrowser(runtime);
+}
+
+function requestForget(runtime: DashboardRuntime): void {
+    const rows = selectedRows(runtime);
+    if (rows.length > 1) runtime.pendingForget = true;
+    else forgetRows(runtime, rows);
 }
 
 function handleKey(runtime: DashboardRuntime, typed: string, key: number): void {
     if (key === 1) {
+        if (runtime.contextMenu !== null) {
+            runtime.contextMenu = null;
+            return;
+        }
+        if (runtime.pendingPrompt !== null) {
+            runtime.pendingPrompt = null;
+            runtime.focusedField = null;
+            return;
+        }
         if (runtime.browserOpen) {
             runtime.browserOpen = false;
             return;
@@ -402,6 +540,13 @@ function handleKey(runtime: DashboardRuntime, typed: string, key: number): void 
 function editFocusedField(runtime: DashboardRuntime, typed: string, key: number): void {
     const id = runtime.focusedField;
     if (id === null) return;
+    if (key === 47 && runtime.gui.isControlDown()) {
+        const pasted = readClipboardText();
+        if (pasted.length > 0) {
+            setFieldValue(runtime, id, getFieldValue(runtime, id) + pasted);
+        }
+        return;
+    }
     if (key === 14) {
         setFieldValue(runtime, id, getFieldValue(runtime, id).slice(0, -1));
         return;
@@ -413,250 +558,62 @@ function editFocusedField(runtime: DashboardRuntime, typed: string, key: number)
             refreshBrowser(runtime);
         }
         if (id === "aliasValue") commitAlias(runtime);
+        if (id === "promptValue") {
+            commitPrompt(runtime);
+            return;
+        }
         runtime.focusedField = null;
         return;
     }
-    if (typed && typed >= " " && typed !== "\u007f") {
-        setFieldValue(runtime, id, getFieldValue(runtime, id) + typed);
+    const character = typedCharacter(typed);
+    if (character !== null) {
+        setFieldValue(runtime, id, getFieldValue(runtime, id) + character);
     }
 }
 
-function loadPath(runtime: DashboardRuntime, rawPath: string): void {
-    const path = stripSurroundingQuotes(rawPath.trim() || "import.json");
-    runtime.state.importPath = path;
-    runtime.state.parseStatus = { kind: "loading" };
-    runtime.project = loadImportProject(path);
-    runtime.state.diagnostics = runtime.project.kind === "ready"
-        ? runtime.project.diagnostics
-        : runtime.project.diagnostics ?? [];
+function typedCharacter(typed: unknown): string | null {
+    if (typed === null || typed === undefined) return null;
+    const value = String(typed);
+    if (value.length === 0) return null;
+    const character = value[0];
+    if (character < " " || character === "") return null;
+    return character;
+}
 
-    if (runtime.project.kind === "ready") {
-        runtime.state.parseStatus = { kind: "ready" };
-        runtime.state.rows = rowsFromImportables(
-            runtime.state.housingUuid,
-            runtime.project.importables,
-            runtime.state.rows
-        );
-        runtime.config = rememberImportPath(runtime.config, path);
-        writeGuiConfig(runtime.config);
-        runtime.state.statusMessage = `Loaded ${runtime.project.importables.length} importables.`;
-    } else {
-        runtime.state.parseStatus = { kind: "error", message: runtime.project.message };
-        runtime.state.rows = [];
-        runtime.state.statusMessage = `Load failed: ${runtime.project.message}`;
+function clickTargetKey(target: { kind: string; [key: string]: any }): string {
+    switch (target.kind) {
+        case "row":
+            return `row:${target.id}`;
+        case "tab":
+            return `tab:${target.tabId}`;
+        case "tabClose":
+            return `tabClose:${target.tabId}`;
+        case "openHtslTab":
+            return `openHtslTab:${target.rowId}`;
+        case "button":
+            return `button:${target.id}`;
+        case "browser":
+            return `browser:${target.entry?.absolutePath ?? ""}`;
+        case "recent":
+            return `recent:${target.path}`;
+        case "contextItem":
+            return `ctx:${target.id}:${target.payload ?? ""}`;
+        case "field":
+            return `field:${target.id}`;
+        default:
+            return target.kind;
     }
 }
 
-function resolveHousing(runtime: DashboardRuntime): void {
-    TaskManager.run(async (ctx) => {
-        const uuid = await getCurrentHousingUuid(ctx);
-        runtime.state.housingUuid = uuid;
-        runtime.state.houseAlias = runtime.config.houseAliases[uuid] ?? null;
-        if (runtime.state.exportRoot.length === 0) {
-            runtime.state.exportRoot = defaultExportRoot(uuid);
-        }
-        if (runtime.project?.kind === "ready") {
-            runtime.state.rows = rowsFromImportables(
-                uuid,
-                runtime.project.importables,
-                runtime.state.rows
-            );
-        }
-    }).catch((error) => {
-        runtime.state.statusMessage = `No housing UUID: ${error}`;
-    });
-}
-
-function startImport(runtime: DashboardRuntime, rows: DashboardRow[]): void {
-    const housingUuid = runtime.state.housingUuid;
-    if (housingUuid === null || rows.length === 0 || runtime.state.activeTask !== null) return;
-    const supported = rows.filter((row) => isImportableSupported(row.importable));
-    if (supported.length === 0) return;
-
-    runtime.state.activeTask = { kind: "import", label: `Importing ${supported.length}` };
-    const importables = supported.map((row) => row.importable);
-    const sourcePath = runtime.state.importPath;
-    const trustMode = runtime.state.trustModeEnabled;
-    if (trustMode && runtime.project?.kind === "ready") {
-        const trustPlan = buildKnowledgeTrustPlan(housingUuid, runtime.project.importables);
-        let whole = 0;
-        let nested = 0;
-        for (const importable of importables) {
-            const key = trustPlanKey(importable.type, importableIdentity(importable));
-            const plan = trustPlan.importables.get(key);
-            if (plan?.wholeImportableTrusted) whole++;
-            nested += plan?.trustedListPaths.size ?? 0;
-        }
-        ChatLib.chat(
-            `&7[gui] trust preview: ${whole} whole importable(s), ${nested} trusted list path(s).`
-        );
+function readClipboardText(): string {
+    try {
+        const Toolkit = Java.type("java.awt.Toolkit");
+        const DataFlavor = Java.type("java.awt.datatransfer.DataFlavor");
+        const clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
+        const value = clipboard.getData(DataFlavor.stringFlavor);
+        return String(value ?? "").replace(/[\r\n]+/g, "");
+    } catch (error) {
+        ChatLib.chat(`&c[gui] paste failed: ${error}`);
+        return "";
     }
-    runtime.gui.close();
-    TaskManager.run(async (ctx) => {
-        ctx.displayMessage(
-            `&a[gui] Importing ${importables.length} importable(s)${trustMode ? " with trust mode" : ""}.`
-        );
-        const result = await importSelectedImportables(ctx, {
-            importables,
-            trustMode,
-            housingUuid,
-            sourcePath,
-        });
-        ctx.displayMessage(
-            `&a[gui] Import done: ${result.imported} imported, ${result.skippedTrusted} trusted skip, ${result.failed} failed.`
-        );
-    }).catch((error) => {
-        ChatLib.chat(`&c[gui] Import failed: ${error}`);
-    });
-}
-
-function startExport(runtime: DashboardRuntime): void {
-    const housingUuid = runtime.state.housingUuid;
-    const name = runtime.state.exportFunctionName.trim();
-    if (housingUuid === null || name.length === 0 || runtime.state.activeTask !== null) return;
-    const rootDir = (runtime.state.exportRoot || defaultExportRoot(housingUuid)).replace(/[\\/]+$/, "");
-    const importJsonPath = `${rootDir}/import.json`;
-    const filename = `${canonicalSlug(name)}.htsl`;
-
-    runtime.state.activeTask = { kind: "export", label: `Exporting ${name}` };
-    runtime.gui.close();
-    TaskManager.run(async (ctx) => {
-        await exportImportable(ctx, {
-            type: "FUNCTION",
-            name,
-            importJsonPath,
-            htslPath: `${rootDir}/${filename}`,
-            htslReference: filename,
-        });
-    }).catch((error) => {
-        ChatLib.chat(`&c[gui] Export failed: ${error}`);
-    });
-}
-
-function forgetRows(runtime: DashboardRuntime, rows: DashboardRow[]): void {
-    const housingUuid = runtime.state.housingUuid;
-    if (housingUuid === null) return;
-    for (const row of rows) {
-        deleteKnowledge(housingUuid, row.type, row.identity);
-    }
-    runtime.pendingForget = false;
-    if (runtime.project?.kind === "ready") {
-        runtime.state.rows = rowsFromImportables(
-            housingUuid,
-            runtime.project.importables,
-            runtime.state.rows
-        );
-    }
-    runtime.state.statusMessage = `Forgot ${rows.length} knowledge entr${rows.length === 1 ? "y" : "ies"}.`;
-}
-
-function field(
-    runtime: DashboardRuntime,
-    id: string,
-    label: string,
-    value: string,
-    rect: Rect
-): TextField {
-    const textField = { id, label, value, rect };
-    runtime.fields.push(textField);
-    runtime.clickTargets.push({ kind: "field", id, rect });
-    return textField;
-}
-
-function button(
-    runtime: DashboardRuntime,
-    id: string,
-    label: string,
-    rect: Rect,
-    enabled: boolean = true
-): void {
-    drawButton(runtime.gui, rect, label, enabled);
-    runtime.clickTargets.push({ kind: "button", id, rect, enabled });
-}
-
-function toggle(runtime: DashboardRuntime, id: string, label: string, on: boolean, rect: Rect): void {
-    drawToggle(runtime.gui, rect, label, on);
-    runtime.clickTargets.push({ kind: "button", id, rect, enabled: true });
-}
-
-function refreshBrowser(runtime: DashboardRuntime): void {
-    runtime.browserDir = normalizePathForDisplay(runtime.browserDir);
-    runtime.browserEntries = listBrowserEntries(runtime.browserDir);
-}
-
-function toggleRow(runtime: DashboardRuntime, id: string): void {
-    runtime.state.rows = runtime.state.rows.map((row) =>
-        row.id === id ? { ...row, selected: !row.selected } : row
-    );
-}
-
-function selectVisible(runtime: DashboardRuntime): void {
-    const ids = new Set(visibleRows(runtime.state).map((row) => row.id));
-    const allSelected = runtime.state.rows
-        .filter((row) => ids.has(row.id))
-        .every((row) => row.selected);
-    runtime.state.rows = runtime.state.rows.map((row) =>
-        ids.has(row.id) ? { ...row, selected: !allSelected } : row
-    );
-}
-
-function selectedRows(runtime: DashboardRuntime): DashboardRow[] {
-    return runtime.state.rows.filter((row) => row.selected);
-}
-
-function canMutate(runtime: DashboardRuntime): boolean {
-    return runtime.state.housingUuid !== null && runtime.state.activeTask === null;
-}
-
-function statusSummary(runtime: DashboardRuntime): string {
-    const selected = selectedRows(runtime).length;
-    const current = runtime.state.rows.filter((row) => row.knowledgeState === "current").length;
-    const stale = runtime.state.rows.filter((row) => row.knowledgeState === "stale").length;
-    const missing = runtime.state.rows.filter((row) => row.knowledgeState === "missing").length;
-    return `${runtime.state.rows.length} rows, ${selected} selected, ${current} current, ${stale} stale, ${missing} missing`;
-}
-
-function emptyTableText(runtime: DashboardRuntime): string {
-    if (runtime.state.parseStatus.kind === "error") return runtime.state.parseStatus.message;
-    if (runtime.state.parseStatus.kind === "loading") return "Loading...";
-    return "No rows.";
-}
-
-function houseLabel(runtime: DashboardRuntime): string {
-    if (runtime.state.housingUuid === null) return "House: unresolved";
-    return `House: ${runtime.state.houseAlias ?? shortenUuid(runtime.state.housingUuid)}`;
-}
-
-function shortenUuid(uuid: string): string {
-    return uuid.length <= 12 ? uuid : `${uuid.slice(0, 8)}...${uuid.slice(-4)}`;
-}
-
-function focusAlias(runtime: DashboardRuntime): void {
-    if (runtime.state.housingUuid === null) return;
-    runtime.focusedField = "aliasValue";
-    runtime.state.statusMessage = "Type house alias and press Enter.";
-}
-
-function commitAlias(runtime: DashboardRuntime): void {
-    const uuid = runtime.state.housingUuid;
-    if (uuid === null) return;
-    runtime.config = setHouseAlias(runtime.config, uuid, runtime.state.houseAlias ?? "");
-    writeGuiConfig(runtime.config);
-}
-
-function getFieldValue(runtime: DashboardRuntime, id: string): string {
-    if (id === "importPath") return runtime.state.importPath;
-    if (id === "exportName") return runtime.state.exportFunctionName;
-    if (id === "exportRoot") return runtime.state.exportRoot;
-    if (id === "browserPath") return runtime.browserDir;
-    if (id === "aliasValue") return runtime.state.houseAlias ?? "";
-    return "";
-}
-
-function setFieldValue(runtime: DashboardRuntime, id: string, value: string): void {
-    if (id === "importPath") runtime.state.importPath = value;
-    if (id === "exportName") runtime.state.exportFunctionName = value;
-    if (id === "exportRoot") runtime.state.exportRoot = value;
-    if (id === "browserPath") runtime.browserDir = value;
-    if (id === "aliasValue") runtime.state.houseAlias = value;
 }

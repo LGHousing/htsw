@@ -1,3 +1,5 @@
+import { defaultImportJsonPath } from "./files";
+
 export type HtswGuiConfig = {
     schemaVersion: 1;
     recentImportJsonPaths: string[];
@@ -10,7 +12,7 @@ const MAX_RECENT_PATHS = 10;
 export function defaultGuiConfig(): HtswGuiConfig {
     return {
         schemaVersion: 1,
-        recentImportJsonPaths: ["import.json"],
+        recentImportJsonPaths: [defaultImportJsonPath()],
         houseAliases: {},
     };
 }
@@ -34,7 +36,9 @@ export function readGuiConfig(): HtswGuiConfig {
         return {
             schemaVersion: 1,
             recentImportJsonPaths: normalizeRecentPaths(
-                parsed.recentImportJsonPaths.filter((path: unknown) => typeof path === "string")
+                parsed.recentImportJsonPaths.filter(
+                    (path: unknown) => typeof path === "string"
+                )
             ),
             houseAliases: parsed.houseAliases as Record<string, string>,
         };
@@ -101,5 +105,5 @@ function normalizeRecentPaths(paths: readonly string[]): string[] {
         out.push(path);
         if (out.length >= MAX_RECENT_PATHS) break;
     }
-    return out.length === 0 ? ["import.json"] : out;
+    return out.length === 0 ? [defaultImportJsonPath()] : out;
 }
