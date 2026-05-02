@@ -130,7 +130,12 @@ function renderItem(
     } else if (e.kind === "text") {
         const text = extract(e.text);
         const ty = r.y + Math.max(0, Math.floor((r.h - LINE_H) / 2));
-        Renderer.drawString(text, r.x, ty);
+        const color = e.color !== undefined ? extract(e.color) : undefined;
+        if (color !== undefined) {
+            Client.getMinecraft().field_71466_p.func_175065_a(text, r.x, ty, color, false);
+        } else {
+            Renderer.drawString(text, r.x, ty);
+        }
     } else if (e.kind === "input") {
         const focused = isInputFocused(e.id);
         const value = extract(e.value);
