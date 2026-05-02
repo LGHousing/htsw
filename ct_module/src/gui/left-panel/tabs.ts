@@ -1,15 +1,15 @@
 import { Element } from "../layout";
 import { Button, Row } from "../components";
 import { ExploreView } from "./explore";
-import { MemoryView } from "./memory";
+import { KnowledgeView } from "./knowledge";
 
-export type TabId = "explore" | "memory";
+export type TabId = "explore" | "knowledge";
 
 type Tab = { id: TabId; label: string; content: () => Element };
 
 export const TABS: Tab[] = [
     { id: "explore", label: "Explore", content: ExploreView },
-    { id: "memory", label: "Memory", content: MemoryView },
+    { id: "knowledge", label: "Knowledge", content: KnowledgeView },
 ];
 
 const TAB_ACTIVE_BG = 0xff67a7e8 | 0;
