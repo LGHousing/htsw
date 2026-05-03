@@ -116,6 +116,7 @@ export function removeSource(fullPath: string): void {
     for (let i = 0; i < sources.length; i++) {
         if (sources[i].fullPath === fullPath) {
             sources.splice(i, 1);
+            enumerationCache.delete(fullPath);
             return;
         }
     }
@@ -123,7 +124,10 @@ export function removeSource(fullPath: string): void {
 
 export function removeAllStandaloneFiles(): void {
     for (let i = sources.length - 1; i >= 0; i--) {
-        if (sources[i].kind === "file") sources.splice(i, 1);
+        if (sources[i].kind === "file") {
+            enumerationCache.delete(sources[i].fullPath);
+            sources.splice(i, 1);
+        }
     }
 }
 
@@ -330,7 +334,14 @@ function walkDir(dir: any, root: any, out: Result[]): void {
     }
 }
 
-export function enumerateForSource(s: Source): Result[] {
+// Per-source TTL cache. The full directory walk is expensive (recursive readdir + stat per
+// entry), and `buildTreeRows()` runs every frame as a Scroll children extractable, so without
+// a cache we'd hit the filesystem hundreds of times per second. 1s TTL means new files appear
+// with at most ~1s lag; that's acceptable for this UI.
+const ENUMERATION_TTL_MS = 1000;
+const enumerationCache = new Map<string, { at: number; results: Result[] }>();
+
+function enumerateForSourceUncached(s: Source): Result[] {
     const Paths = Java.type("java.nio.file.Paths");
     const Files = Java.type("java.nio.file.Files");
     const out: Result[] = [];
@@ -359,4 +370,20 @@ export function enumerateForSource(s: Source): Result[] {
         }
     }
     return out;
+}
+
+export function enumerateForSource(s: Source): Result[] {
+    const now = Date.now();
+    const cached = enumerationCache.get(s.fullPath);
+    if (cached !== undefined && now - cached.at < ENUMERATION_TTL_MS) {
+        return cached.results;
+    }
+    const results = enumerateForSourceUncached(s);
+    enumerationCache.set(s.fullPath, { at: now, results });
+    return results;
+}
+
+export function invalidateEnumerationCache(fullPath?: string): void {
+    if (fullPath === undefined) enumerationCache.clear();
+    else enumerationCache.delete(fullPath);
 }
