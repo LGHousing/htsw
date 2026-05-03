@@ -1,8 +1,9 @@
 /// <reference types="../../../../CTAutocomplete" />
 
-import { Element } from "../../lib/layout";
+import { ClickInfo, Element, Rect } from "../../lib/layout";
 import { Button, Col, Container, Input, Row, Scroll, Text } from "../../lib/components";
 import { closeAllPopovers, togglePopover } from "../../lib/popovers";
+import { openMenu, MenuAction } from "../../lib/menu";
 import {
     ImportEntry,
     Result,
@@ -13,8 +14,18 @@ import {
     ROW_BG,
     ROW_HOVER_BG,
 } from "./types";
-import { Source, enumerateForSource, getSources, queueSourcePath } from "./source";
+import {
+    SourceDir,
+    SourceFile,
+    enumerateForSource,
+    getSources,
+    isDefaultSource,
+    queueSourcePath,
+    removeAllStandaloneFiles,
+    removeSource,
+} from "./source";
 import { showNativePicker } from "../../../utils/nativePicker";
+import { showInExplorer, openInVSCode } from "../../../utils/osShell";
 import { previewSelect, confirmSelect } from "../../selection";
 import { SORT_FIELDS, isSortDefault, sortResults, sortPopoverContent } from "./sort";
 import {
@@ -26,6 +37,15 @@ import {
 
 let searchQuery = "";
 const expandedImports: Set<string> = new Set();
+// Roots are expanded by default; a key in this set means the root is collapsed.
+const collapsedRoots: Set<string> = new Set();
+
+const STANDALONE_KEY = "__standalone__";
+const ROOT_DIR_PREFIX = "dir:";
+
+function dirRootKey(s: SourceDir): string {
+    return ROOT_DIR_PREFIX + s.fullPath;
+}
 
 function filterAndSort(all: Result[]): Result[] {
     const q = searchQuery.toLowerCase();
@@ -59,6 +79,113 @@ function entryLabel(e: ImportEntry): string {
     return e.type === "EVENT" ? e.event : e.name;
 }
 
+// --- Menu helpers ---------------------------------------------------------
+
+function fsActions(fullPath: string): MenuAction[] {
+    return [
+        { label: "Show in explorer", onClick: () => showInExplorer(fullPath) },
+        { label: "Open with VSCode", onClick: () => openInVSCode(fullPath) },
+    ];
+}
+
+// Row-specific extras come BEFORE the standard fsActions so the destructive/contextual
+// options sit at the top of the menu and the always-present Show/Open actions are anchored
+// at the bottom.
+function withFsActions(extras: MenuAction[], fullPath: string): MenuAction[] {
+    return extras.concat(fsActions(fullPath));
+}
+
+function dirRootActions(s: SourceDir): MenuAction[] {
+    const extras: MenuAction[] = [];
+    if (!isDefaultSource(s.fullPath)) {
+        extras.push({
+            label: "Close",
+            onClick: () => {
+                removeSource(s.fullPath);
+                collapsedRoots.delete(dirRootKey(s));
+            },
+        });
+    }
+    return withFsActions(extras, s.fullPath);
+}
+
+function standaloneRootActions(): MenuAction[] {
+    return [
+        {
+            label: "Close all",
+            onClick: () => {
+                removeAllStandaloneFiles();
+            },
+        },
+    ];
+}
+
+function standaloneFileActions(s: SourceFile): MenuAction[] {
+    return withFsActions(
+        [{ label: "Close", onClick: () => removeSource(s.fullPath) }],
+        s.fullPath
+    );
+}
+
+function resultActions(r: Result): MenuAction[] {
+    return fsActions(r.fullPath);
+}
+
+function entryActions(parent: ResultImport, e: ImportEntry): MenuAction[] {
+    const refRel = entryRefPath(e);
+    const target =
+        refRel === undefined ? parent.fullPath : joinPath(dirOf(parent.fullPath), refRel);
+    return fsActions(target);
+}
+
+// Builds a row click handler that:
+//   - opens `actions` as a context menu on right-click,
+//   - runs `defaultLeftAction` on left-click if provided, otherwise opens the menu,
+//   - ignores the second click of a double-click so handlers don't double-fire.
+function rowHandler(
+    actions: MenuAction[],
+    defaultLeftAction?: () => void
+): (rect: Rect, info: ClickInfo) => void {
+    return (_rect, info) => {
+        if (info.isDoubleClickSecond) return;
+        if (info.button === 1) {
+            openMenu(info.x, info.y, actions);
+            return;
+        }
+        if (info.button !== 0) return;
+        if (defaultLeftAction) defaultLeftAction();
+        else openMenu(info.x, info.y, actions);
+    };
+}
+
+// --- Row builders ---------------------------------------------------------
+
+function rootRow(label: string, key: string, actions: MenuAction[]): Element {
+    const collapsed = collapsedRoots.has(key);
+    return Container({
+        style: {
+            direction: "row",
+            padding: [
+                { side: "left", value: 3 },
+                { side: "right", value: 6 },
+            ],
+            gap: 6,
+            align: "center",
+            height: { kind: "px", value: 18 },
+            background: ROW_BG,
+            hoverBackground: ROW_HOVER_BG,
+        },
+        onClick: rowHandler(actions, () => {
+            if (collapsed) collapsedRoots.delete(key);
+            else collapsedRoots.add(key);
+        }),
+        children: [
+            Text({ text: collapsed ? "[+]" : "[-]" }),
+            Text({ text: label, style: { width: { kind: "grow" } } }),
+        ],
+    });
+}
+
 function resultRow(r: Result): Element {
     const isImport = r.type === "import";
     return Container({
@@ -74,14 +201,13 @@ function resultRow(r: Result): Element {
             background: ROW_BG,
             hoverBackground: ROW_HOVER_BG,
         },
-        onClick: (_rect, isDoubleClickSecond) => {
-            if (isDoubleClickSecond) return;
+        onClick: rowHandler(resultActions(r), () => {
             if (isImport) {
                 if (expandedImports.has(r.fullPath)) expandedImports.delete(r.fullPath);
                 else expandedImports.add(r.fullPath);
             }
             previewSelect(r.fullPath);
-        },
+        }),
         onDoubleClick: () => confirmSelect(r.fullPath),
         children: [
             Container({
@@ -121,16 +247,13 @@ function entryContent(parent: ResultImport, e: ImportEntry): Element {
             background: ROW_BG,
             hoverBackground: ROW_HOVER_BG,
         },
-        onClick: (_rect, isDoubleClickSecond) => {
-            if (!isDoubleClickSecond) previewSelect(clickPath);
-        },
+        onClick: rowHandler(entryActions(parent, e), () => previewSelect(clickPath)),
         onDoubleClick: () => confirmSelect(clickPath),
         children: [Text({ text: display })],
     });
 }
 
-function sourceRow(s: Source): Element {
-    const tag = s.kind === "dir" ? "Dir" : "File";
+function standaloneFileRow(s: SourceFile): Element {
     return Container({
         style: {
             direction: "row",
@@ -144,11 +267,13 @@ function sourceRow(s: Source): Element {
             background: ROW_BG,
             hoverBackground: ROW_HOVER_BG,
         },
-        children: [
-            Text({ text: `[${tag}] ${s.label}`, style: { width: { kind: "grow" } } }),
-        ],
+        onClick: rowHandler(standaloneFileActions(s), () => previewSelect(s.fullPath)),
+        onDoubleClick: () => confirmSelect(s.fullPath),
+        children: [Text({ text: s.fullPath, style: { width: { kind: "grow" } } })],
     });
 }
+
+// --- Tree row layout ------------------------------------------------------
 
 const LEFT_PAD = 7;
 const ARM_LEN = 8;
@@ -207,8 +332,6 @@ function emptyStripCol(h: number): Element {
 }
 
 function branchCol(rowH: number, kind: BranchKind): Element {
-    // Center the horizontal arm on the row's vertical center: arm spans
-    // [armTopY .. armTopY + LINE_THICK), with armTopY = (rowH - LINE_THICK) / 2.
     const armTopY = Math.floor((rowH - LINE_THICK) / 2);
     const segs: Element[] = [];
     if (armTopY > 0) segs.push(verticalStripCol(armTopY));
@@ -294,57 +417,106 @@ function composeTreeRow(r: TreeRow): Element {
     });
 }
 
-function buildTreeRows(): TreeRow[] {
+// --- Tree builder ---------------------------------------------------------
+
+type Root =
+    | { kind: "dir"; source: SourceDir; key: string }
+    | { kind: "standalone"; files: SourceFile[]; key: string };
+
+function buildRoots(): Root[] {
     const sources = getSources();
+    const dirs: SourceDir[] = [];
+    const files: SourceFile[] = [];
+    for (let i = 0; i < sources.length; i++) {
+        const s = sources[i];
+        if (s.kind === "dir") dirs.push(s);
+        else files.push(s);
+    }
+    const out: Root[] = [];
+    for (let i = 0; i < dirs.length; i++) {
+        out.push({ kind: "dir", source: dirs[i], key: dirRootKey(dirs[i]) });
+    }
+    if (files.length > 0) {
+        out.push({ kind: "standalone", files, key: STANDALONE_KEY });
+    }
+    return out;
+}
+
+function buildTreeRows(): TreeRow[] {
+    const roots = buildRoots();
+    // Single-root mode: skip the root header and tree branches entirely — render the root's
+    // children flat. Matches the pre-refactor behavior when there's only one source.
+    const showRootHeaders = roots.length > 1;
     const out: TreeRow[] = [];
-    const showSourceHeaders = sources.length > 1;
 
-    for (let si = 0; si < sources.length; si++) {
-        const s = sources[si];
-        const results = filterAndSort(enumerateForSource(s));
+    for (let ri = 0; ri < roots.length; ri++) {
+        const root = roots[ri];
 
-        if (showSourceHeaders) {
-            out.push({
-                levels: [],
-                branch: null,
-                content: sourceRow(s),
-                height: 18,
-            });
-        }
+        if (root.kind === "dir") {
+            if (showRootHeaders) {
+                out.push({
+                    levels: [],
+                    branch: null,
+                    content: rootRow(
+                        root.source.fullPath,
+                        root.key,
+                        dirRootActions(root.source)
+                    ),
+                    height: 18,
+                });
+                if (collapsedRoots.has(root.key)) continue;
+            }
 
-        for (let i = 0; i < results.length; i++) {
-            const r = results[i];
-            const isLastResultInSource = i === results.length - 1;
+            const results = filterAndSort(enumerateForSource(root.source));
+            for (let i = 0; i < results.length; i++) {
+                const r = results[i];
+                const isLastResult = i === results.length - 1;
+                out.push({
+                    levels: [],
+                    branch: showRootHeaders ? (isLastResult ? "ell" : "tee") : null,
+                    content: resultRow(r),
+                    height: 18,
+                });
 
-            const resultLevels: LevelGuide[] = [];
-            const resultBranch: BranchKind | null = showSourceHeaders
-                ? isLastResultInSource
-                    ? "ell"
-                    : "tee"
-                : null;
-
-            out.push({
-                levels: resultLevels,
-                branch: resultBranch,
-                content: resultRow(r),
-                height: 18,
-            });
-
-            if (r.type === "import" && expandedImports.has(r.fullPath)) {
-                const entries = r.entries;
-                for (let j = 0; j < entries.length; j++) {
-                    const isLast = j === entries.length - 1;
-                    const entryLevels: LevelGuide[] = [];
-                    if (showSourceHeaders) {
-                        entryLevels.push(isLastResultInSource ? "empty" : "vertical");
+                if (r.type === "import" && expandedImports.has(r.fullPath)) {
+                    const entries = r.entries;
+                    for (let j = 0; j < entries.length; j++) {
+                        const isLastEntry = j === entries.length - 1;
+                        const entryLevels: LevelGuide[] = showRootHeaders
+                            ? [isLastResult ? "empty" : "vertical"]
+                            : [];
+                        out.push({
+                            levels: entryLevels,
+                            branch: isLastEntry ? "ell" : "tee",
+                            content: entryContent(r, entries[j]),
+                            height: ENTRY_ROW_H,
+                        });
                     }
-                    out.push({
-                        levels: entryLevels,
-                        branch: isLast ? "ell" : "tee",
-                        content: entryContent(r, entries[j]),
-                        height: ENTRY_ROW_H,
-                    });
                 }
+            }
+        } else {
+            if (showRootHeaders) {
+                out.push({
+                    levels: [],
+                    branch: null,
+                    content: rootRow(
+                        "Standalone files",
+                        root.key,
+                        standaloneRootActions()
+                    ),
+                    height: 18,
+                });
+                if (collapsedRoots.has(root.key)) continue;
+            }
+
+            for (let i = 0; i < root.files.length; i++) {
+                const isLast = i === root.files.length - 1;
+                out.push({
+                    levels: [],
+                    branch: showRootHeaders ? (isLast ? "ell" : "tee") : null,
+                    content: standaloneFileRow(root.files[i]),
+                    height: 18,
+                });
             }
         }
     }
@@ -479,3 +651,4 @@ export function ExploreView(): Element {
         ],
     });
 }
+

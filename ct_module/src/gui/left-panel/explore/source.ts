@@ -18,6 +18,7 @@ export type SourceFile = {
 export type Source = SourceDir | SourceFile;
 
 const sources: Source[] = [];
+let defaultSourceFullPath: string | null = null;
 
 const ConcurrentLinkedQueue = Java.type("java.util.concurrent.ConcurrentLinkedQueue");
 const pendingPaths: any = new ConcurrentLinkedQueue();
@@ -74,7 +75,7 @@ function drainPending(): void {
 }
 
 function ensureDefaultSource(): void {
-    if (sources.length > 0) return;
+    if (defaultSourceFullPath !== null) return;
     const Files = Java.type("java.nio.file.Files");
     let p: any;
     try {
@@ -90,7 +91,10 @@ function ensureDefaultSource(): void {
     }
     if (!exists) return;
     const fullPath = String(p.toString()).replace(/\\/g, "/");
-    sources.push({ kind: "dir", label: fileNameOf(p), fullPath });
+    defaultSourceFullPath = fullPath;
+    if (!alreadyHas(fullPath)) {
+        sources.unshift({ kind: "dir", label: fileNameOf(p), fullPath });
+    }
 }
 
 export function queueSourcePath(absolute: string): void {
@@ -98,9 +102,29 @@ export function queueSourcePath(absolute: string): void {
 }
 
 export function getSources(): Source[] {
-    drainPending();
     ensureDefaultSource();
+    drainPending();
     return sources;
+}
+
+export function isDefaultSource(fullPath: string): boolean {
+    return defaultSourceFullPath !== null && defaultSourceFullPath === fullPath;
+}
+
+export function removeSource(fullPath: string): void {
+    if (isDefaultSource(fullPath)) return;
+    for (let i = 0; i < sources.length; i++) {
+        if (sources[i].fullPath === fullPath) {
+            sources.splice(i, 1);
+            return;
+        }
+    }
+}
+
+export function removeAllStandaloneFiles(): void {
+    for (let i = sources.length - 1; i >= 0; i--) {
+        if (sources[i].kind === "file") sources.splice(i, 1);
+    }
 }
 
 function relativePath(root: any, p: any): string {

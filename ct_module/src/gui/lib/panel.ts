@@ -63,7 +63,7 @@ export class Panel {
             (
                 x: number,
                 y: number,
-                _btn: number,
+                btn: number,
                 _gui: MCTGuiScreen,
                 event: CancellableEvent
             ) => {
@@ -73,7 +73,7 @@ export class Panel {
                 // Inside-popover click → dispatch + cancel + return. Outside-popover click → close
                 // stale popovers but fall through so the click still focuses inputs / hits buttons.
                 if (popoverIsOpen() && claimPopoverClick(x, y)) {
-                    if (tryDispatchPopoverClick(x, y)) {
+                    if (tryDispatchPopoverClick(x, y, btn)) {
                         cancel(event);
                         return;
                     }
@@ -82,7 +82,7 @@ export class Panel {
                 const b = extract(this.bounds);
                 if (!pointInRect(b, x, y)) return;
                 const laid = layoutElement(this.root, b.x, b.y, b.w, b.h);
-                if (dispatchClick(laid, x, y)) cancel(event);
+                if (dispatchClick(laid, x, y, btn)) cancel(event);
             }
         );
     }
