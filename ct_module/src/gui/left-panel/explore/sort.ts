@@ -3,7 +3,7 @@ import { Container, Scroll, Text } from "../../components";
 import { Result, ACTIVE_BG, ACTIVE_HOVER_BG, ROW_BG, ROW_HOVER_BG } from "./types";
 
 type SortDir = "ASC" | "DESC";
-type SortFieldId = "alphabetical" | "type";
+type SortFieldId = "type" | "alphabetical";
 
 type SortField = {
     id: SortFieldId;
@@ -15,23 +15,23 @@ type SortField = {
 
 export const SORT_FIELDS: SortField[] = [
     {
-        id: "alphabetical",
-        label: "Alphabetically",
-        precedence: 0,
-        fallbackDir: "ASC",
-        compare: (a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0),
-    },
-    {
         id: "type",
         label: "By type",
         precedence: 1,
         fallbackDir: "ASC",
         compare: (a, b) => (a.type < b.type ? -1 : a.type > b.type ? 1 : 0),
     },
+    {
+        id: "alphabetical",
+        label: "Alphabetically",
+        precedence: 0,
+        fallbackDir: "ASC",
+        compare: (a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0),
+    },
 ];
 
 const DEFAULT_SORT: { id: SortFieldId; direction: SortDir } = {
-    id: "alphabetical",
+    id: "type",
     direction: "ASC",
 };
 let activeSort: { id: SortFieldId; direction: SortDir } = DEFAULT_SORT;
@@ -100,7 +100,6 @@ export function sortPopoverContent(): Element {
                         Text({ text: f.label, style: { width: { kind: "grow" } } }),
                         Text({
                             text: on ? `[${activeSort.direction}]` : "",
-                            color: 0xff888888 | 0,
                         }),
                     ],
                 });
