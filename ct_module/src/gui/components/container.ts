@@ -1,8 +1,8 @@
-import { ContainerStyle, Element, Rect } from "../layout";
+import { Child, ContainerStyle, Element, Rect } from "../layout";
 import { Extractable } from "../extractable";
 
 export type ContainerProps = {
-    children: Extractable<Element[]>;
+    children: Extractable<Child[]>;
     style?: ContainerStyle;
     onClick?: (rect: Rect) => void;
 };

@@ -265,7 +265,9 @@ function walkForInput(
     if (e.kind === "container" || e.kind === "scroll") {
         const children = typeof e.children === "function" ? e.children() : e.children;
         for (let i = 0; i < children.length; i++) {
-            const f = walkForInput(children[i], id);
+            const ch = children[i];
+            if (ch === false) continue;
+            const f = walkForInput(ch, id);
             if (f !== null) return f;
         }
     }

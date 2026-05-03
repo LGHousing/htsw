@@ -30,7 +30,7 @@ The HTSW in-game overlay is a small declarative UI framework that runs inside Ch
 
 | kind | extra fields | clickable? | notes |
 |------|---|---|---|
-| `container` | `style: ContainerStyle`, `children: Extractable<Element[]>`, optional `onClick(rect)` | yes if `onClick` set | flex layout (row/col), gap, align, padding, optional bg/hoverBg |
+| `container` | `style: ContainerStyle`, `children: Extractable<Child[]>`, optional `onClick(rect)` | yes if `onClick` set | flex layout (row/col), gap, align, padding, optional bg/hoverBg |
 | `button` | `style`, `text: Extractable<string>`, `onClick(rect)` | yes | bg + centered text, hover bg |
 | `text` | `style`, `text: Extractable<string>`, optional `color` | no | plain label, intrinsic size = `Renderer.getStringWidth(text)` × `LINE_H` |
 | `input` | `style`, `id: string`, `value: Extractable<string>`, `onChange(v)`, optional `placeholder` | focusable | id is used for global focus + key dispatch |

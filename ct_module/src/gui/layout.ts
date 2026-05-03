@@ -26,11 +26,13 @@ export type ContainerStyle = Style & {
     align?: "start" | "center" | "end" | "stretch";
 };
 
+export type Child = Element | false;
+
 export type Element =
     | {
           kind: "container";
           style: ContainerStyle;
-          children: Extractable<Element[]>;
+          children: Extractable<Child[]>;
           onClick?: (rect: Rect) => void;
       }
     | {
@@ -57,8 +59,18 @@ export type Element =
           kind: "scroll";
           style: ContainerStyle;
           id: string;
-          children: Extractable<Element[]>;
+          children: Extractable<Child[]>;
       };
+
+export function extractChildren(c: Extractable<Child[]>): Element[] {
+    const raw = extract(c);
+    const out: Element[] = [];
+    for (let i = 0; i < raw.length; i++) {
+        const ch = raw[i];
+        if (ch !== false) out.push(ch);
+    }
+    return out;
+}
 
 export type Rect = { x: number; y: number; w: number; h: number };
 export type LaidOut = { element: Element; rect: Rect; clipRect?: Rect };
@@ -130,12 +142,12 @@ function inputContent(_: string): { w: number; h: number } {
 
 function containerContent(c: {
     style: ContainerStyle;
-    children: Extractable<Element[]>;
+    children: Extractable<Child[]>;
 }): { w: number; h: number } {
     const pad = resolvePadding(c.style.padding);
     const dir = c.style.direction ?? "col";
     const gap = c.style.gap ?? 0;
-    const children = extract(c.children);
+    const children = extractChildren(c.children);
     let mainSum = 0;
     let crossMax = 0;
     for (let i = 0; i < children.length; i++) {
@@ -238,7 +250,7 @@ export function layoutElement(
 }
 
 function layoutContainer(
-    c: { kind: "container"; style: ContainerStyle; children: Extractable<Element[]> },
+    c: { kind: "container"; style: ContainerStyle; children: Extractable<Child[]> },
     x: number,
     y: number,
     w: number,
@@ -260,7 +272,7 @@ function layoutContainer(
     const mainAxis: "w" | "h" = isRow ? "w" : "h";
     const crossAxis: "w" | "h" = isRow ? "h" : "w";
 
-    const children = extract(c.children);
+    const children = extractChildren(c.children);
     const n = children.length;
     if (n === 0) return;
 
@@ -336,7 +348,7 @@ function layoutScroll(
         kind: "scroll";
         style: ContainerStyle;
         id: string;
-        children: Extractable<Element[]>;
+        children: Extractable<Child[]>;
     },
     x: number,
     y: number,
@@ -356,7 +368,7 @@ function layoutScroll(
     state.viewportRect = { x: x + pad.l, y: y + pad.t, w: innerW, h: innerH };
     const viewportRect = state.viewportRect;
 
-    const children = extract(s.children);
+    const children = extractChildren(s.children);
     const n = children.length;
 
     // Compute total content height first by resolving each child's main-axis size.

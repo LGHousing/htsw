@@ -19,7 +19,7 @@ export const SORT_FIELDS: SortField[] = [
         label: "Alphabetically",
         precedence: 0,
         fallbackDir: "ASC",
-        compare: (a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0),
+        compare: (a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0),
     },
     {
         id: "type",

@@ -1,9 +1,9 @@
-import { ContainerStyle, Element } from "../layout";
+import { Child, ContainerStyle, Element } from "../layout";
 import { Extractable } from "../extractable";
 
 export type ScrollProps = {
     id: string;
-    children: Extractable<Element[]>;
+    children: Extractable<Child[]>;
     style?: ContainerStyle;
 };
 

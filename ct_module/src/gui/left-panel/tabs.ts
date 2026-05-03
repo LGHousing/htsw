@@ -1,15 +1,31 @@
 import { Element } from "../layout";
-import { Button, Row } from "../components";
+import { Button, Col, Row, Text } from "../components";
 import { ExploreView } from "./explore";
-import { KnowledgeView } from "./knowledge";
 
-export type TabId = "explore" | "knowledge";
+export type TabId = "explore" | "knowledge" | "whatever";
 
 type Tab = { id: TabId; label: string; content: () => Element };
 
 export const TABS: Tab[] = [
     { id: "explore", label: "Explore", content: ExploreView },
-    { id: "knowledge", label: "Knowledge", content: KnowledgeView },
+    {
+        id: "knowledge",
+        label: "Knowledge",
+        content: () =>
+            Col({
+                style: { gap: 6, height: { kind: "grow" }, padding: 4 },
+                children: [Text({ text: "Knowledge stuff??", color: 0xff888888 | 0 })],
+            }),
+    },
+    {
+        id: "whatever",
+        label: "Whatever",
+        content: () =>
+            Col({
+                style: { gap: 6, height: { kind: "grow" }, padding: 4 },
+                children: [Text({ text: "Whatever the frick!", color: 0xff888888 | 0 })],
+            }),
+    },
 ];
 
 const TAB_ACTIVE_BG = 0xff67a7e8 | 0;
@@ -31,7 +47,8 @@ export function TabBar(): Element {
                     width: { kind: "grow" },
                     height: { kind: "grow" },
                     background: () => (activeTab === t.id ? TAB_ACTIVE_BG : undefined),
-                    hoverBackground: () => (activeTab === t.id ? TAB_ACTIVE_BG : undefined),
+                    hoverBackground: () =>
+                        activeTab === t.id ? TAB_ACTIVE_BG : undefined,
                 },
                 onClick: () => {
                     activeTab = t.id;
