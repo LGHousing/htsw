@@ -9,6 +9,7 @@ import {
     type ImportableTrustPlan,
 } from "../../knowledge";
 import TaskContext from "../../tasks/context";
+import { stableStringify } from "../../utils/helpers";
 import { getItemFromNbt, getItemFromSnbt } from "../../utils/nbt";
 import {
     C09PacketHeldItemChange,
@@ -17,7 +18,28 @@ import {
 import { actionListTrustFor } from "../actionListTrust";
 import type { ItemRegistry } from "../itemRegistry";
 import { ensureReferencedImportablesExist } from "../references";
-import { hasItemClickActions, itemShellMatchesCached } from "./shared";
+
+function hasItemClickActions(importable: ImportableItem): boolean {
+    return (
+        (importable.leftClickActions?.length ?? 0) > 0 ||
+        (importable.rightClickActions?.length ?? 0) > 0
+    );
+}
+
+function itemShell(importable: ImportableItem): object {
+    return {
+        type: importable.type,
+        name: importable.name,
+        nbt: importable.nbt,
+    };
+}
+
+function itemShellMatchesCached(
+    cached: ImportableItem,
+    desired: ImportableItem
+): boolean {
+    return stableStringify(itemShell(cached)) === stableStringify(itemShell(desired));
+}
 
 function itemSnbtCachePath(housingUuid: string, hash: string): string {
     return `./htsw/.cache/${housingUuid}/items/${hash}.snbt`;

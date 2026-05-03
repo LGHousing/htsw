@@ -1,0 +1,464 @@
+/// <reference types="../../CTAutocomplete" />
+
+import { Child, Element, Rect } from "./layout";
+import { Button, Col, Container, Input, Row, Scroll, Text } from "./components";
+import { closeAllPopovers, openPopover } from "./popovers";
+import {
+    ACCENT_INFO,
+    ACCENT_SUCCESS,
+    ACCENT_WARN,
+    COLOR_BUTTON,
+    COLOR_BUTTON_HOVER,
+    COLOR_BUTTON_PRIMARY,
+    COLOR_BUTTON_PRIMARY_HOVER,
+    COLOR_DIVIDER,
+    COLOR_INPUT_BG,
+    COLOR_PANEL_RAISED,
+    COLOR_ROW,
+    COLOR_ROW_HOVER,
+    COLOR_TEXT,
+    COLOR_TEXT_DIM,
+    GLYPH_FOLDER,
+    GLYPH_HTSL,
+    GLYPH_JSON,
+    GLYPH_SNBT,
+    GLYPH_X,
+    SIZE_ROW_H,
+} from "./theme";
+import { setImportJsonPath } from "./state";
+import { scheduleReparse } from "./reparse";
+import { addRecent } from "./recents";
+
+type Entry = {
+    name: string;
+    fullPath: string;
+    isDir: boolean;
+    /** lower-cased extension (e.g. "json", "htsl") or "" for dirs / extensionless files. */
+    ext: string;
+};
+
+let cwd: string = "./htsw/imports";
+let filter = "";
+
+function mcRoot(): string {
+    try {
+        // @ts-ignore
+        const Paths = Java.type("java.nio.file.Paths");
+        return String(Paths.get(".").toAbsolutePath().normalize().toString())
+            .replace(/\\/g, "/");
+    } catch (_e) {
+        return ".";
+    }
+}
+
+/** Convert an absolute path under the MC root to a "./..." relative form. */
+function toRelative(p: string): string {
+    const norm = p.replace(/\\/g, "/");
+    const root = mcRoot();
+    if (norm === root) return ".";
+    if (norm.length > root.length && norm.substring(0, root.length + 1) === `${root}/`) {
+        return `./${norm.substring(root.length + 1)}`;
+    }
+    return norm;
+}
+
+function dirExists(path: string): boolean {
+    try {
+        // @ts-ignore
+        const Files = Java.type("java.nio.file.Files");
+        // @ts-ignore
+        const Paths = Java.type("java.nio.file.Paths");
+        const p = Paths.get(String(path));
+        return Files.exists(p) && Files.isDirectory(p);
+    } catch (_e) {
+        return false;
+    }
+}
+
+/** Walk up parents until an existing directory is found, falling back to ".". */
+function resolveExistingDir(start: string): string {
+    let cur = start.replace(/\\/g, "/");
+    for (let i = 0; i < 10 && cur !== "" && cur !== "." && cur !== "/"; i++) {
+        if (dirExists(cur)) return cur;
+        const slash = cur.lastIndexOf("/");
+        if (slash <= 0) break;
+        cur = cur.substring(0, slash);
+    }
+    return ".";
+}
+
+function listDir(dir: string): Entry[] {
+    // @ts-ignore
+    const Files = Java.type("java.nio.file.Files");
+    // @ts-ignore
+    const Paths = Java.type("java.nio.file.Paths");
+    const out: Entry[] = [];
+    let p: any;
+    try {
+        p = Paths.get(String(dir));
+    } catch (_e) {
+        return out;
+    }
+    let stream: any;
+    try {
+        stream = Files.newDirectoryStream(p);
+    } catch (_e) {
+        return out;
+    }
+    try {
+        const it = stream.iterator();
+        while (true) {
+            let entry: any;
+            try {
+                if (!it.hasNext()) break;
+                entry = it.next();
+            } catch (_e) {
+                break;
+            }
+            try {
+                const name = String(entry.getFileName().toString());
+                const isDir = Files.isDirectory(entry);
+                const dot = name.lastIndexOf(".");
+                const ext = dot > 0 ? name.substring(dot + 1).toLowerCase() : "";
+                const raw = String(entry.toString()).replace(/\\/g, "/");
+                out.push({
+                    name,
+                    fullPath: toRelative(raw),
+                    isDir,
+                    ext,
+                });
+            } catch (_e) {
+                // skip unreadable entry
+            }
+        }
+    } finally {
+        try {
+            stream.close();
+        } catch (_e) {
+            // ignore
+        }
+    }
+    out.sort((a, b) => {
+        if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
+        return a.name.toLowerCase() < b.name.toLowerCase() ? -1 : 1;
+    });
+    return out;
+}
+
+function parentOf(dir: string): string {
+    const norm = dir.replace(/\\/g, "/");
+    const slash = norm.lastIndexOf("/");
+    if (slash <= 0) return norm;
+    return norm.substring(0, slash);
+}
+
+function navigateInto(entry: Entry): void {
+    if (entry.isDir) {
+        cwd = entry.fullPath;
+    } else if (entry.name.toLowerCase() === "import.json") {
+        loadAsImport(entry.fullPath);
+    } else if (entry.ext === "json") {
+        loadAsImport(entry.fullPath);
+    }
+}
+
+function loadAsImport(path: string): void {
+    setImportJsonPath(path);
+    addRecent(path);
+    scheduleReparse();
+    closeAllPopovers();
+    ChatLib.chat(`&a[htsw] Loaded ${path}`);
+}
+
+function openInOS(): void {
+    try {
+        // @ts-ignore
+        const Desktop = Java.type("java.awt.Desktop");
+        // @ts-ignore
+        const FileClass = Java.type("java.io.File");
+        Desktop.getDesktop().open(new FileClass(String(cwd)));
+    } catch (err) {
+        ChatLib.chat(`&c[htsw] Open in OS failed: ${err}`);
+    }
+}
+
+function newFolder(): void {
+    try {
+        // @ts-ignore
+        const Files = Java.type("java.nio.file.Files");
+        // @ts-ignore
+        const Paths = Java.type("java.nio.file.Paths");
+        let i = 1;
+        while (true) {
+            const candidate = `${cwd}/new-folder${i === 1 ? "" : `-${i}`}`;
+            const p = Paths.get(String(candidate));
+            if (!Files.exists(p)) {
+                Files.createDirectories(p);
+                ChatLib.chat(`&a[htsw] Created ${candidate}`);
+                return;
+            }
+            i++;
+            if (i > 100) return;
+        }
+    } catch (err) {
+        ChatLib.chat(`&c[htsw] New folder failed: ${err}`);
+    }
+}
+
+function newImportJson(): void {
+    try {
+        // @ts-ignore
+        const Files = Java.type("java.nio.file.Files");
+        // @ts-ignore
+        const Paths = Java.type("java.nio.file.Paths");
+        const target = `${cwd}/import.json`;
+        const p = Paths.get(String(target));
+        if (Files.exists(p)) {
+            ChatLib.chat("&c[htsw] import.json already exists here");
+            loadAsImport(target);
+            return;
+        }
+        FileLib.write(target, "{\n}\n", true);
+        ChatLib.chat(`&a[htsw] Created ${target}`);
+        loadAsImport(target);
+    } catch (err) {
+        ChatLib.chat(`&c[htsw] Init import.json failed: ${err}`);
+    }
+}
+
+function iconFor(e: Entry): string {
+    if (e.isDir) return GLYPH_FOLDER;
+    if (e.name.toLowerCase() === "import.json") return GLYPH_JSON;
+    if (e.ext === "json") return GLYPH_JSON;
+    if (e.ext === "htsl") return GLYPH_HTSL;
+    if (e.ext === "snbt") return GLYPH_SNBT;
+    return "·";
+}
+
+function iconColorFor(e: Entry): number {
+    if (e.isDir) return ACCENT_INFO;
+    if (e.name.toLowerCase() === "import.json" || e.ext === "json") return ACCENT_SUCCESS;
+    if (e.ext === "htsl") return ACCENT_INFO;
+    if (e.ext === "snbt") return ACCENT_WARN;
+    return COLOR_TEXT_DIM;
+}
+
+function fileRow(entry: Entry): Element {
+    const loadable =
+        entry.isDir ||
+        entry.name.toLowerCase() === "import.json" ||
+        entry.ext === "json";
+    return Container({
+        style: {
+            direction: "row",
+            align: "center",
+            padding: { side: "x", value: 8 },
+            gap: 8,
+            height: { kind: "px", value: SIZE_ROW_H },
+            background: COLOR_ROW,
+            hoverBackground: COLOR_ROW_HOVER,
+        },
+        onClick: (_rect, isDouble) => {
+            if (entry.isDir && !isDouble) return; // single click on dir = preview only
+            navigateInto(entry);
+        },
+        onDoubleClick: () => navigateInto(entry),
+        children: [
+            Text({
+                text: iconFor(entry),
+                color: iconColorFor(entry),
+                style: { width: { kind: "px", value: 14 } },
+            }),
+            Text({
+                text: entry.name,
+                color: loadable ? COLOR_TEXT : COLOR_TEXT_DIM,
+                style: { width: { kind: "grow" } },
+            }),
+            Text({
+                text: entry.isDir ? "dir" : entry.ext,
+                color: COLOR_TEXT_DIM,
+            }),
+        ],
+    });
+}
+
+function header(): Element {
+    return Row({
+        style: { gap: 4, height: { kind: "px", value: 18 }, align: "center" },
+        children: [
+            Text({
+                text: "Browser",
+                color: ACCENT_WARN,
+                style: { width: { kind: "px", value: 60 } },
+            }),
+            Button({
+                text: "Up",
+                style: { width: { kind: "px", value: 36 }, height: { kind: "grow" } },
+                onClick: () => { cwd = parentOf(cwd); },
+            }),
+            Button({
+                text: "Open in OS",
+                style: { width: { kind: "px", value: 80 }, height: { kind: "grow" } },
+                onClick: () => openInOS(),
+            }),
+            Button({
+                text: "New Folder",
+                style: { width: { kind: "px", value: 80 }, height: { kind: "grow" } },
+                onClick: () => newFolder(),
+            }),
+            Button({
+                text: "Init import.json",
+                style: { width: { kind: "px", value: 110 }, height: { kind: "grow" } },
+                onClick: () => newImportJson(),
+            }),
+            Container({
+                style: { width: { kind: "grow" } },
+                children: [],
+            }),
+            Button({
+                text: `${GLYPH_X} Close`,
+                style: {
+                    width: { kind: "px", value: 60 },
+                    height: { kind: "grow" },
+                    background: COLOR_BUTTON,
+                    hoverBackground: COLOR_BUTTON_HOVER,
+                },
+                onClick: () => closeAllPopovers(),
+            }),
+        ],
+    });
+}
+
+function pathBar(): Element {
+    return Container({
+        style: {
+            direction: "row",
+            align: "center",
+            padding: { side: "x", value: 6 },
+            gap: 6,
+            height: { kind: "px", value: 22 },
+            background: COLOR_INPUT_BG,
+        },
+        children: [
+            Text({
+                text: "directory",
+                color: COLOR_TEXT_DIM,
+                style: { width: { kind: "px", value: 60 } },
+            }),
+            Input({
+                id: "file-browser-path",
+                value: () => cwd,
+                onChange: (v) => { cwd = v; },
+                placeholder: "filesystem path",
+                style: { width: { kind: "grow" } },
+            }),
+        ],
+    });
+}
+
+function searchBar(): Element {
+    return Row({
+        style: { gap: 6, height: { kind: "px", value: 20 }, align: "center" },
+        children: [
+            Input({
+                id: "file-browser-filter",
+                value: () => filter,
+                onChange: (v) => { filter = v; },
+                placeholder: "Filter files…",
+                style: { width: { kind: "grow" } },
+            }),
+        ],
+    });
+}
+
+function listBody(): Element {
+    return Scroll({
+        id: "file-browser-list",
+        style: { gap: 1, height: { kind: "grow" }, background: COLOR_PANEL_RAISED },
+        children: () => {
+            const all = listDir(cwd);
+            const q = filter.toLowerCase();
+            const filtered =
+                q.length === 0
+                    ? all
+                    : all.filter((e) => e.name.toLowerCase().indexOf(q) >= 0);
+            if (filtered.length === 0) {
+                return [
+                    Container({
+                        style: { padding: 8 },
+                        children: [
+                            Text({
+                                text: "(empty directory)",
+                                color: COLOR_TEXT_DIM,
+                            }),
+                        ],
+                    }),
+                ];
+            }
+            const out: Child[] = [];
+            for (let i = 0; i < filtered.length; i++) out.push(fileRow(filtered[i]));
+            return out;
+        },
+    });
+}
+
+function loadButton(): Element {
+    return Row({
+        style: { gap: 6, height: { kind: "px", value: 20 } },
+        children: [
+            Container({
+                style: { width: { kind: "grow" } },
+                children: [],
+            }),
+            Button({
+                text: "Load this directory's import.json",
+                style: {
+                    width: { kind: "px", value: 220 },
+                    height: { kind: "grow" },
+                    background: COLOR_BUTTON_PRIMARY,
+                    hoverBackground: COLOR_BUTTON_PRIMARY_HOVER,
+                },
+                onClick: () => loadAsImport(`${cwd}/import.json`),
+            }),
+        ],
+    });
+}
+
+function divider(): Element {
+    return Container({
+        style: { height: { kind: "px", value: 1 }, background: COLOR_DIVIDER },
+        children: [],
+    });
+}
+
+function browserContent(): Element {
+    return Col({
+        style: { padding: 8, gap: 6, height: { kind: "grow" } },
+        children: [
+            header(),
+            divider(),
+            pathBar(),
+            searchBar(),
+            listBody(),
+            loadButton(),
+        ],
+    });
+}
+
+const ZERO: Rect = { x: 0, y: 0, w: 0, h: 0 };
+
+export function openFileBrowser(initialDir?: string): void {
+    if (initialDir !== undefined && initialDir.length > 0) {
+        cwd = resolveExistingDir(initialDir);
+    } else {
+        cwd = resolveExistingDir(cwd);
+    }
+    openPopover({
+        anchor: ZERO,
+        content: browserContent(),
+        width: 520,
+        height: 320,
+        key: "file-browser",
+        placement: "modal",
+    });
+}

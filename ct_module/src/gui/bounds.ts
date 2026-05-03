@@ -2,10 +2,9 @@
 
 import { Rect } from "./layout";
 
-const SCREEN_PAD = 4;
-const CONTAINER_GAP = 6;
-const MIN_PANEL_WIDTH = 24;
-const PANEL_HEIGHT_FRACTION = 0.8;
+export const SCREEN_PAD = 4;
+export const FRAME_GAP = 4;
+export const TOP_BAR_H = 22;
 
 export type ContainerBounds = {
     screenW: number;
@@ -24,9 +23,6 @@ export type ContainerBounds = {
 //   field_147009_r = GuiContainer.guiTop  (protected — needs reflection)
 //   field_146999_f = GuiContainer.xSize   (protected — needs reflection)
 //   field_147000_g = GuiContainer.ySize   (protected — needs reflection)
-//
-// Rhino's property-access path only sees public fields, so we walk up the class
-// hierarchy with getDeclaredField + setAccessible to read the protected ones.
 
 function readIntField(obj: any, fieldName: string): number | null {
     try {
@@ -48,9 +44,30 @@ function readIntField(obj: any, fieldName: string): number | null {
     return null;
 }
 
+// Screens that should NOT trigger our overlay — even though they're
+// GuiContainers. The player inventory (E key) and the creative inventory
+// are user-facing inventory UIs that the HTSW overlay has nothing to do
+// with. Keep them clean.
+//
+// We compare by `Class.getName()` substring so the check survives both
+// deobf names (`net.minecraft.client.gui.inventory.GuiInventory`) and
+// obfuscated runtime names — the simple name suffix is the same in both.
+function isSuppressedScreen(gui: any): boolean {
+    try {
+        const name = String(gui.getClass().getName());
+        if (name.indexOf("GuiInventory") >= 0) return true;
+        if (name.indexOf("GuiContainerCreative") >= 0) return true;
+    } catch (_e) {
+        // ignore
+    }
+    return false;
+}
+
 export function getContainerBounds(): ContainerBounds | null {
     const gui = Client.getMinecraft().field_71462_r;
     if (gui === null || gui === undefined) return null;
+
+    if (isSuppressedScreen(gui)) return null;
 
     const screenW = gui.field_146294_l;
     const screenH = gui.field_146295_m;
@@ -66,18 +83,20 @@ export function getContainerBounds(): ContainerBounds | null {
     return { screenW, screenH, left, top, xSize, ySize };
 }
 
-export function leftPanelRect(b: ContainerBounds): Rect | null {
-    const x = SCREEN_PAD;
-    const w = b.left - CONTAINER_GAP - x;
-    if (w < MIN_PANEL_WIDTH) return null;
-    const h = Math.floor(b.screenH * PANEL_HEIGHT_FRACTION);
-    return { x, y: SCREEN_PAD, w, h };
+export function getFullscreenPanelRect(b: ContainerBounds): Rect {
+    return {
+        x: SCREEN_PAD,
+        y: SCREEN_PAD,
+        w: b.screenW - 2 * SCREEN_PAD,
+        h: b.screenH - 2 * SCREEN_PAD,
+    };
 }
 
-export function rightPanelRect(b: ContainerBounds): Rect | null {
-    const x = b.left + b.xSize + CONTAINER_GAP;
-    const w = b.screenW - SCREEN_PAD - x;
-    if (w < MIN_PANEL_WIDTH) return null;
-    const h = Math.floor(b.screenH * PANEL_HEIGHT_FRACTION);
-    return { x, y: SCREEN_PAD, w, h };
+// Vanilla MC 1.8.9 chat default rect: 320×80 scaled px at the bottom-left,
+// 2px gutter from edges, ~22px above hotbar (which we don't use here since
+// the hotbar isn't visible while a GuiContainer is open — but match the
+// usual bottom-anchor anyway). v1 uses fixed defaults; v2 can read
+// gameSettings.chatScale/chatWidth/chatHeightFocused via reflection.
+export function getChatBounds(b: ContainerBounds): Rect {
+    return { x: 2, y: b.screenH - 82, w: 320, h: 80 };
 }

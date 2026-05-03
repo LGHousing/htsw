@@ -2,7 +2,7 @@ import * as json from "jsonc-parser";
 
 import type { GlobalCtxt } from "../../context";
 import { Diagnostic } from "../../diagnostic";
-import { parseActions } from "./actions";
+import { parseActions, parseActionsWithPath } from "./actions";
 import {
     nodeSpan,
     parseArray,
@@ -91,27 +91,27 @@ function parseImportJsonObject(gcx: GlobalCtxt, node: json.Node, currentPath: st
         },
         "functions": {
             required: false,
-            parser: (functionsNode) => parseAndAppendImportables(gcx, functionsNode, parseImportableFunction),
+            parser: (functionsNode) => parseAndAppendImportables(gcx, functionsNode, currentPath, parseImportableFunction),
         },
         "events": {
             required: false,
-            parser: (eventsNode) => parseAndAppendImportables(gcx, eventsNode, parseImportableEvent),
+            parser: (eventsNode) => parseAndAppendImportables(gcx, eventsNode, currentPath, parseImportableEvent),
         },
         "regions": {
             required: false,
-            parser: (regionsNode) => parseAndAppendImportables(gcx, regionsNode, parseImportableRegion),
+            parser: (regionsNode) => parseAndAppendImportables(gcx, regionsNode, currentPath, parseImportableRegion),
         },
         "items": {
             required: false,
-            parser: (itemsNode) => parseAndAppendImportables(gcx, itemsNode, parseImportableItem),
+            parser: (itemsNode) => parseAndAppendImportables(gcx, itemsNode, currentPath, parseImportableItem),
         },
         "npcs": {
             required: false,
-            parser: (npcsNode) => parseAndAppendImportables(gcx, npcsNode, parseImportableNpc),
+            parser: (npcsNode) => parseAndAppendImportables(gcx, npcsNode, currentPath, parseImportableNpc),
         },
         "menus": {
             required: false,
-            parser: (menusNode) => parseAndAppendImportables(gcx, menusNode, parseImportableMenu),
+            parser: (menusNode) => parseAndAppendImportables(gcx, menusNode, currentPath, parseImportableMenu),
         }
     });
 }
@@ -160,10 +160,11 @@ function parseIncludes(
 function parseAndAppendImportables(
     gcx: GlobalCtxt,
     node: json.Node,
-    parser: (gcx: GlobalCtxt, node: json.Node) => Importable
+    declaringPath: string,
+    parser: (gcx: GlobalCtxt, node: json.Node, declaringPath: string) => Importable
 ) {
     gcx.importables.push(
-        ...parseArray(gcx, node, (elementNode) => parser(gcx, elementNode))
+        ...parseArray(gcx, node, (elementNode) => parser(gcx, elementNode, declaringPath))
     );
 }
 
@@ -230,10 +231,13 @@ function resolveImportJsonPath(gcx: GlobalCtxt, path: string): string {
     return gcx.resolvePath(path);
 }
 
-function parseImportableFunction(gcx: GlobalCtxt, node: json.Node): ImportableFunction {
+function parseImportableFunction(gcx: GlobalCtxt, node: json.Node, declaringPath: string): ImportableFunction {
     const importable = { type: "FUNCTION" } as ImportableFunction;
     setSpan(gcx, importable, node);
     setFieldSpan(gcx, importable, "type", node);
+    // Default to the declaring import.json; overridden to the .htsl on
+    // successful parseActionsWithPath below.
+    gcx.sourceFiles.set(importable, declaringPath);
 
     parseObject(gcx, node, {
         "name": {
@@ -246,7 +250,9 @@ function parseImportableFunction(gcx: GlobalCtxt, node: json.Node): ImportableFu
         "actions": {
             required: true,
             parser: (child) => {
-                importable.actions = parseActions(gcx, child);
+                const parsed = parseActionsWithPath(gcx, child);
+                importable.actions = parsed.actions;
+                gcx.sourceFiles.set(importable, parsed.resolvedPath);
                 setFieldSpan(gcx, importable, "actions", child);
             }
         },
@@ -319,10 +325,11 @@ function parseMinecraftItemId(gcx: GlobalCtxt, node: json.Node): string {
     return `minecraft:${match.name}`;
 }
 
-function parseImportableEvent(gcx: GlobalCtxt, node: json.Node): ImportableEvent {
+function parseImportableEvent(gcx: GlobalCtxt, node: json.Node, declaringPath: string): ImportableEvent {
     const importable = { type: "EVENT" } as ImportableEvent;
     setSpan(gcx, importable, node);
     setFieldSpan(gcx, importable, "type", node);
+    gcx.sourceFiles.set(importable, declaringPath);
 
     parseObject(gcx, node, {
         "event": {
@@ -337,7 +344,9 @@ function parseImportableEvent(gcx: GlobalCtxt, node: json.Node): ImportableEvent
         "actions": {
             required: true,
             parser: (child) => {
-                importable.actions = parseActions(gcx, child);
+                const parsed = parseActionsWithPath(gcx, child);
+                importable.actions = parsed.actions;
+                gcx.sourceFiles.set(importable, parsed.resolvedPath);
                 setFieldSpan(gcx, importable, "actions", child);
             }
         },
@@ -346,10 +355,11 @@ function parseImportableEvent(gcx: GlobalCtxt, node: json.Node): ImportableEvent
     return importable;
 }
 
-function parseImportableRegion(gcx: GlobalCtxt, node: json.Node): ImportableRegion {
+function parseImportableRegion(gcx: GlobalCtxt, node: json.Node, declaringPath: string): ImportableRegion {
     const importable = { type: "REGION" } as ImportableRegion;
     setSpan(gcx, importable, node);
     setFieldSpan(gcx, importable, "type", node);
+    gcx.sourceFiles.set(importable, declaringPath);
 
     parseObject(gcx, node, {
         "name": {
@@ -385,10 +395,11 @@ function parseImportableRegion(gcx: GlobalCtxt, node: json.Node): ImportableRegi
     return importable;
 }
 
-function parseImportableNpc(gcx: GlobalCtxt, node: json.Node): ImportableNpc {
+function parseImportableNpc(gcx: GlobalCtxt, node: json.Node, declaringPath: string): ImportableNpc {
     const importable = { type: "NPC" } as ImportableNpc;
     setSpan(gcx, importable, node);
     setFieldSpan(gcx, importable, "type", node);
+    gcx.sourceFiles.set(importable, declaringPath);
 
     parseObject(gcx, node, {
         "name": {
@@ -499,10 +510,11 @@ function parseNpcEquipment(gcx: GlobalCtxt, node: json.Node): NpcEquipment {
     return equipment;
 }
 
-function parseImportableItem(gcx: GlobalCtxt, node: json.Node): ImportableItem {
+function parseImportableItem(gcx: GlobalCtxt, node: json.Node, declaringPath: string): ImportableItem {
     const importable = { type: "ITEM" } as ImportableItem;
     setSpan(gcx, importable, node);
     setFieldSpan(gcx, importable, "type", node);
+    gcx.sourceFiles.set(importable, declaringPath);
 
     parseObject(gcx, node, {
         "name": {
@@ -538,10 +550,11 @@ function parseImportableItem(gcx: GlobalCtxt, node: json.Node): ImportableItem {
     return importable;
 }
 
-function parseImportableMenu(gcx: GlobalCtxt, node: json.Node): ImportableMenu {
+function parseImportableMenu(gcx: GlobalCtxt, node: json.Node, declaringPath: string): ImportableMenu {
     const importable = { type: "MENU", slots: [] as MenuSlot[] } as ImportableMenu;
     setSpan(gcx, importable, node);
     setFieldSpan(gcx, importable, "type", node);
+    gcx.sourceFiles.set(importable, declaringPath);
 
     parseObject(gcx, node, {
         "name": {

@@ -1,9 +1,8 @@
 import { TaskManager } from "../tasks/manager";
 import { exportImportable } from "../importables/exports";
-import { canonicalSlug, defaultExportRoot } from "./paths";
 import { getCurrentHousingUuid } from "../knowledge";
-import { chatSeparator } from "../utils/helpers";
-import { stripSurroundingQuotes } from "../utils/strings";
+import { encodeFilesystemComponent } from "../utils/filesystem";
+import { chatSeparator, stripSurroundingQuotes } from "../utils/helpers";
 import { VERSION } from "htsw";
 
 export { exportImportable } from "../importables/exports";
@@ -52,11 +51,11 @@ function commandExport(args: string[]): void {
                 rootDir = explicitPath.replace(/[\\/]+$/, "");
             } else {
                 const uuid = await getCurrentHousingUuid(ctx);
-                rootDir = defaultExportRoot(uuid);
+                rootDir = `./htsw/exports/${uuid}`;
             }
 
             const importJsonPath = `${rootDir}/import.json`;
-            const filename = `${canonicalSlug(name)}.htsl`;
+            const filename = `${encodeFilesystemComponent(name, { escapeDots: false })}.htsl`;
             const htslPath = `${rootDir}/${filename}`;
             const htslReference = filename;
 
@@ -91,7 +90,7 @@ function commandExport(args: string[]): void {
                 rootDir = explicitPath.replace(/[\\/]+$/, "");
             } else {
                 const uuid = await getCurrentHousingUuid(ctx);
-                rootDir = defaultExportRoot(uuid);
+                rootDir = `./htsw/exports/${uuid}`;
             }
 
             const importJsonPath = `${rootDir}/import.json`;

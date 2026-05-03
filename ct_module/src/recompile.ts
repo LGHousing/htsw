@@ -1,8 +1,11 @@
 import { FileSystemFileLoader } from "./utils/files";
 
 function readDotEnv(key: string): string | null {
-    // HAHAHA dont care!
-    const envContent = new FileSystemFileLoader().readFile(".env");
+    // .env lives next to this CT module at install time, not at the MC
+    // root, so point the loader at the explicit location. (FileSystemFileLoader
+    // is now MC-root-rooted.)
+    const envPath = "./config/ChatTriggers/modules/HTSW/.env";
+    const envContent = new FileSystemFileLoader().readFile(envPath);
     const lines = envContent.split("\n");
     for (const line of lines) {
         const [k, v] = line.split("=");

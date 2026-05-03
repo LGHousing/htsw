@@ -190,39 +190,6 @@ const ACTION_LIST_CONFIG: PaginatedListConfig = {
     emptyPlaceholderName: "No Actions!",
 };
 
-function getVisibleActionItemSlots(ctx: TaskContext): ItemSlot[] {
-    return getVisiblePaginatedItemSlots(ctx);
-}
-
-function isNoActionsPlaceholder(slot: ItemSlot): boolean {
-    return isEmptyPaginatedPlaceholder(slot, ACTION_LIST_CONFIG);
-}
-
-function getCurrentActionPageState(ctx: TaskContext): {
-    currentPage: number;
-    totalPages: number | null;
-    hasNext: boolean;
-    hasPrev: boolean;
-} {
-    return getCurrentPaginatedListPageState(ctx, ACTION_LIST_CONFIG);
-}
-
-function getActionPageForIndex(index: number): number {
-    return getPaginatedListPageForIndex(index);
-}
-
-async function goToActionPage(ctx: TaskContext, targetPage: number): Promise<void> {
-    await goToPaginatedListPage(ctx, targetPage, ACTION_LIST_CONFIG);
-}
-
-async function getActionSlotAtIndex(
-    ctx: TaskContext,
-    index: number,
-    listLength: number
-): Promise<ItemSlot> {
-    return getPaginatedListSlotAtIndex(ctx, index, listLength, ACTION_LIST_CONFIG);
-}
-
 async function readOpenConditional(
     ctx: TaskContext,
     propsToRead: NestedPropsToRead,
@@ -1217,8 +1184,8 @@ function readNestedSummaries(
 export async function readActionsListPage(
     ctx: TaskContext
 ): Promise<ObservedActionSlot[]> {
-    const slots = getVisibleActionItemSlots(ctx).filter(
-        (slot) => !isNoActionsPlaceholder(slot)
+    const slots = getVisiblePaginatedItemSlots(ctx).filter(
+        (slot) => !isEmptyPaginatedPlaceholder(slot, ACTION_LIST_CONFIG)
     );
     const observed: ObservedActionSlot[] = slots
         .map((slot) => ({
@@ -1257,7 +1224,7 @@ export async function readActionList(
     ctx: TaskContext,
     mode: ActionListReadMode = { kind: "full" }
 ): Promise<ObservedActionSlot[]> {
-    await goToActionPage(ctx, 1);
+    await goToPaginatedListPage(ctx, 1, ACTION_LIST_CONFIG);
     const observed: ObservedActionSlot[] = [];
 
     while (true) {
@@ -1267,7 +1234,7 @@ export async function readActionList(
             observed.push(entry);
         }
 
-        const state = getCurrentActionPageState(ctx);
+        const state = getCurrentPaginatedListPageState(ctx, ACTION_LIST_CONFIG);
         if (!state.hasNext) {
             break;
         }
@@ -1276,7 +1243,7 @@ export async function readActionList(
         await waitForMenu(ctx);
     }
 
-    await goToActionPage(ctx, 1);
+    await goToPaginatedListPage(ctx, 1, ACTION_LIST_CONFIG);
     const plan: NestedHydrationPlan =
         mode.kind === "full"
             ? buildFullHydrationPlan(observed)
@@ -1288,7 +1255,7 @@ export async function readActionList(
     await hydrateNestedActions(ctx, plan, observed.length, mode.itemRegistry);
     canonicalizeObservedActionItemNames(observed, mode.itemRegistry);
 
-    await goToActionPage(ctx, 1);
+    await goToPaginatedListPage(ctx, 1, ACTION_LIST_CONFIG);
     return observed;
 }
 
@@ -1403,8 +1370,8 @@ async function hydrateNestedAction(
 
     const note = entry.action.note;
     try {
-        await goToActionPage(ctx, getActionPageForIndex(entry.index));
-        const actionSlot = await getActionSlotAtIndex(ctx, entry.index, listLength);
+        await goToPaginatedListPage(ctx, getPaginatedListPageForIndex(entry.index), ACTION_LIST_CONFIG);
+        const actionSlot = await getPaginatedListSlotAtIndex(ctx, entry.index, listLength, ACTION_LIST_CONFIG);
         entry.slot = actionSlot;
         entry.slotId = actionSlot.getSlotId();
 
@@ -1458,7 +1425,7 @@ async function deleteObservedAction(
     index: number,
     listLength: number
 ): Promise<void> {
-    const slot = await getActionSlotAtIndex(ctx, index, listLength);
+    const slot = await getPaginatedListSlotAtIndex(ctx, index, listLength, ACTION_LIST_CONFIG);
     slot.click(MouseButton.RIGHT);
     await waitForMenu(ctx);
 }
@@ -1482,7 +1449,7 @@ async function moveActionToIndex(
         const button =
             leftDistance <= rightDistance ? MouseButton.LEFT : MouseButton.RIGHT;
 
-        const currentSlot = await getActionSlotAtIndex(ctx, currentIndex, listLength);
+        const currentSlot = await getPaginatedListSlotAtIndex(ctx, currentIndex, listLength, ACTION_LIST_CONFIG);
         currentSlot.click(button, true);
         await waitForMenu(ctx);
 
@@ -1528,7 +1495,7 @@ export async function importAction(
     }
 
     if (action.note) {
-        const itemSlots = getVisibleActionItemSlots(ctx);
+        const itemSlots = getVisiblePaginatedItemSlots(ctx);
         const addedSlot = itemSlots[itemSlots.length - 1];
         if (addedSlot) {
             await setListItemNote(ctx, addedSlot, action.note);
@@ -1598,10 +1565,11 @@ async function applyActionListDiff(
             continue;
         }
 
-        const actionSlot = await getActionSlotAtIndex(
+        const actionSlot = await getPaginatedListSlotAtIndex(
             ctx,
             currentIndex,
-            remainingObserved.length
+            remainingObserved.length,
+            ACTION_LIST_CONFIG
         );
         op.observed.slot = actionSlot;
         op.observed.slotId = actionSlot.getSlotId();
@@ -1669,12 +1637,12 @@ async function applyActionListDiff(
         }
 
         if (op.desired.note !== undefined) {
-            const addedSlot = await getActionSlotAtIndex(ctx, op.toIndex, currentLength);
+            const addedSlot = await getPaginatedListSlotAtIndex(ctx, op.toIndex, currentLength, ACTION_LIST_CONFIG);
             await setListItemNote(ctx, addedSlot, op.desired.note);
         }
     }
 
-    await goToActionPage(ctx, 1);
+    await goToPaginatedListPage(ctx, 1, ACTION_LIST_CONFIG);
 }
 
 function actionLogLabel(action: Action | Observed<Action> | null | undefined): string {

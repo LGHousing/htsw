@@ -1,6 +1,6 @@
 import { VERSION, SourceMap, parseImportablesResult, Diagnostic } from "htsw";
 
-import { chatSeparator } from "./utils/helpers";
+import { chatSeparator, stripSurroundingQuotes } from "./utils/helpers";
 import { Simulator } from "./simulator/simulator";
 import { printDiagnostic, printDiagnostics } from "./tui/diagnostics";
 import { recompile } from "./recompile";
@@ -9,9 +9,9 @@ import { createItemRegistry } from "./importables/itemRegistry";
 import { TaskManager } from "./tasks/manager";
 import { S2FPacketSetSlot } from "./utils/packets";
 import { FileSystemFileLoader } from "./utils/files";
-import { stripSurroundingQuotes } from "./utils/strings";
 import { commandKnowledge } from "./knowledge/commands";
 import { toggleHtswGui, armHtswGuiDebug } from "./gui/overlay";
+import { runDiffDemo } from "./gui/diff-demo";
 
 function printCommandError(sm: SourceMap, err: unknown): void {
     if (err instanceof Diagnostic) {
@@ -69,6 +69,11 @@ function commandHtsw(args: string[]) {
         }
         const nowEnabled = toggleHtswGui();
         ChatLib.chat(`&e[htsw] gui ${nowEnabled ? "&aenabled" : "&cdisabled"}`);
+        return;
+    }
+
+    if (args.length > 0 && args[0] === "diff-demo") {
+        runDiffDemo();
         return;
     }
 

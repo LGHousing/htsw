@@ -13,7 +13,12 @@ function Divider(): Element {
 
 export function LeftPanel(): Element {
     return Col({
-        style: { padding: 6, gap: 6 },
+        style: {
+            padding: 6,
+            gap: 6,
+            width: { kind: "grow" },
+            height: { kind: "grow" },
+        },
         children: () => [TabBar(), Divider(), getActiveTab().content()],
     });
 }

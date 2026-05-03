@@ -6,7 +6,17 @@ import { nodeSpan, parseString } from "./helpers";
 import { parseHtsl } from "../../htsl";
 import { Diagnostic } from "../../diagnostic";
 
+export type ParsedActions = {
+    actions: Action[];
+    /** Resolved absolute path of the .htsl file the actions came from. */
+    resolvedPath: string;
+};
+
 export function parseActions(gcx: GlobalCtxt, node: json.Node): Action[] {
+    return parseActionsWithPath(gcx, node).actions;
+}
+
+export function parseActionsWithPath(gcx: GlobalCtxt, node: json.Node): ParsedActions {
     const path = parseString(gcx, node);
 
     if (!path.endsWith(".htsl")) {
@@ -18,8 +28,8 @@ export function parseActions(gcx: GlobalCtxt, node: json.Node): Action[] {
         throw Diagnostic.error("HTSL file does not exist")
             .addPrimarySpan(nodeSpan(node), "Not found")
     }
-    
+
     const resolvedPath = gcx.resolvePath(path);
-    
-    return parseHtsl(gcx, resolvedPath);
+
+    return { actions: parseHtsl(gcx, resolvedPath), resolvedPath };
 }

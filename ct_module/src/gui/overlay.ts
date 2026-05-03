@@ -19,9 +19,12 @@ const ForgeMouseInputEventPre = Java.type(
 const ForgeKeyboardInputEventPre = Java.type(
     "net.minecraftforge.client.event.GuiScreenEvent$KeyboardInputEvent$Pre"
 );
-import { LeftPanel } from "./left-panel";
-import { RightPanel } from "./right-panel";
-import { getContainerBounds, leftPanelRect, rightPanelRect } from "./bounds";
+import { RootTree } from "./root";
+import { getContainerBounds, getFullscreenPanelRect } from "./bounds";
+import { autoDiscoverImportJson, reparseImportJson, tickReparse } from "./reparse";
+import { CHAT_INPUT_ID } from "./chat-input";
+
+const KEY_T = 20; // LWJGL keycode for 'T'
 import { initPopoverRendering, popoverIsOpen, closeAllPopovers } from "./popovers";
 import {
     dispatchWheel,
@@ -58,28 +61,15 @@ export function debugIsActive(): boolean {
     return debugActive();
 }
 
-function leftBounds(): Rect {
+function frameBounds(): Rect {
     const b = getContainerBounds();
     if (b === null) return ZERO_RECT;
-    return leftPanelRect(b) ?? ZERO_RECT;
+    return getFullscreenPanelRect(b);
 }
 
-function rightBounds(): Rect {
-    const b = getContainerBounds();
-    if (b === null) return ZERO_RECT;
-    return rightPanelRect(b) ?? ZERO_RECT;
-}
-
-function leftVisible(): boolean {
+function frameVisible(): boolean {
     if (!enabled) return false;
-    const b = getContainerBounds();
-    return b !== null && leftPanelRect(b) !== null;
-}
-
-function rightVisible(): boolean {
-    if (!enabled) return false;
-    const b = getContainerBounds();
-    return b !== null && rightPanelRect(b) !== null;
+    return getContainerBounds() !== null;
 }
 
 // Track active panels so global handlers (wheel, key) can locate the laid-out trees.
@@ -106,21 +96,16 @@ export function initHtswGui(): void {
 
     setRenderDebugLog(debug);
 
-    const left = new Panel(leftBounds, LeftPanel(), leftVisible);
-    const right = new Panel(rightBounds, RightPanel(), rightVisible);
-    left.register();
-    right.register();
+    // Single fullscreen panel; the element tree (RootTree) wraps around the
+    // container + chat cutouts. paintBackground=false because the tree paints
+    // its own background regions, leaving cutouts naturally transparent.
+    const frame = new Panel(frameBounds, RootTree(), frameVisible, false);
+    frame.register();
     activePanels.push({
-        panel: left,
-        getBounds: leftBounds,
-        getRoot: () => left.getRoot(),
-        isVisible: leftVisible,
-    });
-    activePanels.push({
-        panel: right,
-        getBounds: rightBounds,
-        getRoot: () => right.getRoot(),
-        isVisible: rightVisible,
+        panel: frame,
+        getBounds: frameBounds,
+        getRoot: () => frame.getRoot(),
+        isVisible: frameVisible,
     });
 
     // Mouse wheel: hook Forge's GuiScreenEvent.MouseInputEvent.Pre, which fires per Mouse.next()
@@ -182,14 +167,26 @@ export function initHtswGui(): void {
     // Cancelling stops MC from reacting to e.g. "e" closing the inventory.
     register(ForgeKeyboardInputEventPre, (event: any) => {
         if (!KeyboardClass.getEventKeyState()) return; // key-up — ignore
+        const keyCode = KeyboardClass.getEventKey();
         const focusedId = getFocusedInput();
+
+        // Global T: when no input is focused and the GUI is shown, focus the
+        // chat input so the user can type messages without leaving the
+        // inventory. Mirrors vanilla MC's "T opens chat" affordance.
+        if (focusedId === null && enabled && keyCode === KEY_T) {
+            if (getContainerBounds() !== null) {
+                setFocusedInput(CHAT_INPUT_ID);
+                cancel(event);
+            }
+            return;
+        }
+
         if (focusedId === null) return;
         const inputEl = findInput(focusedId);
         if (inputEl === null) {
             setFocusedInput(null);
             return;
         }
-        const keyCode = KeyboardClass.getEventKey();
         const charCode = KeyboardClass.getEventCharacter();
         // Esc: clear focus + close popovers, but don't cancel — let MC also close the GUI.
         if (keyCode === 1) {
@@ -198,7 +195,14 @@ export function initHtswGui(): void {
             return;
         }
         if (keyCode === 28) {
-            setFocusedInput(null);
+            // Enter: if the input has an onSubmit handler, run it (the
+            // handler is responsible for clearing focus / clearing text).
+            // Otherwise just unfocus.
+            if (inputEl.onSubmit) {
+                inputEl.onSubmit();
+            } else {
+                setFocusedInput(null);
+            }
             cancel(event);
             return;
         }
@@ -224,6 +228,7 @@ export function initHtswGui(): void {
     register("tick", () => {
         tickAllFields();
         applyFocus(getFocusedInput());
+        tickReparse();
         if (getContainerBounds() === null) {
             if (popoverIsOpen()) closeAllPopovers();
             if (getFocusedInput() !== null) setFocusedInput(null);
@@ -246,6 +251,18 @@ export function initHtswGui(): void {
 
     // Register popover rendering LAST so it paints on top of all panels.
     initPopoverRendering();
+
+    // Best-effort initial parse so the panel populates before the user
+    // touches the path input. autoDiscover handles the case where the
+    // default path doesn't exist by walking ./htsw/imports for any
+    // import.json. Failures are stored in state.parseError and surfaced
+    // inline by the LeftRail empty-state.
+    try {
+        autoDiscoverImportJson();
+        reparseImportJson();
+    } catch (_e) {
+        // ignore — state.parseError will be set
+    }
 }
 
 function findInput(id: string): Extract<Element, { kind: "input" }> | null {
@@ -265,9 +282,9 @@ function walkForInput(
     if (e.kind === "container" || e.kind === "scroll") {
         const children = typeof e.children === "function" ? e.children() : e.children;
         for (let i = 0; i < children.length; i++) {
-            const ch = children[i];
-            if (ch === false) continue;
-            const f = walkForInput(ch, id);
+            const child = children[i];
+            if (child === false) continue;
+            const f = walkForInput(child, id);
             if (f !== null) return f;
         }
     }

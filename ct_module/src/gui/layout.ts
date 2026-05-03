@@ -55,6 +55,12 @@ export type Element =
           id: string;
           value: Extractable<string>;
           onChange: (v: string) => void;
+          /**
+           * Called when Enter is pressed while this input is focused. The
+           * keyboard handler routes Enter to onSubmit (clearing focus
+           * itself); inputs without an onSubmit just unfocus on Enter.
+           */
+          onSubmit?: () => void;
           placeholder?: string;
       }
     | {

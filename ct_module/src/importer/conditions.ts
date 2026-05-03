@@ -147,40 +147,11 @@ const CONDITION_LIST_CONFIG: PaginatedListConfig = {
     emptyPlaceholderName: "No Conditions!",
 };
 
-function getVisibleConditionItemSlots(ctx: TaskContext): ItemSlot[] {
-    return getVisiblePaginatedItemSlots(ctx);
-}
-
-function isNoConditionsPlaceholder(slot: ItemSlot): boolean {
-    return isEmptyPaginatedPlaceholder(slot, CONDITION_LIST_CONFIG);
-}
-
-function getCurrentConditionPageState(ctx: TaskContext): {
-    currentPage: number;
-    totalPages: number | null;
-    hasNext: boolean;
-    hasPrev: boolean;
-} {
-    return getCurrentPaginatedListPageState(ctx, CONDITION_LIST_CONFIG);
-}
-
-async function goToConditionPage(ctx: TaskContext, targetPage: number): Promise<void> {
-    await goToPaginatedListPage(ctx, targetPage, CONDITION_LIST_CONFIG);
-}
-
-async function getConditionSlotAtIndex(
-    ctx: TaskContext,
-    index: number,
-    listLength: number
-): Promise<ItemSlot> {
-    return getPaginatedListSlotAtIndex(ctx, index, listLength, CONDITION_LIST_CONFIG);
-}
-
 export async function readConditionsListPage(
     ctx: TaskContext
 ): Promise<ObservedConditionSlot[]> {
-    return getVisibleConditionItemSlots(ctx)
-        .filter((slot) => !isNoConditionsPlaceholder(slot))
+    return getVisiblePaginatedItemSlots(ctx)
+        .filter((slot) => !isEmptyPaginatedPlaceholder(slot, CONDITION_LIST_CONFIG))
         .map((slot, index) => {
             const type = tryGetConditionTypeFromDisplayName(slot.getItem().getName());
             const observedCondition: ObservedConditionSlot = {
@@ -707,7 +678,7 @@ export async function readConditionList(
     ctx: TaskContext,
     options?: ReadConditionListOptions
 ): Promise<ObservedConditionSlot[]> {
-    await goToConditionPage(ctx, 1);
+    await goToPaginatedListPage(ctx, 1, CONDITION_LIST_CONFIG);
     const observed: ObservedConditionSlot[] = [];
 
     while (true) {
@@ -718,7 +689,7 @@ export async function readConditionList(
             observed.push(entry);
         }
 
-        if (!getCurrentConditionPageState(ctx).hasNext) {
+        if (!getCurrentPaginatedListPageState(ctx, CONDITION_LIST_CONFIG).hasNext) {
             break;
         }
 
@@ -726,7 +697,7 @@ export async function readConditionList(
         await waitForMenu(ctx);
     }
 
-    await goToConditionPage(ctx, 1);
+    await goToPaginatedListPage(ctx, 1, CONDITION_LIST_CONFIG);
     canonicalizeObservedConditionSlots(observed, options?.itemRegistry);
     return observed;
 }
@@ -807,7 +778,7 @@ async function deleteObservedCondition(
     index: number,
     listLength: number
 ): Promise<void> {
-    const slot = await getConditionSlotAtIndex(ctx, index, listLength);
+    const slot = await getPaginatedListSlotAtIndex(ctx, index, listLength, CONDITION_LIST_CONFIG);
     slot.click(MouseButton.RIGHT);
     await waitForMenu(ctx);
 }
@@ -862,7 +833,7 @@ export async function importCondition(
     await clickGoBack(ctx);
 
     if (condition.note) {
-        const conditionSlots = getVisibleConditionItemSlots(ctx);
+        const conditionSlots = getVisiblePaginatedItemSlots(ctx);
         const addedSlot = conditionSlots[conditionSlots.length - 1];
         if (addedSlot) {
             await setListItemNote(ctx, addedSlot, condition.note);
@@ -884,10 +855,11 @@ async function applyConditionListDiff(
             continue;
         }
 
-        const conditionSlot = await getConditionSlotAtIndex(
+        const conditionSlot = await getPaginatedListSlotAtIndex(
             ctx,
             currentIndex,
-            currentObserved.length
+            currentObserved.length,
+            CONDITION_LIST_CONFIG
         );
         entry.observed.slot = conditionSlot;
         entry.observed.slotId = conditionSlot.getSlotId();

@@ -2,6 +2,7 @@
 
 import { Element, Rect, pointInRect, layoutElement } from "./layout";
 import { renderElement, dispatchClick } from "./render";
+import { bumpLastPostRender, postRecentlyFired, resetGuiState } from "./panel";
 
 export type PopoverHandle = {
     id: number;
@@ -11,8 +12,17 @@ export type PopoverHandle = {
     width: number;
     height: number;
     openedAt: number;
+    /**
+     * "anchored" — placed adjacent to the trigger anchor (default).
+     * "modal"    — centered on the screen and a full-screen scrim is drawn
+     *              behind it; outside-clicks still close after the grace
+     *              window so the user can dismiss by clicking off.
+     */
+    placement: "anchored" | "modal";
     onClose?: () => void;
 };
+
+import { COLOR_OVERLAY_DIM, COLOR_PANEL, COLOR_PANEL_BORDER } from "./theme";
 
 const OPEN_GRACE_MS = 250;
 
@@ -26,6 +36,7 @@ export function openPopover(opts: {
     width: number;
     height: number;
     key?: string;
+    placement?: "anchored" | "modal";
     onClose?: () => void;
 }): PopoverHandle {
     const handle: PopoverHandle = {
@@ -36,6 +47,7 @@ export function openPopover(opts: {
         width: opts.width,
         height: opts.height,
         openedAt: Date.now(),
+        placement: opts.placement ?? "anchored",
         onClose: opts.onClose,
     };
     openPopovers.push(handle);
@@ -50,6 +62,7 @@ export function togglePopover(opts: {
     content: Element;
     width: number;
     height: number;
+    placement?: "anchored" | "modal";
     onClose?: () => void;
 }): PopoverHandle | null {
     for (let i = 0; i < openPopovers.length; i++) {
@@ -83,6 +96,16 @@ export function popoverIsOpen(): boolean {
 function computePopoverRect(p: PopoverHandle): Rect {
     const screenH = Renderer.screen.getHeight();
     const screenW = Renderer.screen.getWidth();
+    if (p.placement === "modal") {
+        const w = Math.min(p.width, screenW - 8);
+        const h = Math.min(p.height, screenH - 8);
+        return {
+            x: Math.floor((screenW - w) / 2),
+            y: Math.floor((screenH - h) / 2),
+            w,
+            h,
+        };
+    }
     const anchor = p.anchor;
     const anchorCenterY = anchor.y + anchor.h / 2;
     const goesBelow = anchorCenterY < screenH / 2;
@@ -127,34 +150,70 @@ export function tryDispatchPopoverClick(mouseX: number, mouseY: number): boolean
             if (stale[i].onClose) stale[i].onClose!();
         }
     }
+    // If any modal is still open, absorb the click so it doesn't fall
+    // through to the underlying panel — modals are interaction-blocking.
+    for (let i = 0; i < openPopovers.length; i++) {
+        if (openPopovers[i].placement === "modal") return true;
+    }
     return false;
+}
+
+function drawPopovers(mouseX: number, mouseY: number): void {
+    if (openPopovers.length === 0) return;
+    resetGuiState();
+    let scrimDrawn = false;
+    for (let i = 0; i < openPopovers.length; i++) {
+        const p = openPopovers[i];
+        if (p.placement === "modal" && !scrimDrawn) {
+            const sw = Renderer.screen.getWidth();
+            const sh = Renderer.screen.getHeight();
+            Renderer.drawRect(COLOR_OVERLAY_DIM, 0, 0, sw, sh);
+            scrimDrawn = true;
+        }
+        const rect = computePopoverRect(p);
+        Renderer.drawRect(
+            COLOR_PANEL_BORDER,
+            rect.x - 1,
+            rect.y - 1,
+            rect.w + 2,
+            rect.h + 2
+        );
+        Renderer.drawRect(COLOR_PANEL, rect.x, rect.y, rect.w, rect.h);
+        renderElement(
+            p.content,
+            rect.x,
+            rect.y,
+            rect.w,
+            rect.h,
+            mouseX,
+            mouseY,
+            true
+        );
+    }
 }
 
 export function initPopoverRendering(): void {
     if (renderInitialized) return;
     renderInitialized = true;
+    // Same dual-path scheme as Panel: postGuiRender for clean overlay
+    // (paints after MC slots), guiRender as fallback for builds where
+    // postGuiRender doesn't fire. LOWEST priority so popovers always
+    // paint last, on top of panels.
+    register("postGuiRender", (mouseX: number, mouseY: number) => {
+        bumpLastPostRender();
+        drawPopovers(mouseX, mouseY);
+    }).setPriority(OnTrigger.Priority.LOWEST);
     register("guiRender", (mouseX: number, mouseY: number) => {
-        for (let i = 0; i < openPopovers.length; i++) {
-            const p = openPopovers[i];
-            const rect = computePopoverRect(p);
-            Renderer.drawRect(0xf0242931 | 0, rect.x, rect.y, rect.w, rect.h);
-            renderElement(
-                p.content,
-                rect.x,
-                rect.y,
-                rect.w,
-                rect.h,
-                mouseX,
-                mouseY,
-                true
-            );
-        }
+        if (postRecentlyFired()) return;
+        drawPopovers(mouseX, mouseY);
     }).setPriority(OnTrigger.Priority.LOWEST);
 }
 
 // True when mouseX/mouseY is inside any open popover's rect — used to suppress hover on panels.
+// Modals always return true (their scrim absorbs all hover anywhere on screen).
 export function mouseIsOverPopover(mouseX: number, mouseY: number): boolean {
     for (let i = 0; i < openPopovers.length; i++) {
+        if (openPopovers[i].placement === "modal") return true;
         const rect = computePopoverRect(openPopovers[i]);
         if (pointInRect(rect, mouseX, mouseY)) return true;
     }

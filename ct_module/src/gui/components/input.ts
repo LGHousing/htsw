@@ -5,6 +5,7 @@ export type InputProps = {
     id: string;
     value: Extractable<string>;
     onChange: (v: string) => void;
+    onSubmit?: () => void;
     style?: Style;
     placeholder?: string;
 };
@@ -16,6 +17,7 @@ export function Input(props: InputProps): Element {
         id: props.id,
         value: props.value,
         onChange: props.onChange,
+        onSubmit: props.onSubmit,
         placeholder: props.placeholder,
     };
 }

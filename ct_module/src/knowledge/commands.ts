@@ -3,8 +3,7 @@ import type { Importable } from "htsw/types";
 
 import { TaskManager } from "../tasks/manager";
 import { FileSystemFileLoader } from "../utils/files";
-import { chatSeparator } from "../utils/helpers";
-import { stripSurroundingQuotes } from "../utils/strings";
+import { chatSeparator, stripSurroundingQuotes } from "../utils/helpers";
 import {
     getCurrentHousingUuid,
     buildKnowledgeStatusRows,

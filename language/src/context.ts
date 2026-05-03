@@ -12,6 +12,15 @@ export class GlobalCtxt {
     diagnostics: Diagnostic[];
     activeImportJsonPaths: string[];
     loadedImportJsonPaths: Set<string>;
+    /**
+     * Maps each parsed importable to the resolved path of the file that owns
+     * its primary content — for FUNCTION/EVENT this is the referenced .htsl
+     * (where the action body lives), for ITEM/MENU/REGION/NPC it is the
+     * import.json that declared them. Lives off the importable to avoid
+     * touching the importable's own keys (which knowledge-cache hashing
+     * walks via Object.keys — see ct_module/src/knowledge/hash.ts).
+     */
+    sourceFiles: WeakMap<Importable, string>;
 
     constructor(
         sourceMap: SourceMap,
@@ -25,6 +34,7 @@ export class GlobalCtxt {
         this.diagnostics = [];
         this.activeImportJsonPaths = [];
         this.loadedImportJsonPaths = new Set<string>();
+        this.sourceFiles = new WeakMap<Importable, string>();
     }
 
     addDiagnostic(diag: Diagnostic) {
@@ -58,6 +68,7 @@ export class GlobalCtxt {
         gcx.diagnostics = this.diagnostics;
         gcx.activeImportJsonPaths = this.activeImportJsonPaths;
         gcx.loadedImportJsonPaths = this.loadedImportJsonPaths;
+        gcx.sourceFiles = this.sourceFiles;
         return gcx;
     }
 }

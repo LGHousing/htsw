@@ -8,6 +8,8 @@ import { printDiagnostic } from "../tui/diagnostics";
 import { createItemRegistry } from "./itemRegistry";
 import { importImportable } from "./imports";
 
+// TODO: Make this work with GUI
+
 export type ImportSelection = {
     importables: Importable[];
     trustMode: boolean;

@@ -43,7 +43,7 @@ export function cyrb53(str: string, seed: number = 0) {
 /**
  * Deterministic JSON stringify: sorts object keys, drops `undefined` fields,
  * and drops empty arrays. Used by importable hashing (`knowledge/hash.ts`)
- * and item shell comparison (`importables/items/shared.ts`) so identical
+ * and item shell comparison (`importables/items/import.ts`) so identical
  * importables always serialize to identical strings regardless of insertion
  * order or incidental empty-array fields.
  */
@@ -74,4 +74,15 @@ export function stableStringify(value: unknown): string {
         parts.push(JSON.stringify(key) + ":" + stableStringify(v));
     }
     return "{" + parts.join(",") + "}";
+}
+
+export function stripSurroundingQuotes(value: string): string {
+    if (
+        value.length >= 2 &&
+        value.charAt(0) === '"' &&
+        value.charAt(value.length - 1) === '"'
+    ) {
+        return value.slice(1, value.length - 1);
+    }
+    return value;
 }

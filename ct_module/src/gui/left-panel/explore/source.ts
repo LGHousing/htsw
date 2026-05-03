@@ -213,17 +213,42 @@ function walkDir(dir: any, root: any, out: Result[]): void {
     }
 }
 
+// The Scroll component's children callback fires every frame (layout +
+// render + click dispatch — sometimes 4+ times per frame). Re-walking
+// `./htsw/imports/**` on every call is the source of the explore-tab
+// scroll lag. We cache the walk result with a short TTL so frame-to-frame
+// reads are free; expansions from the user (clicking a row, opening a
+// menu) refresh quickly enough that the staleness is invisible. Edits to
+// disk show up within `WALK_TTL_MS` ms.
+const WALK_TTL_MS = 500;
+let walkCache: Result[] = [];
+let walkCachedAt = 0;
+
+export function invalidateEnumerateCache(): void {
+    walkCachedAt = 0;
+}
+
 export function enumerateResults(): Result[] {
+    const now = Date.now();
+    if (now - walkCachedAt < WALK_TTL_MS) return walkCache;
     const Files = Java.type("java.nio.file.Files");
     const root = resolveImportsRoot();
     let exists = false;
     try {
         exists = Files.exists(root);
     } catch (_e) {
-        return [];
+        walkCache = [];
+        walkCachedAt = now;
+        return walkCache;
     }
-    if (!exists) return [];
+    if (!exists) {
+        walkCache = [];
+        walkCachedAt = now;
+        return walkCache;
+    }
     const out: Result[] = [];
     walkDir(root, root, out);
-    return out;
+    walkCache = out;
+    walkCachedAt = now;
+    return walkCache;
 }
