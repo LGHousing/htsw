@@ -3,6 +3,7 @@
 import {
     Element,
     LaidOut,
+    Rect,
     layoutElement,
     pointInRect,
     getScrollState,
@@ -132,7 +133,13 @@ function renderItem(
         const ty = r.y + Math.max(0, Math.floor((r.h - LINE_H) / 2));
         const color = e.color !== undefined ? extract(e.color) : undefined;
         if (color !== undefined) {
-            Client.getMinecraft().field_71466_p.func_175065_a(text, r.x, ty, color, false);
+            Client.getMinecraft().field_71466_p.func_175065_a(
+                text,
+                r.x,
+                ty,
+                color,
+                false
+            );
         } else {
             Renderer.drawString(text, r.x, ty);
         }
@@ -231,12 +238,16 @@ export function dispatchClick(laid: LaidOut[], mouseX: number, mouseY: number): 
         );
         if (e.kind === "button") {
             setFocusedInput(null);
-            e.onClick(item.rect);
+            const isDouble = consumeDoubleClick(item.rect, mouseX, mouseY);
+            e.onClick(item.rect, isDouble);
+            if (isDouble && e.onDoubleClick) e.onDoubleClick(item.rect);
             return true;
         }
-        if (e.kind === "container" && e.onClick) {
+        if (e.kind === "container" && (e.onClick || e.onDoubleClick)) {
             setFocusedInput(null);
-            e.onClick(item.rect);
+            const isDouble = consumeDoubleClick(item.rect, mouseX, mouseY);
+            if (e.onClick) e.onClick(item.rect, isDouble);
+            if (isDouble && e.onDoubleClick) e.onDoubleClick(item.rect);
             return true;
         }
         if (e.kind === "input") {
@@ -262,6 +273,30 @@ export function dispatchClick(laid: LaidOut[], mouseX: number, mouseY: number): 
     // matching the behavior of clicking outside the panel entirely.
     setFocusedInput(null);
     return false;
+}
+
+// --- Double-click detection ---
+// Two clicks count as a double-click if they happen within DOUBLE_CLICK_MS and the second
+// click's position lies within the first click's rect. Resets after a double so triple-clicks
+// don't chain into a second double.
+const DOUBLE_CLICK_MS = 200;
+let lastClickRect: Rect | null = null;
+let lastClickTime = 0;
+
+function consumeDoubleClick(rect: Rect, mouseX: number, mouseY: number): boolean {
+    const now = Date.now();
+    const isDouble =
+        lastClickRect !== null &&
+        now - lastClickTime < DOUBLE_CLICK_MS &&
+        pointInRect(lastClickRect, mouseX, mouseY);
+    if (isDouble) {
+        lastClickRect = null;
+        lastClickTime = 0;
+    } else {
+        lastClickRect = rect;
+        lastClickTime = now;
+    }
+    return isDouble;
 }
 
 // --- Scrollbar drag state ---

@@ -1,6 +1,6 @@
 export const ALL_TYPES = ["import", "script", "item"] as const;
 
-export type ResultType = typeof ALL_TYPES[number];
+export type ResultType = (typeof ALL_TYPES)[number];
 
 export type ImportEntryFunction = {
     type: "FUNCTION";

@@ -33,13 +33,15 @@ export type Element =
           kind: "container";
           style: ContainerStyle;
           children: Extractable<Child[]>;
-          onClick?: (rect: Rect) => void;
+          onClick?: (rect: Rect, isDoubleClickSecond: boolean) => void;
+          onDoubleClick?: (rect: Rect) => void;
       }
     | {
           kind: "button";
           style: Style;
           text: Extractable<string>;
-          onClick: (rect: Rect) => void;
+          onClick: (rect: Rect, isDoubleClickSecond: boolean) => void;
+          onDoubleClick?: (rect: Rect) => void;
       }
     | {
           kind: "text";
@@ -140,10 +142,10 @@ function inputContent(_: string): { w: number; h: number } {
     return { w: 80, h: LINE_H + INPUT_PAD_Y * 2 };
 }
 
-function containerContent(c: {
-    style: ContainerStyle;
-    children: Extractable<Child[]>;
-}): { w: number; h: number } {
+function containerContent(c: { style: ContainerStyle; children: Extractable<Child[]> }): {
+    w: number;
+    h: number;
+} {
     const pad = resolvePadding(c.style.padding);
     const dir = c.style.direction ?? "col";
     const gap = c.style.gap ?? 0;

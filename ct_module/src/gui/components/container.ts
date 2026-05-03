@@ -4,7 +4,8 @@ import { Extractable } from "../extractable";
 export type ContainerProps = {
     children: Extractable<Child[]>;
     style?: ContainerStyle;
-    onClick?: (rect: Rect) => void;
+    onClick?: (rect: Rect, isDoubleClickSecond: boolean) => void;
+    onDoubleClick?: (rect: Rect) => void;
 };
 
 export function Container(props: ContainerProps): Element {
@@ -13,6 +14,7 @@ export function Container(props: ContainerProps): Element {
         style: props.style ?? {},
         children: props.children,
         onClick: props.onClick,
+        onDoubleClick: props.onDoubleClick,
     };
 }
 
@@ -21,6 +23,7 @@ export function Row(props: ContainerProps): Element {
         children: props.children,
         style: { ...(props.style ?? {}), direction: "row" },
         onClick: props.onClick,
+        onDoubleClick: props.onDoubleClick,
     });
 }
 
@@ -29,5 +32,6 @@ export function Col(props: ContainerProps): Element {
         children: props.children,
         style: { ...(props.style ?? {}), direction: "col" },
         onClick: props.onClick,
+        onDoubleClick: props.onDoubleClick,
     });
 }

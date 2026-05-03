@@ -14,12 +14,8 @@ import {
     ROW_HOVER_BG,
 } from "./types";
 import { enumerateResults } from "./source";
-import {
-    SORT_FIELDS,
-    isSortDefault,
-    sortResults,
-    sortPopoverContent,
-} from "./sort";
+import { previewSelect, confirmSelect } from "../../selection";
+import { SORT_FIELDS, isSortDefault, sortResults, sortPopoverContent } from "./sort";
 import {
     isTypeActive,
     isFilterDefault,
@@ -68,21 +64,25 @@ function resultRow(r: Result): Element {
     return Container({
         style: {
             direction: "row",
-            padding: [{ side: "left", value: 3 }, { side: "right", value: 6 }],
+            padding: [
+                { side: "left", value: 3 },
+                { side: "right", value: 6 },
+            ],
             gap: 6,
             align: "center",
             height: { kind: "px", value: 18 },
             background: ROW_BG,
             hoverBackground: ROW_HOVER_BG,
         },
-        onClick: () => {
+        onClick: (_rect, isDoubleClickSecond) => {
+            if (isDoubleClickSecond) return;
             if (isImport) {
                 if (expandedImports.has(r.fullPath)) expandedImports.delete(r.fullPath);
                 else expandedImports.add(r.fullPath);
-            } else {
-                ChatLib.chat(`&a[htsw] clicked ${r.type}: ${r.fullPath}`);
             }
+            previewSelect(r.fullPath);
         },
+        onDoubleClick: () => confirmSelect(r.fullPath),
         children: [
             Container({
                 style: {
@@ -96,16 +96,18 @@ function resultRow(r: Result): Element {
                 text: r.path,
                 style: { width: { kind: "grow" } },
             }),
-            isImport && Text({
-                text: expandedImports.has(r.fullPath) ? '[-]' : '[+]',
-            }),
+            isImport &&
+                Text({
+                    text: expandedImports.has(r.fullPath) ? "[-]" : "[+]",
+                }),
         ],
     });
 }
 
 function entryContent(parent: ResultImport, e: ImportEntry): Element {
     const refRel = entryRefPath(e);
-    const childFull = refRel === undefined ? undefined : joinPath(dirOf(parent.fullPath), refRel);
+    const childFull =
+        refRel === undefined ? undefined : joinPath(dirOf(parent.fullPath), refRel);
     const display = entryLabel(e);
     const clickPath = childFull ?? entryLabel(e);
     return Container({
@@ -119,7 +121,10 @@ function entryContent(parent: ResultImport, e: ImportEntry): Element {
             background: ROW_BG,
             hoverBackground: ROW_HOVER_BG,
         },
-        onClick: () => ChatLib.chat(`&a[htsw] clicked ${e.type}: ${clickPath}`),
+        onClick: (_rect, isDoubleClickSecond) => {
+            if (!isDoubleClickSecond) previewSelect(clickPath);
+        },
+        onDoubleClick: () => confirmSelect(clickPath),
         children: [Text({ text: display })],
     });
 }
@@ -189,7 +194,9 @@ function branchCol(rowH: number, kind: BranchKind): Element {
     segs.push(pixel(INDENT_STEP, LINE_THICK));
     const bottomH = rowH - armTopY - LINE_THICK;
     if (bottomH > 0) {
-        segs.push(kind === "tee" ? verticalStripCol(bottomH) : spacer(INDENT_STEP, bottomH));
+        segs.push(
+            kind === "tee" ? verticalStripCol(bottomH) : spacer(INDENT_STEP, bottomH)
+        );
     }
     return Container({
         style: {
@@ -207,7 +214,11 @@ function gapBandFor(r: TreeRow): Element {
         cols.push(spacer(LEFT_PAD, ROW_GAP_H));
     }
     for (let i = 0; i < r.levels.length; i++) {
-        cols.push(r.levels[i] === "vertical" ? verticalStripCol(ROW_GAP_H) : emptyStripCol(ROW_GAP_H));
+        cols.push(
+            r.levels[i] === "vertical"
+                ? verticalStripCol(ROW_GAP_H)
+                : emptyStripCol(ROW_GAP_H)
+        );
     }
     if (r.branch !== null) {
         cols.push(verticalStripCol(ROW_GAP_H));
@@ -230,7 +241,11 @@ function composeTreeRow(r: TreeRow): Element {
         const cols: Element[] = [];
         cols.push(spacer(LEFT_PAD, r.height));
         for (let i = 0; i < r.levels.length; i++) {
-            cols.push(r.levels[i] === "vertical" ? verticalStripCol(r.height) : emptyStripCol(r.height));
+            cols.push(
+                r.levels[i] === "vertical"
+                    ? verticalStripCol(r.height)
+                    : emptyStripCol(r.height)
+            );
         }
         if (r.branch !== null) cols.push(branchCol(r.height, r.branch));
         cols.push(

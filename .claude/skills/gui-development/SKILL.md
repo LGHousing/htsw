@@ -30,8 +30,8 @@ The HTSW in-game overlay is a small declarative UI framework that runs inside Ch
 
 | kind | extra fields | clickable? | notes |
 |------|---|---|---|
-| `container` | `style: ContainerStyle`, `children: Extractable<Child[]>`, optional `onClick(rect)` | yes if `onClick` set | flex layout (row/col), gap, align, padding, optional bg/hoverBg |
-| `button` | `style`, `text: Extractable<string>`, `onClick(rect)` | yes | bg + centered text, hover bg |
+| `container` | `style: ContainerStyle`, `children: Extractable<Child[]>`, optional `onClick(rect, isDoubleClickSecond)`, optional `onDoubleClick(rect)` | yes if `onClick` or `onDoubleClick` set | flex layout (row/col), gap, align, padding, optional bg/hoverBg |
+| `button` | `style`, `text: Extractable<string>`, `onClick(rect, isDoubleClickSecond)`, optional `onDoubleClick(rect)` | yes | bg + centered text, hover bg |
 | `text` | `style`, `text: Extractable<string>`, optional `color` | no | plain label, intrinsic size = `Renderer.getStringWidth(text)` × `LINE_H` |
 | `input` | `style`, `id: string`, `value: Extractable<string>`, `onChange(v)`, optional `placeholder` | focusable | id is used for global focus + key dispatch |
 | `scroll` | `style: ContainerStyle`, `id: string`, `children: Extractable<Element[]>` | passes through | vertical scroll viewport with internal offset state, scrollbar overlay, mouse-wheel + drag |
@@ -89,6 +89,7 @@ Scroll({
 - Skips items where the click is outside the `clipRect`.
 - Stops at first hit on `button`, clickable `container`, or `input`.
 - Sets/clears global focused-input.
+- Detects double-clicks: if a click lands within the previously-clicked rect within `DOUBLE_CLICK_MS` (350ms), the second click fires `onClick(rect, true)` and then `onDoubleClick(rect)` if defined. The first click always fires `onClick(rect, false)` immediately — there is no delay-and-coalesce. Handlers that should *not* repeat work on the second click should early-return when `isDoubleClickSecond` is true. The double-click latch resets after firing so triple-clicks don't chain into a second double.
 
 ## Panels
 

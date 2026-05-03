@@ -114,22 +114,38 @@ function loadImportJson(fullPath: string, mtimeMs: number): ImportCacheEntry {
 
 function isDirSafe(p: any): boolean {
     const Files = Java.type("java.nio.file.Files");
-    try { return Files.isDirectory(p); } catch (_e) { return false; }
+    try {
+        return Files.isDirectory(p);
+    } catch (_e) {
+        return false;
+    }
 }
 
 function isRegularFileSafe(p: any): boolean {
     const Files = Java.type("java.nio.file.Files");
-    try { return Files.isRegularFile(p); } catch (_e) { return false; }
+    try {
+        return Files.isRegularFile(p);
+    } catch (_e) {
+        return false;
+    }
 }
 
 function getMtimeSafe(p: any): number {
     const Files = Java.type("java.nio.file.Files");
-    try { return Number(Files.getLastModifiedTime(p).toMillis()); } catch (_e) { return 0; }
+    try {
+        return Number(Files.getLastModifiedTime(p).toMillis());
+    } catch (_e) {
+        return 0;
+    }
 }
 
 function visitFile(p: any, root: any, out: Result[]): void {
     let fileName: any;
-    try { fileName = p.getFileName(); } catch (_e) { return; }
+    try {
+        fileName = p.getFileName();
+    } catch (_e) {
+        return;
+    }
     if (fileName === null) return;
     let fname: string;
     let path: string;
@@ -138,7 +154,9 @@ function visitFile(p: any, root: any, out: Result[]): void {
         fname = String(fileName.toString()).toLowerCase();
         path = relativePath(root, p);
         fullPath = String(p.toString()).replace(/\\/g, "/");
-    } catch (_e) { return; }
+    } catch (_e) {
+        return;
+    }
     if (fname === "import.json") {
         const mtime = getMtimeSafe(p);
         const entry = loadImportJson(fullPath, mtime);
@@ -160,7 +178,11 @@ function visitFile(p: any, root: any, out: Result[]): void {
 function walkDir(dir: any, root: any, out: Result[]): void {
     const Files = Java.type("java.nio.file.Files");
     let stream: any;
-    try { stream = Files.newDirectoryStream(dir); } catch (_e) { return; }
+    try {
+        stream = Files.newDirectoryStream(dir);
+    } catch (_e) {
+        return;
+    }
     try {
         const it = stream.iterator();
         while (true) {
@@ -175,11 +197,19 @@ function walkDir(dir: any, root: any, out: Result[]): void {
             if (isDirSafe(entry)) {
                 walkDir(entry, root, out);
             } else if (isRegularFileSafe(entry)) {
-                try { visitFile(entry, root, out); } catch (_e) { /* skip */ }
+                try {
+                    visitFile(entry, root, out);
+                } catch (_e) {
+                    /* skip */
+                }
             }
         }
     } finally {
-        try { stream.close(); } catch (_e) { /* ignore */ }
+        try {
+            stream.close();
+        } catch (_e) {
+            /* ignore */
+        }
     }
 }
 
@@ -187,7 +217,11 @@ export function enumerateResults(): Result[] {
     const Files = Java.type("java.nio.file.Files");
     const root = resolveImportsRoot();
     let exists = false;
-    try { exists = Files.exists(root); } catch (_e) { return []; }
+    try {
+        exists = Files.exists(root);
+    } catch (_e) {
+        return [];
+    }
     if (!exists) return [];
     const out: Result[] = [];
     walkDir(root, root, out);
