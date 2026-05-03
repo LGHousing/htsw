@@ -30,17 +30,27 @@ def main() -> None:
         if status != 0:
             raise RuntimeError(f'Build failed with error code: {status}')
 
+    mcp_enabled_raw = (os.getenv('HTSW_MCP_ENABLED') or '').strip().lower()
+    mcp_enabled = mcp_enabled_raw in ('1', 'true', 'yes', 'on')
+
     DESTINATION.mkdir(parents=True, exist_ok=True)
     dist_dir = SOURCE / 'dist'
     for source_file in dist_dir.iterdir():
         if source_file.is_file():
             shutil.copy2(source_file, DESTINATION / source_file.name)
     shutil.copy2(SOURCE / 'metadata.json', DESTINATION / 'metadata.json')
-    shutil.copy2(SOURCE / '.env', DESTINATION / '.env')
+
+    # Filter MCP-related env vars out of the deployed .env when the bridge is disabled,
+    # so the final build contains no trace of MCP configuration.
+    env_text = (SOURCE / '.env').read_text(encoding='utf-8')
+    if not mcp_enabled:
+        env_text = ''.join(
+            line for line in env_text.splitlines(keepends=True)
+            if not line.lstrip().upper().startswith('HTSW_MCP_')
+        )
+    (DESTINATION / '.env').write_text(env_text, encoding='utf-8')
 
     mcp_config_path = DESTINATION / 'mcp.json'
-    mcp_enabled_raw = (os.getenv('HTSW_MCP_ENABLED') or '').strip().lower()
-    mcp_enabled = mcp_enabled_raw in ('1', 'true', 'yes', 'on')
     if mcp_enabled:
         try:
             mcp_port = int(os.getenv('HTSW_MCP_PORT') or '37123')

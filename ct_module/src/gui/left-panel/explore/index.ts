@@ -64,6 +64,50 @@ function dirOf(p: string): string {
     return i < 0 ? "" : p.substring(0, i);
 }
 
+function userHome(): string {
+    try {
+        const System = Java.type("java.lang.System");
+        return String(System.getProperty("user.home")).replace(/\\/g, "/");
+    } catch (_e) {
+        return "";
+    }
+}
+
+const MAX_TAIL_SEGMENTS = 3;
+
+// Keep at most the last MAX_TAIL_SEGMENTS path segments. Returns the kept tail and a flag
+// indicating whether segments were dropped from the front.
+function tailSegments(rel: string): { tail: string; truncated: boolean } {
+    const parts = rel.split("/");
+    if (parts.length <= MAX_TAIL_SEGMENTS) return { tail: rel, truncated: false };
+    return { tail: parts.slice(parts.length - MAX_TAIL_SEGMENTS).join("/"), truncated: true };
+}
+
+// Compact a full directory path for display:
+//   `<home>/foo`                  → `~/foo`
+//   `<home>/foo/bar`              → `~/foo/bar`           (≤ 3 tail segments fits)
+//   `<home>/foo/bar/baz`          → `~/foo/bar/baz`
+//   `<home>/a/b/c/d/e`            → `~/.../c/d/e`         (truncated to last 3)
+//   `/elsewhere/a/b/c/d`          → `.../b/c/d`
+//   `/short`                      → `/short`              (already short — pass through)
+// Pass-through if the path is empty.
+function formatFullDir(fullPath: string): string {
+    if (!fullPath) return fullPath;
+    const home = userHome();
+    if (home.length > 0) {
+        if (fullPath === home) return "~";
+        if (fullPath.indexOf(home + "/") === 0) {
+            const rel = fullPath.substring(home.length + 1);
+            const { tail, truncated } = tailSegments(rel);
+            return truncated ? `~/.../${tail}` : `~/${tail}`;
+        }
+    }
+    // Drop the leading "/" so split doesn't yield an empty leading segment.
+    const stripped = fullPath.charAt(0) === "/" ? fullPath.substring(1) : fullPath;
+    const { tail, truncated } = tailSegments(stripped);
+    return truncated ? `.../${tail}` : fullPath;
+}
+
 function joinPath(dir: string, child: string): string {
     if (dir === "") return child;
     return `${dir}/${child}`;
@@ -269,7 +313,9 @@ function standaloneFileRow(s: SourceFile): Element {
         },
         onClick: rowHandler(standaloneFileActions(s), () => previewSelect(s.fullPath)),
         onDoubleClick: () => confirmSelect(s.fullPath),
-        children: [Text({ text: s.fullPath, style: { width: { kind: "grow" } } })],
+        children: [
+            Text({ text: formatFullDir(s.fullPath), style: { width: { kind: "grow" } } }),
+        ],
     });
 }
 
@@ -279,8 +325,12 @@ const LEFT_PAD = 7;
 const ARM_LEN = 8;
 const LINE_THICK = 3;
 
-// Per-level indent step (one ancestor pass-through or branch column).
-const INDENT_STEP = LINE_THICK + ARM_LEN;
+// The actual line+arm portion drawn inside each indent column.
+const TREE_LINE_W = LINE_THICK + ARM_LEN;
+// Per-level indent step. Each indent column starts with a LEFT_PAD-wide transparent gutter,
+// followed by the line+arm (TREE_LINE_W). Two consecutive levels therefore appear separated by
+// LEFT_PAD of empty space, mirroring the panel's outer gutter at every nesting depth.
+const INDENT_STEP = LEFT_PAD + TREE_LINE_W;
 
 const ROW_GAP_H = 2;
 const LINE_COLOR = ROW_BG;
@@ -316,6 +366,8 @@ function spacer(w: number, h: number): Element {
     });
 }
 
+// Each indent column has an internal LEFT_PAD-wide gutter on its left, then the line/arm.
+// The vertical line therefore lands at x=LEFT_PAD..LEFT_PAD+LINE_THICK within the column.
 function verticalStripCol(h: number): Element {
     return Container({
         style: {
@@ -323,7 +375,7 @@ function verticalStripCol(h: number): Element {
             width: { kind: "px", value: INDENT_STEP },
             height: { kind: "px", value: h },
         },
-        children: [pixel(LINE_THICK, h)],
+        children: [spacer(LEFT_PAD, h), pixel(LINE_THICK, h)],
     });
 }
 
@@ -331,11 +383,22 @@ function emptyStripCol(h: number): Element {
     return spacer(INDENT_STEP, h);
 }
 
+function horizontalArm(): Element {
+    return Container({
+        style: {
+            direction: "row",
+            width: { kind: "px", value: INDENT_STEP },
+            height: { kind: "px", value: LINE_THICK },
+        },
+        children: [spacer(LEFT_PAD, LINE_THICK), pixel(TREE_LINE_W, LINE_THICK)],
+    });
+}
+
 function branchCol(rowH: number, kind: BranchKind): Element {
     const armTopY = Math.floor((rowH - LINE_THICK) / 2);
     const segs: Element[] = [];
     if (armTopY > 0) segs.push(verticalStripCol(armTopY));
-    segs.push(pixel(INDENT_STEP, LINE_THICK));
+    segs.push(horizontalArm());
     const bottomH = rowH - armTopY - LINE_THICK;
     if (bottomH > 0) {
         segs.push(
@@ -352,11 +415,12 @@ function branchCol(rowH: number, kind: BranchKind): Element {
     });
 }
 
+// LEFT_PAD is applied uniformly to every row (including ones with no levels/branch) so each
+// extra level of nesting adds exactly INDENT_STEP. Without this, top-level rows started flush
+// at x=0 while their first descendant jumped by LEFT_PAD + INDENT_STEP, making the second
+// descendant's INDENT_STEP-only jump look like the indent was being "applied only once".
 function gapBandFor(r: TreeRow): Element {
-    const cols: Element[] = [];
-    if (r.levels.length > 0 || r.branch !== null) {
-        cols.push(spacer(LEFT_PAD, ROW_GAP_H));
-    }
+    const cols: Element[] = [spacer(LEFT_PAD, ROW_GAP_H)];
     for (let i = 0; i < r.levels.length; i++) {
         cols.push(
             r.levels[i] === "vertical"
@@ -378,39 +442,33 @@ function gapBandFor(r: TreeRow): Element {
 }
 
 function composeTreeRow(r: TreeRow): Element {
-    let body: Element;
-    if (r.levels.length === 0 && r.branch === null) {
-        body = r.content;
-    } else {
-        const cols: Element[] = [];
-        cols.push(spacer(LEFT_PAD, r.height));
-        for (let i = 0; i < r.levels.length; i++) {
-            cols.push(
-                r.levels[i] === "vertical"
-                    ? verticalStripCol(r.height)
-                    : emptyStripCol(r.height)
-            );
-        }
-        if (r.branch !== null) cols.push(branchCol(r.height, r.branch));
+    const cols: Element[] = [spacer(LEFT_PAD, r.height)];
+    for (let i = 0; i < r.levels.length; i++) {
         cols.push(
-            Container({
-                style: {
-                    direction: "col",
-                    width: { kind: "grow" },
-                    height: { kind: "px", value: r.height },
-                },
-                children: [r.content],
-            })
+            r.levels[i] === "vertical"
+                ? verticalStripCol(r.height)
+                : emptyStripCol(r.height)
         );
-        body = Container({
+    }
+    if (r.branch !== null) cols.push(branchCol(r.height, r.branch));
+    cols.push(
+        Container({
             style: {
-                direction: "row",
+                direction: "col",
                 width: { kind: "grow" },
                 height: { kind: "px", value: r.height },
             },
-            children: cols,
-        });
-    }
+            children: [r.content],
+        })
+    );
+    const body = Container({
+        style: {
+            direction: "row",
+            width: { kind: "grow" },
+            height: { kind: "px", value: r.height },
+        },
+        children: cols,
+    });
     return Col({
         style: { width: { kind: "grow" } },
         children: [gapBandFor(r), body],
@@ -458,7 +516,7 @@ function buildTreeRows(): TreeRow[] {
                     levels: [],
                     branch: null,
                     content: rootRow(
-                        root.source.fullPath,
+                        formatFullDir(root.source.fullPath),
                         root.key,
                         dirRootActions(root.source)
                     ),
