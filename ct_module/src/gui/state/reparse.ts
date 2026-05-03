@@ -1,9 +1,9 @@
-/// <reference types="../../CTAutocomplete" />
+/// <reference types="../../../CTAutocomplete" />
 
 import { SourceMap, parseImportablesResult } from "htsw";
 
-import { FileSystemFileLoader } from "../utils/files";
-import { buildKnowledgeStatusRows } from "../knowledge/status";
+import { FileSystemFileLoader } from "../../utils/files";
+import { buildKnowledgeStatusRows } from "../../knowledge/status";
 import {
     getHousingUuid,
     getImportJsonPath,
@@ -11,7 +11,7 @@ import {
     setKnowledgeRows,
     setParseError,
     setParsedResult,
-} from "./state";
+} from "./index";
 
 let lastReparseAtMs = 0;
 let pendingReparse = false;

@@ -1,10 +1,10 @@
-/// <reference types="../../CTAutocomplete" />
+/// <reference types="../../../CTAutocomplete" />
 
 import type { ParseResult } from "htsw";
 import type { Importable } from "htsw/types";
 
-import type { KnowledgeStatusRow } from "../knowledge/status";
-import type { ImportProgress } from "../importables/importSession";
+import type { KnowledgeStatusRow } from "../../knowledge/status";
+import type { ImportProgress } from "../../importables/importSession";
 
 export type ImportProgressView = {
     weightCompleted: number;

@@ -1,8 +1,8 @@
 /// <reference types="../../../../CTAutocomplete" />
 
-import { Element } from "../../layout";
-import { Button, Col, Container, Input, Row, Scroll, Text } from "../../components";
-import { togglePopover } from "../../popovers";
+import { Element } from "../../lib/layout";
+import { Button, Col, Container, Input, Row, Scroll, Text } from "../../lib/components";
+import { togglePopover } from "../../lib/popovers";
 import {
     getParsedResult,
     getParseError,
@@ -14,7 +14,7 @@ import {
 } from "../../state";
 import { STATUS_COLOR, statusForImportable } from "../../knowledge-status";
 import { importableIdentity } from "../../../knowledge/paths";
-import { previewSelect, confirmSelect } from "../../selection";
+import { previewSelect, confirmSelect } from "../../state/selection";
 import type { Importable } from "htsw/types";
 import {
     ACCENT_INFO,
@@ -31,7 +31,7 @@ import {
     GLYPH_DOT,
     GLYPH_HTSL,
     SIZE_ROW_H,
-} from "../../theme";
+} from "../../lib/theme";
 
 type ImportableType = Importable["type"];
 const ALL_TYPES: ImportableType[] = [

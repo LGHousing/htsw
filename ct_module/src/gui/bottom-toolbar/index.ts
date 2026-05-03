@@ -1,7 +1,7 @@
 /// <reference types="../../../CTAutocomplete" />
 
-import { Child, Element } from "../layout";
-import { Button, Col, Container, Row, Text } from "../components";
+import { Child, Element } from "../lib/layout";
+import { Button, Col, Container, Row, Text } from "../lib/components";
 import {
     applyImportProgress,
     getHousingUuid,
@@ -33,12 +33,12 @@ import {
     COLOR_BUTTON_PRIMARY_HOVER,
     COLOR_PANEL,
     GLYPH_CHEVRON_DOWN,
-} from "../theme";
+} from "../lib/theme";
 import {
     getLastOpenTarget,
     openOpenTargetMenu,
     runOpenTarget,
-} from "../open-menu";
+} from "../popovers/open-menu";
 
 const COLOR_BAR_BG = 0xff1a1f25 | 0;
 const COLOR_BAR_FG = ACCENT_SUCCESS;

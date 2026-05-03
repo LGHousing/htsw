@@ -1,8 +1,8 @@
-/// <reference types="../../CTAutocomplete" />
+/// <reference types="../../../CTAutocomplete" />
 
-import { Child, Element, Rect } from "./layout";
-import { Button, Col, Container, Input, Row, Scroll, Text } from "./components";
-import { closeAllPopovers, openPopover } from "./popovers";
+import { Child, Element, Rect } from "../lib/layout";
+import { Button, Col, Container, Input, Row, Scroll, Text } from "../lib/components";
+import { closeAllPopovers, openPopover } from "../lib/popovers";
 import {
     ACCENT_INFO,
     ACCENT_SUCCESS,
@@ -24,10 +24,10 @@ import {
     GLYPH_SNBT,
     GLYPH_X,
     SIZE_ROW_H,
-} from "./theme";
-import { setImportJsonPath } from "./state";
-import { scheduleReparse } from "./reparse";
-import { addRecent } from "./recents";
+} from "../lib/theme";
+import { setImportJsonPath } from "../state";
+import { scheduleReparse } from "../state/reparse";
+import { addRecent } from "../state/recents";
 
 type Entry = {
     name: string;

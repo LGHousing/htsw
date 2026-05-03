@@ -11,7 +11,7 @@ import { S2FPacketSetSlot } from "./utils/packets";
 import { FileSystemFileLoader } from "./utils/files";
 import { commandKnowledge } from "./knowledge/commands";
 import { toggleHtswGui, armHtswGuiDebug } from "./gui/overlay";
-import { runDiffDemo } from "./gui/diff-demo";
+import { runDiffDemo } from "./gui/popovers/diff-demo";
 
 function printCommandError(sm: SourceMap, err: unknown): void {
     if (err instanceof Diagnostic) {

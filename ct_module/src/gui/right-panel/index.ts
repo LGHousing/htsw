@@ -2,16 +2,16 @@
 
 import { Child, Element } from "../lib/layout";
 import { Button, Col, Container, Row, Scroll, Text } from "../lib/components";
-import { getTabs, getActivePath, setActiveTab, confirmSelect, Tab } from "../selection";
+import { getTabs, getActivePath, setActiveTab, confirmSelect, Tab } from "../state/selection";
 import { FileSystemFileLoader } from "../../utils/files";
-import { actionsToLines, parseHtslFile, type HtslLine } from "../htsl-render";
+import { actionsToLines, parseHtslFile, type HtslLine } from "../state/htsl-render";
 import {
     COLOR_BY_STATE,
     ROW_BG_BY_STATE,
     diffKey,
     getDiffEntry,
     type DiffState,
-} from "../diff-state";
+} from "../state/diff";
 import { getParsedResult } from "../state";
 
 const TAB_BG = 0xff2c323b | 0;

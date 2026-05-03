@@ -27,7 +27,7 @@ export type PopoverHandle = {
     onClose?: () => void;
 };
 
-import { COLOR_OVERLAY_DIM, COLOR_PANEL, COLOR_PANEL_BORDER } from "../theme";
+import { COLOR_OVERLAY_DIM, COLOR_PANEL, COLOR_PANEL_BORDER } from "./theme";
 
 let nextId = 1;
 let openPopovers: PopoverHandle[] = [];

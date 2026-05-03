@@ -1,11 +1,11 @@
-/// <reference types="../../CTAutocomplete" />
+/// <reference types="../../../CTAutocomplete" />
 
-import { Element, Rect } from "./layout";
-import { Button, Col, Input, Row, Text } from "./components";
-import { closeAllPopovers, openPopover } from "./popovers";
-import { upsertImportableEntry } from "../exporter/importJsonWriter";
-import { getImportJsonPath } from "./state";
-import { scheduleReparse } from "./reparse";
+import { Element, Rect } from "../lib/layout";
+import { Button, Col, Input, Row, Text } from "../lib/components";
+import { closeAllPopovers, openPopover } from "../lib/popovers";
+import { upsertImportableEntry } from "../../exporter/importJsonWriter";
+import { getImportJsonPath } from "../state";
+import { scheduleReparse } from "../state/reparse";
 
 type AddType = "FUNCTION" | "EVENT" | "REGION" | "ITEM" | "MENU";
 

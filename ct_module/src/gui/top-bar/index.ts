@@ -1,13 +1,13 @@
 /// <reference types="../../../CTAutocomplete" />
 
-import { Element, Rect } from "../layout";
-import { Button, Container, Input, Row, Scroll, Text } from "../components";
+import { Element, Rect } from "../lib/layout";
+import { Button, Container, Input, Row, Scroll, Text } from "../lib/components";
 import { getImportJsonPath, setImportJsonPath } from "../state";
-import { reparseImportJson, scheduleReparse } from "../reparse";
-import { openAddImportablePopover } from "../add-importable-popover";
-import { openFileBrowser } from "../file-browser";
-import { getRecents } from "../recents";
-import { closeAllPopovers, togglePopover } from "../popovers";
+import { reparseImportJson, scheduleReparse } from "../state/reparse";
+import { openAddImportablePopover } from "../popovers/add-importable";
+import { openFileBrowser } from "../popovers/file-browser";
+import { getRecents } from "../state/recents";
+import { closeAllPopovers, togglePopover } from "../lib/popovers";
 import {
     COLOR_BUTTON_PRIMARY,
     COLOR_BUTTON_PRIMARY_HOVER,
@@ -18,7 +18,7 @@ import {
     COLOR_TEXT_DIM,
     GLYPH_CHEVRON_DOWN,
     SIZE_ROW_H,
-} from "../theme";
+} from "../lib/theme";
 
 function dirOf(path: string): string {
     const norm = path.replace(/\\/g, "/");

@@ -1,14 +1,14 @@
 /// <reference types="../../CTAutocomplete" />
 
-import { Element } from "./layout";
-import { Col, Container, Row } from "./components";
+import { Element } from "./lib/layout";
+import { Col, Container, Row } from "./lib/components";
 import {
     SCREEN_PAD,
     TOP_BAR_H,
     getChatBounds,
     getContainerBounds,
     type ContainerBounds,
-} from "./bounds";
+} from "./lib/bounds";
 import { TopBar } from "./top-bar";
 import { LeftPanel } from "./left-panel";
 import { RightPanel } from "./right-panel";

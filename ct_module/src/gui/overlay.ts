@@ -20,8 +20,8 @@ const ForgeKeyboardInputEventPre = Java.type(
     "net.minecraftforge.client.event.GuiScreenEvent$KeyboardInputEvent$Pre"
 );
 import { RootTree } from "./root";
-import { getContainerBounds, getFullscreenPanelRect } from "./bounds";
-import { autoDiscoverImportJson, reparseImportJson, tickReparse } from "./reparse";
+import { getContainerBounds, getFullscreenPanelRect } from "./lib/bounds";
+import { autoDiscoverImportJson, reparseImportJson, tickReparse } from "./state/reparse";
 import { CHAT_INPUT_ID } from "./chat-input";
 import { initPopoverRendering, popoverIsOpen, closeAllPopovers } from "./lib/popovers";
 

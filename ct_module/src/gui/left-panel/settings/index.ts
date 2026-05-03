@@ -1,7 +1,7 @@
 /// <reference types="../../../../CTAutocomplete" />
 
-import { Element } from "../../layout";
-import { Col, Container, Text } from "../../components";
+import { Element } from "../../lib/layout";
+import { Col, Container, Text } from "../../lib/components";
 import { getTrustMode, setTrustMode } from "../../state";
 
 const ON_BG = 0xff2d4d2d | 0;

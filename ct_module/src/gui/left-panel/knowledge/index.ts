@@ -1,7 +1,7 @@
 /// <reference types="../../../../CTAutocomplete" />
 
-import { Element } from "../../layout";
-import { Button, Col, Container, Scroll, Text } from "../../components";
+import { Element } from "../../lib/layout";
+import { Button, Col, Container, Scroll, Text } from "../../lib/components";
 import { getHousingUuid, getKnowledgeRows, setHousingUuid } from "../../state";
 import { STATUS_COLOR, STATUS_LABEL } from "../../knowledge-status";
 import { getCurrentHousingUuid } from "../../../knowledge/housingId";

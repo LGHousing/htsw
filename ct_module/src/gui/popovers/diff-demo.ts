@@ -1,14 +1,14 @@
-/// <reference types="../../CTAutocomplete" />
+/// <reference types="../../../CTAutocomplete" />
 
-import { getActivePath } from "./selection";
-import { parseHtslFile } from "./htsl-render";
+import { getActivePath } from "../state/selection";
+import { parseHtslFile } from "../state/htsl-render";
 import {
     clearDiff,
     diffKey,
     setCurrent,
     setDiffState,
     type DiffState,
-} from "./diff-state";
+} from "../state/diff";
 
 /**
  * Walk through the active .htsl file's actions and publish diff states with a

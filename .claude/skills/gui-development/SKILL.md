@@ -13,23 +13,41 @@ The HTSW in-game overlay is a small declarative UI framework that runs inside Ch
 
 The library code (project-agnostic UI primitives) lives in `gui/lib/`. Project-specific implementation (panel wiring, inventory anchoring, panel content) lives directly under `gui/`. Implementations import from `../lib/...`; library files never import from outside `lib/`.
 
-Library — `gui/lib/`:
+Library — `gui/lib/` (project-agnostic UI primitives + screen/theme):
 - `layout.ts` — element types, padding, sizing, container/scroll layout algorithm.
 - `extractable.ts` — `Extractable<T> = T | (() => T)` and `extract`.
 - `render.ts` — single tree renderer + click dispatcher (used by panels and popovers).
 - `panel.ts` — `Panel` class: bounds, visibility, click trigger, render trigger.
-- `popovers.ts` — global popover stack, anchored render, click dispatch helper, hover-suppression query.
-- `menu.ts` — `openMenu(anchor, actions[])` builds a generic context-menu popover from `{label, onClick}` actions. Use this for right-click menus and similar dropdowns; it auto-closes on click via `closeAllPopovers`.
+- `popovers.ts` — global popover stack, anchored/modal render, click dispatch helper, hover-suppression query.
+- `menu.ts` — `openMenu(x, y, actions[])` builds a context-menu popover from `{label, onClick}` actions. Auto-closes on click.
 - `focus.ts` — single global focused-input id.
 - `inputState.ts` — per-input `GuiTextField` instances (cursor, selection, clipboard, arrow keys).
 - `scissor.ts` — GL scissor stack (uses ScaledResolution to convert MC scaled coords → real pixels).
+- `bounds.ts` — reads the open Minecraft `GuiContainer`'s bounds via Java reflection; provides fullscreen panel rect + chat rect helpers.
+- `theme.ts` — color/size/glyph constants. `lib/popovers` reads its panel/scrim colors from here, so `theme` is treated as part of `lib`.
 - `components/` — thin element-builder functions (`Button`, `Container`, `Row`, `Col`, `Input`, `Scroll`, `Text`).
 
-Implementation — `gui/`:
-- `bounds.ts` — reads the open Minecraft `GuiContainer`'s bounds via Java reflection on protected fields; computes left/right panel rects relative to the inventory.
-- `overlay.ts` — wires everything: registers triggers (guiRender, guiMouseClick, guiKey, guiMouseRelease), builds left/right panels, owns global state.
-- `selection.ts` — preview/confirm + tab state shared by panels.
-- `left-panel/`, `right-panel/` — tree builders for the two anchored panels. Duplicated on purpose; they will diverge.
+App state — `gui/state/`:
+- `index.ts` — global mutable state (parsed import.json, selected importable id, open tabs, trust mode, housing UUID, knowledge rows, import progress).
+- `selection.ts` — preview/confirm + tab state for the right-panel source preview.
+- `reparse.ts` — debounced reparse + auto-discover of `import.json`, plus a tick hook that reparses on mtime change.
+- `recents.ts` — persisted MRU list of recently opened import.json paths (`gui-recents.json`).
+- `htsl-render.ts` — `parseHtslFile` + `actionsToLines` for the right-panel HTSL preview.
+- `diff.ts` — per-importable diff-state map driving the right-panel state colors during import animation.
+
+Popovers — `gui/popovers/`:
+- `add-importable.ts` — "Add Importable" form (top-bar button).
+- `knowledge-settings.ts` — toggles for trust mode etc.
+- `file-browser.ts` — modal file browser for picking an `import.json`.
+- `open-menu.ts` — Hypixel `/functions /eventactions /regions …` shortcut menu.
+- `diff-demo.ts` — debug command that animates the right-panel diff states.
+
+App shell — `gui/`:
+- `overlay.ts` — wires everything: registers triggers, owns the single fullscreen panel, runs the tick handler (reparse, focus, popover cleanup).
+- `root.ts` — root tree builder: arranges TopBar / LeftPanel / center cutouts / RightPanel / BottomToolbar / chat input around the inventory bounds.
+- `chat-input.ts` — `ChatInputBar` element + global `T` shortcut to focus it.
+- `knowledge-status.ts` — derives `STATUS_COLOR` / `STATUS_LABEL` / `statusForImportable` / `knowledgeStatusByImportable` from `state` for the left-rail badges.
+- `top-bar/`, `bottom-toolbar/`, `left-panel/`, `right-panel/` — feature-region tree builders.
 
 ## Element model
 

@@ -26,7 +26,7 @@ import {
 } from "./source";
 import { showNativePicker } from "../../../utils/nativePicker";
 import { showInExplorer, openInVSCode } from "../../../utils/osShell";
-import { previewSelect, confirmSelect } from "../../selection";
+import { previewSelect, confirmSelect } from "../../state/selection";
 import { SORT_FIELDS, isSortDefault, sortResults, sortPopoverContent } from "./sort";
 import {
     isTypeActive,

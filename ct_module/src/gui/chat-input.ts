@@ -1,9 +1,9 @@
 /// <reference types="../../CTAutocomplete" />
 
-import { Element } from "./layout";
-import { Container, Input, Text } from "./components";
-import { ACCENT_INFO, COLOR_INPUT_BG, COLOR_TEXT_DIM } from "./theme";
-import { setFocusedInput } from "./focus";
+import { Element } from "./lib/layout";
+import { Container, Input, Text } from "./lib/components";
+import { ACCENT_INFO, COLOR_INPUT_BG, COLOR_TEXT_DIM } from "./lib/theme";
+import { setFocusedInput } from "./lib/focus";
 
 export const CHAT_INPUT_ID = "htsw-chat-input";
 

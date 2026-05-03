@@ -1,4 +1,4 @@
-/// <reference types="../../CTAutocomplete" />
+/// <reference types="../../../CTAutocomplete" />
 
 const RECENTS_PATH = "./config/ChatTriggers/modules/HTSW/gui-recents.json";
 const MAX_RECENTS = 8;

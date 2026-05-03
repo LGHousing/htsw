@@ -1,9 +1,9 @@
-/// <reference types="../../CTAutocomplete" />
+/// <reference types="../../../CTAutocomplete" />
 
-import { Rect } from "./layout";
-import { Col, Container, Text } from "./components";
-import { togglePopover } from "./popovers";
-import { COLOR_ROW, COLOR_ROW_HOVER, COLOR_TEXT, SIZE_ROW_H } from "./theme";
+import { Rect } from "../lib/layout";
+import { Col, Container, Text } from "../lib/components";
+import { togglePopover } from "../lib/popovers";
+import { COLOR_ROW, COLOR_ROW_HOVER, COLOR_TEXT, SIZE_ROW_H } from "../lib/theme";
 
 /** Hypixel housing chat-command shortcuts surfaced in the toolbar dropdown. */
 export type OpenTargetId =

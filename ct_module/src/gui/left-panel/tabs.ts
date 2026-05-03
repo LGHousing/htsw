@@ -11,7 +11,7 @@ import {
     COLOR_TAB_ACTIVE_HOVER,
     COLOR_TAB_HOVER,
     SIZE_TAB_H,
-} from "../theme";
+} from "../lib/theme";
 
 export type TabId = "importables" | "explore" | "knowledge" | "settings";
 
