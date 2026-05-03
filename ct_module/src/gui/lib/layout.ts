@@ -28,19 +28,28 @@ export type ContainerStyle = Style & {
 
 export type Child = Element | false;
 
+// Mouse button ids match LWJGL: 0 = left, 1 = right, 2 = middle.
+// x/y are the mouse coordinates of the click in MC scaled space.
+export type ClickInfo = {
+    button: number;
+    x: number;
+    y: number;
+    isDoubleClickSecond: boolean;
+};
+
 export type Element =
     | {
           kind: "container";
           style: ContainerStyle;
           children: Extractable<Child[]>;
-          onClick?: (rect: Rect, isDoubleClickSecond: boolean) => void;
+          onClick?: (rect: Rect, info: ClickInfo) => void;
           onDoubleClick?: (rect: Rect) => void;
       }
     | {
           kind: "button";
           style: Style;
           text: Extractable<string>;
-          onClick: (rect: Rect, isDoubleClickSecond: boolean) => void;
+          onClick: (rect: Rect, info: ClickInfo) => void;
           onDoubleClick?: (rect: Rect) => void;
       }
     | {

@@ -1,6 +1,6 @@
 /// <reference types="../../CTAutocomplete" />
 
-import { Rect } from "./layout";
+import { Rect } from "./lib/layout";
 
 export const SCREEN_PAD = 4;
 export const FRAME_GAP = 4;

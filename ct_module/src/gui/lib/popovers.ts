@@ -8,6 +8,11 @@ export type PopoverHandle = {
     id: number;
     key?: string;
     anchor: Rect;
+    // When true, an outside-click on `anchor` keeps the popover open. This is what makes a
+    // button-style trigger (Sort/Filter) toggle correctly — without it, the same click that
+    // hits the trigger would also auto-close the popover, racing with togglePopover. For
+    // cursor-anchored menus that have no re-clickable trigger, set this false.
+    excludeAnchor: boolean;
     content: Element;
     width: number;
     height: number;
@@ -22,9 +27,7 @@ export type PopoverHandle = {
     onClose?: () => void;
 };
 
-import { COLOR_OVERLAY_DIM, COLOR_PANEL, COLOR_PANEL_BORDER } from "./theme";
-
-const OPEN_GRACE_MS = 250;
+import { COLOR_OVERLAY_DIM, COLOR_PANEL, COLOR_PANEL_BORDER } from "../theme";
 
 let nextId = 1;
 let openPopovers: PopoverHandle[] = [];
@@ -37,12 +40,14 @@ export function openPopover(opts: {
     height: number;
     key?: string;
     placement?: "anchored" | "modal";
+    excludeAnchor?: boolean;
     onClose?: () => void;
 }): PopoverHandle {
     const handle: PopoverHandle = {
         id: nextId++,
         key: opts.key,
         anchor: opts.anchor,
+        excludeAnchor: opts.excludeAnchor !== false,
         content: opts.content,
         width: opts.width,
         height: opts.height,
@@ -120,28 +125,30 @@ function computePopoverRect(p: PopoverHandle): Rect {
 // inside any popover (handler invoked, event should be cancelled by caller). Returns false
 // if the click was outside all popovers — caller should also return without dispatching.
 // On outside click, popovers older than OPEN_GRACE_MS are closed.
-export function tryDispatchPopoverClick(mouseX: number, mouseY: number): boolean {
+export function tryDispatchPopoverClick(
+    mouseX: number,
+    mouseY: number,
+    button: number
+): boolean {
     if (openPopovers.length === 0) return false;
     for (let i = openPopovers.length - 1; i >= 0; i--) {
         const p = openPopovers[i];
         const rect = computePopoverRect(p);
         if (pointInRect(rect, mouseX, mouseY)) {
             const laid = layoutElement(p.content, rect.x, rect.y, rect.w, rect.h);
-            dispatchClick(laid, mouseX, mouseY);
+            dispatchClick(laid, mouseX, mouseY, button);
             return true;
         }
     }
-    // Outside all popovers: close stale ones, EXCEPT when the click is on the popover's own
+    // Outside all popovers: close them, EXCEPT when the click is on the popover's own
     // anchor (the trigger). Auto-closing in that case races with togglePopover and you'd need
     // to click the trigger twice to dismiss.
-    const now = Date.now();
     const fresh: PopoverHandle[] = [];
     const stale: PopoverHandle[] = [];
     for (let i = 0; i < openPopovers.length; i++) {
         const p = openPopovers[i];
-        const tooYoung = now - p.openedAt < OPEN_GRACE_MS;
-        const onAnchor = pointInRect(p.anchor, mouseX, mouseY);
-        if (tooYoung || onAnchor) fresh.push(p);
+        const onAnchor = p.excludeAnchor && pointInRect(p.anchor, mouseX, mouseY);
+        if (onAnchor) fresh.push(p);
         else stale.push(p);
     }
     if (stale.length > 0) {

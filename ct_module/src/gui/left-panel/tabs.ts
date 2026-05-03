@@ -1,5 +1,5 @@
-import { Element } from "../layout";
-import { Button, Container, Row } from "../components";
+import { Element } from "../lib/layout";
+import { Button, Container, Row } from "../lib/components";
 import { ExploreView } from "./explore";
 import { ImportablesView } from "./importables";
 import { KnowledgeView } from "./knowledge";

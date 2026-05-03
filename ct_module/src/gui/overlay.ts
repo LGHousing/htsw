@@ -1,7 +1,7 @@
 /// <reference types="../../CTAutocomplete" />
 
-import { Panel } from "./panel";
-import { Element, Rect, layoutElement, pointInRect, getScrollState } from "./layout";
+import { Panel } from "./lib/panel";
+import { Element, Rect, layoutElement, pointInRect, getScrollState } from "./lib/layout";
 
 // LWJGL globals not in CT autocomplete.
 // @ts-ignore
@@ -23,18 +23,18 @@ import { RootTree } from "./root";
 import { getContainerBounds, getFullscreenPanelRect } from "./bounds";
 import { autoDiscoverImportJson, reparseImportJson, tickReparse } from "./reparse";
 import { CHAT_INPUT_ID } from "./chat-input";
+import { initPopoverRendering, popoverIsOpen, closeAllPopovers } from "./lib/popovers";
 
 const KEY_T = 20; // LWJGL keycode for 'T'
-import { initPopoverRendering, popoverIsOpen, closeAllPopovers } from "./popovers";
 import {
     dispatchWheel,
     isDraggingScrollbar,
     updateScrollbarDrag,
     endScrollbarDrag,
     setRenderDebugLog,
-} from "./render";
-import { getFocusedInput, setFocusedInput } from "./focus";
-import { applyFocus, getRecord, readAndSync, tickAllFields } from "./inputState";
+} from "./lib/render";
+import { getFocusedInput, setFocusedInput } from "./lib/focus";
+import { applyFocus, getRecord, readAndSync, tickAllFields } from "./lib/inputState";
 
 let enabled = true;
 let initialized = false;

@@ -3,11 +3,128 @@
 import { FileSystemFileLoader } from "../../../utils/files";
 import { ImportEntry, Result, ResultImport } from "./types";
 
-const IMPORTS_DIR = "./htsw/imports";
+const DEFAULT_IMPORTS_DIR = "./htsw/imports";
 
-function resolveImportsRoot(): any {
+export type SourceDir = {
+    kind: "dir";
+    label: string;
+    fullPath: string;
+};
+export type SourceFile = {
+    kind: "file";
+    label: string;
+    fullPath: string;
+};
+export type Source = SourceDir | SourceFile;
+
+const sources: Source[] = [];
+let defaultSourceFullPath: string | null = null;
+
+const ConcurrentLinkedQueue = Java.type("java.util.concurrent.ConcurrentLinkedQueue");
+const pendingPaths: any = new ConcurrentLinkedQueue();
+
+function pathOf(absolute: string): any {
     const Paths = Java.type("java.nio.file.Paths");
-    return Paths.get(String(IMPORTS_DIR)).toAbsolutePath().normalize();
+    return Paths.get(String(absolute)).toAbsolutePath().normalize();
+}
+
+function fileNameOf(p: any): string {
+    const fn = p.getFileName();
+    if (fn === null) return String(p.toString());
+    return String(fn.toString());
+}
+
+function alreadyHas(fullPath: string): boolean {
+    for (let i = 0; i < sources.length; i++) {
+        if (sources[i].fullPath === fullPath) return true;
+    }
+    return false;
+}
+
+function addSourceFromAbsolute(absolute: string): void {
+    const Files = Java.type("java.nio.file.Files");
+    let p: any;
+    try {
+        p = pathOf(absolute);
+    } catch (_e) {
+        return;
+    }
+    const fullPath = String(p.toString()).replace(/\\/g, "/");
+    if (alreadyHas(fullPath)) return;
+    let isDir = false;
+    let isFile = false;
+    try {
+        isDir = Files.isDirectory(p);
+        isFile = !isDir && Files.isRegularFile(p);
+    } catch (_e) {
+        return;
+    }
+    if (isDir) {
+        sources.push({ kind: "dir", label: fileNameOf(p), fullPath });
+    } else if (isFile) {
+        sources.push({ kind: "file", label: fileNameOf(p), fullPath });
+    }
+}
+
+function drainPending(): void {
+    while (true) {
+        const next = pendingPaths.poll();
+        if (next === null) break;
+        addSourceFromAbsolute(String(next));
+    }
+}
+
+function ensureDefaultSource(): void {
+    if (defaultSourceFullPath !== null) return;
+    const Files = Java.type("java.nio.file.Files");
+    let p: any;
+    try {
+        p = pathOf(DEFAULT_IMPORTS_DIR);
+    } catch (_e) {
+        return;
+    }
+    let exists = false;
+    try {
+        exists = Files.exists(p);
+    } catch (_e) {
+        return;
+    }
+    if (!exists) return;
+    const fullPath = String(p.toString()).replace(/\\/g, "/");
+    defaultSourceFullPath = fullPath;
+    if (!alreadyHas(fullPath)) {
+        sources.unshift({ kind: "dir", label: fileNameOf(p), fullPath });
+    }
+}
+
+export function queueSourcePath(absolute: string): void {
+    pendingPaths.add(String(absolute));
+}
+
+export function getSources(): Source[] {
+    ensureDefaultSource();
+    drainPending();
+    return sources;
+}
+
+export function isDefaultSource(fullPath: string): boolean {
+    return defaultSourceFullPath !== null && defaultSourceFullPath === fullPath;
+}
+
+export function removeSource(fullPath: string): void {
+    if (isDefaultSource(fullPath)) return;
+    for (let i = 0; i < sources.length; i++) {
+        if (sources[i].fullPath === fullPath) {
+            sources.splice(i, 1);
+            return;
+        }
+    }
+}
+
+export function removeAllStandaloneFiles(): void {
+    for (let i = sources.length - 1; i >= 0; i--) {
+        if (sources[i].kind === "file") sources.splice(i, 1);
+    }
 }
 
 function relativePath(root: any, p: any): string {
@@ -215,40 +332,54 @@ function walkDir(dir: any, root: any, out: Result[]): void {
 
 // The Scroll component's children callback fires every frame (layout +
 // render + click dispatch — sometimes 4+ times per frame). Re-walking
-// `./htsw/imports/**` on every call is the source of the explore-tab
-// scroll lag. We cache the walk result with a short TTL so frame-to-frame
-// reads are free; expansions from the user (clicking a row, opening a
-// menu) refresh quickly enough that the staleness is invisible. Edits to
-// disk show up within `WALK_TTL_MS` ms.
+// each source on every call is the source of the explore-tab scroll lag.
+// We cache per-source walks with a short TTL so frame-to-frame reads are
+// free; user actions (click, expand) refresh quickly enough that
+// staleness is invisible. Disk edits show up within WALK_TTL_MS ms.
 const WALK_TTL_MS = 500;
-let walkCache: Result[] = [];
-let walkCachedAt = 0;
+type WalkCacheEntry = { results: Result[]; cachedAt: number };
+const walkCache = new Map<string, WalkCacheEntry>();
 
 export function invalidateEnumerateCache(): void {
-    walkCachedAt = 0;
+    walkCache.clear();
 }
 
-export function enumerateResults(): Result[] {
+export function enumerateForSource(s: Source): Result[] {
     const now = Date.now();
-    if (now - walkCachedAt < WALK_TTL_MS) return walkCache;
+    const cached = walkCache.get(s.fullPath);
+    if (cached !== undefined && now - cached.cachedAt < WALK_TTL_MS) return cached.results;
+    const Paths = Java.type("java.nio.file.Paths");
     const Files = Java.type("java.nio.file.Files");
-    const root = resolveImportsRoot();
+    const out: Result[] = [];
+    let p: any;
+    try {
+        p = Paths.get(String(s.fullPath));
+    } catch (_e) {
+        walkCache.set(s.fullPath, { results: out, cachedAt: now });
+        return out;
+    }
     let exists = false;
     try {
-        exists = Files.exists(root);
+        exists = Files.exists(p);
     } catch (_e) {
-        walkCache = [];
-        walkCachedAt = now;
-        return walkCache;
+        walkCache.set(s.fullPath, { results: out, cachedAt: now });
+        return out;
     }
     if (!exists) {
-        walkCache = [];
-        walkCachedAt = now;
-        return walkCache;
+        walkCache.set(s.fullPath, { results: out, cachedAt: now });
+        return out;
     }
-    const out: Result[] = [];
-    walkDir(root, root, out);
-    walkCache = out;
-    walkCachedAt = now;
-    return walkCache;
+    if (s.kind === "dir") {
+        walkDir(p, p, out);
+    } else {
+        const parent = p.getParent();
+        const root = parent === null ? p : parent;
+        try {
+            visitFile(p, root, out);
+        } catch (_e) {
+            /* skip */
+        }
+    }
+    walkCache.set(s.fullPath, { results: out, cachedAt: now });
+    return out;
 }

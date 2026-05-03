@@ -198,12 +198,18 @@ function renderScrollbar(id: string, mouseX: number, mouseY: number): void {
 export type ClickResult = "consumed" | "passthrough" | "miss";
 
 // Returns "consumed" if a clickable was hit, "miss" otherwise.
-// Also handles input focusing and scrollbar drag start.
-export function dispatchClick(laid: LaidOut[], mouseX: number, mouseY: number): boolean {
-    dbgLog(`dispatchClick @(${mouseX},${mouseY}) laid.length=${laid.length}`);
+// Also handles input focusing and scrollbar drag start. `button` is the LWJGL mouse button
+// (0 = left, 1 = right, 2 = middle); only left clicks engage scrollbar drag and double-click logic.
+export function dispatchClick(
+    laid: LaidOut[],
+    mouseX: number,
+    mouseY: number,
+    button: number
+): boolean {
+    dbgLog(`dispatchClick @(${mouseX},${mouseY}) btn=${button} laid.length=${laid.length}`);
     // Scrollbar thumb drag start uses the same interceptor predicate as hover suppression so the
     // two stay consistent. We still need the scroll id to start the drag, so look it up here.
-    if (getClickInterceptor(laid, mouseX, mouseY) !== null) {
+    if (button === 0 && getClickInterceptor(laid, mouseX, mouseY) !== null) {
         for (let i = 0; i < laid.length; i++) {
             const item = laid[i];
             if (item.element.kind !== "scroll") continue;
@@ -238,19 +244,25 @@ export function dispatchClick(laid: LaidOut[], mouseX: number, mouseY: number): 
         );
         if (e.kind === "button") {
             setFocusedInput(null);
-            const isDouble = consumeDoubleClick(item.rect, mouseX, mouseY);
-            e.onClick(item.rect, isDouble);
+            const isDouble =
+                button === 0 && consumeDoubleClick(item.rect, mouseX, mouseY);
+            e.onClick(item.rect, { button, x: mouseX, y: mouseY, isDoubleClickSecond: isDouble });
             if (isDouble && e.onDoubleClick) e.onDoubleClick(item.rect);
             return true;
         }
         if (e.kind === "container" && (e.onClick || e.onDoubleClick)) {
             setFocusedInput(null);
-            const isDouble = consumeDoubleClick(item.rect, mouseX, mouseY);
-            if (e.onClick) e.onClick(item.rect, isDouble);
+            const isDouble =
+                button === 0 && consumeDoubleClick(item.rect, mouseX, mouseY);
+            if (e.onClick) e.onClick(item.rect, { button, x: mouseX, y: mouseY, isDoubleClickSecond: isDouble });
             if (isDouble && e.onDoubleClick) e.onDoubleClick(item.rect);
             return true;
         }
         if (e.kind === "input") {
+            if (button !== 0) {
+                setFocusedInput(null);
+                return true;
+            }
             dbgLog(`  -> focusing input id=${e.id}`);
             setFocusedInput(e.id);
             // Forward click to the GuiTextField for cursor placement / drag-select start.

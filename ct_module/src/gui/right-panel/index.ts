@@ -1,7 +1,7 @@
 /// <reference types="../../../CTAutocomplete" />
 
-import { Child, Element } from "../layout";
-import { Button, Col, Container, Row, Scroll, Text } from "../components";
+import { Child, Element } from "../lib/layout";
+import { Button, Col, Container, Row, Scroll, Text } from "../lib/components";
 import { getTabs, getActivePath, setActiveTab, confirmSelect, Tab } from "../selection";
 import { FileSystemFileLoader } from "../../utils/files";
 import { actionsToLines, parseHtslFile, type HtslLine } from "../htsl-render";

@@ -11,17 +11,24 @@ The HTSW in-game overlay is a small declarative UI framework that runs inside Ch
 
 ## Files
 
+The library code (project-agnostic UI primitives) lives in `gui/lib/`. Project-specific implementation (panel wiring, inventory anchoring, panel content) lives directly under `gui/`. Implementations import from `../lib/...`; library files never import from outside `lib/`.
+
+Library — `gui/lib/`:
 - `layout.ts` — element types, padding, sizing, container/scroll layout algorithm.
 - `extractable.ts` — `Extractable<T> = T | (() => T)` and `extract`.
 - `render.ts` — single tree renderer + click dispatcher (used by panels and popovers).
 - `panel.ts` — `Panel` class: bounds, visibility, click trigger, render trigger.
 - `popovers.ts` — global popover stack, anchored render, click dispatch helper, hover-suppression query.
+- `menu.ts` — `openMenu(anchor, actions[])` builds a generic context-menu popover from `{label, onClick}` actions. Use this for right-click menus and similar dropdowns; it auto-closes on click via `closeAllPopovers`.
 - `focus.ts` — single global focused-input id.
 - `inputState.ts` — per-input `GuiTextField` instances (cursor, selection, clipboard, arrow keys).
 - `scissor.ts` — GL scissor stack (uses ScaledResolution to convert MC scaled coords → real pixels).
-- `bounds.ts` — reads the open Minecraft `GuiContainer`'s bounds via Java reflection on protected fields.
-- `overlay.ts` — wires everything: registers triggers (guiRender, guiMouseClick, guiKey, guiMouseRelease), builds left/right panels, owns global state.
 - `components/` — thin element-builder functions (`Button`, `Container`, `Row`, `Col`, `Input`, `Scroll`, `Text`).
+
+Implementation — `gui/`:
+- `bounds.ts` — reads the open Minecraft `GuiContainer`'s bounds via Java reflection on protected fields; computes left/right panel rects relative to the inventory.
+- `overlay.ts` — wires everything: registers triggers (guiRender, guiMouseClick, guiKey, guiMouseRelease), builds left/right panels, owns global state.
+- `selection.ts` — preview/confirm + tab state shared by panels.
 - `left-panel/`, `right-panel/` — tree builders for the two anchored panels. Duplicated on purpose; they will diverge.
 
 ## Element model
@@ -30,8 +37,8 @@ The HTSW in-game overlay is a small declarative UI framework that runs inside Ch
 
 | kind | extra fields | clickable? | notes |
 |------|---|---|---|
-| `container` | `style: ContainerStyle`, `children: Extractable<Child[]>`, optional `onClick(rect, isDoubleClickSecond)`, optional `onDoubleClick(rect)` | yes if `onClick` or `onDoubleClick` set | flex layout (row/col), gap, align, padding, optional bg/hoverBg |
-| `button` | `style`, `text: Extractable<string>`, `onClick(rect, isDoubleClickSecond)`, optional `onDoubleClick(rect)` | yes | bg + centered text, hover bg |
+| `container` | `style: ContainerStyle`, `children: Extractable<Child[]>`, optional `onClick(rect, info)` where `info: {button, isDoubleClickSecond}`, optional `onDoubleClick(rect)` | yes if `onClick` or `onDoubleClick` set | flex layout (row/col), gap, align, padding, optional bg/hoverBg |
+| `button` | `style`, `text: Extractable<string>`, `onClick(rect, info)` where `info: {button, isDoubleClickSecond}`, optional `onDoubleClick(rect)` | yes | bg + centered text, hover bg |
 | `text` | `style`, `text: Extractable<string>`, optional `color` | no | plain label, intrinsic size = `Renderer.getStringWidth(text)` × `LINE_H` |
 | `input` | `style`, `id: string`, `value: Extractable<string>`, `onChange(v)`, optional `placeholder` | focusable | id is used for global focus + key dispatch |
 | `scroll` | `style: ContainerStyle`, `id: string`, `children: Extractable<Element[]>` | passes through | vertical scroll viewport with internal offset state, scrollbar overlay, mouse-wheel + drag |
@@ -106,8 +113,8 @@ Scroll({
 Click flow when a popover is open:
 - Panel handler runs, sees `popoverIsOpen()`, and calls `tryDispatchPopoverClick(x,y)` (guarded so it runs once per click via `claimPopoverClick`).
 - Click inside popover rect → dispatch into popover content, panel cancels the event, returns.
-- Click outside every popover → auto-close stale popovers and **fall through** to the panel's normal `dispatchClick`. This is intentional: the same click that closes a popover should also focus an input or hit a button under the cursor.
-- "Stale" = older than `OPEN_GRACE_MS = 250ms` (protects the click that just opened them) **and** not on the popover's own anchor (skipping the anchor avoids a race with `togglePopover` where auto-close fires first, then the trigger's `onClick` reopens a fresh popover, requiring a second click to dismiss).
+- Click outside every popover → auto-close popovers and **fall through** to the panel's normal `dispatchClick`. This is intentional: the same click that closes a popover should also focus an input or hit a button under the cursor.
+- The exception: if the click lands on the popover's own anchor AND `excludeAnchor` is true (default), the popover stays open. This avoids a race with `togglePopover` where auto-close fires first, then the trigger's `onClick` reopens a fresh popover, requiring a second click to dismiss. Cursor-anchored menus (`openMenu`) opt out by passing `excludeAnchor: false` since they have no re-clickable trigger — any subsequent click should close them.
 
 Hover follows click propagation: panels pass `interactive = !mouseIsOverPopover(x, y)` to `renderElement`, so panel elements light up on hover anywhere a click would still reach them — only positions actually under a popover suppress panel hover.
 
