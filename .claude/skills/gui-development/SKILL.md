@@ -11,6 +11,9 @@ The HTSW in-game overlay is a small declarative UI framework that runs inside Ch
 
 ## Files
 
+The library code (project-agnostic UI primitives) lives in `gui/lib/`. Project-specific implementation (panel wiring, inventory anchoring, panel content) lives directly under `gui/`. Implementations import from `../lib/...`; library files never import from outside `lib/`.
+
+Library — `gui/lib/`:
 - `layout.ts` — element types, padding, sizing, container/scroll layout algorithm.
 - `extractable.ts` — `Extractable<T> = T | (() => T)` and `extract`.
 - `render.ts` — single tree renderer + click dispatcher (used by panels and popovers).
@@ -19,9 +22,12 @@ The HTSW in-game overlay is a small declarative UI framework that runs inside Ch
 - `focus.ts` — single global focused-input id.
 - `inputState.ts` — per-input `GuiTextField` instances (cursor, selection, clipboard, arrow keys).
 - `scissor.ts` — GL scissor stack (uses ScaledResolution to convert MC scaled coords → real pixels).
-- `bounds.ts` — reads the open Minecraft `GuiContainer`'s bounds via Java reflection on protected fields.
-- `overlay.ts` — wires everything: registers triggers (guiRender, guiMouseClick, guiKey, guiMouseRelease), builds left/right panels, owns global state.
 - `components/` — thin element-builder functions (`Button`, `Container`, `Row`, `Col`, `Input`, `Scroll`, `Text`).
+
+Implementation — `gui/`:
+- `bounds.ts` — reads the open Minecraft `GuiContainer`'s bounds via Java reflection on protected fields; computes left/right panel rects relative to the inventory.
+- `overlay.ts` — wires everything: registers triggers (guiRender, guiMouseClick, guiKey, guiMouseRelease), builds left/right panels, owns global state.
+- `selection.ts` — preview/confirm + tab state shared by panels.
 - `left-panel/`, `right-panel/` — tree builders for the two anchored panels. Duplicated on purpose; they will diverge.
 
 ## Element model

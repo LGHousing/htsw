@@ -1,5 +1,5 @@
-import { Element } from "../../layout";
-import { Container, Scroll, Text } from "../../components";
+import { Element } from "../../lib/layout";
+import { Container, Scroll, Text } from "../../lib/components";
 import { Result, ACTIVE_BG, ACTIVE_HOVER_BG, ROW_BG, ROW_HOVER_BG } from "./types";
 
 type SortDir = "ASC" | "DESC";

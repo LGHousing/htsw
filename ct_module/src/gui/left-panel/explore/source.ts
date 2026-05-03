@@ -3,11 +3,104 @@
 import { FileSystemFileLoader } from "../../../utils/files";
 import { ImportEntry, Result, ResultImport } from "./types";
 
-const IMPORTS_DIR = "./htsw/imports";
+const DEFAULT_IMPORTS_DIR = "./htsw/imports";
 
-function resolveImportsRoot(): any {
+export type SourceDir = {
+    kind: "dir";
+    label: string;
+    fullPath: string;
+};
+export type SourceFile = {
+    kind: "file";
+    label: string;
+    fullPath: string;
+};
+export type Source = SourceDir | SourceFile;
+
+const sources: Source[] = [];
+
+const ConcurrentLinkedQueue = Java.type("java.util.concurrent.ConcurrentLinkedQueue");
+const pendingPaths: any = new ConcurrentLinkedQueue();
+
+function pathOf(absolute: string): any {
     const Paths = Java.type("java.nio.file.Paths");
-    return Paths.get(String(IMPORTS_DIR)).toAbsolutePath().normalize();
+    return Paths.get(String(absolute)).toAbsolutePath().normalize();
+}
+
+function fileNameOf(p: any): string {
+    const fn = p.getFileName();
+    if (fn === null) return String(p.toString());
+    return String(fn.toString());
+}
+
+function alreadyHas(fullPath: string): boolean {
+    for (let i = 0; i < sources.length; i++) {
+        if (sources[i].fullPath === fullPath) return true;
+    }
+    return false;
+}
+
+function addSourceFromAbsolute(absolute: string): void {
+    const Files = Java.type("java.nio.file.Files");
+    let p: any;
+    try {
+        p = pathOf(absolute);
+    } catch (_e) {
+        return;
+    }
+    const fullPath = String(p.toString()).replace(/\\/g, "/");
+    if (alreadyHas(fullPath)) return;
+    let isDir = false;
+    let isFile = false;
+    try {
+        isDir = Files.isDirectory(p);
+        isFile = !isDir && Files.isRegularFile(p);
+    } catch (_e) {
+        return;
+    }
+    if (isDir) {
+        sources.push({ kind: "dir", label: fileNameOf(p), fullPath });
+    } else if (isFile) {
+        sources.push({ kind: "file", label: fileNameOf(p), fullPath });
+    }
+}
+
+function drainPending(): void {
+    while (true) {
+        const next = pendingPaths.poll();
+        if (next === null) break;
+        addSourceFromAbsolute(String(next));
+    }
+}
+
+function ensureDefaultSource(): void {
+    if (sources.length > 0) return;
+    const Files = Java.type("java.nio.file.Files");
+    let p: any;
+    try {
+        p = pathOf(DEFAULT_IMPORTS_DIR);
+    } catch (_e) {
+        return;
+    }
+    let exists = false;
+    try {
+        exists = Files.exists(p);
+    } catch (_e) {
+        return;
+    }
+    if (!exists) return;
+    const fullPath = String(p.toString()).replace(/\\/g, "/");
+    sources.push({ kind: "dir", label: fileNameOf(p), fullPath });
+}
+
+export function queueSourcePath(absolute: string): void {
+    pendingPaths.add(String(absolute));
+}
+
+export function getSources(): Source[] {
+    drainPending();
+    ensureDefaultSource();
+    return sources;
 }
 
 function relativePath(root: any, p: any): string {
@@ -213,17 +306,33 @@ function walkDir(dir: any, root: any, out: Result[]): void {
     }
 }
 
-export function enumerateResults(): Result[] {
+export function enumerateForSource(s: Source): Result[] {
+    const Paths = Java.type("java.nio.file.Paths");
     const Files = Java.type("java.nio.file.Files");
-    const root = resolveImportsRoot();
+    const out: Result[] = [];
+    let p: any;
+    try {
+        p = Paths.get(String(s.fullPath));
+    } catch (_e) {
+        return out;
+    }
     let exists = false;
     try {
-        exists = Files.exists(root);
+        exists = Files.exists(p);
     } catch (_e) {
-        return [];
+        return out;
     }
-    if (!exists) return [];
-    const out: Result[] = [];
-    walkDir(root, root, out);
+    if (!exists) return out;
+    if (s.kind === "dir") {
+        walkDir(p, p, out);
+    } else {
+        const parent = p.getParent();
+        const root = parent === null ? p : parent;
+        try {
+            visitFile(p, root, out);
+        } catch (_e) {
+            /* skip */
+        }
+    }
     return out;
 }

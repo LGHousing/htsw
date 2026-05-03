@@ -1,5 +1,5 @@
-import { Element } from "../layout";
-import { Button, Col, Row, Text } from "../components";
+import { Element } from "../lib/layout";
+import { Button, Col, Row, Text } from "../lib/components";
 import { getTabs, getActivePath, setActiveTab, confirmSelect, Tab } from "../selection";
 
 const TAB_BG = 0xff2c323b | 0;

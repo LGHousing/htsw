@@ -1,5 +1,5 @@
-import { Element } from "../layout";
-import { Col, Container } from "../components";
+import { Element } from "../lib/layout";
+import { Col, Container } from "../lib/components";
 import { TabBar, getActiveTab } from "./tabs";
 
 const DIVIDER_COLOR = 0xff2c323b | 0;

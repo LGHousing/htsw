@@ -1,8 +1,8 @@
 /// <reference types="../../../../CTAutocomplete" />
 
-import { Element } from "../../layout";
-import { Button, Col, Container, Input, Row, Scroll, Text } from "../../components";
-import { togglePopover } from "../../popovers";
+import { Element } from "../../lib/layout";
+import { Button, Col, Container, Input, Row, Scroll, Text } from "../../lib/components";
+import { closeAllPopovers, togglePopover } from "../../lib/popovers";
 import {
     ImportEntry,
     Result,
@@ -13,7 +13,8 @@ import {
     ROW_BG,
     ROW_HOVER_BG,
 } from "./types";
-import { enumerateResults } from "./source";
+import { Source, enumerateForSource, getSources, queueSourcePath } from "./source";
+import { showNativePicker } from "../../../utils/nativePicker";
 import { previewSelect, confirmSelect } from "../../selection";
 import { SORT_FIELDS, isSortDefault, sortResults, sortPopoverContent } from "./sort";
 import {
@@ -26,9 +27,8 @@ import {
 let searchQuery = "";
 const expandedImports: Set<string> = new Set();
 
-function filteredResults(): Result[] {
+function filterAndSort(all: Result[]): Result[] {
     const q = searchQuery.toLowerCase();
-    const all = enumerateResults();
     const out: Result[] = [];
     for (let i = 0; i < all.length; i++) {
         const r = all[i];
@@ -126,6 +126,27 @@ function entryContent(parent: ResultImport, e: ImportEntry): Element {
         },
         onDoubleClick: () => confirmSelect(clickPath),
         children: [Text({ text: display })],
+    });
+}
+
+function sourceRow(s: Source): Element {
+    const tag = s.kind === "dir" ? "Dir" : "File";
+    return Container({
+        style: {
+            direction: "row",
+            padding: [
+                { side: "left", value: 3 },
+                { side: "right", value: 6 },
+            ],
+            gap: 6,
+            align: "center",
+            height: { kind: "px", value: 18 },
+            background: ROW_BG,
+            hoverBackground: ROW_HOVER_BG,
+        },
+        children: [
+            Text({ text: `[${tag}] ${s.label}`, style: { width: { kind: "grow" } } }),
+        ],
     });
 }
 
@@ -274,21 +295,56 @@ function composeTreeRow(r: TreeRow): Element {
 }
 
 function buildTreeRows(): TreeRow[] {
-    const results = filteredResults();
+    const sources = getSources();
     const out: TreeRow[] = [];
-    for (let i = 0; i < results.length; i++) {
-        const r = results[i];
-        out.push({ levels: [], branch: null, content: resultRow(r), height: 18 });
-        if (r.type === "import" && expandedImports.has(r.fullPath)) {
-            const entries = r.entries;
-            for (let j = 0; j < entries.length; j++) {
-                const isLast = j === entries.length - 1;
-                out.push({
-                    levels: [],
-                    branch: isLast ? "ell" : "tee",
-                    content: entryContent(r, entries[j]),
-                    height: ENTRY_ROW_H,
-                });
+    const showSourceHeaders = sources.length > 1;
+
+    for (let si = 0; si < sources.length; si++) {
+        const s = sources[si];
+        const results = filterAndSort(enumerateForSource(s));
+
+        if (showSourceHeaders) {
+            out.push({
+                levels: [],
+                branch: null,
+                content: sourceRow(s),
+                height: 18,
+            });
+        }
+
+        for (let i = 0; i < results.length; i++) {
+            const r = results[i];
+            const isLastResultInSource = i === results.length - 1;
+
+            const resultLevels: LevelGuide[] = [];
+            const resultBranch: BranchKind | null = showSourceHeaders
+                ? isLastResultInSource
+                    ? "ell"
+                    : "tee"
+                : null;
+
+            out.push({
+                levels: resultLevels,
+                branch: resultBranch,
+                content: resultRow(r),
+                height: 18,
+            });
+
+            if (r.type === "import" && expandedImports.has(r.fullPath)) {
+                const entries = r.entries;
+                for (let j = 0; j < entries.length; j++) {
+                    const isLast = j === entries.length - 1;
+                    const entryLevels: LevelGuide[] = [];
+                    if (showSourceHeaders) {
+                        entryLevels.push(isLastResultInSource ? "empty" : "vertical");
+                    }
+                    out.push({
+                        levels: entryLevels,
+                        branch: isLast ? "ell" : "tee",
+                        content: entryContent(r, entries[j]),
+                        height: ENTRY_ROW_H,
+                    });
+                }
             }
         }
     }
@@ -299,6 +355,50 @@ function renderRows(): Element[] {
     return buildTreeRows().map(composeTreeRow);
 }
 
+function pickerLog(msg: string): void {
+    try {
+        ChatLib.chat(`&7[picker]&r ${msg}`);
+    } catch (_e) {
+        /* ignore */
+    }
+}
+
+function pickSources(mode: "file" | "folder"): void {
+    showNativePicker({
+        mode,
+        onPicked: (paths) => {
+            for (let i = 0; i < paths.length; i++) queueSourcePath(paths[i]);
+        },
+        onError: (msg) => pickerLog(msg),
+    });
+}
+
+const OPEN_POPOVER_HEIGHT = 6 + 2 * 18 + 1 * 4;
+
+function openMenuContent(): Element {
+    return Col({
+        style: { padding: 4, gap: 4 },
+        children: [
+            Button({
+                text: "File",
+                style: { width: { kind: "grow" }, height: { kind: "px", value: 18 } },
+                onClick: () => {
+                    closeAllPopovers();
+                    pickSources("file");
+                },
+            }),
+            Button({
+                text: "Folder",
+                style: { width: { kind: "grow" }, height: { kind: "px", value: 18 } },
+                onClick: () => {
+                    closeAllPopovers();
+                    pickSources("folder");
+                },
+            }),
+        ],
+    });
+}
+
 export function ExploreView(): Element {
     return Col({
         style: { gap: 6, height: { kind: "grow" } },
@@ -306,6 +406,22 @@ export function ExploreView(): Element {
             Row({
                 style: { gap: 6, height: { kind: "px", value: 22 }, align: "stretch" },
                 children: [
+                    Button({
+                        text: "Open",
+                        style: {
+                            width: { kind: "px", value: 40 },
+                            height: { kind: "grow" },
+                        },
+                        onClick: (rect) => {
+                            togglePopover({
+                                key: "left-open",
+                                anchor: rect,
+                                content: openMenuContent(),
+                                width: 100,
+                                height: OPEN_POPOVER_HEIGHT,
+                            });
+                        },
+                    }),
                     Input({
                         id: "left-search",
                         value: () => searchQuery,
@@ -318,7 +434,7 @@ export function ExploreView(): Element {
                     Button({
                         text: "Sort",
                         style: {
-                            width: { kind: "px", value: 48 },
+                            width: { kind: "px", value: 40 },
                             height: { kind: "grow" },
                             background: () => (isSortDefault() ? undefined : ACTIVE_BG),
                             hoverBackground: () =>
@@ -337,7 +453,7 @@ export function ExploreView(): Element {
                     Button({
                         text: "Filter",
                         style: {
-                            width: { kind: "px", value: 48 },
+                            width: { kind: "px", value: 40 },
                             height: { kind: "grow" },
                             background: () => (isFilterDefault() ? undefined : ACTIVE_BG),
                             hoverBackground: () =>

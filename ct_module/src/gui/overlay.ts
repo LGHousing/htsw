@@ -1,7 +1,7 @@
 /// <reference types="../../CTAutocomplete" />
 
-import { Panel } from "./panel";
-import { Element, Rect, layoutElement, pointInRect, getScrollState } from "./layout";
+import { Panel } from "./lib/panel";
+import { Element, Rect, layoutElement, pointInRect, getScrollState } from "./lib/layout";
 
 // LWJGL globals not in CT autocomplete.
 // @ts-ignore
@@ -22,16 +22,16 @@ const ForgeKeyboardInputEventPre = Java.type(
 import { LeftPanel } from "./left-panel";
 import { RightPanel } from "./right-panel";
 import { getContainerBounds, leftPanelRect, rightPanelRect } from "./bounds";
-import { initPopoverRendering, popoverIsOpen, closeAllPopovers } from "./popovers";
+import { initPopoverRendering, popoverIsOpen, closeAllPopovers } from "./lib/popovers";
 import {
     dispatchWheel,
     isDraggingScrollbar,
     updateScrollbarDrag,
     endScrollbarDrag,
     setRenderDebugLog,
-} from "./render";
-import { getFocusedInput, setFocusedInput } from "./focus";
-import { applyFocus, getRecord, readAndSync, tickAllFields } from "./inputState";
+} from "./lib/render";
+import { getFocusedInput, setFocusedInput } from "./lib/focus";
+import { applyFocus, getRecord, readAndSync, tickAllFields } from "./lib/inputState";
 
 let enabled = true;
 let initialized = false;

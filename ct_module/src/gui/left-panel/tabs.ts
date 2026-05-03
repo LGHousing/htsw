@@ -1,5 +1,5 @@
-import { Element } from "../layout";
-import { Button, Col, Row, Text } from "../components";
+import { Element } from "../lib/layout";
+import { Button, Col, Row, Text } from "../lib/components";
 import { ExploreView } from "./explore";
 
 export type TabId = "explore" | "knowledge" | "whatever";

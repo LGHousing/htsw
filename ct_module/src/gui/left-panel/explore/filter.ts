@@ -1,5 +1,5 @@
-import { Element } from "../../layout";
-import { Container, Scroll, Text } from "../../components";
+import { Element } from "../../lib/layout";
+import { Container, Scroll, Text } from "../../lib/components";
 import {
     ALL_TYPES,
     ResultType,
