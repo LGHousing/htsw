@@ -2,7 +2,7 @@
 
 import { Element, Rect, pointInRect, layoutElement } from "./layout";
 import { renderElement, dispatchClick } from "./render";
-import { bumpLastPostRender, postRecentlyFired, resetGuiState } from "./panel";
+import { resetGuiState } from "./panel";
 
 export type PopoverHandle = {
     id: number;
@@ -202,16 +202,14 @@ function drawPopovers(mouseX: number, mouseY: number): void {
 export function initPopoverRendering(): void {
     if (renderInitialized) return;
     renderInitialized = true;
-    // Same dual-path scheme as Panel: postGuiRender for clean overlay
-    // (paints after MC slots), guiRender as fallback for builds where
-    // postGuiRender doesn't fire. LOWEST priority so popovers always
-    // paint last, on top of panels.
-    register("postGuiRender", (mouseX: number, mouseY: number) => {
-        bumpLastPostRender();
+    // Same dual-path as Panel: paint via both events unconditionally so
+    // popovers always render even if postGuiRender fires inconsistently.
+    // LOWEST priority on both so popovers paint after panels (which
+    // register at default priority).
+    register("guiRender", (mouseX: number, mouseY: number) => {
         drawPopovers(mouseX, mouseY);
     }).setPriority(OnTrigger.Priority.LOWEST);
-    register("guiRender", (mouseX: number, mouseY: number) => {
-        if (postRecentlyFired()) return;
+    register("postGuiRender", (mouseX: number, mouseY: number) => {
         drawPopovers(mouseX, mouseY);
     }).setPriority(OnTrigger.Priority.LOWEST);
 }

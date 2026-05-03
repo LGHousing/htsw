@@ -7,17 +7,6 @@ import { tryDispatchPopoverClick, popoverIsOpen, mouseIsOverPopover } from "./po
 
 const COLOR_PANEL = 0xf0242931 | 0;
 
-// Shared between Panel render and the popover render path: tracks the last
-// frame postGuiRender fired so guiRender can no-op when post is working
-// (avoids double-painting). On a CT version where postGuiRender never
-// fires, this stays at 0 and guiRender always runs as the fallback.
-export let lastPostRenderAtMs = 0;
-export function bumpLastPostRender(): void {
-    lastPostRenderAtMs = Date.now();
-}
-export function postRecentlyFired(): boolean {
-    return Date.now() - lastPostRenderAtMs < 100;
-}
 
 // Render helpers used to put GL state back into a known 2D-blit mode.
 // MC's slot rendering / item lighting can leave drawString invisible if
@@ -117,27 +106,22 @@ export class Panel {
             const interactive = !mouseIsOverPopover(x, y);
             renderElement(this.root, b.x, b.y, b.w, b.h, x, y, interactive);
         };
-        // We register on BOTH guiRender (fires INSIDE drawScreen, BEFORE
-        // slot rendering — so panels are at least visible if the post path
-        // is unsupported in this CT build) AND postGuiRender (fires AFTER
-        // drawScreen completes, so panels paint over slots/foreground/
-        // potion icons). The post path tracks postFiredAtMs and the
-        // guiRender path skips when post fired in the last 100ms — so on
-        // a working build we paint exactly once per frame, on the post
-        // path; on a broken build we fall back to guiRender alone.
+        // We register on BOTH guiRender AND postGuiRender. guiRender
+        // fires INSIDE drawScreen (before slot rendering) and is rock
+        // solid across CT builds — it guarantees panels are visible.
+        // postGuiRender fires AFTER drawScreen, so when it fires it
+        // overpaints the same panels above slot icons + the potion
+        // overlay. We do NOT skip guiRender when post fires: an earlier
+        // attempt to time-gate that race made panels flash and disappear
+        // when post fired inconsistently. The double-paint cost is
+        // negligible (a couple hundred drawRect/drawString calls).
         this.renderTrigger = register(
-            "postGuiRender",
-            (x: number, y: number, _gui: MCTGuiScreen) => {
-                bumpLastPostRender();
-                paint(x, y);
-            }
+            "guiRender",
+            (x: number, y: number, _gui: MCTGuiScreen) => paint(x, y)
         );
         register(
-            "guiRender",
-            (x: number, y: number, _gui: MCTGuiScreen) => {
-                if (postRecentlyFired()) return;
-                paint(x, y);
-            }
+            "postGuiRender",
+            (x: number, y: number, _gui: MCTGuiScreen) => paint(x, y)
         );
         this.clickTrigger = register(
             "guiMouseClick",
