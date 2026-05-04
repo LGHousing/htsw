@@ -38,6 +38,20 @@ type ConditionEntry = {
 const NOTE_ONLY_COST = 1;
 const UNREAD_NESTED_ACTION_COST = 1000;
 
+// Real input costs per field kind (based on actual helper implementations)
+// These represent the number of server interactions when a field needs changing.
+const FIELD_KIND_COST: Record<string, number> = {
+    boolean: 1,   // setBooleanValue: 1 click (toggle)
+    cycle: 2,     // setCycleValue: avg ~2 clicks (shortest direction)
+    select: 2,    // setSelectValue: 1 click open submenu + 1 click option
+    value: 2,     // setStringValue/setNumberValue: 1 click field + 1 chat/anvil input
+    item: 2,      // setItemValue: 1 click field + 1 click item
+    nestedList: 50, // recursive sync — extremely expensive
+};
+
+// Fixed overhead for opening an action editor and going back (only paid if any field differs)
+const EDIT_OPEN_CLOSE_COST = 2;
+
 function actionsEqual(
     observed: Action | Observed<Action>,
     desired: Action | Observed<Action>
@@ -65,13 +79,15 @@ function getFieldValue(value: object, key: string): unknown {
 function fieldDifferenceCount(
     observed: object,
     desired: object,
-    props: string[]
+    props: string[],
+    fieldKinds?: Record<string, string>
 ): number {
     let cost = 0;
 
     for (const key of props) {
         if (getFieldValue(observed, key) !== getFieldValue(desired, key)) {
-            cost += 1;
+            const kind = fieldKinds?.[key];
+            cost += kind ? (FIELD_KIND_COST[kind] ?? 1) : 1;
         }
     }
 
@@ -234,15 +250,18 @@ function actionCost(
     >;
     const nestedProps: NestedListProp[] = [];
     const scalarProps: string[] = [];
+    const scalarFieldKinds: Record<string, string> = {};
     for (const label in loreFields) {
         const field = loreFields[label];
         if (field.kind === "nestedList") {
             nestedProps.push(field.prop as NestedListProp);
         } else {
             scalarProps.push(field.prop);
+            scalarFieldKinds[field.prop] = field.kind;
         }
     }
 
+    // Move cost: 1 input per position shifted
     let cost = circularMoveDistance(observed.index, desired.index, listLength);
     if (
         observed.nestedReadState === "summary" &&
@@ -250,8 +269,17 @@ function actionCost(
     ) {
         cost += UNREAD_NESTED_ACTION_COST;
     }
-    cost += fieldDifferenceCount(observed.action, desired.action, scalarProps);
-    cost += observed.action.note === desired.action.note ? 0 : 1;
+
+    // Scalar field edit cost: weighted by field kind
+    const scalarCost = fieldDifferenceCount(
+        observed.action, desired.action, scalarProps, scalarFieldKinds
+    );
+    const noteCost = observed.action.note === desired.action.note ? 0 : 1;
+
+    // Add open/close overhead only if any editing is needed
+    if (scalarCost > 0 || noteCost > 0) {
+        cost += EDIT_OPEN_CLOSE_COST + scalarCost + noteCost;
+    }
 
     for (const prop of nestedProps) {
         const observedValue = getFieldValue(observed.action, prop);
@@ -293,21 +321,29 @@ function matchActions(
     const unmatchedDesired = desired.map((action, index) => ({ index, action }));
     const matches: ActionMatch[] = [];
 
-    for (
-        let desiredIndex = unmatchedDesired.length - 1;
-        desiredIndex >= 0;
-        desiredIndex--
-    ) {
+    // Pass 1: Exact matching with position preference.
+    // When multiple observed actions are identical (e.g. repeated `var z = "d"`),
+    // prefer the one at the same index to avoid unnecessary moves.
+    for (let desiredIndex = 0; desiredIndex < unmatchedDesired.length; desiredIndex++) {
         const desiredEntry = unmatchedDesired[desiredIndex];
-        const observedIndex = unmatchedObserved.findIndex((entry) =>
-            actionsEqual(entry.action, desiredEntry.action)
+
+        // Prefer same-index match first to preserve positional stability
+        let observedIndex = unmatchedObserved.findIndex((entry) =>
+            entry.index === desiredEntry.index && actionsEqual(entry.action, desiredEntry.action)
         );
+        // Fall back to any matching observed action
+        if (observedIndex === -1) {
+            observedIndex = unmatchedObserved.findIndex((entry) =>
+                actionsEqual(entry.action, desiredEntry.action)
+            );
+        }
         if (observedIndex === -1) {
             continue;
         }
 
         const [matchedObserved] = unmatchedObserved.splice(observedIndex, 1);
         unmatchedDesired.splice(desiredIndex, 1);
+        desiredIndex--;
         matches.push({
             observed: matchedObserved,
             desiredIndex: desiredEntry.index,
@@ -317,21 +353,24 @@ function matchActions(
         });
     }
 
-    for (
-        let desiredIndex = unmatchedDesired.length - 1;
-        desiredIndex >= 0;
-        desiredIndex--
-    ) {
+    // Pass 2: Note-only matching with same position preference.
+    for (let desiredIndex = 0; desiredIndex < unmatchedDesired.length; desiredIndex++) {
         const desiredEntry = unmatchedDesired[desiredIndex];
-        const observedIndex = unmatchedObserved.findIndex((entry) =>
-            onlyNoteDiffers(desiredEntry.action, entry.action)
+        let observedIndex = unmatchedObserved.findIndex((entry) =>
+            entry.index === desiredEntry.index && onlyNoteDiffers(desiredEntry.action, entry.action)
         );
+        if (observedIndex === -1) {
+            observedIndex = unmatchedObserved.findIndex((entry) =>
+                onlyNoteDiffers(desiredEntry.action, entry.action)
+            );
+        }
         if (observedIndex === -1) {
             continue;
         }
 
         const [matchedObserved] = unmatchedObserved.splice(observedIndex, 1);
         unmatchedDesired.splice(desiredIndex, 1);
+        desiredIndex--;
         matches.push({
             observed: matchedObserved,
             desiredIndex: desiredEntry.index,
@@ -341,6 +380,9 @@ function matchActions(
         });
     }
 
+    // Pass 3: Same-type matching with position preference.
+    // First pin same-index same-type pairs (avoids unnecessary moves for stable-order imports),
+    // then fall back to cost-based greedy matching for remaining unpinned actions.
     const remainingTypes = new Set(unmatchedDesired.map((entry) => entry.action.type));
     for (const type of remainingTypes) {
         const observedBucket = unmatchedObserved.filter(
@@ -353,49 +395,74 @@ function matchActions(
             continue;
         }
 
-        const candidates: Array<{
-            observed: KnownObservedAction;
-            desired: DesiredActionEntry;
-            cost: number;
-        }> = [];
+        const usedObserved = new Set<KnownObservedAction>();
+        const usedDesired = new Set<number>();
 
+        // Position-preference: pin same-type actions that share the same index.
+        // This eliminates moves when the list order hasn't changed (programmatic imports).
         for (const desiredEntry of desiredBucket) {
-            for (const observedEntry of observedBucket) {
-                candidates.push({
-                    observed: observedEntry,
-                    desired: desiredEntry,
-                    cost: actionCost(observedEntry, desiredEntry, listLength),
+            const positionalMatch = observedBucket.find(
+                (entry) => entry.index === desiredEntry.index && !usedObserved.has(entry)
+            );
+            if (positionalMatch) {
+                usedObserved.add(positionalMatch);
+                usedDesired.add(desiredEntry.index);
+                matches.push({
+                    observed: positionalMatch,
+                    desiredIndex: desiredEntry.index,
+                    desired: desiredEntry.action,
+                    kind: "same_type",
+                    cost: actionCost(positionalMatch, desiredEntry, listLength),
                 });
             }
         }
 
-        candidates.sort(
-            (a, b) =>
-                a.cost - b.cost ||
-                a.observed.index - b.observed.index ||
-                a.desired.index - b.desired.index
-        );
+        // Cost-based greedy matching for remaining unpinned actions.
+        const remainingObservedBucket = observedBucket.filter((e) => !usedObserved.has(e));
+        const remainingDesiredBucket = desiredBucket.filter((e) => !usedDesired.has(e.index));
 
-        const usedObserved = new Set<KnownObservedAction>();
-        const usedDesired = new Set<number>();
+        if (remainingObservedBucket.length > 0 && remainingDesiredBucket.length > 0) {
+            const candidates: Array<{
+                observed: KnownObservedAction;
+                desired: DesiredActionEntry;
+                cost: number;
+            }> = [];
 
-        for (const candidate of candidates) {
-            if (
-                usedObserved.has(candidate.observed) ||
-                usedDesired.has(candidate.desired.index)
-            ) {
-                continue;
+            for (const desiredEntry of remainingDesiredBucket) {
+                for (const observedEntry of remainingObservedBucket) {
+                    candidates.push({
+                        observed: observedEntry,
+                        desired: desiredEntry,
+                        cost: actionCost(observedEntry, desiredEntry, listLength),
+                    });
+                }
             }
 
-            usedObserved.add(candidate.observed);
-            usedDesired.add(candidate.desired.index);
-            matches.push({
-                observed: candidate.observed,
-                desiredIndex: candidate.desired.index,
-                desired: candidate.desired.action,
-                kind: "same_type",
-                cost: candidate.cost,
-            });
+            candidates.sort(
+                (a, b) =>
+                    a.cost - b.cost ||
+                    a.observed.index - b.observed.index ||
+                    a.desired.index - b.desired.index
+            );
+
+            for (const candidate of candidates) {
+                if (
+                    usedObserved.has(candidate.observed) ||
+                    usedDesired.has(candidate.desired.index)
+                ) {
+                    continue;
+                }
+
+                usedObserved.add(candidate.observed);
+                usedDesired.add(candidate.desired.index);
+                matches.push({
+                    observed: candidate.observed,
+                    desiredIndex: candidate.desired.index,
+                    desired: candidate.desired.action,
+                    kind: "same_type",
+                    cost: candidate.cost,
+                });
+            }
         }
 
         for (let index = unmatchedObserved.length - 1; index >= 0; index--) {

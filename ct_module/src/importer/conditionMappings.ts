@@ -13,7 +13,7 @@ export const CONDITION_MAPPINGS = {
             "Include Higher Groups": {
                 prop: "includeHigherGroups",
                 kind: "boolean",
-                default: "false",
+                default: false,
             },
         },
     },
@@ -25,7 +25,7 @@ export const CONDITION_MAPPINGS = {
             Variable: { prop: "var", kind: "value" },
             Comparator: { prop: "op", kind: "select" },
             "Compare Value": { prop: "amount", kind: "value" },
-            "Fallback Value": { prop: "fallback", kind: "value" },
+            "Fallback Value": { prop: "fallback", kind: "value", default: "Not Set" },
         },
     },
 

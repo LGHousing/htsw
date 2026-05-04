@@ -2,6 +2,9 @@ import {
     tryGetItemSlot,
     getAllItemSlots,
     getItemSlot,
+    tryGetMenuItemSlot,
+    getMenuItemSlots,
+    getMenuItemSlot,
     getOpenContainerTitle,
 } from "./specifics/slots";
 import { waitFor } from "./specifics/waitFor";
@@ -90,6 +93,9 @@ export default class TaskContext {
     getAllItemSlots = getAllItemSlots;
     tryGetItemSlot = tryGetItemSlot;
     getItemSlot = getItemSlot;
+    getMenuItemSlots = getMenuItemSlots;
+    tryGetMenuItemSlot = tryGetMenuItemSlot;
+    getMenuItemSlot = getMenuItemSlot;
     getOpenContainerTitle = getOpenContainerTitle;
 
     waitFor = waitFor;

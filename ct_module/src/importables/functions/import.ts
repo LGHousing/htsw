@@ -27,10 +27,13 @@ export async function importImportableFunction(
     const actionsTrusted =
         actionsTrust !== undefined && trustPlan?.trustedListPaths.has("actions");
     if (!actionsTrusted) {
+        ctx.displayMessage(`&b&l[import] &r&bSyncing function: &f${importable.name} &7(${importable.actions.length} actions)`);
         await syncActionList(ctx, importable.actions, {
             itemRegistry,
             trust: actionsTrust,
         });
+    } else {
+        ctx.displayMessage(`&b&l[import] &r&7Function "${importable.name}" trusted, skipped.`);
     }
 
     if (

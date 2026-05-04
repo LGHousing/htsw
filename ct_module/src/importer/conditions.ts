@@ -183,9 +183,9 @@ async function readRequireGroup(ctx: TaskContext): Promise<ConditionRequireGroup
     );
 
     const includeHigherGroups =
-        readBooleanValue(ctx.getItemSlot(includeHigherGroupsLabel)) ?? false;
+        readBooleanValue(ctx.getMenuItemSlot(includeHigherGroupsLabel)) ?? false;
 
-    let group = readStringValue(ctx.getItemSlot(groupLabel)) ?? undefined;
+    let group = readStringValue(ctx.getMenuItemSlot(groupLabel)) ?? undefined;
     if (!group) {
         await openSubmenu(ctx, groupLabel);
         const selectedSlot = findMenuOptionByLore(ctx, "Already Selected");
@@ -234,7 +234,7 @@ async function writeRequireGroup(
 
     await setBooleanValue(
         ctx,
-        ctx.getItemSlot(getConditionFieldLabel("REQUIRE_GROUP", "includeHigherGroups")),
+        ctx.getMenuItemSlot(getConditionFieldLabel("REQUIRE_GROUP", "includeHigherGroups")),
         condition.includeHigherGroups === true
     );
 }
@@ -255,7 +255,7 @@ async function writeCompareVar(
     if (condition.var) {
         await setStringValue(
             ctx,
-            ctx.getItemSlot(getConditionFieldLabel("COMPARE_VAR", "var")),
+            ctx.getMenuItemSlot(getConditionFieldLabel("COMPARE_VAR", "var")),
             condition.var
         );
     }
@@ -271,7 +271,7 @@ async function writeCompareVar(
     if (condition.amount) {
         await setStringValue(
             ctx,
-            ctx.getItemSlot(getConditionFieldLabel("COMPARE_VAR", "amount")),
+            ctx.getMenuItemSlot(getConditionFieldLabel("COMPARE_VAR", "amount")),
             condition.amount
         );
     }
@@ -279,7 +279,7 @@ async function writeCompareVar(
     if (condition.fallback) {
         await setStringValue(
             ctx,
-            ctx.getItemSlot(getConditionFieldLabel("COMPARE_VAR", "fallback")),
+            ctx.getMenuItemSlot(getConditionFieldLabel("COMPARE_VAR", "fallback")),
             condition.fallback
         );
     }
@@ -380,7 +380,7 @@ async function writeCompareHealth(
     if (condition.amount) {
         await setStringValue(
             ctx,
-            ctx.getItemSlot(getConditionFieldLabel("COMPARE_HEALTH", "amount")),
+            ctx.getMenuItemSlot(getConditionFieldLabel("COMPARE_HEALTH", "amount")),
             condition.amount
         );
     }
@@ -401,7 +401,7 @@ async function writeCompareMaxHealth(
     if (condition.amount) {
         await setStringValue(
             ctx,
-            ctx.getItemSlot(getConditionFieldLabel("COMPARE_MAX_HEALTH", "amount")),
+            ctx.getMenuItemSlot(getConditionFieldLabel("COMPARE_MAX_HEALTH", "amount")),
             condition.amount
         );
     }
@@ -422,7 +422,7 @@ async function writeCompareHunger(
     if (condition.amount) {
         await setStringValue(
             ctx,
-            ctx.getItemSlot(getConditionFieldLabel("COMPARE_HUNGER", "amount")),
+            ctx.getMenuItemSlot(getConditionFieldLabel("COMPARE_HUNGER", "amount")),
             condition.amount
         );
     }
@@ -449,7 +449,7 @@ async function writeComparePlaceholder(
     if (condition.placeholder) {
         await setStringValue(
             ctx,
-            ctx.getItemSlot(getConditionFieldLabel("COMPARE_PLACEHOLDER", "placeholder")),
+            ctx.getMenuItemSlot(getConditionFieldLabel("COMPARE_PLACEHOLDER", "placeholder")),
             condition.placeholder
         );
     }
@@ -465,7 +465,7 @@ async function writeComparePlaceholder(
     if (condition.amount) {
         await setStringValue(
             ctx,
-            ctx.getItemSlot(getConditionFieldLabel("COMPARE_PLACEHOLDER", "amount")),
+            ctx.getMenuItemSlot(getConditionFieldLabel("COMPARE_PLACEHOLDER", "amount")),
             condition.amount
         );
     }
@@ -569,7 +569,7 @@ async function writeCompareDamage(
     if (condition.amount) {
         await setStringValue(
             ctx,
-            ctx.getItemSlot(getConditionFieldLabel("COMPARE_DAMAGE", "amount")),
+            ctx.getMenuItemSlot(getConditionFieldLabel("COMPARE_DAMAGE", "amount")),
             condition.amount
         );
     }
@@ -784,7 +784,7 @@ async function deleteObservedCondition(
 }
 
 function getInvertSlot(ctx: TaskContext): ItemSlot {
-    return ctx.getItemSlot((slot) => {
+    return ctx.getMenuItemSlot((slot) => {
         const name = removedFormatting(slot.getItem().getName()).trim().toLowerCase();
         return name === "invert" || name === "inverted";
     });
@@ -811,11 +811,11 @@ export async function importCondition(
     condition: Condition,
     itemRegistry?: ItemRegistry
 ): Promise<void> {
-    ctx.getItemSlot("Add Condition").click();
+    ctx.getMenuItemSlot("Add Condition").click();
     await waitForMenu(ctx);
 
     const spec = getConditionSpec(condition.type);
-    const slot = ctx.getItemSlot(spec.displayName);
+    const slot = ctx.getMenuItemSlot(spec.displayName);
 
     if (isLimitExceeded(slot)) {
         throw Diagnostic.error(

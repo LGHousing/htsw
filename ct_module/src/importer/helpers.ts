@@ -46,7 +46,7 @@ export async function getSlotPaginate(ctx: TaskContext, name: string): Promise<I
     await goToFirstPaginatedOptionPage(ctx);
 
     for (let page = 0; page < 100; page++) {
-        const slot = ctx.tryGetItemSlot(name);
+        const slot = ctx.tryGetMenuItemSlot(name);
         if (slot !== null) return slot;
 
         const nextPageSlot = findPaginationControl(ctx, "next");
@@ -74,11 +74,11 @@ function findPaginationControl(
     direction: "next" | "previous"
 ): ItemSlot | null {
     const exactText = `Left-click for ${direction} page!`;
-    const exactSlot = ctx.tryGetItemSlot(exactText);
+    const exactSlot = ctx.tryGetMenuItemSlot(exactText);
     if (exactSlot !== null) return exactSlot;
 
     const needle = `${direction} page`;
-    return ctx.tryGetItemSlot((slot) => {
+    return ctx.tryGetMenuItemSlot((slot) => {
         const item = slot.getItem();
         const lines = [item.getName(), ...item.getLore()];
         return lines.some((line) =>
@@ -88,12 +88,12 @@ function findPaginationControl(
 }
 
 export async function clickGoBack(ctx: TaskContext): Promise<void> {
-    ctx.getItemSlot("Go Back").click();
+    ctx.getMenuItemSlot("Go Back").click();
     await waitForMenu(ctx);
 }
 
 export async function openSubmenu(ctx: TaskContext, slotName: string): Promise<void> {
-    ctx.getItemSlot(slotName).click();
+    ctx.getMenuItemSlot(slotName).click();
     await waitForMenu(ctx);
 }
 
@@ -258,7 +258,7 @@ export function findMenuOptionByLore(
     ctx: TaskContext,
     loreLine: string
 ): ItemSlot | null {
-    return ctx.tryGetItemSlot((slot) =>
+    return ctx.tryGetMenuItemSlot((slot) =>
         slot
             .getItem()
             .getLore()
@@ -302,7 +302,7 @@ export async function setSelectValue(
     optionSlot.click();
     await waitForMenu(ctx);
 
-    if (ctx.tryGetItemSlot(slotName) !== null) {
+    if (ctx.tryGetMenuItemSlot(slotName) !== null) {
         return;
     }
 
@@ -319,7 +319,7 @@ export async function setCycleValue(
         throw new Error(`"${value}" is not a valid option for "${slotName}".`);
     }
 
-    const getSlot = () => ctx.getItemSlot(slotName);
+    const getSlot = () => ctx.getMenuItemSlot(slotName);
     const currentValue = readSelectedOption(getSlot(), options);
 
     if (currentValue === value) {
@@ -486,7 +486,7 @@ export async function setStringOrPaginatedOptionValue(
 
             optionSlot.click();
             await waitForMenu(ctx);
-            if (ctx.tryGetItemSlot(slotName) !== null) {
+            if (ctx.tryGetMenuItemSlot(slotName) !== null) {
                 return;
             }
 

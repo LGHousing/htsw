@@ -96,6 +96,68 @@ export function getItemSlot(check: string | ((slot: ItemSlot) => boolean)): Item
     return slot;
 }
 
+/**
+ * Like getAllItemSlots but only searches the container's own slots,
+ * excluding the player inventory (last 36 slots). Works for any
+ * container size.
+ */
+export function getMenuItemSlots(check: null | ((slot: ItemSlot) => boolean) = null): ItemSlot[] | null {
+    const container = Player.getContainer();
+    if (container == null) {
+        return null;
+    }
+
+    const menuEnd = container.getSize() - 36;
+    const slots: ItemSlot[] = [];
+    for (let slotId = 0; slotId < menuEnd; slotId++) {
+        const item = container.getStackInSlot(slotId);
+        if (item == null) {
+            continue;
+        }
+        const slot = new ItemSlot(slotId, item);
+        if (check !== null && !check(slot)) {
+            continue;
+        }
+        slots.push(slot);
+    }
+
+    return slots;
+}
+
+export function tryGetMenuItemSlot(
+    check: string | ((slot: ItemSlot) => boolean),
+): ItemSlot | null {
+    if (typeof check === "string") {
+        const name = removedFormatting(check);
+        check = (slot: ItemSlot) => {
+            return removedFormatting(slot.getItem().getName()) === name;
+        };
+    }
+
+    const slots = getMenuItemSlots();
+    if (slots == null) return null;
+    for (const slot of slots) {
+        if (check(slot)) {
+            return slot;
+        }
+    }
+    return null;
+}
+
+export function getMenuItemSlot(
+    check: string | ((slot: ItemSlot) => boolean),
+): ItemSlot {
+    const slot = tryGetMenuItemSlot(check);
+    if (slot === null) {
+        if (typeof check === "string") {
+            throw new Error(`Could not find "${check}"`);
+        } else {
+            throw new Error("Could not find item slot");
+        }
+    }
+    return slot;
+}
+
 export function getOpenContainerTitle(): string | null {
     const container = Player.getContainer();
     if (container == null) {
