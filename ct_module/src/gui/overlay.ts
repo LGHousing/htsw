@@ -23,7 +23,12 @@ import { RootTree } from "./root";
 import { getContainerBounds, getFullscreenPanelRect } from "./lib/bounds";
 import { autoDiscoverImportJson, reparseImportJson, tickReparse } from "./state/reparse";
 import { CHAT_INPUT_ID } from "./chat-input";
-import { initPopoverRendering, popoverIsOpen, closeAllPopovers } from "./lib/popovers";
+import {
+    initPopoverRendering,
+    popoverIsOpen,
+    closeAllPopovers,
+    tryDispatchPopoverWheel,
+} from "./lib/popovers";
 
 const KEY_T = 20; // LWJGL keycode for 'T'
 import {
@@ -127,6 +132,17 @@ export function initHtswGui(): void {
         const dh = (mc as any).field_71440_d;
         const mx = Math.floor((MouseClass.getEventX() * sw) / dw);
         const my = sh - Math.floor((MouseClass.getEventY() * sh) / dh) - 1;
+        // Popovers paint on top of panels so they should also see the wheel first. Without
+        // this, scrolling inside the file-browser/recents popovers fell through to whatever
+        // panel scroll happened to be under the cursor.
+        if (popoverIsOpen()) {
+            const dir = dwheel > 0 ? 1 : -1;
+            if (tryDispatchPopoverWheel(mx, my, dir)) {
+                debug(`wheel dwheel=${dwheel} dir=${dir} cancelled+dispatched (popover)`);
+                cancel(event);
+                return;
+            }
+        }
         const trees = laidOutTrees();
         for (let i = 0; i < trees.length; i++) {
             const t = trees[i];

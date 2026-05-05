@@ -10,9 +10,7 @@ export type OpenTargetId =
     | "functions"
     | "eventactions"
     | "regions"
-    | "menus"
-    | "stats"
-    | "items";
+    | "menus";
 
 type OpenTarget = { id: OpenTargetId; label: string; command: string };
 
@@ -21,8 +19,6 @@ export const OPEN_TARGETS: OpenTarget[] = [
     { id: "eventactions", label: "Event Actions", command: "/eventactions" },
     { id: "regions", label: "Regions", command: "/regions" },
     { id: "menus", label: "Menus", command: "/menus" },
-    { id: "stats", label: "Stats", command: "/stats" },
-    { id: "items", label: "Items", command: "/itemsstart" },
 ];
 
 const PERSIST_PATH =

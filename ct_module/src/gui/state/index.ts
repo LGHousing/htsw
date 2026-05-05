@@ -5,6 +5,7 @@ import type { Importable } from "htsw/types";
 
 import type { KnowledgeStatusRow } from "../../knowledge/status";
 import type { ImportProgress } from "../../importables/importSession";
+import { normalizeHtswPath } from "../lib/pathDisplay";
 
 export type ImportProgressView = {
     weightCompleted: number;
@@ -29,6 +30,14 @@ let parsedResult: ParseResult<Importable[]> | null = null;
 let parseError: string | null = null;
 let selectedImportableId: string | null = null;
 /**
+ * Resolved filesystem path of the importable currently being processed by
+ * the in-flight import session. Drives the LiveImporter panel above the
+ * inventory: when set, that file's HTSL is rendered with diff colors;
+ * when null, the panel shows an idle state. Cleared by the import's
+ * progress callback when the session reports `currentLabel === "done"`.
+ */
+let currentImportingPath: string | null = null;
+/**
  * Set of importable identities (`type:identity` strings) currently checked
  * in the Importables list. Drives multi-import: when non-empty, the bottom
  * toolbar's Import targets exactly these. Empty set = "no checkboxes
@@ -41,12 +50,19 @@ let trustMode = false;
 let housingUuid: string | null = null;
 let knowledgeRows: KnowledgeStatusRow[] = [];
 let importProgress: ImportProgressView | null = null;
+/**
+ * `Date.now()` of the moment the in-flight import started. Captured the
+ * first time `setImportProgress` transitions from null → non-null and
+ * cleared on the inverse transition. The LiveImporter panel divides
+ * elapsed time by `weightCompleted / weightTotal` to project an ETA.
+ */
+let importStartedAt: number | null = null;
 
 export function getImportJsonPath(): string {
     return importJsonPath;
 }
 export function setImportJsonPath(path: string): void {
-    importJsonPath = path;
+    importJsonPath = normalizeHtswPath(path);
 }
 
 export function getParsedResult(): ParseResult<Importable[]> | null {
@@ -139,7 +155,25 @@ export function getImportProgress(): ImportProgressView | null {
     return importProgress;
 }
 export function setImportProgress(p: ImportProgressView | null): void {
+    if (p !== null && importProgress === null) {
+        importStartedAt = Date.now();
+    } else if (p === null) {
+        importStartedAt = null;
+    }
     importProgress = p;
+}
+export function getImportStartedAt(): number | null {
+    return importStartedAt;
+}
+
+export function getCurrentImportingPath(): string | null {
+    return currentImportingPath;
+}
+export function setCurrentImportingPath(p: string | null): void {
+    if (p !== null && p !== currentImportingPath) {
+        ChatLib.chat(`&7[live-imp] currentImportingPath = &f${p}`);
+    }
+    currentImportingPath = p;
 }
 export function applyImportProgress(p: ImportProgress): void {
     importProgress = {

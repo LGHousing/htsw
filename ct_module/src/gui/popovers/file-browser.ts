@@ -16,6 +16,8 @@ import {
     COLOR_PANEL_RAISED,
     COLOR_ROW,
     COLOR_ROW_HOVER,
+    COLOR_ROW_SELECTED,
+    COLOR_ROW_SELECTED_HOVER,
     COLOR_TEXT,
     COLOR_TEXT_DIM,
     GLYPH_FOLDER,
@@ -28,6 +30,7 @@ import {
 import { setImportJsonPath } from "../state";
 import { scheduleReparse } from "../state/reparse";
 import { addRecent } from "../state/recents";
+import { normalizeHtswPath } from "../lib/pathDisplay";
 
 type Entry = {
     name: string;
@@ -39,28 +42,12 @@ type Entry = {
 
 let cwd: string = "./htsw/imports";
 let filter = "";
-
-function mcRoot(): string {
-    try {
-        // @ts-ignore
-        const Paths = Java.type("java.nio.file.Paths");
-        return String(Paths.get(".").toAbsolutePath().normalize().toString())
-            .replace(/\\/g, "/");
-    } catch (_e) {
-        return ".";
-    }
-}
-
-/** Convert an absolute path under the MC root to a "./..." relative form. */
-function toRelative(p: string): string {
-    const norm = p.replace(/\\/g, "/");
-    const root = mcRoot();
-    if (norm === root) return ".";
-    if (norm.length > root.length && norm.substring(0, root.length + 1) === `${root}/`) {
-        return `./${norm.substring(root.length + 1)}`;
-    }
-    return norm;
-}
+// Selected import.json in the current directory listing. Only set when the
+// user single-clicks a *.json/import.json row — drives the Load button label
+// and active state. Cleared on directory change so a stale selection from a
+// previous folder can't be loaded.
+let selectedImportPath: string | null = null;
+let selectedImportName: string | null = null;
 
 function dirExists(path: string): boolean {
     try {
@@ -120,10 +107,10 @@ function listDir(dir: string): Entry[] {
                 const isDir = Files.isDirectory(entry);
                 const dot = name.lastIndexOf(".");
                 const ext = dot > 0 ? name.substring(dot + 1).toLowerCase() : "";
-                const raw = String(entry.toString()).replace(/\\/g, "/");
+                const raw = String(entry.toString());
                 out.push({
                     name,
-                    fullPath: toRelative(raw),
+                    fullPath: normalizeHtswPath(raw),
                     isDir,
                     ext,
                 });
@@ -152,12 +139,22 @@ function parentOf(dir: string): string {
     return norm.substring(0, slash);
 }
 
+function isImportJsonEntry(entry: Entry): boolean {
+    if (entry.isDir) return false;
+    return entry.name.toLowerCase() === "import.json" || entry.ext === "json";
+}
+
+function selectImport(entry: Entry): void {
+    selectedImportPath = entry.fullPath;
+    selectedImportName = entry.name;
+}
+
 function navigateInto(entry: Entry): void {
     if (entry.isDir) {
         cwd = entry.fullPath;
-    } else if (entry.name.toLowerCase() === "import.json") {
-        loadAsImport(entry.fullPath);
-    } else if (entry.ext === "json") {
+        selectedImportPath = null;
+        selectedImportName = null;
+    } else if (isImportJsonEntry(entry)) {
         loadAsImport(entry.fullPath);
     }
 }
@@ -244,10 +241,10 @@ function iconColorFor(e: Entry): number {
 }
 
 function fileRow(entry: Entry): Element {
-    const loadable =
-        entry.isDir ||
-        entry.name.toLowerCase() === "import.json" ||
-        entry.ext === "json";
+    const isJson = isImportJsonEntry(entry);
+    const loadable = entry.isDir || isJson;
+    const isSelected =
+        isJson && selectedImportPath !== null && selectedImportPath === entry.fullPath;
     return Container({
         style: {
             direction: "row",
@@ -255,14 +252,23 @@ function fileRow(entry: Entry): Element {
             padding: { side: "x", value: 8 },
             gap: 8,
             height: { kind: "px", value: SIZE_ROW_H },
-            background: COLOR_ROW,
-            hoverBackground: COLOR_ROW_HOVER,
+            background: isSelected ? COLOR_ROW_SELECTED : COLOR_ROW,
+            hoverBackground: isSelected ? COLOR_ROW_SELECTED_HOVER : COLOR_ROW_HOVER,
         },
-        onClick: (_rect, isDouble) => {
-            if (entry.isDir && !isDouble) return; // single click on dir = preview only
-            navigateInto(entry);
+        onClick: (_rect, info) => {
+            // Dirs: ignore single-click (acts as preview only); double-click navigates.
+            // import.json files: single-click selects (lights up the Load button); double
+            // -click loads. Other files: ignored entirely. All double-click work happens
+            // here via isDoubleClickSecond — no separate onDoubleClick handler so chat
+            // messages and loadAsImport don't fire twice.
+            if (entry.isDir) {
+                if (info.isDoubleClickSecond) navigateInto(entry);
+                return;
+            }
+            if (!isJson) return;
+            if (info.isDoubleClickSecond) navigateInto(entry);
+            else selectImport(entry);
         },
-        onDoubleClick: () => navigateInto(entry),
         children: [
             Text({
                 text: iconFor(entry),
@@ -294,7 +300,11 @@ function header(): Element {
             Button({
                 text: "Up",
                 style: { width: { kind: "px", value: 36 }, height: { kind: "grow" } },
-                onClick: () => { cwd = parentOf(cwd); },
+                onClick: () => {
+                    cwd = parentOf(cwd);
+                    selectedImportPath = null;
+                    selectedImportName = null;
+                },
             }),
             Button({
                 text: "Open in OS",
@@ -348,7 +358,11 @@ function pathBar(): Element {
             Input({
                 id: "file-browser-path",
                 value: () => cwd,
-                onChange: (v) => { cwd = v; },
+                onChange: (v) => {
+                    cwd = v;
+                    selectedImportPath = null;
+                    selectedImportName = null;
+                },
                 placeholder: "filesystem path",
                 style: { width: { kind: "grow" } },
             }),
@@ -411,14 +425,26 @@ function loadButton(): Element {
                 children: [],
             }),
             Button({
-                text: "Load this directory's import.json",
+                // Dim the button until the user picks an import.json. Without a selection
+                // we don't know which one to load — directories can hold multiple
+                // *.import.json files so there's no useful default.
+                text: () =>
+                    selectedImportName !== null
+                        ? `Load ${selectedImportName}`
+                        : "Select an import.json",
                 style: {
                     width: { kind: "px", value: 220 },
                     height: { kind: "grow" },
-                    background: COLOR_BUTTON_PRIMARY,
-                    hoverBackground: COLOR_BUTTON_PRIMARY_HOVER,
+                    background: () =>
+                        selectedImportPath !== null ? COLOR_BUTTON_PRIMARY : COLOR_BUTTON,
+                    hoverBackground: () =>
+                        selectedImportPath !== null
+                            ? COLOR_BUTTON_PRIMARY_HOVER
+                            : COLOR_BUTTON_HOVER,
                 },
-                onClick: () => loadAsImport(`${cwd}/import.json`),
+                onClick: () => {
+                    if (selectedImportPath !== null) loadAsImport(selectedImportPath);
+                },
             }),
         ],
     });

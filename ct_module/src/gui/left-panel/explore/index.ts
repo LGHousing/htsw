@@ -19,7 +19,6 @@ import {
     SourceFile,
     enumerateForSource,
     getSources,
-    isDefaultSource,
     queueSourcePath,
     removeAllStandaloneFiles,
     removeSource,
@@ -140,16 +139,15 @@ function withFsActions(extras: MenuAction[], fullPath: string): MenuAction[] {
 }
 
 function dirRootActions(s: SourceDir): MenuAction[] {
-    const extras: MenuAction[] = [];
-    if (!isDefaultSource(s.fullPath)) {
-        extras.push({
+    const extras: MenuAction[] = [
+        {
             label: "Close",
             onClick: () => {
                 removeSource(s.fullPath);
                 collapsedRoots.delete(dirRootKey(s));
             },
-        });
-    }
+        },
+    ];
     return withFsActions(extras, s.fullPath);
 }
 
@@ -603,7 +601,12 @@ function pickSources(mode: "file" | "folder"): void {
     });
 }
 
-const OPEN_POPOVER_HEIGHT = 6 + 2 * 18 + 1 * 4;
+const DEFAULT_IMPORTS_DIR = "./htsw/imports";
+const OPEN_POPOVER_HEIGHT = 6 + 3 * 18 + 2 * 4;
+
+function showImportsInOS(): void {
+    showInExplorer(DEFAULT_IMPORTS_DIR);
+}
 
 function openMenuContent(): Element {
     return Col({
@@ -624,6 +627,26 @@ function openMenuContent(): Element {
                     closeAllPopovers();
                     pickSources("folder");
                 },
+            }),
+            Button({
+                text: "Show ./htsw/imports",
+                style: { width: { kind: "grow" }, height: { kind: "px", value: 18 } },
+                onClick: () => {
+                    closeAllPopovers();
+                    showImportsInOS();
+                },
+            }),
+        ],
+    });
+}
+
+function emptyStateRow(): Element {
+    return Container({
+        style: { padding: 8 },
+        children: [
+            Text({
+                text: "Open a folder to explore.",
+                style: { width: { kind: "grow" } },
             }),
         ],
     });
@@ -704,7 +727,11 @@ export function ExploreView(): Element {
             Scroll({
                 id: "left-results-scroll",
                 style: { gap: 0, height: { kind: "grow" } },
-                children: () => renderRows(),
+                children: () => {
+                    const rows = renderRows();
+                    if (rows.length === 0) return [emptyStateRow()];
+                    return rows;
+                },
             }),
         ],
     });

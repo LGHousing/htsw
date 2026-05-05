@@ -55,6 +55,22 @@ export function buildKnowledgeEntry(
  * the importer/exporter has already done its real work and the cache
  * is just a hint.
  */
+function ensureParentDirs(path: string): void {
+    try {
+        // @ts-ignore
+        const Paths = Java.type("java.nio.file.Paths");
+        // @ts-ignore
+        const Files = Java.type("java.nio.file.Files");
+        const p = Paths.get(String(path));
+        const parent = p.getParent();
+        if (parent !== null && !Files.exists(parent)) {
+            Files.createDirectories(parent);
+        }
+    } catch (_e) {
+        // best-effort; FileLib.write may also create dirs on some builds.
+    }
+}
+
 export function writeKnowledge(
     ctx: TaskContext,
     housingUuid: string,
@@ -64,7 +80,9 @@ export function writeKnowledge(
     const path = cachePathFor(housingUuid, importable);
     const entry = buildKnowledgeEntry(importable, writer);
     try {
+        ensureParentDirs(path);
         FileLib.write(path, JSON.stringify(entry, null, 4), true);
+        ctx.displayMessage(`&7[knowledge] saved &f${path}`);
     } catch (error) {
         ctx.displayMessage(`&7[knowledge] &eFailed to write cache at ${path}: ${error}`);
     }

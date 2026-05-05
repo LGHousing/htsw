@@ -3,7 +3,6 @@ import { Button, Container, Row } from "../lib/components";
 import { ExploreView } from "./explore";
 import { ImportablesView } from "./importables";
 import { KnowledgeView } from "./knowledge";
-import { SettingsView } from "./settings";
 import {
     COLOR_TAB,
     COLOR_TAB_ACCENT,
@@ -13,7 +12,7 @@ import {
     SIZE_TAB_H,
 } from "../lib/theme";
 
-export type TabId = "importables" | "explore" | "knowledge" | "settings";
+export type TabId = "importables" | "explore" | "knowledge";
 
 type Tab = { id: TabId; label: string; content: () => Element };
 
@@ -21,7 +20,6 @@ export const TABS: Tab[] = [
     { id: "importables", label: "Importables", content: ImportablesView },
     { id: "explore", label: "Explore", content: ExploreView },
     { id: "knowledge", label: "Knowledge", content: KnowledgeView },
-    { id: "settings", label: "Settings", content: SettingsView },
 ];
 
 let activeTab: TabId = "importables";

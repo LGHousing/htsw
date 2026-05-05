@@ -99,6 +99,11 @@ import {
     type PaginatedListConfig,
 } from "./paginatedList";
 import { setItemValue } from "./items";
+import {
+    getActiveDiffSink,
+    setActiveDiffSink,
+    type ImportDiffSink,
+} from "./diffSink";
 
 export { diffActionList };
 export type {
@@ -1509,10 +1514,68 @@ export async function importAction(
 async function applyActionListDiff(
     ctx: TaskContext,
     observed: ObservedActionSlot[],
+    desired: Action[],
     diff: ActionListDiff,
     itemRegistry?: ItemRegistry
 ): Promise<void> {
-    if (diff.operations.length === 0) return;
+    // Capture and suppress the active sink so nested syncActionList calls
+    // (e.g. CONDITIONAL/RANDOM bodies) don't smear events onto the parent's
+    // line indices. Only the outermost (top-level) sync emits.
+    const sink = getActiveDiffSink();
+    setActiveDiffSink(null);
+    try {
+        await applyActionListDiffInner(
+            ctx,
+            observed,
+            desired,
+            diff,
+            sink,
+            itemRegistry
+        );
+    } finally {
+        setActiveDiffSink(sink);
+    }
+}
+
+function srcIndexForOp(op: ActionListOperation, desired: Action[]): number {
+    if (op.kind === "add" || op.kind === "move") return op.toIndex;
+    if (op.kind === "edit") return desired.indexOf(op.desired);
+    return -1; // delete: action isn't in source
+}
+
+function opLabel(op: ActionListOperation): string {
+    if (op.kind === "delete") return `delete ${actionLogLabel(op.observed.action)}`;
+    if (op.kind === "edit") return `edit → ${actionLogLabel(op.desired)}`;
+    if (op.kind === "move") return `move ${actionLogLabel(op.action)} → #${op.toIndex + 1}`;
+    return `add ${actionLogLabel(op.desired)}`;
+}
+
+async function applyActionListDiffInner(
+    ctx: TaskContext,
+    observed: ObservedActionSlot[],
+    desired: Action[],
+    diff: ActionListDiff,
+    sink: ImportDiffSink | null,
+    itemRegistry?: ItemRegistry
+): Promise<void> {
+    // Pre-mark already-matching desired actions. Anything not touched by an
+    // op is "match" (white) from the start; ops will paint their own state
+    // on completion.
+    if (sink !== null) {
+        const touched = new Set<number>();
+        for (const op of diff.operations) {
+            const idx = srcIndexForOp(op, desired);
+            if (idx >= 0) touched.add(idx);
+        }
+        for (let i = 0; i < desired.length; i++) {
+            if (!touched.has(i)) sink.markMatch(i);
+        }
+    }
+
+    if (diff.operations.length === 0) {
+        if (sink !== null) sink.end();
+        return;
+    }
 
     const deletes: Array<ActionListOperation & { kind: "delete" }> = [];
     const edits: Array<ActionListOperation & { kind: "edit" }> = [];
@@ -1568,6 +1631,9 @@ async function applyActionListDiff(
             continue;
         }
 
+        const srcIdx = srcIndexForOp(op, desired);
+        if (sink !== null && srcIdx >= 0) sink.beginOp(srcIdx, "edit", opLabel(op));
+
         const actionSlot = await getPaginatedListSlotAtIndex(
             ctx,
             currentIndex,
@@ -1579,6 +1645,7 @@ async function applyActionListDiff(
 
         if (op.noteOnly) {
             await setListItemNote(ctx, actionSlot, op.desired.note);
+            if (sink !== null && srcIdx >= 0) sink.completeOp(srcIdx, "edit");
             continue;
         }
 
@@ -1598,6 +1665,7 @@ async function applyActionListDiff(
         }
 
         await setListItemNote(ctx, actionSlot, op.desired.note);
+        if (sink !== null && srcIdx >= 0) sink.completeOp(srcIdx, "edit");
     }
 
     moves.sort((a, b) => a.toIndex - b.toIndex);
@@ -1607,6 +1675,9 @@ async function applyActionListDiff(
             continue;
         }
 
+        const srcIdx = srcIndexForOp(op, desired);
+        if (sink !== null && srcIdx >= 0) sink.beginOp(srcIdx, "move", opLabel(op));
+
         await moveActionToIndex(ctx, fromIndex, op.toIndex, remainingObserved.length);
 
         remainingObserved.splice(fromIndex, 1);
@@ -1614,11 +1685,15 @@ async function applyActionListDiff(
         for (let i = 0; i < remainingObserved.length; i++) {
             remainingObserved[i].index = i;
         }
+        if (sink !== null && srcIdx >= 0) sink.completeOp(srcIdx, "match");
     }
 
     adds.sort((a, b) => a.toIndex - b.toIndex);
     let currentLength = remainingObserved.length;
     for (const op of adds) {
+        const srcIdx = srcIndexForOp(op, desired);
+        if (sink !== null && srcIdx >= 0) sink.beginOp(srcIdx, "add", opLabel(op));
+
         const actionToImport =
             op.desired.note === undefined
                 ? op.desired
@@ -1643,9 +1718,12 @@ async function applyActionListDiff(
             const addedSlot = await getPaginatedListSlotAtIndex(ctx, op.toIndex, currentLength, ACTION_LIST_CONFIG);
             await setListItemNote(ctx, addedSlot, op.desired.note);
         }
+        if (sink !== null && srcIdx >= 0) sink.completeOp(srcIdx, "add");
     }
 
     await goToPaginatedListPage(ctx, 1, ACTION_LIST_CONFIG);
+
+    if (sink !== null) sink.end();
 }
 
 function actionLogLabel(action: Action | Observed<Action> | null | undefined): string {
@@ -1807,6 +1885,6 @@ export async function syncActionList(
     }
     const diff = diffActionList(observed, desired);
     logSyncState(ctx, diff);
-    await applyActionListDiff(ctx, observed, diff, options?.itemRegistry);
+    await applyActionListDiff(ctx, observed, desired, diff, options?.itemRegistry);
     return { usedObserved: observed };
 }

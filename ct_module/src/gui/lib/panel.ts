@@ -15,6 +15,8 @@ const COLOR_PANEL = 0xf0242931 | 0;
 const RenderHelper: any = Java.type("net.minecraft.client.renderer.RenderHelper");
 // @ts-ignore
 const GlStateManager: any = Java.type("net.minecraft.client.renderer.GlStateManager");
+// @ts-ignore
+const GL11: any = org.lwjgl.opengl.GL11;
 
 /**
  * Restore the GL state we need for 2D blits + drawString. After MC's slot
@@ -26,6 +28,11 @@ const GlStateManager: any = Java.type("net.minecraft.client.renderer.GlStateMana
  * Uses SRG names since CT 1.8.9 binds the runtime obf-mapped class.
  */
 export function resetGuiState(): void {
+    try {
+        GL11.glDisable(GL11.GL_SCISSOR_TEST);
+    } catch (_e) {
+        // ignore
+    }
     try {
         RenderHelper.func_74518_a(); // disableStandardItemLighting
     } catch (_e) {
@@ -47,6 +54,69 @@ export function resetGuiState(): void {
     }
     try {
         GlStateManager.func_179131_c(1.0, 1.0, 1.0, 1.0); // color(1,1,1,1)
+    } catch (_e) {
+        // ignore
+    }
+    try {
+        GlStateManager.func_179097_i(); // disableDepth
+    } catch (_e) {
+        try {
+            GL11.glDisable(GL11.GL_DEPTH_TEST);
+        } catch (_e2) {
+            // ignore
+        }
+    }
+    try {
+        GL11.glDepthMask(false);
+    } catch (_e) {
+        // ignore
+    }
+    try {
+        GlStateManager.func_179147_l(); // enableBlend
+    } catch (_e) {
+        try {
+            GL11.glEnable(GL11.GL_BLEND);
+        } catch (_e2) {
+            // ignore
+        }
+    }
+    try {
+        GlStateManager.func_179120_a(770, 771, 1, 0); // tryBlendFuncSeparate
+    } catch (_e) {
+        try {
+            GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
+        } catch (_e2) {
+            // ignore
+        }
+    }
+}
+
+export function beginHtswOverlayDraw(): void {
+    resetGuiState();
+    try {
+        GL11.glPushMatrix();
+        GL11.glTranslated(0, 0, 1000);
+    } catch (_e) {
+        try {
+            Renderer.translate(0, 0, 1000);
+        } catch (_e2) {
+            // ignore
+        }
+    }
+}
+
+export function endHtswOverlayDraw(): void {
+    try {
+        GL11.glPopMatrix();
+    } catch (_e) {
+        try {
+            Renderer.translate(0, 0, -1000);
+        } catch (_e2) {
+            // ignore
+        }
+    }
+    try {
+        GL11.glDepthMask(true);
     } catch (_e) {
         // ignore
     }
@@ -97,7 +167,7 @@ export class Panel {
         const paint = (x: number, y: number) => {
             if (!extract(this.shouldBeVisible)) return;
             const b = extract(this.bounds);
-            resetGuiState();
+            beginHtswOverlayDraw();
             if (this.paintBackground) {
                 Renderer.drawRect(COLOR_PANEL, b.x, b.y, b.w, b.h);
             }
@@ -105,24 +175,18 @@ export class Panel {
             // actually over a popover (in which case the popover absorbs the click).
             const interactive = !mouseIsOverPopover(x, y);
             renderElement(this.root, b.x, b.y, b.w, b.h, x, y, interactive);
+            endHtswOverlayDraw();
         };
-        // We register on BOTH guiRender AND postGuiRender. guiRender
-        // fires INSIDE drawScreen (before slot rendering) and is rock
-        // solid across CT builds — it guarantees panels are visible.
-        // postGuiRender fires AFTER drawScreen, so when it fires it
-        // overpaints the same panels above slot icons + the potion
-        // overlay. We do NOT skip guiRender when post fires: an earlier
-        // attempt to time-gate that race made panels flash and disappear
-        // when post fired inconsistently. The double-paint cost is
-        // negligible (a couple hundred drawRect/drawString calls).
+        // CT's "guiRender" maps to Forge's BackgroundDrawnEvent — fires after MC's dim gradient
+        // but before slot/foreground/tooltip rendering, so MC's hover tooltip on container
+        // slots paints on top of our right panel instead of being covered. Inventory bg + items
+        // paint after us too, but our panels sit around the inventory (not over it) so they
+        // don't actually overlap pixel-wise. Popovers stay on postGuiRender (LOWEST) so they
+        // remain modal above the tooltip.
         this.renderTrigger = register(
             "guiRender",
             (x: number, y: number, _gui: MCTGuiScreen) => paint(x, y)
-        );
-        register(
-            "postGuiRender",
-            (x: number, y: number, _gui: MCTGuiScreen) => paint(x, y)
-        );
+        ).setPriority(OnTrigger.Priority.LOW);
         this.clickTrigger = register(
             "guiMouseClick",
             (

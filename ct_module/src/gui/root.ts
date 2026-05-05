@@ -14,20 +14,10 @@ import { LeftPanel } from "./left-panel";
 import { RightPanel } from "./right-panel";
 import { BottomToolbar } from "./bottom-toolbar";
 import { ChatInputBar } from "./chat-input";
+import { LiveImporter } from "./live-importer";
+import { COLOR_PANEL } from "./lib/theme";
 
-const COLOR_PANEL = 0xf0242931 | 0;
 const CHAT_INPUT_H = 16;
-
-function bgPad(h: number): Element {
-    return Container({
-        style: {
-            width: { kind: "grow" },
-            height: { kind: "px", value: Math.max(0, h) },
-            background: COLOR_PANEL,
-        },
-        children: [],
-    });
-}
 
 function transparentPad(h: number): Element {
     return Container({
@@ -118,7 +108,10 @@ function buildLayout(b: ContainerBounds): Element {
                             height: { kind: "grow" },
                         },
                         children: [
-                            bgPad(topGapH),
+                            // Above-inventory area now hosts the live importer
+                            // diff view (progress bar + currently-importing
+                            // HTSL with diff colors).
+                            bgWrap(LiveImporter(), topGapH),
                             // CONTAINER CUTOUT
                             transparentPad(b.ySize),
                             // Bottom toolbar

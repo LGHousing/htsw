@@ -1,8 +1,8 @@
 /// <reference types="../../CTAutocomplete" />
 
 import { Element, Rect, pointInRect, layoutElement } from "./layout";
-import { renderElement, dispatchClick } from "./render";
-import { resetGuiState } from "./panel";
+import { renderElement, dispatchClick, dispatchWheel } from "./render";
+import { beginHtswOverlayDraw, endHtswOverlayDraw } from "./panel";
 
 export type PopoverHandle = {
     id: number;
@@ -115,7 +115,7 @@ function computePopoverRect(p: PopoverHandle): Rect {
     const anchorCenterY = anchor.y + anchor.h / 2;
     const goesBelow = anchorCenterY < screenH / 2;
     const y = goesBelow ? anchor.y + anchor.h + 2 : anchor.y - p.height - 2;
-    let x = anchor.x;
+    let x = anchor.x + anchor.w - p.width;
     if (x + p.width > screenW - 2) x = screenW - 2 - p.width;
     if (x < 2) x = 2;
     return { x, y, w: p.width, h: p.height };
@@ -167,7 +167,7 @@ export function tryDispatchPopoverClick(
 
 function drawPopovers(mouseX: number, mouseY: number): void {
     if (openPopovers.length === 0) return;
-    resetGuiState();
+    beginHtswOverlayDraw();
     let scrimDrawn = false;
     for (let i = 0; i < openPopovers.length; i++) {
         const p = openPopovers[i];
@@ -197,21 +197,45 @@ function drawPopovers(mouseX: number, mouseY: number): void {
             true
         );
     }
+    endHtswOverlayDraw();
 }
 
 export function initPopoverRendering(): void {
     if (renderInitialized) return;
     renderInitialized = true;
-    // Same dual-path as Panel: paint via both events unconditionally so
-    // popovers always render even if postGuiRender fires inconsistently.
-    // LOWEST priority on both so popovers paint after panels (which
-    // register at default priority).
-    register("guiRender", (mouseX: number, mouseY: number) => {
-        drawPopovers(mouseX, mouseY);
-    }).setPriority(OnTrigger.Priority.LOWEST);
     register("postGuiRender", (mouseX: number, mouseY: number) => {
         drawPopovers(mouseX, mouseY);
     }).setPriority(OnTrigger.Priority.LOWEST);
+}
+
+// Dispatch a wheel event into the topmost popover under the cursor. Returns true if any
+// popover absorbed the wheel (caller should cancel the underlying Forge event so MC's
+// scroll/tab change is suppressed), false if the cursor isn't over any popover so the
+// wheel can fall through to the panel beneath.
+export function tryDispatchPopoverWheel(
+    mouseX: number,
+    mouseY: number,
+    delta: number
+): boolean {
+    if (openPopovers.length === 0) return false;
+    for (let i = openPopovers.length - 1; i >= 0; i--) {
+        const p = openPopovers[i];
+        const rect = computePopoverRect(p);
+        if (!pointInRect(rect, mouseX, mouseY)) {
+            // For modals the scrim absorbs interaction even outside the popover rect, so
+            // wheel scroll shouldn't fall through to the panel beneath.
+            if (p.placement === "modal") return true;
+            continue;
+        }
+        const laid = layoutElement(p.content, rect.x, rect.y, rect.w, rect.h);
+        dispatchWheel(laid, mouseX, mouseY, delta);
+        return true;
+    }
+    // No popover under cursor; modals block fall-through anywhere on screen.
+    for (let i = 0; i < openPopovers.length; i++) {
+        if (openPopovers[i].placement === "modal") return true;
+    }
+    return false;
 }
 
 // True when mouseX/mouseY is inside any open popover's rect — used to suppress hover on panels.

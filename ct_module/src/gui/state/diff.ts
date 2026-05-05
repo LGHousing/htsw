@@ -1,5 +1,7 @@
 /// <reference types="../../../CTAutocomplete" />
 
+import { normalizeHtswPath } from "../lib/pathDisplay";
+
 /**
  * Diff state model for the right-panel HTSL animation.
  *
@@ -41,7 +43,10 @@ export type DiffEntry = {
 const entries: Map<DiffKey, DiffEntry> = new Map();
 
 export function diffKey(filePath: string): DiffKey {
-    return filePath.replace(/\\/g, "/");
+    // Canonicalize so the GUI's parsed-result path and the importer
+    // session's parsed-result path resolve to the same key — otherwise the
+    // sink writes under one key and the live-importer reads from another.
+    return normalizeHtswPath(filePath);
 }
 
 export function getDiffEntry(key: DiffKey): DiffEntry | undefined {

@@ -13,14 +13,15 @@ import { extract } from "./extractable";
 import { isInputFocused, setFocusedInput } from "./focus";
 import { pushScissor, popScissor } from "./scissor";
 import { getInputField } from "./inputState";
+import { COLOR_PANEL, COLOR_PANEL_BORDER } from "./theme";
 
 let dbgLog: (m: string) => void = () => {};
 export function setRenderDebugLog(fn: (m: string) => void): void {
     dbgLog = fn;
 }
 
-const COLOR_BUTTON = 0xe02d333d | 0;
-const COLOR_BUTTON_HOVER = 0xf03a4350 | 0;
+const COLOR_BUTTON = 0xff2d333d | 0;
+const COLOR_BUTTON_HOVER = 0xff3a4350 | 0;
 const COLOR_INPUT_BG = 0xff000000 | 0;
 const COLOR_INPUT_BORDER = 0xff444444 | 0;
 const COLOR_INPUT_BORDER_HOVER = 0xffa2a2a2 | 0;
@@ -30,6 +31,11 @@ const COLOR_SCROLLBAR_THUMB = 0xff888888 | 0;
 const COLOR_SCROLLBAR_THUMB_HOVER = 0xffaaaaaa | 0;
 
 const LINE_H = 8;
+
+// Per-renderElement-call hover-tooltip queue. Set inside renderItem when a text
+// with a `tooltip` is hovered; drawn after items + scrollbars so it's on top.
+type QueuedTooltip = { text: string; color: number; anchor: Rect };
+let queuedTooltip: QueuedTooltip | null = null;
 
 export function renderElement(
     root: Element,
@@ -41,6 +47,7 @@ export function renderElement(
     mouseY: number,
     interactive: boolean
 ): LaidOut[] {
+    queuedTooltip = null;
     const laid = layoutElement(root, x, y, w, h);
 
     // A click here would be intercepted by the scrollbar thumb (it starts a drag) — suppress hover
@@ -61,7 +68,36 @@ export function renderElement(
         renderScrollbar(item.element.id, mouseX, mouseY);
     }
 
+    if (queuedTooltip !== null) {
+        drawTooltip(queuedTooltip);
+        queuedTooltip = null;
+    }
+
     return laid;
+}
+
+function drawTooltip(t: QueuedTooltip): void {
+    const padX = 3;
+    const padY = 2;
+    const tw = Renderer.getStringWidth(t.text);
+    const w = tw + padX * 2;
+    const h = LINE_H + padY * 2;
+    const screenW = Renderer.screen.getWidth();
+    const screenH = Renderer.screen.getHeight();
+    let x = t.anchor.x;
+    let y = t.anchor.y + t.anchor.h + 2;
+    if (y + h > screenH - 2) y = t.anchor.y - h - 2; // flip above
+    if (x + w > screenW - 2) x = screenW - 2 - w;
+    if (x < 2) x = 2;
+    Renderer.drawRect(COLOR_PANEL_BORDER, x - 1, y - 1, w + 2, h + 2);
+    Renderer.drawRect(COLOR_PANEL, x, y, w, h);
+    Client.getMinecraft().field_71466_p.func_175065_a(
+        t.text,
+        x + padX,
+        y + padY,
+        t.color,
+        false
+    );
 }
 
 // Returns the rect at (mx,my) that would intercept a click before it reaches normal element
@@ -142,6 +178,13 @@ function renderItem(
             );
         } else {
             Renderer.drawString(text, r.x, ty);
+        }
+        if (hovered && e.tooltip !== undefined) {
+            const tt = extract(e.tooltip);
+            if (tt.length > 0) {
+                const tc = e.tooltipColor !== undefined ? extract(e.tooltipColor) : 0xffffffff | 0;
+                queuedTooltip = { text: tt, color: tc, anchor: r };
+            }
         }
     } else if (e.kind === "input") {
         const focused = isInputFocused(e.id);

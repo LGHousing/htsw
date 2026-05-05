@@ -9,6 +9,10 @@ import {
     setDiffState,
     type DiffState,
 } from "../state/diff";
+import {
+    setCurrentImportingPath,
+    setImportProgress,
+} from "../state";
 
 /**
  * Walk through the active .htsl file's actions and publish diff states with a
@@ -38,15 +42,40 @@ export function runDiffDemo(): void {
         return;
     }
     ChatLib.chat(`&a[htsw] diff demo: ${total} actions on ${path}`);
+    // Light up the LiveImporter panel too so the demo is visible above the
+    // inventory, not just in the right-panel source preview.
+    setCurrentImportingPath(path);
+    setImportProgress({
+        weightCompleted: 0,
+        weightTotal: total,
+        weightCurrent: 0,
+        currentLabel: "diff demo",
+        completed: 0,
+        total: 1,
+        failed: 0,
+        inFlight: true,
+    });
     let i = 0;
     const tick = () => {
         if (i >= total) {
             setCurrent(key, null);
+            setCurrentImportingPath(null);
+            setImportProgress(null);
             ChatLib.chat("&a[htsw] diff demo done");
             return;
         }
         const finalState = cycle[i % cycle.length];
         setCurrent(key, i, `step ${i + 1}/${total} (→ ${finalState})`);
+        setImportProgress({
+            weightCompleted: i,
+            weightTotal: total,
+            weightCurrent: 1,
+            currentLabel: `diff demo · ${i + 1}/${total}`,
+            completed: 0,
+            total: 1,
+            failed: 0,
+            inFlight: true,
+        });
         // Settle this action after a short pause, then advance.
         setTimeout(() => {
             setDiffState(key, i, finalState);

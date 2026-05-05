@@ -13,7 +13,7 @@
  */
 
 // ── Surfaces ────────────────────────────────────────────────────────────
-export const COLOR_PANEL = 0xf01b1f25 | 0;            // dark slate, primary panel bg
+export const COLOR_PANEL = 0xff1b1f25 | 0;            // dark slate, primary panel bg
 export const COLOR_PANEL_BORDER = 0xff2c323b | 0;     // 1px panel edge
 export const COLOR_PANEL_RAISED = 0xff242931 | 0;     // slightly lighter sub-panel bg
 export const COLOR_DIVIDER = 0xff2c323b | 0;          // hairline rule

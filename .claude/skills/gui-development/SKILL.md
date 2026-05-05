@@ -28,16 +28,21 @@ Library — `gui/lib/` (project-agnostic UI primitives + screen/theme):
 - `components/` — thin element-builder functions (`Button`, `Container`, `Row`, `Col`, `Input`, `Scroll`, `Text`).
 
 App state — `gui/state/`:
-- `index.ts` — global mutable state (parsed import.json, selected importable id, open tabs, trust mode, housing UUID, knowledge rows, import progress).
+- `index.ts` — global mutable state (parsed import.json, selected importable id, open tabs, trust mode, housing UUID, knowledge rows, import progress, `currentImportingPath` driving the live-importer panel).
 - `selection.ts` — preview/confirm + tab state for the right-panel source preview.
 - `reparse.ts` — debounced reparse + auto-discover of `import.json`, plus a tick hook that reparses on mtime change.
 - `recents.ts` — persisted MRU list of recently opened import.json paths (`gui-recents.json`).
 - `htsl-render.ts` — `parseHtslFile` + `actionsToLines` for the right-panel HTSL preview.
 - `diff.ts` — per-importable diff-state map driving the right-panel state colors during import animation.
 
+Live import view — `gui/live-importer/`:
+- `index.ts` — `LiveImporter()` panel that sits in the empty space above the inventory. Reads `getImportProgress()` + `getCurrentImportingPath()` and renders a compact progress bar, the importable label, the source path, and the current file's HTSL with diff colors via `htslDiffLines` (re-exported from `right-panel/index.ts`). Diff colors come from `gui/state/diff.ts` populated live by the importer through `ImportDiffSink`.
+
+Importer hookup — `importer/diffSink.ts`:
+- Defines `ImportDiffSink` (`markMatch`/`beginOp`/`completeOp`/`end`) and a single global active sink. `applyActionListDiff` captures and clears the sink on entry (so nested syncs in CONDITIONAL/RANDOM bodies stay silent), pre-marks untouched desired actions as `match`, and emits per-op events. The session (`importables/importSession.ts`) sets/clears the sink around each importable; the GUI's `startImport` (`bottom-toolbar`) wires sink events to `setDiffState`/`setCurrent` keyed by the importable's source-file path.
+
 Popovers — `gui/popovers/`:
 - `add-importable.ts` — "Add Importable" form (top-bar button).
-- `knowledge-settings.ts` — toggles for trust mode etc.
 - `file-browser.ts` — modal file browser for picking an `import.json`.
 - `open-menu.ts` — Hypixel `/functions /eventactions /regions …` shortcut menu.
 - `diff-demo.ts` — debug command that animates the right-panel diff states.
@@ -47,7 +52,7 @@ App shell — `gui/`:
 - `root.ts` — root tree builder: arranges TopBar / LeftPanel / center cutouts / RightPanel / BottomToolbar / chat input around the inventory bounds.
 - `chat-input.ts` — `ChatInputBar` element + global `T` shortcut to focus it.
 - `knowledge-status.ts` — derives `STATUS_COLOR` / `STATUS_LABEL` / `statusForImportable` / `knowledgeStatusByImportable` from `state` for the left-rail badges.
-- `top-bar/`, `bottom-toolbar/`, `left-panel/`, `right-panel/` — feature-region tree builders.
+- `top-bar/`, `bottom-toolbar/`, `left-panel/`, `right-panel/`, `live-importer/` — feature-region tree builders.
 
 ## Element model
 
@@ -57,7 +62,7 @@ App shell — `gui/`:
 |------|---|---|---|
 | `container` | `style: ContainerStyle`, `children: Extractable<Child[]>`, optional `onClick(rect, info)` where `info: {button, isDoubleClickSecond}`, optional `onDoubleClick(rect)` | yes if `onClick` or `onDoubleClick` set | flex layout (row/col), gap, align, padding, optional bg/hoverBg |
 | `button` | `style`, `text: Extractable<string>`, `onClick(rect, info)` where `info: {button, isDoubleClickSecond}`, optional `onDoubleClick(rect)` | yes | bg + centered text, hover bg |
-| `text` | `style`, `text: Extractable<string>`, optional `color` | no | plain label, intrinsic size = `Renderer.getStringWidth(text)` × `LINE_H` |
+| `text` | `style`, `text: Extractable<string>`, optional `color`, optional `tooltip: Extractable<string>` + `tooltipColor: Extractable<number>` | no | plain label, intrinsic size = `Renderer.getStringWidth(text)` × `LINE_H`. When `tooltip` is set and the rect is hovered, a small chip is drawn just below (or above near the screen edge) the rect — drawn after items + scrollbars in `renderElement`, so popovers (LOWEST priority) still cover it |
 | `input` | `style`, `id: string`, `value: Extractable<string>`, `onChange(v)`, optional `placeholder` | focusable | id is used for global focus + key dispatch |
 | `scroll` | `style: ContainerStyle`, `id: string`, `children: Extractable<Element[]>` | passes through | vertical scroll viewport with internal offset state, scrollbar overlay, mouse-wheel + drag |
 
@@ -83,7 +88,7 @@ Layout algorithm (per container):
 
 `Extractable<T>` is `T | (() => T)`. `extract(v)` calls the function or returns the value.
 
-Extractable today: `button.text`, `input.value`, `text.text`, `container.children`, `scroll.children`, `style.background`, `style.hoverBackground`, `Panel.bounds`, `Panel.shouldBeVisible`. Anything else is static.
+Extractable today: `button.text`, `input.value`, `text.text`, `text.color`, `text.tooltip`, `text.tooltipColor`, `container.children`, `scroll.children`, `style.background`, `style.hoverBackground`, `Panel.bounds`, `Panel.shouldBeVisible`. Anything else is static.
 
 Pattern: keep a module-level mutable, expose it via `() => state` and mutate it via the `onChange`/onClick callback.
 
@@ -120,11 +125,13 @@ Scroll({
 
 `Panel` (in `panel.ts`) registers two triggers per panel: `guiRender` and `guiMouseClick`. It calls `renderElement` for rendering and `dispatchClick` for clicking. It checks `event.isCanceled()` first; this lets higher-priority handlers (popover render at LOWEST + popover-click-from-panel guard) short-circuit.
 
+CT's `guiRender` maps to Forge's `GuiScreenEvent$BackgroundDrawnEvent` — it fires after MC's dim gradient but **before** slot/foreground/tooltip rendering. Painting here means MC's hover tooltip (rendered later in `drawScreen`) overlays our right panel instead of being covered by it. The inventory bg + slot items also paint after us, but our panels sit *around* the inventory bounds (not over them), so they don't actually overlap pixel-wise. If you ever change the panel layout to cover the inventory rect, this will paint underneath — switch to a custom Forge event (e.g. `GuiContainerEvent$DrawForeground` after translation back) instead.
+
 **Multiple panels share dispatch state.** Both left and right panel handlers fire for every click. The popover dispatch is invoked from inside the panel handler, gated by `claimPopoverClick(x,y)` so it runs exactly once even with two panel triggers active.
 
 ## Popovers
 
-`openPopover({anchor, content, width, height, key?, onClose?})` pushes a popover onto a stack. They render last (LOWEST guiRender priority) so they appear on top. Position auto-flips: anchored *below* the trigger when the trigger is in the top half of the screen, *above* otherwise.
+`openPopover({anchor, content, width, height, key?, onClose?})` pushes a popover onto a stack. They render on `postGuiRender` at LOWEST priority — i.e. *after* MC's drawScreen completes — so they paint on top of everything including MC's hover tooltips, keeping them modal. (Panels by contrast paint at `guiRender`/BackgroundDrawnEvent, before MC's tooltip; see the Panels section.) Position auto-flips: anchored *below* the trigger when the trigger is in the top half of the screen, *above* otherwise.
 
 `togglePopover({key, ...})` is the toggle-style helper for re-clickable triggers (e.g. a Filter button that reopens-or-dismisses): if a popover with the same `key` is open it closes it; otherwise it opens a new one.
 
@@ -154,6 +161,8 @@ Keyboard input is routed via Forge's `GuiScreenEvent$KeyboardInputEvent$Pre` (re
 
 We hook Forge's `GuiScreenEvent$MouseInputEvent$Pre` (registered via `register(ForgeClass, cb)`). It fires per `Mouse.next()` event *before* `GuiScreen.handleMouseInput` runs. In the handler we read `Mouse.getEventDWheel()` (per-event wheel), compute scaled mouse coords from `Mouse.getEventX/Y` + `ScaledResolution`, and if the cursor is over one of our scroll viewports we dispatch the scroll AND `cancel(event)` to suppress MC's reaction.
 
+Open popovers see the wheel first via `tryDispatchPopoverWheel(mx, my, dir)` — popovers paint on top, so they should also intercept scroll. Modals absorb wheel anywhere on screen even outside their rect (their scrim already blocks click fall-through). Only when no popover is under the cursor do we fall through to the panel scroll walk.
+
 **Important:** an earlier approach polled `Mouse.getDWheel()` from `guiRender`. That is too late — MC processes mouse events in `runTick` before rendering. It also doesn't suppress: `getDWheel()` is the accumulator, while `GuiContainer`/`GuiContainerCreative` read per-event via `Mouse.getEventDWheel()`, and the two are independent. Cancelling the Pre event is the only thing that actually stops creative-inventory scroll/tab change.
 
 CT's `register("scrolled", ...)` exists but doesn't pass the underlying event, so it can't cancel. CT's `register(ForgeClass, ...)` *does* fire for `GuiScreenEvent$MouseInputEvent$Pre` despite earlier docs claiming Forge events were unreliable in this build.
@@ -179,7 +188,7 @@ GL scissor uses pixel coordinates (origin bottom-left), but our layout uses MC s
 
 Within a single trigger type, CT fires handlers in registration order unless you call `setPriority(Trigger.Priority.X)`. `HIGHEST` runs first; `LOWEST` runs last.
 
-- Popover `guiRender` is registered with `setPriority(LOWEST)` so it paints on top.
+- Popover `postGuiRender` is registered with `setPriority(LOWEST)` so it paints last (on top of MC's tooltip too — they're modal). Panel render uses `guiRender` (BackgroundDrawnEvent), which is the *earlier* event; the two don't compete.
 - Panels `guiMouseClick` runs at default priority. The popover click logic is invoked **from within the panel click handler**, not as its own trigger — that earlier (separate-trigger) approach caused the popover dispatch to fire twice per click (toggleType ran twice and undid itself).
 
 If you add a new trigger that needs to fire before/after others, prefer `setPriority` over reordering registration calls. Be aware: setting `HIGHEST` on `guiMouseClick` was observed to double-fire in this CT build for unknown reasons; if a similar symptom appears, drop the explicit priority and use registration order or guards instead.

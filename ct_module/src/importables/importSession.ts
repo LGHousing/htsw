@@ -7,6 +7,7 @@ import { buildKnowledgeTrustPlan, importableIdentity, trustPlanKey } from "../kn
 import { printDiagnostic } from "../tui/diagnostics";
 import { createItemRegistry } from "./itemRegistry";
 import { importImportable } from "./imports";
+import { setActiveDiffSink, type ImportDiffSink } from "../importer/diffSink";
 
 // TODO: Make this work with GUI
 
@@ -21,6 +22,18 @@ export type ImportSelection = {
      * how far through the import we are.
      */
     onProgress?: (progress: ImportProgress) => void;
+    /**
+     * Optional factory the session calls before each importable to obtain a
+     * per-importable diff sink. When non-null, the sink receives action-level
+     * events (`markMatch` / `beginOp` / `completeOp` / `end`) as the importer
+     * walks the action list — driving the live HTSL diff view above the
+     * inventory. The session sets/clears the active sink around each
+     * importable so events route to the right listener.
+     */
+    diffSinkForImportable?: (
+        importable: Importable,
+        sourcePath: string | null
+    ) => ImportDiffSink | null;
 };
 
 export type ImportProgress = {
@@ -107,8 +120,16 @@ export async function importSelectedImportables(
             result.skippedTrusted++;
         }
 
+        const sourcePath = parsed.gcx.sourceFiles.get(importable) ?? null;
+        const sink = selection.diffSinkForImportable
+            ? selection.diffSinkForImportable(importable, sourcePath)
+            : null;
+        setActiveDiffSink(sink);
         try {
-            await importImportable(ctx, importable, registry, { plan });
+            await importImportable(ctx, importable, registry, {
+                plan,
+                housingUuid: selection.housingUuid,
+            });
             if (!plan?.wholeImportableTrusted) {
                 result.imported++;
             }
@@ -119,6 +140,8 @@ export async function importSelectedImportables(
             } else {
                 ctx.displayMessage(`&cFailed to import ${importable.type}: ${error}`);
             }
+        } finally {
+            setActiveDiffSink(null);
         }
         completed++;
         weightCompleted += weightCurrent;

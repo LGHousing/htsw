@@ -1,19 +1,22 @@
 /// <reference types="../../../CTAutocomplete" />
 
-import { Child, Element } from "../lib/layout";
+import { Element } from "../lib/layout";
 import { Button, Col, Container, Row, Text } from "../lib/components";
 import {
     applyImportProgress,
     getHousingUuid,
     getImportJsonPath,
-    getImportProgress,
     getParsedResult,
     getSelectedImportableId,
     getSelectedImportableIds,
     getTrustMode,
+    setCurrentImportingPath,
     setHousingUuid,
     setImportProgress,
+    setKnowledgeRows,
+    setTrustMode,
 } from "../state";
+import { buildKnowledgeStatusRows } from "../../knowledge/status";
 import {
     importSelectedImportables,
     type ImportSelection,
@@ -24,9 +27,15 @@ import { importableIdentity } from "../../knowledge/paths";
 import { TaskManager } from "../../tasks/manager";
 import type TaskContext from "../../tasks/context";
 import type { Importable } from "htsw/types";
+import {
+    clearDiff,
+    diffKey,
+    setCurrent,
+    setDiffState,
+} from "../state/diff";
+import type { ImportDiffSink } from "../../importer/diffSink";
 
 import {
-    ACCENT_SUCCESS,
     COLOR_BUTTON,
     COLOR_BUTTON_HOVER,
     COLOR_BUTTON_PRIMARY,
@@ -40,8 +49,10 @@ import {
     runOpenTarget,
 } from "../popovers/open-menu";
 
-const COLOR_BAR_BG = 0xff1a1f25 | 0;
-const COLOR_BAR_FG = ACCENT_SUCCESS;
+const TRUST_ON_BG = 0xff2d4d2d | 0;
+const TRUST_ON_HOVER = 0xff3a5d3a | 0;
+const TRUST_OFF_BG = 0xff2d333d | 0;
+const TRUST_OFF_HOVER = 0xff3a4350 | 0;
 
 async function ensureHousingUuid(ctx: TaskContext): Promise<string> {
     const cached = getHousingUuid();
@@ -74,6 +85,64 @@ function selectionToImport(): Importable[] {
     return parsed.value;
 }
 
+function findImportableByLabel(
+    parsed: NonNullable<ReturnType<typeof getParsedResult>>,
+    label: string
+): Importable | null {
+    const space = label.indexOf(" ");
+    if (space < 0) return null;
+    const type = label.substring(0, space);
+    const identity = label.substring(space + 1);
+    for (let i = 0; i < parsed.value.length; i++) {
+        const imp = parsed.value[i];
+        if (imp.type === type && importableIdentity(imp) === identity) return imp;
+    }
+    return null;
+}
+
+function refreshKnowledgeRows(): void {
+    const uuid = getHousingUuid();
+    const parsed = getParsedResult();
+    if (uuid === null || parsed === null) return;
+    setKnowledgeRows(buildKnowledgeStatusRows(uuid, parsed.value));
+}
+
+function makeDiffSink(sourcePath: string): ImportDiffSink {
+    const key = diffKey(sourcePath);
+    clearDiff(key);
+    let markCount = 0;
+    let opCount = 0;
+    ChatLib.chat(`&7[diff-sink] keyed at &f${key}`);
+    return {
+        markMatch: (idx) => {
+            setDiffState(key, idx, "match");
+            markCount++;
+            if (markCount <= 3) {
+                ChatLib.chat(`&7[diff-sink] markMatch idx=${idx} (${markCount})`);
+            }
+        },
+        beginOp: (idx, kind, label) => {
+            setCurrent(key, idx, label);
+            opCount++;
+            if (opCount <= 3) {
+                ChatLib.chat(`&7[diff-sink] beginOp ${kind} idx=${idx} (${opCount})`);
+            }
+        },
+        completeOp: (idx, state) => {
+            setDiffState(key, idx, state);
+            setCurrent(key, null, "");
+        },
+        end: () => {
+            setCurrent(key, null, "");
+            ChatLib.chat(`&7[diff-sink] end · matches=${markCount} ops=${opCount}`);
+            // The just-finished importable's knowledge.json was written
+            // moments ago — refresh the GUI's knowledge cache so its dot
+            // flips from red (unknown) to green (current) right away.
+            refreshKnowledgeRows();
+        },
+    };
+}
+
 function startImport(trustMode: boolean): void {
     const parsed = getParsedResult();
     if (parsed === null) {
@@ -102,12 +171,27 @@ function startImport(trustMode: boolean): void {
             trustMode,
             housingUuid,
             sourcePath: getImportJsonPath(),
-            onProgress: (p) => applyImportProgress(p),
+            onProgress: (p) => {
+                applyImportProgress(p);
+                if (p.currentLabel === "done") {
+                    setCurrentImportingPath(null);
+                    return;
+                }
+                const imp = findImportableByLabel(parsed, p.currentLabel);
+                const path =
+                    imp === null ? null : (parsed.gcx.sourceFiles.get(imp) ?? null);
+                setCurrentImportingPath(path);
+            },
+            diffSinkForImportable: (_imp, path) =>
+                path === null ? null : makeDiffSink(path),
         };
         await importSelectedImportables(ctx, selection);
         setImportProgress(null);
+        setCurrentImportingPath(null);
+        refreshKnowledgeRows();
     }).catch((err: unknown) => {
         setImportProgress(null);
+        setCurrentImportingPath(null);
         ChatLib.chat(`&c[htsw] Import failed: ${err}`);
     });
 }
@@ -160,50 +244,6 @@ function startExport(): void {
     });
 }
 
-function progressBar(): Element {
-    return Container({
-        style: {
-            width: { kind: "grow" },
-            height: { kind: "px", value: 6 },
-            background: COLOR_BAR_BG,
-        },
-        children: () => {
-            const p = getImportProgress();
-            if (p === null || p.weightTotal <= 0) return [];
-            const ratio = Math.min(1, Math.max(0, p.weightCompleted / p.weightTotal));
-            const out: Child[] = [
-                Container({
-                    style: {
-                        width: { kind: "grow", factor: Math.max(0.0001, ratio) },
-                        height: { kind: "grow" },
-                        background: COLOR_BAR_FG,
-                    },
-                    children: [],
-                }),
-                Container({
-                    style: {
-                        width: { kind: "grow", factor: Math.max(0.0001, 1 - ratio) },
-                        height: { kind: "grow" },
-                    },
-                    children: [],
-                }),
-            ];
-            return out;
-        },
-    });
-}
-
-function progressLabel(): Element {
-    return Text({
-        text: () => {
-            const p = getImportProgress();
-            if (p === null) return "";
-            return `${p.completed}/${p.total} ${p.currentLabel}`;
-        },
-        style: { width: { kind: "grow" } },
-    });
-}
-
 function navRow(): Element {
     return Row({
         style: {
@@ -230,7 +270,7 @@ function navRow(): Element {
             }),
             // Split-button: left = run last-selected, right = open dropdown.
             Button({
-                text: () => `Open ${getLastOpenTarget().label}`,
+                text: () => getLastOpenTarget().label,
                 style: {
                     width: { kind: "grow" },
                     height: { kind: "grow" },
@@ -249,6 +289,29 @@ function navRow(): Element {
                 },
                 onClick: (rect) => openOpenTargetMenu(rect),
             }),
+        ],
+    });
+}
+
+function trustModeToggle(): Element {
+    return Container({
+        style: {
+            direction: "row",
+            align: "center",
+            padding: { side: "x", value: 6 },
+            gap: 6,
+            width: { kind: "grow" },
+            height: { kind: "px", value: 18 },
+            background: () => (getTrustMode() ? TRUST_ON_BG : TRUST_OFF_BG),
+            hoverBackground: () => (getTrustMode() ? TRUST_ON_HOVER : TRUST_OFF_HOVER),
+        },
+        onClick: () => setTrustMode(!getTrustMode()),
+        children: [
+            Text({
+                text: "Trust mode",
+                style: { width: { kind: "grow" } },
+            }),
+            Text({ text: () => (getTrustMode() ? "[x]" : "[ ]") }),
         ],
     });
 }
@@ -296,6 +359,8 @@ function actionRow(): Element {
 }
 
 export function BottomToolbar(): Element {
+    // Progress bar + currently-importing label live in the LiveImporter
+    // panel above the inventory now — see `gui/live-importer/index.ts`.
     return Col({
         style: {
             background: COLOR_PANEL,
@@ -305,14 +370,13 @@ export function BottomToolbar(): Element {
             height: { kind: "grow" },
         },
         children: [
-            progressBar(),
-            progressLabel(),
             navRow(),
-            // Push the action buttons to the bottom of the toolbar area.
+            // Filler — push the trust toggle + actions to the bottom.
             Container({
                 style: { width: { kind: "grow" }, height: { kind: "grow" } },
                 children: [],
             }),
+            trustModeToggle(),
             actionRow(),
         ],
     });

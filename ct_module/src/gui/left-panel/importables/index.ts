@@ -4,6 +4,7 @@ import { Element } from "../../lib/layout";
 import { Button, Col, Container, Input, Row, Scroll, Text } from "../../lib/components";
 import { togglePopover } from "../../lib/popovers";
 import {
+    getImportJsonPath,
     getParsedResult,
     getParseError,
     getSelectedImportableId,
@@ -12,9 +13,10 @@ import {
     toggleImportableChecked,
     openTab,
 } from "../../state";
-import { STATUS_COLOR, statusForImportable } from "../../knowledge-status";
+import { STATUS_COLOR, STATUS_LABEL, statusForImportable } from "../../knowledge-status";
 import { importableIdentity } from "../../../knowledge/paths";
 import { previewSelect, confirmSelect } from "../../state/selection";
+import { openInVSCode } from "../../../utils/osShell";
 import type { Importable } from "htsw/types";
 import {
     ACCENT_INFO,
@@ -29,7 +31,6 @@ import {
     COLOR_ROW_SELECTED_HOVER,
     COLOR_TEXT_DIM,
     GLYPH_DOT,
-    GLYPH_HTSL,
     SIZE_ROW_H,
 } from "../../lib/theme";
 
@@ -52,14 +53,16 @@ const TYPE_COLORS: { [k in ImportableType]: number } = {
     NPC: ACCENT_TEAL,
 };
 
-const TYPE_GLYPHS: { [k in ImportableType]: string } = {
-    FUNCTION: GLYPH_HTSL,
-    EVENT: "⚡",
-    REGION: "▥",
-    ITEM: "◆",
-    MENU: "▦",
-    NPC: "☻",
-};
+function statusTooltip(state: keyof typeof STATUS_LABEL): string {
+    const lbl = STATUS_LABEL[state];
+    return lbl.charAt(0).toUpperCase() + lbl.substring(1);
+}
+
+function basename(p: string): string {
+    const norm = p.replace(/\\/g, "/");
+    const slash = norm.lastIndexOf("/");
+    return slash < 0 ? norm : norm.substring(slash + 1);
+}
 
 let searchQuery = "";
 let selectedTypes: { [k in ImportableType]: boolean } = {
@@ -206,6 +209,7 @@ function resultRow(r: Importable): Element {
     const id = importableIdentity(r);
     const isHighlighted = getSelectedImportableId() === id;
     const isChecked = isImportableChecked(id);
+    const status = statusForImportable(r);
     return Container({
         style: {
             direction: "row",
@@ -216,14 +220,11 @@ function resultRow(r: Importable): Element {
             background: isHighlighted ? SELECTED_BG : ROW_BG,
             hoverBackground: isHighlighted ? SELECTED_HOVER_BG : ROW_HOVER_BG,
         },
-        onClick: (_rect, isDouble) => {
-            if (isDouble) {
-                // Double-click pins/opens in right pane. Don't clear the
-                // checkbox state — multi-select stays.
-                openImportable(r, true);
-            } else {
-                toggleAndHighlight(r);
-            }
+        onClick: (_rect, info) => {
+            // The first click of a double-click pair already toggled the
+            // checkbox; don't untoggle it on the second click.
+            if (info.isDoubleClickSecond) return;
+            toggleAndHighlight(r);
         },
         onDoubleClick: () => openImportable(r, true),
         children: [
@@ -233,17 +234,13 @@ function resultRow(r: Importable): Element {
                 color: isChecked ? ACCENT_SUCCESS : COLOR_TEXT_DIM,
                 style: { width: { kind: "px", value: 14 } },
             }),
-            // Knowledge-status dot.
+            // Knowledge-status dot — hover shows the status label.
             Text({
                 text: GLYPH_DOT,
-                color: STATUS_COLOR[statusForImportable(r)],
+                color: STATUS_COLOR[status],
+                tooltip: statusTooltip(status),
+                tooltipColor: STATUS_COLOR[status],
                 style: { width: { kind: "px", value: 6 } },
-            }),
-            // Type glyph + label colored by type.
-            Text({
-                text: TYPE_GLYPHS[r.type],
-                color: TYPE_COLORS[r.type],
-                style: { width: { kind: "px", value: 10 } },
             }),
             Text({ text: importableLabel(r), style: { width: { kind: "grow" } } }),
             Text({ text: r.type, color: COLOR_TEXT_DIM }),
@@ -451,14 +448,31 @@ export function ImportablesView(): Element {
                     return items.map(resultRow);
                 },
             }),
-            Button({
-                text: "Grab All Items [TODO]",
+            Row({
                 style: {
+                    gap: 4,
                     width: { kind: "grow" },
                     height: { kind: "px", value: 18 },
                 },
-                onClick: () =>
-                    ChatLib.chat("&7[htsw] Grab All Items not implemented"),
+                children: [
+                    Button({
+                        text: "Grab All Items [TODO]",
+                        style: {
+                            width: { kind: "grow" },
+                            height: { kind: "grow" },
+                        },
+                        onClick: () =>
+                            ChatLib.chat("&7[htsw] Grab All Items not implemented"),
+                    }),
+                    Button({
+                        text: () => `Open ${basename(getImportJsonPath())}`,
+                        style: {
+                            width: { kind: "grow" },
+                            height: { kind: "grow" },
+                        },
+                        onClick: () => openInVSCode(getImportJsonPath()),
+                    }),
+                ],
             }),
         ],
     });

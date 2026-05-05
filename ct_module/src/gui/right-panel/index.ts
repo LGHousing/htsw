@@ -13,6 +13,7 @@ import {
     type DiffState,
 } from "../state/diff";
 import { getParsedResult } from "../state";
+import { normalizeHtswPath } from "../lib/pathDisplay";
 
 const TAB_BG = 0xff2c323b | 0;
 const TAB_BG_HOVER = 0xff3a4350 | 0;
@@ -126,14 +127,25 @@ function tabButton(tab: Tab): Element {
     });
 }
 
+// Per-state gutter glyph. Makes diff state legible at a glance even when
+// the foreground-color shifts are subtle (e.g. unknown-gray vs match-white
+// on similar backgrounds). Plain ASCII so the MC default font renders all.
+const STATE_GLYPH: { [k in DiffState]: string } = {
+    unknown: " ",
+    match: "✓",
+    edit: "~",
+    delete: "-",
+    add: "+",
+    current: ">",
+};
+
 function lineRow(
     lineNum: number,
     text: string,
     color: number,
     bg: number | undefined,
-    cursor: boolean
+    state: DiffState
 ): Element {
-    const cursorMark = cursor ? ">" : " ";
     return Container({
         style: {
             direction: "row",
@@ -144,8 +156,8 @@ function lineRow(
         },
         children: [
             Text({
-                text: cursorMark,
-                color: cursor ? 0xff67a7e8 | 0 : COLOR_GUTTER,
+                text: STATE_GLYPH[state],
+                color,
                 style: { width: { kind: "px", value: 8 } },
             }),
             Text({
@@ -168,12 +180,12 @@ function indentedText(line: HtslLine): string {
     return prefix + line.text;
 }
 
-function htslDiffLines(path: string): Element[] {
+export function htslDiffLines(path: string): Element[] {
     const parsed = parseHtslFile(path);
     if (parsed.parseError !== null) {
         const errLines = parsed.parseError.split("\n");
         const out: Element[] = [
-            lineRow(0, "// parse failed", COLOR_ERROR, undefined, false),
+            lineRow(0, "// parse failed", COLOR_ERROR, undefined, "unknown"),
         ];
         for (let i = 0; i < errLines.length; i++) {
             out.push(
@@ -182,7 +194,7 @@ function htslDiffLines(path: string): Element[] {
                     shortenForDisplay(errLines[i], 60),
                     COLOR_ERROR,
                     undefined,
-                    false
+                    "unknown"
                 )
             );
         }
@@ -191,7 +203,7 @@ function htslDiffLines(path: string): Element[] {
     const lines = actionsToLines(parsed.actions);
     if (lines.length === 0) {
         return [
-            lineRow(1, "// (empty function)", COLOR_GUTTER, undefined, false),
+            lineRow(1, "// (empty function)", COLOR_GUTTER, undefined, "unknown"),
         ];
     }
     const entry = getDiffEntry(diffKey(path));
@@ -209,7 +221,7 @@ function htslDiffLines(path: string): Element[] {
                 shortenForDisplay(indentedText(ln), 80),
                 color,
                 bg,
-                isCurrent
+                effectiveState
             )
         );
     }
@@ -220,7 +232,7 @@ function htslDiffLines(path: string): Element[] {
                 `// ${entry.currentLabel}`,
                 0xff67a7e8 | 0,
                 undefined,
-                false
+                "current"
             )
         );
     }
@@ -234,7 +246,7 @@ function plainTextLines(path: string): Element[] {
     for (let i = 0; i < lines.length; i++) {
         const ln = i + 1;
         const bg = bgForDiag(diags.get(ln));
-        out.push(lineRow(ln, shortenForDisplay(lines[i], 80), COLOR_PLAIN, bg, false));
+        out.push(lineRow(ln, shortenForDisplay(lines[i], 80), COLOR_PLAIN, bg, "unknown"));
     }
     return out;
 }
@@ -263,30 +275,12 @@ function sourceBody(): Element {
 }
 
 /**
- * Render a path as `./...` when it lives under the MC root (using Java's
- * `Path.relativize` for robust separator/case handling), then ellipsize
- * the leading directories if the result is still too long for the
- * right-pane width.
+ * Render a path as `./htsw/...` when the path passes through the htsw repo,
+ * else as `./...` relative to the MC root. Falls back to head-ellipsis when
+ * the result is still too long for the right-pane width.
  */
 function displayPath(p: string): string {
-    let rel = p.replace(/\\/g, "/");
-    try {
-        // @ts-ignore
-        const Paths = Java.type("java.nio.file.Paths");
-        const root = Paths.get(".").toAbsolutePath().normalize();
-        const target = Paths.get(String(p));
-        if (target.isAbsolute()) {
-            try {
-                const r = root.relativize(target);
-                const rs = String(r.toString()).replace(/\\/g, "/");
-                if (rs.indexOf("..") !== 0) rel = `./${rs}`;
-            } catch (_e) {
-                // not under root
-            }
-        }
-    } catch (_e) {
-        // fall through to raw path
-    }
+    const rel = normalizeHtswPath(p);
     if (rel.length > 40) {
         const tail = rel.substring(rel.length - 38);
         return `…${tail}`;

@@ -3,8 +3,6 @@
 import { FileSystemFileLoader } from "../../../utils/files";
 import { ImportEntry, Result, ResultImport } from "./types";
 
-const DEFAULT_IMPORTS_DIR = "./htsw/imports";
-
 export type SourceDir = {
     kind: "dir";
     label: string;
@@ -18,7 +16,6 @@ export type SourceFile = {
 export type Source = SourceDir | SourceFile;
 
 const sources: Source[] = [];
-let defaultSourceFullPath: string | null = null;
 
 const ConcurrentLinkedQueue = Java.type("java.util.concurrent.ConcurrentLinkedQueue");
 const pendingPaths: any = new ConcurrentLinkedQueue();
@@ -74,45 +71,16 @@ function drainPending(): void {
     }
 }
 
-function ensureDefaultSource(): void {
-    if (defaultSourceFullPath !== null) return;
-    const Files = Java.type("java.nio.file.Files");
-    let p: any;
-    try {
-        p = pathOf(DEFAULT_IMPORTS_DIR);
-    } catch (_e) {
-        return;
-    }
-    let exists = false;
-    try {
-        exists = Files.exists(p);
-    } catch (_e) {
-        return;
-    }
-    if (!exists) return;
-    const fullPath = String(p.toString()).replace(/\\/g, "/");
-    defaultSourceFullPath = fullPath;
-    if (!alreadyHas(fullPath)) {
-        sources.unshift({ kind: "dir", label: fileNameOf(p), fullPath });
-    }
-}
-
 export function queueSourcePath(absolute: string): void {
     pendingPaths.add(String(absolute));
 }
 
 export function getSources(): Source[] {
-    ensureDefaultSource();
     drainPending();
     return sources;
 }
 
-export function isDefaultSource(fullPath: string): boolean {
-    return defaultSourceFullPath !== null && defaultSourceFullPath === fullPath;
-}
-
 export function removeSource(fullPath: string): void {
-    if (isDefaultSource(fullPath)) return;
     for (let i = 0; i < sources.length; i++) {
         if (sources[i].fullPath === fullPath) {
             sources.splice(i, 1);
@@ -233,15 +201,6 @@ function loadImportJson(fullPath: string, mtimeMs: number): ImportCacheEntry {
     return entry;
 }
 
-function isDirSafe(p: any): boolean {
-    const Files = Java.type("java.nio.file.Files");
-    try {
-        return Files.isDirectory(p);
-    } catch (_e) {
-        return false;
-    }
-}
-
 function isRegularFileSafe(p: any): boolean {
     const Files = Java.type("java.nio.file.Files");
     try {
@@ -315,9 +274,10 @@ function walkDir(dir: any, root: any, out: Result[]): void {
                 // Iterator state may be poisoned; bail out of this directory.
                 break;
             }
-            if (isDirSafe(entry)) {
-                walkDir(entry, root, out);
-            } else if (isRegularFileSafe(entry)) {
+            // Top-level only — recursive walking pulled too many irrelevant files into the
+            // Explore list. The user can drill into subfolders explicitly via the Open
+            // popover if they need them.
+            if (isRegularFileSafe(entry)) {
                 try {
                     visitFile(entry, root, out);
                 } catch (_e) {

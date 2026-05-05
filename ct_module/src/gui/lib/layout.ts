@@ -57,6 +57,10 @@ export type Element =
           style: Style;
           text: Extractable<string>;
           color?: Extractable<number | undefined>;
+          // When set, hovering this text element shows a small tooltip chip
+          // anchored just below (or above near the screen edge) the rect.
+          tooltip?: Extractable<string>;
+          tooltipColor?: Extractable<number>;
       }
     | {
           kind: "input";

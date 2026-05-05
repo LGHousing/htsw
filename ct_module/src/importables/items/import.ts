@@ -63,11 +63,12 @@ export async function importImportableItem(
     ctx: TaskContext,
     importable: ImportableItem,
     itemRegistry: ItemRegistry,
-    trustPlan?: ImportableTrustPlan
+    trustPlan?: ImportableTrustPlan,
+    cachedUuid?: string
 ): Promise<void> {
     await ensureReferencedImportablesExist(ctx, importable);
 
-    const uuid = await getCurrentHousingUuid(ctx);
+    const uuid = cachedUuid ?? (await getCurrentHousingUuid(ctx));
     if (!hasItemClickActions(importable)) {
         await injectHeldItem(ctx, getItemFromNbt(importable.nbt));
         writeItemKnowledge(ctx, uuid, importable);

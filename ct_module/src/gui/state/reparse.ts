@@ -12,6 +12,7 @@ import {
     setParseError,
     setParsedResult,
 } from "./index";
+import { addRecent, getRecents } from "./recents";
 
 let lastReparseAtMs = 0;
 let pendingReparse = false;
@@ -99,11 +100,18 @@ function fileExistsSafe(path: string): boolean {
 }
 
 /**
- * Run on overlay init. If the configured import.json path doesn't exist on
- * disk, try to find one under `./htsw/imports/` and set that as the path
- * before the first parse.
+ * Run on overlay init. Restore the user's last-loaded import.json from
+ * the recents file (persisted across module reloads); only fall back to
+ * walking `./htsw/imports/` if nothing in recents still exists.
  */
 export function autoDiscoverImportJson(): void {
+    const recents = getRecents();
+    for (let i = 0; i < recents.length; i++) {
+        if (fileExistsSafe(recents[i])) {
+            setImportJsonPath(recents[i]);
+            return;
+        }
+    }
     if (fileExistsSafe(getImportJsonPath())) return;
     const found = findFirstImportJson();
     if (found !== null) {
@@ -144,6 +152,10 @@ export function reparseImportJson(): void {
         const result = parseImportablesResult(sm, path);
         setParsedResult(result);
         setParseError(null);
+        // Any successful parse adds the path to the recents dropdown — covers loads from the
+        // file browser, the path input, the recents dropdown itself (re-bumps to top), and
+        // auto-discover. Dedup is handled inside addRecent.
+        addRecent(path);
         const housingUuid = getHousingUuid();
         if (housingUuid !== null) {
             setKnowledgeRows(buildKnowledgeStatusRows(housingUuid, result.value));
@@ -164,8 +176,12 @@ export function reparseImportJson(): void {
  * since last parse, reparse without a debounce.
  */
 export function tickReparse(): void {
-    if (pendingReparse && Date.now() - lastReparseAtMs >= DEBOUNCE_MS) {
-        reparseImportJson();
+    if (pendingReparse) {
+        // Wait the debounce out — don't disturb the timer. The earlier code
+        // re-called scheduleReparse() here when the path differed from
+        // lastSeenPath, which reset lastReparseAtMs every tick (~50ms) and
+        // prevented the 300ms debounce from ever elapsing.
+        if (Date.now() - lastReparseAtMs >= DEBOUNCE_MS) reparseImportJson();
         return;
     }
     const path = getImportJsonPath();
