@@ -66,7 +66,7 @@ function dirExists(path: string): boolean {
 function resolveExistingDir(start: string): string {
     let cur = start.replace(/\\/g, "/");
     for (let i = 0; i < 10 && cur !== "" && cur !== "." && cur !== "/"; i++) {
-        if (dirExists(cur)) return cur;
+        if (dirExists(cur)) return normalizeHtswPath(cur);
         const slash = cur.lastIndexOf("/");
         if (slash <= 0) break;
         cur = cur.substring(0, slash);
@@ -135,8 +135,8 @@ function listDir(dir: string): Entry[] {
 function parentOf(dir: string): string {
     const norm = dir.replace(/\\/g, "/");
     const slash = norm.lastIndexOf("/");
-    if (slash <= 0) return norm;
-    return norm.substring(0, slash);
+    if (slash <= 0) return normalizeHtswPath(norm);
+    return normalizeHtswPath(norm.substring(0, slash));
 }
 
 function isImportJsonEntry(entry: Entry): boolean {
@@ -357,9 +357,9 @@ function pathBar(): Element {
             }),
             Input({
                 id: "file-browser-path",
-                value: () => cwd,
+                value: () => normalizeHtswPath(cwd),
                 onChange: (v) => {
-                    cwd = v;
+                    cwd = normalizeHtswPath(v);
                     selectedImportPath = null;
                     selectedImportName = null;
                 },

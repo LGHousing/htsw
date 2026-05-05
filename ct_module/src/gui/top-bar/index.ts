@@ -8,6 +8,7 @@ import { openAddImportablePopover } from "../popovers/add-importable";
 import { openFileBrowser } from "../popovers/file-browser";
 import { getRecents } from "../state/recents";
 import { closeAllPopovers, togglePopover } from "../lib/popovers";
+import { normalizeHtswPath } from "../lib/pathDisplay";
 import {
     COLOR_BUTTON_PRIMARY,
     COLOR_BUTTON_PRIMARY_HOVER,
@@ -97,7 +98,7 @@ export function TopBar(): Element {
                 children: [
                     Input({
                         id: "topbar-import-path",
-                        value: () => getImportJsonPath(),
+                        value: () => normalizeHtswPath(getImportJsonPath()),
                         onChange: (v) => {
                             setImportJsonPath(v);
                             scheduleReparse();
