@@ -7,6 +7,7 @@ import { buildKnowledgeStatusRows } from "../../knowledge/status";
 import {
     getHousingUuid,
     getImportJsonPath,
+    getParsedResult,
     setImportJsonPath,
     setKnowledgeRows,
     setParseError,
@@ -15,10 +16,16 @@ import {
 import { addRecent, getRecents } from "./recents";
 
 let lastReparseAtMs = 0;
+let lastMtimeCheckAt = 0;
 let pendingReparse = false;
 let lastSeenPath = "";
-let lastSeenMtime = 0;
+// Mtime snapshot per watched file (the import.json + every htsl source it
+// referenced on the last successful parse). When any of these change on
+// disk we reparse so knowledge dots / right-pane / live importer reflect
+// the edit immediately.
+const watchedMtimes: { [path: string]: number } = {};
 const DEBOUNCE_MS = 300;
+const MTIME_CHECK_INTERVAL_MS = 500;
 const IMPORTS_ROOT = "./htsw/imports";
 
 
@@ -136,15 +143,29 @@ export function scheduleReparse(): void {
     lastReparseAtMs = Date.now();
 }
 
+function refreshWatchedMtimes(): void {
+    for (const k in watchedMtimes) delete watchedMtimes[k];
+    const path = getImportJsonPath();
+    watchedMtimes[path] = getMtimeMs(path);
+    const parsed = getParsedResult();
+    if (parsed === null) return;
+    for (let i = 0; i < parsed.value.length; i++) {
+        const src = parsed.gcx.sourceFiles.get(parsed.value[i]);
+        if (src === undefined) continue;
+        if (watchedMtimes[src] !== undefined) continue;
+        watchedMtimes[src] = getMtimeMs(src);
+    }
+}
+
 export function reparseImportJson(): void {
     pendingReparse = false;
     const path = getImportJsonPath();
     lastSeenPath = path;
-    lastSeenMtime = getMtimeMs(path);
     if (!fileExistsSafe(path)) {
         setParsedResult(null);
         setParseError(null);
         setKnowledgeRows([]);
+        refreshWatchedMtimes();
         return;
     }
     const sm = new SourceMap(new FileSystemFileLoader());
@@ -168,12 +189,15 @@ export function reparseImportJson(): void {
         setParseError(msg);
         setKnowledgeRows([]);
     }
+    refreshWatchedMtimes();
 }
 
 /**
  * Tick hook: if a reparse was scheduled and the debounce has elapsed, run
  * it. Also catches manual edits to the file: if the path or mtime changed
- * since last parse, reparse without a debounce.
+ * since last parse, reparse without a debounce. Watches all htsl sources
+ * referenced by the current parse, not just the import.json — so editing
+ * an htsl in VS Code immediately flips the knowledge dot.
  */
 export function tickReparse(): void {
     if (pendingReparse) {
@@ -189,11 +213,13 @@ export function tickReparse(): void {
         scheduleReparse();
         return;
     }
-    // mtime watch: only check ~once a second to avoid hammering disk.
-    if (Date.now() - lastReparseAtMs > 1000) {
-        const m = getMtimeMs(path);
-        if (m !== 0 && m !== lastSeenMtime) {
+    if (Date.now() - lastMtimeCheckAt < MTIME_CHECK_INTERVAL_MS) return;
+    lastMtimeCheckAt = Date.now();
+    for (const watched in watchedMtimes) {
+        const m = getMtimeMs(watched);
+        if (m !== 0 && m !== watchedMtimes[watched]) {
             reparseImportJson();
+            return;
         }
     }
 }
