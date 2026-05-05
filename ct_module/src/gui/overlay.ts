@@ -29,6 +29,15 @@ import {
     closeAllPopovers,
     tryDispatchPopoverWheel,
 } from "./lib/popovers";
+import {
+    getHousingUuid,
+    getParsedResult,
+    setHousingUuid,
+    setKnowledgeRows,
+} from "./state";
+import { buildKnowledgeStatusRows } from "../knowledge/status";
+import { getCurrentHousingUuid } from "../knowledge/housingId";
+import { TaskManager } from "../tasks/manager";
 
 const KEY_T = 20; // LWJGL keycode for 'T'
 import {
@@ -75,6 +84,42 @@ function frameBounds(): Rect {
 function frameVisible(): boolean {
     if (!enabled) return false;
     return getContainerBounds() !== null;
+}
+
+// Lazy housing-UUID fetch. After a CT reload the in-memory `housingUuid`
+// is null, so the knowledge dots in the Importables list all read as
+// "unknown" (red) until something forces an `/wtfmap` round trip — and
+// previously only the import flow did that. This watcher fires `/wtfmap`
+// once when the user opens a housing-style GUI, then refreshes the
+// knowledge rows from the on-disk cache so the dots reflect reality
+// without requiring a manual import.
+let uuidFetchInFlight = false;
+let lastUuidFetchAt = 0;
+const UUID_FETCH_COOLDOWN_MS = 60_000;
+
+function refreshKnowledgeFromUuid(uuid: string): void {
+    const parsed = getParsedResult();
+    if (parsed === null) return;
+    setKnowledgeRows(buildKnowledgeStatusRows(uuid, parsed.value));
+}
+
+function maybeAutoFetchHousingUuid(): void {
+    if (uuidFetchInFlight) return;
+    if (getHousingUuid() !== null) return;
+    if (Date.now() - lastUuidFetchAt < UUID_FETCH_COOLDOWN_MS) return;
+    uuidFetchInFlight = true;
+    lastUuidFetchAt = Date.now();
+    void TaskManager.run(async (ctx) => {
+        const uuid = await getCurrentHousingUuid(ctx);
+        setHousingUuid(uuid);
+        refreshKnowledgeFromUuid(uuid);
+    })
+        .catch(() => {
+            /* not in a housing / timeout — leave dots as-is */
+        })
+        .then(() => {
+            uuidFetchInFlight = false;
+        });
 }
 
 // Track active panels so global handlers (wheel, key) can locate the laid-out trees.
@@ -248,6 +293,8 @@ export function initHtswGui(): void {
         if (getContainerBounds() === null) {
             if (popoverIsOpen()) closeAllPopovers();
             if (getFocusedInput() !== null) setFocusedInput(null);
+        } else {
+            maybeAutoFetchHousingUuid();
         }
     });
 
