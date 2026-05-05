@@ -3,6 +3,7 @@
 import { Element } from "../../lib/layout";
 import { Button, Col, Container, Input, Row, Scroll, Text } from "../../lib/components";
 import { togglePopover } from "../../lib/popovers";
+import { openMenu, MenuAction } from "../../lib/menu";
 import {
     getImportJsonPath,
     getParsedResult,
@@ -16,7 +17,7 @@ import {
 import { STATUS_COLOR, STATUS_LABEL, statusForImportable } from "../../knowledge-status";
 import { importableIdentity } from "../../../knowledge/paths";
 import { previewSelect, confirmSelect } from "../../state/selection";
-import { openInVSCode } from "../../../utils/osShell";
+import { openInVSCode, showInExplorer } from "../../../utils/osShell";
 import type { Importable } from "htsw/types";
 import {
     ACCENT_INFO,
@@ -62,6 +63,37 @@ function basename(p: string): string {
     const norm = p.replace(/\\/g, "/");
     const slash = norm.lastIndexOf("/");
     return slash < 0 ? norm : norm.substring(slash + 1);
+}
+
+function dirname(p: string): string {
+    const norm = p.replace(/\\/g, "/");
+    const slash = norm.lastIndexOf("/");
+    return slash < 0 ? "" : norm.substring(0, slash);
+}
+
+function fsActions(fullPath: string): MenuAction[] {
+    return [
+        { label: "Show in explorer", onClick: () => showInExplorer(fullPath) },
+        { label: "Open with VSCode", onClick: () => openInVSCode(fullPath) },
+    ];
+}
+
+function importableSourcePath(imp: Importable): string | undefined {
+    const parsed = getParsedResult();
+    if (parsed === null) return undefined;
+    // For ITEM, gcx.sourceFiles intentionally points to the declaring
+    // import.json (see context.ts). The actual .snbt file is what the user
+    // wants to open — the parsed `nbt` Tag's span resolves to it via the
+    // source map because parseSnbt registers the .snbt file there.
+    if (imp.type === "ITEM" && imp.nbt !== undefined) {
+        try {
+            const span = parsed.gcx.spans.get(imp.nbt);
+            return parsed.gcx.sourceMap.getFileByPos(span.start).path;
+        } catch (_e) {
+            // Fall through to the declaring file.
+        }
+    }
+    return parsed.gcx.sourceFiles.get(imp);
 }
 
 let searchQuery = "";
@@ -224,6 +256,12 @@ function resultRow(r: Importable): Element {
             // The first click of a double-click pair already toggled the
             // checkbox; don't untoggle it on the second click.
             if (info.isDoubleClickSecond) return;
+            if (info.button === 1) {
+                const path = importableSourcePath(r);
+                if (path !== undefined) openMenu(info.x, info.y, fsActions(path));
+                return;
+            }
+            if (info.button !== 0) return;
             toggleAndHighlight(r);
         },
         onDoubleClick: () => openImportable(r, true),
@@ -470,7 +508,33 @@ export function ImportablesView(): Element {
                             width: { kind: "grow" },
                             height: { kind: "grow" },
                         },
-                        onClick: () => openInVSCode(getImportJsonPath()),
+                        onClick: (_rect, info) => {
+                            if (info.isDoubleClickSecond) return;
+                            const path = getImportJsonPath();
+                            if (info.button === 1) {
+                                openMenu(info.x, info.y, fsActions(path));
+                                return;
+                            }
+                            if (info.button !== 0) return;
+                            openInVSCode(path);
+                        },
+                    }),
+                    Button({
+                        text: "Open Folder",
+                        style: {
+                            width: { kind: "grow" },
+                            height: { kind: "grow" },
+                        },
+                        onClick: (_rect, info) => {
+                            if (info.isDoubleClickSecond) return;
+                            const folder = dirname(getImportJsonPath());
+                            if (info.button === 1) {
+                                openMenu(info.x, info.y, fsActions(folder));
+                                return;
+                            }
+                            if (info.button !== 0) return;
+                            openInVSCode(folder);
+                        },
                     }),
                 ],
             }),
