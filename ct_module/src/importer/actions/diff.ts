@@ -1,7 +1,11 @@
 import type { Action, Condition } from "htsw/types";
 
 import { ACTION_MAPPINGS } from "../actionMappings";
-import { normalizeActionCompare, normalizeConditionCompare } from "../compare";
+import {
+    diffScalarFields,
+    normalizeActionCompare,
+    normalizeConditionCompare,
+} from "../compare";
 import { CONDITION_MAPPINGS } from "../conditionMappings";
 import type {
     ActionListDiff,
@@ -9,6 +13,8 @@ import type {
     NestedListProp,
     Observed,
     ObservedActionSlot,
+    ScalarFieldDiff,
+    UiFieldKind,
 } from "../types";
 
 type KnownObservedAction = Omit<ObservedActionSlot, "action"> & {
@@ -76,21 +82,11 @@ function getFieldValue(value: object, key: string): unknown {
     return (value as { [key: string]: unknown })[key];
 }
 
-function fieldDifferenceCount(
-    observed: object,
-    desired: object,
-    props: string[],
-    fieldKinds?: Record<string, string>
-): number {
+function fieldDifferenceCost(diffs: ScalarFieldDiff[]): number {
     let cost = 0;
-
-    for (const key of props) {
-        if (getFieldValue(observed, key) !== getFieldValue(desired, key)) {
-            const kind = fieldKinds?.[key];
-            cost += kind ? (FIELD_KIND_COST[kind] ?? 1) : 1;
-        }
+    for (const diff of diffs) {
+        cost += FIELD_KIND_COST[diff.kind] ?? 1;
     }
-
     return cost;
 }
 
@@ -111,6 +107,27 @@ function onlyNoteDiffers(
     );
 }
 
+function splitLoreFields(type: Action["type"]): {
+    nestedProps: NestedListProp[];
+    scalarProps: { prop: string; kind: UiFieldKind }[];
+} {
+    const loreFields = ACTION_MAPPINGS[type].loreFields as Record<
+        string,
+        { prop: string; kind: UiFieldKind }
+    >;
+    const nestedProps: NestedListProp[] = [];
+    const scalarProps: { prop: string; kind: UiFieldKind }[] = [];
+    for (const label in loreFields) {
+        const field = loreFields[label];
+        if (field.kind === "nestedList") {
+            nestedProps.push(field.prop as NestedListProp);
+        } else {
+            scalarProps.push({ prop: field.prop, kind: field.kind });
+        }
+    }
+    return { nestedProps, scalarProps };
+}
+
 function circularMoveDistance(from: number, to: number, listLength: number): number {
     if (listLength <= 1) {
         return 0;
@@ -127,15 +144,19 @@ function conditionCost(observed: Condition, desired: Condition): number {
 
     const loreFields = CONDITION_MAPPINGS[observed.type].loreFields as Record<
         string,
-        { prop: string }
+        { prop: string; kind: UiFieldKind }
     >;
-    const mappedProps: string[] = [];
+    const scalarProps: { prop: string; kind: UiFieldKind }[] = [];
     for (const label in loreFields) {
-        mappedProps.push(loreFields[label].prop);
+        const field = loreFields[label];
+        if (field.kind === "nestedList") continue;
+        scalarProps.push({ prop: field.prop, kind: field.kind });
     }
 
+    const diffs = diffScalarFields(observed, desired, observed.type, scalarProps);
+
     return (
-        fieldDifferenceCount(observed, desired, mappedProps) +
+        fieldDifferenceCost(diffs) +
         (observed.inverted === desired.inverted ? 0 : 1) +
         (observed.note === desired.note ? 0 : 1)
     );
@@ -244,22 +265,7 @@ function actionCost(
         return NOTE_ONLY_COST;
     }
 
-    const loreFields = ACTION_MAPPINGS[observed.action.type].loreFields as Record<
-        string,
-        { prop: string; kind: string }
-    >;
-    const nestedProps: NestedListProp[] = [];
-    const scalarProps: string[] = [];
-    const scalarFieldKinds: Record<string, string> = {};
-    for (const label in loreFields) {
-        const field = loreFields[label];
-        if (field.kind === "nestedList") {
-            nestedProps.push(field.prop as NestedListProp);
-        } else {
-            scalarProps.push(field.prop);
-            scalarFieldKinds[field.prop] = field.kind;
-        }
-    }
+    const { nestedProps, scalarProps } = splitLoreFields(observed.action.type);
 
     // Move cost: 1 input per position shifted
     let cost = circularMoveDistance(observed.index, desired.index, listLength);
@@ -270,10 +276,16 @@ function actionCost(
         cost += UNREAD_NESTED_ACTION_COST;
     }
 
-    // Scalar field edit cost: weighted by field kind
-    const scalarCost = fieldDifferenceCount(
-        observed.action, desired.action, scalarProps, scalarFieldKinds
+    // Scalar field edit cost: weighted by field kind, computed from
+    // normalised field comparison so e.g. volume "0.7" vs 0.7 doesn't add
+    // a phantom 2-cost when the values are equal in canonical form.
+    const scalarDiffs = diffScalarFields(
+        observed.action,
+        desired.action,
+        observed.action.type,
+        scalarProps
     );
+    const scalarCost = fieldDifferenceCost(scalarDiffs);
     const noteCost = observed.action.note === desired.action.note ? 0 : 1;
 
     // Add open/close overhead only if any editing is needed

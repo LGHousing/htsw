@@ -103,6 +103,13 @@ export type ObservedConditionSlot = {
     condition: Condition | null;
 };
 
+export type ScalarFieldDiff = {
+    prop: string;
+    kind: UiFieldKind;
+    observed: unknown;
+    desired: unknown;
+};
+
 export type ActionListOperation =
     | { kind: "move"; observed: ObservedActionSlot; toIndex: number; action: Action }
     | {
