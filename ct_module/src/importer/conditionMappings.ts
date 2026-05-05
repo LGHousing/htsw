@@ -2,8 +2,12 @@ import { CONDITION_NAMES, type Condition, type ConditionCompareVar } from "htsw/
 
 import { ItemSlot } from "../tasks/specifics/slots";
 import { removedFormatting } from "../utils/helpers";
-import { parseLoreFields, readListItemNote } from "./loreParsing";
-import type { ConditionLoreSpec } from "./types";
+import {
+    parseLoreFields,
+    parseLoreKeyValueLine,
+    readListItemNote,
+} from "./loreParsing";
+import type { ConditionLoreSpec, UiFieldKind } from "./types";
 
 export const CONDITION_MAPPINGS = {
     REQUIRE_GROUP: {
@@ -183,13 +187,27 @@ export const CONDITION_MAPPINGS = {
  * Mirrors getActionFieldDefault for conditions.
  */
 export function getConditionFieldDefault(type: string, prop: string): unknown {
+    return getConditionFieldSpec(type, prop)?.default;
+}
+
+export function getConditionFieldKind(
+    type: string,
+    prop: string
+): UiFieldKind | undefined {
+    return getConditionFieldSpec(type, prop)?.kind;
+}
+
+function getConditionFieldSpec(
+    type: string,
+    prop: string
+): { prop: string; kind: UiFieldKind; default?: unknown } | undefined {
     const mapping = (
         CONDITION_MAPPINGS as Record<
             string,
             | {
                   loreFields: Record<
                       string,
-                      { prop: string; kind: string; default?: unknown }
+                      { prop: string; kind: UiFieldKind; default?: unknown }
                   >;
               }
             | undefined
@@ -198,7 +216,7 @@ export function getConditionFieldDefault(type: string, prop: string): unknown {
     if (!mapping) return undefined;
     for (const label in mapping.loreFields) {
         const field = mapping.loreFields[label];
-        if (field.prop === prop) return field.default;
+        if (field.prop === prop) return field;
     }
     return undefined;
 }
@@ -249,11 +267,24 @@ export function parseConditionListItem(
         ...parseLoreFields(slot, mapping.loreFields),
     } as Condition;
 
-    // COMPARE_VAR holder is parsed as a string from lore but the type expects { type: string }
+    // COMPARE_VAR holder mirrors the CHANGE_VAR shape: when holder = Team the
+    // lore also has a "Team: <name>" line, which is needed to produce the
+    // full { type: "Team", team } holder shape.
     if (condition.type === "COMPARE_VAR") {
         const holder = (condition as any).holder as string | undefined;
-        if (holder === "Player" || holder === "Global" || holder === "Team") {
+        if (holder === "Player" || holder === "Global") {
             (condition as ConditionCompareVar).holder = { type: holder };
+        } else if (holder === "Team") {
+            let team: string | undefined;
+            for (const line of slot.getItem().getLore()) {
+                const kv = parseLoreKeyValueLine(line);
+                if (kv !== null && kv.label === "Team") {
+                    team = removedFormatting(kv.value).trim();
+                    break;
+                }
+            }
+            (condition as ConditionCompareVar).holder =
+                team === undefined ? { type: "Team" } : { type: "Team", team };
         }
     }
 

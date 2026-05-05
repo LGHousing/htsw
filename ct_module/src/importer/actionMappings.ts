@@ -2,7 +2,11 @@ import type { Action, ActionChangeVar } from "htsw/types";
 
 import type { ItemSlot } from "../tasks/specifics/slots";
 import { removedFormatting } from "../utils/helpers";
-import { parseLoreFields, readListItemNote } from "./loreParsing";
+import {
+    parseLoreFields,
+    parseLoreKeyValueLine,
+    readListItemNote,
+} from "./loreParsing";
 import type { ActionLoreSpec, UiFieldKind } from "./types";
 
 export const ACTION_MAPPINGS = {
@@ -377,6 +381,17 @@ export function getActionLoreFields(
  * as equivalent to an omitted field in desired source.
  */
 export function getActionFieldDefault(type: string, prop: string): unknown {
+    return getActionFieldSpec(type, prop)?.default;
+}
+
+export function getActionFieldKind(type: string, prop: string): UiFieldKind | undefined {
+    return getActionFieldSpec(type, prop)?.kind;
+}
+
+function getActionFieldSpec(
+    type: string,
+    prop: string
+): { prop: string; kind: UiFieldKind; default?: unknown } | undefined {
     const mapping = (
         ACTION_MAPPINGS as Record<
             string,
@@ -392,7 +407,7 @@ export function getActionFieldDefault(type: string, prop: string): unknown {
     if (!mapping) return undefined;
     for (const label in mapping.loreFields) {
         const field = mapping.loreFields[label];
-        if (field.prop === prop) return field.default;
+        if (field.prop === prop) return field;
     }
     return undefined;
 }
@@ -432,6 +447,20 @@ export function getNestedListFields(
     return result;
 }
 
+export function getActionScalarLoreFields(
+    type: Action["type"]
+): { prop: string; kind: UiFieldKind }[] {
+    const loreFields = getActionLoreFields(type);
+    const result: { prop: string; kind: UiFieldKind }[] = [];
+    for (const label in loreFields) {
+        const field = loreFields[label];
+        if (field.kind !== "nestedList") {
+            result.push({ prop: field.prop, kind: field.kind });
+        }
+    }
+    return result;
+}
+
 export function tryGetActionTypeFromDisplayName(
     displayName: string
 ): Action["type"] | undefined {
@@ -459,11 +488,24 @@ export function parseActionListItem(slot: ItemSlot, type: Action["type"]): Actio
         ...parseLoreFields(slot, mapping.loreFields),
     } as Action;
 
-    // CHANGE_VAR holder is parsed as a string from lore but the type expects { type: string }
+    // CHANGE_VAR holder is parsed as a string from lore but the type expects
+    // { type: string, team?: string }. When holder = Team the lore also has
+    // a "Team: <name>" line; pull it out here so the holder is fully formed.
     if (action.type === "CHANGE_VAR") {
         const holder = (action as any).holder as string | undefined;
-        if (holder === "Player" || holder === "Global" || holder === "Team") {
+        if (holder === "Player" || holder === "Global") {
             (action as ActionChangeVar).holder = { type: holder };
+        } else if (holder === "Team") {
+            let team: string | undefined;
+            for (const line of slot.getItem().getLore()) {
+                const kv = parseLoreKeyValueLine(line);
+                if (kv !== null && kv.label === "Team") {
+                    team = removedFormatting(kv.value).trim();
+                    break;
+                }
+            }
+            (action as ActionChangeVar).holder =
+                team === undefined ? { type: "Team" } : { type: "Team", team };
         }
     }
 
