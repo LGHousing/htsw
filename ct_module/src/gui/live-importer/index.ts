@@ -187,6 +187,28 @@ function htslView(): Element {
         children: () => {
             const path = getCurrentImportingPath();
             if (path === null) return [];
+            // Pre-sync read phase: the sink hasn't fired any events yet,
+            // so the action-by-action diff view has nothing to color.
+            // Tell the user explicitly what's happening instead of showing
+            // a wall of gray "unknown" lines.
+            const entry = getDiffEntry(diffKey(path));
+            const hasState =
+                entry !== undefined &&
+                (entry.states.size > 0 || entry.currentIndex !== null);
+            if (!hasState) {
+                return [
+                    Text({
+                        text: "Reading housing state…",
+                        color: COLOR_TEXT_DIM,
+                        style: { padding: 6 },
+                    }),
+                    Text({
+                        text: "(Trust mode could speed this up)",
+                        color: COLOR_TEXT_FAINT,
+                        style: { padding: { side: "x", value: 6 } },
+                    }),
+                ];
+            }
             autoScrollToCurrent(path);
             const out: Child[] = htslDiffLines(path);
             return out;
