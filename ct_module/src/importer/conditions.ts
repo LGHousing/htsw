@@ -250,6 +250,9 @@ async function writeCompareVar(
             VAR_HOLDER_OPTIONS,
             condition.holder.type
         );
+        if (condition.holder.type === "Team" && condition.holder.team !== undefined) {
+            await setSelectValue(ctx, "Team", condition.holder.team);
+        }
     }
 
     if (condition.var) {

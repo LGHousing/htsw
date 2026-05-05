@@ -63,11 +63,14 @@ import {
     readConditionList,
     syncConditionList,
 } from "./conditions";
-import { normalizeActionCompare, normalizeConditionCompare } from "./compare";
+import {
+    getEditFieldDiffs,
+    normalizeActionCompare,
+    normalizeConditionCompare,
+} from "./compare";
 import {
     ACTION_MAPPINGS,
     getActionFieldLabel,
-    getActionLoreFields,
     getNestedListFields,
     parseActionListItem,
     tryGetActionTypeFromDisplayName,
@@ -561,6 +564,9 @@ async function writeChangeVar(ctx: TaskContext, action: ActionChangeVar): Promis
             VAR_HOLDER_OPTIONS,
             action.holder.type
         );
+        if (action.holder.type === "Team" && action.holder.team !== undefined) {
+            await setSelectValue(ctx, "Team", action.holder.team);
+        }
     }
 
     if (action.key) {
@@ -1766,32 +1772,29 @@ function actionLogLabel(action: Action | Observed<Action> | null | undefined): s
 }
 
 function shortVal(v: unknown): string {
-    if (v === undefined || v === null) return "unset";
+    if (v === undefined) return "unset";
+    if (v === null) return "null";
     if (typeof v === "boolean") return v ? "true" : "false";
-    if (typeof v === "object") return JSON.stringify(v);
+    if (typeof v === "string") {
+        const quoted = `"${v}"`;
+        return quoted.length > 35 ? `"${v.slice(0, 30)}..."` : quoted;
+    }
+    if (typeof v === "object") {
+        const json = JSON.stringify(v);
+        return json.length > 35 ? json.slice(0, 32) + "..." : json;
+    }
     const s = String(v);
     return s.length > 35 ? s.slice(0, 32) + "..." : s;
 }
 
-function editDiffSummary(observed: Observed<Action> | null, desired: Action): string {
-    if (observed === null) return "";
-    if (observed.type !== desired.type) return `type ${observed.type} -> ${desired.type}`;
-
-    const loreFields = getActionLoreFields(observed.type);
-    const diffs: string[] = [];
-    for (const label in loreFields) {
-        const field = loreFields[label];
-        if (field.kind === "nestedList") continue;
-        const obsVal = (observed as Record<string, unknown>)[field.prop];
-        const desVal = (desired as Record<string, unknown>)[field.prop];
-        if (JSON.stringify(obsVal) !== JSON.stringify(desVal)) {
-            diffs.push(`${field.prop} ${shortVal(obsVal)} -> ${shortVal(desVal)}`);
-        }
+function editDiffSummary(op: Extract<ActionListOperation, { kind: "edit" }>): string {
+    const { fieldDiffs, noteDiffers } = getEditFieldDiffs(op);
+    const parts: string[] = [];
+    for (const diff of fieldDiffs) {
+        parts.push(`${diff.prop} ${shortVal(diff.observed)} -> ${shortVal(diff.desired)}`);
     }
-    if (observed.note !== desired.note) {
-        diffs.push(`note changed`);
-    }
-    return diffs.length > 0 ? diffs.join(", ") : "fields match (nested or lore-truncated diff)";
+    if (noteDiffers) parts.push("note changed");
+    return parts.length > 0 ? parts.join(", ") : "(nested-only diff)";
 }
 
 function logSyncState(ctx: TaskContext, diff: ActionListDiff): void {
@@ -1823,7 +1826,7 @@ function logSyncState(ctx: TaskContext, diff: ActionListDiff): void {
                     );
                 } else {
                     ctx.displayMessage(
-                        `&7  &6~EDIT [${op.observed.index}] ${actionLogLabel(op.observed.action)}: ${editDiffSummary(op.observed.action, op.desired)}`
+                        `&7  &6~EDIT [${op.observed.index}] ${actionLogLabel(op.observed.action)}: ${editDiffSummary(op)}`
                     );
                 }
                 break;
