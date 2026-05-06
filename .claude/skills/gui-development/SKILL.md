@@ -19,7 +19,7 @@ Library — `gui/lib/` (project-agnostic UI primitives + screen/theme):
 - `render.ts` — single tree renderer + click dispatcher (used by panels and popovers).
 - `panel.ts` — `Panel` class: bounds, visibility, click trigger, render trigger.
 - `popovers.ts` — global popover stack, anchored/modal render, click dispatch helper, hover-suppression query.
-- `menu.ts` — `openMenu(x, y, actions[])` builds a context-menu popover from `{label, onClick}` actions. Auto-closes on click.
+- `menu.ts` — `openMenu(x, y, actions[])` builds a context-menu popover from `{label, onClick}` actions, plus `{kind: "separator"}` dividers. Auto-closes on click. Menu width auto-sizes to the widest label via `Renderer.getStringWidth` (floored at `MIN_MENU_WIDTH`); callers don't need to truncate.
 - `focus.ts` — single global focused-input id.
 - `inputState.ts` — per-input `GuiTextField` instances (cursor, selection, clipboard, arrow keys).
 - `scissor.ts` — GL scissor stack (uses ScaledResolution to convert MC scaled coords → real pixels).
@@ -30,10 +30,11 @@ Library — `gui/lib/` (project-agnostic UI primitives + screen/theme):
 App state — `gui/state/`:
 - `index.ts` — global mutable state (parsed import.json, selected importable id, open tabs, trust mode, housing UUID, knowledge rows, import progress, `currentImportingPath` driving the live-importer panel).
 - `selection.ts` — preview/confirm + tab state for the right-panel source preview.
-- `reparse.ts` — debounced reparse + auto-discover of `import.json`, plus a tick hook that reparses on mtime change.
+- `reparse.ts` — debounced reparse + auto-discover of `import.json`, plus a tick hook that reparses on mtime change. Watches both `gcx.sourceFiles` AND `importableSourcePath` so editing a `.snbt` triggers a reparse just like editing an htsl does.
 - `recents.ts` — persisted MRU list of recently opened import.json paths (`gui-recents.json`).
 - `htsl-render.ts` — `parseHtslFile` + `actionsToLines` for the right-panel HTSL preview.
 - `diff.ts` — per-importable diff-state map driving the right-panel state colors during import animation.
+- `importablePaths.ts` — centralized importable→path lookups: `importableSourcePath` (smart: htsl/.snbt/json), `importableDeclaringJson` (declaring import.json — currently the top-level loaded one), and `importableSubListPath(imp, kind)` for action sub-lists (`onEnterActions` / `onExitActions` on REGION; `leftClickActions` / `rightClickActions` on ITEM). Resolves through `parsed.gcx.spans.get(list).start` → `sourceMap.getFileByPos` so a list with `actionsPath: "..."` returns the htsl while inline JSON returns the import.json.
 
 Live import view — `gui/live-importer/`:
 - `index.ts` — `LiveImporter()` panel that sits in the empty space above the inventory. Reads `getImportProgress()` + `getCurrentImportingPath()` and renders a compact progress bar, the importable label, the source path, and the current file's HTSL with diff colors via `htslDiffLines` (re-exported from `right-panel/index.ts`). Diff colors come from `gui/state/diff.ts` populated live by the importer through `ImportDiffSink`.
@@ -54,6 +55,8 @@ App shell — `gui/`:
 - `knowledge-status.ts` — derives `STATUS_COLOR` / `STATUS_LABEL` / `statusForImportable` / `knowledgeStatusByImportable` from `state` for the left-rail badges.
 - `top-bar/`, `bottom-toolbar/`, `left-panel/`, `right-panel/`, `live-importer/` — feature-region tree builders.
 
+The Importables row builder (`gui/left-panel/importables/index.ts`) follows a **type-aware dispatch** pattern worth knowing about: a single `resultRow(imp)` builds every row but branches on `imp.type` for behavior. Right-click always builds a menu via `buildPrimaryAndJsonMenu(primaryPath, primaryLabel, declaringPath)` which shows `fsActions(primary, label)` + a `{kind:"separator"}` + `fsActions(import.json)`, with the separator and primary suppressed when `primaryPath === declaringPath` (REGION/MENU/NPC). Double-click is dispatched through `dispatchDoubleClick(imp)` which previews htsl for FUNCTION/EVENT, .snbt for ITEM, toggles inline expansion for REGION (showing "Enter actions" / "Exit actions" sub-rows under the parent), and falls back to the import.json with a chat note for MENU/NPC. ITEM rows with click-actions also expand to show "Left/Right click actions" sub-rows. The chevron is its own clickable Container (not the whole row) so the body still toggles the multi-select checkbox as before. Sub-rows reuse the same `buildPrimaryAndJsonMenu` with the sub-list's resolved path from `importableSubListPath`.
+
 ## Element model
 
 `Element` is a discriminated union (`layout.ts`). Five kinds today:
@@ -61,7 +64,7 @@ App shell — `gui/`:
 | kind | extra fields | clickable? | notes |
 |------|---|---|---|
 | `container` | `style: ContainerStyle`, `children: Extractable<Child[]>`, optional `onClick(rect, info)` where `info: {button, isDoubleClickSecond}`, optional `onDoubleClick(rect)` | yes if `onClick` or `onDoubleClick` set | flex layout (row/col), gap, align, padding, optional bg/hoverBg |
-| `button` | `style`, `text: Extractable<string>`, `onClick(rect, info)` where `info: {button, isDoubleClickSecond}`, optional `onDoubleClick(rect)` | yes | bg + centered text, hover bg |
+| `button` | `style`, `text: Extractable<string>`, `onClick(rect, info)` where `info: {button, isDoubleClickSecond}`, optional `onDoubleClick(rect)` | yes | bg + centered text, hover bg. Text auto-truncates with `...` when wider than the button (no scissor; without this, narrow split-buttons let labels spill into siblings) |
 | `text` | `style`, `text: Extractable<string>`, optional `color`, optional `tooltip: Extractable<string>` + `tooltipColor: Extractable<number>` | no | plain label, intrinsic size = `Renderer.getStringWidth(text)` × `LINE_H`. When `tooltip` is set and the rect is hovered, a small chip is drawn just below (or above near the screen edge) the rect — drawn after items + scrollbars in `renderElement`, so popovers (LOWEST priority) still cover it |
 | `input` | `style`, `id: string`, `value: Extractable<string>`, `onChange(v)`, optional `placeholder` | focusable | id is used for global focus + key dispatch |
 | `scroll` | `style: ContainerStyle`, `id: string`, `children: Extractable<Element[]>` | passes through | vertical scroll viewport with internal offset state, scrollbar overlay, mouse-wheel + drag |
