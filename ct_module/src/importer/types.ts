@@ -1,6 +1,7 @@
 import type { Action, Condition } from "htsw/types";
 import type { ItemSlot } from "../tasks/specifics/slots";
 import type { ItemRegistry } from "../importables/itemRegistry";
+import type { EtaConfidence } from "./progress/costs";
 
 export type UiFieldKind =
     | "boolean"
@@ -61,13 +62,32 @@ export type NestedReadState = "none" | "summary" | "full" | "trusted";
 export type NestedSummaries = Partial<Record<NestedListProp, string[]>>;
 
 export type ActionListReadMode =
-    | { kind: "full"; itemRegistry?: ItemRegistry }
+    | { kind: "full"; itemRegistry?: ItemRegistry; onProgress?: ActionListProgressSink }
     | {
           kind: "sync";
           desired: readonly Action[];
           itemRegistry?: ItemRegistry;
           trust?: ActionListTrust;
+          onProgress?: ActionListProgressSink;
       };
+
+export type ActionListProgressPhase =
+    | "reading"
+    | "hydrating"
+    | "diffing"
+    | "applying";
+
+export type ActionListProgress = {
+    phase: ActionListProgressPhase;
+    completed: number;
+    total: number;
+    label: string;
+    estimatedCompleted: number;
+    estimatedTotal: number;
+    confidence: EtaConfidence;
+};
+
+export type ActionListProgressSink = (progress: ActionListProgress) => void;
 
 export type ActionListTrust = {
     basePath: string;

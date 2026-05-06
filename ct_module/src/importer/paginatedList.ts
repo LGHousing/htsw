@@ -1,7 +1,7 @@
 import TaskContext from "../tasks/context";
 import { ItemSlot } from "../tasks/specifics/slots";
 import { removedFormatting } from "../utils/helpers";
-import { waitForMenu } from "./helpers";
+import { timedWaitForMenu } from "./helpers";
 
 const ITEMS_PER_PAGE = 21;
 const PREV_PAGE_SLOT_ID = 45;
@@ -134,7 +134,7 @@ export async function goToPaginatedListPage(
             }
 
             ctx.getItemSlot((slot) => slot.getSlotId() === NEXT_PAGE_SLOT_ID).click();
-            await waitForMenu(ctx);
+            await timedWaitForMenu(ctx, "pageTurnWait");
 
             const nextState = getCurrentPaginatedListPageState(ctx, config);
             if (nextState.currentPage <= state.currentPage) {
@@ -152,7 +152,7 @@ export async function goToPaginatedListPage(
         }
 
         ctx.getItemSlot((slot) => slot.getSlotId() === PREV_PAGE_SLOT_ID).click();
-        await waitForMenu(ctx);
+        await timedWaitForMenu(ctx, "pageTurnWait");
 
         const prevState = getCurrentPaginatedListPageState(ctx, config);
         if (prevState.currentPage >= state.currentPage) {

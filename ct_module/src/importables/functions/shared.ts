@@ -4,7 +4,7 @@ import {
     clickGoBack,
     getSlotPaginate,
     setNumberValue,
-    waitForMenu,
+    timedWaitForMenu,
 } from "../../importer/helpers";
 import { setItemValue } from "../../importer/items";
 import { parseLoreKeyValueLine } from "../../importer/loreParsing";
@@ -23,7 +23,7 @@ export async function openFunctionEditor(
 
     const exists = await ctx.withTimeout(
         Promise.race([
-            waitForMenu(ctx).then(() => true),
+            timedWaitForMenu(ctx, "commandMenuWait").then(() => true),
             ctx
                 .waitFor(
                     "message",
@@ -47,7 +47,7 @@ export async function ensureFunctionExists(
     if (status === "opened") return;
 
     await ctx.runCommand(`/function create ${name}`);
-    await waitForMenu(ctx);
+    await timedWaitForMenu(ctx, "commandMenuWait");
 }
 
 export async function ensureFunctionNamesExist(
@@ -71,7 +71,7 @@ export async function openFunctionSettings(
 ): Promise<void> {
     const listSlot = await getSlotPaginate(ctx, name);
     listSlot.click(MouseButton.RIGHT);
-    await waitForMenu(ctx);
+    await timedWaitForMenu(ctx, "menuClickWait");
 }
 
 export function readAutomaticExecutionTicks(ctx: TaskContext): number | undefined {

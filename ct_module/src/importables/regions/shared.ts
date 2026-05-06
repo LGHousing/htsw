@@ -1,7 +1,7 @@
 import {
     clickGoBack,
-    waitForMenu,
-    waitForUnformattedMessage,
+    timedWaitForMenu,
+    timedWaitForUnformattedMessage,
 } from "../../importer/helpers";
 import TaskContext from "../../tasks/context";
 import { removedFormatting, unique } from "../../utils/helpers";
@@ -14,7 +14,7 @@ export async function openRegionEditor(
 
     const opened = await ctx.withTimeout(
         Promise.race([
-            waitForMenu(ctx).then(() => true),
+            timedWaitForMenu(ctx, "commandMenuWait").then(() => true),
             ctx
                 .waitFor(
                     "message",
@@ -49,6 +49,6 @@ export async function ensureRegionNamesExist(
         await ctx.runCommand(`/pos2`);
 
         await ctx.runCommand(`/region create ${name}`);
-        await waitForUnformattedMessage(ctx, `Created region ${name}!`);
+        await timedWaitForUnformattedMessage(ctx, `Created region ${name}!`);
     }
 }

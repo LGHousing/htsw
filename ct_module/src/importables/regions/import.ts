@@ -3,10 +3,11 @@ import type { ImportableRegion, Pos } from "htsw/types";
 import { syncActionList } from "../../importer/actions";
 import {
     clickGoBack,
-    waitForMenu,
-    waitForUnformattedMessage,
+    timedWaitForMenu,
+    timedWaitForUnformattedMessage,
 } from "../../importer/helpers";
 import type { ImportableTrustPlan } from "../../knowledge";
+import type { ActionListProgress } from "../../importer/types";
 import TaskContext from "../../tasks/context";
 import { actionListTrustFor } from "../actionListTrust";
 import type { ItemRegistry } from "../itemRegistry";
@@ -17,19 +18,20 @@ export async function importImportableRegion(
     ctx: TaskContext,
     importable: ImportableRegion,
     itemRegistry: ItemRegistry,
-    trustPlan?: ImportableTrustPlan
+    trustPlan?: ImportableTrustPlan,
+    onActionListProgress?: (progress: ActionListProgress) => void
 ): Promise<void> {
     await ensureReferencedImportablesExist(ctx, importable);
 
     const setPos = async (pos: Pos, corner: "A" | "B") => {
         await ctx.runCommand(`/tp ${pos.x} ${pos.y} ${pos.z}`);
-        await waitForUnformattedMessage(
+        await timedWaitForUnformattedMessage(
             ctx,
             `Teleporting you to ${pos.x}, ${pos.y}, ${pos.z}.`
         );
 
         await ctx.runCommand(`//pos${corner}`);
-        await waitForUnformattedMessage(
+        await timedWaitForUnformattedMessage(
             ctx,
             `Position ${corner} set to ${pos.x}, ${pos.y}, ${pos.z}.`
         );
@@ -42,19 +44,19 @@ export async function importImportableRegion(
 
     if (!alreadyExists) {
         await ctx.runCommand(`/region create ${importable.name}`);
-        await waitForUnformattedMessage(ctx, `Created region ${importable.name}!`);
+        await timedWaitForUnformattedMessage(ctx, `Created region ${importable.name}!`);
 
         await openRegionEditor(ctx, importable.name);
     } else {
         ctx.getItemSlot("Move Region").click();
-        await waitForUnformattedMessage(ctx, "Updated region to your current selection!");
+        await timedWaitForUnformattedMessage(ctx, "Updated region to your current selection!", "messageClickWait");
 
         await openRegionEditor(ctx, importable.name);
     }
 
     if (importable.onEnterActions && !trustPlan?.trustedListPaths.has("onEnterActions")) {
         ctx.getItemSlot("Entry Actions").click();
-        await waitForMenu(ctx);
+        await timedWaitForMenu(ctx, "menuClickWait");
 
         await syncActionList(ctx, importable.onEnterActions, {
             itemRegistry,
@@ -63,6 +65,7 @@ export async function importImportableRegion(
                 "onEnterActions",
                 importable.onEnterActions
             ),
+            onProgress: onActionListProgress,
         });
 
         if (
@@ -75,7 +78,7 @@ export async function importImportableRegion(
 
     if (importable.onExitActions && !trustPlan?.trustedListPaths.has("onExitActions")) {
         ctx.getItemSlot("Exit Actions").click();
-        await waitForMenu(ctx);
+        await timedWaitForMenu(ctx, "menuClickWait");
 
         await syncActionList(ctx, importable.onExitActions, {
             itemRegistry,
@@ -84,6 +87,7 @@ export async function importImportableRegion(
                 "onExitActions",
                 importable.onExitActions
             ),
+            onProgress: onActionListProgress,
         });
     }
 }

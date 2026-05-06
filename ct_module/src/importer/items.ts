@@ -1,6 +1,8 @@
 import TaskContext from "../tasks/context";
 import { C10PacketCreativeInventoryAction, S2FPacketSetSlot } from "../utils/packets";
-import { waitForMenu } from "./helpers";
+import { timedWaitForMenu, waitForMenu } from "./helpers";
+import { COST } from "./progress/costs";
+import { timed } from "./progress/timing";
 
 const INV_PACKET_SLOT = 26; // inventory row 2, column 9 (rightmost, out of the way — matches BHTSL)
 const SET_SLOT_ACK_TIMEOUT_MS = 2000;
@@ -22,7 +24,7 @@ export async function setItemValue(
     item: Item
 ): Promise<void> {
     ctx.getItemSlot(fieldName).click();
-    await waitForMenu(ctx);
+    await timedWaitForMenu(ctx, "menuClickWait");
 
     await selectItemFromOpenInventory(ctx, item, fieldName);
 }
@@ -56,12 +58,21 @@ export async function selectItemFromOpenInventory(
 
     if (existingSlot !== null) {
         existingSlot.click();
-        await waitForMenu(ctx);
+        await timed("itemSelect", COST.itemSelect, () => waitForMenu(ctx));
         return;
     }
 
     // Item not in inventory — inject via creative packet
     const targetSlotInContainer = container.getSize() - 36 + (INV_PACKET_SLOT - 9);
+    const scratchSlot = ctx.tryGetItemSlot((s) => s.getSlotId() === targetSlotInContainer);
+    if (
+        scratchSlot !== null &&
+        scratchSlot.getItem().getItemStack().func_179549_c(desiredStack)
+    ) {
+        scratchSlot.click();
+        await timed("itemSelect", COST.itemSelect, () => waitForMenu(ctx));
+        return;
+    }
 
     Client.sendPacket(
         new C10PacketCreativeInventoryAction(INV_PACKET_SLOT, desiredStack)
@@ -90,5 +101,5 @@ export async function selectItemFromOpenInventory(
     }
 
     slot.click();
-    await waitForMenu(ctx);
+    await timed("itemSelect", COST.itemSelect, () => waitForMenu(ctx));
 }

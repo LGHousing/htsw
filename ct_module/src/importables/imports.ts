@@ -12,9 +12,11 @@ import { importImportableItem } from "./items/import";
 import { importImportableMenu } from "./menus/import";
 import { importImportableRegion } from "./regions/import";
 import type { ItemRegistry } from "./itemRegistry";
+import type { ActionListProgress } from "../importer/types";
 
 export type ImportTrustOptions = {
     plan?: ImportableTrustPlan;
+    onActionListProgress?: (progress: ActionListProgress) => void;
     /**
      * Session-level housing UUID. When provided, `maybeWriteKnowledge`
      * skips the `/wtfmap` round trip — the session already resolved the
@@ -38,28 +40,28 @@ export async function importImportable(
     }
 
     if (importable.type === "FUNCTION") {
-        await importImportableFunction(ctx, importable, itemRegistry, options?.plan);
+        await importImportableFunction(ctx, importable, itemRegistry, options?.plan, options?.onActionListProgress);
         await maybeWriteKnowledge(ctx, importable, options?.housingUuid);
         return;
     }
     if (importable.type === "EVENT") {
-        await importImportableEvent(ctx, importable, itemRegistry, options?.plan);
+        await importImportableEvent(ctx, importable, itemRegistry, options?.plan, options?.onActionListProgress);
         await maybeWriteKnowledge(ctx, importable, options?.housingUuid);
         return;
     }
     if (importable.type === "REGION") {
-        await importImportableRegion(ctx, importable, itemRegistry, options?.plan);
+        await importImportableRegion(ctx, importable, itemRegistry, options?.plan, options?.onActionListProgress);
         await maybeWriteKnowledge(ctx, importable, options?.housingUuid);
         return;
     }
     if (importable.type === "ITEM") {
         // Item handles its own UUID resolution because it needs the UUID
         // for both the existing SNBT cache and the new knowledge cache.
-        await importImportableItem(ctx, importable, itemRegistry, options?.plan, options?.housingUuid);
+        await importImportableItem(ctx, importable, itemRegistry, options?.plan, options?.housingUuid, options?.onActionListProgress);
         return;
     }
     if (importable.type === "MENU") {
-        await importImportableMenu(ctx, importable, itemRegistry, options?.plan);
+        await importImportableMenu(ctx, importable, itemRegistry, options?.plan, options?.onActionListProgress);
         await maybeWriteKnowledge(ctx, importable, options?.housingUuid);
         return;
     }

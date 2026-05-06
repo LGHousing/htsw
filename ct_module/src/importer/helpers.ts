@@ -8,6 +8,8 @@ import {
     normalizeNoteText,
     readListItemNote,
 } from "./loreParsing";
+import { COST } from "./progress/costs";
+import { recordTimedOp, timed } from "./progress/timing";
 
 export async function waitForMenu(ctx: TaskContext): Promise<void> {
     await ctx.withTimeout(async () => {
@@ -29,6 +31,21 @@ export async function waitForMenu(ctx: TaskContext): Promise<void> {
     }, "Waiting for menu to load");
 }
 
+export async function timedWaitForMenu(
+    ctx: TaskContext,
+    kind: "menuClickWait" | "pageTurnWait" | "goBackWait" | "commandMenuWait" = "menuClickWait"
+): Promise<void> {
+    const expected =
+        kind === "pageTurnWait"
+            ? COST.pageTurnWait
+            : kind === "goBackWait"
+              ? COST.goBackWait
+              : kind === "commandMenuWait"
+                ? COST.commandMenuWait
+                : COST.menuClickWait;
+    await timed(kind, expected, () => waitForMenu(ctx));
+}
+
 export async function waitForUnformattedMessage(
     ctx: TaskContext,
     message: string
@@ -42,6 +59,18 @@ export async function waitForUnformattedMessage(
     );
 }
 
+export async function timedWaitForUnformattedMessage(
+    ctx: TaskContext,
+    message: string,
+    kind: "commandMessageWait" | "messageClickWait" = "commandMessageWait"
+): Promise<void> {
+    await timed(
+        kind,
+        kind === "messageClickWait" ? COST.messageClickWait : COST.commandMessageWait,
+        () => waitForUnformattedMessage(ctx, message)
+    );
+}
+
 export async function getSlotPaginate(ctx: TaskContext, name: string): Promise<ItemSlot> {
     await goToFirstPaginatedOptionPage(ctx);
 
@@ -52,7 +81,7 @@ export async function getSlotPaginate(ctx: TaskContext, name: string): Promise<I
         const nextPageSlot = findPaginationControl(ctx, "next");
         if (nextPageSlot === null) break;
         nextPageSlot.click();
-        await waitForMenu(ctx);
+        await timedWaitForMenu(ctx, "pageTurnWait");
     }
 
     throw new Error(`Could not find "${name}" on any page.`);
@@ -63,7 +92,7 @@ async function goToFirstPaginatedOptionPage(ctx: TaskContext): Promise<void> {
         const prevPageSlot = findPaginationControl(ctx, "previous");
         if (prevPageSlot === null) return;
         prevPageSlot.click();
-        await waitForMenu(ctx);
+        await timedWaitForMenu(ctx, "pageTurnWait");
     }
 
     throw new Error("Could not find the first page of this paginated menu.");
@@ -89,12 +118,12 @@ function findPaginationControl(
 
 export async function clickGoBack(ctx: TaskContext): Promise<void> {
     ctx.getMenuItemSlot("Go Back").click();
-    await waitForMenu(ctx);
+    await timedWaitForMenu(ctx, "goBackWait");
 }
 
 export async function openSubmenu(ctx: TaskContext, slotName: string): Promise<void> {
     ctx.getMenuItemSlot(slotName).click();
-    await waitForMenu(ctx);
+    await timedWaitForMenu(ctx, "menuClickWait");
 }
 
 export function setAnvilItemName(newName: string) {
@@ -149,7 +178,7 @@ export async function setListItemNote(
     } else {
         await enterValue(ctx, normalizedNote);
     }
-    await waitForMenu(ctx);
+    await timedWaitForMenu(ctx, "menuClickWait");
 }
 
 export function readCurrentValue(slot: ItemSlot): string | null {
@@ -283,7 +312,7 @@ export async function setBooleanValue(ctx: TaskContext, slot: ItemSlot, value: b
     }
 
     slot.click();
-    await waitForMenu(ctx);
+    await timedWaitForMenu(ctx, "menuClickWait");
 }
 
 export async function setSelectValue(
@@ -300,7 +329,7 @@ export async function setSelectValue(
     }
 
     optionSlot.click();
-    await waitForMenu(ctx);
+    await timedWaitForMenu(ctx, "menuClickWait");
 
     if (ctx.tryGetMenuItemSlot(slotName) !== null) {
         return;
@@ -332,7 +361,7 @@ export async function setCycleValue(
     ): Promise<boolean> {
         for (let i = 0; i < maxClicks; i++) {
             getSlot().click(button);
-            await waitForMenu(ctx);
+            await timedWaitForMenu(ctx, "menuClickWait");
 
             if (readSelectedOption(getSlot(), options) === value) {
                 return true;
@@ -364,7 +393,7 @@ export async function setCycleValue(
     throw new Error(`Could not set "${slotName}" to "${value}".`);
 }
 
-export async function enterValue(ctx: TaskContext, value: string) {
+export async function enterValue(ctx: TaskContext, value: string): Promise<"CHAT" | "ANVIL"> {
     const inputMode = await ctx.withTimeout(
         Promise.race([
             waitForChatInputPrompt(ctx).then(() => "CHAT" as const),
@@ -386,14 +415,15 @@ export async function enterValue(ctx: TaskContext, value: string) {
     switch (inputMode) {
         case "CHAT":
             ctx.sendMessage(value);
-            break;
+            return "CHAT";
         case "ANVIL":
             await waitForMenu(ctx);
             setAnvilItemName(value);
             acceptNewAnvilItem();
-            break;
+            return "ANVIL";
         default:
             const _exhaustiveCheck: never = inputMode;
+            throw new Error(`Unknown input mode ${_exhaustiveCheck}`);
     }
 }
 
@@ -413,8 +443,10 @@ export async function setNumberValue(ctx: TaskContext, slot: ItemSlot, value: nu
     }
 
     slot.click();
-    await enterValue(ctx, newValue);
+    const started = Date.now();
+    const mode = await enterValue(ctx, newValue);
     await waitForMenu(ctx);
+    recordTimedOp(mode === "CHAT" ? "chatInput" : "anvilInput", mode === "CHAT" ? COST.chatInput : COST.anvilInput, Date.now() - started);
 }
 
 export async function setStringValue(
@@ -429,8 +461,10 @@ export async function setStringValue(
     }
 
     slot.click();
-    await enterValue(ctx, newValue);
+    const started = Date.now();
+    const mode = await enterValue(ctx, newValue);
     await waitForMenu(ctx);
+    recordTimedOp(mode === "CHAT" ? "chatInput" : "anvilInput", mode === "CHAT" ? COST.chatInput : COST.anvilInput, Date.now() - started);
 }
 
 export async function setStringOrPaginatedOptionValue(

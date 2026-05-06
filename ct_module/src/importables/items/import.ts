@@ -1,7 +1,7 @@
 import type { Action, ImportableItem } from "htsw/types";
 
 import { syncActionList } from "../../importer/actions";
-import { clickGoBack, waitForMenu } from "../../importer/helpers";
+import { clickGoBack, timedWaitForMenu } from "../../importer/helpers";
 import {
     getCurrentHousingUuid,
     importableHash,
@@ -14,10 +14,14 @@ import { getItemFromNbt, getItemFromSnbt } from "../../utils/nbt";
 import {
     C09PacketHeldItemChange,
     C10PacketCreativeInventoryAction,
+    S2FPacketSetSlot,
 } from "../../utils/packets";
 import { actionListTrustFor } from "../actionListTrust";
 import type { ItemRegistry } from "../itemRegistry";
 import { ensureReferencedImportablesExist } from "../references";
+import type { ActionListProgress } from "../../importer/types";
+import { COST } from "../../importer/progress/costs";
+import { timed } from "../../importer/progress/timing";
 
 function hasItemClickActions(importable: ImportableItem): boolean {
     return (
@@ -59,12 +63,16 @@ type ItemStart = {
     cachedImportable?: ImportableItem;
 };
 
+const HOTBAR_ZERO_PACKET_SLOT = 36;
+const SET_SLOT_ACK_TIMEOUT_MS = 2000;
+
 export async function importImportableItem(
     ctx: TaskContext,
     importable: ImportableItem,
     itemRegistry: ItemRegistry,
     trustPlan?: ImportableTrustPlan,
-    cachedUuid?: string
+    cachedUuid?: string,
+    onActionListProgress?: (progress: ActionListProgress) => void
 ): Promise<void> {
     await ensureReferencedImportablesExist(ctx, importable);
 
@@ -86,14 +94,21 @@ export async function importImportableItem(
     await injectHeldItem(ctx, start.item);
 
     await ctx.runCommand("/edit");
-    await waitForMenu(ctx);
+    await timedWaitForMenu(ctx, "commandMenuWait");
 
     ctx.getItemSlot("Edit Actions").click();
-    await waitForMenu(ctx);
+    await timedWaitForMenu(ctx, "menuClickWait");
 
-    await syncItemActionLists(ctx, importable, itemRegistry, trustPlan, start);
+    await syncItemActionLists(
+        ctx,
+        importable,
+        itemRegistry,
+        trustPlan,
+        start,
+        onActionListProgress
+    );
 
-    await ctx.sleep(1000);
+    await timed("sleep1000", COST.guaranteedSleep1000, () => ctx.sleep(1000));
 
     const snbt = Player.getInventory()?.getStackInSlot(0)?.getRawNBT();
     if (!snbt) throw Error("Why don't we have the item?");
@@ -137,12 +152,39 @@ function chooseItemStart(
 }
 
 async function injectHeldItem(ctx: TaskContext, item: Item): Promise<void> {
-    Client.sendPacket(new C10PacketCreativeInventoryAction(36, item.getItemStack()));
+    const stack = item.getItemStack();
+    if (stack === null || stack === undefined) {
+        throw new Error("Cannot inject an empty item stack.");
+    }
+
+    const inv = Player.getInventory();
+    const current = inv?.getStackInSlot(0);
+    if (current !== null && current !== undefined && current.getItemStack().func_179549_c(stack)) {
+        if (Player.getPlayer().field_71071_by.field_70461_c !== 0) {
+            Client.sendPacket(new C09PacketHeldItemChange(0));
+            Player.getPlayer().field_71071_by.field_70461_c = 0;
+        }
+        return;
+    }
+
+    Client.sendPacket(new C10PacketCreativeInventoryAction(HOTBAR_ZERO_PACKET_SLOT, stack));
+    await ctx.withTimeout(
+        ctx.waitFor("packetReceived", (packet) => {
+            if (!(packet instanceof S2FPacketSetSlot)) return false;
+            const windowId = packet.func_149175_c();
+            const slotIdx = packet.func_149173_d();
+            return windowId === 0 && slotIdx === HOTBAR_ZERO_PACKET_SLOT;
+        }),
+        "held item injection ack",
+        SET_SLOT_ACK_TIMEOUT_MS
+    );
+    await ctx.waitFor("tick");
+
     if (Player.getPlayer().field_71071_by.field_70461_c !== 0) {
         Client.sendPacket(new C09PacketHeldItemChange(0));
         Player.getPlayer().field_71071_by.field_70461_c = 0;
     }
-    await ctx.sleep(1000);
+    await timed("sleep1000", COST.guaranteedSleep1000, () => ctx.sleep(1000));
 }
 
 async function syncItemActionLists(
@@ -150,7 +192,8 @@ async function syncItemActionLists(
     importable: ImportableItem,
     itemRegistry: ItemRegistry,
     trustPlan: ImportableTrustPlan | undefined,
-    start: ItemStart
+    start: ItemStart,
+    onActionListProgress?: (progress: ActionListProgress) => void
 ): Promise<void> {
     const leftDesired = actionListToSync(
         importable.leftClickActions,
@@ -168,11 +211,12 @@ async function syncItemActionLists(
         !trustPlan?.trustedListPaths.has("leftClickActions")
     ) {
         ctx.getItemSlot("Left Click Actions").click();
-        await waitForMenu(ctx);
+        await timedWaitForMenu(ctx, "menuClickWait");
 
         await syncActionList(ctx, leftDesired, {
             itemRegistry,
             trust: actionListTrustFor(trustPlan, "leftClickActions", leftDesired),
+            onProgress: onActionListProgress,
         });
 
         if (
@@ -188,11 +232,12 @@ async function syncItemActionLists(
         !trustPlan?.trustedListPaths.has("rightClickActions")
     ) {
         ctx.getItemSlot("Right Click Actions").click();
-        await waitForMenu(ctx);
+        await timedWaitForMenu(ctx, "menuClickWait");
 
         await syncActionList(ctx, rightDesired, {
             itemRegistry,
             trust: actionListTrustFor(trustPlan, "rightClickActions", rightDesired),
+            onProgress: onActionListProgress,
         });
     }
 }

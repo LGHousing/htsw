@@ -4,11 +4,12 @@ import { syncActionList } from "../../importer/actions";
 import {
     clickGoBack,
     setCycleValue,
-    waitForMenu,
-    waitForUnformattedMessage,
+    timedWaitForMenu,
+    timedWaitForUnformattedMessage,
 } from "../../importer/helpers";
 import { selectItemFromOpenInventory } from "../../importer/items";
 import type { ImportableTrustPlan } from "../../knowledge";
+import type { ActionListProgress } from "../../importer/types";
 import TaskContext from "../../tasks/context";
 import { getItemFromNbt } from "../../utils/nbt";
 import { actionListTrustFor } from "../actionListTrust";
@@ -22,7 +23,8 @@ export async function importImportableMenu(
     ctx: TaskContext,
     importable: ImportableMenu,
     itemRegistry: ItemRegistry,
-    trustPlan?: ImportableTrustPlan
+    trustPlan?: ImportableTrustPlan,
+    onActionListProgress?: (progress: ActionListProgress) => void
 ): Promise<void> {
     await ensureReferencedImportablesExist(ctx, importable);
 
@@ -30,7 +32,7 @@ export async function importImportableMenu(
 
     if (!alreadyExists) {
         await ctx.runCommand(`/menu create ${importable.name}`);
-        await waitForUnformattedMessage(ctx, `Created menu ${importable.name}!`);
+        await timedWaitForUnformattedMessage(ctx, `Created menu ${importable.name}!`);
 
         await openMenuEditor(ctx, importable.name);
     }
@@ -53,7 +55,7 @@ export async function importImportableMenu(
             throw new Error("No open container while opening menu slot " + slot.slot);
         }
         container.click(slot.slot, false, "LEFT");
-        await waitForMenu(ctx);
+        await timedWaitForMenu(ctx, "menuClickWait");
 
         await selectItemFromOpenInventory(ctx, item, `menu slot ${slot.slot}`);
 
@@ -64,11 +66,12 @@ export async function importImportableMenu(
 
         if (hasActions && !slotActionsTrusted) {
             ctx.getItemSlot("Edit Actions").click();
-            await waitForMenu(ctx);
+            await timedWaitForMenu(ctx, "menuClickWait");
 
             await syncActionList(ctx, slot.actions!, {
                 itemRegistry,
                 trust: actionListTrustFor(trustPlan, slotActionsPath, slot.actions!),
+                onProgress: onActionListProgress,
             });
 
             await clickGoBack(ctx);

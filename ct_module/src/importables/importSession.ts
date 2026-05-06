@@ -8,6 +8,8 @@ import { printDiagnostic } from "../tui/diagnostics";
 import { createItemRegistry } from "./itemRegistry";
 import { importImportable } from "./imports";
 import { setActiveDiffSink, type ImportDiffSink } from "../importer/diffSink";
+import type { ActionListProgress, ActionListProgressPhase } from "../importer/types";
+import { estimateImportableCost, type EtaConfidence } from "../importer/progress/costs";
 
 // TODO: Make this work with GUI
 
@@ -54,6 +56,21 @@ export type ImportProgress = {
      */
     weightCurrent: number;
     currentLabel: string;
+    phase:
+        | "starting"
+        | "opening"
+        | "reading"
+        | "hydrating"
+        | "diffing"
+        | "applying"
+        | "writingKnowledge"
+        | "done";
+    phaseLabel: string;
+    unitCompleted: number;
+    unitTotal: number;
+    estimatedCompleted: number;
+    estimatedTotal: number;
+    etaConfidence: EtaConfidence;
     failed: number;
 };
 
@@ -62,6 +79,13 @@ export type ImportSessionResult = {
     skippedTrusted: number;
     failed: number;
 };
+
+function importPhaseFromActionPhase(phase: ActionListProgressPhase): ImportProgress["phase"] {
+    if (phase === "reading") return "reading";
+    if (phase === "hydrating") return "hydrating";
+    if (phase === "diffing") return "diffing";
+    return "applying";
+}
 
 export async function importSelectedImportables(
     ctx: TaskContext,
@@ -104,20 +128,56 @@ export async function importSelectedImportables(
         const key = trustPlanKey(importable.type, importableIdentity(importable));
         const plan = trustPlan?.importables.get(key);
         const label = `${importable.type} ${importableIdentity(importable)}`;
-        if (selection.onProgress) {
+        const emitProgress = (
+            phase: ImportProgress["phase"],
+            phaseLabel: string,
+            unitCompleted: number,
+            unitTotal: number,
+            estimatedCompleted?: number,
+            estimatedTotal?: number,
+            etaConfidence?: ImportProgress["etaConfidence"]
+        ) => {
+            if (!selection.onProgress) return;
+            const remainingWeight = weightTotal - weightCompleted - weightCurrent;
+            const refinedCurrentTotal = estimatedTotal ?? weightCurrent;
+            const refinedCurrentCompleted =
+                estimatedCompleted ??
+                (unitTotal > 0
+                    ? weightCurrent * Math.min(1, Math.max(0, unitCompleted / unitTotal))
+                    : 0);
             selection.onProgress({
                 completed,
                 total: ordered.length,
                 weightCompleted,
-                weightTotal,
-                weightCurrent,
+                weightTotal: weightCompleted + refinedCurrentTotal + remainingWeight,
+                weightCurrent: refinedCurrentTotal,
                 currentLabel: label,
+                phase,
+                phaseLabel,
+                unitCompleted,
+                unitTotal,
+                estimatedCompleted: weightCompleted + refinedCurrentCompleted,
+                estimatedTotal: weightCompleted + refinedCurrentTotal + remainingWeight,
+                etaConfidence: etaConfidence ?? "rough",
                 failed: result.failed,
             });
-        }
+        };
+        emitProgress("opening", "opening importable", 0, Math.max(1, weightCurrent));
 
         if (plan?.wholeImportableTrusted) {
             result.skippedTrusted++;
+            emitProgress(
+                "done",
+                "trusted cache current; skipped",
+                1,
+                1,
+                weightCurrent,
+                weightCurrent,
+                "planned"
+            );
+            completed++;
+            weightCompleted += weightCurrent;
+            continue;
         }
 
         const sourcePath = parsed.gcx.sourceFiles.get(importable) ?? null;
@@ -129,6 +189,17 @@ export async function importSelectedImportables(
             await importImportable(ctx, importable, registry, {
                 plan,
                 housingUuid: selection.housingUuid,
+                onActionListProgress: (progress: ActionListProgress) => {
+                    emitProgress(
+                        importPhaseFromActionPhase(progress.phase),
+                        progress.label,
+                        progress.completed,
+                        progress.total,
+                        progress.estimatedCompleted,
+                        progress.estimatedTotal,
+                        progress.confidence
+                    );
+                },
             });
             if (!plan?.wholeImportableTrusted) {
                 result.imported++;
@@ -139,7 +210,20 @@ export async function importSelectedImportables(
                 printDiagnostic(sm, error);
             } else {
                 ctx.displayMessage(`&cFailed to import ${importable.type}: ${error}`);
+                const stack = (error as { stack?: string })?.stack;
+                if (typeof stack === "string" && stack.length > 0) {
+                    ctx.displayMessage(`&7${stack}`);
+                }
             }
+            // Halt the session on first failure rather than ploughing
+            // through the remaining importables — they're often dependent
+            // on each other and a partial import is worse than a clean
+            // abort. The user can fix the failing importable and retry.
+            ctx.displayMessage(
+                `&c[htsw] Import aborted after failure on ${importable.type} ${importableIdentity(importable)}`
+            );
+            setActiveDiffSink(null);
+            break;
         } finally {
             setActiveDiffSink(null);
         }
@@ -155,6 +239,13 @@ export async function importSelectedImportables(
             weightTotal,
             weightCurrent: 0,
             currentLabel: "done",
+            phase: "done",
+            phaseLabel: "done",
+            unitCompleted: 1,
+            unitTotal: 1,
+            estimatedCompleted: weightCompleted,
+            estimatedTotal: weightTotal,
+            etaConfidence: "planned",
             failed: result.failed,
         });
     }
@@ -169,61 +260,5 @@ export async function importSelectedImportables(
  * just monotonic with how long the import will take.
  */
 function estimateImportableWeight(importable: Importable): number {
-    if (importable.type === "FUNCTION") {
-        return 2 + countActionWeight(importable.actions);
-    }
-    if (importable.type === "EVENT") {
-        return 1 + countActionWeight(importable.actions);
-    }
-    if (importable.type === "REGION") {
-        return (
-            3 +
-            countActionWeight(importable.onEnterActions ?? []) +
-            countActionWeight(importable.onExitActions ?? [])
-        );
-    }
-    if (importable.type === "ITEM") {
-        return (
-            3 +
-            countActionWeight(importable.leftClickActions ?? []) +
-            countActionWeight(importable.rightClickActions ?? [])
-        );
-    }
-    if (importable.type === "NPC") {
-        return (
-            5 +
-            countActionWeight(importable.leftClickActions ?? []) +
-            countActionWeight(importable.rightClickActions ?? [])
-        );
-    }
-    if (importable.type === "MENU") {
-        return 2 + (importable.slots?.length ?? 0) * 4;
-    }
-    return 1;
-}
-
-function countActionWeight(actions: readonly any[]): number {
-    let total = 0;
-    for (let i = 0; i < actions.length; i++) {
-        const action = actions[i];
-        // Each action is at least one Housing GUI list-add, plus its field
-        // edits. Nested CONDITIONAL/RANDOM bodies recurse so their nested
-        // actions count too.
-        total += 2;
-        if (action && typeof action === "object") {
-            if (Array.isArray(action.ifActions)) {
-                total += countActionWeight(action.ifActions);
-            }
-            if (Array.isArray(action.elseActions)) {
-                total += countActionWeight(action.elseActions);
-            }
-            if (Array.isArray(action.conditions)) {
-                total += action.conditions.length;
-            }
-            if (Array.isArray(action.actions)) {
-                total += countActionWeight(action.actions);
-            }
-        }
-    }
-    return total;
+    return Math.max(1, estimateImportableCost(importable));
 }

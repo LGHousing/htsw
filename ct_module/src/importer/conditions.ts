@@ -34,6 +34,7 @@ import {
     setSelectValue,
     setStringValue,
     setListItemNote,
+    timedWaitForMenu,
     waitForMenu,
 } from "./helpers";
 import { ItemSlot, MouseButton } from "../tasks/specifics/slots";
@@ -783,7 +784,7 @@ async function deleteObservedCondition(
 ): Promise<void> {
     const slot = await getPaginatedListSlotAtIndex(ctx, index, listLength, CONDITION_LIST_CONFIG);
     slot.click(MouseButton.RIGHT);
-    await waitForMenu(ctx);
+    await timedWaitForMenu(ctx, "menuClickWait");
 }
 
 function getInvertSlot(ctx: TaskContext): ItemSlot {
@@ -806,7 +807,7 @@ async function setOpenConditionInverted(
     }
 
     invertSlot.click();
-    await waitForMenu(ctx);
+    await timedWaitForMenu(ctx, "menuClickWait");
 }
 
 export async function importCondition(
@@ -815,7 +816,7 @@ export async function importCondition(
     itemRegistry?: ItemRegistry
 ): Promise<void> {
     ctx.getMenuItemSlot("Add Condition").click();
-    await waitForMenu(ctx);
+    await timedWaitForMenu(ctx, "menuClickWait");
 
     const spec = getConditionSpec(condition.type);
     const slot = ctx.getMenuItemSlot(spec.displayName);
@@ -827,7 +828,7 @@ export async function importCondition(
     }
 
     slot.click();
-    await waitForMenu(ctx);
+    await timedWaitForMenu(ctx, "menuClickWait");
     await writeOpenCondition(ctx, condition, undefined, itemRegistry);
 
     await setOpenConditionInverted(ctx, condition.inverted === true);
@@ -873,7 +874,7 @@ async function applyConditionListDiff(
         }
 
         conditionSlot.click();
-        await waitForMenu(ctx);
+        await timedWaitForMenu(ctx, "menuClickWait");
 
         if (!entry.observed.condition) {
             throw new Error(

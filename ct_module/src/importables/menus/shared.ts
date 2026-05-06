@@ -1,7 +1,7 @@
 import {
     clickGoBack,
-    waitForMenu,
-    waitForUnformattedMessage,
+    timedWaitForMenu,
+    timedWaitForUnformattedMessage,
 } from "../../importer/helpers";
 import TaskContext from "../../tasks/context";
 import { removedFormatting, unique } from "../../utils/helpers";
@@ -14,7 +14,7 @@ export async function openMenuEditor(
 
     const opened = await ctx.withTimeout(
         Promise.race([
-            waitForMenu(ctx).then(() => true),
+            timedWaitForMenu(ctx, "commandMenuWait").then(() => true),
             ctx
                 .waitFor(
                     "message",
@@ -47,6 +47,6 @@ export async function ensureMenuNamesExist(
         }
 
         await ctx.runCommand(`/menu create ${name}`);
-        await waitForUnformattedMessage(ctx, `Created menu ${name}!`);
+        await timedWaitForUnformattedMessage(ctx, `Created menu ${name}!`);
     }
 }

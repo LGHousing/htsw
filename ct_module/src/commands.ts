@@ -109,6 +109,7 @@ function commandEta(args: string[]): void {
         "commandMenuWait",
         "commandMessageWait",
         "menuClickWait",
+        "messageClickWait",
         "pageTurnWait",
         "goBackWait",
         "chatInput",

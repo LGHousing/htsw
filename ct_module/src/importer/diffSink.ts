@@ -12,7 +12,23 @@
 export type DiffOpKind = "edit" | "add" | "move" | "delete";
 export type DiffFinalState = "match" | "edit" | "add" | "delete";
 
+export type DiffSummary = {
+    matches: number;
+    edits: number;
+    moves: number;
+    adds: number;
+    deletes: number;
+};
+
 export interface ImportDiffSink {
+    /** Human-readable phase label, e.g. "reading housing state". */
+    phase(label: string): void;
+    /** Operation counts for the current list diff. */
+    summary(summary: DiffSummary): void;
+    /** A desired source action has a planned operation. */
+    planOp(actionIndex: number, kind: DiffOpKind, label: string, detail: string): void;
+    /** An observed Housing action has no source line and will be deleted. */
+    deleteOp(index: number, label: string, detail: string): void;
     /** A desired action at this source index already matched observed. */
     markMatch(actionIndex: number): void;
     /** The importer is starting work on the action at this source index. */
