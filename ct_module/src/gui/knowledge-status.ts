@@ -1,7 +1,7 @@
 import type { KnowledgeState, KnowledgeStatusRow } from "../knowledge/status";
 import { buildKnowledgeStatusRows } from "../knowledge/status";
 import { importableIdentity } from "../knowledge/paths";
-import { buildKnowledgeTrustPlan, trustPlanKey } from "../knowledge/trust";
+import { trustPlanKey } from "../knowledge/trust";
 import { getKnowledgeRows } from "./state";
 import type { Importable } from "htsw/types";
 
@@ -57,17 +57,11 @@ export function knowledgeStatusByImportable(
     const out = new Map<string, PlanStatus>();
     if (importables.length === 0) return out;
     const rows = buildKnowledgeStatusRows(housingUuid, importables);
-    const plan = buildKnowledgeTrustPlan(housingUuid, importables);
     for (let i = 0; i < rows.length; i++) {
         const row = rows[i];
         const key = trustPlanKey(row.importable.type, row.identity);
-        const trusted = plan.importables.get(key)?.wholeImportableTrusted === true;
         const status: PlanStatus =
-            row.state === "current" || trusted
-                ? "current"
-                : row.entry === null
-                  ? "unknown"
-                  : "diff";
+            row.state === "current" ? "current" : row.entry === null ? "unknown" : "diff";
         out.set(key, status);
     }
     return out;
