@@ -12,6 +12,7 @@ import { FileSystemFileLoader } from "./utils/files";
 import { commandKnowledge } from "./knowledge/commands";
 import { toggleHtswGui, armHtswGuiDebug } from "./gui/overlay";
 import { runDiffDemo } from "./gui/popovers/diff-demo";
+import { getTimingStats, resetTimingStats } from "./importer/progress/timing";
 
 function printCommandError(sm: SourceMap, err: unknown): void {
     if (err instanceof Diagnostic) {
@@ -61,6 +62,11 @@ function commandHtsw(args: string[]) {
         return;
     }
 
+    if (args.length > 0 && args[0] === "eta") {
+        commandEta(args.slice(1));
+        return;
+    }
+
     if (args.length > 0 && args[0] === "gui") {
         if (args.length > 1 && args[1] === "debug") {
             const frames = args.length > 2 ? parseInt(args[2], 10) : 30;
@@ -86,8 +92,47 @@ function commandHtsw(args: string[]) {
     ChatLib.chat("&f/import &7- Import actions from HTSL files");
     ChatLib.chat("&f/simulator &7- Simulate actions from HTSL files");
     ChatLib.chat("&f/htsw knowledge &7- Inspect local import/export knowledge");
+    ChatLib.chat("&f/htsw eta &7- Show importer ETA timing samples");
     ChatLib.chat("&f/htsw gui &7- Open the in-game HTSW dashboard");
     ChatLib.chat(`&7${chatSeparator()}`);
+}
+
+function commandEta(args: string[]): void {
+    if (args.length > 0 && args[0] === "reset") {
+        resetTimingStats();
+        ChatLib.chat("&7[eta] timing samples reset");
+        return;
+    }
+
+    const stats = getTimingStats();
+    const kinds = [
+        "commandMenuWait",
+        "commandMessageWait",
+        "menuClickWait",
+        "pageTurnWait",
+        "goBackWait",
+        "chatInput",
+        "anvilInput",
+        "itemSelect",
+        "reorderStep",
+        "sleep1000",
+    ];
+    ChatLib.chat("&7[eta] timing samples");
+    let printed = false;
+    for (let i = 0; i < kinds.length; i++) {
+        const kind = kinds[i];
+        const entry = stats[kind];
+        if (entry === undefined || entry.count === 0) continue;
+        printed = true;
+        const expected =
+            entry.count === 0 ? 0 : entry.totalExpectedUnits / entry.count;
+        ChatLib.chat(
+            `&7${kind}: &f${entry.count} samples&7, avg &f${entry.avgMs.toFixed(0)}ms&7, expected &f${expected.toFixed(2)}u&7 => &f${entry.avgMsPerExpectedUnit.toFixed(0)}ms/u`
+        );
+    }
+    if (!printed) {
+        ChatLib.chat("&7[eta] no samples yet");
+    }
 }
 
 /**

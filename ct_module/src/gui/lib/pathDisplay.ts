@@ -6,13 +6,21 @@
 
 let cachedMcRoot: string | null = null;
 
+// Rhino regex on CT 1.8.9 has been seen swallowing `/\\/g`-style replacements
+// in production (the regex returns the input unchanged), so we use split/join
+// for backslash conversion everywhere in this file.
+function toForwardSlashes(s: string): string {
+    return String(s).split("\\").join("/");
+}
+
 function mcRoot(): string {
     if (cachedMcRoot !== null) return cachedMcRoot;
     try {
         // @ts-ignore
         const Paths = Java.type("java.nio.file.Paths");
-        cachedMcRoot = String(Paths.get(".").toAbsolutePath().normalize().toString())
-            .replace(/\\/g, "/");
+        cachedMcRoot = toForwardSlashes(
+            Paths.get(".").toAbsolutePath().normalize().toString()
+        );
     } catch (_e) {
         cachedMcRoot = "";
     }
@@ -29,7 +37,7 @@ function mcRoot(): string {
  */
 export function normalizeHtswPath(p: string): string {
     if (p === undefined || p === null) return p;
-    const norm = String(p).replace(/\\/g, "/");
+    const norm = toForwardSlashes(p);
     const idx = norm.lastIndexOf("/htsw/");
     if (idx >= 0) return `.${norm.substring(idx)}`;
     const root = mcRoot();

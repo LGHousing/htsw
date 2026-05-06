@@ -14,6 +14,19 @@ import {
     setParsedResult,
 } from "./index";
 import { addRecent, getRecents } from "./recents";
+import {
+    hasSubList,
+    importableSourcePath,
+    importableSubListPath,
+    type SubListKind,
+} from "./importablePaths";
+
+const SUB_LIST_KINDS: SubListKind[] = [
+    "onEnterActions",
+    "onExitActions",
+    "leftClickActions",
+    "rightClickActions",
+];
 
 let lastReparseAtMs = 0;
 let lastMtimeCheckAt = 0;
@@ -143,17 +156,32 @@ export function scheduleReparse(): void {
     lastReparseAtMs = Date.now();
 }
 
+function watch(path: string | undefined): void {
+    if (path === undefined) return;
+    if (watchedMtimes[path] !== undefined) return;
+    watchedMtimes[path] = getMtimeMs(path);
+}
+
 function refreshWatchedMtimes(): void {
     for (const k in watchedMtimes) delete watchedMtimes[k];
-    const path = getImportJsonPath();
-    watchedMtimes[path] = getMtimeMs(path);
+    watch(getImportJsonPath());
     const parsed = getParsedResult();
     if (parsed === null) return;
     for (let i = 0; i < parsed.value.length; i++) {
-        const src = parsed.gcx.sourceFiles.get(parsed.value[i]);
-        if (src === undefined) continue;
-        if (watchedMtimes[src] !== undefined) continue;
-        watchedMtimes[src] = getMtimeMs(src);
+        const imp = parsed.value[i];
+        // Watch the parser-recorded source file (htsl for FUNCTION/EVENT,
+        // import.json for everything else), the GUI's "smart" source path
+        // (.snbt for ITEM via the parsed nbt span), AND any nested
+        // action-list sources (REGION enter/exit + ITEM left/right-click
+        // htsl files). Editing any of these flips knowledge dots and
+        // re-renders sub-row previews.
+        watch(parsed.gcx.sourceFiles.get(imp));
+        watch(importableSourcePath(imp));
+        for (let j = 0; j < SUB_LIST_KINDS.length; j++) {
+            const kind = SUB_LIST_KINDS[j];
+            if (!hasSubList(imp, kind)) continue;
+            watch(importableSubListPath(imp, kind));
+        }
     }
 }
 

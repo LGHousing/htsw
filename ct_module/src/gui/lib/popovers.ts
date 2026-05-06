@@ -98,6 +98,19 @@ export function popoverIsOpen(): boolean {
     return openPopovers.length > 0;
 }
 
+/**
+ * Element trees of all currently-open popovers, in open-order. Used by
+ * the keyboard input handler so a focused input INSIDE a popover (not
+ * inside any registered panel) can still be located by id.
+ */
+export function getOpenPopoverContents(): Element[] {
+    const out: Element[] = [];
+    for (let i = 0; i < openPopovers.length; i++) {
+        out.push(openPopovers[i].content);
+    }
+    return out;
+}
+
 function computePopoverRect(p: PopoverHandle): Rect {
     const screenH = Renderer.screen.getHeight();
     const screenW = Renderer.screen.getWidth();

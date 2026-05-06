@@ -12,6 +12,21 @@ export type ImportProgressView = {
     weightTotal: number;
     weightCurrent: number;
     currentLabel: string;
+    phase:
+        | "starting"
+        | "opening"
+        | "reading"
+        | "hydrating"
+        | "diffing"
+        | "applying"
+        | "writingKnowledge"
+        | "done";
+    phaseLabel: string;
+    unitCompleted: number;
+    unitTotal: number;
+    estimatedCompleted: number;
+    estimatedTotal: number;
+    etaConfidence: "rough" | "informed" | "planned";
     completed: number;
     total: number;
     failed: number;
@@ -52,11 +67,76 @@ let knowledgeRows: KnowledgeStatusRow[] = [];
 let importProgress: ImportProgressView | null = null;
 /**
  * `Date.now()` of the moment the in-flight import started. Captured the
- * first time `setImportProgress` transitions from null → non-null and
- * cleared on the inverse transition. The LiveImporter panel divides
- * elapsed time by `weightCompleted / weightTotal` to project an ETA.
+ * first time `setImportProgress` transitions from null to non-null and
+ * cleared on the inverse transition.
  */
 let importStartedAt: number | null = null;
+
+export function getImportProgressFraction(): number {
+    const p = importProgress;
+    if (p === null || p.estimatedTotal <= 0) return 0;
+    return Math.min(1, Math.max(0, p.estimatedCompleted / p.estimatedTotal));
+}
+
+/**
+ * Rolling window of completed estimated work units. ETA is based on recent
+ * ms/unit, not importable count or phase count.
+ */
+type EtaSample = { t: number; completed: number };
+const ETA_WINDOW_MS = 45000;
+const ETA_MIN_WINDOW_MS = 2500;
+const ETA_SAMPLE_INTERVAL_MS = 250;
+const ETA_MIN_COMPLETED_UNITS = 3;
+let etaSamples: EtaSample[] = [];
+let etaSamplesForStartedAt: number | null = null;
+
+function maybePushEtaSample(now: number, completed: number): void {
+    if (etaSamplesForStartedAt !== importStartedAt) {
+        etaSamples = [];
+        etaSamplesForStartedAt = importStartedAt;
+    }
+    if (importStartedAt === null) return;
+    const last = etaSamples.length > 0 ? etaSamples[etaSamples.length - 1] : null;
+    if (last !== null && now - last.t < ETA_SAMPLE_INTERVAL_MS) return;
+    etaSamples.push({ t: now, completed });
+    while (etaSamples.length > 0 && etaSamples[0].t < now - ETA_WINDOW_MS) {
+        etaSamples.shift();
+    }
+}
+
+/**
+ * Estimated remaining seconds for the in-flight import, or null if no
+ * meaningful estimate is available yet. Uses a windowed rate when at
+ * least `ETA_MIN_WINDOW_MS` of samples are buffered, falling back to
+ * total-elapsed extrapolation before then.
+ */
+export function getImportEtaSeconds(): number | null {
+    const p = importProgress;
+    if (p === null || importStartedAt === null) return null;
+    if (p.estimatedTotal <= 0) return null;
+    const completed = Math.min(p.estimatedCompleted, p.estimatedTotal);
+    const remainingUnits = Math.max(0, p.estimatedTotal - completed);
+    if (remainingUnits <= 0) return 0;
+    const now = Date.now();
+    maybePushEtaSample(now, completed);
+    let remaining: number;
+    const oldest = etaSamples.length > 0 ? etaSamples[0] : null;
+    const windowAge = oldest !== null ? now - oldest.t : 0;
+    if (
+        oldest !== null &&
+        windowAge >= ETA_MIN_WINDOW_MS &&
+        completed - oldest.completed >= ETA_MIN_COMPLETED_UNITS
+    ) {
+        const msPerUnit = windowAge / (completed - oldest.completed);
+        remaining = (remainingUnits * msPerUnit) / 1000;
+    } else {
+        const elapsed = (now - importStartedAt) / 1000;
+        if (completed < ETA_MIN_COMPLETED_UNITS) return null;
+        remaining = (remainingUnits * elapsed) / completed;
+    }
+    if (!isFinite(remaining) || remaining < 0) return null;
+    return remaining;
+}
 
 export function getImportJsonPath(): string {
     return importJsonPath;
@@ -170,9 +250,6 @@ export function getCurrentImportingPath(): string | null {
     return currentImportingPath;
 }
 export function setCurrentImportingPath(p: string | null): void {
-    if (p !== null && p !== currentImportingPath) {
-        ChatLib.chat(`&7[live-imp] currentImportingPath = &f${p}`);
-    }
     currentImportingPath = p;
 }
 export function applyImportProgress(p: ImportProgress): void {
@@ -181,6 +258,13 @@ export function applyImportProgress(p: ImportProgress): void {
         weightTotal: p.weightTotal,
         weightCurrent: p.weightCurrent,
         currentLabel: p.currentLabel,
+        phase: p.phase,
+        phaseLabel: p.phaseLabel,
+        unitCompleted: p.unitCompleted,
+        unitTotal: p.unitTotal,
+        estimatedCompleted: p.estimatedCompleted,
+        estimatedTotal: p.estimatedTotal,
+        etaConfidence: p.etaConfidence,
         completed: p.completed,
         total: p.total,
         failed: p.failed,
