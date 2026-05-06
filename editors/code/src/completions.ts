@@ -28,8 +28,8 @@ export class CompletionAdapter implements vscode.CompletionItemProvider {
     public async provideCompletionItems(
         document: vscode.TextDocument,
         position: vscode.Position
-    ): Promise<vscode.CompletionItem[]> {
-        if (document.languageId !== "htsl") return [];
+    ): Promise<vscode.CompletionItem[] | undefined> {
+        if (document.languageId !== "htsl") return undefined;
 
         const linePrefix = document.lineAt(position.line).text.slice(0, position.character);
         const range = this.getReplacementRange(document, position);
@@ -51,6 +51,11 @@ export class CompletionAdapter implements vscode.CompletionItemProvider {
                   items: await collectItemCompletions(document),
               })
             : probeCompletions;
+
+        // Returning undefined (rather than []) lets VS Code suppress the
+        // "No suggestions" tooltip when our provider genuinely has nothing
+        // to offer at this position.
+        if (completions.length === 0) return undefined;
 
         return completions.map((completion) => {
             const item = new vscode.CompletionItem(

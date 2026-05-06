@@ -2,7 +2,7 @@
     "name": "htsw-plus-plus",
     "displayName": "HTSW++",
     "description": "HTSW completions, diagnostics, hints, and more.",
-    "version": "2.0.1",
+    "version": "2.0.2",
     "license": "MIT",
     "type": "module",
     "repository": {
@@ -32,6 +32,13 @@
         "onLanguage:jsonc"
     ],
     "contributes": {
+        "commands": [
+            {
+                "command": "htsw.snbt.format",
+                "title": "Format SNBT",
+                "category": "HTSW"
+            }
+        ],
         "languages": [
             {
                 "id": "htsl",
