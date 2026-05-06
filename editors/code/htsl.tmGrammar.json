@@ -50,7 +50,7 @@
         "placeholders": {
             "name": "string.quoted.placeholder.htsl",
             "begin": "%",
-            "end": "%",
+            "end": "%|(?=[\"\\n])",
             "patterns": [
                 {
                     "name": "constant.character.escape.htsl",
