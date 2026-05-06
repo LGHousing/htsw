@@ -57,6 +57,12 @@ function commandHtsw(args: string[]) {
         return;
     }
 
+    if (args.length > 0 && args[0] === "packet-probe") {
+        const seconds = args.length > 1 ? parseInt(args[1], 10) : 30;
+        packetProbe(Number.isFinite(seconds) && seconds > 0 ? seconds : 30);
+        return;
+    }
+
     if (args.length > 0 && args[0] === "knowledge") {
         commandKnowledge(args.slice(1));
         return;
@@ -93,12 +99,13 @@ function commandHtsw(args: string[]) {
     ChatLib.chat("&f/simulator &7- Simulate actions from HTSL files");
     ChatLib.chat("&f/htsw knowledge &7- Inspect local import/export knowledge");
     ChatLib.chat("&f/htsw eta &7- Show importer ETA timing samples");
+    ChatLib.chat("&f/htsw packet-probe [seconds] &7- Safely log relevant packets");
     ChatLib.chat("&f/htsw gui &7- Open the in-game HTSW dashboard");
     ChatLib.chat(`&7${chatSeparator()}`);
 }
 
 function commandEta(args: string[]): void {
-    if (args.length > 0 && args[0] === "reset") {
+    if (args.length > 0 && (args[0] === "reset" || args[0] === "clear")) {
         resetTimingStats();
         ChatLib.chat("&7[eta] timing samples reset");
         return;
@@ -134,6 +141,89 @@ function commandEta(args: string[]): void {
     if (!printed) {
         ChatLib.chat("&7[eta] no samples yet");
     }
+}
+
+function packetProbe(seconds: number): void {
+    const lines: string[] = [];
+    const started = Date.now();
+    const path = `./htsw/packet-probe-${started}.txt`;
+
+    function log(line: string): void {
+        const elapsed = ((Date.now() - started) / 1000).toFixed(2);
+        const full = `${elapsed}s ${line}`;
+        lines.push(full);
+        ChatLib.chat(`&7[pkt] &f${full}`);
+    }
+
+    function className(packet: any): string {
+        try {
+            return String(packet.getClass().getSimpleName());
+        } catch (_error) {
+            return String(packet);
+        }
+    }
+
+    function shouldLog(name: string): boolean {
+        return (
+            name.indexOf("CloseWindow") !== -1 ||
+            name.indexOf("CreativeInventoryAction") !== -1 ||
+            name.indexOf("SetSlot") !== -1 ||
+            name.indexOf("OpenWindow") !== -1 ||
+            name.indexOf("WindowItems") !== -1 ||
+            name.indexOf("HeldItemChange") !== -1
+        );
+    }
+
+    function fieldSummary(packet: any): string {
+        try {
+            const fields = packet.getClass().getDeclaredFields();
+            const parts: string[] = [];
+            for (let i = 0; i < fields.length; i++) {
+                const field = fields[i];
+                field.setAccessible(true);
+                const name = String(field.getName());
+                const value = field.get(packet);
+                if (value === null || value === undefined) {
+                    parts.push(`${name}=null`);
+                    continue;
+                }
+                const valueClass = String(value.getClass?.().getSimpleName?.() ?? "");
+                if (valueClass === "ItemStack") {
+                    parts.push(`${name}=ItemStack(${String(value.func_82833_r?.() ?? value)})`);
+                } else {
+                    parts.push(`${name}=${String(value)}`);
+                }
+            }
+            return parts.join(", ");
+        } catch (error) {
+            return `fields unavailable: ${error}`;
+        }
+    }
+
+    ChatLib.chat(`&e[pkt] probing relevant packets for ${seconds}s`);
+
+    const sent = register("packetSent", (packet) => {
+        const name = className(packet);
+        if (!shouldLog(name)) return;
+        log(`C->S ${name} ${fieldSummary(packet)}`);
+    });
+
+    const received = register("packetReceived", (packet) => {
+        const name = className(packet);
+        if (!shouldLog(name)) return;
+        log(`S->C ${name} ${fieldSummary(packet)}`);
+    });
+
+    setTimeout(() => {
+        sent.unregister();
+        received.unregister();
+        try {
+            FileLib.write(path, lines.join("\n"), true);
+            ChatLib.chat(`&a[pkt] wrote ${path}`);
+        } catch (error) {
+            ChatLib.chat(`&c[pkt] failed to write ${path}: ${error}`);
+        }
+    }, seconds * 1000);
 }
 
 /**

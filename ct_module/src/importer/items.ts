@@ -1,11 +1,39 @@
 import TaskContext from "../tasks/context";
-import { C10PacketCreativeInventoryAction, S2FPacketSetSlot } from "../utils/packets";
 import { timedWaitForMenu, waitForMenu } from "./helpers";
+import {
+    SET_SLOT_ACK_TIMEOUT_MS,
+    sendCreativeInventoryAction,
+    waitForAnySetSlot,
+} from "./packets";
 import { COST } from "./progress/costs";
 import { timed } from "./progress/timing";
 
-const INV_PACKET_SLOT = 26; // inventory row 2, column 9 (rightmost, out of the way — matches BHTSL)
-const SET_SLOT_ACK_TIMEOUT_MS = 2000;
+const INV_PACKET_SLOT = 26; // inventory row 2, column 9 (for HasItem and similar, rightmost, out of the way — matches BHTSL)
+
+function slotMatchesStack(slotId: number, stack: any): boolean {
+    const slot = Player.getContainer()?.getItems()?.[slotId];
+    return (
+        slot !== null &&
+        slot !== undefined &&
+        stacksEqual(slot.getItemStack(), stack)
+    );
+}
+
+function stacksEqual(left: any, right: any): boolean {
+    // func_179549_c = ItemStack.areItemStacksEqual, including item, damage, size, and NBT.
+    return left.func_179549_c(right);
+}
+
+async function waitForContainerSlotMatch(
+    ctx: TaskContext,
+    slotId: number,
+    stack: any
+): Promise<void> {
+    while (!slotMatchesStack(slotId, stack)) {
+        await waitForAnySetSlot(ctx);
+        await ctx.waitFor("tick");
+    }
+}
 
 /**
  * Set the value of a Housing "Item" field (GIVE_ITEM, REMOVE_ITEM, IS_ITEM, ...).
@@ -53,7 +81,7 @@ export async function selectItemFromOpenInventory(
     const existingSlot = ctx.tryGetItemSlot((s) => {
         if (s.getSlotId() < playerInvStart) return false;
         const slotStack = s.getItem().getItemStack();
-        return slotStack.func_179549_c(desiredStack);
+        return stacksEqual(slotStack, desiredStack);
     });
 
     if (existingSlot !== null) {
@@ -67,30 +95,39 @@ export async function selectItemFromOpenInventory(
     const scratchSlot = ctx.tryGetItemSlot((s) => s.getSlotId() === targetSlotInContainer);
     if (
         scratchSlot !== null &&
-        scratchSlot.getItem().getItemStack().func_179549_c(desiredStack)
+        stacksEqual(scratchSlot.getItem().getItemStack(), desiredStack)
     ) {
         scratchSlot.click();
         await timed("itemSelect", COST.itemSelect, () => waitForMenu(ctx));
         return;
     }
 
-    Client.sendPacket(
-        new C10PacketCreativeInventoryAction(INV_PACKET_SLOT, desiredStack)
+    const ack = waitForContainerSlotMatch(ctx, targetSlotInContainer, desiredStack);
+    sendCreativeInventoryAction(
+        ctx,
+        INV_PACKET_SLOT,
+        desiredStack,
+        `injecting item-field value for &f${label}`
     );
 
-    await ctx.withTimeout(
-        ctx.waitFor("packetReceived", (packet) => {
-            if (!(packet instanceof S2FPacketSetSlot)) return false;
-            const windowId = packet.func_149175_c();
-            const slotIdx = packet.func_149173_d();
-            return (
-                (windowId !== 0 && slotIdx === targetSlotInContainer) ||
-                (windowId === 0 && slotIdx === INV_PACKET_SLOT)
-            );
-        }),
-        `creative-inventory ack for "${label}"`,
-        SET_SLOT_ACK_TIMEOUT_MS
-    );
+    try {
+        await ctx.withTimeout(
+            ack,
+            `creative-inventory ack for "${label}"`,
+            SET_SLOT_ACK_TIMEOUT_MS
+        );
+    } catch (error) {
+        const matchedSlot = ctx.tryGetItemSlot((s) => {
+            if (s.getSlotId() !== targetSlotInContainer) return false;
+            return stacksEqual(s.getItem().getItemStack(), desiredStack);
+        });
+        if (matchedSlot === null) {
+            throw error;
+        }
+        ctx.displayMessage(
+            `&e[packet] item-field ack was not observed for &f${label}&e, but the scratch slot matches; continuing.`
+        );
+    }
     await ctx.waitFor("tick");
 
     const slot = ctx.tryGetItemSlot((s) => s.getSlotId() === targetSlotInContainer);
