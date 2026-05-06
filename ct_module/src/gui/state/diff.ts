@@ -1,7 +1,7 @@
 /// <reference types="../../../CTAutocomplete" />
 
 import { normalizeHtswPath } from "../lib/pathDisplay";
-import type { DiffOpKind, DiffSummary } from "../../importer/diffSink";
+import type { ActionPath, DiffOpKind, DiffSummary } from "../../importer/diffSink";
 
 /**
  * Diff state model for the right-panel HTSL animation.
@@ -16,8 +16,8 @@ import type { DiffOpKind, DiffSummary } from "../../importer/diffSink";
  *
  * The map is keyed by import.json path + importable identity (`type:name`)
  * so the right panel can scope rendering to "the current importable" without
- * stepping on others. Action index is the position inside the importable's
- * action list (post-merge if you're displaying both knowledge + current).
+ * stepping on others. Action paths identify nested source actions, e.g.
+ * `4.ifActions.2`.
  */
 
 export type DiffState =
@@ -31,14 +31,14 @@ export type DiffState =
 export type DiffKey = string; // resolved file path of the .htsl being imported
 
 export type DiffEntry = {
-    /** State per action index in the rendered list. */
-    states: Map<number, DiffState>;
-    details: Map<number, DiffLineInfo>;
+    /** State per source action path in the rendered list. */
+    states: Map<ActionPath, DiffState>;
+    details: Map<ActionPath, DiffLineInfo>;
     deletes: DiffDeleteInfo[];
     summary: DiffSummary | null;
     phaseLabel: string;
-    /** The action index the importer is currently working on, if any. */
-    currentIndex: number | null;
+    /** The source action path the importer is currently working on, if any. */
+    currentPath: ActionPath | null;
     /** Optional sub-step label rendered next to the cursor (e.g. "editing message"). */
     currentLabel: string;
     /** Frame timestamp for blink/pulse on the cursor. */
@@ -50,6 +50,7 @@ export type DiffLineInfo = {
     kind?: DiffOpKind;
     label?: string;
     detail?: string;
+    completed?: boolean;
 };
 
 export type DiffDeleteInfo = {
@@ -80,7 +81,7 @@ function ensureEntry(key: DiffKey): DiffEntry {
             deletes: [],
             summary: null,
             phaseLabel: "",
-            currentIndex: null,
+            currentPath: null,
             currentLabel: "",
             updatedAt: 0,
         };
@@ -91,13 +92,13 @@ function ensureEntry(key: DiffKey): DiffEntry {
 
 export function setDiffState(
     key: DiffKey,
-    actionIndex: number,
+    actionPath: ActionPath,
     state: DiffState
 ): void {
     const e = ensureEntry(key);
-    e.states.set(actionIndex, state);
-    const existing = e.details.get(actionIndex);
-    e.details.set(actionIndex, { ...(existing ?? { state }), state });
+    e.states.set(actionPath, state);
+    const existing = e.details.get(actionPath);
+    e.details.set(actionPath, { ...(existing ?? { state }), state });
     e.updatedAt = Date.now();
 }
 
@@ -115,7 +116,7 @@ export function setDiffSummary(key: DiffKey, summary: DiffSummary): void {
 
 export function setPlannedOp(
     key: DiffKey,
-    actionIndex: number,
+    actionPath: ActionPath,
     kind: DiffOpKind,
     label: string,
     detail: string
@@ -123,9 +124,9 @@ export function setPlannedOp(
     const e = ensureEntry(key);
     const state: DiffState =
         kind === "edit" ? "edit" : kind === "add" ? "add" : kind === "move" ? "edit" : "delete";
-    const existing = e.details.get(actionIndex);
-    e.states.set(actionIndex, state);
-    e.details.set(actionIndex, {
+    const existing = e.details.get(actionPath);
+    e.states.set(actionPath, state);
+    e.details.set(actionPath, {
         state,
         kind,
         label: label.length > 0 ? label : existing?.label,
@@ -145,13 +146,21 @@ export function addDeleteOp(
     e.updatedAt = Date.now();
 }
 
+export function markCompleted(key: DiffKey, actionPath: ActionPath): void {
+    const e = ensureEntry(key);
+    const existing = e.details.get(actionPath);
+    if (existing === undefined) return;
+    e.details.set(actionPath, { ...existing, completed: true });
+    e.updatedAt = Date.now();
+}
+
 export function setCurrent(
     key: DiffKey,
-    actionIndex: number | null,
+    actionPath: ActionPath | null,
     label: string = ""
 ): void {
     const e = ensureEntry(key);
-    e.currentIndex = actionIndex;
+    e.currentPath = actionPath;
     e.currentLabel = label;
     e.updatedAt = Date.now();
 }

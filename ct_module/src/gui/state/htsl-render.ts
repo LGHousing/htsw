@@ -8,6 +8,8 @@ import { FileSystemFileLoader } from "../../utils/files";
 export type HtslLine = {
     /** Index into the action list this line belongs to. -1 for synthetic header/blank lines. */
     actionIndex: number;
+    /** Nested action path, e.g. `4.ifActions.2`; top-level lines use `4`. */
+    actionPath: string;
     /** Indent level (nested actions inside CONDITIONAL/RANDOM bodies). */
     depth: number;
     /** Rendered text (no trailing newline). */
@@ -59,15 +61,42 @@ export function parseHtslFile(path: string): ParsedFile {
  * given action index. Indent depth is inferred from leading spaces in the
  * printer output (4-space indent per the printer's default style).
  */
+function childActionPaths(action: Action, basePath: string): string[] {
+    const out: string[] = [];
+    function addChildren(actions: readonly Action[] | undefined, prop: string): void {
+        if (actions === undefined) return;
+        for (let i = 0; i < actions.length; i++) {
+            const path = `${basePath}.${prop}.${i}`;
+            out.push(path);
+            const nested = childActionPaths(actions[i], path);
+            for (let j = 0; j < nested.length; j++) out.push(nested[j]);
+        }
+    }
+    if (action.type === "CONDITIONAL") {
+        addChildren(action.ifActions, "ifActions");
+        addChildren(action.elseActions, "elseActions");
+    } else if (action.type === "RANDOM") {
+        addChildren(action.actions, "actions");
+    }
+    return out;
+}
+
+function isStructuralLine(text: string): boolean {
+    return text === "}" || text.indexOf("} else") === 0 || text === "else {";
+}
+
 export function actionToLines(action: Action, actionIndex: number): HtslLine[] {
+    const basePath = String(actionIndex);
     let src: string;
     try {
         src = htsw.htsl.printAction(action);
     } catch (err) {
-        return [{ actionIndex, depth: 0, text: `// <print failed: ${err}>` }];
+        return [{ actionIndex, actionPath: basePath, depth: 0, text: `// <print failed: ${err}>` }];
     }
     const out: HtslLine[] = [];
     const raw = src.split("\n");
+    const nestedPaths = childActionPaths(action, basePath);
+    let nestedCursor = 0;
     for (let i = 0; i < raw.length; i++) {
         const line = raw[i];
         if (line.length === 0 && i === raw.length - 1) continue; // trailing blank
@@ -77,7 +106,13 @@ export function actionToLines(action: Action, actionIndex: number): HtslLine[] {
             depth++;
             j += 4;
         }
-        out.push({ actionIndex, depth, text: line.substring(j) });
+        const text = line.substring(j);
+        let actionPath = basePath;
+        if (depth > 0 && !isStructuralLine(text) && nestedCursor < nestedPaths.length) {
+            actionPath = nestedPaths[nestedCursor];
+            nestedCursor++;
+        }
+        out.push({ actionIndex, actionPath, depth, text });
     }
     return out;
 }

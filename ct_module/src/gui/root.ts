@@ -15,6 +15,7 @@ import { RightPanel } from "./right-panel";
 import { BottomToolbar } from "./bottom-toolbar";
 import { ChatInputBar } from "./chat-input";
 import { LiveImporter } from "./live-importer";
+import { getImportProgress } from "./state";
 import { COLOR_PANEL, COLOR_PANEL_BORDER } from "./lib/theme";
 
 const CHAT_INPUT_H = 16;
@@ -24,6 +25,17 @@ function transparentPad(h: number): Element {
         style: {
             width: { kind: "grow" },
             height: { kind: "px", value: Math.max(0, h) },
+        },
+        children: [],
+    });
+}
+
+function stablePanel(h: number): Element {
+    return Container({
+        style: {
+            width: { kind: "grow" },
+            height: { kind: "px", value: Math.max(0, h) },
+            background: COLOR_PANEL,
         },
         children: [],
     });
@@ -43,7 +55,31 @@ function bgWrap(child: Element, height: number | "grow"): Element {
     });
 }
 
+let cachedImportBounds: ContainerBounds | null = null;
+
+function getStableBounds(): ContainerBounds | null {
+    const live = getContainerBounds();
+    const importing = getImportProgress() !== null;
+    if (!importing) {
+        cachedImportBounds = null;
+        return live;
+    }
+    if (live !== null) {
+        if (cachedImportBounds === null) {
+            cachedImportBounds = live;
+        } else {
+            cachedImportBounds = {
+                ...cachedImportBounds,
+                screenW: live.screenW,
+                screenH: live.screenH,
+            };
+        }
+    }
+    return cachedImportBounds ?? live;
+}
+
 function buildLayout(b: ContainerBounds): Element {
+    const importing = getImportProgress() !== null;
     const chat = getChatBounds(b);
     const panelTop = SCREEN_PAD;
     const contentRowY = panelTop + TOP_BAR_H;
@@ -130,7 +166,7 @@ function buildLayout(b: ContainerBounds): Element {
                                             height: { kind: "grow" },
                                         },
                                         children: [
-                                            transparentPad(b.ySize),
+                                            importing ? stablePanel(b.ySize) : transparentPad(b.ySize),
                                             bgWrap(BottomToolbar(), "grow"),
                                         ],
                                     }),
@@ -168,7 +204,7 @@ export function RootTree(): Element {
     return Container({
         style: { width: { kind: "grow" }, height: { kind: "grow" } },
         children: () => {
-            const b = getContainerBounds();
+            const b = getStableBounds();
             if (b === null) return [];
             return [buildLayout(b)];
         },

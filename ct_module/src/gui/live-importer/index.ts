@@ -187,13 +187,13 @@ function pathRow(): Element {
 
 function autoScrollToCurrent(path: string): void {
     const entry = getDiffEntry(diffKey(path));
-    if (entry === undefined || entry.currentIndex === null) return;
+    if (entry === undefined || entry.currentPath === null) return;
     const parsed = parseHtslFile(path);
     if (parsed.parseError !== null) return;
     const lines = actionsToLines(parsed.actions);
     let firstLineIdx = -1;
     for (let i = 0; i < lines.length; i++) {
-        if (lines[i].actionIndex === entry.currentIndex) {
+        if (lines[i].actionPath === entry.currentPath) {
             firstLineIdx = i;
             break;
         }
@@ -223,7 +223,7 @@ function htslView(): Element {
             const entry = getDiffEntry(diffKey(path));
             const hasState =
                 entry !== undefined &&
-                (entry.states.size > 0 || entry.currentIndex !== null);
+                (entry.states.size > 0 || entry.currentPath !== null);
             if (!hasState) {
                 return [
                     Text({
@@ -248,7 +248,11 @@ function htslView(): Element {
                 ];
             }
             autoScrollToCurrent(path);
-            const out: Child[] = htslDiffLines(path);
+            const out: Child[] = htslDiffLines(path, {
+                focusCurrent: true,
+                before: 1,
+                after: 2,
+            });
             return out;
         },
     });

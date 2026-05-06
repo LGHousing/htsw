@@ -9,14 +9,18 @@ import {
     getImportJsonPath,
     getParsedResult,
     getParseError,
+    getImportRunRow,
+    getImportRunState,
     getSelectedImportableId,
     isImportableChecked,
     setSelectedImportableId,
     toggleImportableChecked,
     openTab,
+    type ImportRunRow,
 } from "../../state";
 import { STATUS_COLOR, STATUS_LABEL, statusForImportable } from "../../knowledge-status";
 import { importableIdentity } from "../../../knowledge/paths";
+import { trustPlanKey } from "../../../knowledge/trust";
 import { confirmSelect } from "../../state/selection";
 import {
     hasSubList,
@@ -34,6 +38,7 @@ import {
     ACCENT_SUCCESS,
     ACCENT_TEAL,
     ACCENT_WARN,
+    ACCENT_DANGER,
     COLOR_PANEL_RAISED,
     COLOR_ROW,
     COLOR_ROW_HOVER,
@@ -120,6 +125,10 @@ function importableMenuLabel(imp: Importable): string {
 function importableLabel(i: Importable): string {
     if (i.type === "EVENT") return i.event;
     return i.name;
+}
+
+function importableKey(imp: Importable): string {
+    return trustPlanKey(imp.type, importableIdentity(imp));
 }
 
 let searchQuery = "";
@@ -251,18 +260,43 @@ function toggleType(t: ImportableType): void {
     selectedTypes[t] = !selectedTypes[t];
 }
 
-function filteredResults(): Importable[] {
-    const parsed = getParsedResult();
-    if (parsed === null) return [];
+function matchesFilters(r: Importable): boolean {
     const q = searchQuery.toLowerCase();
+    if (!selectedTypes[r.type]) return false;
+    if (q.length > 0 && importableLabel(r).toLowerCase().indexOf(q) < 0) return false;
+    return true;
+}
+
+type FilteredImportables =
+    | { kind: "normal"; items: Importable[] }
+    | { kind: "importing"; importing: Importable[]; rest: Importable[] };
+
+function filteredResults(): FilteredImportables {
+    const parsed = getParsedResult();
+    if (parsed === null) return { kind: "normal", items: [] };
+    const run = getImportRunState();
     const out: Importable[] = [];
     for (let i = 0; i < parsed.value.length; i++) {
         const r = parsed.value[i];
-        if (!selectedTypes[r.type]) continue;
-        if (q.length > 0 && importableLabel(r).toLowerCase().indexOf(q) < 0) continue;
+        if (!matchesFilters(r)) continue;
         out.push(r);
     }
-    return sortResults(out);
+    if (run === null) return { kind: "normal", items: sortResults(out) };
+    const importing: Importable[] = [];
+    const rest: Importable[] = [];
+    for (let i = 0; i < out.length; i++) {
+        const key = importableKey(out[i]);
+        if (run.rows.has(key)) importing.push(out[i]);
+        else rest.push(out[i]);
+    }
+    importing.sort((a, b) => {
+        const ar = run.rows.get(importableKey(a));
+        const br = run.rows.get(importableKey(b));
+        const ao = ar === undefined ? 999999 : ar.order;
+        const bo = br === undefined ? 999999 : br.order;
+        return ao - bo;
+    });
+    return { kind: "importing", importing, rest: sortResults(rest) };
 }
 
 function toggleAndHighlight(imp: Importable): void {
@@ -428,6 +462,71 @@ function chevronCell(imp: Importable): Element {
     });
 }
 
+function runStatusForImportable(imp: Importable): ImportRunRow | null {
+    if (getImportRunState() === null) return null;
+    return getImportRunRow(importableKey(imp));
+}
+
+function runStatusGlyph(row: ImportRunRow | null): string {
+    if (row === null) return " ";
+    if (row.status === "queued") return "·";
+    if (row.status === "current") return GLYPH_CHEVRON_RIGHT;
+    if (row.status === "imported") return "✓";
+    if (row.status === "skipped") return "≈";
+    return "!";
+}
+
+function runStatusColor(row: ImportRunRow | null): number {
+    if (row === null) return COLOR_TEXT_FAINT;
+    if (row.status === "queued") return COLOR_TEXT_FAINT;
+    if (row.status === "current") return ACCENT_INFO;
+    if (row.status === "imported") return ACCENT_SUCCESS;
+    if (row.status === "skipped") return COLOR_TEXT_DIM;
+    return ACCENT_DANGER;
+}
+
+function runStatusTooltip(row: ImportRunRow | null): string {
+    if (row === null) return "Not in this import";
+    if (row.status === "queued") return `Queued #${row.order + 1}`;
+    if (row.status === "imported") return "Imported";
+    if (row.status === "skipped") return "Skipped: trusted cache current";
+    if (row.status === "failed") return "Failed";
+    const unit =
+        row.unitTotal > 0 ? ` · ${row.unitCompleted}/${row.unitTotal}` : "";
+    return `Importing · ${row.phase} · ${row.phaseLabel}${unit}`;
+}
+
+function runStatusCell(imp: Importable): Element | false {
+    if (getImportRunState() === null) return false;
+    const row = runStatusForImportable(imp);
+    return Text({
+        text: runStatusGlyph(row),
+        color: runStatusColor(row),
+        tooltip: runStatusTooltip(row),
+        tooltipColor: runStatusColor(row),
+        style: { width: { kind: "px", value: 8 } },
+    });
+}
+
+function separatorRow(label: string): Element {
+    return Container({
+        style: {
+            direction: "row",
+            padding: { side: "x", value: 6 },
+            align: "center",
+            height: { kind: "px", value: 12 },
+            background: COLOR_PANEL_RAISED,
+        },
+        children: [
+            Text({
+                text: label,
+                color: COLOR_TEXT_FAINT,
+                style: { width: { kind: "grow" } },
+            }),
+        ],
+    });
+}
+
 function resultRow(r: Importable): Element {
     const id = importableIdentity(r);
     const isHighlighted = getSelectedImportableId() === id;
@@ -471,6 +570,7 @@ function resultRow(r: Importable): Element {
                 color: isChecked ? ACCENT_SUCCESS : COLOR_TEXT_DIM,
                 style: { width: { kind: "px", value: 14 } },
             }),
+            runStatusCell(r),
             // Knowledge-status dot — hover shows the status label.
             Text({
                 text: GLYPH_DOT,
@@ -492,6 +592,13 @@ function rowAndChildren(r: Importable): Element[] {
     const kinds = subRowsFor(r);
     for (let i = 0; i < kinds.length; i++) out.push(subRow(r, kinds[i]));
     return out;
+}
+
+function appendRows(out: Element[], items: Importable[]): void {
+    for (let i = 0; i < items.length; i++) {
+        const sub = rowAndChildren(items[i]);
+        for (let j = 0; j < sub.length; j++) out.push(sub[j]);
+    }
 }
 
 function sortPopoverContent(): Element {
@@ -701,13 +808,19 @@ export function ImportablesView(): Element {
                 id: "importables-results-scroll",
                 style: { gap: 2, height: { kind: "grow" } },
                 children: () => {
-                    const items = filteredResults();
-                    if (items.length === 0) return [emptyState()];
+                    const grouped = filteredResults();
                     const out: Element[] = [];
-                    for (let i = 0; i < items.length; i++) {
-                        const sub = rowAndChildren(items[i]);
-                        for (let j = 0; j < sub.length; j++) out.push(sub[j]);
+                    if (grouped.kind === "normal") {
+                        if (grouped.items.length === 0) return [emptyState()];
+                        appendRows(out, grouped.items);
+                        return out;
                     }
+                    if (grouped.importing.length === 0 && grouped.rest.length === 0) return [emptyState()];
+                    appendRows(out, grouped.importing);
+                    if (grouped.importing.length > 0 && grouped.rest.length > 0) {
+                        out.push(separatorRow("Not importing"));
+                    }
+                    appendRows(out, grouped.rest);
                     return out;
                 },
             }),

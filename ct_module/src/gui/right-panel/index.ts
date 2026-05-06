@@ -354,14 +354,21 @@ function diffLineDetail(
 ): string | undefined {
     if (info === undefined) return undefined;
     if (state === "current" && info.label) return `current: ${info.label}`;
-    if (info.kind === "edit") return info.detail ? `edit: ${info.detail}` : "edit";
+    if (info.completed === true) return undefined;
+    if (info.kind === "edit") return info.detail ? `edit: ${info.detail}` : undefined;
     if (info.kind === "add") return "add";
     if (info.kind === "move") return info.detail ? `move: ${info.detail}` : "move";
     if (info.kind === "delete") return "delete";
     return info.detail;
 }
 
-export function htslDiffLines(path: string): Element[] {
+export type HtslDiffLinesOptions = {
+    focusCurrent?: boolean;
+    before?: number;
+    after?: number;
+};
+
+export function htslDiffLines(path: string, options?: HtslDiffLinesOptions): Element[] {
     const parsed = parseHtslFile(path);
     if (parsed.parseError !== null) {
         const errLines = parsed.parseError.split("\n");
@@ -424,12 +431,27 @@ export function htslDiffLines(path: string): Element[] {
             )
         );
     }
-    for (let i = 0; i < lines.length; i++) {
+    let first = 0;
+    let last = lines.length - 1;
+    if (options?.focusCurrent === true && entry?.currentPath !== null && entry !== undefined) {
+        let currentLine = -1;
+        for (let i = 0; i < lines.length; i++) {
+            if (lines[i].actionPath === entry.currentPath) {
+                currentLine = i;
+                break;
+            }
+        }
+        if (currentLine >= 0) {
+            first = Math.max(0, currentLine - (options.before ?? 1));
+            last = Math.min(lines.length - 1, currentLine + (options.after ?? 2));
+        }
+    }
+    for (let i = first; i <= last; i++) {
         const ln = lines[i];
-        const state: DiffState = entry?.states.get(ln.actionIndex) ?? "unknown";
-        const isCurrent = entry?.currentIndex === ln.actionIndex;
+        const state: DiffState = entry?.states.get(ln.actionPath) ?? "unknown";
+        const isCurrent = entry?.currentPath === ln.actionPath;
         const effectiveState: DiffState = isCurrent ? "current" : state;
-        const info = entry?.details.get(ln.actionIndex);
+        const info = entry?.details.get(ln.actionPath);
         const stateColor = COLOR_BY_STATE[effectiveState];
         const bg = ROW_BG_BY_STATE[effectiveState];
         const lineText = shortenForDisplay(indentedText(ln), 80);

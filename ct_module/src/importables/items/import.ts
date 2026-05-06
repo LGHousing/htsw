@@ -12,10 +12,13 @@ import TaskContext from "../../tasks/context";
 import { stableStringify } from "../../utils/helpers";
 import { getItemFromNbt, getItemFromSnbt } from "../../utils/nbt";
 import {
-    C09PacketHeldItemChange,
-    C10PacketCreativeInventoryAction,
-    S2FPacketSetSlot,
-} from "../../utils/packets";
+    HOTBAR_ZERO_PACKET_SLOT,
+    SET_SLOT_ACK_TIMEOUT_MS,
+    selectHotbarSlot,
+    selectedHotbarSlot,
+    sendCreativeInventoryAction,
+    waitForAnySetSlot,
+} from "../../importer/packets";
 import { actionListTrustFor } from "../actionListTrust";
 import type { ItemRegistry } from "../itemRegistry";
 import { ensureReferencedImportablesExist } from "../references";
@@ -63,8 +66,39 @@ type ItemStart = {
     cachedImportable?: ImportableItem;
 };
 
-const HOTBAR_ZERO_PACKET_SLOT = 36;
-const SET_SLOT_ACK_TIMEOUT_MS = 2000;
+function hotbarSlotMatches(slot: number, stack: any): boolean {
+    const current = Player.getInventory()?.getStackInSlot(slot);
+    return (
+        current !== null &&
+        current !== undefined &&
+        stacksEqual(current.getItemStack(), stack)
+    );
+}
+
+function hotbarZeroMatches(stack: any): boolean {
+    return hotbarSlotMatches(0, stack);
+}
+
+function findMatchingHotbarSlot(stack: any): number | null {
+    for (let slot = 0; slot < 9; slot++) {
+        if (hotbarSlotMatches(slot, stack)) {
+            return slot;
+        }
+    }
+    return null;
+}
+
+function stacksEqual(left: any, right: any): boolean {
+    // func_179549_c = ItemStack.areItemStacksEqual, including item, damage, size, and NBT.
+    return left.func_179549_c(right);
+}
+
+async function waitForHotbarZeroMatch(ctx: TaskContext, stack: any): Promise<void> {
+    while (!hotbarZeroMatches(stack)) {
+        await waitForAnySetSlot(ctx);
+        await ctx.waitFor("tick");
+    }
+}
 
 export async function importImportableItem(
     ctx: TaskContext,
@@ -110,7 +144,7 @@ export async function importImportableItem(
 
     await timed("sleep1000", COST.guaranteedSleep1000, () => ctx.sleep(1000));
 
-    const snbt = Player.getInventory()?.getStackInSlot(0)?.getRawNBT();
+    const snbt = Player.getInventory()?.getStackInSlot(selectedHotbarSlot())?.getRawNBT();
     if (!snbt) throw Error("Why don't we have the item?");
 
     FileLib.write(cachePath, snbt, true);
@@ -157,32 +191,58 @@ async function injectHeldItem(ctx: TaskContext, item: Item): Promise<void> {
         throw new Error("Cannot inject an empty item stack.");
     }
 
-    const inv = Player.getInventory();
-    const current = inv?.getStackInSlot(0);
-    if (current !== null && current !== undefined && current.getItemStack().func_179549_c(stack)) {
-        if (Player.getPlayer().field_71071_by.field_70461_c !== 0) {
-            Client.sendPacket(new C09PacketHeldItemChange(0));
-            Player.getPlayer().field_71071_by.field_70461_c = 0;
+    if (hotbarZeroMatches(stack)) {
+        if (selectedHotbarSlot() !== 0) {
+            selectHotbarSlot(
+                ctx,
+                0,
+                "selecting hotbar slot 0 for already-present import item"
+            );
         }
         return;
     }
 
-    Client.sendPacket(new C10PacketCreativeInventoryAction(HOTBAR_ZERO_PACKET_SLOT, stack));
-    await ctx.withTimeout(
-        ctx.waitFor("packetReceived", (packet) => {
-            if (!(packet instanceof S2FPacketSetSlot)) return false;
-            const windowId = packet.func_149175_c();
-            const slotIdx = packet.func_149173_d();
-            return windowId === 0 && slotIdx === HOTBAR_ZERO_PACKET_SLOT;
-        }),
-        "held item injection ack",
-        SET_SLOT_ACK_TIMEOUT_MS
-    );
+    const existingHotbarSlot = findMatchingHotbarSlot(stack);
+    if (existingHotbarSlot !== null) {
+        if (selectedHotbarSlot() !== existingHotbarSlot) {
+            selectHotbarSlot(
+                ctx,
+                existingHotbarSlot,
+                `selecting existing hotbar slot ${existingHotbarSlot} for import item`
+            );
+        }
+        return;
+    }
+
+    try {
+        const ack = waitForHotbarZeroMatch(ctx, stack);
+        sendCreativeInventoryAction(
+            ctx,
+            HOTBAR_ZERO_PACKET_SLOT,
+            stack,
+            `injecting import item &f${item.getName()}`
+        );
+        await ctx.withTimeout(
+            ack,
+            "held item injection ack",
+            SET_SLOT_ACK_TIMEOUT_MS
+        );
+    } catch (error) {
+        if (!hotbarZeroMatches(stack)) {
+            throw error;
+        }
+        ctx.displayMessage(
+            "&e[packet] held item ack was not observed, but hotbar slot 0 matches; continuing."
+        );
+    }
     await ctx.waitFor("tick");
 
-    if (Player.getPlayer().field_71071_by.field_70461_c !== 0) {
-        Client.sendPacket(new C09PacketHeldItemChange(0));
-        Player.getPlayer().field_71071_by.field_70461_c = 0;
+    if (selectedHotbarSlot() !== 0) {
+        selectHotbarSlot(
+            ctx,
+            0,
+            "selecting hotbar slot 0 after import item injection"
+        );
     }
     await timed("sleep1000", COST.guaranteedSleep1000, () => ctx.sleep(1000));
 }

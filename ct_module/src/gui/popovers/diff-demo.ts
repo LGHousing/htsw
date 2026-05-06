@@ -49,6 +49,11 @@ export function runDiffDemo(): void {
         weightCompleted: 0,
         weightTotal: total,
         weightCurrent: 0,
+        currentKey: "",
+        currentType: null,
+        currentIdentity: "diff demo",
+        orderIndex: -1,
+        rowStatus: null,
         currentLabel: "diff demo",
         phase: "applying",
         phaseLabel: "diff demo",
@@ -72,11 +77,16 @@ export function runDiffDemo(): void {
             return;
         }
         const finalState = cycle[i % cycle.length];
-        setCurrent(key, i, `step ${i + 1}/${total} (→ ${finalState})`);
+        setCurrent(key, String(i), `step ${i + 1}/${total} (→ ${finalState})`);
         setImportProgress({
             weightCompleted: i,
             weightTotal: total,
             weightCurrent: 1,
+            currentKey: "",
+            currentType: null,
+            currentIdentity: "diff demo",
+            orderIndex: -1,
+            rowStatus: null,
             currentLabel: `diff demo · ${i + 1}/${total}`,
             phase: "applying",
             phaseLabel: "diff demo",
@@ -92,7 +102,7 @@ export function runDiffDemo(): void {
         });
         // Settle this action after a short pause, then advance.
         setTimeout(() => {
-            setDiffState(key, i, finalState);
+            setDiffState(key, String(i), finalState);
             i++;
             setTimeout(tick, 250);
         }, 250);

@@ -106,7 +106,7 @@ import {
 import { setItemValue } from "./items";
 import {
     getActiveDiffSink,
-    setActiveDiffSink,
+    type ActionPath,
     type ImportDiffSink,
     type DiffSummary,
 } from "./diffSink";
@@ -145,6 +145,29 @@ type ActionSpec<T extends Action = Action> = {
         itemRegistry?: ItemRegistry
     ) => Promise<void>;
 };
+
+let currentWritingActionPath: ActionPath | null = null;
+
+function actionPathForIndex(pathPrefix: string | undefined, index: number): ActionPath {
+    return pathPrefix && pathPrefix.length > 0
+        ? `${pathPrefix}.${index}`
+        : String(index);
+}
+
+function withWritingActionPath<T>(path: ActionPath | null, fn: () => Promise<T>): Promise<T> {
+    const previous = currentWritingActionPath;
+    currentWritingActionPath = path;
+    return fn().then(
+        (value) => {
+            currentWritingActionPath = previous;
+            return value;
+        },
+        (err) => {
+            currentWritingActionPath = previous;
+            throw err;
+        }
+    );
+}
 
 type ActionSpecMap = {
     [K in Action["type"]]: ActionSpec<Extract<Action, { type: K }>>;
@@ -299,7 +322,12 @@ async function writeConditional(
         ctx.displayMessage(`&7  [cond] syncing ifActions (${action.ifActions.length} desired)`);
         ctx.getMenuItemSlot(getActionFieldLabel("CONDITIONAL", "ifActions")).click();
         await waitForMenu(ctx);
-        await syncActionList(ctx, action.ifActions, { itemRegistry });
+        await syncActionList(ctx, action.ifActions, {
+            itemRegistry,
+            pathPrefix: currentWritingActionPath === null
+                ? undefined
+                : `${currentWritingActionPath}.ifActions`,
+        });
         await clickGoBack(ctx);
     }
 
@@ -310,7 +338,12 @@ async function writeConditional(
         ctx.displayMessage(`&7  [cond] syncing elseActions (${action.elseActions.length} desired)`);
         ctx.getMenuItemSlot(getActionFieldLabel("CONDITIONAL", "elseActions")).click();
         await waitForMenu(ctx);
-        await syncActionList(ctx, action.elseActions, { itemRegistry });
+        await syncActionList(ctx, action.elseActions, {
+            itemRegistry,
+            pathPrefix: currentWritingActionPath === null
+                ? undefined
+                : `${currentWritingActionPath}.elseActions`,
+        });
         await clickGoBack(ctx);
     }
 }
@@ -768,7 +801,12 @@ async function writeRandom(
 
     ctx.getMenuItemSlot(getActionFieldLabel("RANDOM", "actions")).click();
     await waitForMenu(ctx);
-    await syncActionList(ctx, action.actions, { itemRegistry });
+    await syncActionList(ctx, action.actions, {
+        itemRegistry,
+        pathPrefix: currentWritingActionPath === null
+            ? undefined
+            : `${currentWritingActionPath}.actions`,
+    });
     await clickGoBack(ctx);
 }
 
@@ -1593,26 +1631,20 @@ async function applyActionListDiff(
     desired: Action[],
     diff: ActionListDiff,
     itemRegistry?: ItemRegistry,
-    progress?: ActionListProgressSink
+    progress?: ActionListProgressSink,
+    pathPrefix?: string
 ): Promise<void> {
-    // Capture and suppress the active sink so nested syncActionList calls
-    // (e.g. CONDITIONAL/RANDOM bodies) don't smear events onto the parent's
-    // line indices. Only the outermost (top-level) sync emits.
     const sink = getActiveDiffSink();
-    setActiveDiffSink(null);
-    try {
-        await applyActionListDiffInner(
-            ctx,
-            observed,
-            desired,
-            diff,
-            sink,
-            itemRegistry,
-            progress
-        );
-    } finally {
-        setActiveDiffSink(sink);
-    }
+    await applyActionListDiffInner(
+        ctx,
+        observed,
+        desired,
+        diff,
+        sink,
+        itemRegistry,
+        progress,
+        pathPrefix
+    );
 }
 
 function srcIndexForOp(op: ActionListOperation, desired: Action[]): number {
@@ -1692,7 +1724,8 @@ async function applyActionListDiffInner(
     diff: ActionListDiff,
     sink: ImportDiffSink | null,
     itemRegistry?: ItemRegistry,
-    progress?: ActionListProgressSink
+    progress?: ActionListProgressSink,
+    pathPrefix?: string
 ): Promise<void> {
     const summary = summarizeDiff(diff, desired.length, desired);
     const plannedApplyBudget = actionListDiffApplyBudget(
@@ -1706,7 +1739,7 @@ async function applyActionListDiffInner(
         for (const op of diff.operations) {
             const idx = srcIndexForOp(op, desired);
             if (idx >= 0) {
-                sink.planOp(idx, op.kind, opLabel(op), opDetail(op));
+                sink.planOp(actionPathForIndex(pathPrefix, idx), op.kind, opLabel(op), opDetail(op));
             } else if (op.kind === "delete") {
                 sink.deleteOp(op.observed.index, opLabel(op), opDetail(op));
             }
@@ -1732,7 +1765,7 @@ async function applyActionListDiffInner(
             if (idx >= 0) touched.add(idx);
         }
         for (let i = 0; i < desired.length; i++) {
-            if (!touched.has(i)) sink.markMatch(i);
+            if (!touched.has(i)) sink.markMatch(actionPathForIndex(pathPrefix, i));
         }
     }
 
@@ -1811,7 +1844,8 @@ async function applyActionListDiffInner(
         }
 
         const srcIdx = srcIndexForOp(op, desired);
-        if (sink !== null && srcIdx >= 0) sink.beginOp(srcIdx, "edit", opLabel(op));
+        const srcPath = srcIdx >= 0 ? actionPathForIndex(pathPrefix, srcIdx) : null;
+        if (sink !== null && srcPath !== null) sink.beginOp(srcPath, "edit", opLabel(op));
         progress?.({
             phase: "applying",
             completed: appliedOps,
@@ -1835,7 +1869,7 @@ async function applyActionListDiffInner(
         if (op.noteOnly) {
             await setListItemNote(ctx, actionSlot, op.desired.note);
             appliedBudget += operationApplyBudget(op, desired.length);
-            if (sink !== null && srcIdx >= 0) sink.completeOp(srcIdx, "edit");
+            if (sink !== null && srcPath !== null) sink.completeOp(srcPath, "edit");
             continue;
         }
 
@@ -1849,14 +1883,17 @@ async function applyActionListDiffInner(
                     "Observed action should always be present for edit operations."
                 );
             }
+            const currentAction = op.observed.action;
 
-            await writeOpenAction(ctx, op.desired, op.observed.action, itemRegistry);
+            await withWritingActionPath(srcPath, () =>
+                writeOpenAction(ctx, op.desired, currentAction, itemRegistry)
+            );
             await clickGoBack(ctx);
         }
 
         await setListItemNote(ctx, actionSlot, op.desired.note);
         appliedBudget += operationApplyBudget(op, desired.length);
-        if (sink !== null && srcIdx >= 0) sink.completeOp(srcIdx, "edit");
+        if (sink !== null && srcPath !== null) sink.completeOp(srcPath, "edit");
     }
 
     moves.sort((a, b) => a.toIndex - b.toIndex);
@@ -1867,7 +1904,8 @@ async function applyActionListDiffInner(
         }
 
         const srcIdx = srcIndexForOp(op, desired);
-        if (sink !== null && srcIdx >= 0) sink.beginOp(srcIdx, "move", opLabel(op));
+        const srcPath = srcIdx >= 0 ? actionPathForIndex(pathPrefix, srcIdx) : null;
+        if (sink !== null && srcPath !== null) sink.beginOp(srcPath, "move", opLabel(op));
         progress?.({
             phase: "applying",
             completed: appliedOps,
@@ -1887,14 +1925,15 @@ async function applyActionListDiffInner(
         for (let i = 0; i < remainingObserved.length; i++) {
             remainingObserved[i].index = i;
         }
-        if (sink !== null && srcIdx >= 0) sink.completeOp(srcIdx, "match");
+        if (sink !== null && srcPath !== null) sink.completeOp(srcPath, "match");
     }
 
     adds.sort((a, b) => a.toIndex - b.toIndex);
     let currentLength = remainingObserved.length;
     for (const op of adds) {
         const srcIdx = srcIndexForOp(op, desired);
-        if (sink !== null && srcIdx >= 0) sink.beginOp(srcIdx, "add", opLabel(op));
+        const srcPath = srcIdx >= 0 ? actionPathForIndex(pathPrefix, srcIdx) : null;
+        if (sink !== null && srcPath !== null) sink.beginOp(srcPath, "add", opLabel(op));
         progress?.({
             phase: "applying",
             completed: appliedOps,
@@ -1911,7 +1950,7 @@ async function applyActionListDiffInner(
                 ? op.desired
                 : ({ ...op.desired, note: undefined } as Action);
 
-        await importAction(ctx, actionToImport, itemRegistry);
+        await withWritingActionPath(srcPath, () => importAction(ctx, actionToImport, itemRegistry));
         await moveActionToIndex(ctx, currentLength, op.toIndex, currentLength + 1);
 
         const insertedAction: ObservedActionSlot = {
@@ -1931,7 +1970,7 @@ async function applyActionListDiffInner(
             await setListItemNote(ctx, addedSlot, op.desired.note);
         }
         appliedBudget += operationApplyBudget(op, desired.length);
-        if (sink !== null && srcIdx >= 0) sink.completeOp(srcIdx, "add");
+        if (sink !== null && srcPath !== null) sink.completeOp(srcPath, "add");
     }
 
     await goToPaginatedListPage(ctx, 1, ACTION_LIST_CONFIG);
@@ -1954,15 +1993,7 @@ function actionLogLabel(action: Action | Observed<Action> | null | undefined): s
     }
 
     if (action.type === "CONDITIONAL") {
-        // Observed conditionals may not have nested lists hydrated yet —
-        // fall back to "?" rather than crashing on undefined.length.
-        const cc =
-            (action.conditions as unknown as readonly unknown[] | undefined)?.length ?? "?";
-        const ic =
-            (action.ifActions as unknown as readonly unknown[] | undefined)?.length ?? "?";
-        const ec =
-            (action.elseActions as unknown as readonly unknown[] | undefined)?.length ?? "?";
-        return `CONDITIONAL (${cc}cond/${ic}if/${ec}else)`;
+        return "CONDITIONAL";
     }
 
     if (action.type === "RANDOM") {
@@ -2020,7 +2051,7 @@ function editDiffSummary(op: Extract<ActionListOperation, { kind: "edit" }>): st
         parts.push(`${diff.prop} ${shortVal(diff.observed)} -> ${shortVal(diff.desired)}`);
     }
     if (noteDiffers) parts.push("note changed");
-    return parts.length > 0 ? parts.join(", ") : "(nested-only diff)";
+    return parts.join(", ");
 }
 
 function logSyncState(ctx: TaskContext, diff: ActionListDiff): void {
@@ -2083,6 +2114,8 @@ export type SyncActionListOptions = {
     itemRegistry?: ItemRegistry;
     trust?: ActionListTrust;
     onProgress?: ActionListProgressSink;
+    /** Source path prefix for nested lists, e.g. `4.ifActions`. */
+    pathPrefix?: string;
 };
 
 export type SyncActionListResult = {
@@ -2122,7 +2155,8 @@ export async function syncActionList(
         desired,
         diff,
         options?.itemRegistry,
-        options?.onProgress
+        options?.onProgress,
+        options?.pathPrefix
     );
     return { usedObserved: observed };
 }

@@ -4,13 +4,26 @@ import type { ParseResult } from "htsw";
 import type { Importable } from "htsw/types";
 
 import type { KnowledgeStatusRow } from "../../knowledge/status";
-import type { ImportProgress } from "../../importables/importSession";
+import type {
+    ImportProgress,
+    ImportRunRowStatus,
+} from "../../importables/importSession";
 import { normalizeHtswPath } from "../lib/pathDisplay";
+import { getTimingStats } from "../../importer/progress/timing";
+import { importableIdentity } from "../../knowledge/paths";
+import { trustPlanKey } from "../../knowledge/trust";
+
+export type { ImportRunRowStatus };
 
 export type ImportProgressView = {
     weightCompleted: number;
     weightTotal: number;
     weightCurrent: number;
+    currentKey: string;
+    currentType: Importable["type"] | null;
+    currentIdentity: string;
+    orderIndex: number;
+    rowStatus: ImportRunRowStatus | null;
     currentLabel: string;
     phase:
         | "starting"
@@ -31,6 +44,24 @@ export type ImportProgressView = {
     total: number;
     failed: number;
     inFlight: boolean;
+};
+
+export type ImportRunRow = {
+    key: string;
+    type: Importable["type"];
+    identity: string;
+    order: number;
+    status: ImportRunRowStatus;
+    phase: ImportProgressView["phase"];
+    phaseLabel: string;
+    unitCompleted: number;
+    unitTotal: number;
+};
+
+export type ImportRunState = {
+    rows: Map<string, ImportRunRow>;
+    order: string[];
+    startedAt: number;
 };
 
 export type SourceTab = {
@@ -65,6 +96,9 @@ let trustMode = false;
 let housingUuid: string | null = null;
 let knowledgeRows: KnowledgeStatusRow[] = [];
 let importProgress: ImportProgressView | null = null;
+let importRunState: ImportRunState | null = null;
+let lastEstimatedCompleted = 0;
+let lastEstimatedTotal = 1;
 /**
  * `Date.now()` of the moment the in-flight import started. Captured the
  * first time `setImportProgress` transitions from null to non-null and
@@ -76,6 +110,20 @@ export function getImportProgressFraction(): number {
     const p = importProgress;
     if (p === null || p.estimatedTotal <= 0) return 0;
     return Math.min(1, Math.max(0, p.estimatedCompleted / p.estimatedTotal));
+}
+
+function calibratedMsPerUnit(): number | null {
+    const stats = getTimingStats();
+    let totalMs = 0;
+    let totalUnits = 0;
+    for (const kind in stats) {
+        const entry = stats[kind];
+        if (entry === undefined) continue;
+        totalMs += entry.totalMs;
+        totalUnits += entry.totalExpectedUnits;
+    }
+    if (totalUnits <= 0) return null;
+    return totalMs / totalUnits;
 }
 
 /**
@@ -119,7 +167,7 @@ export function getImportEtaSeconds(): number | null {
     if (remainingUnits <= 0) return 0;
     const now = Date.now();
     maybePushEtaSample(now, completed);
-    let remaining: number;
+    let windowRemaining: number | null = null;
     const oldest = etaSamples.length > 0 ? etaSamples[0] : null;
     const windowAge = oldest !== null ? now - oldest.t : 0;
     if (
@@ -128,12 +176,20 @@ export function getImportEtaSeconds(): number | null {
         completed - oldest.completed >= ETA_MIN_COMPLETED_UNITS
     ) {
         const msPerUnit = windowAge / (completed - oldest.completed);
-        remaining = (remainingUnits * msPerUnit) / 1000;
+        windowRemaining = (remainingUnits * msPerUnit) / 1000;
     } else {
         const elapsed = (now - importStartedAt) / 1000;
-        if (completed < ETA_MIN_COMPLETED_UNITS) return null;
-        remaining = (remainingUnits * elapsed) / completed;
+        if (completed >= ETA_MIN_COMPLETED_UNITS) {
+            windowRemaining = (remainingUnits * elapsed) / completed;
+        }
     }
+    const calibrated = calibratedMsPerUnit();
+    if (calibrated !== null && (p.etaConfidence === "planned" || windowRemaining === null)) {
+        const remaining = (remainingUnits * calibrated) / 1000;
+        return !isFinite(remaining) || remaining < 0 ? null : remaining;
+    }
+    const remaining = windowRemaining;
+    if (remaining === null) return null;
     if (!isFinite(remaining) || remaining < 0) return null;
     return remaining;
 }
@@ -237,8 +293,12 @@ export function getImportProgress(): ImportProgressView | null {
 export function setImportProgress(p: ImportProgressView | null): void {
     if (p !== null && importProgress === null) {
         importStartedAt = Date.now();
+        lastEstimatedCompleted = Math.max(0, p.estimatedCompleted);
+        lastEstimatedTotal = Math.max(1, p.estimatedTotal);
     } else if (p === null) {
         importStartedAt = null;
+        lastEstimatedCompleted = 0;
+        lastEstimatedTotal = 1;
     }
     importProgress = p;
 }
@@ -252,18 +312,99 @@ export function getCurrentImportingPath(): string | null {
 export function setCurrentImportingPath(p: string | null): void {
     currentImportingPath = p;
 }
+
+export function beginImportRun(importables: readonly Importable[]): void {
+    const rows = new Map<string, ImportRunRow>();
+    const order: string[] = [];
+    for (let i = 0; i < importables.length; i++) {
+        const imp = importables[i];
+        const identity = importableIdentity(imp);
+        const key = trustPlanKey(imp.type, identity);
+        order.push(key);
+        rows.set(key, {
+            key,
+            type: imp.type,
+            identity,
+            order: i,
+            status: "queued",
+            phase: "starting",
+            phaseLabel: "queued",
+            unitCompleted: 0,
+            unitTotal: 0,
+        });
+    }
+    importRunState = { rows, order, startedAt: Date.now() };
+}
+
+export function getImportRunState(): ImportRunState | null {
+    return importRunState;
+}
+
+export function getImportRunRow(key: string): ImportRunRow | null {
+    if (importRunState === null) return null;
+    return importRunState.rows.get(key) ?? null;
+}
+
+export function markImportRunRowDone(
+    key: string,
+    status: "imported" | "skipped" | "failed"
+): void {
+    if (importRunState === null) return;
+    const row = importRunState.rows.get(key);
+    if (row === undefined) return;
+    importRunState.rows.set(key, { ...row, status });
+}
+
+export function updateImportRunFromProgress(progress: ImportProgress): void {
+    if (importRunState === null || progress.currentKey.length === 0) return;
+    const row = importRunState.rows.get(progress.currentKey);
+    if (row === undefined || progress.rowStatus === null) return;
+    if (progress.rowStatus === "current") {
+        for (const key of importRunState.order) {
+            if (key === progress.currentKey) continue;
+            const other = importRunState.rows.get(key);
+            if (other !== undefined && other.status === "current") {
+                importRunState.rows.set(key, { ...other, status: "imported" });
+            }
+        }
+    }
+    importRunState.rows.set(progress.currentKey, {
+        ...row,
+        status: progress.rowStatus,
+        phase: progress.phase,
+        phaseLabel: progress.phaseLabel,
+        unitCompleted: progress.unitCompleted,
+        unitTotal: progress.unitTotal,
+    });
+}
+
+export function clearImportRun(): void {
+    importRunState = null;
+}
+
 export function applyImportProgress(p: ImportProgress): void {
+    const rawCompleted = p.estimatedCompleted;
+    const rawTotal = Math.max(1, p.estimatedTotal);
+    const estimatedCompleted = Math.max(lastEstimatedCompleted, rawCompleted);
+    const estimatedTotal = Math.max(lastEstimatedTotal, rawTotal, estimatedCompleted);
+    lastEstimatedCompleted = estimatedCompleted;
+    lastEstimatedTotal = estimatedTotal;
     importProgress = {
         weightCompleted: p.weightCompleted,
         weightTotal: p.weightTotal,
         weightCurrent: p.weightCurrent,
+        currentKey: p.currentKey,
+        currentType: p.currentType,
+        currentIdentity: p.currentIdentity,
+        orderIndex: p.orderIndex,
+        rowStatus: p.rowStatus,
         currentLabel: p.currentLabel,
         phase: p.phase,
         phaseLabel: p.phaseLabel,
         unitCompleted: p.unitCompleted,
         unitTotal: p.unitTotal,
-        estimatedCompleted: p.estimatedCompleted,
-        estimatedTotal: p.estimatedTotal,
+        estimatedCompleted,
+        estimatedTotal,
         etaConfidence: p.etaConfidence,
         completed: p.completed,
         total: p.total,

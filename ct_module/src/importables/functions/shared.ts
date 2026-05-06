@@ -59,7 +59,9 @@ export async function ensureFunctionNamesExist(
 
     ctx.displayMessage(`&7Ensuring ${names.length} function shell(s) exist.`);
 
-    for (const name of names) {
+    for (let i = 0; i < names.length; i++) {
+        const name = names[i];
+        ctx.displayMessage(`&7  [shell ${i + 1}/${names.length}] ${String(name)}`);
         await ensureFunctionExists(ctx, name);
         await clickGoBack(ctx);
     }

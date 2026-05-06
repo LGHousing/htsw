@@ -4,6 +4,8 @@ import { Element } from "../lib/layout";
 import { Button, Col, Container, Row, Text } from "../lib/components";
 import {
     applyImportProgress,
+    beginImportRun,
+    clearImportRun,
     getHousingUuid,
     getImportJsonPath,
     getParsedResult,
@@ -14,10 +16,12 @@ import {
     setImportProgress,
     setKnowledgeRows,
     setTrustMode,
+    updateImportRunFromProgress,
 } from "../state";
 import { buildKnowledgeStatusRows } from "../../knowledge/status";
 import {
     importSelectedImportables,
+    orderImportablesForImportSession,
     type ImportSelection,
 } from "../../importables/importSession";
 import { exportImportable } from "../../importables/exports";
@@ -27,6 +31,7 @@ import {
 } from "../../exporter/captureFromHousing";
 import { getCurrentHousingUuid } from "../../knowledge/housingId";
 import { importableIdentity } from "../../knowledge/paths";
+import { trustPlanKey } from "../../knowledge/trust";
 import { TaskManager } from "../../tasks/manager";
 import type TaskContext from "../../tasks/context";
 import type { Importable } from "htsw/types";
@@ -36,6 +41,7 @@ import {
     clearDiff,
     addDeleteOp,
     diffKey,
+    markCompleted,
     setCurrent,
     setDiffState,
     setDiffPhase,
@@ -86,17 +92,13 @@ function selectionToImport(): Importable[] {
     return parsed.value;
 }
 
-function findImportableByLabel(
+function findImportableByKey(
     parsed: NonNullable<ReturnType<typeof getParsedResult>>,
-    label: string
+    key: string
 ): Importable | null {
-    const space = label.indexOf(" ");
-    if (space < 0) return null;
-    const type = label.substring(0, space);
-    const identity = label.substring(space + 1);
     for (let i = 0; i < parsed.value.length; i++) {
         const imp = parsed.value[i];
-        if (imp.type === type && importableIdentity(imp) === identity) return imp;
+        if (trustPlanKey(imp.type, importableIdentity(imp)) === key) return imp;
     }
     return null;
 }
@@ -118,22 +120,23 @@ function makeDiffSink(sourcePath: string): ImportDiffSink {
         summary: (summary) => {
             setDiffSummary(key, summary);
         },
-        planOp: (idx, kind, label, detail) => {
-            setPlannedOp(key, idx, kind, label, detail);
+        planOp: (path, kind, label, detail) => {
+            setPlannedOp(key, path, kind, label, detail);
         },
         deleteOp: (idx, label, detail) => {
             addDeleteOp(key, idx, label, detail);
         },
-        markMatch: (idx) => {
-            setDiffState(key, idx, "match");
+        markMatch: (path) => {
+            setDiffState(key, path, "match");
         },
-        beginOp: (idx, kind, label) => {
+        beginOp: (path, kind, label) => {
             setDiffPhase(key, label);
-            setCurrent(key, idx, label);
-            setPlannedOp(key, idx, kind, label, "");
+            setCurrent(key, path, label);
+            setPlannedOp(key, path, kind, label, "");
         },
-        completeOp: (idx, state) => {
-            setDiffState(key, idx, state);
+        completeOp: (path, state) => {
+            setDiffState(key, path, state);
+            markCompleted(key, path);
             setCurrent(key, null, "");
         },
         end: () => {
@@ -157,10 +160,17 @@ function startImport(trustMode: boolean): void {
         ChatLib.chat("&c[htsw] Nothing to import");
         return;
     }
+    const orderedImportables = orderImportablesForImportSession(parsed.value, importables);
+    beginImportRun(orderedImportables);
     setImportProgress({
         weightCompleted: 0,
         weightTotal: 1,
         weightCurrent: 0,
+        currentKey: "",
+        currentType: null,
+        currentIdentity: "starting",
+        orderIndex: -1,
+        rowStatus: null,
         currentLabel: "starting…",
         phase: "starting",
         phaseLabel: "starting import",
@@ -176,39 +186,46 @@ function startImport(trustMode: boolean): void {
     });
     TaskManager.run(async (ctx) => {
         const startedAt = Date.now();
-        ctx.displayMessage(
-            `&7[import] starting ${importables.length} importable${importables.length === 1 ? "" : "s"} · trust ${trustMode ? "on" : "off"}`
-        );
-        const housingUuid = await ensureHousingUuid(ctx);
-        const selection: ImportSelection = {
-            importables,
-            trustMode,
-            housingUuid,
-            sourcePath: getImportJsonPath(),
-            onProgress: (p) => {
-                applyImportProgress(p);
-                if (p.currentLabel === "done") {
-                    setCurrentImportingPath(null);
-                    return;
-                }
-                const imp = findImportableByLabel(parsed, p.currentLabel);
-                const path = imp === null ? null : (importableSourcePath(imp) ?? null);
-                setCurrentImportingPath(path);
-            },
-            diffSinkForImportable: (_imp, path) =>
-                path === null ? null : makeDiffSink(path),
-        };
-        const result = await importSelectedImportables(ctx, selection);
-        setImportProgress(null);
-        setCurrentImportingPath(null);
-        refreshKnowledgeRows();
-        const elapsed = Math.max(0, Math.round((Date.now() - startedAt) / 1000));
-        ctx.displayMessage(
-            `&7[import] done · imported ${result.imported}, skipped ${result.skippedTrusted}, failed ${result.failed}, ${elapsed}s`
-        );
+        try {
+            ctx.displayMessage(
+                `&7[import] starting ${importables.length} importable${importables.length === 1 ? "" : "s"} · trust ${trustMode ? "on" : "off"}`
+            );
+            const housingUuid = await ensureHousingUuid(ctx);
+            const selection: ImportSelection = {
+                importables,
+                trustMode,
+                housingUuid,
+                sourcePath: getImportJsonPath(),
+                onProgress: (p) => {
+                    applyImportProgress(p);
+                    updateImportRunFromProgress(p);
+                    if (p.currentKey.length === 0) {
+                        setCurrentImportingPath(null);
+                        return;
+                    }
+                    const imp = findImportableByKey(parsed, p.currentKey);
+                    const path = imp === null ? null : (importableSourcePath(imp) ?? null);
+                    setCurrentImportingPath(path);
+                },
+                diffSinkForImportable: (_imp, path) =>
+                    path === null ? null : makeDiffSink(path),
+            };
+            const result = await importSelectedImportables(ctx, selection);
+            const elapsed = Math.max(0, Math.round((Date.now() - startedAt) / 1000));
+            ctx.displayMessage(
+                `&7[import] done · imported ${result.imported}, skipped ${result.skippedTrusted}, failed ${result.failed}, ${elapsed}s`
+            );
+        } finally {
+            // Runs on success, failure, AND cancellation. TaskManager swallows
+            // the __taskCancelled error so a .catch() outside wouldn't fire —
+            // without this finally, the progress UI (and the cancel button)
+            // would stay stuck on screen after the user clicks cancel.
+            setImportProgress(null);
+            setCurrentImportingPath(null);
+            clearImportRun();
+            refreshKnowledgeRows();
+        }
     }).catch((err: unknown) => {
-        setImportProgress(null);
-        setCurrentImportingPath(null);
         ChatLib.chat(`&c[htsw] Import failed: ${err}`);
     });
 }

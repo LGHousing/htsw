@@ -3,14 +3,11 @@
  *
  * The action sync engine (`applyActionListDiff`) calls into the active sink
  * as it walks operations so a UI can light up source-action lines as they
- * are touched. Each importable gets its own sink (assigned by the session
- * before the importable runs and cleared after), so nested syncs inside a
- * parent op do not leak events — `applyActionListDiff` clears the sink on
- * entry and restores on exit, leaving only the outermost top-level sync
- * visible to the listener.
+ * are touched. Paths identify nested actions, e.g. `4.ifActions.2`.
  */
 export type DiffOpKind = "edit" | "add" | "move" | "delete";
 export type DiffFinalState = "match" | "edit" | "add" | "delete";
+export type ActionPath = string;
 
 export type DiffSummary = {
     matches: number;
@@ -26,15 +23,15 @@ export interface ImportDiffSink {
     /** Operation counts for the current list diff. */
     summary(summary: DiffSummary): void;
     /** A desired source action has a planned operation. */
-    planOp(actionIndex: number, kind: DiffOpKind, label: string, detail: string): void;
+    planOp(actionPath: ActionPath, kind: DiffOpKind, label: string, detail: string): void;
     /** An observed Housing action has no source line and will be deleted. */
     deleteOp(index: number, label: string, detail: string): void;
-    /** A desired action at this source index already matched observed. */
-    markMatch(actionIndex: number): void;
-    /** The importer is starting work on the action at this source index. */
-    beginOp(actionIndex: number, kind: DiffOpKind, label: string): void;
+    /** A desired action at this source path already matched observed. */
+    markMatch(actionPath: ActionPath): void;
+    /** The importer is starting work on the action at this source path. */
+    beginOp(actionPath: ActionPath, kind: DiffOpKind, label: string): void;
     /** The op has finished; final color = `state`. */
-    completeOp(actionIndex: number, state: DiffFinalState): void;
+    completeOp(actionPath: ActionPath, state: DiffFinalState): void;
     /** Sync done; clear any "currently working" highlight. */
     end(): void;
 }

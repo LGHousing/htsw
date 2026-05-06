@@ -2,6 +2,7 @@ import { Diagnostic, SourceMap, parseImportablesResult } from "htsw";
 import type { Importable } from "htsw/types";
 
 import TaskContext from "../tasks/context";
+import { isTaskCancelled } from "../tasks/manager";
 import { FileSystemFileLoader } from "../utils/files";
 import { buildKnowledgeTrustPlan, importableIdentity, trustPlanKey } from "../knowledge";
 import { printDiagnostic } from "../tui/diagnostics";
@@ -38,6 +39,13 @@ export type ImportSelection = {
     ) => ImportDiffSink | null;
 };
 
+export type ImportRunRowStatus =
+    | "queued"
+    | "current"
+    | "imported"
+    | "skipped"
+    | "failed";
+
 export type ImportProgress = {
     completed: number;
     total: number;
@@ -55,6 +63,11 @@ export type ImportProgress = {
      * weightCompleted + weightCurrent for nicer mid-importable feedback.
      */
     weightCurrent: number;
+    currentKey: string;
+    currentType: Importable["type"] | null;
+    currentIdentity: string;
+    orderIndex: number;
+    rowStatus: ImportRunRowStatus | null;
     currentLabel: string;
     phase:
         | "starting"
@@ -87,6 +100,23 @@ function importPhaseFromActionPhase(phase: ActionListProgressPhase): ImportProgr
     return "applying";
 }
 
+export function orderImportablesForImportSession(
+    allImportables: readonly Importable[],
+    selectedImportables: readonly Importable[]
+): Importable[] {
+    const selectedKeys = new Set(
+        selectedImportables.map((importable) =>
+            trustPlanKey(importable.type, importableIdentity(importable))
+        )
+    );
+    return [
+        ...allImportables.filter((i) => i.type === "ITEM"),
+        ...allImportables.filter((i) => i.type !== "ITEM"),
+    ].filter((importable) =>
+        selectedKeys.has(trustPlanKey(importable.type, importableIdentity(importable)))
+    );
+}
+
 export async function importSelectedImportables(
     ctx: TaskContext,
     selection: ImportSelection
@@ -94,17 +124,7 @@ export async function importSelectedImportables(
     const sm = new SourceMap(new FileSystemFileLoader());
     const parsed = parseImportablesResult(sm, selection.sourcePath);
     const registry = createItemRegistry(parsed.value, parsed.gcx);
-    const selectedKeys = new Set(
-        selection.importables.map((importable) =>
-            trustPlanKey(importable.type, importableIdentity(importable))
-        )
-    );
-    const ordered = [
-        ...parsed.value.filter((i) => i.type === "ITEM"),
-        ...parsed.value.filter((i) => i.type !== "ITEM"),
-    ].filter((importable) =>
-        selectedKeys.has(trustPlanKey(importable.type, importableIdentity(importable)))
-    );
+    const ordered = orderImportablesForImportSession(parsed.value, selection.importables);
     const trustPlan = selection.trustMode
         ? buildKnowledgeTrustPlan(selection.housingUuid, parsed.value)
         : undefined;
@@ -126,8 +146,9 @@ export async function importSelectedImportables(
         const importable = ordered[i];
         const weightCurrent = weights[i];
         const key = trustPlanKey(importable.type, importableIdentity(importable));
+        const identity = importableIdentity(importable);
         const plan = trustPlan?.importables.get(key);
-        const label = `${importable.type} ${importableIdentity(importable)}`;
+        const label = `${importable.type} ${identity}`;
         const emitProgress = (
             phase: ImportProgress["phase"],
             phaseLabel: string,
@@ -135,7 +156,8 @@ export async function importSelectedImportables(
             unitTotal: number,
             estimatedCompleted?: number,
             estimatedTotal?: number,
-            etaConfidence?: ImportProgress["etaConfidence"]
+            etaConfidence?: ImportProgress["etaConfidence"],
+            rowStatus: ImportRunRowStatus = "current"
         ) => {
             if (!selection.onProgress) return;
             const remainingWeight = weightTotal - weightCompleted - weightCurrent;
@@ -151,6 +173,11 @@ export async function importSelectedImportables(
                 weightCompleted,
                 weightTotal: weightCompleted + refinedCurrentTotal + remainingWeight,
                 weightCurrent: refinedCurrentTotal,
+                currentKey: key,
+                currentType: importable.type,
+                currentIdentity: identity,
+                orderIndex: i,
+                rowStatus,
                 currentLabel: label,
                 phase,
                 phaseLabel,
@@ -173,7 +200,8 @@ export async function importSelectedImportables(
                 1,
                 weightCurrent,
                 weightCurrent,
-                "planned"
+                "planned",
+                "skipped"
             );
             completed++;
             weightCompleted += weightCurrent;
@@ -204,15 +232,49 @@ export async function importSelectedImportables(
             if (!plan?.wholeImportableTrusted) {
                 result.imported++;
             }
+            emitProgress(
+                "done",
+                "imported",
+                1,
+                1,
+                weightCurrent,
+                weightCurrent,
+                "planned",
+                "imported"
+            );
         } catch (error) {
+            // User-initiated cancel — propagate so TaskManager logs "Task
+            // cancelled" once and the GUI's progress UI clears, instead of
+            // surfacing "Failed to import ...: [object Object]".
+            if (isTaskCancelled(error)) {
+                setActiveDiffSink(null);
+                throw error;
+            }
             result.failed++;
+            emitProgress(
+                "done",
+                "failed",
+                1,
+                1,
+                weightCurrent,
+                weightCurrent,
+                "planned",
+                "failed"
+            );
             if (error instanceof Diagnostic) {
                 printDiagnostic(sm, error);
             } else {
                 ctx.displayMessage(`&cFailed to import ${importable.type}: ${error}`);
-                const stack = (error as { stack?: string })?.stack;
-                if (typeof stack === "string" && stack.length > 0) {
-                    ctx.displayMessage(`&7${stack}`);
+                const e = error as {
+                    stack?: string;
+                    fileName?: string;
+                    lineNumber?: number;
+                };
+                if (typeof e?.fileName === "string" && typeof e?.lineNumber === "number") {
+                    ctx.displayMessage(`&7thrown at ${e.fileName}:${e.lineNumber}`);
+                }
+                if (typeof e?.stack === "string" && e.stack.length > 0) {
+                    ctx.displayMessage(`&7${e.stack}`);
                 }
             }
             // Halt the session on first failure rather than ploughing
@@ -238,6 +300,11 @@ export async function importSelectedImportables(
             weightCompleted,
             weightTotal,
             weightCurrent: 0,
+            currentKey: "",
+            currentType: null,
+            currentIdentity: "done",
+            orderIndex: -1,
+            rowStatus: null,
             currentLabel: "done",
             phase: "done",
             phaseLabel: "done",
