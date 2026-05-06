@@ -77,9 +77,31 @@ export default class TaskContext {
         reason: string,
         duration: number = 2000
     ): Promise<T> {
+        if (this.cancelled) {
+            throw { __taskCancelled: true, reason: "Task cancelled" };
+        }
         const pending = typeof promise === "function" ? promise() : promise;
         const cleanup = (pending as Promise<T> & { cleanupWaiter?: () => void })
             .cleanupWaiter;
+        // Poll the cancel flag so a click on the GUI cancel button takes effect
+        // mid-wait instead of after the full timeout. Without this, an import
+        // stuck waiting on a menu packet that never arrives would have to burn
+        // the entire `duration` per importable before cancellation is observed.
+        let settled = false;
+        const cancellationPromise = new Promise<T>((_, reject) => {
+            const poll = () => {
+                if (settled) return;
+                if (this.cancelled) {
+                    settled = true;
+                    cleanup?.();
+                    reject({ __taskCancelled: true, reason: "Task cancelled" });
+                    return;
+                }
+                setTimeout(poll, 50);
+            };
+            setTimeout(poll, 50);
+        });
+        cancellationPromise.catch(() => {});
         const timeoutPromise = new Promise<T>((_, reject) => {
             setTimeout(() => {
                 cleanup?.();
@@ -87,7 +109,11 @@ export default class TaskContext {
             }, duration);
         });
 
-        return Promise.race([pending, timeoutPromise]);
+        try {
+            return await Promise.race([pending, timeoutPromise, cancellationPromise]);
+        } finally {
+            settled = true;
+        }
     }
 
     getAllItemSlots = getAllItemSlots;
