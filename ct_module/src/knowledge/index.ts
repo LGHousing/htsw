@@ -41,3 +41,5 @@ export type { KnowledgeState, KnowledgeStatusRow } from "./status";
 
 export { buildKnowledgeTrustPlan, trustPlanKey } from "./trust";
 export type { KnowledgeTrustPlan, ImportableTrustPlan, TrustedListPath } from "./trust";
+
+export { getAlias, setAlias, clearAlias, listAliases } from "./aliases";
