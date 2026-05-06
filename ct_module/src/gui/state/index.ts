@@ -12,6 +12,13 @@ import { normalizeHtswPath } from "../lib/pathDisplay";
 import { getTimingStats } from "../../importer/progress/timing";
 import { importableIdentity } from "../../knowledge/paths";
 import { trustPlanKey } from "../../knowledge/trust";
+import {
+    clearActiveTab,
+    getActivePath,
+    getTabs,
+    PROGRESS_TAB_PATH,
+    setActiveTab,
+} from "./selection";
 
 export type { ImportRunRowStatus };
 
@@ -310,7 +317,8 @@ export function setImportProgress(p: ImportProgressView | null): void {
         setActiveTab(PROGRESS_TAB_PATH);
     } else if (p === null && !wasNull && getActivePath() === PROGRESS_TAB_PATH) {
         const tabs = getTabs();
-        setActiveTab(tabs.length > 0 ? tabs[0].path : null!);
+        if (tabs.length > 0) setActiveTab(tabs[0].path);
+        else clearActiveTab();
     }
 }
 export function getImportStartedAt(): number | null {
