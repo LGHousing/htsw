@@ -2,17 +2,22 @@
 
 import type { Child, Element } from "../lib/layout";
 import { getScrollState, setScrollOffset } from "../lib/layout";
-import { Col, Container, Row, Scroll, Text } from "../lib/components";
+import { Button, Col, Container, Row, Scroll, Text } from "../lib/components";
 import {
     ACCENT_SUCCESS,
+    COLOR_BUTTON_DANGER,
+    COLOR_BUTTON_DANGER_HOVER,
+    COLOR_PANEL_BORDER,
     COLOR_TEXT,
     COLOR_TEXT_DIM,
     COLOR_TEXT_FAINT,
 } from "../lib/theme";
+import { TaskManager } from "../../tasks/manager";
 import {
     getCurrentImportingPath,
+    getImportEtaSeconds,
     getImportProgress,
-    getImportStartedAt,
+    getImportProgressFraction,
 } from "../state";
 import { diffKey, getDiffEntry } from "../state/diff";
 import { actionsToLines, parseHtslFile } from "../state/htsl-render";
@@ -24,20 +29,30 @@ const SCROLL_ID = "live-importer-htsl";
 // uses inside `htslDiffLines`, so each rendered htsl line is this tall.
 const LINE_H = 10;
 
-const COLOR_BAR_BG = 0xff1a1f25 | 0;
+// Use the panel-border color (visibly lighter than COLOR_PANEL) so the
+// empty channel reads as "an empty bar" instead of vanishing into the
+// surrounding panel bg at 0% progress. 6px tall so it's a clear stripe.
+const COLOR_BAR_BG = COLOR_PANEL_BORDER;
 const COLOR_BAR_FG = ACCENT_SUCCESS;
+const PROGRESS_BAR_H = 6;
 
 function progressBar(): Element {
     return Container({
         style: {
+            // Without `direction: "row"` the two children stack along the
+            // 4px-tall main axis (col is the default). The green child
+            // would grow vertically instead of horizontally, so the bar
+            // would either be all-green or all-dark with nothing in
+            // between — exactly the "always 100% green" symptom.
+            direction: "row",
             width: { kind: "grow" },
-            height: { kind: "px", value: 4 },
+            height: { kind: "px", value: PROGRESS_BAR_H },
             background: COLOR_BAR_BG,
         },
         children: () => {
             const p = getImportProgress();
             if (p === null || p.weightTotal <= 0) return [];
-            const ratio = Math.min(1, Math.max(0, p.weightCompleted / p.weightTotal));
+            const ratio = getImportProgressFraction();
             return [
                 Container({
                     style: {
@@ -59,8 +74,8 @@ function progressBar(): Element {
     });
 }
 
-function formatEta(ms: number): string {
-    const total = Math.max(0, Math.round(ms / 1000));
+function formatEtaSeconds(secs: number): string {
+    const total = Math.max(0, Math.round(secs));
     if (total < 60) return `~${total}s`;
     const m = Math.floor(total / 60);
     const s = total % 60;
@@ -70,69 +85,44 @@ function formatEta(ms: number): string {
     return mm === 0 ? `~${h}h` : `~${h}h${mm}m`;
 }
 
-/**
- * Effective work-completion ratio that accounts for in-flight progress
- * inside the current importable. The session only emits coarse progress
- * events at importable boundaries (`weightCompleted` jumps once per
- * importable), so for a 1-importable run the raw value stays at 0 until
- * the very end. We bridge that gap by counting how many actions in the
- * currently-importing function have settled to a non-`unknown` state.
- */
-function effectiveWeightRatio(): number {
-    const p = getImportProgress();
-    if (p === null || p.weightTotal <= 0) return 0;
-    const path = getCurrentImportingPath();
-    let inFlightFraction = 0;
-    if (path !== null) {
-        const entry = getDiffEntry(diffKey(path));
-        if (entry !== undefined) {
-            const parsed = parseHtslFile(path);
-            if (parsed.parseError === null && parsed.actions.length > 0) {
-                let settled = 0;
-                for (let i = 0; i < parsed.actions.length; i++) {
-                    const s = entry.states.get(i);
-                    if (s !== undefined && s !== "unknown") settled++;
-                }
-                inFlightFraction = settled / parsed.actions.length;
-            }
-        }
-    }
-    const effectiveCompleted =
-        p.weightCompleted + p.weightCurrent * inFlightFraction;
-    return Math.min(1, Math.max(0, effectiveCompleted / p.weightTotal));
-}
-
 function etaText(): string {
     const p = getImportProgress();
-    const startedAt = getImportStartedAt();
-    if (p === null || startedAt === null) return "";
-    const ratio = effectiveWeightRatio();
-    if (ratio <= 0) return "—";
-    const elapsed = Date.now() - startedAt;
-    if (elapsed <= 0) return "—";
-    const remaining = (elapsed * (1 - ratio)) / ratio;
-    if (!isFinite(remaining) || remaining < 0) return "—";
-    return formatEta(remaining);
+    const secs = getImportEtaSeconds();
+    if (secs === null) return p === null ? "" : "calculating";
+    const text = formatEtaSeconds(secs);
+    if (p !== null && p.etaConfidence === "rough") return `${text} rough`;
+    if (p !== null && p.etaConfidence === "informed") return `${text} informed`;
+    return text;
+}
+
+function percentText(): string {
+    return `${Math.floor(getImportProgressFraction() * 100)}%`;
+}
+
+function unitText(): string {
+    const p = getImportProgress();
+    if (p === null || p.unitTotal <= 0) return "";
+    return `${p.unitCompleted}/${p.unitTotal}`;
 }
 
 function headerRow(): Element {
     return Row({
-        style: { gap: 6, height: { kind: "px", value: 10 }, align: "center" },
+        style: { gap: 6, height: { kind: "px", value: 12 }, align: "center" },
         children: [
             Text({
                 text: () => {
                     const p = getImportProgress();
                     if (p === null) return "Idle";
-                    return `${p.completed}/${p.total}`;
+                    return percentText();
                 },
                 color: COLOR_TEXT_DIM,
-                style: { width: { kind: "px", value: 28 } },
+                style: { width: { kind: "px", value: 34 } },
             }),
             Text({
                 text: () => {
                     const p = getImportProgress();
                     if (p === null) return "no import in flight";
-                    return p.currentLabel;
+                    return `${p.currentLabel} · ${p.completed + 1}/${p.total}`;
                 },
                 color: () => (getImportProgress() === null ? COLOR_TEXT_FAINT : COLOR_TEXT),
                 style: { width: { kind: "grow" } },
@@ -140,6 +130,45 @@ function headerRow(): Element {
             Text({
                 text: () => etaText(),
                 color: COLOR_TEXT_DIM,
+            }),
+            // Cancel button — only meaningful while an import is in flight.
+            // `TaskManager.cancelAll()` flips the cancel flag on the running
+            // TaskContext; the next `ctx.sleep`/`ctx.runCommand`/etc. throws
+            // a `__taskCancelled` error which TaskManager catches and logs
+            // as "Task cancelled".
+            Button({
+                text: "✕ Cancel",
+                style: {
+                    width: { kind: "px", value: 50 },
+                    height: { kind: "grow" },
+                    background: COLOR_BUTTON_DANGER,
+                    hoverBackground: COLOR_BUTTON_DANGER_HOVER,
+                },
+                onClick: () => {
+                    if (getImportProgress() === null) return;
+                    TaskManager.cancelAll();
+                    ChatLib.chat(`&c[htsw] cancelling import…`);
+                },
+            }),
+        ],
+    });
+}
+
+function phaseRow(): Element {
+    return Row({
+        style: { gap: 6, height: { kind: "px", value: 10 }, align: "center" },
+        children: [
+            Text({
+                text: () => {
+                    const p = getImportProgress();
+                    if (p === null) return "";
+                    const unit = unitText();
+                    return unit.length === 0
+                        ? `${p.phase} · ${p.phaseLabel}`
+                        : `${p.phase} · ${p.phaseLabel} · ${unit}`;
+                },
+                color: COLOR_TEXT_DIM,
+                style: { width: { kind: "grow" } },
             }),
         ],
     });
@@ -198,12 +227,21 @@ function htslView(): Element {
             if (!hasState) {
                 return [
                     Text({
-                        text: "Reading housing state…",
+                        text: () => {
+                            const p = getImportProgress();
+                            return p === null ? "Reading housing state..." : p.phaseLabel;
+                        },
                         color: COLOR_TEXT_DIM,
                         style: { padding: 6 },
                     }),
                     Text({
-                        text: "(Trust mode could speed this up)",
+                        text: () => {
+                            const p = getImportProgress();
+                            if (p === null || p.unitTotal <= 0) {
+                                return "(Trust mode can skip known-current work)";
+                            }
+                            return `${p.unitCompleted}/${p.unitTotal} · ${etaText()}`;
+                        },
                         color: COLOR_TEXT_FAINT,
                         style: { padding: { side: "x", value: 6 } },
                     }),
@@ -248,7 +286,7 @@ export function LiveImporter(): Element {
                         height: { kind: "grow" },
                         gap: 3,
                     },
-                    children: [progressBar(), headerRow(), pathRow(), htslView()],
+                    children: [progressBar(), headerRow(), pathRow(), phaseRow(), htslView()],
                 }),
             ];
         },

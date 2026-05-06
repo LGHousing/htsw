@@ -4,6 +4,7 @@ import { Element } from "../../lib/layout";
 import { Button, Col, Container, Input, Row, Scroll, Text } from "../../lib/components";
 import { togglePopover } from "../../lib/popovers";
 import { openMenu, MenuAction } from "../../lib/menu";
+import { openAddImportablePopover } from "../../popovers/add-importable";
 import {
     getImportJsonPath,
     getParsedResult,
@@ -16,7 +17,14 @@ import {
 } from "../../state";
 import { STATUS_COLOR, STATUS_LABEL, statusForImportable } from "../../knowledge-status";
 import { importableIdentity } from "../../../knowledge/paths";
-import { previewSelect, confirmSelect } from "../../state/selection";
+import { confirmSelect } from "../../state/selection";
+import {
+    hasSubList,
+    importableDeclaringJson,
+    importableSourcePath,
+    importableSubListPath,
+    type SubListKind,
+} from "../../state/importablePaths";
 import { openInVSCode, showInExplorer } from "../../../utils/osShell";
 import type { Importable } from "htsw/types";
 import {
@@ -26,11 +34,15 @@ import {
     ACCENT_SUCCESS,
     ACCENT_TEAL,
     ACCENT_WARN,
+    COLOR_PANEL_RAISED,
     COLOR_ROW,
     COLOR_ROW_HOVER,
     COLOR_ROW_SELECTED,
     COLOR_ROW_SELECTED_HOVER,
     COLOR_TEXT_DIM,
+    COLOR_TEXT_FAINT,
+    GLYPH_CHEVRON_DOWN,
+    GLYPH_CHEVRON_RIGHT,
     GLYPH_DOT,
     SIZE_ROW_H,
 } from "../../lib/theme";
@@ -71,29 +83,43 @@ function dirname(p: string): string {
     return slash < 0 ? "" : norm.substring(0, slash);
 }
 
-function fsActions(fullPath: string): MenuAction[] {
+function fsActions(fullPath: string, label: string): MenuAction[] {
     return [
-        { label: "Show in explorer", onClick: () => showInExplorer(fullPath) },
-        { label: "Open with VSCode", onClick: () => openInVSCode(fullPath) },
+        { label: `Open ${label} in VSCode`, onClick: () => openInVSCode(fullPath) },
+        { label: `Show ${label} in explorer`, onClick: () => showInExplorer(fullPath) },
     ];
 }
 
-function importableSourcePath(imp: Importable): string | undefined {
-    const parsed = getParsedResult();
-    if (parsed === null) return undefined;
-    // For ITEM, gcx.sourceFiles intentionally points to the declaring
-    // import.json (see context.ts). The actual .snbt file is what the user
-    // wants to open — the parsed `nbt` Tag's span resolves to it via the
-    // source map because parseSnbt registers the .snbt file there.
-    if (imp.type === "ITEM" && imp.nbt !== undefined) {
-        try {
-            const span = parsed.gcx.spans.get(imp.nbt);
-            return parsed.gcx.sourceMap.getFileByPos(span.start).path;
-        } catch (_e) {
-            // Fall through to the declaring file.
-        }
+/**
+ * Build the right-click menu for a row that has a "primary" source file
+ * (the htsl for FUNCTION/EVENT, the .snbt for ITEM, the htsl for an
+ * action sub-list, etc.). When the primary path equals the declaring
+ * import.json — the case for REGION/MENU/NPC and inline-JSON sub-lists —
+ * we show only the import.json actions to avoid duplicates.
+ */
+function buildPrimaryAndJsonMenu(
+    primaryPath: string | undefined,
+    primaryLabel: string,
+    declaringPath: string
+): MenuAction[] {
+    const out: MenuAction[] = [];
+    if (primaryPath !== undefined && primaryPath !== declaringPath) {
+        out.push(...fsActions(primaryPath, primaryLabel));
+        out.push({ kind: "separator" });
     }
-    return parsed.gcx.sourceFiles.get(imp);
+    out.push(...fsActions(declaringPath, "import.json"));
+    return out;
+}
+
+function importableMenuLabel(imp: Importable): string {
+    const path = importableSourcePath(imp);
+    if (path === undefined) return "source file";
+    return basename(path);
+}
+
+function importableLabel(i: Importable): string {
+    if (i.type === "EVENT") return i.event;
+    return i.name;
 }
 
 let searchQuery = "";
@@ -106,6 +132,28 @@ let selectedTypes: { [k in ImportableType]: boolean } = {
     NPC: true,
 };
 
+// Identities (`type:identity` strings) of importables whose chevron is
+// currently expanded. Reset across module reloads — purely a UI concern.
+const expandedImportables: Set<string> = new Set();
+
+function isExpandable(imp: Importable): boolean {
+    if (imp.type === "REGION") {
+        return hasSubList(imp, "onEnterActions") || hasSubList(imp, "onExitActions");
+    }
+    if (imp.type === "ITEM") {
+        return (
+            hasSubList(imp, "leftClickActions") || hasSubList(imp, "rightClickActions")
+        );
+    }
+    return false;
+}
+
+function toggleExpansion(imp: Importable): void {
+    const id = importableIdentity(imp);
+    if (expandedImportables.has(id)) expandedImportables.delete(id);
+    else expandedImportables.add(id);
+}
+
 type SortDir = "ASC" | "DESC";
 type SortFieldId = "alphabetical" | "type";
 
@@ -116,11 +164,6 @@ type SortField = {
     fallbackDir: SortDir;
     compare: (a: Importable, b: Importable) => number;
 };
-
-function importableLabel(i: Importable): string {
-    if (i.type === "EVENT") return i.event;
-    return i.name;
-}
 
 const SORT_FIELDS: SortField[] = [
     {
@@ -193,6 +236,8 @@ const ROW_BG = COLOR_ROW;
 const ROW_HOVER_BG = COLOR_ROW_HOVER;
 const SELECTED_BG = COLOR_ROW_SELECTED;
 const SELECTED_HOVER_BG = COLOR_ROW_SELECTED_HOVER;
+const SUBROW_BG = COLOR_PANEL_RAISED;
+const SUBROW_HOVER_BG = COLOR_ROW_HOVER;
 
 function selectSort(id: SortFieldId): void {
     if (activeSort.id === id) {
@@ -226,15 +271,161 @@ function toggleAndHighlight(imp: Importable): void {
     setSelectedImportableId(id);
 }
 
-function openImportable(imp: Importable, pin: boolean): void {
+/**
+ * Type-dispatched "open" action invoked on double-click. FUNCTION/EVENT
+ * preview their htsl in the right pane (existing behavior). ITEM jumps to
+ * its .snbt. REGION toggles inline expansion (matching the chevron). MENU
+ * and NPC fall back to the declaring import.json with a chat note —
+ * dedicated panes for them are deferred work.
+ */
+function dispatchDoubleClick(imp: Importable): void {
     setSelectedImportableId(importableIdentity(imp));
-    const parsed = getParsedResult();
-    if (parsed === null) return;
-    const path = parsed.gcx.sourceFiles.get(imp);
+    if (imp.type === "REGION") {
+        toggleExpansion(imp);
+        return;
+    }
+    if (imp.type === "MENU") {
+        ChatLib.chat("&7[htsw] menu pane TBD — opening import.json");
+        const json = importableDeclaringJson(imp);
+        openTab({ path: json, label: importableLabel(imp) });
+        confirmSelect(json);
+        return;
+    }
+    if (imp.type === "NPC") {
+        ChatLib.chat("&7[htsw] npc view TBD — opening import.json");
+        const json = importableDeclaringJson(imp);
+        openTab({ path: json, label: importableLabel(imp) });
+        confirmSelect(json);
+        return;
+    }
+    const path = importableSourcePath(imp);
     if (path === undefined) return;
     openTab({ path, label: importableLabel(imp) });
-    if (pin) confirmSelect(path);
-    else previewSelect(path);
+    confirmSelect(path);
+}
+
+const SUB_LIST_LABELS: { [k in SubListKind]: string } = {
+    onEnterActions: "Enter actions",
+    onExitActions: "Exit actions",
+    leftClickActions: "Left click actions",
+    rightClickActions: "Right click actions",
+};
+
+function subRowsFor(imp: Importable): SubListKind[] {
+    if (imp.type === "REGION") {
+        const out: SubListKind[] = [];
+        if (hasSubList(imp, "onEnterActions")) out.push("onEnterActions");
+        if (hasSubList(imp, "onExitActions")) out.push("onExitActions");
+        return out;
+    }
+    if (imp.type === "ITEM") {
+        const out: SubListKind[] = [];
+        if (hasSubList(imp, "leftClickActions")) out.push("leftClickActions");
+        if (hasSubList(imp, "rightClickActions")) out.push("rightClickActions");
+        return out;
+    }
+    return [];
+}
+
+function subRow(parent: Importable, kind: SubListKind): Element {
+    const label = SUB_LIST_LABELS[kind];
+    const declaring = importableDeclaringJson(parent);
+    return Container({
+        style: {
+            direction: "row",
+            padding: [
+                { side: "left", value: 22 },
+                { side: "right", value: 4 },
+            ],
+            gap: 6,
+            align: "center",
+            height: { kind: "px", value: SIZE_ROW_H },
+            background: SUBROW_BG,
+            hoverBackground: SUBROW_HOVER_BG,
+        },
+        onClick: (_rect, info) => {
+            if (info.isDoubleClickSecond) return;
+            const path = importableSubListPath(parent, kind);
+            if (info.button === 1) {
+                openMenu(
+                    info.x,
+                    info.y,
+                    buildPrimaryAndJsonMenu(
+                        path,
+                        path === undefined ? "list" : basename(path),
+                        declaring
+                    )
+                );
+                return;
+            }
+            if (info.button !== 0) return;
+            if (path !== undefined) {
+                openTab({ path, label: `${importableLabel(parent)} · ${label}` });
+                // Confirm rather than preview: previewing a sub-row's htsl
+                // would clear any previously-pinned preview tab, so jumping
+                // between Enter actions ↔ Exit actions on the same region
+                // would keep blowing away the other one. Each sub-row click
+                // pins so both stay visible.
+                confirmSelect(path);
+            }
+        },
+        onDoubleClick: () => {
+            const path = importableSubListPath(parent, kind);
+            if (path === undefined) return;
+            openTab({ path, label: `${importableLabel(parent)} · ${label}` });
+            confirmSelect(path);
+        },
+        children: [
+            Text({
+                text: "↳",
+                color: COLOR_TEXT_FAINT,
+                style: { width: { kind: "px", value: 8 } },
+            }),
+            Text({
+                text: label,
+                color: COLOR_TEXT_DIM,
+                style: { width: { kind: "grow" } },
+            }),
+        ],
+    });
+}
+
+function chevronCell(imp: Importable): Element {
+    const expandable = isExpandable(imp);
+    // Always reserve the same horizontal slot so expandable and non-
+    // expandable rows column-align. Use a Row with vertical center so the
+    // glyph sits on the same baseline as the rest of the row's content
+    // (which the parent `align: "center"` does for its own children, but
+    // doesn't propagate into nested containers).
+    if (!expandable) {
+        return Container({
+            style: { width: { kind: "px", value: 16 }, height: { kind: "grow" } },
+            children: [],
+        });
+    }
+    const id = importableIdentity(imp);
+    const expanded = expandedImportables.has(id);
+    return Container({
+        style: {
+            direction: "row",
+            align: "center",
+            padding: { side: "left", value: 4 },
+            width: { kind: "px", value: 16 },
+            height: { kind: "grow" },
+            hoverBackground: COLOR_ROW_HOVER,
+        },
+        onClick: (_rect, info) => {
+            if (info.isDoubleClickSecond) return;
+            if (info.button !== 0) return;
+            toggleExpansion(imp);
+        },
+        children: [
+            Text({
+                text: expanded ? GLYPH_CHEVRON_DOWN : GLYPH_CHEVRON_RIGHT,
+                color: ACCENT_INFO,
+            }),
+        ],
+    });
 }
 
 function resultRow(r: Importable): Element {
@@ -257,15 +448,23 @@ function resultRow(r: Importable): Element {
             // checkbox; don't untoggle it on the second click.
             if (info.isDoubleClickSecond) return;
             if (info.button === 1) {
-                const path = importableSourcePath(r);
-                if (path !== undefined) openMenu(info.x, info.y, fsActions(path));
+                openMenu(
+                    info.x,
+                    info.y,
+                    buildPrimaryAndJsonMenu(
+                        importableSourcePath(r),
+                        importableMenuLabel(r),
+                        importableDeclaringJson(r)
+                    )
+                );
                 return;
             }
             if (info.button !== 0) return;
             toggleAndHighlight(r);
         },
-        onDoubleClick: () => openImportable(r, true),
+        onDoubleClick: () => dispatchDoubleClick(r),
         children: [
+            chevronCell(r),
             // Multi-select checkbox.
             Text({
                 text: isChecked ? "[x]" : "[ ]",
@@ -284,6 +483,15 @@ function resultRow(r: Importable): Element {
             Text({ text: r.type, color: COLOR_TEXT_DIM }),
         ],
     });
+}
+
+function rowAndChildren(r: Importable): Element[] {
+    const out: Element[] = [resultRow(r)];
+    if (!isExpandable(r)) return out;
+    if (!expandedImportables.has(importableIdentity(r))) return out;
+    const kinds = subRowsFor(r);
+    for (let i = 0; i < kinds.length; i++) out.push(subRow(r, kinds[i]));
+    return out;
 }
 
 function sortPopoverContent(): Element {
@@ -475,6 +683,18 @@ export function ImportablesView(): Element {
                             });
                         },
                     }),
+                    // Add a blank stub entry to import.json. Lives next to
+                    // Sort/Filter because it's another list-management
+                    // affordance — moved here from the top toolbar when
+                    // that slot was repurposed for Alias.
+                    Button({
+                        text: "+",
+                        style: {
+                            width: { kind: "px", value: 18 },
+                            height: { kind: "grow" },
+                        },
+                        onClick: (rect) => openAddImportablePopover(rect),
+                    }),
                 ],
             }),
             Scroll({
@@ -483,7 +703,12 @@ export function ImportablesView(): Element {
                 children: () => {
                     const items = filteredResults();
                     if (items.length === 0) return [emptyState()];
-                    return items.map(resultRow);
+                    const out: Element[] = [];
+                    for (let i = 0; i < items.length; i++) {
+                        const sub = rowAndChildren(items[i]);
+                        for (let j = 0; j < sub.length; j++) out.push(sub[j]);
+                    }
+                    return out;
                 },
             }),
             Row({
@@ -512,7 +737,7 @@ export function ImportablesView(): Element {
                             if (info.isDoubleClickSecond) return;
                             const path = getImportJsonPath();
                             if (info.button === 1) {
-                                openMenu(info.x, info.y, fsActions(path));
+                                openMenu(info.x, info.y, fsActions(path, "import.json"));
                                 return;
                             }
                             if (info.button !== 0) return;
@@ -529,7 +754,7 @@ export function ImportablesView(): Element {
                             if (info.isDoubleClickSecond) return;
                             const folder = dirname(getImportJsonPath());
                             if (info.button === 1) {
-                                openMenu(info.x, info.y, fsActions(folder));
+                                openMenu(info.x, info.y, fsActions(folder, "folder"));
                                 return;
                             }
                             if (info.button !== 0) return;

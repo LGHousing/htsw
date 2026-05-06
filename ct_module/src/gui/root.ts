@@ -15,7 +15,7 @@ import { RightPanel } from "./right-panel";
 import { BottomToolbar } from "./bottom-toolbar";
 import { ChatInputBar } from "./chat-input";
 import { LiveImporter } from "./live-importer";
-import { COLOR_PANEL } from "./lib/theme";
+import { COLOR_PANEL, COLOR_PANEL_BORDER } from "./lib/theme";
 
 const CHAT_INPUT_H = 16;
 
@@ -134,14 +134,25 @@ function buildLayout(b: ContainerBounds): Element {
                                             bgWrap(BottomToolbar(), "grow"),
                                         ],
                                     }),
-                                    // RIGHT COLUMN — gives up topGapH worth of vertical space.
+                                    // RIGHT COLUMN — gives up topGapH worth of
+                                    // vertical space.
                                     Container({
                                         style: {
                                             width: { kind: "px", value: rightColW },
                                             height: { kind: "grow" },
-                                            background: COLOR_PANEL,
+                                            background: COLOR_PANEL_BORDER,
+                                            padding: 1,
                                         },
-                                        children: [RightPanel()],
+                                        children: [
+                                            Container({
+                                                style: {
+                                                    width: { kind: "grow" },
+                                                    height: { kind: "grow" },
+                                                    background: COLOR_PANEL,
+                                                },
+                                                children: [RightPanel()],
+                                            }),
+                                        ],
                                     }),
                                 ],
                             }),

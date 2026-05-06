@@ -1,8 +1,23 @@
 /// <reference types="../../../CTAutocomplete" />
 
-import { Child, Element } from "../lib/layout";
-import { Button, Col, Container, Row, Scroll, Text } from "../lib/components";
-import { getTabs, getActivePath, setActiveTab, confirmSelect, Tab } from "../state/selection";
+import { Child, ClickInfo, Element, Rect } from "../lib/layout";
+import { Col, Container, Row, Scroll, Text } from "../lib/components";
+import {
+    closeTab,
+    confirmSelect,
+    getActivePath,
+    getTabs,
+    moveTab,
+    moveTabToEnd,
+    moveTabToStart,
+    setActiveTab,
+    Tab,
+    tabIndex,
+    tabCount,
+} from "../state/selection";
+import { openMenu, MenuAction } from "../lib/menu";
+import { GLYPH_X } from "../lib/theme";
+import { SyntaxToken, tokenizeHtsl } from "./syntax";
 import { FileSystemFileLoader } from "../../utils/files";
 import { actionsToLines, parseHtslFile, type HtslLine } from "../state/htsl-render";
 import {
@@ -11,6 +26,7 @@ import {
     diffKey,
     getDiffEntry,
     type DiffState,
+    type DiffLineInfo,
 } from "../state/diff";
 import { getParsedResult } from "../state";
 import { normalizeHtswPath } from "../lib/pathDisplay";
@@ -78,7 +94,13 @@ function endsWith(s: string, suffix: string): boolean {
 }
 
 function stem(p: string): string {
-    const slash = p.lastIndexOf("/");
+    // Walk both separators — tab paths come straight from `gcx.sourceFiles`
+    // which on Windows are absolute paths with backslashes. Splitting on `/`
+    // alone leaves the whole `C:\…` path as the "basename" and the tab button
+    // ends up showing the full Windows path instead of just the file stem.
+    const fwd = p.lastIndexOf("/");
+    const back = p.lastIndexOf("\\");
+    const slash = fwd > back ? fwd : back;
     const base = slash < 0 ? p : p.substring(slash + 1);
     const dot = base.lastIndexOf(".");
     return dot <= 0 ? base : base.substring(0, dot);
@@ -111,19 +133,112 @@ function readPlainLines(path: string): string[] {
     return lines;
 }
 
+const TAB_H = 13;
+const TAB_CLOSE_W = 11;
+const TAB_LABEL_PAD_X = 5;
+const TAB_W_BUFFER = 2;
+const COLOR_TAB_CLOSE = 0xffaaaaaa | 0;
+const COLOR_TAB_CLOSE_BG_HOVER = 0x40e85c5c | 0;
+
+function tabReorderActions(path: string): MenuAction[] {
+    const idx = tabIndex(path);
+    const total = tabCount();
+    const out: MenuAction[] = [];
+    out.push({
+        label: "Move left",
+        onClick: () => moveTab(path, -1),
+    });
+    out.push({
+        label: "Move right",
+        onClick: () => moveTab(path, +1),
+    });
+    out.push({ kind: "separator" });
+    out.push({
+        label: "Move to start",
+        onClick: () => moveTabToStart(path),
+    });
+    out.push({
+        label: "Move to end",
+        onClick: () => moveTabToEnd(path),
+    });
+    out.push({ kind: "separator" });
+    out.push({
+        label: "Close tab",
+        onClick: () => closeTab(path),
+    });
+    // Reference idx/total so unused-var lint stays quiet — and it's a useful
+    // sanity check if we ever want to disable specific entries based on
+    // position (e.g. greying out "Move left" when already first).
+    void idx;
+    void total;
+    return out;
+}
+
 function tabButton(tab: Tab): Element {
     const isActive = getActivePath() === tab.path;
-    const label = tab.confirmed ? stem(tab.path) : `§o${stem(tab.path)}`;
-    return Button({
-        text: label,
+    const labelText = tab.confirmed ? stem(tab.path) : `§o${stem(tab.path)}`;
+    const tabBg = isActive ? TAB_BG_ACTIVE : TAB_BG;
+    const tabHoverBg = isActive ? TAB_BG_ACTIVE_HOVER : TAB_BG_HOVER;
+    // Width sized to: label width + horizontal padding + close-glyph cell +
+    // a tiny safety buffer (italic chars and `Renderer.getStringWidth`
+    // occasionally undercount by a pixel, which would otherwise shave the
+    // last char off a tightly-fitted label). Content-sized so the X sits
+    // next to the label instead of floating to the far end of the row.
+    const labelW = Renderer.getStringWidth(labelText);
+    const tabW = labelW + TAB_LABEL_PAD_X * 2 + TAB_CLOSE_W + TAB_W_BUFFER;
+    return Container({
         style: {
-            width: { kind: "grow" },
+            direction: "row",
+            align: "center",
+            width: { kind: "px", value: tabW },
             height: { kind: "grow" },
-            background: isActive ? TAB_BG_ACTIVE : TAB_BG,
-            hoverBackground: isActive ? TAB_BG_ACTIVE_HOVER : TAB_BG_HOVER,
+            background: tabBg,
+            hoverBackground: tabHoverBg,
         },
-        onClick: () => setActiveTab(tab.path),
-        onDoubleClick: () => confirmSelect(tab.path),
+        onClick: (_rect: Rect, info: ClickInfo) => {
+            if (info.button === 1) {
+                openMenu(info.x, info.y, tabReorderActions(tab.path));
+                return;
+            }
+            if (info.button !== 0) return;
+            if (info.isDoubleClickSecond) confirmSelect(tab.path);
+            else setActiveTab(tab.path);
+        },
+        children: [
+            Container({
+                style: {
+                    direction: "row",
+                    width: { kind: "grow" },
+                    height: { kind: "grow" },
+                    align: "center",
+                    padding: { side: "x", value: TAB_LABEL_PAD_X },
+                },
+                children: [Text({ text: labelText })],
+            }),
+            // Close [x]. `direction: col` + `align: center` puts the glyph
+            // on the cell's horizontal centre; the inner Text takes the full
+            // height so its built-in vertical centering kicks in too.
+            Container({
+                style: {
+                    direction: "col",
+                    width: { kind: "px", value: TAB_CLOSE_W },
+                    height: { kind: "grow" },
+                    align: "center",
+                    hoverBackground: COLOR_TAB_CLOSE_BG_HOVER,
+                },
+                onClick: (_rect, info) => {
+                    if (info.button !== 0) return;
+                    closeTab(tab.path);
+                },
+                children: [
+                    Text({
+                        text: GLYPH_X,
+                        color: COLOR_TAB_CLOSE,
+                        style: { height: { kind: "grow" } },
+                    }),
+                ],
+            }),
+        ],
     });
 }
 
@@ -139,13 +254,71 @@ const STATE_GLYPH: { [k in DiffState]: string } = {
     current: ">",
 };
 
+function tokenTexts(tokens: SyntaxToken[]): Element[] {
+    const out: Element[] = [];
+    for (let i = 0; i < tokens.length; i++) {
+        out.push(Text({ text: tokens[i].text, color: tokens[i].color }));
+    }
+    return out;
+}
+
+function digitsOf(n: number): number {
+    if (n <= 0) return 1;
+    let d = 0;
+    let x = n;
+    while (x > 0) {
+        d++;
+        x = Math.floor(x / 10);
+    }
+    return d;
+}
+
+function padLeft(s: string, width: number): string {
+    let out = s;
+    while (out.length < width) out = " " + out;
+    return out;
+}
+
 function lineRow(
     lineNum: number,
-    text: string,
-    color: number,
+    padWidth: number,
+    tokens: SyntaxToken[],
+    glyphColor: number,
     bg: number | undefined,
-    state: DiffState
+    state: DiffState,
+    detail?: string
 ): Element {
+    const children: Element[] = [
+        Text({
+            text: STATE_GLYPH[state],
+            color: glyphColor,
+            style: { width: { kind: "px", value: 8 } },
+        }),
+        Text({
+            text: padLeft(String(lineNum), padWidth),
+            color: COLOR_GUTTER,
+            style: { width: { kind: "px", value: 24 } },
+        }),
+        Container({
+            style: {
+                direction: "row",
+                width: { kind: "grow" },
+                height: { kind: "grow" },
+                align: "center",
+                gap: 0,
+            },
+            children: tokenTexts(tokens),
+        }),
+    ];
+    if (detail !== undefined && detail.length > 0) {
+        children.push(
+            Text({
+                text: shortenForDisplay(detail, 42),
+                color: glyphColor,
+                style: { width: { kind: "px", value: 180 } },
+            })
+        );
+    }
     return Container({
         style: {
             direction: "row",
@@ -154,24 +327,13 @@ function lineRow(
             height: { kind: "px", value: LINE_H },
             background: bg,
         },
-        children: [
-            Text({
-                text: STATE_GLYPH[state],
-                color,
-                style: { width: { kind: "px", value: 8 } },
-            }),
-            Text({
-                text: String(lineNum),
-                color: COLOR_GUTTER,
-                style: { width: { kind: "px", value: 24 } },
-            }),
-            Text({
-                text,
-                color,
-                style: { width: { kind: "grow" } },
-            }),
-        ],
+        children,
     });
+}
+
+/** One-color line for parse errors / labels / comments — bypasses tokenizer. */
+function plainTokens(text: string, color: number): SyntaxToken[] {
+    return [{ text, color }];
 }
 
 function indentedText(line: HtslLine): string {
@@ -180,18 +342,38 @@ function indentedText(line: HtslLine): string {
     return prefix + line.text;
 }
 
+function summaryText(entry: NonNullable<ReturnType<typeof getDiffEntry>>): string {
+    const s = entry.summary;
+    if (s === null) return "";
+    return `${s.edits} edits · ${s.adds} adds · ${s.deletes} deletes · ${s.moves} moves`;
+}
+
+function diffLineDetail(
+    state: DiffState,
+    info: DiffLineInfo | undefined
+): string | undefined {
+    if (info === undefined) return undefined;
+    if (state === "current" && info.label) return `current: ${info.label}`;
+    if (info.kind === "edit") return info.detail ? `edit: ${info.detail}` : "edit";
+    if (info.kind === "add") return "add";
+    if (info.kind === "move") return info.detail ? `move: ${info.detail}` : "move";
+    if (info.kind === "delete") return "delete";
+    return info.detail;
+}
+
 export function htslDiffLines(path: string): Element[] {
     const parsed = parseHtslFile(path);
     if (parsed.parseError !== null) {
         const errLines = parsed.parseError.split("\n");
         const out: Element[] = [
-            lineRow(0, "// parse failed", COLOR_ERROR, undefined, "unknown"),
+            lineRow(0, 1, plainTokens("// parse failed", COLOR_ERROR), COLOR_ERROR, undefined, "unknown"),
         ];
         for (let i = 0; i < errLines.length; i++) {
             out.push(
                 lineRow(
                     0,
-                    shortenForDisplay(errLines[i], 60),
+                    1,
+                    plainTokens(shortenForDisplay(errLines[i], 60), COLOR_ERROR),
                     COLOR_ERROR,
                     undefined,
                     "unknown"
@@ -203,38 +385,110 @@ export function htslDiffLines(path: string): Element[] {
     const lines = actionsToLines(parsed.actions);
     if (lines.length === 0) {
         return [
-            lineRow(1, "// (empty function)", COLOR_GUTTER, undefined, "unknown"),
+            lineRow(
+                1,
+                1,
+                plainTokens("// (empty function)", COLOR_GUTTER),
+                COLOR_GUTTER,
+                undefined,
+                "unknown"
+            ),
         ];
     }
     const entry = getDiffEntry(diffKey(path));
+    const hasLabel = entry !== undefined && entry.currentLabel.length > 0;
+    const hasSummary = entry !== undefined && entry.summary !== null;
+    const padWidth = digitsOf(lines.length + (hasLabel || hasSummary ? 1 : 0));
     const out: Element[] = [];
+    if (entry !== undefined && entry.phaseLabel.length > 0) {
+        out.push(
+            lineRow(
+                0,
+                padWidth,
+                plainTokens(`// ${entry.phaseLabel}`, COLOR_GUTTER),
+                COLOR_GUTTER,
+                undefined,
+                "unknown"
+            )
+        );
+    }
+    if (hasSummary && entry !== undefined) {
+        out.push(
+            lineRow(
+                0,
+                padWidth,
+                plainTokens(`// ${summaryText(entry)}`, COLOR_GUTTER),
+                COLOR_GUTTER,
+                undefined,
+                "unknown"
+            )
+        );
+    }
     for (let i = 0; i < lines.length; i++) {
         const ln = lines[i];
         const state: DiffState = entry?.states.get(ln.actionIndex) ?? "unknown";
         const isCurrent = entry?.currentIndex === ln.actionIndex;
         const effectiveState: DiffState = isCurrent ? "current" : state;
-        const color = COLOR_BY_STATE[effectiveState];
+        const info = entry?.details.get(ln.actionIndex);
+        const stateColor = COLOR_BY_STATE[effectiveState];
         const bg = ROW_BG_BY_STATE[effectiveState];
+        const lineText = shortenForDisplay(indentedText(ln), 80);
+        // For the live-cursor line, paint the whole line in the cursor colour
+        // so it reads as one focused unit. All other states keep syntax
+        // colouring — the row background already conveys the diff state.
+        const tokens = effectiveState === "current"
+            ? plainTokens(lineText, stateColor)
+            : tokenizeHtsl(lineText);
         out.push(
             lineRow(
                 i + 1,
-                shortenForDisplay(indentedText(ln), 80),
-                color,
+                padWidth,
+                tokens,
+                stateColor,
                 bg,
-                effectiveState
+                effectiveState,
+                diffLineDetail(effectiveState, info)
             )
         );
     }
-    if (entry !== undefined && entry.currentLabel.length > 0) {
+    if (hasLabel) {
+        const labelColor = 0xff67a7e8 | 0;
         out.push(
             lineRow(
                 lines.length + 1,
-                `// ${entry.currentLabel}`,
-                0xff67a7e8 | 0,
+                padWidth,
+                plainTokens(`// ${entry.currentLabel}`, labelColor),
+                labelColor,
                 undefined,
                 "current"
             )
         );
+    }
+    if (entry !== undefined && entry.deletes.length > 0) {
+        out.push(
+            lineRow(
+                0,
+                padWidth,
+                plainTokens("// Housing-only actions to delete", COLOR_ERROR),
+                COLOR_ERROR,
+                undefined,
+                "delete"
+            )
+        );
+        for (let i = 0; i < entry.deletes.length; i++) {
+            const d = entry.deletes[i];
+            out.push(
+                lineRow(
+                    d.index + 1,
+                    padWidth,
+                    plainTokens(`- ${d.label}`, COLOR_ERROR),
+                    COLOR_ERROR,
+                    ROW_BG_BY_STATE.delete,
+                    "delete",
+                    d.detail
+                )
+            );
+        }
     }
     return out;
 }
@@ -242,11 +496,21 @@ export function htslDiffLines(path: string): Element[] {
 function plainTextLines(path: string): Element[] {
     const lines = readPlainLines(path);
     const diags = diagLinesForActive(path);
+    const padWidth = digitsOf(lines.length);
     const out: Element[] = [];
     for (let i = 0; i < lines.length; i++) {
         const ln = i + 1;
         const bg = bgForDiag(diags.get(ln));
-        out.push(lineRow(ln, shortenForDisplay(lines[i], 80), COLOR_PLAIN, bg, "unknown"));
+        out.push(
+            lineRow(
+                ln,
+                padWidth,
+                plainTokens(shortenForDisplay(lines[i], 80), COLOR_PLAIN),
+                COLOR_PLAIN,
+                bg,
+                "unknown"
+            )
+        );
     }
     return out;
 }
@@ -276,16 +540,11 @@ function sourceBody(): Element {
 
 /**
  * Render a path as `./htsw/...` when the path passes through the htsw repo,
- * else as `./...` relative to the MC root. Falls back to head-ellipsis when
- * the result is still too long for the right-pane width.
+ * else as `./...` relative to the MC root. No length-based truncation — the
+ * scissor on the path-label container clips any overflow at the panel edge.
  */
 function displayPath(p: string): string {
-    const rel = normalizeHtswPath(p);
-    if (rel.length > 40) {
-        const tail = rel.substring(rel.length - 38);
-        return `…${tail}`;
-    }
-    return rel;
+    return normalizeHtswPath(p);
 }
 
 let cachedMcRootForwardSlash: string | null = null;
@@ -341,7 +600,7 @@ export function RightPanel(): Element {
         style: { padding: 6, gap: 4, width: { kind: "grow" }, height: { kind: "grow" } },
         children: [
             Row({
-                style: { gap: 2, height: { kind: "px", value: 18 } },
+                style: { gap: 2, height: { kind: "px", value: TAB_H } },
                 children: () => getTabs().map(tabButton),
             }),
             pathLabel(),

@@ -4,8 +4,10 @@ import { Element, Rect } from "../lib/layout";
 import { Button, Container, Input, Row, Scroll, Text } from "../lib/components";
 import { getImportJsonPath, setImportJsonPath } from "../state";
 import { reparseImportJson, scheduleReparse } from "../state/reparse";
-import { openAddImportablePopover } from "../popovers/add-importable";
+import { openAliasPopover } from "../popovers/alias";
 import { openFileBrowser } from "../popovers/file-browser";
+import { getHousingUuid } from "../state";
+import { getAlias } from "../../knowledge/aliases";
 import { getRecents } from "../state/recents";
 import { closeAllPopovers, togglePopover } from "../lib/popovers";
 import { normalizeHtswPath } from "../lib/pathDisplay";
@@ -134,13 +136,22 @@ export function TopBar(): Element {
                 },
                 onClick: () => openFileBrowser(dirOf(getImportJsonPath())),
             }),
+            // Alias button — set a plain-English nickname for the current
+            // housing UUID. Disabled when no UUID is detected; the label
+            // shows the current alias (or "Alias" if none) so the user
+            // sees at a glance which housing they're naming.
             Button({
-                text: "Add Importable",
+                text: () => {
+                    const uuid = getHousingUuid();
+                    if (uuid === null) return "Alias";
+                    const alias = getAlias(uuid);
+                    return alias === null ? "Alias" : alias;
+                },
                 style: {
                     width: { kind: "px", value: 96 },
                     height: { kind: "grow" },
                 },
-                onClick: (rect: Rect) => openAddImportablePopover(rect),
+                onClick: (rect: Rect) => openAliasPopover(rect),
             }),
             // Refresh: force-reparse the current path. Useful when the
             // file changed on disk and the mtime-watch hasn't fired yet.

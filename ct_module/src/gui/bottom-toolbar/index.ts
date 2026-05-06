@@ -7,7 +7,6 @@ import {
     getHousingUuid,
     getImportJsonPath,
     getParsedResult,
-    getSelectedImportableId,
     getSelectedImportableIds,
     getTrustMode,
     setCurrentImportingPath,
@@ -22,17 +21,28 @@ import {
     type ImportSelection,
 } from "../../importables/importSession";
 import { exportImportable } from "../../importables/exports";
+import {
+    captureFromHousing,
+    type CaptureType,
+} from "../../exporter/captureFromHousing";
 import { getCurrentHousingUuid } from "../../knowledge/housingId";
 import { importableIdentity } from "../../knowledge/paths";
 import { TaskManager } from "../../tasks/manager";
 import type TaskContext from "../../tasks/context";
 import type { Importable } from "htsw/types";
+import { closeAllPopovers, togglePopover } from "../lib/popovers";
+import { COLOR_ROW, COLOR_ROW_HOVER, COLOR_TEXT, SIZE_ROW_H } from "../lib/theme";
 import {
     clearDiff,
+    addDeleteOp,
     diffKey,
     setCurrent,
     setDiffState,
+    setDiffPhase,
+    setDiffSummary,
+    setPlannedOp,
 } from "../state/diff";
+import { importableSourcePath } from "../state/importablePaths";
 import type { ImportDiffSink } from "../../importer/diffSink";
 
 import {
@@ -63,10 +73,8 @@ async function ensureHousingUuid(ctx: TaskContext): Promise<string> {
 }
 
 /**
- * Resolve which importables to act on. Priority:
- *   1. Multi-select checkboxes (set non-empty)         → all checked
- *   2. Single-row highlight (selectedImportableId)     → just that one
- *   3. Otherwise                                       → all in import.json
+ * Resolve which importables to act on. Checked rows define scope; otherwise
+ * Import means all parsed importables. Highlighted rows are preview-only.
  */
 function selectionToImport(): Importable[] {
     const parsed = getParsedResult();
@@ -74,13 +82,6 @@ function selectionToImport(): Importable[] {
     const checked = getSelectedImportableIds();
     if (checked.size > 0) {
         return parsed.value.filter((i) => checked.has(importableIdentity(i)));
-    }
-    const selectedId = getSelectedImportableId();
-    if (selectedId === null) return parsed.value;
-    for (let i = 0; i < parsed.value.length; i++) {
-        if (importableIdentity(parsed.value[i]) === selectedId) {
-            return [parsed.value[i]];
-        }
     }
     return parsed.value;
 }
@@ -110,23 +111,26 @@ function refreshKnowledgeRows(): void {
 function makeDiffSink(sourcePath: string): ImportDiffSink {
     const key = diffKey(sourcePath);
     clearDiff(key);
-    let markCount = 0;
-    let opCount = 0;
-    ChatLib.chat(`&7[diff-sink] keyed at &f${key}`);
     return {
+        phase: (label) => {
+            setDiffPhase(key, label);
+        },
+        summary: (summary) => {
+            setDiffSummary(key, summary);
+        },
+        planOp: (idx, kind, label, detail) => {
+            setPlannedOp(key, idx, kind, label, detail);
+        },
+        deleteOp: (idx, label, detail) => {
+            addDeleteOp(key, idx, label, detail);
+        },
         markMatch: (idx) => {
             setDiffState(key, idx, "match");
-            markCount++;
-            if (markCount <= 3) {
-                ChatLib.chat(`&7[diff-sink] markMatch idx=${idx} (${markCount})`);
-            }
         },
         beginOp: (idx, kind, label) => {
+            setDiffPhase(key, label);
             setCurrent(key, idx, label);
-            opCount++;
-            if (opCount <= 3) {
-                ChatLib.chat(`&7[diff-sink] beginOp ${kind} idx=${idx} (${opCount})`);
-            }
+            setPlannedOp(key, idx, kind, label, "");
         },
         completeOp: (idx, state) => {
             setDiffState(key, idx, state);
@@ -134,7 +138,6 @@ function makeDiffSink(sourcePath: string): ImportDiffSink {
         },
         end: () => {
             setCurrent(key, null, "");
-            ChatLib.chat(`&7[diff-sink] end · matches=${markCount} ops=${opCount}`);
             // The just-finished importable's knowledge.json was written
             // moments ago — refresh the GUI's knowledge cache so its dot
             // flips from red (unknown) to green (current) right away.
@@ -159,12 +162,23 @@ function startImport(trustMode: boolean): void {
         weightTotal: 1,
         weightCurrent: 0,
         currentLabel: "starting…",
+        phase: "starting",
+        phaseLabel: "starting import",
+        unitCompleted: 0,
+        unitTotal: 0,
+        estimatedCompleted: 0,
+        estimatedTotal: 1,
+        etaConfidence: "rough",
         completed: 0,
         total: importables.length,
         failed: 0,
         inFlight: true,
     });
     TaskManager.run(async (ctx) => {
+        const startedAt = Date.now();
+        ctx.displayMessage(
+            `&7[import] starting ${importables.length} importable${importables.length === 1 ? "" : "s"} · trust ${trustMode ? "on" : "off"}`
+        );
         const housingUuid = await ensureHousingUuid(ctx);
         const selection: ImportSelection = {
             importables,
@@ -178,17 +192,20 @@ function startImport(trustMode: boolean): void {
                     return;
                 }
                 const imp = findImportableByLabel(parsed, p.currentLabel);
-                const path =
-                    imp === null ? null : (parsed.gcx.sourceFiles.get(imp) ?? null);
+                const path = imp === null ? null : (importableSourcePath(imp) ?? null);
                 setCurrentImportingPath(path);
             },
             diffSinkForImportable: (_imp, path) =>
                 path === null ? null : makeDiffSink(path),
         };
-        await importSelectedImportables(ctx, selection);
+        const result = await importSelectedImportables(ctx, selection);
         setImportProgress(null);
         setCurrentImportingPath(null);
         refreshKnowledgeRows();
+        const elapsed = Math.max(0, Math.round((Date.now() - startedAt) / 1000));
+        ctx.displayMessage(
+            `&7[import] done · imported ${result.imported}, skipped ${result.skippedTrusted}, failed ${result.failed}, ${elapsed}s`
+        );
     }).catch((err: unknown) => {
         setImportProgress(null);
         setCurrentImportingPath(null);
@@ -196,51 +213,87 @@ function startImport(trustMode: boolean): void {
     });
 }
 
-function startExport(): void {
-    const parsed = getParsedResult();
-    if (parsed === null) {
-        ChatLib.chat("&c[htsw] Load an import.json first");
-        return;
-    }
-    const id = getSelectedImportableId();
-    let target: Importable | null = null;
-    if (id !== null) {
-        for (let i = 0; i < parsed.value.length; i++) {
-            if (importableIdentity(parsed.value[i]) === id) {
-                target = parsed.value[i];
-                break;
-            }
-        }
-    }
-    if (target === null) {
-        ChatLib.chat("&c[htsw] Select a FUNCTION or MENU on the left first");
-        return;
-    }
-    if (target.type !== "FUNCTION" && target.type !== "MENU") {
-        ChatLib.chat(`&c[htsw] Export not supported for ${target.type}`);
-        return;
-    }
-    const exportTarget = target;
-    const importJsonPath = getImportJsonPath();
+/**
+ * Types the click-to-pick capture flow knows how to handle. Mirror of
+ * `CaptureType` in `exporter/captureFromHousing` — kept here as a
+ * literal array so the picker menu can iterate it.
+ */
+const CAPTURE_TYPES: CaptureType[] = ["FUNCTION", "MENU"];
+
+function importJsonDir(path: string): string {
+    const norm = path.replace(/\\/g, "/");
+    const slash = norm.lastIndexOf("/");
+    if (slash <= 0) return ".";
+    return norm.substring(0, slash);
+}
+
+/**
+ * Start the click-to-pick export flow for `type`. Closes any open
+ * popovers first so the picker menu doesn't linger over the chest UI
+ * once it opens, then runs the appropriate Hypixel command and arms
+ * the capture listeners. On a successful capture, dispatches to the
+ * existing exporter for that type.
+ */
+function startCaptureExport(type: CaptureType): void {
+    closeAllPopovers();
+
     TaskManager.run(async (ctx) => {
-        if (exportTarget.type === "FUNCTION") {
+        const result = await captureFromHousing(ctx, type);
+        if (result.kind === "cancelled") {
+            ctx.displayMessage("&7[htsw] Export cancelled");
+            return;
+        }
+        const importJsonPath = getImportJsonPath();
+        if (importJsonPath.trim() === "") {
+            ctx.displayMessage("&c[htsw] No import.json loaded — load one first");
+            return;
+        }
+        const dir = importJsonDir(importJsonPath);
+        if (result.type === "FUNCTION") {
             await exportImportable(ctx, {
                 type: "FUNCTION",
-                name: exportTarget.name,
+                name: result.name,
                 importJsonPath,
-                htslPath: `${exportTarget.name}.htsl`,
-                htslReference: `${exportTarget.name}.htsl`,
+                htslPath: `${dir}/${result.name}.htsl`,
+                htslReference: `${result.name}.htsl`,
             });
         } else {
             await exportImportable(ctx, {
                 type: "MENU",
-                name: exportTarget.name,
+                name: result.name,
                 importJsonPath,
-                rootDir: ".",
+                rootDir: dir,
             });
         }
     }).catch((err: unknown) => {
         ChatLib.chat(`&c[htsw] Export failed: ${err}`);
+    });
+}
+
+function captureMenuPopoverContent(): Element {
+    return Col({
+        style: { gap: 2, padding: 4 },
+        children: CAPTURE_TYPES.map((t) =>
+            Container({
+                style: {
+                    direction: "row",
+                    align: "center",
+                    padding: { side: "x", value: 8 },
+                    gap: 6,
+                    height: { kind: "px", value: SIZE_ROW_H },
+                    background: COLOR_ROW,
+                    hoverBackground: COLOR_ROW_HOVER,
+                },
+                onClick: () => startCaptureExport(t),
+                children: [
+                    Text({
+                        text: `Capture ${t}`,
+                        color: COLOR_TEXT,
+                        style: { width: { kind: "grow" } },
+                    }),
+                ],
+            })
+        ),
     });
 }
 
@@ -324,15 +377,24 @@ function actionRow(): Element {
             height: { kind: "px", value: 18 },
         },
         children: [
+            // Capture-from-Housing — always opens the type picker; user
+            // picks FUNCTION/MENU/etc. on every capture.
             Button({
-                text: "Export",
+                text: `Capture ${GLYPH_CHEVRON_DOWN}`,
                 style: {
                     width: { kind: "grow" },
                     height: { kind: "grow" },
                     background: COLOR_BUTTON,
                     hoverBackground: COLOR_BUTTON_HOVER,
                 },
-                onClick: () => startExport(),
+                onClick: (rect) =>
+                    togglePopover({
+                        key: "capture-type-menu",
+                        anchor: rect,
+                        content: captureMenuPopoverContent(),
+                        width: 140,
+                        height: CAPTURE_TYPES.length * 20 + 8,
+                    }),
             }),
             Button({
                 text: "Import",
@@ -343,16 +405,6 @@ function actionRow(): Element {
                     hoverBackground: COLOR_BUTTON_PRIMARY_HOVER,
                 },
                 onClick: () => startImport(getTrustMode()),
-            }),
-            Button({
-                text: "Diff",
-                style: {
-                    width: { kind: "grow" },
-                    height: { kind: "grow" },
-                    background: COLOR_BUTTON,
-                    hoverBackground: COLOR_BUTTON_HOVER,
-                },
-                onClick: () => startImport(true),
             }),
         ],
     });

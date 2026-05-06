@@ -27,6 +27,7 @@ import {
     initPopoverRendering,
     popoverIsOpen,
     closeAllPopovers,
+    getOpenPopoverContents,
     tryDispatchPopoverWheel,
 } from "./lib/popovers";
 import {
@@ -86,13 +87,12 @@ function frameVisible(): boolean {
     return getContainerBounds() !== null;
 }
 
-// Lazy housing-UUID fetch. After a CT reload the in-memory `housingUuid`
-// is null, so the knowledge dots in the Importables list all read as
-// "unknown" (red) until something forces an `/wtfmap` round trip — and
-// previously only the import flow did that. This watcher fires `/wtfmap`
-// once when the user opens a housing-style GUI, then refreshes the
-// knowledge rows from the on-disk cache so the dots reflect reality
-// without requiring a manual import.
+// Housing-UUID auto-fetch. We only run `/wtfmap` when we actually need
+// the UUID — firing it on every inventory open spams chat. Triggers:
+//   1. Module load with a null UUID and the user opened a housing GUI.
+//   2. Hypixel just sent a "Sending you to <server>..." transport
+//      message — the user changed lobbies/houses, the cached UUID is
+//      stale. We clear it; the next inventory open path catches case 1.
 let uuidFetchInFlight = false;
 let lastUuidFetchAt = 0;
 const UUID_FETCH_COOLDOWN_MS = 60_000;
@@ -145,6 +145,15 @@ export function initHtswGui(): void {
     initialized = true;
 
     setRenderDebugLog(debug);
+
+    // Hypixel server-transport messages are the cleanest "you may have
+    // changed housings" signal. When we see one, drop the cached UUID and
+    // knowledge rows so the next inventory open re-runs `/wtfmap` for the
+    // new server. Avoids spamming `/wtfmap` on every inventory open.
+    register("chat", () => {
+        setHousingUuid(null);
+        setKnowledgeRows([]);
+    }).setCriteria("Sending you to ${server}...");
 
     // Single fullscreen panel; the element tree (RootTree) wraps around the
     // container + chat cutouts. paintBackground=false because the tree paints
@@ -332,6 +341,13 @@ function findInput(id: string): Extract<Element, { kind: "input" }> | null {
     const trees = laidOutTrees();
     for (let i = 0; i < trees.length; i++) {
         const found = walkForInput(trees[i].root, id);
+        if (found !== null) return found;
+    }
+    // Popover content lives outside the panel trees — walk it too so
+    // typing in a popover input can locate the focused element.
+    const popoverContents = getOpenPopoverContents();
+    for (let i = 0; i < popoverContents.length; i++) {
+        const found = walkForInput(popoverContents[i], id);
         if (found !== null) return found;
     }
     return null;

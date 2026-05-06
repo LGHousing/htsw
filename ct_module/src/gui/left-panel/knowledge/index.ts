@@ -5,6 +5,7 @@ import { Button, Col, Container, Scroll, Text } from "../../lib/components";
 import { getHousingUuid, getKnowledgeRows, setHousingUuid } from "../../state";
 import { STATUS_COLOR, STATUS_LABEL } from "../../knowledge-status";
 import { getCurrentHousingUuid } from "../../../knowledge/housingId";
+import { getAlias } from "../../../knowledge/aliases";
 import { TaskManager } from "../../../tasks/manager";
 
 const ROW_BG = 0xff2d333d | 0;
@@ -55,9 +56,14 @@ export function KnowledgeView(): Element {
                     }),
                 ];
             }
+            const alias = getAlias(uuid);
+            const headerText =
+                alias === null
+                    ? `Housing: ${shortUuid(uuid)}`
+                    : `Housing: ${alias} (${shortUuid(uuid)})`;
             const header: Element[] = [
                 Text({
-                    text: `Housing: ${shortUuid(uuid)}`,
+                    text: headerText,
                     color: 0xff888888 | 0,
                 }),
             ];
