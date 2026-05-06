@@ -3,7 +3,6 @@ import type { Condition } from "htsw/types";
 import TaskContext from "../../tasks/context";
 import { type ItemRegistry } from "../../importables/itemRegistry";
 import { waitForMenu } from "../helpers";
-import { removedFormatting } from "../../utils/helpers";
 import {
     parseConditionListItem,
     tryGetConditionTypeFromDisplayName,
@@ -12,7 +11,6 @@ import type { ObservedConditionSlot } from "../types";
 import {
     clickPaginatedNextPage,
     getCurrentPaginatedListPageState,
-    getPaginatedListSlotAtIndex,
     getVisiblePaginatedItemSlots,
     goToPaginatedListPage,
     isEmptyPaginatedPlaceholder,

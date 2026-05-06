@@ -29,7 +29,6 @@ import type {
     ActionListOperation,
     ActionListProgressSink,
     ObservedActionSlot,
-    Observed,
 } from "../types";
 import {
     getPaginatedListSlotAtIndex,

@@ -10,6 +10,7 @@ import {
     moveTab,
     moveTabToEnd,
     moveTabToStart,
+    PROGRESS_TAB_PATH,
     setActiveTab,
     Tab,
     tabIndex,
@@ -37,14 +38,6 @@ import {
 } from "../state";
 import { normalizeHtswPath } from "../lib/pathDisplay";
 
-/** Sentinel "path" for the synthetic Progress tab the right panel injects
- * while an import is running. Not a real file — picked to never collide
- * with a filesystem path on either Windows or POSIX. */
-export const PROGRESS_TAB_PATH = "<htsw:progress>";
-
-export function isProgressTab(path: string | null): boolean {
-    return path === PROGRESS_TAB_PATH;
-}
 
 const TAB_BG = 0xff2c323b | 0;
 const TAB_BG_HOVER = 0xff3a4350 | 0;

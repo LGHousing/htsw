@@ -4,7 +4,6 @@ import TaskContext from "../../tasks/context";
 import { type ItemRegistry } from "../../importables/itemRegistry";
 import type {
     ActionListDiff,
-    ActionListOperation,
     ActionListProgressSink,
     ActionListTrust,
     ObservedActionSlot,

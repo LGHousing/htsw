@@ -1,4 +1,4 @@
-import type { Action, Condition } from "htsw/types";
+import type { Action } from "htsw/types";
 
 import TaskContext from "../../tasks/context";
 import { type ItemRegistry } from "../../importables/itemRegistry";

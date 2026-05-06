@@ -36,11 +36,10 @@ import type {
 } from "htsw/types";
 
 import TaskContext from "../tasks/context";
-import { type ItemRegistry, getMemoizedHousingUuid } from "../importables/itemRegistry";
+import { type ItemRegistry } from "../importables/itemRegistry";
 import {
     clickGoBack,
     waitForMenu,
-    timedWaitForMenu,
     getSlotPaginate,
     openSubmenu,
     enterValue,
@@ -52,76 +51,41 @@ import {
     setNumberValue,
     readBooleanValue,
     readStringValue,
-    setListItemNote,
 } from "./helpers";
-import { ItemSlot, MouseButton } from "../tasks/specifics/slots";
+import { ItemSlot } from "../tasks/specifics/slots";
 import { removedFormatting } from "../utils/helpers";
-import { getItemFromSnbt } from "../utils/nbt";
-import { importableHash } from "../knowledge";
-import { Diagnostic } from "htsw";
 import {
-    canonicalizeObservedConditionItemNames,
     readConditionList,
     syncConditionList,
 } from "./conditions";
 import {
-    getEditFieldDiffs,
     normalizeActionCompare,
     normalizeConditionCompare,
 } from "./compare";
 import {
     ACTION_MAPPINGS,
     getActionFieldLabel,
-    getNestedListFields,
-    parseActionListItem,
-    tryGetActionTypeFromDisplayName,
 } from "./actionMappings";
 import { diffActionList } from "./actions/diff";
 import type {
-    ActionListDiff,
-    ActionListTrust,
-    ActionListReadMode,
-    ActionListOperation,
-    NestedHydrationPlan,
-    NestedListProp,
     NestedPropsToRead,
-    NestedSummaries,
     Observed,
-    ObservedActionSlot,
-    ActionListProgressSink,
 } from "./types";
-import { createNestedHydrationPlan } from "./actions/hydrationPlan";
-import { matchObservedToDesired } from "./actions/nestedMatching";
-import { applyActionListTrust } from "./actions/trustHydration";
-import { tryGetConditionTypeFromDisplayName } from "./conditionMappings";
-import {
-    clickPaginatedNextPage,
-    getCurrentPaginatedListPageState,
-    getPaginatedListPageForIndex,
-    getPaginatedListSlotAtIndex,
-    getVisiblePaginatedItemSlots,
-    goToPaginatedListPage,
-    isEmptyPaginatedPlaceholder,
-    type PaginatedListConfig,
-} from "./paginatedList";
 import { setItemValue } from "./items";
-import {
-    getActiveDiffSink,
-    type ActionPath,
-    type ImportDiffSink,
-    type DiffSummary,
-} from "./diffSink";
-import {
-    COST,
-    actionListDiffApplyBudget,
-    actionListRoughBudget,
-    hydrationEntryBudget,
-    moveBudget,
-    scalarFieldEditBudget,
-} from "./progress/costs";
-import { timed } from "./progress/timing";
+import type { ActionPath } from "./diffSink";
+import { resolveImportableItem } from "./resolveItem";
+import { readActionList } from "./actions/readList";
+import { syncActionList } from "./actions/sync";
 
+// Public re-exports — external callers import these names from "./actions".
 export { diffActionList };
+export { readActionList, readActionsListPage } from "./actions/readList";
+export { syncActionList } from "./actions/sync";
+export { importAction } from "./actions/applyDiff";
+export type {
+    SyncActionListOptions,
+    SyncActionListResult,
+} from "./actions/sync";
 export type {
     ActionListDiff,
     ActionListOperation,
@@ -147,15 +111,21 @@ type ActionSpec<T extends Action = Action> = {
     ) => Promise<void>;
 };
 
+// Ambient path tracker. `applyDiff.ts` wraps each edit/add in
+// `withWritingActionPath`; the nested writers below
+// (`writeConditional`, `writeRandom`) read `currentWritingActionPath`
+// to compute pathPrefix for recursive `syncActionList` calls.
+// Threading the path through every spec.write signature would change 35
+// writers for two consumers — not worth it.
 let currentWritingActionPath: ActionPath | null = null;
 
-function actionPathForIndex(pathPrefix: string | undefined, index: number): ActionPath {
+export function actionPathForIndex(pathPrefix: string | undefined, index: number): ActionPath {
     return pathPrefix && pathPrefix.length > 0
         ? `${pathPrefix}.${index}`
         : String(index);
 }
 
-function withWritingActionPath<T>(path: ActionPath | null, fn: () => Promise<T>): Promise<T> {
+export function withWritingActionPath<T>(path: ActionPath | null, fn: () => Promise<T>): Promise<T> {
     const previous = currentWritingActionPath;
     currentWritingActionPath = path;
     return fn().then(
@@ -174,67 +144,18 @@ type ActionSpecMap = {
     [K in Action["type"]]: ActionSpec<Extract<Action, { type: K }>>;
 };
 
-function getActionSpec<T extends Action["type"]>(
+export function getActionSpec<T extends Action["type"]>(
     type: T
 ): ActionSpec<Extract<Action, { type: T }>> {
     return ACTION_SPECS[type] as ActionSpec<Extract<Action, { type: T }>>;
 }
 
-function isLimitExceeded(slot: ItemSlot): boolean {
+export function isLimitExceeded(slot: ItemSlot): boolean {
     const lore = slot.getItem().getLore();
     if (lore.length === 0) return false;
     const lastLine = lore[lore.length - 1];
     return removedFormatting(lastLine) === "You can't have more of this action!";
 }
-
-async function resolveActionItem(
-    ctx: TaskContext,
-    itemRegistry: ItemRegistry | undefined,
-    action: Action,
-    itemName: string
-): Promise<Item> {
-    if (itemRegistry === undefined) {
-        throw new Error(
-            `Cannot set item "${itemName}" for ${action.type}: no item registry is available.`
-        );
-    }
-
-    const entry = itemRegistry.resolve(itemName, action);
-    if (entry === undefined) {
-        throw new Error(
-            `Cannot set item "${itemName}" for ${action.type}: item fields resolve against top-level items[].name or direct .snbt paths.`
-        );
-    }
-
-    const importable = entry.importable;
-    const hasActions =
-        importable !== undefined &&
-        ((importable.leftClickActions !== undefined &&
-            importable.leftClickActions.length > 0) ||
-            (importable.rightClickActions !== undefined &&
-                importable.rightClickActions.length > 0));
-    if (!hasActions) {
-        return entry.item;
-    }
-
-    const uuid = await getMemoizedHousingUuid(ctx, itemRegistry);
-    const hash = importableHash(importable);
-    const cachePath = `./htsw/.cache/${uuid}/items/${hash}.snbt`;
-    if (!FileLib.exists(cachePath)) {
-        throw new Error(
-            `Cannot set item "${itemName}" for ${action.type}: it has click actions but isn't cached at ${cachePath}. ` +
-                `Declare the item as a top-level importable in the same import.json so it imports first, ` +
-                `or run /import on it before whatever references it.`
-        );
-    }
-    const snbt = String(FileLib.read(cachePath));
-    return getItemFromSnbt(snbt);
-}
-
-const ACTION_LIST_CONFIG: PaginatedListConfig = {
-    label: "action",
-    emptyPlaceholderName: "No Actions!",
-};
 
 async function readOpenConditional(
     ctx: TaskContext,
@@ -474,7 +395,7 @@ async function writeGiveItem(
     await setItemValue(
         ctx,
         getActionFieldLabel("GIVE_ITEM", "itemName"),
-        await resolveActionItem(ctx, itemRegistry, action, action.itemName)
+        await resolveImportableItem(ctx, itemRegistry, action, action.itemName, "action")
     );
 
     if (action.allowMultiple !== undefined) {
@@ -512,7 +433,7 @@ async function writeRemoveItem(
         await setItemValue(
             ctx,
             getActionFieldLabel("REMOVE_ITEM", "itemName"),
-            await resolveActionItem(ctx, itemRegistry, action, action.itemName)
+            await resolveImportableItem(ctx, itemRegistry, action, action.itemName, "action")
         );
     }
 }
@@ -882,7 +803,7 @@ async function writeDropItem(
     await setItemValue(
         ctx,
         getActionFieldLabel("DROP_ITEM", "itemName"),
-        await resolveActionItem(ctx, itemRegistry, action, action.itemName)
+        await resolveImportableItem(ctx, itemRegistry, action, action.itemName, "action")
     );
 
     if (action.location !== undefined) {
@@ -1181,350 +1102,7 @@ const ACTION_SPECS = {
     },
 } satisfies ActionSpecMap;
 
-function readNestedSummaries(
-    action: Observed<Action>,
-    slot: ItemSlot
-): { summaries: NestedSummaries; propsToRead: NestedPropsToRead } {
-    const nestedFields = getNestedListFields(action.type);
-    const lore = slot.getItem().getLore();
-    const summaries: NestedSummaries = {};
-    const propsToRead: NestedPropsToRead = new Set();
-    const labels = new Set(nestedFields.map((field) => field.label));
-
-    for (const { label, prop } of nestedFields) {
-        const itemTypes: string[] = [];
-        let labelIndex = -1;
-        for (let i = 0; i < lore.length; i++) {
-            if (removedFormatting(lore[i]).trim() === label + ":") {
-                labelIndex = i;
-                break;
-            }
-        }
-
-        if (labelIndex === -1) {
-            continue;
-        }
-
-        for (let i = labelIndex + 1; i < lore.length; i++) {
-            const text = removedFormatting(lore[i]).trim();
-            if (text === "") break;
-            if (text.startsWith("minecraft:") || text.startsWith("NBT:")) break;
-            if (
-                text === "Left Click to edit!" ||
-                text === "Right Click to remove!" ||
-                text === "Click to edit!" ||
-                text.startsWith("Use shift ")
-            ) {
-                break;
-            }
-            if (text.endsWith(":") && labels.has(text.slice(0, -1))) {
-                break;
-            }
-            if (!text.startsWith("- ")) {
-                break;
-            }
-
-            const displayName = text.slice(2).trim();
-            if (displayName === "None") {
-                continue;
-            }
-
-            const type =
-                prop === "conditions"
-                    ? tryGetConditionTypeFromDisplayName(displayName)
-                    : tryGetActionTypeFromDisplayName(displayName);
-            itemTypes.push(type ?? "UNKNOWN");
-        }
-
-        summaries[prop as NestedListProp] = itemTypes;
-        if (itemTypes.length === 0) {
-            Object.assign(action, { [prop]: [] });
-        } else {
-            propsToRead.add(prop as NestedListProp);
-        }
-    }
-
-    return { summaries, propsToRead };
-}
-
-export async function readActionsListPage(
-    ctx: TaskContext
-): Promise<ObservedActionSlot[]> {
-    const slots = getVisiblePaginatedItemSlots(ctx).filter(
-        (slot) => !isEmptyPaginatedPlaceholder(slot, ACTION_LIST_CONFIG)
-    );
-    const observed: ObservedActionSlot[] = slots
-        .map((slot) => ({
-            slot,
-            type: tryGetActionTypeFromDisplayName(slot.getItem().getName()),
-        }))
-
-        .map((entry, index) => {
-            const observed: ObservedActionSlot = {
-                index,
-                slotId: entry.slot.getSlotId(),
-                slot: entry.slot,
-                action: null,
-                nestedReadState: "none",
-                nestedSummaries: {},
-                nestedPropsToRead: new Set(),
-            };
-            if (!entry.type) {
-                return observed;
-            }
-
-            const action = parseActionListItem(entry.slot, entry.type);
-            const nested = readNestedSummaries(action, entry.slot);
-            observed.action = action;
-            observed.nestedReadState =
-                getNestedListFields(action.type).length === 0 ? "none" : "summary";
-            observed.nestedSummaries = nested.summaries;
-            observed.nestedPropsToRead = nested.propsToRead;
-            return observed;
-        });
-
-    return observed;
-}
-
-export async function readActionList(
-    ctx: TaskContext,
-    mode: ActionListReadMode = { kind: "full" }
-): Promise<ObservedActionSlot[]> {
-    const progress = mode.onProgress;
-    const desiredTotal =
-        mode.kind === "sync" ? Math.max(1, mode.desired.length) : 1;
-    const roughEstimate =
-        mode.kind === "sync" ? Math.max(1, actionListRoughBudget(mode.desired)) : 1;
-    let readEstimatedCompleted = 0;
-    progress?.({
-        phase: "reading",
-        completed: 0,
-        total: desiredTotal,
-        label: "reading housing state",
-        estimatedCompleted: 0,
-        estimatedTotal: roughEstimate,
-        confidence: "rough",
-    });
-    getActiveDiffSink()?.phase("reading housing state");
-    await goToPaginatedListPage(ctx, 1, ACTION_LIST_CONFIG);
-    const observed: ObservedActionSlot[] = [];
-
-    while (true) {
-        const pageObserved = await readActionsListPage(ctx);
-        for (const entry of pageObserved) {
-            entry.index = observed.length;
-            observed.push(entry);
-        }
-        progress?.({
-            phase: "reading",
-            completed: observed.length,
-            total: Math.max(desiredTotal, observed.length),
-            label: `${observed.length} actions read`,
-            estimatedCompleted: readEstimatedCompleted,
-            estimatedTotal: Math.max(roughEstimate, readEstimatedCompleted),
-            confidence: "rough",
-        });
-
-        const state = getCurrentPaginatedListPageState(ctx, ACTION_LIST_CONFIG);
-        if (!state.hasNext) {
-            break;
-        }
-
-        clickPaginatedNextPage(ctx);
-        await timedWaitForMenu(ctx, "pageTurnWait");
-        readEstimatedCompleted += COST.pageTurnWait;
-    }
-
-    await goToPaginatedListPage(ctx, 1, ACTION_LIST_CONFIG);
-    let plan: NestedHydrationPlan;
-    if (mode.kind === "full") {
-        plan = buildFullHydrationPlan(observed);
-    } else {
-        const matches = matchObservedToDesired(observed, mode.desired);
-        plan = createNestedHydrationPlan(matches);
-        if (mode.trust !== undefined) {
-            applyActionListTrust(matches, plan, mode.trust);
-        }
-    }
-    addScalarHydrationEntries(plan, observed);
-    await hydrateNestedActions(ctx, plan, observed.length, mode.itemRegistry, progress, readEstimatedCompleted);
-    canonicalizeObservedActionItemNames(observed, mode.itemRegistry);
-
-    await goToPaginatedListPage(ctx, 1, ACTION_LIST_CONFIG);
-    return observed;
-}
-
-function addScalarHydrationEntries(
-    plan: NestedHydrationPlan,
-    observed: readonly ObservedActionSlot[]
-): void {
-    for (const entry of observed) {
-        if (entry.action === null || plan.has(entry)) {
-            continue;
-        }
-
-        if (shouldHydrateScalarAction(entry.action)) {
-            plan.set(entry, new Set());
-        }
-    }
-}
-
-function shouldHydrateScalarAction(action: Observed<Action>): boolean {
-    if (action.type === "MESSAGE") {
-        return removedFormatting(action.message).trim().endsWith("...");
-    }
-
-    return false;
-}
-
-function buildFullHydrationPlan(
-    observed: readonly ObservedActionSlot[]
-): NestedHydrationPlan {
-    const plan: NestedHydrationPlan = new Map();
-    for (const entry of observed) {
-        if (entry.nestedPropsToRead && entry.nestedPropsToRead.size > 0) {
-            plan.set(entry, entry.nestedPropsToRead);
-        }
-    }
-    return plan;
-}
-
-function canonicalizeObservedActionItemNames(
-    observed: readonly ObservedActionSlot[],
-    itemRegistry?: ItemRegistry
-): void {
-    if (itemRegistry === undefined) {
-        return;
-    }
-
-    for (const entry of observed) {
-        if (entry.action !== null) {
-            canonicalizeActionItemName(entry.action, itemRegistry);
-        }
-    }
-}
-
-function canonicalizeActionItemName(
-    action: Observed<Action> | Action,
-    itemRegistry: ItemRegistry
-): void {
-    if (
-        action.type === "GIVE_ITEM" ||
-        action.type === "REMOVE_ITEM" ||
-        action.type === "DROP_ITEM"
-    ) {
-        if (action.itemName !== undefined) {
-            action.itemName = itemRegistry.canonicalizeObservedName(action.itemName);
-        }
-    }
-
-    if (action.type === "CONDITIONAL") {
-        canonicalizeObservedConditionItemNames(action.conditions, itemRegistry);
-        for (const nested of action.ifActions) {
-            if (nested !== null) {
-                canonicalizeActionItemName(nested, itemRegistry);
-            }
-        }
-        for (const nested of action.elseActions) {
-            if (nested !== null) {
-                canonicalizeActionItemName(nested, itemRegistry);
-            }
-        }
-    }
-
-    if (action.type === "RANDOM") {
-        for (const nested of action.actions) {
-            if (nested !== null) {
-                canonicalizeActionItemName(nested, itemRegistry);
-            }
-        }
-    }
-}
-
-async function hydrateNestedActions(
-    ctx: TaskContext,
-    plan: NestedHydrationPlan,
-    listLength: number,
-    itemRegistry?: ItemRegistry,
-    progress?: ActionListProgressSink,
-    baseEstimatedCompleted: number = 0
-): Promise<void> {
-    let completed = 0;
-    const total = plan.size;
-    let completedBudget = 0;
-    let totalBudget = 0;
-    plan.forEach((propsToRead, entry) => {
-        totalBudget += hydrationEntryBudget(entry, propsToRead);
-    });
-    for (const [entry, propsToRead] of plan) {
-        progress?.({
-            phase: "hydrating",
-            completed,
-            total,
-            label: `reading nested ${actionLogLabel(entry.action)}`,
-            estimatedCompleted: baseEstimatedCompleted + completedBudget,
-            estimatedTotal: baseEstimatedCompleted + totalBudget,
-            confidence: "informed",
-        });
-        getActiveDiffSink()?.phase(`reading nested ${actionLogLabel(entry.action)}`);
-        const beforeBudget = hydrationEntryBudget(entry, propsToRead);
-        await hydrateNestedAction(ctx, entry, propsToRead, listLength, itemRegistry);
-        completedBudget += beforeBudget;
-        completed++;
-        progress?.({
-            phase: "hydrating",
-            completed,
-            total,
-            label: `${completed}/${total} nested actions read`,
-            estimatedCompleted: baseEstimatedCompleted + completedBudget,
-            estimatedTotal: baseEstimatedCompleted + totalBudget,
-            confidence: "informed",
-        });
-    }
-}
-
-async function hydrateNestedAction(
-    ctx: TaskContext,
-    entry: ObservedActionSlot,
-    propsToRead: NestedPropsToRead,
-    listLength: number,
-    itemRegistry?: ItemRegistry
-): Promise<void> {
-    if (entry.action === null) {
-        return;
-    }
-
-    const note = entry.action.note;
-    try {
-        await goToPaginatedListPage(ctx, getPaginatedListPageForIndex(entry.index), ACTION_LIST_CONFIG);
-        const actionSlot = await getPaginatedListSlotAtIndex(ctx, entry.index, listLength, ACTION_LIST_CONFIG);
-        entry.slot = actionSlot;
-        entry.slotId = actionSlot.getSlotId();
-
-        actionSlot.click();
-        await timedWaitForMenu(ctx, "menuClickWait");
-        const spec = getActionSpec(entry.action.type);
-        if (!spec.read) {
-            throw new Error(`Reading action "${entry.action.type}" is not implemented.`);
-        }
-
-        entry.action = await spec.read(ctx, propsToRead, itemRegistry);
-        entry.nestedReadState = "full";
-        if (note) {
-            entry.action.note = note;
-        }
-        await clickGoBack(ctx);
-    } catch (error) {
-        ctx.displayMessage(
-            `&7[action-read] &cFailed to read nested action at index ${entry.index} (${entry.action.type}): ${error}`
-        );
-        if (ctx.tryGetMenuItemSlot("Go Back") !== null) {
-            await clickGoBack(ctx);
-        }
-    }
-}
-
-async function writeOpenAction(
+export async function writeOpenAction(
     ctx: TaskContext,
     desired: Action,
     current?: Observed<Action>,
@@ -1544,623 +1122,4 @@ async function writeOpenAction(
     }
 
     await spec.write(ctx, desired, resolvedCurrent, itemRegistry);
-}
-
-async function deleteObservedAction(
-    ctx: TaskContext,
-    index: number,
-    listLength: number
-): Promise<void> {
-    const slot = await getPaginatedListSlotAtIndex(ctx, index, listLength, ACTION_LIST_CONFIG);
-    slot.click(MouseButton.RIGHT);
-    await timedWaitForMenu(ctx, "menuClickWait");
-}
-
-async function moveActionToIndex(
-    ctx: TaskContext,
-    fromIndex: number,
-    toIndex: number,
-    listLength: number
-): Promise<void> {
-    if (listLength <= 1) {
-        return;
-    }
-
-    const targetIndex = ((toIndex % listLength) + listLength) % listLength;
-    let currentIndex = ((fromIndex % listLength) + listLength) % listLength;
-
-    for (let attempt = 0; attempt < 128 && currentIndex !== targetIndex; attempt++) {
-        const rightDistance = (targetIndex - currentIndex + listLength) % listLength;
-        const leftDistance = (currentIndex - targetIndex + listLength) % listLength;
-        const button =
-            leftDistance <= rightDistance ? MouseButton.LEFT : MouseButton.RIGHT;
-
-        const currentSlot = await getPaginatedListSlotAtIndex(ctx, currentIndex, listLength, ACTION_LIST_CONFIG);
-        currentSlot.click(button, true);
-        await timed("reorderStep", COST.reorderStep, () => waitForMenu(ctx));
-
-        if (button === MouseButton.LEFT) {
-            currentIndex = (currentIndex - 1 + listLength) % listLength;
-        } else {
-            currentIndex = (currentIndex + 1) % listLength;
-        }
-    }
-
-    if (currentIndex !== targetIndex) {
-        throw new Error(
-            `Failed to move action from index ${fromIndex} to ${toIndex} within ${listLength} item(s).`
-        );
-    }
-}
-
-export async function importAction(
-    ctx: TaskContext,
-    action: Action,
-    itemRegistry?: ItemRegistry
-): Promise<void> {
-    ctx.getMenuItemSlot("Add Action").click();
-    await timedWaitForMenu(ctx, "menuClickWait");
-
-    const spec = getActionSpec(action.type);
-    const displayName = spec.displayName;
-
-    const slot = await getSlotPaginate(ctx, displayName);
-
-    if (isLimitExceeded(slot)) {
-        throw Diagnostic.error(`Maximum amount of ${displayName} actions exceeded`);
-    }
-
-    slot.click();
-    await timedWaitForMenu(ctx, "menuClickWait");
-
-    // No-field actions (e.g. Kill Player, Exit) add directly to the list
-    // without opening an editor.
-    if (spec.write) {
-        await writeOpenAction(ctx, action, undefined, itemRegistry);
-        await clickGoBack(ctx);
-    }
-
-    if (action.note) {
-        const itemSlots = getVisiblePaginatedItemSlots(ctx);
-        const addedSlot = itemSlots[itemSlots.length - 1];
-        if (addedSlot) {
-            await setListItemNote(ctx, addedSlot, action.note);
-        }
-    }
-}
-
-async function applyActionListDiff(
-    ctx: TaskContext,
-    observed: ObservedActionSlot[],
-    desired: Action[],
-    diff: ActionListDiff,
-    itemRegistry?: ItemRegistry,
-    progress?: ActionListProgressSink,
-    pathPrefix?: string
-): Promise<void> {
-    const sink = getActiveDiffSink();
-    await applyActionListDiffInner(
-        ctx,
-        observed,
-        desired,
-        diff,
-        sink,
-        itemRegistry,
-        progress,
-        pathPrefix
-    );
-}
-
-function srcIndexForOp(op: ActionListOperation, desired: Action[]): number {
-    if (op.kind === "add" || op.kind === "move") return op.toIndex;
-    if (op.kind === "edit") return desired.indexOf(op.desired);
-    return -1; // delete: action isn't in source
-}
-
-function opLabel(op: ActionListOperation): string {
-    if (op.kind === "delete") return `delete ${actionLogLabel(op.observed.action)}`;
-    if (op.kind === "edit") return `edit → ${actionLogLabel(op.desired)}`;
-    if (op.kind === "move") return `move ${actionLogLabel(op.action)} → #${op.toIndex + 1}`;
-    return `add ${actionLogLabel(op.desired)}`;
-}
-
-function opDetail(op: ActionListOperation): string {
-    if (op.kind === "edit") return editDiffSummary(op);
-    if (op.kind === "move") return `#${op.observed.index + 1} -> #${op.toIndex + 1}`;
-    if (op.kind === "add") return "add source action";
-    return "delete Housing-only action";
-}
-
-function editOperationFieldBudget(
-    op: Extract<ActionListOperation, { kind: "edit" }>
-): number {
-    const { fieldDiffs } = getEditFieldDiffs(op);
-    return scalarFieldEditBudget(fieldDiffs);
-}
-
-function operationApplyBudget(
-    op: ActionListOperation,
-    desiredLength: number
-): number {
-    if (op.kind === "delete") return COST.menuClickWait;
-    if (op.kind === "move") {
-        return moveBudget(op.observed.index, op.toIndex, desiredLength);
-    }
-    if (op.kind === "add") {
-        const fakeDiff: ActionListDiff = { operations: [op] };
-        return actionListDiffApplyBudget(fakeDiff, editOperationFieldBudget, desiredLength);
-    }
-    const fakeDiff: ActionListDiff = { operations: [op] };
-    return actionListDiffApplyBudget(fakeDiff, editOperationFieldBudget, desiredLength);
-}
-
-function summarizeDiff(
-    diff: ActionListDiff,
-    desiredLength: number,
-    desired: Action[]
-): DiffSummary {
-    let edits = 0;
-    let moves = 0;
-    let adds = 0;
-    let deletes = 0;
-    const touched = new Set<number>();
-    for (const op of diff.operations) {
-        const idx = srcIndexForOp(op, desired);
-        if (idx >= 0) touched.add(idx);
-        if (op.kind === "edit") edits++;
-        else if (op.kind === "move") moves++;
-        else if (op.kind === "add") adds++;
-        else deletes++;
-    }
-    return {
-        matches: Math.max(0, desiredLength - touched.size),
-        edits,
-        moves,
-        adds,
-        deletes,
-    };
-}
-
-async function applyActionListDiffInner(
-    ctx: TaskContext,
-    observed: ObservedActionSlot[],
-    desired: Action[],
-    diff: ActionListDiff,
-    sink: ImportDiffSink | null,
-    itemRegistry?: ItemRegistry,
-    progress?: ActionListProgressSink,
-    pathPrefix?: string
-): Promise<void> {
-    const summary = summarizeDiff(diff, desired.length, desired);
-    const plannedApplyBudget = actionListDiffApplyBudget(
-        diff,
-        editOperationFieldBudget,
-        desired.length
-    );
-    if (sink !== null) {
-        sink.summary(summary);
-        sink.phase("computed diff");
-        for (const op of diff.operations) {
-            const idx = srcIndexForOp(op, desired);
-            if (idx >= 0) {
-                sink.planOp(actionPathForIndex(pathPrefix, idx), op.kind, opLabel(op), opDetail(op));
-            } else if (op.kind === "delete") {
-                sink.deleteOp(op.observed.index, opLabel(op), opDetail(op));
-            }
-        }
-    }
-    progress?.({
-        phase: "diffing",
-        completed: 1,
-        total: 1,
-        label: `${summary.edits} edits · ${summary.adds} adds · ${summary.deletes} deletes · ${summary.moves} moves`,
-        estimatedCompleted: 0,
-        estimatedTotal: plannedApplyBudget,
-        confidence: "planned",
-    });
-
-    // Pre-mark already-matching desired actions. Anything not touched by an
-    // op is "match" (white) from the start; ops will paint their own state
-    // on completion.
-    if (sink !== null) {
-        const touched = new Set<number>();
-        for (const op of diff.operations) {
-            const idx = srcIndexForOp(op, desired);
-            if (idx >= 0) touched.add(idx);
-        }
-        for (let i = 0; i < desired.length; i++) {
-            if (!touched.has(i)) sink.markMatch(actionPathForIndex(pathPrefix, i));
-        }
-    }
-
-    if (diff.operations.length === 0) {
-        if (sink !== null) sink.end();
-        return;
-    }
-
-    const deletes: Array<ActionListOperation & { kind: "delete" }> = [];
-    const edits: Array<ActionListOperation & { kind: "edit" }> = [];
-    const moves: Array<ActionListOperation & { kind: "move" }> = [];
-    const adds: Array<ActionListOperation & { kind: "add" }> = [];
-
-    for (const op of diff.operations) {
-        switch (op.kind) {
-            case "delete":
-                deletes.push(op);
-                break;
-            case "edit":
-                edits.push(op);
-                break;
-            case "move":
-                moves.push(op);
-                break;
-            case "add":
-                adds.push(op);
-                break;
-        }
-    }
-
-    let appliedBudget = 0;
-
-    // Deletes first (reverse order so indices stay valid), then refresh slot refs.
-    if (deletes.length > 0) {
-        deletes.sort((a, b) => b.observed.index - a.observed.index);
-        const currentObserved = [...observed];
-
-        for (let i = 0; i < deletes.length; i++) {
-            const op = deletes[i];
-            const index = currentObserved.indexOf(op.observed);
-            if (index === -1) {
-                continue;
-            }
-
-            progress?.({
-                phase: "applying",
-                completed: i,
-                total: diff.operations.length,
-                label: opLabel(op),
-                estimatedCompleted: appliedBudget,
-                estimatedTotal: plannedApplyBudget,
-                confidence: "planned",
-            });
-            if (sink !== null) sink.phase(opLabel(op));
-            await deleteObservedAction(ctx, index, currentObserved.length);
-            appliedBudget += operationApplyBudget(op, desired.length);
-            currentObserved.splice(index, 1);
-        }
-    }
-
-    const remainingObserved = observed.filter(
-        (entry) => !deletes.some((op) => op.observed === entry)
-    );
-    for (let i = 0; i < remainingObserved.length; i++) {
-        remainingObserved[i].index = i;
-    }
-
-    // Edits before moves: edits use slot refs from readActionList which
-    // become stale after moves shift actions around. Moves re-read slots
-    // internally so they're unaffected by prior edits.
-    let appliedOps = deletes.length;
-    for (const op of edits) {
-        const currentIndex = remainingObserved.indexOf(op.observed);
-        if (currentIndex === -1) {
-            continue;
-        }
-
-        const srcIdx = srcIndexForOp(op, desired);
-        const srcPath = srcIdx >= 0 ? actionPathForIndex(pathPrefix, srcIdx) : null;
-        if (sink !== null && srcPath !== null) sink.beginOp(srcPath, "edit", opLabel(op));
-        progress?.({
-            phase: "applying",
-            completed: appliedOps,
-            total: diff.operations.length,
-            label: opLabel(op),
-            estimatedCompleted: appliedBudget,
-            estimatedTotal: plannedApplyBudget,
-            confidence: "planned",
-        });
-        appliedOps++;
-
-        const actionSlot = await getPaginatedListSlotAtIndex(
-            ctx,
-            currentIndex,
-            remainingObserved.length,
-            ACTION_LIST_CONFIG
-        );
-        op.observed.slot = actionSlot;
-        op.observed.slotId = actionSlot.getSlotId();
-
-        if (op.noteOnly) {
-            await setListItemNote(ctx, actionSlot, op.desired.note);
-            appliedBudget += operationApplyBudget(op, desired.length);
-            if (sink !== null && srcPath !== null) sink.completeOp(srcPath, "edit");
-            continue;
-        }
-
-        const spec = getActionSpec(op.desired.type);
-        if (spec.write) {
-            actionSlot.click();
-            await timedWaitForMenu(ctx, "menuClickWait");
-
-            if (!op.observed.action) {
-                throw new Error(
-                    "Observed action should always be present for edit operations."
-                );
-            }
-            const currentAction = op.observed.action;
-
-            await withWritingActionPath(srcPath, () =>
-                writeOpenAction(ctx, op.desired, currentAction, itemRegistry)
-            );
-            await clickGoBack(ctx);
-        }
-
-        await setListItemNote(ctx, actionSlot, op.desired.note);
-        appliedBudget += operationApplyBudget(op, desired.length);
-        if (sink !== null && srcPath !== null) sink.completeOp(srcPath, "edit");
-    }
-
-    moves.sort((a, b) => a.toIndex - b.toIndex);
-    for (const op of moves) {
-        const fromIndex = remainingObserved.indexOf(op.observed);
-        if (fromIndex === -1) {
-            continue;
-        }
-
-        const srcIdx = srcIndexForOp(op, desired);
-        const srcPath = srcIdx >= 0 ? actionPathForIndex(pathPrefix, srcIdx) : null;
-        if (sink !== null && srcPath !== null) sink.beginOp(srcPath, "move", opLabel(op));
-        progress?.({
-            phase: "applying",
-            completed: appliedOps,
-            total: diff.operations.length,
-            label: opLabel(op),
-            estimatedCompleted: appliedBudget,
-            estimatedTotal: plannedApplyBudget,
-            confidence: "planned",
-        });
-        appliedOps++;
-
-        await moveActionToIndex(ctx, fromIndex, op.toIndex, remainingObserved.length);
-        appliedBudget += operationApplyBudget(op, desired.length);
-
-        remainingObserved.splice(fromIndex, 1);
-        remainingObserved.splice(op.toIndex, 0, op.observed);
-        for (let i = 0; i < remainingObserved.length; i++) {
-            remainingObserved[i].index = i;
-        }
-        if (sink !== null && srcPath !== null) sink.completeOp(srcPath, "match");
-    }
-
-    adds.sort((a, b) => a.toIndex - b.toIndex);
-    let currentLength = remainingObserved.length;
-    for (const op of adds) {
-        const srcIdx = srcIndexForOp(op, desired);
-        const srcPath = srcIdx >= 0 ? actionPathForIndex(pathPrefix, srcIdx) : null;
-        if (sink !== null && srcPath !== null) sink.beginOp(srcPath, "add", opLabel(op));
-        progress?.({
-            phase: "applying",
-            completed: appliedOps,
-            total: diff.operations.length,
-            label: opLabel(op),
-            estimatedCompleted: appliedBudget,
-            estimatedTotal: plannedApplyBudget,
-            confidence: "planned",
-        });
-        appliedOps++;
-
-        const actionToImport =
-            op.desired.note === undefined
-                ? op.desired
-                : ({ ...op.desired, note: undefined } as Action);
-
-        await withWritingActionPath(srcPath, () => importAction(ctx, actionToImport, itemRegistry));
-        await moveActionToIndex(ctx, currentLength, op.toIndex, currentLength + 1);
-
-        const insertedAction: ObservedActionSlot = {
-            index: op.toIndex,
-            slotId: -1,
-            slot: null as never,
-            action: op.desired,
-        };
-        remainingObserved.splice(op.toIndex, 0, insertedAction);
-        currentLength += 1;
-        for (let i = 0; i < remainingObserved.length; i++) {
-            remainingObserved[i].index = i;
-        }
-
-        if (op.desired.note !== undefined) {
-            const addedSlot = await getPaginatedListSlotAtIndex(ctx, op.toIndex, currentLength, ACTION_LIST_CONFIG);
-            await setListItemNote(ctx, addedSlot, op.desired.note);
-        }
-        appliedBudget += operationApplyBudget(op, desired.length);
-        if (sink !== null && srcPath !== null) sink.completeOp(srcPath, "add");
-    }
-
-    await goToPaginatedListPage(ctx, 1, ACTION_LIST_CONFIG);
-    progress?.({
-        phase: "applying",
-        completed: diff.operations.length,
-        total: diff.operations.length,
-        label: "applied action diff",
-        estimatedCompleted: plannedApplyBudget,
-        estimatedTotal: plannedApplyBudget,
-        confidence: "planned",
-    });
-
-    if (sink !== null) sink.end();
-}
-
-function actionLogLabel(action: Action | Observed<Action> | null | undefined): string {
-    if (action === null || action === undefined) {
-        return "Unknown Action";
-    }
-
-    if (action.type === "CONDITIONAL") {
-        return "CONDITIONAL";
-    }
-
-    if (action.type === "RANDOM") {
-        const ac =
-            (action.actions as unknown as readonly unknown[] | undefined)?.length ?? "?";
-        return `RANDOM (${ac})`;
-    }
-
-    if (action.type === "CHANGE_VAR") {
-        const holder = action.holder?.type === "Global" ? "g/" : action.holder?.type === "Team" ? "t/" : "";
-        return `CHANGE_VAR ${holder}${action.key ?? "?"} ${action.op ?? "="} ${action.value ?? "?"}`;
-    }
-
-    if (action.type === "MESSAGE") {
-        const msg = action.message ?? "";
-        const short = msg.length > 30 ? msg.slice(0, 27) + "..." : msg;
-        return `MESSAGE "${short}"`;
-    }
-
-    if (action.type === "FUNCTION") {
-        return `FUNCTION "${action.function ?? "?"}"`;
-    }
-
-    if (action.type === "GIVE_ITEM" || action.type === "REMOVE_ITEM" || action.type === "DROP_ITEM") {
-        return `${action.type} "${action.itemName ?? "?"}"`;
-    }
-
-    if (action.type === "SET_TEAM") {
-        return `SET_TEAM "${action.team ?? "None"}"`;
-    }
-
-    return action.type;
-}
-
-function shortVal(v: unknown): string {
-    if (v === undefined) return "unset";
-    if (v === null) return "null";
-    if (typeof v === "boolean") return v ? "true" : "false";
-    if (typeof v === "string") {
-        const quoted = `"${v}"`;
-        return quoted.length > 35 ? `"${v.slice(0, 30)}..."` : quoted;
-    }
-    if (typeof v === "object") {
-        const json = JSON.stringify(v);
-        return json.length > 35 ? json.slice(0, 32) + "..." : json;
-    }
-    const s = String(v);
-    return s.length > 35 ? s.slice(0, 32) + "..." : s;
-}
-
-function editDiffSummary(op: Extract<ActionListOperation, { kind: "edit" }>): string {
-    const { fieldDiffs, noteDiffers } = getEditFieldDiffs(op);
-    const parts: string[] = [];
-    for (const diff of fieldDiffs) {
-        parts.push(`${diff.prop} ${shortVal(diff.observed)} -> ${shortVal(diff.desired)}`);
-    }
-    if (noteDiffers) parts.push("note changed");
-    return parts.join(", ");
-}
-
-function logSyncState(ctx: TaskContext, diff: ActionListDiff): void {
-    if (diff.operations.length === 0) {
-        ctx.displayMessage(`&7[sync] &aUp to date.`);
-        return;
-    }
-
-    const deletes = diff.operations.filter((op) => op.kind === "delete");
-    const edits = diff.operations.filter((op) => op.kind === "edit");
-    const moves = diff.operations.filter((op) => op.kind === "move");
-    const adds = diff.operations.filter((op) => op.kind === "add");
-
-    ctx.displayMessage(
-        `&7[sync] &d${diff.operations.length} ops &7(&c${deletes.length} del &6${edits.length} edit &e${moves.length} move &a${adds.length} add&7)`
-    );
-
-    for (const op of diff.operations) {
-        switch (op.kind) {
-            case "delete":
-                ctx.displayMessage(
-                    `&7  &c-DEL [${op.observed.index}] ${actionLogLabel(op.observed.action)}`
-                );
-                break;
-            case "edit":
-                if (op.noteOnly) {
-                    ctx.displayMessage(
-                        `&7  &6~NOTE [${op.observed.index}] ${actionLogLabel(op.observed.action)}`
-                    );
-                } else {
-                    ctx.displayMessage(
-                        `&7  &6~EDIT [${op.observed.index}] ${actionLogLabel(op.observed.action)}: ${editDiffSummary(op)}`
-                    );
-                }
-                break;
-            case "add":
-                ctx.displayMessage(
-                    `&7  &a+ADD [${op.toIndex}] ${actionLogLabel(op.desired)}`
-                );
-                break;
-            case "move":
-                ctx.displayMessage(
-                    `&7  &e>MOV [${op.observed.index} -> ${op.toIndex}] ${actionLogLabel(op.action)}`
-                );
-                break;
-        }
-    }
-}
-
-export type SyncActionListOptions = {
-    /**
-     * Pre-read observed list to use instead of reading from the menu.
-     *
-     * The exporter and (future) trust-mode hand the importer a known-good
-     * observation so a second `readActionList` round trip can be avoided.
-     * If absent, the menu is read in `{ kind: "sync", desired }` mode as
-     * before.
-     */
-    observed?: ObservedActionSlot[];
-    itemRegistry?: ItemRegistry;
-    trust?: ActionListTrust;
-    onProgress?: ActionListProgressSink;
-    /** Source path prefix for nested lists, e.g. `4.ifActions`. */
-    pathPrefix?: string;
-};
-
-export type SyncActionListResult = {
-    /**
-     * The observed list the diff was computed against — either the one
-     * passed in via `options.observed`, or a fresh read. Returned so
-     * callers can hand it to the knowledge writer without re-reading.
-     */
-    usedObserved: ObservedActionSlot[];
-};
-
-export async function syncActionList(
-    ctx: TaskContext,
-    desired: Action[],
-    options?: SyncActionListOptions
-): Promise<SyncActionListResult> {
-    const observed =
-        options?.observed ??
-        (await readActionList(ctx, {
-            kind: "sync",
-            desired,
-            itemRegistry: options?.itemRegistry,
-            trust: options?.trust,
-            onProgress: options?.onProgress,
-        }));
-    canonicalizeObservedActionItemNames(observed, options?.itemRegistry);
-    if (options?.itemRegistry) {
-        for (const action of desired) {
-            canonicalizeActionItemName(action, options.itemRegistry);
-        }
-    }
-    const diff = diffActionList(observed, desired);
-    logSyncState(ctx, diff);
-    await applyActionListDiff(
-        ctx,
-        observed,
-        desired,
-        diff,
-        options?.itemRegistry,
-        options?.onProgress,
-        options?.pathPrefix
-    );
-    return { usedObserved: observed };
 }
