@@ -4,6 +4,12 @@ import * as common from "htsw-editor-common";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { computeBestLayout } from "./loreLineLayout";
+import {
+    formatSnbtText,
+    findEnclosingJsonString,
+    decodeJsonStringContent,
+    encodeJsonString,
+} from "./snbtFormat";
 
 export { CompletionAdapter, SnbtCompletionAdapter } from "./completions";
 
@@ -615,6 +621,9 @@ export class SnbtCodeActionAdapter implements vscode.CodeActionProvider {
             actions.push(action);
         }
 
+        const prettyAction = buildSnbtPrettyPrintAction(document, text);
+        if (prettyAction) actions.push(prettyAction);
+
         const config = vscode.workspace.getConfiguration("htsw", document.uri);
         if (!config.get<boolean>("snbt.suggestLoreSplitting", false)) return actions;
         const maxWidth = Math.max(8, config.get<number>("snbt.loreLineMaxWidth", 40));
@@ -653,6 +662,83 @@ export class SnbtCodeActionAdapter implements vscode.CodeActionProvider {
         actions.push(action);
 
         return actions;
+    }
+}
+
+function buildSnbtPrettyPrintAction(
+    document: vscode.TextDocument,
+    text: string,
+): vscode.CodeAction | undefined {
+    const trimmed = text.trim();
+    if (trimmed.length === 0) return undefined;
+    if (trimmed.charAt(0) !== "{" && trimmed.charAt(0) !== "[") return undefined;
+    if (text.includes("\n") && document.lineCount > 5) return undefined;
+
+    const result = formatSnbtText(text);
+    if (!result.ok) return undefined;
+    if (!result.output.includes("\n")) return undefined;
+
+    const action = new vscode.CodeAction(
+        "Pretty-print SNBT",
+        vscode.CodeActionKind.RefactorRewrite,
+    );
+    action.edit = new vscode.WorkspaceEdit();
+    action.edit.replace(
+        document.uri,
+        new vscode.Range(document.positionAt(0), document.positionAt(text.length)),
+        result.output,
+    );
+    return action;
+}
+
+export class JsonSnbtCodeActionAdapter implements vscode.CodeActionProvider {
+    public static readonly providedCodeActionKinds = [
+        vscode.CodeActionKind.RefactorRewrite,
+    ];
+
+    public provideCodeActions(
+        document: vscode.TextDocument,
+        range: vscode.Range | vscode.Selection,
+    ): vscode.ProviderResult<vscode.CodeAction[]> {
+        if (document.languageId !== "json" && document.languageId !== "jsonc") return [];
+
+        const text = document.getText();
+        const cursorOffset = document.offsetAt(range.start);
+        const stringRange = findEnclosingJsonString(text, cursorOffset);
+        if (!stringRange) return [];
+
+        const inner = text.slice(stringRange.openQuote + 1, stringRange.closeQuote);
+        const decoded = decodeJsonStringContent(inner);
+        const looksLikeSnbt = /^\s*[{[]/.test(decoded);
+        if (!looksLikeSnbt) return [];
+
+        const result = formatSnbtText(decoded);
+        if (!result.ok) return [];
+        if (!result.output.includes("\n")) return [];
+
+        const editRange = new vscode.Range(
+            document.positionAt(stringRange.openQuote),
+            document.positionAt(stringRange.closeQuote + 1),
+        );
+
+        const replaceAction = new vscode.CodeAction(
+            "Pretty-print SNBT (re-encode inline)",
+            vscode.CodeActionKind.RefactorRewrite,
+        );
+        replaceAction.edit = new vscode.WorkspaceEdit();
+        replaceAction.edit.replace(document.uri, editRange, encodeJsonString(result.output));
+
+        const previewAction = new vscode.CodeAction(
+            "Open formatted SNBT in new editor",
+            vscode.CodeActionKind.RefactorRewrite,
+        );
+        previewAction.command = {
+            command: "htsw.snbt.openFormattedPreview",
+            title: "Open formatted SNBT in new editor",
+            arguments: [result.output],
+        };
+
+        return [previewAction, replaceAction];
     }
 }
 
