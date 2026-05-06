@@ -16,7 +16,7 @@ import {
     tabCount,
 } from "../state/selection";
 import { openMenu, MenuAction } from "../lib/menu";
-import { GLYPH_X } from "../lib/theme";
+import { ACCENT_INFO, COLOR_TEXT, COLOR_TEXT_DIM, COLOR_TEXT_FAINT, GLYPH_X } from "../lib/theme";
 import { SyntaxToken, tokenizeHtsl } from "./syntax";
 import { FileSystemFileLoader } from "../../utils/files";
 import { actionsToLines, parseHtslFile, type HtslLine } from "../state/htsl-render";
@@ -28,8 +28,23 @@ import {
     type DiffState,
     type DiffLineInfo,
 } from "../state/diff";
-import { getParsedResult } from "../state";
+import {
+    getCurrentImportingPath,
+    getImportEtaSeconds,
+    getImportProgress,
+    getImportProgressFraction,
+    getParsedResult,
+} from "../state";
 import { normalizeHtswPath } from "../lib/pathDisplay";
+
+/** Sentinel "path" for the synthetic Progress tab the right panel injects
+ * while an import is running. Not a real file — picked to never collide
+ * with a filesystem path on either Windows or POSIX. */
+export const PROGRESS_TAB_PATH = "<htsw:progress>";
+
+export function isProgressTab(path: string | null): boolean {
+    return path === PROGRESS_TAB_PATH;
+}
 
 const TAB_BG = 0xff2c323b | 0;
 const TAB_BG_HOVER = 0xff3a4350 | 0;
@@ -172,6 +187,41 @@ function tabReorderActions(path: string): MenuAction[] {
     void idx;
     void total;
     return out;
+}
+
+function progressTabButton(): Element {
+    const isActive = getActivePath() === PROGRESS_TAB_PATH;
+    const labelText = `§l${Math.floor(getImportProgressFraction() * 100)}% Progress`;
+    const tabBg = isActive ? TAB_BG_ACTIVE : TAB_BG;
+    const tabHoverBg = isActive ? TAB_BG_ACTIVE_HOVER : TAB_BG_HOVER;
+    const labelW = Renderer.getStringWidth(labelText);
+    const tabW = labelW + TAB_LABEL_PAD_X * 2 + TAB_W_BUFFER;
+    return Container({
+        style: {
+            direction: "row",
+            align: "center",
+            width: { kind: "px", value: tabW },
+            height: { kind: "grow" },
+            background: tabBg,
+            hoverBackground: tabHoverBg,
+        },
+        onClick: (_rect, info) => {
+            if (info.button !== 0) return;
+            setActiveTab(PROGRESS_TAB_PATH);
+        },
+        children: [
+            Container({
+                style: {
+                    direction: "row",
+                    width: { kind: "grow" },
+                    height: { kind: "grow" },
+                    align: "center",
+                    padding: { side: "x", value: TAB_LABEL_PAD_X },
+                },
+                children: [Text({ text: labelText, color: ACCENT_INFO })],
+            }),
+        ],
+    });
 }
 
 function tabButton(tab: Tab): Element {
@@ -537,6 +587,159 @@ function plainTextLines(path: string): Element[] {
     return out;
 }
 
+function formatEtaSeconds(secs: number): string {
+    const total = Math.max(0, Math.round(secs));
+    if (total < 60) return `~${total}s`;
+    const m = Math.floor(total / 60);
+    const s = total % 60;
+    if (m < 60) return s === 0 ? `~${m}m` : `~${m}m${s}s`;
+    const h = Math.floor(m / 60);
+    const mm = m % 60;
+    return mm === 0 ? `~${h}h` : `~${h}h${mm}m`;
+}
+
+function progressEtaText(): string {
+    const p = getImportProgress();
+    const secs = getImportEtaSeconds();
+    if (secs === null) return p === null ? "" : "calculating…";
+    const text = formatEtaSeconds(secs);
+    if (p !== null && p.etaConfidence === "rough") return `${text} rough`;
+    if (p !== null && p.etaConfidence === "informed") return `${text} informed`;
+    return text;
+}
+
+/** What's happening *right now* — pulled from the diff entry's per-action
+ * label first (most specific), then the importer's phase-level label. */
+function progressCurrentLabel(): string {
+    const path = getCurrentImportingPath();
+    if (path !== null) {
+        const entry = getDiffEntry(diffKey(path));
+        if (entry !== undefined && entry.currentLabel.length > 0) {
+            return entry.currentLabel;
+        }
+    }
+    const p = getImportProgress();
+    if (p === null) return "";
+    if (p.currentLabel.length > 0) return p.currentLabel;
+    if (p.phaseLabel.length > 0) return p.phaseLabel;
+    return "working";
+}
+
+function progressView(): Child[] {
+    const p = getImportProgress();
+    if (p === null) {
+        return [
+            Text({
+                text: "No import in progress.",
+                color: COLOR_TEXT_DIM,
+                style: { padding: 6 },
+            }),
+        ];
+    }
+    const out: Child[] = [];
+    out.push(
+        Container({
+            style: {
+                width: { kind: "grow" },
+                padding: { side: "x", value: 6 },
+                height: { kind: "px", value: 12 },
+                align: "center",
+            },
+            children: [
+                Text({ text: "Currently", color: COLOR_TEXT_FAINT }),
+            ],
+        })
+    );
+    out.push(
+        Container({
+            style: {
+                width: { kind: "grow" },
+                padding: { side: "x", value: 6 },
+                height: { kind: "px", value: 12 },
+                align: "center",
+            },
+            children: [
+                Text({
+                    text: () => `§l${progressCurrentLabel()}`,
+                    color: COLOR_TEXT,
+                }),
+            ],
+        })
+    );
+    out.push(
+        Container({
+            style: {
+                width: { kind: "grow" },
+                padding: { side: "x", value: 6 },
+                height: { kind: "px", value: 12 },
+                align: "center",
+            },
+            children: [
+                Text({
+                    text: () => {
+                        const prog = getImportProgress();
+                        if (prog === null) return "";
+                        const parts: string[] = [];
+                        parts.push(`${prog.phase} · ${prog.phaseLabel}`);
+                        if (prog.unitTotal > 0) parts.push(`${prog.unitCompleted}/${prog.unitTotal}`);
+                        parts.push(progressEtaText());
+                        return parts.filter((s) => s.length > 0).join("  ·  ");
+                    },
+                    color: COLOR_TEXT_DIM,
+                }),
+            ],
+        })
+    );
+    out.push(
+        Container({
+            style: {
+                width: { kind: "grow" },
+                padding: { side: "x", value: 6 },
+                height: { kind: "px", value: 12 },
+                align: "center",
+            },
+            children: [
+                Text({
+                    text: () => {
+                        const path = getCurrentImportingPath();
+                        return path === null ? "" : `→ ${normalizeHtswPath(path)}`;
+                    },
+                    color: COLOR_TEXT_FAINT,
+                }),
+            ],
+        })
+    );
+    out.push(
+        Container({
+            style: {
+                width: { kind: "grow" },
+                padding: { side: "x", value: 6 },
+                height: { kind: "px", value: 12 },
+                align: "center",
+            },
+            children: [
+                Text({
+                    text: () => `${p.completed + 1}/${p.total} importable · ${p.currentIdentity}`,
+                    color: COLOR_TEXT_FAINT,
+                }),
+            ],
+        })
+    );
+    // Spacer between header and diff context.
+    out.push(
+        Container({
+            style: { width: { kind: "grow" }, height: { kind: "px", value: 4 } },
+            children: [],
+        })
+    );
+    const path = getCurrentImportingPath();
+    if (path !== null && path.toLowerCase().endsWith(".htsl")) {
+        const lines = htslDiffLines(path, { focusCurrent: true, before: 3, after: 6 });
+        for (const ln of lines) out.push(ln);
+    }
+    return out;
+}
+
 function sourceBody(): Element {
     return Scroll({
         id: "right-source-scroll",
@@ -552,6 +755,7 @@ function sourceBody(): Element {
                     }),
                 ];
             }
+            if (active === PROGRESS_TAB_PATH) return progressView();
             const norm = active.replace(/\\/g, "/").toLowerCase();
             const out: Child[] =
                 endsWith(norm, ".htsl") ? htslDiffLines(active) : plainTextLines(active);
@@ -610,7 +814,8 @@ function pathLabel(): Element {
     return Text({
         text: () => {
             const p = getActivePath();
-            return p === null ? "" : displayPath(p);
+            if (p === null || p === PROGRESS_TAB_PATH) return "";
+            return displayPath(p);
         },
         color: 0xff888888 | 0,
         style: { width: { kind: "grow" } },
@@ -623,7 +828,12 @@ export function RightPanel(): Element {
         children: [
             Row({
                 style: { gap: 2, height: { kind: "px", value: TAB_H } },
-                children: () => getTabs().map(tabButton),
+                children: () => {
+                    const out: Element[] = [];
+                    if (getImportProgress() !== null) out.push(progressTabButton());
+                    for (const tab of getTabs()) out.push(tabButton(tab));
+                    return out;
+                },
             }),
             pathLabel(),
             sourceBody(),

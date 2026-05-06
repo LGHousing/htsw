@@ -470,7 +470,7 @@ function runStatusForImportable(imp: Importable): ImportRunRow | null {
 function runStatusGlyph(row: ImportRunRow | null): string {
     if (row === null) return " ";
     if (row.status === "queued") return "·";
-    if (row.status === "current") return GLYPH_CHEVRON_RIGHT;
+    if (row.status === "current") return "→";
     if (row.status === "imported") return "✓";
     if (row.status === "skipped") return "≈";
     return "!";
@@ -478,7 +478,7 @@ function runStatusGlyph(row: ImportRunRow | null): string {
 
 function runStatusColor(row: ImportRunRow | null): number {
     if (row === null) return COLOR_TEXT_FAINT;
-    if (row.status === "queued") return COLOR_TEXT_FAINT;
+    if (row.status === "queued") return ACCENT_WARN;
     if (row.status === "current") return ACCENT_INFO;
     if (row.status === "imported") return ACCENT_SUCCESS;
     if (row.status === "skipped") return COLOR_TEXT_DIM;

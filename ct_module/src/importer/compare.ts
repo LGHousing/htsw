@@ -25,6 +25,55 @@ export function normalizeActionCompare(
     return normalizeValue(value) as Action | Observed<Action>;
 }
 
+export function actionsEqual(
+    observed: Action | Observed<Action>,
+    desired: Action | Observed<Action>
+): boolean {
+    return (
+        JSON.stringify(normalizeActionCompare(observed)) ===
+        JSON.stringify(normalizeActionCompare(desired))
+    );
+}
+
+export function conditionsEqual(
+    observed: Condition | Observed<Condition> | null,
+    desired: Condition | Observed<Condition> | null
+): boolean {
+    return (
+        JSON.stringify(normalizeConditionCompare(observed)) ===
+        JSON.stringify(normalizeConditionCompare(desired))
+    );
+}
+
+function stripNote<T extends { note?: unknown }>(value: T): T {
+    const { note: _note, ...rest } = value;
+    return rest as T;
+}
+
+export function actionOnlyNoteDiffers(
+    desired: Action,
+    current: Action | Observed<Action>
+): boolean {
+    return (
+        desired.type === current.type &&
+        JSON.stringify(normalizeActionCompare(stripNote(desired))) ===
+            JSON.stringify(normalizeActionCompare(stripNote(current))) &&
+        desired.note !== current.note
+    );
+}
+
+export function conditionOnlyNoteDiffers(
+    desired: Condition,
+    current: Condition | null
+): boolean {
+    if (current === null) return false;
+    return (
+        JSON.stringify(normalizeConditionCompare(stripNote(desired))) ===
+            JSON.stringify(normalizeConditionCompare(stripNote(current))) &&
+        desired.note !== current.note
+    );
+}
+
 /**
  * Returns the GUI default for a (type, prop) on either an action or a
  * condition, or undefined if no default applies. Action and condition

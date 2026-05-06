@@ -91,6 +91,7 @@ import type {
     ActionListProgressSink,
 } from "./types";
 import { createNestedHydrationPlan } from "./actions/hydrationPlan";
+import { matchObservedToDesired } from "./actions/nestedMatching";
 import { applyActionListTrust } from "./actions/trustHydration";
 import { tryGetConditionTypeFromDisplayName } from "./conditionMappings";
 import {
@@ -1335,14 +1336,17 @@ export async function readActionList(
     }
 
     await goToPaginatedListPage(ctx, 1, ACTION_LIST_CONFIG);
-    const plan: NestedHydrationPlan =
-        mode.kind === "full"
-            ? buildFullHydrationPlan(observed)
-            : createNestedHydrationPlan(observed, mode.desired);
-    addScalarHydrationEntries(plan, observed);
-    if (mode.kind === "sync" && mode.trust !== undefined) {
-        applyActionListTrust(observed, mode.desired, plan, mode.trust);
+    let plan: NestedHydrationPlan;
+    if (mode.kind === "full") {
+        plan = buildFullHydrationPlan(observed);
+    } else {
+        const matches = matchObservedToDesired(observed, mode.desired);
+        plan = createNestedHydrationPlan(matches);
+        if (mode.trust !== undefined) {
+            applyActionListTrust(matches, plan, mode.trust);
+        }
     }
+    addScalarHydrationEntries(plan, observed);
     await hydrateNestedActions(ctx, plan, observed.length, mode.itemRegistry, progress, readEstimatedCompleted);
     canonicalizeObservedActionItemNames(observed, mode.itemRegistry);
 

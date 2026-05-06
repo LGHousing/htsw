@@ -96,10 +96,13 @@ function buildLayout(b: ContainerBounds): Element {
     // its height eats into the rail's available space.
     const chatInputH = chatTopInLeftCol >= CHAT_INPUT_H + 20 ? CHAT_INPUT_H : 0;
     const railH = Math.max(0, chatTopInLeftCol - chatInputH);
-    // Width of the LiveImporter strip: spans the inventory column + the
-    // right panel's column. Only the right panel gives up vertical room
-    // for it; the left rail keeps its full height.
-    const liveImporterW = centerColW + rightColW;
+
+    // Compact above-menu strip just above the inventory cutout. When
+    // there's more vertical room than needed, the rest stays transparent
+    // so the right panel below dominates the right side.
+    const STRIP_MAX = 64;
+    const stripH = importing ? Math.min(topGapH, STRIP_MAX) : 0;
+    const aboveStripH = Math.max(0, topGapH - stripH);
 
     return Col({
         style: { width: { kind: "grow" }, height: { kind: "grow" } },
@@ -141,56 +144,40 @@ function buildLayout(b: ContainerBounds): Element {
                             transparentPad(chatSpacerH),
                         ],
                     }),
-                    // RIGHT-SIDE STACK: LiveImporter on top spanning the
-                    // inventory column + right panel column, and below it
-                    // the inventory cutout + bottom toolbar (left half) and
-                    // the right panel (right half) sharing the remaining
-                    // height.
+                    // CENTER COLUMN — above-menu strip + inventory cutout +
+                    // bottom toolbar. The compact LiveImporter strip sits
+                    // directly above the inventory; everything above the
+                    // strip is transparent so the screen isn't covered.
                     Col({
                         style: {
-                            width: { kind: "px", value: liveImporterW },
+                            width: { kind: "px", value: centerColW },
                             height: { kind: "grow" },
                         },
                         children: [
-                            bgWrap(LiveImporter(), topGapH),
-                            Row({
+                            transparentPad(aboveStripH),
+                            stripH > 0 ? bgWrap(LiveImporter(), stripH) : false,
+                            importing ? stablePanel(b.ySize) : transparentPad(b.ySize),
+                            bgWrap(BottomToolbar(), "grow"),
+                        ],
+                    }),
+                    // RIGHT COLUMN — full content height. Hosts the
+                    // line-by-line diff view (RightPanel) so it has the
+                    // most room available for context during imports.
+                    Container({
+                        style: {
+                            width: { kind: "px", value: rightColW },
+                            height: { kind: "grow" },
+                            background: COLOR_PANEL_BORDER,
+                            padding: 1,
+                        },
+                        children: [
+                            Container({
                                 style: {
                                     width: { kind: "grow" },
                                     height: { kind: "grow" },
+                                    background: COLOR_PANEL,
                                 },
-                                children: [
-                                    // CENTER COLUMN — inventory cutout + bottom toolbar.
-                                    Col({
-                                        style: {
-                                            width: { kind: "px", value: centerColW },
-                                            height: { kind: "grow" },
-                                        },
-                                        children: [
-                                            importing ? stablePanel(b.ySize) : transparentPad(b.ySize),
-                                            bgWrap(BottomToolbar(), "grow"),
-                                        ],
-                                    }),
-                                    // RIGHT COLUMN — gives up topGapH worth of
-                                    // vertical space.
-                                    Container({
-                                        style: {
-                                            width: { kind: "px", value: rightColW },
-                                            height: { kind: "grow" },
-                                            background: COLOR_PANEL_BORDER,
-                                            padding: 1,
-                                        },
-                                        children: [
-                                            Container({
-                                                style: {
-                                                    width: { kind: "grow" },
-                                                    height: { kind: "grow" },
-                                                    background: COLOR_PANEL,
-                                                },
-                                                children: [RightPanel()],
-                                            }),
-                                        ],
-                                    }),
-                                ],
+                                children: [RightPanel()],
                             }),
                         ],
                     }),

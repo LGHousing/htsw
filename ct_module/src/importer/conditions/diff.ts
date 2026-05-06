@@ -1,7 +1,9 @@
 import type { Condition } from "htsw/types";
 
-import { normalizeConditionCompare } from "../compare";
+import { conditionsEqual } from "../compare";
 import type { ObservedConditionSlot } from "../types";
+
+export { conditionOnlyNoteDiffers as onlyNoteDiffers } from "../compare";
 
 export type ConditionListDiff = {
     edits: Array<{
@@ -11,30 +13,6 @@ export type ConditionListDiff = {
     deletes: ObservedConditionSlot[];
     adds: Condition[];
 };
-
-function conditionsEqual(a: Condition | null, b: Condition | null): boolean {
-    return (
-        JSON.stringify(normalizeConditionCompare(a)) ===
-        JSON.stringify(normalizeConditionCompare(b))
-    );
-}
-
-export function onlyNoteDiffers(desired: Condition, current: Condition | null): boolean {
-    if (current === null) {
-        return false;
-    }
-
-    const stripNote = (condition: Condition): Condition => {
-        const { note: _note, ...withoutNote } = condition;
-        return withoutNote;
-    };
-
-    return (
-        JSON.stringify(normalizeConditionCompare(stripNote(desired))) ===
-            JSON.stringify(normalizeConditionCompare(stripNote(current))) &&
-        desired.note !== current.note
-    );
-}
 
 export function diffConditionList(
     observed: ObservedConditionSlot[],

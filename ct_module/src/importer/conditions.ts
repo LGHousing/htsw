@@ -21,7 +21,7 @@ import {
 } from "htsw/types";
 
 import TaskContext from "../tasks/context";
-import { type ItemRegistry, getMemoizedHousingUuid } from "../importables/itemRegistry";
+import { type ItemRegistry } from "../importables/itemRegistry";
 import {
     clickGoBack,
     findMenuOptionByLore,
@@ -33,37 +33,31 @@ import {
     setCycleValue,
     setSelectValue,
     setStringValue,
-    setListItemNote,
-    timedWaitForMenu,
     waitForMenu,
 } from "./helpers";
-import { ItemSlot, MouseButton } from "../tasks/specifics/slots";
+import { ItemSlot } from "../tasks/specifics/slots";
 import { removedFormatting } from "../utils/helpers";
-import { getItemFromSnbt } from "../utils/nbt";
-import { importableHash } from "../knowledge";
 import {
     CONDITION_MAPPINGS,
     getConditionFieldLabel,
-    parseConditionListItem,
-    tryGetConditionTypeFromDisplayName,
 } from "./conditionMappings";
-import { Diagnostic } from "htsw";
-import { ObservedConditionSlot } from "./types";
-import {
-    type ConditionListDiff,
-    diffConditionList,
-    onlyNoteDiffers,
-} from "./conditions/diff";
-import {
-    clickPaginatedNextPage,
-    getCurrentPaginatedListPageState,
-    getPaginatedListSlotAtIndex,
-    getVisiblePaginatedItemSlots,
-    goToPaginatedListPage,
-    isEmptyPaginatedPlaceholder,
-    type PaginatedListConfig,
-} from "./paginatedList";
+import { onlyNoteDiffers } from "./conditions/diff";
 import { setItemValue } from "./items";
+import { resolveImportableItem } from "./resolveItem";
+
+export {
+    readConditionList,
+    readConditionsListPage,
+    canonicalizeObservedConditionItemNames,
+} from "./conditions/readList";
+export type { ReadConditionListOptions } from "./conditions/readList";
+export {
+    syncConditionList,
+} from "./conditions/sync";
+export type {
+    SyncConditionListOptions,
+    SyncConditionListResult,
+} from "./conditions/sync";
 
 type ConditionSpec<T extends Condition> = {
     displayName: string;
@@ -86,94 +80,17 @@ const FISHING_ENVIRONMENT_OPTIONS = ["Water", "Lava"] as const;
 const ITEM_PROPERTY_OPTIONS = ["Item Type", "Metadata"] as const;
 const ITEM_AMOUNT_OPTIONS = ["Any Amount", "Equal or Greater Amount"] as const;
 
-function getConditionSpec<T extends Condition["type"]>(
+export function getConditionSpec<T extends Condition["type"]>(
     type: T
 ): ConditionSpec<Extract<Condition, { type: T }>> {
     return CONDITION_SPECS[type] as ConditionSpec<Extract<Condition, { type: T }>>;
 }
 
-function isLimitExceeded(slot: ItemSlot): boolean {
-    const lore = slot.getItem().getLore();
-    if (lore.length === 0) return false;
-    const lastLine = lore[lore.length - 1];
-    return removedFormatting(lastLine) === "You can't have more of this condition!";
-}
-
-async function resolveConditionItem(
-    ctx: TaskContext,
-    itemRegistry: ItemRegistry | undefined,
-    condition: Condition,
-    itemName: string
-): Promise<Item> {
-    if (itemRegistry === undefined) {
-        throw Diagnostic.error(
-            `Cannot set item "${itemName}" for ${condition.type}: no item registry is available.`
-        );
-    }
-
-    const entry = itemRegistry.resolve(itemName, condition);
-    if (entry === undefined) {
-        throw Diagnostic.error(
-            `Cannot set item "${itemName}" for ${condition.type}: item fields resolve against top-level items[].name or direct .snbt paths.`
-        );
-    }
-
-    const importable = entry.importable;
-    const hasActions =
-        importable !== undefined &&
-        ((importable.leftClickActions !== undefined &&
-            importable.leftClickActions.length > 0) ||
-            (importable.rightClickActions !== undefined &&
-                importable.rightClickActions.length > 0));
-    if (!hasActions) {
-        return entry.item;
-    }
-
-    const uuid = await getMemoizedHousingUuid(ctx, itemRegistry);
-    const hash = importableHash(importable);
-    const cachePath = `./htsw/.cache/${uuid}/items/${hash}.snbt`;
-    if (!FileLib.exists(cachePath)) {
-        throw Diagnostic.error(
-            `Cannot set item "${itemName}" for ${condition.type}: it has click actions but isn't cached at ${cachePath}. ` +
-                `Declare the item as a top-level importable in the same import.json so it imports first, ` +
-                `or run /import on it before whatever references it.`
-        );
-    }
-    const snbt = String(FileLib.read(cachePath));
-    return getItemFromSnbt(snbt);
-}
-
-const CONDITION_LIST_CONFIG: PaginatedListConfig = {
-    label: "condition",
-    emptyPlaceholderName: "No Conditions!",
-};
-
-export async function readConditionsListPage(
-    ctx: TaskContext
-): Promise<ObservedConditionSlot[]> {
-    return getVisiblePaginatedItemSlots(ctx)
-        .filter((slot) => !isEmptyPaginatedPlaceholder(slot, CONDITION_LIST_CONFIG))
-        .map((slot, index) => {
-            const type = tryGetConditionTypeFromDisplayName(slot.getItem().getName());
-            const observedCondition: ObservedConditionSlot = {
-                index,
-                slotId: slot.getSlotId(),
-                slot,
-                condition: null,
-            };
-
-            if (!type) {
-                return observedCondition;
-            }
-
-            const condition = parseConditionListItem(slot, type);
-            if (isConditionListItemInverted(slot)) {
-                condition.inverted = true;
-            }
-
-            observedCondition.condition = condition;
-            return observedCondition;
-        });
+export function isConditionListItemInverted(slot: ItemSlot): boolean {
+    return slot
+        .getItem()
+        .getLore()
+        .some((line) => removedFormatting(line).trim() === "Inverted");
 }
 
 async function readRequireGroup(ctx: TaskContext): Promise<ConditionRequireGroup> {
@@ -325,7 +242,7 @@ async function writeRequireItem(
         await setItemValue(
             ctx,
             getConditionFieldLabel("REQUIRE_ITEM", "itemName"),
-            await resolveConditionItem(ctx, itemRegistry, condition, condition.itemName)
+            await resolveImportableItem(ctx, itemRegistry, condition, condition.itemName, "condition")
         );
     }
 
@@ -538,7 +455,7 @@ async function writeBlockType(
         await setItemValue(
             ctx,
             getConditionFieldLabel("BLOCK_TYPE", "itemName"),
-            await resolveConditionItem(ctx, itemRegistry, condition, condition.itemName)
+            await resolveImportableItem(ctx, itemRegistry, condition, condition.itemName, "condition")
         );
     }
 }
@@ -553,7 +470,7 @@ async function writeIsItem(
         await setItemValue(
             ctx,
             getConditionFieldLabel("IS_ITEM", "itemName"),
-            await resolveConditionItem(ctx, itemRegistry, condition, condition.itemName)
+            await resolveImportableItem(ctx, itemRegistry, condition, condition.itemName, "condition")
         );
     }
 }
@@ -667,46 +584,7 @@ const CONDITION_SPECS = {
     },
 } satisfies ConditionSpecMap;
 
-function isConditionListItemInverted(slot: ItemSlot): boolean {
-    return slot
-        .getItem()
-        .getLore()
-        .some((line) => removedFormatting(line).trim() === "Inverted");
-}
-
-export type ReadConditionListOptions = {
-    itemRegistry?: ItemRegistry;
-};
-
-export async function readConditionList(
-    ctx: TaskContext,
-    options?: ReadConditionListOptions
-): Promise<ObservedConditionSlot[]> {
-    await goToPaginatedListPage(ctx, 1, CONDITION_LIST_CONFIG);
-    const observed: ObservedConditionSlot[] = [];
-
-    while (true) {
-        const pageObserved = await readConditionsListPage(ctx);
-
-        for (const entry of pageObserved) {
-            entry.index = observed.length;
-            observed.push(entry);
-        }
-
-        if (!getCurrentPaginatedListPageState(ctx, CONDITION_LIST_CONFIG).hasNext) {
-            break;
-        }
-
-        clickPaginatedNextPage(ctx);
-        await waitForMenu(ctx);
-    }
-
-    await goToPaginatedListPage(ctx, 1, CONDITION_LIST_CONFIG);
-    canonicalizeObservedConditionSlots(observed, options?.itemRegistry);
-    return observed;
-}
-
-async function writeOpenCondition(
+export async function writeOpenCondition(
     ctx: TaskContext,
     condition: Condition,
     current?: Condition,
@@ -729,248 +607,4 @@ async function writeOpenCondition(
     if (spec.write) {
         await spec.write(ctx, condition, resolvedCurrent, itemRegistry);
     }
-}
-
-function canonicalizeObservedConditionSlots(
-    observed: readonly ObservedConditionSlot[],
-    itemRegistry?: ItemRegistry
-): void {
-    if (itemRegistry === undefined) {
-        return;
-    }
-
-    for (const entry of observed) {
-        if (entry.condition !== null) {
-            canonicalizeConditionItemName(entry.condition, itemRegistry);
-        }
-    }
-}
-
-export function canonicalizeObservedConditionItemNames(
-    conditions: readonly (Condition | null)[],
-    itemRegistry?: ItemRegistry
-): void {
-    if (itemRegistry === undefined) {
-        return;
-    }
-
-    for (const condition of conditions) {
-        if (condition !== null) {
-            canonicalizeConditionItemName(condition, itemRegistry);
-        }
-    }
-}
-
-function canonicalizeConditionItemName(
-    condition: Condition,
-    itemRegistry: ItemRegistry
-): void {
-    if (
-        condition.type !== "REQUIRE_ITEM" &&
-        condition.type !== "BLOCK_TYPE" &&
-        condition.type !== "IS_ITEM"
-    ) {
-        return;
-    }
-
-    if (condition.itemName !== undefined) {
-        condition.itemName = itemRegistry.canonicalizeObservedName(condition.itemName);
-    }
-}
-async function deleteObservedCondition(
-    ctx: TaskContext,
-    index: number,
-    listLength: number
-): Promise<void> {
-    const slot = await getPaginatedListSlotAtIndex(ctx, index, listLength, CONDITION_LIST_CONFIG);
-    slot.click(MouseButton.RIGHT);
-    await timedWaitForMenu(ctx, "menuClickWait");
-}
-
-function getInvertSlot(ctx: TaskContext): ItemSlot {
-    return ctx.getMenuItemSlot((slot) => {
-        const name = removedFormatting(slot.getItem().getName()).trim().toLowerCase();
-        return name === "invert" || name === "inverted";
-    });
-}
-
-async function setOpenConditionInverted(
-    ctx: TaskContext,
-    desiredInverted: boolean,
-    knownCurrentInverted?: boolean
-): Promise<void> {
-    const invertSlot = getInvertSlot(ctx);
-    const currentInverted = knownCurrentInverted ?? readBooleanValue(invertSlot) ?? false;
-
-    if (currentInverted === desiredInverted) {
-        return;
-    }
-
-    invertSlot.click();
-    await timedWaitForMenu(ctx, "menuClickWait");
-}
-
-export async function importCondition(
-    ctx: TaskContext,
-    condition: Condition,
-    itemRegistry?: ItemRegistry
-): Promise<void> {
-    ctx.getMenuItemSlot("Add Condition").click();
-    await timedWaitForMenu(ctx, "menuClickWait");
-
-    const spec = getConditionSpec(condition.type);
-    const slot = ctx.getMenuItemSlot(spec.displayName);
-
-    if (isLimitExceeded(slot)) {
-        throw Diagnostic.error(
-            `Maximum amount of ${spec.displayName} conditions exceeded`
-        );
-    }
-
-    slot.click();
-    await timedWaitForMenu(ctx, "menuClickWait");
-    await writeOpenCondition(ctx, condition, undefined, itemRegistry);
-
-    await setOpenConditionInverted(ctx, condition.inverted === true);
-    // we ALWAYS click go back because every single condition has
-    // the invert toggle so opens a submenu, this is not the case for actions
-    await clickGoBack(ctx);
-
-    if (condition.note) {
-        const conditionSlots = getVisiblePaginatedItemSlots(ctx);
-        const addedSlot = conditionSlots[conditionSlots.length - 1];
-        if (addedSlot) {
-            await setListItemNote(ctx, addedSlot, condition.note);
-        }
-    }
-}
-
-async function applyConditionListDiff(
-    ctx: TaskContext,
-    observed: ObservedConditionSlot[],
-    diff: ConditionListDiff,
-    itemRegistry?: ItemRegistry
-): Promise<void> {
-    const currentObserved = [...observed];
-
-    for (const entry of diff.edits) {
-        const currentIndex = currentObserved.indexOf(entry.observed);
-        if (currentIndex === -1) {
-            continue;
-        }
-
-        const conditionSlot = await getPaginatedListSlotAtIndex(
-            ctx,
-            currentIndex,
-            currentObserved.length,
-            CONDITION_LIST_CONFIG
-        );
-        entry.observed.slot = conditionSlot;
-        entry.observed.slotId = conditionSlot.getSlotId();
-
-        if (onlyNoteDiffers(entry.desired, entry.observed?.condition)) {
-            await setListItemNote(ctx, conditionSlot, entry.desired.note);
-            continue;
-        }
-
-        conditionSlot.click();
-        await timedWaitForMenu(ctx, "menuClickWait");
-
-        if (!entry.observed.condition) {
-            throw new Error(
-                "Observed condition should always be present for edit operations."
-            );
-        }
-
-        await writeOpenCondition(
-            ctx,
-            entry.desired,
-            entry.observed.condition,
-            itemRegistry
-        );
-
-        const currentInverted = entry.observed.condition.inverted === true;
-        const desiredInverted = entry.desired.inverted === true;
-        await setOpenConditionInverted(ctx, desiredInverted, currentInverted);
-
-        await clickGoBack(ctx);
-
-        await setListItemNote(ctx, conditionSlot, entry.desired.note);
-    }
-
-    const deletesDescending = [...diff.deletes].sort((a, b) => b.index - a.index);
-    for (const observed of deletesDescending) {
-        const index = currentObserved.indexOf(observed);
-        if (index === -1) {
-            continue;
-        }
-
-        await deleteObservedCondition(ctx, index, currentObserved.length);
-        currentObserved.splice(index, 1);
-    }
-
-    for (const condition of diff.adds) {
-        await importCondition(ctx, condition, itemRegistry);
-    }
-}
-
-function logConditionSyncState(ctx: TaskContext, diff: ConditionListDiff): void {
-    const totalOps = diff.edits.length + diff.deletes.length + diff.adds.length;
-
-    if (totalOps === 0) {
-        ctx.displayMessage(`&7[cond-sync] &aUp to date.`);
-        return;
-    }
-
-    ctx.displayMessage(`&7[cond-sync] &d${totalOps} operation(s):`);
-    for (const entry of diff.edits) {
-        const observedName =
-            entry.observed.condition === null
-                ? "Unknown Condition"
-                : CONDITION_MAPPINGS[entry.observed.condition.type].displayName;
-        ctx.displayMessage(
-            `&7  &6~ [${entry.observed.index}] ${observedName} &7-> &6${CONDITION_MAPPINGS[entry.desired.type].displayName}`
-        );
-    }
-    for (const entry of diff.deletes) {
-        const deleteName =
-            entry.condition === null
-                ? "Unknown Condition"
-                : CONDITION_MAPPINGS[entry.condition.type].displayName;
-        ctx.displayMessage(`&7  &c- [${entry.index}] ${deleteName}`);
-    }
-    for (const [index, entry] of diff.adds.entries()) {
-        ctx.displayMessage(
-            `&7  &a+ [${index}] ${CONDITION_MAPPINGS[entry.type].displayName}`
-        );
-    }
-}
-
-export type SyncConditionListOptions = {
-    /**
-     * Pre-read observed list to use instead of reading from the menu.
-     * Mirrors `SyncActionListOptions.observed`.
-     */
-    observed?: ObservedConditionSlot[];
-    itemRegistry?: ItemRegistry;
-};
-
-export type SyncConditionListResult = {
-    usedObserved: ObservedConditionSlot[];
-};
-
-export async function syncConditionList(
-    ctx: TaskContext,
-    desired: Condition[],
-    options?: SyncConditionListOptions
-): Promise<SyncConditionListResult> {
-    const observed =
-        options?.observed ??
-        (await readConditionList(ctx, { itemRegistry: options?.itemRegistry }));
-    canonicalizeObservedConditionSlots(observed, options?.itemRegistry);
-    const diff = diffConditionList(observed, desired);
-    logConditionSyncState(ctx, diff);
-
-    await applyConditionListDiff(ctx, observed, diff, options?.itemRegistry);
-    return { usedObserved: observed };
 }

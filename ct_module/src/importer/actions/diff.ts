@@ -2,9 +2,10 @@ import type { Action, Condition } from "htsw/types";
 
 import { ACTION_MAPPINGS } from "../actionMappings";
 import {
+    actionOnlyNoteDiffers,
+    actionsEqual,
+    conditionsEqual,
     diffScalarFields,
-    normalizeActionCompare,
-    normalizeConditionCompare,
 } from "../compare";
 import { CONDITION_MAPPINGS } from "../conditionMappings";
 import type {
@@ -58,26 +59,6 @@ const FIELD_KIND_COST: Record<string, number> = {
 // Fixed overhead for opening an action editor and going back (only paid if any field differs)
 const EDIT_OPEN_CLOSE_COST = 2;
 
-function actionsEqual(
-    observed: Action | Observed<Action>,
-    desired: Action | Observed<Action>
-): boolean {
-    return (
-        JSON.stringify(normalizeActionCompare(observed)) ===
-        JSON.stringify(normalizeActionCompare(desired))
-    );
-}
-
-function conditionsEqual(
-    observed: Condition | Observed<Condition> | null,
-    desired: Condition | Observed<Condition> | null
-): boolean {
-    return (
-        JSON.stringify(normalizeConditionCompare(observed)) ===
-        JSON.stringify(normalizeConditionCompare(desired))
-    );
-}
-
 function getFieldValue(value: object, key: string): unknown {
     return (value as { [key: string]: unknown })[key];
 }
@@ -88,23 +69,6 @@ function fieldDifferenceCost(diffs: ScalarFieldDiff[]): number {
         cost += FIELD_KIND_COST[diff.kind] ?? 1;
     }
     return cost;
-}
-
-function stripActionNote(action: Action | Observed<Action>): Action | Observed<Action> {
-    const { note: _note, ...withoutNote } = action;
-    return withoutNote;
-}
-
-function onlyNoteDiffers(
-    desired: Action,
-    current: NonNullable<ObservedActionSlot["action"]>
-): boolean {
-    return (
-        desired.type === current.type &&
-        JSON.stringify(normalizeActionCompare(stripActionNote(desired))) ===
-            JSON.stringify(normalizeActionCompare(stripActionNote(current))) &&
-        desired.note !== current.note
-    );
 }
 
 function splitLoreFields(type: Action["type"]): {
@@ -261,7 +225,7 @@ function actionCost(
         return 0;
     }
 
-    if (onlyNoteDiffers(desired.action, observed.action)) {
+    if (actionOnlyNoteDiffers(desired.action, observed.action)) {
         return NOTE_ONLY_COST;
     }
 
@@ -369,11 +333,11 @@ function matchActions(
     for (let desiredIndex = 0; desiredIndex < unmatchedDesired.length; desiredIndex++) {
         const desiredEntry = unmatchedDesired[desiredIndex];
         let observedIndex = unmatchedObserved.findIndex((entry) =>
-            entry.index === desiredEntry.index && onlyNoteDiffers(desiredEntry.action, entry.action)
+            entry.index === desiredEntry.index && actionOnlyNoteDiffers(desiredEntry.action, entry.action)
         );
         if (observedIndex === -1) {
             observedIndex = unmatchedObserved.findIndex((entry) =>
-                onlyNoteDiffers(desiredEntry.action, entry.action)
+                actionOnlyNoteDiffers(desiredEntry.action, entry.action)
             );
         }
         if (observedIndex === -1) {

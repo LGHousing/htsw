@@ -291,6 +291,7 @@ export function getImportProgress(): ImportProgressView | null {
     return importProgress;
 }
 export function setImportProgress(p: ImportProgressView | null): void {
+    const wasNull = importProgress === null;
     if (p !== null && importProgress === null) {
         importStartedAt = Date.now();
         lastEstimatedCompleted = Math.max(0, p.estimatedCompleted);
@@ -301,6 +302,16 @@ export function setImportProgress(p: ImportProgressView | null): void {
         lastEstimatedTotal = 1;
     }
     importProgress = p;
+    // On import start, jump the right panel to the Progress tab so the
+    // user sees what's happening without having to click. On import end,
+    // fall back to whatever tab they had open before — or nothing if
+    // they had no tabs pinned.
+    if (p !== null && wasNull) {
+        setActiveTab(PROGRESS_TAB_PATH);
+    } else if (p === null && !wasNull && getActivePath() === PROGRESS_TAB_PATH) {
+        const tabs = getTabs();
+        setActiveTab(tabs.length > 0 ? tabs[0].path : null!);
+    }
 }
 export function getImportStartedAt(): number | null {
     return importStartedAt;
