@@ -40,7 +40,7 @@ import { buildKnowledgeStatusRows } from "../knowledge/status";
 import { getCurrentHousingUuid } from "../knowledge/housingId";
 import { TaskManager } from "../tasks/manager";
 
-const KEY_T = 20; // LWJGL keycode for 'T'
+import { getChatKeyCode } from "./keybinds";
 import {
     dispatchWheel,
     isDraggingScrollbar,
@@ -240,10 +240,12 @@ export function initHtswGui(): void {
         const keyCode = KeyboardClass.getEventKey();
         const focusedId = getFocusedInput();
 
-        // Global T: when no input is focused and the GUI is shown, focus the
-        // chat input so the user can type messages without leaving the
-        // inventory. Mirrors vanilla MC's "T opens chat" affordance.
-        if (focusedId === null && enabled && keyCode === KEY_T) {
+        // Global chat-focus key: when no input is focused and the GUI is
+        // shown, focus the chat input so the user can type messages without
+        // leaving the inventory. Mirrors vanilla MC's "T opens chat"
+        // affordance; key is configurable via Options → Controls → HTSW.
+        const chatKey = getChatKeyCode();
+        if (focusedId === null && enabled && chatKey > 0 && keyCode === chatKey) {
             if (getContainerBounds() !== null) {
                 setFocusedInput(CHAT_INPUT_ID);
                 cancel(event);

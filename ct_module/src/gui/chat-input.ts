@@ -4,6 +4,7 @@ import { Element } from "./lib/layout";
 import { Container, Input, Text } from "./lib/components";
 import { ACCENT_INFO, COLOR_INPUT_BG, COLOR_TEXT_DIM } from "./lib/theme";
 import { setFocusedInput } from "./lib/focus";
+import { getChatKeyName } from "./keybinds";
 
 export const CHAT_INPUT_ID = "htsw-chat-input";
 
@@ -66,7 +67,7 @@ export function ChatInputBar(): Element {
                 value: () => chatText,
                 onChange: (v) => { chatText = v; },
                 onSubmit: () => submitChat(),
-                placeholder: "Press T to chat…",
+                placeholder: `Press ${getChatKeyName()} to chat…`,
                 style: { width: { kind: "grow" } },
             }),
             Text({
