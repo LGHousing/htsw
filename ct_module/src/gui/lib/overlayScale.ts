@@ -12,7 +12,37 @@ import { ContainerBounds, getContainerBounds } from "./bounds";
 // @ts-ignore
 const ScaledResolutionClass = net.minecraft.client.gui.ScaledResolution;
 
-export const OVERLAY_SCALE = 4;
+// Target overlay scale (real pixels per overlay unit) — the size we'd LIKE to render at when MC
+// is rendering at the user's chosen GUI scale setting. The actual scale used per-frame is
+// `getEffectiveOverlayScale()`, which scales this proportionally to MC's own clamp ratio so the
+// overlay stays visible when the window is small.
+export const OVERLAY_SCALE_TARGET = 4;
+
+// User's configured GUI scale (gameSettings.guiScale). 0 = "Auto". Mods can allow values > 4.
+// SRG field path: Minecraft.gameSettings → field_71474_y, GameSettings.guiScale → field_74335_Z.
+function getMcGuiScaleSetting(): number {
+    try {
+        const mc = Client.getMinecraft() as any;
+        const v = mc.field_71474_y.field_74335_Z;
+        return typeof v === "number" ? v : 0;
+    } catch (_e) {
+        return 0;
+    }
+}
+
+// Effective overlay scale this frame. Always `OVERLAY_SCALE_TARGET * (real / setting)`:
+// when MC isn't clamping (real == setting) the ratio is 1 and we render at the target scale;
+// when MC has auto-clamped below the user's setting because the window is too small, we ride
+// the same clamp ratio so the overlay shrinks proportionally and stays visible.
+//
+// When guiScale is 0 ("Auto") there's no setting value to divide by — MC just picks the largest
+// scale that fits — so we render at the target scale.
+export function getEffectiveOverlayScale(): number {
+    const setting = getMcGuiScaleSetting();
+    if (setting <= 0) return OVERLAY_SCALE_TARGET;
+    const real = getMcScale();
+    return OVERLAY_SCALE_TARGET * (real / setting);
+}
 
 // MC's current effective scale factor (real pixels per scaled unit). We DON'T use
 // `ScaledResolution.func_78325_e()` because vanilla 1.8.9 caps it at 4 — mods that add larger
@@ -30,21 +60,21 @@ export function getMcScale(): number {
     return sr.func_78325_e();
 }
 
-// Convert a coord/length from MC's current scaled-coord space to overlay (scale-4) space.
-// Equivalent to (mcCoord * mcScale) / OVERLAY_SCALE = realPixels / OVERLAY_SCALE.
+// Convert a coord/length from MC's current scaled-coord space to overlay space (1 overlay unit
+// = effective overlay scale real pixels). Equivalent to realPixels / effectiveOverlayScale.
 export function mcToOverlay(coord: number): number {
-    return Math.floor((coord * getMcScale()) / OVERLAY_SCALE);
+    return Math.floor((coord * getMcScale()) / getEffectiveOverlayScale());
 }
 
-// Overlay-space screen dimensions (= real pixels / 4).
+// Overlay-space screen dimensions (= real pixels / effective overlay scale).
 export function getOverlayScreenW(): number {
     const dw = (Client.getMinecraft() as any).field_71443_c;
-    return Math.floor(dw / OVERLAY_SCALE);
+    return Math.floor(dw / getEffectiveOverlayScale());
 }
 
 export function getOverlayScreenH(): number {
     const dh = (Client.getMinecraft() as any).field_71440_d;
-    return Math.floor(dh / OVERLAY_SCALE);
+    return Math.floor(dh / getEffectiveOverlayScale());
 }
 
 // Convert an MC scaled-coord rect into overlay coords.

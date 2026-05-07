@@ -48,7 +48,7 @@ import {
 } from "./lib/render";
 import { getFocusedInput, setFocusedInput } from "./lib/focus";
 import { applyFocus, getRecord, readAndSync, tickAllFields } from "./lib/inputState";
-import { OVERLAY_SCALE, mcToOverlay, getContainerBoundsOverlay } from "./lib/overlayScale";
+import { getEffectiveOverlayScale, mcToOverlay, getContainerBoundsOverlay } from "./lib/overlayScale";
 
 let enabled = true;
 let initialized = false;
@@ -180,12 +180,13 @@ export function initHtswGui(): void {
         const mc = Client.getMinecraft();
         const screen = (mc as any).field_71462_r;
         if (screen === null || screen === undefined) return;
-        // Convert raw real-pixel mouse coords directly into overlay (scale-OVERLAY_SCALE) space —
-        // 1 overlay unit = OVERLAY_SCALE real pixels.
+        // Convert raw real-pixel mouse coords directly into overlay space —
+        // 1 overlay unit = effective overlay scale real pixels.
         const dh = (mc as any).field_71440_d;
-        const overlayScreenH = Math.floor(dh / OVERLAY_SCALE);
-        const mx = Math.floor(MouseClass.getEventX() / OVERLAY_SCALE);
-        const my = overlayScreenH - Math.floor(MouseClass.getEventY() / OVERLAY_SCALE) - 1;
+        const s = getEffectiveOverlayScale();
+        const overlayScreenH = Math.floor(dh / s);
+        const mx = Math.floor(MouseClass.getEventX() / s);
+        const my = overlayScreenH - Math.floor(MouseClass.getEventY() / s) - 1;
         // Popovers paint on top of panels so they should also see the wheel first. Without
         // this, scrolling inside the file-browser/recents popovers fell through to whatever
         // panel scroll happened to be under the cursor.

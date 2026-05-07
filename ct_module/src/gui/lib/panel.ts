@@ -4,7 +4,7 @@ import { Element, Rect, layoutElement, pointInRect } from "./layout";
 import { Extractable, extract } from "./extractable";
 import { renderElement, dispatchClick } from "./render";
 import { tryDispatchPopoverClick, popoverIsOpen, mouseIsOverPopover } from "./popovers";
-import { OVERLAY_SCALE, getMcScale, mcToOverlay } from "./overlayScale";
+import { getEffectiveOverlayScale, getMcScale, mcToOverlay } from "./overlayScale";
 
 const COLOR_PANEL = 0xf0242931 | 0;
 
@@ -94,15 +94,17 @@ export function resetGuiState(): void {
 
 export function beginHtswOverlayDraw(): void {
     resetGuiState();
-    // Force the overlay to render as if MC's GUI scale were OVERLAY_SCALE, regardless of the
-    // user's setting. MC's projection draws 1 scaled unit as `mcScale` real pixels; we want
-    // 1 overlay unit to be OVERLAY_SCALE real pixels, so apply factor OVERLAY_SCALE/mcScale.
+    // Force the overlay to render at the effective overlay scale (= OVERLAY_SCALE_TARGET
+    // capped to MC's current scale, so we never try to render bigger than MC itself when the
+    // window is small). MC's projection draws 1 scaled unit as `mcScale` real pixels; we want
+    // 1 overlay unit to be `effectiveOverlayScale` real pixels, so apply factor
+    // effectiveOverlayScale / mcScale (= 1 when MC is already at-or-below our cap).
     // We push BOTH matrices: scale on the projection (which MC re-binds on every drawScreen
     // and which downstream rendering paths don't usually re-touch), and translate-Z on the
     // modelview so we still draw above other GUI elements. Doing the scale on projection
     // means even rendering paths that re-load the modelview matrix internally still get our
     // scale applied through the projection.
-    const f = OVERLAY_SCALE / getMcScale();
+    const f = getEffectiveOverlayScale() / getMcScale();
     GL11.glMatrixMode(GL11.GL_PROJECTION);
     GL11.glPushMatrix();
     GL11.glScalef(f, f, 1);

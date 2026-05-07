@@ -1,7 +1,7 @@
 /// <reference types="../../CTAutocomplete" />
 
 import { Rect, intersectRect } from "./layout";
-import { OVERLAY_SCALE, getOverlayScreenH } from "./overlayScale";
+import { getEffectiveOverlayScale, getOverlayScreenH } from "./overlayScale";
 
 // @ts-ignore
 const GL11 = org.lwjgl.opengl.GL11;
@@ -27,15 +27,16 @@ export function popScissor(): void {
 }
 
 function applyScissor(rect: Rect): void {
-    // Rects are in overlay (scale-OVERLAY_SCALE) coords. GL scissor takes real pixels with
-    // origin bottom-left, so multiply by OVERLAY_SCALE and y-flip against the overlay screen
-    // height (also in overlay coords).
+    // Rects are in overlay coords. GL scissor takes real pixels with origin bottom-left, so
+    // multiply by the effective overlay scale and y-flip against the overlay screen height
+    // (also in overlay coords).
+    const s = getEffectiveOverlayScale();
     const screenH = getOverlayScreenH();
     GL11.glEnable(GL11.GL_SCISSOR_TEST);
     GL11.glScissor(
-        rect.x * OVERLAY_SCALE,
-        (screenH - rect.y - rect.h) * OVERLAY_SCALE,
-        rect.w * OVERLAY_SCALE,
-        rect.h * OVERLAY_SCALE
+        rect.x * s,
+        (screenH - rect.y - rect.h) * s,
+        rect.w * s,
+        rect.h * s
     );
 }

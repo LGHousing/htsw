@@ -187,17 +187,20 @@ Returns `null` for non-`GuiContainer` screens (main menu, settings, etc.). The p
 
 ## Coordinate space
 
-The overlay always renders at `OVERLAY_SCALE = 4` regardless of Minecraft's GUI Scale setting. All internal coordinates (layout rects, mouse coords used by hit-testing, screen dims, scissor inputs) are in this fixed scale-4 space — `1 overlay unit = 4 real pixels`. This keeps element sizes constant across users.
+The overlay targets `OVERLAY_SCALE_TARGET = 4` real pixels per overlay unit, regardless of Minecraft's GUI Scale setting. All internal coordinates (layout rects, mouse coords used by hit-testing, screen dims, scissor inputs) live in this overlay space.
+
+The effective scale per frame is `getEffectiveOverlayScale() = OVERLAY_SCALE_TARGET * (mcReal / mcSetting)` — when MC isn't clamping (real == setting) the ratio is 1 and we render at 4 px/unit; when MC has auto-clamped below the user's setting because the window is too small (e.g. setting 5 → real 2), we ride the same clamp ratio so the overlay shrinks proportionally and stays visible (4 × 2/5 = 1.6). When `gameSettings.guiScale = 0` ("Auto") there's no setting value to compare against, so we render at the target scale.
 
 How it works:
-- `beginHtswOverlayDraw()` (in `panel.ts`) applies `glScale(OVERLAY_SCALE / mcScale)` so `Renderer.*` calls — which interpret coords in MC's current scaled space — paint correctly when fed overlay coords. `postGuiRender` popovers go through the same begin/end so they pick up the transform.
+- `getMcScale()` computes the actual scale via `realW / scaledW` rather than `ScaledResolution.func_78325_e()`, because vanilla 1.8.9 caps `scaleFactor` at 4 and mods that allow scale 5+ typically override `getScaledWidth/Height` but leave `scaleFactor` untouched.
+- `beginHtswOverlayDraw()` (in `panel.ts`) applies `glScale(effectiveOverlayScale / mcScale)` **on the projection matrix** (not modelview — projection survives intermediate matrix manipulation by font/icon rendering paths). It also pushes a Z-translate on modelview so the overlay paints above other GUI. `postGuiRender` popovers go through the same begin/end so they pick up the transform.
 - Triggers receive coords in MC's current scaled space. We convert at the boundary via `mcToOverlay(coord)` (in `lib/overlayScale.ts`):
   - `Panel`'s render + click handlers (`panel.ts`)
-  - `overlay.ts` mouse-wheel handler (uses raw real-pixel `Mouse.getEventX/Y` and divides by `OVERLAY_SCALE` directly — equivalent)
+  - `overlay.ts` mouse-wheel handler (uses raw real-pixel `Mouse.getEventX/Y` and divides by `getEffectiveOverlayScale()` — equivalent)
   - `overlay.ts` scrollbar-drag `guiRender` and focus-clear `guiMouseClick`
   - popovers' `postGuiRender` (`popovers.ts`)
-- `bounds.ts` converts MC's `screenW/H/left/top/xSize/ySize` to overlay space before returning.
-- `scissor.ts` multiplies rect by `OVERLAY_SCALE` to reach real pixels (no `ScaledResolution` lookup).
+- `bounds.ts` returns raw MC-scaled coords (untouched). `getContainerBoundsOverlay()` in `lib/overlayScale.ts` is the wrapper that converts; consumers (`overlay.ts:frameBounds`, `root.ts:getStableBounds`) route through it.
+- `scissor.ts` multiplies rect by `getEffectiveOverlayScale()` to reach real pixels.
 - Code that wants the screen in overlay coords calls `getOverlayScreenW/H` (NOT `Renderer.screen.getWidth/Height`, which return MC's current scaled dims).
 
 If you add a new entry point that receives MC scaled coords, **convert with `mcToOverlay` before passing into layout / dispatch / popovers**. If you add code that draws via `Renderer.*`, make sure it runs inside a `beginHtswOverlayDraw()`/`endHtswOverlayDraw()` pair.
