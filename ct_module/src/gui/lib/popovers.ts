@@ -165,14 +165,18 @@ export function tryDispatchPopoverClick(
         if (onAnchor) fresh.push(p);
         else stale.push(p);
     }
+    let closedModal = false;
     if (stale.length > 0) {
         openPopovers = fresh;
         for (let i = 0; i < stale.length; i++) {
+            if (stale[i].placement === "modal") closedModal = true;
             if (stale[i].onClose) stale[i].onClose!();
         }
     }
-    // If any modal is still open, absorb the click so it doesn't fall
-    // through to the underlying panel — modals are interaction-blocking.
+    // Modals are interaction-blocking: absorb the click if any modal is still open OR if
+    // the outside-click is what just closed a modal (so the dismissing click doesn't also
+    // hit a button/input underneath).
+    if (closedModal) return true;
     for (let i = 0; i < openPopovers.length; i++) {
         if (openPopovers[i].placement === "modal") return true;
     }

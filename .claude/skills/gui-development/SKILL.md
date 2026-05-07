@@ -143,7 +143,7 @@ CT's `guiRender` maps to Forge's `GuiScreenEvent$BackgroundDrawnEvent` — it fi
 Click flow when a popover is open:
 - Panel handler runs, sees `popoverIsOpen()`, and calls `tryDispatchPopoverClick(x,y)` (guarded so it runs once per click via `claimPopoverClick`).
 - Click inside popover rect → dispatch into popover content, panel cancels the event, returns.
-- Click outside every popover → auto-close popovers and **fall through** to the panel's normal `dispatchClick`. This is intentional: the same click that closes a popover should also focus an input or hit a button under the cursor.
+- Click outside every popover → auto-close popovers and **fall through** to the panel's normal `dispatchClick`. This is intentional: the same click that closes a popover should also focus an input or hit a button under the cursor. **Exception:** modals (`placement: "modal"`) absorb the dismissing click — closing a modal does NOT propagate to the panel underneath, since modals are interaction-blocking by design.
 - The exception: if the click lands on the popover's own anchor AND `excludeAnchor` is true (default), the popover stays open. This avoids a race with `togglePopover` where auto-close fires first, then the trigger's `onClick` reopens a fresh popover, requiring a second click to dismiss. Cursor-anchored menus (`openMenu`) opt out by passing `excludeAnchor: false` since they have no re-clickable trigger — any subsequent click should close them.
 
 Hover follows click propagation: panels pass `interactive = !mouseIsOverPopover(x, y)` to `renderElement`, so panel elements light up on hover anywhere a click would still reach them — only positions actually under a popover suppress panel hover.
