@@ -144,7 +144,6 @@ export const ACTION_SPECS: readonly ActionSpec[] = [
     },
     { kw: "globalstat", fields: VAR_FIELDS },
     { kw: "globalvar", fields: VAR_FIELDS },
-    { kw: "houseSpawn", fields: [] },
     {
         kw: "hungerLevel",
         fields: [f("op", "operation"), f("amount", "value")],

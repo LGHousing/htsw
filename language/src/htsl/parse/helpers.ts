@@ -20,7 +20,6 @@ export const ACTION_KWS = [
     "fullHeal",
     "xpLevel",
     "giveItem",
-    "houseSpawn",
     "kill",
     "parkCheck",
     "pause",

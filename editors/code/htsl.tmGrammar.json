@@ -64,7 +64,7 @@
         },
         "entities": {
             "name": "entity.name.function.htsl",
-            "match": "\\b(applyLayout|applyPotion|balanceTeam|cancelEvent|changeHealth|hungerLevel|maxHealth|changePlayerGroup|clearEffects|closeMenu|actionBar|displayMenu|title|enchant|failParkour|fullHeal|xpLevel|giveItem|houseSpawn|kill|parkCheck|pause|sound|removeItem|resetInventory|chat|lobby|compassTarget|gamemode|setTeam|tp|consumeItem|launch|changeVelocity|dropItem|blockType|damageAmount|damageCause|doingParkour|fishingEnv|hasItem|hasPotion|isItem|isSneaking|isFlying|health|hunger|portal|canPvp|hasGroup|hasPermission|hasTeam|inRegion|randomint|locX|locY|locZ|unix)\\b"
+            "match": "\\b(applyLayout|applyPotion|balanceTeam|cancelEvent|changeHealth|hungerLevel|maxHealth|changePlayerGroup|clearEffects|closeMenu|actionBar|displayMenu|title|enchant|failParkour|fullHeal|xpLevel|giveItem|kill|parkCheck|pause|sound|removeItem|resetInventory|chat|lobby|compassTarget|gamemode|setTeam|tp|consumeItem|launch|changeVelocity|dropItem|blockType|damageAmount|damageCause|doingParkour|fishingEnv|hasItem|hasPotion|isItem|isSneaking|isFlying|health|hunger|portal|canPvp|hasGroup|hasPermission|hasTeam|inRegion|randomint|locX|locY|locZ|unix)\\b"
         },
         "storage-types": {
             "name": "storage.type.htsl",
