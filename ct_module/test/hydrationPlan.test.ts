@@ -1,7 +1,8 @@
-import { strict as assert } from "node:assert";
+import { describe, expect, test } from "vitest";
 import type { Action, Condition } from "htsw/types";
 
 import { createNestedHydrationPlan } from "../src/importer/actions/hydrationPlan";
+import { matchObservedToDesired } from "../src/importer/actions/nestedMatching";
 import type {
     NestedListProp,
     NestedPropsToRead,
@@ -27,6 +28,9 @@ function observed(
         action: {
             type: "CONDITIONAL",
             matchAny: false,
+            conditions: [],
+            ifActions: [],
+            elseActions: [],
             ...fields,
         } as NonNullable<ObservedActionSlot["action"]>,
         nestedReadState: "summary",
@@ -50,88 +54,96 @@ function desired(
     } as Action;
 }
 
-function plannedIndexes(plan: ReturnType<typeof createNestedHydrationPlan>): number[] {
-    return [...plan.keys()].map((entry) => entry.index).sort((a, b) => a - b);
+function plan(observedList: ObservedActionSlot[], desiredList: Action[]) {
+    return createNestedHydrationPlan(matchObservedToDesired(observedList, desiredList));
 }
 
-{
-    const plan = createNestedHydrationPlan(
-        [
-            observed(0, { conditions: ["REQUIRE_ITEM"] }),
-            observed(1, { conditions: ["REQUIRE_ITEM"] }),
-            observed(2, { conditions: ["REQUIRE_ITEM"] }),
-        ],
-        [{ type: "MESSAGE", message: "hello" }]
-    );
-    assert.deepEqual(plannedIndexes(plan), []);
+function plannedIndexes(p: ReturnType<typeof plan>): number[] {
+    const out: number[] = [];
+    for (const slot of p.keys()) out.push(slot.index);
+    return out.sort((a, b) => a - b);
 }
 
-{
-    const observedActions = Array.from({ length: 20 }, (_, index) =>
-        observed(index, {
-            conditions: [index === 8 || index === 14 ? "REQUIRE_ITEM" : "REQUIRE_TEAM"],
-            ifActions: Array.from({ length: index === 14 ? 2 : 1 }, () => "CHANGE_VAR"),
-            elseActions: [],
-        })
-    );
-    const plan = createNestedHydrationPlan(observedActions, [
-        desired(["REQUIRE_ITEM"], ["CHANGE_VAR"]),
-        desired(["REQUIRE_ITEM"], ["CHANGE_VAR", "CHANGE_VAR"]),
-    ]);
-    assert.deepEqual(plannedIndexes(plan), [8, 14]);
-}
+describe("createNestedHydrationPlan", () => {
+    test("no matchable desired => empty plan", () => {
+        const result = plan(
+            [
+                observed(0, { conditions: ["REQUIRE_ITEM"] }),
+                observed(1, { conditions: ["REQUIRE_ITEM"] }),
+                observed(2, { conditions: ["REQUIRE_ITEM"] }),
+            ],
+            [{ type: "MESSAGE", message: "hello" }]
+        );
+        expect(plannedIndexes(result)).toEqual([]);
+    });
 
-{
-    const observedActions = Array.from({ length: 20 }, (_, index) =>
-        observed(index, { conditions: ["REQUIRE_ITEM"], ifActions: ["CHANGE_VAR"] })
-    );
-    const desiredActions = Array.from({ length: 20 }, () =>
-        desired(["REQUIRE_ITEM"], ["CHANGE_VAR"])
-    );
-    const plan = createNestedHydrationPlan(observedActions, desiredActions);
-    assert.equal(plan.size, 20);
-}
+    test("picks the cheapest observed slots out of many candidates", () => {
+        // 20 observed CONDITIONALs, mostly with mismatched condition types.
+        // Slots 8 and 14 have nested shapes that match the two desired
+        // entries, so the matcher should pair them.
+        const observedActions = Array.from({ length: 20 }, (_, index) =>
+            observed(index, {
+                conditions: [index === 8 || index === 14 ? "REQUIRE_ITEM" : "REQUIRE_TEAM"],
+                ifActions: Array.from({ length: index === 14 ? 2 : 1 }, () => "CHANGE_VAR"),
+                elseActions: [],
+            })
+        );
+        const result = plan(observedActions, [
+            desired(["REQUIRE_ITEM"], ["CHANGE_VAR"]),
+            desired(["REQUIRE_ITEM"], ["CHANGE_VAR", "CHANGE_VAR"]),
+        ]);
+        expect(plannedIndexes(result)).toEqual([8, 14]);
+    });
 
-{
-    const entry = observed(0, { conditions: ["REQUIRE_ITEM"], elseActions: [] });
-    const plan = createNestedHydrationPlan(
-        [entry],
-        [desired(["REQUIRE_ITEM"], ["CHANGE_VAR"])]
-    );
-    assert.deepEqual([...(plan.get(entry) ?? new Set())].sort(), ["conditions"]);
-}
+    test("matches all 20 when observed and desired are aligned", () => {
+        const observedActions = Array.from({ length: 20 }, (_, index) =>
+            observed(index, { conditions: ["REQUIRE_ITEM"], ifActions: ["CHANGE_VAR"] })
+        );
+        const desiredActions = Array.from({ length: 20 }, () =>
+            desired(["REQUIRE_ITEM"], ["CHANGE_VAR"])
+        );
+        const result = plan(observedActions, desiredActions);
+        expect(result.size).toBe(20);
+    });
 
-{
-    const known = observed(0, { conditions: ["REQUIRE_ITEM"] });
-    const unknown = observed(1, { conditions: ["UNKNOWN"] });
-    const plan = createNestedHydrationPlan(
-        [unknown, known],
-        [desired(["REQUIRE_ITEM"], [])]
-    );
-    assert.deepEqual(plannedIndexes(plan), [0]);
-}
+    test("hydrates only the props that have non-empty summaries", () => {
+        const entry = observed(0, { conditions: ["REQUIRE_ITEM"], elseActions: [] });
+        const result = plan([entry], [desired(["REQUIRE_ITEM"], ["CHANGE_VAR"])]);
+        const props = Array.from(result.get(entry) ?? new Set<string>()).sort();
+        expect(props).toEqual(["conditions"]);
+    });
 
-{
-    const wrongMatchAny = observed(
-        0,
-        { conditions: ["REQUIRE_ITEM"] },
-        { matchAny: true }
-    );
-    const rightMatchAny = observed(1, { conditions: ["REQUIRE_ITEM"] });
-    const plan = createNestedHydrationPlan(
-        [wrongMatchAny, rightMatchAny],
-        [desired(["REQUIRE_ITEM"], [])]
-    );
-    assert.deepEqual(plannedIndexes(plan), [1]);
-}
+    test("prefers the slot whose summary already shapes-up to the desired", () => {
+        // The "known" slot's condition matches the desired; the "unknown"
+        // slot's doesn't. The matcher should pick the known one.
+        const known = observed(0, { conditions: ["REQUIRE_ITEM"] });
+        const unknown = observed(1, { conditions: ["UNKNOWN"] });
+        const result = plan([unknown, known], [desired(["REQUIRE_ITEM"], [])]);
+        expect(plannedIndexes(result)).toEqual([0]);
+    });
 
-{
-    const plan = createNestedHydrationPlan(
-        [
-            observed(0, { conditions: ["REQUIRE_ITEM"] }),
-            observed(1, { conditions: ["REQUIRE_ITEM"] }),
-        ],
-        [desired(["REQUIRE_ITEM"], [])]
-    );
-    assert.deepEqual(plannedIndexes(plan), [0]);
-}
+    test("scalar field mismatches contribute to cost (matchAny picks the right slot)", () => {
+        const wrongMatchAny = observed(
+            0,
+            { conditions: ["REQUIRE_ITEM"] },
+            { matchAny: true }
+        );
+        const rightMatchAny = observed(1, { conditions: ["REQUIRE_ITEM"] });
+        const result = plan(
+            [wrongMatchAny, rightMatchAny],
+            [desired(["REQUIRE_ITEM"], [])]
+        );
+        expect(plannedIndexes(result)).toEqual([1]);
+    });
+
+    test("when two slots are tied, the lower-index one wins (deterministic tie-break)", () => {
+        const result = plan(
+            [
+                observed(0, { conditions: ["REQUIRE_ITEM"] }),
+                observed(1, { conditions: ["REQUIRE_ITEM"] }),
+            ],
+            [desired(["REQUIRE_ITEM"], [])]
+        );
+        expect(plannedIndexes(result)).toEqual([0]);
+    });
+});

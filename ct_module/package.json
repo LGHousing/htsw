@@ -10,6 +10,7 @@
         "build:java": "node --experimental-strip-types ./scripts/compileJava.ts",
         "typecheck": "tsc --noEmit",
         "lint": "eslint src",
+        "test": "vitest run",
         "build": "npm run generate:icons && npm run typecheck && npm run lint && vite build --mode production && npm run build:java",
         "generate:icons": "node --experimental-strip-types ./scripts/generateIconsList.ts",
         "generate:condition-mappings": "node --experimental-strip-types ./scripts/generateConditionMappingScaffold.ts",
@@ -34,6 +35,7 @@
         "prettier": "^3.8.3",
         "typescript": "^5.9.3",
         "typescript-eslint": "^8.59.1",
-        "vite": "^7.0.0"
+        "vite": "^7.0.0",
+        "vitest": "3.0.5"
     }
 }
