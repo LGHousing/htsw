@@ -38,6 +38,15 @@ def main() -> None:
     for source_file in dist_dir.iterdir():
         if source_file.is_file():
             shutil.copy2(source_file, DESTINATION / source_file.name)
+    # Mirror dist/assets/ into the deploy. The Vite icon-shake plugin only writes
+    # PNGs that are referenced in the bundle, so this copy is already minimal.
+    # Wipe the destination assets dir first so removed icons don't linger.
+    dist_assets = dist_dir / 'assets'
+    dest_assets = DESTINATION / 'assets'
+    if dest_assets.exists():
+        shutil.rmtree(dest_assets)
+    if dist_assets.exists():
+        shutil.copytree(dist_assets, dest_assets)
     shutil.copy2(SOURCE / 'metadata.json', DESTINATION / 'metadata.json')
 
     # Filter MCP-related env vars out of the deployed .env when the bridge is disabled,

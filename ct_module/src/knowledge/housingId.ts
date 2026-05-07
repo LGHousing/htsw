@@ -16,21 +16,13 @@ import { removedFormatting } from "../utils/helpers";
 export async function getCurrentHousingUuid(ctx: TaskContext): Promise<string> {
     await ctx.runCommand("/wtfmap");
 
-    let message: string = "";
-    await ctx.withTimeout(
+    const message = await ctx.withTimeout(
         ctx.waitFor(
             "message",
-            (chatMessage) =>
-                removedFormatting(chatMessage).startsWith(
-                    "You are currently playing on"
-                ) &&
-                (() => {
-                    message = removedFormatting(chatMessage);
-                    return true;
-                })()
+            (msg) => removedFormatting(msg).startsWith("You are currently playing on"),
         ),
         "Waiting for /wtfmap reply"
-    );
+    ).then(([msg]) => removedFormatting(msg));
 
     // "You are currently playing on " is 29 chars; UUIDs are 36 chars long.
     return message.substring(29, 65);

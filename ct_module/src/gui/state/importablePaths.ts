@@ -1,5 +1,6 @@
 /// <reference types="../../../CTAutocomplete" />
 
+import type { ParseResult } from "htsw";
 import type { Importable } from "htsw/types";
 import { getImportJsonPath, getParsedResult } from "./index";
 
@@ -35,9 +36,18 @@ export type SubListKind =
     | "leftClickActions"
     | "rightClickActions";
 
-export function importableSourcePath(imp: Importable): string | undefined {
-    const parsed = getParsedResult();
-    if (parsed === null) return undefined;
+/**
+ * Resolve `imp`'s source file path. Pass `parse` when looking up
+ * importables that came from a parse other than the globally-active one
+ * (multi-parse Explore + queue use-case); omit it to fall back to
+ * `getParsedResult()` for legacy single-parse callers.
+ */
+export function importableSourcePath(
+    imp: Importable,
+    parse?: ParseResult<Importable[]> | null
+): string | undefined {
+    const parsed = parse ?? getParsedResult();
+    if (parsed === null || parsed === undefined) return undefined;
     if (imp.type === "ITEM" && imp.nbt !== undefined) {
         try {
             const span = parsed.gcx.spans.get(imp.nbt);

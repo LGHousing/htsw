@@ -4,16 +4,24 @@ import { ClickInfo, Element, Rect } from "../../lib/layout";
 import { Button, Col, Container, Input, Row, Scroll, Text } from "../../lib/components";
 import { closeAllPopovers, togglePopover } from "../../lib/popovers";
 import { openMenu, MenuAction } from "../../lib/menu";
+import { openFileBrowser } from "../../popovers/file-browser";
+import { getImportJsonPath, setImportJsonPath } from "../../state";
+import { scheduleReparse } from "../../state/reparse";
+import { composeFileMenu } from "../../state/fileMenu";
 import {
-    ImportEntry,
     Result,
     ResultImport,
     TYPE_COLORS,
+    IMPORTABLE_TYPE_COLORS,
     ACTIVE_BG,
     ACTIVE_HOVER_BG,
     ROW_BG,
     ROW_HOVER_BG,
 } from "./types";
+import type { Importable } from "htsw/types";
+import { importableSourcePath } from "../../state/importablePaths";
+import { makeImportableQueueItem } from "../../state/queue";
+import { composeImportableMenu } from "../../state/fileMenu";
 import {
     SourceDir,
     SourceFile,
@@ -35,7 +43,14 @@ import {
 } from "./filter";
 
 let searchQuery = "";
+// Expansion state is keyed by `<sourceKey>::<fullPath>` so the same file
+// surfaced under two different sources (a dir root + a standalone, two
+// dir roots that both contain it, etc.) keeps independent expansion
+// state. Toggling one no longer collapses every other instance.
 const expandedImports: Set<string> = new Set();
+function expansionKey(sourceKey: string, fullPath: string): string {
+    return `${sourceKey}::${fullPath}`;
+}
 // Roots are expanded by default; a key in this set means the root is collapsed.
 const collapsedRoots: Set<string> = new Set();
 
@@ -58,68 +73,39 @@ function filterAndSort(all: Result[]): Result[] {
     return sortResults(out);
 }
 
-function dirOf(p: string): string {
-    const i = p.lastIndexOf("/");
-    return i < 0 ? "" : p.substring(0, i);
-}
-
-function userHome(): string {
-    try {
-        const System = Java.type("java.lang.System");
-        return String(System.getProperty("user.home")).replace(/\\/g, "/");
-    } catch (_e) {
-        return "";
-    }
-}
-
 const MAX_TAIL_SEGMENTS = 3;
 
-// Keep at most the last MAX_TAIL_SEGMENTS path segments. Returns the kept tail and a flag
-// indicating whether segments were dropped from the front.
-function tailSegments(rel: string): { tail: string; truncated: boolean } {
-    const parts = rel.split("/");
-    if (parts.length <= MAX_TAIL_SEGMENTS) return { tail: rel, truncated: false };
-    return { tail: parts.slice(parts.length - MAX_TAIL_SEGMENTS).join("/"), truncated: true };
-}
-
-// Compact a full directory path for display:
-//   `<home>/foo`                  → `~/foo`
-//   `<home>/foo/bar`              → `~/foo/bar`           (≤ 3 tail segments fits)
-//   `<home>/foo/bar/baz`          → `~/foo/bar/baz`
-//   `<home>/a/b/c/d/e`            → `~/.../c/d/e`         (truncated to last 3)
-//   `/elsewhere/a/b/c/d`          → `.../b/c/d`
-//   `/short`                      → `/short`              (already short — pass through)
-// Pass-through if the path is empty.
+// Compact any path shown in the Explore page to a uniform shape:
+//   `.../<dir1>/<dir2>/<dir3>` (last MAX_TAIL_SEGMENTS segments).
+// The leading `...` is always present so every path on the page reads
+// the same way, regardless of how deep it actually is on disk. Paths
+// with fewer than MAX_TAIL_SEGMENTS segments still get the prefix —
+// `.../foo.htsl` — for consistency.
 function formatFullDir(fullPath: string): string {
     if (!fullPath) return fullPath;
-    const home = userHome();
-    if (home.length > 0) {
-        if (fullPath === home) return "~";
-        if (fullPath.indexOf(home + "/") === 0) {
-            const rel = fullPath.substring(home.length + 1);
-            const { tail, truncated } = tailSegments(rel);
-            return truncated ? `~/.../${tail}` : `~/${tail}`;
-        }
-    }
-    // Drop the leading "/" so split doesn't yield an empty leading segment.
-    const stripped = fullPath.charAt(0) === "/" ? fullPath.substring(1) : fullPath;
-    const { tail, truncated } = tailSegments(stripped);
-    return truncated ? `.../${tail}` : fullPath;
+    const norm = fullPath.replace(/\\/g, "/");
+    const parts = norm.split("/").filter((s) => s.length > 0);
+    const tail =
+        parts.length <= MAX_TAIL_SEGMENTS
+            ? parts.join("/")
+            : parts.slice(parts.length - MAX_TAIL_SEGMENTS).join("/");
+    return `.../${tail}`;
 }
 
-function joinPath(dir: string, child: string): string {
-    if (dir === "") return child;
-    return `${dir}/${child}`;
+function importableLabel(imp: Importable): string {
+    return imp.type === "EVENT" ? imp.event : imp.name;
 }
 
-function entryRefPath(e: ImportEntry): string | undefined {
-    if (e.type === "FUNCTION" || e.type === "EVENT") return e.actionsPath;
-    if (e.type === "ITEM") return e.nbtPath;
-    return undefined;
-}
-
-function entryLabel(e: ImportEntry): string {
-    return e.type === "EVENT" ? e.event : e.name;
+/**
+ * Resolve the file an importable should preview-into when its row is
+ * left-clicked. Falls back to the parent import.json if the importable
+ * has no resolvable source (REGION/MENU/NPC live entirely as inline
+ * JSON; they have no separate htsl/snbt to jump to).
+ */
+function importablePreviewPath(parent: ResultImport, imp: Importable): string {
+    const src = importableSourcePath(imp);
+    if (src !== undefined) return src;
+    return parent.fullPath;
 }
 
 // --- Menu helpers ---------------------------------------------------------
@@ -162,22 +148,18 @@ function standaloneRootActions(): MenuAction[] {
     ];
 }
 
-function standaloneFileActions(s: SourceFile): MenuAction[] {
-    return withFsActions(
-        [{ label: "Close", onClick: () => removeSource(s.fullPath) }],
-        s.fullPath
-    );
-}
-
-function resultActions(r: Result): MenuAction[] {
-    return fsActions(r.fullPath);
-}
-
-function entryActions(parent: ResultImport, e: ImportEntry): MenuAction[] {
-    const refRel = entryRefPath(e);
-    const target =
-        refRel === undefined ? parent.fullPath : joinPath(dirOf(parent.fullPath), refRel);
-    return fsActions(target);
+/**
+ * Right-click menu for an importable row. Routes through
+ * `composeImportableMenu` (not `composeFileMenu`) so the queue toggle
+ * uses the precise importable identity instead of guessing from the
+ * file path — correct even when an htsl is referenced by several
+ * importables, or when REGION/MENU/NPC have no separate source file at
+ * all and the path resolves back to the parent import.json.
+ */
+function importableActions(parent: ResultImport, imp: Importable): MenuAction[] {
+    const target = importablePreviewPath(parent, imp);
+    const item = makeImportableQueueItem(imp, parent.fullPath);
+    return composeImportableMenu([], target, item);
 }
 
 // Builds a row click handler that:
@@ -228,8 +210,24 @@ function rootRow(label: string, key: string, actions: MenuAction[]): Element {
     });
 }
 
-function resultRow(r: Result): Element {
+// `extraActions` are prepended to the standard `resultActions` so callers
+// can layer row-specific options (e.g. "Close" for a standalone file row)
+// without forking the whole row builder. `labelOverride` lets standalone
+// rows show their full-path tail instead of the bare filename that
+// `enumerateForSource` produces for single-file sources.
+function resultRow(
+    r: Result,
+    sourceKey: string,
+    extraActions: MenuAction[] = [],
+    labelOverride?: string
+): Element {
     const isImport = r.type === "import";
+    const expKey = expansionKey(sourceKey, r.fullPath);
+    // Always route through composeFileMenu so the menu shape matches the
+    // right panel's tab menu: side-specific extras pinned at the top, a
+    // separator, then the universal generics (Add to queue / Show in
+    // explorer / Open with VSCode) at the bottom.
+    const actions = composeFileMenu(extraActions, r.fullPath);
     return Container({
         style: {
             direction: "row",
@@ -243,10 +241,10 @@ function resultRow(r: Result): Element {
             background: ROW_BG,
             hoverBackground: ROW_HOVER_BG,
         },
-        onClick: rowHandler(resultActions(r), () => {
+        onClick: rowHandler(actions, () => {
             if (isImport) {
-                if (expandedImports.has(r.fullPath)) expandedImports.delete(r.fullPath);
-                else expandedImports.add(r.fullPath);
+                if (expandedImports.has(expKey)) expandedImports.delete(expKey);
+                else expandedImports.add(expKey);
             }
             previewSelect(r.fullPath);
         }),
@@ -261,23 +259,33 @@ function resultRow(r: Result): Element {
                 children: [],
             }),
             Text({
-                text: r.path,
+                // Folder-rooted rows show the path relative to their
+                // source dir (`r.path` from `enumerateForSource`) so a
+                // file at the root reads as `foo.htsl` and a nested one
+                // as `sub/foo.htsl`. Standalone rows pass an explicit
+                // `labelOverride` (the `.../<dir1>/<dir2>/<dir3>` shape
+                // from `formatFullDir`) since they have no enclosing
+                // source dir to be relative to.
+                text: labelOverride ?? r.path,
                 style: { width: { kind: "grow" } },
             }),
             isImport &&
                 Text({
-                    text: expandedImports.has(r.fullPath) ? "[-]" : "[+]",
+                    text: expandedImports.has(expKey) ? "[-]" : "[+]",
                 }),
         ],
     });
 }
 
-function entryContent(parent: ResultImport, e: ImportEntry): Element {
-    const refRel = entryRefPath(e);
-    const childFull =
-        refRel === undefined ? undefined : joinPath(dirOf(parent.fullPath), refRel);
-    const display = entryLabel(e);
-    const clickPath = childFull ?? entryLabel(e);
+/**
+ * Sub-row rendered under an expanded import.json. Looks like the old
+ * Importables-tab row: type-color swatch, the importable's display name,
+ * its type label on the right. Right-click goes through
+ * `composeImportableMenu` so "Add to queue" knows which importable it
+ * targets without scanning by file path.
+ */
+function importableRow(parent: ResultImport, imp: Importable): Element {
+    const previewPath = importablePreviewPath(parent, imp);
     return Container({
         style: {
             direction: "row",
@@ -289,32 +297,32 @@ function entryContent(parent: ResultImport, e: ImportEntry): Element {
             background: ROW_BG,
             hoverBackground: ROW_HOVER_BG,
         },
-        onClick: rowHandler(entryActions(parent, e), () => previewSelect(clickPath)),
-        onDoubleClick: () => confirmSelect(clickPath),
-        children: [Text({ text: display })],
+        onClick: rowHandler(importableActions(parent, imp), () => previewSelect(previewPath)),
+        onDoubleClick: () => confirmSelect(previewPath),
+        children: [
+            Container({
+                style: {
+                    width: { kind: "px", value: 6 },
+                    height: { kind: "px", value: 12 },
+                    background: IMPORTABLE_TYPE_COLORS[imp.type],
+                },
+                children: [],
+            }),
+            Text({
+                text: importableLabel(imp),
+                style: { width: { kind: "grow" } },
+            }),
+            Text({ text: imp.type, color: 0xff8a92a3 | 0 }),
+        ],
     });
 }
 
-function standaloneFileRow(s: SourceFile): Element {
-    return Container({
-        style: {
-            direction: "row",
-            padding: [
-                { side: "left", value: 3 },
-                { side: "right", value: 6 },
-            ],
-            gap: 6,
-            align: "center",
-            height: { kind: "px", value: 18 },
-            background: ROW_BG,
-            hoverBackground: ROW_HOVER_BG,
-        },
-        onClick: rowHandler(standaloneFileActions(s), () => previewSelect(s.fullPath)),
-        onDoubleClick: () => confirmSelect(s.fullPath),
-        children: [
-            Text({ text: formatFullDir(s.fullPath), style: { width: { kind: "grow" } } }),
-        ],
-    });
+// Build the per-row "Close" menu entry for a standalone file. Layered on
+// top of the normal result menu by passing as `extraActions` to
+// `resultRow`, so the rest of the menu (Show in explorer / Open with
+// VSCode / etc.) matches what folder-rooted rows show.
+function standaloneCloseAction(s: SourceFile): MenuAction[] {
+    return [{ label: "Close", onClick: () => removeSource(s.fullPath) }];
 }
 
 // --- Tree row layout ------------------------------------------------------
@@ -500,16 +508,31 @@ function buildRoots(): Root[] {
 
 function buildTreeRows(): TreeRow[] {
     const roots = buildRoots();
-    // Single-root mode: skip the root header and tree branches entirely — render the root's
-    // children flat. Matches the pre-refactor behavior when there's only one source.
-    const showRootHeaders = roots.length > 1;
+    let dirCount = 0;
+    let standaloneCount = 0;
+    for (let i = 0; i < roots.length; i++) {
+        const r = roots[i];
+        if (r.kind === "dir") dirCount++;
+        else standaloneCount = r.files.length;
+    }
+    // Per-root header visibility:
+    //   - dir roots: always show the header so the user can collapse / get
+    //     context, even when only one folder is open.
+    //   - standalone group: show the header in every case except the lone
+    //     "single source" mode (no dirs + exactly one standalone file),
+    //     where a header would just add noise above one row.
+    const showHeaderFor = (root: Root): boolean => {
+        if (root.kind === "dir") return true;
+        return !(dirCount === 0 && standaloneCount === 1);
+    };
     const out: TreeRow[] = [];
 
     for (let ri = 0; ri < roots.length; ri++) {
         const root = roots[ri];
+        const headered = showHeaderFor(root);
 
         if (root.kind === "dir") {
-            if (showRootHeaders) {
+            if (headered) {
                 out.push({
                     levels: [],
                     branch: null,
@@ -523,35 +546,39 @@ function buildTreeRows(): TreeRow[] {
                 if (collapsedRoots.has(root.key)) continue;
             }
 
+            const dirSourceKey = root.key;
             const results = filterAndSort(enumerateForSource(root.source));
             for (let i = 0; i < results.length; i++) {
                 const r = results[i];
                 const isLastResult = i === results.length - 1;
                 out.push({
                     levels: [],
-                    branch: showRootHeaders ? (isLastResult ? "ell" : "tee") : null,
-                    content: resultRow(r),
+                    branch: headered ? (isLastResult ? "ell" : "tee") : null,
+                    content: resultRow(r, dirSourceKey),
                     height: 18,
                 });
 
-                if (r.type === "import" && expandedImports.has(r.fullPath)) {
-                    const entries = r.entries;
-                    for (let j = 0; j < entries.length; j++) {
-                        const isLastEntry = j === entries.length - 1;
-                        const entryLevels: LevelGuide[] = showRootHeaders
+                if (
+                    r.type === "import" &&
+                    expandedImports.has(expansionKey(dirSourceKey, r.fullPath))
+                ) {
+                    const importables = r.importables;
+                    for (let j = 0; j < importables.length; j++) {
+                        const isLastImp = j === importables.length - 1;
+                        const impLevels: LevelGuide[] = headered
                             ? [isLastResult ? "empty" : "vertical"]
                             : [];
                         out.push({
-                            levels: entryLevels,
-                            branch: isLastEntry ? "ell" : "tee",
-                            content: entryContent(r, entries[j]),
+                            levels: impLevels,
+                            branch: isLastImp ? "ell" : "tee",
+                            content: importableRow(r, importables[j]),
                             height: ENTRY_ROW_H,
                         });
                     }
                 }
             }
         } else {
-            if (showRootHeaders) {
+            if (headered) {
                 out.push({
                     levels: [],
                     branch: null,
@@ -565,14 +592,56 @@ function buildTreeRows(): TreeRow[] {
                 if (collapsedRoots.has(root.key)) continue;
             }
 
+            // Run each standalone file through the same enumeration that
+            // a folder-rooted source uses. That gives us a real `Result`
+            // (typed import.json / htsl / snbt) so the rows render with
+            // `resultRow` and inherit its actions, expansion, and entry
+            // sub-rows. Per-file `Close` is layered on via `extraActions`.
             for (let i = 0; i < root.files.length; i++) {
-                const isLast = i === root.files.length - 1;
-                out.push({
-                    levels: [],
-                    branch: showRootHeaders ? (isLast ? "ell" : "tee") : null,
-                    content: standaloneFileRow(root.files[i]),
-                    height: 18,
-                });
+                const file = root.files[i];
+                // Each standalone file is its own source for expansion-key
+                // purposes, so two adds of the same path keep independent
+                // [+]/[-] state from each other and from any folder root.
+                const fileSourceKey = `file:${file.fullPath}`;
+                const isLastFile = i === root.files.length - 1;
+                const fileResults = filterAndSort(enumerateForSource(file));
+                for (let j = 0; j < fileResults.length; j++) {
+                    const r = fileResults[j];
+                    const isLastResult = isLastFile && j === fileResults.length - 1;
+                    out.push({
+                        levels: [],
+                        branch: headered ? (isLastResult ? "ell" : "tee") : null,
+                        content: resultRow(
+                            r,
+                            fileSourceKey,
+                            standaloneCloseAction(file),
+                            // For single-file sources `r.path` collapses to the
+                            // bare filename; show the last-3-dirs tail instead
+                            // so the user can tell two same-named files apart.
+                            formatFullDir(file.fullPath)
+                        ),
+                        height: 18,
+                    });
+
+                    if (
+                        r.type === "import" &&
+                        expandedImports.has(expansionKey(fileSourceKey, r.fullPath))
+                    ) {
+                        const importables = r.importables;
+                        for (let k = 0; k < importables.length; k++) {
+                            const isLastImp = k === importables.length - 1;
+                            const impLevels: LevelGuide[] = headered
+                                ? [isLastResult ? "empty" : "vertical"]
+                                : [];
+                            out.push({
+                                levels: impLevels,
+                                branch: isLastImp ? "ell" : "tee",
+                                content: importableRow(r, importables[k]),
+                                height: ENTRY_ROW_H,
+                            });
+                        }
+                    }
+                }
             }
         }
     }
@@ -591,53 +660,92 @@ function pickerLog(msg: string): void {
     }
 }
 
+function isJsonPath(p: string): boolean {
+    return p.toLowerCase().endsWith(".json");
+}
+
+/**
+ * Look for an `import.json` at `folder` itself, then one level deeper.
+ * Matches the same shallow-recurse rule `walkDir` uses for displaying
+ * folder contents, so what auto-loads agrees with what the user sees.
+ * Returns the first hit (root preferred over children) or null.
+ */
+function findImportJsonShallow(folder: string): string | null {
+    const root = `${folder}/import.json`;
+    try {
+        if (FileLib.exists(root)) return root;
+    } catch (_e) {
+        /* fall through to child scan */
+    }
+    try {
+        // @ts-ignore
+        const Paths = Java.type("java.nio.file.Paths");
+        // @ts-ignore
+        const Files = Java.type("java.nio.file.Files");
+        const dir = Paths.get(String(folder));
+        if (!Files.isDirectory(dir)) return null;
+        const stream = Files.newDirectoryStream(dir);
+        try {
+            const it = stream.iterator();
+            while (it.hasNext()) {
+                const child = it.next();
+                if (!Files.isDirectory(child)) continue;
+                const candidate = `${String(child.toString()).replace(/\\/g, "/")}/import.json`;
+                if (FileLib.exists(candidate)) return candidate;
+            }
+        } finally {
+            try { stream.close(); } catch (_e) { /* ignore */ }
+        }
+    } catch (_e) {
+        /* ignore — caller treats null as "no import.json found" */
+    }
+    return null;
+}
+
+/**
+ * Pick a file or folder. The pick is added to the Explore source list as
+ * before, AND — matching how the old Importables tab "found" its file —
+ * if a single import.json is selected (or auto-discovered inside a picked
+ * folder) it becomes the active import.json so the parser picks it up.
+ */
 function pickSources(mode: "file" | "folder"): void {
     showNativePicker({
         mode,
         onPicked: (paths) => {
             for (let i = 0; i < paths.length; i++) queueSourcePath(paths[i]);
+            if (paths.length !== 1) return;
+            const picked = paths[0].replace(/\\/g, "/");
+            if (mode === "file") {
+                if (isJsonPath(picked)) {
+                    setImportJsonPath(picked);
+                    scheduleReparse();
+                }
+                return;
+            }
+            // Folder: search for `import.json` at the folder root first,
+            // then one nest deeper. Matches the same shallow-recurse rule
+            // the source enumeration uses, so the auto-load and the
+            // visible tree agree on what counts as "in this folder".
+            const found = findImportJsonShallow(picked);
+            if (found !== null) {
+                setImportJsonPath(found);
+                scheduleReparse();
+            }
         },
         onError: (msg) => pickerLog(msg),
     });
 }
 
-const DEFAULT_IMPORTS_DIR = "./htsw/imports";
-const OPEN_POPOVER_HEIGHT = 6 + 3 * 18 + 2 * 4;
-
-function showImportsInOS(): void {
-    showInExplorer(DEFAULT_IMPORTS_DIR);
+function dirOfPath(p: string): string {
+    const norm = p.replace(/\\/g, "/");
+    const slash = norm.lastIndexOf("/");
+    if (slash <= 0) return ".";
+    return norm.substring(0, slash);
 }
 
-function openMenuContent(): Element {
-    return Col({
-        style: { padding: 4, gap: 4 },
-        children: [
-            Button({
-                text: "File",
-                style: { width: { kind: "grow" }, height: { kind: "px", value: 18 } },
-                onClick: () => {
-                    closeAllPopovers();
-                    pickSources("file");
-                },
-            }),
-            Button({
-                text: "Folder",
-                style: { width: { kind: "grow" }, height: { kind: "px", value: 18 } },
-                onClick: () => {
-                    closeAllPopovers();
-                    pickSources("folder");
-                },
-            }),
-            Button({
-                text: "Show ./htsw/imports",
-                style: { width: { kind: "grow" }, height: { kind: "px", value: 18 } },
-                onClick: () => {
-                    closeAllPopovers();
-                    showImportsInOS();
-                },
-            }),
-        ],
-    });
+function openBrowseModal(): void {
+    closeAllPopovers();
+    openFileBrowser(dirOfPath(getImportJsonPath()) || ".");
 }
 
 function emptyStateRow(): Element {
@@ -656,25 +764,31 @@ export function ExploreView(): Element {
     return Col({
         style: { gap: 6, height: { kind: "grow" } },
         children: [
+            // Top row: three inline file-loader buttons. Replaces the old
+            // "Open" popover that hid these behind a click.
             Row({
                 style: { gap: 6, height: { kind: "px", value: 22 }, align: "stretch" },
                 children: [
                     Button({
-                        text: "Open",
-                        style: {
-                            width: { kind: "px", value: 40 },
-                            height: { kind: "grow" },
-                        },
-                        onClick: (rect) => {
-                            togglePopover({
-                                key: "left-open",
-                                anchor: rect,
-                                content: openMenuContent(),
-                                width: 100,
-                                height: OPEN_POPOVER_HEIGHT,
-                            });
-                        },
+                        text: "Browse",
+                        style: { width: { kind: "grow" }, height: { kind: "grow" } },
+                        onClick: () => openBrowseModal(),
                     }),
+                    Button({
+                        text: "Open file",
+                        style: { width: { kind: "grow" }, height: { kind: "grow" } },
+                        onClick: () => pickSources("file"),
+                    }),
+                    Button({
+                        text: "Open folder",
+                        style: { width: { kind: "grow" }, height: { kind: "grow" } },
+                        onClick: () => pickSources("folder"),
+                    }),
+                ],
+            }),
+            Row({
+                style: { gap: 6, height: { kind: "px", value: 22 }, align: "stretch" },
+                children: [
                     Input({
                         id: "left-search",
                         value: () => searchQuery,

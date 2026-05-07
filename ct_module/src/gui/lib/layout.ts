@@ -81,6 +81,14 @@ export type Element =
           style: ContainerStyle;
           id: string;
           children: Extractable<Child[]>;
+      }
+    | {
+          kind: "image";
+          style: Style;
+          // Icon name without the .png suffix, e.g. "a-arrow-down".
+          // The Vite icon plugin scans the bundled output for these literals
+          // and copies only the matched PNGs into dist/assets/icons/.
+          name: Extractable<string>;
       };
 
 export function extractChildren(c: Extractable<Child[]>): Element[] {
@@ -161,6 +169,11 @@ function inputContent(_: string): { w: number; h: number } {
     return { w: 80, h: LINE_H + INPUT_PAD_Y * 2 };
 }
 
+const ICON_DEFAULT_SIZE = 16;
+function imageContent(): { w: number; h: number } {
+    return { w: ICON_DEFAULT_SIZE, h: ICON_DEFAULT_SIZE };
+}
+
 function containerContent(c: { style: ContainerStyle; children: Extractable<Child[]> }): {
     w: number;
     h: number;
@@ -193,6 +206,7 @@ function measure(e: Element): { w: number; h: number } {
     else if (e.kind === "text") content = textContent(extract(e.text));
     else if (e.kind === "input") content = inputContent(extract(e.value));
     else if (e.kind === "scroll") content = { w: 0, h: 0 };
+    else if (e.kind === "image") content = imageContent();
     else content = containerContent(e);
     const w = e.style.width;
     const h = e.style.height;

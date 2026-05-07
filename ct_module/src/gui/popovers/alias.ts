@@ -3,7 +3,6 @@
 import { Element, Rect } from "../lib/layout";
 import { Button, Col, Input, Row, Text } from "../lib/components";
 import { closeAllPopovers, openPopover } from "../lib/popovers";
-import { getHousingUuid } from "../state";
 import { getAlias, setAlias, clearAlias } from "../../knowledge/aliases";
 
 let editingUuid: string | null = null;
@@ -80,18 +79,13 @@ function popoverContent(uuid: string): Element {
     });
 }
 
-export function openAliasPopover(anchor: Rect): void {
-    const uuid = getHousingUuid();
-    if (uuid === null) {
-        ChatLib.chat("&c[htsw] No housing UUID detected — run /wtfmap first");
-        return;
-    }
+export function openAliasPopover(anchor: Rect, uuid: string): void {
     syncFromUuid(uuid);
     openPopover({
         anchor,
         content: popoverContent(uuid),
         width: 220,
         height: 80,
-        key: "alias",
+        key: `alias:${uuid}`,
     });
 }

@@ -1,7 +1,7 @@
 /// <reference types="../../../../CTAutocomplete" />
 
-import { FileSystemFileLoader } from "../../../utils/files";
-import { ImportEntry, Result, ResultImport } from "./types";
+import { Result, ResultImport } from "./types";
+import { parseImportJsonAt } from "../../state/parses";
 
 export type SourceDir = {
     kind: "dir";
@@ -17,8 +17,18 @@ export type Source = SourceDir | SourceFile;
 
 const sources: Source[] = [];
 
-const ConcurrentLinkedQueue = Java.type("java.util.concurrent.ConcurrentLinkedQueue");
-const pendingPaths: any = new ConcurrentLinkedQueue();
+// Lazy: top-level `Java.type(...)` is known to hang CT 1.8.9 at module
+// load (see the comment block in `gui/lib/render.ts` above
+// `getIconImage`). Defer the lookup + queue construction until the
+// first source is actually queued.
+let pendingPaths: any = null;
+function getPendingPaths(): any {
+    if (pendingPaths === null) {
+        const ConcurrentLinkedQueue = Java.type("java.util.concurrent.ConcurrentLinkedQueue");
+        pendingPaths = new ConcurrentLinkedQueue();
+    }
+    return pendingPaths;
+}
 
 function pathOf(absolute: string): any {
     const Paths = Java.type("java.nio.file.Paths");
@@ -64,6 +74,7 @@ function addSourceFromAbsolute(absolute: string): void {
 }
 
 function drainPending(): void {
+    if (pendingPaths === null) return; // never queued anything yet
     while (true) {
         const next = pendingPaths.poll();
         if (next === null) break;
@@ -72,7 +83,7 @@ function drainPending(): void {
 }
 
 export function queueSourcePath(absolute: string): void {
-    pendingPaths.add(String(absolute));
+    getPendingPaths().add(String(absolute));
 }
 
 export function getSources(): Source[] {
@@ -104,118 +115,12 @@ function relativePath(root: any, p: any): string {
     return String(rel.toString()).replace(/\\/g, "/");
 }
 
-type ImportCacheEntry = {
-    mtime: number;
-    entries: ImportEntry[];
-    parseError?: string;
-};
-
-const importCache = new Map<string, ImportCacheEntry>();
-const fileLoader = new FileSystemFileLoader();
-
-function asString(v: unknown): string | undefined {
-    return typeof v === "string" ? v : undefined;
-}
-
-function extractEntries(json: any): ImportEntry[] {
-    const out: ImportEntry[] = [];
-    if (json === null || typeof json !== "object") return out;
-
-    const fns = json.functions;
-    if (Array.isArray(fns)) {
-        for (let i = 0; i < fns.length; i++) {
-            const f = fns[i];
-            if (!f || typeof f !== "object") continue;
-            const name = asString(f.name) ?? "";
-            const actionsPath = asString(f.actions);
-            out.push({ type: "FUNCTION", name, actionsPath });
-        }
-    }
-
-    const evs = json.events;
-    if (Array.isArray(evs)) {
-        for (let i = 0; i < evs.length; i++) {
-            const e = evs[i];
-            if (!e || typeof e !== "object") continue;
-            const ev = asString(e.event) ?? "";
-            const actionsPath = asString(e.actions);
-            out.push({ type: "EVENT", event: ev, actionsPath });
-        }
-    }
-
-    const items = json.items;
-    if (Array.isArray(items)) {
-        for (let i = 0; i < items.length; i++) {
-            const it = items[i];
-            if (!it || typeof it !== "object") continue;
-            const name = asString(it.name) ?? "";
-            const nbtPath = asString(it.nbt);
-            out.push({ type: "ITEM", name, nbtPath });
-        }
-    }
-
-    const regions = json.regions;
-    if (Array.isArray(regions)) {
-        for (let i = 0; i < regions.length; i++) {
-            const r = regions[i];
-            if (!r || typeof r !== "object") continue;
-            out.push({ type: "REGION", name: asString(r.name) ?? "" });
-        }
-    }
-
-    const menus = json.menus;
-    if (Array.isArray(menus)) {
-        for (let i = 0; i < menus.length; i++) {
-            const m = menus[i];
-            if (!m || typeof m !== "object") continue;
-            out.push({ type: "MENU", name: asString(m.name) ?? "" });
-        }
-    }
-
-    const npcs = json.npcs;
-    if (Array.isArray(npcs)) {
-        for (let i = 0; i < npcs.length; i++) {
-            const n = npcs[i];
-            if (!n || typeof n !== "object") continue;
-            out.push({ type: "NPC", name: asString(n.name) ?? "" });
-        }
-    }
-
-    return out;
-}
-
-function loadImportJson(fullPath: string, mtimeMs: number): ImportCacheEntry {
-    const cached = importCache.get(fullPath);
-    if (cached !== undefined && cached.mtime === mtimeMs) return cached;
-    let entries: ImportEntry[] = [];
-    let parseError: string | undefined;
-    try {
-        const src = fileLoader.readFile(fullPath);
-        const json = JSON.parse(src);
-        entries = extractEntries(json);
-    } catch (e) {
-        parseError = String(e);
-    }
-    const entry: ImportCacheEntry = { mtime: mtimeMs, entries, parseError };
-    importCache.set(fullPath, entry);
-    return entry;
-}
-
 function isRegularFileSafe(p: any): boolean {
     const Files = Java.type("java.nio.file.Files");
     try {
         return Files.isRegularFile(p);
     } catch (_e) {
         return false;
-    }
-}
-
-function getMtimeSafe(p: any): number {
-    const Files = Java.type("java.nio.file.Files");
-    try {
-        return Number(Files.getLastModifiedTime(p).toMillis());
-    } catch (_e) {
-        return 0;
     }
 }
 
@@ -238,14 +143,13 @@ function visitFile(p: any, root: any, out: Result[]): void {
         return;
     }
     if (fname === "import.json") {
-        const mtime = getMtimeSafe(p);
-        const entry = loadImportJson(fullPath, mtime);
+        const cached = parseImportJsonAt(fullPath);
         const r: ResultImport = {
             type: "import",
             path,
             fullPath,
-            entries: entry.entries,
-            parseError: entry.parseError,
+            importables: cached.parsed?.value ?? [],
+            parseError: cached.error ?? undefined,
         };
         out.push(r);
     } else if (fname.length >= 5 && fname.lastIndexOf(".htsl") === fname.length - 5) {
@@ -255,7 +159,20 @@ function visitFile(p: any, root: any, out: Result[]): void {
     }
 }
 
-function walkDir(dir: any, root: any, out: Result[]): void {
+function isDirectorySafe(p: any): boolean {
+    const Files = Java.type("java.nio.file.Files");
+    try {
+        return Files.isDirectory(p);
+    } catch (_e) {
+        return false;
+    }
+}
+
+// Walk `dir`. When `depth > 0`, descend into immediate child directories
+// once (so depth=1 gives the folder root + one nest deep, no further).
+// Bounded recursion keeps the Explore list usable while letting the user
+// drop a parent folder and still find the import.json one level in.
+function walkDir(dir: any, root: any, out: Result[], depth: number = 1): void {
     const Files = Java.type("java.nio.file.Files");
     let stream: any;
     try {
@@ -271,18 +188,16 @@ function walkDir(dir: any, root: any, out: Result[]): void {
                 if (!it.hasNext()) break;
                 entry = it.next();
             } catch (_e) {
-                // Iterator state may be poisoned; bail out of this directory.
                 break;
             }
-            // Top-level only — recursive walking pulled too many irrelevant files into the
-            // Explore list. The user can drill into subfolders explicitly via the Open
-            // popover if they need them.
             if (isRegularFileSafe(entry)) {
                 try {
                     visitFile(entry, root, out);
                 } catch (_e) {
                     /* skip */
                 }
+            } else if (depth > 0 && isDirectorySafe(entry)) {
+                walkDir(entry, root, out, depth - 1);
             }
         }
     } finally {

@@ -57,6 +57,46 @@ function truncateToWidth(text: string, maxW: number): string {
 type QueuedTooltip = { text: string; color: number; anchor: Rect };
 let queuedTooltip: QueuedTooltip | null = null;
 
+// Icon (Image) cache. Loading reads from disk synchronously, so cache by name to pay
+// the cost once. A failed load is cached as null so we don't retry every frame
+// (and don't spam logs).
+//
+// We deliberately avoid `Image.fromAsset` / `Image.fromFile` — both are advertised by
+// the CT autocomplete but other CT 1.8.9 modules (HTSL, HousingEditor) use the
+// `new Image(javax.imageio.ImageIO.read(java.io.File(absPath)))` pattern instead,
+// suggesting the convenience helpers don't work reliably in this CT build. Render
+// path also uses Renderer.drawImage(img, x, y, w, h) instead of img.draw(...) for
+// the same reason. We reach the Java APIs through Rhino's bare `java`/`javax`
+// globals (matching HTSL); `Java.type(...)` was observed to hang CT 1.8.9 at module
+// load time when invoked at top level.
+// Flat under assets/ — CT 1.8.9 was observed to hang at /ct reload when this module's
+// dir contained a nested subfolder (e.g. assets/icons/). Other working modules (HTSL,
+// HousingEditor) keep all PNGs at the top level of assets/, so we match that layout.
+const ICON_BASE_PATH = "./config/ChatTriggers/modules/HTSW/assets/";
+
+declare const javax: { imageio: { ImageIO: { read: (f: unknown) => unknown } } };
+declare const java: { io: { File: new (path: string) => unknown } };
+
+const iconCache: { [name: string]: unknown } = {};
+function getIconImage(name: string): unknown {
+    if (Object.prototype.hasOwnProperty.call(iconCache, name)) {
+        return iconCache[name];
+    }
+    let img: unknown = null;
+    try {
+        const buffered = javax.imageio.ImageIO.read(
+            new java.io.File(ICON_BASE_PATH + name + ".png")
+        );
+        const ImageCtor = Image as unknown as new (b: unknown) => unknown;
+        img = new ImageCtor(buffered);
+    } catch (e) {
+        dbgLog(`icon load failed "${name}": ${(e as Error).message ?? e}`);
+        img = null;
+    }
+    iconCache[name] = img;
+    return img;
+}
+
 export function renderElement(
     root: Element,
     x: number,
@@ -235,6 +275,15 @@ function renderItem(
         const bg =
             e.style.background !== undefined ? extract(e.style.background) : undefined;
         if (bg !== undefined) Renderer.drawRect(bg, r.x, r.y, r.w, r.h);
+    } else if (e.kind === "image") {
+        const bg =
+            e.style.background !== undefined ? extract(e.style.background) : undefined;
+        if (bg !== undefined) Renderer.drawRect(bg, r.x, r.y, r.w, r.h);
+        const name = extract(e.name);
+        const img = getIconImage(name);
+        // The DOM lib's HTMLImageElement collides with CT's global `Image` class for `as Image`
+        // typing — go through `unknown` so the cast lands on CT's runtime Image.
+        if (img !== null) Renderer.drawImage(img as unknown as Parameters<typeof Renderer.drawImage>[0], r.x, r.y, r.w, r.h);
     }
 
     if (item.clipRect) popScissor();

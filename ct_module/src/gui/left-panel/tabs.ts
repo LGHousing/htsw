@@ -1,7 +1,6 @@
 import { Element } from "../lib/layout";
 import { Button, Container, Row } from "../lib/components";
 import { ExploreView } from "./explore";
-import { ImportablesView } from "./importables";
 import { KnowledgeView } from "./knowledge";
 import {
     COLOR_TAB,
@@ -12,17 +11,16 @@ import {
     SIZE_TAB_H,
 } from "../lib/theme";
 
-export type TabId = "importables" | "explore" | "knowledge";
+export type TabId = "explore" | "knowledge";
 
 type Tab = { id: TabId; label: string; content: () => Element };
 
 export const TABS: Tab[] = [
-    { id: "importables", label: "Importables", content: ImportablesView },
     { id: "explore", label: "Explore", content: ExploreView },
     { id: "knowledge", label: "Knowledge", content: KnowledgeView },
 ];
 
-let activeTab: TabId = "importables";
+let activeTab: TabId = "explore";
 
 export function getActiveTab(): Tab {
     for (let i = 0; i < TABS.length; i++) if (TABS[i].id === activeTab) return TABS[i];
@@ -31,7 +29,6 @@ export function getActiveTab(): Tab {
 
 function tabButton(t: Tab): Element {
     const isActive = activeTab === t.id;
-    // 2px accent strip under the active tab. Stack as Col: button + strip.
     return Container({
         style: {
             direction: "col",

@@ -4,19 +4,16 @@ import { Element } from "./lib/layout";
 import { Col, Container, Row } from "./lib/components";
 import {
     SCREEN_PAD,
-    TOP_BAR_H,
     getChatBounds,
     getContainerBounds,
     type ContainerBounds,
 } from "./lib/bounds";
-import { TopBar } from "./top-bar";
 import { LeftPanel } from "./left-panel";
 import { RightPanel } from "./right-panel";
 import { BottomToolbar } from "./bottom-toolbar";
 import { ChatInputBar } from "./chat-input";
-import { LiveImporter } from "./live-importer";
 import { getImportProgress } from "./state";
-import { COLOR_PANEL, COLOR_PANEL_BORDER } from "./lib/theme";
+import { COLOR_PANEL } from "./lib/theme";
 
 const CHAT_INPUT_H = 16;
 
@@ -25,17 +22,6 @@ function transparentPad(h: number): Element {
         style: {
             width: { kind: "grow" },
             height: { kind: "px", value: Math.max(0, h) },
-        },
-        children: [],
-    });
-}
-
-function stablePanel(h: number): Element {
-    return Container({
-        style: {
-            width: { kind: "grow" },
-            height: { kind: "px", value: Math.max(0, h) },
-            background: COLOR_PANEL,
         },
         children: [],
     });
@@ -79,12 +65,13 @@ function getStableBounds(): ContainerBounds | null {
 }
 
 function buildLayout(b: ContainerBounds): Element {
-    const importing = getImportProgress() !== null;
     const chat = getChatBounds(b);
-    const panelTop = SCREEN_PAD;
-    const contentRowY = panelTop + TOP_BAR_H;
+    const contentRowY = SCREEN_PAD;
     const leftColW = Math.max(0, b.left - SCREEN_PAD);
     const centerColW = b.xSize;
+    // Right column eats everything from the inventory's right edge to the
+    // screen edge minus SCREEN_PAD on both sides — same gutter the left
+    // panel gets against the inventory.
     const rightColW = Math.max(0, b.screenW - SCREEN_PAD - (b.left + b.xSize));
 
     const topGapH = Math.max(0, b.top - contentRowY);
@@ -92,35 +79,19 @@ function buildLayout(b: ContainerBounds): Element {
     const leftColBottom = contentRowY + contentRowH;
     const chatTopInLeftCol = Math.max(0, chat.y - contentRowY);
     const chatSpacerH = Math.max(0, Math.min(leftColBottom - chat.y, chat.h));
-    // The chat input bar sits just above the chat cutout in the left column;
-    // its height eats into the rail's available space.
     const chatInputH = chatTopInLeftCol >= CHAT_INPUT_H + 20 ? CHAT_INPUT_H : 0;
     const railH = Math.max(0, chatTopInLeftCol - chatInputH);
-
-    // Compact above-menu strip just above the inventory cutout. When
-    // there's more vertical room than needed, the rest stays transparent
-    // so the right panel below dominates the right side.
-    const STRIP_MAX = 64;
-    const stripH = importing ? Math.min(topGapH, STRIP_MAX) : 0;
-    const aboveStripH = Math.max(0, topGapH - stripH);
 
     return Col({
         style: { width: { kind: "grow" }, height: { kind: "grow" } },
         children: [
-            // TOP BAR
-            Container({
-                style: {
-                    width: { kind: "grow" },
-                    height: { kind: "px", value: TOP_BAR_H },
-                    background: COLOR_PANEL,
-                },
-                children: [TopBar()],
-            }),
-            // CONTENT ROW
+            // CONTENT ROW — left + center cutouts + right, full screen height
+            // (minus SCREEN_PAD top/bottom). No top bar above this row.
             Row({
                 style: { width: { kind: "grow" }, height: { kind: "grow" } },
                 children: [
-                    // LEFT COLUMN — unchanged, full content height.
+                    // LEFT COLUMN — full content height, chat input + cutout
+                    // pinned to the bottom of the rail.
                     Col({
                         style: {
                             width: { kind: "px", value: leftColW },
@@ -128,8 +99,6 @@ function buildLayout(b: ContainerBounds): Element {
                         },
                         children: [
                             bgWrap(LeftPanel(), railH),
-                            // Inline chat input — only rendered if there's
-                            // room without crushing the rail.
                             chatInputH > 0
                                 ? Container({
                                       style: {
@@ -140,46 +109,34 @@ function buildLayout(b: ContainerBounds): Element {
                                       children: [ChatInputBar()],
                                   })
                                 : false,
-                            // CHAT CUTOUT
                             transparentPad(chatSpacerH),
                         ],
                     }),
-                    // CENTER COLUMN — above-menu strip + inventory cutout +
-                    // bottom toolbar. The compact LiveImporter strip sits
-                    // directly above the inventory; everything above the
-                    // strip is transparent so the screen isn't covered.
+                    // CENTER COLUMN — transparent above the inventory, the
+                    // inventory cutout itself, and the slim BottomToolbar
+                    // below. The toolbar paints no background of its own.
                     Col({
                         style: {
                             width: { kind: "px", value: centerColW },
                             height: { kind: "grow" },
                         },
                         children: [
-                            transparentPad(aboveStripH),
-                            stripH > 0 ? bgWrap(LiveImporter(), stripH) : false,
-                            importing ? stablePanel(b.ySize) : transparentPad(b.ySize),
-                            bgWrap(BottomToolbar(), "grow"),
+                            transparentPad(topGapH),
+                            transparentPad(b.ySize),
+                            BottomToolbar(),
                         ],
                     }),
-                    // RIGHT COLUMN — full content height. Hosts the
-                    // line-by-line diff view (RightPanel) so it has the
-                    // most room available for context during imports.
+                    // RIGHT COLUMN — same height as the left column. Add
+                    // SCREEN_PAD on the inventory-facing side so it doesn't
+                    // jam up against the inventory edge (mirrors the gap on
+                    // the screen-edge side).
                     Container({
                         style: {
                             width: { kind: "px", value: rightColW },
                             height: { kind: "grow" },
-                            background: COLOR_PANEL_BORDER,
-                            padding: 1,
+                            padding: { side: "left", value: SCREEN_PAD },
                         },
-                        children: [
-                            Container({
-                                style: {
-                                    width: { kind: "grow" },
-                                    height: { kind: "grow" },
-                                    background: COLOR_PANEL,
-                                },
-                                children: [RightPanel()],
-                            }),
-                        ],
+                        children: [bgWrap(RightPanel(), "grow")],
                     }),
                 ],
             }),

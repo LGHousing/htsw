@@ -28,34 +28,35 @@ Library — `gui/lib/` (project-agnostic UI primitives + screen/theme):
 - `components/` — thin element-builder functions (`Button`, `Container`, `Row`, `Col`, `Input`, `Scroll`, `Text`).
 
 App state — `gui/state/`:
-- `index.ts` — global mutable state (parsed import.json, selected importable id, open tabs, trust mode, housing UUID, knowledge rows, import progress, `currentImportingPath` driving the live-importer panel).
+- `index.ts` — global mutable state (parsed import.json, selected importable id, multi-select checkbox set, open tabs, **per-house trust set** with `isHouseTrusted` / `setHouseTrust` / `isCurrentHouseTrusted`, housing UUID, knowledge rows, import progress, `currentImportingPath` driving the inline live-importer strip in the right panel's Import tab).
 - `selection.ts` — preview/confirm + tab state for the right-panel source preview.
 - `reparse.ts` — debounced reparse + auto-discover of `import.json`, plus a tick hook that reparses on mtime change. Watches both `gcx.sourceFiles` AND `importableSourcePath` so editing a `.snbt` triggers a reparse just like editing an htsl does.
-- `recents.ts` — persisted MRU list of recently opened import.json paths (`gui-recents.json`).
+- `recents.ts` — persisted MRU list of recently opened import.json paths (`gui-recents.json`). Used by `popovers/file-browser.ts` and `state/reparse.ts`.
 - `htsl-render.ts` — `parseHtslFile` + `actionsToLines` for the right-panel HTSL preview.
 - `diff.ts` — per-importable diff-state map driving the right-panel state colors during import animation.
 - `importablePaths.ts` — centralized importable→path lookups: `importableSourcePath` (smart: htsl/.snbt/json), `importableDeclaringJson` (declaring import.json — currently the top-level loaded one), and `importableSubListPath(imp, kind)` for action sub-lists (`onEnterActions` / `onExitActions` on REGION; `leftClickActions` / `rightClickActions` on ITEM). Resolves through `parsed.gcx.spans.get(list).start` → `sourceMap.getFileByPos` so a list with `actionsPath: "..."` returns the htsl while inline JSON returns the import.json.
 
-Live import view — `gui/live-importer/`:
-- `index.ts` — `LiveImporter()` panel that sits in the empty space above the inventory. Reads `getImportProgress()` + `getCurrentImportingPath()` and renders a compact progress bar, the importable label, the source path, and the current file's HTSL with diff colors via `htslDiffLines` (re-exported from `right-panel/index.ts`). Diff colors come from `gui/state/diff.ts` populated live by the importer through `ImportDiffSink`.
-
 Importer hookup — `importer/diffSink.ts`:
-- Defines `ImportDiffSink` (`markMatch`/`beginOp`/`completeOp`/`end`) and a single global active sink. `applyActionListDiff` captures and clears the sink on entry (so nested syncs in CONDITIONAL/RANDOM bodies stay silent), pre-marks untouched desired actions as `match`, and emits per-op events. The session (`importables/importSession.ts`) sets/clears the sink around each importable; the GUI's `startImport` (`bottom-toolbar`) wires sink events to `setDiffState`/`setCurrent` keyed by the importable's source-file path.
+- Defines `ImportDiffSink` (`markMatch`/`beginOp`/`completeOp`/`end`) and a single global active sink. `applyActionListDiff` captures and clears the sink on entry (so nested syncs in CONDITIONAL/RANDOM bodies stay silent), pre-marks untouched desired actions as `match`, and emits per-op events. The session (`importables/importSession.ts`) sets/clears the sink around each importable; the GUI's `startImport` (in `right-panel/import-actions.ts`) wires sink events to `setDiffState`/`setCurrent` keyed by the importable's source-file path.
 
 Popovers — `gui/popovers/`:
-- `add-importable.ts` — "Add Importable" form (top-bar button).
+- `add-importable.ts` — "Add Importable" form (Explore "+" button).
+- `alias.ts` — per-house alias editor. `openAliasPopover(rect, uuid)` takes the target UUID explicitly so the Knowledge tab can edit any known house, not just the currently-detected one.
 - `file-browser.ts` — modal file browser for picking an `import.json`.
 - `open-menu.ts` — Hypixel `/functions /eventactions /regions …` shortcut menu.
 - `diff-demo.ts` — debug command that animates the right-panel diff states.
 
 App shell — `gui/`:
 - `overlay.ts` — wires everything: registers triggers, owns the single fullscreen panel, runs the tick handler (reparse, focus, popover cleanup).
-- `root.ts` — root tree builder: arranges TopBar / LeftPanel / center cutouts / RightPanel / BottomToolbar / chat input around the inventory bounds.
+- `root.ts` — root tree builder: arranges LeftPanel / center cutouts (transparent above + below the inventory) / RightPanel / chat input around the inventory bounds. **No top bar.** Right column gets `padding-left: SCREEN_PAD` so it mirrors the screen-edge gap on the inventory-facing side.
 - `chat-input.ts` — `ChatInputBar` element + global `T` shortcut to focus it.
 - `knowledge-status.ts` — derives `STATUS_COLOR` / `STATUS_LABEL` / `statusForImportable` / `knowledgeStatusByImportable` from `state` for the left-rail badges.
-- `top-bar/`, `bottom-toolbar/`, `left-panel/`, `right-panel/`, `live-importer/` — feature-region tree builders.
+- `bottom-toolbar/` — slim, no-background strip under the inventory: only Housing Menu + the `/functions …` shortcut split-button. Capture / Import / Trust moved into the right panel's Import tab.
+- `left-panel/` — two tabs: **Explore** (importables list + Open file/folder/Browse buttons) and **Knowledge** (per-house list with Trust toggle + Alias button per house).
+- `right-panel/` — top-level **View / Import** tabs. View hosts the existing source-preview tabs; Import hosts the queue (checkboxes from the Explore list), the inline live-importer strip (progress bar + cancel + current path), and the Capture / Import action row.
+- `right-panel/import-actions.ts` — `startImport()` (reads per-house trust via `isCurrentHouseTrusted()`), `startCaptureExport(type)`, `importablesForImport()`, and `CAPTURE_TYPES`. The diff-sink wiring lives here now (was previously in `bottom-toolbar/index.ts`).
 
-The Importables row builder (`gui/left-panel/importables/index.ts`) follows a **type-aware dispatch** pattern worth knowing about: a single `resultRow(imp)` builds every row but branches on `imp.type` for behavior. Right-click always builds a menu via `buildPrimaryAndJsonMenu(primaryPath, primaryLabel, declaringPath)` which shows `fsActions(primary, label)` + a `{kind:"separator"}` + `fsActions(import.json)`, with the separator and primary suppressed when `primaryPath === declaringPath` (REGION/MENU/NPC). Double-click is dispatched through `dispatchDoubleClick(imp)` which previews htsl for FUNCTION/EVENT, .snbt for ITEM, toggles inline expansion for REGION (showing "Enter actions" / "Exit actions" sub-rows under the parent), and falls back to the import.json with a chat note for MENU/NPC. ITEM rows with click-actions also expand to show "Left/Right click actions" sub-rows. The chevron is its own clickable Container (not the whole row) so the body still toggles the multi-select checkbox as before. Sub-rows reuse the same `buildPrimaryAndJsonMenu` with the sub-list's resolved path from `importableSubListPath`.
+The Explore row builder (`gui/left-panel/explore/index.ts`) follows a **type-aware dispatch** pattern worth knowing about: a single `resultRow(imp)` builds every row but branches on `imp.type` for behavior. Right-click always builds a menu via `buildPrimaryAndJsonMenu(primaryPath, primaryLabel, declaringPath)` which shows `fsActions(primary, label)` + a `{kind:"separator"}` + `fsActions(import.json)`, with the separator and primary suppressed when `primaryPath === declaringPath` (REGION/MENU/NPC). Double-click is dispatched through `dispatchDoubleClick(imp)` which previews htsl for FUNCTION/EVENT, .snbt for ITEM, toggles inline expansion for REGION (showing "Enter actions" / "Exit actions" sub-rows under the parent), and falls back to the import.json with a chat note for MENU/NPC. ITEM rows with click-actions also expand to show "Left/Right click actions" sub-rows. The chevron is its own clickable Container (not the whole row) so the body still toggles the multi-select checkbox as before. Sub-rows reuse the same `buildPrimaryAndJsonMenu` with the sub-list's resolved path from `importableSubListPath`. Each row also displays the source-file tail (`tailSegments(path, 3)` from `lib/pathDisplay`) — last 3 dirs joined by `/`, no `~/` or `./` prefix.
 
 ## Element model
 
@@ -68,6 +69,7 @@ The Importables row builder (`gui/left-panel/importables/index.ts`) follows a **
 | `text` | `style`, `text: Extractable<string>`, optional `color`, optional `tooltip: Extractable<string>` + `tooltipColor: Extractable<number>` | no | plain label, intrinsic size = `Renderer.getStringWidth(text)` × `LINE_H`. When `tooltip` is set and the rect is hovered, a small chip is drawn just below (or above near the screen edge) the rect — drawn after items + scrollbars in `renderElement`, so popovers (LOWEST priority) still cover it |
 | `input` | `style`, `id: string`, `value: Extractable<string>`, `onChange(v)`, optional `placeholder` | focusable | id is used for global focus + key dispatch |
 | `scroll` | `style: ContainerStyle`, `id: string`, `children: Extractable<Element[]>` | passes through | vertical scroll viewport with internal offset state, scrollbar overlay, mouse-wheel + drag |
+| `image` | `style`, `name: Extractable<IconName>` | no | 16×16 default; draws via `Image.fromAsset("icons/<name>.png")` cached per name. See **Icons** below. |
 
 Children of `container` and `scroll` are `Extractable<Element[]>` so the list can be dynamic each frame (e.g. filter results). Layout is recomputed every frame; **there is no layout cache** — anything in the tree may change between frames.
 
@@ -208,6 +210,33 @@ These bit us; they will bite you again. Read these before touching CT trigger co
 - Vite-bundled `net.minecraftforge.client.event.MouseEvent` style references work at runtime (Rhino bridge), but `Java.type("…")` is safer. Use it for new Java class references.
 - `Renderer.getStringWidth` returns the actual proportional-font width — use it for centering text. Do not use `text.length * CHAR_W`.
 - IDE diagnostics shown after edits are often stale. Always confirm with `npx tsc --noEmit` from `ct_module/`.
+
+## Icons
+
+PNGs live in `ct_module/assets/icons/*.png` (16×16, kebab-case filenames). Two pieces of build automation make this useable + small:
+
+1. **Enum generator** (`scripts/generateIconsList.ts`, runs before `tsc` via `npm run build`'s prefix step): scans `assets/icons/` and writes `src/gui/lib/icons.generated.ts` exporting `Icons` (a `{ camelKey: "kebab-name" } as const` object) and `IconName` (the union type). Re-run manually with `npm run generate:icons` after adding/removing PNGs.
+2. **Tree-shake plugin** (`iconShakePlugin` in `vite.config.ts`, fires in `closeBundle`): reads every emitted `.js` in `dist/`, scans for each known icon-name as a quoted string literal, and copies *only* the matched PNGs into `dist/assets/icons/`. `install.py` then mirrors `dist/assets/` to the deploy.
+
+Usage:
+
+```ts
+import { Icon } from "./gui/lib/components";
+import { Icons } from "./gui/lib/icons.generated";
+
+Row({ children: [
+  Icon({ name: Icons.aArrowDown }),
+  Text({ text: "Sort ascending" }),
+]});
+```
+
+`IconProps.name` is typed as `IconName`, not plain `string`, so dynamic lookups (`Icons[someVar]`) fail typecheck — that's deliberate. The shake is string-based: it greps the bundle for `"<icon-name>"`, and a dynamic key would silently drop the PNG. If you need dynamic icons, list every possible name in a literal-typed array first so they all land in the bundle:
+
+```ts
+const ARROWS: IconName[] = [Icons.arrowUp, Icons.arrowDown];
+```
+
+`Image.fromAsset` is called lazily on first render and cached per name in `render.ts`. A failed load is cached as `null` (so no per-frame retry/log spam) — if a missing-icon symptom appears, the cause is almost always that the shake didn't pick it up.
 
 ## Adding a new element kind
 

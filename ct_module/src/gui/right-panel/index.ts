@@ -1,7 +1,7 @@
 /// <reference types="../../../CTAutocomplete" />
 
 import { Child, ClickInfo, Element, Rect } from "../lib/layout";
-import { Col, Container, Row, Scroll, Text } from "../lib/components";
+import { Button, Col, Container, Row, Scroll, Text } from "../lib/components";
 import {
     closeTab,
     confirmSelect,
@@ -17,7 +17,33 @@ import {
     tabCount,
 } from "../state/selection";
 import { openMenu, MenuAction } from "../lib/menu";
-import { ACCENT_INFO, COLOR_TEXT, COLOR_TEXT_DIM, COLOR_TEXT_FAINT, GLYPH_X } from "../lib/theme";
+import { togglePopover } from "../lib/popovers";
+import {
+    ACCENT_INFO,
+    ACCENT_SUCCESS,
+    COLOR_BUTTON,
+    COLOR_BUTTON_HOVER,
+    COLOR_BUTTON_DANGER,
+    COLOR_BUTTON_DANGER_HOVER,
+    COLOR_BUTTON_PRIMARY,
+    COLOR_BUTTON_PRIMARY_HOVER,
+    COLOR_PANEL_BORDER,
+    COLOR_PANEL_RAISED,
+    COLOR_ROW,
+    COLOR_ROW_HOVER,
+    COLOR_TAB,
+    COLOR_TAB_ACCENT,
+    COLOR_TAB_ACTIVE,
+    COLOR_TAB_ACTIVE_HOVER,
+    COLOR_TAB_HOVER,
+    COLOR_TEXT,
+    COLOR_TEXT_DIM,
+    COLOR_TEXT_FAINT,
+    GLYPH_CHEVRON_DOWN,
+    GLYPH_X,
+    SIZE_ROW_H,
+    SIZE_TAB_H,
+} from "../lib/theme";
 import { SyntaxToken, tokenizeHtsl } from "./syntax";
 import { FileSystemFileLoader } from "../../utils/files";
 import { actionsToLines, parseHtslFile, type HtslLine } from "../state/htsl-render";
@@ -36,7 +62,22 @@ import {
     getImportProgressFraction,
     getParsedResult,
 } from "../state";
-import { normalizeHtswPath } from "../lib/pathDisplay";
+import {
+    clearQueue,
+    getQueue,
+    getQueueLength,
+    queueItemKey,
+    removeFromQueueKey,
+    type QueueItem,
+} from "../state/queue";
+import { TaskManager } from "../../tasks/manager";
+import { normalizeHtswPath, tailSegments } from "../lib/pathDisplay";
+import { composeFileMenu } from "../state/fileMenu";
+import {
+    CAPTURE_TYPES,
+    startCaptureExport,
+    startImport,
+} from "./import-actions";
 
 
 const TAB_BG = 0xff2c323b | 0;
@@ -151,35 +192,22 @@ const COLOR_TAB_CLOSE_BG_HOVER = 0x40e85c5c | 0;
 function tabReorderActions(path: string): MenuAction[] {
     const idx = tabIndex(path);
     const total = tabCount();
-    const out: MenuAction[] = [];
-    out.push({
-        label: "Move left",
-        onClick: () => moveTab(path, -1),
-    });
-    out.push({
-        label: "Move right",
-        onClick: () => moveTab(path, +1),
-    });
-    out.push({ kind: "separator" });
-    out.push({
-        label: "Move to start",
-        onClick: () => moveTabToStart(path),
-    });
-    out.push({
-        label: "Move to end",
-        onClick: () => moveTabToEnd(path),
-    });
-    out.push({ kind: "separator" });
-    out.push({
-        label: "Close tab",
-        onClick: () => closeTab(path),
-    });
-    // Reference idx/total so unused-var lint stays quiet — and it's a useful
-    // sanity check if we ever want to disable specific entries based on
-    // position (e.g. greying out "Move left" when already first).
+    // Tab-specific extras pinned at the top; `composeFileMenu` appends
+    // the universal generics (Add to queue / Show in explorer / Open with
+    // VSCode) below a divider so the menu shape matches the left
+    // panel's row right-click.
+    const specific: MenuAction[] = [
+        { label: "Move left", onClick: () => moveTab(path, -1) },
+        { label: "Move right", onClick: () => moveTab(path, +1) },
+        { kind: "separator" },
+        { label: "Move to start", onClick: () => moveTabToStart(path) },
+        { label: "Move to end", onClick: () => moveTabToEnd(path) },
+        { kind: "separator" },
+        { label: "Close tab", onClick: () => closeTab(path) },
+    ];
     void idx;
     void total;
-    return out;
+    return composeFileMenu(specific, path);
 }
 
 function progressTabButton(): Element {
@@ -815,9 +843,63 @@ function pathLabel(): Element {
     });
 }
 
-export function RightPanel(): Element {
+// ── Top-level View/Import panel tabs ────────────────────────────────────
+
+type RightPanelTabId = "view" | "import";
+let activeRightTab: RightPanelTabId = "view";
+
+function panelTabButton(id: RightPanelTabId, label: string): Element {
+    const isActive = activeRightTab === id;
+    return Container({
+        style: {
+            direction: "col",
+            width: { kind: "grow" },
+            height: { kind: "grow" },
+        },
+        children: [
+            Button({
+                text: label,
+                style: {
+                    width: { kind: "grow" },
+                    height: { kind: "grow" },
+                    background: isActive ? COLOR_TAB_ACTIVE : COLOR_TAB,
+                    hoverBackground: isActive ? COLOR_TAB_ACTIVE_HOVER : COLOR_TAB_HOVER,
+                },
+                onClick: () => {
+                    activeRightTab = id;
+                },
+            }),
+            Container({
+                style: {
+                    width: { kind: "grow" },
+                    height: { kind: "px", value: 2 },
+                    background: isActive ? COLOR_TAB_ACCENT : undefined,
+                },
+                children: [],
+            }),
+        ],
+    });
+}
+
+function panelTabBar(): Element {
+    return Row({
+        style: {
+            gap: 2,
+            height: { kind: "px", value: SIZE_TAB_H + 2 },
+            width: { kind: "grow" },
+        },
+        children: [
+            panelTabButton("view", "View"),
+            panelTabButton("import", "Import"),
+        ],
+    });
+}
+
+// ── View tab (existing source preview + sub-tabs) ──────────────────────
+
+function viewTab(): Element {
     return Col({
-        style: { padding: 6, gap: 4, width: { kind: "grow" }, height: { kind: "grow" } },
+        style: { gap: 4, width: { kind: "grow" }, height: { kind: "grow" } },
         children: [
             Row({
                 style: { gap: 2, height: { kind: "px", value: TAB_H } },
@@ -830,6 +912,304 @@ export function RightPanel(): Element {
             }),
             pathLabel(),
             sourceBody(),
+        ],
+    });
+}
+
+// ── Import tab (queue + live importer + capture/import buttons) ─────────
+
+function shortSource(p: string): string {
+    const norm = p.replace(/\\/g, "/");
+    const slash = norm.lastIndexOf("/");
+    return slash < 0 ? norm : norm.substring(slash + 1);
+}
+
+function queueRow(item: QueueItem): Element {
+    const typeText =
+        item.kind === "importJson" ? "ALL" : item.type;
+    return Container({
+        style: {
+            direction: "row",
+            align: "center",
+            padding: { side: "x", value: 6 },
+            gap: 6,
+            height: { kind: "px", value: SIZE_ROW_H },
+            background: COLOR_ROW,
+            hoverBackground: COLOR_ROW_HOVER,
+        },
+        children: [
+            Text({
+                text: typeText,
+                color: COLOR_TEXT_DIM,
+                style: { width: { kind: "px", value: 48 } },
+            }),
+            Text({
+                text: item.label,
+                style: { width: { kind: "grow" } },
+            }),
+            Text({
+                text: shortSource(item.sourcePath),
+                color: COLOR_TEXT_FAINT,
+            }),
+            Container({
+                style: {
+                    direction: "col",
+                    width: { kind: "px", value: 14 },
+                    height: { kind: "grow" },
+                    align: "center",
+                    hoverBackground: 0x40e85c5c | 0,
+                },
+                onClick: (_rect, info) => {
+                    if (info.button !== 0) return;
+                    removeFromQueueKey(queueItemKey(item));
+                },
+                children: [
+                    Text({
+                        text: GLYPH_X,
+                        color: COLOR_TEXT_DIM,
+                        style: { height: { kind: "grow" } },
+                    }),
+                ],
+            }),
+        ],
+    });
+}
+
+function queueHeader(): Element {
+    return Row({
+        style: { gap: 4, height: { kind: "px", value: 16 }, align: "center" },
+        children: [
+            Text({
+                text: () => {
+                    const n = getQueueLength();
+                    return n === 0 ? "Queue (empty)" : `Queue (${n})`;
+                },
+                color: COLOR_TEXT_DIM,
+                style: { width: { kind: "grow" } },
+            }),
+            Button({
+                text: "Clear",
+                style: {
+                    width: { kind: "px", value: 38 },
+                    height: { kind: "grow" },
+                    background: COLOR_BUTTON,
+                    hoverBackground: COLOR_BUTTON_HOVER,
+                },
+                onClick: () => clearQueue(),
+            }),
+        ],
+    });
+}
+
+const COLOR_BAR_BG = COLOR_PANEL_BORDER;
+const COLOR_BAR_FG = ACCENT_SUCCESS;
+const PROGRESS_BAR_H = 6;
+
+function progressBar(): Element {
+    return Container({
+        style: {
+            direction: "row",
+            width: { kind: "grow" },
+            height: { kind: "px", value: PROGRESS_BAR_H },
+            background: COLOR_BAR_BG,
+        },
+        children: () => {
+            const p = getImportProgress();
+            if (p === null || p.weightTotal <= 0) return [];
+            const ratio = getImportProgressFraction();
+            return [
+                Container({
+                    style: {
+                        width: { kind: "grow", factor: Math.max(0.0001, ratio) },
+                        height: { kind: "grow" },
+                        background: COLOR_BAR_FG,
+                    },
+                    children: [],
+                }),
+                Container({
+                    style: {
+                        width: { kind: "grow", factor: Math.max(0.0001, 1 - ratio) },
+                        height: { kind: "grow" },
+                    },
+                    children: [],
+                }),
+            ];
+        },
+    });
+}
+
+function liveImporterPanel(): Element {
+    return Container({
+        style: {
+            width: { kind: "grow" },
+            padding: 4,
+            background: COLOR_PANEL_RAISED,
+        },
+        children: () => {
+            const p = getImportProgress();
+            if (p === null) {
+                return [
+                    Text({
+                        text: "No import in progress.",
+                        color: COLOR_TEXT_DIM,
+                    }),
+                ];
+            }
+            return [
+                Col({
+                    style: { gap: 4, width: { kind: "grow" } },
+                    children: [
+                        progressBar(),
+                        Row({
+                            style: { gap: 6, height: { kind: "px", value: 12 }, align: "center" },
+                            children: [
+                                Text({
+                                    text: () => `${Math.floor(getImportProgressFraction() * 100)}%`,
+                                    color: COLOR_TEXT,
+                                    style: { width: { kind: "px", value: 28 } },
+                                }),
+                                Text({
+                                    text: () => {
+                                        const cur = getCurrentImportingPath();
+                                        return cur === null ? "(starting…)" : tailSegments(cur, 3);
+                                    },
+                                    color: COLOR_TEXT_DIM,
+                                    style: { width: { kind: "grow" } },
+                                }),
+                                Button({
+                                    text: "✕ Cancel",
+                                    style: {
+                                        width: { kind: "px", value: 50 },
+                                        height: { kind: "grow" },
+                                        background: COLOR_BUTTON_DANGER,
+                                        hoverBackground: COLOR_BUTTON_DANGER_HOVER,
+                                    },
+                                    onClick: () => {
+                                        if (getImportProgress() === null) return;
+                                        TaskManager.cancelAll();
+                                        ChatLib.chat(`&c[htsw] cancelling import…`);
+                                    },
+                                }),
+                            ],
+                        }),
+                        Text({
+                            text: () => {
+                                const prog = getImportProgress();
+                                if (prog === null) return "";
+                                return `${prog.completed + 1}/${prog.total} · ${prog.phase} · ${prog.phaseLabel}`;
+                            },
+                            color: COLOR_TEXT_FAINT,
+                        }),
+                    ],
+                }),
+            ];
+        },
+    });
+}
+
+function captureMenuPopoverContent(): Element {
+    return Col({
+        style: { gap: 2, padding: 4 },
+        children: CAPTURE_TYPES.map((t) =>
+            Container({
+                style: {
+                    direction: "row",
+                    align: "center",
+                    padding: { side: "x", value: 8 },
+                    gap: 6,
+                    height: { kind: "px", value: SIZE_ROW_H },
+                    background: COLOR_ROW,
+                    hoverBackground: COLOR_ROW_HOVER,
+                },
+                onClick: () => startCaptureExport(t),
+                children: [
+                    Text({
+                        text: `Capture ${t}`,
+                        color: COLOR_TEXT,
+                        style: { width: { kind: "grow" } },
+                    }),
+                ],
+            })
+        ),
+    });
+}
+
+function importActionRow(): Element {
+    return Row({
+        style: { gap: 4, height: { kind: "px", value: 18 } },
+        children: [
+            Button({
+                text: `Capture ${GLYPH_CHEVRON_DOWN}`,
+                style: {
+                    width: { kind: "grow" },
+                    height: { kind: "grow" },
+                    background: COLOR_BUTTON,
+                    hoverBackground: COLOR_BUTTON_HOVER,
+                },
+                onClick: (rect) =>
+                    togglePopover({
+                        key: "right-capture-type-menu",
+                        anchor: rect,
+                        content: captureMenuPopoverContent(),
+                        width: 140,
+                        height: CAPTURE_TYPES.length * 20 + 8,
+                    }),
+            }),
+            Button({
+                text: () => {
+                    const n = getQueueLength();
+                    return n === 0 ? "Import" : `Import (${n})`;
+                },
+                style: {
+                    width: { kind: "grow" },
+                    height: { kind: "grow" },
+                    background: COLOR_BUTTON_PRIMARY,
+                    hoverBackground: COLOR_BUTTON_PRIMARY_HOVER,
+                },
+                onClick: () => startImport(),
+            }),
+        ],
+    });
+}
+
+function importTab(): Element {
+    return Col({
+        style: { gap: 4, width: { kind: "grow" }, height: { kind: "grow" } },
+        children: [
+            queueHeader(),
+            Scroll({
+                id: "right-import-queue-scroll",
+                style: { gap: 2, height: { kind: "grow" } },
+                children: () => {
+                    const items = getQueue();
+                    if (items.length === 0) {
+                        return [
+                            Container({
+                                style: { padding: 6 },
+                                children: [
+                                    Text({
+                                        text: "Queue is empty — right-click anything in Explore and Add to queue.",
+                                        color: COLOR_TEXT_FAINT,
+                                    }),
+                                ],
+                            }),
+                        ];
+                    }
+                    return items.map(queueRow);
+                },
+            }),
+            liveImporterPanel(),
+            importActionRow(),
+        ],
+    });
+}
+
+export function RightPanel(): Element {
+    return Col({
+        style: { padding: 6, gap: 4, width: { kind: "grow" }, height: { kind: "grow" } },
+        children: () => [
+            panelTabBar(),
+            activeRightTab === "view" ? viewTab() : importTab(),
         ],
     });
 }

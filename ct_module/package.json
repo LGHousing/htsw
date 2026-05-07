@@ -10,7 +10,8 @@
         "build:java": "node --experimental-strip-types ./scripts/compileJava.ts",
         "typecheck": "tsc --noEmit",
         "lint": "eslint src",
-        "build": "npm run typecheck && npm run lint && vite build --mode production && npm run build:java",
+        "build": "npm run generate:icons && npm run typecheck && npm run lint && vite build --mode production && npm run build:java",
+        "generate:icons": "node --experimental-strip-types ./scripts/generateIconsList.ts",
         "generate:condition-mappings": "node --experimental-strip-types ./scripts/generateConditionMappingScaffold.ts",
         "generate:action-mappings": "node --experimental-strip-types ./scripts/generateActionMappingScaffold.ts",
         "format": "npx prettier \"**/*.{ts,json}\" --write"

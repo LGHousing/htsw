@@ -90,16 +90,10 @@ let selectedImportableId: string | null = null;
  * progress callback when the session reports `currentLabel === "done"`.
  */
 let currentImportingPath: string | null = null;
-/**
- * Set of importable identities (`type:identity` strings) currently checked
- * in the Importables list. Drives multi-import: when non-empty, the bottom
- * toolbar's Import targets exactly these. Empty set = "no checkboxes
- * ticked, fall back to all".
- */
-let selectedImportableIds: Set<string> = new Set();
 let openTabs: SourceTab[] = [];
 let activeTabPath: string | null = null;
-let trustMode = false;
+/** Housing UUIDs the user has explicitly opted in to "trust the cache for". */
+const trustedHouses: Set<string> = new Set();
 let housingUuid: string | null = null;
 let knowledgeRows: KnowledgeStatusRow[] = [];
 let importProgress: ImportProgressView | null = null;
@@ -229,20 +223,6 @@ export function setSelectedImportableId(id: string | null): void {
     selectedImportableId = id;
 }
 
-export function getSelectedImportableIds(): Set<string> {
-    return selectedImportableIds;
-}
-export function isImportableChecked(id: string): boolean {
-    return selectedImportableIds.has(id);
-}
-export function toggleImportableChecked(id: string): void {
-    if (selectedImportableIds.has(id)) selectedImportableIds.delete(id);
-    else selectedImportableIds.add(id);
-}
-export function clearImportableSelection(): void {
-    selectedImportableIds = new Set();
-}
-
 export function getOpenTabs(): SourceTab[] {
     return openTabs;
 }
@@ -273,11 +253,17 @@ export function setActiveStateTab(path: string): void {
     activeTabPath = path;
 }
 
-export function getTrustMode(): boolean {
-    return trustMode;
+export function isHouseTrusted(uuid: string): boolean {
+    return trustedHouses.has(uuid);
 }
-export function setTrustMode(v: boolean): void {
-    trustMode = v;
+export function setHouseTrust(uuid: string, trusted: boolean): void {
+    if (trusted) trustedHouses.add(uuid);
+    else trustedHouses.delete(uuid);
+}
+/** Trust mode is now per-house: an in-flight import trusts the cache iff
+ *  the current housing UUID is in the trusted-houses set. */
+export function isCurrentHouseTrusted(): boolean {
+    return housingUuid !== null && trustedHouses.has(housingUuid);
 }
 
 export function getHousingUuid(): string | null {

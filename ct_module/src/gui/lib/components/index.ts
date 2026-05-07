@@ -8,3 +8,7 @@ export { Scroll } from "./scroll";
 export type { ScrollProps } from "./scroll";
 export { Text } from "./text";
 export type { TextProps } from "./text";
+export { Icon } from "./icon";
+export type { IconProps } from "./icon";
+export { Icons } from "../icons.generated";
+export type { IconName } from "../icons.generated";

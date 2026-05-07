@@ -42,8 +42,9 @@ export function runDiffDemo(): void {
         return;
     }
     ChatLib.chat(`&a[htsw] diff demo: ${total} actions on ${path}`);
-    // Light up the LiveImporter panel too so the demo is visible above the
-    // inventory, not just in the right-panel source preview.
+    // Light up the right panel's Import tab too — its inline live-importer
+    // strip reads getImportProgress(), so the demo animates there alongside
+    // the right-panel source preview.
     setCurrentImportingPath(path);
     setImportProgress({
         weightCompleted: 0,
