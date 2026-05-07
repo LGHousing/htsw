@@ -22,6 +22,8 @@ Each package builds independently. No top-level workspace script.
 
 `ct_module/install.py` needs a local `.env` with `CT_MODULE_DESTINATION` (target ChatTriggers folder) and `HTSW_REPOSITORY_PATH` (used by `/htsw recompile`).
 
+**After any change under `ct_module/`, run `python install.py` from `ct_module/` so the user can just `/ct reload` in-game.** The script runs `npm run build` (typecheck + lint + Vite + Java) and copies `dist/` to the deploy. Pass `--nobuild` only if you have already built and just want to redeploy.
+
 ## Rhino / ES5 Constraint — Read Before Writing CT Module Code
 
 `ct_module` runs on a Rhino-like JS engine. `tsconfig.json` sets `lib: ["ES5", "DOM"]` deliberately so the editor surfaces missing methods. **Anything that ends up in the ChatTriggers bundle** is constrained, including emitted `language/` JS.
