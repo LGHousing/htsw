@@ -14,6 +14,7 @@ import { isInputFocused, setFocusedInput } from "./focus";
 import { pushScissor, popScissor } from "./scissor";
 import { getInputField } from "./inputState";
 import { COLOR_PANEL, COLOR_PANEL_BORDER } from "./theme";
+import { getOverlayScreenW, getOverlayScreenH } from "./overlayScale";
 
 let dbgLog: (m: string) => void = () => {};
 export function setRenderDebugLog(fn: (m: string) => void): void {
@@ -120,8 +121,8 @@ function drawTooltip(t: QueuedTooltip): void {
     const tw = Renderer.getStringWidth(t.text);
     const w = tw + padX * 2;
     const h = LINE_H + padY * 2;
-    const screenW = Renderer.screen.getWidth();
-    const screenH = Renderer.screen.getHeight();
+    const screenW = getOverlayScreenW();
+    const screenH = getOverlayScreenH();
     let x = t.anchor.x;
     let y = t.anchor.y + t.anchor.h + 2;
     if (y + h > screenH - 2) y = t.anchor.y - h - 2; // flip above

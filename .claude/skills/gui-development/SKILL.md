@@ -22,8 +22,9 @@ Library — `gui/lib/` (project-agnostic UI primitives + screen/theme):
 - `menu.ts` — `openMenu(x, y, actions[])` builds a context-menu popover from `{label, onClick}` actions, plus `{kind: "separator"}` dividers. Auto-closes on click. Menu width auto-sizes to the widest label via `Renderer.getStringWidth` (floored at `MIN_MENU_WIDTH`); callers don't need to truncate.
 - `focus.ts` — single global focused-input id.
 - `inputState.ts` — per-input `GuiTextField` instances (cursor, selection, clipboard, arrow keys).
-- `scissor.ts` — GL scissor stack (uses ScaledResolution to convert MC scaled coords → real pixels).
-- `bounds.ts` — reads the open Minecraft `GuiContainer`'s bounds via Java reflection; provides fullscreen panel rect + chat rect helpers.
+- `scissor.ts` — GL scissor stack. Multiplies overlay coords by `OVERLAY_SCALE` to get real pixels (see Coordinate space).
+- `overlayScale.ts` — fixed-scale boundary helpers. `OVERLAY_SCALE = 4`, `mcToOverlay`, `getOverlayScreen{W,H}`. See **Coordinate space** below.
+- `bounds.ts` — reads the open Minecraft `GuiContainer`'s bounds via Java reflection and converts them to overlay space; provides fullscreen panel rect + chat rect helpers.
 - `theme.ts` — color/size/glyph constants. `lib/popovers` reads its panel/scrim colors from here, so `theme` is treated as part of `lib`.
 - `components/` — thin element-builder functions (`Button`, `Container`, `Row`, `Col`, `Input`, `Scroll`, `Text`).
 
@@ -184,9 +185,26 @@ Rhino's property access only sees public fields, so the protected ones use `getD
 
 Returns `null` for non-`GuiContainer` screens (main menu, settings, etc.). The panel's `shouldBeVisible` callback uses this — when bounds are null, panels hide.
 
+## Coordinate space
+
+The overlay always renders at `OVERLAY_SCALE = 4` regardless of Minecraft's GUI Scale setting. All internal coordinates (layout rects, mouse coords used by hit-testing, screen dims, scissor inputs) are in this fixed scale-4 space — `1 overlay unit = 4 real pixels`. This keeps element sizes constant across users.
+
+How it works:
+- `beginHtswOverlayDraw()` (in `panel.ts`) applies `glScale(OVERLAY_SCALE / mcScale)` so `Renderer.*` calls — which interpret coords in MC's current scaled space — paint correctly when fed overlay coords. `postGuiRender` popovers go through the same begin/end so they pick up the transform.
+- Triggers receive coords in MC's current scaled space. We convert at the boundary via `mcToOverlay(coord)` (in `lib/overlayScale.ts`):
+  - `Panel`'s render + click handlers (`panel.ts`)
+  - `overlay.ts` mouse-wheel handler (uses raw real-pixel `Mouse.getEventX/Y` and divides by `OVERLAY_SCALE` directly — equivalent)
+  - `overlay.ts` scrollbar-drag `guiRender` and focus-clear `guiMouseClick`
+  - popovers' `postGuiRender` (`popovers.ts`)
+- `bounds.ts` converts MC's `screenW/H/left/top/xSize/ySize` to overlay space before returning.
+- `scissor.ts` multiplies rect by `OVERLAY_SCALE` to reach real pixels (no `ScaledResolution` lookup).
+- Code that wants the screen in overlay coords calls `getOverlayScreenW/H` (NOT `Renderer.screen.getWidth/Height`, which return MC's current scaled dims).
+
+If you add a new entry point that receives MC scaled coords, **convert with `mcToOverlay` before passing into layout / dispatch / popovers**. If you add code that draws via `Renderer.*`, make sure it runs inside a `beginHtswOverlayDraw()`/`endHtswOverlayDraw()` pair.
+
 ## Scissor
 
-GL scissor uses pixel coordinates (origin bottom-left), but our layout uses MC scaled coords (origin top-left). `scissor.ts` converts via `ScaledResolution` and maintains a stack so nested scrolls work. **If a render path early-returns between push and pop, the stack is unbalanced.** Render code is structured so `pushScissor`/`popScissor` always happen in pairs.
+GL scissor uses pixel coordinates (origin bottom-left), but our layout uses overlay scale-4 coords (origin top-left). `scissor.ts` multiplies by `OVERLAY_SCALE` and y-flips against `getOverlayScreenH()`. It maintains a stack so nested scrolls work. **If a render path early-returns between push and pop, the stack is unbalanced.** Render code is structured so `pushScissor`/`popScissor` always happen in pairs.
 
 ## Trigger registration order matters
 

@@ -1,11 +1,10 @@
 /// <reference types="../../CTAutocomplete" />
 
 import { Rect, intersectRect } from "./layout";
+import { OVERLAY_SCALE, getOverlayScreenH } from "./overlayScale";
 
 // @ts-ignore
 const GL11 = org.lwjgl.opengl.GL11;
-// @ts-ignore
-const ScaledResolutionClass = net.minecraft.client.gui.ScaledResolution;
 
 const scissorStack: Rect[] = [];
 
@@ -28,14 +27,15 @@ export function popScissor(): void {
 }
 
 function applyScissor(rect: Rect): void {
-    const sr = new ScaledResolutionClass(Client.getMinecraft());
-    const scale = sr.func_78325_e();
-    const screenH = sr.func_78328_b();
+    // Rects are in overlay (scale-OVERLAY_SCALE) coords. GL scissor takes real pixels with
+    // origin bottom-left, so multiply by OVERLAY_SCALE and y-flip against the overlay screen
+    // height (also in overlay coords).
+    const screenH = getOverlayScreenH();
     GL11.glEnable(GL11.GL_SCISSOR_TEST);
     GL11.glScissor(
-        rect.x * scale,
-        (screenH - rect.y - rect.h) * scale,
-        rect.w * scale,
-        rect.h * scale
+        rect.x * OVERLAY_SCALE,
+        (screenH - rect.y - rect.h) * OVERLAY_SCALE,
+        rect.w * OVERLAY_SCALE,
+        rect.h * OVERLAY_SCALE
     );
 }

@@ -4,6 +4,7 @@ import { Element, Rect, layoutElement, pointInRect } from "./layout";
 import { Extractable, extract } from "./extractable";
 import { renderElement, dispatchClick } from "./render";
 import { tryDispatchPopoverClick, popoverIsOpen, mouseIsOverPopover } from "./popovers";
+import { OVERLAY_SCALE, getMcScale, mcToOverlay } from "./overlayScale";
 
 const COLOR_PANEL = 0xf0242931 | 0;
 
@@ -93,33 +94,30 @@ export function resetGuiState(): void {
 
 export function beginHtswOverlayDraw(): void {
     resetGuiState();
-    try {
-        GL11.glPushMatrix();
-        GL11.glTranslated(0, 0, 1000);
-    } catch (_e) {
-        try {
-            Renderer.translate(0, 0, 1000);
-        } catch (_e2) {
-            // ignore
-        }
-    }
+    // Force the overlay to render as if MC's GUI scale were OVERLAY_SCALE, regardless of the
+    // user's setting. MC's projection draws 1 scaled unit as `mcScale` real pixels; we want
+    // 1 overlay unit to be OVERLAY_SCALE real pixels, so apply factor OVERLAY_SCALE/mcScale.
+    // We push BOTH matrices: scale on the projection (which MC re-binds on every drawScreen
+    // and which downstream rendering paths don't usually re-touch), and translate-Z on the
+    // modelview so we still draw above other GUI elements. Doing the scale on projection
+    // means even rendering paths that re-load the modelview matrix internally still get our
+    // scale applied through the projection.
+    const f = OVERLAY_SCALE / getMcScale();
+    GL11.glMatrixMode(GL11.GL_PROJECTION);
+    GL11.glPushMatrix();
+    GL11.glScalef(f, f, 1);
+    GL11.glMatrixMode(GL11.GL_MODELVIEW);
+    GL11.glPushMatrix();
+    GL11.glTranslated(0, 0, 1000);
 }
 
 export function endHtswOverlayDraw(): void {
-    try {
-        GL11.glPopMatrix();
-    } catch (_e) {
-        try {
-            Renderer.translate(0, 0, -1000);
-        } catch (_e2) {
-            // ignore
-        }
-    }
-    try {
-        GL11.glDepthMask(true);
-    } catch (_e) {
-        // ignore
-    }
+    GL11.glMatrixMode(GL11.GL_MODELVIEW);
+    GL11.glPopMatrix();
+    GL11.glMatrixMode(GL11.GL_PROJECTION);
+    GL11.glPopMatrix();
+    GL11.glMatrixMode(GL11.GL_MODELVIEW);
+    GL11.glDepthMask(true);
 }
 
 export class Panel {
@@ -164,9 +162,11 @@ export class Panel {
         if (this.renderTrigger !== null) {
             throw new Error("Panel is already registered");
         }
-        const paint = (x: number, y: number) => {
+        const paint = (rawX: number, rawY: number) => {
             if (!extract(this.shouldBeVisible)) return;
             const b = extract(this.bounds);
+            const x = mcToOverlay(rawX);
+            const y = mcToOverlay(rawY);
             beginHtswOverlayDraw();
             if (this.paintBackground) {
                 Renderer.drawRect(COLOR_PANEL, b.x, b.y, b.w, b.h);
@@ -190,13 +190,15 @@ export class Panel {
         this.clickTrigger = register(
             "guiMouseClick",
             (
-                x: number,
-                y: number,
+                rawX: number,
+                rawY: number,
                 btn: number,
                 _gui: MCTGuiScreen,
                 event: CancellableEvent
             ) => {
                 if (event.isCanceled()) return;
+                const x = mcToOverlay(rawX);
+                const y = mcToOverlay(rawY);
                 // Popover takes priority. Only one panel should actually run the popover dispatch
                 // (since it mutates state and runs onClick once); we use a per-frame guard.
                 // Inside-popover click → dispatch + cancel + return. Outside-popover click → close

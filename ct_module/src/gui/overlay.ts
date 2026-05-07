@@ -8,8 +8,6 @@ import { Element, Rect, layoutElement, pointInRect, getScrollState } from "./lib
 const MouseClass = Java.type("org.lwjgl.input.Mouse");
 // @ts-ignore
 const KeyboardClass = Java.type("org.lwjgl.input.Keyboard");
-// @ts-ignore
-const ScaledResolutionClass = net.minecraft.client.gui.ScaledResolution;
 // Forge inner-class path uses $ separators with Java.type.
 // @ts-ignore
 const ForgeMouseInputEventPre = Java.type(
@@ -50,6 +48,7 @@ import {
 } from "./lib/render";
 import { getFocusedInput, setFocusedInput } from "./lib/focus";
 import { applyFocus, getRecord, readAndSync, tickAllFields } from "./lib/inputState";
+import { OVERLAY_SCALE, mcToOverlay, getContainerBoundsOverlay } from "./lib/overlayScale";
 
 let enabled = true;
 let initialized = false;
@@ -77,7 +76,9 @@ export function debugIsActive(): boolean {
 }
 
 function frameBounds(): Rect {
-    const b = getContainerBounds();
+    // Use the overlay-converted bounds so the panel rect lives in overlay coords (1 unit =
+    // OVERLAY_SCALE real pixels). bounds.ts itself is left untouched.
+    const b = getContainerBoundsOverlay();
     if (b === null) return ZERO_RECT;
     return getFullscreenPanelRect(b);
 }
@@ -179,13 +180,12 @@ export function initHtswGui(): void {
         const mc = Client.getMinecraft();
         const screen = (mc as any).field_71462_r;
         if (screen === null || screen === undefined) return;
-        const sr = new ScaledResolutionClass(mc);
-        const sw = sr.func_78326_a();
-        const sh = sr.func_78328_b();
-        const dw = (mc as any).field_71443_c;
+        // Convert raw real-pixel mouse coords directly into overlay (scale-OVERLAY_SCALE) space —
+        // 1 overlay unit = OVERLAY_SCALE real pixels.
         const dh = (mc as any).field_71440_d;
-        const mx = Math.floor((MouseClass.getEventX() * sw) / dw);
-        const my = sh - Math.floor((MouseClass.getEventY() * sh) / dh) - 1;
+        const overlayScreenH = Math.floor(dh / OVERLAY_SCALE);
+        const mx = Math.floor(MouseClass.getEventX() / OVERLAY_SCALE);
+        const my = overlayScreenH - Math.floor(MouseClass.getEventY() / OVERLAY_SCALE) - 1;
         // Popovers paint on top of panels so they should also see the wheel first. Without
         // this, scrolling inside the file-browser/recents popovers fell through to whatever
         // panel scroll happened to be under the cursor.
@@ -215,15 +215,17 @@ export function initHtswGui(): void {
         }
     });
     register("guiRender", (_mouseX: number, mouseY: number) => {
-        if (isDraggingScrollbar()) updateScrollbarDrag(mouseY);
+        if (isDraggingScrollbar()) updateScrollbarDrag(mcToOverlay(mouseY));
     });
     register("guiMouseRelease", () => {
         endScrollbarDrag();
     });
 
     // Clear focus when the user clicks anywhere outside every visible panel.
-    register("guiMouseClick", (x: number, y: number) => {
+    register("guiMouseClick", (rawX: number, rawY: number) => {
         if (getFocusedInput() === null) return;
+        const x = mcToOverlay(rawX);
+        const y = mcToOverlay(rawY);
         for (let i = 0; i < activePanels.length; i++) {
             if (!activePanels[i].isVisible()) continue;
             if (pointInRect(activePanels[i].getBounds(), x, y)) return;

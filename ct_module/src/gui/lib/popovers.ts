@@ -3,6 +3,7 @@
 import { Element, Rect, pointInRect, layoutElement } from "./layout";
 import { renderElement, dispatchClick, dispatchWheel } from "./render";
 import { beginHtswOverlayDraw, endHtswOverlayDraw } from "./panel";
+import { getOverlayScreenW, getOverlayScreenH, mcToOverlay } from "./overlayScale";
 
 export type PopoverHandle = {
     id: number;
@@ -112,8 +113,8 @@ export function getOpenPopoverContents(): Element[] {
 }
 
 function computePopoverRect(p: PopoverHandle): Rect {
-    const screenH = Renderer.screen.getHeight();
-    const screenW = Renderer.screen.getWidth();
+    const screenH = getOverlayScreenH();
+    const screenW = getOverlayScreenW();
     if (p.placement === "modal") {
         const w = Math.min(p.width, screenW - 8);
         const h = Math.min(p.height, screenH - 8);
@@ -185,8 +186,8 @@ function drawPopovers(mouseX: number, mouseY: number): void {
     for (let i = 0; i < openPopovers.length; i++) {
         const p = openPopovers[i];
         if (p.placement === "modal" && !scrimDrawn) {
-            const sw = Renderer.screen.getWidth();
-            const sh = Renderer.screen.getHeight();
+            const sw = getOverlayScreenW();
+            const sh = getOverlayScreenH();
             Renderer.drawRect(COLOR_OVERLAY_DIM, 0, 0, sw, sh);
             scrimDrawn = true;
         }
@@ -217,7 +218,7 @@ export function initPopoverRendering(): void {
     if (renderInitialized) return;
     renderInitialized = true;
     register("postGuiRender", (mouseX: number, mouseY: number) => {
-        drawPopovers(mouseX, mouseY);
+        drawPopovers(mcToOverlay(mouseX), mcToOverlay(mouseY));
     }).setPriority(OnTrigger.Priority.LOWEST);
 }
 

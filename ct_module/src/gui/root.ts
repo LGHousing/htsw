@@ -5,9 +5,9 @@ import { Col, Container, Row } from "./lib/components";
 import {
     SCREEN_PAD,
     getChatBounds,
-    getContainerBounds,
     type ContainerBounds,
 } from "./lib/bounds";
+import { getContainerBoundsOverlay } from "./lib/overlayScale";
 import { LeftPanel } from "./left-panel";
 import { RightPanel } from "./right-panel";
 import { BottomToolbar } from "./bottom-toolbar";
@@ -44,7 +44,7 @@ function bgWrap(child: Element, height: number | "grow"): Element {
 let cachedImportBounds: ContainerBounds | null = null;
 
 function getStableBounds(): ContainerBounds | null {
-    const live = getContainerBounds();
+    const live = getContainerBoundsOverlay();
     const importing = getImportProgress() !== null;
     if (!importing) {
         cachedImportBounds = null;
