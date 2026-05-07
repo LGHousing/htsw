@@ -1,19 +1,39 @@
 /// <reference types="../../CTAutocomplete" />
 
-// Registering a `KeyBind` with a category surfaces it in MC's Options →
-// Controls menu, so the user can rebind it. Construction happens at module
-// load — that's fine because by the time any HTSW JS executes, MC and CT
-// are fully initialized and the key-bindings list exists.
-const chatKeyBind = new KeyBind("Focus HTSW chat input", Keyboard.KEY_T, "HTSW");
+function getMinecraftChatKeyBinding(): any | null {
+    try {
+        const settings = Client.getMinecraft().field_71474_y;
+        if (settings === null || settings === undefined) return null;
+        const binding = settings.field_74310_D;
+        return binding === undefined ? null : binding;
+    } catch (_e) {
+        return null;
+    }
+}
+
+function keyCodeOf(binding: any): number | null {
+    try {
+        return Number(binding.func_151463_i());
+    } catch (_e) {
+        try {
+            return Number(binding.getKeyCode());
+        } catch (_inner) {
+            return null;
+        }
+    }
+}
 
 export function getChatKeyCode(): number {
-    return chatKeyBind.getKeyCode();
+    const binding = getMinecraftChatKeyBinding();
+    if (binding === null) return Keyboard.KEY_T;
+    const code = keyCodeOf(binding);
+    return code === null ? Keyboard.KEY_T : code;
 }
 
 /** Display name like "T" or "LSHIFT". Returns "(unbound)" when MC's controls
  *  menu has the binding cleared. */
 export function getChatKeyName(): string {
-    const code = chatKeyBind.getKeyCode();
+    const code = getChatKeyCode();
     if (code <= 0) return "(unbound)";
     const name = Keyboard.getKeyName(code);
     if (name === null || name === "NONE") return "(unbound)";

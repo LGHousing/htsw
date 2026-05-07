@@ -243,7 +243,7 @@ export function initHtswGui(): void {
         // Global chat-focus key: when no input is focused and the GUI is
         // shown, focus the chat input so the user can type messages without
         // leaving the inventory. Mirrors vanilla MC's "T opens chat"
-        // affordance; key is configurable via Options → Controls → HTSW.
+        // affordance; key is Minecraft's existing Open Chat binding.
         const chatKey = getChatKeyCode();
         if (focusedId === null && enabled && chatKey > 0 && keyCode === chatKey) {
             if (getContainerBounds() !== null) {
