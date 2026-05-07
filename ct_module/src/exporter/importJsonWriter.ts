@@ -24,7 +24,7 @@ const FORMATTING: json.FormattingOptions = {
     eol: "\n",
 };
 
-type Section = "functions" | "events" | "regions" | "items" | "menus";
+export type Section = "functions" | "events" | "regions" | "items" | "menus" | "npcs";
 
 /**
  * The field that uniquely identifies an entry within its section.
@@ -110,4 +110,43 @@ export function upsertImportableEntry(
 
     if (!next.endsWith("\n")) next += "\n";
     FileLib.write(importJsonPath, next, true);
+}
+
+/**
+ * Surgical rename: change just the identity field of one entry in the
+ * given section. Preserves every other field (and surrounding comments
+ * / formatting) untouched. Returns true on success, false when no entry
+ * with `oldIdentity` was found.
+ */
+export function renameImportableEntry(
+    importJsonPath: string,
+    section: Section,
+    oldIdentity: string,
+    newIdentity: string
+): boolean {
+    const idField = identityField(section);
+    if (!FileLib.exists(importJsonPath)) return false;
+    const text = String(FileLib.read(importJsonPath) ?? "");
+    if (text.trim() === "") return false;
+    const tree = json.parseTree(text);
+    if (!tree) return false;
+    const sectionNode = json.findNodeAtLocation(tree, [section]);
+    if (!sectionNode || sectionNode.type !== "array") return false;
+    const items = sectionNode.children ?? [];
+    let matchIndex = -1;
+    for (let i = 0; i < items.length; i++) {
+        const idNode = json.findNodeAtLocation(items[i], [idField]);
+        if (idNode && idNode.type === "string" && idNode.value === oldIdentity) {
+            matchIndex = i;
+            break;
+        }
+    }
+    if (matchIndex === -1) return false;
+    const edits = json.modify(text, [section, matchIndex, idField], newIdentity, {
+        formattingOptions: FORMATTING,
+    });
+    let next = json.applyEdits(text, edits);
+    if (!next.endsWith("\n")) next += "\n";
+    FileLib.write(importJsonPath, next, true);
+    return true;
 }

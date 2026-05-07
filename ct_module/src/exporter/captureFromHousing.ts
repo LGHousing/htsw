@@ -26,12 +26,21 @@ type CaptureSpec = {
 const SPECS: Record<CaptureType, CaptureSpec> = {
     FUNCTION: {
         command: "/functions",
-        // "Find Free Slot (#0395)" → "Find Free Slot"
+        // "Find Free Slot (#0395)" -> "Find Free Slot"
         // The trailing (#NNNN) is Hypixel's per-housing function id, not
         // part of the function name we pass to /function edit.
         extractName: (raw) => {
+            const ignored = raw.toLowerCase();
+            if (
+                ignored === "go back" ||
+                ignored === "close" ||
+                ignored.indexOf("previous page") >= 0 ||
+                ignored.indexOf("next page") >= 0
+            ) {
+                return null;
+            }
             const m = raw.match(/^(.+?)\s*\(#\d+\)\s*$/);
-            return m !== null ? m[1] : null;
+            return m !== null ? m[1] : raw.length > 0 ? raw : null;
         },
     },
     MENU: {
@@ -100,14 +109,15 @@ export async function captureFromHousing(
             (
                 _x: number,
                 _y: number,
-                _button: number,
+                button: number,
                 _gui: any,
                 event: any
             ) => {
+                if (button !== 0) return;
                 const slot = Client.currentGui.getSlotUnderMouse();
-                if (slot === null) return;
+                if (slot === null || slot === undefined) return;
                 const item = slot.getItem();
-                if (item === null) return;
+                if (item === null || item === undefined) return;
                 const rawName = removedFormatting(item.getName());
                 const extracted = spec.extractName(rawName);
                 if (extracted === null) return;
