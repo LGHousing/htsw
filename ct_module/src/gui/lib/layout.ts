@@ -23,7 +23,12 @@ export type Style = {
 export type ContainerStyle = Style & {
     direction?: "row" | "col";
     gap?: number;
+    // Cross-axis alignment of children (perpendicular to direction).
     align?: "start" | "center" | "end" | "stretch";
+    // Main-axis alignment of children as a group (parallel to direction).
+    // Only meaningful when no child has `kind: "grow"` on the main axis —
+    // grows already eat all the leftover space.
+    justify?: "start" | "center" | "end";
 };
 
 export type Child = Element | false;
@@ -43,13 +48,6 @@ export type Element =
           style: ContainerStyle;
           children: Extractable<Child[]>;
           onClick?: (rect: Rect, info: ClickInfo) => void;
-          onDoubleClick?: (rect: Rect) => void;
-      }
-    | {
-          kind: "button";
-          style: Style;
-          text: Extractable<string>;
-          onClick: (rect: Rect, info: ClickInfo) => void;
           onDoubleClick?: (rect: Rect) => void;
       }
     | {
@@ -107,8 +105,6 @@ export type LaidOut = { element: Element; rect: Rect; clipRect?: Rect };
 type ResolvedPadding = { t: number; r: number; b: number; l: number };
 
 const LINE_H = 8;
-const BUTTON_PAD_X = 4;
-const BUTTON_PAD_Y = 4;
 const INPUT_PAD_Y = 6;
 const TEXT_PAD = 0;
 const SCROLLBAR_W = 4;
@@ -154,13 +150,6 @@ function isPaddingEntry(p: PaddingEntry | PaddingEntry[]): p is PaddingEntry {
     return !(p instanceof Array);
 }
 
-function buttonContent(text: string): { w: number; h: number } {
-    return {
-        w: Renderer.getStringWidth(text) + BUTTON_PAD_X * 2,
-        h: LINE_H + BUTTON_PAD_Y * 2,
-    };
-}
-
 function textContent(text: string): { w: number; h: number } {
     return { w: Renderer.getStringWidth(text) + TEXT_PAD * 2, h: LINE_H + TEXT_PAD * 2 };
 }
@@ -202,8 +191,7 @@ function containerContent(c: { style: ContainerStyle; children: Extractable<Chil
 
 function measure(e: Element): { w: number; h: number } {
     let content: { w: number; h: number };
-    if (e.kind === "button") content = buttonContent(extract(e.text));
-    else if (e.kind === "text") content = textContent(extract(e.text));
+    if (e.kind === "text") content = textContent(extract(e.text));
     else if (e.kind === "input") content = inputContent(extract(e.value));
     else if (e.kind === "scroll") content = { w: 0, h: 0 };
     else if (e.kind === "image") content = imageContent();
@@ -345,7 +333,14 @@ function layoutContainer(
         for (let i = 0; i < n; i++) if (mainSizes[i] === null) mainSizes[i] = 0;
     }
 
+    // Main-axis justify: when there are no grow children, leftover lives at the
+    // ends. Shift the start cursor so the children sit centered/end as a group.
+    const justify = c.style.justify ?? "start";
     let cursor = isRow ? innerX : innerY;
+    if (growTotal === 0 && justify !== "start" && leftover > 0) {
+        if (justify === "center") cursor += Math.floor(leftover / 2);
+        else if (justify === "end") cursor += leftover;
+    }
     for (let i = 0; i < n; i++) {
         const ch = children[i];
         const mSize = mainSizes[i] as number;

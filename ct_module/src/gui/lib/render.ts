@@ -20,8 +20,6 @@ export function setRenderDebugLog(fn: (m: string) => void): void {
     dbgLog = fn;
 }
 
-const COLOR_BUTTON = 0xff2d333d | 0;
-const COLOR_BUTTON_HOVER = 0xff3a4350 | 0;
 const COLOR_INPUT_BG = 0xff000000 | 0;
 const COLOR_INPUT_BORDER = 0xff444444 | 0;
 const COLOR_INPUT_BORDER_HOVER = 0xffa2a2a2 | 0;
@@ -31,26 +29,6 @@ const COLOR_SCROLLBAR_THUMB = 0xff888888 | 0;
 const COLOR_SCROLLBAR_THUMB_HOVER = 0xffaaaaaa | 0;
 
 const LINE_H = 8;
-
-// Trim `text` so it (with a "..." suffix when needed) fits in `maxW` pixels.
-// Buttons render text without scissoring, so without this a too-narrow button
-// lets its label spill into adjacent siblings.
-function truncateToWidth(text: string, maxW: number): string {
-    if (Renderer.getStringWidth(text) <= maxW) return text;
-    const ELLIPSIS = "...";
-    if (Renderer.getStringWidth(ELLIPSIS) > maxW) return "";
-    let lo = 0;
-    let hi = text.length;
-    while (lo < hi) {
-        const mid = Math.floor((lo + hi + 1) / 2);
-        if (Renderer.getStringWidth(text.substring(0, mid) + ELLIPSIS) <= maxW) {
-            lo = mid;
-        } else {
-            hi = mid - 1;
-        }
-    }
-    return text.substring(0, lo) + ELLIPSIS;
-}
 
 // Per-renderElement-call hover-tooltip queue. Set inside renderItem when a text
 // with a `tooltip` is hovered; drawn after items + scrollbars so it's on top.
@@ -209,23 +187,6 @@ function renderItem(
             e.style.background !== undefined ? extract(e.style.background) : undefined;
         const bg = hovered && e.onClick && hoverBg !== undefined ? hoverBg : baseBg;
         if (bg !== undefined) Renderer.drawRect(bg, r.x, r.y, r.w, r.h);
-    } else if (e.kind === "button") {
-        const baseBg =
-            e.style.background !== undefined ? extract(e.style.background) : undefined;
-        const hoverBg =
-            e.style.hoverBackground !== undefined
-                ? extract(e.style.hoverBackground)
-                : undefined;
-        const bg = baseBg !== undefined ? baseBg : COLOR_BUTTON;
-        const hBg = hoverBg !== undefined ? hoverBg : COLOR_BUTTON_HOVER;
-        Renderer.drawRect(hovered ? hBg : bg, r.x, r.y, r.w, r.h);
-        const rawText = extract(e.text);
-        const innerW = Math.max(0, r.w - 4);
-        const text = truncateToWidth(rawText, innerW);
-        const tw = Renderer.getStringWidth(text);
-        const tx = r.x + Math.max(2, Math.floor((r.w - tw) / 2));
-        const ty = r.y + Math.max(2, Math.floor((r.h - LINE_H) / 2));
-        Renderer.drawString(text, tx, ty);
     } else if (e.kind === "text") {
         const text = extract(e.text);
         const ty = r.y + Math.max(0, Math.floor((r.h - LINE_H) / 2));
@@ -356,14 +317,6 @@ export function dispatchClick(
         dbgLog(
             `  hit kind=${e.kind} rect=(${item.rect.x},${item.rect.y} ${item.rect.w}x${item.rect.h})`
         );
-        if (e.kind === "button") {
-            setFocusedInput(null);
-            const isDouble =
-                button === 0 && consumeDoubleClick(item.rect, mouseX, mouseY);
-            e.onClick(item.rect, { button, x: mouseX, y: mouseY, isDoubleClickSecond: isDouble });
-            if (isDouble && e.onDoubleClick) e.onDoubleClick(item.rect);
-            return true;
-        }
         if (e.kind === "container" && (e.onClick || e.onDoubleClick)) {
             setFocusedInput(null);
             const isDouble =

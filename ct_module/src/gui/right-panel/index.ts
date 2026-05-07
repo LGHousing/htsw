@@ -1,7 +1,8 @@
 /// <reference types="../../../CTAutocomplete" />
 
 import { Child, ClickInfo, Element, Rect } from "../lib/layout";
-import { Button, Col, Container, Row, Scroll, Text } from "../lib/components";
+import { Button, Col, Container, Icon, Row, Scroll, Text } from "../lib/components";
+import { Icons, IconName } from "../lib/icons.generated";
 import {
     closeTab,
     confirmSelect,
@@ -39,8 +40,6 @@ import {
     COLOR_TEXT,
     COLOR_TEXT_DIM,
     COLOR_TEXT_FAINT,
-    GLYPH_CHEVRON_DOWN,
-    GLYPH_X,
     SIZE_ROW_H,
     SIZE_TAB_H,
 } from "../lib/theme";
@@ -186,7 +185,6 @@ const TAB_H = 13;
 const TAB_CLOSE_W = 11;
 const TAB_LABEL_PAD_X = 5;
 const TAB_W_BUFFER = 2;
-const COLOR_TAB_CLOSE = 0xffaaaaaa | 0;
 const COLOR_TAB_CLOSE_BG_HOVER = 0x40e85c5c | 0;
 
 function tabReorderActions(path: string): MenuAction[] {
@@ -286,28 +284,22 @@ function tabButton(tab: Tab): Element {
                 },
                 children: [Text({ text: labelText })],
             }),
-            // Close [x]. `direction: col` + `align: center` puts the glyph
-            // on the cell's horizontal centre; the inner Text takes the full
-            // height so its built-in vertical centering kicks in too.
+            // Close cell — direction:col + align/justify:center centers the
+            // icon both ways inside the close cell.
             Container({
                 style: {
                     direction: "col",
                     width: { kind: "px", value: TAB_CLOSE_W },
                     height: { kind: "grow" },
                     align: "center",
+                    justify: "center",
                     hoverBackground: COLOR_TAB_CLOSE_BG_HOVER,
                 },
                 onClick: (_rect, info) => {
                     if (info.button !== 0) return;
                     closeTab(tab.path);
                 },
-                children: [
-                    Text({
-                        text: GLYPH_X,
-                        color: COLOR_TAB_CLOSE,
-                        style: { height: { kind: "grow" } },
-                    }),
-                ],
+                children: [Icon({ name: Icons.x })],
             }),
         ],
     });
@@ -848,7 +840,7 @@ function pathLabel(): Element {
 type RightPanelTabId = "view" | "import";
 let activeRightTab: RightPanelTabId = "view";
 
-function panelTabButton(id: RightPanelTabId, label: string): Element {
+function panelTabButton(id: RightPanelTabId, label: string, icon: IconName): Element {
     const isActive = activeRightTab === id;
     return Container({
         style: {
@@ -858,6 +850,7 @@ function panelTabButton(id: RightPanelTabId, label: string): Element {
         },
         children: [
             Button({
+                icon,
                 text: label,
                 style: {
                     width: { kind: "grow" },
@@ -889,8 +882,8 @@ function panelTabBar(): Element {
             width: { kind: "grow" },
         },
         children: [
-            panelTabButton("view", "View"),
-            panelTabButton("import", "Import"),
+            panelTabButton("view", "View", Icons.eye),
+            panelTabButton("import", "Import", Icons.upload),
         ],
     });
 }
@@ -957,19 +950,14 @@ function queueRow(item: QueueItem): Element {
                     width: { kind: "px", value: 14 },
                     height: { kind: "grow" },
                     align: "center",
+                    justify: "center",
                     hoverBackground: 0x40e85c5c | 0,
                 },
                 onClick: (_rect, info) => {
                     if (info.button !== 0) return;
                     removeFromQueueKey(queueItemKey(item));
                 },
-                children: [
-                    Text({
-                        text: GLYPH_X,
-                        color: COLOR_TEXT_DIM,
-                        style: { height: { kind: "grow" } },
-                    }),
-                ],
+                children: [Icon({ name: Icons.x })],
             }),
         ],
     });
@@ -1077,9 +1065,10 @@ function liveImporterPanel(): Element {
                                     style: { width: { kind: "grow" } },
                                 }),
                                 Button({
-                                    text: "✕ Cancel",
+                                    icon: Icons.x,
+                                    text: "Cancel",
                                     style: {
-                                        width: { kind: "px", value: 50 },
+                                        width: { kind: "px", value: 56 },
                                         height: { kind: "grow" },
                                         background: COLOR_BUTTON_DANGER,
                                         hoverBackground: COLOR_BUTTON_DANGER_HOVER,
@@ -1139,7 +1128,13 @@ function importActionRow(): Element {
         style: { gap: 4, height: { kind: "px", value: 18 } },
         children: [
             Button({
-                text: `Capture ${GLYPH_CHEVRON_DOWN}`,
+                // Capture pulls from server → user, hence `download`. The
+                // chevron-down keeps the "this opens a menu" affordance.
+                children: [
+                    Icon({ name: Icons.download }),
+                    Text({ text: "Capture" }),
+                    Icon({ name: Icons.chevronDown }),
+                ],
                 style: {
                     width: { kind: "grow" },
                     height: { kind: "grow" },
@@ -1156,6 +1151,7 @@ function importActionRow(): Element {
                     }),
             }),
             Button({
+                icon: Icons.upload,
                 text: () => {
                     const n = getQueueLength();
                     return n === 0 ? "Import" : `Import (${n})`;

@@ -1,7 +1,8 @@
 /// <reference types="../../../../CTAutocomplete" />
 
 import { Element, Rect } from "../../lib/layout";
-import { Button, Col, Container, Row, Scroll, Text } from "../../lib/components";
+import { Button, Col, Container, Icon, Row, Scroll, Text } from "../../lib/components";
+import { Icons } from "../../lib/icons.generated";
 import {
     getHousingUuid,
     isHouseTrusted,
@@ -14,7 +15,6 @@ import { openAliasPopover } from "../../popovers/alias";
 import { TaskManager } from "../../../tasks/manager";
 import { KNOWLEDGE_ROOT } from "../../../knowledge/paths";
 import {
-    ACCENT_INFO,
     COLOR_BUTTON,
     COLOR_BUTTON_HOVER,
     COLOR_ROW,
@@ -106,11 +106,14 @@ function houseRow(uuid: string): Element {
             hoverBackground: COLOR_ROW_HOVER,
         },
         children: [
-            // Current-house marker.
-            Text({
-                text: isCurrent ? "→" : " ",
-                color: ACCENT_INFO,
-                style: { width: { kind: "px", value: 8 } },
+            // Current-house marker. Filled-target when current, faint circle
+            // when not, so a quick scan tells you which row is "you".
+            Icon({
+                name: isCurrent ? Icons.target : Icons.circle,
+                style: {
+                    width: { kind: "px", value: 10 },
+                    height: { kind: "px", value: 10 },
+                },
             }),
             // Alias (or short UUID) — primary label. Big, full grow.
             Text({
@@ -127,7 +130,7 @@ function houseRow(uuid: string): Element {
                 text: () => (getAlias(uuid) === null ? "" : shortUuid(uuid)),
                 color: COLOR_TEXT_FAINT,
             }),
-            // Per-house Trust toggle.
+            // Per-house Trust toggle. Shield-check on, plain shield off.
             Container({
                 style: {
                     direction: "row",
@@ -145,19 +148,23 @@ function houseRow(uuid: string): Element {
                     setHouseTrust(uuid, !isHouseTrusted(uuid));
                 },
                 children: [
+                    Icon({
+                        name: () =>
+                            isHouseTrusted(uuid) ? Icons.shieldCheck : Icons.shield,
+                    }),
                     Text({
                         text: "Trust",
                         color: COLOR_TEXT_DIM,
                         style: { width: { kind: "grow" } },
                     }),
-                    Text({ text: () => (isHouseTrusted(uuid) ? "[x]" : "[ ]") }),
                 ],
             }),
-            // Per-house Alias button.
+            // Per-house Alias button — pencil = "edit this name".
             Button({
+                icon: Icons.pencil,
                 text: "Alias",
                 style: {
-                    width: { kind: "px", value: 36 },
+                    width: { kind: "px", value: 44 },
                     height: { kind: "grow" },
                     background: COLOR_BUTTON,
                     hoverBackground: COLOR_BUTTON_HOVER,
@@ -181,6 +188,7 @@ function emptyState(): Element {
                 color: COLOR_TEXT_FAINT,
             }),
             Button({
+                icon: Icons.radar,
                 text: "Detect (/wtfmap)",
                 style: {
                     width: { kind: "grow" },
@@ -209,9 +217,10 @@ export function KnowledgeView(): Element {
                             style: { width: { kind: "grow" } },
                         }),
                         Button({
+                            icon: Icons.radar,
                             text: "Detect",
                             style: {
-                                width: { kind: "px", value: 50 },
+                                width: { kind: "px", value: 60 },
                                 height: { kind: "grow" },
                                 background: COLOR_BUTTON,
                                 hoverBackground: COLOR_BUTTON_HOVER,

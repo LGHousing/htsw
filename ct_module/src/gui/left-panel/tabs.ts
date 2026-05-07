@@ -1,5 +1,6 @@
 import { Element } from "../lib/layout";
 import { Button, Container, Row } from "../lib/components";
+import { Icons, IconName } from "../lib/icons.generated";
 import { ExploreView } from "./explore";
 import { KnowledgeView } from "./knowledge";
 import {
@@ -13,11 +14,11 @@ import {
 
 export type TabId = "explore" | "knowledge";
 
-type Tab = { id: TabId; label: string; content: () => Element };
+type Tab = { id: TabId; label: string; icon: IconName; content: () => Element };
 
 export const TABS: Tab[] = [
-    { id: "explore", label: "Explore", content: ExploreView },
-    { id: "knowledge", label: "Knowledge", content: KnowledgeView },
+    { id: "explore", label: "Explore", icon: Icons.compass, content: ExploreView },
+    { id: "knowledge", label: "Knowledge", icon: Icons.bookOpen, content: KnowledgeView },
 ];
 
 let activeTab: TabId = "explore";
@@ -37,6 +38,7 @@ function tabButton(t: Tab): Element {
         },
         children: [
             Button({
+                icon: t.icon,
                 text: t.label,
                 style: {
                     width: { kind: "grow" },

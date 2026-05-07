@@ -1,7 +1,8 @@
 /// <reference types="../../../../CTAutocomplete" />
 
 import { ClickInfo, Element, Rect } from "../../lib/layout";
-import { Button, Col, Container, Input, Row, Scroll, Text } from "../../lib/components";
+import { Button, Col, Container, Icon, Input, Row, Scroll, Text } from "../../lib/components";
+import { Icons } from "../../lib/icons.generated";
 import { closeAllPopovers, togglePopover } from "../../lib/popovers";
 import { openMenu, MenuAction } from "../../lib/menu";
 import { openFileBrowser } from "../../popovers/file-browser";
@@ -204,7 +205,7 @@ function rootRow(label: string, key: string, actions: MenuAction[]): Element {
             else collapsedRoots.add(key);
         }),
         children: [
-            Text({ text: collapsed ? "[+]" : "[-]" }),
+            Icon({ name: collapsed ? Icons.chevronRight : Icons.chevronDown }),
             Text({ text: label, style: { width: { kind: "grow" } } }),
         ],
     });
@@ -270,8 +271,10 @@ function resultRow(
                 style: { width: { kind: "grow" } },
             }),
             isImport &&
-                Text({
-                    text: expandedImports.has(expKey) ? "[-]" : "[+]",
+                Icon({
+                    name: expandedImports.has(expKey)
+                        ? Icons.chevronDown
+                        : Icons.chevronRight,
                 }),
         ],
     });
@@ -770,16 +773,19 @@ export function ExploreView(): Element {
                 style: { gap: 6, height: { kind: "px", value: 22 }, align: "stretch" },
                 children: [
                     Button({
+                        icon: Icons.search,
                         text: "Browse",
                         style: { width: { kind: "grow" }, height: { kind: "grow" } },
                         onClick: () => openBrowseModal(),
                     }),
                     Button({
+                        icon: Icons.file,
                         text: "Open file",
                         style: { width: { kind: "grow" }, height: { kind: "grow" } },
                         onClick: () => pickSources("file"),
                     }),
                     Button({
+                        icon: Icons.folderOpen,
                         text: "Open folder",
                         style: { width: { kind: "grow" }, height: { kind: "grow" } },
                         onClick: () => pickSources("folder"),
@@ -789,19 +795,33 @@ export function ExploreView(): Element {
             Row({
                 style: { gap: 6, height: { kind: "px", value: 22 }, align: "stretch" },
                 children: [
-                    Input({
-                        id: "left-search",
-                        value: () => searchQuery,
-                        onChange: (v) => {
-                            searchQuery = v;
+                    // Search prefix: icon + input grouped in a Row so the
+                    // glyph reads as part of the field, not a separate cell.
+                    Row({
+                        style: {
+                            gap: 4,
+                            width: { kind: "grow" },
+                            height: { kind: "grow" },
+                            align: "center",
+                            padding: { side: "left", value: 4 },
                         },
-                        placeholder: "Search...",
-                        style: { width: { kind: "grow" }, height: { kind: "grow" } },
+                        children: [
+                            Icon({ name: Icons.search }),
+                            Input({
+                                id: "left-search",
+                                value: () => searchQuery,
+                                onChange: (v) => {
+                                    searchQuery = v;
+                                },
+                                placeholder: "Search...",
+                                style: { width: { kind: "grow" }, height: { kind: "grow" } },
+                            }),
+                        ],
                     }),
                     Button({
-                        text: "Sort",
+                        icon: Icons.arrowUpDown,
                         style: {
-                            width: { kind: "px", value: 40 },
+                            width: { kind: "px", value: 26 },
                             height: { kind: "grow" },
                             background: () => (isSortDefault() ? undefined : ACTIVE_BG),
                             hoverBackground: () =>
@@ -818,9 +838,9 @@ export function ExploreView(): Element {
                         },
                     }),
                     Button({
-                        text: "Filter",
+                        icon: Icons.filter,
                         style: {
-                            width: { kind: "px", value: 40 },
+                            width: { kind: "px", value: 26 },
                             height: { kind: "grow" },
                             background: () => (isFilterDefault() ? undefined : ACTIVE_BG),
                             hoverBackground: () =>
