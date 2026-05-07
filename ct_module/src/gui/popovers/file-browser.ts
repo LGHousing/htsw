@@ -3,6 +3,9 @@
 import { Child, Element, Rect } from "../lib/layout";
 import { Button, Col, Container, Input, Row, Scroll, Text } from "../lib/components";
 import { closeAllPopovers, openPopover } from "../lib/popovers";
+import { openMenu } from "../lib/menu";
+import { openRenameFilePopover } from "./rename-file";
+import { showInExplorer } from "../../utils/osShell";
 import {
     ACCENT_INFO,
     ACCENT_SUCCESS,
@@ -31,6 +34,7 @@ import { setImportJsonPath } from "../state";
 import { scheduleReparse } from "../state/reparse";
 import { addRecent } from "../state/recents";
 import { normalizeHtswPath } from "../lib/pathDisplay";
+import { queueSourcePath } from "../left-panel/explore/source";
 
 type Entry = {
     name: string;
@@ -41,6 +45,11 @@ type Entry = {
 };
 
 let cwd: string = "./htsw/imports";
+// Mirror of the path-bar input. Decoupled from `cwd` so typing/pasting a
+// path doesn't navigate or normalize until the user commits (Enter / Go).
+// All non-typed cwd writes route through `setCwd`, which keeps the draft
+// in sync so the bar always shows the actual current directory.
+let pathDraft: string = cwd;
 let filter = "";
 // Selected import.json in the current directory listing. Only set when the
 // user single-clicks a *.json/import.json row — drives the Load button label
@@ -48,6 +57,13 @@ let filter = "";
 // previous folder can't be loaded.
 let selectedImportPath: string | null = null;
 let selectedImportName: string | null = null;
+
+function setCwd(next: string): void {
+    cwd = normalizeHtswPath(next);
+    pathDraft = cwd;
+    selectedImportPath = null;
+    selectedImportName = null;
+}
 
 function dirExists(path: string): boolean {
     try {
@@ -151,20 +167,85 @@ function selectImport(entry: Entry): void {
 
 function navigateInto(entry: Entry): void {
     if (entry.isDir) {
-        cwd = entry.fullPath;
-        selectedImportPath = null;
-        selectedImportName = null;
+        setCwd(entry.fullPath);
     } else if (isImportJsonEntry(entry)) {
         loadAsImport(entry.fullPath);
     }
 }
 
 function loadAsImport(path: string): void {
+    queueSourcePath(path);
     setImportJsonPath(path);
     addRecent(path);
     scheduleReparse();
     closeAllPopovers();
     ChatLib.chat(`&a[htsw] Loaded ${path}`);
+}
+
+/**
+ * Resolve whatever the user has typed/pasted into the path bar. Called on
+ * Enter (Input.onSubmit) and the Go button. Directory → navigate. Json
+ * file → load. Other file → jump to its parent so the user can see it
+ * highlighted in the listing. Non-existent → fall back to the nearest
+ * existing ancestor (same fallback the browser uses on initial open).
+ */
+function commitPathDraft(): void {
+    const raw = pathDraft.trim();
+    if (raw.length === 0) return;
+    const normalized = normalizeHtswPath(raw);
+    // @ts-ignore
+    const Paths = Java.type("java.nio.file.Paths");
+    // @ts-ignore
+    const Files = Java.type("java.nio.file.Files");
+    let p: any;
+    try {
+        p = Paths.get(String(normalized));
+    } catch (_e) {
+        ChatLib.chat(`&c[htsw] Invalid path: ${normalized}`);
+        return;
+    }
+    let exists = false;
+    try {
+        exists = Files.exists(p);
+    } catch (_e) {
+        exists = false;
+    }
+    if (exists) {
+        let isDir = false;
+        try {
+            isDir = Files.isDirectory(p);
+        } catch (_e) {
+            isDir = false;
+        }
+        if (isDir) {
+            setCwd(normalized);
+            return;
+        }
+        const fnObj = p.getFileName();
+        if (fnObj === null) {
+            setCwd(normalized);
+            return;
+        }
+        const fname = String(fnObj.toString()).toLowerCase();
+        const isJson =
+            fname.length >= 5 &&
+            fname.lastIndexOf(".json") === fname.length - 5;
+        if (isJson) {
+            loadAsImport(normalized);
+            return;
+        }
+        const parent = p.getParent();
+        if (parent !== null) {
+            setCwd(String(parent.toString()).split("\\").join("/"));
+            ChatLib.chat(`&7[htsw] ${fname} is not an import.json — jumped to its folder`);
+            return;
+        }
+        ChatLib.chat(`&c[htsw] Cannot open ${fname}`);
+        return;
+    }
+    const fallback = resolveExistingDir(normalized);
+    setCwd(fallback);
+    ChatLib.chat(`&c[htsw] Path not found, jumped to ${fallback}`);
 }
 
 function openInOS(): void {
@@ -256,6 +337,32 @@ function fileRow(entry: Entry): Element {
             hoverBackground: isSelected ? COLOR_ROW_SELECTED_HOVER : COLOR_ROW_HOVER,
         },
         onClick: (_rect, info) => {
+            // Right-click on any entry → context menu (Rename / Show in
+            // explorer). Doesn't gate on file kind so the user can rename
+            // directories and non-.json files too.
+            if (info.button === 1) {
+                openMenu(
+                    info.x,
+                    info.y,
+                    [
+                        {
+                            label: "Rename",
+                            onClick: () => {
+                                openRenameFilePopover(
+                                    { x: 0, y: 0, w: 0, h: 0 },
+                                    entry.fullPath
+                                );
+                            },
+                        },
+                        {
+                            label: "Show in explorer",
+                            onClick: () => showInExplorer(entry.fullPath),
+                        },
+                    ],
+                    { keepUnderlying: true }
+                );
+                return;
+            }
             // Dirs: ignore single-click (acts as preview only); double-click navigates.
             // import.json files: single-click selects (lights up the Load button); double
             // -click loads. Other files: ignored entirely. All double-click work happens
@@ -301,9 +408,7 @@ function header(): Element {
                 text: "Up",
                 style: { width: { kind: "px", value: 36 }, height: { kind: "grow" } },
                 onClick: () => {
-                    cwd = parentOf(cwd);
-                    selectedImportPath = null;
-                    selectedImportName = null;
+                    setCwd(parentOf(cwd));
                 },
             }),
             Button({
@@ -351,20 +456,24 @@ function pathBar(): Element {
         },
         children: [
             Text({
-                text: "directory",
+                text: "path",
                 color: COLOR_TEXT_DIM,
-                style: { width: { kind: "px", value: 60 } },
+                style: { width: { kind: "px", value: 40 } },
             }),
             Input({
                 id: "file-browser-path",
-                value: () => normalizeHtswPath(cwd),
+                value: () => pathDraft,
                 onChange: (v) => {
-                    cwd = normalizeHtswPath(v);
-                    selectedImportPath = null;
-                    selectedImportName = null;
+                    pathDraft = v;
                 },
-                placeholder: "filesystem path",
+                onSubmit: () => commitPathDraft(),
+                placeholder: "paste a path or import.json…",
                 style: { width: { kind: "grow" } },
+            }),
+            Button({
+                text: "Go",
+                style: { width: { kind: "px", value: 30 }, height: { kind: "grow" } },
+                onClick: () => commitPathDraft(),
             }),
         ],
     });
@@ -475,9 +584,9 @@ const ZERO: Rect = { x: 0, y: 0, w: 0, h: 0 };
 
 export function openFileBrowser(initialDir?: string): void {
     if (initialDir !== undefined && initialDir.length > 0) {
-        cwd = resolveExistingDir(initialDir);
+        setCwd(resolveExistingDir(initialDir));
     } else {
-        cwd = resolveExistingDir(cwd);
+        setCwd(resolveExistingDir(cwd));
     }
     openPopover({
         anchor: ZERO,

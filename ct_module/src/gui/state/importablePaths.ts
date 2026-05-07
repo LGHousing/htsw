@@ -30,11 +30,32 @@ import { getImportJsonPath, getParsedResult } from "./index";
  *    JSON the span resolves back to the declaring import.json.
  */
 
-export type SubListKind =
-    | "onEnterActions"
-    | "onExitActions"
-    | "leftClickActions"
-    | "rightClickActions";
+// Single source of truth for sub-list kinds. The `SubListKind` union
+// derives from this so a new kind only gets typed in one place.
+export const SUB_LIST_KINDS = [
+    "onEnterActions",
+    "onExitActions",
+    "leftClickActions",
+    "rightClickActions",
+] as const;
+export type SubListKind = (typeof SUB_LIST_KINDS)[number];
+
+/**
+ * Look a span-bearing object up in the parse's source map. Both the ITEM
+ * `nbt` resolution and the sub-list resolution use this exact pattern;
+ * extracted so neither has to inline the try/catch + double dereference.
+ */
+function pathFromSpan(
+    parsed: ParseResult<Importable[]>,
+    key: object
+): string | undefined {
+    try {
+        const span = parsed.gcx.spans.get(key);
+        return parsed.gcx.sourceMap.getFileByPos(span.start).path;
+    } catch (_e) {
+        return undefined;
+    }
+}
 
 /**
  * Resolve `imp`'s source file path. Pass `parse` when looking up
@@ -49,12 +70,10 @@ export function importableSourcePath(
     const parsed = parse ?? getParsedResult();
     if (parsed === null || parsed === undefined) return undefined;
     if (imp.type === "ITEM" && imp.nbt !== undefined) {
-        try {
-            const span = parsed.gcx.spans.get(imp.nbt);
-            return parsed.gcx.sourceMap.getFileByPos(span.start).path;
-        } catch (_e) {
-            // Fall through to the declaring file.
-        }
+        const fromNbt = pathFromSpan(parsed, imp.nbt);
+        if (fromNbt !== undefined) return fromNbt;
+        // Fall through to the declaring file when the nbt span doesn't
+        // resolve (e.g. inline NBT with no span recorded).
     }
     return parsed.gcx.sourceFiles.get(imp);
 }
@@ -94,20 +113,44 @@ export function hasSubList(imp: Importable, kind: SubListKind): boolean {
 
 export function importableSubListPath(
     imp: Importable,
-    kind: SubListKind
+    kind: SubListKind,
+    parse?: ParseResult<Importable[]> | null
 ): string | undefined {
-    const parsed = getParsedResult();
-    if (parsed === null) return undefined;
+    const parsed = parse ?? getParsedResult();
+    if (parsed === null || parsed === undefined) return undefined;
     const list = subListOf(imp, kind);
     if (list === undefined || list.length === 0) return undefined;
     // The first action's span resolves through the SourceMap to whatever
     // file the actions live in: an htsl when the list was materialized
     // from `actionsPath: "..."`, or the declaring import.json for inline
     // JSON action lists.
-    try {
-        const span = parsed.gcx.spans.get(list[0]);
-        return parsed.gcx.sourceMap.getFileByPos(span.start).path;
-    } catch (_e) {
-        return undefined;
+    return pathFromSpan(parsed, list[0]);
+}
+
+/**
+ * Every file path the given parse references — the import.json itself,
+ * each importable's primary source file (htsl/snbt), and each sub-list's
+ * source file. Deduplicated, returned in stable insertion order.
+ */
+export function allReferencedPaths(
+    importJsonPath: string,
+    parse: ParseResult<Importable[]> | null
+): string[] {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    const push = (p: string | undefined): void => {
+        if (p === undefined) return;
+        if (seen.has(p)) return;
+        seen.add(p);
+        out.push(p);
+    };
+    push(importJsonPath);
+    if (parse === null) return out;
+    for (const imp of parse.value) {
+        push(importableSourcePath(imp, parse));
+        for (let i = 0; i < SUB_LIST_KINDS.length; i++) {
+            push(importableSubListPath(imp, SUB_LIST_KINDS[i], parse));
+        }
     }
+    return out;
 }

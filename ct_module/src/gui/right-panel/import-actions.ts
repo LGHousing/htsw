@@ -13,8 +13,12 @@ import {
     setKnowledgeRows,
     updateImportRunFromProgress,
 } from "../state";
-import { clearQueue, getQueue } from "../state/queue";
-import { getParseAt, parseImportJsonAt } from "../state/parses";
+import {
+    clearQueue,
+    getQueue,
+    type QueueItem,
+} from "../state/queue";
+import { forEachCachedParse, getParseAt, parseImportJsonAt } from "../state/parses";
 import { buildKnowledgeStatusRows } from "../../knowledge/status";
 import {
     importSelectedImportables,
@@ -33,6 +37,7 @@ import { TaskManager } from "../../tasks/manager";
 import type { Importable } from "htsw/types";
 import type { ParseResult } from "htsw";
 import { closeAllPopovers } from "../lib/popovers";
+import { encodeFilesystemComponent } from "../../utils/filesystem";
 import {
     clearDiff,
     addDeleteOp,
@@ -126,8 +131,8 @@ type ImportBatch = {
  * Returns null when nothing in the queue could be resolved — the caller
  * uses that to short-circuit with a friendly chat message.
  */
-function buildBatches(): ImportBatch[] | null {
-    const queue = getQueue();
+function buildBatches(explicit?: readonly QueueItem[]): ImportBatch[] | null {
+    const queue = explicit ?? getQueue();
     if (queue.length === 0) return null;
     const groups = new Map<string, { parsed: ParseResult<Importable[]>; ids: Set<string>; addAll: boolean }>();
     for (const item of queue) {
@@ -172,10 +177,39 @@ function totalImportableCount(batches: ImportBatch[]): number {
     return n;
 }
 
-export function startImport(): void {
-    const batches = buildBatches();
+/**
+ * Build queue items for every importable whose `trustPlanKey` is in
+ * `checked`. Walks every cached parse so importables across multiple
+ * loaded import.jsons all get picked up.
+ */
+export function queueItemsForCheckedKeys(checked: Set<string>): QueueItem[] {
+    if (checked.size === 0) return [];
+    const out: QueueItem[] = [];
+    forEachCachedParse((entry) => {
+        if (entry.parsed === null) return;
+        for (const imp of entry.parsed.value) {
+            const key = trustPlanKey(imp.type, importableIdentity(imp));
+            if (!checked.has(key)) continue;
+            out.push({
+                kind: "importable",
+                sourcePath: entry.canonicalPath,
+                identity: importableIdentity(imp),
+                type: imp.type,
+                label: imp.type === "EVENT" ? imp.event : imp.name,
+            });
+        }
+    });
+    return out;
+}
+
+export function startImport(explicit?: readonly QueueItem[]): void {
+    const batches = buildBatches(explicit);
     if (batches === null) {
-        ChatLib.chat("&c[htsw] Queue is empty — right-click something and Add to queue.");
+        const msg =
+            explicit !== undefined
+                ? "Nothing matched the selection — try checking importables in the Importables tab first."
+                : "Queue is empty — right-click something and Add to queue.";
+        ChatLib.chat(`&c[htsw] ${msg}`);
         return;
     }
     const trustMode = isCurrentHouseTrusted();
@@ -260,9 +294,10 @@ export function startImport(): void {
             ctx.displayMessage(
                 `&7[import] done · imported ${totalImported}, skipped ${totalSkipped}, failed ${totalFailed}, ${elapsed}s`
             );
-            // Clear the queue on successful run so the user doesn't need
-            // to manually empty it before queuing the next batch.
-            clearQueue();
+            // Only clear the queue when this run came from the queue. An
+            // ad-hoc "Import selected" run leaves the queue alone since it
+            // was never the source of the work.
+            if (explicit === undefined) clearQueue();
         } finally {
             setImportProgress(null);
             setCurrentImportingPath(null);
@@ -277,7 +312,7 @@ export function startImport(): void {
 // ── Capture flow (unchanged from prior version) ──────────────────────────
 
 function importJsonDir(path: string): string {
-    const norm = path.replace(/\\/g, "/");
+    const norm = path.split("\\").join("/");
     const slash = norm.lastIndexOf("/");
     if (slash <= 0) return ".";
     return norm.substring(0, slash);
@@ -298,12 +333,13 @@ export function startCaptureExport(type: CaptureType): void {
         }
         const dir = importJsonDir(importJsonPath);
         if (result.type === "FUNCTION") {
+            const filename = `${encodeFilesystemComponent(result.name, { escapeDots: false })}.htsl`;
             await exportImportable(ctx, {
                 type: "FUNCTION",
                 name: result.name,
                 importJsonPath,
-                htslPath: `${dir}/${result.name}.htsl`,
-                htslReference: `${result.name}.htsl`,
+                htslPath: `${dir}/${filename}`,
+                htslReference: filename,
             });
         } else {
             await exportImportable(ctx, {

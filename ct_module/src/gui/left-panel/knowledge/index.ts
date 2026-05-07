@@ -5,10 +5,13 @@ import { Button, Col, Container, Icon, Row, Scroll, Text } from "../../lib/compo
 import { Icons } from "../../lib/icons.generated";
 import {
     getHousingUuid,
+    getKnowledgeRows,
     isHouseTrusted,
     setHousingUuid,
     setHouseTrust,
 } from "../../state";
+import { STATUS_COLOR, STATUS_LABEL } from "../../knowledge-status";
+import { GLYPH_DOT } from "../../lib/theme";
 import { getCurrentHousingUuid } from "../../../knowledge/housingId";
 import { getAlias, listAliases } from "../../../knowledge/aliases";
 import { openAliasPopover } from "../../popovers/alias";
@@ -159,12 +162,14 @@ function houseRow(uuid: string): Element {
                     }),
                 ],
             }),
-            // Per-house Alias button — pencil = "edit this name".
+            // Per-house Alias button — pencil = "edit this name". 44px
+            // wasn't wide enough for icon + label + padding so the hover
+            // highlight cut off mid-text; bumped to 56.
             Button({
                 icon: Icons.pencil,
                 text: "Alias",
                 style: {
-                    width: { kind: "px", value: 44 },
+                    width: { kind: "px", value: 56 },
                     height: { kind: "grow" },
                     background: COLOR_BUTTON,
                     hoverBackground: COLOR_BUTTON_HOVER,
@@ -172,6 +177,75 @@ function houseRow(uuid: string): Element {
                 onClick: (rect: Rect) => openAliasPopover(rect, uuid),
             }),
         ],
+    });
+}
+
+function knowledgeRow(row: ReturnType<typeof getKnowledgeRows>[number]): Element {
+    const label = row.importable.type === "EVENT" ? row.importable.event : row.importable.name;
+    return Container({
+        style: {
+            direction: "row",
+            align: "center",
+            padding: { side: "x", value: 6 },
+            gap: 6,
+            height: { kind: "px", value: SIZE_ROW_H },
+            background: COLOR_ROW,
+            hoverBackground: COLOR_ROW_HOVER,
+        },
+        children: [
+            Text({
+                text: GLYPH_DOT,
+                color: STATUS_COLOR[row.state],
+                tooltip: STATUS_LABEL[row.state],
+                tooltipColor: STATUS_COLOR[row.state],
+                style: { width: { kind: "px", value: 8 } },
+            }),
+            Text({
+                text: label,
+                color: COLOR_TEXT,
+                style: { width: { kind: "grow" } },
+            }),
+            Text({
+                text: row.importable.type,
+                color: COLOR_TEXT_DIM,
+            }),
+        ],
+    });
+}
+
+function knowledgeRowsSection(): Element {
+    return Col({
+        style: { gap: 4, height: { kind: "grow" } },
+        children: () => {
+            const uuid = getHousingUuid();
+            const rows = getKnowledgeRows();
+            const out: Element[] = [
+                Text({
+                    text: () => {
+                        if (uuid === null) return "Knowledge: (no active house)";
+                        return `Knowledge for active house · ${rows.length} importable${rows.length === 1 ? "" : "s"}`;
+                    },
+                    color: COLOR_TEXT_DIM,
+                }),
+            ];
+            if (rows.length === 0) {
+                out.push(
+                    Text({
+                        text: "No importables loaded — open an import.json on the Importables tab.",
+                        color: COLOR_TEXT_FAINT,
+                    })
+                );
+                return out;
+            }
+            out.push(
+                Scroll({
+                    id: "knowledge-rows-scroll",
+                    style: { height: { kind: "grow" }, gap: 1 },
+                    children: rows.map(knowledgeRow),
+                })
+            );
+            return out;
+        },
     });
 }
 
@@ -229,11 +303,15 @@ export function KnowledgeView(): Element {
                         }),
                     ],
                 }),
-                Scroll({
-                    id: "knowledge-houses-scroll",
-                    style: { height: { kind: "grow" }, gap: 2 },
+                // Houses get a fixed slot (one row each, capped). The
+                // knowledge-rows section underneath gets the remaining grow
+                // space — that's the per-importable list the user wants
+                // visibility on.
+                Col({
+                    style: { gap: 2, height: { kind: "px", value: Math.min(houses.length, 4) * (SIZE_ROW_H + 4) + 4 } },
                     children: houses.map(houseRow),
                 }),
+                knowledgeRowsSection(),
             ];
         },
     });

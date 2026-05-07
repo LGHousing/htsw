@@ -2,15 +2,18 @@ const confirmed: string[] = [];
 let preview: string | null = null;
 let active: string | null = null;
 
-/** Sentinel "path" for the synthetic Progress tab the right panel injects
- * while an import is running. Not a real file — picked to never collide
- * with a filesystem path on either Windows or POSIX. Kept here (next to
- * `setActiveTab`) so it can be used from both the right panel and the
- * import-progress state without creating a circular import. */
-export const PROGRESS_TAB_PATH = "<htsw:progress>";
+/** Top-level right-panel tab selection. Lives here (next to `setActiveTab`)
+ * so it can be read by the right panel and written by import-progress
+ * state without creating a circular import. */
+export type RightPanelTabId = "view" | "import";
+let activeRightTab: RightPanelTabId = "view";
 
-export function isProgressTab(path: string | null): boolean {
-    return path === PROGRESS_TAB_PATH;
+export function getActiveRightTab(): RightPanelTabId {
+    return activeRightTab;
+}
+
+export function setActiveRightTab(id: RightPanelTabId): void {
+    activeRightTab = id;
 }
 
 export type Tab = { path: string; confirmed: boolean };

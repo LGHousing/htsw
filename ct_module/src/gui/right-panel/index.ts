@@ -7,20 +7,21 @@ import {
     closeTab,
     confirmSelect,
     getActivePath,
+    getActiveRightTab,
     getTabs,
     moveTab,
     moveTabToEnd,
     moveTabToStart,
-    PROGRESS_TAB_PATH,
+    setActiveRightTab,
     setActiveTab,
     Tab,
     tabIndex,
     tabCount,
+    type RightPanelTabId,
 } from "../state/selection";
 import { openMenu, MenuAction } from "../lib/menu";
-import { togglePopover } from "../lib/popovers";
+import { closeAllPopovers, togglePopover } from "../lib/popovers";
 import {
-    ACCENT_INFO,
     ACCENT_SUCCESS,
     COLOR_BUTTON,
     COLOR_BUTTON_HOVER,
@@ -55,14 +56,23 @@ import {
     type DiffLineInfo,
 } from "../state/diff";
 import {
+    getCheckedImportableCount,
     getCurrentImportingPath,
+    getHousingUuid,
     getImportEtaSeconds,
+    getImportStartedAt,
+    getImportJsonPath,
     getImportProgress,
     getImportProgressFraction,
     getParsedResult,
+    isCurrentHouseTrusted,
+    setHouseTrust,
 } from "../state";
+import { getAlias } from "../../knowledge/aliases";
+import { openAliasPopover } from "../popovers/alias";
 import {
     clearQueue,
+    addToQueue,
     getQueue,
     getQueueLength,
     queueItemKey,
@@ -70,13 +80,16 @@ import {
     type QueueItem,
 } from "../state/queue";
 import { TaskManager } from "../../tasks/manager";
-import { normalizeHtswPath, tailSegments } from "../lib/pathDisplay";
+import { normalizeHtswPath } from "../lib/pathDisplay";
+import { openFileBrowser } from "../popovers/file-browser";
 import { composeFileMenu } from "../state/fileMenu";
 import {
     CAPTURE_TYPES,
+    queueItemsForCheckedKeys,
     startCaptureExport,
     startImport,
 } from "./import-actions";
+import { clearImportableChecks, getCheckedImportableKeys } from "../state";
 
 
 const TAB_BG = 0xff2c323b | 0;
@@ -154,6 +167,20 @@ function stem(p: string): string {
     return dot <= 0 ? base : base.substring(0, dot);
 }
 
+function dirOfPath(p: string): string {
+    const norm = p.split("\\").join("/");
+    const slash = norm.lastIndexOf("/");
+    if (slash <= 0) return ".";
+    return norm.substring(0, slash);
+}
+
+function shortPath(p: string): string {
+    const norm = normalizeHtswPath(p).split("\\").join("/");
+    const parts = norm.split("/");
+    if (parts.length <= 4) return norm;
+    return `.../${parts.slice(parts.length - 4).join("/")}`;
+}
+
 function getMtimeMs(path: string): number {
     try {
         // @ts-ignore
@@ -206,41 +233,6 @@ function tabReorderActions(path: string): MenuAction[] {
     void idx;
     void total;
     return composeFileMenu(specific, path);
-}
-
-function progressTabButton(): Element {
-    const isActive = getActivePath() === PROGRESS_TAB_PATH;
-    const labelText = `§l${Math.floor(getImportProgressFraction() * 100)}% Progress`;
-    const tabBg = isActive ? TAB_BG_ACTIVE : TAB_BG;
-    const tabHoverBg = isActive ? TAB_BG_ACTIVE_HOVER : TAB_BG_HOVER;
-    const labelW = Renderer.getStringWidth(labelText);
-    const tabW = labelW + TAB_LABEL_PAD_X * 2 + TAB_W_BUFFER;
-    return Container({
-        style: {
-            direction: "row",
-            align: "center",
-            width: { kind: "px", value: tabW },
-            height: { kind: "grow" },
-            background: tabBg,
-            hoverBackground: tabHoverBg,
-        },
-        onClick: (_rect, info) => {
-            if (info.button !== 0) return;
-            setActiveTab(PROGRESS_TAB_PATH);
-        },
-        children: [
-            Container({
-                style: {
-                    direction: "row",
-                    width: { kind: "grow" },
-                    height: { kind: "grow" },
-                    align: "center",
-                    padding: { side: "x", value: TAB_LABEL_PAD_X },
-                },
-                children: [Text({ text: labelText, color: ACCENT_INFO })],
-            }),
-        ],
-    });
 }
 
 function tabButton(tab: Tab): Element {
@@ -611,6 +603,17 @@ function formatEtaSeconds(secs: number): string {
     return mm === 0 ? `~${h}h` : `~${h}h${mm}m`;
 }
 
+function formatElapsedSeconds(secs: number): string {
+    const total = Math.max(0, Math.floor(secs));
+    if (total < 60) return `${total}s`;
+    const m = Math.floor(total / 60);
+    const s = total % 60;
+    if (m < 60) return s === 0 ? `${m}m` : `${m}m${s}s`;
+    const h = Math.floor(m / 60);
+    const mm = m % 60;
+    return mm === 0 ? `${h}h` : `${h}h${mm}m`;
+}
+
 function progressEtaText(): string {
     const p = getImportProgress();
     const secs = getImportEtaSeconds();
@@ -619,6 +622,12 @@ function progressEtaText(): string {
     if (p !== null && p.etaConfidence === "rough") return `${text} rough`;
     if (p !== null && p.etaConfidence === "informed") return `${text} informed`;
     return text;
+}
+
+function progressElapsedText(): string {
+    const startedAt = getImportStartedAt();
+    if (startedAt === null) return "";
+    return `elapsed ${formatElapsedSeconds((Date.now() - startedAt) / 1000)}`;
 }
 
 /** What's happening *right now* — pulled from the diff entry's per-action
@@ -638,121 +647,6 @@ function progressCurrentLabel(): string {
     return "working";
 }
 
-function progressView(): Child[] {
-    const p = getImportProgress();
-    if (p === null) {
-        return [
-            Text({
-                text: "No import in progress.",
-                color: COLOR_TEXT_DIM,
-                style: { padding: 6 },
-            }),
-        ];
-    }
-    const out: Child[] = [];
-    out.push(
-        Container({
-            style: {
-                width: { kind: "grow" },
-                padding: { side: "x", value: 6 },
-                height: { kind: "px", value: 12 },
-                align: "center",
-            },
-            children: [
-                Text({ text: "Currently", color: COLOR_TEXT_FAINT }),
-            ],
-        })
-    );
-    out.push(
-        Container({
-            style: {
-                width: { kind: "grow" },
-                padding: { side: "x", value: 6 },
-                height: { kind: "px", value: 12 },
-                align: "center",
-            },
-            children: [
-                Text({
-                    text: () => `§l${progressCurrentLabel()}`,
-                    color: COLOR_TEXT,
-                }),
-            ],
-        })
-    );
-    out.push(
-        Container({
-            style: {
-                width: { kind: "grow" },
-                padding: { side: "x", value: 6 },
-                height: { kind: "px", value: 12 },
-                align: "center",
-            },
-            children: [
-                Text({
-                    text: () => {
-                        const prog = getImportProgress();
-                        if (prog === null) return "";
-                        const parts: string[] = [];
-                        parts.push(`${prog.phase} · ${prog.phaseLabel}`);
-                        if (prog.unitTotal > 0) parts.push(`${prog.unitCompleted}/${prog.unitTotal}`);
-                        parts.push(progressEtaText());
-                        return parts.filter((s) => s.length > 0).join("  ·  ");
-                    },
-                    color: COLOR_TEXT_DIM,
-                }),
-            ],
-        })
-    );
-    out.push(
-        Container({
-            style: {
-                width: { kind: "grow" },
-                padding: { side: "x", value: 6 },
-                height: { kind: "px", value: 12 },
-                align: "center",
-            },
-            children: [
-                Text({
-                    text: () => {
-                        const path = getCurrentImportingPath();
-                        return path === null ? "" : `→ ${normalizeHtswPath(path)}`;
-                    },
-                    color: COLOR_TEXT_FAINT,
-                }),
-            ],
-        })
-    );
-    out.push(
-        Container({
-            style: {
-                width: { kind: "grow" },
-                padding: { side: "x", value: 6 },
-                height: { kind: "px", value: 12 },
-                align: "center",
-            },
-            children: [
-                Text({
-                    text: () => `${p.completed + 1}/${p.total} importable · ${p.currentIdentity}`,
-                    color: COLOR_TEXT_FAINT,
-                }),
-            ],
-        })
-    );
-    // Spacer between header and diff context.
-    out.push(
-        Container({
-            style: { width: { kind: "grow" }, height: { kind: "px", value: 4 } },
-            children: [],
-        })
-    );
-    const path = getCurrentImportingPath();
-    if (path !== null && path.toLowerCase().endsWith(".htsl")) {
-        const lines = htslDiffLines(path, { focusCurrent: true, before: 3, after: 6 });
-        for (const ln of lines) out.push(ln);
-    }
-    return out;
-}
-
 function sourceBody(): Element {
     return Scroll({
         id: "right-source-scroll",
@@ -768,7 +662,6 @@ function sourceBody(): Element {
                     }),
                 ];
             }
-            if (active === PROGRESS_TAB_PATH) return progressView();
             const norm = active.replace(/\\/g, "/").toLowerCase();
             const out: Child[] =
                 endsWith(norm, ".htsl") ? htslDiffLines(active) : plainTextLines(active);
@@ -827,8 +720,7 @@ function pathLabel(): Element {
     return Text({
         text: () => {
             const p = getActivePath();
-            if (p === null || p === PROGRESS_TAB_PATH) return "";
-            return displayPath(p);
+            return p === null ? "" : displayPath(p);
         },
         color: 0xff888888 | 0,
         style: { width: { kind: "grow" } },
@@ -837,11 +729,8 @@ function pathLabel(): Element {
 
 // ── Top-level View/Import panel tabs ────────────────────────────────────
 
-type RightPanelTabId = "view" | "import";
-let activeRightTab: RightPanelTabId = "view";
-
 function panelTabButton(id: RightPanelTabId, label: string, icon: IconName): Element {
-    const isActive = activeRightTab === id;
+    const isActive = getActiveRightTab() === id;
     return Container({
         style: {
             direction: "col",
@@ -859,7 +748,7 @@ function panelTabButton(id: RightPanelTabId, label: string, icon: IconName): Ele
                     hoverBackground: isActive ? COLOR_TAB_ACTIVE_HOVER : COLOR_TAB_HOVER,
                 },
                 onClick: () => {
-                    activeRightTab = id;
+                    setActiveRightTab(id);
                 },
             }),
             Container({
@@ -896,12 +785,7 @@ function viewTab(): Element {
         children: [
             Row({
                 style: { gap: 2, height: { kind: "px", value: TAB_H } },
-                children: () => {
-                    const out: Element[] = [];
-                    if (getImportProgress() !== null) out.push(progressTabButton());
-                    for (const tab of getTabs()) out.push(tabButton(tab));
-                    return out;
-                },
+                children: () => getTabs().map(tabButton),
             }),
             pathLabel(),
             sourceBody(),
@@ -1045,30 +929,68 @@ function liveImporterPanel(): Element {
             }
             return [
                 Col({
-                    style: { gap: 4, width: { kind: "grow" } },
+                    style: { gap: 3, width: { kind: "grow" } },
                     children: [
+                        // "Currently" header + bold action label — the
+                        // primary read for the user.
+                        Text({ text: "Currently", color: COLOR_TEXT_FAINT }),
+                        Text({
+                            text: () => `§l${progressCurrentLabel()}`,
+                            color: COLOR_TEXT,
+                        }),
+                        // Phase + step counter + ETA on one line.
+                        Text({
+                            text: () => {
+                                const prog = getImportProgress();
+                                if (prog === null) return "";
+                                const parts: string[] = [];
+                                parts.push(`${prog.phase} · ${prog.phaseLabel}`);
+                                if (prog.unitTotal > 0) {
+                                    parts.push(`${prog.unitCompleted}/${prog.unitTotal}`);
+                                }
+                                parts.push(progressEtaText());
+                                return parts.filter((s) => s.length > 0).join("  ·  ");
+                            },
+                            color: COLOR_TEXT_DIM,
+                        }),
+                        // Source file path (full htsw-relative form).
+                        Text({
+                            text: () => {
+                                const path = getCurrentImportingPath();
+                                return path === null ? "" : `→ ${normalizeHtswPath(path)}`;
+                            },
+                            color: COLOR_TEXT_FAINT,
+                        }),
+                        // Importable counter — which of N is currently active.
+                        Text({
+                            text: () =>
+                                `${p.completed + 1}/${p.total} importable · ${p.currentIdentity}`,
+                            color: COLOR_TEXT_FAINT,
+                        }),
+                        // Visual rule before the progress bar.
+                        Container({
+                            style: { width: { kind: "grow" }, height: { kind: "px", value: 2 } },
+                            children: [],
+                        }),
                         progressBar(),
                         Row({
                             style: { gap: 6, height: { kind: "px", value: 12 }, align: "center" },
                             children: [
                                 Text({
-                                    text: () => `${Math.floor(getImportProgressFraction() * 100)}%`,
+                                    text: () =>
+                                        `${Math.floor(getImportProgressFraction() * 100)}%`,
                                     color: COLOR_TEXT,
-                                    style: { width: { kind: "px", value: 28 } },
+                                    style: { width: { kind: "grow" } },
                                 }),
                                 Text({
-                                    text: () => {
-                                        const cur = getCurrentImportingPath();
-                                        return cur === null ? "(starting…)" : tailSegments(cur, 3);
-                                    },
-                                    color: COLOR_TEXT_DIM,
-                                    style: { width: { kind: "grow" } },
+                                    text: () => progressElapsedText(),
+                                    color: COLOR_TEXT_FAINT,
                                 }),
                                 Button({
                                     icon: Icons.x,
                                     text: "Cancel",
                                     style: {
-                                        width: { kind: "px", value: 56 },
+                                        width: { kind: "auto" },
                                         height: { kind: "grow" },
                                         background: COLOR_BUTTON_DANGER,
                                         hoverBackground: COLOR_BUTTON_DANGER_HOVER,
@@ -1081,14 +1003,6 @@ function liveImporterPanel(): Element {
                                 }),
                             ],
                         }),
-                        Text({
-                            text: () => {
-                                const prog = getImportProgress();
-                                if (prog === null) return "";
-                                return `${prog.completed + 1}/${prog.total} · ${prog.phase} · ${prog.phaseLabel}`;
-                            },
-                            color: COLOR_TEXT_FAINT,
-                        }),
                     ],
                 }),
             ];
@@ -1099,27 +1013,52 @@ function liveImporterPanel(): Element {
 function captureMenuPopoverContent(): Element {
     return Col({
         style: { gap: 2, padding: 4 },
-        children: CAPTURE_TYPES.map((t) =>
-            Container({
-                style: {
-                    direction: "row",
-                    align: "center",
-                    padding: { side: "x", value: 8 },
-                    gap: 6,
-                    height: { kind: "px", value: SIZE_ROW_H },
-                    background: COLOR_ROW,
-                    hoverBackground: COLOR_ROW_HOVER,
-                },
-                onClick: () => startCaptureExport(t),
+        children: [
+            Row({
+                style: { gap: 4, height: { kind: "px", value: SIZE_ROW_H } },
                 children: [
                     Text({
-                        text: `Capture ${t}`,
-                        color: COLOR_TEXT,
+                        text: () => shortPath(getImportJsonPath()),
+                        color: COLOR_TEXT_DIM,
                         style: { width: { kind: "grow" } },
                     }),
+                    Button({
+                        text: "Change",
+                        style: {
+                            width: { kind: "px", value: 56 },
+                            height: { kind: "grow" },
+                            background: COLOR_BUTTON,
+                            hoverBackground: COLOR_BUTTON_HOVER,
+                        },
+                        onClick: () => {
+                            closeAllPopovers();
+                            openFileBrowser(dirOfPath(getImportJsonPath()) || ".");
+                        },
+                    }),
                 ],
-            })
-        ),
+            }),
+            ...CAPTURE_TYPES.map((t) =>
+                Container({
+                    style: {
+                        direction: "row",
+                        align: "center",
+                        padding: { side: "x", value: 8 },
+                        gap: 6,
+                        height: { kind: "px", value: SIZE_ROW_H },
+                        background: COLOR_ROW,
+                        hoverBackground: COLOR_ROW_HOVER,
+                    },
+                    onClick: () => startCaptureExport(t),
+                    children: [
+                        Text({
+                            text: `Capture ${t}`,
+                            color: COLOR_TEXT,
+                            style: { width: { kind: "grow" } },
+                        }),
+                    ],
+                })
+            ),
+        ],
     });
 }
 
@@ -1146,8 +1085,8 @@ function importActionRow(): Element {
                         key: "right-capture-type-menu",
                         anchor: rect,
                         content: captureMenuPopoverContent(),
-                        width: 140,
-                        height: CAPTURE_TYPES.length * 20 + 8,
+                        width: 260,
+                        height: (CAPTURE_TYPES.length + 1) * 20 + 8,
                     }),
             }),
             Button({
@@ -1164,6 +1103,162 @@ function importActionRow(): Element {
                 },
                 onClick: () => startImport(),
             }),
+            // Caret: alternate-source actions (run only the multi-selected
+            // importables, clear the selection). Sized to match the
+            // chevron-only buttons elsewhere in this row.
+            Button({
+                icon: Icons.chevronDown,
+                style: {
+                    width: { kind: "px", value: 22 },
+                    height: { kind: "grow" },
+                    background: COLOR_BUTTON_PRIMARY,
+                    hoverBackground: COLOR_BUTTON_PRIMARY_HOVER,
+                },
+                onClick: (rect) => {
+                    togglePopover({
+                        key: "right-import-caret-menu",
+                        anchor: rect,
+                        content: importCaretPopoverContent(),
+                        width: 200,
+                        height: 56,
+                    });
+                },
+            }),
+        ],
+    });
+}
+
+function importCaretPopoverContent(): Element {
+    return Col({
+        style: { padding: 4, gap: 2, height: { kind: "grow" } },
+        children: [
+            Button({
+                text: () => `Add selected to queue (${getCheckedImportableCount()})`,
+                style: {
+                    width: { kind: "grow" },
+                    height: { kind: "px", value: 20 },
+                    background: COLOR_BUTTON,
+                    hoverBackground: COLOR_BUTTON_HOVER,
+                },
+                onClick: () => {
+                    const items = queueItemsForCheckedKeys(getCheckedImportableKeys());
+                    let added = 0;
+                    for (let i = 0; i < items.length; i++) {
+                        if (addToQueue(items[i])) added++;
+                    }
+                    closeAllPopovers();
+                    ChatLib.chat(`&a[htsw] Added ${added} to queue.`);
+                },
+            }),
+            Button({
+                text: "Clear selection",
+                style: {
+                    width: { kind: "grow" },
+                    height: { kind: "px", value: 20 },
+                    background: COLOR_BUTTON,
+                    hoverBackground: COLOR_BUTTON_HOVER,
+                },
+                onClick: () => {
+                    clearImportableChecks();
+                    closeAllPopovers();
+                },
+            }),
+        ],
+    });
+}
+
+// Trust toggle colours mirror the Knowledge tab so the two surfaces read
+// the same (green = on, blue = off). Kept local — too small to extract.
+const TRUST_ON_BG = 0xff2d4d2d | 0;
+const TRUST_ON_HOVER = 0xff3a5d3a | 0;
+const TRUST_OFF_BG = 0xff2d333d | 0;
+const TRUST_OFF_HOVER = 0xff3a4350 | 0;
+
+function shortUuid(uuid: string): string {
+    if (uuid.length <= 18) return uuid;
+    return `${uuid.substring(0, 8)}…${uuid.substring(uuid.length - 6)}`;
+}
+
+function houseHeader(): Element {
+    return Container({
+        style: {
+            direction: "row",
+            align: "center",
+            padding: { side: "x", value: 6 },
+            gap: 6,
+            height: { kind: "px", value: SIZE_ROW_H + 4 },
+            background: COLOR_ROW,
+        },
+        children: [
+            Text({
+                text: "House:",
+                color: COLOR_TEXT_DIM,
+            }),
+            Text({
+                text: () => {
+                    const uuid = getHousingUuid();
+                    if (uuid === null) return "(unknown — open Knowledge tab to detect)";
+                    const alias = getAlias(uuid);
+                    return alias === null ? shortUuid(uuid) : alias;
+                },
+                color: COLOR_TEXT,
+                style: { width: { kind: "grow" } },
+            }),
+            // Faded UUID tail when an alias is set, so the user can still
+            // tell two aliases apart at a glance.
+            Text({
+                text: () => {
+                    const uuid = getHousingUuid();
+                    if (uuid === null) return "";
+                    return getAlias(uuid) === null ? "" : shortUuid(uuid);
+                },
+                color: COLOR_TEXT_FAINT,
+            }),
+            Container({
+                style: {
+                    direction: "row",
+                    align: "center",
+                    padding: { side: "x", value: 6 },
+                    gap: 4,
+                    width: { kind: "px", value: 70 },
+                    height: { kind: "grow" },
+                    background: () => (isCurrentHouseTrusted() ? TRUST_ON_BG : TRUST_OFF_BG),
+                    hoverBackground: () =>
+                        isCurrentHouseTrusted() ? TRUST_ON_HOVER : TRUST_OFF_HOVER,
+                },
+                onClick: (_rect, info) => {
+                    if (info.button !== 0) return;
+                    const uuid = getHousingUuid();
+                    if (uuid === null) return;
+                    setHouseTrust(uuid, !isCurrentHouseTrusted());
+                },
+                children: [
+                    Icon({
+                        name: () =>
+                            isCurrentHouseTrusted() ? Icons.shieldCheck : Icons.shield,
+                    }),
+                    Text({
+                        text: "Trust",
+                        color: COLOR_TEXT_DIM,
+                        style: { width: { kind: "grow" } },
+                    }),
+                ],
+            }),
+            Button({
+                icon: Icons.pencil,
+                text: "Alias",
+                style: {
+                    width: { kind: "px", value: 56 },
+                    height: { kind: "grow" },
+                    background: COLOR_BUTTON,
+                    hoverBackground: COLOR_BUTTON_HOVER,
+                },
+                onClick: (rect: Rect) => {
+                    const uuid = getHousingUuid();
+                    if (uuid === null) return;
+                    openAliasPopover(rect, uuid);
+                },
+            }),
         ],
     });
 }
@@ -1172,6 +1267,7 @@ function importTab(): Element {
     return Col({
         style: { gap: 4, width: { kind: "grow" }, height: { kind: "grow" } },
         children: [
+            houseHeader(),
             queueHeader(),
             Scroll({
                 id: "right-import-queue-scroll",
@@ -1205,7 +1301,7 @@ export function RightPanel(): Element {
         style: { padding: 6, gap: 4, width: { kind: "grow" }, height: { kind: "grow" } },
         children: () => [
             panelTabBar(),
-            activeRightTab === "view" ? viewTab() : importTab(),
+            getActiveRightTab() === "view" ? viewTab() : importTab(),
         ],
     });
 }

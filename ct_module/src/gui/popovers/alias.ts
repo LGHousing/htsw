@@ -57,20 +57,37 @@ function popoverContent(uuid: string): Element {
                 onChange: (v) => {
                     editingValue = v;
                 },
+                onSubmit: () => save(uuid),
                 placeholder: "nickname…",
-                style: { width: { kind: "grow" } },
+                style: {
+                    width: { kind: "grow" },
+                    height: { kind: "px", value: 18 },
+                },
             }),
+            // Explicit width: grow + height so Save/Clear fill the popover
+            // width and match the input height instead of collapsing to a
+            // thin 8px text-height strip.
             Row({
-                style: { gap: 4 },
+                style: {
+                    width: { kind: "grow" },
+                    height: { kind: "px", value: 18 },
+                    gap: 4,
+                },
                 children: [
                     Button({
                         text: "Save",
-                        style: { width: { kind: "grow" } },
+                        style: {
+                            width: { kind: "grow" },
+                            height: { kind: "px", value: 18 },
+                        },
                         onClick: () => save(uuid),
                     }),
                     Button({
                         text: "Clear",
-                        style: { width: { kind: "grow" } },
+                        style: {
+                            width: { kind: "grow" },
+                            height: { kind: "px", value: 18 },
+                        },
                         onClick: () => clear(uuid),
                     }),
                 ],
@@ -85,7 +102,9 @@ export function openAliasPopover(anchor: Rect, uuid: string): void {
         anchor,
         content: popoverContent(uuid),
         width: 220,
-        height: 80,
+        // 6 (top pad) + 8 (title) + 4 (gap) + 18 (input) + 4 (gap) + 18
+        // (buttons) + 6 (bottom pad) = 64
+        height: 64,
         key: `alias:${uuid}`,
     });
 }

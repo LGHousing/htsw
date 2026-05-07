@@ -2,7 +2,7 @@
 
 import { Element } from "./layout";
 import { Button, Col, Container } from "./components";
-import { closeAllPopovers, openPopover } from "./popovers";
+import { closeAllPopovers, closePopover, openPopover, type PopoverHandle } from "./popovers";
 import { COLOR_PANEL_BORDER } from "./theme";
 
 export type MenuAction =
@@ -25,7 +25,10 @@ function isAction(
     return a.kind !== "separator";
 }
 
-function actionElement(a: MenuAction): Element {
+function actionElement(
+    a: MenuAction,
+    closeMenu: () => void
+): Element {
     if (!isAction(a)) {
         return Container({
             style: {
@@ -49,7 +52,7 @@ function actionElement(a: MenuAction): Element {
         text: a.label,
         style: { width: { kind: "grow" }, height: { kind: "px", value: ITEM_H } },
         onClick: () => {
-            closeAllPopovers();
+            closeMenu();
             a.onClick();
         },
     });
@@ -68,27 +71,46 @@ function menuWidthFor(actions: MenuAction[]): number {
 }
 
 // Open a context menu anchored at the given screen position (typically the cursor).
-// Any currently-open popovers are closed first so successive right-clicks don't stack menus.
-export function openMenu(x: number, y: number, actions: MenuAction[]): void {
+// By default any currently-open popovers are closed first so successive right-clicks don't
+// stack menus. Pass `keepUnderlying: true` to keep parent popovers (e.g. when right-clicking
+// inside the file-browser popover — closing the parent would whisk the browser away).
+export function openMenu(
+    x: number,
+    y: number,
+    actions: MenuAction[],
+    options?: { keepUnderlying?: boolean }
+): void {
     if (actions.length === 0) return;
-    closeAllPopovers();
+    if (!options?.keepUnderlying) closeAllPopovers();
     let height = PAD * 2;
     for (let i = 0; i < actions.length; i++) {
         height += isAction(actions[i]) ? ITEM_H : SEPARATOR_H;
         if (i > 0) height += GAP;
     }
+    let handle: PopoverHandle | null = null;
+    const closeMenu = () => {
+        if (handle !== null) {
+            closePopover(handle);
+            handle = null;
+        } else {
+            closeAllPopovers();
+        }
+    };
     const content: Element = Col({
         style: { padding: PAD, gap: GAP },
-        children: actions.map(actionElement),
+        children: actions.map((a) => actionElement(a, closeMenu)),
     });
     // 0×0 anchor at the cursor for positioning. Context menus have no re-clickable trigger so
     // the anchor-exclusion close guard isn't useful — the off-screen `excludeAnchor` flag opts
     // out so a left-click anywhere (including the original cursor pixel) cleanly closes the menu.
-    openPopover({
+    handle = openPopover({
         anchor: { x, y, w: 0, h: 0 },
         excludeAnchor: false,
         content,
         width: menuWidthFor(actions),
         height,
+        onClose: () => {
+            handle = null;
+        },
     });
 }

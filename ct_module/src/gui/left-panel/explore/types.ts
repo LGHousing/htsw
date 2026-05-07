@@ -1,3 +1,4 @@
+import type { ParseResult } from "htsw";
 import type { Importable } from "htsw/types";
 
 // File-level row types: what `enumerateForSource` returns. Each row is a
@@ -15,6 +16,11 @@ export type ResultImport = {
     fullPath: string;
     /** Importables parsed out of this import.json (empty if parse failed). */
     importables: Importable[];
+    /** The parse result this row's importables came from. Lets callers
+     * resolve `imp` through `importableSourcePath(imp, parse)` against the
+     * correct source map — without it, the WeakMap lookup misses and we
+     * fall back to the import.json instead of the htsl/snbt. */
+    parse: ParseResult<Importable[]> | null;
     parseError?: string;
 };
 export type ResultScript = { type: "script"; path: string; fullPath: string };

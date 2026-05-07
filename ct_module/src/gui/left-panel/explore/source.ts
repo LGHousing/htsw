@@ -142,13 +142,21 @@ function visitFile(p: any, root: any, out: Result[]): void {
     } catch (_e) {
         return;
     }
-    if (fname === "import.json") {
+    // Treat any *.json as an import.json entry — matches the file browser's
+    // `isImportJsonEntry`. Without this, a user-renamed `x.import.json` or
+    // `foo.json` gets silently dropped from the tree even though Browse
+    // happily loads it.
+    const isImportJson =
+        fname === "import.json" ||
+        (fname.length >= 5 && fname.lastIndexOf(".json") === fname.length - 5);
+    if (isImportJson) {
         const cached = parseImportJsonAt(fullPath);
         const r: ResultImport = {
             type: "import",
             path,
             fullPath,
             importables: cached.parsed?.value ?? [],
+            parse: cached.parsed,
             parseError: cached.error ?? undefined,
         };
         out.push(r);

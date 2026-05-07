@@ -12,13 +12,7 @@ import { normalizeHtswPath } from "../lib/pathDisplay";
 import { getTimingStats } from "../../importer/progress/timing";
 import { importableIdentity } from "../../knowledge/paths";
 import { trustPlanKey } from "../../knowledge/trust";
-import {
-    clearActiveTab,
-    getActivePath,
-    getTabs,
-    PROGRESS_TAB_PATH,
-    setActiveTab,
-} from "./selection";
+import { getActiveRightTab, setActiveRightTab } from "./selection";
 
 export type { ImportRunRowStatus };
 
@@ -82,6 +76,13 @@ let importJsonPath = "./htsw/imports/import.json";
 let parsedResult: ParseResult<Importable[]> | null = null;
 let parseError: string | null = null;
 let selectedImportableId: string | null = null;
+/**
+ * Multi-select for the Importables tab. Keyed by `${type}:${identity}`
+ * (the `trustPlanKey` shape). Independent of `selectedImportableId` —
+ * single-selection drives preview, multi-selection drives "Import
+ * selected" and the queue-bulk paths.
+ */
+const checkedImportableKeys: Set<string> = new Set();
 /**
  * Resolved filesystem path of the importable currently being processed by
  * the in-flight import session. Drives the LiveImporter panel above the
@@ -223,6 +224,27 @@ export function setSelectedImportableId(id: string | null): void {
     selectedImportableId = id;
 }
 
+export function isImportableChecked(key: string): boolean {
+    return checkedImportableKeys.has(key);
+}
+export function toggleImportableChecked(key: string): boolean {
+    if (checkedImportableKeys.has(key)) {
+        checkedImportableKeys.delete(key);
+        return false;
+    }
+    checkedImportableKeys.add(key);
+    return true;
+}
+export function clearImportableChecks(): void {
+    checkedImportableKeys.clear();
+}
+export function getCheckedImportableKeys(): Set<string> {
+    return checkedImportableKeys;
+}
+export function getCheckedImportableCount(): number {
+    return checkedImportableKeys.size;
+}
+
 export function getOpenTabs(): SourceTab[] {
     return openTabs;
 }
@@ -295,16 +317,15 @@ export function setImportProgress(p: ImportProgressView | null): void {
         lastEstimatedTotal = 1;
     }
     importProgress = p;
-    // On import start, jump the right panel to the Progress tab so the
-    // user sees what's happening without having to click. On import end,
-    // fall back to whatever tab they had open before — or nothing if
-    // they had no tabs pinned.
+    // On import start, flip the right panel to the Import tab so the
+    // user sees the live progress without having to click. On end,
+    // flip back to View (where they were before the import) — but only
+    // if we're still on Import, so we don't override an explicit user
+    // navigation away mid-import.
     if (p !== null && wasNull) {
-        setActiveTab(PROGRESS_TAB_PATH);
-    } else if (p === null && !wasNull && getActivePath() === PROGRESS_TAB_PATH) {
-        const tabs = getTabs();
-        if (tabs.length > 0) setActiveTab(tabs[0].path);
-        else clearActiveTab();
+        setActiveRightTab("import");
+    } else if (p === null && !wasNull && getActiveRightTab() === "import") {
+        setActiveRightTab("view");
     }
 }
 export function getImportStartedAt(): number | null {

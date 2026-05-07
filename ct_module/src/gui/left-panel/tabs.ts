@@ -17,7 +17,7 @@ export type TabId = "explore" | "knowledge";
 type Tab = { id: TabId; label: string; icon: IconName; content: () => Element };
 
 export const TABS: Tab[] = [
-    { id: "explore", label: "Explore", icon: Icons.compass, content: ExploreView },
+    { id: "explore", label: "Importables", icon: Icons.compass, content: ExploreView },
     { id: "knowledge", label: "Knowledge", icon: Icons.bookOpen, content: KnowledgeView },
 ];
 

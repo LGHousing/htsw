@@ -30,10 +30,13 @@ export function BottomToolbar(): Element {
             align: "center",
         },
         children: [
+            // Housing Menu sizes to its label so the split button on the
+            // right always has enough room for "Event Actions" without
+            // overflowing the button background.
             Button({
                 text: "Housing Menu",
                 style: {
-                    width: { kind: "grow" },
+                    width: { kind: "auto" },
                     height: { kind: "px", value: 18 },
                     background: COLOR_BUTTON,
                     hoverBackground: COLOR_BUTTON_HOVER,
@@ -46,25 +49,36 @@ export function BottomToolbar(): Element {
                     }
                 },
             }),
-            Button({
-                text: () => getLastOpenTarget().label,
+            // Split button: main label + caret share a Row with gap=0 so
+            // the two halves visually fuse into one control.
+            Row({
                 style: {
                     width: { kind: "grow" },
                     height: { kind: "px", value: 18 },
-                    background: COLOR_BUTTON,
-                    hoverBackground: COLOR_BUTTON_HOVER,
+                    gap: 0,
                 },
-                onClick: () => runOpenTarget(getLastOpenTarget()),
-            }),
-            Button({
-                text: GLYPH_CHEVRON_DOWN,
-                style: {
-                    width: { kind: "px", value: 14 },
-                    height: { kind: "px", value: 18 },
-                    background: COLOR_BUTTON,
-                    hoverBackground: COLOR_BUTTON_HOVER,
-                },
-                onClick: (rect) => openOpenTargetMenu(rect),
+                children: [
+                    Button({
+                        text: () => getLastOpenTarget().label,
+                        style: {
+                            width: { kind: "grow" },
+                            height: { kind: "px", value: 18 },
+                            background: COLOR_BUTTON,
+                            hoverBackground: COLOR_BUTTON_HOVER,
+                        },
+                        onClick: () => runOpenTarget(getLastOpenTarget()),
+                    }),
+                    Button({
+                        text: GLYPH_CHEVRON_DOWN,
+                        style: {
+                            width: { kind: "px", value: 14 },
+                            height: { kind: "px", value: 18 },
+                            background: COLOR_BUTTON,
+                            hoverBackground: COLOR_BUTTON_HOVER,
+                        },
+                        onClick: (rect) => openOpenTargetMenu(rect),
+                    }),
+                ],
             }),
         ],
     });

@@ -50,7 +50,14 @@ export function showInExplorer(fullPath: string): void {
     }
 }
 
-export function openInVSCode(fullPath: string): void {
+export function openInVSCode(fullPath: string | string[]): void {
     // `code` is a .cmd shim on Windows; route through cmd.exe so PATH lookup finds it.
-    runDetached(["cmd.exe", "/c", "code", String(fullPath)]);
+    // Multiple paths open in the same VSCode window — same as `code path1 path2 …`.
+    const args: string[] = ["cmd.exe", "/c", "code"];
+    if (typeof fullPath === "string") {
+        args.push(String(fullPath));
+    } else {
+        for (let i = 0; i < fullPath.length; i++) args.push(String(fullPath[i]));
+    }
+    runDetached(args);
 }
