@@ -1,0 +1,48 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: en-US
+
+reviews:
+  profile: chill
+  request_changes_workflow: false
+  high_level_summary: true
+  review_status: true
+  auto_review:
+    enabled: true
+    auto_incremental_review: true
+    auto_pause_after_reviewed_commits: 0
+    drafts: false
+    ignore_title_keywords:
+      - "WIP"
+      - "[skip review]"
+    ignore_usernames:
+      - "dependabot[bot]"
+      - "renovate[bot]"
+      - "github-actions[bot]"
+  path_filters:
+    - "!dist/**"
+    - "!node_modules/**"
+    - "!**/*.class"
+    - "!ct_module/dist/**"
+  path_instructions:
+    - path: "ct_module/**"
+      instructions: |
+        Review for Rhino/ES5 runtime compatibility. Flag use of modern prototype methods like String.padStart, String.replaceAll, String.matchAll, Array.flat, Array.flatMap, Object.entries, Object.values, Object.fromEntries, Array.prototype.at, and String.prototype.at unless an appropriate polyfill is imported before first use.
+        Prefer TaskContext, waitForMenu, ItemSlot, and existing importer helpers over direct ChatTriggers globals or hardcoded sleeps.
+        After changes under ct_module/, expect python install.py from ct_module/ before handing work back.
+    - path: "language/**"
+      instructions: |
+        Treat this package as the syntax, type-system, diagnostics, import.json loader, NBT, and runtime source of truth. Be strict about parser and checker regressions, and expect focused test coverage for behavioral changes.
+    - path: "ct_module/src/importables/**"
+      instructions: |
+        Check that import/export logic stays under the relevant importables/<type>/ folder, dispatchers stay pure, and per-type exporter bodies are not placed under exporter/.
+        Exporters should reuse importer read logic instead of duplicating GUI parsing.
+    - path: "ct_module/src/importer/**"
+      instructions: |
+        Preserve action sync ordering delete -> edit -> move -> add, nested hydration behavior, and normalizeActionCompare/normalizeConditionCompare semantics.
+        Prefer existing setters and diff helpers; flag changes likely to create diff churn or unstable slot references.
+    - path: "editors/**"
+      instructions: |
+        Check editor behavior against the shared language package APIs and avoid duplicating parser, diagnostic, or completion logic that belongs in shared editor features.
+
+chat:
+  auto_reply: true
