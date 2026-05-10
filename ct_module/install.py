@@ -1,6 +1,7 @@
 from pathlib import Path
 import json
 import os
+import re
 import sys
 import shutil
 import dotenv
@@ -17,10 +18,22 @@ dotenv.load_dotenv(DOT_ENV)
 SOURCE = Path(__file__).resolve().parent
 assert SOURCE.exists()
 
+
+def _normalize_destination(raw: str) -> str:
+    # On Linux/WSL, translate Windows paths like `C:\foo\bar` to `/mnt/c/foo/bar`
+    # so the same .env works from both PowerShell and a WSL shell.
+    if sys.platform == 'win32':
+        return raw
+    m = re.match(r'^([A-Za-z]):[\\/](.*)$', raw)
+    if not m:
+        return raw
+    return f'/mnt/{m.group(1).lower()}/{m.group(2).replace(chr(92), "/")}'
+
+
 RAW_DESTINATION = os.getenv('CT_MODULE_DESTINATION')
 if RAW_DESTINATION is None:
     raise ValueError('CT_MODULE_DESTINATION is not set in .env')
-DESTINATION = Path(RAW_DESTINATION).resolve()
+DESTINATION = Path(_normalize_destination(RAW_DESTINATION)).resolve()
 
 
 def main() -> None:

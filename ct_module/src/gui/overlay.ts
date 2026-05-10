@@ -94,6 +94,9 @@ function frameVisible(): boolean {
 //   2. Hypixel just sent a "Sending you to <server>..." transport
 //      message — the user changed lobbies/houses, the cached UUID is
 //      stale. We clear it; the next inventory open path catches case 1.
+// The transport handler also zeroes `lastUuidFetchAt` so the cooldown
+// from any prior failed fetch (e.g. one attempted from limbo where
+// `/wtfmap` returns "Unknown command") doesn't gate the new attempt.
 let uuidFetchInFlight = false;
 let lastUuidFetchAt = 0;
 const UUID_FETCH_COOLDOWN_MS = 60_000;
@@ -150,11 +153,20 @@ export function initHtswGui(): void {
     // Hypixel server-transport messages are the cleanest "you may have
     // changed housings" signal. When we see one, drop the cached UUID and
     // knowledge rows so the next inventory open re-runs `/wtfmap` for the
-    // new server. Avoids spamming `/wtfmap` on every inventory open.
-    register("chat", () => {
+    // new server. Both `setCriteria("Sending you to ${server}...")` and a
+    // `^Sending you to ` regex were observed to silently never fire here,
+    // so we match on `${*}` and prefix-test the unformatted message in JS.
+    // We also clear `lastUuidFetchAt`: a prior failed `/wtfmap` (e.g. one
+    // attempted from a lobby) sets the cooldown, which would otherwise
+    // gate the next auto-fetch in the new housing for up to 60s.
+    register("chat", (event: any) => {
+        const msg = ChatLib.getChatMessage(event, false);
+        if (typeof msg !== "string") return;
+        if (msg.indexOf("Sending you to ") !== 0) return;
         setHousingUuid(null);
         setKnowledgeRows([]);
-    }).setCriteria("Sending you to ${server}...");
+        lastUuidFetchAt = 0;
+    }).setCriteria("${*}");
 
     // Single fullscreen panel; the element tree (RootTree) wraps around the
     // container + chat cutouts. paintBackground=false because the tree paints

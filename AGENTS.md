@@ -22,7 +22,7 @@ Each package builds independently. No top-level workspace script.
 
 `ct_module/install.py` needs a local `.env` with `CT_MODULE_DESTINATION` (target ChatTriggers folder) and `HTSW_REPOSITORY_PATH` (used by `/htsw recompile`).
 
-**After any change under `ct_module/`, run `python install.py` from `ct_module/` so the user can just `/ct reload` in-game.** The script runs `npm run build` (typecheck + lint + Vite + Java) and copies `dist/` to the deploy. Pass `--nobuild` only if you have already built and just want to redeploy.
+**After any change under `ct_module/`, run `python install.py` from `ct_module/` so the deployed module is ready for `/ct reload`.** The script runs `npm run build` (typecheck + lint + Vite + Java) and copies `dist/` to the deploy. Pass `--nobuild` only if you have already built and just want to redeploy.
 
 ## Rhino / ES5 Constraint — Read Before Writing CT Module Code
 
@@ -154,3 +154,4 @@ Spec-driven invariants:
 
 - Short progress updates before edits, builds, installs, and when findings change the plan.
 - Be direct about what changed and why. No vague reassurance.
+- For meaningful code changes, especially under `ct_module/`, `language/`, importer/exporter logic, or editor behavior, run CodeRabbit CLI before handing work back when available: `cr --type uncommitted`.
