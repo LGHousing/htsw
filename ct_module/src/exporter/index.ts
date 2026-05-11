@@ -1,7 +1,7 @@
 import { TaskManager } from "../tasks/manager";
 import { exportImportable } from "../importables/exports";
 import { getCurrentHousingUuid } from "../knowledge";
-import { canonicalSlug } from "./paths";
+import { htslFilenameForFunctionExport } from "./paths";
 import { chatSeparator, stripSurroundingQuotes } from "../utils/helpers";
 import { VERSION } from "htsw";
 
@@ -97,7 +97,7 @@ function commandExport(args: string[]): void {
                 importJsonPath = `${rootDir}/import.json`;
             }
 
-            const filename = `${canonicalSlug(name)}.htsl`;
+            const filename = htslFilenameForFunctionExport(importJsonPath, name);
             const htslPath = `${rootDir}/${filename}`;
             const htslReference = filename;
 

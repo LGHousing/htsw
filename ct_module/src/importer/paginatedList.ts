@@ -1,7 +1,7 @@
 import TaskContext from "../tasks/context";
 import { ItemSlot } from "../tasks/specifics/slots";
 import { removedFormatting } from "../utils/helpers";
-import { timedWaitForMenu } from "./helpers";
+import { timedWaitForMenu } from "./menuWait";
 
 const ITEMS_PER_PAGE = 21;
 const PREV_PAGE_SLOT_ID = 45;
@@ -209,20 +209,38 @@ export async function readPaginatedList<T extends { index: number }>(
 ): Promise<T[]> {
     await goToPaginatedListPage(ctx, 1, config);
     const entries: T[] = [];
-    let pagesRead = 0;
-    while (true) {
-        const pageEntries = await readPage();
-        for (const entry of pageEntries) {
-            entry.index = entries.length;
-            entries.push(entry);
+    try {
+        let pagesRead = 0;
+        while (true) {
+            const pageEntries = await readPage();
+            for (const entry of pageEntries) {
+                entry.index = entries.length;
+                entries.push(entry);
+            }
+            pagesRead++;
+            onPageRead?.({ totalEntries: entries.length, pagesRead });
+            const stateBefore = getCurrentPaginatedListPageState(ctx, config);
+            if (!stateBefore.hasNext) break;
+
+            clickPaginatedNextPage(ctx);
+            await timedWaitForMenu(ctx, "pageTurnWait");
+
+            // Guard: if the click didn't advance us, abort instead of looping
+            // forever on the same page (which would also duplicate entries).
+            const stateAfter = getCurrentPaginatedListPageState(ctx, config);
+            if (stateAfter.currentPage <= stateBefore.currentPage) {
+                throw new Error(
+                    `Paginated ${config.label} page did not advance after clicking next page (still on page ${stateAfter.currentPage}).`
+                );
+            }
         }
-        pagesRead++;
-        onPageRead?.({ totalEntries: entries.length, pagesRead });
-        if (!getCurrentPaginatedListPageState(ctx, config).hasNext) break;
-        clickPaginatedNextPage(ctx);
-        await timedWaitForMenu(ctx, "pageTurnWait");
+    } finally {
+        // Always try to leave the GUI on page 1, even if the read body
+        // threw. If this reset itself throws, the finally error supersedes
+        // the original — accepted JS semantics; the alternative is silently
+        // swallowing a genuinely-broken GUI state.
+        await goToPaginatedListPage(ctx, 1, config);
     }
-    await goToPaginatedListPage(ctx, 1, config);
     return entries;
 }
 
