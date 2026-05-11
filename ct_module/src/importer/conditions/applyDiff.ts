@@ -11,8 +11,10 @@ import TaskContext from "../../tasks/context";
 import { type ItemRegistry } from "../../importables/itemRegistry";
 import {
     clickGoBack,
+    isLimitExceeded,
     readBooleanValue,
     setListItemNote,
+    setNoteOnLastVisibleSlot,
     timedWaitForMenu,
 } from "../helpers";
 import { ItemSlot, MouseButton } from "../../tasks/specifics/slots";
@@ -23,10 +25,7 @@ import {
     type ConditionListDiff,
     onlyNoteDiffers,
 } from "./diff";
-import {
-    getPaginatedListSlotAtIndex,
-    getVisiblePaginatedItemSlots,
-} from "../paginatedList";
+import { getPaginatedListSlotAtIndex } from "../paginatedList";
 import { CONDITION_LIST_CONFIG } from "./listConfig";
 import { getConditionSpec, writeOpenCondition } from "../conditions";
 
@@ -64,7 +63,7 @@ export async function importCondition(
     const spec = getConditionSpec(condition.type);
     const slot = ctx.getMenuItemSlot(spec.displayName);
 
-    if (isLimitExceeded(slot)) {
+    if (isLimitExceeded(slot, "condition")) {
         throw Diagnostic.error(
             `Maximum amount of ${spec.displayName} conditions exceeded`
         );
@@ -79,20 +78,7 @@ export async function importCondition(
     // the invert toggle so opens a submenu, this is not the case for actions
     await clickGoBack(ctx);
 
-    if (condition.note) {
-        const conditionSlots = getVisiblePaginatedItemSlots(ctx);
-        const addedSlot = conditionSlots[conditionSlots.length - 1];
-        if (addedSlot) {
-            await setListItemNote(ctx, addedSlot, condition.note);
-        }
-    }
-}
-
-function isLimitExceeded(slot: ItemSlot): boolean {
-    const lore = slot.getItem().getLore();
-    if (lore.length === 0) return false;
-    const lastLine = lore[lore.length - 1];
-    return removedFormatting(lastLine) === "You can't have more of this condition!";
+    await setNoteOnLastVisibleSlot(ctx, condition.note);
 }
 
 async function deleteObservedCondition(

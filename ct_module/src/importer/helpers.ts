@@ -1,3 +1,5 @@
+import type { Location } from "htsw/types";
+
 import TaskContext from "../tasks/context";
 import { ItemSlot, MouseButton } from "../tasks/specifics/slots";
 import { removedFormatting } from "../utils/helpers";
@@ -8,8 +10,12 @@ import {
     normalizeNoteText,
     readListItemNote,
 } from "./loreParsing";
+import { getVisiblePaginatedItemSlots } from "./paginatedList";
 import { COST } from "./progress/costs";
 import { recordTimedOp, timed } from "./progress/timing";
+
+/** Cycle options shared by `CHANGE_VAR` (action) and `COMPARE_VAR` (condition). */
+export const VAR_HOLDER_OPTIONS = ["Player", "Global", "Team"] as const;
 
 export async function waitForMenu(ctx: TaskContext): Promise<void> {
     await ctx.withTimeout(async () => {
@@ -530,5 +536,54 @@ export async function setStringOrPaginatedOptionValue(
         default:
             const _exhaustiveCheck: never = inputMode;
             return _exhaustiveCheck;
+    }
+}
+
+/**
+ * Set a location-typed field (TELEPORT, LAUNCH, PLAY_SOUND, ...). "Custom
+ * Coordinates" opens the location submenu, picks the option, and enters the
+ * coordinate string; every other location type is a plain select.
+ */
+export async function setLocationValue(
+    ctx: TaskContext,
+    label: string,
+    location: Location
+): Promise<void> {
+    if (location.type === "Custom Coordinates") {
+        await openSubmenu(ctx, label);
+        const optionSlot = await getSlotPaginate(ctx, "Custom Coordinates");
+        optionSlot.click();
+        await enterValue(ctx, location.value);
+        await waitForMenu(ctx);
+        return;
+    }
+    await setSelectValue(ctx, label, location.type);
+}
+
+/**
+ * Detect the Housing "You can't have more of this {action|condition}!" hint
+ * on the add-X menu's type slot. Lore-only check; no clicks.
+ */
+export function isLimitExceeded(slot: ItemSlot, kind: "action" | "condition"): boolean {
+    const lore = slot.getItem().getLore();
+    if (lore.length === 0) return false;
+    const lastLine = lore[lore.length - 1];
+    return removedFormatting(lastLine) === `You can't have more of this ${kind}!`;
+}
+
+/**
+ * After importing a new action/condition (which adds at the end of the
+ * paginated list), set the note on the last visible slot. No-op when `note`
+ * is undefined.
+ */
+export async function setNoteOnLastVisibleSlot(
+    ctx: TaskContext,
+    note: string | undefined
+): Promise<void> {
+    if (!note) return;
+    const slots = getVisiblePaginatedItemSlots(ctx);
+    const last = slots[slots.length - 1];
+    if (last) {
+        await setListItemNote(ctx, last, note);
     }
 }

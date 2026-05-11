@@ -23,6 +23,7 @@ import {
 import TaskContext from "../tasks/context";
 import { type ItemRegistry } from "../importables/itemRegistry";
 import {
+    VAR_HOLDER_OPTIONS,
     clickGoBack,
     findMenuOptionByLore,
     getSlotPaginate,
@@ -74,7 +75,6 @@ type ConditionSpecMap = {
     [K in Condition["type"]]: ConditionSpec<Extract<Condition, { type: K }>>;
 };
 
-const VAR_HOLDER_OPTIONS = ["Player", "Global", "Team"] as const;
 const GAMEMODE_OPTIONS = ["Adventure", "Survival", "Creative"] as const;
 const FISHING_ENVIRONMENT_OPTIONS = ["Water", "Lava"] as const;
 const ITEM_PROPERTY_OPTIONS = ["Item Type", "Metadata"] as const;

@@ -5,7 +5,11 @@ import type {
     ScalarFieldDiff,
     UiFieldKind,
 } from "./types";
-import { normalizeNoteText } from "./loreParsing";
+import {
+    DECIMAL_DISPLAY_VALUE_PATTERN,
+    INTEGER_DISPLAY_VALUE_PATTERN,
+    normalizeNoteText,
+} from "./loreParsing";
 import {
     getActionFieldDefault,
     getActionFieldKind,
@@ -165,9 +169,6 @@ function normalizeValue(value: unknown): unknown {
 function fieldsAreEqual(a: unknown, b: unknown): boolean {
     return JSON.stringify(a) === JSON.stringify(b);
 }
-
-const INTEGER_DISPLAY_VALUE_PATTERN = /^[+-]?(?:(?:\d{1,3}(?:,\d{3})+)|\d+)$/;
-const DECIMAL_DISPLAY_VALUE_PATTERN = /^[+-]?(?:(?:\d{1,3}(?:,\d{3})+)|\d+)\.\d+$/;
 
 function normalizeComparableString(value: string): string {
     const isIntegerDisplay = INTEGER_DISPLAY_VALUE_PATTERN.test(value);

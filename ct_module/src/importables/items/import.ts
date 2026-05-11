@@ -5,6 +5,7 @@ import { clickGoBack, timedWaitForMenu } from "../../importer/helpers";
 import {
     getCurrentHousingUuid,
     importableHash,
+    itemSnbtCachePath,
     writeKnowledge,
     type ImportableTrustPlan,
 } from "../../knowledge";
@@ -46,10 +47,6 @@ function itemShellMatchesCached(
     desired: ImportableItem
 ): boolean {
     return stableStringify(itemShell(cached)) === stableStringify(itemShell(desired));
-}
-
-function itemSnbtCachePath(housingUuid: string, hash: string): string {
-    return `./htsw/.cache/${housingUuid}/items/${hash}.snbt`;
 }
 
 function readCachedItemSnbt(housingUuid: string, hash: string): string | undefined {

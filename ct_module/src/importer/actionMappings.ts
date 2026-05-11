@@ -3,8 +3,8 @@ import type { Action, ActionChangeVar } from "htsw/types";
 import type { ItemSlot } from "../tasks/specifics/slots";
 import { removedFormatting } from "../utils/helpers";
 import {
+    parseHolderField,
     parseLoreFields,
-    parseLoreKeyValueLine,
     readListItemNote,
 } from "./loreParsing";
 import type { ActionLoreSpec, UiFieldKind } from "./types";
@@ -488,24 +488,10 @@ export function parseActionListItem(slot: ItemSlot, type: Action["type"]): Actio
         ...parseLoreFields(slot, mapping.loreFields),
     } as Action;
 
-    // CHANGE_VAR holder is parsed as a string from lore but the type expects
-    // { type: string, team?: string }. When holder = Team the lore also has
-    // a "Team: <name>" line; pull it out here so the holder is fully formed.
     if (action.type === "CHANGE_VAR") {
-        const holder = (action as any).holder as string | undefined;
-        if (holder === "Player" || holder === "Global") {
-            (action as ActionChangeVar).holder = { type: holder };
-        } else if (holder === "Team") {
-            let team: string | undefined;
-            for (const line of slot.getItem().getLore()) {
-                const kv = parseLoreKeyValueLine(line);
-                if (kv !== null && kv.label === "Team") {
-                    team = removedFormatting(kv.value).trim();
-                    break;
-                }
-            }
-            (action as ActionChangeVar).holder =
-                team === undefined ? { type: "Team" } : { type: "Team", team };
+        const holder = parseHolderField(slot, (action as Record<string, unknown>).holder);
+        if (holder !== undefined) {
+            (action as ActionChangeVar).holder = holder;
         }
     }
 
