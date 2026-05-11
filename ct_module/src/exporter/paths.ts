@@ -9,7 +9,9 @@ import { encodeFilesystemComponent } from "../utils/filesystem";
  * the name is filesystem-safe.
  */
 export function canonicalSlug(identity: string): string {
-    return encodeFilesystemComponent(identity, { escapeDots: false });
+    return encodeFilesystemComponent(identity.split(" ").join("_"), {
+        escapeDots: false,
+    });
 }
 
 /** Filename for an importable's `.htsl` source file. */

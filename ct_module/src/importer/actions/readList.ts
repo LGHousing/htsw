@@ -9,12 +9,16 @@ import {
 import { ItemSlot } from "../../tasks/specifics/slots";
 import { removedFormatting } from "../../utils/helpers";
 import {
+    ACTION_MAPPINGS,
     getNestedListFields,
     parseActionListItem,
     tryGetActionTypeFromDisplayName,
 } from "../actionMappings";
-import { tryGetConditionTypeFromDisplayName } from "../conditionMappings";
-import { canonicalizeObservedConditionItemNames } from "../conditions";
+import {
+    CONDITION_MAPPINGS,
+    tryGetConditionTypeFromDisplayName,
+} from "../conditionMappings";
+import { canonicalizeItemFields } from "../canonicalizeItems";
 import type {
     ActionListProgressSink,
     ActionListReadMode,
@@ -29,13 +33,12 @@ import { createNestedHydrationPlan } from "./hydrationPlan";
 import { matchObservedToDesired } from "./nestedMatching";
 import { applyActionListTrust } from "./trustHydration";
 import {
-    clickPaginatedNextPage,
-    getCurrentPaginatedListPageState,
     getPaginatedListPageForIndex,
     getPaginatedListSlotAtIndex,
     getVisiblePaginatedItemSlots,
     goToPaginatedListPage,
     isEmptyPaginatedPlaceholder,
+    readPaginatedList,
 } from "../paginatedList";
 import { getActiveDiffSink } from "../diffSink";
 import { COST, actionListRoughBudget, hydrationEntryBudget } from "../progress/costs";
@@ -168,36 +171,23 @@ export async function readActionList(
         confidence: "rough",
     });
     getActiveDiffSink()?.phase("reading housing state");
-    await goToPaginatedListPage(ctx, 1, ACTION_LIST_CONFIG);
-    const observed: ObservedActionSlot[] = [];
-
-    while (true) {
-        const pageObserved = await readActionsListPage(ctx);
-        for (const entry of pageObserved) {
-            entry.index = observed.length;
-            observed.push(entry);
+    const observed = await readPaginatedList(
+        ctx,
+        ACTION_LIST_CONFIG,
+        () => readActionsListPage(ctx),
+        ({ totalEntries, pagesRead }) => {
+            readEstimatedCompleted = Math.max(0, pagesRead - 1) * COST.pageTurnWait;
+            progress?.({
+                phase: "reading",
+                completed: totalEntries,
+                total: Math.max(desiredTotal, totalEntries),
+                label: `${totalEntries} actions read`,
+                estimatedCompleted: readEstimatedCompleted,
+                estimatedTotal: Math.max(roughEstimate, readEstimatedCompleted),
+                confidence: "rough",
+            });
         }
-        progress?.({
-            phase: "reading",
-            completed: observed.length,
-            total: Math.max(desiredTotal, observed.length),
-            label: `${observed.length} actions read`,
-            estimatedCompleted: readEstimatedCompleted,
-            estimatedTotal: Math.max(roughEstimate, readEstimatedCompleted),
-            confidence: "rough",
-        });
-
-        const state = getCurrentPaginatedListPageState(ctx, ACTION_LIST_CONFIG);
-        if (!state.hasNext) {
-            break;
-        }
-
-        clickPaginatedNextPage(ctx);
-        await timedWaitForMenu(ctx, "pageTurnWait");
-        readEstimatedCompleted += COST.pageTurnWait;
-    }
-
-    await goToPaginatedListPage(ctx, 1, ACTION_LIST_CONFIG);
+    );
     let plan: NestedHydrationPlan;
     if (mode.kind === "full") {
         plan = buildFullHydrationPlan(observed);
@@ -270,34 +260,21 @@ export function canonicalizeActionItemName(
     action: Observed<Action> | Action,
     itemRegistry: ItemRegistry
 ): void {
-    if (
-        action.type === "GIVE_ITEM" ||
-        action.type === "REMOVE_ITEM" ||
-        action.type === "DROP_ITEM"
-    ) {
-        if (action.itemName !== undefined) {
-            action.itemName = itemRegistry.canonicalizeObservedName(action.itemName);
-        }
-    }
+    canonicalizeItemFields(action, ACTION_MAPPINGS, itemRegistry);
 
-    if (action.type === "CONDITIONAL") {
-        canonicalizeObservedConditionItemNames(action.conditions, itemRegistry);
-        for (const nested of action.ifActions) {
-            if (nested !== null) {
-                canonicalizeActionItemName(nested, itemRegistry);
-            }
-        }
-        for (const nested of action.elseActions) {
-            if (nested !== null) {
-                canonicalizeActionItemName(nested, itemRegistry);
-            }
-        }
-    }
-
-    if (action.type === "RANDOM") {
-        for (const nested of action.actions) {
-            if (nested !== null) {
-                canonicalizeActionItemName(nested, itemRegistry);
+    for (const nestedField of getNestedListFields(action.type)) {
+        const value = (action as Record<string, unknown>)[nestedField.prop];
+        if (!Array.isArray(value)) continue;
+        for (const child of value) {
+            if (child === null) continue;
+            if (nestedField.prop === "conditions") {
+                canonicalizeItemFields(
+                    child as { type: string },
+                    CONDITION_MAPPINGS,
+                    itemRegistry
+                );
+            } else {
+                canonicalizeActionItemName(child as Action, itemRegistry);
             }
         }
     }

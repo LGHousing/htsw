@@ -2,18 +2,17 @@ import type { Condition } from "htsw/types";
 
 import TaskContext from "../../tasks/context";
 import { type ItemRegistry } from "../../importables/itemRegistry";
-import { waitForMenu } from "../helpers";
+import { canonicalizeItemFields } from "../canonicalizeItems";
 import {
+    CONDITION_MAPPINGS,
     parseConditionListItem,
     tryGetConditionTypeFromDisplayName,
 } from "../conditionMappings";
 import type { ObservedConditionSlot } from "../types";
 import {
-    clickPaginatedNextPage,
-    getCurrentPaginatedListPageState,
     getVisiblePaginatedItemSlots,
-    goToPaginatedListPage,
     isEmptyPaginatedPlaceholder,
+    readPaginatedList,
 } from "../paginatedList";
 import { CONDITION_LIST_CONFIG } from "./listConfig";
 import { isConditionListItemInverted } from "../conditions";
@@ -54,26 +53,11 @@ export async function readConditionList(
     ctx: TaskContext,
     options?: ReadConditionListOptions
 ): Promise<ObservedConditionSlot[]> {
-    await goToPaginatedListPage(ctx, 1, CONDITION_LIST_CONFIG);
-    const observed: ObservedConditionSlot[] = [];
-
-    while (true) {
-        const pageObserved = await readConditionsListPage(ctx);
-
-        for (const entry of pageObserved) {
-            entry.index = observed.length;
-            observed.push(entry);
-        }
-
-        if (!getCurrentPaginatedListPageState(ctx, CONDITION_LIST_CONFIG).hasNext) {
-            break;
-        }
-
-        clickPaginatedNextPage(ctx);
-        await waitForMenu(ctx);
-    }
-
-    await goToPaginatedListPage(ctx, 1, CONDITION_LIST_CONFIG);
+    const observed = await readPaginatedList(
+        ctx,
+        CONDITION_LIST_CONFIG,
+        () => readConditionsListPage(ctx)
+    );
     canonicalizeObservedConditionSlots(observed, options?.itemRegistry);
     return observed;
 }
@@ -82,13 +66,10 @@ function canonicalizeObservedConditionSlots(
     observed: readonly ObservedConditionSlot[],
     itemRegistry?: ItemRegistry
 ): void {
-    if (itemRegistry === undefined) {
-        return;
-    }
-
+    if (itemRegistry === undefined) return;
     for (const entry of observed) {
         if (entry.condition !== null) {
-            canonicalizeConditionItemName(entry.condition, itemRegistry);
+            canonicalizeItemFields(entry.condition, CONDITION_MAPPINGS, itemRegistry);
         }
     }
 }
@@ -97,30 +78,10 @@ export function canonicalizeObservedConditionItemNames(
     conditions: readonly (Condition | null)[],
     itemRegistry?: ItemRegistry
 ): void {
-    if (itemRegistry === undefined) {
-        return;
-    }
-
+    if (itemRegistry === undefined) return;
     for (const condition of conditions) {
         if (condition !== null) {
-            canonicalizeConditionItemName(condition, itemRegistry);
+            canonicalizeItemFields(condition, CONDITION_MAPPINGS, itemRegistry);
         }
-    }
-}
-
-function canonicalizeConditionItemName(
-    condition: Condition,
-    itemRegistry: ItemRegistry
-): void {
-    if (
-        condition.type !== "REQUIRE_ITEM" &&
-        condition.type !== "BLOCK_TYPE" &&
-        condition.type !== "IS_ITEM"
-    ) {
-        return;
-    }
-
-    if (condition.itemName !== undefined) {
-        condition.itemName = itemRegistry.canonicalizeObservedName(condition.itemName);
     }
 }

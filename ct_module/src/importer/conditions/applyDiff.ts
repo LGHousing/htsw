@@ -20,11 +20,11 @@ import {
 import { ItemSlot, MouseButton } from "../../tasks/specifics/slots";
 import { removedFormatting } from "../../utils/helpers";
 import { CONDITION_MAPPINGS } from "../conditionMappings";
-import type { ObservedConditionSlot } from "../types";
-import {
-    type ConditionListDiff,
-    onlyNoteDiffers,
-} from "./diff";
+import type {
+    ConditionListDiff,
+    ConditionListOperation,
+    ObservedConditionSlot,
+} from "../types";
 import { getPaginatedListSlotAtIndex } from "../paginatedList";
 import { CONDITION_LIST_CONFIG } from "./listConfig";
 import { getConditionSpec, writeOpenCondition } from "../conditions";
@@ -98,9 +98,19 @@ export async function applyConditionListDiff(
     itemRegistry?: ItemRegistry
 ): Promise<void> {
     const currentObserved = [...observed];
+    const edits: Array<Extract<ConditionListOperation, { kind: "edit" }>> = [];
+    const deletes: Array<Extract<ConditionListOperation, { kind: "delete" }>> = [];
+    const adds: Array<Extract<ConditionListOperation, { kind: "add" }>> = [];
+    for (const op of diff.operations) {
+        if (op.kind === "edit") edits.push(op);
+        else if (op.kind === "delete") deletes.push(op);
+        else adds.push(op);
+    }
 
-    for (const entry of diff.edits) {
-        const currentIndex = currentObserved.indexOf(entry.observed);
+    // Edits first: indices don't shift while editing in place. Then deletes
+    // (descending) so prior indices stay valid. Adds last — they append.
+    for (const op of edits) {
+        const currentIndex = currentObserved.indexOf(op.observed);
         if (currentIndex === -1) {
             continue;
         }
@@ -111,18 +121,18 @@ export async function applyConditionListDiff(
             currentObserved.length,
             CONDITION_LIST_CONFIG
         );
-        entry.observed.slot = conditionSlot;
-        entry.observed.slotId = conditionSlot.getSlotId();
+        op.observed.slot = conditionSlot;
+        op.observed.slotId = conditionSlot.getSlotId();
 
-        if (onlyNoteDiffers(entry.desired, entry.observed?.condition)) {
-            await setListItemNote(ctx, conditionSlot, entry.desired.note);
+        if (op.noteOnly) {
+            await setListItemNote(ctx, conditionSlot, op.desired.note);
             continue;
         }
 
         conditionSlot.click();
         await timedWaitForMenu(ctx, "menuClickWait");
 
-        if (!entry.observed.condition) {
+        if (!op.observed.condition) {
             throw new Error(
                 "Observed condition should always be present for edit operations."
             );
@@ -130,23 +140,23 @@ export async function applyConditionListDiff(
 
         await writeOpenCondition(
             ctx,
-            entry.desired,
-            entry.observed.condition,
+            op.desired,
+            op.observed.condition,
             itemRegistry
         );
 
-        const currentInverted = entry.observed.condition.inverted === true;
-        const desiredInverted = entry.desired.inverted === true;
+        const currentInverted = op.observed.condition.inverted === true;
+        const desiredInverted = op.desired.inverted === true;
         await setOpenConditionInverted(ctx, desiredInverted, currentInverted);
 
         await clickGoBack(ctx);
 
-        await setListItemNote(ctx, conditionSlot, entry.desired.note);
+        await setListItemNote(ctx, conditionSlot, op.desired.note);
     }
 
-    const deletesDescending = [...diff.deletes].sort((a, b) => b.index - a.index);
-    for (const observed of deletesDescending) {
-        const index = currentObserved.indexOf(observed);
+    deletes.sort((a, b) => b.observed.index - a.observed.index);
+    for (const op of deletes) {
+        const index = currentObserved.indexOf(op.observed);
         if (index === -1) {
             continue;
         }
@@ -155,39 +165,39 @@ export async function applyConditionListDiff(
         currentObserved.splice(index, 1);
     }
 
-    for (const condition of diff.adds) {
-        await importCondition(ctx, condition, itemRegistry);
+    for (const op of adds) {
+        await importCondition(ctx, op.desired, itemRegistry);
     }
 }
 
 export function logConditionSyncState(ctx: TaskContext, diff: ConditionListDiff): void {
-    const totalOps = diff.edits.length + diff.deletes.length + diff.adds.length;
-
-    if (totalOps === 0) {
+    if (diff.operations.length === 0) {
         ctx.displayMessage(`&7[cond-sync] &aUp to date.`);
         return;
     }
 
-    ctx.displayMessage(`&7[cond-sync] &d${totalOps} operation(s):`);
-    for (const entry of diff.edits) {
-        const observedName =
-            entry.observed.condition === null
-                ? "Unknown Condition"
-                : CONDITION_MAPPINGS[entry.observed.condition.type].displayName;
-        ctx.displayMessage(
-            `&7  &6~ [${entry.observed.index}] ${observedName} &7-> &6${CONDITION_MAPPINGS[entry.desired.type].displayName}`
-        );
-    }
-    for (const entry of diff.deletes) {
-        const deleteName =
-            entry.condition === null
-                ? "Unknown Condition"
-                : CONDITION_MAPPINGS[entry.condition.type].displayName;
-        ctx.displayMessage(`&7  &c- [${entry.index}] ${deleteName}`);
-    }
-    for (const [index, entry] of diff.adds.entries()) {
-        ctx.displayMessage(
-            `&7  &a+ [${index}] ${CONDITION_MAPPINGS[entry.type].displayName}`
-        );
+    ctx.displayMessage(`&7[cond-sync] &d${diff.operations.length} operation(s):`);
+    let addIndex = 0;
+    for (const op of diff.operations) {
+        if (op.kind === "edit") {
+            const observedName =
+                op.observed.condition === null
+                    ? "Unknown Condition"
+                    : CONDITION_MAPPINGS[op.observed.condition.type].displayName;
+            ctx.displayMessage(
+                `&7  &6~ [${op.observed.index}] ${observedName} &7-> &6${CONDITION_MAPPINGS[op.desired.type].displayName}`
+            );
+        } else if (op.kind === "delete") {
+            const deleteName =
+                op.observed.condition === null
+                    ? "Unknown Condition"
+                    : CONDITION_MAPPINGS[op.observed.condition.type].displayName;
+            ctx.displayMessage(`&7  &c- [${op.observed.index}] ${deleteName}`);
+        } else {
+            ctx.displayMessage(
+                `&7  &a+ [${addIndex}] ${CONDITION_MAPPINGS[op.desired.type].displayName}`
+            );
+            addIndex++;
+        }
     }
 }

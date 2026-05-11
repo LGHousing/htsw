@@ -192,6 +192,40 @@ export function clickPaginatedNextPage(ctx: TaskContext): void {
     ctx.getItemSlot((slot) => slot.getSlotId() === NEXT_PAGE_SLOT_ID).click();
 }
 
+/**
+ * Read every page of a Housing paginated list and concatenate. Resets to
+ * page 1 at start and end so callers don't have to remember either
+ * invariant. Renumbers `entry.index` across pages so it matches the global
+ * list position.
+ *
+ * `onPageRead` fires once per page after entries are merged; use it for
+ * progress reporting. `pagesRead` starts at 1.
+ */
+export async function readPaginatedList<T extends { index: number }>(
+    ctx: TaskContext,
+    config: PaginatedListConfig,
+    readPage: () => Promise<T[]>,
+    onPageRead?: (state: { totalEntries: number; pagesRead: number }) => void
+): Promise<T[]> {
+    await goToPaginatedListPage(ctx, 1, config);
+    const entries: T[] = [];
+    let pagesRead = 0;
+    while (true) {
+        const pageEntries = await readPage();
+        for (const entry of pageEntries) {
+            entry.index = entries.length;
+            entries.push(entry);
+        }
+        pagesRead++;
+        onPageRead?.({ totalEntries: entries.length, pagesRead });
+        if (!getCurrentPaginatedListPageState(ctx, config).hasNext) break;
+        clickPaginatedNextPage(ctx);
+        await timedWaitForMenu(ctx, "pageTurnWait");
+    }
+    await goToPaginatedListPage(ctx, 1, config);
+    return entries;
+}
+
 function capitalize(value: string): string {
     return value.charAt(0).toUpperCase() + value.slice(1);
 }

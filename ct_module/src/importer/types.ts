@@ -144,3 +144,24 @@ export type ActionListOperation =
 export type ActionListDiff = {
     operations: ActionListOperation[];
 };
+
+/**
+ * Same shape as `ActionListOperation` minus `move` — the condition GUI has
+ * no reorder affordance, so condition diff cannot emit moves. `edit` carries
+ * `noteOnly` so the applier can short-circuit straight to `setListItemNote`
+ * without opening the condition editor; the diff computes it once instead
+ * of every consumer re-deriving it.
+ */
+export type ConditionListOperation =
+    | {
+          kind: "edit";
+          observed: ObservedConditionSlot;
+          desired: Condition;
+          noteOnly: boolean;
+      }
+    | { kind: "add"; desired: Condition }
+    | { kind: "delete"; observed: ObservedConditionSlot };
+
+export type ConditionListDiff = {
+    operations: ConditionListOperation[];
+};

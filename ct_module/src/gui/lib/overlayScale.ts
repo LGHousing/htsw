@@ -12,36 +12,19 @@ import { ContainerBounds, getContainerBounds } from "./bounds";
 // @ts-ignore
 const ScaledResolutionClass = net.minecraft.client.gui.ScaledResolution;
 
-// Target overlay scale (real pixels per overlay unit) — the size we'd LIKE to render at when MC
-// is rendering at the user's chosen GUI scale setting. The actual scale used per-frame is
-// `getEffectiveOverlayScale()`, which scales this proportionally to MC's own clamp ratio so the
-// overlay stays visible when the window is small.
+// Target overlay scale (real pixels per overlay unit) — the cap on how big we'll render. The
+// actual per-frame scale is `getEffectiveOverlayScale()`, which is MC's current scale capped at
+// this target. We never render bigger than MC's own GUI; we only render smaller when a modded
+// MC scale exceeds our cap.
 export const OVERLAY_SCALE_TARGET = 4;
 
-// User's configured GUI scale (gameSettings.guiScale). 0 = "Auto". Mods can allow values > 4.
-// SRG field path: Minecraft.gameSettings → field_71474_y, GameSettings.guiScale → field_74335_Z.
-function getMcGuiScaleSetting(): number {
-    try {
-        const mc = Client.getMinecraft() as any;
-        const v = mc.field_71474_y.field_74335_Z;
-        return typeof v === "number" ? v : 0;
-    } catch (_e) {
-        return 0;
-    }
-}
-
-// Effective overlay scale this frame. Always `OVERLAY_SCALE_TARGET * (real / setting)`:
-// when MC isn't clamping (real == setting) the ratio is 1 and we render at the target scale;
-// when MC has auto-clamped below the user's setting because the window is too small, we ride
-// the same clamp ratio so the overlay shrinks proportionally and stays visible.
-//
-// When guiScale is 0 ("Auto") there's no setting value to divide by — MC just picks the largest
-// scale that fits — so we render at the target scale.
+// Effective overlay scale this frame: MC's current real scale capped at OVERLAY_SCALE_TARGET.
+// When MC is at-or-below the cap (the common case — vanilla maxes at 4), we match it exactly so
+// the overlay tracks the user's chosen GUI Scale and doesn't tower over the inventory. When MC
+// is above the cap (modded scale 5+), we stay at the target so the overlay doesn't become
+// unusably large.
 export function getEffectiveOverlayScale(): number {
-    const setting = getMcGuiScaleSetting();
-    if (setting <= 0) return OVERLAY_SCALE_TARGET;
-    const real = getMcScale();
-    return OVERLAY_SCALE_TARGET * (real / setting);
+    return Math.min(OVERLAY_SCALE_TARGET, getMcScale());
 }
 
 // MC's current effective scale factor (real pixels per scaled unit). We DON'T use

@@ -37,7 +37,7 @@ import { TaskManager } from "../../tasks/manager";
 import type { Importable } from "htsw/types";
 import type { ParseResult } from "htsw";
 import { closeAllPopovers } from "../lib/popovers";
-import { encodeFilesystemComponent } from "../../utils/filesystem";
+import { canonicalSlug } from "../../exporter/paths";
 import {
     clearDiff,
     addDeleteOp,
@@ -333,7 +333,7 @@ export function startCaptureExport(type: CaptureType): void {
         }
         const dir = importJsonDir(importJsonPath);
         if (result.type === "FUNCTION") {
-            const filename = `${encodeFilesystemComponent(result.name, { escapeDots: false })}.htsl`;
+            const filename = `${canonicalSlug(result.name)}.htsl`;
             await exportImportable(ctx, {
                 type: "FUNCTION",
                 name: result.name,
