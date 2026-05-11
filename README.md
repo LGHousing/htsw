@@ -2,7 +2,7 @@
 
 Write Hypixel Housing GUIs as text instead of clicking through in-game menus. The included ChatTriggers module imports your file straight into Housing and diffs against what's already there, so re-runs only push what changed.
 
-HTSW is a refined evolution of [HTSL](https://github.com/BusterBrown1218) — same idea, stricter type system, real diagnostics, and a working round-trip with the game.
+HTSW is a refined evolution of [HTSL](https://github.com/BusterBrown1218/HTSL) — stricter type system, better diagnostics, and a working smart importer & exporter with the game.
 
 ## What it looks like
 
@@ -34,12 +34,12 @@ Wired up in `import.json`:
 }
 ```
 
-Run `/import import.json` in a Housing world and the function lands in your Housing menus, with the referenced item materialized and ready to use.
+Run `/import import.json` in a Housing world (or probably preferably in the GUI) and the function lands in your Housing menus, with the referenced item materialized and ready to use.
 
 ## What's in the box
 
 - **Parser, type checker, and diagnostics.** Wrong action names, bad field types, and missing references get caught before you ever open a menu.
-- **ChatTriggers module.** `/import`, `/export`, `/simulator`, `/htsw gui`. Drives the actual Housing GUI — opens menus, edits actions, diffs against what's there, syncs only the differences. Item NBT is cached per-housing.
+- **ChatTriggers module.** `Drives the actual Housing GUI — opens menus, edits actions, diffs against what's there, syncs only the differences. Item NBT is cached per-housing.
 - **Simulator.** Run your code outside Housing for fast iteration on logic.
 - **In-game dashboard.** `/htsw gui` opens an overlay for browsing files, inspecting knowledge, and kicking off imports without touching chat.
 - **VSCode extension.** Autocomplete, hover, diagnostics. A Monaco build exists for the web.
@@ -48,6 +48,8 @@ Run `/import import.json` in a Housing world and the function lands in your Hous
 ## Quick start
 
 ### Use it in Minecraft
+
+SUBJECT TO CHANGE!
 
 1. Install [ChatTriggers](https://www.chattriggers.com/).
 2. Clone this repo.
@@ -58,7 +60,6 @@ Run `/import import.json` in a Housing world and the function lands in your Hous
    ```
 4. From `ct_module/`, run `python install.py`.
 5. In Minecraft, in a Housing world: `/import path/to/import.json`.
-
 ### Edit with autocomplete
 
 Install the VSCode extension from the releases page.
@@ -81,6 +82,10 @@ Working examples live under [`examples/`](examples/). Start with [`examples/simp
 A continuation of [BusterBrown1218](https://github.com/BusterBrown1218)'s HTSL. Housing wouldn't be in the state it's in today without his work.
 
 HTSW itself is built by @sndyx, @j_sse, and @callanftw.
+
+Thank you Sandy for the parser, lexer, linter, simulator, cli, VSCode extension, and initiating the project.
+Thank you Callan for the importer, exporter, diffing algorithm, knowledge, GUI, and VSCode extension 
+Thank you Jesse for the GUI, MCP, and miscellaneous things
 
 ## License
 
