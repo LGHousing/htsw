@@ -73,6 +73,7 @@ export type SourceTab = {
 };
 
 let importJsonPath = "./htsw/imports/import.json";
+let exportImportJsonPath: string | null = null;
 let parsedResult: ParseResult<Importable[]> | null = null;
 let parseError: string | null = null;
 let selectedImportableId: string | null = null;
@@ -201,6 +202,13 @@ export function getImportJsonPath(): string {
 }
 export function setImportJsonPath(path: string): void {
     importJsonPath = normalizeHtswPath(path);
+}
+
+export function getExportImportJsonPath(): string {
+    return exportImportJsonPath === null ? importJsonPath : exportImportJsonPath;
+}
+export function setExportImportJsonPath(path: string): void {
+    exportImportJsonPath = normalizeHtswPath(path);
 }
 
 export function getParsedResult(): ParseResult<Importable[]> | null {

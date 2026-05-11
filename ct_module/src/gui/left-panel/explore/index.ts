@@ -1,6 +1,12 @@
 /// <reference types="../../../../CTAutocomplete" />
 
-import { ClickInfo, Element, Rect } from "../../lib/layout";
+import {
+    ClickInfo,
+    Element,
+    Rect,
+    getScrollState,
+    SCROLLBAR_WIDTH,
+} from "../../lib/layout";
 import { Button, Col, Container, Icon, Input, Row, Scroll, Text } from "../../lib/components";
 import { Icons } from "../../lib/icons.generated";
 import { closeAllPopovers, togglePopover } from "../../lib/popovers";
@@ -46,7 +52,6 @@ import {
     enumerateForSource,
     getSources,
     queueSourcePath,
-    removeAllStandaloneFiles,
     removeSource,
 } from "./source";
 import { showInExplorer, openInVSCode } from "../../../utils/osShell";
@@ -195,17 +200,6 @@ function dirRootActions(s: SourceDir): MenuAction[] {
         },
     ];
     return withFsActions(extras, s.fullPath);
-}
-
-function standaloneRootActions(): MenuAction[] {
-    return [
-        {
-            label: "Close all",
-            onClick: () => {
-                removeAllStandaloneFiles();
-            },
-        },
-    ];
 }
 
 /**
@@ -463,7 +457,7 @@ function importableRow(parent: ResultImport, imp: Importable): Element {
  */
 function subRow(parent: ResultImport, imp: Importable, kind: SubListKind): Element {
     const label = SUB_LIST_LABELS[kind];
-    const path = importableSubListPath(imp, kind);
+    const path = importableSubListPath(imp, kind, parent.parse);
     const target = path ?? parent.fullPath;
     const actions = composeFileMenu([], target);
     return Container({
@@ -519,7 +513,7 @@ type BranchKind = "tee" | "ell";
 type TreeRow = {
     levels: LevelGuide[];
     branch: BranchKind | null;
-    content: Element;
+    content: () => Element;
     height: number;
 };
 
@@ -636,7 +630,7 @@ function composeTreeRow(r: TreeRow): Element {
                 width: { kind: "grow" },
                 height: { kind: "px", value: r.height },
             },
-            children: [r.content],
+            children: [r.content()],
         })
     );
     const body = Container({
@@ -680,22 +674,14 @@ function buildRoots(): Root[] {
 
 function buildTreeRows(): TreeRow[] {
     const roots = buildRoots();
-    let dirCount = 0;
-    let standaloneCount = 0;
-    for (let i = 0; i < roots.length; i++) {
-        const r = roots[i];
-        if (r.kind === "dir") dirCount++;
-        else standaloneCount = r.files.length;
-    }
     // Per-root header visibility:
     //   - dir roots: always show the header so the user can collapse / get
     //     context, even when only one folder is open.
-    //   - standalone group: show the header in every case except the lone
-    //     "single source" mode (no dirs + exactly one standalone file),
-    //     where a header would just add noise above one row.
+    //   - standalone files render directly; a synthetic group label adds
+    //     noise when the files are already named import.json / .htsl / .snbt.
     const showHeaderFor = (root: Root): boolean => {
         if (root.kind === "dir") return true;
-        return !(dirCount === 0 && standaloneCount === 1);
+        return false;
     };
     // Count imports across every opened source (unfiltered — search/type
     // filtering shouldn't change the default). When there's exactly one,
@@ -740,7 +726,7 @@ function buildTreeRows(): TreeRow[] {
                 out.push({
                     levels: [],
                     branch: null,
-                    content: rootRow(
+                    content: () => rootRow(
                         formatFullDir(root.source.fullPath),
                         root.key,
                         dirRootActions(root.source)
@@ -760,7 +746,7 @@ function buildTreeRows(): TreeRow[] {
                 out.push({
                     levels: [],
                     branch: headered ? (isLastResult ? "ell" : "tee") : null,
-                    content: resultRow(r, dirSourceKey, defaultExpanded),
+                    content: () => resultRow(r, dirSourceKey, defaultExpanded),
                     height: 18,
                 });
 
@@ -775,7 +761,7 @@ function buildTreeRows(): TreeRow[] {
                         out.push({
                             levels: impLevels,
                             branch: isLastImp ? "ell" : "tee",
-                            content: importableRow(r, imp),
+                            content: () => importableRow(r, imp),
                             height: ENTRY_ROW_H,
                         });
                         const subKey = importableExpansionKey(r.fullPath, imp);
@@ -789,7 +775,7 @@ function buildTreeRows(): TreeRow[] {
                                 out.push({
                                     levels: subLevels,
                                     branch: isLastSub ? "ell" : "tee",
-                                    content: subRow(r, imp, subs[k]),
+                                    content: () => subRow(r, imp, subs[k]),
                                     height: ENTRY_ROW_H,
                                 });
                             }
@@ -798,20 +784,6 @@ function buildTreeRows(): TreeRow[] {
                 }
             }
         } else {
-            if (headered) {
-                out.push({
-                    levels: [],
-                    branch: null,
-                    content: rootRow(
-                        "Standalone files",
-                        root.key,
-                        standaloneRootActions()
-                    ),
-                    height: 18,
-                });
-                if (collapsedRoots.has(root.key)) continue;
-            }
-
             // Run each standalone file through the same enumeration that
             // a folder-rooted source uses. That gives us a real `Result`
             // (typed import.json / htsl / snbt) so the rows render with
@@ -833,7 +805,7 @@ function buildTreeRows(): TreeRow[] {
                     out.push({
                         levels: [],
                         branch: headered ? (isLastResult ? "ell" : "tee") : null,
-                        content: resultRow(
+                        content: () => resultRow(
                             r,
                             fileSourceKey,
                             defaultExpanded,
@@ -857,7 +829,7 @@ function buildTreeRows(): TreeRow[] {
                             out.push({
                                 levels: impLevels,
                                 branch: isLastImp ? "ell" : "tee",
-                                content: importableRow(r, imp),
+                                content: () => importableRow(r, imp),
                                 height: ENTRY_ROW_H,
                             });
                             const subKey = importableExpansionKey(r.fullPath, imp);
@@ -871,7 +843,7 @@ function buildTreeRows(): TreeRow[] {
                                     out.push({
                                         levels: subLevels,
                                         branch: isLastSub ? "ell" : "tee",
-                                        content: subRow(r, imp, subs[s]),
+                                        content: () => subRow(r, imp, subs[s]),
                                         height: ENTRY_ROW_H,
                                     });
                                 }
@@ -885,8 +857,64 @@ function buildTreeRows(): TreeRow[] {
     return out;
 }
 
+const RESULTS_SCROLL_ID = "left-results-scroll";
+const VIRTUAL_OVERSCAN_PX = 96;
+
 function renderRows(): Element[] {
-    return buildTreeRows().map(composeTreeRow);
+    const rows = buildTreeRows();
+    if (rows.length === 0) return [];
+
+    let totalH = 0;
+    for (let i = 0; i < rows.length; i++) totalH += rows[i].height + ROW_GAP_H;
+
+    const state = getScrollState(RESULTS_SCROLL_ID);
+    const viewportH = state.viewportRect.h;
+    if (viewportH <= 0) {
+        const initial: Element[] = [];
+        let initialH = 0;
+        const limitH = 420;
+        for (let i = 0; i < rows.length && initialH < limitH; i++) {
+            initial.push(composeTreeRow(rows[i]));
+            initialH += rows[i].height + ROW_GAP_H;
+        }
+        if (totalH > initialH) initial.push(spacer(1, totalH - initialH));
+        return initial;
+    }
+
+    const minY = Math.max(0, state.offset - VIRTUAL_OVERSCAN_PX);
+    const maxY = state.offset + viewportH + VIRTUAL_OVERSCAN_PX;
+    const out: Element[] = [];
+    let cursor = 0;
+    let visibleH = 0;
+    let topPad = 0;
+    let started = false;
+
+    for (let i = 0; i < rows.length; i++) {
+        const rowH = rows[i].height + ROW_GAP_H;
+        const rowStart = cursor;
+        const rowEnd = cursor + rowH;
+        if (rowEnd >= minY && rowStart <= maxY) {
+            if (!started) {
+                topPad = rowStart;
+                if (topPad > 0) out.push(spacer(1, topPad));
+                started = true;
+            }
+            out.push(composeTreeRow(rows[i]));
+            visibleH += rowH;
+        } else if (started && rowStart > maxY) {
+            break;
+        }
+        cursor = rowEnd;
+    }
+
+    if (!started) {
+        out.push(spacer(1, totalH));
+        return out;
+    }
+
+    const bottomPad = Math.max(0, totalH - topPad - visibleH);
+    if (bottomPad > 0) out.push(spacer(1, bottomPad));
+    return out;
 }
 
 function dirOfPath(p: string): string {

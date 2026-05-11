@@ -3,11 +3,13 @@
 import { Rect } from "./layout";
 import { ContainerBounds, getContainerBounds } from "./bounds";
 
-// We always render the overlay as if MC's GUI scale were 4 ("Large"), regardless of the user's
-// setting. All overlay-internal coordinates are in this fixed scale-4 space (1 unit = 4 real
-// pixels). At the boundary with MC we convert to/from MC's current scaled-coord space, and the
-// render path applies a GL scale transform so Renderer.* calls (which interpret coords in MC's
-// scaled space) produce the correct real-pixel output.
+// The overlay renders at MC's current GUI scale, capped at `OVERLAY_SCALE_TARGET` (4) so a
+// modded scale of 5+ doesn't make the overlay unusably large. The per-frame effective scale is
+// `getEffectiveOverlayScale() = min(OVERLAY_SCALE_TARGET, mcScale)`; overlay-internal
+// coordinates live in that space (1 unit = effective-overlay-scale real pixels). At the
+// boundary with MC we convert to/from MC's current scaled-coord space, and the render path
+// applies a GL scale transform so Renderer.* calls (which interpret coords in MC's scaled
+// space) produce the correct real-pixel output.
 
 // @ts-ignore
 const ScaledResolutionClass = net.minecraft.client.gui.ScaledResolution;

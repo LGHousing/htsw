@@ -22,8 +22,8 @@ Library — `gui/lib/` (project-agnostic UI primitives + screen/theme):
 - `menu.ts` — `openMenu(x, y, actions[])` builds a context-menu popover from `{label, onClick}` actions, plus `{kind: "separator"}` dividers. Auto-closes on click. Menu width auto-sizes to the widest label via `Renderer.getStringWidth` (floored at `MIN_MENU_WIDTH`); callers don't need to truncate.
 - `focus.ts` — single global focused-input id.
 - `inputState.ts` — per-input `GuiTextField` instances (cursor, selection, clipboard, arrow keys).
-- `scissor.ts` — GL scissor stack. Multiplies overlay coords by `OVERLAY_SCALE` to get real pixels (see Coordinate space).
-- `overlayScale.ts` — fixed-scale boundary helpers. `OVERLAY_SCALE = 4`, `mcToOverlay`, `getOverlayScreen{W,H}`. See **Coordinate space** below.
+- `scissor.ts` — GL scissor stack. Multiplies overlay coords by `getEffectiveOverlayScale()` to get real pixels (see Coordinate space).
+- `overlayScale.ts` — scale boundary helpers. `OVERLAY_SCALE_TARGET = 4` (the cap), `getEffectiveOverlayScale()` (per-frame actual), `mcToOverlay`, `getOverlayScreen{W,H}`. See **Coordinate space** below.
 - `bounds.ts` — reads the open Minecraft `GuiContainer`'s bounds via Java reflection and converts them to overlay space; provides fullscreen panel rect + chat rect helpers.
 - `theme.ts` — color/size/glyph constants. `lib/popovers` reads its panel/scrim colors from here, so `theme` is treated as part of `lib`.
 - `components/` — thin element-builder functions (`Button`, `Container`, `Row`, `Col`, `Input`, `Scroll`, `Text`).
@@ -207,7 +207,7 @@ If you add a new entry point that receives MC scaled coords, **convert with `mcT
 
 ## Scissor
 
-GL scissor uses pixel coordinates (origin bottom-left), but our layout uses overlay scale-4 coords (origin top-left). `scissor.ts` multiplies by `OVERLAY_SCALE` and y-flips against `getOverlayScreenH()`. It maintains a stack so nested scrolls work. **If a render path early-returns between push and pop, the stack is unbalanced.** Render code is structured so `pushScissor`/`popScissor` always happen in pairs.
+GL scissor uses pixel coordinates (origin bottom-left), but our layout uses overlay coords (origin top-left, scale per-frame from `getEffectiveOverlayScale()`). `scissor.ts` multiplies by `getEffectiveOverlayScale()` and y-flips against `getOverlayScreenH()`. It maintains a stack so nested scrolls work. **If a render path early-returns between push and pop, the stack is unbalanced.** Render code is structured so `pushScissor`/`popScissor` always happen in pairs.
 
 ## Trigger registration order matters
 
