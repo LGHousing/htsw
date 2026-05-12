@@ -5,10 +5,12 @@ import { clickGoBack, timedWaitForMenu } from "../../importer/helpers";
 import {
     getCurrentHousingUuid,
     importableHash,
+    itemSnbtCachePath,
     writeKnowledge,
     type ImportableTrustPlan,
 } from "../../knowledge";
 import TaskContext from "../../tasks/context";
+import { ensureParentDirs } from "../../utils/filesystem";
 import { stableStringify } from "../../utils/helpers";
 import { getItemFromNbt, getItemFromSnbt } from "../../utils/nbt";
 import {
@@ -46,10 +48,6 @@ function itemShellMatchesCached(
     desired: ImportableItem
 ): boolean {
     return stableStringify(itemShell(cached)) === stableStringify(itemShell(desired));
-}
-
-function itemSnbtCachePath(housingUuid: string, hash: string): string {
-    return `./htsw/.cache/${housingUuid}/items/${hash}.snbt`;
 }
 
 function readCachedItemSnbt(housingUuid: string, hash: string): string | undefined {
@@ -147,6 +145,7 @@ export async function importImportableItem(
     const snbt = Player.getInventory()?.getStackInSlot(selectedHotbarSlot())?.getRawNBT();
     if (!snbt) throw Error("Why don't we have the item?");
 
+    ensureParentDirs(cachePath);
     FileLib.write(cachePath, snbt, true);
     writeItemKnowledge(ctx, uuid, importable);
 }

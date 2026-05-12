@@ -1,18 +1,13 @@
 import type { Condition } from "htsw/types";
 
-import { conditionsEqual } from "../compare";
-import type { ObservedConditionSlot } from "../types";
+import { conditionOnlyNoteDiffers, conditionsEqual } from "../compare";
+import type {
+    ConditionListDiff,
+    ConditionListOperation,
+    ObservedConditionSlot,
+} from "../types";
 
 export { conditionOnlyNoteDiffers as onlyNoteDiffers } from "../compare";
-
-export type ConditionListDiff = {
-    edits: Array<{
-        observed: ObservedConditionSlot;
-        desired: Condition;
-    }>;
-    deletes: ObservedConditionSlot[];
-    adds: Condition[];
-};
 
 export function diffConditionList(
     observed: ObservedConditionSlot[],
@@ -20,10 +15,9 @@ export function diffConditionList(
 ): ConditionListDiff {
     const unmatchedObserved = [...observed];
     const unmatchedDesired = [...desired];
-    const edits: ConditionListDiff["edits"] = [];
-    const adds: Condition[] = [];
+    const operations: ConditionListOperation[] = [];
 
-    // Remove exact matches before pairing same-type edits.
+    // Pass 1: drop exact matches before pairing the rest.
     for (
         let desiredIndex = unmatchedDesired.length - 1;
         desiredIndex >= 0;
@@ -42,26 +36,57 @@ export function diffConditionList(
         unmatchedDesired.splice(desiredIndex, 1);
     }
 
+    // Pass 2: note-only pairs. Prefer these over later same-type pairings so
+    // a note-only edit doesn't get burned on an arbitrary same-type slot
+    // while a real note-only candidate gets deleted-then-added.
+    for (
+        let desiredIndex = unmatchedDesired.length - 1;
+        desiredIndex >= 0;
+        desiredIndex--
+    ) {
+        const desiredCondition = unmatchedDesired[desiredIndex];
+        const observedIndex = unmatchedObserved.findIndex((entry) =>
+            conditionOnlyNoteDiffers(desiredCondition, entry.condition)
+        );
+
+        if (observedIndex === -1) {
+            continue;
+        }
+
+        const [observedCondition] = unmatchedObserved.splice(observedIndex, 1);
+        unmatchedDesired.splice(desiredIndex, 1);
+        operations.push({
+            kind: "edit",
+            observed: observedCondition,
+            desired: desiredCondition,
+            noteOnly: true,
+        });
+    }
+
+    // Pass 3: same-type edits, else adds.
     for (const desiredCondition of unmatchedDesired) {
         const observedIndex = unmatchedObserved.findIndex(
             (entry) => entry.condition?.type === desiredCondition.type
         );
 
         if (observedIndex === -1) {
-            adds.push(desiredCondition);
+            operations.push({ kind: "add", desired: desiredCondition });
             continue;
         }
 
         const [observedCondition] = unmatchedObserved.splice(observedIndex, 1);
-        edits.push({
+        operations.push({
+            kind: "edit",
             observed: observedCondition,
             desired: desiredCondition,
+            noteOnly: false,
         });
     }
 
-    return {
-        edits,
-        deletes: unmatchedObserved,
-        adds,
-    };
+    // Pass 4: leftover observed entries are deletes.
+    for (const observed of unmatchedObserved) {
+        operations.push({ kind: "delete", observed });
+    }
+
+    return { operations };
 }

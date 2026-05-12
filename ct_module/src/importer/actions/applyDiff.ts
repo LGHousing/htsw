@@ -18,7 +18,9 @@ import { type ItemRegistry } from "../../importables/itemRegistry";
 import {
     clickGoBack,
     getSlotPaginate,
+    isLimitExceeded,
     setListItemNote,
+    setNoteOnLastVisibleSlot,
     timedWaitForMenu,
     waitForMenu,
 } from "../helpers";
@@ -32,7 +34,6 @@ import type {
 } from "../types";
 import {
     getPaginatedListSlotAtIndex,
-    getVisiblePaginatedItemSlots,
     goToPaginatedListPage,
 } from "../paginatedList";
 import {
@@ -51,7 +52,6 @@ import { ACTION_LIST_CONFIG } from "./listConfig";
 import {
     actionPathForIndex,
     getActionSpec,
-    isLimitExceeded,
     withWritingActionPath,
     writeOpenAction,
 } from "../actions";
@@ -70,7 +70,7 @@ export async function importAction(
 
     const slot = await getSlotPaginate(ctx, displayName);
 
-    if (isLimitExceeded(slot)) {
+    if (isLimitExceeded(slot, "action")) {
         throw Diagnostic.error(`Maximum amount of ${displayName} actions exceeded`);
     }
 
@@ -84,13 +84,7 @@ export async function importAction(
         await clickGoBack(ctx);
     }
 
-    if (action.note) {
-        const itemSlots = getVisiblePaginatedItemSlots(ctx);
-        const addedSlot = itemSlots[itemSlots.length - 1];
-        if (addedSlot) {
-            await setListItemNote(ctx, addedSlot, action.note);
-        }
-    }
+    await setNoteOnLastVisibleSlot(ctx, action.note);
 }
 
 async function deleteObservedAction(

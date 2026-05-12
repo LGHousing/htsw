@@ -65,8 +65,8 @@ export function normalizeLoreValueFormatting(value: string): string {
     return normalized.slice(index);
 }
 
-const INTEGER_DISPLAY_VALUE_PATTERN = /^[+-]?(?:(?:\d{1,3}(?:,\d{3})+)|\d+)$/;
-const DECIMAL_DISPLAY_VALUE_PATTERN = /^[+-]?(?:(?:\d{1,3}(?:,\d{3})+)|\d+)\.\d+$/;
+export const INTEGER_DISPLAY_VALUE_PATTERN = /^[+-]?(?:(?:\d{1,3}(?:,\d{3})+)|\d+)$/;
+export const DECIMAL_DISPLAY_VALUE_PATTERN = /^[+-]?(?:(?:\d{1,3}(?:,\d{3})+)|\d+)\.\d+$/;
 
 function stripNumericGroupingCommas(value: string): string {
     if (value.indexOf(",") === -1) return value;
@@ -186,4 +186,32 @@ export function normalizeNoteText(note: string): string {
         .map((line) => normalizeLoreValueFormatting(line).trim())
         .join("\n")
         .trim();
+}
+
+/**
+ * Lore parser for the holder field shared by `CHANGE_VAR` (action) and
+ * `COMPARE_VAR` (condition). The lore exposes the holder as a bare string
+ * ("Player" / "Global" / "Team"); when "Team", an additional "Team: <name>"
+ * lore line carries the team name. Returns the fully-shaped holder object
+ * the type system expects, or undefined if the raw value isn't a recognized
+ * holder string.
+ */
+export function parseHolderField(
+    slot: ItemSlot,
+    rawHolder: unknown
+): { type: "Player" | "Global" | "Team"; team?: string } | undefined {
+    if (typeof rawHolder !== "string") return undefined;
+    if (rawHolder === "Player" || rawHolder === "Global") {
+        return { type: rawHolder };
+    }
+    if (rawHolder === "Team") {
+        for (const line of slot.getItem().getLore()) {
+            const kv = parseLoreKeyValueLine(line);
+            if (kv !== null && kv.label === "Team") {
+                return { type: "Team", team: removedFormatting(kv.value).trim() };
+            }
+        }
+        return { type: "Team" };
+    }
+    return undefined;
 }

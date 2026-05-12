@@ -4,7 +4,7 @@ import type { Action, Condition } from "htsw/types";
 import TaskContext from "../tasks/context";
 import { type ItemRegistry, getMemoizedHousingUuid } from "../importables/itemRegistry";
 import { getItemFromSnbt } from "../utils/nbt";
-import { importableHash } from "../knowledge";
+import { importableHash, itemSnbtCachePath } from "../knowledge";
 
 type Owner = Action | Condition;
 
@@ -49,7 +49,7 @@ export async function resolveImportableItem(
 
     const uuid = await getMemoizedHousingUuid(ctx, itemRegistry);
     const hash = importableHash(importable);
-    const cachePath = `./htsw/.cache/${uuid}/items/${hash}.snbt`;
+    const cachePath = itemSnbtCachePath(uuid, hash);
     if (!FileLib.exists(cachePath)) {
         throw Diagnostic.error(
             `Cannot set item "${itemName}" for ${owner.type}: it has click actions but isn't cached at ${cachePath}. ` +

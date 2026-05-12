@@ -1,7 +1,7 @@
 import { TaskManager } from "../tasks/manager";
 import { exportImportable } from "../importables/exports";
 import { getCurrentHousingUuid } from "../knowledge";
-import { encodeFilesystemComponent } from "../utils/filesystem";
+import { htslFilenameForFunctionExport } from "./paths";
 import { chatSeparator, stripSurroundingQuotes } from "../utils/helpers";
 import { VERSION } from "htsw";
 
@@ -97,7 +97,7 @@ function commandExport(args: string[]): void {
                 importJsonPath = `${rootDir}/import.json`;
             }
 
-            const filename = `${encodeFilesystemComponent(name, { escapeDots: false })}.htsl`;
+            const filename = htslFilenameForFunctionExport(importJsonPath, name);
             const htslPath = `${rootDir}/${filename}`;
             const htslReference = filename;
 

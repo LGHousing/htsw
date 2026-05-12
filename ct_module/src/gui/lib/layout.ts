@@ -418,7 +418,10 @@ function layoutScroll(
     if (state.offset > maxOffset) state.offset = maxOffset;
     if (state.offset < 0) state.offset = 0;
 
-    // Place children with offset applied. Cross-axis = stretch into innerW (no scrollbar reservation).
+    // Place children with offset applied. The scrollbar is drawn inside the
+    // viewport, so reserve its track width instead of letting right-aligned
+    // row labels sit underneath it.
+    const contentW = Math.max(0, innerW - SCROLLBAR_W);
     let cursor = y + pad.t - state.offset;
     for (let i = 0; i < n; i++) {
         const ch = children[i];
@@ -427,14 +430,14 @@ function layoutScroll(
         const explicitCross = ch.style.width;
         const crossResolved = resolveAxis(ch, "w");
         let cSize: number;
-        if (crossResolved === null) cSize = innerW;
+        if (crossResolved === null) cSize = contentW;
         else if (align === "stretch" && (!explicitCross || explicitCross.kind === "auto"))
-            cSize = innerW;
-        else cSize = Math.min(crossResolved, innerW);
+            cSize = contentW;
+        else cSize = Math.min(crossResolved, contentW);
 
         let crossOff = innerX;
-        if (align === "center") crossOff = innerX + Math.floor((innerW - cSize) / 2);
-        else if (align === "end") crossOff = innerX + (innerW - cSize);
+        if (align === "center") crossOff = innerX + Math.floor((contentW - cSize) / 2);
+        else if (align === "end") crossOff = innerX + (contentW - cSize);
 
         const rect: Rect = { x: crossOff, y: cursor, w: cSize, h: mSize };
         out.push({ element: ch, rect, clipRect: viewportRect });

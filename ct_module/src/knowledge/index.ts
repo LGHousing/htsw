@@ -30,6 +30,7 @@ export {
     cachePathFor,
     cachePathForId,
     importableIdentity,
+    itemSnbtCachePath,
     slug,
     KNOWLEDGE_ROOT,
 } from "./paths";

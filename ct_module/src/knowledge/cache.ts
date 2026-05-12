@@ -1,6 +1,7 @@
 import type { Importable } from "htsw/types";
 
 import TaskContext from "../tasks/context";
+import { ensureParentDirs } from "../utils/filesystem";
 import { importableHash, listHashes } from "./hash";
 import { cachePathFor, cachePathForId } from "./paths";
 
@@ -55,22 +56,6 @@ export function buildKnowledgeEntry(
  * the importer/exporter has already done its real work and the cache
  * is just a hint.
  */
-function ensureParentDirs(path: string): void {
-    try {
-        // @ts-ignore
-        const Paths = Java.type("java.nio.file.Paths");
-        // @ts-ignore
-        const Files = Java.type("java.nio.file.Files");
-        const p = Paths.get(String(path));
-        const parent = p.getParent();
-        if (parent !== null && !Files.exists(parent)) {
-            Files.createDirectories(parent);
-        }
-    } catch (_e) {
-        // best-effort; FileLib.write may also create dirs on some builds.
-    }
-}
-
 export function writeKnowledge(
     ctx: TaskContext,
     housingUuid: string,

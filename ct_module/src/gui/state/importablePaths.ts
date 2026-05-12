@@ -57,6 +57,28 @@ function pathFromSpan(
     }
 }
 
+function actionPathFromFieldSpan(
+    parsed: ParseResult<Importable[]>,
+    imp: Importable,
+    kind: SubListKind
+): string | undefined {
+    try {
+        const span = parsed.gcx.spans.getField(imp as any, kind);
+        const file = parsed.gcx.sourceMap.getFileByPos(span.start);
+        const start = span.start - file.startPos;
+        const end = span.end - file.startPos;
+        const raw = file.src.slice(start, end);
+        const value = JSON.parse(raw);
+        if (typeof value !== "string") return undefined;
+        return parsed.gcx.sourceMap.fileLoader.resolvePath(
+            parsed.gcx.sourceMap.fileLoader.getParentPath(file.path),
+            value
+        );
+    } catch (_e) {
+        return undefined;
+    }
+}
+
 /**
  * Resolve `imp`'s source file path. Pass `parse` when looking up
  * importables that came from a parse other than the globally-active one
@@ -119,7 +141,8 @@ export function importableSubListPath(
     const parsed = parse ?? getParsedResult();
     if (parsed === null || parsed === undefined) return undefined;
     const list = subListOf(imp, kind);
-    if (list === undefined || list.length === 0) return undefined;
+    if (list === undefined) return undefined;
+    if (list.length === 0) return actionPathFromFieldSpan(parsed, imp, kind);
     // The first action's span resolves through the SourceMap to whatever
     // file the actions live in: an htsl when the list was materialized
     // from `actionsPath: "..."`, or the declaring import.json for inline

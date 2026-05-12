@@ -62,3 +62,13 @@ export function cachePathForId(
 ): string {
     return `${KNOWLEDGE_ROOT}/${housingUuid}/${dirFor(type)}/${slug(identity)}.knowledge.json`;
 }
+
+/**
+ * Per-housing SNBT cache for items with click actions. Distinct from the
+ * `item/` knowledge dir (which holds the .knowledge.json metadata) — this
+ * stores the raw NBT we captured after editing so a later reference can
+ * inject the same item without redoing the edits.
+ */
+export function itemSnbtCachePath(housingUuid: string, hash: string): string {
+    return `${KNOWLEDGE_ROOT}/${housingUuid}/items/${hash}.snbt`;
+}

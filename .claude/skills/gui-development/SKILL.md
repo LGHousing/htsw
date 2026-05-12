@@ -22,8 +22,8 @@ Library — `gui/lib/` (project-agnostic UI primitives + screen/theme):
 - `menu.ts` — `openMenu(x, y, actions[])` builds a context-menu popover from `{label, onClick}` actions, plus `{kind: "separator"}` dividers. Auto-closes on click. Menu width auto-sizes to the widest label via `Renderer.getStringWidth` (floored at `MIN_MENU_WIDTH`); callers don't need to truncate.
 - `focus.ts` — single global focused-input id.
 - `inputState.ts` — per-input `GuiTextField` instances (cursor, selection, clipboard, arrow keys).
-- `scissor.ts` — GL scissor stack. Multiplies overlay coords by `OVERLAY_SCALE` to get real pixels (see Coordinate space).
-- `overlayScale.ts` — fixed-scale boundary helpers. `OVERLAY_SCALE = 4`, `mcToOverlay`, `getOverlayScreen{W,H}`. See **Coordinate space** below.
+- `scissor.ts` — GL scissor stack. Multiplies overlay coords by `getEffectiveOverlayScale()` to get real pixels (see Coordinate space).
+- `overlayScale.ts` — scale boundary helpers. `OVERLAY_SCALE_TARGET = 4` (the cap), `getEffectiveOverlayScale()` (per-frame actual), `mcToOverlay`, `getOverlayScreen{W,H}`. See **Coordinate space** below.
 - `bounds.ts` — reads the open Minecraft `GuiContainer`'s bounds via Java reflection and converts them to overlay space; provides fullscreen panel rect + chat rect helpers.
 - `theme.ts` — color/size/glyph constants. `lib/popovers` reads its panel/scrim colors from here, so `theme` is treated as part of `lib`.
 - `components/` — thin element-builder functions (`Button`, `Container`, `Row`, `Col`, `Input`, `Scroll`, `Text`).
@@ -187,9 +187,9 @@ Returns `null` for non-`GuiContainer` screens (main menu, settings, etc.). The p
 
 ## Coordinate space
 
-The overlay targets `OVERLAY_SCALE_TARGET = 4` real pixels per overlay unit, regardless of Minecraft's GUI Scale setting. All internal coordinates (layout rects, mouse coords used by hit-testing, screen dims, scissor inputs) live in this overlay space.
+The overlay caps at `OVERLAY_SCALE_TARGET = 4` real pixels per overlay unit, but otherwise tracks MC's current GUI scale. All internal coordinates (layout rects, mouse coords used by hit-testing, screen dims, scissor inputs) live in this overlay space.
 
-The effective scale per frame is `getEffectiveOverlayScale() = OVERLAY_SCALE_TARGET * (mcReal / mcSetting)` — when MC isn't clamping (real == setting) the ratio is 1 and we render at 4 px/unit; when MC has auto-clamped below the user's setting because the window is too small (e.g. setting 5 → real 2), we ride the same clamp ratio so the overlay shrinks proportionally and stays visible (4 × 2/5 = 1.6). When `gameSettings.guiScale = 0` ("Auto") there's no setting value to compare against, so we render at the target scale.
+The effective scale per frame is `getEffectiveOverlayScale() = min(OVERLAY_SCALE_TARGET, mcScale)`. When MC is at-or-below the cap (vanilla, which maxes at 4), we match it exactly — so on Normal (scale 2) the overlay also renders at 2 and looks the same size as the inventory it sits next to. When a mod pushes MC above the cap (scale 5+), the overlay stays at 4 so it doesn't become unusably large. MC's own auto-clamp on small windows is handled implicitly, since `mcScale` is the post-clamp value.
 
 How it works:
 - `getMcScale()` computes the actual scale via `realW / scaledW` rather than `ScaledResolution.func_78325_e()`, because vanilla 1.8.9 caps `scaleFactor` at 4 and mods that allow scale 5+ typically override `getScaledWidth/Height` but leave `scaleFactor` untouched.
@@ -207,7 +207,7 @@ If you add a new entry point that receives MC scaled coords, **convert with `mcT
 
 ## Scissor
 
-GL scissor uses pixel coordinates (origin bottom-left), but our layout uses overlay scale-4 coords (origin top-left). `scissor.ts` multiplies by `OVERLAY_SCALE` and y-flips against `getOverlayScreenH()`. It maintains a stack so nested scrolls work. **If a render path early-returns between push and pop, the stack is unbalanced.** Render code is structured so `pushScissor`/`popScissor` always happen in pairs.
+GL scissor uses pixel coordinates (origin bottom-left), but our layout uses overlay coords (origin top-left, scale per-frame from `getEffectiveOverlayScale()`). `scissor.ts` multiplies by `getEffectiveOverlayScale()` and y-flips against `getOverlayScreenH()`. It maintains a stack so nested scrolls work. **If a render path early-returns between push and pop, the stack is unbalanced.** Render code is structured so `pushScissor`/`popScissor` always happen in pairs.
 
 ## Trigger registration order matters
 

@@ -1,3 +1,27 @@
+/**
+ * Best-effort `mkdir -p` for the parent directory of `path`. Used before
+ * `FileLib.write` because that call doesn't create missing parents on its
+ * own — silent write failures in CT otherwise look like "the export just
+ * didn't happen." Swallows errors because some FileLib builds DO create
+ * dirs, in which case we'd hit a benign already-exists case from the
+ * second creator.
+ */
+export function ensureParentDirs(path: string): void {
+    try {
+        // @ts-ignore
+        const Paths = Java.type("java.nio.file.Paths");
+        // @ts-ignore
+        const Files = Java.type("java.nio.file.Files");
+        const p = Paths.get(String(path));
+        const parent = p.getParent();
+        if (parent !== null && !Files.exists(parent)) {
+            Files.createDirectories(parent);
+        }
+    } catch (_e) {
+        // best-effort; FileLib.write may also create dirs on some builds.
+    }
+}
+
 export function encodeFilesystemComponent(
     value: string,
     options: { escapeDots?: boolean } = {}

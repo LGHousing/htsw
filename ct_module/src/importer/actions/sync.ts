@@ -64,7 +64,7 @@ export async function syncActionList(
         }
     }
     const diff = diffActionList(observed, desired);
-    logSyncState(ctx, diff);
+    logActionSyncState(ctx, diff);
     await applyActionListDiff(
         ctx,
         observed,
@@ -77,7 +77,7 @@ export async function syncActionList(
     return { usedObserved: observed };
 }
 
-function logSyncState(ctx: TaskContext, diff: ActionListDiff): void {
+function logActionSyncState(ctx: TaskContext, diff: ActionListDiff): void {
     if (diff.operations.length === 0) {
         ctx.displayMessage(`&7[sync] &aUp to date.`);
         return;

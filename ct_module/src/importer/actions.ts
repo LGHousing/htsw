@@ -38,6 +38,7 @@ import type {
 import TaskContext from "../tasks/context";
 import { type ItemRegistry } from "../importables/itemRegistry";
 import {
+    VAR_HOLDER_OPTIONS,
     clickGoBack,
     waitForMenu,
     getSlotPaginate,
@@ -46,14 +47,13 @@ import {
     setStringValue,
     setStringOrPaginatedOptionValue,
     setBooleanValue,
+    setLocationValue,
     setSelectValue,
     setCycleValue,
     setNumberValue,
     readBooleanValue,
     readStringValue,
 } from "./helpers";
-import { ItemSlot } from "../tasks/specifics/slots";
-import { removedFormatting } from "../utils/helpers";
 import {
     readConditionList,
     syncConditionList,
@@ -148,13 +148,6 @@ export function getActionSpec<T extends Action["type"]>(
     type: T
 ): ActionSpec<Extract<Action, { type: T }>> {
     return ACTION_SPECS[type] as ActionSpec<Extract<Action, { type: T }>>;
-}
-
-export function isLimitExceeded(slot: ItemSlot): boolean {
-    const lore = slot.getItem().getLore();
-    if (lore.length === 0) return false;
-    const lastLine = lore[lore.length - 1];
-    return removedFormatting(lastLine) === "You can't have more of this action!";
 }
 
 async function readOpenConditional(
@@ -522,8 +515,6 @@ async function writeSendToLobby(
     }
 }
 
-const VAR_HOLDER_OPTIONS = ["Player", "Global", "Team"] as const;
-
 async function writeChangeVar(ctx: TaskContext, action: ActionChangeVar): Promise<void> {
     if (action.holder) {
         await setCycleValue(
@@ -568,15 +559,7 @@ async function writeChangeVar(ctx: TaskContext, action: ActionChangeVar): Promis
 
 async function writeTeleport(ctx: TaskContext, action: ActionTeleport): Promise<void> {
     const locationLabel = getActionFieldLabel("TELEPORT", "location");
-    if (action.location.type === "Custom Coordinates") {
-        await openSubmenu(ctx, locationLabel);
-        const optionSlot = await getSlotPaginate(ctx, "Custom Coordinates");
-        optionSlot.click();
-        await enterValue(ctx, action.location.value);
-        await waitForMenu(ctx);
-    } else {
-        await setSelectValue(ctx, locationLabel, action.location.type);
-    }
+    await setLocationValue(ctx, locationLabel, action.location);
 
     if (action.preventTeleportInsideBlocks !== undefined) {
         await setBooleanValue(
@@ -631,15 +614,7 @@ async function writePlaySound(ctx: TaskContext, action: ActionPlaySound): Promis
 
     if (action.location !== undefined) {
         const locationLabel = getActionFieldLabel("PLAY_SOUND", "location");
-        if (action.location.type === "Custom Coordinates") {
-            await openSubmenu(ctx, locationLabel);
-            const optionSlot = await getSlotPaginate(ctx, "Custom Coordinates");
-            optionSlot.click();
-            await enterValue(ctx, action.location.value);
-            await waitForMenu(ctx);
-        } else {
-            await setSelectValue(ctx, locationLabel, action.location.type);
-        }
+        await setLocationValue(ctx, locationLabel, action.location);
     }
 }
 
@@ -648,15 +623,7 @@ async function writeSetCompassTarget(
     action: ActionSetCompassTarget
 ): Promise<void> {
     const locationLabel = getActionFieldLabel("SET_COMPASS_TARGET", "location");
-    if (action.location.type === "Custom Coordinates") {
-        await openSubmenu(ctx, locationLabel);
-        const optionSlot = await getSlotPaginate(ctx, "Custom Coordinates");
-        optionSlot.click();
-        await enterValue(ctx, action.location.value);
-        await waitForMenu(ctx);
-    } else {
-        await setSelectValue(ctx, locationLabel, action.location.type);
-    }
+    await setLocationValue(ctx, locationLabel, action.location);
 }
 
 async function writeSetGamemode(
@@ -808,15 +775,7 @@ async function writeDropItem(
 
     if (action.location !== undefined) {
         const locationLabel = getActionFieldLabel("DROP_ITEM", "location");
-        if (action.location.type === "Custom Coordinates") {
-            await openSubmenu(ctx, locationLabel);
-            const optionSlot = await getSlotPaginate(ctx, "Custom Coordinates");
-            optionSlot.click();
-            await enterValue(ctx, action.location.value);
-            await waitForMenu(ctx);
-        } else {
-            await setSelectValue(ctx, locationLabel, action.location.type);
-        }
+        await setLocationValue(ctx, locationLabel, action.location);
     }
 
     if (action.dropNaturally !== undefined) {
@@ -891,15 +850,7 @@ async function writeSetVelocity(
 
 async function writeLaunch(ctx: TaskContext, action: ActionLaunch): Promise<void> {
     const locationLabel = getActionFieldLabel("LAUNCH", "location");
-    if (action.location.type === "Custom Coordinates") {
-        await openSubmenu(ctx, locationLabel);
-        const optionSlot = await getSlotPaginate(ctx, "Custom Coordinates");
-        optionSlot.click();
-        await enterValue(ctx, action.location.value);
-        await waitForMenu(ctx);
-    } else {
-        await setSelectValue(ctx, locationLabel, action.location.type);
-    }
+    await setLocationValue(ctx, locationLabel, action.location);
     await setNumberValue(
         ctx,
         ctx.getMenuItemSlot(getActionFieldLabel("LAUNCH", "strength")),

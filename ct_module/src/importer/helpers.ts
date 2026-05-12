@@ -1,75 +1,35 @@
+import type { Location } from "htsw/types";
+
 import TaskContext from "../tasks/context";
 import { ItemSlot, MouseButton } from "../tasks/specifics/slots";
 import { removedFormatting } from "../utils/helpers";
-import { S2DPacketOpenWindow, S30PacketWindowItems } from "../utils/packets";
-import { lastWindowID___FromS30PacketWindowItemsPacketReceived__ThisIsNecessary_sadly_itIncrementsFrom1To100ThenItGoesBackAround_ButSometimesItSkipsOneOrMoreWeAreNotSureMaybeMore_AndItWillNeverBeZero } from "../tasks/specifics/waitFor";
+import { S2DPacketOpenWindow } from "../utils/packets";
 import {
     normalizeLoreValueFormatting,
     normalizeNoteText,
     readListItemNote,
 } from "./loreParsing";
+import {
+    timedWaitForMenu,
+    waitForMenu,
+} from "./menuWait";
+import { getVisiblePaginatedItemSlots } from "./paginatedList";
 import { COST } from "./progress/costs";
-import { recordTimedOp, timed } from "./progress/timing";
+import { recordTimedOp } from "./progress/timing";
 
-export async function waitForMenu(ctx: TaskContext): Promise<void> {
-    await ctx.withTimeout(async () => {
-        await ctx.waitFor("packetReceived", (packet) => {
-            if (!(packet instanceof S30PacketWindowItems)) return false;
-            const windowID = packet.func_148911_c();
-            return (
-                windowID !== 0 &&
-                windowID !==
-                    lastWindowID___FromS30PacketWindowItemsPacketReceived__ThisIsNecessary_sadly_itIncrementsFrom1To100ThenItGoesBackAround_ButSometimesItSkipsOneOrMoreWeAreNotSureMaybeMore_AndItWillNeverBeZero
-            );
-        });
+// Re-exported so existing consumers don't need to change their imports.
+// Module-graph-wise these now live in `menuWait.ts` so `paginatedList.ts`
+// can pull `timedWaitForMenu` from there without creating a helpers ↔
+// paginatedList cycle.
+export {
+    timedWaitForMenu,
+    timedWaitForUnformattedMessage,
+    waitForMenu,
+    waitForUnformattedMessage,
+} from "./menuWait";
 
-        // Netty handles packets from a worker thread but the packet is only
-        // actually handled by Minecraft once it is synchronized with the main
-        // thread. So we have to wait for the next tick so the packet will be
-        // processed and the window items will be in the container.
-        await ctx.waitFor("tick");
-    }, "Waiting for menu to load");
-}
-
-export async function timedWaitForMenu(
-    ctx: TaskContext,
-    kind: "menuClickWait" | "pageTurnWait" | "goBackWait" | "commandMenuWait" = "menuClickWait"
-): Promise<void> {
-    const expected =
-        kind === "pageTurnWait"
-            ? COST.pageTurnWait
-            : kind === "goBackWait"
-              ? COST.goBackWait
-              : kind === "commandMenuWait"
-                ? COST.commandMenuWait
-                : COST.menuClickWait;
-    await timed(kind, expected, () => waitForMenu(ctx));
-}
-
-export async function waitForUnformattedMessage(
-    ctx: TaskContext,
-    message: string
-): Promise<void> {
-    await ctx.withTimeout(
-        ctx.waitFor(
-            "message",
-            (chatMessage) => removedFormatting(chatMessage) === message
-        ),
-        "Waiting for message in chat"
-    );
-}
-
-export async function timedWaitForUnformattedMessage(
-    ctx: TaskContext,
-    message: string,
-    kind: "commandMessageWait" | "messageClickWait" = "commandMessageWait"
-): Promise<void> {
-    await timed(
-        kind,
-        kind === "messageClickWait" ? COST.messageClickWait : COST.commandMessageWait,
-        () => waitForUnformattedMessage(ctx, message)
-    );
-}
+/** Cycle options shared by `CHANGE_VAR` (action) and `COMPARE_VAR` (condition). */
+export const VAR_HOLDER_OPTIONS = ["Player", "Global", "Team"] as const;
 
 export async function getSlotPaginate(ctx: TaskContext, name: string): Promise<ItemSlot> {
     await goToFirstPaginatedOptionPage(ctx);
@@ -530,5 +490,54 @@ export async function setStringOrPaginatedOptionValue(
         default:
             const _exhaustiveCheck: never = inputMode;
             return _exhaustiveCheck;
+    }
+}
+
+/**
+ * Set a location-typed field (TELEPORT, LAUNCH, PLAY_SOUND, ...). "Custom
+ * Coordinates" opens the location submenu, picks the option, and enters the
+ * coordinate string; every other location type is a plain select.
+ */
+export async function setLocationValue(
+    ctx: TaskContext,
+    label: string,
+    location: Location
+): Promise<void> {
+    if (location.type === "Custom Coordinates") {
+        await openSubmenu(ctx, label);
+        const optionSlot = await getSlotPaginate(ctx, "Custom Coordinates");
+        optionSlot.click();
+        await enterValue(ctx, location.value);
+        await waitForMenu(ctx);
+        return;
+    }
+    await setSelectValue(ctx, label, location.type);
+}
+
+/**
+ * Detect the Housing "You can't have more of this {action|condition}!" hint
+ * on the add-X menu's type slot. Lore-only check; no clicks.
+ */
+export function isLimitExceeded(slot: ItemSlot, kind: "action" | "condition"): boolean {
+    const lore = slot.getItem().getLore();
+    if (lore.length === 0) return false;
+    const lastLine = lore[lore.length - 1];
+    return removedFormatting(lastLine) === `You can't have more of this ${kind}!`;
+}
+
+/**
+ * After importing a new action/condition (which adds at the end of the
+ * paginated list), set the note on the last visible slot. No-op when `note`
+ * is undefined.
+ */
+export async function setNoteOnLastVisibleSlot(
+    ctx: TaskContext,
+    note: string | undefined
+): Promise<void> {
+    if (!note) return;
+    const slots = getVisiblePaginatedItemSlots(ctx);
+    const last = slots[slots.length - 1];
+    if (last) {
+        await setListItemNote(ctx, last, note);
     }
 }

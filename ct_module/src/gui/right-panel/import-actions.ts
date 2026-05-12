@@ -4,6 +4,7 @@ import {
     applyImportProgress,
     beginImportRun,
     clearImportRun,
+    getExportImportJsonPath,
     getHousingUuid,
     getImportJsonPath,
     isCurrentHouseTrusted,
@@ -37,7 +38,7 @@ import { TaskManager } from "../../tasks/manager";
 import type { Importable } from "htsw/types";
 import type { ParseResult } from "htsw";
 import { closeAllPopovers } from "../lib/popovers";
-import { encodeFilesystemComponent } from "../../utils/filesystem";
+import { htslFilenameForFunctionExport } from "../../exporter/paths";
 import {
     clearDiff,
     addDeleteOp,
@@ -326,14 +327,14 @@ export function startCaptureExport(type: CaptureType): void {
             ctx.displayMessage("&7[htsw] Export cancelled");
             return;
         }
-        const importJsonPath = getImportJsonPath();
+        const importJsonPath = getExportImportJsonPath();
         if (importJsonPath.trim() === "") {
             ctx.displayMessage("&c[htsw] No import.json loaded — load one first");
             return;
         }
         const dir = importJsonDir(importJsonPath);
         if (result.type === "FUNCTION") {
-            const filename = `${encodeFilesystemComponent(result.name, { escapeDots: false })}.htsl`;
+            const filename = htslFilenameForFunctionExport(importJsonPath, result.name);
             await exportImportable(ctx, {
                 type: "FUNCTION",
                 name: result.name,

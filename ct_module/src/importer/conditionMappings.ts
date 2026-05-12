@@ -3,8 +3,8 @@ import { CONDITION_NAMES, type Condition, type ConditionCompareVar } from "htsw/
 import { ItemSlot } from "../tasks/specifics/slots";
 import { removedFormatting } from "../utils/helpers";
 import {
+    parseHolderField,
     parseLoreFields,
-    parseLoreKeyValueLine,
     readListItemNote,
 } from "./loreParsing";
 import type { ConditionLoreSpec, UiFieldKind } from "./types";
@@ -267,24 +267,13 @@ export function parseConditionListItem(
         ...parseLoreFields(slot, mapping.loreFields),
     } as Condition;
 
-    // COMPARE_VAR holder mirrors the CHANGE_VAR shape: when holder = Team the
-    // lore also has a "Team: <name>" line, which is needed to produce the
-    // full { type: "Team", team } holder shape.
     if (condition.type === "COMPARE_VAR") {
-        const holder = (condition as any).holder as string | undefined;
-        if (holder === "Player" || holder === "Global") {
-            (condition as ConditionCompareVar).holder = { type: holder };
-        } else if (holder === "Team") {
-            let team: string | undefined;
-            for (const line of slot.getItem().getLore()) {
-                const kv = parseLoreKeyValueLine(line);
-                if (kv !== null && kv.label === "Team") {
-                    team = removedFormatting(kv.value).trim();
-                    break;
-                }
-            }
-            (condition as ConditionCompareVar).holder =
-                team === undefined ? { type: "Team" } : { type: "Team", team };
+        const holder = parseHolderField(
+            slot,
+            (condition as Record<string, unknown>).holder
+        );
+        if (holder !== undefined) {
+            (condition as ConditionCompareVar).holder = holder;
         }
     }
 
