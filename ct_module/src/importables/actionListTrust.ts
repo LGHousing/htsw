@@ -21,7 +21,7 @@ export function actionListTrustFor(
     };
 }
 
-function readCachedActionList(
+export function readCachedActionList(
     importable: Importable,
     basePath: string
 ): readonly Action[] | undefined {

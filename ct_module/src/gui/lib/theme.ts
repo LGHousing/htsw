@@ -60,6 +60,13 @@ export const ACCENT_PURPLE = 0xffce7be0 | 0;
 export const ACCENT_TEAL = 0xff7be0c0 | 0;
 export const ACCENT_ORANGE = 0xffe87a4b | 0;
 
+// ── Importer phase colors (queue-row mini bars + future overall-bar
+// segmentation). Distinct hues so reading vs hydrating vs applying are
+// instantly distinguishable; matched in chroma so they read as siblings.
+export const PHASE_READING = ACCENT_INFO;     // blue — paginated reads
+export const PHASE_HYDRATING = ACCENT_PURPLE; // purple — nested-action opens
+export const PHASE_APPLYING = ACCENT_SUCCESS; // green — actual edits
+
 // Translucent row tints (overlay over a row bg).
 export const TINT_DANGER = 0x40e85c5c | 0;
 export const TINT_WARN = 0x40e5bc4b | 0;

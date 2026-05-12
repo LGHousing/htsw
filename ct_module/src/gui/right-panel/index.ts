@@ -29,6 +29,7 @@ import {
     COLOR_BUTTON_DANGER_HOVER,
     COLOR_BUTTON_PRIMARY,
     COLOR_BUTTON_PRIMARY_HOVER,
+    COLOR_PANEL,
     COLOR_PANEL_BORDER,
     COLOR_PANEL_RAISED,
     COLOR_ROW,
@@ -41,11 +42,15 @@ import {
     COLOR_TEXT,
     COLOR_TEXT_DIM,
     COLOR_TEXT_FAINT,
+    PHASE_APPLYING,
+    PHASE_HYDRATING,
+    PHASE_READING,
     SIZE_ROW_H,
     SIZE_TAB_H,
 } from "../lib/theme";
 import { SyntaxToken, tokenizeHtsl } from "./syntax";
-import { FileSystemFileLoader } from "../../utils/files";
+import { FileSystemFileLoader, StringFileLoader } from "../../utils/files";
+import * as htsw from "htsw";
 import { actionsToLines, parseHtslFile, type HtslLine } from "../state/htsl-render";
 import {
     COLOR_BY_STATE,
@@ -55,8 +60,11 @@ import {
     type DiffState,
     type DiffLineInfo,
 } from "../state/diff";
+import { computeCacheDiff } from "../state/cacheDiff";
+import { canonicalPath } from "../state/parses";
 import {
     getCheckedImportableCount,
+    getCurrentImportableEtaSeconds,
     getCurrentImportingPath,
     getHousingUuid,
     getImportEtaSeconds,
@@ -65,8 +73,12 @@ import {
     getImportProgress,
     getImportProgressFraction,
     getParsedResult,
+    getQueueItemRunState,
     isCurrentHouseTrusted,
+    isCurrentQueueItem,
+    isImportSoundsMuted,
     setHouseTrust,
+    setImportSoundsMuted,
 } from "../state";
 import { getAlias } from "../../knowledge/aliases";
 import { openAliasPopover } from "../popovers/alias";
@@ -201,6 +213,14 @@ function readPlainLines(path: string): string[] {
     try {
         const src = fileLoader.readFile(path);
         lines = src.split("\n");
+        // CRLF-saved files (common on Windows or after a manual VSCode save)
+        // would otherwise show a `[CR]` glyph at every line end in MC's font.
+        for (let i = 0; i < lines.length; i++) {
+            const ln = lines[i];
+            if (ln.length > 0 && ln.charCodeAt(ln.length - 1) === 13) {
+                lines[i] = ln.substring(0, ln.length - 1);
+            }
+        }
     } catch (e) {
         lines = [`// failed to read ${path}: ${e}`];
     }
@@ -302,7 +322,10 @@ function tabButton(tab: Tab): Element {
 // on similar backgrounds). Plain ASCII so the MC default font renders all.
 const STATE_GLYPH: { [k in DiffState]: string } = {
     unknown: " ",
-    match: "✓",
+    // Match is the default — leaving the gutter clean here means a page
+    // full of matches reads as quietly as a plain text view, with markers
+    // only on the lines that actually need attention.
+    match: " ",
     edit: "~",
     delete: "-",
     add: "+",
@@ -457,7 +480,18 @@ export function htslDiffLines(path: string, options?: HtslDiffLinesOptions): Ele
             ),
         ];
     }
-    const entry = getDiffEntry(diffKey(path));
+    // Live importer entry only counts when this file is the one being
+    // worked on right now — otherwise an old session's stale states would
+    // outrank fresh cache-diff. The cache-diff map is the idle/baseline
+    // source of states: source-vs-knowledge per action.
+    const live = getDiffEntry(diffKey(path));
+    const importing = getCurrentImportingPath();
+    const liveActive =
+        live !== undefined &&
+        importing !== null &&
+        canonicalPath(importing) === canonicalPath(path);
+    const entry = liveActive ? live : undefined;
+    const cacheStates = liveActive ? null : computeCacheDiff(path, parsed.actions);
     const hasLabel = entry !== undefined && entry.currentLabel.length > 0;
     const hasSummary = entry !== undefined && entry.summary !== null;
     const padWidth = digitsOf(lines.length + (hasLabel || hasSummary ? 1 : 0));
@@ -503,7 +537,10 @@ export function htslDiffLines(path: string, options?: HtslDiffLinesOptions): Ele
     }
     for (let i = first; i <= last; i++) {
         const ln = lines[i];
-        const state: DiffState = entry?.states.get(ln.actionPath) ?? "unknown";
+        const state: DiffState =
+            entry?.states.get(ln.actionPath) ??
+            cacheStates?.get(ln.actionPath) ??
+            "unknown";
         const isCurrent = entry?.currentPath === ln.actionPath;
         const effectiveState: DiffState = isCurrent ? "current" : state;
         const info = entry?.details.get(ln.actionPath);
@@ -594,13 +631,13 @@ function plainTextLines(path: string): Element[] {
 
 function formatEtaSeconds(secs: number): string {
     const total = Math.max(0, Math.round(secs));
-    if (total < 60) return `~${total}s`;
+    if (total < 60) return `${total}s`;
     const m = Math.floor(total / 60);
     const s = total % 60;
-    if (m < 60) return s === 0 ? `~${m}m` : `~${m}m${s}s`;
+    if (m < 60) return s === 0 ? `${m}m` : `${m}m${s}s`;
     const h = Math.floor(m / 60);
     const mm = m % 60;
-    return mm === 0 ? `~${h}h` : `~${h}h${mm}m`;
+    return mm === 0 ? `${h}h` : `${h}h${mm}m`;
 }
 
 function formatElapsedSeconds(secs: number): string {
@@ -618,10 +655,7 @@ function progressEtaText(): string {
     const p = getImportProgress();
     const secs = getImportEtaSeconds();
     if (secs === null) return p === null ? "" : "calculating…";
-    const text = formatEtaSeconds(secs);
-    if (p !== null && p.etaConfidence === "rough") return `${text} rough`;
-    if (p !== null && p.etaConfidence === "informed") return `${text} informed`;
-    return text;
+    return formatEtaSeconds(secs);
 }
 
 function progressElapsedText(): string {
@@ -727,6 +761,52 @@ function pathLabel(): Element {
     });
 }
 
+function isSnbtPath(p: string): boolean {
+    return endsWith(p.replace(/\\/g, "/").toLowerCase(), ".snbt");
+}
+
+/**
+ * Parse the active .snbt file and rewrite it with the language printer's
+ * pretty mode, then drop the plain-text view cache so the next render
+ * picks up the new bytes. Surfaces any parser diagnostic in chat rather
+ * than silently failing — formatting a malformed SNBT is a no-op.
+ */
+function formatActiveSnbt(): void {
+    const path = getActivePath();
+    if (path === null) return;
+    let src: string;
+    try {
+        src = fileLoader.readFile(path);
+    } catch (err) {
+        ChatLib.chat(`&c[htsw] format: read failed: ${err}`);
+        return;
+    }
+    const sm = new htsw.SourceMap(new StringFileLoader(src));
+    const gcx = new htsw.GlobalCtxt(sm, "format.snbt");
+    const tag = htsw.nbt.parseSnbt(gcx, "format.snbt");
+    if (tag === undefined || gcx.isFailed()) {
+        let msg = "parse failed";
+        for (let i = 0; i < gcx.diagnostics.length; i++) {
+            const d = gcx.diagnostics[i];
+            if (d.level === "error" || d.level === "bug") {
+                msg = d.message;
+                break;
+            }
+        }
+        ChatLib.chat(`&c[htsw] format: ${msg}`);
+        return;
+    }
+    const formatted = htsw.nbt.printSnbt(tag, { pretty: true, indent: "    " });
+    try {
+        FileLib.write(String(path), formatted, true);
+    } catch (err) {
+        ChatLib.chat(`&c[htsw] format: write failed: ${err}`);
+        return;
+    }
+    fileCache.delete(path);
+    ChatLib.chat(`&a[htsw] formatted ${path}`);
+}
+
 // ── Top-level View/Import panel tabs ────────────────────────────────────
 
 function panelTabButton(id: RightPanelTabId, label: string, icon: IconName): Element {
@@ -779,6 +859,31 @@ function panelTabBar(): Element {
 
 // ── View tab (existing source preview + sub-tabs) ──────────────────────
 
+function viewTabHeader(): Element {
+    return Row({
+        style: { gap: 4, align: "center", height: { kind: "px", value: SIZE_ROW_H } },
+        children: () => {
+            const p = getActivePath();
+            const children: Element[] = [pathLabel()];
+            if (p !== null && isSnbtPath(p)) {
+                children.push(
+                    Button({
+                        text: "Format",
+                        style: {
+                            width: { kind: "px", value: 50 },
+                            height: { kind: "grow" },
+                            background: COLOR_BUTTON,
+                            hoverBackground: COLOR_BUTTON_HOVER,
+                        },
+                        onClick: () => formatActiveSnbt(),
+                    })
+                );
+            }
+            return children;
+        },
+    });
+}
+
 function viewTab(): Element {
     return Col({
         style: { gap: 4, width: { kind: "grow" }, height: { kind: "grow" } },
@@ -787,7 +892,7 @@ function viewTab(): Element {
                 style: { gap: 2, height: { kind: "px", value: TAB_H } },
                 children: () => getTabs().map(tabButton),
             }),
-            pathLabel(),
+            viewTabHeader(),
             sourceBody(),
         ],
     });
@@ -801,48 +906,140 @@ function shortSource(p: string): string {
     return slash < 0 ? norm : norm.substring(slash + 1);
 }
 
-function queueRow(item: QueueItem): Element {
-    const typeText =
-        item.kind === "importJson" ? "ALL" : item.type;
+function phaseSegment(weight: number, fraction: number, color: number): Element {
     return Container({
         style: {
             direction: "row",
-            align: "center",
-            padding: { side: "x", value: 6 },
-            gap: 6,
-            height: { kind: "px", value: SIZE_ROW_H },
-            background: COLOR_ROW,
-            hoverBackground: COLOR_ROW_HOVER,
+            width: { kind: "grow", factor: Math.max(0.0001, weight) },
+            height: { kind: "grow" },
         },
         children: [
-            Text({
-                text: typeText,
-                color: COLOR_TEXT_DIM,
-                style: { width: { kind: "px", value: 48 } },
-            }),
-            Text({
-                text: item.label,
-                style: { width: { kind: "grow" } },
-            }),
-            Text({
-                text: shortSource(item.sourcePath),
-                color: COLOR_TEXT_FAINT,
+            Container({
+                style: {
+                    width: { kind: "grow", factor: Math.max(0.0001, fraction) },
+                    height: { kind: "grow" },
+                    background: color,
+                },
+                children: [],
             }),
             Container({
                 style: {
-                    direction: "col",
-                    width: { kind: "px", value: 14 },
+                    width: { kind: "grow", factor: Math.max(0.0001, 1 - fraction) },
                     height: { kind: "grow" },
-                    align: "center",
-                    justify: "center",
-                    hoverBackground: 0x40e85c5c | 0,
                 },
-                onClick: (_rect, info) => {
-                    if (info.button !== 0) return;
-                    removeFromQueueKey(queueItemKey(item));
-                },
-                children: [Icon({ name: Icons.x })],
+                children: [],
             }),
+        ],
+    });
+}
+
+function queueRowMiniBar(item: QueueItem): Element {
+    const state = getQueueItemRunState(item);
+    if (state.kind === "queued") {
+        // Empty 2px slot — keeps row heights uniform.
+        return Container({
+            style: { width: { kind: "grow" }, height: { kind: "px", value: 2 } },
+            children: [],
+        });
+    }
+    if (state.kind === "done") {
+        return Container({
+            style: {
+                width: { kind: "grow" },
+                height: { kind: "px", value: 2 },
+                background: ACCENT_SUCCESS,
+            },
+            children: [],
+        });
+    }
+    // current — three phase segments side-by-side, each filled per its
+    // own fraction. Widths are proportional to phase budget so a hydrate-
+    // heavy importable shows a wider purple region.
+    return Container({
+        style: {
+            direction: "row",
+            width: { kind: "grow" },
+            height: { kind: "px", value: 2 },
+        },
+        children: [
+            phaseSegment(state.readWeight, state.readFraction, PHASE_READING),
+            phaseSegment(state.hydrateWeight, state.hydrateFraction, PHASE_HYDRATING),
+            phaseSegment(state.applyWeight, state.applyFraction, PHASE_APPLYING),
+        ],
+    });
+}
+
+function queueRow(item: QueueItem): Element {
+    const typeText = item.kind === "importJson" ? "ALL" : item.type;
+    const isCurrent = isCurrentQueueItem(item);
+    return Container({
+        // Outer container is now a column: row content on top, mini
+        // progress bar at the bottom edge.
+        style: {
+            direction: "col",
+            height: { kind: "px", value: SIZE_ROW_H },
+            background: isCurrent ? COLOR_ROW_HOVER : COLOR_ROW,
+            hoverBackground: COLOR_ROW_HOVER,
+        },
+        children: [
+            Container({
+                style: {
+                    direction: "row",
+                    align: "center",
+                    padding: [
+                        { side: "left", value: 0 },
+                        { side: "right", value: 6 },
+                    ],
+                    gap: 6,
+                    width: { kind: "grow" },
+                    height: { kind: "grow" },
+                },
+                children: [
+                    // Left-edge stripe — green for the importable currently
+                    // being processed, otherwise an invisible 2px spacer.
+                    Container({
+                        style: {
+                            width: { kind: "px", value: 2 },
+                            height: { kind: "grow" },
+                            background: isCurrent ? ACCENT_SUCCESS : undefined,
+                        },
+                        children: [],
+                    }),
+                    Container({
+                        style: { width: { kind: "px", value: 4 }, height: { kind: "grow" } },
+                        children: [],
+                    }),
+                    Text({
+                        text: typeText,
+                        color: COLOR_TEXT_DIM,
+                        style: { width: { kind: "px", value: 48 } },
+                    }),
+                    Text({
+                        text: item.label,
+                        style: { width: { kind: "grow" } },
+                    }),
+                    Text({
+                        text: shortSource(item.sourcePath),
+                        color: COLOR_TEXT_FAINT,
+                    }),
+                    Container({
+                        style: {
+                            direction: "col",
+                            width: { kind: "px", value: 14 },
+                            height: { kind: "grow" },
+                            align: "center",
+                            justify: "center",
+                            hoverBackground: 0x40e85c5c | 0,
+                        },
+                        onClick: (_rect, info) => {
+                            if (info.button !== 0) return;
+                            removeFromQueueKey(queueItemKey(item));
+                        },
+                        children: [Icon({ name: Icons.x })],
+                    }),
+                ],
+            }),
+            queueRowMiniBar(item),
         ],
     });
 }
@@ -888,26 +1085,150 @@ function progressBar(): Element {
         children: () => {
             const p = getImportProgress();
             if (p === null || p.weightTotal <= 0) return [];
-            const ratio = getImportProgressFraction();
-            return [
-                Container({
-                    style: {
-                        width: { kind: "grow", factor: Math.max(0.0001, ratio) },
-                        height: { kind: "grow" },
-                        background: COLOR_BAR_FG,
-                    },
-                    children: [],
-                }),
-                Container({
-                    style: {
-                        width: { kind: "grow", factor: Math.max(0.0001, 1 - ratio) },
-                        height: { kind: "grow" },
-                    },
-                    children: [],
-                }),
-            ];
+            // If we don't have per-importable weights (synthetic events
+            // like the diff-demo), fall back to the simple single-fill
+            // bar so we don't render an empty bar.
+            if (p.weights.length === 0) {
+                const ratio = getImportProgressFraction();
+                return [
+                    Container({
+                        style: {
+                            width: { kind: "grow", factor: Math.max(0.0001, ratio) },
+                            height: { kind: "grow" },
+                            background: COLOR_BAR_FG,
+                        },
+                        children: [],
+                    }),
+                    Container({
+                        style: {
+                            width: { kind: "grow", factor: Math.max(0.0001, 1 - ratio) },
+                            height: { kind: "grow" },
+                        },
+                        children: [],
+                    }),
+                ];
+            }
+            // Per-importable segments. Each segment's width is proportional
+            // to its initial weight estimate; fill is solid green for done
+            // importables, partially filled for the current one, empty for
+            // queued. 1px dark dividers between segments mark importable
+            // boundaries so you can see roughly where each one will land.
+            //
+            // Refinement: when the current importable's *live* weight
+            // (post-diff `phaseBudget.total`) exceeds its initial cache-
+            // aware estimate, widen its segment to match. Without this,
+            // the bar would jump from e.g. 20% → 90% as we finish the
+            // prior importable, because cache underestimated how much
+            // work the next one would take. Completed segments keep their
+            // initial widths — refining them too would jiggle the layout.
+            const liveWeights = p.weights.slice();
+            if (p.orderIndex >= 0 && p.orderIndex < liveWeights.length) {
+                liveWeights[p.orderIndex] = Math.max(
+                    p.weights[p.orderIndex],
+                    p.weightCurrent
+                );
+            }
+            let totalWeight = 0;
+            for (let i = 0; i < liveWeights.length; i++) totalWeight += liveWeights[i];
+            if (totalWeight <= 0) totalWeight = 1;
+            const out: Child[] = [];
+            for (let i = 0; i < p.weights.length; i++) {
+                const w = p.weights[i];
+                const flexFactor = Math.max(0.0001, w / totalWeight);
+                let fill: number;
+                if (i < p.completed) {
+                    fill = 1;
+                } else if (i === p.orderIndex) {
+                    const within =
+                        p.estimatedCompleted - p.weightCompleted;
+                    const denom = Math.max(0.0001, p.weightCurrent);
+                    fill = Math.min(1, Math.max(0, within / denom));
+                } else {
+                    fill = 0;
+                }
+                out.push(
+                    Container({
+                        style: {
+                            direction: "row",
+                            width: { kind: "grow", factor: flexFactor },
+                            height: { kind: "grow" },
+                        },
+                        children: [
+                            Container({
+                                style: {
+                                    width: { kind: "grow", factor: Math.max(0.0001, fill) },
+                                    height: { kind: "grow" },
+                                    background: COLOR_BAR_FG,
+                                },
+                                children: [],
+                            }),
+                            Container({
+                                style: {
+                                    width: { kind: "grow", factor: Math.max(0.0001, 1 - fill) },
+                                    height: { kind: "grow" },
+                                },
+                                children: [],
+                            }),
+                        ],
+                    })
+                );
+                if (i < p.weights.length - 1) {
+                    out.push(
+                        Container({
+                            style: {
+                                width: { kind: "px", value: 1 },
+                                height: { kind: "grow" },
+                                background: COLOR_PANEL,
+                            },
+                            children: [],
+                        })
+                    );
+                }
+            }
+            return out;
         },
     });
+}
+
+function capitalizePhase(phase: string): string {
+    if (phase.length === 0) return phase;
+    return phase.charAt(0).toUpperCase() + phase.slice(1);
+}
+
+function formatEtaShort(secs: number): string {
+    const total = Math.max(0, Math.round(secs));
+    if (total < 60) return `${total}s`;
+    const m = Math.floor(total / 60);
+    const s = total % 60;
+    if (m < 60) return s === 0 ? `${m}m` : `${m}m${s}s`;
+    const h = Math.floor(m / 60);
+    const mm = m % 60;
+    return mm === 0 ? `${h}h` : `${h}h${mm}m`;
+}
+
+function currentImportableEtaText(): string {
+    const secs = getCurrentImportableEtaSeconds();
+    if (secs === null || secs <= 0) return "";
+    return `${formatEtaShort(secs)} left in this importable`;
+}
+
+function formatClockTime(d: Date): string {
+    // Local-time HH:MM with AM/PM. Uses MC's ambient locale via the JS
+    // Date methods so Java client-locale isn't needed.
+    let h = d.getHours();
+    const m = d.getMinutes();
+    const ampm = h >= 12 ? "PM" : "AM";
+    h = h % 12;
+    if (h === 0) h = 12;
+    const mm = m < 10 ? `0${m}` : String(m);
+    return `${h}:${mm} ${ampm}`;
+}
+
+function progressFinishTimeText(): string {
+    const secs = getImportEtaSeconds();
+    if (secs === null) return "";
+    const finish = new Date(Date.now() + secs * 1000);
+    return `done ${formatClockTime(finish)}`;
 }
 
 function liveImporterPanel(): Element {
@@ -931,41 +1252,48 @@ function liveImporterPanel(): Element {
                 Col({
                     style: { gap: 3, width: { kind: "grow" } },
                     children: [
-                        // "Currently" header + bold action label — the
-                        // primary read for the user.
-                        Text({ text: "Currently", color: COLOR_TEXT_FAINT }),
+                        // WHO — which importable (1-of-N) we're working on.
                         Text({
-                            text: () => `§l${progressCurrentLabel()}`,
+                            text: () =>
+                                `Importable ${p.completed + 1} of ${p.total} · ${p.currentIdentity}`,
                             color: COLOR_TEXT,
                         }),
-                        // Phase + step counter + ETA on one line.
+                        // WHAT — capitalized phase + the specific action label,
+                        // bold via §l so it's the most visible line.
+                        Text({
+                            text: () =>
+                                `§l${capitalizePhase(p.phase)}: ${progressCurrentLabel()}`,
+                            color: COLOR_TEXT,
+                        }),
+                        // HOW FAR (in this importable) — step counter +
+                        // per-importable ETA. Only the importable-scoped
+                        // ETA lives here; the queue-wide ETA + elapsed
+                        // sit on the bar row below to keep them visually
+                        // separated.
                         Text({
                             text: () => {
                                 const prog = getImportProgress();
                                 if (prog === null) return "";
                                 const parts: string[] = [];
-                                parts.push(`${prog.phase} · ${prog.phaseLabel}`);
-                                if (prog.unitTotal > 0) {
-                                    parts.push(`${prog.unitCompleted}/${prog.unitTotal}`);
+                                const isActionListPhase =
+                                    prog.phase === "reading" ||
+                                    prog.phase === "hydrating" ||
+                                    prog.phase === "diffing" ||
+                                    prog.phase === "applying";
+                                if (isActionListPhase && prog.unitTotal > 1) {
+                                    if (prog.phase === "reading") {
+                                        parts.push(`${prog.unitCompleted} read so far`);
+                                    } else {
+                                        parts.push(
+                                            `step ${prog.unitCompleted} of ${prog.unitTotal}`
+                                        );
+                                    }
                                 }
-                                parts.push(progressEtaText());
-                                return parts.filter((s) => s.length > 0).join("  ·  ");
+                                const eta = currentImportableEtaText();
+                                if (eta.length > 0) parts.push(eta);
+                                return parts.join("  ·  ");
                             },
                             color: COLOR_TEXT_DIM,
-                        }),
-                        // Source file path (full htsw-relative form).
-                        Text({
-                            text: () => {
-                                const path = getCurrentImportingPath();
-                                return path === null ? "" : `→ ${normalizeHtswPath(path)}`;
-                            },
-                            color: COLOR_TEXT_FAINT,
-                        }),
-                        // Importable counter — which of N is currently active.
-                        Text({
-                            text: () =>
-                                `${p.completed + 1}/${p.total} importable · ${p.currentIdentity}`,
-                            color: COLOR_TEXT_FAINT,
                         }),
                         // Visual rule before the progress bar.
                         Container({
@@ -980,6 +1308,23 @@ function liveImporterPanel(): Element {
                                     text: () =>
                                         `${Math.floor(getImportProgressFraction() * 100)}%`,
                                     color: COLOR_TEXT,
+                                    style: { width: { kind: "px", value: 30 } },
+                                }),
+                                // Queue-wide ETA on the bar row, paired
+                                // with elapsed for direct comparison.
+                                // Includes a wall-clock finish-time
+                                // prediction so the user can compare it
+                                // to when the import actually completes.
+                                Text({
+                                    text: () => {
+                                        const eta = progressEtaText();
+                                        if (eta === "") return "";
+                                        if (eta === "calculating…") return eta;
+                                        const finish = progressFinishTimeText();
+                                        if (finish === "") return `${eta} left`;
+                                        return `${eta} left · ${finish}`;
+                                    },
+                                    color: COLOR_TEXT_DIM,
                                     style: { width: { kind: "grow" } },
                                 }),
                                 Text({
@@ -1263,11 +1608,67 @@ function houseHeader(): Element {
     });
 }
 
+function muteSoundsRow(): Element {
+    return Container({
+        style: {
+            direction: "row",
+            align: "center",
+            padding: { side: "x", value: 6 },
+            gap: 6,
+            height: { kind: "px", value: SIZE_ROW_H },
+            background: COLOR_ROW,
+        },
+        children: [
+            Text({
+                text: "Sounds:",
+                color: COLOR_TEXT_DIM,
+            }),
+            Text({
+                text: () =>
+                    isImportSoundsMuted()
+                        ? "Muted while importing"
+                        : "Playing normally",
+                color: COLOR_TEXT,
+                style: { width: { kind: "grow" } },
+            }),
+            Container({
+                style: {
+                    direction: "row",
+                    align: "center",
+                    padding: { side: "x", value: 6 },
+                    gap: 4,
+                    width: { kind: "px", value: 70 },
+                    height: { kind: "grow" },
+                    background: () => (isImportSoundsMuted() ? TRUST_ON_BG : TRUST_OFF_BG),
+                    hoverBackground: () =>
+                        isImportSoundsMuted() ? TRUST_ON_HOVER : TRUST_OFF_HOVER,
+                },
+                onClick: (_rect, info) => {
+                    if (info.button !== 0) return;
+                    setImportSoundsMuted(!isImportSoundsMuted());
+                },
+                children: [
+                    Icon({
+                        name: () =>
+                            isImportSoundsMuted() ? Icons.volumeOff : Icons.volume2,
+                    }),
+                    Text({
+                        text: () => (isImportSoundsMuted() ? "Mute" : "Play"),
+                        color: COLOR_TEXT_DIM,
+                        style: { width: { kind: "grow" } },
+                    }),
+                ],
+            }),
+        ],
+    });
+}
+
 function importTab(): Element {
     return Col({
         style: { gap: 4, width: { kind: "grow" }, height: { kind: "grow" } },
         children: [
             houseHeader(),
+            muteSoundsRow(),
             queueHeader(),
             Scroll({
                 id: "right-import-queue-scroll",

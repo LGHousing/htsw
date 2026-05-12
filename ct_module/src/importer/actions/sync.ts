@@ -16,6 +16,7 @@ import {
     readActionList,
 } from "./readList";
 import { actionLogLabel, editDiffSummary } from "./log";
+import { estimateActionListPhaseBudget } from "../progress/costs";
 
 export type SyncActionListOptions = {
     /**
@@ -48,6 +49,10 @@ export async function syncActionList(
     desired: Action[],
     options?: SyncActionListOptions
 ): Promise<SyncActionListResult> {
+    // Single mutable phase budget shared across read + apply so all four
+    // phases emit estimatedCompleted/Total against the same scale. Both
+    // sides update its parts in place when actual work exceeds estimate.
+    const phaseBudget = estimateActionListPhaseBudget(desired);
     const observed =
         options?.observed ??
         (await readActionList(ctx, {
@@ -56,6 +61,7 @@ export async function syncActionList(
             itemRegistry: options?.itemRegistry,
             trust: options?.trust,
             onProgress: options?.onProgress,
+            phaseBudget,
         }));
     canonicalizeObservedActionItemNames(observed, options?.itemRegistry);
     if (options?.itemRegistry) {
@@ -72,7 +78,8 @@ export async function syncActionList(
         diff,
         options?.itemRegistry,
         options?.onProgress,
-        options?.pathPrefix
+        options?.pathPrefix,
+        phaseBudget
     );
     return { usedObserved: observed };
 }

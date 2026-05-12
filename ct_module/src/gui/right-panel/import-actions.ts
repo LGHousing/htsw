@@ -239,6 +239,8 @@ export function startImport(explicit?: readonly QueueItem[]): void {
         estimatedCompleted: 0,
         estimatedTotal: 1,
         etaConfidence: "rough",
+        phaseBudget: null,
+        weights: [],
         completed: 0,
         total,
         failed: 0,

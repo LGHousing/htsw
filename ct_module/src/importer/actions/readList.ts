@@ -41,7 +41,13 @@ import {
     readPaginatedList,
 } from "../paginatedList";
 import { getActiveDiffSink } from "../diffSink";
-import { COST, actionListRoughBudget, hydrationEntryBudget } from "../progress/costs";
+import {
+    COST,
+    actionListRoughBudget,
+    hydrationEntryBudget,
+    type ActionListPhaseBudget,
+} from "../progress/costs";
+import { setCurrentPhase } from "../progress/timing";
 import { ACTION_LIST_CONFIG } from "./listConfig";
 import { getActionSpec } from "../actions";
 import { actionLogLabel } from "./log";
@@ -160,15 +166,19 @@ export async function readActionList(
         mode.kind === "sync" ? Math.max(1, mode.desired.length) : 1;
     const roughEstimate =
         mode.kind === "sync" ? Math.max(1, actionListRoughBudget(mode.desired)) : 1;
+    const phaseBudget = mode.phaseBudget;
     let readEstimatedCompleted = 0;
+    setCurrentPhase("reading");
     progress?.({
         phase: "reading",
         completed: 0,
         total: desiredTotal,
         label: "reading housing state",
-        estimatedCompleted: 0,
-        estimatedTotal: roughEstimate,
+        estimatedCompleted: phaseBudget !== undefined ? 0 : 0,
+        estimatedTotal:
+            phaseBudget !== undefined ? phaseBudget.total : roughEstimate,
         confidence: "rough",
+        phaseBudget,
     });
     getActiveDiffSink()?.phase("reading housing state");
     const observed = await readPaginatedList(
@@ -177,17 +187,42 @@ export async function readActionList(
         () => readActionsListPage(ctx),
         ({ totalEntries, pagesRead }) => {
             readEstimatedCompleted = Math.max(0, pagesRead - 1) * COST.pageTurnWait;
-            progress?.({
-                phase: "reading",
-                completed: totalEntries,
-                total: Math.max(desiredTotal, totalEntries),
-                label: `${totalEntries} actions read`,
-                estimatedCompleted: readEstimatedCompleted,
-                estimatedTotal: Math.max(roughEstimate, readEstimatedCompleted),
-                confidence: "rough",
-            });
+            if (phaseBudget !== undefined) {
+                if (readEstimatedCompleted > phaseBudget.readPart) {
+                    phaseBudget.readPart = readEstimatedCompleted;
+                    phaseBudget.total = recomputeTotal(phaseBudget);
+                }
+                progress?.({
+                    phase: "reading",
+                    completed: totalEntries,
+                    total: Math.max(desiredTotal, totalEntries),
+                    label: `${totalEntries} actions read`,
+                    estimatedCompleted: readEstimatedCompleted,
+                    estimatedTotal: phaseBudget.total,
+                    confidence: "rough",
+                    phaseBudget,
+                });
+            } else {
+                progress?.({
+                    phase: "reading",
+                    completed: totalEntries,
+                    total: Math.max(desiredTotal, totalEntries),
+                    label: `${totalEntries} actions read`,
+                    estimatedCompleted: readEstimatedCompleted,
+                    estimatedTotal: Math.max(roughEstimate, readEstimatedCompleted),
+                    confidence: "rough",
+                });
+            }
         }
     );
+    // Reading is done. Lock readPart to actual observed cost so subsequent
+    // phases use a stable baseline.
+    if (phaseBudget !== undefined) {
+        if (readEstimatedCompleted > phaseBudget.readPart) {
+            phaseBudget.readPart = readEstimatedCompleted;
+            phaseBudget.total = recomputeTotal(phaseBudget);
+        }
+    }
     let plan: NestedHydrationPlan;
     if (mode.kind === "full") {
         plan = buildFullHydrationPlan(observed);
@@ -199,11 +234,24 @@ export async function readActionList(
         }
     }
     addScalarHydrationEntries(plan, observed);
-    await hydrateNestedActions(ctx, plan, observed.length, mode.itemRegistry, progress, readEstimatedCompleted);
+    await hydrateNestedActions(
+        ctx,
+        plan,
+        observed.length,
+        mode.itemRegistry,
+        progress,
+        readEstimatedCompleted,
+        phaseBudget
+    );
+    setCurrentPhase(null);
     canonicalizeObservedActionItemNames(observed, mode.itemRegistry);
 
     await goToPaginatedListPage(ctx, 1, ACTION_LIST_CONFIG);
     return observed;
+}
+
+function recomputeTotal(b: ActionListPhaseBudget): number {
+    return b.readPart + b.hydratePart + b.applyPart;
 }
 
 function addScalarHydrationEntries(
@@ -286,8 +334,10 @@ async function hydrateNestedActions(
     listLength: number,
     itemRegistry?: ItemRegistry,
     progress?: ActionListProgressSink,
-    baseEstimatedCompleted: number = 0
+    baseEstimatedCompleted: number = 0,
+    phaseBudget?: ActionListPhaseBudget
 ): Promise<void> {
+    setCurrentPhase("hydrating");
     let completed = 0;
     const total = plan.size;
     let completedBudget = 0;
@@ -295,30 +345,44 @@ async function hydrateNestedActions(
     plan.forEach((propsToRead, entry) => {
         totalBudget += hydrationEntryBudget(entry, propsToRead);
     });
+    if (phaseBudget !== undefined && totalBudget > phaseBudget.hydratePart) {
+        phaseBudget.hydratePart = totalBudget;
+        phaseBudget.total = recomputeTotal(phaseBudget);
+    }
+    const emit = (label: string, justFinished: boolean) => {
+        if (phaseBudget !== undefined) {
+            progress?.({
+                phase: "hydrating",
+                completed,
+                total,
+                label,
+                estimatedCompleted: phaseBudget.readPart + completedBudget,
+                estimatedTotal: phaseBudget.total,
+                confidence: "informed",
+                phaseBudget,
+            });
+        } else {
+            progress?.({
+                phase: "hydrating",
+                completed,
+                total,
+                label,
+                estimatedCompleted: baseEstimatedCompleted + completedBudget,
+                estimatedTotal: baseEstimatedCompleted + totalBudget,
+                confidence: "informed",
+            });
+        }
+        // suppress unused-var warning when only one branch references it
+        void justFinished;
+    };
     for (const [entry, propsToRead] of plan) {
-        progress?.({
-            phase: "hydrating",
-            completed,
-            total,
-            label: `reading nested ${actionLogLabel(entry.action)}`,
-            estimatedCompleted: baseEstimatedCompleted + completedBudget,
-            estimatedTotal: baseEstimatedCompleted + totalBudget,
-            confidence: "informed",
-        });
+        emit(`reading nested ${actionLogLabel(entry.action)}`, false);
         getActiveDiffSink()?.phase(`reading nested ${actionLogLabel(entry.action)}`);
         const beforeBudget = hydrationEntryBudget(entry, propsToRead);
         await hydrateNestedAction(ctx, entry, propsToRead, listLength, itemRegistry);
         completedBudget += beforeBudget;
         completed++;
-        progress?.({
-            phase: "hydrating",
-            completed,
-            total,
-            label: `${completed}/${total} nested actions read`,
-            estimatedCompleted: baseEstimatedCompleted + completedBudget,
-            estimatedTotal: baseEstimatedCompleted + totalBudget,
-            confidence: "informed",
-        });
+        emit(`${completed}/${total} nested actions read`, true);
     }
 }
 

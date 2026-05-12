@@ -17,7 +17,7 @@ const ForgeMouseInputEventPre = Java.type(
 const ForgeKeyboardInputEventPre = Java.type(
     "net.minecraftforge.client.event.GuiScreenEvent$KeyboardInputEvent$Pre"
 );
-import { RootTree } from "./root";
+import { RootTree, getImportCachedBounds } from "./root";
 import { getContainerBounds, getFullscreenPanelRect } from "./lib/bounds";
 import { autoDiscoverImportJson, reparseImportJson, tickReparse } from "./state/reparse";
 import { CHAT_INPUT_ID } from "./chat-input";
@@ -27,10 +27,13 @@ import {
     closeAllPopovers,
     getOpenPopoverContents,
     tryDispatchPopoverWheel,
+    mouseIsOverPopover,
 } from "./lib/popovers";
 import {
     getHousingUuid,
+    getImportProgress,
     getParsedResult,
+    isImportSoundsMuted,
     setHousingUuid,
     setKnowledgeRows,
 } from "./state";
@@ -45,10 +48,19 @@ import {
     updateScrollbarDrag,
     endScrollbarDrag,
     setRenderDebugLog,
+    renderElement,
 } from "./lib/render";
 import { getFocusedInput, setFocusedInput } from "./lib/focus";
 import { applyFocus, getRecord, readAndSync, tickAllFields } from "./lib/inputState";
-import { getEffectiveOverlayScale, mcToOverlay, getContainerBoundsOverlay } from "./lib/overlayScale";
+import {
+    getEffectiveOverlayScale,
+    mcToOverlay,
+    getContainerBoundsOverlay,
+    getOverlayScreenW,
+    getOverlayScreenH,
+} from "./lib/overlayScale";
+import { beginHtswOverlayDraw, endHtswOverlayDraw } from "./lib/panel";
+import { COLOR_OVERLAY_DIM } from "./lib/theme";
 
 let enabled = true;
 let initialized = false;
@@ -79,13 +91,21 @@ function frameBounds(): Rect {
     // Use the overlay-converted bounds so the panel rect lives in overlay coords (1 unit =
     // OVERLAY_SCALE real pixels). bounds.ts itself is left untouched.
     const b = getContainerBoundsOverlay();
-    if (b === null) return ZERO_RECT;
-    return getFullscreenPanelRect(b);
+    if (b !== null) return getFullscreenPanelRect(b);
+    // Mid-import gap (Hypixel closed the housing menu to prompt for chat
+    // input). Reuse the bounds we captured the last time the menu was open
+    // so the panel layout stays put instead of collapsing to nothing.
+    if (getImportProgress() !== null) {
+        const cached = getImportCachedBounds();
+        if (cached !== null) return getFullscreenPanelRect(cached);
+    }
+    return ZERO_RECT;
 }
 
 function frameVisible(): boolean {
     if (!enabled) return false;
-    return getContainerBounds() !== null;
+    if (getContainerBounds() !== null) return true;
+    return getImportProgress() !== null && getImportCachedBounds() !== null;
 }
 
 // Housing-UUID auto-fetch. We only run `/wtfmap` when we actually need
@@ -144,6 +164,32 @@ function laidOutTrees(): { root: Element; rect: Rect }[] {
     return out;
 }
 
+/**
+ * Paint the overlay's dim shade + panel tree using the cached menu rect,
+ * for the brief gaps when no GuiContainer is open during an import.
+ * No-op outside of those gaps so the regular `guiRender` panel paint is
+ * the source of truth whenever a GuiContainer is up. Coords come in as
+ * MC-scaled and are converted to overlay space.
+ */
+function paintImportShade(rawX: number, rawY: number, root: Element): void {
+    if (!enabled) return;
+    if (getImportProgress() === null) return;
+    if (getContainerBounds() !== null) return;
+    const cached = getImportCachedBounds();
+    if (cached === null) return;
+    const b = getFullscreenPanelRect(cached);
+    const x = mcToOverlay(rawX);
+    const y = mcToOverlay(rawY);
+    beginHtswOverlayDraw();
+    // Inventory dim — a single flat scrim is close enough to MC's
+    // vertical gradient and matches the scrim we already use for modal
+    // popovers, so transient gaps don't visually pop.
+    Renderer.drawRect(COLOR_OVERLAY_DIM, 0, 0, getOverlayScreenW(), getOverlayScreenH());
+    const interactive = !mouseIsOverPopover(x, y);
+    renderElement(root, b.x, b.y, b.w, b.h, x, y, interactive);
+    endHtswOverlayDraw();
+}
+
 export function initHtswGui(): void {
     if (initialized) return;
     initialized = true;
@@ -178,6 +224,47 @@ export function initHtswGui(): void {
         getBounds: frameBounds,
         getRoot: () => frame.getRoot(),
         isVisible: frameVisible,
+    });
+
+    // Mid-import fallback paint. When Hypixel closes the housing menu to
+    // prompt for a chat-entered value, `getContainerBounds()` flips to
+    // null and the regular `guiRender` (Forge BackgroundDrawnEvent) stops
+    // firing — leaving a visible flash between menus. While an import is
+    // in flight and we have a cached menu rect, repaint the same overlay
+    // (plus a dim shade mimicking MC's `drawDefaultBackground`) from
+    // whichever trigger does fire in the no-GuiContainer state:
+    //   - `postGuiRender` fires for any GuiScreen, including GuiChat
+    //     which doesn't trip BackgroundDrawnEvent.
+    //   - `renderOverlay` fires for the in-game HUD path, which is what
+    //     we get during the brief gap when `currentScreen == null`.
+    // The HUD trigger fires every frame, so guard it to "no screen open"
+    // to avoid double-painting alongside the panel/postGuiRender paints.
+    register("renderOverlay", () => {
+        const screen = (Client.getMinecraft() as any).field_71462_r;
+        if (screen !== null && screen !== undefined) return;
+        paintImportShade(0, 0, frame.getRoot());
+    });
+    register("postGuiRender", (mouseX: number, mouseY: number) =>
+        paintImportShade(mouseX, mouseY, frame.getRoot())
+    );
+
+    // Sound mute. While `muteImportSounds` is on and an import is in
+    // flight, cancel `Forge.PlaySoundEvent` so the repetitive ding/click
+    // sounds Hypixel plays on every menu open during a sync don't fire.
+    // We do not touch the master volume — friend PMs / other sounds
+    // outside the import keep playing.
+    register("soundPlay", (
+        _position: any,
+        _name: string,
+        _vol: number,
+        _pitch: number,
+        _category: any,
+        event: any
+    ) => {
+        if (!enabled) return;
+        if (getImportProgress() === null) return;
+        if (!isImportSoundsMuted()) return;
+        cancel(event);
     });
 
     // Mouse wheel: hook Forge's GuiScreenEvent.MouseInputEvent.Pre, which fires per Mouse.next()

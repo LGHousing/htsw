@@ -10,7 +10,14 @@ import { createItemRegistry } from "./itemRegistry";
 import { importImportable } from "./imports";
 import { setActiveDiffSink, type ImportDiffSink } from "../importer/diffSink";
 import type { ActionListProgress, ActionListProgressPhase } from "../importer/types";
-import { estimateImportableCost, type EtaConfidence } from "../importer/progress/costs";
+import {
+    estimateImportableCost,
+    estimateImportableCostWithCache,
+    type ActionListPhaseBudget,
+    type EtaConfidence,
+} from "../importer/progress/costs";
+import { readKnowledge } from "../knowledge/cache";
+import { readCachedActionList } from "./actionListTrust";
 
 // TODO: Make this work with GUI
 
@@ -84,6 +91,19 @@ export type ImportProgress = {
     estimatedCompleted: number;
     estimatedTotal: number;
     etaConfidence: EtaConfidence;
+    /**
+     * Per-phase budget breakdown for the *current importable's* in-flight
+     * action-list call, when one is active. Used by the GUI's ETA to split
+     * remaining work by phase and apply per-phase ms/budget-unit rates.
+     */
+    phaseBudget: ActionListPhaseBudget | null;
+    /**
+     * Initial estimated weights for every importable in this session,
+     * indexed by `orderIndex`. Sums to roughly `weightTotal` (modulo the
+     * dynamic refinement of the current importable's weight). Used by the
+     * GUI to draw per-importable divider tick marks on the overall bar.
+     */
+    weights: readonly number[];
     failed: number;
 };
 
@@ -135,7 +155,15 @@ export async function importSelectedImportables(
         failed: 0,
     };
 
-    const weights: number[] = ordered.map(estimateImportableWeight);
+    // Use the knowledge cache (last-known observed state) to predict each
+    // importable's apply-phase budget — even when trust mode is off. If
+    // the cache says nothing changed, the predicted diff is empty and the
+    // bar correctly anticipates a near-instant pass. Falls back to the
+    // worst-case all-adds estimate when cache is missing for that
+    // importable (e.g., first-ever import for this house).
+    const weights: number[] = ordered.map((importable) =>
+        estimateImportableWeightWithCache(importable, selection.housingUuid)
+    );
     let weightTotal = 0;
     for (let i = 0; i < weights.length; i++) weightTotal += weights[i];
     if (weightTotal === 0) weightTotal = 1;
@@ -157,7 +185,8 @@ export async function importSelectedImportables(
             estimatedCompleted?: number,
             estimatedTotal?: number,
             etaConfidence?: ImportProgress["etaConfidence"],
-            rowStatus: ImportRunRowStatus = "current"
+            rowStatus: ImportRunRowStatus = "current",
+            phaseBudget?: ActionListPhaseBudget
         ) => {
             if (!selection.onProgress) return;
             const remainingWeight = weightTotal - weightCompleted - weightCurrent;
@@ -186,6 +215,8 @@ export async function importSelectedImportables(
                 estimatedCompleted: weightCompleted + refinedCurrentCompleted,
                 estimatedTotal: weightCompleted + refinedCurrentTotal + remainingWeight,
                 etaConfidence: etaConfidence ?? "rough",
+                phaseBudget: phaseBudget ?? null,
+                weights,
                 failed: result.failed,
             });
         };
@@ -225,7 +256,9 @@ export async function importSelectedImportables(
                         progress.total,
                         progress.estimatedCompleted,
                         progress.estimatedTotal,
-                        progress.confidence
+                        progress.confidence,
+                        "current",
+                        progress.phaseBudget
                     );
                 },
             });
@@ -313,6 +346,8 @@ export async function importSelectedImportables(
             estimatedCompleted: weightCompleted,
             estimatedTotal: weightTotal,
             etaConfidence: "planned",
+            phaseBudget: null,
+            weights,
             failed: result.failed,
         });
     }
@@ -328,4 +363,25 @@ export async function importSelectedImportables(
  */
 function estimateImportableWeight(importable: Importable): number {
     return Math.max(1, estimateImportableCost(importable));
+}
+
+/**
+ * Cache-aware variant of `estimateImportableWeight`. Looks up the
+ * housing's last-known observed state for this importable and uses it
+ * to predict the apply-phase budget via `cacheAwareApplyBudget`. Falls
+ * back silently to the worst-case estimate when no cache exists for
+ * that importable (first-ever import for the house).
+ */
+function estimateImportableWeightWithCache(
+    importable: Importable,
+    housingUuid: string
+): number {
+    const identity = importableIdentity(importable);
+    const entry = readKnowledge(housingUuid, importable.type, identity);
+    if (entry === null) {
+        return estimateImportableWeight(importable);
+    }
+    const getCached = (basePath: string) =>
+        readCachedActionList(entry.importable, basePath);
+    return Math.max(1, estimateImportableCostWithCache(importable, getCached));
 }

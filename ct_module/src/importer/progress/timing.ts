@@ -1,4 +1,5 @@
 import { COST } from "./costs";
+import type { ActionListProgressPhase } from "../types";
 
 export type TimedOperationKind =
     | "commandMenuWait"
@@ -39,6 +40,57 @@ type MutableTimingStatsEntry = {
 
 const stats: { [kind: string]: MutableTimingStatsEntry | undefined } = {};
 
+/**
+ * Per-phase budget-time accumulator. Tracks how many real ms were spent
+ * inside each `setCurrentPhase(...)` window, paired with how many budget
+ * units those ms covered. The ratio gives a calibrated ms/budget-unit
+ * for each phase, which the GUI uses for phase-aware ETA — separate
+ * buckets for reading vs hydrating vs applying so finishing one doesn't
+ * poison the projection of the others.
+ */
+type PhaseStatsEntry = {
+    totalMs: number;
+    totalBudgetUnits: number;
+};
+
+const phaseStats: { [phase: string]: PhaseStatsEntry | undefined } = {};
+let currentPhase: ActionListProgressPhase | null = null;
+
+export function setCurrentPhase(phase: ActionListProgressPhase | null): void {
+    currentPhase = phase;
+}
+
+export function getCurrentPhase(): ActionListProgressPhase | null {
+    return currentPhase;
+}
+
+export type PhaseStats = {
+    [phase: string]:
+        | { totalMs: number; totalBudgetUnits: number; msPerBudgetUnit: number }
+        | undefined;
+};
+
+export function getPhaseStats(): PhaseStats {
+    const out: PhaseStats = {};
+    for (const phase in phaseStats) {
+        const entry = phaseStats[phase];
+        if (entry === undefined) continue;
+        out[phase] = {
+            totalMs: entry.totalMs,
+            totalBudgetUnits: entry.totalBudgetUnits,
+            msPerBudgetUnit:
+                entry.totalBudgetUnits <= 0 ? 0 : entry.totalMs / entry.totalBudgetUnits,
+        };
+    }
+    return out;
+}
+
+export function resetPhaseStats(): void {
+    for (const k in phaseStats) {
+        delete phaseStats[k];
+    }
+}
+
 export function beginTimedOp(
     kind: TimedOperationKind,
     expectedUnits: number
@@ -69,6 +121,15 @@ export function recordTimedOp(
     entry.count++;
     entry.totalMs += Math.max(0, elapsedMs);
     entry.totalExpectedUnits += expectedUnits;
+    if (currentPhase !== null) {
+        let phaseEntry = phaseStats[currentPhase];
+        if (phaseEntry === undefined) {
+            phaseEntry = { totalMs: 0, totalBudgetUnits: 0 };
+            phaseStats[currentPhase] = phaseEntry;
+        }
+        phaseEntry.totalMs += Math.max(0, elapsedMs);
+        phaseEntry.totalBudgetUnits += expectedUnits;
+    }
 }
 
 export async function timed<T>(
