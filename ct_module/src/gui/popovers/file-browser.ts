@@ -591,7 +591,6 @@ function browserContent(): Element {
 const ZERO: Rect = { x: 0, y: 0, w: 0, h: 0 };
 
 export function openFileBrowser(initialDir?: string): void {
-    selectImportJsonOnly = null;
     openFileBrowserWithImportJsonSelection(initialDir, null);
 }
 

@@ -1091,8 +1091,12 @@ export function ExploreView(): Element {
                 ],
             }),
             Scroll({
-                id: "left-results-scroll",
-                style: { gap: 0, height: { kind: "grow" } },
+                id: RESULTS_SCROLL_ID,
+                style: {
+                    gap: 0,
+                    height: { kind: "grow" },
+                    padding: { side: "right", value: SCROLLBAR_WIDTH + 4 },
+                },
                 children: () => {
                     const rows = renderRows();
                     if (rows.length === 0) return [emptyStateRow()];
