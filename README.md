@@ -84,8 +84,8 @@ A continuation of [BusterBrown1218](https://github.com/BusterBrown1218)'s HTSL. 
 HTSW itself is built by @sndyx, @j_sse, and @callanftw.
 
 Thank you Sandy for the parser, lexer, linter, simulator, cli, VSCode extension, and initiating the project.
-Thank you Callan for the importer, exporter, diffing algorithm, knowledge, GUI, and VSCode extension 
-Thank you Jesse for the GUI, MCP, and miscellaneous things
+Thank you Callan for the importer, exporter, diffing algorithm, knowledge, GUI, and VSCode extension.
+Thank you Jesse for the GUI, MCP, and miscellaneous things.
 
 ## License
 
