@@ -248,7 +248,21 @@ async function applyActionListDiffInner(
         for (const op of diff.operations) {
             const idx = srcIndexForOp(op, desired);
             if (idx >= 0) {
-                sink.planOp(actionPathForIndex(pathPrefix, idx), op.kind, opLabel(op), opDetail(op));
+                const srcPath = actionPathForIndex(pathPrefix, idx);
+                sink.planOp(srcPath, op.kind, opLabel(op), opDetail(op));
+                // Edit ops carry the in-Housing "before" action; hand it
+                // to the UI for side-by-side rendering. The Observed<Action>
+                // may have null nested children — the renderer catches print
+                // failures and falls back to no preview line.
+                if (op.kind === "edit" && sink.planEditWithObserved) {
+                    const observed = op.observed.action;
+                    if (observed !== null) {
+                        sink.planEditWithObserved(
+                            srcPath,
+                            observed as unknown as Action
+                        );
+                    }
+                }
             } else if (op.kind === "delete") {
                 sink.deleteOp(op.observed.index, opLabel(op), opDetail(op));
             }

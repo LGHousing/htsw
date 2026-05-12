@@ -2,6 +2,7 @@
 
 import { normalizeHtswPath } from "../lib/pathDisplay";
 import type { ActionPath, DiffOpKind, DiffSummary } from "../../importer/diffSink";
+import type { Action } from "htsw/types";
 
 /**
  * Diff state model for the right-panel HTSL animation.
@@ -43,6 +44,8 @@ export type DiffEntry = {
     currentLabel: string;
     /** Frame timestamp for blink/pulse on the cursor. */
     updatedAt: number;
+    /** Optional currently-edited field prop, for the field-level focus box. */
+    currentFieldProp: string | null;
 };
 
 export type DiffLineInfo = {
@@ -51,6 +54,12 @@ export type DiffLineInfo = {
     label?: string;
     detail?: string;
     completed?: boolean;
+    /**
+     * For edit ops: the in-Housing action this line is being edited from.
+     * Populated when the diff planner has `op.observed.action`, so the
+     * code view can render a side-by-side "before / after" pair.
+     */
+    observed?: Action;
 };
 
 export type DiffDeleteInfo = {
@@ -84,10 +93,28 @@ function ensureEntry(key: DiffKey): DiffEntry {
             currentPath: null,
             currentLabel: "",
             updatedAt: 0,
+            currentFieldProp: null,
         };
         entries.set(key, e);
     }
     return e;
+}
+
+export function setObservedAction(
+    key: DiffKey,
+    actionPath: ActionPath,
+    observed: Action
+): void {
+    const e = ensureEntry(key);
+    const existing = e.details.get(actionPath);
+    e.details.set(actionPath, { ...(existing ?? { state: "unknown" }), observed });
+    e.updatedAt = Date.now();
+}
+
+export function setCurrentField(key: DiffKey, prop: string | null): void {
+    const e = ensureEntry(key);
+    e.currentFieldProp = prop;
+    e.updatedAt = Date.now();
 }
 
 export function setDiffState(

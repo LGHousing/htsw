@@ -18,6 +18,12 @@ export type Style = {
     padding?: Padding;
     background?: Extractable<number | undefined>;
     hoverBackground?: Extractable<number | undefined>;
+    /**
+     * When set on a `text` element, draws a 1-px underline beneath the
+     * text in the text's color. Used by the code-view to mark fields
+     * that changed in an `edit` op. Ignored for non-text elements.
+     */
+    underline?: Extractable<boolean | undefined>;
 };
 
 export type ContainerStyle = Style & {

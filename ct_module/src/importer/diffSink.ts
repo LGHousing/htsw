@@ -5,6 +5,8 @@
  * as it walks operations so a UI can light up source-action lines as they
  * are touched. Paths identify nested actions, e.g. `4.ifActions.2`.
  */
+import type { Action } from "htsw/types";
+
 export type DiffOpKind = "edit" | "add" | "move" | "delete";
 export type DiffFinalState = "match" | "edit" | "add" | "delete";
 export type ActionPath = string;
@@ -34,6 +36,21 @@ export interface ImportDiffSink {
     completeOp(actionPath: ActionPath, state: DiffFinalState): void;
     /** Sync done; clear any "currently working" highlight. */
     end(): void;
+    /**
+     * Optional: a desired action is being edited; provides the in-Housing
+     * "before" action so the UI can render a side-by-side preview.
+     */
+    planEditWithObserved?(actionPath: ActionPath, observed: Action): void;
+    /**
+     * Optional: per-action read confirmation during the reading/hydration
+     * phase. Drives the gray→vibrant fade-in. Coarse-grained (per inventory
+     * page); see Phase 5 for sub-page granularity.
+     */
+    readActionComplete?(actionPath: ActionPath): void;
+    /** Optional: the importer is about to edit field `prop` of this action. */
+    beginField?(actionPath: ActionPath, prop: string): void;
+    /** Optional: the importer finished editing field `prop`. */
+    completeField?(actionPath: ActionPath, prop: string): void;
 }
 
 let activeSink: ImportDiffSink | null = null;

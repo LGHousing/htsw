@@ -203,6 +203,15 @@ function renderItem(
         } else {
             Renderer.drawString(text, r.x, ty);
         }
+        // Underline support — drawn as a 1-px tall rect just below the text
+        // baseline. Color tracks the text color (or full white if unset).
+        const underlineFlag =
+            e.style.underline !== undefined ? extract(e.style.underline) : undefined;
+        if (underlineFlag === true) {
+            const tw = Renderer.getStringWidth(text);
+            const uColor = color !== undefined ? color : 0xffffffff | 0;
+            Renderer.drawRect(uColor, r.x, ty + LINE_H, tw, 1);
+        }
         if (hovered && e.tooltip !== undefined) {
             const tt = extract(e.tooltip);
             if (tt.length > 0) {

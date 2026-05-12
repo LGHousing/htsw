@@ -13,7 +13,9 @@
 
 import type { Action, Condition } from "../../types";
 import {
+    printActionHeadSpans,
     printActionList,
+    type FieldSpan,
     type PrintActionsContext,
     type PrinterDiagnostic,
 } from "./actions";
@@ -21,7 +23,7 @@ import { printCondition as printConditionImpl } from "./conditions";
 import { DEFAULT_PRINT_STYLE, resolveStyle, type PrintStyle } from "./style";
 
 export { DEFAULT_PRINT_STYLE };
-export type { PrintStyle, PrinterDiagnostic };
+export type { PrintStyle, PrinterDiagnostic, FieldSpan };
 
 /** Print a list of actions to HTSL source. */
 export function printActions(
@@ -59,4 +61,20 @@ export function printAction(
 /** Print a single condition body (without the surrounding `if (...)`). */
 export function printCondition(cond: Condition): string {
     return printConditionImpl(cond);
+}
+
+/**
+ * Print a single action's head text plus per-field character spans.
+ * Coverage is opportunistic — actions without bespoke span instrumentation
+ * return `fieldSpans: []` and the consumer falls back gracefully (no
+ * underlines / field box). For block-bearing actions, only the head
+ * (`if and (...)`, `random `) text is covered.
+ */
+export function printActionSpans(
+    action: Action,
+    style?: Partial<PrintStyle>,
+): { text: string; fieldSpans: FieldSpan[] } {
+    const resolved = resolveStyle(style);
+    const ctx: PrintActionsContext = { style: resolved, diagnostics: [] };
+    return printActionHeadSpans(action, 0, ctx);
 }
