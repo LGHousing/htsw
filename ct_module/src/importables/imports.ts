@@ -1,3 +1,4 @@
+import { Diagnostic } from "htsw";
 import { Importable } from "htsw/types";
 
 import TaskContext from "../tasks/context";
@@ -12,11 +13,11 @@ import { importImportableItem } from "./items/import";
 import { importImportableMenu } from "./menus/import";
 import { importImportableRegion } from "./regions/import";
 import type { ItemRegistry } from "./itemRegistry";
-import type { ActionListProgress } from "../importer/types";
+import type { ActionListProgressFields } from "../importer/progress/types";
 
 export type ImportTrustOptions = {
     plan?: ImportableTrustPlan;
-    onActionListProgress?: (progress: ActionListProgress) => void;
+    onActionListProgress?: (progress: ActionListProgressFields) => void;
     /**
      * Session-level housing UUID. When provided, `maybeWriteKnowledge`
      * skips the `/wtfmap` round trip — the session already resolved the
@@ -39,35 +40,64 @@ export async function importImportable(
         return;
     }
 
-    if (importable.type === "FUNCTION") {
-        await importImportableFunction(ctx, importable, itemRegistry, options?.plan, options?.onActionListProgress);
-        await maybeWriteKnowledge(ctx, importable, options?.housingUuid);
-        return;
+    switch (importable.type) {
+        case "FUNCTION":
+            await importImportableFunction(
+                ctx,
+                importable,
+                itemRegistry,
+                options?.plan,
+                options?.onActionListProgress
+            );
+            await maybeWriteKnowledge(ctx, importable, options?.housingUuid);
+            return;
+        case "EVENT":
+            await importImportableEvent(
+                ctx,
+                importable,
+                itemRegistry,
+                options?.plan,
+                options?.onActionListProgress
+            );
+            await maybeWriteKnowledge(ctx, importable, options?.housingUuid);
+            return;
+        case "REGION":
+            await importImportableRegion(
+                ctx,
+                importable,
+                itemRegistry,
+                options?.plan,
+                options?.onActionListProgress
+            );
+            await maybeWriteKnowledge(ctx, importable, options?.housingUuid);
+            return;
+        case "ITEM":
+            await importImportableItem(
+                ctx,
+                importable,
+                itemRegistry,
+                options?.plan,
+                options?.housingUuid,
+                options?.onActionListProgress
+            );
+            return;
+        case "MENU":
+            await importImportableMenu(
+                ctx,
+                importable,
+                itemRegistry,
+                options?.plan,
+                options?.onActionListProgress
+            );
+            await maybeWriteKnowledge(ctx, importable, options?.housingUuid);
+            return;
+        case "NPC":
+            throw Diagnostic.error("NPC imports are not implemented in the ChatTriggers module.");
+        default: {
+            const _exhaustiveCheck: never = importable;
+            return _exhaustiveCheck;
+        }
     }
-    if (importable.type === "EVENT") {
-        await importImportableEvent(ctx, importable, itemRegistry, options?.plan, options?.onActionListProgress);
-        await maybeWriteKnowledge(ctx, importable, options?.housingUuid);
-        return;
-    }
-    if (importable.type === "REGION") {
-        await importImportableRegion(ctx, importable, itemRegistry, options?.plan, options?.onActionListProgress);
-        await maybeWriteKnowledge(ctx, importable, options?.housingUuid);
-        return;
-    }
-    if (importable.type === "ITEM") {
-        // Item handles its own UUID resolution because it needs the UUID
-        // for both the existing SNBT cache and the new knowledge cache.
-        await importImportableItem(ctx, importable, itemRegistry, options?.plan, options?.housingUuid, options?.onActionListProgress);
-        return;
-    }
-    if (importable.type === "MENU") {
-        await importImportableMenu(ctx, importable, itemRegistry, options?.plan, options?.onActionListProgress);
-        await maybeWriteKnowledge(ctx, importable, options?.housingUuid);
-        return;
-    }
-    // TODO add the others idk and remove the ts ignore
-    // @ts-ignore
-    const _exhaustiveCheck: never = importable;
 }
 
 /**

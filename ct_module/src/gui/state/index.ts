@@ -7,10 +7,15 @@ import type { KnowledgeStatusRow } from "../../knowledge/status";
 import type {
     ImportProgress,
     ImportRunRowStatus,
-} from "../../importables/importSession";
+} from "../../importer/progress/types";
 import { normalizeHtswPath } from "../lib/pathDisplay";
-import { getPhaseStats } from "../../importer/progress/timing";
-import type { ActionListPhaseBudget } from "../../importer/progress/costs";
+import {
+    getImportEtaBreakdown as etaGetImportEtaBreakdown,
+    getImportEtaSeconds as etaGetImportEtaSeconds,
+    getCurrentImportableEtaSeconds as etaGetCurrentImportableEtaSeconds,
+    resetEtaCache,
+    type ImportEtaBreakdown,
+} from "../../importer/progress/eta";
 import { importableIdentity } from "../../knowledge/paths";
 import { trustPlanKey } from "../../knowledge/trust";
 import type { QueueItem } from "./queue";
@@ -19,50 +24,13 @@ import { getActiveRightTab, setActiveRightTab } from "./selection";
 
 export type { ImportRunRowStatus };
 
-export type ImportProgressView = {
-    weightCompleted: number;
-    weightTotal: number;
-    weightCurrent: number;
-    currentKey: string;
-    currentType: Importable["type"] | null;
-    currentIdentity: string;
-    orderIndex: number;
-    rowStatus: ImportRunRowStatus | null;
-    currentLabel: string;
-    phase:
-        | "starting"
-        | "opening"
-        | "reading"
-        | "hydrating"
-        | "diffing"
-        | "applying"
-        | "writingKnowledge"
-        | "done";
-    phaseLabel: string;
-    unitCompleted: number;
-    unitTotal: number;
-    estimatedCompleted: number;
-    estimatedTotal: number;
-    etaConfidence: "rough" | "informed" | "planned";
-    /** Per-phase budget for the in-flight action-list call. Null when not
-     *  inside one (e.g. between importables, during knowledge writes). */
-    phaseBudget: ActionListPhaseBudget | null;
-    /** Per-importable initial weights (indexed by orderIndex) for divider
-     *  tick marks on the overall bar. */
-    weights: readonly number[];
-    completed: number;
-    total: number;
-    failed: number;
-    inFlight: boolean;
-};
-
 export type ImportRunRow = {
     key: string;
     type: Importable["type"];
     identity: string;
     order: number;
     status: ImportRunRowStatus;
-    phase: ImportProgressView["phase"];
+    phase: ImportProgress["phase"];
     phaseLabel: string;
     unitCompleted: number;
     unitTotal: number;
@@ -112,7 +80,7 @@ const trustedHouses: Set<string> = new Set();
 let muteImportSounds: boolean = false;
 let housingUuid: string | null = null;
 let knowledgeRows: KnowledgeStatusRow[] = [];
-let importProgress: ImportProgressView | null = null;
+let importProgress: ImportProgress | null = null;
 let importRunState: ImportRunState | null = null;
 /**
  * `Date.now()` of the moment the in-flight import started. Captured the
@@ -127,242 +95,27 @@ export function getImportProgressFraction(): number {
     return Math.min(1, Math.max(0, p.estimatedCompleted / p.estimatedTotal));
 }
 
-/**
- * Baseline ms/budget-unit per phase. Used until real observed timing data
- * is collected. Numbers are from a measured `/htsw eta dump` against a
- * 10-importable session (~537 budget units, ~85s wall time):
- *   - reading: ~118 ms/u rounded to 120
- *   - hydrating: ~168 ms/u rounded to 170
- *   - applying: ~158 ms/u rounded to 160
- *
- * Diffing isn't tracked: it's pure in-process compute, ~1-5ms per call,
- * and contributes nothing meaningful to ETA.
- *
- * To re-validate / refresh these:
- *   1. `/htsw eta reset` — clear any prior samples
- *   2. Run a representative import
- *   3. `/htsw eta` to inspect, `/htsw eta dump` to snapshot to JSON
- *   4. Update these constants from the measured values
- *
- * Once `getPhaseStats()` has real data for a phase, the observed rate
- * replaces the default for that phase — defaults only fire on the very
- * first emit per phase per session.
- */
-const DEFAULT_MS_PER_UNIT_BY_PHASE: {
-    [k in "reading" | "hydrating" | "applying"]: number;
-} = {
-    reading: 120,
-    hydrating: 170,
-    applying: 160,
-};
-
-/** Generic fallback when callers ask outside the tracked phases. */
-const DEFAULT_MS_PER_UNIT = 160;
-
-function msPerUnitForPhase(phase: "reading" | "hydrating" | "applying"): number {
-    const stats = getPhaseStats();
-    const entry = stats[phase];
-    if (entry === undefined || entry.totalBudgetUnits <= 0) {
-        return DEFAULT_MS_PER_UNIT_BY_PHASE[phase];
-    }
-    return entry.msPerBudgetUnit;
-}
+export type { ImportEtaBreakdown };
 
 /**
- * Cached ETA from the most recent progress event, decremented by elapsed
- * wall time on each read so the displayed countdown ticks down between
- * progress events instead of freezing. Recomputed fresh whenever a new
- * progress event arrives via `applyImportProgress`.
- */
-let cachedEtaSeconds: number | null = null;
-let cachedEtaComputedAt: number | null = null;
-
-function recomputeEtaForCurrentProgress(): number | null {
-    const p = importProgress;
-    if (p === null) return null;
-
-    // Within-importable phase breakdown using the live phaseBudget.
-    let remainingMs = 0;
-    if (p.phaseBudget !== null) {
-        const pb = p.phaseBudget;
-        const phaseOrder: Array<"reading" | "hydrating" | "applying"> = [
-            "reading",
-            "hydrating",
-            "applying",
-        ];
-        // Cumulative budget consumed up to (not including) each phase.
-        const phaseStartCum: { [k: string]: number } = {
-            reading: 0,
-            hydrating: pb.readPart,
-            applying: pb.readPart + pb.hydratePart,
-        };
-        const phasePart: { [k: string]: number } = {
-            reading: pb.readPart,
-            hydrating: pb.hydratePart,
-            applying: pb.applyPart,
-        };
-        // Position inside the current importable. estimatedCompleted in
-        // the progress view is `weightCompleted + currentImportableProgress`,
-        // so subtract weightCompleted to get the within-importable cursor.
-        const within =
-            p.estimatedCompleted - p.weightCompleted;
-        const currentPhaseFromEvent: "reading" | "hydrating" | "applying" | null =
-            p.phase === "reading" || p.phase === "hydrating" || p.phase === "applying"
-                ? p.phase
-                : null;
-        for (const ph of phaseOrder) {
-            const phStart = phaseStartCum[ph];
-            const phLen = phasePart[ph];
-            const phEnd = phStart + phLen;
-            // Position WITHIN this phase: 0 if we haven't reached it yet,
-            // phLen if we've passed it, else cursor - phStart.
-            let consumedInPhase: number;
-            if (currentPhaseFromEvent === ph) {
-                consumedInPhase = Math.min(phLen, Math.max(0, within - phStart));
-            } else if (within >= phEnd) {
-                consumedInPhase = phLen;
-            } else if (within < phStart) {
-                consumedInPhase = 0;
-            } else {
-                // Cursor is mid-phase but the event reports a different
-                // phase — trust the cursor (within - phStart, clamped).
-                consumedInPhase = Math.min(phLen, Math.max(0, within - phStart));
-            }
-            const remainingInPhase = Math.max(0, phLen - consumedInPhase);
-            if (remainingInPhase > 0) {
-                remainingMs += remainingInPhase * msPerUnitForPhase(ph);
-            }
-        }
-    } else {
-        // No phase budget (e.g. non-action-list phases like
-        // opening/writingKnowledge). Fall back to weight-based remaining
-        // for the current importable using a generic ms/unit.
-        const within = Math.max(0, p.weightCurrent - (p.estimatedCompleted - p.weightCompleted));
-        remainingMs += within * DEFAULT_MS_PER_UNIT;
-    }
-
-    // Future importables (after the current one). Use estimateImportableCost
-    // already baked into weightTotal: remainingFutureWeight = weightTotal -
-    // weightCompleted - weightCurrent. We don't have per-phase breakdown for
-    // future importables, so use a representative blended rate from the
-    // applying phase (the dominant one for most action lists).
-    const remainingFutureWeight = Math.max(
-        0,
-        p.weightTotal - p.weightCompleted - p.weightCurrent
-    );
-    if (remainingFutureWeight > 0) {
-        remainingMs += remainingFutureWeight * msPerUnitForPhase("applying");
-    }
-
-    if (!isFinite(remainingMs) || remainingMs < 0) return null;
-    return remainingMs / 1000;
-}
-
-/**
- * Estimated remaining seconds for the in-flight import. Phase-aware:
- * remaining work is decomposed by phase and each phase contributes via
- * its own observed ms/budget-unit, so a slow "reading" pass doesn't
- * poison the projection of an "applying" pass and vice versa.
- *
- * Ticks down between progress events: caches the most recent computed
- * value with its timestamp and returns `cached - elapsed` until a new
- * event triggers recomputation in `applyImportProgress`.
+ * Total remaining seconds for the in-flight import. Phase-aware, with
+ * a guard that prevents the cached/decayed value from undershooting
+ * the current importable's recomputed remaining. See
+ * `importer/progress/eta.ts` for the math.
  */
 export function getImportEtaSeconds(): number | null {
-    if (importProgress === null || importStartedAt === null) return null;
-    if (cachedEtaSeconds === null || cachedEtaComputedAt === null) {
-        cachedEtaSeconds = recomputeEtaForCurrentProgress();
-        cachedEtaComputedAt = Date.now();
-        if (cachedEtaSeconds === null) return null;
-    }
-    const elapsed = (Date.now() - cachedEtaComputedAt) / 1000;
-    const live = cachedEtaSeconds - elapsed;
-    return live < 0 ? 0 : live;
+    if (importStartedAt === null) return null;
+    return etaGetImportEtaSeconds(importProgress);
 }
 
-/**
- * Remaining seconds for *just the current importable*, decoupled from the
- * queue-wide ETA. Sums per-phase remaining ms within the in-flight
- * importable using its live phaseBudget; falls back to weight-based
- * remaining for non-action-list phases (opening / writingKnowledge).
- */
+/** Remaining seconds for *just the current importable*. */
 export function getCurrentImportableEtaSeconds(): number | null {
-    const p = importProgress;
-    if (p === null) return null;
-    const breakdown = getImportEtaBreakdown();
-    if (breakdown === null) return null;
-    const ms =
-        breakdown.readSeconds +
-        breakdown.hydrateSeconds +
-        breakdown.applySeconds;
-    return ms;
+    return etaGetCurrentImportableEtaSeconds(importProgress);
 }
 
-/**
- * Per-phase breakdown of the *current importable's* remaining work, plus
- * a separate bucket for everything-after-this-importable. Lets the UI
- * show the user where the projected time is going. Returns null if no
- * import is in flight.
- */
-export type ImportEtaBreakdown = {
-    readSeconds: number;
-    hydrateSeconds: number;
-    applySeconds: number;
-    futureImportableSeconds: number;
-    futureImportableCount: number;
-};
-
+/** Per-phase breakdown of the current importable's remaining work. */
 export function getImportEtaBreakdown(): ImportEtaBreakdown | null {
-    const p = importProgress;
-    if (p === null) return null;
-    let readMs = 0;
-    let hydrateMs = 0;
-    let applyMs = 0;
-    if (p.phaseBudget !== null) {
-        const pb = p.phaseBudget;
-        const within = p.estimatedCompleted - p.weightCompleted;
-        const phaseStartCum: { [k: string]: number } = {
-            reading: 0,
-            hydrating: pb.readPart,
-            applying: pb.readPart + pb.hydratePart,
-        };
-        const remainingIn = (
-            ph: "reading" | "hydrating" | "applying",
-            phLen: number
-        ): number => {
-            const phStart = phaseStartCum[ph];
-            const phEnd = phStart + phLen;
-            if (within >= phEnd) return 0;
-            if (within < phStart) return phLen;
-            return Math.max(0, phEnd - within);
-        };
-        readMs = remainingIn("reading", pb.readPart) * msPerUnitForPhase("reading");
-        hydrateMs =
-            remainingIn("hydrating", pb.hydratePart) * msPerUnitForPhase("hydrating");
-        applyMs = remainingIn("applying", pb.applyPart) * msPerUnitForPhase("applying");
-    } else {
-        // Pre-action-list phase (opening / starting). Treat all current
-        // importable work as "applying" for breakdown display since we
-        // can't decompose without a phase budget yet.
-        const within = Math.max(
-            0,
-            p.weightCurrent - (p.estimatedCompleted - p.weightCompleted)
-        );
-        applyMs = within * msPerUnitForPhase("applying");
-    }
-    const futureWeight = Math.max(
-        0,
-        p.weightTotal - p.weightCompleted - p.weightCurrent
-    );
-    const futureMs = futureWeight * msPerUnitForPhase("applying");
-    const futureCount = Math.max(0, p.total - p.completed - 1);
-    return {
-        readSeconds: readMs / 1000,
-        hydrateSeconds: hydrateMs / 1000,
-        applySeconds: applyMs / 1000,
-        futureImportableSeconds: futureMs / 1000,
-        futureImportableCount: futureCount,
-    };
+    return etaGetImportEtaBreakdown(importProgress);
 }
 
 export function getImportJsonPath(): string {
@@ -478,22 +231,61 @@ export function setKnowledgeRows(rows: KnowledgeStatusRow[]): void {
     knowledgeRows = rows;
 }
 
-export function getImportProgress(): ImportProgressView | null {
+export function getImportProgress(): ImportProgress | null {
     return importProgress;
 }
-export function setImportProgress(p: ImportProgressView | null): void {
+export type ImportProgressInit =
+    & Pick<ImportProgress, "currentIdentity">
+    & Partial<ImportProgress>;
+
+export function createImportProgress(init: ImportProgressInit): ImportProgress {
+    const unitTotal = init.unitTotal ?? 1;
+    const estimatedTotal = init.estimatedTotal ?? Math.max(1, unitTotal);
+    return normalizeImportProgress({
+        weightCompleted: init.weightCompleted ?? 0,
+        weightTotal: init.weightTotal ?? estimatedTotal,
+        weightCurrent: init.weightCurrent ?? 0,
+        currentKey: init.currentKey ?? "",
+        currentType: init.currentType ?? null,
+        currentIdentity: init.currentIdentity,
+        orderIndex: init.orderIndex ?? -1,
+        rowStatus: init.rowStatus ?? null,
+        currentLabel: init.currentLabel ?? init.currentIdentity,
+        phase: init.phase ?? "starting",
+        phaseLabel: init.phaseLabel ?? init.currentLabel ?? init.currentIdentity,
+        unitCompleted: init.unitCompleted ?? 0,
+        unitTotal,
+        estimatedCompleted: init.estimatedCompleted ?? 0,
+        estimatedTotal,
+        etaConfidence: init.etaConfidence ?? "rough",
+        phaseBudget: init.phaseBudget ?? null,
+        weights: init.weights ?? [],
+        completed: init.completed ?? 0,
+        total: init.total ?? 1,
+        failed: init.failed ?? 0,
+    });
+}
+
+function normalizeImportProgress(p: ImportProgress): ImportProgress {
+    const estimatedCompleted = Math.max(0, p.estimatedCompleted);
+    const estimatedTotal = Math.max(1, p.estimatedTotal, estimatedCompleted);
+    return {
+        ...p,
+        estimatedCompleted,
+        estimatedTotal,
+    };
+}
+
+export function setImportProgress(p: ImportProgress | null): void {
     const wasNull = importProgress === null;
     if (p !== null && importProgress === null) {
         importStartedAt = Date.now();
     } else if (p === null) {
         importStartedAt = null;
-        cachedEtaSeconds = null;
-        cachedEtaComputedAt = null;
     }
-    importProgress = p;
+    importProgress = p === null ? null : normalizeImportProgress(p);
     // Force ETA recompute on the next read so the new event's data is used.
-    cachedEtaSeconds = null;
-    cachedEtaComputedAt = null;
+    resetEtaCache();
     // On import start, flip the right panel to the Import tab so the
     // user sees the live progress without having to click. On end,
     // flip back to View (where they were before the import) — but only
@@ -518,12 +310,13 @@ export function setCurrentImportingPath(p: string | null): void {
 
 /**
  * Render-state for a queue row's mini progress bar. "queued" → empty bar;
- * "done" → full green; "current" → phase-segmented showing how far through
- * each phase we are within this importable.
+ * "done" → full green; "failed" → full red; "current" → phase-segmented
+ * showing how far through each phase we are within this importable.
  */
 export type QueueItemRunState =
     | { kind: "queued" }
     | { kind: "done" }
+    | { kind: "failed" }
     | {
           kind: "current";
           /**
@@ -556,9 +349,11 @@ export function getQueueItemRunState(item: QueueItem): QueueItemRunState {
         return { kind: "done" };
     }
     if (row.status === "failed") {
-        // Treat failed as "done" for bar purposes; the aborted-import
-        // halt means everything after stays queued anyway.
-        return { kind: "done" };
+        // The session halts on first failure, so everything after this
+        // stays queued. We render the failed row with the error color
+        // (distinct from the green "done" fill) so the user can see at a
+        // glance which importable aborted the run.
+        return { kind: "failed" };
     }
     if (row.status === "queued") return { kind: "queued" };
     // "current" — break down by phase using the live phaseBudget.
@@ -687,35 +482,3 @@ export function clearImportRun(): void {
     importRunState = null;
 }
 
-export function applyImportProgress(p: ImportProgress): void {
-    const estimatedCompleted = Math.max(0, p.estimatedCompleted);
-    const estimatedTotal = Math.max(1, p.estimatedTotal, estimatedCompleted);
-    importProgress = {
-        weightCompleted: p.weightCompleted,
-        weightTotal: p.weightTotal,
-        weightCurrent: p.weightCurrent,
-        currentKey: p.currentKey,
-        currentType: p.currentType,
-        currentIdentity: p.currentIdentity,
-        orderIndex: p.orderIndex,
-        rowStatus: p.rowStatus,
-        currentLabel: p.currentLabel,
-        phase: p.phase,
-        phaseLabel: p.phaseLabel,
-        unitCompleted: p.unitCompleted,
-        unitTotal: p.unitTotal,
-        estimatedCompleted,
-        estimatedTotal,
-        etaConfidence: p.etaConfidence,
-        phaseBudget: p.phaseBudget,
-        weights: p.weights,
-        completed: p.completed,
-        total: p.total,
-        failed: p.failed,
-        inFlight: p.completed < p.total,
-    };
-    // Fresh data — discard the cached/ticking ETA so the next read
-    // recomputes against the new state.
-    cachedEtaSeconds = null;
-    cachedEtaComputedAt = null;
-}

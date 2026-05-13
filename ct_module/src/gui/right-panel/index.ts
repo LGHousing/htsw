@@ -21,7 +21,9 @@ import {
 } from "../state/selection";
 import { openMenu, MenuAction } from "../lib/menu";
 import { closeAllPopovers, togglePopover } from "../lib/popovers";
+import { javaType } from "../lib/java";
 import {
+    ACCENT_DANGER,
     ACCENT_SUCCESS,
     COLOR_BUTTON,
     COLOR_BUTTON_HOVER,
@@ -60,7 +62,7 @@ import {
     type DiffState,
     type DiffLineInfo,
 } from "../state/diff";
-import { computeCacheDiff } from "../state/cacheDiff";
+import { cacheFileMtimeFor, computeCacheDiff } from "../state/cacheDiff";
 import { canonicalPath } from "../state/parses";
 import {
     getCheckedImportableCount,
@@ -195,10 +197,8 @@ function shortPath(p: string): string {
 
 function getMtimeMs(path: string): number {
     try {
-        // @ts-ignore
-        const Paths = Java.type("java.nio.file.Paths");
-        // @ts-ignore
-        const Files = Java.type("java.nio.file.Files");
+        const Paths = javaType("java.nio.file.Paths");
+        const Files = javaType("java.nio.file.Files");
         return Number(Files.getLastModifiedTime(Paths.get(String(path))).toMillis());
     } catch (_e) {
         return 0;
@@ -366,16 +366,23 @@ function lineRow(
     state: DiffState,
     detail?: string
 ): Element {
+    // Cells sized to actual content. Glyph is one ASCII char (6px slot fits
+    // every glyph in STATE_GLYPH). Line numbers are padded to padWidth, so
+    // padWidth * 6 fits any value at this depth in MC's default font where
+    // each digit is 6px wide. Pre-tightening these saves ~14px of left
+    // margin vs the previous fixed 8/24 cells — that gap was the bulk of
+    // the wasted space between the gutter and the code.
+    const LINE_NUM_DIGIT_W = 6;
     const children: Element[] = [
         Text({
             text: STATE_GLYPH[state],
             color: glyphColor,
-            style: { width: { kind: "px", value: 8 } },
+            style: { width: { kind: "px", value: 6 } },
         }),
         Text({
             text: padLeft(String(lineNum), padWidth),
             color: COLOR_GUTTER,
-            style: { width: { kind: "px", value: 24 } },
+            style: { width: { kind: "px", value: padWidth * LINE_NUM_DIGIT_W } },
         }),
         Container({
             style: {
@@ -446,6 +453,34 @@ export type HtslDiffLinesOptions = {
     after?: number;
 };
 
+// `htslDiffLines` is called once per frame from the right-panel Scroll
+// children-extractor. For a long file this used to redo: actionsToLines
+// (calls `printAction` per action), tokenizeHtsl per line, actionHash per
+// action (via computeCacheDiff), and a fresh Element allocation per line.
+// Pure scrolling doesn't change any of that — so memoize on the inputs
+// that actually invalidate the rendered tree:
+//   - parsed source identity (re-parse on file mtime change)
+//   - the diff key inputs (live importer state during an active run,
+//     cache file mtime otherwise)
+//   - the focus-window options
+// Hit rate while idle is effectively 100%; the cost reduces to a
+// dictionary lookup + a single filesystem stat for the cache mtime.
+type DiffLinesCacheEntry = {
+    parsedRef: object;
+    liveActive: boolean;
+    liveUpdatedAt: number;
+    cacheMtime: number;
+    optionsKey: string;
+    result: Element[];
+};
+const diffLinesCache = new Map<string, DiffLinesCacheEntry>();
+
+function optionsKeyOf(options: HtslDiffLinesOptions | undefined): string {
+    if (options === undefined) return "";
+    const f = options.focusCurrent === true ? "1" : "0";
+    return `${f}|${options.before ?? ""}|${options.after ?? ""}`;
+}
+
 export function htslDiffLines(path: string, options?: HtslDiffLinesOptions): Element[] {
     const parsed = parseHtslFile(path);
     if (parsed.parseError !== null) {
@@ -467,6 +502,30 @@ export function htslDiffLines(path: string, options?: HtslDiffLinesOptions): Ele
         }
         return out;
     }
+    // Live importer entry only counts when this file is the one being
+    // worked on right now — otherwise an old session's stale states would
+    // outrank fresh cache-diff. The cache-diff map is the idle/baseline
+    // source of states: source-vs-knowledge per action.
+    const live = getDiffEntry(diffKey(path));
+    const importing = getCurrentImportingPath();
+    const liveActive =
+        live !== undefined &&
+        importing !== null &&
+        canonicalPath(importing) === canonicalPath(path);
+    const liveUpdatedAt = live !== undefined ? live.updatedAt : 0;
+    const cacheMtime = liveActive ? 0 : cacheFileMtimeFor(path);
+    const optionsKey = optionsKeyOf(options);
+    const cached = diffLinesCache.get(path);
+    if (
+        cached !== undefined &&
+        cached.parsedRef === parsed &&
+        cached.liveActive === liveActive &&
+        cached.liveUpdatedAt === liveUpdatedAt &&
+        cached.cacheMtime === cacheMtime &&
+        cached.optionsKey === optionsKey
+    ) {
+        return cached.result;
+    }
     const lines = actionsToLines(parsed.actions);
     if (lines.length === 0) {
         return [
@@ -480,16 +539,6 @@ export function htslDiffLines(path: string, options?: HtslDiffLinesOptions): Ele
             ),
         ];
     }
-    // Live importer entry only counts when this file is the one being
-    // worked on right now — otherwise an old session's stale states would
-    // outrank fresh cache-diff. The cache-diff map is the idle/baseline
-    // source of states: source-vs-knowledge per action.
-    const live = getDiffEntry(diffKey(path));
-    const importing = getCurrentImportingPath();
-    const liveActive =
-        live !== undefined &&
-        importing !== null &&
-        canonicalPath(importing) === canonicalPath(path);
     const entry = liveActive ? live : undefined;
     const cacheStates = liveActive ? null : computeCacheDiff(path, parsed.actions);
     const hasLabel = entry !== undefined && entry.currentLabel.length > 0;
@@ -604,6 +653,14 @@ export function htslDiffLines(path: string, options?: HtslDiffLinesOptions): Ele
             );
         }
     }
+    diffLinesCache.set(path, {
+        parsedRef: parsed,
+        liveActive,
+        liveUpdatedAt,
+        cacheMtime,
+        optionsKey,
+        result: out,
+    });
     return out;
 }
 
@@ -717,8 +774,7 @@ let cachedMcRootForwardSlash: string | null = null;
 function mcRootForward(): string {
     if (cachedMcRootForwardSlash !== null) return cachedMcRootForwardSlash;
     try {
-        // @ts-ignore
-        const Paths = Java.type("java.nio.file.Paths");
+        const Paths = javaType("java.nio.file.Paths");
         cachedMcRootForwardSlash = String(
             Paths.get(".").toAbsolutePath().normalize().toString()
         ).replace(/\\/g, "/");
@@ -952,6 +1008,16 @@ function queueRowMiniBar(item: QueueItem): Element {
             children: [],
         });
     }
+    if (state.kind === "failed") {
+        return Container({
+            style: {
+                width: { kind: "grow" },
+                height: { kind: "px", value: 2 },
+                background: ACCENT_DANGER,
+            },
+            children: [],
+        });
+    }
     // current — three phase segments side-by-side, each filled per its
     // own fraction. Widths are proportional to phase budget so a hydrate-
     // heavy importable shows a wider purple region.
@@ -1132,8 +1198,8 @@ function progressBar(): Element {
             for (let i = 0; i < liveWeights.length; i++) totalWeight += liveWeights[i];
             if (totalWeight <= 0) totalWeight = 1;
             const out: Child[] = [];
-            for (let i = 0; i < p.weights.length; i++) {
-                const w = p.weights[i];
+            for (let i = 0; i < liveWeights.length; i++) {
+                const w = liveWeights[i];
                 const flexFactor = Math.max(0.0001, w / totalWeight);
                 let fill: number;
                 if (i < p.completed) {
@@ -1141,7 +1207,7 @@ function progressBar(): Element {
                 } else if (i === p.orderIndex) {
                     const within =
                         p.estimatedCompleted - p.weightCompleted;
-                    const denom = Math.max(0.0001, p.weightCurrent);
+                    const denom = Math.max(0.0001, liveWeights[p.orderIndex]);
                     fill = Math.min(1, Math.max(0, within / denom));
                 } else {
                     fill = 0;
@@ -1172,7 +1238,7 @@ function progressBar(): Element {
                         ],
                     })
                 );
-                if (i < p.weights.length - 1) {
+                if (i < liveWeights.length - 1) {
                     out.push(
                         Container({
                             style: {
@@ -1195,21 +1261,10 @@ function capitalizePhase(phase: string): string {
     return phase.charAt(0).toUpperCase() + phase.slice(1);
 }
 
-function formatEtaShort(secs: number): string {
-    const total = Math.max(0, Math.round(secs));
-    if (total < 60) return `${total}s`;
-    const m = Math.floor(total / 60);
-    const s = total % 60;
-    if (m < 60) return s === 0 ? `${m}m` : `${m}m${s}s`;
-    const h = Math.floor(m / 60);
-    const mm = m % 60;
-    return mm === 0 ? `${h}h` : `${h}h${mm}m`;
-}
-
 function currentImportableEtaText(): string {
     const secs = getCurrentImportableEtaSeconds();
     if (secs === null || secs <= 0) return "";
-    return `${formatEtaShort(secs)} left in this importable`;
+    return `${formatEtaSeconds(secs)} left in this importable`;
 }
 
 function formatClockTime(d: Date): string {
@@ -1529,7 +1584,7 @@ function houseHeader(): Element {
         style: {
             direction: "row",
             align: "center",
-            padding: { side: "x", value: 6 },
+            padding: { side: "left", value: 6 },
             gap: 6,
             height: { kind: "px", value: SIZE_ROW_H + 4 },
             background: COLOR_ROW,
@@ -1539,25 +1594,22 @@ function houseHeader(): Element {
                 text: "House:",
                 color: COLOR_TEXT_DIM,
             }),
+            // Alias-or-UUID + faint UUID tail. Width is `grow` so a long
+            // alias can't push the right-aligned toggles off the row — the
+            // toggles keep their fixed widths and the text gets the rest.
+            // The Trust button paints AFTER this text in render order, so
+            // any visual overflow from a long alias is cleanly masked by
+            // the Trust button's background instead of bleeding through.
             Text({
+                style: { width: { kind: "grow" } },
                 text: () => {
                     const uuid = getHousingUuid();
                     if (uuid === null) return "(unknown — open Knowledge tab to detect)";
                     const alias = getAlias(uuid);
-                    return alias === null ? shortUuid(uuid) : alias;
+                    if (alias === null) return shortUuid(uuid);
+                    return `${alias} §8${shortUuid(uuid)}`;
                 },
                 color: COLOR_TEXT,
-                style: { width: { kind: "grow" } },
-            }),
-            // Faded UUID tail when an alias is set, so the user can still
-            // tell two aliases apart at a glance.
-            Text({
-                text: () => {
-                    const uuid = getHousingUuid();
-                    if (uuid === null) return "";
-                    return getAlias(uuid) === null ? "" : shortUuid(uuid);
-                },
-                color: COLOR_TEXT_FAINT,
             }),
             Container({
                 style: {
@@ -1589,6 +1641,28 @@ function houseHeader(): Element {
                     }),
                 ],
             }),
+            Container({
+                style: {
+                    direction: "col",
+                    align: "center",
+                    justify: "center",
+                    width: { kind: "px", value: 18 },
+                    height: { kind: "grow" },
+                    background: () => (isImportSoundsMuted() ? TRUST_ON_BG : COLOR_BUTTON),
+                    hoverBackground: () =>
+                        isImportSoundsMuted() ? TRUST_ON_HOVER : COLOR_BUTTON_HOVER,
+                },
+                onClick: (_rect, info) => {
+                    if (info.button !== 0) return;
+                    setImportSoundsMuted(!isImportSoundsMuted());
+                },
+                children: [
+                    Icon({
+                        name: () =>
+                            isImportSoundsMuted() ? Icons.volumeOff : Icons.volume2,
+                    }),
+                ],
+            }),
             Button({
                 icon: Icons.pencil,
                 text: "Alias",
@@ -1608,67 +1682,11 @@ function houseHeader(): Element {
     });
 }
 
-function muteSoundsRow(): Element {
-    return Container({
-        style: {
-            direction: "row",
-            align: "center",
-            padding: { side: "x", value: 6 },
-            gap: 6,
-            height: { kind: "px", value: SIZE_ROW_H },
-            background: COLOR_ROW,
-        },
-        children: [
-            Text({
-                text: "Sounds:",
-                color: COLOR_TEXT_DIM,
-            }),
-            Text({
-                text: () =>
-                    isImportSoundsMuted()
-                        ? "Muted while importing"
-                        : "Playing normally",
-                color: COLOR_TEXT,
-                style: { width: { kind: "grow" } },
-            }),
-            Container({
-                style: {
-                    direction: "row",
-                    align: "center",
-                    padding: { side: "x", value: 6 },
-                    gap: 4,
-                    width: { kind: "px", value: 70 },
-                    height: { kind: "grow" },
-                    background: () => (isImportSoundsMuted() ? TRUST_ON_BG : TRUST_OFF_BG),
-                    hoverBackground: () =>
-                        isImportSoundsMuted() ? TRUST_ON_HOVER : TRUST_OFF_HOVER,
-                },
-                onClick: (_rect, info) => {
-                    if (info.button !== 0) return;
-                    setImportSoundsMuted(!isImportSoundsMuted());
-                },
-                children: [
-                    Icon({
-                        name: () =>
-                            isImportSoundsMuted() ? Icons.volumeOff : Icons.volume2,
-                    }),
-                    Text({
-                        text: () => (isImportSoundsMuted() ? "Mute" : "Play"),
-                        color: COLOR_TEXT_DIM,
-                        style: { width: { kind: "grow" } },
-                    }),
-                ],
-            }),
-        ],
-    });
-}
-
 function importTab(): Element {
     return Col({
         style: { gap: 4, width: { kind: "grow" }, height: { kind: "grow" } },
         children: [
             houseHeader(),
-            muteSoundsRow(),
             queueHeader(),
             Scroll({
                 id: "right-import-queue-scroll",

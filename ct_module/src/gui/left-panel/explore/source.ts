@@ -101,15 +101,6 @@ export function removeSource(fullPath: string): void {
     }
 }
 
-export function removeAllStandaloneFiles(): void {
-    for (let i = sources.length - 1; i >= 0; i--) {
-        if (sources[i].kind === "file") {
-            enumerationCache.delete(sources[i].fullPath);
-            sources.splice(i, 1);
-        }
-    }
-}
-
 function relativePath(root: any, p: any): string {
     const rel = root.relativize(p);
     return String(rel.toString()).replace(/\\/g, "/");

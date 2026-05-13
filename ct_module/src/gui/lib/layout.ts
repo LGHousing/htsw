@@ -418,11 +418,30 @@ function layoutScroll(
     if (state.offset > maxOffset) state.offset = maxOffset;
     if (state.offset < 0) state.offset = 0;
 
-    // Place children with offset applied. Cross-axis = stretch into innerW (no scrollbar reservation).
+    // Place children with offset applied. Cross-axis = stretch into innerW
+    // (no scrollbar reservation). Viewport-cull off-screen children so a
+    // 1000-line source file doesn't pay layout + render cost for the 950
+    // lines you can't see this frame. The cull is purely a fast-skip; we
+    // still update `cursor` so subsequent children land at the same y as
+    // they would without culling, and `contentHeight` was already computed
+    // above the loop so the scrollbar math is unaffected.
+    //
+    // The buffer lets a few rows just off-screen still lay out, so a tiny
+    // scroll delta doesn't reveal an un-laid-out gap before the next frame.
+    const CULL_BUFFER = 32;
+    const cullTop = viewportRect.y - CULL_BUFFER;
+    const cullBottom = viewportRect.y + viewportRect.h + CULL_BUFFER;
     let cursor = y + pad.t - state.offset;
     for (let i = 0; i < n; i++) {
         const ch = children[i];
         const mSize = sizes[i];
+
+        const top = cursor;
+        const bottom = cursor + mSize;
+        if (bottom < cullTop || top > cullBottom) {
+            cursor += mSize + gap;
+            continue;
+        }
 
         const explicitCross = ch.style.width;
         const crossResolved = resolveAxis(ch, "w");

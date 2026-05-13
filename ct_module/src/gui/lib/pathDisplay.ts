@@ -1,5 +1,7 @@
 /// <reference types="../../CTAutocomplete" />
 
+import { javaType } from "./java";
+
 // Shared path-shortening helpers used by both the topbar Input and the
 // right-pane source-preview header. Both places want paths that read as
 // `./htsw/imports/...` rather than the raw absolute Windows form.
@@ -16,8 +18,7 @@ function toForwardSlashes(s: string): string {
 function mcRoot(): string {
     if (cachedMcRoot !== null) return cachedMcRoot;
     try {
-        // @ts-ignore
-        const Paths = Java.type("java.nio.file.Paths");
+        const Paths = javaType("java.nio.file.Paths");
         cachedMcRoot = toForwardSlashes(
             Paths.get(".").toAbsolutePath().normalize().toString()
         );

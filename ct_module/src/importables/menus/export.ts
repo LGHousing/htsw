@@ -1,6 +1,6 @@
 import type { ImportableMenu, MenuSlot } from "htsw/types";
 
-import { readActionList } from "../../importer/actions";
+import { readActionList } from "../../importer/actions/readList";
 import {
     clickGoBack,
     readCurrentValue,

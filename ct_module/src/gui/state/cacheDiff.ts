@@ -15,6 +15,7 @@ import {
 import { getHousingUuid, getParsedResult } from "./index";
 import { canonicalPath } from "./parses";
 import type { DiffState } from "./diff";
+import { javaType } from "../lib/java";
 
 /**
  * Source-vs-knowledge-cache diff for an `.htsl` source file.
@@ -128,10 +129,8 @@ export function computeCacheDiff(
 
 function mtimeOf(path: string): number {
     try {
-        // @ts-ignore
-        const Paths = Java.type("java.nio.file.Paths");
-        // @ts-ignore
-        const Files = Java.type("java.nio.file.Files");
+        const Paths = javaType("java.nio.file.Paths");
+        const Files = javaType("java.nio.file.Files");
         const p = Paths.get(String(path));
         if (!Files.exists(p)) return 0;
         return Number(Files.getLastModifiedTime(p).toMillis());

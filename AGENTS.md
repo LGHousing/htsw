@@ -146,9 +146,40 @@ Spec-driven invariants:
 - Action sync order is **delete → edit → move → add** by design.
 - Item cache is stateful and map-specific — be careful when debugging "why didn't this re-import?"
 
+## Comments
+
+**Default to NO comment.** AI-written comments tend to (a) restate what well-named code already says and (b) phrase guessed reasoning as established fact. The second is the worse failure: a confident-sounding "this works because X" misleads the next reader (human or agent) into trusting incorrect rationale and leaving real bugs in place. A wrong comment is worse than no comment.
+
+Before writing a comment: **did you verify this, or are you narrating your mental model?** If you didn't verify it (an assumed MC/Rhino quirk, a guessed "this is needed because…"), leave it out. If the reader can recover the WHY from the code, leave it out.
+
+Write a comment only when ALL hold:
+- The WHY cannot be recovered from reading the code.
+- It is non-obvious AND load-bearing — a future edit that ignores it would introduce a real bug.
+- You actually know the reason — verified by tracing, testing, or repo history, not inferred.
+
+**Do not write:**
+- Restatements of the next line — `// increment i`, `// dark slate, primary panel bg` next to `COLOR_PANEL`.
+- Narration of removed code or past bugs — `// previously this re-called scheduleReparse() here…`, `// removed Y`, `// fix for ticket X`. Git has the diff; PRs have the context. Comments rot, history doesn't.
+- Task / PR breadcrumbs — `// added for the export flow`, `// used by the importer`. Renames and call-site changes silently make these wrong.
+- Section dividers inside functions — `// --- Double-click detection ---`, `// === parsing ===`. The function is too long; extract a helper instead.
+- Inline Java-method aliases over CT calls — `// getCursorPosition`. Rename the surrounding helper.
+- Speculative MC/CT/Rhino internals — `// works because MC reads X during runTick`, unless you have actually traced it. If you can't reproduce the claim on demand, do not assert it in prose.
+- TODOs without a tracked issue and a concrete next step. Stale TODOs accumulate forever.
+- Docstrings that restate the type signature or list every parameter.
+
+**Comments worth keeping (good patterns already in this repo):**
+- Hidden MC / CT 1.8.9 quirks you can demonstrate — placeholder `GuiScreen` swap, `displayGuiScreen(null)` side effects, `Image.fromAsset` being non-functional in this CT build.
+- Concrete race-condition or timing assumptions in async / event code (e.g. capturing a GuiScreen ref before listener registration to avoid a close-event race).
+- Non-obvious design choices a future agent would otherwise undo — fixed overlay scale of 4, action sync order `delete → edit → move → add`, per-housing item SNBT cache.
+- Short docstrings on exported APIs covering the *contract*, not the implementation.
+
+When in doubt: delete the comment, build, see if the next reader (you, one week later) needs it. If a single line truly needs prose to be understandable, rename the symbol or extract a function — prose is the last resort, not the first.
+
 ## Code Style
 
-- No unnecessary comments. Docstrings on exported APIs and non-obvious internals are fine, but don't overuse them — let well-named code carry the meaning. Drop noise like `// increment i` or restating what the next line obviously does.
+- Prefer rename / extract over explanatory comments. See **Comments** above. 
+
+- Feel free to delete unecessary comments you come across.
 
 ## Working Style
 

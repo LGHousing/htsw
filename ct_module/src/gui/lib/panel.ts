@@ -5,19 +5,12 @@ import { Extractable, extract } from "./extractable";
 import { renderElement, dispatchClick } from "./render";
 import { tryDispatchPopoverClick, popoverIsOpen, mouseIsOverPopover } from "./popovers";
 import { getEffectiveOverlayScale, getMcScale, mcToOverlay } from "./overlayScale";
+import { GL11, javaType } from "./java";
 
 const COLOR_PANEL = 0xf0242931 | 0;
 
-
-// Render helpers used to put GL state back into a known 2D-blit mode.
-// MC's slot rendering / item lighting can leave drawString invisible if
-// we don't reset; resetGuiState() handles that.
-// @ts-ignore
-const RenderHelper: any = Java.type("net.minecraft.client.renderer.RenderHelper");
-// @ts-ignore
-const GlStateManager: any = Java.type("net.minecraft.client.renderer.GlStateManager");
-// @ts-ignore
-const GL11: any = org.lwjgl.opengl.GL11;
+const RenderHelper: any = javaType("net.minecraft.client.renderer.RenderHelper");
+const GlStateManager: any = javaType("net.minecraft.client.renderer.GlStateManager");
 
 /**
  * Restore the GL state we need for 2D blits + drawString. After MC's slot

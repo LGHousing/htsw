@@ -1,6 +1,7 @@
 import type { Action, ImportableItem } from "htsw/types";
 
-import { syncActionList } from "../../importer/actions";
+import { syncActionList } from "../../importer/actions/sync";
+import type { ActionListProgressFields } from "../../importer/progress/types";
 import { clickGoBack, timedWaitForMenu } from "../../importer/helpers";
 import {
     getCurrentHousingUuid,
@@ -23,7 +24,6 @@ import {
 import { actionListTrustFor } from "../actionListTrust";
 import type { ItemRegistry } from "../itemRegistry";
 import { ensureReferencedImportablesExist } from "../references";
-import type { ActionListProgress } from "../../importer/types";
 import { COST } from "../../importer/progress/costs";
 import { timed } from "../../importer/progress/timing";
 
@@ -103,7 +103,7 @@ export async function importImportableItem(
     itemRegistry: ItemRegistry,
     trustPlan?: ImportableTrustPlan,
     cachedUuid?: string,
-    onActionListProgress?: (progress: ActionListProgress) => void
+    onActionListProgress?: (progress: ActionListProgressFields) => void
 ): Promise<void> {
     await ensureReferencedImportablesExist(ctx, importable);
 
@@ -250,7 +250,7 @@ async function syncItemActionLists(
     itemRegistry: ItemRegistry,
     trustPlan: ImportableTrustPlan | undefined,
     start: ItemStart,
-    onActionListProgress?: (progress: ActionListProgress) => void
+    onActionListProgress?: (progress: ActionListProgressFields) => void
 ): Promise<void> {
     const leftDesired = actionListToSync(
         importable.leftClickActions,

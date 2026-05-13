@@ -14,19 +14,39 @@ import { getEditFieldDiffs } from "../compare";
 
 export type EtaConfidence = "rough" | "informed" | "planned";
 
+/**
+ * Per-op-kind budget costs in abstract "units". Calibrated against
+ * `guaranteedSleep1000 = 4` as the 1-second anchor, so 1 unit ≈ 250ms.
+ *
+ * Costs are tuned so each kind's *real* avg ms / unit lands close to a
+ * common ~150-160 ms/u band — that way ETA projections stay accurate
+ * even when an importable's op mix is skewed (e.g. lots of `itemSelect`
+ * vs lots of `anvilInput`). When a per-op ms/u drifts noticeably from
+ * the band, bump the cost to compensate. Latest sample basis (n=samples):
+ *   commandMenuWait 2.9 (n=26 @ 433ms → ~150 ms/u)
+ *   menuClickWait 2.0  (n=1451 @ 283ms → ~141 ms/u)
+ *   pageTurnWait 1.7   (n=36 @ 258ms → ~152 ms/u)
+ *   goBackWait 2.0     (n=521 @ 316ms → ~158 ms/u)
+ *   chatInput 3.0      (n=497 @ 472ms → ~157 ms/u)
+ *   anvilInput 4.0     (n=6 @ 605ms → ~151 ms/u)
+ *   itemSelect 1.6     (n=4 @ 238ms → ~149 ms/u)
+ *
+ * Re-tune via `/htsw eta dump`, then divide each kind's `avgMs` by the
+ * target band rate to get the new unit value.
+ */
 export const COST = {
     commandInterval: 1,
-    commandMenuWait: 2,
+    commandMenuWait: 2.9,
     commandMessageWait: 2,
 
     menuClickWait: 2,
     messageClickWait: 2,
-    pageTurnWait: 2,
+    pageTurnWait: 1.7,
     goBackWait: 2,
 
     chatInput: 3,
-    anvilInput: 3,
-    itemSelect: 3,
+    anvilInput: 4,
+    itemSelect: 1.6,
 
     reorderStep: 1.5,
     guaranteedSleep1000: 4,
@@ -41,15 +61,15 @@ export const COST = {
 
 const ACTIONS_PER_PAGE = 21;
 
-export function pagesForActionCount(count: number): number {
+function pagesForActionCount(count: number): number {
     return Math.max(1, Math.ceil(Math.max(0, count) / ACTIONS_PER_PAGE));
 }
 
-export function pageTurnBudgetForActionCount(count: number): number {
+function pageTurnBudgetForActionCount(count: number): number {
     return Math.max(0, pagesForActionCount(count) - 1) * COST.pageTurnWait;
 }
 
-export function fieldKindEditBudget(kind: UiFieldKind): number {
+function fieldKindEditBudget(kind: UiFieldKind): number {
     if (kind === "boolean") return COST.menuClickWait;
     if (kind === "cycle") return COST.menuClickWait * 2;
     if (kind === "select") return COST.menuClickWait + COST.menuClickWait;
@@ -76,30 +96,7 @@ export function moveBudget(fromIndex: number, toIndex: number, listLength: numbe
     return Math.min(leftDistance, rightDistance) * COST.reorderStep;
 }
 
-export function actionSourceNestedBudget(action: Action): number {
-    let total = 0;
-    if (action.type === "CONDITIONAL") {
-        total += nestedActionReadBudget(action.ifActions.length);
-        total += nestedActionReadBudget(action.elseActions.length);
-        total += action.conditions.length > 0 ? COST.menuClickWait + COST.goBackWait : 0;
-        total += actionListSourceBudget(action.ifActions);
-        total += actionListSourceBudget(action.elseActions);
-    } else if (action.type === "RANDOM") {
-        total += nestedActionReadBudget(action.actions.length);
-        total += actionListSourceBudget(action.actions);
-    }
-    return total;
-}
-
-export function actionListSourceBudget(actions: readonly Action[]): number {
-    let total = pageTurnBudgetForActionCount(actions.length);
-    for (let i = 0; i < actions.length; i++) {
-        total += actionSourceNestedBudget(actions[i]);
-    }
-    return total;
-}
-
-export function nestedActionReadBudget(nestedCount: number): number {
+function nestedActionReadBudget(nestedCount: number): number {
     return (
         COST.menuClickWait +
         COST.menuClickWait +
@@ -128,37 +125,68 @@ function nestedPropReadBudget(entry: ObservedActionSlot, prop: NestedListProp): 
     return COST.menuClickWait + pageTurnBudgetForActionCount(count) + COST.goBackWait;
 }
 
-export function noteEditBudget(): number {
+function noteEditBudget(): number {
     return COST.chatInput;
 }
 
-export function actionAddShellBudget(): number {
+function actionAddShellBudget(): number {
     return COST.menuClickWait + COST.menuClickWait;
 }
 
-export function actionWriteRoughBudget(action: Action): number {
+/**
+ * Rough per-condition shell + scalar-fields cost: open the condition
+ * editor (menu click), set its scalar fields (one chat input as a
+ * reasonable average — most conditions have one configurable value),
+ * close the editor. Conditions can't contain nested action lists, so
+ * this stays flat per condition.
+ */
+function conditionRoughBudget(): number {
+    return COST.menuClickWait + COST.chatInput + COST.menuClickWait;
+}
+
+function conditionListRoughBudget(conditions: readonly unknown[]): number {
+    return conditions.length * conditionRoughBudget();
+}
+
+/**
+ * Cost of writing one action's payload (scalar fields + any nested
+ * action/condition lists) once its shell has been added. Scalar fields
+ * each cost a `chatInput`; array fields recurse — `conditions` via
+ * `conditionListRoughBudget`, action-list arrays (e.g. `ifActions`,
+ * `elseActions`, `actions` for RANDOM) via `actionListRoughApplyBudget`.
+ *
+ * Recursion terminates because CONDITIONAL/RANDOM aren't allowed to
+ * nest — the inner action lists only contain non-CONDITIONAL,
+ * non-RANDOM actions, none of which carry action-list arrays. Returns
+ * at least `menuClickWait` so a fieldless action (e.g. Kill Player)
+ * still costs the menu round-trip to commit the add.
+ */
+function actionWriteRoughBudget(action: Action): number {
     let total = 0;
     for (const key in action) {
         if (key === "type" || key === "note") continue;
         const value = (action as { [key: string]: unknown })[key];
-        if (Array.isArray(value)) continue;
         if (value === undefined) continue;
+        if (Array.isArray(value)) {
+            if (key === "conditions") {
+                total += conditionListRoughBudget(value);
+            } else {
+                total += actionListRoughApplyBudget(value as Action[]);
+            }
+            continue;
+        }
         total += COST.chatInput;
     }
     return Math.max(COST.menuClickWait, total);
 }
 
-export function actionListRoughApplyBudget(actions: readonly Action[]): number {
+function actionListRoughApplyBudget(actions: readonly Action[]): number {
     let total = 0;
     for (let i = 0; i < actions.length; i++) {
         total += actionAddShellBudget() + actionWriteRoughBudget(actions[i]);
         if (actions[i].note !== undefined) total += noteEditBudget();
     }
     return total;
-}
-
-export function actionListRoughBudget(actions: readonly Action[]): number {
-    return actionListSourceBudget(actions) + actionListRoughApplyBudget(actions);
 }
 
 export function actionListDiffApplyBudget(
@@ -223,12 +251,39 @@ function topLevelHydrateBudget(desired: readonly Action[]): number {
     return total;
 }
 
+/**
+ * Predict per-phase budget for a single action-list sync.
+ *
+ * Two cases, no mixed worldviews:
+ *
+ * 1. **Cache available** (`cached !== undefined`): we have a snapshot
+ *    of what the housing looked like last time. Use it as the ground
+ *    truth for the read + hydrate phases (housing is *probably* still
+ *    in that state), and run the real diff `cached → desired` to price
+ *    the apply phase.
+ *
+ * 2. **No cache** (`cached === undefined`): we don't know what the
+ *    housing has — first-ever import for this house, or cache was
+ *    wiped. Assume the housing is *empty*: zero pages to turn, nothing
+ *    to hydrate, and every desired action must be added from scratch.
+ *
+ * The estimate self-corrects during the run: `readPart` and
+ * `hydratePart` bump up one-way if reality exceeds prediction, and
+ * `applyPart` is *replaced* with the real diff cost once
+ * `readActionList` + `diffActionList` have observed the actual
+ * housing.
+ */
 export function estimateActionListPhaseBudget(
-    desired: readonly Action[]
+    desired: readonly Action[],
+    cached?: readonly Action[]
 ): ActionListPhaseBudget {
-    const readPart = pageTurnBudgetForActionCount(desired.length);
-    const hydratePart = topLevelHydrateBudget(desired);
-    const applyPart = actionListRoughApplyBudget(desired);
+    if (cached === undefined) {
+        const applyPart = actionListRoughApplyBudget(desired);
+        return { readPart: 0, hydratePart: 0, applyPart, total: applyPart };
+    }
+    const readPart = pageTurnBudgetForActionCount(cached.length);
+    const hydratePart = topLevelHydrateBudget(cached);
+    const applyPart = cacheAwareApplyBudget(desired, cached);
     return {
         readPart,
         hydratePart,
@@ -243,9 +298,9 @@ export function estimateActionListPhaseBudget(
  * `diffActionList`. The slots are stubs — no real `ItemSlot` references —
  * which is fine since `diffActionList` only reads `index` + `action`.
  *
- * The cast through `Observed<Action>` is a lie (cached actions don't
- * carry the runtime `observed` brand) but `diffActionList` doesn't care
- * about the brand, only the action data, so it works in practice.
+ * Structural typing accepts the plain `Action` here because
+ * `diffActionList` only consumes the action data and never inspects the
+ * `Observed<>` brand.
  */
 function cachedActionsAsObserved(cached: readonly Action[]): ObservedActionSlot[] {
     const out: ObservedActionSlot[] = [];
@@ -263,15 +318,13 @@ function cachedActionsAsObserved(cached: readonly Action[]): ObservedActionSlot[
 
 /**
  * Compute the apply-phase budget for transforming `cached` → `desired`,
- * by running the real diff and pricing each operation. This is the
- * cache-aware alternative to `actionListRoughApplyBudget(desired)` (which
- * assumes worst-case all-adds). Used to tighten ETA estimates when we
- * have a recent knowledge cache for the housing.
+ * by running the real diff and pricing each operation. Used to tighten
+ * ETA estimates when we have a recent knowledge cache for the housing.
  *
- * Returns 0 when cached and desired are identical (the bar can predict a
+ * Returns 0 when cached and desired are identical (the bar predicts a
  * near-instant pass for this list).
  */
-export function cacheAwareApplyBudget(
+function cacheAwareApplyBudget(
     desired: readonly Action[],
     cached: readonly Action[]
 ): number {
@@ -285,96 +338,39 @@ export function cacheAwareApplyBudget(
 }
 
 /**
- * Cache-aware variant of `actionListRoughBudget`: source budget unchanged
- * (we still have to read + hydrate to verify), but the apply portion is
- * replaced with `cacheAwareApplyBudget` when cache is provided.
+ * Total work for one action-list sync (read + hydrate + apply). Wraps
+ * `estimateActionListPhaseBudget`'s three parts back into a single
+ * number. Used by `estimateImportableCost` to weight importables.
  */
-export function actionListRoughBudgetWithCache(
+function actionListCost(
     desired: readonly Action[],
     cached: readonly Action[] | undefined
 ): number {
-    const sourcePart = actionListSourceBudget(desired);
-    const applyPart =
-        cached !== undefined
-            ? cacheAwareApplyBudget(desired, cached)
-            : actionListRoughApplyBudget(desired);
-    return sourcePart + applyPart;
+    return estimateActionListPhaseBudget(desired, cached).total;
 }
 
 /**
- * Cache-aware variant of `estimateImportableCost`. Caller supplies a
- * `getCachedActionList(basePath) → Action[] | undefined` that resolves
- * cached actions for each of the importable's action lists; pass a
- * function that returns `undefined` for everything to fall back to the
- * worst-case estimate.
+ * Total work estimate for one importable in budget units. The optional
+ * `getCached(basePath)` callback returns the last-known cached actions
+ * for the importable's action-list fields (e.g. `"actions"`,
+ * `"onEnterActions"`). Pass `undefined` for the no-cache path; phase
+ * budgets fall back to "assume housing is empty" → predict only the
+ * worst-case apply work.
+ *
+ * MENU / NPC fall through to a cache-blind rough estimate — their slots
+ * have variable indexing and aren't worth special-casing yet.
  */
-export function estimateImportableCostWithCache(
+export function estimateImportableCost(
     importable: Importable,
-    getCachedActionList: (basePath: string) => readonly Action[] | undefined
+    getCached?: (basePath: string) => readonly Action[] | undefined
 ): number {
-    if (importable.type === "FUNCTION") {
-        return (
-            COST.commandMenuWait +
-            actionListRoughBudgetWithCache(
-                importable.actions,
-                getCachedActionList("actions")
-            ) +
-            COST.knowledgeWrite
-        );
-    }
-    if (importable.type === "EVENT") {
-        return (
-            COST.commandMenuWait +
-            COST.menuClickWait +
-            actionListRoughBudgetWithCache(
-                importable.actions,
-                getCachedActionList("actions")
-            ) +
-            COST.knowledgeWrite
-        );
-    }
-    if (importable.type === "REGION") {
-        return (
-            COST.commandMessageWait * 3 +
-            COST.commandMenuWait +
-            actionListRoughBudgetWithCache(
-                importable.onEnterActions ?? [],
-                getCachedActionList("onEnterActions")
-            ) +
-            actionListRoughBudgetWithCache(
-                importable.onExitActions ?? [],
-                getCachedActionList("onExitActions")
-            ) +
-            COST.knowledgeWrite
-        );
-    }
-    if (importable.type === "ITEM") {
-        const left = importable.leftClickActions ?? [];
-        const right = importable.rightClickActions ?? [];
-        if (left.length === 0 && right.length === 0) {
-            return COST.itemInject + COST.knowledgeWrite;
-        }
-        return (
-            COST.itemInject +
-            COST.commandMenuWait +
-            COST.menuClickWait +
-            actionListRoughBudgetWithCache(left, getCachedActionList("leftClickActions")) +
-            actionListRoughBudgetWithCache(right, getCachedActionList("rightClickActions")) +
-            COST.guaranteedSleep1000 +
-            COST.nbtCapture +
-            COST.knowledgeWrite
-        );
-    }
-    // MENU / NPC fall through to the cache-blind path; their action lists
-    // have variable indexing and aren't worth special-casing yet.
-    return estimateImportableCost(importable);
-}
+    const get = (path: string): readonly Action[] | undefined =>
+        getCached === undefined ? undefined : getCached(path);
 
-export function estimateImportableCost(importable: Importable): number {
     if (importable.type === "FUNCTION") {
         return (
             COST.commandMenuWait +
-            actionListRoughBudget(importable.actions) +
+            actionListCost(importable.actions, get("actions")) +
             COST.knowledgeWrite
         );
     }
@@ -382,7 +378,7 @@ export function estimateImportableCost(importable: Importable): number {
         return (
             COST.commandMenuWait +
             COST.menuClickWait +
-            actionListRoughBudget(importable.actions) +
+            actionListCost(importable.actions, get("actions")) +
             COST.knowledgeWrite
         );
     }
@@ -390,8 +386,8 @@ export function estimateImportableCost(importable: Importable): number {
         return (
             COST.commandMessageWait * 3 +
             COST.commandMenuWait +
-            actionListRoughBudget(importable.onEnterActions ?? []) +
-            actionListRoughBudget(importable.onExitActions ?? []) +
+            actionListCost(importable.onEnterActions ?? [], get("onEnterActions")) +
+            actionListCost(importable.onExitActions ?? [], get("onExitActions")) +
             COST.knowledgeWrite
         );
     }
@@ -405,15 +401,19 @@ export function estimateImportableCost(importable: Importable): number {
             COST.itemInject +
             COST.commandMenuWait +
             COST.menuClickWait +
-            actionListRoughBudget(left) +
-            actionListRoughBudget(right) +
+            actionListCost(left, get("leftClickActions")) +
+            actionListCost(right, get("rightClickActions")) +
             COST.guaranteedSleep1000 +
             COST.nbtCapture +
             COST.knowledgeWrite
         );
     }
     if (importable.type === "MENU") {
-        return COST.commandMenuWait + (importable.slots?.length ?? 0) * COST.menuClickWait + COST.knowledgeWrite;
+        return (
+            COST.commandMenuWait +
+            (importable.slots?.length ?? 0) * COST.menuClickWait +
+            COST.knowledgeWrite
+        );
     }
     return COST.commandMenuWait + COST.knowledgeWrite;
 }

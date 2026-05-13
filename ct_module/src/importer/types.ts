@@ -1,7 +1,5 @@
 import type { Action, Condition } from "htsw/types";
 import type { ItemSlot } from "../tasks/specifics/slots";
-import type { ItemRegistry } from "../importables/itemRegistry";
-import type { ActionListPhaseBudget, EtaConfidence } from "./progress/costs";
 
 export type UiFieldKind =
     | "boolean"
@@ -60,53 +58,6 @@ export type NestedPropsToRead = Set<NestedListProp>;
 export type NestedReadState = "none" | "summary" | "full" | "trusted";
 
 export type NestedSummaries = Partial<Record<NestedListProp, string[]>>;
-
-export type ActionListReadMode =
-    | {
-          kind: "full";
-          itemRegistry?: ItemRegistry;
-          onProgress?: ActionListProgressSink;
-          /**
-           * Mutable phase budget shared with the subsequent applyDiff call
-           * (see costs.ts). Mutated in-place when actual reading/hydration
-           * exceeds the desired-derived estimate so the GUI sees a coherent
-           * `estimatedTotal` across all four phases instead of per-phase
-           * scale jumps. Optional for legacy callers.
-           */
-          phaseBudget?: ActionListPhaseBudget;
-      }
-    | {
-          kind: "sync";
-          desired: readonly Action[];
-          itemRegistry?: ItemRegistry;
-          trust?: ActionListTrust;
-          onProgress?: ActionListProgressSink;
-          phaseBudget?: ActionListPhaseBudget;
-      };
-
-export type ActionListProgressPhase =
-    | "reading"
-    | "hydrating"
-    | "diffing"
-    | "applying";
-
-export type ActionListProgress = {
-    phase: ActionListProgressPhase;
-    completed: number;
-    total: number;
-    label: string;
-    estimatedCompleted: number;
-    estimatedTotal: number;
-    confidence: EtaConfidence;
-    /**
-     * Per-phase budget breakdown for this action-list call. Lets the GUI
-     * compute a phase-aware ETA (remaining work in current phase × that
-     * phase's measured ms/unit, plus upcoming phases × their rates).
-     */
-    phaseBudget?: ActionListPhaseBudget;
-};
-
-export type ActionListProgressSink = (progress: ActionListProgress) => void;
 
 export type ActionListTrust = {
     basePath: string;

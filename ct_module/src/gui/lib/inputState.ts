@@ -1,5 +1,7 @@
 /// <reference types="../../CTAutocomplete" />
 
+import { javaType } from "./java";
+
 // Per-input GuiTextField management. We delegate cursor/selection/clipboard/arrow-key handling
 // to vanilla MC's GuiTextField rather than reimplementing it. Each input id keeps one field
 // instance; we recreate it only when the laid-out width/height changes (those are final on the
@@ -8,8 +10,7 @@
 // Obfuscated names — CT 1.8.9 uses SRG/obf for member access (same convention as bounds.ts /
 // scissor.ts). Method/field maps are documented inline.
 
-// @ts-ignore
-const GuiTextFieldClass = Java.type("net.minecraft.client.gui.GuiTextField");
+const GuiTextFieldClass = javaType("net.minecraft.client.gui.GuiTextField");
 
 type Record = {
     field: any; // GuiTextField

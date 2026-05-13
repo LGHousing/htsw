@@ -10,6 +10,7 @@ import {
     type DiffState,
 } from "../state/diff";
 import {
+    createImportProgress,
     setCurrentImportingPath,
     setImportProgress,
 } from "../state";
@@ -46,30 +47,15 @@ export function runDiffDemo(): void {
     // strip reads getImportProgress(), so the demo animates there alongside
     // the right-panel source preview.
     setCurrentImportingPath(path);
-    setImportProgress({
-        weightCompleted: 0,
+    setImportProgress(createImportProgress({
         weightTotal: total,
-        weightCurrent: 0,
-        currentKey: "",
-        currentType: null,
         currentIdentity: "diff demo",
-        orderIndex: -1,
-        rowStatus: null,
-        currentLabel: "diff demo",
         phase: "applying",
         phaseLabel: "diff demo",
-        unitCompleted: 0,
         unitTotal: total,
-        estimatedCompleted: 0,
         estimatedTotal: total,
         etaConfidence: "planned",
-        phaseBudget: null,
-        weights: [],
-        completed: 0,
-        total: 1,
-        failed: 0,
-        inFlight: true,
-    });
+    }));
     let i = 0;
     const tick = () => {
         if (i >= total) {
@@ -81,15 +67,11 @@ export function runDiffDemo(): void {
         }
         const finalState = cycle[i % cycle.length];
         setCurrent(key, String(i), `step ${i + 1}/${total} (→ ${finalState})`);
-        setImportProgress({
+        setImportProgress(createImportProgress({
             weightCompleted: i,
             weightTotal: total,
             weightCurrent: 1,
-            currentKey: "",
-            currentType: null,
             currentIdentity: "diff demo",
-            orderIndex: -1,
-            rowStatus: null,
             currentLabel: `diff demo · ${i + 1}/${total}`,
             phase: "applying",
             phaseLabel: "diff demo",
@@ -98,13 +80,7 @@ export function runDiffDemo(): void {
             estimatedCompleted: i,
             estimatedTotal: total,
             etaConfidence: "planned",
-            phaseBudget: null,
-            weights: [],
-            completed: 0,
-            total: 1,
-            failed: 0,
-            inFlight: true,
-        });
+        }));
         // Settle this action after a short pause, then advance.
         setTimeout(() => {
             setDiffState(key, String(i), finalState);

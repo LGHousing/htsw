@@ -20,6 +20,7 @@ import {
     importableSubListPath,
     type SubListKind,
 } from "./importablePaths";
+import { javaType } from "../lib/java";
 
 const SUB_LIST_KINDS: SubListKind[] = [
     "onEnterActions",
@@ -49,10 +50,8 @@ const IMPORTS_ROOT = "./htsw/imports";
  */
 export function findFirstImportJson(): string | null {
     try {
-        // @ts-ignore
-        const Files = Java.type("java.nio.file.Files");
-        // @ts-ignore
-        const Paths = Java.type("java.nio.file.Paths");
+        const Files = javaType("java.nio.file.Files");
+        const Paths = javaType("java.nio.file.Paths");
         const root = Paths.get(String(IMPORTS_ROOT));
         if (!Files.exists(root)) return null;
         return walkForImportJson(root);
@@ -62,8 +61,7 @@ export function findFirstImportJson(): string | null {
 }
 
 function walkForImportJson(dir: any): string | null {
-    // @ts-ignore
-    const Files = Java.type("java.nio.file.Files");
+    const Files = javaType("java.nio.file.Files");
     let stream: any;
     try {
         stream = Files.newDirectoryStream(dir);
@@ -109,10 +107,8 @@ function walkForImportJson(dir: any): string | null {
 
 function fileExistsSafe(path: string): boolean {
     try {
-        // @ts-ignore
-        const Files = Java.type("java.nio.file.Files");
-        // @ts-ignore
-        const Paths = Java.type("java.nio.file.Paths");
+        const Files = javaType("java.nio.file.Files");
+        const Paths = javaType("java.nio.file.Paths");
         return Files.exists(Paths.get(String(path)));
     } catch (_e) {
         return false;
@@ -141,10 +137,8 @@ export function autoDiscoverImportJson(): void {
 
 function getMtimeMs(path: string): number {
     try {
-        // @ts-ignore
-        const Paths = Java.type("java.nio.file.Paths");
-        // @ts-ignore
-        const Files = Java.type("java.nio.file.Files");
+        const Paths = javaType("java.nio.file.Paths");
+        const Files = javaType("java.nio.file.Files");
         return Number(Files.getLastModifiedTime(Paths.get(String(path))).toMillis());
     } catch (_e) {
         return 0;

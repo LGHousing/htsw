@@ -2,6 +2,7 @@
 
 import { Rect } from "./layout";
 import { ContainerBounds, getContainerBounds } from "./bounds";
+import { javaType } from "./java";
 
 // We always render the overlay as if MC's GUI scale were 4 ("Large"), regardless of the user's
 // setting. All overlay-internal coordinates are in this fixed scale-4 space (1 unit = 4 real
@@ -9,8 +10,7 @@ import { ContainerBounds, getContainerBounds } from "./bounds";
 // render path applies a GL scale transform so Renderer.* calls (which interpret coords in MC's
 // scaled space) produce the correct real-pixel output.
 
-// @ts-ignore
-const ScaledResolutionClass = net.minecraft.client.gui.ScaledResolution;
+const ScaledResolutionClass = javaType("net.minecraft.client.gui.ScaledResolution");
 
 // Target overlay scale (real pixels per overlay unit) — the cap on how big we'll render. The
 // actual per-frame scale is `getEffectiveOverlayScale()`, which is MC's current scale capped at

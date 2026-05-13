@@ -17,6 +17,7 @@ import { getAlias, listAliases } from "../../../knowledge/aliases";
 import { openAliasPopover } from "../../popovers/alias";
 import { TaskManager } from "../../../tasks/manager";
 import { KNOWLEDGE_ROOT } from "../../../knowledge/paths";
+import { javaType } from "../../lib/java";
 import {
     COLOR_BUTTON,
     COLOR_BUTTON_HOVER,
@@ -56,10 +57,8 @@ function shortUuid(uuid: string): string {
  *  failures (missing dir, permissions) yield an empty list. */
 function listCachedHousingUuids(): string[] {
     try {
-        // @ts-ignore
-        const Paths = Java.type("java.nio.file.Paths");
-        // @ts-ignore
-        const Files = Java.type("java.nio.file.Files");
+        const Paths = javaType("java.nio.file.Paths");
+        const Files = javaType("java.nio.file.Files");
         const root = Paths.get(String(KNOWLEDGE_ROOT));
         if (!Files.exists(root) || !Files.isDirectory(root)) return [];
         const stream = Files.newDirectoryStream(root);

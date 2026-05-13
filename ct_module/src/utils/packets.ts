@@ -33,3 +33,7 @@ export const S2DPacketOpenWindow = Java.type(
 export const S2FPacketSetSlot = Java.type(
     "net.minecraft.network.play.server.S2FPacketSetSlot"
 );
+
+export const S2EPacketCloseWindow = Java.type(
+    "net.minecraft.network.play.server.S2EPacketCloseWindow"
+);

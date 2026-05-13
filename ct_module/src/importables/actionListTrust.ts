@@ -1,6 +1,6 @@
 import type { Action, Importable } from "htsw/types";
 
-import type { ActionListTrust } from "../importer/actions";
+import type { ActionListTrust } from "../importer/types";
 import type { ImportableTrustPlan } from "../knowledge";
 
 export function actionListTrustFor(

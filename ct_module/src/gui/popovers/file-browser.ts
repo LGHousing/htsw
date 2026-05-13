@@ -35,6 +35,7 @@ import { scheduleReparse } from "../state/reparse";
 import { addRecent } from "../state/recents";
 import { normalizeHtswPath } from "../lib/pathDisplay";
 import { queueSourcePath } from "../left-panel/explore/source";
+import { javaType } from "../lib/java";
 
 type Entry = {
     name: string;
@@ -67,10 +68,8 @@ function setCwd(next: string): void {
 
 function dirExists(path: string): boolean {
     try {
-        // @ts-ignore
-        const Files = Java.type("java.nio.file.Files");
-        // @ts-ignore
-        const Paths = Java.type("java.nio.file.Paths");
+        const Files = javaType("java.nio.file.Files");
+        const Paths = javaType("java.nio.file.Paths");
         const p = Paths.get(String(path));
         return Files.exists(p) && Files.isDirectory(p);
     } catch (_e) {
@@ -91,10 +90,8 @@ function resolveExistingDir(start: string): string {
 }
 
 function listDir(dir: string): Entry[] {
-    // @ts-ignore
-    const Files = Java.type("java.nio.file.Files");
-    // @ts-ignore
-    const Paths = Java.type("java.nio.file.Paths");
+    const Files = javaType("java.nio.file.Files");
+    const Paths = javaType("java.nio.file.Paths");
     const out: Entry[] = [];
     let p: any;
     try {
@@ -193,10 +190,8 @@ function commitPathDraft(): void {
     const raw = pathDraft.trim();
     if (raw.length === 0) return;
     const normalized = normalizeHtswPath(raw);
-    // @ts-ignore
-    const Paths = Java.type("java.nio.file.Paths");
-    // @ts-ignore
-    const Files = Java.type("java.nio.file.Files");
+    const Paths = javaType("java.nio.file.Paths");
+    const Files = javaType("java.nio.file.Files");
     let p: any;
     try {
         p = Paths.get(String(normalized));
@@ -250,10 +245,8 @@ function commitPathDraft(): void {
 
 function openInOS(): void {
     try {
-        // @ts-ignore
-        const Desktop = Java.type("java.awt.Desktop");
-        // @ts-ignore
-        const FileClass = Java.type("java.io.File");
+        const Desktop = javaType("java.awt.Desktop");
+        const FileClass = javaType("java.io.File");
         Desktop.getDesktop().open(new FileClass(String(cwd)));
     } catch (err) {
         ChatLib.chat(`&c[htsw] Open in OS failed: ${err}`);
@@ -262,10 +255,8 @@ function openInOS(): void {
 
 function newFolder(): void {
     try {
-        // @ts-ignore
-        const Files = Java.type("java.nio.file.Files");
-        // @ts-ignore
-        const Paths = Java.type("java.nio.file.Paths");
+        const Files = javaType("java.nio.file.Files");
+        const Paths = javaType("java.nio.file.Paths");
         let i = 1;
         while (true) {
             const candidate = `${cwd}/new-folder${i === 1 ? "" : `-${i}`}`;
@@ -285,10 +276,8 @@ function newFolder(): void {
 
 function newImportJson(): void {
     try {
-        // @ts-ignore
-        const Files = Java.type("java.nio.file.Files");
-        // @ts-ignore
-        const Paths = Java.type("java.nio.file.Paths");
+        const Files = javaType("java.nio.file.Files");
+        const Paths = javaType("java.nio.file.Paths");
         const target = `${cwd}/import.json`;
         const p = Paths.get(String(target));
         if (Files.exists(p)) {

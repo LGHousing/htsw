@@ -1,13 +1,13 @@
 import type { ImportableRegion, Pos } from "htsw/types";
 
-import { syncActionList } from "../../importer/actions";
+import { syncActionList } from "../../importer/actions/sync";
 import {
     clickGoBack,
     timedWaitForMenu,
     timedWaitForUnformattedMessage,
 } from "../../importer/helpers";
 import type { ImportableTrustPlan } from "../../knowledge";
-import type { ActionListProgress } from "../../importer/types";
+import type { ActionListProgressFields } from "../../importer/progress/types";
 import TaskContext from "../../tasks/context";
 import { actionListTrustFor } from "../actionListTrust";
 import type { ItemRegistry } from "../itemRegistry";
@@ -19,7 +19,7 @@ export async function importImportableRegion(
     importable: ImportableRegion,
     itemRegistry: ItemRegistry,
     trustPlan?: ImportableTrustPlan,
-    onActionListProgress?: (progress: ActionListProgress) => void
+    onActionListProgress?: (progress: ActionListProgressFields) => void
 ): Promise<void> {
     await ensureReferencedImportablesExist(ctx, importable);
 

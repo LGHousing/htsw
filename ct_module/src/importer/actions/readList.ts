@@ -20,8 +20,7 @@ import {
 } from "../conditionMappings";
 import { canonicalizeItemFields } from "../canonicalizeItems";
 import type {
-    ActionListProgressSink,
-    ActionListReadMode,
+    ActionListTrust,
     NestedHydrationPlan,
     NestedListProp,
     NestedPropsToRead,
@@ -29,6 +28,7 @@ import type {
     Observed,
     ObservedActionSlot,
 } from "../types";
+import type { ActionListProgressSink } from "../progress/types";
 import { createNestedHydrationPlan } from "./hydrationPlan";
 import { matchObservedToDesired } from "./nestedMatching";
 import { applyActionListTrust } from "./trustHydration";
@@ -43,7 +43,6 @@ import {
 import { getActiveDiffSink } from "../diffSink";
 import {
     COST,
-    actionListRoughBudget,
     hydrationEntryBudget,
     type ActionListPhaseBudget,
 } from "../progress/costs";
@@ -51,6 +50,22 @@ import { setCurrentPhase } from "../progress/timing";
 import { ACTION_LIST_CONFIG } from "./listConfig";
 import { getActionSpec } from "../actions";
 import { actionLogLabel } from "./log";
+
+export type ActionListReadMode =
+    | {
+          kind: "full";
+          itemRegistry?: ItemRegistry;
+          onProgress?: ActionListProgressSink;
+          phaseBudget?: ActionListPhaseBudget;
+      }
+    | {
+          kind: "sync";
+          desired: readonly Action[];
+          itemRegistry?: ItemRegistry;
+          trust?: ActionListTrust;
+          onProgress?: ActionListProgressSink;
+          phaseBudget?: ActionListPhaseBudget;
+      };
 
 function readNestedSummaries(
     action: Observed<Action>,
@@ -164,89 +179,90 @@ export async function readActionList(
     const progress = mode.onProgress;
     const desiredTotal =
         mode.kind === "sync" ? Math.max(1, mode.desired.length) : 1;
-    const roughEstimate =
-        mode.kind === "sync" ? Math.max(1, actionListRoughBudget(mode.desired)) : 1;
     const phaseBudget = mode.phaseBudget;
     let readEstimatedCompleted = 0;
     setCurrentPhase("reading");
-    progress?.({
-        phase: "reading",
-        completed: 0,
-        total: desiredTotal,
-        label: "reading housing state",
-        estimatedCompleted: phaseBudget !== undefined ? 0 : 0,
-        estimatedTotal:
-            phaseBudget !== undefined ? phaseBudget.total : roughEstimate,
-        confidence: "rough",
-        phaseBudget,
-    });
-    getActiveDiffSink()?.phase("reading housing state");
-    const observed = await readPaginatedList(
-        ctx,
-        ACTION_LIST_CONFIG,
-        () => readActionsListPage(ctx),
-        ({ totalEntries, pagesRead }) => {
-            readEstimatedCompleted = Math.max(0, pagesRead - 1) * COST.pageTurnWait;
-            if (phaseBudget !== undefined) {
+    // The reading + hydrating phases perform many awaited menu round-trips
+    // via `readPaginatedList` and `hydrateNestedActions`. A throw in any of
+    // them must still clear `currentPhase` or per-phase ms accumulates
+    // against "reading" / "hydrating" forever after a failure. Wrap both
+    // phases in try/finally so the phase resets on every exit path.
+    let observed: ObservedActionSlot[];
+    try {
+        if (phaseBudget !== undefined) {
+            progress?.({
+                phase: "reading",
+                phaseLabel: "reading housing state",
+                unitCompleted: 0,
+                unitTotal: desiredTotal,
+                estimatedCompleted: 0,
+                estimatedTotal: phaseBudget.total,
+                etaConfidence: "rough",
+                phaseBudget,
+            });
+        }
+        getActiveDiffSink()?.phase("reading housing state");
+        observed = await readPaginatedList(
+            ctx,
+            ACTION_LIST_CONFIG,
+            () => readActionsListPage(ctx),
+            ({ totalEntries, pagesRead }) => {
+                readEstimatedCompleted = Math.max(0, pagesRead - 1) * COST.pageTurnWait;
+                if (phaseBudget === undefined) return;
                 if (readEstimatedCompleted > phaseBudget.readPart) {
                     phaseBudget.readPart = readEstimatedCompleted;
                     phaseBudget.total = recomputeTotal(phaseBudget);
                 }
                 progress?.({
                     phase: "reading",
-                    completed: totalEntries,
-                    total: Math.max(desiredTotal, totalEntries),
-                    label: `${totalEntries} actions read`,
+                    phaseLabel: `${totalEntries} actions read`,
+                    unitCompleted: totalEntries,
+                    unitTotal: Math.max(desiredTotal, totalEntries),
                     estimatedCompleted: readEstimatedCompleted,
                     estimatedTotal: phaseBudget.total,
-                    confidence: "rough",
+                    etaConfidence: "rough",
                     phaseBudget,
                 });
-            } else {
-                progress?.({
-                    phase: "reading",
-                    completed: totalEntries,
-                    total: Math.max(desiredTotal, totalEntries),
-                    label: `${totalEntries} actions read`,
-                    estimatedCompleted: readEstimatedCompleted,
-                    estimatedTotal: Math.max(roughEstimate, readEstimatedCompleted),
-                    confidence: "rough",
-                });
+            }
+        );
+        // Reading is done. Grow `phaseBudget.readPart` to the observed
+        // cost when it exceeded estimate (one-way bump — never shrinks)
+        // so the ETA never regresses for already-spent work. Decreases
+        // are handled later via `phaseBudget.applyPart` getting refined
+        // once `applyDiff` knows the real diff.
+        if (phaseBudget !== undefined) {
+            if (readEstimatedCompleted > phaseBudget.readPart) {
+                phaseBudget.readPart = readEstimatedCompleted;
+                phaseBudget.total = recomputeTotal(phaseBudget);
             }
         }
-    );
-    // Reading is done. Lock readPart to actual observed cost so subsequent
-    // phases use a stable baseline.
-    if (phaseBudget !== undefined) {
-        if (readEstimatedCompleted > phaseBudget.readPart) {
-            phaseBudget.readPart = readEstimatedCompleted;
-            phaseBudget.total = recomputeTotal(phaseBudget);
+        let plan: NestedHydrationPlan;
+        if (mode.kind === "full") {
+            plan = buildFullHydrationPlan(observed);
+        } else {
+            const matches = matchObservedToDesired(observed, mode.desired);
+            plan = createNestedHydrationPlan(matches);
+            if (mode.trust !== undefined) {
+                applyActionListTrust(matches, plan, mode.trust);
+            }
         }
+        addScalarHydrationEntries(plan, observed);
+        await hydrateNestedActions(
+            ctx,
+            plan,
+            observed.length,
+            mode.itemRegistry,
+            progress,
+            phaseBudget
+        );
+        // Reset back to page 1 while still inside the phase window so the
+        // page turns count toward "hydrating" timing samples instead of
+        // leaking out with currentPhase=null.
+        await goToPaginatedListPage(ctx, 1, ACTION_LIST_CONFIG);
+    } finally {
+        setCurrentPhase(null);
     }
-    let plan: NestedHydrationPlan;
-    if (mode.kind === "full") {
-        plan = buildFullHydrationPlan(observed);
-    } else {
-        const matches = matchObservedToDesired(observed, mode.desired);
-        plan = createNestedHydrationPlan(matches);
-        if (mode.trust !== undefined) {
-            applyActionListTrust(matches, plan, mode.trust);
-        }
-    }
-    addScalarHydrationEntries(plan, observed);
-    await hydrateNestedActions(
-        ctx,
-        plan,
-        observed.length,
-        mode.itemRegistry,
-        progress,
-        readEstimatedCompleted,
-        phaseBudget
-    );
-    setCurrentPhase(null);
     canonicalizeObservedActionItemNames(observed, mode.itemRegistry);
-
-    await goToPaginatedListPage(ctx, 1, ACTION_LIST_CONFIG);
     return observed;
 }
 
@@ -334,7 +350,6 @@ async function hydrateNestedActions(
     listLength: number,
     itemRegistry?: ItemRegistry,
     progress?: ActionListProgressSink,
-    baseEstimatedCompleted: number = 0,
     phaseBudget?: ActionListPhaseBudget
 ): Promise<void> {
     setCurrentPhase("hydrating");
@@ -349,40 +364,27 @@ async function hydrateNestedActions(
         phaseBudget.hydratePart = totalBudget;
         phaseBudget.total = recomputeTotal(phaseBudget);
     }
-    const emit = (label: string, justFinished: boolean) => {
-        if (phaseBudget !== undefined) {
-            progress?.({
-                phase: "hydrating",
-                completed,
-                total,
-                label,
-                estimatedCompleted: phaseBudget.readPart + completedBudget,
-                estimatedTotal: phaseBudget.total,
-                confidence: "informed",
-                phaseBudget,
-            });
-        } else {
-            progress?.({
-                phase: "hydrating",
-                completed,
-                total,
-                label,
-                estimatedCompleted: baseEstimatedCompleted + completedBudget,
-                estimatedTotal: baseEstimatedCompleted + totalBudget,
-                confidence: "informed",
-            });
-        }
-        // suppress unused-var warning when only one branch references it
-        void justFinished;
+    const emit = (label: string) => {
+        if (phaseBudget === undefined) return;
+        progress?.({
+            phase: "hydrating",
+            phaseLabel: label,
+            unitCompleted: completed,
+            unitTotal: total,
+            estimatedCompleted: phaseBudget.readPart + completedBudget,
+            estimatedTotal: phaseBudget.total,
+            etaConfidence: "informed",
+            phaseBudget,
+        });
     };
     for (const [entry, propsToRead] of plan) {
-        emit(`reading nested ${actionLogLabel(entry.action)}`, false);
+        emit(`reading nested ${actionLogLabel(entry.action)}`);
         getActiveDiffSink()?.phase(`reading nested ${actionLogLabel(entry.action)}`);
         const beforeBudget = hydrationEntryBudget(entry, propsToRead);
         await hydrateNestedAction(ctx, entry, propsToRead, listLength, itemRegistry);
         completedBudget += beforeBudget;
         completed++;
-        emit(`${completed}/${total} nested actions read`, true);
+        emit(`${completed}/${total} nested actions read`);
     }
 }
 
