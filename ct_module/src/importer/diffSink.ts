@@ -51,6 +51,51 @@ export interface ImportDiffSink {
     beginField?(actionPath: ActionPath, prop: string): void;
     /** Optional: the importer finished editing field `prop`. */
     completeField?(actionPath: ActionPath, prop: string): void;
+    /**
+     * Optional: top-level read of housing actions complete. Each entry is
+     * either a (possibly partially-hydrated) Action or null for a slot
+     * that wasn't populated. Drives the read-phase preview to switch
+     * from cache-snapshot to actual observed state.
+     */
+    setObservedSnapshot?(actions: ReadonlyArray<Action | null>): void;
+    /**
+     * Optional: a single nested-list hydration is complete. Replaces the
+     * placeholder line(s) for `parentPath`.`prop` in the live preview
+     * with the real hydrated children.
+     */
+    setHydratedNestedAction?(
+        parentPath: ActionPath,
+        prop: string,
+        actions: ReadonlyArray<Action | null>
+    ): void;
+    /**
+     * Optional: the importer is about to read (hydrate) the action at
+     * this source path. Drives the blue ▶ cursor + autoscroll during
+     * the read phase, so the user can see WHICH conditional/random is
+     * being walked, not just a generic "hydrating" label.
+     */
+    setReading?(actionPath: ActionPath, label: string): void;
+    /** Optional: the importer is no longer reading any specific action. */
+    clearReading?(): void;
+    /**
+     * Optional: explicit per-op planning calls carrying full Action
+     * payloads. The legacy `planOp` only conveys path + kind + label;
+     * these variants give the live preview enough data to insert/morph
+     * lines for the unified morph animation.
+     */
+    planAdd?(actionPath: ActionPath, desired: Action, toIndex: number): void;
+    planEdit?(actionPath: ActionPath, observed: Action, desired: Action): void;
+    planDelete?(actionPath: ActionPath, observed: Action): void;
+    planMove?(actionPath: ActionPath, fromIndex: number, toIndex: number): void;
+    /** Optional: the apply phase finished one op. Drives the per-line morph. */
+    applyDone?(actionPath: ActionPath, finalState: DiffFinalState, kind: DiffOpKind): void;
+    /**
+     * Optional: end-of-import reconciliation. Carries the full source
+     * action tree so the live preview can rebuild from a known-good
+     * shape (catches edge cases the per-op morphs missed, notably
+     * deep moves with nested children).
+     */
+    finalizeSource?(actions: ReadonlyArray<Action>): void;
 }
 
 let activeSink: ImportDiffSink | null = null;

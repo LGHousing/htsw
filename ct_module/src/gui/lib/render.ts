@@ -300,6 +300,23 @@ export function dispatchClick(
             if (item.element.kind !== "scroll") continue;
             const s = getScrollState(item.element.id);
             if (s.contentHeight <= s.viewportRect.h) continue;
+            // Locked scroll: don't start a drag. Consume the click so
+            // it doesn't fall through to the underlying clickable.
+            const elLocked =
+                item.element.locked !== undefined &&
+                extract(item.element.locked) === true;
+            if (elLocked) {
+                const v = s.viewportRect;
+                const trackXl = v.x + v.w - SCROLLBAR_WIDTH;
+                if (pointInRect(
+                    { x: trackXl, y: v.y, w: SCROLLBAR_WIDTH, h: v.h },
+                    mouseX,
+                    mouseY
+                )) {
+                    return true;
+                }
+                continue;
+            }
             const v = s.viewportRect;
             const trackX = v.x + v.w - SCROLLBAR_WIDTH;
             const thumbH = Math.max(8, Math.floor((v.h * v.h) / s.contentHeight));
@@ -438,6 +455,12 @@ export function dispatchWheel(
         if (item.element.kind !== "scroll") continue;
         const s = getScrollState(item.element.id);
         if (!pointInRect(s.viewportRect, mouseX, mouseY)) continue;
+        // Locked scrolls (e.g. live-preview during import auto-follow)
+        // consume the event without moving — caller cancels at the
+        // Forge layer so MC's vanilla scroll handlers don't react.
+        if (item.element.locked !== undefined && extract(item.element.locked) === true) {
+            return true;
+        }
         if (s.contentHeight <= s.viewportRect.h) return true;
         s.offset = Math.max(
             0,

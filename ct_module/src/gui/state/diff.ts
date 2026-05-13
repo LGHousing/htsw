@@ -200,20 +200,24 @@ export function clearAllDiffs(): void {
     entries.clear();
 }
 
+// GitHub-flavored diff palette: brighter foregrounds, darker tinted bgs.
+// Foregrounds drive the gutter glyph + line-num + state-icon; the row bg
+// is a low-saturation tint of the same hue so the eye groups added /
+// edited / deleted ranges without the colour fighting the syntax tokens.
 export const COLOR_BY_STATE: { [k in DiffState]: number } = {
     unknown: 0xff666666 | 0,
     match: 0xffe5e5e5 | 0,
-    edit: 0xffe5bc4b | 0,
-    delete: 0xffe85c5c | 0,
-    add: 0xff5cb85c | 0,
-    current: 0xff67a7e8 | 0,
+    edit: 0xffe3b341 | 0,   // gold (GH PR review "changes requested")
+    delete: 0xfff85149 | 0, // bright red
+    add: 0xff7ee787 | 0,    // bright green
+    current: 0xff79b8ff | 0, // soft sky blue (matches the cursor)
 };
 
 export const ROW_BG_BY_STATE: { [k in DiffState]: number | undefined } = {
     unknown: undefined,
     match: undefined,
-    edit: 0x40e5bc4b | 0,
-    delete: 0x40e85c5c | 0,
-    add: 0x405cb85c | 0,
-    current: 0x4067a7e8 | 0,
+    edit: 0x55403110 | 0,   // dark amber tint
+    delete: 0x55491212 | 0, // dark red tint
+    add: 0x55114a25 | 0,    // dark green tint
+    current: 0x5018365d | 0, // dark blue tint (subtle, lets cursor stand out)
 };

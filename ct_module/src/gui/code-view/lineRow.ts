@@ -21,6 +21,7 @@ import type { LineDecorations, RenderableLine, TokenSpan } from "./types";
 
 export const LINE_H = 10;
 export const FOCUS_GUTTER_W = 8;
+export const STATE_GUTTER_W = 8;
 export const LINE_NUM_MIN_W = 16;
 export const BRACKET_GUTTER_W = 6;
 
@@ -180,16 +181,52 @@ export function buildLineRow(
 
     const alpha = dec.alpha !== undefined ? dec.alpha : 1;
 
-    const focusGlyphText = isFocused
-        ? STATE_GLYPH["current"]
-        : (dec.state !== undefined ? STATE_GLYPH[state] : " ");
-    const focusGlyphColor = isFocused ? COLOR_BY_STATE["current"] : glyphColor;
+    // Cursor (▶) lives in its own column to the LEFT of the diff state
+    // glyph (+/~/-/✓), so the user can read both signals at a glance:
+    // "what's happening right now" vs "what's planned for this line".
+    const cursorGlyphText = isFocused ? STATE_GLYPH["current"] : " ";
+    const cursorGlyphColor = COLOR_BY_STATE["current"];
+    const stateGlyphText = dec.state !== undefined ? STATE_GLYPH[state] : " ";
+    const stateGlyphColor = glyphColor;
 
-    const lineNumText = line.lineNum > 0 ? padLeft(String(line.lineNum), 3) : "";
+    const hideLineNum = dec.hideLineNum === true;
+    const lineNumText = hideLineNum
+        ? ""
+        : (line.lineNum > 0 ? padLeft(String(line.lineNum), 3) : "");
 
     const bracketGlyph = dec.bracketRole === undefined
         ? ""
         : BRACKET_GLYPH[dec.bracketRole];
+
+    // Italic body text: render the entire line as a single §o-prefixed
+    // Text element rather than per-token Texts. The §o code formats
+    // everything to the next §r (or end-of-string); MC's font renderer
+    // resets formatting on newlines automatically. Per-token italic
+    // would let tokens drift apart since each Text is its own draw call.
+    let bodyChildren: Element[];
+    if (dec.italic === true) {
+        let combined = "";
+        const tokens = line.tokens;
+        for (let i = 0; i < tokens.length; i++) combined += tokens[i].text;
+        const baseColor = dec.foregroundColor !== undefined
+            ? dec.foregroundColor
+            : (tokens.length > 0 ? tokens[0].color : CodeViewColors.gutter);
+        const textColor = alpha < 1 ? applyAlpha(baseColor, alpha) : baseColor;
+        bodyChildren = [
+            Text({
+                text: `§o${combined}§r`,
+                color: textColor,
+            }),
+        ];
+    } else {
+        bodyChildren = tokenElements(
+            line.tokens,
+            dec.foregroundColor,
+            alpha,
+            dec.underlinedFields,
+            dec.focusedFieldProp
+        );
+    }
 
     const children: Element[] = [
         // Bracket gutter — reserves the column even when empty so all rows
@@ -199,10 +236,36 @@ export function buildLineRow(
             color: COLOR_BRACKET,
             style: { width: { kind: "px", value: BRACKET_GUTTER_W } },
         }),
+        // Cursor column: only ever shows the blue ▶ for the line the
+        // importer is touching this instant. Always reserved so other
+        // columns don't shift when the cursor jumps to a new line.
+        // When `cursorColumnBackground` is set the column gets a tinted
+        // background — used for the apply-phase focus indicator so a
+        // tall blue box runs through the cursor column without
+        // overriding the row's own diff state colour.
+        Container({
+            style: {
+                direction: "row",
+                align: "center",
+                justify: "center",
+                width: { kind: "px", value: FOCUS_GUTTER_W },
+                height: { kind: "grow" },
+                background: dec.cursorColumnBackground,
+            },
+            children: [
+                Text({
+                    text: cursorGlyphText,
+                    color: applyAlpha(cursorGlyphColor, alpha),
+                }),
+            ],
+        }),
+        // State column: +/~/-/✓ glyph for the planned diff op on this
+        // line. Independent of cursor position so the user can read
+        // both at the same time.
         Text({
-            text: focusGlyphText,
-            color: applyAlpha(focusGlyphColor, alpha),
-            style: { width: { kind: "px", value: FOCUS_GUTTER_W } },
+            text: stateGlyphText,
+            color: applyAlpha(stateGlyphColor, alpha),
+            style: { width: { kind: "px", value: STATE_GUTTER_W } },
         }),
         Text({
             text: lineNumText,
@@ -217,13 +280,7 @@ export function buildLineRow(
                 align: "center",
                 gap: 0,
             },
-            children: tokenElements(
-                line.tokens,
-                dec.foregroundColor,
-                alpha,
-                dec.underlinedFields,
-                dec.focusedFieldProp
-            ),
+            children: bodyChildren,
         }),
     ];
 

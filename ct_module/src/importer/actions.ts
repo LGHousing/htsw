@@ -140,6 +140,17 @@ export function withWritingActionPath<T>(path: ActionPath | null, fn: () => Prom
     );
 }
 
+/**
+ * The action path the importer is currently writing into, or null when no
+ * writer is active. Read by `readList.ts` to decide whether a `kind: "sync"`
+ * read is the top-level import or a recursive nested sync inside a
+ * CONDITIONAL/RANDOM writer (which would otherwise blow away the live
+ * preview model with the inner list contents).
+ */
+export function getCurrentWritingActionPath(): ActionPath | null {
+    return currentWritingActionPath;
+}
+
 type ActionSpecMap = {
     [K in Action["type"]]: ActionSpec<Extract<Action, { type: K }>>;
 };

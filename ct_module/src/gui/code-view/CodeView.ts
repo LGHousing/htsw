@@ -18,11 +18,22 @@ import { extract, type Extractable } from "../lib/extractable";
 import { COLOR_TEXT_FAINT } from "../lib/theme";
 import { linesForFile } from "./lineModel";
 import { buildLineRow, gutterWidthForLines, LINE_H } from "./lineRow";
-import type { LineDecorator } from "./types";
+import type { LineDecorator, RenderableLine } from "./types";
 
 export type CodeViewProps = {
-    /** Reactive file path. `null` renders the empty state. */
-    source: Extractable<string | null>;
+    /**
+     * Reactive file path. `null` renders the empty state. Used by the
+     * View tab to read+parse a `.htsl` file each frame. Mutually
+     * exclusive with `lines` — pass one or the other.
+     */
+    source?: Extractable<string | null>;
+    /**
+     * Reactive list of pre-built lines. Used by the Import tab's live
+     * preview, where the line content is generated from observed
+     * importer state rather than parsed from a file. `null` or empty
+     * renders the empty state. Mutually exclusive with `source`.
+     */
+    lines?: Extractable<readonly RenderableLine[] | null>;
     /** Unique scroll id; persists offset across frames. */
     scrollId: string;
     /** Reactive line decorator (re-extracted each frame).
@@ -36,6 +47,13 @@ export type CodeViewProps = {
     lineDecorator: Extractable<LineDecorator>;
     /** When true, auto-scroll the viewport to centre the focused line. */
     autoFollow?: boolean;
+    /**
+     * When true, lock the underlying Scroll so the user can't move the
+     * viewport with mouse wheel or scrollbar drag. Use with `autoFollow`
+     * for the import live preview, where a user-initiated scroll just
+     * snaps back glitchily on the next throttle tick.
+     */
+    scrollLocked?: Extractable<boolean>;
     /** Empty-state message when source is null. */
     emptyMessage?: string;
 };
@@ -65,9 +83,28 @@ export function CodeView(props: CodeViewProps): Element {
     return Scroll({
         id: props.scrollId,
         style: { height: { kind: "grow" }, gap: 0 },
+        locked: props.scrollLocked,
         children: () => {
-            const path = extract(props.source);
-            if (path === null) {
+            const lineDecorator = extract(props.lineDecorator);
+            // Resolve lines via the caller's `lines` prop first, then
+            // fall back to the `source` file. Returning null/empty from
+            // `lines` is a "let source handle it" signal, NOT an
+            // empty-state — the empty state is reserved for "neither
+            // source nor lines yielded anything".
+            let lines: readonly RenderableLine[] | null = null;
+            if (props.lines !== undefined) {
+                const explicit = extract(props.lines);
+                if (explicit !== null && explicit.length > 0) {
+                    lines = explicit;
+                }
+            }
+            if (lines === null && props.source !== undefined) {
+                const path = extract(props.source);
+                if (path !== null) {
+                    lines = linesForFile(path);
+                }
+            }
+            if (lines === null || lines.length === 0) {
                 return [
                     Text({
                         text: props.emptyMessage ?? "(no file)",
@@ -76,8 +113,6 @@ export function CodeView(props: CodeViewProps): Element {
                     }),
                 ];
             }
-            const lineDecorator = extract(props.lineDecorator);
-            const lines = linesForFile(path);
             const maxLineNum = lines.length === 0 ? 1 : lines.length;
             const gutterW = gutterWidthForLines(maxLineNum);
             const out: Element[] = [];

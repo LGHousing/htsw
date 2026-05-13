@@ -85,6 +85,15 @@ export type Element =
           style: ContainerStyle;
           id: string;
           children: Extractable<Child[]>;
+          /**
+           * When true, mouse-wheel and scrollbar-drag input is consumed
+           * but ignored — used for the live-preview during an import,
+           * which auto-follows the cursor and shouldn't let the user
+           * scroll away (the snap-back was glitchy). The event is still
+           * cancelled at the Forge layer so MC's own scroll handlers
+           * don't react.
+           */
+          locked?: Extractable<boolean>;
       }
     | {
           kind: "image";

@@ -103,6 +103,29 @@ export type LineDecorations = {
      * edited so the visual narrows from "this line" to "this field".
      */
     focusedFieldProp?: string;
+    /**
+     * When true, render the line body in italic. Used for ghost
+     * (future-edit) and placeholder (unhydrated nested) lines so they
+     * stand apart from the real source. Implementation: lineRow renders
+     * the line as a single `§o<text>§r` Text element instead of
+     * per-token Texts (italic per-token would let tokens drift apart).
+     */
+    italic?: boolean;
+    /**
+     * When true, suppress the line-number column entirely. Used for
+     * ghost / placeholder lines. The column still reserves its width so
+     * gutter alignment is preserved across rows.
+     */
+    hideLineNum?: boolean;
+    /**
+     * Background tint applied ONLY to the cursor (▶) column for this
+     * line. Used by the apply-phase focus indicator: a tall blue box
+     * runs through the cursor column for every line in the focus range
+     * (single line OR multi-line bracket span), without overriding the
+     * row's own diff-state tint (red/green/gold). For the read+hydrate
+     * phase the decorator uses `background` (full row) instead.
+     */
+    cursorColumnBackground?: number;
 };
 
 /**

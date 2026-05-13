@@ -41,6 +41,7 @@ import {
     type ImportDiffSink,
     type DiffSummary,
 } from "../diffSink";
+import { waitIfStepPaused } from "../stepGate";
 import {
     COST,
     actionListDiffApplyBudget,
@@ -242,6 +243,21 @@ async function applyActionListDiffInner(
         editOperationFieldBudget,
         desired.length
     );
+    // Morph events touch the live preview's line list. They fire at
+    // EVERY level — top-level AND nested CONDITIONAL/RANDOM bodies —
+    // so the inner adds/edits/deletes animate one-by-one too. The
+    // pending-add line ids carry an `__add::` prefix (see
+    // markPlannedAdd) which keeps them from colliding with observed
+    // lines at the same actionPath (e.g. observed had b at index 1,
+    // desired wants d at index 1; the diff plans both a delete on b
+    // and an add on d, both keyed `<pathPrefix>.1`). Apply order is
+    // delete → edit → move → add, so by the time the add applies and
+    // the prefix is stripped, the observed-pending-delete line is
+    // already gone — no id collision at the final step.
+    //
+    // The TOP-LEVEL-only event is `finalizeSource`, gated below by
+    // `pathPrefix === undefined`. It rebuilds the whole model from
+    // the desired tree at the very end.
     if (sink !== null) {
         sink.summary(summary);
         sink.phase("computed diff");
@@ -263,8 +279,49 @@ async function applyActionListDiffInner(
                         );
                     }
                 }
+                if (op.kind === "add" && sink.planAdd) {
+                    sink.planAdd(srcPath, op.desired, op.toIndex);
+                } else if (op.kind === "edit" && !op.noteOnly && sink.planEdit) {
+                    // Skip noteOnly edits — note-only changes have no
+                    // visible body diff, so a ghost line would just be
+                    // a duplicate of the original.
+                    //
+                    // Use the OBSERVED path, not the desired-index
+                    // srcPath. Reason: when the diff matcher emits an
+                    // edit + move combo (observed[i] matches desired[j]
+                    // with i ≠ j), the model line lives at obsPath
+                    // (i, where the observed read placed it), not at
+                    // srcPath (j, where desired wants it). The move op
+                    // handles the reorder separately.
+                    const observedAction = op.observed.action;
+                    if (observedAction !== null) {
+                        const obsPath = actionPathForIndex(pathPrefix, op.observed.index);
+                        // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
+                        sink.planEdit(obsPath, observedAction as unknown as Action, op.desired);
+                    }
+                } else if (op.kind === "move" && sink.planMove) {
+                    // Use OBSERVED path (where the model line actually
+                    // lives), not the desired toIndex path — markPlanned-
+                    // Move marks the line at this path, and the line at
+                    // toIndex is some other observed action, not the one
+                    // being moved.
+                    const obsPath = actionPathForIndex(pathPrefix, op.observed.index);
+                    sink.planMove(obsPath, op.observed.index, op.toIndex);
+                }
             } else if (op.kind === "delete") {
                 sink.deleteOp(op.observed.index, opLabel(op), opDetail(op));
+                if (sink.planDelete) {
+                    const observedAction = op.observed.action;
+                    if (observedAction !== null) {
+                        // Use the observed action's REAL model path so
+                        // the preview can find and mark the line. The
+                        // model was built from the observed tree, so a
+                        // line at this path exists.
+                        const obsPath = actionPathForIndex(pathPrefix, op.observed.index);
+                        // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
+                        sink.planDelete(obsPath, observedAction as unknown as Action);
+                    }
+                }
             }
         }
     }
@@ -293,7 +350,16 @@ async function applyActionListDiffInner(
     }
 
     if (diff.operations.length === 0) {
-        if (sink !== null) sink.end();
+        if (sink !== null && pathPrefix === undefined) {
+            // end() clears currentPath + focusLineId. Firing it from
+            // nested applyDiff would blink the cursor off every time a
+            // nested CONDITIONAL/RANDOM finished its inner sync, even
+            // though the outer apply is still in flight. Top-level only.
+            if (sink.finalizeSource !== undefined) {
+                sink.finalizeSource(desired);
+            }
+            sink.end();
+        }
         return;
     }
 
@@ -333,6 +399,8 @@ async function applyActionListDiffInner(
                 continue;
             }
 
+            const obsPath = actionPathForIndex(pathPrefix, op.observed.index);
+            await waitIfStepPaused(ctx);
             progress?.({
                 phase: "applying",
                 completed: i,
@@ -342,10 +410,20 @@ async function applyActionListDiffInner(
                 estimatedTotal: plannedApplyBudget,
                 confidence: "planned",
             });
-            if (sink !== null) sink.phase(opLabel(op));
+            // beginOp drives the cursor (▶ + autoscroll) onto the line
+            // about to be deleted. Without this the cursor would stay
+            // parked on the previous op while the user watches a delete
+            // happen elsewhere — confusing in step-debug mode.
+            if (sink !== null) sink.beginOp(obsPath, "delete", opLabel(op));
             await deleteObservedAction(ctx, index, currentObserved.length);
             appliedBudget += operationApplyBudget(op, desired.length);
             currentObserved.splice(index, 1);
+            if (sink !== null) {
+                sink.completeOp(obsPath, "delete");
+                if (sink.applyDone !== undefined) {
+                    sink.applyDone(obsPath, "delete", "delete");
+                }
+            }
         }
     }
 
@@ -366,9 +444,13 @@ async function applyActionListDiffInner(
             continue;
         }
 
-        const srcIdx = srcIndexForOp(op, desired);
-        const srcPath = srcIdx >= 0 ? actionPathForIndex(pathPrefix, srcIdx) : null;
-        if (sink !== null && srcPath !== null) sink.beginOp(srcPath, "edit", opLabel(op));
+        await waitIfStepPaused(ctx);
+        // Use OBSERVED path so the cursor lands on the actual model
+        // line (the observed entry being edited), not on the desired
+        // index — important when edit + move combine and observed.index
+        // differs from desired.index. The model line is at obsPath.
+        const srcPath: string | null = actionPathForIndex(pathPrefix, op.observed.index);
+        if (sink !== null) sink.beginOp(srcPath, "edit", opLabel(op));
         progress?.({
             phase: "applying",
             completed: appliedOps,
@@ -392,7 +474,11 @@ async function applyActionListDiffInner(
         if (op.noteOnly) {
             await setListItemNote(ctx, actionSlot, op.desired.note);
             appliedBudget += operationApplyBudget(op, desired.length);
-            if (sink !== null && srcPath !== null) sink.completeOp(srcPath, "edit");
+            if (sink !== null && srcPath !== null) {
+                sink.completeOp(srcPath, "edit");
+                // Note-only edits don't insert a ghost (planEdit was
+                // skipped for them) — no morph to finalize.
+            }
             continue;
         }
 
@@ -416,7 +502,10 @@ async function applyActionListDiffInner(
 
         await setListItemNote(ctx, actionSlot, op.desired.note);
         appliedBudget += operationApplyBudget(op, desired.length);
-        if (sink !== null && srcPath !== null) sink.completeOp(srcPath, "edit");
+        if (sink !== null && srcPath !== null) {
+            sink.completeOp(srcPath, "edit");
+            sink.applyDone?.(srcPath, "edit", "edit");
+        }
     }
 
     moves.sort((a, b) => a.toIndex - b.toIndex);
@@ -426,9 +515,12 @@ async function applyActionListDiffInner(
             continue;
         }
 
-        const srcIdx = srcIndexForOp(op, desired);
-        const srcPath = srcIdx >= 0 ? actionPathForIndex(pathPrefix, srcIdx) : null;
-        if (sink !== null && srcPath !== null) sink.beginOp(srcPath, "move", opLabel(op));
+        await waitIfStepPaused(ctx);
+        // Cursor on the line being moved (its OBSERVED model path),
+        // not the destination index — the model line at toIndex is some
+        // other observed action.
+        const srcPath: string | null = actionPathForIndex(pathPrefix, op.observed.index);
+        if (sink !== null) sink.beginOp(srcPath, "move", opLabel(op));
         progress?.({
             phase: "applying",
             completed: appliedOps,
@@ -448,12 +540,16 @@ async function applyActionListDiffInner(
         for (let i = 0; i < remainingObserved.length; i++) {
             remainingObserved[i].index = i;
         }
-        if (sink !== null && srcPath !== null) sink.completeOp(srcPath, "match");
+        if (sink !== null && srcPath !== null) {
+            sink.completeOp(srcPath, "match");
+            sink.applyDone?.(srcPath, "match", "move");
+        }
     }
 
     adds.sort((a, b) => a.toIndex - b.toIndex);
     let currentLength = remainingObserved.length;
     for (const op of adds) {
+        await waitIfStepPaused(ctx);
         const srcIdx = srcIndexForOp(op, desired);
         const srcPath = srcIdx >= 0 ? actionPathForIndex(pathPrefix, srcIdx) : null;
         if (sink !== null && srcPath !== null) sink.beginOp(srcPath, "add", opLabel(op));
@@ -493,7 +589,10 @@ async function applyActionListDiffInner(
             await setListItemNote(ctx, addedSlot, op.desired.note);
         }
         appliedBudget += operationApplyBudget(op, desired.length);
-        if (sink !== null && srcPath !== null) sink.completeOp(srcPath, "add");
+        if (sink !== null && srcPath !== null) {
+            sink.completeOp(srcPath, "add");
+            sink.applyDone?.(srcPath, "add", "add");
+        }
     }
 
     await goToPaginatedListPage(ctx, 1, ACTION_LIST_CONFIG);
@@ -507,5 +606,13 @@ async function applyActionListDiffInner(
         confidence: "planned",
     });
 
-    if (sink !== null) sink.end();
+    if (sink !== null && pathPrefix === undefined) {
+        // Top-level only: finalize from source + clear cursor. Nested
+        // applyDiff returns silently — sink.end() would blink the
+        // cursor off mid-import (see early-return branch above).
+        if (sink.finalizeSource !== undefined) {
+            sink.finalizeSource(desired);
+        }
+        sink.end();
+    }
 }

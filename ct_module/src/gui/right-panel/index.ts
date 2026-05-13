@@ -88,6 +88,11 @@ import {
 import { clearImportableChecks, getCheckedImportableKeys } from "../state";
 import { viewBody } from "./view-body";
 import { livePreviewBody } from "./live-preview-body";
+import {
+    getStepAuto,
+    requestStepAdvance,
+    setStepAuto,
+} from "../../importer/stepGate";
 
 
 const TAB_BG = 0xff2c323b | 0;
@@ -1035,11 +1040,78 @@ function houseHeader(): Element {
     });
 }
 
+// Bright high-contrast colors for the paused state — easy to see at a
+// glance whether the importer is gated. ARGB.
+const COLOR_STEP_PAUSED_BG = 0xffe3b341 | 0;       // amber, like a "yield" sign
+const COLOR_STEP_PAUSED_BG_HOVER = 0xfff0c668 | 0;
+const COLOR_STEP_PAUSED_FG = 0xff202020 | 0;       // dark text on amber
+const COLOR_STEP_ADVANCE_BG = 0xff5cb85c | 0;      // green "go"
+const COLOR_STEP_ADVANCE_BG_HOVER = 0xff7fc77f | 0;
+
+/**
+ * Debug strip with two buttons that pause / resume the importer at
+ * checkpoints (every reading-snapshot, every hydration entry, every
+ * apply op — but only at the TOP level, so a single Advance never
+ * walks N nested ifActions inside a CONDITIONAL writer). Auto:OFF is
+ * sticky across runs and can be toggled mid-import to pause at the
+ * next checkpoint.
+ */
+function stepDebugRow(): Element {
+    return Row({
+        style: {
+            gap: 4,
+            height: { kind: "px", value: 14 },
+            align: "center",
+            padding: { side: "x", value: 2 },
+        },
+        children: [
+            Text({
+                text: "DEBUG",
+                color: COLOR_TEXT_FAINT,
+                style: { width: { kind: "auto" } },
+            }),
+            Button({
+                text: () => `Auto: ${getStepAuto() ? "ON" : "OFF"}`,
+                textColor: () => getStepAuto() ? COLOR_TEXT : COLOR_STEP_PAUSED_FG,
+                style: {
+                    width: { kind: "px", value: 70 },
+                    height: { kind: "grow" },
+                    background: () => getStepAuto() ? COLOR_BUTTON : COLOR_STEP_PAUSED_BG,
+                    hoverBackground: () => getStepAuto() ? COLOR_BUTTON_HOVER : COLOR_STEP_PAUSED_BG_HOVER,
+                },
+                onClick: () => setStepAuto(!getStepAuto()),
+            }),
+            Button({
+                text: "Advance 1 op",
+                textColor: () => getStepAuto() ? COLOR_TEXT_DIM : COLOR_TEXT,
+                style: {
+                    width: { kind: "px", value: 80 },
+                    height: { kind: "grow" },
+                    background: () => getStepAuto() ? COLOR_BUTTON : COLOR_STEP_ADVANCE_BG,
+                    hoverBackground: () => getStepAuto() ? COLOR_BUTTON_HOVER : COLOR_STEP_ADVANCE_BG_HOVER,
+                },
+                onClick: () => {
+                    if (getStepAuto()) return;
+                    requestStepAdvance();
+                },
+            }),
+            Text({
+                text: () => getStepAuto()
+                    ? "(Auto on — running through)"
+                    : "(PAUSED — click Advance to step, or Auto to resume)",
+                color: () => getStepAuto() ? COLOR_TEXT_FAINT : COLOR_STEP_PAUSED_BG,
+                style: { width: { kind: "grow" } },
+            }),
+        ],
+    });
+}
+
 function importTab(): Element {
     // Layout: house header (fixed) → collapsible queue summary (fixed) →
-    // expanded queue list (fixed height, only when expanded) → live preview
-    // (grow, the new scrollable file view) → live importer panel (shrinks
-    // when import inactive) → action row (fixed).
+    // expanded queue list (fixed height, only when expanded) → step
+    // debug strip (fixed) → live preview (grow, the new scrollable
+    // file view) → live importer panel (shrinks when import inactive)
+    // → action row (fixed).
     // When the queue is collapsed, omit `queueExpansion()` entirely so the
     // Col doesn't reserve its 80px height (or the surrounding gap).
     return Col({
@@ -1048,6 +1120,7 @@ function importTab(): Element {
             houseHeader(),
             queueSummary(),
             ...(queueExpanded ? [queueExpansion()] : []),
+            stepDebugRow(),
             livePreviewBody(),
             liveImporterPanel(),
             importActionRow(),

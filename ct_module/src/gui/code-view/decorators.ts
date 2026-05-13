@@ -12,7 +12,7 @@
  */
 
 import type { Action } from "htsw/types";
-import { diffKey, getDiffEntry, type DiffState } from "../state/diff";
+import { diffKey, getDiffEntry, ROW_BG_BY_STATE, type DiffState } from "../state/diff";
 import {
     focusBracketForFile,
     focusFieldBoxForFile,
@@ -30,12 +30,27 @@ import type {
     LineDecorator,
     RenderableLine,
 } from "./types";
+import type { PreviewLine } from "../state/importPreviewState";
 
 // Right-aligned per-line labels (`add`, `edit:foo`, etc.) were dropped
 // entirely — they overlapped the code text. The diff state is conveyed by
 // the gutter glyph (`+`/`~`/`-`/`▶`) and the row background tint, which is
 // enough.
 const COLOR_PENDING_GRAY = 0xff666666 | 0;
+// Ghost lines (future-edit preview) sit beneath the original body line
+// and easily get mistaken for a separate real line. Render them noticeably
+// dimmer than the regular pending-gray so the eye reads them as "preview"
+// rather than "another action".
+const COLOR_GHOST_GRAY = 0xff444444 | 0;
+
+// Reading-phase focus tint: full-row blue strip across the action being
+// read (head + nested children + close brace). Subtle so syntax tokens
+// stay readable.
+const COLOR_READ_FOCUS_ROW_BG = 0x5018365d | 0;
+// Apply-phase focus tint: brighter blue, applied ONLY to the cursor
+// column (not the row), so it doesn't fight the diff-state row tint
+// (gold/red/green) of an op currently in flight.
+const COLOR_APPLY_FOCUS_COLUMN_BG = 0xa067a7e8 | 0;
 
 /**
  * View tab decorator: reads diff state for the file at `path` and applies
@@ -199,21 +214,41 @@ export function progressDecorator(path: string | null): LineDecorator {
     };
     return {
         decorateLine(line: RenderableLine): LineDecorations {
-            // Header/synthetic lines or no diff context: defer to base.
-            if (path === null || key === null || line.actionPath === undefined) {
-                return base.decorateLine(line);
-            }
-            const entry = getDiffEntry(key);
-            if (entry === undefined) {
-                // No diff state at all yet — leave the file looking
-                // colorless until the importer plans something.
-                return { foregroundColor: COLOR_PENDING_GRAY };
-            }
-            const isFocused = entry.currentPath === line.actionPath;
-            const info = entry.details.get(line.actionPath);
-            const state = entry.states.get(line.actionPath);
+            const preview = line as PreviewLine;
+            const entry = key === null ? undefined : getDiffEntry(key);
 
-            // Bracket span (multi-line current op indicator).
+            // Phase signal: summary fires once at the start of the apply
+            // phase. Reading/hydration → null. We use this to choose
+            // full-row tint (read) vs cursor-column-only tint (apply).
+            const isApplyPhase = entry !== undefined && entry.summary !== null;
+
+            // Focus range = the contiguous span of lines belonging to
+            // the action the importer is currently touching. Covers the
+            // head line, all nested children, and the close brace —
+            // because they share / nest under the same actionPath.
+            const inFocusRange =
+                entry !== undefined
+                && entry.currentPath !== null
+                && line.actionPath !== undefined
+                && (line.actionPath === entry.currentPath
+                    || line.actionPath.indexOf(entry.currentPath + ".") === 0);
+            const isFocused =
+                entry !== undefined
+                && line.actionPath !== undefined
+                && entry.currentPath === line.actionPath;
+
+            // Reading: full-row blue tint across the focus range.
+            // Apply: column-only blue tint, so the row's own diff-state
+            // colour (gold/red/green) keeps showing through.
+            const focusRowBg =
+                inFocusRange && !isApplyPhase ? COLOR_READ_FOCUS_ROW_BG : undefined;
+            const focusColBg =
+                inFocusRange && isApplyPhase ? COLOR_APPLY_FOCUS_COLUMN_BG : undefined;
+
+            // Bracket gutter glyphs (┌│└) for multi-line current op —
+            // computed from entry.details, which is populated during
+            // apply only. Reading phase has no bracket gutter glyphs
+            // because the focus tint already conveys the range.
             let bracketRole: "top" | "middle" | "bottom" | undefined;
             if (bracketRange !== null) {
                 if (line.id === bracketRange.topLineId) bracketRole = "top";
@@ -222,21 +257,82 @@ export function progressDecorator(path: string | null): LineDecorator {
                     bracketRole = "middle";
             }
 
-            // Field-level focus box (blue tint over a single field token).
+            // ── Preview-model-driven branches (live morph animation) ──
+
+            if (preview.completed === true) {
+                return {
+                    isFocused,
+                    bracketRole,
+                    background: focusRowBg,
+                    cursorColumnBackground: focusColBg,
+                };
+            }
+            if (preview.isGhost === true) {
+                // Suppress isFocused on the ghost — its body partner
+                // shares the same actionPath, and putting ▶ on both
+                // double-marks the same op. Cursor lives on the body.
+                //
+                // Set the row background DIRECTLY rather than via
+                // `state: "edit"` — going through state would also
+                // paint the `~` glyph in the state column, which is
+                // redundant since the original body line above already
+                // shows it. Gold tint here, no glyph.
+                return {
+                    foregroundColor: COLOR_GHOST_GRAY,
+                    italic: true,
+                    hideLineNum: true,
+                    background: ROW_BG_BY_STATE["edit"],
+                    isFocused: false,
+                    bracketRole,
+                    cursorColumnBackground: focusColBg,
+                };
+            }
+            if (preview.isPlaceholder === true) {
+                return {
+                    foregroundColor: COLOR_PENDING_GRAY,
+                    italic: true,
+                    hideLineNum: true,
+                    isFocused,
+                    bracketRole,
+                    background: focusRowBg,
+                    cursorColumnBackground: focusColBg,
+                };
+            }
+            if (preview.diffState !== undefined) {
+                return {
+                    state: preview.diffState,
+                    foregroundColor: COLOR_PENDING_GRAY,
+                    isFocused,
+                    bracketRole,
+                    cursorColumnBackground: focusColBg,
+                };
+            }
+
+            // ── Entry-driven branches (legacy, used for non-preview lines) ──
+
+            if (path === null || key === null || line.actionPath === undefined) {
+                return base.decorateLine(line);
+            }
+            if (entry === undefined) {
+                return { foregroundColor: COLOR_PENDING_GRAY };
+            }
+            const info = entry.details.get(line.actionPath);
+            const state = entry.states.get(line.actionPath);
+
             let focusedFieldProp: string | undefined;
-            if (
-                entry.currentPath === line.actionPath &&
-                entry.currentFieldProp !== null
-            ) {
+            if (isFocused && entry.currentFieldProp !== null) {
                 focusedFieldProp = entry.currentFieldProp;
             }
 
-            // DONE: line is finalized (either applied successfully or was
-            // already a match in housing). Render with full syntax colors,
-            // no diff glyph, no row background.
             const isDone = info?.completed === true || state === "match";
             if (isDone) {
-                return { isFocused, bracketRole, focusedFieldProp };
+                return {
+                    isFocused,
+                    bracketRole,
+                    focusedFieldProp,
+                    background: focusRowBg,
+                    cursorColumnBackground: focusColBg,
+                };
             }
 
             // Per-field underline set for edits-in-flight.
@@ -252,18 +348,17 @@ export function progressDecorator(path: string | null): LineDecorator {
                 }
             }
 
-            // Untouched line — no diff state yet. Render gray, no syntax.
             if (state === undefined || state === "unknown") {
                 return {
                     foregroundColor: COLOR_PENDING_GRAY,
                     isFocused,
                     bracketRole,
                     focusedFieldProp,
+                    background: focusRowBg,
+                    cursorColumnBackground: focusColBg,
                 };
             }
 
-            // Planned line — diff glyph + tinted background, but text stays
-            // gray (no syntax) because the change hasn't happened yet.
             return {
                 state,
                 foregroundColor: COLOR_PENDING_GRAY,
@@ -271,6 +366,7 @@ export function progressDecorator(path: string | null): LineDecorator {
                 bracketRole,
                 focusedFieldProp,
                 underlinedFields: underlines,
+                cursorColumnBackground: focusColBg,
             };
         },
         focusedLineId(): string | null {

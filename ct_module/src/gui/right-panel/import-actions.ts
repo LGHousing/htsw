@@ -50,8 +50,21 @@ import {
     setDiffSummary,
     setPlannedOp,
 } from "../state/diff";
+import {
+    finalizeFromSource,
+    markPlannedAdd,
+    markPlannedDelete,
+    markPlannedEdit,
+    markPlannedMove,
+    primeWithCache,
+    resetPreview,
+    setObservedTopLevel,
+    applyComplete as applyPreviewComplete,
+} from "../state/importPreviewState";
+import { setFocusLineId } from "../state/codeViewState";
 import { importableSourcePath } from "../state/importablePaths";
 import type { ImportDiffSink } from "../../importer/diffSink";
+import { readKnowledge } from "../../knowledge/cache";
 
 export const CAPTURE_TYPES: CaptureType[] = ["FUNCTION", "MENU"];
 
@@ -87,9 +100,21 @@ function refreshKnowledgeRows(): void {
     setKnowledgeRows(buildKnowledgeStatusRows(uuid, all));
 }
 
-function makeDiffSink(sourcePath: string): ImportDiffSink {
+function makeDiffSink(sourcePath: string, importable: Importable): ImportDiffSink {
     const key = diffKey(sourcePath);
     clearDiff(key);
+    resetPreview(sourcePath);
+    // Prime the preview from the HTSW knowledge cache so the user sees
+    // SOMETHING immediately while the importer's first read packet is
+    // still in flight. Best-effort: missing UUID or missing cache entry
+    // both fall through to an empty model.
+    const uuid = getHousingUuid();
+    if (uuid !== null) {
+        const cache = readKnowledge(uuid, importable.type, importableIdentity(importable));
+        primeWithCache(sourcePath, cache === null ? null : cache.importable);
+    } else {
+        primeWithCache(sourcePath, null);
+    }
     return {
         phase: (label) => setDiffPhase(key, label),
         summary: (summary) => setDiffSummary(key, summary),
@@ -101,15 +126,60 @@ function makeDiffSink(sourcePath: string): ImportDiffSink {
             setDiffPhase(key, label);
             setCurrent(key, path, label);
             setPlannedOp(key, path, kind, label, "");
+            // Drive Spotify-lyrics-style auto-scroll: the PreviewModel
+            // keys each action's primary line as `<actionPath>:body`.
+            setFocusLineId(sourcePath, `${path}:body`);
         },
         completeOp: (path, state) => {
             setDiffState(key, path, state);
             markCompleted(key, path);
-            setCurrent(key, null, "");
+            // Park the cursor on the op that just finished. Two reasons:
+            // 1) avoids a flicker between ops (clearing → re-setting on
+            //    next beginOp would briefly drop ▶ and the tint).
+            // 2) after a nested CONDITIONAL's inner ops finish (which
+            //    leave currentPath on the LAST inner action), the outer
+            //    completeOp here pulls the cursor back up to the outer
+            //    action's path — so when the step-gate pauses before the
+            //    next outer op the user sees the cursor on the correct
+            //    just-completed conditional, not stale on its last child.
+            setCurrent(key, path, "");
+            setFocusLineId(sourcePath, `${path}:body`);
         },
         end: () => {
             setCurrent(key, null, "");
+            setFocusLineId(sourcePath, null);
             refreshKnowledgeRows();
+        },
+        setObservedSnapshot: (actions) => {
+            setObservedTopLevel(sourcePath, actions);
+        },
+        setReading: (path, label) => {
+            // Same wiring as beginOp, minus the planned-state side
+            // effect — we don't want hydration to paint diff colors on
+            // lines, just show the cursor and auto-scroll to it.
+            setCurrent(key, path, label);
+            setFocusLineId(sourcePath, `${path}:body`);
+        },
+        clearReading: () => {
+            setCurrent(key, null, "");
+        },
+        planAdd: (path, desired, toIndex) => {
+            markPlannedAdd(sourcePath, path, desired, toIndex);
+        },
+        planEdit: (path, observed, desired) => {
+            markPlannedEdit(sourcePath, path, observed, desired);
+        },
+        planDelete: (path) => {
+            markPlannedDelete(sourcePath, path);
+        },
+        planMove: (path, fromIndex, toIndex) => {
+            markPlannedMove(sourcePath, path, fromIndex, toIndex);
+        },
+        applyDone: (path, finalState, kind) => {
+            applyPreviewComplete(sourcePath, path, finalState, kind);
+        },
+        finalizeSource: (actions) => {
+            finalizeFromSource(sourcePath, actions);
         },
     };
 }
@@ -283,8 +353,8 @@ export function startImport(explicit?: readonly QueueItem[]): void {
                                 : (importableSourcePath(imp, batch.parsed) ?? null);
                         setCurrentImportingPath(path);
                     },
-                    diffSinkForImportable: (_imp, path) =>
-                        path === null ? null : makeDiffSink(path),
+                    diffSinkForImportable: (imp, path) =>
+                        path === null ? null : makeDiffSink(path, imp),
                 };
                 const result = await importSelectedImportables(ctx, selection);
                 totalImported += result.imported;
