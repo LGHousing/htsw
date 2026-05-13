@@ -46,6 +46,10 @@ import { ACTION_LIST_CONFIG } from "./listConfig";
 import { getActionSpec, getCurrentWritingActionPath } from "../actions";
 import { actionLogLabel } from "./log";
 import { waitIfStepPaused } from "../stepGate";
+import { getActionFieldLabel } from "../actionMappings";
+import { readBooleanValue } from "../helpers";
+import { waitForMenu } from "../menuWait";
+import { readConditionList } from "../conditions/readList";
 
 function readNestedSummaries(
     action: Observed<Action>,
@@ -107,6 +111,15 @@ function readNestedSummaries(
             Object.assign(action, { [prop]: [] });
         } else {
             propsToRead.add(prop as NestedListProp);
+            // Pre-fill the nested array with N null entries so the live
+            // preview can render a `...N actions...` (or `(...N conditions...)`)
+            // placeholder showing the known count even before hydration
+            // fills the real data. Without this, the field would be
+            // undefined and the model would render the conditional as
+            // `if (...) {}` (empty body, no count cue).
+            const placeholders: Array<unknown> = [];
+            for (let i = 0; i < itemTypes.length; i++) placeholders.push(null);
+            Object.assign(action, { [prop]: placeholders });
         }
     }
 
@@ -383,7 +396,10 @@ async function hydrateNestedActions(
             sinkRef.setReading(String(entry.index), entryLabel);
         }
         const beforeBudget = hydrationEntryBudget(entry, propsToRead);
-        await hydrateNestedAction(ctx, entry, propsToRead, listLength, itemRegistry);
+        await hydrateNestedAction(
+            ctx, entry, propsToRead, listLength, itemRegistry,
+            isTopLevelImport ? observed : undefined
+        );
         // After each top-level entry's hydration, push a fresh full
         // snapshot so the preview re-renders with the now-known
         // children AND the now-known conditions inside the conditional's
@@ -417,7 +433,8 @@ async function hydrateNestedAction(
     entry: ObservedActionSlot,
     propsToRead: NestedPropsToRead,
     listLength: number,
-    itemRegistry?: ItemRegistry
+    itemRegistry?: ItemRegistry,
+    observedTopLevel?: readonly ObservedActionSlot[]
 ): Promise<void> {
     if (entry.action === null) {
         return;
@@ -432,12 +449,30 @@ async function hydrateNestedAction(
 
         actionSlot.click();
         await timedWaitForMenu(ctx, "menuClickWait");
-        const spec = getActionSpec(entry.action.type);
-        if (!spec.read) {
-            throw new Error(`Reading action "${entry.action.type}" is not implemented.`);
-        }
 
-        entry.action = await spec.read(ctx, propsToRead, itemRegistry);
+        // Top-level CONDITIONAL hydration uses a sub-stepped read so the
+        // live preview can split the visualization into discrete phases:
+        //   1) cursor on `if (...) {` while reading conditions, then the
+        //      head text updates to show the real conditions
+        //   2) cursor moves to the `...M actions...` placeholder while
+        //      reading ifActions, then the body fills with real lines
+        //   3) similar for elseActions if they exist
+        // Non-CONDITIONAL action types and recursive nested reads use
+        // the standard one-shot spec.read path.
+        if (
+            entry.action.type === "CONDITIONAL"
+            && observedTopLevel !== undefined
+        ) {
+            await hydrateConditionalSubsteps(
+                ctx, entry, propsToRead, itemRegistry, observedTopLevel
+            );
+        } else {
+            const spec = getActionSpec(entry.action.type);
+            if (!spec.read) {
+                throw new Error(`Reading action "${entry.action.type}" is not implemented.`);
+            }
+            entry.action = await spec.read(ctx, propsToRead, itemRegistry);
+        }
         entry.nestedReadState = "full";
         if (note) {
             entry.action.note = note;
@@ -450,5 +485,101 @@ async function hydrateNestedAction(
         if (ctx.tryGetMenuItemSlot("Go Back") !== null) {
             await clickGoBack(ctx);
         }
+    }
+}
+
+/**
+ * Visualization-aware variant of `readOpenConditional`. Mutates
+ * `entry.action` in place after each sub-step so the GUI's snapshot
+ * emit shows incremental progress, and moves the read cursor onto each
+ * sub-list's consolidated `...N actions...` placeholder before reading
+ * it.
+ *
+ * Functionally equivalent to the standard `spec.read` path — same menu
+ * navigation, same lore parsing — just with extra sink events and
+ * intermediate snapshots between sub-steps.
+ */
+async function hydrateConditionalSubsteps(
+    ctx: TaskContext,
+    entry: ObservedActionSlot,
+    propsToRead: NestedPropsToRead,
+    itemRegistry: ItemRegistry | undefined,
+    observedTopLevel: readonly ObservedActionSlot[]
+): Promise<void> {
+    if (entry.action === null) return;
+    const conditionsLabel = getActionFieldLabel("CONDITIONAL", "conditions");
+    const matchAnyLabel = getActionFieldLabel("CONDITIONAL", "matchAny");
+    const ifActionsLabel = getActionFieldLabel("CONDITIONAL", "ifActions");
+    const elseActionsLabel = getActionFieldLabel("CONDITIONAL", "elseActions");
+
+    const actionPath = String(entry.index);
+    const sink = getActiveDiffSink();
+    const action = entry.action as unknown as {
+        conditions?: unknown[];
+        matchAny?: boolean;
+        ifActions?: unknown[];
+        elseActions?: unknown[];
+    };
+
+    if (propsToRead.has("conditions")) {
+        // Cursor stays on the conditional's `if (...) {` line (set by
+        // hydrateNestedActions before this call).
+        ctx.getMenuItemSlot(conditionsLabel).click();
+        await waitForMenu(ctx);
+        const conditions = (await readConditionList(ctx, { itemRegistry })).map(
+            (e) => e.condition
+        );
+        action.conditions = conditions;
+        await clickGoBack(ctx);
+        // Snapshot: head text re-renders with the real conditions, body
+        // still shows `...M actions...` placeholder. Step gate pauses
+        // here so the user can observe the head before the cursor moves
+        // down into the actions sub-step.
+        emitObservedSnapshot(observedTopLevel);
+        await waitIfStepPaused(ctx);
+    }
+
+    action.matchAny = readBooleanValue(ctx.getMenuItemSlot(matchAnyLabel)) ?? false;
+
+    if (propsToRead.has("ifActions")) {
+        // Move cursor onto the `...M actions...` consolidated placeholder
+        // for ifActions. The placeholder line lives at actionPath
+        // `<conditional>.ifActions`.
+        if (sink && sink.setReading) {
+            sink.setReading(`${actionPath}.ifActions`, "reading ifActions");
+        }
+        ctx.getMenuItemSlot(ifActionsLabel).click();
+        await waitForMenu(ctx);
+        const ifActions: unknown[] = [];
+        for (const ent of await readActionList(ctx, { kind: "full", itemRegistry })) {
+            ifActions.push(ent.action);
+        }
+        action.ifActions = ifActions;
+        await clickGoBack(ctx);
+        emitObservedSnapshot(observedTopLevel);
+        await waitIfStepPaused(ctx);
+    }
+
+    if (propsToRead.has("elseActions")) {
+        if (sink && sink.setReading) {
+            sink.setReading(`${actionPath}.elseActions`, "reading elseActions");
+        }
+        ctx.getMenuItemSlot(elseActionsLabel).click();
+        await waitForMenu(ctx);
+        const elseActions: unknown[] = [];
+        for (const ent of await readActionList(ctx, { kind: "full", itemRegistry })) {
+            elseActions.push(ent.action);
+        }
+        action.elseActions = elseActions;
+        await clickGoBack(ctx);
+        emitObservedSnapshot(observedTopLevel);
+        await waitIfStepPaused(ctx);
+    }
+
+    // Park the cursor back on the conditional itself before we return —
+    // hydrateNestedActions's outer step-gate fires next with the cursor
+    // expected on the entry being hydrated.
+    if (sink && sink.setReading) {
+        sink.setReading(actionPath, `reading nested ${actionLogLabel(entry.action)}`);
     }
 }

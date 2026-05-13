@@ -296,8 +296,7 @@ async function applyActionListDiffInner(
                     const observedAction = op.observed.action;
                     if (observedAction !== null) {
                         const obsPath = actionPathForIndex(pathPrefix, op.observed.index);
-                        // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
-                        sink.planEdit(obsPath, observedAction as unknown as Action, op.desired);
+                        sink.planEdit(obsPath, observedAction as Action, op.desired);
                     }
                 } else if (op.kind === "move" && sink.planMove) {
                     // Use OBSERVED path (where the model line actually
@@ -318,8 +317,7 @@ async function applyActionListDiffInner(
                         // model was built from the observed tree, so a
                         // line at this path exists.
                         const obsPath = actionPathForIndex(pathPrefix, op.observed.index);
-                        // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
-                        sink.planDelete(obsPath, observedAction as unknown as Action);
+                        sink.planDelete(obsPath, observedAction as Action);
                     }
                 }
             }

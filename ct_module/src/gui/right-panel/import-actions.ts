@@ -52,10 +52,12 @@ import {
 } from "../state/diff";
 import {
     finalizeFromSource,
+    markHeadApplied,
     markPlannedAdd,
     markPlannedDelete,
     markPlannedEdit,
     markPlannedMove,
+    previewLineIdForPath,
     primeWithCache,
     resetPreview,
     setObservedTopLevel,
@@ -65,6 +67,7 @@ import { setFocusLineId } from "../state/codeViewState";
 import { importableSourcePath } from "../state/importablePaths";
 import type { ImportDiffSink } from "../../importer/diffSink";
 import { readKnowledge } from "../../knowledge/cache";
+import { gmcOnImportStart, playImportSuccessSound } from "../../importer/sideEffects";
 
 export const CAPTURE_TYPES: CaptureType[] = ["FUNCTION", "MENU"];
 
@@ -126,9 +129,11 @@ function makeDiffSink(sourcePath: string, importable: Importable): ImportDiffSin
             setDiffPhase(key, label);
             setCurrent(key, path, label);
             setPlannedOp(key, path, kind, label, "");
-            // Drive Spotify-lyrics-style auto-scroll: the PreviewModel
-            // keys each action's primary line as `<actionPath>:body`.
-            setFocusLineId(sourcePath, `${path}:body`);
+            // Drive Spotify-lyrics-style auto-scroll. Pending-add lines
+            // carry an `__add::` prefix on their id; previewLineIdForPath
+            // returns the id that's actually present in the model so the
+            // auto-follow lookup hits.
+            setFocusLineId(sourcePath, previewLineIdForPath(sourcePath, path));
         },
         completeOp: (path, state) => {
             setDiffState(key, path, state);
@@ -143,7 +148,7 @@ function makeDiffSink(sourcePath: string, importable: Importable): ImportDiffSin
             //    next outer op the user sees the cursor on the correct
             //    just-completed conditional, not stale on its last child.
             setCurrent(key, path, "");
-            setFocusLineId(sourcePath, `${path}:body`);
+            setFocusLineId(sourcePath, previewLineIdForPath(sourcePath, path));
         },
         end: () => {
             setCurrent(key, null, "");
@@ -158,7 +163,7 @@ function makeDiffSink(sourcePath: string, importable: Importable): ImportDiffSin
             // effect — we don't want hydration to paint diff colors on
             // lines, just show the cursor and auto-scroll to it.
             setCurrent(key, path, label);
-            setFocusLineId(sourcePath, `${path}:body`);
+            setFocusLineId(sourcePath, previewLineIdForPath(sourcePath, path));
         },
         clearReading: () => {
             setCurrent(key, null, "");
@@ -180,6 +185,9 @@ function makeDiffSink(sourcePath: string, importable: Importable): ImportDiffSin
         },
         finalizeSource: (actions) => {
             finalizeFromSource(sourcePath, actions);
+        },
+        markActionHeadApplied: (path) => {
+            markHeadApplied(sourcePath, path);
         },
     };
 }
@@ -286,6 +294,10 @@ export function startImport(explicit?: readonly QueueItem[]): void {
     const trustMode = isCurrentHouseTrusted();
     const total = totalImportableCount(batches);
 
+    // Auto-switch to creative — housing edits require it. Fires AFTER
+    // the empty-queue early-return so we don't /gmc for a no-op invocation.
+    gmcOnImportStart();
+
     // Concatenate every batch's ordered importables for the run-row
     // tracking; the per-row UI only needs the flat list, not the
     // per-batch grouping.
@@ -318,6 +330,7 @@ export function startImport(explicit?: readonly QueueItem[]): void {
 
     TaskManager.run(async (ctx) => {
         const startedAt = Date.now();
+        let success = false;
         try {
             ctx.displayMessage(
                 `&7[import] starting ${total} importable${total === 1 ? "" : "s"} ` +
@@ -365,6 +378,7 @@ export function startImport(explicit?: readonly QueueItem[]): void {
             ctx.displayMessage(
                 `&7[import] done · imported ${totalImported}, skipped ${totalSkipped}, failed ${totalFailed}, ${elapsed}s`
             );
+            success = (totalFailed === 0);
             // Only clear the queue when this run came from the queue. An
             // ad-hoc "Import selected" run leaves the queue alone since it
             // was never the source of the work.
@@ -375,6 +389,10 @@ export function startImport(explicit?: readonly QueueItem[]): void {
             clearImportRun();
             refreshKnowledgeRows();
         }
+        // After finally: import progress is cleared, so the soundPlay
+        // cancel hook no longer swallows sounds and this chime can play.
+        // Cancellation throws BEFORE this line — no chime on cancel.
+        if (success) playImportSuccessSound();
     }).catch((err: unknown) => {
         ChatLib.chat(`&c[htsw] Import failed: ${err}`);
     });

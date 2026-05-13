@@ -421,6 +421,10 @@ export function applyComplete(
             bump(s);
             return;
         }
+        // Two-pass: first strip prefixes, then dedup. Strip-then-dedup
+        // (vs interleaved) keeps the indices stable across the strip
+        // pass — defensive splices during strip would shift firstAdded/
+        // lastAdded and break the loop bounds.
         for (let i = firstAdded; i <= lastAdded; i++) {
             // Bottom-up applyDone fires inner adds before outer adds.
             // By the time the outer's loop iterates over its subtree,
@@ -435,6 +439,38 @@ export function applyComplete(
             s.lines[i].diffState = undefined;
             s.lines[i].completed = true;
         }
+        // Defensive dedup: if stripping the `__add::` prefix produced
+        // a line whose id collides with another existing line, drop
+        // the older one. Catches the move+add edge case (matcher emits
+        // a MOVE for the observed line at this actionPath AND an ADD
+        // for a new desired action at the same source path; without
+        // this both end up with id `<path>:body` after stripping and
+        // visually duplicate).
+        const idCounts: { [id: string]: number[] } = {};
+        for (let i = 0; i < s.lines.length; i++) {
+            const id = s.lines[i].id;
+            if (idCounts[id] === undefined) idCounts[id] = [];
+            idCounts[id].push(i);
+        }
+        // Walk back-to-front so splicing doesn't invalidate earlier indices.
+        const dupIdsToRemove: number[] = [];
+        for (const id in idCounts) {
+            const positions = idCounts[id];
+            if (positions.length <= 1) continue;
+            // Keep the line we just stripped (or the latest one that's
+            // marked completed); remove the others. Heuristic: keep the
+            // last position (the just-promoted pending-add tends to be
+            // the most recent insertion).
+            for (let k = 0; k < positions.length - 1; k++) {
+                dupIdsToRemove.push(positions[k]);
+            }
+        }
+        if (dupIdsToRemove.length > 0) {
+            dupIdsToRemove.sort((a, b) => b - a);
+            for (let i = 0; i < dupIdsToRemove.length; i++) {
+                s.lines.splice(dupIdsToRemove[i], 1);
+            }
+        }
         renumberLines(s.lines);
         bump(s);
         return;
@@ -447,6 +483,102 @@ export function applyComplete(
         bump(s);
         return;
     }
+}
+
+/**
+ * Mark the head of an action as completed — its body line + (if it's a
+ * block-bearing action) the matching `} else {` and `}` lines. Used by
+ * `markActionHeadApplied` from the importer: when a CONDITIONAL's
+ * conditions and matchAny are written, the head is "correct" even
+ * though inner ifActions sync work continues. Without this, those
+ * three lines would stay gray-pending until every inner op finished.
+ *
+ * Strips the `__add::` prefix on body / else / close (when present)
+ * since the head is now real, not pending. Inner children keep their
+ * own prefix until their individual `applyDone` strips them.
+ *
+ * If a ghost line exists below the body (planEdit was called), promote
+ * it the same way `applyComplete(kind: "edit")` does so the body shows
+ * the desired text, not the observed.
+ */
+export function markHeadApplied(path: string, actionPath: string): void {
+    const s = ensure(path);
+    const bodyId = `${actionPath}:body`;
+    const addedBodyId = `${ADD_ID_PREFIX}${actionPath}:body`;
+    let bodyIdx = -1;
+    let bodyHasPrefix = false;
+    for (let i = 0; i < s.lines.length; i++) {
+        if (s.lines[i].id === bodyId) {
+            bodyIdx = i;
+            break;
+        }
+        if (s.lines[i].id === addedBodyId) {
+            bodyIdx = i;
+            bodyHasPrefix = true;
+            break;
+        }
+    }
+    if (bodyIdx < 0) return;
+
+    // Promote ghost if planEdit had inserted one.
+    const ghostId = `${actionPath}:ghost`;
+    let ghostIdx = -1;
+    for (let i = bodyIdx + 1; i < s.lines.length; i++) {
+        if (s.lines[i].id === ghostId) {
+            ghostIdx = i;
+            break;
+        }
+    }
+    if (ghostIdx >= 0) {
+        const ghost = s.lines[ghostIdx];
+        ghost.italic = false;
+        ghost.isGhost = false;
+        ghost.diffState = undefined;
+        ghost.completed = true;
+        ghost.id = bodyId;
+        s.lines.splice(ghostIdx, 1);
+        s.lines.splice(bodyIdx, 1, ghost);
+    } else {
+        if (bodyHasPrefix) s.lines[bodyIdx].id = bodyId;
+        s.lines[bodyIdx].diffState = undefined;
+        s.lines[bodyIdx].completed = true;
+    }
+
+    // Mark `} else {` and `}` of this same actionPath as completed too.
+    // Strip the `__add::` prefix on either if present.
+    const elseId = `${actionPath}:else`;
+    const closeId = `${actionPath}:close`;
+    const addedElseId = `${ADD_ID_PREFIX}${actionPath}:else`;
+    const addedCloseId = `${ADD_ID_PREFIX}${actionPath}:close`;
+    for (let i = 0; i < s.lines.length; i++) {
+        const id = s.lines[i].id;
+        if (id === addedElseId) s.lines[i].id = elseId;
+        else if (id === addedCloseId) s.lines[i].id = closeId;
+        else if (id !== elseId && id !== closeId) continue;
+        s.lines[i].diffState = undefined;
+        s.lines[i].completed = true;
+    }
+
+    renumberLines(s.lines);
+    bump(s);
+}
+
+/**
+ * Resolve an actionPath to the actual line id present in the model.
+ * Pending-add lines carry an `__add::` prefix; without this lookup,
+ * autoFollow's `lineIdToIndex[focusedId]` would miss them and the
+ * viewport wouldn't recenter on a freshly-added action.
+ */
+export function previewLineIdForPath(path: string, actionPath: string): string {
+    const k = keyForFile(path);
+    const s = states[k];
+    const unprefixedId = `${actionPath}:body`;
+    if (s === undefined) return unprefixedId;
+    const prefixedId = `${ADD_ID_PREFIX}${actionPath}:body`;
+    for (let i = 0; i < s.lines.length; i++) {
+        if (s.lines[i].id === prefixedId) return prefixedId;
+    }
+    return unprefixedId;
 }
 
 /**
@@ -537,8 +669,16 @@ function insertionIndexForPath(lines: PreviewLine[], actionPath: string): number
         const siblingParts = parts.slice(0, parts.length - 1);
         siblingParts.push(String(lastIdx - 1));
         const siblingPath = siblingParts.join(".");
-        const siblingStart = findActionStartIndex(lines, siblingPath);
+        // Match BOTH unprefixed (existing observed) AND `__add::` prefixed
+        // (just-inserted pending) siblings. Without this, sequential adds
+        // (Pt2 → Pt3 → Pt4) can't see each other as siblings — each falls
+        // through to the parent-body fallback and inserts at parentBody+1,
+        // which reverses their visual order.
+        const siblingStart = findIndexByIdAny(lines, `${siblingPath}:body`);
         if (siblingStart >= 0) {
+            // findActionEndIndex scans by `line.actionPath`, which is the
+            // same on prefixed and unprefixed lines, so it correctly walks
+            // either kind to the end of its scope.
             return findActionEndIndex(lines, siblingPath, siblingStart) + 1;
         }
     }
@@ -676,6 +816,32 @@ function appendNestedListBody(
 ): void {
     if (nested === null || nested === undefined || nested.length === 0) {
         return; // empty body — render nothing inside the braces
+    }
+    // If every entry is null (fully unhydrated), collapse to a single
+    // `...N actions...` placeholder line so the user sees the known
+    // count rather than N separate `...` slot lines. As soon as ANY
+    // entry hydrates, fall through to per-entry rendering (mixed
+    // hydrated + still-null is handled by the per-slot fallback).
+    let allNull = true;
+    for (let i = 0; i < nested.length; i++) {
+        if (nested[i] !== null) {
+            allNull = false;
+            break;
+        }
+    }
+    if (allNull) {
+        const subListPath = `${parentPath}.${prop}`;
+        const noun = nested.length === 1 ? "action" : "actions";
+        out.push(makeLine({
+            id: `${subListPath}:placeholder`,
+            actionPath: subListPath,
+            text: `${indent(depth)}...${nested.length} ${noun}...`,
+            depth,
+            lineNum: 0,
+            italic: true,
+            isPlaceholder: true,
+        }));
+        return;
     }
     appendActions(out, nested, `${parentPath}.${prop}`, depth);
 }

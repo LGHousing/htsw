@@ -222,20 +222,64 @@ export function progressDecorator(path: string | null): LineDecorator {
             // full-row tint (read) vs cursor-column-only tint (apply).
             const isApplyPhase = entry !== undefined && entry.summary !== null;
 
-            // Focus range = the contiguous span of lines belonging to
-            // the action the importer is currently touching. Covers the
-            // head line, all nested children, and the close brace —
-            // because they share / nest under the same actionPath.
-            const inFocusRange =
+            // Focus range scoping depends on phase:
+            // - Reading: highlight the WHOLE subtree of the action being
+            //   read, so the user sees the scope being walked.
+            // - Apply: narrow to JUST the action's body line. Nested
+            //   children get their own focus when the inner sync moves
+            //   the cursor onto them. Without this narrowing, editing
+            //   the conditions of a CONDITIONAL paints the whole if{}
+            //   range blue when only the head is actually being touched.
+            let inFocusRange = false;
+            if (
                 entry !== undefined
                 && entry.currentPath !== null
                 && line.actionPath !== undefined
-                && (line.actionPath === entry.currentPath
-                    || line.actionPath.indexOf(entry.currentPath + ".") === 0);
+            ) {
+                if (isApplyPhase) {
+                    // body lines have id `<path>:body` or `__add::<path>:body`;
+                    // both end with ":body". `:else` and `:close` (which share
+                    // the parent's actionPath) end with ":else"/":close" and
+                    // are excluded by this check.
+                    const bodySuffix = ":body";
+                    const isBody =
+                        line.id.length >= bodySuffix.length
+                        && line.id.substring(line.id.length - bodySuffix.length) === bodySuffix;
+                    inFocusRange = isBody && line.actionPath === entry.currentPath;
+                } else {
+                    inFocusRange =
+                        line.actionPath === entry.currentPath
+                        || line.actionPath.indexOf(entry.currentPath + ".") === 0;
+                }
+            }
+            // Cursor (▶) lands on the action's body line OR (during the
+            // reading phase only) on a consolidated `...N actions...`
+            // placeholder. Both indicate "the importer is touching this
+            // logical unit right now". The `} else {` and trailing `}`
+            // of a CONDITIONAL share the parent's actionPath but aren't
+            // "the current line" — excluded by the suffix check.
+            const bodySuffixForCursor = ":body";
+            const placeholderSuffix = ":placeholder";
+            const isBodyForCursor =
+                line.id.length >= bodySuffixForCursor.length
+                && line.id.substring(line.id.length - bodySuffixForCursor.length) === bodySuffixForCursor;
+            const isConsolidatedPlaceholder =
+                line.id.length >= placeholderSuffix.length
+                && line.id.substring(line.id.length - placeholderSuffix.length) === placeholderSuffix
+                // Filter the per-slot `:slot<N>:placeholder` ids — those use
+                // the same suffix but represent partially-hydrated lists. The
+                // consolidated placeholder uses `<subListPath>:placeholder`
+                // exactly, so its substring before `:placeholder` doesn't
+                // contain `:slot`.
+                && line.id.indexOf(":slot") < 0;
+            const isCursorTarget = isApplyPhase
+                ? isBodyForCursor
+                : (isBodyForCursor || isConsolidatedPlaceholder);
             const isFocused =
                 entry !== undefined
                 && line.actionPath !== undefined
-                && entry.currentPath === line.actionPath;
+                && entry.currentPath === line.actionPath
+                && isCursorTarget;
 
             // Reading: full-row blue tint across the focus range.
             // Apply: column-only blue tint, so the row's own diff-state

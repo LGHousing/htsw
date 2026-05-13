@@ -73,6 +73,7 @@ import type {
 } from "./types";
 import { setItemValue } from "./items";
 import type { ActionPath } from "./diffSink";
+import { getActiveDiffSink } from "./diffSink";
 import { resolveImportableItem } from "./resolveItem";
 import { readActionList } from "./actions/readList";
 import { syncActionList } from "./actions/sync";
@@ -240,6 +241,14 @@ async function writeConditional(
         ctx.getMenuItemSlot(getActionFieldLabel("CONDITIONAL", "matchAny")),
         action.matchAny
     );
+
+    // The conditional's head (conditions + matchAny) is now correct in
+    // housing. Tell the live preview so the `if (...) {`, `} else {`,
+    // and `}` lines flip to vibrant immediately — without this they'd
+    // stay gray until every nested ifAction/elseAction op completes.
+    if (currentWritingActionPath !== null) {
+        getActiveDiffSink()?.markActionHeadApplied?.(currentWritingActionPath);
+    }
 
     if (
         !observedActionListsEqual(current?.ifActions, action.ifActions) &&

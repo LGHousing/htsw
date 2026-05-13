@@ -78,6 +78,16 @@ export interface ImportDiffSink {
     /** Optional: the importer is no longer reading any specific action. */
     clearReading?(): void;
     /**
+     * Optional: the "head" (scalar fields + head text) of this action
+     * is now finalized in housing — even though inner sync work
+     * continues. For CONDITIONAL: fired after `conditions` and
+     * `matchAny` are written, BEFORE `ifActions`/`elseActions` sync.
+     * Lets the live preview flip the body / `} else {` / `}` lines to
+     * vibrant immediately, instead of waiting for every nested op to
+     * complete first.
+     */
+    markActionHeadApplied?(actionPath: ActionPath): void;
+    /**
      * Optional: explicit per-op planning calls carrying full Action
      * payloads. The legacy `planOp` only conveys path + kind + label;
      * these variants give the live preview enough data to insert/morph

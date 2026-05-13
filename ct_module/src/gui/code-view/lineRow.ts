@@ -187,7 +187,12 @@ export function buildLineRow(
     const cursorGlyphText = isFocused ? STATE_GLYPH["current"] : " ";
     const cursorGlyphColor = COLOR_BY_STATE["current"];
     const stateGlyphText = dec.state !== undefined ? STATE_GLYPH[state] : " ";
-    const stateGlyphColor = glyphColor;
+    // State glyph always uses the diff state's vibrant color when set,
+    // ignoring dec.foregroundColor — pending lines have foregroundColor
+    // set to COLOR_PENDING_GRAY which would otherwise wash out the glyph
+    // (a "+" should be bright green even on a gray-pending line).
+    const stateGlyphColor =
+        dec.state !== undefined ? COLOR_BY_STATE[state] : glyphColor;
 
     const hideLineNum = dec.hideLineNum === true;
     const lineNumText = hideLineNum
@@ -267,9 +272,16 @@ export function buildLineRow(
             color: applyAlpha(stateGlyphColor, alpha),
             style: { width: { kind: "px", value: STATE_GUTTER_W } },
         }),
+        // Line number: tinted with the diff state's color when set, so
+        // an `add` line shows a green line number, `delete` red, `edit`
+        // gold — same git-style cue the +/~/- glyph carries. Untouched
+        // lines stay neutral gutter-gray.
         Text({
             text: lineNumText,
-            color: applyAlpha(CodeViewColors.gutter, alpha),
+            color: applyAlpha(
+                dec.state !== undefined ? COLOR_BY_STATE[state] : CodeViewColors.gutter,
+                alpha
+            ),
             style: { width: { kind: "px", value: gutterWidth } },
         }),
         Container({
