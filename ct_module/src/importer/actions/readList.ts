@@ -43,13 +43,14 @@ import {
 import { getActiveDiffSink } from "../diffSink";
 import { COST, actionListRoughBudget, hydrationEntryBudget } from "../progress/costs";
 import { ACTION_LIST_CONFIG } from "./listConfig";
-import { getActionSpec, getCurrentWritingActionPath } from "../actions";
+import {
+    getActionSpec,
+    getCurrentWritingActionPath,
+    readOpenConditional,
+    type ConditionalReadHooks,
+} from "../actions";
 import { actionLogLabel } from "./log";
 import { waitIfStepPaused } from "../stepGate";
-import { getActionFieldLabel } from "../actionMappings";
-import { readBooleanValue } from "../helpers";
-import { waitForMenu } from "../menuWait";
-import { readConditionList } from "../conditions/readList";
 import { traceEvent } from "../traceLog";
 
 function readNestedSummaries(
@@ -515,15 +516,15 @@ async function hydrateNestedAction(
 }
 
 /**
- * Visualization-aware variant of `readOpenConditional`. Mutates
- * `entry.action` in place after each sub-step so the GUI's snapshot
- * emit shows incremental progress, and moves the read cursor onto each
- * sub-list's consolidated `...N actions...` placeholder before reading
- * it.
+ * Drive `readOpenConditional` with visualization hooks for the live
+ * preview. The hooks fire trace events, push snapshots so the model
+ * re-renders with the now-known content, and move the read cursor onto
+ * each sub-list's `...N actions...` placeholder line.
  *
- * Functionally equivalent to the standard `spec.read` path — same menu
- * navigation, same lore parsing — just with extra sink events and
- * intermediate snapshots between sub-steps.
+ * Mutates `entry.action` in place after each sub-step (via the hook
+ * snapshot path) so the GUI sees incremental progress. The standard
+ * `spec.read(...)` path returns the action only at the end; we replace
+ * it explicitly at the bottom for the same effect.
  */
 async function hydrateConditionalSubsteps(
     ctx: TaskContext,
@@ -533,89 +534,58 @@ async function hydrateConditionalSubsteps(
     observedTopLevel: readonly ObservedActionSlot[]
 ): Promise<void> {
     if (entry.action === null) return;
-    const conditionsLabel = getActionFieldLabel("CONDITIONAL", "conditions");
-    const matchAnyLabel = getActionFieldLabel("CONDITIONAL", "matchAny");
-    const ifActionsLabel = getActionFieldLabel("CONDITIONAL", "ifActions");
-    const elseActionsLabel = getActionFieldLabel("CONDITIONAL", "elseActions");
-
     const actionPath = String(entry.index);
     const sink = getActiveDiffSink();
+    // Each hook reflects the freshly-read sub-list onto entry.action so
+    // the snapshot emit publishes incremental progress (head re-renders
+    // with real conditions; body's `...M actions...` placeholder fills
+    // in once ifActions arrive; etc).
     const action = entry.action as unknown as {
         conditions?: unknown[];
-        matchAny?: boolean;
         ifActions?: unknown[];
         elseActions?: unknown[];
     };
-
-    if (propsToRead.has("conditions")) {
-        // Cursor stays on the conditional's `if (...) {` line (set by
-        // hydrateNestedActions before this call).
-        ctx.getMenuItemSlot(conditionsLabel).click();
-        await waitForMenu(ctx);
-        const conditions = (await readConditionList(ctx, { itemRegistry })).map(
-            (e) => e.condition
-        );
-        action.conditions = conditions;
-        await clickGoBack(ctx);
-        traceEvent("conditional-conditions-read", {
-            actionPath,
-            conditions,
-        });
-        // Snapshot: head text re-renders with the real conditions, body
-        // still shows `...M actions...` placeholder. Step gate pauses
-        // here so the user can observe the head before the cursor moves
-        // down into the actions sub-step.
-        emitObservedSnapshot(observedTopLevel);
-        await waitIfStepPaused(ctx);
-    }
-
-    action.matchAny = readBooleanValue(ctx.getMenuItemSlot(matchAnyLabel)) ?? false;
-
-    if (propsToRead.has("ifActions")) {
-        // Move cursor onto the `...M actions...` consolidated placeholder
-        // for ifActions. The placeholder line lives at actionPath
-        // `<conditional>.ifActions`.
-        if (sink && sink.setReading) {
-            sink.setReading(`${actionPath}.ifActions`, "reading ifActions");
-        }
-        ctx.getMenuItemSlot(ifActionsLabel).click();
-        await waitForMenu(ctx);
-        const ifActions: unknown[] = [];
-        for (const ent of await readActionList(ctx, { kind: "full", itemRegistry })) {
-            ifActions.push(ent.action);
-        }
-        action.ifActions = ifActions;
-        await clickGoBack(ctx);
-        traceEvent("conditional-ifActions-read", {
-            actionPath,
-            count: ifActions.length,
-            ifActions,
-        });
-        emitObservedSnapshot(observedTopLevel);
-        await waitIfStepPaused(ctx);
-    }
-
-    if (propsToRead.has("elseActions")) {
-        if (sink && sink.setReading) {
-            sink.setReading(`${actionPath}.elseActions`, "reading elseActions");
-        }
-        ctx.getMenuItemSlot(elseActionsLabel).click();
-        await waitForMenu(ctx);
-        const elseActions: unknown[] = [];
-        for (const ent of await readActionList(ctx, { kind: "full", itemRegistry })) {
-            elseActions.push(ent.action);
-        }
-        action.elseActions = elseActions;
-        await clickGoBack(ctx);
-        traceEvent("conditional-elseActions-read", {
-            actionPath,
-            count: elseActions.length,
-            elseActions,
-        });
-        emitObservedSnapshot(observedTopLevel);
-        await waitIfStepPaused(ctx);
-    }
-
+    const hooks: ConditionalReadHooks = {
+        onConditionsRead: async (conditions) => {
+            action.conditions = [...conditions];
+            traceEvent("conditional-conditions-read", { actionPath, conditions });
+            emitObservedSnapshot(observedTopLevel);
+            await waitIfStepPaused(ctx);
+        },
+        onIfActionsBefore: async () => {
+            // Cursor onto the `...M actions...` consolidated placeholder
+            // (its actionPath is `<conditional>.ifActions`).
+            if (sink && sink.setReading) {
+                sink.setReading(`${actionPath}.ifActions`, "reading ifActions");
+            }
+        },
+        onIfActionsRead: async (ifActions) => {
+            action.ifActions = [...ifActions];
+            traceEvent("conditional-ifActions-read", {
+                actionPath,
+                count: ifActions.length,
+                ifActions,
+            });
+            emitObservedSnapshot(observedTopLevel);
+            await waitIfStepPaused(ctx);
+        },
+        onElseActionsBefore: async () => {
+            if (sink && sink.setReading) {
+                sink.setReading(`${actionPath}.elseActions`, "reading elseActions");
+            }
+        },
+        onElseActionsRead: async (elseActions) => {
+            action.elseActions = [...elseActions];
+            traceEvent("conditional-elseActions-read", {
+                actionPath,
+                count: elseActions.length,
+                elseActions,
+            });
+            emitObservedSnapshot(observedTopLevel);
+            await waitIfStepPaused(ctx);
+        },
+    };
+    entry.action = await readOpenConditional(ctx, propsToRead, itemRegistry, hooks);
     // Park the cursor back on the conditional itself before we return —
     // hydrateNestedActions's outer step-gate fires next with the cursor
     // expected on the entry being hydrated.

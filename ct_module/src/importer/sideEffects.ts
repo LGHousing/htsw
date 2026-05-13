@@ -15,7 +15,7 @@
  * just early-returns when its toggle is off.
  */
 
-import { getImportProgress } from "../gui/state";
+import { isImportRunning } from "./runtimeState";
 
 /**
  * Module bootstrap: registers the global soundPlay cancel hook. Called
@@ -44,7 +44,7 @@ export function registerImportSoundCancel(): void {
             // same way.
             event: any
         ) => {
-            if (getImportProgress() === null) return;
+            if (!isImportRunning()) return;
             cancel(event);
         }
     );

@@ -3,14 +3,19 @@
 /**
  * Render a single source line to an `Element` tree. Pure builder — takes
  * a data-only `RenderableLine` plus per-line `LineDecorations` from a
- * `LineDecorator`. Shared by the View tab (static diff colors) and the
+ * `LineDecorator`. Shared by the View tab (static diff colours) and the
  * Import tab's live preview.
  *
- * Layout (left to right):
- *   [ 8px focus-glyph ] [ N px line-num ] [ grow text tokens ] [ optional detail ]
+ * Row layout (left to right):
+ *   [ 8px cursor (▶) ]
+ *   [ 8px state glyph (+/~/-/✓) ]
+ *   [ N px line-num ]
+ *   [ grow text tokens ]
+ *   [ optional 180px detail ]
  *
- * The focus-glyph column is reserved even when no decoration is set so
- * gutters stay aligned across consecutive rows.
+ * Cursor and state glyph live in separate columns so the user can read
+ * "what's happening right now" (▶) and "what's planned for this line"
+ * (+/~/-/✓) at the same time.
  */
 
 import { Container, Text } from "../lib/components";
@@ -23,9 +28,8 @@ export const LINE_H = 10;
 export const FOCUS_GUTTER_W = 8;
 export const STATE_GUTTER_W = 8;
 export const LINE_NUM_MIN_W = 16;
-export const BRACKET_GUTTER_W = 6;
 
-/** Glyph drawn in the focus gutter per diff state. */
+/** Glyph drawn in each gutter column per diff state. */
 export const STATE_GLYPH: { [k in DiffState]: string } = {
     unknown: " ",
     match: "✓",
@@ -34,14 +38,6 @@ export const STATE_GLYPH: { [k in DiffState]: string } = {
     add: "+",
     current: "▶",
 };
-
-/** Glyphs forming the multi-line "[" bracket. */
-const BRACKET_GLYPH = {
-    top: "┌",
-    middle: "│",
-    bottom: "└",
-};
-const COLOR_BRACKET = 0xff67a7e8 | 0; // blue, matches the focus arrow
 
 function padLeft(s: string, width: number): string {
     let out = s;
@@ -66,8 +62,9 @@ export function gutterWidthForLines(maxLine: number): number {
 }
 
 /**
- * Mix a foreground color toward gray by `t` (0..1). Used by the
- * progressDecorator for the gray→vibrant fade-in animation.
+ * Mix a foreground color toward gray by `t` (0..1). Used by callers
+ * that want a soft fade — the morph preview doesn't drive this currently
+ * but the helper is still useful for synthesised lines.
  */
 export function lerpColorToward(target: number, base: number, t: number): number {
     if (t >= 1) return target;
@@ -99,50 +96,17 @@ export function applyAlpha(color: number, factor: number): number {
     return ((newA << 24) | (r << 16) | (g << 8) | b) | 0;
 }
 
-const FIELD_FOCUS_BG = 0x4067a7e8 | 0; // translucent blue, matches focus arrow
-
 function tokenElements(
     tokens: TokenSpan[],
     overrideColor: number | undefined,
-    alpha: number,
-    underlinedFields: { [prop: string]: true } | undefined,
-    focusedFieldProp: string | undefined
+    alpha: number
 ): Element[] {
     const out: Element[] = [];
     for (let i = 0; i < tokens.length; i++) {
         const t = tokens[i];
         const baseColor = overrideColor !== undefined ? overrideColor : t.color;
         const color = alpha < 1 ? applyAlpha(baseColor, alpha) : baseColor;
-        const underline =
-            underlinedFields !== undefined &&
-            t.fieldProp !== undefined &&
-            underlinedFields[t.fieldProp] === true;
-        const isFocusedField =
-            focusedFieldProp !== undefined &&
-            t.fieldProp !== undefined &&
-            t.fieldProp === focusedFieldProp;
-        const textEl = Text({
-            text: t.text,
-            color,
-            style: { underline },
-        });
-        if (isFocusedField) {
-            // Wrap in a thin-padded Container with a translucent blue
-            // background so the token reads as the "field box" the
-            // importer is currently editing.
-            out.push(
-                Container({
-                    style: {
-                        direction: "row",
-                        align: "center",
-                        background: FIELD_FOCUS_BG,
-                    },
-                    children: [textEl],
-                })
-            );
-        } else {
-            out.push(textEl);
-        }
+        out.push(Text({ text: t.text, color }));
     }
     return out;
 }
@@ -167,23 +131,8 @@ export function buildLineRow(
     }
     if (bg === undefined) bg = line.staticBackground;
 
-    // Foreground glyph color (gutter glyph + line number).
-    let glyphColor: number;
-    if (dec.foregroundColor !== undefined) {
-        glyphColor = dec.foregroundColor;
-    } else if (dec.state !== undefined) {
-        glyphColor = COLOR_BY_STATE[state];
-    } else if (line.staticForeground !== undefined) {
-        glyphColor = line.staticForeground;
-    } else {
-        glyphColor = CodeViewColors.gutter;
-    }
-
     const alpha = dec.alpha !== undefined ? dec.alpha : 1;
 
-    // Cursor (▶) lives in its own column to the LEFT of the diff state
-    // glyph (+/~/-/✓), so the user can read both signals at a glance:
-    // "what's happening right now" vs "what's planned for this line".
     const cursorGlyphText = isFocused ? STATE_GLYPH["current"] : " ";
     const cursorGlyphColor = COLOR_BY_STATE["current"];
     const stateGlyphText = dec.state !== undefined ? STATE_GLYPH[state] : " ";
@@ -192,16 +141,14 @@ export function buildLineRow(
     // set to COLOR_PENDING_GRAY which would otherwise wash out the glyph
     // (a "+" should be bright green even on a gray-pending line).
     const stateGlyphColor =
-        dec.state !== undefined ? COLOR_BY_STATE[state] : glyphColor;
+        dec.state !== undefined
+            ? COLOR_BY_STATE[state]
+            : (line.staticForeground ?? CodeViewColors.gutter);
 
     const hideLineNum = dec.hideLineNum === true;
     const lineNumText = hideLineNum
         ? ""
         : (line.lineNum > 0 ? padLeft(String(line.lineNum), 3) : "");
-
-    const bracketGlyph = dec.bracketRole === undefined
-        ? ""
-        : BRACKET_GLYPH[dec.bracketRole];
 
     // Italic body text: render the entire line as a single §o-prefixed
     // Text element rather than per-token Texts. The §o code formats
@@ -224,30 +171,14 @@ export function buildLineRow(
             }),
         ];
     } else {
-        bodyChildren = tokenElements(
-            line.tokens,
-            dec.foregroundColor,
-            alpha,
-            dec.underlinedFields,
-            dec.focusedFieldProp
-        );
+        bodyChildren = tokenElements(line.tokens, dec.foregroundColor, alpha);
     }
 
     const children: Element[] = [
-        // Bracket gutter — reserves the column even when empty so all rows
-        // line up. Rendered first (leftmost).
-        Text({
-            text: bracketGlyph,
-            color: COLOR_BRACKET,
-            style: { width: { kind: "px", value: BRACKET_GUTTER_W } },
-        }),
-        // Cursor column: only ever shows the blue ▶ for the line the
-        // importer is touching this instant. Always reserved so other
-        // columns don't shift when the cursor jumps to a new line.
-        // When `cursorColumnBackground` is set the column gets a tinted
-        // background — used for the apply-phase focus indicator so a
-        // tall blue box runs through the cursor column without
-        // overriding the row's own diff state colour.
+        // Cursor column: only shows ▶ for the line the importer is touching
+        // this instant. `cursorColumnBackground` paints a tall blue strip
+        // through this column without overriding the row's diff-state tint —
+        // used during apply for the focus indicator.
         Container({
             style: {
                 direction: "row",
@@ -264,18 +195,14 @@ export function buildLineRow(
                 }),
             ],
         }),
-        // State column: +/~/-/✓ glyph for the planned diff op on this
-        // line. Independent of cursor position so the user can read
-        // both at the same time.
+        // State column: +/~/-/✓ glyph for the planned diff op.
         Text({
             text: stateGlyphText,
             color: applyAlpha(stateGlyphColor, alpha),
             style: { width: { kind: "px", value: STATE_GUTTER_W } },
         }),
-        // Line number: tinted with the diff state's color when set, so
-        // an `add` line shows a green line number, `delete` red, `edit`
-        // gold — same git-style cue the +/~/- glyph carries. Untouched
-        // lines stay neutral gutter-gray.
+        // Line number: tinted with the diff state's color when set
+        // (git-style cue), neutral gutter-gray otherwise.
         Text({
             text: lineNumText,
             color: applyAlpha(
@@ -300,7 +227,10 @@ export function buildLineRow(
         children.push(
             Text({
                 text: dec.detail.length > 42 ? dec.detail.substring(0, 41) + "…" : dec.detail,
-                color: applyAlpha(glyphColor, alpha),
+                color: applyAlpha(
+                    dec.foregroundColor ?? CodeViewColors.gutter,
+                    alpha
+                ),
                 style: { width: { kind: "px", value: 180 } },
             })
         );

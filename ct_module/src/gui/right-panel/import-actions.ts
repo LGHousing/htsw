@@ -68,6 +68,7 @@ import { importableSourcePath } from "../state/importablePaths";
 import type { ImportDiffSink } from "../../importer/diffSink";
 import { readKnowledge } from "../../knowledge/cache";
 import { gmcOnImportStart, playImportSuccessSound } from "../../importer/sideEffects";
+import { setImportRunning } from "../../importer/runtimeState";
 import {
     beginTraceRun,
     endTraceRun,
@@ -359,6 +360,7 @@ export function startImport(explicit?: readonly QueueItem[]): void {
         inFlight: true,
     });
 
+    setImportRunning(true);
     TaskManager.run(async (ctx) => {
         const startedAt = Date.now();
         let success = false;
@@ -431,6 +433,9 @@ export function startImport(explicit?: readonly QueueItem[]): void {
             setCurrentImportingPath(null);
             clearImportRun();
             refreshKnowledgeRows();
+            // Clear the importer's run flag BEFORE the chime fires so the
+            // soundPlay cancel hook in `sideEffects` no longer swallows it.
+            setImportRunning(false);
             // Untag the active importable BEFORE writing the trace so
             // the run-end event isn't attributed to a specific one.
             setTraceImportable(null);

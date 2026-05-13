@@ -37,37 +37,12 @@ export interface ImportDiffSink {
     /** Sync done; clear any "currently working" highlight. */
     end(): void;
     /**
-     * Optional: a desired action is being edited; provides the in-Housing
-     * "before" action so the UI can render a side-by-side preview.
-     */
-    planEditWithObserved?(actionPath: ActionPath, observed: Action): void;
-    /**
-     * Optional: per-action read confirmation during the reading/hydration
-     * phase. Drives the gray→vibrant fade-in. Coarse-grained (per inventory
-     * page); see Phase 5 for sub-page granularity.
-     */
-    readActionComplete?(actionPath: ActionPath): void;
-    /** Optional: the importer is about to edit field `prop` of this action. */
-    beginField?(actionPath: ActionPath, prop: string): void;
-    /** Optional: the importer finished editing field `prop`. */
-    completeField?(actionPath: ActionPath, prop: string): void;
-    /**
      * Optional: top-level read of housing actions complete. Each entry is
      * either a (possibly partially-hydrated) Action or null for a slot
      * that wasn't populated. Drives the read-phase preview to switch
      * from cache-snapshot to actual observed state.
      */
     setObservedSnapshot?(actions: ReadonlyArray<Action | null>): void;
-    /**
-     * Optional: a single nested-list hydration is complete. Replaces the
-     * placeholder line(s) for `parentPath`.`prop` in the live preview
-     * with the real hydrated children.
-     */
-    setHydratedNestedAction?(
-        parentPath: ActionPath,
-        prop: string,
-        actions: ReadonlyArray<Action | null>
-    ): void;
     /**
      * Optional: the importer is about to read (hydrate) the action at
      * this source path. Drives the blue ▶ cursor + autoscroll during

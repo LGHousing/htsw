@@ -1120,7 +1120,10 @@ function importTab(): Element {
             houseHeader(),
             queueSummary(),
             ...(queueExpanded ? [queueExpansion()] : []),
-            stepDebugRow(),
+            // Step-debug row only shows during an active import — it's
+            // a debug aid for stepping through the morph one op at a
+            // time, useless when nothing's running.
+            ...(getImportProgress() !== null ? [stepDebugRow()] : []),
             livePreviewBody(),
             liveImporterPanel(),
             importActionRow(),

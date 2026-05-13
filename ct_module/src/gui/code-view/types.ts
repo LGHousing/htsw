@@ -75,40 +75,25 @@ export type LineDecorations = {
     background?: number;
     /** Per-row detail string rendered right-aligned. */
     detail?: string;
-    /** Per-token underline set (matches token.fieldProp). */
-    underlinedFields?: { [prop: string]: true };
     /**
-     * Per-line foreground alpha factor 0..1 — used for the gray→vibrant
-     * fade-in. 1 = full opacity (default), 0 = same color but invisible.
+     * Per-line foreground alpha factor 0..1 — used for fades. 1 = full
+     * opacity (default), 0 = invisible. The morph preview doesn't drive
+     * this currently; reserved for future tween-style transitions.
      */
     alpha?: number;
     /** When true, drop a blue `▶` triangle in the focus gutter. */
     isFocused?: boolean;
     /**
      * Synthetic lines inserted ABOVE this row in the rendered output.
-     * Used for "before / after" rendering of edit ops — the observed
-     * action is rendered above the desired one.
+     * Used for "before / after" rendering of edit ops.
      */
     extraLinesBefore?: { line: RenderableLine; decorations: LineDecorations }[];
     /**
-     * Role of this line within a tall `[` bracket spanning multi-line
-     * focus. "top" draws the opening corner, "middle" the vertical bar,
-     * "bottom" the closing corner.
-     */
-    bracketRole?: "top" | "middle" | "bottom";
-    /**
-     * When set, tokens whose `fieldProp` matches this string get a blue
-     * background tint — used for the field-level focus box during an
-     * edit op. The decorator returns this for the line being actively
-     * edited so the visual narrows from "this line" to "this field".
-     */
-    focusedFieldProp?: string;
-    /**
      * When true, render the line body in italic. Used for ghost
      * (future-edit) and placeholder (unhydrated nested) lines so they
-     * stand apart from the real source. Implementation: lineRow renders
-     * the line as a single `§o<text>§r` Text element instead of
-     * per-token Texts (italic per-token would let tokens drift apart).
+     * stand apart from the real source. lineRow renders the line as a
+     * single `§o<text>§r` Text element instead of per-token Texts so
+     * italics don't let tokens drift apart.
      */
     italic?: boolean;
     /**
@@ -118,39 +103,20 @@ export type LineDecorations = {
      */
     hideLineNum?: boolean;
     /**
-     * Background tint applied ONLY to the cursor (▶) column for this
-     * line. Used by the apply-phase focus indicator: a tall blue box
-     * runs through the cursor column for every line in the focus range
-     * (single line OR multi-line bracket span), without overriding the
-     * row's own diff-state tint (red/green/gold). For the read+hydrate
-     * phase the decorator uses `background` (full row) instead.
+     * Background tint applied ONLY to the cursor (▶) column. Used by
+     * the apply-phase focus indicator: a tall blue box runs through the
+     * cursor column without overriding the row's own diff-state tint
+     * (red/green/gold). The reading phase uses `background` (full row)
+     * instead.
      */
     cursorColumnBackground?: number;
 };
 
 /**
- * Bracket span computed by a decorator. Drawn as a tall `[` in the focus
- * gutter spanning from `topLineId` to `bottomLineId`.
- */
-export type FocusBracket = {
-    topLineId: string;
-    bottomLineId: string;
-};
-
-/**
- * Field-level focus box. The decorator returns this when the importer is
- * editing a specific field within a line, so CodeView can overlay a 1-px
- * blue border around the matching token's rect.
- */
-export type FocusFieldBox = {
-    lineId: string;
-    fieldProp: string;
-};
-
-/**
- * The pluggable decoration layer. `LineDecorator` instances are
- * memoised per file path; `diffDecorator` produces the View-tab look,
- * `progressDecorator` adds animations + focus overlays for the Import tab.
+ * The pluggable decoration layer. `LineDecorator` instances are built
+ * fresh per frame in `CodeView`; `diffDecorator` produces the View-tab
+ * look, `progressDecorator` adds animations + focus overlays for the
+ * Import tab.
  */
 export type LineDecorator = {
     /** Per-line look. Called once per visible line per frame. */
@@ -160,8 +126,4 @@ export type LineDecorator = {
      * uses this to drive the Spotify-lyrics scroll behaviour.
      */
     focusedLineId(): string | null;
-    /** Optional multi-line bracket range (e.g. CONDITIONAL.ifActions in flight). */
-    focusBracket?(): FocusBracket | null;
-    /** Optional field-level focus box. */
-    focusFieldBox?(): FocusFieldBox | null;
 };
