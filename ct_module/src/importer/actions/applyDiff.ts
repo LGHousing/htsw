@@ -42,6 +42,7 @@ import {
     type DiffSummary,
 } from "../diffSink";
 import { waitIfStepPaused } from "../stepGate";
+import { traceEvent } from "../traceLog";
 import {
     COST,
     actionListDiffApplyBudget,
@@ -258,6 +259,48 @@ async function applyActionListDiffInner(
     // The TOP-LEVEL-only event is `finalizeSource`, gated below by
     // `pathPrefix === undefined`. It rebuilds the whole model from
     // the desired tree at the very end.
+    // Trace: full diff with observed + desired + every operation. The
+    // pathPrefix tells the trace whether this is a top-level diff or a
+    // nested one (CONDITIONAL.ifActions sync, etc.). For nested diffs
+    // the importer's WRITER is in the middle of a top-level apply op,
+    // so the nested diff is part of THAT op's effect.
+    traceEvent("diff-computed", {
+        pathPrefix: pathPrefix ?? null,
+        summary,
+        observed: observed.map((entry) => ({
+            index: entry.index,
+            action: entry.action,
+        })),
+        desired,
+        operations: diff.operations.map((op) => {
+            if (op.kind === "edit") {
+                return {
+                    kind: "edit",
+                    observedIndex: op.observed.index,
+                    observedAction: op.observed.action,
+                    desired: op.desired,
+                    noteOnly: op.noteOnly,
+                    fieldDiffs: getEditFieldDiffs(op).fieldDiffs,
+                };
+            }
+            if (op.kind === "delete") {
+                return {
+                    kind: "delete",
+                    observedIndex: op.observed.index,
+                    observedAction: op.observed.action,
+                };
+            }
+            if (op.kind === "add") {
+                return { kind: "add", toIndex: op.toIndex, desired: op.desired };
+            }
+            return {
+                kind: "move",
+                observedIndex: op.observed.index,
+                toIndex: op.toIndex,
+                action: op.action,
+            };
+        }),
+    });
     if (sink !== null) {
         sink.summary(summary);
         sink.phase("computed diff");
@@ -413,9 +456,12 @@ async function applyActionListDiffInner(
             // parked on the previous op while the user watches a delete
             // happen elsewhere — confusing in step-debug mode.
             if (sink !== null) sink.beginOp(obsPath, "delete", opLabel(op));
+            const opStart = Date.now();
+            traceEvent("apply-op-begin", { kind: "delete", path: obsPath, observedAction: op.observed.action });
             await deleteObservedAction(ctx, index, currentObserved.length);
             appliedBudget += operationApplyBudget(op, desired.length);
             currentObserved.splice(index, 1);
+            traceEvent("apply-op-complete", { kind: "delete", path: obsPath, durationMs: Date.now() - opStart });
             if (sink !== null) {
                 sink.completeOp(obsPath, "delete");
                 if (sink.applyDone !== undefined) {
@@ -449,6 +495,15 @@ async function applyActionListDiffInner(
         // differs from desired.index. The model line is at obsPath.
         const srcPath: string | null = actionPathForIndex(pathPrefix, op.observed.index);
         if (sink !== null) sink.beginOp(srcPath, "edit", opLabel(op));
+        const editStart = Date.now();
+        traceEvent("apply-op-begin", {
+            kind: "edit",
+            path: srcPath,
+            noteOnly: op.noteOnly,
+            observedAction: op.observed.action,
+            desired: op.desired,
+            fieldDiffs: op.noteOnly ? [] : getEditFieldDiffs(op).fieldDiffs,
+        });
         progress?.({
             phase: "applying",
             completed: appliedOps,
@@ -472,6 +527,12 @@ async function applyActionListDiffInner(
         if (op.noteOnly) {
             await setListItemNote(ctx, actionSlot, op.desired.note);
             appliedBudget += operationApplyBudget(op, desired.length);
+            traceEvent("apply-op-complete", {
+                kind: "edit",
+                path: srcPath,
+                noteOnly: true,
+                durationMs: Date.now() - editStart,
+            });
             if (sink !== null && srcPath !== null) {
                 sink.completeOp(srcPath, "edit");
                 // Note-only edits don't insert a ghost (planEdit was
@@ -500,6 +561,12 @@ async function applyActionListDiffInner(
 
         await setListItemNote(ctx, actionSlot, op.desired.note);
         appliedBudget += operationApplyBudget(op, desired.length);
+        traceEvent("apply-op-complete", {
+            kind: "edit",
+            path: srcPath,
+            noteOnly: false,
+            durationMs: Date.now() - editStart,
+        });
         if (sink !== null && srcPath !== null) {
             sink.completeOp(srcPath, "edit");
             sink.applyDone?.(srcPath, "edit", "edit");
@@ -519,6 +586,14 @@ async function applyActionListDiffInner(
         // other observed action.
         const srcPath: string | null = actionPathForIndex(pathPrefix, op.observed.index);
         if (sink !== null) sink.beginOp(srcPath, "move", opLabel(op));
+        const moveStart = Date.now();
+        traceEvent("apply-op-begin", {
+            kind: "move",
+            path: srcPath,
+            fromIndex: op.observed.index,
+            toIndex: op.toIndex,
+            action: op.action,
+        });
         progress?.({
             phase: "applying",
             completed: appliedOps,
@@ -538,6 +613,11 @@ async function applyActionListDiffInner(
         for (let i = 0; i < remainingObserved.length; i++) {
             remainingObserved[i].index = i;
         }
+        traceEvent("apply-op-complete", {
+            kind: "move",
+            path: srcPath,
+            durationMs: Date.now() - moveStart,
+        });
         if (sink !== null && srcPath !== null) {
             sink.completeOp(srcPath, "match");
             sink.applyDone?.(srcPath, "match", "move");
@@ -551,6 +631,13 @@ async function applyActionListDiffInner(
         const srcIdx = srcIndexForOp(op, desired);
         const srcPath = srcIdx >= 0 ? actionPathForIndex(pathPrefix, srcIdx) : null;
         if (sink !== null && srcPath !== null) sink.beginOp(srcPath, "add", opLabel(op));
+        const addStart = Date.now();
+        traceEvent("apply-op-begin", {
+            kind: "add",
+            path: srcPath,
+            toIndex: op.toIndex,
+            desired: op.desired,
+        });
         progress?.({
             phase: "applying",
             completed: appliedOps,
@@ -587,6 +674,11 @@ async function applyActionListDiffInner(
             await setListItemNote(ctx, addedSlot, op.desired.note);
         }
         appliedBudget += operationApplyBudget(op, desired.length);
+        traceEvent("apply-op-complete", {
+            kind: "add",
+            path: srcPath,
+            durationMs: Date.now() - addStart,
+        });
         if (sink !== null && srcPath !== null) {
             sink.completeOp(srcPath, "add");
             sink.applyDone?.(srcPath, "add", "add");

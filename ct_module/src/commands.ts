@@ -13,6 +13,7 @@ import { runDiffDemo } from "./gui/popovers/diff-demo";
 import { getTimingStats, resetTimingStats } from "./importer/progress/timing";
 import { startImport } from "./gui/right-panel/import-actions";
 import { makeImportJsonQueueItem } from "./gui/state/queue";
+import { isTraceEnabled, setTraceEnabled } from "./importer/traceLog";
 
 function printCommandError(sm: SourceMap, err: unknown): void {
     if (err instanceof Diagnostic) {
@@ -89,6 +90,33 @@ function commandHtsw(args: string[]) {
         return;
     }
 
+    if (args.length > 0 && args[0] === "trace") {
+        if (args.length === 1) {
+            ChatLib.chat(
+                `&e[htsw] trace is ${isTraceEnabled() ? "&aON" : "&cOFF"}&e. ` +
+                    `Use &f/htsw trace on|off&e to toggle.`
+            );
+            ChatLib.chat(
+                `&7When ON, each import writes ./htsw/imports-trace/<timestamp>.json ` +
+                    `with the full observed/desired state and every plan/apply op.`
+            );
+            return;
+        }
+        const arg = args[1].toLowerCase();
+        if (arg === "on" || arg === "true" || arg === "1") {
+            setTraceEnabled(true);
+            ChatLib.chat("&e[htsw] trace &aON&e — next import will write ./htsw/imports-trace/<timestamp>.json");
+            return;
+        }
+        if (arg === "off" || arg === "false" || arg === "0") {
+            setTraceEnabled(false);
+            ChatLib.chat("&e[htsw] trace &cOFF");
+            return;
+        }
+        ChatLib.chat(`&c[htsw] unknown trace arg "${args[1]}". Use on|off.`);
+        return;
+    }
+
     ChatLib.chat(`&7${chatSeparator()}`);
     const title = `&e&lHTSW &f&l${VERSION}`;
     ChatLib.chat(`${ChatLib.getCenteredText(title)}`);
@@ -101,6 +129,7 @@ function commandHtsw(args: string[]) {
     ChatLib.chat("&f/htsw eta &7- Show importer ETA timing samples");
     ChatLib.chat("&f/htsw packet-probe [seconds] &7- Safely log relevant packets");
     ChatLib.chat("&f/htsw gui &7- Open the in-game HTSW dashboard");
+    ChatLib.chat("&f/htsw trace [on|off] &7- Per-import JSON debug trace");
     ChatLib.chat(`&7${chatSeparator()}`);
 }
 

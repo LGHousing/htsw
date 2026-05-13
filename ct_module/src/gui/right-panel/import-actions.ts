@@ -68,6 +68,12 @@ import { importableSourcePath } from "../state/importablePaths";
 import type { ImportDiffSink } from "../../importer/diffSink";
 import { readKnowledge } from "../../knowledge/cache";
 import { gmcOnImportStart, playImportSuccessSound } from "../../importer/sideEffects";
+import {
+    beginTraceRun,
+    endTraceRun,
+    setTraceImportable,
+    traceEvent,
+} from "../../importer/traceLog";
 
 export const CAPTURE_TYPES: CaptureType[] = ["FUNCTION", "MENU"];
 
@@ -107,17 +113,33 @@ function makeDiffSink(sourcePath: string, importable: Importable): ImportDiffSin
     const key = diffKey(sourcePath);
     clearDiff(key);
     resetPreview(sourcePath);
+    // Trace tagging: subsequent trace events belong to this importable
+    // until the next setTraceImportable call (or run end).
+    const importableId = `${importable.type}:${importableIdentity(importable)}`;
+    setTraceImportable(importableId, {
+        type: importable.type,
+        identity: importableIdentity(importable),
+        sourcePath,
+    });
     // Prime the preview from the HTSW knowledge cache so the user sees
     // SOMETHING immediately while the importer's first read packet is
     // still in flight. Best-effort: missing UUID or missing cache entry
     // both fall through to an empty model.
     const uuid = getHousingUuid();
+    let cachedImportable: Importable | null = null;
     if (uuid !== null) {
         const cache = readKnowledge(uuid, importable.type, importableIdentity(importable));
-        primeWithCache(sourcePath, cache === null ? null : cache.importable);
+        cachedImportable = cache === null ? null : cache.importable;
+        primeWithCache(sourcePath, cachedImportable);
     } else {
         primeWithCache(sourcePath, null);
     }
+    traceEvent("importable-prime", {
+        sourcePath,
+        cacheHit: cachedImportable !== null,
+        cachedImportable,
+        desired: importable,
+    });
     return {
         phase: (label) => setDiffPhase(key, label),
         summary: (summary) => setDiffSummary(key, summary),
@@ -298,6 +320,15 @@ export function startImport(explicit?: readonly QueueItem[]): void {
     // the empty-queue early-return so we don't /gmc for a no-op invocation.
     gmcOnImportStart();
 
+    // Open a trace run if `/htsw trace on` is active. The path here is
+    // the planned write location; the file is actually written in the
+    // finally block below. No-op when tracing is off.
+    const tracePath = beginTraceRun({
+        queueSize: total,
+        sourcePath: batches.length === 1 ? batches[0].sourcePath : undefined,
+        trustMode,
+    });
+
     // Concatenate every batch's ordered importables for the run-row
     // tracking; the per-row UI only needs the flat list, not the
     // per-batch grouping.
@@ -331,6 +362,12 @@ export function startImport(explicit?: readonly QueueItem[]): void {
     TaskManager.run(async (ctx) => {
         const startedAt = Date.now();
         let success = false;
+        // Hoisted out of try so the `finally` can pass them to
+        // endTraceRun's summary even if the loop throws/cancels.
+        let totalImported = 0;
+        let totalSkipped = 0;
+        let totalFailed = 0;
+        let cancelled = false;
         try {
             ctx.displayMessage(
                 `&7[import] starting ${total} importable${total === 1 ? "" : "s"} ` +
@@ -343,9 +380,6 @@ export function startImport(explicit?: readonly QueueItem[]): void {
                 housingUuid = await getCurrentHousingUuid(ctx);
                 setHousingUuid(housingUuid);
             }
-            let totalImported = 0;
-            let totalSkipped = 0;
-            let totalFailed = 0;
             for (const batch of batches) {
                 const selection: ImportSelection = {
                     importables: batch.importables,
@@ -383,11 +417,35 @@ export function startImport(explicit?: readonly QueueItem[]): void {
             // ad-hoc "Import selected" run leaves the queue alone since it
             // was never the source of the work.
             if (explicit === undefined) clearQueue();
+        } catch (err) {
+            // Detect TaskManager cancellation so the trace summary can
+            // distinguish user-cancel from a genuine import failure.
+            // Re-throw to keep the existing .catch() chat output intact.
+            const message = err instanceof Error ? err.message : String(err);
+            if (message.indexOf("cancelled") >= 0 || message.indexOf("Cancelled") >= 0) {
+                cancelled = true;
+            }
+            throw err;
         } finally {
             setImportProgress(null);
             setCurrentImportingPath(null);
             clearImportRun();
             refreshKnowledgeRows();
+            // Untag the active importable BEFORE writing the trace so
+            // the run-end event isn't attributed to a specific one.
+            setTraceImportable(null);
+            const writtenTracePath = endTraceRun({
+                imported: totalImported,
+                skipped: totalSkipped,
+                failed: totalFailed,
+                cancelled,
+            });
+            if (writtenTracePath !== null) {
+                ChatLib.chat(`&7[trace] wrote ${writtenTracePath}`);
+            } else if (tracePath !== null) {
+                // Trace was enabled but the write failed — note it.
+                ChatLib.chat(`&c[trace] failed to write trace file (was planned at ${tracePath})`);
+            }
         }
         // After finally: import progress is cleared, so the soundPlay
         // cancel hook no longer swallows sounds and this chime can play.

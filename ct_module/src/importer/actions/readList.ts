@@ -50,6 +50,7 @@ import { getActionFieldLabel } from "../actionMappings";
 import { readBooleanValue } from "../helpers";
 import { waitForMenu } from "../menuWait";
 import { readConditionList } from "../conditions/readList";
+import { traceEvent } from "../traceLog";
 
 function readNestedSummaries(
     action: Observed<Action>,
@@ -219,6 +220,18 @@ export async function readActionList(
         mode.kind === "sync" && getCurrentWritingActionPath() === null;
     if (isTopLevelImport) {
         emitObservedSnapshot(observed);
+        // Trace: full top-level observed snapshot (with the still-null
+        // nested entries — count is known from summaries even though
+        // the actual nested actions aren't read yet).
+        traceEvent("read-top-level-complete", {
+            count: observed.length,
+            observed: observed.map((entry) => ({
+                index: entry.index,
+                action: entry.action,
+                nestedSummaries: entry.nestedSummaries,
+                nestedReadState: entry.nestedReadState,
+            })),
+        });
         // Step-debug checkpoint: user can observe the freshly-read
         // top-level state (still-unhydrated nested children render as
         // `...` placeholders) before hydration begins.
@@ -396,6 +409,14 @@ async function hydrateNestedActions(
             sinkRef.setReading(String(entry.index), entryLabel);
         }
         const beforeBudget = hydrationEntryBudget(entry, propsToRead);
+        if (isTopLevelImport) {
+            traceEvent("hydrate-entry-begin", {
+                index: entry.index,
+                actionType: entry.action?.type ?? null,
+                propsToRead: Array.from(propsToRead),
+                nestedSummaries: entry.nestedSummaries,
+            });
+        }
         await hydrateNestedAction(
             ctx, entry, propsToRead, listLength, itemRegistry,
             isTopLevelImport ? observed : undefined
@@ -407,6 +428,11 @@ async function hydrateNestedActions(
         // The `isTopLevelImport` guard keeps nested writer-driven reads
         // from blowing away the model.
         if (isTopLevelImport) {
+            traceEvent("hydrate-entry-complete", {
+                index: entry.index,
+                actionAfter: entry.action,
+                nestedReadState: entry.nestedReadState,
+            });
             emitObservedSnapshot(observed);
             // Step-debug checkpoint after each hydration entry — user
             // gets to watch one conditional/random fill in at a time.
@@ -531,6 +557,10 @@ async function hydrateConditionalSubsteps(
         );
         action.conditions = conditions;
         await clickGoBack(ctx);
+        traceEvent("conditional-conditions-read", {
+            actionPath,
+            conditions,
+        });
         // Snapshot: head text re-renders with the real conditions, body
         // still shows `...M actions...` placeholder. Step gate pauses
         // here so the user can observe the head before the cursor moves
@@ -556,6 +586,11 @@ async function hydrateConditionalSubsteps(
         }
         action.ifActions = ifActions;
         await clickGoBack(ctx);
+        traceEvent("conditional-ifActions-read", {
+            actionPath,
+            count: ifActions.length,
+            ifActions,
+        });
         emitObservedSnapshot(observedTopLevel);
         await waitIfStepPaused(ctx);
     }
@@ -572,6 +607,11 @@ async function hydrateConditionalSubsteps(
         }
         action.elseActions = elseActions;
         await clickGoBack(ctx);
+        traceEvent("conditional-elseActions-read", {
+            actionPath,
+            count: elseActions.length,
+            elseActions,
+        });
         emitObservedSnapshot(observedTopLevel);
         await waitIfStepPaused(ctx);
     }
