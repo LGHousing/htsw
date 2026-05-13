@@ -8,6 +8,7 @@ import {
     getOpenContainerTitle,
 } from "./specifics/slots";
 import { waitFor } from "./specifics/waitFor";
+import { C01PacketChatMessage } from "../utils/packets";
 
 const COMMAND_INTERVAL_MS = 250;
 
@@ -45,7 +46,18 @@ export default class TaskContext {
         if (message.startsWith("/")) {
             throw new Error(`Invalid message: ${message}`);
         }
-        ChatLib.say(message);
+        // MC 1.8.9's C01PacketChatMessage constructor truncates message > 100
+        // chars client-side, which breaks Housing chat-input writes for long
+        // MESSAGE / scalar values (Hypixel itself is multi-version and accepts
+        // up to ~256). Construct the packet with a dummy string and overwrite
+        // the `message` field via reflection so the full value reaches the
+        // server unhindered.
+        const packet = new C01PacketChatMessage("");
+        const messageField = packet.class.getDeclaredField("field_149440_a");
+        // @ts-ignore
+        messageField.setAccessible(true);
+        messageField.set(packet, message);
+        Client.sendPacket(packet);
     }
 
     public displayMessage(message: string) {

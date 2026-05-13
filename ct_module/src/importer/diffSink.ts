@@ -5,6 +5,8 @@
  * as it walks operations so a UI can light up source-action lines as they
  * are touched. Paths identify nested actions, e.g. `4.ifActions.2`.
  */
+import type { Action } from "htsw/types";
+
 export type DiffOpKind = "edit" | "add" | "move" | "delete";
 export type DiffFinalState = "match" | "edit" | "add" | "delete";
 export type ActionPath = string;
@@ -34,6 +36,51 @@ export interface ImportDiffSink {
     completeOp(actionPath: ActionPath, state: DiffFinalState): void;
     /** Sync done; clear any "currently working" highlight. */
     end(): void;
+    /**
+     * Optional: top-level read of housing actions complete. Each entry is
+     * either a (possibly partially-hydrated) Action or null for a slot
+     * that wasn't populated. Drives the read-phase preview to switch
+     * from cache-snapshot to actual observed state.
+     */
+    setObservedSnapshot?(actions: ReadonlyArray<Action | null>): void;
+    /**
+     * Optional: the importer is about to read (hydrate) the action at
+     * this source path. Drives the blue ▶ cursor + autoscroll during
+     * the read phase, so the user can see WHICH conditional/random is
+     * being walked, not just a generic "hydrating" label.
+     */
+    setReading?(actionPath: ActionPath, label: string): void;
+    /** Optional: the importer is no longer reading any specific action. */
+    clearReading?(): void;
+    /**
+     * Optional: the "head" (scalar fields + head text) of this action
+     * is now finalized in housing — even though inner sync work
+     * continues. For CONDITIONAL: fired after `conditions` and
+     * `matchAny` are written, BEFORE `ifActions`/`elseActions` sync.
+     * Lets the live preview flip the body / `} else {` / `}` lines to
+     * vibrant immediately, instead of waiting for every nested op to
+     * complete first.
+     */
+    markActionHeadApplied?(actionPath: ActionPath): void;
+    /**
+     * Optional: explicit per-op planning calls carrying full Action
+     * payloads. The legacy `planOp` only conveys path + kind + label;
+     * these variants give the live preview enough data to insert/morph
+     * lines for the unified morph animation.
+     */
+    planAdd?(actionPath: ActionPath, desired: Action, toIndex: number): void;
+    planEdit?(actionPath: ActionPath, observed: Action, desired: Action): void;
+    planDelete?(actionPath: ActionPath, observed: Action): void;
+    planMove?(actionPath: ActionPath, fromIndex: number, toIndex: number): void;
+    /** Optional: the apply phase finished one op. Drives the per-line morph. */
+    applyDone?(actionPath: ActionPath, finalState: DiffFinalState, kind: DiffOpKind): void;
+    /**
+     * Optional: end-of-import reconciliation. Carries the full source
+     * action tree so the live preview can rebuild from a known-good
+     * shape (catches edge cases the per-op morphs missed, notably
+     * deep moves with nested children).
+     */
+    finalizeSource?(actions: ReadonlyArray<Action>): void;
 }
 
 let activeSink: ImportDiffSink | null = null;

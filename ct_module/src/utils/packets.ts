@@ -1,9 +1,10 @@
 // define all packet java types
 // TODO DEFINE ALL THE FRICKING PACKETS OR SOMETHING
 
-// const C01PacketChatMessage = Java.type(
-//     "net.minecraft.network.play.client.C01PacketChatMessage"
-// );
+export const C01PacketChatMessage = Java.type(
+    "net.minecraft.network.play.client.C01PacketChatMessage"
+);
+
 // const C0EPacketClickWindow = Java.type(
 //     "net.minecraft.network.play.client.C0EPacketClickWindow"
 // );

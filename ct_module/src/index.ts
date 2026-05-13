@@ -6,8 +6,10 @@ import { registerCommands } from "./commands";
 import { registerExportCommands } from "./exporter";
 import { initMcpBridge } from "./mcp/bridge";
 import { initHtswGui } from "./gui/overlay";
+import { registerImportSoundCancel } from "./importer/sideEffects";
 
 registerCommands();
 registerExportCommands();
 initMcpBridge();
 initHtswGui();
+registerImportSoundCancel();

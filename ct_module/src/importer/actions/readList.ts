@@ -43,8 +43,15 @@ import {
 import { getActiveDiffSink } from "../diffSink";
 import { COST, actionListRoughBudget, hydrationEntryBudget } from "../progress/costs";
 import { ACTION_LIST_CONFIG } from "./listConfig";
-import { getActionSpec } from "../actions";
+import {
+    getActionSpec,
+    getCurrentWritingActionPath,
+    readOpenConditional,
+    type ConditionalReadHooks,
+} from "../actions";
 import { actionLogLabel } from "./log";
+import { waitIfStepPaused } from "../stepGate";
+import { traceEvent } from "../traceLog";
 
 function readNestedSummaries(
     action: Observed<Action>,
@@ -106,6 +113,15 @@ function readNestedSummaries(
             Object.assign(action, { [prop]: [] });
         } else {
             propsToRead.add(prop as NestedListProp);
+            // Pre-fill the nested array with N null entries so the live
+            // preview can render a `...N actions...` (or `(...N conditions...)`)
+            // placeholder showing the known count even before hydration
+            // fills the real data. Without this, the field would be
+            // undefined and the model would render the conditional as
+            // `if (...) {}` (empty body, no count cue).
+            const placeholders: Array<unknown> = [];
+            for (let i = 0; i < itemTypes.length; i++) placeholders.push(null);
+            Object.assign(action, { [prop]: placeholders });
         }
     }
 
@@ -188,6 +204,40 @@ export async function readActionList(
             });
         }
     );
+    // Top-level read complete: hand the snapshot to the live preview so
+    // it can render the (still-unhydrated) observed actions immediately.
+    // Nested action lists are mostly null at this point — they fill in
+    // as `hydrateNestedActions` walks them below.
+    //
+    // Gated to BOTH `kind: "sync"` AND no active writer:
+    //   - `kind: "sync"` rules out nested CONDITIONAL/RANDOM hydration
+    //     reads (which use `kind: "full"`) during the read phase.
+    //   - No active writer rules out the apply phase's nested
+    //     `syncActionList` calls — those ALSO use `kind: "sync"` but
+    //     run from inside a writer (`withWritingActionPath`). Without
+    //     this second guard, editing a CONDITIONAL would blow away the
+    //     model with the inner ifActions list mid-apply.
+    const isTopLevelImport =
+        mode.kind === "sync" && getCurrentWritingActionPath() === null;
+    if (isTopLevelImport) {
+        emitObservedSnapshot(observed);
+        // Trace: full top-level observed snapshot (with the still-null
+        // nested entries — count is known from summaries even though
+        // the actual nested actions aren't read yet).
+        traceEvent("read-top-level-complete", {
+            count: observed.length,
+            observed: observed.map((entry) => ({
+                index: entry.index,
+                action: entry.action,
+                nestedSummaries: entry.nestedSummaries,
+                nestedReadState: entry.nestedReadState,
+            })),
+        });
+        // Step-debug checkpoint: user can observe the freshly-read
+        // top-level state (still-unhydrated nested children render as
+        // `...` placeholders) before hydration begins.
+        await waitIfStepPaused(ctx);
+    }
     let plan: NestedHydrationPlan;
     if (mode.kind === "full") {
         plan = buildFullHydrationPlan(observed);
@@ -199,11 +249,51 @@ export async function readActionList(
         }
     }
     addScalarHydrationEntries(plan, observed);
-    await hydrateNestedActions(ctx, plan, observed.length, mode.itemRegistry, progress, readEstimatedCompleted);
+    await hydrateNestedActions(
+        ctx,
+        plan,
+        observed,
+        mode.itemRegistry,
+        progress,
+        readEstimatedCompleted,
+        isTopLevelImport
+    );
     canonicalizeObservedActionItemNames(observed, mode.itemRegistry);
+    // Final snapshot after canonicalization. Only at the top level — a
+    // recursive nested read would otherwise wipe the unrelated rest of
+    // the model.
+    if (isTopLevelImport) {
+        emitObservedSnapshot(observed);
+        // Hydration is done — drop the read cursor before the diff
+        // planning fires so the blue ▶ doesn't ghost-stick onto the
+        // last-read line through the diff phase.
+        getActiveDiffSink()?.clearReading?.();
+    }
 
     await goToPaginatedListPage(ctx, 1, ACTION_LIST_CONFIG);
     return observed;
+}
+
+/**
+ * Hand the current observed snapshot to the live preview model. The sink
+ * is best-effort — if no GUI sink is active (e.g., the exporter is
+ * driving readActionList), this is a no-op.
+ *
+ * We strip the `Observed` brand by pretending entries are Action[]; the
+ * preview model is permissive about partially-hydrated nested arrays.
+ */
+function emitObservedSnapshot(observed: readonly ObservedActionSlot[]): void {
+    const sink = getActiveDiffSink();
+    if (sink === undefined || sink === null || sink.setObservedSnapshot === undefined) return;
+    const out: Array<Action | null> = [];
+    for (const entry of observed) {
+        out.push(entry.action as Action | null);
+    }
+    try {
+        sink.setObservedSnapshot(out);
+    } catch (_e) {
+        // Preview-side failures must never abort the importer.
+    }
 }
 
 function addScalarHydrationEntries(
@@ -283,11 +373,13 @@ export function canonicalizeActionItemName(
 async function hydrateNestedActions(
     ctx: TaskContext,
     plan: NestedHydrationPlan,
-    listLength: number,
+    observed: readonly ObservedActionSlot[],
     itemRegistry?: ItemRegistry,
     progress?: ActionListProgressSink,
-    baseEstimatedCompleted: number = 0
+    baseEstimatedCompleted: number = 0,
+    isTopLevelImport: boolean = false
 ): Promise<void> {
+    const listLength = observed.length;
     let completed = 0;
     const total = plan.size;
     let completedBudget = 0;
@@ -296,18 +388,59 @@ async function hydrateNestedActions(
         totalBudget += hydrationEntryBudget(entry, propsToRead);
     });
     for (const [entry, propsToRead] of plan) {
+        const entryLabel = `reading nested ${actionLogLabel(entry.action)}`;
         progress?.({
             phase: "hydrating",
             completed,
             total,
-            label: `reading nested ${actionLogLabel(entry.action)}`,
+            label: entryLabel,
             estimatedCompleted: baseEstimatedCompleted + completedBudget,
             estimatedTotal: baseEstimatedCompleted + totalBudget,
             confidence: "informed",
         });
-        getActiveDiffSink()?.phase(`reading nested ${actionLogLabel(entry.action)}`);
+        const sinkRef = getActiveDiffSink();
+        sinkRef?.phase(entryLabel);
+        // Show the blue ▶ + autoscroll on the entry's source line for
+        // the duration of its hydration. Only at the top level — nested
+        // recursive reads (CONDITIONAL bodies inside CONDITIONAL bodies)
+        // would otherwise jump the cursor to inner indices that aren't
+        // even rendered as their own lines yet. `entry.index` IS the
+        // top-level source index when invoked from the top-level read.
+        if (isTopLevelImport && sinkRef !== null && sinkRef.setReading !== undefined) {
+            sinkRef.setReading(String(entry.index), entryLabel);
+        }
         const beforeBudget = hydrationEntryBudget(entry, propsToRead);
-        await hydrateNestedAction(ctx, entry, propsToRead, listLength, itemRegistry);
+        if (isTopLevelImport) {
+            traceEvent("hydrate-entry-begin", {
+                index: entry.index,
+                actionType: entry.action?.type ?? null,
+                propsToRead: Array.from(propsToRead),
+                nestedSummaries: entry.nestedSummaries,
+            });
+        }
+        await hydrateNestedAction(
+            ctx, entry, propsToRead, listLength, itemRegistry,
+            isTopLevelImport ? observed : undefined
+        );
+        // After each top-level entry's hydration, push a fresh full
+        // snapshot so the preview re-renders with the now-known
+        // children AND the now-known conditions inside the conditional's
+        // head line (a surgical nested-only emit would miss the head).
+        // The `isTopLevelImport` guard keeps nested writer-driven reads
+        // from blowing away the model.
+        if (isTopLevelImport) {
+            traceEvent("hydrate-entry-complete", {
+                index: entry.index,
+                actionAfter: entry.action,
+                nestedReadState: entry.nestedReadState,
+            });
+            emitObservedSnapshot(observed);
+            // Step-debug checkpoint after each hydration entry — user
+            // gets to watch one conditional/random fill in at a time.
+            // Cursor stays on this entry's line through the gate so the
+            // user sees what was just read.
+            await waitIfStepPaused(ctx);
+        }
         completedBudget += beforeBudget;
         completed++;
         progress?.({
@@ -327,7 +460,8 @@ async function hydrateNestedAction(
     entry: ObservedActionSlot,
     propsToRead: NestedPropsToRead,
     listLength: number,
-    itemRegistry?: ItemRegistry
+    itemRegistry?: ItemRegistry,
+    observedTopLevel?: readonly ObservedActionSlot[]
 ): Promise<void> {
     if (entry.action === null) {
         return;
@@ -342,12 +476,30 @@ async function hydrateNestedAction(
 
         actionSlot.click();
         await timedWaitForMenu(ctx, "menuClickWait");
-        const spec = getActionSpec(entry.action.type);
-        if (!spec.read) {
-            throw new Error(`Reading action "${entry.action.type}" is not implemented.`);
-        }
 
-        entry.action = await spec.read(ctx, propsToRead, itemRegistry);
+        // Top-level CONDITIONAL hydration uses a sub-stepped read so the
+        // live preview can split the visualization into discrete phases:
+        //   1) cursor on `if (...) {` while reading conditions, then the
+        //      head text updates to show the real conditions
+        //   2) cursor moves to the `...M actions...` placeholder while
+        //      reading ifActions, then the body fills with real lines
+        //   3) similar for elseActions if they exist
+        // Non-CONDITIONAL action types and recursive nested reads use
+        // the standard one-shot spec.read path.
+        if (
+            entry.action.type === "CONDITIONAL"
+            && observedTopLevel !== undefined
+        ) {
+            await hydrateConditionalSubsteps(
+                ctx, entry, propsToRead, itemRegistry, observedTopLevel
+            );
+        } else {
+            const spec = getActionSpec(entry.action.type);
+            if (!spec.read) {
+                throw new Error(`Reading action "${entry.action.type}" is not implemented.`);
+            }
+            entry.action = await spec.read(ctx, propsToRead, itemRegistry);
+        }
         entry.nestedReadState = "full";
         if (note) {
             entry.action.note = note;
@@ -360,5 +512,84 @@ async function hydrateNestedAction(
         if (ctx.tryGetMenuItemSlot("Go Back") !== null) {
             await clickGoBack(ctx);
         }
+    }
+}
+
+/**
+ * Drive `readOpenConditional` with visualization hooks for the live
+ * preview. The hooks fire trace events, push snapshots so the model
+ * re-renders with the now-known content, and move the read cursor onto
+ * each sub-list's `...N actions...` placeholder line.
+ *
+ * Mutates `entry.action` in place after each sub-step (via the hook
+ * snapshot path) so the GUI sees incremental progress. The standard
+ * `spec.read(...)` path returns the action only at the end; we replace
+ * it explicitly at the bottom for the same effect.
+ */
+async function hydrateConditionalSubsteps(
+    ctx: TaskContext,
+    entry: ObservedActionSlot,
+    propsToRead: NestedPropsToRead,
+    itemRegistry: ItemRegistry | undefined,
+    observedTopLevel: readonly ObservedActionSlot[]
+): Promise<void> {
+    if (entry.action === null) return;
+    const actionPath = String(entry.index);
+    const sink = getActiveDiffSink();
+    // Each hook reflects the freshly-read sub-list onto entry.action so
+    // the snapshot emit publishes incremental progress (head re-renders
+    // with real conditions; body's `...M actions...` placeholder fills
+    // in once ifActions arrive; etc).
+    const action = entry.action as unknown as {
+        conditions?: unknown[];
+        ifActions?: unknown[];
+        elseActions?: unknown[];
+    };
+    const hooks: ConditionalReadHooks = {
+        onConditionsRead: async (conditions) => {
+            action.conditions = [...conditions];
+            traceEvent("conditional-conditions-read", { actionPath, conditions });
+            emitObservedSnapshot(observedTopLevel);
+            await waitIfStepPaused(ctx);
+        },
+        onIfActionsBefore: async () => {
+            // Cursor onto the `...M actions...` consolidated placeholder
+            // (its actionPath is `<conditional>.ifActions`).
+            if (sink && sink.setReading) {
+                sink.setReading(`${actionPath}.ifActions`, "reading ifActions");
+            }
+        },
+        onIfActionsRead: async (ifActions) => {
+            action.ifActions = [...ifActions];
+            traceEvent("conditional-ifActions-read", {
+                actionPath,
+                count: ifActions.length,
+                ifActions,
+            });
+            emitObservedSnapshot(observedTopLevel);
+            await waitIfStepPaused(ctx);
+        },
+        onElseActionsBefore: async () => {
+            if (sink && sink.setReading) {
+                sink.setReading(`${actionPath}.elseActions`, "reading elseActions");
+            }
+        },
+        onElseActionsRead: async (elseActions) => {
+            action.elseActions = [...elseActions];
+            traceEvent("conditional-elseActions-read", {
+                actionPath,
+                count: elseActions.length,
+                elseActions,
+            });
+            emitObservedSnapshot(observedTopLevel);
+            await waitIfStepPaused(ctx);
+        },
+    };
+    entry.action = await readOpenConditional(ctx, propsToRead, itemRegistry, hooks);
+    // Park the cursor back on the conditional itself before we return —
+    // hydrateNestedActions's outer step-gate fires next with the cursor
+    // expected on the entry being hydrated.
+    if (sink && sink.setReading) {
+        sink.setReading(actionPath, `reading nested ${actionLogLabel(entry.action)}`);
     }
 }

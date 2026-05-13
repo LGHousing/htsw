@@ -18,6 +18,12 @@ export type Style = {
     padding?: Padding;
     background?: Extractable<number | undefined>;
     hoverBackground?: Extractable<number | undefined>;
+    /**
+     * When set on a `text` element, draws a 1-px underline beneath the
+     * text in the text's color. Used by the code-view to mark fields
+     * that changed in an `edit` op. Ignored for non-text elements.
+     */
+    underline?: Extractable<boolean | undefined>;
 };
 
 export type ContainerStyle = Style & {
@@ -79,6 +85,15 @@ export type Element =
           style: ContainerStyle;
           id: string;
           children: Extractable<Child[]>;
+          /**
+           * When true, mouse-wheel and scrollbar-drag input is consumed
+           * but ignored — used for the live-preview during an import,
+           * which auto-follows the cursor and shouldn't let the user
+           * scroll away (the snap-back was glitchy). The event is still
+           * cancelled at the Forge layer so MC's own scroll handlers
+           * don't react.
+           */
+          locked?: Extractable<boolean>;
       }
     | {
           kind: "image";

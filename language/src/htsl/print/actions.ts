@@ -36,6 +36,42 @@ export type PrintActionsContext = {
     diagnostics: PrinterDiagnostic[];
 };
 
+/**
+ * Half-open character range tagged with the AST field it covers. Emitted
+ * alongside the printed text by `printActionHeadSpans` so consumers (e.g.
+ * the in-game code view) can underline or focus individual fields without
+ * re-parsing the output.
+ */
+export type FieldSpan = {
+    prop: string;
+    start: number;
+    end: number;
+};
+
+/**
+ * Text part with optional field-prop tag. Joined with a separator by
+ * `joinParts` to produce both the final string AND the field-span list.
+ * Untagged parts (no `prop`) are pure plumbing — keywords, punctuation,
+ * separators.
+ */
+type Part = { text: string; prop?: string };
+
+/** Join parts with `sep`, accumulating spans for tagged parts. */
+function joinParts(parts: readonly Part[], sep: string): { text: string; fieldSpans: FieldSpan[] } {
+    let text = "";
+    const fieldSpans: FieldSpan[] = [];
+    for (let i = 0; i < parts.length; i++) {
+        if (i > 0) text += sep;
+        const p = parts[i];
+        const start = text.length;
+        text += p.text;
+        if (p.prop !== undefined) {
+            fieldSpans.push({ prop: p.prop, start, end: text.length });
+        }
+    }
+    return { text, fieldSpans };
+}
+
 const ITEM_PLACEHOLDER = "<item-not-supported>";
 
 /**
@@ -75,6 +111,174 @@ function printActionAt(
 
     out += pad + printActionHead(action, depth, ctx) + eol;
     return out;
+}
+
+/**
+ * Like `printActionHead` but also returns per-field character ranges.
+ * Coverage is opportunistic: action types with explicit Part-based
+ * handlers below carry field spans; others fall back to the plain text
+ * with no spans (graceful — consumers treat missing spans as "no
+ * underlines to draw" without crashing).
+ *
+ * For block-bearing actions (CONDITIONAL, RANDOM) the field spans cover
+ * only the head text up to the opening `{` — nested action lines are
+ * tracked separately by the caller.
+ */
+export function printActionHeadSpans(
+    action: Action,
+    depth: number,
+    ctx: PrintActionsContext,
+): { text: string; fieldSpans: FieldSpan[] } {
+    switch (action.type) {
+        case "ACTION_BAR":
+            return joinParts(
+                [{ text: "actionBar" }, { text: quoteStringOrPlaceholder(action.message), prop: "message" }],
+                " "
+            );
+        case "APPLY_INVENTORY_LAYOUT":
+            return joinParts(
+                [{ text: "applyLayout" }, { text: quoteStringOrPlaceholder(action.layout), prop: "layout" }],
+                " "
+            );
+        case "CHANGE_HEALTH":
+            return joinParts(
+                [
+                    { text: "changeHealth" },
+                    { text: printOption(action.op), prop: "op" },
+                    { text: printValue(action.amount), prop: "amount" },
+                ],
+                " "
+            );
+        case "CHANGE_HUNGER":
+            return joinParts(
+                [
+                    { text: "hungerLevel" },
+                    { text: printOption(action.op), prop: "op" },
+                    { text: printValue(action.amount), prop: "amount" },
+                ],
+                " "
+            );
+        case "CHANGE_MAX_HEALTH":
+            return joinParts(
+                [
+                    { text: "maxHealth" },
+                    { text: printOption(action.op), prop: "op" },
+                    { text: printValue(action.amount), prop: "amount" },
+                ],
+                " "
+            );
+        case "ENCHANT_HELD_ITEM":
+            return joinParts(
+                [
+                    { text: "enchant" },
+                    { text: printOption(action.enchant), prop: "enchant" },
+                    { text: printNumber(action.level), prop: "level" },
+                ],
+                " "
+            );
+        case "FAIL_PARKOUR":
+            return joinParts(
+                [
+                    { text: "failParkour" },
+                    { text: quoteStringOrPlaceholder(action.message ?? ""), prop: "message" },
+                ],
+                " "
+            );
+        case "GIVE_EXPERIENCE_LEVELS":
+            return joinParts(
+                [{ text: "xpLevel" }, { text: printValue(action.amount), prop: "amount" }],
+                " "
+            );
+        case "MESSAGE":
+            return joinParts(
+                [{ text: "chat" }, { text: quoteStringOrPlaceholder(action.message), prop: "message" }],
+                " "
+            );
+        case "PAUSE":
+            return joinParts(
+                [{ text: "pause" }, { text: printNumber(action.ticks), prop: "ticks" }],
+                " "
+            );
+        case "SET_COMPASS_TARGET":
+            return joinParts(
+                [{ text: "compassTarget" }, { text: printLocation(action.location), prop: "location" }],
+                " "
+            );
+        case "SET_GAMEMODE":
+            return joinParts(
+                [{ text: "gamemode" }, { text: printOption(action.gamemode), prop: "gamemode" }],
+                " "
+            );
+        case "SET_MENU":
+            return joinParts(
+                [{ text: "displayMenu" }, { text: quoteName(action.menu), prop: "menu" }],
+                " "
+            );
+        case "SET_PLAYER_TIME":
+            return joinParts(
+                [{ text: "playerTime" }, { text: quoteString(action.time), prop: "time" }],
+                " "
+            );
+        case "SET_PLAYER_WEATHER":
+            return joinParts(
+                [{ text: "playerWeather" }, { text: quoteString(action.weather), prop: "weather" }],
+                " "
+            );
+        case "SET_TEAM":
+            return joinParts(
+                [{ text: "setTeam" }, { text: quoteName(action.team), prop: "team" }],
+                " "
+            );
+        case "SET_VELOCITY":
+            return joinParts(
+                [
+                    { text: "changeVelocity" },
+                    { text: printValue(action.x), prop: "x" },
+                    { text: printValue(action.y), prop: "y" },
+                    { text: printValue(action.z), prop: "z" },
+                ],
+                " "
+            );
+        case "TELEPORT": {
+            const parts: Part[] = [
+                { text: "tp" },
+                { text: printLocation(action.location), prop: "location" },
+            ];
+            if (action.preventTeleportInsideBlocks !== undefined) {
+                parts.push({
+                    text: printBoolean(action.preventTeleportInsideBlocks),
+                    prop: "preventTeleportInsideBlocks",
+                });
+            }
+            return joinParts(parts, " ");
+        }
+        case "TITLE": {
+            const parts: Part[] = [
+                { text: "title" },
+                { text: quoteStringOrPlaceholder(action.title), prop: "title" },
+            ];
+            const optionalGroup: Part[] = [];
+            if (action.subtitle !== undefined) {
+                optionalGroup.push({ text: quoteStringOrPlaceholder(action.subtitle), prop: "subtitle" });
+            }
+            const fadeFields = action.fadein !== undefined || action.stay !== undefined || action.fadeout !== undefined;
+            if (fadeFields) {
+                if (optionalGroup.length === 0) optionalGroup.push({ text: quoteString("") });
+                optionalGroup.push({ text: printNumber(action.fadein ?? 1), prop: "fadein" });
+                optionalGroup.push({ text: printNumber(action.stay ?? 5), prop: "stay" });
+                optionalGroup.push({ text: printNumber(action.fadeout ?? 1), prop: "fadeout" });
+            }
+            return joinParts(parts.concat(optionalGroup), " ");
+        }
+        case "TOGGLE_NAMETAG_DISPLAY":
+            return joinParts(
+                [{ text: "displayNametag" }, { text: printBoolean(action.displayNametag), prop: "displayNametag" }],
+                " "
+            );
+        // Actions without bespoke span handling — fall back to plain text.
+        default:
+            return { text: printActionHead(action, depth, ctx), fieldSpans: [] };
+    }
 }
 
 /**
