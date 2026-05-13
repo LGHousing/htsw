@@ -11,18 +11,15 @@
  * decorator slots in alongside without touching the code view itself.
  */
 
-import * as htsw from "htsw";
 import type { Action } from "htsw/types";
-import { diffKey, getDiffEntry, type DiffLineInfo, type DiffState } from "../state/diff";
+import { diffKey, getDiffEntry, type DiffState } from "../state/diff";
 import {
     focusBracketForFile,
     focusFieldBoxForFile,
     focusLineIdForFile,
-    lifecycleAlphaForLine,
     underlinedFieldsForLine,
 } from "../state/codeViewState";
-import { tokenizeHtsl } from "../right-panel/syntax";
-import { attachFieldSpans, lineIdForActionPath, linesForFile } from "./lineModel";
+import { lineIdForActionPath, linesForFile } from "./lineModel";
 import { diffScalarFields } from "../../importer/compare";
 import { getActionScalarLoreFields } from "../../importer/actionMappings";
 import { parseHtslFile } from "../state/htsl-render";
@@ -32,19 +29,13 @@ import type {
     LineDecorations,
     LineDecorator,
     RenderableLine,
-    TokenSpan,
 } from "./types";
 
-function detailFor(state: DiffState, info: DiffLineInfo | undefined): string | undefined {
-    if (info === undefined) return undefined;
-    if (state === "current" && info.label) return `current: ${info.label}`;
-    if (info.completed === true) return undefined;
-    if (info.kind === "edit") return info.detail ? `edit: ${info.detail}` : undefined;
-    if (info.kind === "add") return "add";
-    if (info.kind === "move") return info.detail ? `move: ${info.detail}` : "move";
-    if (info.kind === "delete") return "delete";
-    return info.detail;
-}
+// Right-aligned per-line labels (`add`, `edit:foo`, etc.) were dropped
+// entirely — they overlapped the code text. The diff state is conveyed by
+// the gutter glyph (`+`/`~`/`-`/`▶`) and the row background tint, which is
+// enough.
+const COLOR_PENDING_GRAY = 0xff666666 | 0;
 
 /**
  * View tab decorator: reads diff state for the file at `path` and applies
@@ -67,10 +58,8 @@ export function diffDecorator(path: string | null): LineDecorator {
             }
             const isFocused = entry.currentPath === line.actionPath;
             const effective: DiffState = isFocused ? "current" : state;
-            const info = entry.details.get(line.actionPath);
             return {
                 state: effective,
-                detail: detailFor(effective, info),
                 isFocused,
             };
         },
@@ -143,44 +132,6 @@ function changedFieldsBetween(
 }
 
 /**
- * Build a synthetic RenderableLine from an in-Housing observed action.
- * Used to render the "before" row for an edit op, above the source's
- * "after" row.
- */
-function observedRenderableLine(
-    actionPath: string,
-    observed: unknown,
-    depth: number
-): RenderableLine | null {
-    let text: string;
-    try {
-        text = htsw.htsl.printAction(observed as Parameters<typeof htsw.htsl.printAction>[0]);
-    } catch (_e) {
-        return null;
-    }
-    // printAction may emit multi-line output (e.g. CONDITIONAL). We collapse
-    // to the first line only for the side-by-side preview — nested bodies
-    // are already visible in the desired view below.
-    const splitText = text.split("\n");
-    const first = splitText.length > 0 ? splitText[0] : text;
-    let prefix = "";
-    for (let i = 0; i < depth; i++) prefix += "  ";
-    const lineText = prefix + first;
-    const tokens: TokenSpan[] = attachFieldSpans(tokenizeHtsl(lineText), undefined);
-    return {
-        id: `observed:${actionPath}`,
-        lineNum: 0,
-        depth,
-        tokens,
-        actionPath,
-        isHeader: false,
-    };
-}
-
-const ROW_BG_OBSERVED = 0x40e85c5c | 0; // faint red, "before" tint
-const COLOR_OBSERVED = 0xff8a92a3 | 0;  // dim gray for old text
-
-/**
  * Compute the tall `[` bracket range for the current frame: { topLineId,
  * bottomLineId, middleLineIds: Set }. Returns null when the current path
  * has no descendants currently being touched.
@@ -248,61 +199,21 @@ export function progressDecorator(path: string | null): LineDecorator {
     };
     return {
         decorateLine(line: RenderableLine): LineDecorations {
-            const baseDec = base.decorateLine(line);
-            if (path === null || key === null) return baseDec;
-            const alpha = lifecycleAlphaForLine(path, line.id);
-            let underlines = underlinedFieldsForLine(path, line.id);
-            // Compute underline set on-the-fly for edit ops with observed
-            // actions. Cheaper than threading through a separate sink
-            // event; this only runs on lines that have an active edit.
-            if (underlines === undefined && line.actionPath !== undefined) {
-                const entry = getDiffEntry(key);
-                const info = entry?.details.get(line.actionPath);
-                if (
-                    info !== undefined &&
-                    info.observed !== undefined &&
-                    info.kind === "edit" &&
-                    info.completed !== true
-                ) {
-                    const root = getRoot();
-                    if (root !== null) {
-                        const desired = findActionByPathLocal(root, line.actionPath);
-                        if (desired !== null) {
-                            const changed = changedFieldsBetween(info.observed, desired);
-                            if (changed !== null) underlines = changed;
-                        }
-                    }
-                }
+            // Header/synthetic lines or no diff context: defer to base.
+            if (path === null || key === null || line.actionPath === undefined) {
+                return base.decorateLine(line);
             }
-
-            // Side-by-side: when this line has an edit op with an observed
-            // action attached, render the observed action as a gray row
-            // above the desired row.
-            let extras: LineDecorations["extraLinesBefore"];
-            if (line.actionPath !== undefined) {
-                const entry = getDiffEntry(key);
-                const info = entry?.details.get(line.actionPath);
-                if (info?.observed !== undefined && info.kind === "edit" && info.completed !== true) {
-                    const obsLine = observedRenderableLine(
-                        line.actionPath,
-                        info.observed,
-                        line.depth
-                    );
-                    if (obsLine !== null) {
-                        extras = [
-                            {
-                                line: obsLine,
-                                decorations: {
-                                    foregroundColor: COLOR_OBSERVED,
-                                    background: ROW_BG_OBSERVED,
-                                    alpha: 0.7,
-                                },
-                            },
-                        ];
-                    }
-                }
+            const entry = getDiffEntry(key);
+            if (entry === undefined) {
+                // No diff state at all yet — leave the file looking
+                // colorless until the importer plans something.
+                return { foregroundColor: COLOR_PENDING_GRAY };
             }
+            const isFocused = entry.currentPath === line.actionPath;
+            const info = entry.details.get(line.actionPath);
+            const state = entry.states.get(line.actionPath);
 
+            // Bracket span (multi-line current op indicator).
             let bracketRole: "top" | "middle" | "bottom" | undefined;
             if (bracketRange !== null) {
                 if (line.id === bracketRange.topLineId) bracketRole = "top";
@@ -311,31 +222,55 @@ export function progressDecorator(path: string | null): LineDecorator {
                     bracketRole = "middle";
             }
 
-            // Field-level focus: only attach to the focused line so we
-            // don't tint matching fieldProp tokens elsewhere in the file.
+            // Field-level focus box (blue tint over a single field token).
             let focusedFieldProp: string | undefined;
-            if (key !== null && line.actionPath !== undefined) {
-                const entry = getDiffEntry(key);
-                if (
-                    entry !== undefined &&
-                    entry.currentPath === line.actionPath &&
-                    entry.currentFieldProp !== null
-                ) {
-                    focusedFieldProp = entry.currentFieldProp;
+            if (
+                entry.currentPath === line.actionPath &&
+                entry.currentFieldProp !== null
+            ) {
+                focusedFieldProp = entry.currentFieldProp;
+            }
+
+            // DONE: line is finalized (either applied successfully or was
+            // already a match in housing). Render with full syntax colors,
+            // no diff glyph, no row background.
+            const isDone = info?.completed === true || state === "match";
+            if (isDone) {
+                return { isFocused, bracketRole, focusedFieldProp };
+            }
+
+            // Per-field underline set for edits-in-flight.
+            let underlines = underlinedFieldsForLine(path, line.id);
+            if (underlines === undefined && info?.observed !== undefined && info.kind === "edit") {
+                const root = getRoot();
+                if (root !== null) {
+                    const desired = findActionByPathLocal(root, line.actionPath);
+                    if (desired !== null) {
+                        const changed = changedFieldsBetween(info.observed, desired);
+                        if (changed !== null) underlines = changed;
+                    }
                 }
             }
 
+            // Untouched line — no diff state yet. Render gray, no syntax.
+            if (state === undefined || state === "unknown") {
+                return {
+                    foregroundColor: COLOR_PENDING_GRAY,
+                    isFocused,
+                    bracketRole,
+                    focusedFieldProp,
+                };
+            }
+
+            // Planned line — diff glyph + tinted background, but text stays
+            // gray (no syntax) because the change hasn't happened yet.
             return {
-                state: baseDec.state,
-                foregroundColor: baseDec.foregroundColor,
-                background: baseDec.background,
-                detail: baseDec.detail,
-                isFocused: baseDec.isFocused,
-                alpha,
-                underlinedFields: underlines,
-                extraLinesBefore: extras,
+                state,
+                foregroundColor: COLOR_PENDING_GRAY,
+                isFocused,
                 bracketRole,
                 focusedFieldProp,
+                underlinedFields: underlines,
             };
         },
         focusedLineId(): string | null {

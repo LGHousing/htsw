@@ -40,16 +40,12 @@ export type CodeViewProps = {
     emptyMessage?: string;
 };
 
-const USER_SCROLL_SUPPRESS_MS = 1500;
-const FOLLOW_THROTTLE_MS = 250;
+const FOLLOW_THROTTLE_MS = 80;
 
-// Per-scroll-id meta. Tracks our own last programmatic offset so we can
-// distinguish user scrolls from our own setScrollOffset calls.
+// Per-scroll-id meta. Tracks the last time we centred the viewport so the
+// recenter call doesn't fire every frame.
 type FollowMeta = {
-    lastProgrammaticOffset: number;
-    lastUserOffsetAt: number;
     lastFollowAt: number;
-    lastFocusedLineId: string | null;
 };
 
 const followStates: { [id: string]: FollowMeta } = {};
@@ -58,10 +54,7 @@ function getFollowMeta(scrollId: string): FollowMeta {
     let m = followStates[scrollId];
     if (!m) {
         m = {
-            lastProgrammaticOffset: 0,
-            lastUserOffsetAt: 0,
             lastFollowAt: 0,
-            lastFocusedLineId: null,
         };
         followStates[scrollId] = m;
     }
@@ -119,12 +112,11 @@ export function CodeView(props: CodeViewProps): Element {
 }
 
 /**
- * Compute the target scroll offset to centre the focused line in the
- * viewport, and call `setScrollOffset` once per `FOLLOW_THROTTLE_MS` when
- * the focus has actually moved. Detects user-driven scrolls by comparing
- * the current offset to our last programmatic write — if they differ,
- * the user touched the scrollbar, so we suspend follow for
- * `USER_SCROLL_SUPPRESS_MS`.
+ * Force the scroll offset to keep the focused line centred. No
+ * suspend-on-user-input — during an import the user shouldn't be able to
+ * scroll the live preview at all; any wheel input gets snapped back on
+ * the next throttle tick. The throttle exists only to avoid re-issuing
+ * the same setScrollOffset call every frame.
  */
 function applyAutoFollow(
     scrollId: string,
@@ -136,18 +128,7 @@ function applyAutoFollow(
     const meta = getFollowMeta(scrollId);
     const state = getScrollState(scrollId);
     const now = Date.now();
-
-    // Detect user-driven scroll: offset diverged from our last write.
-    if (
-        meta.lastProgrammaticOffset !== state.offset &&
-        Math.abs(state.offset - meta.lastProgrammaticOffset) > 1
-    ) {
-        meta.lastUserOffsetAt = now;
-        meta.lastProgrammaticOffset = state.offset;
-    }
-    if (now - meta.lastUserOffsetAt < USER_SCROLL_SUPPRESS_MS) return;
     if (now - meta.lastFollowAt < FOLLOW_THROTTLE_MS) return;
-    if (focusedId === meta.lastFocusedLineId) return;
 
     const idx = lineIdToIndex[focusedId];
     if (idx === undefined) return;
@@ -156,7 +137,5 @@ function applyAutoFollow(
     const focusedY = idx * LINE_H;
     const target = Math.max(0, focusedY - Math.floor(viewportH / 2));
     setScrollOffset(scrollId, target);
-    meta.lastProgrammaticOffset = getScrollState(scrollId).offset;
     meta.lastFollowAt = now;
-    meta.lastFocusedLineId = focusedId;
 }

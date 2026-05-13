@@ -1040,12 +1040,14 @@ function importTab(): Element {
     // expanded queue list (fixed height, only when expanded) → live preview
     // (grow, the new scrollable file view) → live importer panel (shrinks
     // when import inactive) → action row (fixed).
+    // When the queue is collapsed, omit `queueExpansion()` entirely so the
+    // Col doesn't reserve its 80px height (or the surrounding gap).
     return Col({
         style: { gap: 4, width: { kind: "grow" }, height: { kind: "grow" } },
         children: [
             houseHeader(),
             queueSummary(),
-            queueExpansion(),
+            ...(queueExpanded ? [queueExpansion()] : []),
             livePreviewBody(),
             liveImporterPanel(),
             importActionRow(),
