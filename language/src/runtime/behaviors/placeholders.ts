@@ -1,7 +1,7 @@
 import { Long } from "../../long";
 
 import { Behaviors, type Behavior } from "./behaviors";
-import { VarDouble, VarLong, parseValue, type TeamVarKey, type Var, type VarHolder } from "../vars";
+import { VarDouble, VarLong, type Var } from "../vars";
 
 export type PlaceholderInvocation = {
     raw: string;
@@ -13,38 +13,11 @@ export type PlaceholderBehavior = Behavior<PlaceholderInvocation, Var<any> | und
 
 export class PlaceholderBehaviors extends Behaviors<PlaceholderInvocation, Var<any> | undefined> {
     static default(): PlaceholderBehaviors {
-        return new PlaceholderBehaviors()        
-            .with("var.player", defaultBehaviorVarPlayer)
-            .with("var.global", defaultBehaviorVarGlobal)
-            .with("var.team", defaultBehaviorVarTeam)
-            
+        return new PlaceholderBehaviors()
             .with("random.int", defaultBehaviorRandomWhole)
             .with("random.whole", defaultBehaviorRandomWhole)
             .with("random.decimal", defaultBehaviorRandomDecimal);
     }
-}
-
-const defaultBehaviorVarPlayer: PlaceholderBehavior = (rt, invocation) => {
-    return resolveVar(rt.playerVars, invocation.args[0], invocation.args[1], rt);
-};
-
-const defaultBehaviorVarGlobal: PlaceholderBehavior = (rt, invocation) => {
-    return resolveVar(rt.globalVars, invocation.args[0], invocation.args[1], rt);
-};
-
-const defaultBehaviorVarTeam: PlaceholderBehavior = (rt, invocation) => {
-    const key: TeamVarKey = { key: invocation.args[0] ?? "", team: invocation.args[1] ?? "" };
-    return resolveVar(rt.teamVars, key, invocation.args[2], rt);
-};
-
-function resolveVar<T>(
-    holder: VarHolder<T>,
-    key: T,
-    fallbackRaw: string | undefined,
-    rt: Parameters<PlaceholderBehavior>[0],
-): Var<any> {
-    const fallback = parseValue(rt, fallbackRaw ?? '""');
-    return holder.get(key, fallback);
 }
 
 const defaultBehaviorRandomWhole: PlaceholderBehavior = (_rt, invocation) => {

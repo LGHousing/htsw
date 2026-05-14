@@ -1,8 +1,5 @@
-import { Diagnostic } from "../../diagnostic";
 import type { Action } from "../../types";
 import { Behaviors, type Behavior } from "./behaviors";
-import type { Runtime } from "../runtime";
-import { parseValue, type TeamVarKey, type Var, type VarHolder } from "../vars";
 
 export class RuntimeExitSignal { }
 
@@ -26,7 +23,6 @@ export class ActionBehaviors extends Behaviors<Action, void> {
         return new ActionBehaviors()
             .with("EXIT", defaultBehaviorExit)
             .with("PAUSE", defaultBehaviorPause)
-            .with("CHANGE_VAR", defaultBehaviorChangeVar)
             .with("RANDOM", defaultBehaviorRandom)
             .with("CONDITIONAL", defaultBehaviorConditional)
     }
@@ -38,46 +34,6 @@ const defaultBehaviorExit: ActionBehavior<"EXIT"> = () => {
 
 const defaultBehaviorPause: ActionBehavior<"PAUSE"> = (_rt, action) => {
     throw new RuntimePauseSignal(Math.max(0, Math.floor(action.ticks ?? 0)));
-};
-
-const defaultBehaviorChangeVar: ActionBehavior<"CHANGE_VAR"> = (rt, action) => {
-    if (!action.holder || !action.op || !action.key) return;
-
-    const holderType = action.holder.type;
-    const key: string | TeamVarKey = holderType === "Team"
-        ? { team: action.holder.team ?? "", key: action.key }
-        : action.key;
-    const varHolder: VarHolder<any> = holderType === "Team"
-        ? rt.teamVars
-        : holderType === "Global"
-            ? rt.globalVars
-            : rt.playerVars;
-
-    if (action.op === "Unset") {
-        varHolder.unset(key);
-        return;
-    }
-
-    if (!action.value) return;
-
-    const rhs: Var<any> = parseValue(rt, action.value);
-    const lhs = varHolder.get(key, rhs.unsetValue());
-
-    if (action.op === "Set") {
-        varHolder.set(key, rhs);
-        return;
-    }
-
-    if (lhs.type !== rhs.type || lhs.type === "string" || rhs.type === "string") {
-        rt.emitDiagnostic(
-            Diagnostic.warning(
-                `Operator ${action.op} cannot be applied to ${lhs.type} and ${rhs.type}`,
-            ).addPrimarySpan(rt.spans.getField(action, "op"))
-        );
-        return;
-    }
-
-    varHolder.set(key, lhs.binOp(rhs, action.op));
 };
 
 const defaultBehaviorRandom: ActionBehavior<"RANDOM"> = (rt, action) => {
@@ -94,7 +50,7 @@ const defaultBehaviorConditional: ActionBehavior<"CONDITIONAL"> = (rt, action) =
         rt.runActions(action.ifActions, true);
         return;
     }
-    
+
     let matches = 0;
     for (const condition of action.conditions) {
         if (rt.runCondition(condition)) matches++;

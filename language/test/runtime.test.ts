@@ -52,7 +52,8 @@ describe("Runtime", () => {
             const expected: string[] = [];
             const actual: string[] = [];
 
-            const actionBehaviors = htsw.runtime.ActionBehaviors.default().with(
+            const vars = new htsw.runtime.simple.SimpleVars();
+            const actionBehaviors = new htsw.runtime.simple.SimpleActionBehaviors(vars).with(
                 "MESSAGE",
                 (rt, action) => {
                     const note = action.note;
@@ -67,6 +68,8 @@ describe("Runtime", () => {
             const rt = new htsw.runtime.Runtime({
                 spans: parsed.spans,
                 actionBehaviors,
+                conditionBehaviors: new htsw.runtime.simple.SimpleConditionBehaviors(vars),
+                placeholderBehaviors: new htsw.runtime.simple.SimplePlaceholderBehaviors(vars),
             });
 
             rt.runActions(parsed.value);
