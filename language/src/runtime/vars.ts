@@ -234,11 +234,6 @@ export class VarString implements Var<string> {
     }
 }
 
-// VarHolder and TeamVarKey moved to ./simple/varHolder. Re-exported here for
-// backwards compat during the transitional period; will be dropped when the
-// Runtime's playerVars/globalVars/teamVars fields go away.
-export { VarHolder, type TeamVarKey } from "./simple/varHolder";
-
 const PLACEHOLDER_REGEX = /%([^%]+?)%/g;
 const EXPLICIT_DOUBLE_REGEX = /^(0|[1-9]\d*)(\.\d+)$/;
 
