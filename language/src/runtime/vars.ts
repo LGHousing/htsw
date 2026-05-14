@@ -234,52 +234,6 @@ export class VarString implements Var<string> {
     }
 }
 
-export type TeamVarKey = { team: string; key: string };
-
-export class VarHolder<T> {
-    private vars: Map<string, { raw: T; value: Var<any> }>;
-
-    constructor() {
-        this.vars = new Map();
-    }
-
-    hasVar(key: T): boolean {
-        return this.vars.has(this.keyFor(key));
-    }
-
-    getVar(key: T, fallback: Var<any> = new VarString("")): Var<any> {
-        return this.vars.get(this.keyFor(key))?.value ?? fallback;
-    }
-
-    setVar(key: T, value: Var<any>): void {
-        this.vars.set(this.keyFor(key), { raw: key, value });
-    }
-
-    unsetVar(key: T): void {
-        this.vars.delete(this.keyFor(key));
-    }
-
-    keys(): Set<T> {
-        const set = new Set<T>();
-        for (const entry of this.vars.values()) {
-            set.add(entry.raw);
-        }
-        return set;
-    }
-
-    private keyFor(key: T): string {
-        if (typeof key === "object" && key !== null) {
-            if ("team" in key && "key" in key) {
-                const teamKey = key as { team: unknown; key: unknown };
-                return `team:${String(teamKey.team)}\u0000key:${String(teamKey.key)}`;
-            }
-            return JSON.stringify(key);
-        }
-
-        return String(key);
-    }
-}
-
 const PLACEHOLDER_REGEX = /%([^%]+?)%/g;
 const EXPLICIT_DOUBLE_REGEX = /^(0|[1-9]\d*)(\.\d+)$/;
 

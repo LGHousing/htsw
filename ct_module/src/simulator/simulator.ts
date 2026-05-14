@@ -40,11 +40,12 @@ export class Simulator {
     }
 
     private static createRuntime(spans: SpanTable): runtime.Runtime {
+        const vars = new runtime.simple.SimpleVars();
         const rt = new runtime.Runtime({
             spans,
-            actionBehaviors: createActionBehaviors(),
-            conditionBehaviors: createConditionBehaviors(),
-            placeholderBehaviors: createPlaceholderBehaviors(),
+            actionBehaviors: createActionBehaviors(vars),
+            conditionBehaviors: createConditionBehaviors(vars),
+            placeholderBehaviors: createPlaceholderBehaviors(vars),
             onDiagnostic: (diag) => printDiagnostic(this.sm, diag),
         });
 

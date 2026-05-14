@@ -21,6 +21,10 @@
             "import": "./dist/runtime/index.js",
             "types": "./dist/runtime/index.d.ts"
         },
+        "./runtime/simple": {
+            "import": "./dist/runtime/simple/index.js",
+            "types": "./dist/runtime/simple/index.d.ts"
+        },
         "./nbt": {
             "import": "./dist/nbt/index.js",
             "types": "./dist/nbt/index.d.ts"

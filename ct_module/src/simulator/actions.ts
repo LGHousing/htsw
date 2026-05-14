@@ -13,8 +13,8 @@ import { Simulator } from "./simulator";
 import { replacePlaceholders } from "./placeholders";
 import { coerceWithin } from "./helpers";
 
-export function createActionBehaviors(): runtime.ActionBehaviors {
-    return runtime.ActionBehaviors.default()
+export function createActionBehaviors(vars: runtime.simple.Vars): runtime.ActionBehaviors {
+    return new runtime.simple.SimpleActionBehaviors(vars)
         .with("FUNCTION", behaviorFunction)
         .with("ACTION_BAR", behaviorActionBar)
         .with("MESSAGE", behaviorSendChatMessage)
