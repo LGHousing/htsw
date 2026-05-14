@@ -44,7 +44,7 @@ const stats: { [kind: string]: MutableTimingStatsEntry | undefined } = {};
 
 /**
  * Per-phase budget-time accumulator. Tracks how many real ms were spent
- * inside each `setCurrentPhase(...)` window, paired with how many budget
+ * inside each `withCurrentPhase(...)` window, paired with how many budget
  * units those ms covered. The ratio gives a calibrated ms/budget-unit
  * for each phase, which the GUI uses for phase-aware ETA — separate
  * buckets for reading vs hydrating vs applying so finishing one doesn't
@@ -78,8 +78,17 @@ const PHASE_STATS_PATH = "./htsw/eta-stats.json";
  */
 const PHASE_STATS_WINDOW = 500;
 
-export function setCurrentPhase(phase: ActionListProgressPhase | null): void {
+export async function withCurrentPhase<T>(
+    phase: ActionListProgressPhase,
+    fn: () => Promise<T>
+): Promise<T> {
+    const previous = currentPhase;
     currentPhase = phase;
+    try {
+        return await fn();
+    } finally {
+        currentPhase = previous;
+    }
 }
 
 export function getCurrentPhase(): ActionListProgressPhase | null {

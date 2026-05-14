@@ -179,7 +179,7 @@ When in doubt: delete the comment, build, see if the next reader (you, one week 
 
 - Prefer rename / extract over explanatory comments. See **Comments** above. 
 
-- Feel free to delete unecessary comments you come across.
+- Feel free to delete unnecessary comments you come across.
 
 ## Working Style
 

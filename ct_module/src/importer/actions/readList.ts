@@ -46,7 +46,7 @@ import {
     hydrationEntryBudget,
     type ActionListPhaseBudget,
 } from "../progress/costs";
-import { setCurrentPhase } from "../progress/timing";
+import { withCurrentPhase } from "../progress/timing";
 import { ACTION_LIST_CONFIG } from "./listConfig";
 import { getActionSpec } from "../actions";
 import { actionLogLabel } from "./log";
@@ -181,14 +181,8 @@ export async function readActionList(
         mode.kind === "sync" ? Math.max(1, mode.desired.length) : 1;
     const phaseBudget = mode.phaseBudget;
     let readEstimatedCompleted = 0;
-    setCurrentPhase("reading");
-    // The reading + hydrating phases perform many awaited menu round-trips
-    // via `readPaginatedList` and `hydrateNestedActions`. A throw in any of
-    // them must still clear `currentPhase` or per-phase ms accumulates
-    // against "reading" / "hydrating" forever after a failure. Wrap both
-    // phases in try/finally so the phase resets on every exit path.
-    let observed: ObservedActionSlot[];
-    try {
+    let observed: ObservedActionSlot[] = [];
+    await withCurrentPhase("reading", async () => {
         if (phaseBudget !== undefined) {
             progress?.({
                 phase: "reading",
@@ -236,16 +230,18 @@ export async function readActionList(
                 phaseBudget.total = recomputeTotal(phaseBudget);
             }
         }
-        let plan: NestedHydrationPlan;
-        if (mode.kind === "full") {
-            plan = buildFullHydrationPlan(observed);
-        } else {
-            const matches = matchObservedToDesired(observed, mode.desired);
-            plan = createNestedHydrationPlan(matches);
-            if (mode.trust !== undefined) {
-                applyActionListTrust(matches, plan, mode.trust);
-            }
+    });
+    let plan: NestedHydrationPlan;
+    if (mode.kind === "full") {
+        plan = buildFullHydrationPlan(observed);
+    } else {
+        const matches = matchObservedToDesired(observed, mode.desired);
+        plan = createNestedHydrationPlan(matches);
+        if (mode.trust !== undefined) {
+            applyActionListTrust(matches, plan, mode.trust);
         }
+    }
+    await withCurrentPhase("hydrating", async () => {
         addScalarHydrationEntries(plan, observed);
         await hydrateNestedActions(
             ctx,
@@ -255,13 +251,8 @@ export async function readActionList(
             progress,
             phaseBudget
         );
-        // Reset back to page 1 while still inside the phase window so the
-        // page turns count toward "hydrating" timing samples instead of
-        // leaking out with currentPhase=null.
         await goToPaginatedListPage(ctx, 1, ACTION_LIST_CONFIG);
-    } finally {
-        setCurrentPhase(null);
-    }
+    });
     canonicalizeObservedActionItemNames(observed, mode.itemRegistry);
     return observed;
 }
@@ -352,7 +343,6 @@ async function hydrateNestedActions(
     progress?: ActionListProgressSink,
     phaseBudget?: ActionListPhaseBudget
 ): Promise<void> {
-    setCurrentPhase("hydrating");
     let completed = 0;
     const total = plan.size;
     let completedBudget = 0;

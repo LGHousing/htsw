@@ -226,8 +226,12 @@ export function actionListDiffApplyBudget(
  * the timing data. The `phase: "diffing"` progress event still fires
  * for the GUI's diff-sink visualization but contributes nothing to ETA.
  *
- * The parts cover *this level only* — recursive `syncActionList` calls
- * inside `writeOpenAction` for CONDITIONAL/RANDOM bodies are silent.
+ * `readPart` / `hydratePart` cover this list only — nested `syncActionList`
+ * calls inside CONDITIONAL/RANDOM bodies aren't separately tracked because
+ * their reading is folded into the parent's hydrate phase (via
+ * `topLevelHydrateBudget`). `applyPart` does include nested-body apply
+ * work via the cache-aware diff recursing one level into
+ * `ifActions` / `elseActions` / `actions` (see `editBudgetWithNested`).
  */
 export type ActionListPhaseBudget = {
     readPart: number;
@@ -330,11 +334,87 @@ function cacheAwareApplyBudget(
 ): number {
     const observed = cachedActionsAsObserved(cached);
     const diff = diffActionList(observed, desired as Action[]);
-    return actionListDiffApplyBudget(
-        diff,
-        (op) => scalarFieldEditBudget(getEditFieldDiffs(op).fieldDiffs),
-        desired.length
-    );
+    return actionListDiffApplyBudget(diff, editBudgetWithNested, desired.length);
+}
+
+/**
+ * Edit-op cost for the cache-aware apply path. Scalar field changes go
+ * through `getEditFieldDiffs` + `scalarFieldEditBudget` as before.
+ *
+ * `getActionScalarLoreFields` strips out `nestedList` field kinds, so
+ * the scalar pass never prices changes to CONDITIONAL.ifActions /
+ * elseActions / RANDOM.actions — even though the diff engine still
+ * emits an edit op when those bodies differ (its `actionsEqual` does a
+ * deep compare). Without this wrapper, a CONDITIONAL whose ifActions
+ * grew by 30 actions would be priced as `menuClickWait + 0 + goBackWait`
+ * and the bar would silently under-count by the cost of those 30
+ * additions, making the live `refinedWeightCurrent` widening do all
+ * the catch-up work.
+ *
+ * We re-run the diff one level deeper for any CONDITIONAL/RANDOM edit
+ * and add the nested apply cost. The HTSL constraint that
+ * CONDITIONAL/RANDOM can't appear inside another CONDITIONAL/RANDOM
+ * body bounds the recursion at one level.
+ */
+function editBudgetWithNested(
+    op: Extract<ActionListOperation, { kind: "edit" }>
+): number {
+    let total = scalarFieldEditBudget(getEditFieldDiffs(op).fieldDiffs);
+
+    const observedAction = op.observed.action;
+    if (observedAction === null) return total;
+
+    const desired = op.desired;
+    if (desired.type === "CONDITIONAL" && observedAction.type === "CONDITIONAL") {
+        total += nestedListSyncBudget(
+            desired.ifActions,
+            extractNestedActions(observedAction.ifActions)
+        );
+        total += nestedListSyncBudget(
+            desired.elseActions,
+            extractNestedActions(observedAction.elseActions)
+        );
+    } else if (desired.type === "RANDOM" && observedAction.type === "RANDOM") {
+        total += nestedListSyncBudget(
+            desired.actions,
+            extractNestedActions(observedAction.actions)
+        );
+    }
+    return total;
+}
+
+/**
+ * Drop nulls and erase the `Observed<>` brand from a nested action list
+ * so it can feed back into `cacheAwareApplyBudget`. Cached snapshots in
+ * this path are plain Actions wrapped via `cachedActionsAsObserved`, so
+ * non-null entries are already structurally Action[]; the cast is a
+ * type-only concession.
+ */
+function extractNestedActions(value: unknown): readonly Action[] {
+    if (!Array.isArray(value)) return [];
+    const out: Action[] = [];
+    for (const entry of value) {
+        if (entry === null || entry === undefined) continue;
+        out.push(entry as Action);
+    }
+    return out;
+}
+
+/**
+ * Cost of running a nested action-list sync from inside an edit op:
+ * open the nested submenu, apply its diff, close it. Returns 0 when
+ * the nested diff is empty so we don't price a menu round-trip the
+ * importer won't actually make (it skips opening the submenu when the
+ * lists are equal — see `writeConditional` / `writeRandom`).
+ */
+function nestedListSyncBudget(
+    desired: readonly Action[],
+    cached: readonly Action[]
+): number {
+    if (desired.length === 0 && cached.length === 0) return 0;
+    const apply = cacheAwareApplyBudget(desired, cached);
+    if (apply === 0) return 0;
+    return COST.menuClickWait + apply + COST.goBackWait;
 }
 
 /**

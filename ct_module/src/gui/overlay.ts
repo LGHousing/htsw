@@ -404,10 +404,12 @@ export function initHtswGui(): void {
     });
 
     // Sound mute. While `muteImportSounds` is on and an import is in
-    // flight, cancel `Forge.PlaySoundEvent` so the repetitive ding/click
-    // sounds Hypixel plays on every menu open during a sync don't fire.
-    // We do not touch the master volume — friend PMs / other sounds
-    // outside the import keep playing.
+    // flight, cancel every `Forge.PlaySoundEvent` so the repetitive
+    // ding/click sounds Hypixel plays on every menu open during a sync
+    // don't fire. This is a broad cancel — chat dings and ambient audio
+    // are also suppressed during the import. Master volume itself is
+    // untouched, so audio resumes the moment the import ends or the
+    // toggle is turned off.
     register("soundPlay", (
         _position: any,
         _name: string,

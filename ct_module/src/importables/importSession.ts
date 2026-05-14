@@ -115,6 +115,8 @@ export async function importSelectedImportables(
         const identity = importableIdentity(importable);
         const plan = trustPlan?.importables.get(key);
         const label = `${importable.type} ${identity}`;
+        let refinedWeightCurrent = weightCurrent;
+        let refinedCurrentCompleted = 0;
         /**
          * Merge an action-list-scope event (or a synthesized one for
          * importable-level transitions like "opening") with the
@@ -127,26 +129,38 @@ export async function importSelectedImportables(
         ): void => {
             if (!selection.onProgress) return;
             const remainingWeight = weightTotal - weightCompleted - weightCurrent;
-            const refinedCurrentTotal = inner.estimatedTotal > 0
+            const eventCurrentTotal = inner.estimatedTotal > 0
                 ? inner.estimatedTotal
                 : weightCurrent;
-            const refinedCurrentCompleted =
-                inner.estimatedCompleted > 0
-                    ? inner.estimatedCompleted
-                    : (inner.unitTotal > 0
-                        ? weightCurrent *
-                          Math.min(
-                              1,
-                              Math.max(0, inner.unitCompleted / inner.unitTotal)
-                          )
-                        : 0);
+            if (eventCurrentTotal > refinedWeightCurrent) {
+                refinedWeightCurrent = eventCurrentTotal;
+            }
+            let eventCurrentCompleted =
+                rowStatus === "current"
+                    ? (inner.estimatedCompleted > 0
+                        ? inner.estimatedCompleted
+                        : (inner.unitTotal > 0
+                            ? refinedWeightCurrent *
+                              Math.min(
+                                  1,
+                                  Math.max(0, inner.unitCompleted / inner.unitTotal)
+                              )
+                            : 0))
+                    : refinedWeightCurrent;
+            eventCurrentCompleted = Math.min(
+                refinedWeightCurrent,
+                Math.max(0, eventCurrentCompleted)
+            );
+            if (eventCurrentCompleted > refinedCurrentCompleted) {
+                refinedCurrentCompleted = eventCurrentCompleted;
+            }
             selection.onProgress({
                 ...inner,
                 completed,
                 total: ordered.length,
                 weightCompleted,
-                weightTotal: weightCompleted + refinedCurrentTotal + remainingWeight,
-                weightCurrent: refinedCurrentTotal,
+                weightTotal: weightCompleted + refinedWeightCurrent + remainingWeight,
+                weightCurrent: refinedWeightCurrent,
                 currentKey: key,
                 currentType: importable.type,
                 currentIdentity: identity,
@@ -154,7 +168,7 @@ export async function importSelectedImportables(
                 rowStatus,
                 currentLabel: label,
                 estimatedCompleted: weightCompleted + refinedCurrentCompleted,
-                estimatedTotal: weightCompleted + refinedCurrentTotal + remainingWeight,
+                estimatedTotal: weightCompleted + refinedWeightCurrent + remainingWeight,
                 weights,
                 failed: result.failed,
             });
@@ -186,7 +200,14 @@ export async function importSelectedImportables(
                 "skipped"
             );
             completed++;
-            weightCompleted += weightCurrent;
+            // Lock in the refined weight so the static `weightTotal`
+            // stays consistent with `weights[]` and `weightCompleted` —
+            // otherwise the next importable's `remainingWeight` calc
+            // (weightTotal - weightCompleted - weightCurrent) can go
+            // negative and the GUI's overall bar/ETA snaps backwards.
+            weightTotal += refinedWeightCurrent - weightCurrent;
+            weights[i] = refinedWeightCurrent;
+            weightCompleted += refinedWeightCurrent;
             continue;
         }
 
@@ -265,12 +286,16 @@ export async function importSelectedImportables(
                 `&c[htsw] Import aborted after failure on ${importable.type} ${importableIdentity(importable)}`
             );
             setActiveDiffSink(null);
+            weightTotal += refinedWeightCurrent - weightCurrent;
+            weights[i] = refinedWeightCurrent;
             break;
         } finally {
             setActiveDiffSink(null);
         }
         completed++;
-        weightCompleted += weightCurrent;
+        weightTotal += refinedWeightCurrent - weightCurrent;
+        weights[i] = refinedWeightCurrent;
+        weightCompleted += refinedWeightCurrent;
     }
 
     if (selection.onProgress) {

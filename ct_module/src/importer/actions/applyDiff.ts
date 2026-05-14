@@ -49,7 +49,7 @@ import {
     scalarFieldEditBudget,
     type ActionListPhaseBudget,
 } from "../progress/costs";
-import { setCurrentPhase, timed } from "../progress/timing";
+import { timed, withCurrentPhase } from "../progress/timing";
 import { ACTION_LIST_CONFIG } from "./listConfig";
 import {
     actionPathForIndex,
@@ -288,7 +288,7 @@ async function applyActionListDiffInner(
     }
     // Diffing is in-process compute (~1-5ms) with no menu round-trips —
     // we don't track timing for it. The progress event still fires so the
-    // GUI's diff-sink can display the diff summary, but `setCurrentPhase`
+    // GUI's diff-sink can display the diff summary, but the phase wrapper
     // jumps straight to "applying" and the budget math skips diffPart.
     const diffLabel =
         `${summary.edits} edits · ${summary.adds} adds · ${summary.deletes} deletes · ${summary.moves} moves`;
@@ -315,14 +315,7 @@ async function applyActionListDiffInner(
             phaseBudget: null,
         });
     }
-    setCurrentPhase("applying");
-    // The applying phase performs many awaited menu round-trips; any
-    // throw between here and the function exit must still clear the
-    // currentPhase, otherwise per-phase timing accumulates against
-    // "applying" forever after a failure. Wrap the rest of the body in
-    // try/finally so the phase is reset on every exit path including
-    // exceptions and the early-return for empty diffs.
-    try {
+    await withCurrentPhase("applying", async () => {
     // Pre-mark already-matching desired actions. Anything not touched by an
     // op is "match" (white) from the start; ops will paint their own state
     // on completion.
@@ -545,7 +538,5 @@ async function applyActionListDiffInner(
     emitApplying("applied action diff", diff.operations.length, appliedBudget);
 
     if (sink !== null) sink.end();
-    } finally {
-        setCurrentPhase(null);
-    }
+    });
 }
