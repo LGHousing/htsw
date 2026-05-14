@@ -54,17 +54,17 @@ const defaultBehaviorChangeVar: ActionBehavior<"CHANGE_VAR"> = (rt, action) => {
             : rt.playerVars;
 
     if (action.op === "Unset") {
-        varHolder.unsetVar(key);
+        varHolder.unset(key);
         return;
     }
 
     if (!action.value) return;
 
     const rhs: Var<any> = parseValue(rt, action.value);
-    const lhs = varHolder.getVar(key, rhs.unsetValue());
+    const lhs = varHolder.get(key, rhs.unsetValue());
 
     if (action.op === "Set") {
-        varHolder.setVar(key, rhs);
+        varHolder.set(key, rhs);
         return;
     }
 
@@ -77,7 +77,7 @@ const defaultBehaviorChangeVar: ActionBehavior<"CHANGE_VAR"> = (rt, action) => {
         return;
     }
 
-    varHolder.setVar(key, lhs.binOp(rhs, action.op));
+    varHolder.set(key, lhs.binOp(rhs, action.op));
 };
 
 const defaultBehaviorRandom: ActionBehavior<"RANDOM"> = (rt, action) => {

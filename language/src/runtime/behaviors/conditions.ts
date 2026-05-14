@@ -38,7 +38,7 @@ const defaultBehaviorCompareVar: ConditionBehavior<"COMPARE_VAR"> = (rt, conditi
     }
 
     const rhs: Var<any> = parseValue(rt, condition.amount);
-    const lhs = varHolder.getVar(key, fallback);
+    const lhs = varHolder.get(key, fallback);
 
     return lhs.cmpOp(rhs, condition.op);
 };

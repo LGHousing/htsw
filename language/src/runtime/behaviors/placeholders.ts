@@ -44,7 +44,7 @@ function resolveVar<T>(
     rt: Parameters<PlaceholderBehavior>[0],
 ): Var<any> {
     const fallback = parseValue(rt, fallbackRaw ?? '""');
-    return holder.getVar(key, fallback);
+    return holder.get(key, fallback);
 }
 
 const defaultBehaviorRandomWhole: PlaceholderBehavior = (_rt, invocation) => {
