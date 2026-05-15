@@ -5,8 +5,8 @@ import {
     normalizeActionCompare,
     normalizeConditionCompare,
     scalarFieldDiffers,
-} from "../src/importer/compare";
-import { getActionScalarLoreFields } from "../src/importer/actionMappings";
+} from "../src/importer/fields/compare";
+import { getActionScalarLoreFields } from "../src/importer/fields/actionMappings";
 import type { Observed } from "../src/importer/types";
 
 import { changeVar, message, playSound } from "./utils";

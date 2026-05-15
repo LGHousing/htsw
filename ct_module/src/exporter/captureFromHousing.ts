@@ -1,7 +1,7 @@
 /// <reference types="../../CTAutocomplete" />
 
 import TaskContext from "../tasks/context";
-import { waitForMenu } from "../importer/helpers";
+import { waitForMenu } from "../importer/gui/helpers";
 import { removedFormatting } from "../utils/helpers";
 
 export type CaptureType = "FUNCTION" | "MENU";

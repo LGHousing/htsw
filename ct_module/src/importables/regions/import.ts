@@ -5,7 +5,7 @@ import {
     clickGoBack,
     timedWaitForMenu,
     timedWaitForUnformattedMessage,
-} from "../../importer/helpers";
+} from "../../importer/gui/helpers";
 import type { ImportableTrustPlan } from "../../knowledge";
 import type { ActionListProgressFields } from "../../importer/progress/types";
 import TaskContext from "../../tasks/context";

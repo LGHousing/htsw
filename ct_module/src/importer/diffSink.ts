@@ -6,7 +6,7 @@
  * are touched. Paths identify nested actions, e.g. `4.ifActions.2`.
  */
 export type DiffOpKind = "edit" | "add" | "move" | "delete";
-export type DiffFinalState = "match" | "edit" | "add" | "delete";
+type DiffFinalState = "match" | "edit" | "add" | "delete";
 export type ActionPath = string;
 
 export type DiffSummary = {

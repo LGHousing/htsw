@@ -6,7 +6,7 @@ import { importableIdentity } from "./paths";
 import { readKnowledge } from "./cache";
 import { sameHashList } from "./status";
 
-export type TrustedListPath = string;
+type TrustedListPath = string;
 
 export type ImportableTrustPlan = {
     importable: Importable;

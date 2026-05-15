@@ -14,7 +14,7 @@ type ConditionDataKey<T extends Condition> = Exclude<
     "type" | "inverted" | "note"
 >;
 
-export type ConditionLoreFieldSpec<T extends Condition> = {
+type ConditionLoreFieldSpec<T extends Condition> = {
     prop: ConditionDataKey<T>;
     kind: UiFieldKind;
     /**
@@ -33,7 +33,7 @@ export type ConditionLoreSpec<T extends Condition> = {
 
 type ActionDataKey<T extends Action> = Exclude<keyof T, "type" | "note">;
 
-export type ActionLoreFieldSpec<T extends Action> = {
+type ActionLoreFieldSpec<T extends Action> = {
     prop: ActionDataKey<T>;
     kind: UiFieldKind;
     /**
@@ -55,7 +55,7 @@ export type NestedListProp = "conditions" | "ifActions" | "elseActions" | "actio
 /** Nested list properties that still need to be read by clicking in. */
 export type NestedPropsToRead = Set<NestedListProp>;
 
-export type NestedReadState = "none" | "summary" | "full" | "trusted";
+type NestedReadState = "none" | "summary" | "full" | "trusted";
 
 export type NestedSummaries = Partial<Record<NestedListProp, string[]>>;
 

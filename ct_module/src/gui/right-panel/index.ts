@@ -451,7 +451,7 @@ function diffLineDetail(
     return info.detail;
 }
 
-export type HtslDiffLinesOptions = {
+type HtslDiffLinesOptions = {
     focusCurrent?: boolean;
     before?: number;
     after?: number;
@@ -485,7 +485,7 @@ function optionsKeyOf(options: HtslDiffLinesOptions | undefined): string {
     return `${f}|${options.before ?? ""}|${options.after ?? ""}`;
 }
 
-export function htslDiffLines(path: string, options?: HtslDiffLinesOptions): Element[] {
+function htslDiffLines(path: string, options?: HtslDiffLinesOptions): Element[] {
     const parsed = parseHtslFile(path);
     if (parsed.parseError !== null) {
         const errLines = parsed.parseError.split("\n");
@@ -1249,6 +1249,44 @@ const COLOR_BAR_BG = COLOR_PANEL_BORDER;
 const COLOR_BAR_FG = ACCENT_SUCCESS;
 const PROGRESS_BAR_H = 6;
 
+function progressPhaseColor(): number {
+    const p = getImportProgress();
+    if (p === null) return COLOR_BAR_FG;
+    if (p.phase === "reading") return PHASE_READING;
+    if (p.phase === "hydrating") return PHASE_HYDRATING;
+    if (p.phase === "applying") return PHASE_APPLYING;
+    return COLOR_BAR_FG;
+}
+
+function currentImportablePhaseSegments(p: NonNullable<ReturnType<typeof getImportProgress>>): Child[] {
+    const pb = p.phaseBudget;
+    if (pb === null) return [];
+    const total = Math.max(1, pb.readPart + pb.hydratePart + pb.applyPart);
+    const within = Math.max(0, p.estimatedCompleted - p.weightCompleted);
+    const readDone = Math.min(pb.readPart, within);
+    const hydrateDone = Math.min(
+        pb.hydratePart,
+        Math.max(0, within - pb.readPart)
+    );
+    const applyDone = Math.min(
+        pb.applyPart,
+        Math.max(0, within - pb.readPart - pb.hydratePart)
+    );
+    return [
+        phaseSegment(pb.readPart / total, pb.readPart > 0 ? readDone / pb.readPart : 1, PHASE_READING),
+        phaseSegment(
+            pb.hydratePart / total,
+            pb.hydratePart > 0 ? hydrateDone / pb.hydratePart : 1,
+            PHASE_HYDRATING
+        ),
+        phaseSegment(
+            pb.applyPart / total,
+            pb.applyPart > 0 ? applyDone / pb.applyPart : 0,
+            PHASE_APPLYING
+        ),
+    ];
+}
+
 function progressBar(): Element {
     return Container({
         style: {
@@ -1270,7 +1308,7 @@ function progressBar(): Element {
                         style: {
                             width: { kind: "grow", factor: Math.max(0.0001, ratio) },
                             height: { kind: "grow" },
-                            background: COLOR_BAR_FG,
+                            background: progressPhaseColor(),
                         },
                         children: [],
                     }),
@@ -1321,6 +1359,8 @@ function progressBar(): Element {
                 } else {
                     fill = 0;
                 }
+                const currentPhaseSegments =
+                    i === p.orderIndex ? currentImportablePhaseSegments(p) : [];
                 out.push(
                     Container({
                         style: {
@@ -1328,23 +1368,26 @@ function progressBar(): Element {
                             width: { kind: "grow", factor: flexFactor },
                             height: { kind: "grow" },
                         },
-                        children: [
-                            Container({
-                                style: {
-                                    width: { kind: "grow", factor: Math.max(0.0001, fill) },
-                                    height: { kind: "grow" },
-                                    background: COLOR_BAR_FG,
-                                },
-                                children: [],
-                            }),
-                            Container({
-                                style: {
-                                    width: { kind: "grow", factor: Math.max(0.0001, 1 - fill) },
-                                    height: { kind: "grow" },
-                                },
-                                children: [],
-                            }),
-                        ],
+                        children:
+                            currentPhaseSegments.length > 0
+                                ? currentPhaseSegments
+                                : [
+                                      Container({
+                                          style: {
+                                              width: { kind: "grow", factor: Math.max(0.0001, fill) },
+                                              height: { kind: "grow" },
+                                              background: i === p.orderIndex ? progressPhaseColor() : COLOR_BAR_FG,
+                                          },
+                                          children: [],
+                                      }),
+                                      Container({
+                                          style: {
+                                              width: { kind: "grow", factor: Math.max(0.0001, 1 - fill) },
+                                              height: { kind: "grow" },
+                                          },
+                                          children: [],
+                                      }),
+                                  ],
                     })
                 );
                 if (i < liveWeights.length - 1) {
@@ -1452,6 +1495,26 @@ function liveImporterPanel(): Element {
                                 if (isActionListPhase && prog.unitTotal > 1) {
                                     if (prog.phase === "reading") {
                                         parts.push(`${prog.unitCompleted} read so far`);
+                                    } else if (prog.phase === "hydrating") {
+                                        parts.push(
+                                            `${prog.unitCompleted} of ${prog.unitTotal} nested reads`
+                                        );
+                                    } else if (prog.phase === "applying") {
+                                        if (
+                                            prog.parentUnitCompleted !== undefined &&
+                                            prog.parentUnitTotal !== undefined
+                                        ) {
+                                            parts.push(
+                                                `operation ${prog.parentUnitCompleted} of ${prog.parentUnitTotal}`
+                                            );
+                                            parts.push(
+                                                `nested operation ${prog.unitCompleted} of ${prog.unitTotal}`
+                                            );
+                                        } else {
+                                            parts.push(
+                                                `operation ${prog.unitCompleted} of ${prog.unitTotal}`
+                                            );
+                                        }
                                     } else {
                                         parts.push(
                                             `step ${prog.unitCompleted} of ${prog.unitTotal}`
@@ -1490,7 +1553,7 @@ function liveImporterPanel(): Element {
                                         if (eta === "") return "";
                                         if (eta === "total ETA calculating…") return eta;
                                         if (!progressEtaIsStable()) {
-                                            return `total provisional ${eta} left`;
+                                            return `total ~${eta} left`;
                                         }
                                         const finish = progressFinishTimeText();
                                         if (finish === "") return `total ${eta} left`;
@@ -1852,5 +1915,3 @@ export function RightPanel(): Element {
         ],
     });
 }
-
-export const RightRail = RightPanel;

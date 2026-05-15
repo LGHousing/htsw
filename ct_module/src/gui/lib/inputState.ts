@@ -74,11 +74,6 @@ export function readAndSync(id: string): string | null {
 export function getRecord(id: string): Record | null {
     return records[id] ?? null;
 }
-
-export function dropInputField(id: string): void {
-    delete records[id];
-}
-
 export function tickAllFields(): void {
     for (const id in records) records[id].field.func_146178_a(); // updateCursorCounter
 }

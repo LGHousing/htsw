@@ -6,7 +6,7 @@ import {
     readCurrentValue,
     readSelectedOption,
     waitForMenu,
-} from "../../importer/helpers";
+} from "../../importer/gui/helpers";
 import { getCurrentHousingUuid, writeKnowledge } from "../../knowledge";
 import TaskContext from "../../tasks/context";
 import { getAllItemSlots } from "../../tasks/specifics/slots";

@@ -76,16 +76,7 @@ function debug(msg: string): void {
     if (!debugActive()) return;
     debugBuffer += `[${Date.now()}] ${msg}\n`;
     FileLib.write(DEBUG_LOG_PATH, debugBuffer);
-}
-
-export function debugLog(msg: string): void {
-    debug(msg);
-}
-export function debugIsActive(): boolean {
-    return debugActive();
-}
-
-function frameBounds(): Rect {
+}function frameBounds(): Rect {
     // Use the overlay-converted bounds so the panel rect lives in overlay coords (1 unit =
     // OVERLAY_SCALE real pixels). bounds.ts itself is left untouched.
     const b = getContainerBoundsOverlay();

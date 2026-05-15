@@ -1,6 +1,5 @@
 /// <reference types="../../CTAutocomplete" />
 
-import { Rect } from "./layout";
 import { ContainerBounds, getContainerBounds } from "./bounds";
 import { javaType } from "./java";
 
@@ -16,7 +15,7 @@ const ScaledResolutionClass = javaType("net.minecraft.client.gui.ScaledResolutio
 // actual per-frame scale is `getEffectiveOverlayScale()`, which is MC's current scale capped at
 // this target. We never render bigger than MC's own GUI; we only render smaller when a modded
 // MC scale exceeds our cap.
-export const OVERLAY_SCALE_TARGET = 4;
+const OVERLAY_SCALE_TARGET = 4;
 
 // Effective overlay scale this frame: MC's current real scale capped at OVERLAY_SCALE_TARGET.
 // When MC is at-or-below the cap (the common case — vanilla maxes at 4), we match it exactly so
@@ -59,17 +58,6 @@ export function getOverlayScreenH(): number {
     const dh = (Client.getMinecraft() as any).field_71440_d;
     return Math.floor(dh / getEffectiveOverlayScale());
 }
-
-// Convert an MC scaled-coord rect into overlay coords.
-export function mcRectToOverlay(r: Rect): Rect {
-    return {
-        x: mcToOverlay(r.x),
-        y: mcToOverlay(r.y),
-        w: mcToOverlay(r.w),
-        h: mcToOverlay(r.h),
-    };
-}
-
 // Same as `getContainerBounds` from `bounds.ts`, but with every field converted into overlay
 // coords. Use this for layout / panel positioning; use the bounds.ts version when you need raw
 // MC coords (e.g. forwarding to a Java API that expects them).

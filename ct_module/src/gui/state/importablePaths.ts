@@ -2,7 +2,7 @@
 
 import type { ParseResult } from "htsw";
 import type { Importable } from "htsw/types";
-import { getImportJsonPath, getParsedResult } from "./index";
+import { getParsedResult } from "./index";
 
 /**
  * Centralized importable→path lookups.
@@ -77,14 +77,6 @@ export function importableSourcePath(
     }
     return parsed.gcx.sourceFiles.get(imp);
 }
-
-export function importableDeclaringJson(_imp: Importable): string {
-    // Future: when the parser tracks per-importable declaring import.json,
-    // resolve through that map. Today every importable shares the
-    // currently-loaded top-level import.json.
-    return getImportJsonPath();
-}
-
 function subListOf(imp: Importable, kind: SubListKind): readonly object[] | undefined {
     if (kind === "onEnterActions" && imp.type === "REGION") {
         return imp.onEnterActions;

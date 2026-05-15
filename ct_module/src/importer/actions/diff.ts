@@ -1,13 +1,13 @@
 import type { Action, Condition } from "htsw/types";
 
-import { ACTION_MAPPINGS } from "../actionMappings";
+import { ACTION_MAPPINGS } from "../fields/actionMappings";
 import {
     actionOnlyNoteDiffers,
     actionsEqual,
     conditionsEqual,
     scalarFieldDiffers,
-} from "../compare";
-import { CONDITION_MAPPINGS } from "../conditionMappings";
+} from "../fields/compare";
+import { CONDITION_MAPPINGS } from "../fields/conditionMappings";
 import { diffConditionList } from "../conditions/diff";
 import type {
     ActionListDiff,

@@ -8,39 +8,23 @@
  */
 
 export {
-    KNOWLEDGE_SCHEMA_VERSION,
-    buildKnowledgeEntry,
     writeKnowledge,
     readKnowledge,
     deleteKnowledge,
 } from "./cache";
-export type { KnowledgeEntry, KnowledgeWriter } from "./cache";
 
 export {
-    actionHash,
-    actionListHash,
-    conditionHash,
-    conditionListHash,
     importableHash,
-    listHashes,
-    perSlotActionHashes,
 } from "./hash";
 
 export {
-    cachePathFor,
-    cachePathForId,
     importableIdentity,
     itemSnbtCachePath,
-    slug,
-    KNOWLEDGE_ROOT,
 } from "./paths";
 
 export { getCurrentHousingUuid } from "./housingId";
 
-export { buildKnowledgeStatusRows, sameHashList } from "./status";
-export type { KnowledgeState, KnowledgeStatusRow } from "./status";
+export { buildKnowledgeStatusRows } from "./status";
 
 export { buildKnowledgeTrustPlan, trustPlanKey } from "./trust";
-export type { KnowledgeTrustPlan, ImportableTrustPlan, TrustedListPath } from "./trust";
-
-export { getAlias, setAlias, clearAlias, listAliases } from "./aliases";
+export type { ImportableTrustPlan } from "./trust";

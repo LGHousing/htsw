@@ -1,6 +1,5 @@
 /// <reference types="../../../CTAutocomplete" />
 
-import { COST } from "./costs";
 import type { ActionListProgressPhase } from "./types";
 
 export type TimedOperationKind =
@@ -16,13 +15,13 @@ export type TimedOperationKind =
     | "reorderStep"
     | "sleep1000";
 
-export type TimedOp = {
+type TimedOp = {
     kind: TimedOperationKind;
     expectedUnits: number;
     startedAt: number;
 };
 
-export type TimingStatsEntry = {
+type TimingStatsEntry = {
     count: number;
     totalMs: number;
     totalExpectedUnits: number;
@@ -103,11 +102,6 @@ export async function withCurrentPhase<T>(
         currentPhase = previous;
     }
 }
-
-export function getCurrentPhase(): ActionListProgressPhase | null {
-    return currentPhase;
-}
-
 export type PhaseStats = {
     [phase: string]:
         | { totalMs: number; totalBudgetUnits: number; msPerBudgetUnit: number }
@@ -194,7 +188,7 @@ export function savePhaseStatsToDisk(): void {
     }
 }
 
-export function beginTimedOp(
+function beginTimedOp(
     kind: TimedOperationKind,
     expectedUnits: number
 ): TimedOp {
@@ -205,7 +199,7 @@ export function beginTimedOp(
     };
 }
 
-export function endTimedOp(op: TimedOp): void {
+function endTimedOp(op: TimedOp): void {
     const elapsed = Math.max(0, Date.now() - op.startedAt);
     recordTimedOp(op.kind, op.expectedUnits, elapsed);
 }
@@ -282,18 +276,4 @@ export function resetTimingStats(): void {
     for (const kind in stats) {
         delete stats[kind];
     }
-}
-
-export function defaultExpectedUnits(kind: TimedOperationKind): number {
-    if (kind === "commandMenuWait") return COST.commandMenuWait;
-    if (kind === "commandMessageWait") return COST.commandMessageWait;
-    if (kind === "menuClickWait") return COST.menuClickWait;
-    if (kind === "messageClickWait") return COST.messageClickWait;
-    if (kind === "pageTurnWait") return COST.pageTurnWait;
-    if (kind === "goBackWait") return COST.goBackWait;
-    if (kind === "chatInput") return COST.chatInput;
-    if (kind === "anvilInput") return COST.anvilInput;
-    if (kind === "itemSelect") return COST.itemSelect;
-    if (kind === "reorderStep") return COST.reorderStep;
-    return COST.guaranteedSleep1000;
 }

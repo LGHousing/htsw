@@ -84,7 +84,7 @@ function isStructuralLine(text: string): boolean {
     return text === "}" || text.indexOf("} else") === 0 || text === "else {";
 }
 
-export function actionToLines(action: Action, actionIndex: number): HtslLine[] {
+function actionToLines(action: Action, actionIndex: number): HtslLine[] {
     const basePath = String(actionIndex);
     let src: string;
     try {

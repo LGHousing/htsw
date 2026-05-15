@@ -1,13 +1,13 @@
 import type { Condition } from "htsw/types";
 
-import { conditionOnlyNoteDiffers, conditionsEqual } from "../compare";
+import { conditionOnlyNoteDiffers, conditionsEqual } from "../fields/compare";
 import type {
     ConditionListDiff,
     ConditionListOperation,
     ObservedConditionSlot,
 } from "../types";
 
-export { conditionOnlyNoteDiffers as onlyNoteDiffers } from "../compare";
+export { conditionOnlyNoteDiffers as onlyNoteDiffers } from "../fields/compare";
 
 export function diffConditionList(
     observed: ObservedConditionSlot[],

@@ -1,5 +1,5 @@
 import type { Action, Condition } from "htsw/types";
-import type { Observed, UiFieldKind } from "./types";
+import type { Observed, UiFieldKind } from "../types";
 import {
     DECIMAL_DISPLAY_VALUE_PATTERN,
     INTEGER_DISPLAY_VALUE_PATTERN,

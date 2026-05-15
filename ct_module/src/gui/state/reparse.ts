@@ -48,7 +48,7 @@ const IMPORTS_ROOT = "./htsw/imports";
  * on init when the configured path doesn't exist yet — saves the user
  * having to type a path before anything appears.
  */
-export function findFirstImportJson(): string | null {
+function findFirstImportJson(): string | null {
     try {
         const Files = javaType("java.nio.file.Files");
         const Paths = javaType("java.nio.file.Paths");

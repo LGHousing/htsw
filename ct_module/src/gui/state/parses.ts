@@ -92,16 +92,6 @@ export function getParseAt(path: string): CachedParse | null {
     const canon = canonicalPath(path);
     return cache.get(canon) ?? null;
 }
-
-/**
- * Drop the cached parse for `path`. Used when the source file is removed
- * from the Explore tree so we don't grow the cache forever.
- */
-export function evictParseAt(path: string): void {
-    const canon = canonicalPath(path);
-    cache.delete(canon);
-}
-
 /**
  * Iterate every parsed import.json. Used by the queue layer to find a
  * `QueueItem`'s importable when only its source path is known.

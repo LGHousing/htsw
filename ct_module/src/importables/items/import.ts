@@ -2,7 +2,7 @@ import type { Action, ImportableItem } from "htsw/types";
 
 import { syncActionList } from "../../importer/actions/sync";
 import type { ActionListProgressFields } from "../../importer/progress/types";
-import { clickGoBack, timedWaitForMenu } from "../../importer/helpers";
+import { clickGoBack, timedWaitForMenu } from "../../importer/gui/helpers";
 import {
     getCurrentHousingUuid,
     importableHash,
@@ -20,7 +20,7 @@ import {
     selectedHotbarSlot,
     sendCreativeInventoryAction,
     waitForAnySetSlot,
-} from "../../importer/packets";
+} from "../../importer/gui/packets";
 import { actionListTrustFor } from "../actionListTrust";
 import type { ItemRegistry } from "../itemRegistry";
 import { ensureReferencedImportablesExist } from "../references";

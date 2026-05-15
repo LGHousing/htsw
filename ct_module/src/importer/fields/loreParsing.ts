@@ -8,9 +8,9 @@
 // is not. Read-then-click pairs (e.g. readBooleanValue / setBooleanValue)
 // stay together in helpers.ts.
 
-import type { ItemSlot } from "../tasks/specifics/slots";
-import { normalizeFormattingCodes, removedFormatting } from "../utils/helpers";
-import type { UiFieldKind } from "./types";
+import type { ItemSlot } from "../../tasks/specifics/slots";
+import { normalizeFormattingCodes, removedFormatting } from "../../utils/helpers";
+import type { UiFieldKind } from "../types";
 
 export function parseLoreKeyValueLine(
     line: string
@@ -35,7 +35,7 @@ export function parseLoreKeyValueLine(
     return { label, value };
 }
 
-export function parseBooleanText(value: string): boolean | undefined {
+function parseBooleanText(value: string): boolean | undefined {
     const normalized = removedFormatting(value).trim();
     if (normalized === "Enabled") {
         return true;
@@ -79,7 +79,7 @@ function stripNumericGroupingCommas(value: string): string {
     return value.replace(/,/g, "");
 }
 
-export function parseFieldValue(
+function parseFieldValue(
     kind: UiFieldKind,
     value: string
 ): string | boolean | undefined {

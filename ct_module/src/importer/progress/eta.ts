@@ -172,7 +172,7 @@ export function getImportEtaSeconds(progress: ImportProgress | null): number | n
  * cheap and the caller of `getImportEtaSeconds` consults this on every
  * read for the `max(...)` floor.
  */
-export function getCurrentImportableEtaSeconds(
+function getCurrentImportableEtaSeconds(
     progress: ImportProgress | null
 ): number | null {
     if (progress === null) return null;

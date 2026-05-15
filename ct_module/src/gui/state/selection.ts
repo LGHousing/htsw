@@ -50,11 +50,6 @@ export function setActiveTab(path: string): void {
     if (preview !== null && path !== preview) preview = null;
     active = path;
 }
-
-export function clearActiveTab(): void {
-    active = null;
-}
-
 export function closeTab(path: string): void {
     if (preview === path) preview = null;
     const idx = confirmed.indexOf(path);

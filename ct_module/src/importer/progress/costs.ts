@@ -10,8 +10,8 @@ import type {
     UiFieldKind,
 } from "../types";
 import { diffActionList } from "../actions/diff";
-import { getActionScalarLoreFields } from "../actionMappings";
-import { scalarFieldDiffers } from "../compare";
+import { getActionScalarLoreFields } from "../fields/actionMappings";
+import { scalarFieldDiffers } from "../fields/compare";
 
 export type EtaConfidence = "rough" | "informed" | "planned";
 

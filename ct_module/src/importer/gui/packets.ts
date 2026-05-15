@@ -1,8 +1,8 @@
-import TaskContext from "../tasks/context";
+import TaskContext from "../../tasks/context";
 import {
     C10PacketCreativeInventoryAction,
     S2FPacketSetSlot,
-} from "../utils/packets";
+} from "../../utils/packets";
 
 type Packet = MCPacket<MCINetHandler>;
 

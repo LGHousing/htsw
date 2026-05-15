@@ -12,9 +12,7 @@ import { normalizeHtswPath } from "../lib/pathDisplay";
 import {
     getImportEtaBreakdown as etaGetImportEtaBreakdown,
     getImportEtaSeconds as etaGetImportEtaSeconds,
-    getCurrentImportableEtaSeconds as etaGetCurrentImportableEtaSeconds,
     resetEtaCache,
-    type ImportEtaBreakdown,
 } from "../../importer/progress/eta";
 import { importableIdentity } from "../../knowledge/paths";
 import { trustPlanKey } from "../../knowledge/trust";
@@ -22,9 +20,7 @@ import type { QueueItem } from "./queue";
 import { canonicalPath } from "./parses";
 import { getActiveRightTab, setActiveRightTab } from "./selection";
 
-export type { ImportRunRowStatus };
-
-export type ImportRunRow = {
+type ImportRunRow = {
     key: string;
     type: Importable["type"];
     identity: string;
@@ -36,23 +32,14 @@ export type ImportRunRow = {
     unitTotal: number;
 };
 
-export type ImportRunState = {
+type ImportRunState = {
     rows: Map<string, ImportRunRow>;
     order: string[];
     startedAt: number;
 };
 
-export type SourceTab = {
-    /** Filesystem path of the source file. Identity for the tab. */
-    path: string;
-    /** Display label (basename + maybe importable name). */
-    label: string;
-};
-
 let importJsonPath = "./htsw/imports/import.json";
 let parsedResult: ParseResult<Importable[]> | null = null;
-let parseError: string | null = null;
-let selectedImportableId: string | null = null;
 /**
  * Multi-select for the Importables tab. Keyed by `${type}:${identity}`
  * (the `trustPlanKey` shape). Independent of `selectedImportableId` —
@@ -68,8 +55,6 @@ const checkedImportableKeys: Set<string> = new Set();
  * progress callback when the session reports `currentLabel === "done"`.
  */
 let currentImportingPath: string | null = null;
-let openTabs: SourceTab[] = [];
-let activeTabPath: string | null = null;
 /** Housing UUIDs the user has explicitly opted in to "trust the cache for". */
 const trustedHouses: Set<string> = new Set();
 /**
@@ -96,8 +81,6 @@ export function getImportProgressFraction(): number {
     return Math.min(1, Math.max(0, p.estimatedCompleted / p.estimatedTotal));
 }
 
-export type { ImportEtaBreakdown };
-
 /**
  * Total remaining seconds for the in-flight import. Phase-aware, with
  * a guard that prevents the cached/decayed value from undershooting
@@ -108,14 +91,6 @@ export function getImportEtaSeconds(): number | null {
     if (importStartedAt === null) return null;
     return etaGetImportEtaSeconds(importProgress);
 }
-
-/** Remaining seconds for *just the current importable*. */
-export function getCurrentImportableEtaSeconds(): number | null {
-    const secs = etaGetCurrentImportableEtaSeconds(importProgress);
-    if (secs === null || importProgressUpdatedAt === null) return secs;
-    return Math.max(0, secs - (Date.now() - importProgressUpdatedAt) / 1000);
-}
-
 /** Remaining seconds for the active read/hydrate/apply phase. */
 export function getCurrentPhaseEtaSeconds(): number | null {
     const p = importProgress;
@@ -130,12 +105,6 @@ export function getCurrentPhaseEtaSeconds(): number | null {
     if (secs === null || importProgressUpdatedAt === null) return secs;
     return Math.max(0, secs - (Date.now() - importProgressUpdatedAt) / 1000);
 }
-
-/** Per-phase breakdown of the current importable's remaining work. */
-export function getImportEtaBreakdown(): ImportEtaBreakdown | null {
-    return etaGetImportEtaBreakdown(importProgress);
-}
-
 export function getImportJsonPath(): string {
     return importJsonPath;
 }
@@ -150,18 +119,8 @@ export function setParsedResult(r: ParseResult<Importable[]> | null): void {
     parsedResult = r;
 }
 
-export function getParseError(): string | null {
-    return parseError;
-}
 export function setParseError(msg: string | null): void {
-    parseError = msg;
-}
-
-export function getSelectedImportableId(): string | null {
-    return selectedImportableId;
-}
-export function setSelectedImportableId(id: string | null): void {
-    selectedImportableId = id;
+    void msg;
 }
 
 export function isImportableChecked(key: string): boolean {
@@ -183,36 +142,6 @@ export function getCheckedImportableKeys(): Set<string> {
 }
 export function getCheckedImportableCount(): number {
     return checkedImportableKeys.size;
-}
-
-export function getOpenTabs(): SourceTab[] {
-    return openTabs;
-}
-export function getActiveTabPath(): string | null {
-    return activeTabPath;
-}
-export function openTab(tab: SourceTab): void {
-    for (let i = 0; i < openTabs.length; i++) {
-        if (openTabs[i].path === tab.path) {
-            activeTabPath = tab.path;
-            return;
-        }
-    }
-    openTabs = openTabs.concat([tab]);
-    activeTabPath = tab.path;
-}
-export function closeTab(path: string): void {
-    const next: SourceTab[] = [];
-    for (let i = 0; i < openTabs.length; i++) {
-        if (openTabs[i].path !== path) next.push(openTabs[i]);
-    }
-    openTabs = next;
-    if (activeTabPath === path) {
-        activeTabPath = next.length > 0 ? next[next.length - 1].path : null;
-    }
-}
-export function setActiveStateTab(path: string): void {
-    activeTabPath = path;
 }
 
 export function isHouseTrusted(uuid: string): boolean {
@@ -456,25 +385,6 @@ export function beginImportRun(importables: readonly Importable[]): void {
         });
     }
     importRunState = { rows, order, startedAt: Date.now() };
-}
-
-export function getImportRunState(): ImportRunState | null {
-    return importRunState;
-}
-
-export function getImportRunRow(key: string): ImportRunRow | null {
-    if (importRunState === null) return null;
-    return importRunState.rows.get(key) ?? null;
-}
-
-export function markImportRunRowDone(
-    key: string,
-    status: "imported" | "skipped" | "failed"
-): void {
-    if (importRunState === null) return;
-    const row = importRunState.rows.get(key);
-    if (row === undefined) return;
-    importRunState.rows.set(key, { ...row, status });
 }
 
 export function updateImportRunFromProgress(progress: ImportProgress): void {

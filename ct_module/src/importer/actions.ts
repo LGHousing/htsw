@@ -53,47 +53,27 @@ import {
     setNumberValue,
     readBooleanValue,
     readStringValue,
-} from "./helpers";
+} from "./gui/helpers";
 import { readConditionList } from "./conditions/readList";
 import { syncConditionList } from "./conditions/sync";
 import {
     normalizeActionCompare,
     normalizeConditionCompare,
-} from "./compare";
+} from "./fields/compare";
 import {
     ACTION_MAPPINGS,
     getActionFieldLabel,
-} from "./actionMappings";
-import { diffActionList } from "./actions/diff";
+} from "./fields/actionMappings";
 import type {
     NestedPropsToRead,
     Observed,
 } from "./types";
-import { setItemValue } from "./items";
+import { setItemValue } from "./items/items";
 import type { ActionPath } from "./diffSink";
-import { resolveImportableItem } from "./resolveItem";
+import { resolveImportableItem } from "./items/resolveItem";
 import { readActionList } from "./actions/readList";
 import { syncActionList } from "./actions/sync";
 import type { ActionListProgressSink } from "./progress/types";
-
-// Public re-exports — external callers import these names from "./actions".
-export { diffActionList };
-export { readActionList, readActionsListPage } from "./actions/readList";
-export type { ActionListReadMode } from "./actions/readList";
-export { syncActionList } from "./actions/sync";
-export { importAction } from "./actions/applyDiff";
-export type {
-    SyncActionListOptions,
-    SyncActionListResult,
-} from "./actions/sync";
-export type {
-    ActionListDiff,
-    ActionListOperation,
-    NestedListProp,
-    NestedPropsToRead,
-    ObservedActionSlot as ObservedAction,
-    ActionListTrust,
-} from "./types";
 
 export type WriteActionOptions<T extends Action = Action> = {
     current?: Observed<T>;

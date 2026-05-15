@@ -17,7 +17,7 @@ export type ImportRunRowStatus =
     | "failed";
 
 /** All phases an import can be in, end-to-end. */
-export type ImportPhase =
+type ImportPhase =
     | "starting"
     | "opening"
     | "reading"
@@ -48,6 +48,9 @@ export type ActionListProgressFields = {
     phaseLabel: string;
     unitCompleted: number;
     unitTotal: number;
+    parentUnitCompleted?: number;
+    parentUnitTotal?: number;
+    parentPhaseLabel?: string;
     estimatedCompleted: number;
     estimatedTotal: number;
     etaConfidence: EtaConfidence;

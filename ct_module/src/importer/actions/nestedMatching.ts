@@ -1,6 +1,6 @@
 import type { Action, Condition } from "htsw/types";
 
-import { getActionLoreFields, getNestedListFields } from "../actionMappings";
+import { getActionLoreFields, getNestedListFields } from "../fields/actionMappings";
 import type {
     NestedListProp,
     NestedPropsToRead,

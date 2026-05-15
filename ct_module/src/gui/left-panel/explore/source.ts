@@ -256,8 +256,3 @@ export function enumerateForSource(s: Source): Result[] {
     enumerationCache.set(s.fullPath, { at: now, results });
     return results;
 }
-
-export function invalidateEnumerationCache(fullPath?: string): void {
-    if (fullPath === undefined) enumerationCache.clear();
-    else enumerationCache.delete(fullPath);
-}

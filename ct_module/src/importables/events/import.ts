@@ -1,7 +1,7 @@
 import type { ImportableEvent } from "htsw/types";
 
 import { syncActionList } from "../../importer/actions/sync";
-import { timedWaitForMenu } from "../../importer/helpers";
+import { timedWaitForMenu } from "../../importer/gui/helpers";
 import type { ImportableTrustPlan } from "../../knowledge";
 import type { ActionListProgressFields } from "../../importer/progress/types";
 import TaskContext from "../../tasks/context";

@@ -23,7 +23,7 @@ import {
     setNoteOnLastVisibleSlot,
     timedWaitForMenu,
     waitForMenu,
-} from "../helpers";
+} from "../gui/helpers";
 import { MouseButton } from "../../tasks/specifics/slots";
 import type {
     ActionListDiff,
@@ -35,7 +35,7 @@ import { createApplyProgressAdapter } from "../progress/nested";
 import {
     getPaginatedListSlotAtIndex,
     goToPaginatedListPage,
-} from "../paginatedList";
+} from "../gui/paginatedList";
 import {
     getActiveDiffSink,
     type ImportDiffSink,
@@ -58,7 +58,7 @@ import {
 } from "../actions";
 import { actionLogLabel, editDiffSummary } from "./log";
 
-export async function importAction(
+async function importAction(
     ctx: TaskContext,
     action: Action,
     itemRegistry?: ItemRegistry,
@@ -465,7 +465,12 @@ async function applyActionListDiffInner(
                 current: currentAction,
                 itemRegistry,
                 pathPrefix: srcPath ?? undefined,
-                onProgress: applyProgress?.nestedSink() ?? progress,
+                onProgress:
+                    applyProgress?.nestedSink({
+                        label: opLabel(op),
+                        unitCompleted: appliedOps,
+                        unitTotal: diff.operations.length,
+                    }) ?? progress,
             });
             if (applyProgress !== null) {
                 appliedBudget = Math.max(appliedBudget, applyProgress.getAppliedBudget());
@@ -524,7 +529,11 @@ async function applyActionListDiffInner(
             ctx,
             actionToImport,
             itemRegistry,
-            applyProgress?.nestedSink() ?? progress,
+            applyProgress?.nestedSink({
+                label: opLabel(op),
+                unitCompleted: appliedOps,
+                unitTotal: diff.operations.length,
+            }) ?? progress,
             srcPath ?? undefined
         );
         if (applyProgress !== null) {

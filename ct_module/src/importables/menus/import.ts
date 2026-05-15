@@ -6,8 +6,8 @@ import {
     setCycleValue,
     timedWaitForMenu,
     timedWaitForUnformattedMessage,
-} from "../../importer/helpers";
-import { selectItemFromOpenInventory } from "../../importer/items";
+} from "../../importer/gui/helpers";
+import { selectItemFromOpenInventory } from "../../importer/items/items";
 import type { ImportableTrustPlan } from "../../knowledge";
 import type { ActionListProgressFields } from "../../importer/progress/types";
 import TaskContext from "../../tasks/context";

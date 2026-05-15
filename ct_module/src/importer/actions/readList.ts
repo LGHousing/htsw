@@ -5,7 +5,7 @@ import { type ItemRegistry } from "../../importables/itemRegistry";
 import {
     clickGoBack,
     timedWaitForMenu,
-} from "../helpers";
+} from "../gui/helpers";
 import { ItemSlot } from "../../tasks/specifics/slots";
 import { removedFormatting } from "../../utils/helpers";
 import {
@@ -13,12 +13,12 @@ import {
     getNestedListFields,
     parseActionListItem,
     tryGetActionTypeFromDisplayName,
-} from "../actionMappings";
+} from "../fields/actionMappings";
 import {
     CONDITION_MAPPINGS,
     tryGetConditionTypeFromDisplayName,
-} from "../conditionMappings";
-import { canonicalizeItemFields } from "../canonicalizeItems";
+} from "../fields/conditionMappings";
+import { canonicalizeItemFields } from "../fields/canonicalizeItems";
 import type {
     ActionListTrust,
     NestedHydrationPlan,
@@ -39,7 +39,7 @@ import {
     goToPaginatedListPage,
     isEmptyPaginatedPlaceholder,
     readPaginatedList,
-} from "../paginatedList";
+} from "../gui/paginatedList";
 import { getActiveDiffSink } from "../diffSink";
 import {
     COST,
@@ -133,7 +133,7 @@ function readNestedSummaries(
     return { summaries, propsToRead };
 }
 
-export async function readActionsListPage(
+async function readActionsListPage(
     ctx: TaskContext
 ): Promise<ObservedActionSlot[]> {
     const slots = getVisiblePaginatedItemSlots(ctx).filter(

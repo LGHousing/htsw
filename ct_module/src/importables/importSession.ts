@@ -266,17 +266,6 @@ export async function importSelectedImportables(
                 printDiagnostic(sm, error);
             } else {
                 ctx.displayMessage(`&cFailed to import ${importable.type}: ${error}`);
-                const e = error as {
-                    stack?: string;
-                    fileName?: string;
-                    lineNumber?: number;
-                };
-                if (typeof e?.fileName === "string" && typeof e?.lineNumber === "number") {
-                    ctx.displayMessage(`&7thrown at ${e.fileName}:${e.lineNumber}`);
-                }
-                if (typeof e?.stack === "string" && e.stack.length > 0) {
-                    ctx.displayMessage(`&7${e.stack}`);
-                }
             }
             // Halt the session on first failure rather than ploughing
             // through the remaining importables — they're often dependent

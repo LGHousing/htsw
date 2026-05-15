@@ -1,7 +1,7 @@
 import type { ImportableFunction } from "htsw/types";
 
 import { syncActionList } from "../../importer/actions/sync";
-import { clickGoBack } from "../../importer/helpers";
+import { clickGoBack } from "../../importer/gui/helpers";
 import type { ImportableTrustPlan } from "../../knowledge";
 import type { ActionListProgressFields } from "../../importer/progress/types";
 import TaskContext from "../../tasks/context";

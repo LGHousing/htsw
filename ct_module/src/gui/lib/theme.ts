@@ -42,14 +42,11 @@ export const COLOR_TAB_ACCENT = 0xff67a7e8 | 0; // 1px accent bar under the acti
 
 // ── Inputs ──────────────────────────────────────────────────────────────
 export const COLOR_INPUT_BG = 0xff15181d | 0;
-export const COLOR_INPUT_BORDER = 0xff3a4350 | 0;
-export const COLOR_INPUT_BORDER_FOCUS = 0xff67a7e8 | 0;
 
 // ── Text ────────────────────────────────────────────────────────────────
 export const COLOR_TEXT = 0xffe5e5e5 | 0;
 export const COLOR_TEXT_DIM = 0xff8a92a3 | 0;
 export const COLOR_TEXT_FAINT = 0xff5c6371 | 0;
-export const COLOR_GUTTER = 0xff666666 | 0;
 
 // ── Semantic accents ────────────────────────────────────────────────────
 export const ACCENT_SUCCESS = 0xff5cb85c | 0;
@@ -67,32 +64,17 @@ export const PHASE_READING = ACCENT_INFO;     // blue — paginated reads
 export const PHASE_HYDRATING = ACCENT_PURPLE; // purple — nested-action opens
 export const PHASE_APPLYING = ACCENT_SUCCESS; // green — actual edits
 
-// Translucent row tints (overlay over a row bg).
-export const TINT_DANGER = 0x40e85c5c | 0;
-export const TINT_WARN = 0x40e5bc4b | 0;
-export const TINT_SUCCESS = 0x405cb85c | 0;
-export const TINT_INFO = 0x4067a7e8 | 0;
-
 // ── Sizes ───────────────────────────────────────────────────────────────
 export const SIZE_TAB_H = 18;
-export const SIZE_BUTTON_H = 18;
 export const SIZE_ROW_H = 18;
-export const SIZE_LINE_H = 10;
 
 // ── Glyphs (Minecraft default font) ─────────────────────────────────────
 // MC's font has limited unicode support; these all render in the default
 // font without falling back to a missing-glyph box.
 export const GLYPH_FOLDER = "▣";  // U+25A3 — squared box, used for directories
-export const GLYPH_FILE = "□";    // U+25A1 — empty square, generic file
 export const GLYPH_JSON = "{ }";  // import.json marker
 export const GLYPH_HTSL = "▶";    // U+25B6 — play, denotes executable function
 export const GLYPH_SNBT = "◆";    // U+25C6 — diamond, item/snbt
 export const GLYPH_CHEVRON_DOWN = "▼";
-export const GLYPH_CHEVRON_UP = "▲";
-export const GLYPH_CHEVRON_RIGHT = "▶";
 export const GLYPH_DOT = "●";
-export const GLYPH_RING = "○";
-export const GLYPH_CHECK = "✓";
-export const GLYPH_CROSS = "✗";
-export const GLYPH_PLUS = "+";
 export const GLYPH_X = "✕";

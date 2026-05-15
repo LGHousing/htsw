@@ -16,17 +16,17 @@ import {
     setListItemNote,
     setNoteOnLastVisibleSlot,
     timedWaitForMenu,
-} from "../helpers";
+} from "../gui/helpers";
 import { ItemSlot, MouseButton } from "../../tasks/specifics/slots";
 import { removedFormatting } from "../../utils/helpers";
-import { CONDITION_MAPPINGS } from "../conditionMappings";
+import { CONDITION_MAPPINGS } from "../fields/conditionMappings";
 import type {
     ConditionListDiff,
     ConditionListOperation,
     ObservedConditionSlot,
 } from "../types";
 import type { ActionListProgressSink } from "../progress/types";
-import { getPaginatedListSlotAtIndex } from "../paginatedList";
+import { getPaginatedListSlotAtIndex } from "../gui/paginatedList";
 import { CONDITION_LIST_CONFIG } from "./listConfig";
 import { getConditionSpec, writeOpenCondition } from "../conditions";
 
@@ -37,7 +37,7 @@ function getInvertSlot(ctx: TaskContext): ItemSlot {
     });
 }
 
-export async function setOpenConditionInverted(
+async function setOpenConditionInverted(
     ctx: TaskContext,
     desiredInverted: boolean,
     knownCurrentInverted?: boolean
@@ -53,7 +53,7 @@ export async function setOpenConditionInverted(
     await timedWaitForMenu(ctx, "menuClickWait");
 }
 
-export async function importCondition(
+async function importCondition(
     ctx: TaskContext,
     condition: Condition,
     itemRegistry?: ItemRegistry

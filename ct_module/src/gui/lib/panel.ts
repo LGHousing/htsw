@@ -21,7 +21,7 @@ const GlStateManager: any = javaType("net.minecraft.client.renderer.GlStateManag
  *
  * Uses SRG names since CT 1.8.9 binds the runtime obf-mapped class.
  */
-export function resetGuiState(): void {
+function resetGuiState(): void {
     try {
         GL11.glDisable(GL11.GL_SCISSOR_TEST);
     } catch (_e) {

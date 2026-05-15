@@ -3,7 +3,11 @@ import type { ActionListProgressSink } from "./types";
 
 export type ApplyProgressAdapter = {
     emitOuter(label: string, unitCompleted: number, appliedBudget: number): void;
-    nestedSink(): ActionListProgressSink | undefined;
+    nestedSink(parent?: {
+        label: string;
+        unitCompleted: number;
+        unitTotal: number;
+    }): ActionListProgressSink | undefined;
     getAppliedBudget(): number;
 };
 
@@ -26,7 +30,12 @@ export function createApplyProgressAdapter(args: {
         label: string,
         unitCompleted: number,
         unitTotal: number,
-        applied: number
+        applied: number,
+        parent?: {
+            label: string;
+            unitCompleted: number;
+            unitTotal: number;
+        }
     ): void => {
         appliedBudget = Math.max(appliedBudget, applied);
         growApplyPart(appliedBudget);
@@ -35,6 +44,9 @@ export function createApplyProgressAdapter(args: {
             phaseLabel: label,
             unitCompleted,
             unitTotal,
+            parentUnitCompleted: parent?.unitCompleted,
+            parentUnitTotal: parent?.unitTotal,
+            parentPhaseLabel: parent?.label,
             estimatedCompleted: args.baseline + appliedBudget,
             estimatedTotal: args.phaseBudget.total,
             etaConfidence: "planned",
@@ -46,7 +58,7 @@ export function createApplyProgressAdapter(args: {
         emitOuter(label, unitCompleted, applied): void {
             emitParent(label, unitCompleted, args.unitTotal, applied);
         },
-        nestedSink(): ActionListProgressSink | undefined {
+        nestedSink(parent): ActionListProgressSink | undefined {
             if (args.sink === undefined) return undefined;
             const nestedStart = appliedBudget;
             return (inner) => {
@@ -55,7 +67,8 @@ export function createApplyProgressAdapter(args: {
                     inner.phaseLabel,
                     inner.unitCompleted,
                     inner.unitTotal,
-                    nestedStart + nestedCompleted
+                    nestedStart + nestedCompleted,
+                    parent
                 );
             };
         },
