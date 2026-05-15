@@ -173,9 +173,8 @@ export function getImportEtaSeconds(progress: ImportProgress | null): number | n
  * read for the `max(...)` floor.
  */
 function getCurrentImportableEtaSeconds(
-    progress: ImportProgress | null
+    progress: ImportProgress
 ): number | null {
-    if (progress === null) return null;
     const breakdown = getImportEtaBreakdown(progress);
     if (breakdown === null) return null;
     return breakdown.readSeconds + breakdown.hydrateSeconds + breakdown.applySeconds;
