@@ -1,10 +1,5 @@
 import type { Action, Condition } from "htsw/types";
-import type {
-    ActionListOperation,
-    Observed,
-    ScalarFieldDiff,
-    UiFieldKind,
-} from "./types";
+import type { Observed, UiFieldKind } from "./types";
 import {
     DECIMAL_DISPLAY_VALUE_PATTERN,
     INTEGER_DISPLAY_VALUE_PATTERN,
@@ -13,7 +8,6 @@ import {
 import {
     getActionFieldDefault,
     getActionFieldKind,
-    getActionScalarLoreFields,
 } from "./actionMappings";
 import { getConditionFieldDefault, getConditionFieldKind } from "./conditionMappings";
 
@@ -189,53 +183,15 @@ function normalizeComparableString(value: string): string {
     return normalized;
 }
 
-/**
- * Per-field comparison used by the diff engine and the edit-log
- * renderer. Returns the list of fields that differ post-normalization,
- * with the canonical observed/desired values. Centralising this means
- * the cost calculation, the equality check, and the human-readable
- * EDIT log all agree on what counts as a real change.
- */
-export function diffScalarFields(
+export function scalarFieldDiffers(
     observed: Record<string, unknown>,
     desired: Record<string, unknown>,
     type: string,
-    scalarProps: ReadonlyArray<{ prop: string; kind: UiFieldKind }>
-): ScalarFieldDiff[] {
-    const out: ScalarFieldDiff[] = [];
-    for (const { prop, kind } of scalarProps) {
-        const obsCanonical = canonicalizeForCompare(type, prop, observed[prop]);
-        const desCanonical = canonicalizeForCompare(type, prop, desired[prop]);
-        if (!fieldsAreEqual(obsCanonical, desCanonical)) {
-            out.push({ prop, kind, observed: observed[prop], desired: desired[prop] });
-        }
-    }
-    return out;
-}
-
-/**
- * Per-edit-op verdict used by the edit-log renderer and any other
- * consumer (telemetry, replay logs, the right-panel diff sink) that
- * needs to know which fields the engine considers different. Reuses
- * the same normalized comparison the engine uses to emit the op, so
- * callers can't drift from the engine's truth.
- */
-export function getEditFieldDiffs(
-    op: Extract<ActionListOperation, { kind: "edit" }>
-): { fieldDiffs: ScalarFieldDiff[]; noteDiffers: boolean } {
-    const action = op.observed.action;
-    if (action === null) {
-        return { fieldDiffs: [], noteDiffers: false };
-    }
-    const fieldDiffs = op.noteOnly
-        ? []
-        : diffScalarFields(
-              action,
-              op.desired,
-              action.type,
-              getActionScalarLoreFields(action.type)
-          );
-    return { fieldDiffs, noteDiffers: action.note !== op.desired.note };
+    prop: string
+): boolean {
+    const obsCanonical = canonicalizeForCompare(type, prop, observed[prop]);
+    const desCanonical = canonicalizeForCompare(type, prop, desired[prop]);
+    return !fieldsAreEqual(obsCanonical, desCanonical);
 }
 
 function canonicalizeForCompare(

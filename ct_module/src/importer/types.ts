@@ -93,12 +93,9 @@ export type ObservedConditionSlot = {
     condition: Condition | null;
 };
 
-export type ScalarFieldDiff = {
-    prop: string;
-    kind: UiFieldKind;
-    observed: unknown;
-    desired: unknown;
-};
+export type NestedListDiff =
+    | { prop: "conditions"; diff: ConditionListDiff }
+    | { prop: "ifActions" | "elseActions" | "actions"; diff: ActionListDiff };
 
 export type ActionListOperation =
     | { kind: "move"; observed: ObservedActionSlot; toIndex: number; action: Action }
@@ -107,12 +104,15 @@ export type ActionListOperation =
           observed: ObservedActionSlot;
           desired: Action;
           noteOnly: boolean;
+          noteDiffers: boolean;
+          nestedDiffs: NestedListDiff[];
       }
     | { kind: "add"; desired: Action; toIndex: number }
     | { kind: "delete"; observed: ObservedActionSlot };
 
 export type ActionListDiff = {
     operations: ActionListOperation[];
+    desiredLength: number;
 };
 
 /**

@@ -63,6 +63,19 @@ const phaseStats: { [phase: string]: PhaseStatsEntry | undefined } = {};
 let currentPhase: ActionListProgressPhase | null = null;
 let phaseStatsLoaded = false;
 
+/**
+ * The phases whose timing we calibrate and persist. `diffing` is part of
+ * `ActionListProgressPhase` for event-emission purposes but contributes
+ * nothing to ETA — it's pure in-process compute. Centralising the
+ * whitelist here keeps `recordTimedOp`, `savePhaseStatsToDisk`, and
+ * `ensurePhaseStatsLoaded` in lockstep so we never persist a phase we
+ * can't load back, or accept one on disk we don't write.
+ */
+type StatsTrackedPhase = "reading" | "hydrating" | "applying";
+function isStatsTrackedPhase(phase: string): phase is StatsTrackedPhase {
+    return phase === "reading" || phase === "hydrating" || phase === "applying";
+}
+
 const PHASE_STATS_PATH = "./htsw/eta-stats.json";
 
 /**
@@ -138,9 +151,7 @@ function ensurePhaseStatsLoaded(): void {
         const phases = parsed?.phases;
         if (phases === undefined || phases === null) return;
         for (const phase in phases) {
-            if (phase !== "reading" && phase !== "hydrating" && phase !== "applying") {
-                continue;
-            }
+            if (!isStatsTrackedPhase(phase)) continue;
             const entry = phases[phase];
             const totalMs = Number(entry?.totalMs);
             const totalBudgetUnits = Number(entry?.totalBudgetUnits);
@@ -165,6 +176,7 @@ export function savePhaseStatsToDisk(): void {
             [phase: string]: { totalMs: number; totalBudgetUnits: number };
         } = {};
         for (const phase in phaseStats) {
+            if (!isStatsTrackedPhase(phase)) continue;
             const entry = phaseStats[phase];
             if (entry === undefined) continue;
             phases[phase] = {
@@ -212,7 +224,7 @@ export function recordTimedOp(
     entry.count++;
     entry.totalMs += Math.max(0, elapsedMs);
     entry.totalExpectedUnits += expectedUnits;
-    if (currentPhase !== null) {
+    if (currentPhase !== null && isStatsTrackedPhase(currentPhase)) {
         ensurePhaseStatsLoaded();
         let phaseEntry = phaseStats[currentPhase];
         if (phaseEntry === undefined) {

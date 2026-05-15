@@ -193,7 +193,6 @@ async function injectHeldItem(ctx: TaskContext, item: Item): Promise<void> {
             selectHotbarSlot(
                 ctx,
                 0,
-                "selecting hotbar slot 0 for already-present import item"
             );
         }
         return;
@@ -205,7 +204,6 @@ async function injectHeldItem(ctx: TaskContext, item: Item): Promise<void> {
             selectHotbarSlot(
                 ctx,
                 existingHotbarSlot,
-                `selecting existing hotbar slot ${existingHotbarSlot} for import item`
             );
         }
         return;
@@ -217,7 +215,6 @@ async function injectHeldItem(ctx: TaskContext, item: Item): Promise<void> {
             ctx,
             HOTBAR_ZERO_PACKET_SLOT,
             stack,
-            `injecting import item &f${item.getName()}`
         );
         await ctx.withTimeout(
             ack,
@@ -238,7 +235,6 @@ async function injectHeldItem(ctx: TaskContext, item: Item): Promise<void> {
         selectHotbarSlot(
             ctx,
             0,
-            "selecting hotbar slot 0 after import item injection"
         );
     }
     await timed("sleep1000", COST.guaranteedSleep1000, () => ctx.sleep(1000));

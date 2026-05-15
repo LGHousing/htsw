@@ -107,7 +107,6 @@ export async function selectItemFromOpenInventory(
         ctx,
         INV_PACKET_SLOT,
         desiredStack,
-        `injecting item-field value for &f${label}`
     );
 
     try {
@@ -124,9 +123,6 @@ export async function selectItemFromOpenInventory(
         if (matchedSlot === null) {
             throw error;
         }
-        ctx.displayMessage(
-            `&e[packet] item-field ack was not observed for &f${label}&e, but the scratch slot matches; continuing.`
-        );
     }
     await ctx.waitFor("tick");
 

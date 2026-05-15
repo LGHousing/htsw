@@ -88,6 +88,7 @@ let importRunState: ImportRunState | null = null;
  * cleared on the inverse transition.
  */
 let importStartedAt: number | null = null;
+let importProgressUpdatedAt: number | null = null;
 
 export function getImportProgressFraction(): number {
     const p = importProgress;
@@ -110,7 +111,24 @@ export function getImportEtaSeconds(): number | null {
 
 /** Remaining seconds for *just the current importable*. */
 export function getCurrentImportableEtaSeconds(): number | null {
-    return etaGetCurrentImportableEtaSeconds(importProgress);
+    const secs = etaGetCurrentImportableEtaSeconds(importProgress);
+    if (secs === null || importProgressUpdatedAt === null) return secs;
+    return Math.max(0, secs - (Date.now() - importProgressUpdatedAt) / 1000);
+}
+
+/** Remaining seconds for the active read/hydrate/apply phase. */
+export function getCurrentPhaseEtaSeconds(): number | null {
+    const p = importProgress;
+    if (p === null) return null;
+    const breakdown = etaGetImportEtaBreakdown(p);
+    if (breakdown === null) return null;
+
+    let secs: number | null = null;
+    if (p.phase === "reading") secs = breakdown.readSeconds;
+    else if (p.phase === "hydrating") secs = breakdown.hydrateSeconds;
+    else if (p.phase === "applying") secs = breakdown.applySeconds;
+    if (secs === null || importProgressUpdatedAt === null) return secs;
+    return Math.max(0, secs - (Date.now() - importProgressUpdatedAt) / 1000);
 }
 
 /** Per-phase breakdown of the current importable's remaining work. */
@@ -282,8 +300,12 @@ export function setImportProgress(p: ImportProgress | null): void {
         importStartedAt = Date.now();
     } else if (p === null) {
         importStartedAt = null;
+        importProgressUpdatedAt = null;
     }
     importProgress = p === null ? null : normalizeImportProgress(p);
+    if (p !== null) {
+        importProgressUpdatedAt = Date.now();
+    }
     // Force ETA recompute on the next read so the new event's data is used.
     resetEtaCache();
     // On import start, flip the right panel to the Import tab so the

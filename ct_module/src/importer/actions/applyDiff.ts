@@ -25,7 +25,6 @@ import {
     waitForMenu,
 } from "../helpers";
 import { MouseButton } from "../../tasks/specifics/slots";
-import { getEditFieldDiffs } from "../compare";
 import type {
     ActionListDiff,
     ActionListOperation,
@@ -45,8 +44,9 @@ import {
 import {
     COST,
     actionListDiffApplyBudget,
+    conditionListDiffApplyBudget,
     moveBudget,
-    scalarFieldEditBudget,
+    scalarFieldEditBudgetForOp,
     type ActionListPhaseBudget,
 } from "../progress/costs";
 import { timed, withCurrentPhase } from "../progress/timing";
@@ -192,8 +192,21 @@ function opDetail(op: ActionListOperation): string {
 function editOperationFieldBudget(
     op: Extract<ActionListOperation, { kind: "edit" }>
 ): number {
-    const { fieldDiffs } = getEditFieldDiffs(op);
-    return scalarFieldEditBudget(fieldDiffs);
+    let total = scalarFieldEditBudgetForOp(op);
+    for (const nested of op.nestedDiffs) {
+        if (nested.diff.operations.length === 0) continue;
+        total += COST.menuClickWait + COST.goBackWait;
+        if (nested.prop === "conditions") {
+            total += conditionListDiffApplyBudget(nested.diff);
+        } else {
+            total += actionListDiffApplyBudget(
+                nested.diff,
+                editOperationFieldBudget,
+                nested.diff.desiredLength
+            );
+        }
+    }
+    return total;
 }
 
 function operationApplyBudget(
@@ -205,10 +218,10 @@ function operationApplyBudget(
         return moveBudget(op.observed.index, op.toIndex, desiredLength);
     }
     if (op.kind === "add") {
-        const fakeDiff: ActionListDiff = { operations: [op] };
+        const fakeDiff: ActionListDiff = { operations: [op], desiredLength };
         return actionListDiffApplyBudget(fakeDiff, editOperationFieldBudget, desiredLength);
     }
-    const fakeDiff: ActionListDiff = { operations: [op] };
+    const fakeDiff: ActionListDiff = { operations: [op], desiredLength };
     return actionListDiffApplyBudget(fakeDiff, editOperationFieldBudget, desiredLength);
 }
 
@@ -418,6 +431,7 @@ async function applyActionListDiffInner(
         if (sink !== null && srcPath !== null) sink.beginOp(srcPath, "edit", opLabel(op));
         emitApplying(opLabel(op), appliedOps, appliedBudget);
         appliedOps++;
+        const opStartBudget = appliedBudget;
 
         const actionSlot = await getPaginatedListSlotAtIndex(
             ctx,
@@ -460,7 +474,10 @@ async function applyActionListDiffInner(
         }
 
         await setListItemNote(ctx, actionSlot, op.desired.note);
-        appliedBudget += operationApplyBudget(op, desired.length);
+        appliedBudget = Math.max(
+            appliedBudget,
+            opStartBudget + operationApplyBudget(op, desired.length)
+        );
         if (sink !== null && srcPath !== null) sink.completeOp(srcPath, "edit");
     }
 
@@ -496,6 +513,7 @@ async function applyActionListDiffInner(
         if (sink !== null && srcPath !== null) sink.beginOp(srcPath, "add", opLabel(op));
         emitApplying(opLabel(op), appliedOps, appliedBudget);
         appliedOps++;
+        const opStartBudget = appliedBudget;
 
         const actionToImport =
             op.desired.note === undefined
@@ -530,7 +548,10 @@ async function applyActionListDiffInner(
             const addedSlot = await getPaginatedListSlotAtIndex(ctx, op.toIndex, currentLength, ACTION_LIST_CONFIG);
             await setListItemNote(ctx, addedSlot, op.desired.note);
         }
-        appliedBudget += operationApplyBudget(op, desired.length);
+        appliedBudget = Math.max(
+            appliedBudget,
+            opStartBudget + operationApplyBudget(op, desired.length)
+        );
         if (sink !== null && srcPath !== null) sink.completeOp(srcPath, "add");
     }
 

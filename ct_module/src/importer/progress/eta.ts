@@ -138,14 +138,16 @@ export function resetEtaCache(): void {
  * Total remaining seconds for the in-flight import, with two safety
  * properties:
  *
- * 1. **Ticks down between events** — cached value decays linearly by
- *    elapsed wall time so the UI updates smoothly even when progress
- *    events are sparse.
+ * 1. **Ticks down between events** — both the cached overall value and
+ *    the current-importable floor decay linearly by elapsed wall time
+ *    so the UI updates smoothly even when progress events are sparse
+ *    (e.g. during a multi-second chat/anvil input).
  * 2. **Never undershoots the current importable** — the displayed
- *    value is `max(decayed, currentImportableRemaining)`. Fixes the
- *    "overall ETA reads 0s while the current importable still says
- *    14s left" bug that occurred when a long apply op (e.g. multi-second
- *    chatInput) ran longer than the previously-cached value.
+ *    value is `max(decayed, currentImportableRemaining - elapsed)`.
+ *    Fixes the "overall ETA reads 0s while the current importable
+ *    still says 14s left" bug that occurred when a long apply op ran
+ *    longer than the previously-cached value, while still letting both
+ *    sides count down together when no new event arrives.
  */
 export function getImportEtaSeconds(progress: ImportProgress | null): number | null {
     if (progress === null) return null;
@@ -156,8 +158,12 @@ export function getImportEtaSeconds(progress: ImportProgress | null): number | n
     }
     const elapsed = (Date.now() - cachedEtaComputedAt) / 1000;
     const decayed = Math.max(0, cachedEtaSeconds - elapsed);
-    const currentImportable = getCurrentImportableEtaSeconds(progress) ?? 0;
-    return Math.max(decayed, currentImportable);
+    const currentImportableSnapshot = getCurrentImportableEtaSeconds(progress);
+    const currentImportableDecayed =
+        currentImportableSnapshot === null
+            ? 0
+            : Math.max(0, currentImportableSnapshot - elapsed);
+    return Math.max(decayed, currentImportableDecayed);
 }
 
 /**

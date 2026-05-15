@@ -3,14 +3,15 @@ import type { Action, Importable } from "htsw/types";
 import type {
     ActionListDiff,
     ActionListOperation,
+    ConditionListDiff,
     NestedListProp,
     NestedPropsToRead,
     ObservedActionSlot,
-    ScalarFieldDiff,
     UiFieldKind,
 } from "../types";
 import { diffActionList } from "../actions/diff";
-import { getEditFieldDiffs } from "../compare";
+import { getActionScalarLoreFields } from "../actionMappings";
+import { scalarFieldDiffers } from "../compare";
 
 export type EtaConfidence = "rough" | "informed" | "planned";
 
@@ -79,10 +80,19 @@ function fieldKindEditBudget(kind: UiFieldKind): number {
     return COST.menuClickWait;
 }
 
-export function scalarFieldEditBudget(diffs: readonly ScalarFieldDiff[]): number {
+export function scalarFieldEditBudgetForOp(
+    op: Extract<ActionListOperation, { kind: "edit" }>
+): number {
+    const action = op.observed.action;
+    if (action === null || op.noteOnly) return 0;
+
     let total = 0;
-    for (let i = 0; i < diffs.length; i++) {
-        total += fieldKindEditBudget(diffs[i].kind);
+    const fields = getActionScalarLoreFields(action.type);
+    for (let i = 0; i < fields.length; i++) {
+        const field = fields[i];
+        if (scalarFieldDiffers(action, op.desired, action.type, field.prop)) {
+            total += fieldKindEditBudget(field.kind);
+        }
     }
     return total;
 }
@@ -146,6 +156,22 @@ function conditionRoughBudget(): number {
 
 function conditionListRoughBudget(conditions: readonly unknown[]): number {
     return conditions.length * conditionRoughBudget();
+}
+
+export function conditionListDiffApplyBudget(diff: ConditionListDiff): number {
+    let total = 0;
+    for (let i = 0; i < diff.operations.length; i++) {
+        const op = diff.operations[i];
+        if (op.kind === "delete") {
+            total += COST.menuClickWait;
+        } else if (op.kind === "add") {
+            total += conditionRoughBudget();
+        } else {
+            total += op.noteOnly ? noteEditBudget() : conditionRoughBudget();
+            if (op.desired.note !== op.observed.condition?.note) total += noteEditBudget();
+        }
+    }
+    return total;
 }
 
 /**
@@ -338,8 +364,8 @@ function cacheAwareApplyBudget(
 }
 
 /**
- * Edit-op cost for the cache-aware apply path. Scalar field changes go
- * through `getEditFieldDiffs` + `scalarFieldEditBudget` as before.
+ * Edit-op cost for the cache-aware apply path. Scalar field changes are
+ * derived from the edit op's observed/desired pair.
  *
  * `getActionScalarLoreFields` strips out `nestedList` field kinds, so
  * the scalar pass never prices changes to CONDITIONAL.ifActions /
@@ -356,65 +382,24 @@ function cacheAwareApplyBudget(
  * CONDITIONAL/RANDOM can't appear inside another CONDITIONAL/RANDOM
  * body bounds the recursion at one level.
  */
-function editBudgetWithNested(
-    op: Extract<ActionListOperation, { kind: "edit" }>
-): number {
-    let total = scalarFieldEditBudget(getEditFieldDiffs(op).fieldDiffs);
+function editBudgetWithNested(op: Extract<ActionListOperation, { kind: "edit" }>): number {
+    let total = scalarFieldEditBudgetForOp(op);
 
-    const observedAction = op.observed.action;
-    if (observedAction === null) return total;
-
-    const desired = op.desired;
-    if (desired.type === "CONDITIONAL" && observedAction.type === "CONDITIONAL") {
-        total += nestedListSyncBudget(
-            desired.ifActions,
-            extractNestedActions(observedAction.ifActions)
-        );
-        total += nestedListSyncBudget(
-            desired.elseActions,
-            extractNestedActions(observedAction.elseActions)
-        );
-    } else if (desired.type === "RANDOM" && observedAction.type === "RANDOM") {
-        total += nestedListSyncBudget(
-            desired.actions,
-            extractNestedActions(observedAction.actions)
-        );
+    for (let i = 0; i < op.nestedDiffs.length; i++) {
+        const nested = op.nestedDiffs[i];
+        if (nested.diff.operations.length === 0) continue;
+        total += COST.menuClickWait + COST.goBackWait;
+        if (nested.prop === "conditions") {
+            total += conditionListDiffApplyBudget(nested.diff);
+        } else {
+            total += actionListDiffApplyBudget(
+                nested.diff,
+                editBudgetWithNested,
+                nested.diff.desiredLength
+            );
+        }
     }
     return total;
-}
-
-/**
- * Drop nulls and erase the `Observed<>` brand from a nested action list
- * so it can feed back into `cacheAwareApplyBudget`. Cached snapshots in
- * this path are plain Actions wrapped via `cachedActionsAsObserved`, so
- * non-null entries are already structurally Action[]; the cast is a
- * type-only concession.
- */
-function extractNestedActions(value: unknown): readonly Action[] {
-    if (!Array.isArray(value)) return [];
-    const out: Action[] = [];
-    for (const entry of value) {
-        if (entry === null || entry === undefined) continue;
-        out.push(entry as Action);
-    }
-    return out;
-}
-
-/**
- * Cost of running a nested action-list sync from inside an edit op:
- * open the nested submenu, apply its diff, close it. Returns 0 when
- * the nested diff is empty so we don't price a menu round-trip the
- * importer won't actually make (it skips opening the submenu when the
- * lists are equal — see `writeConditional` / `writeRandom`).
- */
-function nestedListSyncBudget(
-    desired: readonly Action[],
-    cached: readonly Action[]
-): number {
-    if (desired.length === 0 && cached.length === 0) return 0;
-    const apply = cacheAwareApplyBudget(desired, cached);
-    if (apply === 0) return 0;
-    return COST.menuClickWait + apply + COST.goBackWait;
 }
 
 /**

@@ -53,6 +53,7 @@ import {
 import { SyntaxToken, tokenizeHtsl } from "./syntax";
 import { FileSystemFileLoader, StringFileLoader } from "../../utils/files";
 import * as htsw from "htsw";
+import type { Importable } from "htsw/types";
 import { actionsToLines, parseHtslFile, type HtslLine } from "../state/htsl-render";
 import {
     COLOR_BY_STATE,
@@ -63,11 +64,11 @@ import {
     type DiffLineInfo,
 } from "../state/diff";
 import { cacheFileMtimeFor, computeCacheDiff } from "../state/cacheDiff";
-import { canonicalPath } from "../state/parses";
+import { canonicalPath, parseImportJsonAt } from "../state/parses";
 import {
     getCheckedImportableCount,
-    getCurrentImportableEtaSeconds,
     getCurrentImportingPath,
+    getCurrentPhaseEtaSeconds,
     getHousingUuid,
     getImportEtaSeconds,
     getImportStartedAt,
@@ -104,6 +105,8 @@ import {
     startImport,
 } from "./import-actions";
 import { clearImportableChecks, getCheckedImportableKeys } from "../state";
+import { importableIdentity } from "../../knowledge/paths";
+import { orderImportablesForImportSession } from "../../importables/importSession";
 
 
 const TAB_BG = 0xff2c323b | 0;
@@ -113,6 +116,7 @@ const TAB_BG_ACTIVE_HOVER = 0xff586477 | 0;
 const COLOR_GUTTER = 0xff666666 | 0;
 const COLOR_PLAIN = 0xffe5e5e5 | 0;
 const COLOR_ERROR = 0xffe85c5c | 0;
+const collapsedQueueImportJsonRows: Set<string> = new Set();
 const LINE_H = 10;
 const DIAG_ERROR_BG = 0x40e85c5c | 0;
 const DIAG_WARN_BG = 0x40e5bc4b | 0;
@@ -711,8 +715,14 @@ function formatElapsedSeconds(secs: number): string {
 function progressEtaText(): string {
     const p = getImportProgress();
     const secs = getImportEtaSeconds();
-    if (secs === null) return p === null ? "" : "calculating…";
+    if (secs === null) return p === null ? "" : "total ETA calculating…";
     return formatEtaSeconds(secs);
+}
+
+function progressEtaIsStable(): boolean {
+    const p = getImportProgress();
+    if (p === null) return false;
+    return p.etaConfidence === "planned" || p.phase === "applying" || p.phase === "done";
 }
 
 function progressElapsedText(): string {
@@ -1035,12 +1045,37 @@ function queueRowMiniBar(item: QueueItem): Element {
     });
 }
 
+function queueImportableLabel(imp: Importable): string {
+    return imp.type === "EVENT" ? imp.event : imp.name;
+}
+
+function queueImportJsonChildren(item: QueueItem): QueueItem[] {
+    if (item.kind !== "importJson") return [];
+    const cached = parseImportJsonAt(item.sourcePath);
+    if (cached.parsed === null) return [];
+    const ordered = orderImportablesForImportSession(
+        cached.parsed.value,
+        cached.parsed.value
+    );
+    return ordered.map((imp) => ({
+        kind: "importable",
+        sourcePath: item.sourcePath,
+        identity: importableIdentity(imp),
+        type: imp.type,
+        label: queueImportableLabel(imp),
+    }));
+}
+
+function isQueueImportJsonExpanded(item: QueueItem): boolean {
+    return item.kind === "importJson" && !collapsedQueueImportJsonRows.has(queueItemKey(item));
+}
+
 function queueRow(item: QueueItem): Element {
     const typeText = item.kind === "importJson" ? "ALL" : item.type;
     const isCurrent = isCurrentQueueItem(item);
+    const canExpand = item.kind === "importJson";
+    const expanded = canExpand && isQueueImportJsonExpanded(item);
     return Container({
-        // Outer container is now a column: row content on top, mini
-        // progress bar at the bottom edge.
         style: {
             direction: "col",
             height: { kind: "px", value: SIZE_ROW_H },
@@ -1072,8 +1107,23 @@ function queueRow(item: QueueItem): Element {
                         children: [],
                     }),
                     Container({
-                        style: { width: { kind: "px", value: 4 }, height: { kind: "grow" } },
-                        children: [],
+                        style: {
+                            direction: "col",
+                            align: "center",
+                            justify: "center",
+                            width: { kind: "px", value: 14 },
+                            height: { kind: "grow" },
+                            hoverBackground: canExpand ? COLOR_BUTTON_HOVER : undefined,
+                        },
+                        onClick: (_rect, info) => {
+                            if (!canExpand || info.button !== 0) return;
+                            const key = queueItemKey(item);
+                            if (expanded) collapsedQueueImportJsonRows.add(key);
+                            else collapsedQueueImportJsonRows.delete(key);
+                        },
+                        children: canExpand
+                            ? [Icon({ name: expanded ? Icons.chevronDown : Icons.chevronRight })]
+                            : [],
                     }),
                     Text({
                         text: typeText,
@@ -1102,6 +1152,65 @@ function queueRow(item: QueueItem): Element {
                             removeFromQueueKey(queueItemKey(item));
                         },
                         children: [Icon({ name: Icons.x })],
+                    }),
+                ],
+            }),
+            queueRowMiniBar(item),
+        ],
+    });
+}
+
+function queueImportJsonChildRow(parent: QueueItem, item: QueueItem): Element {
+    const isCurrent = isCurrentQueueItem(item);
+    return Container({
+        style: {
+            direction: "col",
+            height: { kind: "px", value: SIZE_ROW_H },
+            background: isCurrent ? COLOR_ROW_HOVER : COLOR_ROW,
+            hoverBackground: COLOR_ROW_HOVER,
+        },
+        children: [
+            Container({
+                style: {
+                    direction: "row",
+                    align: "center",
+                    padding: [
+                        { side: "left", value: 0 },
+                        { side: "right", value: 6 },
+                    ],
+                    gap: 6,
+                    width: { kind: "grow" },
+                    height: { kind: "grow" },
+                },
+                children: [
+                    Container({
+                        style: {
+                            width: { kind: "px", value: 2 },
+                            height: { kind: "grow" },
+                            background: isCurrent ? ACCENT_SUCCESS : undefined,
+                        },
+                        children: [],
+                    }),
+                    Container({
+                        style: { width: { kind: "px", value: 14 }, height: { kind: "grow" } },
+                        children: [],
+                    }),
+                    Text({
+                        text: item.kind === "importable" ? item.type : "ALL",
+                        color: COLOR_TEXT_DIM,
+                        style: { width: { kind: "px", value: 48 } },
+                    }),
+                    Text({
+                        text: item.label,
+                        style: { width: { kind: "grow" } },
+                    }),
+                    Text({
+                        text: shortSource(parent.sourcePath),
+                        color: COLOR_TEXT_FAINT,
+                    }),
+                    Container({
+                        style: { width: { kind: "px", value: 14 }, height: { kind: "grow" } },
+                        children: [],
                     }),
                 ],
             }),
@@ -1261,10 +1370,15 @@ function capitalizePhase(phase: string): string {
     return phase.charAt(0).toUpperCase() + phase.slice(1);
 }
 
-function currentImportableEtaText(): string {
-    const secs = getCurrentImportableEtaSeconds();
+function currentPhaseEtaText(): string {
+    const p = getImportProgress();
+    if (p === null) return "";
+    const secs = getCurrentPhaseEtaSeconds();
     if (secs === null || secs <= 0) return "";
-    return `${formatEtaSeconds(secs)} left in this importable`;
+    if (p.phase === "reading") return `${formatEtaSeconds(secs)} left reading`;
+    if (p.phase === "hydrating") return `${formatEtaSeconds(secs)} left hydrating`;
+    if (p.phase === "applying") return `${formatEtaSeconds(secs)} left applying`;
+    return "";
 }
 
 function formatClockTime(d: Date): string {
@@ -1344,7 +1458,7 @@ function liveImporterPanel(): Element {
                                         );
                                     }
                                 }
-                                const eta = currentImportableEtaText();
+                                const eta = currentPhaseEtaText();
                                 if (eta.length > 0) parts.push(eta);
                                 return parts.join("  ·  ");
                             },
@@ -1374,10 +1488,13 @@ function liveImporterPanel(): Element {
                                     text: () => {
                                         const eta = progressEtaText();
                                         if (eta === "") return "";
-                                        if (eta === "calculating…") return eta;
+                                        if (eta === "total ETA calculating…") return eta;
+                                        if (!progressEtaIsStable()) {
+                                            return `total provisional ${eta} left`;
+                                        }
                                         const finish = progressFinishTimeText();
-                                        if (finish === "") return `${eta} left`;
-                                        return `${eta} left · ${finish}`;
+                                        if (finish === "") return `total ${eta} left`;
+                                        return `total ${eta} left · ${finish}`;
                                     },
                                     color: COLOR_TEXT_DIM,
                                     style: { width: { kind: "grow" } },
@@ -1706,7 +1823,18 @@ function importTab(): Element {
                             }),
                         ];
                     }
-                    return items.map(queueRow);
+                    const rows: Child[] = [];
+                    for (let i = 0; i < items.length; i++) {
+                        const item = items[i];
+                        rows.push(queueRow(item));
+                        if (item.kind === "importJson" && isQueueImportJsonExpanded(item)) {
+                            const children = queueImportJsonChildren(item);
+                            for (let j = 0; j < children.length; j++) {
+                                rows.push(queueImportJsonChildRow(item, children[j]));
+                            }
+                        }
+                    }
+                    return rows;
                 },
             }),
             liveImporterPanel(),

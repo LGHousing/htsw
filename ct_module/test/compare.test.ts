@@ -2,44 +2,14 @@ import { describe, expect, test } from "vitest";
 import type { Action, ActionPlaySound, ConditionCompareVar } from "htsw/types";
 
 import {
-    diffScalarFields,
-    getEditFieldDiffs,
     normalizeActionCompare,
     normalizeConditionCompare,
+    scalarFieldDiffers,
 } from "../src/importer/compare";
 import { getActionScalarLoreFields } from "../src/importer/actionMappings";
-import type {
-    ActionListOperation,
-    Observed,
-    ObservedActionSlot,
-} from "../src/importer/types";
+import type { Observed } from "../src/importer/types";
 
-import { changeVar, message, observedSlot, playSound } from "./utils";
-
-function editOp(
-    observed: NonNullable<ObservedActionSlot["action"]>,
-    desired: Action,
-    noteOnly = false
-): Extract<ActionListOperation, { kind: "edit" }> {
-    return {
-        kind: "edit",
-        observed: observedSlot(0, observed),
-        desired,
-        noteOnly,
-    };
-}
-
-function diffOf(
-    observed: Observed<Action>,
-    desired: Action
-): ReturnType<typeof diffScalarFields> {
-    return diffScalarFields(
-        observed,
-        desired,
-        observed.type,
-        getActionScalarLoreFields(observed.type)
-    );
-}
+import { changeVar, message, playSound } from "./utils";
 
 function actionsCompareEqual(a: Action | Observed<Action>, b: Action): boolean {
     return (
@@ -205,14 +175,15 @@ describe("normalizeConditionCompare — same machinery as actions", () => {
     });
 });
 
-describe("diffScalarFields — per-field verdict", () => {
-    test("equal actions produce empty diff list", () => {
+describe("scalarFieldDiffers — scalar field comparison", () => {
+    test("equal actions report no scalar change", () => {
         const observed = playSound({ volume: 0.7, pitch: 1.0 });
         const desired = playSound({ volume: 0.7, pitch: 1.0 });
-        expect(diffOf(observed, desired)).toEqual([]);
+        expect(scalarFieldDiffers(observed, desired, observed.type, "volume")).toBe(false);
+        expect(scalarFieldDiffers(observed, desired, observed.type, "pitch")).toBe(false);
     });
 
-    test("string and number forms of all defaultable fields collapse to no diff", () => {
+    test("string and number forms of defaultable fields collapse to no change", () => {
         const observed = playSound({
             volume: "0.7" as unknown as number,
             pitch: "1.0" as unknown as number,
@@ -223,22 +194,17 @@ describe("diffScalarFields — per-field verdict", () => {
             pitch: 1.0,
             location: { type: "Invokers Location" },
         });
-        expect(diffOf(observed, desired)).toEqual([]);
+        expect(scalarFieldDiffers(observed, desired, observed.type, "volume")).toBe(false);
+        expect(scalarFieldDiffers(observed, desired, observed.type, "pitch")).toBe(false);
+        expect(scalarFieldDiffers(observed, desired, observed.type, "location")).toBe(false);
     });
 
-    test("real differences carry the raw observed/desired values", () => {
-        // Renderer needs the unmasked values so it can show what the user
-        // actually has set, not the canonicalised form used for comparison.
+    test("real differences report a scalar change", () => {
         const observed = playSound({
             volume: "0.5" as unknown as number,
         });
         const desired = playSound({ volume: 0.9 });
-        const diffs = diffOf(observed, desired);
-        expect(diffs).toHaveLength(1);
-        expect(diffs[0].prop).toBe("volume");
-        expect(diffs[0].kind).toBe("value");
-        expect(diffs[0].observed).toBe("0.5");
-        expect(diffs[0].desired).toBe(0.9);
+        expect(scalarFieldDiffers(observed, desired, observed.type, "volume")).toBe(true);
     });
 
     test("nestedList fields are excluded from the scalar prop list", () => {
@@ -246,52 +212,5 @@ describe("diffScalarFields — per-field verdict", () => {
         for (const p of props) {
             expect(p.kind).not.toBe("nestedList");
         }
-    });
-});
-
-describe("getEditFieldDiffs — engine verdict for the renderer", () => {
-    test("note-only edit returns empty fieldDiffs but noteDiffers=true", () => {
-        const observed = message("hi", { note: "old" });
-        const desired = message("hi", { note: "new" });
-        const verdict = getEditFieldDiffs(editOp(observed, desired, true));
-        expect(verdict.fieldDiffs).toEqual([]);
-        expect(verdict.noteDiffers).toBe(true);
-    });
-
-    test("scalar edit reports the differing field, noteDiffers=false", () => {
-        const observed = playSound({ volume: 0.5 });
-        const desired = playSound({ volume: 0.9 });
-        const verdict = getEditFieldDiffs(editOp(observed, desired));
-        expect(verdict.fieldDiffs).toHaveLength(1);
-        expect(verdict.fieldDiffs[0].prop).toBe("volume");
-        expect(verdict.noteDiffers).toBe(false);
-    });
-
-    test("does not flag fields that normalize to equal", () => {
-        const observed = playSound({
-            volume: "0.7" as unknown as number,
-            pitch: "1.0" as unknown as number,
-            location: "Invokers Location" as unknown as ActionPlaySound["location"],
-        });
-        const desired = playSound({
-            volume: 0.7,
-            pitch: 1.0,
-            location: { type: "Invokers Location" },
-        });
-        const verdict = getEditFieldDiffs(editOp(observed, desired));
-        expect(verdict.fieldDiffs).toEqual([]);
-        expect(verdict.noteDiffers).toBe(false);
-    });
-
-    test("returns empty when observed.action is null (defensive)", () => {
-        const op: Extract<ActionListOperation, { kind: "edit" }> = {
-            kind: "edit",
-            observed: { index: 0, slotId: 0, slot: null as never, action: null },
-            desired: playSound(),
-            noteOnly: false,
-        };
-        const verdict = getEditFieldDiffs(op);
-        expect(verdict.fieldDiffs).toEqual([]);
-        expect(verdict.noteDiffers).toBe(false);
     });
 });
