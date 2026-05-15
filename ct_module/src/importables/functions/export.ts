@@ -7,6 +7,7 @@ import { getCurrentHousingUuid, writeKnowledge } from "../../knowledge";
 import TaskContext from "../../tasks/context";
 import { observedSlotsToActions } from "../../exporter/sanitize";
 import { upsertImportableEntry } from "../../exporter/importJsonWriter";
+import { ensureParentDirs } from "../../utils/filesystem";
 import {
     openFunctionEditor,
     openFunctionSettings,
@@ -88,6 +89,11 @@ export async function exportFunction(
     for (const diag of diagnostics) {
         ctx.displayMessage(`&7[export] &e${diag.message}`);
     }
+
+    // FileLib.write doesn't create parent dirs. When the import.json
+    // reference is something like `actions/main.htsl`, the export silently
+    // failed before — now we mkdir first so subdir-organized exports work.
+    ensureParentDirs(htslPath);
 
     FileLib.write(htslPath, source, true);
 

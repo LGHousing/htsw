@@ -58,6 +58,7 @@ let filter = "";
 // previous folder can't be loaded.
 let selectedImportPath: string | null = null;
 let selectedImportName: string | null = null;
+let selectImportJsonOnly: ((path: string) => void) | null = null;
 
 function setCwd(next: string): void {
     cwd = normalizeHtswPath(next);
@@ -171,6 +172,13 @@ function navigateInto(entry: Entry): void {
 }
 
 function loadAsImport(path: string): void {
+    if (selectImportJsonOnly !== null) {
+        addRecent(path);
+        selectImportJsonOnly(path);
+        closeAllPopovers();
+        ChatLib.chat(`&a[htsw] Selected ${path}`);
+        return;
+    }
     queueSourcePath(path);
     setImportJsonPath(path);
     addRecent(path);
@@ -528,7 +536,7 @@ function loadButton(): Element {
                 // *.import.json files so there's no useful default.
                 text: () =>
                     selectedImportName !== null
-                        ? `Load ${selectedImportName}`
+                        ? `${selectImportJsonOnly === null ? "Load" : "Select"} ${selectedImportName}`
                         : "Select an import.json",
                 style: {
                     width: { kind: "px", value: 220 },
@@ -572,6 +580,14 @@ function browserContent(): Element {
 const ZERO: Rect = { x: 0, y: 0, w: 0, h: 0 };
 
 export function openFileBrowser(initialDir?: string): void {
+    openFileBrowserWithImportJsonSelection(initialDir, null);
+}
+
+export function openFileBrowserWithImportJsonSelection(
+    initialDir: string | undefined,
+    onSelect: ((path: string) => void) | null
+): void {
+    selectImportJsonOnly = onSelect;
     if (initialDir !== undefined && initialDir.length > 0) {
         setCwd(resolveExistingDir(initialDir));
     } else {

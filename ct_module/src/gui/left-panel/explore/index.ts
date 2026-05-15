@@ -1,6 +1,12 @@
 /// <reference types="../../../../CTAutocomplete" />
 
-import { ClickInfo, Element, Rect } from "../../lib/layout";
+import {
+    ClickInfo,
+    Element,
+    Rect,
+    getScrollState,
+    SCROLLBAR_WIDTH,
+} from "../../lib/layout";
 import { Button, Col, Container, Icon, Input, Row, Scroll, Text } from "../../lib/components";
 import { Icons } from "../../lib/icons.generated";
 import { closeAllPopovers, togglePopover } from "../../lib/popovers";
@@ -450,7 +456,7 @@ function importableRow(parent: ResultImport, imp: Importable): Element {
  */
 function subRow(parent: ResultImport, imp: Importable, kind: SubListKind): Element {
     const label = SUB_LIST_LABELS[kind];
-    const path = importableSubListPath(imp, kind);
+    const path = importableSubListPath(imp, kind, parent.parse);
     const target = path ?? parent.fullPath;
     const actions = composeFileMenu([], target);
     return Container({
@@ -506,7 +512,7 @@ type BranchKind = "tee" | "ell";
 type TreeRow = {
     levels: LevelGuide[];
     branch: BranchKind | null;
-    content: Element;
+    content: () => Element;
     height: number;
 };
 
@@ -623,7 +629,7 @@ function composeTreeRow(r: TreeRow): Element {
                 width: { kind: "grow" },
                 height: { kind: "px", value: r.height },
             },
-            children: [r.content],
+            children: [r.content()],
         })
     );
     const body = Container({
@@ -708,7 +714,7 @@ function buildTreeRows(): TreeRow[] {
             out.push({
                 levels: [],
                 branch: null,
-                content: rootRow(
+                content: () => rootRow(
                     formatFullDir(root.source.fullPath),
                     root.key,
                     dirRootActions(root.source)
@@ -727,7 +733,7 @@ function buildTreeRows(): TreeRow[] {
                 out.push({
                     levels: [],
                     branch: isLastResult ? "ell" : "tee",
-                    content: resultRow(r, dirSourceKey, defaultExpanded),
+                    content: () => resultRow(r, dirSourceKey, defaultExpanded),
                     height: 18,
                 });
 
@@ -742,7 +748,7 @@ function buildTreeRows(): TreeRow[] {
                         out.push({
                             levels: impLevels,
                             branch: isLastImp ? "ell" : "tee",
-                            content: importableRow(r, imp),
+                            content: () => importableRow(r, imp),
                             height: ENTRY_ROW_H,
                         });
                         const subKey = importableExpansionKey(r.fullPath, imp);
@@ -756,7 +762,7 @@ function buildTreeRows(): TreeRow[] {
                                 out.push({
                                     levels: subLevels,
                                     branch: isLastSub ? "ell" : "tee",
-                                    content: subRow(r, imp, subs[k]),
+                                    content: () => subRow(r, imp, subs[k]),
                                     height: ENTRY_ROW_H,
                                 });
                             }
@@ -785,7 +791,7 @@ function buildTreeRows(): TreeRow[] {
                     out.push({
                         levels: [],
                         branch: null,
-                        content: resultRow(
+                        content: () => resultRow(
                             r,
                             fileSourceKey,
                             defaultExpanded,
@@ -806,7 +812,7 @@ function buildTreeRows(): TreeRow[] {
                             out.push({
                                 levels: [],
                                 branch: isLastImp ? "ell" : "tee",
-                                content: importableRow(r, imp),
+                                content: () => importableRow(r, imp),
                                 height: ENTRY_ROW_H,
                             });
                             const subKey = importableExpansionKey(r.fullPath, imp);
@@ -820,7 +826,7 @@ function buildTreeRows(): TreeRow[] {
                                     out.push({
                                         levels: subLevels,
                                         branch: isLastSub ? "ell" : "tee",
-                                        content: subRow(r, imp, subs[s]),
+                                        content: () => subRow(r, imp, subs[s]),
                                         height: ENTRY_ROW_H,
                                     });
                                 }
@@ -834,8 +840,64 @@ function buildTreeRows(): TreeRow[] {
     return out;
 }
 
+const RESULTS_SCROLL_ID = "left-results-scroll";
+const VIRTUAL_OVERSCAN_PX = 96;
+
 function renderRows(): Element[] {
-    return buildTreeRows().map(composeTreeRow);
+    const rows = buildTreeRows();
+    if (rows.length === 0) return [];
+
+    let totalH = 0;
+    for (let i = 0; i < rows.length; i++) totalH += rows[i].height + ROW_GAP_H;
+
+    const state = getScrollState(RESULTS_SCROLL_ID);
+    const viewportH = state.viewportRect.h;
+    if (viewportH <= 0) {
+        const initial: Element[] = [];
+        let initialH = 0;
+        const limitH = 420;
+        for (let i = 0; i < rows.length && initialH < limitH; i++) {
+            initial.push(composeTreeRow(rows[i]));
+            initialH += rows[i].height + ROW_GAP_H;
+        }
+        if (totalH > initialH) initial.push(spacer(1, totalH - initialH));
+        return initial;
+    }
+
+    const minY = Math.max(0, state.offset - VIRTUAL_OVERSCAN_PX);
+    const maxY = state.offset + viewportH + VIRTUAL_OVERSCAN_PX;
+    const out: Element[] = [];
+    let cursor = 0;
+    let visibleH = 0;
+    let topPad = 0;
+    let started = false;
+
+    for (let i = 0; i < rows.length; i++) {
+        const rowH = rows[i].height + ROW_GAP_H;
+        const rowStart = cursor;
+        const rowEnd = cursor + rowH;
+        if (rowEnd >= minY && rowStart <= maxY) {
+            if (!started) {
+                topPad = rowStart;
+                if (topPad > 0) out.push(spacer(1, topPad));
+                started = true;
+            }
+            out.push(composeTreeRow(rows[i]));
+            visibleH += rowH;
+        } else if (started && rowStart > maxY) {
+            break;
+        }
+        cursor = rowEnd;
+    }
+
+    if (!started) {
+        out.push(spacer(1, totalH));
+        return out;
+    }
+
+    const bottomPad = Math.max(0, totalH - topPad - visibleH);
+    if (bottomPad > 0) out.push(spacer(1, bottomPad));
+    return out;
 }
 
 function dirOfPath(p: string): string {
@@ -1012,8 +1074,12 @@ export function ExploreView(): Element {
                 ],
             }),
             Scroll({
-                id: "left-results-scroll",
-                style: { gap: 0, height: { kind: "grow" } },
+                id: RESULTS_SCROLL_ID,
+                style: {
+                    gap: 0,
+                    height: { kind: "grow" },
+                    padding: { side: "right", value: SCROLLBAR_WIDTH + 4 },
+                },
                 children: () => {
                     const rows = renderRows();
                     if (rows.length === 0) return [emptyStateRow()];

@@ -395,8 +395,9 @@ function layoutScroll(
     if (state.offset > maxOffset) state.offset = maxOffset;
     if (state.offset < 0) state.offset = 0;
 
-    // Place children with offset applied. Cross-axis = stretch into innerW
-    // (no scrollbar reservation). Viewport-cull off-screen children so a
+    // Place children with offset applied. The scrollbar is drawn inside the
+    // viewport, so reserve its track width instead of letting right-aligned
+    // row labels sit underneath it. Viewport-cull off-screen children so a
     // 1000-line source file doesn't pay layout + render cost for the 950
     // lines you can't see this frame. The cull is purely a fast-skip; we
     // still update `cursor` so subsequent children land at the same y as
@@ -405,6 +406,7 @@ function layoutScroll(
     //
     // The buffer lets a few rows just off-screen still lay out, so a tiny
     // scroll delta doesn't reveal an un-laid-out gap before the next frame.
+    const contentW = Math.max(0, innerW - SCROLLBAR_W);
     const CULL_BUFFER = 32;
     const cullTop = viewportRect.y - CULL_BUFFER;
     const cullBottom = viewportRect.y + viewportRect.h + CULL_BUFFER;
@@ -423,14 +425,14 @@ function layoutScroll(
         const explicitCross = ch.style.width;
         const crossResolved = resolveAxis(ch, "w");
         let cSize: number;
-        if (crossResolved === null) cSize = innerW;
+        if (crossResolved === null) cSize = contentW;
         else if (align === "stretch" && (!explicitCross || explicitCross.kind === "auto"))
-            cSize = innerW;
-        else cSize = Math.min(crossResolved, innerW);
+            cSize = contentW;
+        else cSize = Math.min(crossResolved, contentW);
 
         let crossOff = innerX;
-        if (align === "center") crossOff = innerX + Math.floor((innerW - cSize) / 2);
-        else if (align === "end") crossOff = innerX + (innerW - cSize);
+        if (align === "center") crossOff = innerX + Math.floor((contentW - cSize) / 2);
+        else if (align === "end") crossOff = innerX + (contentW - cSize);
 
         const rect: Rect = { x: crossOff, y: cursor, w: cSize, h: mSize };
         out.push({ element: ch, rect, clipRect: viewportRect });

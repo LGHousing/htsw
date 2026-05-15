@@ -4,6 +4,7 @@ import {
     beginImportRun,
     clearImportRun,
     createImportProgress,
+    getExportImportJsonPath,
     getHousingUuid,
     getImportJsonPath,
     isCurrentHouseTrusted,
@@ -315,7 +316,7 @@ export function startCaptureExport(type: CaptureType): void {
             ctx.displayMessage("&7[htsw] Export cancelled");
             return;
         }
-        const importJsonPath = getImportJsonPath();
+        const importJsonPath = getExportImportJsonPath();
         if (importJsonPath.trim() === "") {
             ctx.displayMessage("&c[htsw] No import.json loaded — load one first");
             return;

@@ -10,6 +10,7 @@ import {
 import { getCurrentHousingUuid, writeKnowledge } from "../../knowledge";
 import TaskContext from "../../tasks/context";
 import { getAllItemSlots } from "../../tasks/specifics/slots";
+import { ensureParentDirs } from "../../utils/filesystem";
 import { removedFormatting } from "../../utils/helpers";
 import { observedSlotsToActions } from "../../exporter/sanitize";
 import { upsertImportableEntry } from "../../exporter/importJsonWriter";
@@ -126,6 +127,10 @@ export async function exportMenu(
     for (const { slotId, snbt } of snapshot) {
         const snbtRel = `${menuRel}/slot-${slotId}.snbt`;
         const snbtAbs = `${menuAbs}/slot-${slotId}.snbt`;
+        // FileLib.write doesn't create parent dirs. ensureParentDirs is
+        // idempotent (Files.exists short-circuits) so calling it per slot
+        // is cheap, and avoids dropping a sentinel-path workaround.
+        ensureParentDirs(snbtAbs);
         FileLib.write(snbtAbs, snbt, true);
 
         // Left-click the slot to open its per-slot editor.
