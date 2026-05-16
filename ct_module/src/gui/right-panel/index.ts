@@ -1286,9 +1286,10 @@ const PROGRESS_BAR_H = 6;
 function progressPhaseColor(): number {
     const p = getImportProgress();
     if (p === null) return COLOR_BAR_FG;
-    if (p.phase === "reading") return PHASE_READING;
-    if (p.phase === "hydrating") return PHASE_HYDRATING;
-    if (p.phase === "applying") return PHASE_APPLYING;
+    const phase = p.phase === "diffing" ? "applying" : p.phase;
+    if (phase === "reading") return PHASE_READING;
+    if (phase === "hydrating") return PHASE_HYDRATING;
+    if (phase === "applying") return PHASE_APPLYING;
     return COLOR_BAR_FG;
 }
 
@@ -1450,11 +1451,12 @@ function capitalizePhase(phase: string): string {
 function currentPhaseEtaText(): string {
     const p = getImportProgress();
     if (p === null) return "";
+    const phase = p.phase === "diffing" ? "applying" : p.phase;
     const secs = getCurrentPhaseEtaSeconds();
     if (secs === null || secs <= 0) return "";
-    if (p.phase === "reading") return `${formatEtaSeconds(secs)} left reading`;
-    if (p.phase === "hydrating") return `${formatEtaSeconds(secs)} left hydrating`;
-    if (p.phase === "applying") return `${formatEtaSeconds(secs)} left applying`;
+    if (phase === "reading") return `${formatEtaSeconds(secs)} left reading`;
+    if (phase === "hydrating") return `${formatEtaSeconds(secs)} left hydrating`;
+    if (phase === "applying") return `${formatEtaSeconds(secs)} left applying`;
     return "";
 }
 

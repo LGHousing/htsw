@@ -19,7 +19,6 @@ export type ImportRunRowStatus =
 /** All phases an import can be in, end-to-end. */
 type ImportPhase =
     | "starting"
-    | "opening"
     | "reading"
     | "hydrating"
     | "diffing"
@@ -29,8 +28,8 @@ type ImportPhase =
 
 /**
  * The phases reachable from inside one action-list sync. The outer
- * importable-level phases (`starting`, `opening`, `writingKnowledge`,
- * `done`) are not emitted by read/apply internals.
+ * importable-level phases (`starting`, `writingKnowledge`, `done`) are
+ * not emitted by read/apply internals.
  */
 export type ActionListProgressPhase =
     | "reading"

@@ -108,5 +108,3 @@ export function composeImportableMenu(
     if (specific.length === 0) return generics;
     return specific.concat([{ kind: "separator" }], generics);
 }
-
-// Re-export so callers don't have to reach across modules for the resolver.

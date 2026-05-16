@@ -4,6 +4,8 @@ import { Panel } from "./lib/panel";
 import { Element, Rect, layoutElement, pointInRect, getScrollState } from "./lib/layout";
 import { javaType } from "./lib/java";
 
+declare const JavaAdapter: new (baseClass: any, implementation: object) => any;
+
 const MouseClass = javaType("org.lwjgl.input.Mouse");
 const KeyboardClass = javaType("org.lwjgl.input.Keyboard");
 const ForgeMouseInputEventPre = javaType(
@@ -217,7 +219,7 @@ function paintImportShade(rawX: number, rawY: number, root: Element, source: str
 // import actually runs.
 let placeholderScreen: any = null;
 function getPlaceholderScreen(): any {
-    if (placeholderScreen === null) placeholderScreen = new GuiScreenClass();
+    if (placeholderScreen === null) placeholderScreen = new JavaAdapter(GuiScreenClass, {});
     return placeholderScreen;
 }
 

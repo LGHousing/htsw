@@ -100,9 +100,10 @@ export function getCurrentPhaseEtaSeconds(): number | null {
     if (breakdown === null) return null;
 
     let secs: number | null = null;
-    if (p.phase === "reading") secs = breakdown.readSeconds;
-    else if (p.phase === "hydrating") secs = breakdown.hydrateSeconds;
-    else if (p.phase === "applying") secs = breakdown.applySeconds;
+    const phase = p.phase === "diffing" ? "applying" : p.phase;
+    if (phase === "reading") secs = breakdown.readSeconds;
+    else if (phase === "hydrating") secs = breakdown.hydrateSeconds;
+    else if (phase === "applying") secs = breakdown.applySeconds;
     if (secs === null || importProgressUpdatedAt === null) return secs;
     return Math.max(0, secs - (Date.now() - importProgressUpdatedAt) / 1000);
 }

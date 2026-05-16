@@ -7,7 +7,7 @@ import { getParsedResult } from "./index";
 /**
  * Centralized importable→path lookups.
  *
- * Three concepts the rest of the GUI keeps re-implementing:
+ * Two concepts the rest of the GUI keeps re-implementing:
  *
  * 1. **Source path** (`importableSourcePath`) — the file the user expects
  *    to open when they say "show me this importable". For FUNCTION/EVENT
@@ -15,13 +15,7 @@ import { getParsedResult } from "./index";
  *    the parsed `nbt` Tag's span); for REGION/MENU/NPC it's the declaring
  *    import.json (since those types live entirely as JSON inline).
  *
- * 2. **Declaring import.json** (`importableDeclaringJson`) — the `.json`
- *    the importable was declared in. Today this is just the currently-
- *    loaded top-level path; eventually the parser may track per-importable
- *    declaring paths so sub-imports point at their own file. Callers
- *    should route through this so we have one place to update later.
- *
- * 3. **Sub-list source path** (`importableSubListPath`) — for nested
+ * 2. **Sub-list source path** (`importableSubListPath`) — for nested
  *    action lists on REGION (`onEnterActions` / `onExitActions`) and ITEM
  *    (`leftClickActions` / `rightClickActions`). If the JSON used
  *    `{ actionsPath: "..." }` the parser materialized those actions from

@@ -113,13 +113,14 @@ export async function applyConditionListDiff(
     const totalOps = diff.operations.length;
     const emitConditionOp = (label: string): void => {
         if (progress === undefined) return;
+        if (totalOps === 0) return;
         progress({
             phase: "applying",
             phaseLabel: label,
             unitCompleted: completedOps,
-            unitTotal: Math.max(1, totalOps),
+            unitTotal: totalOps,
             estimatedCompleted: completedOps,
-            estimatedTotal: Math.max(1, totalOps),
+            estimatedTotal: totalOps,
             etaConfidence: "planned",
             phaseBudget: null,
         });

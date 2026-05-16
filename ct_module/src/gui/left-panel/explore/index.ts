@@ -771,17 +771,10 @@ function buildTreeRows(): TreeRow[] {
                 }
             }
         } else {
-            // Each standalone file is a top-level row — no wrapping
-            // "Standalone files" header. Run each through the same
-            // enumeration a folder-rooted source uses, so the rows
-            // render with `resultRow` and inherit its actions, expansion,
-            // and entry sub-rows. Per-file `Close` is layered on via
-            // `extraActions`.
             for (let i = 0; i < root.files.length; i++) {
                 const file = root.files[i];
-                // Each standalone file is its own source for expansion-key
-                // purposes, so two adds of the same path keep independent
-                // [+]/[-] state from each other and from any folder root.
+                // `alreadyHas` dedups source fullPath entries, so a file path
+                // owns one expansion key.
                 const fileSourceKey = `file:${file.fullPath}`;
                 const fileResults = filterAndSort(enumerateForSource(file));
                 for (let j = 0; j < fileResults.length; j++) {
