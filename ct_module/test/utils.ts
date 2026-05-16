@@ -1,7 +1,9 @@
 import type {
     Action,
+    ActionConditional,
     ActionChangeVar,
     ActionPlaySound,
+    ActionRandom,
     ActionSendMessage,
 } from "htsw/types";
 
@@ -46,4 +48,23 @@ export const changeVar = (
     op: "Set",
     value: "0",
     ...(over as Partial<ActionChangeVar>),
+});
+
+export const conditional = (
+    over: ActionOverride<ActionConditional> = {}
+): ActionConditional => ({
+    type: "CONDITIONAL",
+    matchAny: false,
+    conditions: [],
+    ifActions: [],
+    elseActions: [],
+    ...(over as Partial<ActionConditional>),
+});
+
+export const random = (
+    over: ActionOverride<ActionRandom> = {}
+): ActionRandom => ({
+    type: "RANDOM",
+    actions: [],
+    ...(over as Partial<ActionRandom>),
 });

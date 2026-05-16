@@ -1,9 +1,9 @@
 import type { ImportableFunction } from "htsw/types";
 
-import { syncActionList } from "../../importer/actions";
-import { clickGoBack } from "../../importer/helpers";
+import { syncActionList } from "../../importer/actions/sync";
+import { clickGoBack } from "../../importer/gui/helpers";
 import type { ImportableTrustPlan } from "../../knowledge";
-import type { ActionListProgress } from "../../importer/types";
+import type { ActionListProgressFields } from "../../importer/progress/types";
 import TaskContext from "../../tasks/context";
 import { actionListTrustFor } from "../actionListTrust";
 import type { ItemRegistry } from "../itemRegistry";
@@ -20,7 +20,7 @@ export async function importImportableFunction(
     importable: ImportableFunction,
     itemRegistry: ItemRegistry,
     trustPlan?: ImportableTrustPlan,
-    onActionListProgress?: (progress: ActionListProgress) => void
+    onActionListProgress?: (progress: ActionListProgressFields) => void
 ): Promise<void> {
     await ensureReferencedImportablesExist(ctx, importable);
     await ensureFunctionExists(ctx, importable.name);

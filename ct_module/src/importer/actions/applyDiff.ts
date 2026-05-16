@@ -4,7 +4,7 @@
  * is its only caller.
  *
  * Module graph note: this file imports `writeOpenAction`,
- * `withWritingActionPath`, `actionPathForIndex`, `getActionSpec`, and
+ * `actionPathForIndex`, `getActionSpec`, and
  * `isLimitExceeded` from `../actions`. The writers in `../actions` reach
  * back into `./sync` (which itself imports from this file) for nested
  * `syncActionList` calls. This is a function-reference cycle that resolves
@@ -23,19 +23,19 @@ import {
     setNoteOnLastVisibleSlot,
     timedWaitForMenu,
     waitForMenu,
-} from "../helpers";
+} from "../gui/helpers";
 import { MouseButton } from "../../tasks/specifics/slots";
-import { getEditFieldDiffs } from "../compare";
 import type {
     ActionListDiff,
     ActionListOperation,
-    ActionListProgressSink,
     ObservedActionSlot,
 } from "../types";
+import type { ActionListProgressSink } from "../progress/types";
+import { createApplyProgressAdapter } from "../progress/nested";
 import {
     getPaginatedListSlotAtIndex,
     goToPaginatedListPage,
-} from "../paginatedList";
+} from "../gui/paginatedList";
 import {
     getActiveDiffSink,
     type ImportDiffSink,
@@ -44,23 +44,26 @@ import {
 import {
     COST,
     actionListDiffApplyBudget,
+    conditionListDiffApplyBudget,
     moveBudget,
-    scalarFieldEditBudget,
+    scalarFieldEditBudgetForOp,
+    type ActionListPhaseBudget,
 } from "../progress/costs";
-import { timed } from "../progress/timing";
+import { timed, withCurrentPhase } from "../progress/timing";
 import { ACTION_LIST_CONFIG } from "./listConfig";
 import {
     actionPathForIndex,
     getActionSpec,
-    withWritingActionPath,
     writeOpenAction,
 } from "../actions";
 import { actionLogLabel, editDiffSummary } from "./log";
 
-export async function importAction(
+async function importAction(
     ctx: TaskContext,
     action: Action,
-    itemRegistry?: ItemRegistry
+    itemRegistry?: ItemRegistry,
+    progress?: ActionListProgressSink,
+    pathPrefix?: string
 ): Promise<void> {
     ctx.getMenuItemSlot("Add Action").click();
     await timedWaitForMenu(ctx, "menuClickWait");
@@ -80,7 +83,11 @@ export async function importAction(
     // No-field actions (e.g. Kill Player, Exit) add directly to the list
     // without opening an editor.
     if (spec.write) {
-        await writeOpenAction(ctx, action, undefined, itemRegistry);
+        await writeOpenAction(ctx, action, {
+            itemRegistry,
+            pathPrefix,
+            onProgress: progress,
+        });
         await clickGoBack(ctx);
     }
 
@@ -141,7 +148,8 @@ export async function applyActionListDiff(
     diff: ActionListDiff,
     itemRegistry?: ItemRegistry,
     progress?: ActionListProgressSink,
-    pathPrefix?: string
+    pathPrefix?: string,
+    phaseBudget?: ActionListPhaseBudget
 ): Promise<void> {
     const sink = getActiveDiffSink();
     await applyActionListDiffInner(
@@ -152,8 +160,13 @@ export async function applyActionListDiff(
         sink,
         itemRegistry,
         progress,
-        pathPrefix
+        pathPrefix,
+        phaseBudget
     );
+}
+
+function recomputeTotal(b: ActionListPhaseBudget): number {
+    return b.readPart + b.hydratePart + b.applyPart;
 }
 
 function srcIndexForOp(op: ActionListOperation, desired: Action[]): number {
@@ -179,8 +192,21 @@ function opDetail(op: ActionListOperation): string {
 function editOperationFieldBudget(
     op: Extract<ActionListOperation, { kind: "edit" }>
 ): number {
-    const { fieldDiffs } = getEditFieldDiffs(op);
-    return scalarFieldEditBudget(fieldDiffs);
+    let total = scalarFieldEditBudgetForOp(op);
+    for (const nested of op.nestedDiffs) {
+        if (nested.diff.operations.length === 0) continue;
+        total += COST.menuClickWait + COST.goBackWait;
+        if (nested.prop === "conditions") {
+            total += conditionListDiffApplyBudget(nested.diff);
+        } else {
+            total += actionListDiffApplyBudget(
+                nested.diff,
+                editOperationFieldBudget,
+                nested.diff.desiredLength
+            );
+        }
+    }
+    return total;
 }
 
 function operationApplyBudget(
@@ -192,10 +218,10 @@ function operationApplyBudget(
         return moveBudget(op.observed.index, op.toIndex, desiredLength);
     }
     if (op.kind === "add") {
-        const fakeDiff: ActionListDiff = { operations: [op] };
+        const fakeDiff: ActionListDiff = { operations: [op], desiredLength };
         return actionListDiffApplyBudget(fakeDiff, editOperationFieldBudget, desiredLength);
     }
-    const fakeDiff: ActionListDiff = { operations: [op] };
+    const fakeDiff: ActionListDiff = { operations: [op], desiredLength };
     return actionListDiffApplyBudget(fakeDiff, editOperationFieldBudget, desiredLength);
 }
 
@@ -234,7 +260,8 @@ async function applyActionListDiffInner(
     sink: ImportDiffSink | null,
     itemRegistry?: ItemRegistry,
     progress?: ActionListProgressSink,
-    pathPrefix?: string
+    pathPrefix?: string,
+    phaseBudget?: ActionListPhaseBudget
 ): Promise<void> {
     const summary = summarizeDiff(diff, desired.length, desired);
     const plannedApplyBudget = actionListDiffApplyBudget(
@@ -242,6 +269,24 @@ async function applyActionListDiffInner(
         editOperationFieldBudget,
         desired.length
     );
+    // Lock the phase budget's apply portion to the actual diff work — the
+    // initial estimate from desired-only was a worst-case placeholder.
+    if (phaseBudget !== undefined) {
+        phaseBudget.applyPart = Math.max(plannedApplyBudget, 1);
+        phaseBudget.total = recomputeTotal(phaseBudget);
+    }
+    const baseline = phaseBudget !== undefined
+        ? phaseBudget.readPart + phaseBudget.hydratePart
+        : 0;
+    const applyProgress =
+        phaseBudget === undefined
+            ? null
+            : createApplyProgressAdapter({
+                  phaseBudget,
+                  unitTotal: Math.max(1, diff.operations.length),
+                  baseline,
+                  sink: progress,
+              });
     if (sink !== null) {
         sink.summary(summary);
         sink.phase("computed diff");
@@ -254,16 +299,36 @@ async function applyActionListDiffInner(
             }
         }
     }
-    progress?.({
-        phase: "diffing",
-        completed: 1,
-        total: 1,
-        label: `${summary.edits} edits · ${summary.adds} adds · ${summary.deletes} deletes · ${summary.moves} moves`,
-        estimatedCompleted: 0,
-        estimatedTotal: plannedApplyBudget,
-        confidence: "planned",
-    });
-
+    // Diffing is in-process compute (~1-5ms) with no menu round-trips —
+    // we don't track timing for it. The progress event still fires so the
+    // GUI's diff-sink can display the diff summary, but the phase wrapper
+    // jumps straight to "applying" and the budget math skips diffPart.
+    const diffLabel =
+        `${summary.edits} edits · ${summary.adds} adds · ${summary.deletes} deletes · ${summary.moves} moves`;
+    if (phaseBudget !== undefined) {
+        progress?.({
+            phase: "diffing",
+            phaseLabel: diffLabel,
+            unitCompleted: 1,
+            unitTotal: 1,
+            estimatedCompleted: baseline,
+            estimatedTotal: phaseBudget.total,
+            etaConfidence: "planned",
+            phaseBudget,
+        });
+    } else {
+        progress?.({
+            phase: "diffing",
+            phaseLabel: diffLabel,
+            unitCompleted: 1,
+            unitTotal: 1,
+            estimatedCompleted: 0,
+            estimatedTotal: plannedApplyBudget,
+            etaConfidence: "planned",
+            phaseBudget: null,
+        });
+    }
+    await withCurrentPhase("applying", async () => {
     // Pre-mark already-matching desired actions. Anything not touched by an
     // op is "match" (white) from the start; ops will paint their own state
     // on completion.
@@ -282,6 +347,23 @@ async function applyActionListDiffInner(
         if (sink !== null) sink.end();
         return;
     }
+
+    const emitApplying = (label: string, completedOps: number, applied: number): void => {
+        if (applyProgress !== null) {
+            applyProgress.emitOuter(label, completedOps, applied);
+        } else {
+            progress?.({
+                phase: "applying",
+                phaseLabel: label,
+                unitCompleted: completedOps,
+                unitTotal: diff.operations.length,
+                estimatedCompleted: applied,
+                estimatedTotal: plannedApplyBudget,
+                etaConfidence: "planned",
+                phaseBudget: null,
+            });
+        }
+    };
 
     const deletes: Array<ActionListOperation & { kind: "delete" }> = [];
     const edits: Array<ActionListOperation & { kind: "edit" }> = [];
@@ -319,15 +401,7 @@ async function applyActionListDiffInner(
                 continue;
             }
 
-            progress?.({
-                phase: "applying",
-                completed: i,
-                total: diff.operations.length,
-                label: opLabel(op),
-                estimatedCompleted: appliedBudget,
-                estimatedTotal: plannedApplyBudget,
-                confidence: "planned",
-            });
+            emitApplying(opLabel(op), i, appliedBudget);
             if (sink !== null) sink.phase(opLabel(op));
             await deleteObservedAction(ctx, index, currentObserved.length);
             appliedBudget += operationApplyBudget(op, desired.length);
@@ -355,16 +429,9 @@ async function applyActionListDiffInner(
         const srcIdx = srcIndexForOp(op, desired);
         const srcPath = srcIdx >= 0 ? actionPathForIndex(pathPrefix, srcIdx) : null;
         if (sink !== null && srcPath !== null) sink.beginOp(srcPath, "edit", opLabel(op));
-        progress?.({
-            phase: "applying",
-            completed: appliedOps,
-            total: diff.operations.length,
-            label: opLabel(op),
-            estimatedCompleted: appliedBudget,
-            estimatedTotal: plannedApplyBudget,
-            confidence: "planned",
-        });
+        emitApplying(opLabel(op), appliedOps, appliedBudget);
         appliedOps++;
+        const opStartBudget = appliedBudget;
 
         const actionSlot = await getPaginatedListSlotAtIndex(
             ctx,
@@ -394,14 +461,28 @@ async function applyActionListDiffInner(
             }
             const currentAction = op.observed.action;
 
-            await withWritingActionPath(srcPath, () =>
-                writeOpenAction(ctx, op.desired, currentAction, itemRegistry)
-            );
+            await writeOpenAction(ctx, op.desired, {
+                current: currentAction,
+                itemRegistry,
+                pathPrefix: srcPath ?? undefined,
+                onProgress:
+                    applyProgress?.nestedSink({
+                        label: opLabel(op),
+                        unitCompleted: appliedOps,
+                        unitTotal: diff.operations.length,
+                    }) ?? progress,
+            });
+            if (applyProgress !== null) {
+                appliedBudget = Math.max(appliedBudget, applyProgress.getAppliedBudget());
+            }
             await clickGoBack(ctx);
         }
 
         await setListItemNote(ctx, actionSlot, op.desired.note);
-        appliedBudget += operationApplyBudget(op, desired.length);
+        appliedBudget = Math.max(
+            appliedBudget,
+            opStartBudget + operationApplyBudget(op, desired.length)
+        );
         if (sink !== null && srcPath !== null) sink.completeOp(srcPath, "edit");
     }
 
@@ -415,15 +496,7 @@ async function applyActionListDiffInner(
         const srcIdx = srcIndexForOp(op, desired);
         const srcPath = srcIdx >= 0 ? actionPathForIndex(pathPrefix, srcIdx) : null;
         if (sink !== null && srcPath !== null) sink.beginOp(srcPath, "move", opLabel(op));
-        progress?.({
-            phase: "applying",
-            completed: appliedOps,
-            total: diff.operations.length,
-            label: opLabel(op),
-            estimatedCompleted: appliedBudget,
-            estimatedTotal: plannedApplyBudget,
-            confidence: "planned",
-        });
+        emitApplying(opLabel(op), appliedOps, appliedBudget);
         appliedOps++;
 
         await moveActionToIndex(ctx, fromIndex, op.toIndex, remainingObserved.length);
@@ -443,23 +516,29 @@ async function applyActionListDiffInner(
         const srcIdx = srcIndexForOp(op, desired);
         const srcPath = srcIdx >= 0 ? actionPathForIndex(pathPrefix, srcIdx) : null;
         if (sink !== null && srcPath !== null) sink.beginOp(srcPath, "add", opLabel(op));
-        progress?.({
-            phase: "applying",
-            completed: appliedOps,
-            total: diff.operations.length,
-            label: opLabel(op),
-            estimatedCompleted: appliedBudget,
-            estimatedTotal: plannedApplyBudget,
-            confidence: "planned",
-        });
+        emitApplying(opLabel(op), appliedOps, appliedBudget);
         appliedOps++;
+        const opStartBudget = appliedBudget;
 
         const actionToImport =
             op.desired.note === undefined
                 ? op.desired
                 : ({ ...op.desired, note: undefined } as Action);
 
-        await withWritingActionPath(srcPath, () => importAction(ctx, actionToImport, itemRegistry));
+        await importAction(
+            ctx,
+            actionToImport,
+            itemRegistry,
+            applyProgress?.nestedSink({
+                label: opLabel(op),
+                unitCompleted: appliedOps,
+                unitTotal: diff.operations.length,
+            }) ?? progress,
+            srcPath ?? undefined
+        );
+        if (applyProgress !== null) {
+            appliedBudget = Math.max(appliedBudget, applyProgress.getAppliedBudget());
+        }
         await moveActionToIndex(ctx, currentLength, op.toIndex, currentLength + 1);
 
         const insertedAction: ObservedActionSlot = {
@@ -478,20 +557,16 @@ async function applyActionListDiffInner(
             const addedSlot = await getPaginatedListSlotAtIndex(ctx, op.toIndex, currentLength, ACTION_LIST_CONFIG);
             await setListItemNote(ctx, addedSlot, op.desired.note);
         }
-        appliedBudget += operationApplyBudget(op, desired.length);
+        appliedBudget = Math.max(
+            appliedBudget,
+            opStartBudget + operationApplyBudget(op, desired.length)
+        );
         if (sink !== null && srcPath !== null) sink.completeOp(srcPath, "add");
     }
 
     await goToPaginatedListPage(ctx, 1, ACTION_LIST_CONFIG);
-    progress?.({
-        phase: "applying",
-        completed: diff.operations.length,
-        total: diff.operations.length,
-        label: "applied action diff",
-        estimatedCompleted: plannedApplyBudget,
-        estimatedTotal: plannedApplyBudget,
-        confidence: "planned",
-    });
+    emitApplying("applied action diff", diff.operations.length, appliedBudget);
 
     if (sink !== null) sink.end();
+    });
 }

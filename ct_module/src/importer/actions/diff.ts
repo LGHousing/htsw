@@ -1,20 +1,22 @@
 import type { Action, Condition } from "htsw/types";
 
-import { ACTION_MAPPINGS } from "../actionMappings";
+import { ACTION_MAPPINGS } from "../fields/actionMappings";
 import {
     actionOnlyNoteDiffers,
     actionsEqual,
     conditionsEqual,
-    diffScalarFields,
-} from "../compare";
-import { CONDITION_MAPPINGS } from "../conditionMappings";
+    scalarFieldDiffers,
+} from "../fields/compare";
+import { CONDITION_MAPPINGS } from "../fields/conditionMappings";
+import { diffConditionList } from "../conditions/diff";
 import type {
     ActionListDiff,
     ActionListOperation,
+    NestedListDiff,
     NestedListProp,
     Observed,
     ObservedActionSlot,
-    ScalarFieldDiff,
+    ObservedConditionSlot,
     UiFieldKind,
 } from "../types";
 
@@ -63,10 +65,17 @@ function getFieldValue(value: object, key: string): unknown {
     return (value as { [key: string]: unknown })[key];
 }
 
-function fieldDifferenceCost(diffs: ScalarFieldDiff[]): number {
+function fieldDifferenceCost(
+    observed: Record<string, unknown>,
+    desired: Record<string, unknown>,
+    type: string,
+    scalarProps: { prop: string; kind: UiFieldKind }[]
+): number {
     let cost = 0;
-    for (const diff of diffs) {
-        cost += FIELD_KIND_COST[diff.kind] ?? 1;
+    for (const field of scalarProps) {
+        if (scalarFieldDiffers(observed, desired, type, field.prop)) {
+            cost += FIELD_KIND_COST[field.kind] ?? 1;
+        }
     }
     return cost;
 }
@@ -117,10 +126,8 @@ function conditionCost(observed: Condition, desired: Condition): number {
         scalarProps.push({ prop: field.prop, kind: field.kind });
     }
 
-    const diffs = diffScalarFields(observed, desired, observed.type, scalarProps);
-
     return (
-        fieldDifferenceCost(diffs) +
+        fieldDifferenceCost(observed, desired, observed.type, scalarProps) +
         (observed.inverted === desired.inverted ? 0 : 1) +
         (observed.note === desired.note ? 0 : 1)
     );
@@ -243,13 +250,12 @@ function actionCost(
     // Scalar field edit cost: weighted by field kind, computed from
     // normalised field comparison so e.g. volume "0.7" vs 0.7 doesn't add
     // a phantom 2-cost when the values are equal in canonical form.
-    const scalarDiffs = diffScalarFields(
+    const scalarCost = fieldDifferenceCost(
         observed.action,
         desired.action,
         observed.action.type,
         scalarProps
     );
-    const scalarCost = fieldDifferenceCost(scalarDiffs);
     const noteCost = observed.action.note === desired.action.note ? 0 : 1;
 
     // Add open/close overhead only if any editing is needed
@@ -487,9 +493,112 @@ function actionListCost(
     return cost;
 }
 
+function observedActionsAsSlots(
+    observed: Array<Observed<Action> | null>
+): ObservedActionSlot[] {
+    return observed.map((action, index) => ({
+        index,
+        slotId: -1,
+        slot: null as never,
+        action,
+        nestedReadState: "full",
+    }));
+}
+
+function observedConditionsAsSlots(
+    observed: Array<Condition | null>
+): ObservedConditionSlot[] {
+    return observed.map((condition, index) => ({
+        index,
+        slotId: -1,
+        slot: null as never,
+        condition,
+    }));
+}
+
+function nestedActionDiff(
+    prop: "ifActions" | "elseActions" | "actions",
+    observed: unknown,
+    desired: unknown
+): NestedListDiff | null {
+    const observedList = Array.isArray(observed)
+        ? (observed as Array<Observed<Action> | null>)
+        : [];
+    const desiredList = Array.isArray(desired) ? (desired as Action[]) : [];
+    const diff = diffActionListInner(observedActionsAsSlots(observedList), desiredList, false);
+    if (diff.operations.length === 0) return null;
+    return { prop, diff };
+}
+
+function nestedConditionDiff(
+    observed: unknown,
+    desired: unknown
+): NestedListDiff | null {
+    const observedList = Array.isArray(observed)
+        ? (observed as Array<Condition | null>)
+        : [];
+    const desiredList = Array.isArray(desired) ? (desired as Condition[]) : [];
+    const diff = diffConditionList(observedConditionsAsSlots(observedList), desiredList);
+    if (diff.operations.length === 0) return null;
+    return { prop: "conditions", diff };
+}
+
+function getNestedDiffs(
+    observed: Observed<Action>,
+    desired: Action,
+    includeNested: boolean
+): NestedListDiff[] {
+    if (!includeNested || observed.type !== desired.type) return [];
+
+    const out: NestedListDiff[] = [];
+    if (observed.type === "CONDITIONAL" && desired.type === "CONDITIONAL") {
+        const conditions = nestedConditionDiff(observed.conditions, desired.conditions);
+        if (conditions !== null) out.push(conditions);
+
+        const ifActions = nestedActionDiff("ifActions", observed.ifActions, desired.ifActions);
+        if (ifActions !== null) out.push(ifActions);
+
+        const elseActions = nestedActionDiff(
+            "elseActions",
+            observed.elseActions,
+            desired.elseActions
+        );
+        if (elseActions !== null) out.push(elseActions);
+    } else if (observed.type === "RANDOM" && desired.type === "RANDOM") {
+        const actions = nestedActionDiff("actions", observed.actions, desired.actions);
+        if (actions !== null) out.push(actions);
+    }
+    return out;
+}
+
+function createEditOperation(
+    match: ActionMatch,
+    includeNested: boolean
+): Extract<ActionListOperation, { kind: "edit" }> {
+    const noteOnly = match.kind === "note_only";
+    return {
+        kind: "edit",
+        observed: match.observed,
+        desired: match.desired,
+        noteOnly,
+        noteDiffers: match.observed.action.note !== match.desired.note,
+        nestedDiffs: noteOnly
+            ? []
+            : getNestedDiffs(match.observed.action, match.desired, includeNested),
+    };
+}
+
 export function diffActionList(
     readActions: ObservedActionSlot[],
     desired: Action[]
+): ActionListDiff {
+    return diffActionListInner(readActions, desired, true);
+}
+
+function diffActionListInner(
+    readActions: ObservedActionSlot[],
+    desired: Action[],
+    includeNested: boolean
 ): ActionListDiff {
     const knownObserved = readActions.filter(
         (entry): entry is KnownObservedAction => entry.action !== null
@@ -526,12 +635,7 @@ export function diffActionList(
         }
 
         if (!actionsEqual(match.observed.action, match.desired)) {
-            operations.push({
-                kind: "edit",
-                observed: match.observed,
-                desired: match.desired,
-                noteOnly: match.kind === "note_only",
-            });
+            operations.push(createEditOperation(match, includeNested));
         }
     }
 
@@ -543,5 +647,5 @@ export function diffActionList(
         });
     }
 
-    return { operations };
+    return { operations, desiredLength: desired.length };
 }

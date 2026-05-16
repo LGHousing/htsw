@@ -7,76 +7,40 @@ import type { KnowledgeStatusRow } from "../../knowledge/status";
 import type {
     ImportProgress,
     ImportRunRowStatus,
-} from "../../importables/importSession";
+} from "../../importer/progress/types";
 import { normalizeHtswPath } from "../lib/pathDisplay";
-import { getTimingStats } from "../../importer/progress/timing";
+import {
+    getImportEtaBreakdown as etaGetImportEtaBreakdown,
+    getImportEtaSeconds as etaGetImportEtaSeconds,
+    resetEtaCache,
+} from "../../importer/progress/eta";
 import { importableIdentity } from "../../knowledge/paths";
 import { trustPlanKey } from "../../knowledge/trust";
+import type { QueueItem } from "./queue";
+import { canonicalPath } from "./parses";
 import { getActiveRightTab, setActiveRightTab } from "./selection";
 
-export type { ImportRunRowStatus };
-
-export type ImportProgressView = {
-    weightCompleted: number;
-    weightTotal: number;
-    weightCurrent: number;
-    currentKey: string;
-    currentType: Importable["type"] | null;
-    currentIdentity: string;
-    orderIndex: number;
-    rowStatus: ImportRunRowStatus | null;
-    currentLabel: string;
-    phase:
-        | "starting"
-        | "opening"
-        | "reading"
-        | "hydrating"
-        | "diffing"
-        | "applying"
-        | "writingKnowledge"
-        | "done";
-    phaseLabel: string;
-    unitCompleted: number;
-    unitTotal: number;
-    estimatedCompleted: number;
-    estimatedTotal: number;
-    etaConfidence: "rough" | "informed" | "planned";
-    completed: number;
-    total: number;
-    failed: number;
-    inFlight: boolean;
-};
-
-export type ImportRunRow = {
+type ImportRunRow = {
     key: string;
     type: Importable["type"];
     identity: string;
     order: number;
     status: ImportRunRowStatus;
-    phase: ImportProgressView["phase"];
+    phase: ImportProgress["phase"];
     phaseLabel: string;
     unitCompleted: number;
     unitTotal: number;
 };
 
-export type ImportRunState = {
+type ImportRunState = {
     rows: Map<string, ImportRunRow>;
     order: string[];
     startedAt: number;
 };
 
-export type SourceTab = {
-    /** Filesystem path of the source file. Identity for the tab. */
-    path: string;
-    /** Display label (basename + maybe importable name). */
-    label: string;
-};
-
 let importJsonPath = "./htsw/imports/import.json";
 let exportImportJsonPath: string | null = null;
 let parsedResult: ParseResult<Importable[]> | null = null;
-let parseError: string | null = null;
-let selectedImportableId: string | null = null;
 /**
  * Multi-select for the Importables tab. Keyed by `${type}:${identity}`
  * (the `trustPlanKey` shape). Independent of `selectedImportableId` —
@@ -92,22 +56,25 @@ const checkedImportableKeys: Set<string> = new Set();
  * progress callback when the session reports `currentLabel === "done"`.
  */
 let currentImportingPath: string | null = null;
-let openTabs: SourceTab[] = [];
-let activeTabPath: string | null = null;
 /** Housing UUIDs the user has explicitly opted in to "trust the cache for". */
 const trustedHouses: Set<string> = new Set();
+/**
+ * When true, sound effects fired by `Forge.PlaySoundEvent` are cancelled
+ * while an import is in flight. Suppresses the repetitive ding/click
+ * sounds Hypixel plays on every housing menu open during an import.
+ */
+let muteImportSounds: boolean = false;
 let housingUuid: string | null = null;
 let knowledgeRows: KnowledgeStatusRow[] = [];
-let importProgress: ImportProgressView | null = null;
+let importProgress: ImportProgress | null = null;
 let importRunState: ImportRunState | null = null;
-let lastEstimatedCompleted = 0;
-let lastEstimatedTotal = 1;
 /**
  * `Date.now()` of the moment the in-flight import started. Captured the
  * first time `setImportProgress` transitions from null to non-null and
  * cleared on the inverse transition.
  */
 let importStartedAt: number | null = null;
+let importProgressUpdatedAt: number | null = null;
 
 export function getImportProgressFraction(): number {
     const p = importProgress;
@@ -115,88 +82,31 @@ export function getImportProgressFraction(): number {
     return Math.min(1, Math.max(0, p.estimatedCompleted / p.estimatedTotal));
 }
 
-function calibratedMsPerUnit(): number | null {
-    const stats = getTimingStats();
-    let totalMs = 0;
-    let totalUnits = 0;
-    for (const kind in stats) {
-        const entry = stats[kind];
-        if (entry === undefined) continue;
-        totalMs += entry.totalMs;
-        totalUnits += entry.totalExpectedUnits;
-    }
-    if (totalUnits <= 0) return null;
-    return totalMs / totalUnits;
-}
-
 /**
- * Rolling window of completed estimated work units. ETA is based on recent
- * ms/unit, not importable count or phase count.
- */
-type EtaSample = { t: number; completed: number };
-const ETA_WINDOW_MS = 45000;
-const ETA_MIN_WINDOW_MS = 2500;
-const ETA_SAMPLE_INTERVAL_MS = 250;
-const ETA_MIN_COMPLETED_UNITS = 3;
-let etaSamples: EtaSample[] = [];
-let etaSamplesForStartedAt: number | null = null;
-
-function maybePushEtaSample(now: number, completed: number): void {
-    if (etaSamplesForStartedAt !== importStartedAt) {
-        etaSamples = [];
-        etaSamplesForStartedAt = importStartedAt;
-    }
-    if (importStartedAt === null) return;
-    const last = etaSamples.length > 0 ? etaSamples[etaSamples.length - 1] : null;
-    if (last !== null && now - last.t < ETA_SAMPLE_INTERVAL_MS) return;
-    etaSamples.push({ t: now, completed });
-    while (etaSamples.length > 0 && etaSamples[0].t < now - ETA_WINDOW_MS) {
-        etaSamples.shift();
-    }
-}
-
-/**
- * Estimated remaining seconds for the in-flight import, or null if no
- * meaningful estimate is available yet. Uses a windowed rate when at
- * least `ETA_MIN_WINDOW_MS` of samples are buffered, falling back to
- * total-elapsed extrapolation before then.
+ * Total remaining seconds for the in-flight import. Phase-aware, with
+ * a guard that prevents the cached/decayed value from undershooting
+ * the current importable's recomputed remaining. See
+ * `importer/progress/eta.ts` for the math.
  */
 export function getImportEtaSeconds(): number | null {
-    const p = importProgress;
-    if (p === null || importStartedAt === null) return null;
-    if (p.estimatedTotal <= 0) return null;
-    const completed = Math.min(p.estimatedCompleted, p.estimatedTotal);
-    const remainingUnits = Math.max(0, p.estimatedTotal - completed);
-    if (remainingUnits <= 0) return 0;
-    const now = Date.now();
-    maybePushEtaSample(now, completed);
-    let windowRemaining: number | null = null;
-    const oldest = etaSamples.length > 0 ? etaSamples[0] : null;
-    const windowAge = oldest !== null ? now - oldest.t : 0;
-    if (
-        oldest !== null &&
-        windowAge >= ETA_MIN_WINDOW_MS &&
-        completed - oldest.completed >= ETA_MIN_COMPLETED_UNITS
-    ) {
-        const msPerUnit = windowAge / (completed - oldest.completed);
-        windowRemaining = (remainingUnits * msPerUnit) / 1000;
-    } else {
-        const elapsed = (now - importStartedAt) / 1000;
-        if (completed >= ETA_MIN_COMPLETED_UNITS) {
-            windowRemaining = (remainingUnits * elapsed) / completed;
-        }
-    }
-    const calibrated = calibratedMsPerUnit();
-    if (calibrated !== null && (p.etaConfidence === "planned" || windowRemaining === null)) {
-        const remaining = (remainingUnits * calibrated) / 1000;
-        return !isFinite(remaining) || remaining < 0 ? null : remaining;
-    }
-    const remaining = windowRemaining;
-    if (remaining === null) return null;
-    if (!isFinite(remaining) || remaining < 0) return null;
-    return remaining;
+    if (importStartedAt === null) return null;
+    return etaGetImportEtaSeconds(importProgress);
 }
+/** Remaining seconds for the active read/hydrate/apply phase. */
+export function getCurrentPhaseEtaSeconds(): number | null {
+    const p = importProgress;
+    if (p === null) return null;
+    const breakdown = etaGetImportEtaBreakdown(p);
+    if (breakdown === null) return null;
 
+    let secs: number | null = null;
+    const phase = p.phase === "diffing" ? "applying" : p.phase;
+    if (phase === "reading") secs = breakdown.readSeconds;
+    else if (phase === "hydrating") secs = breakdown.hydrateSeconds;
+    else if (phase === "applying") secs = breakdown.applySeconds;
+    if (secs === null || importProgressUpdatedAt === null) return secs;
+    return Math.max(0, secs - (Date.now() - importProgressUpdatedAt) / 1000);
+}
 export function getImportJsonPath(): string {
     return importJsonPath;
 }
@@ -218,18 +128,8 @@ export function setParsedResult(r: ParseResult<Importable[]> | null): void {
     parsedResult = r;
 }
 
-export function getParseError(): string | null {
-    return parseError;
-}
 export function setParseError(msg: string | null): void {
-    parseError = msg;
-}
-
-export function getSelectedImportableId(): string | null {
-    return selectedImportableId;
-}
-export function setSelectedImportableId(id: string | null): void {
-    selectedImportableId = id;
+    void msg;
 }
 
 export function isImportableChecked(key: string): boolean {
@@ -253,36 +153,6 @@ export function getCheckedImportableCount(): number {
     return checkedImportableKeys.size;
 }
 
-export function getOpenTabs(): SourceTab[] {
-    return openTabs;
-}
-export function getActiveTabPath(): string | null {
-    return activeTabPath;
-}
-export function openTab(tab: SourceTab): void {
-    for (let i = 0; i < openTabs.length; i++) {
-        if (openTabs[i].path === tab.path) {
-            activeTabPath = tab.path;
-            return;
-        }
-    }
-    openTabs = openTabs.concat([tab]);
-    activeTabPath = tab.path;
-}
-export function closeTab(path: string): void {
-    const next: SourceTab[] = [];
-    for (let i = 0; i < openTabs.length; i++) {
-        if (openTabs[i].path !== path) next.push(openTabs[i]);
-    }
-    openTabs = next;
-    if (activeTabPath === path) {
-        activeTabPath = next.length > 0 ? next[next.length - 1].path : null;
-    }
-}
-export function setActiveStateTab(path: string): void {
-    activeTabPath = path;
-}
-
 export function isHouseTrusted(uuid: string): boolean {
     return trustedHouses.has(uuid);
 }
@@ -294,6 +164,13 @@ export function setHouseTrust(uuid: string, trusted: boolean): void {
  *  the current housing UUID is in the trusted-houses set. */
 export function isCurrentHouseTrusted(): boolean {
     return housingUuid !== null && trustedHouses.has(housingUuid);
+}
+
+export function isImportSoundsMuted(): boolean {
+    return muteImportSounds;
+}
+export function setImportSoundsMuted(muted: boolean): void {
+    muteImportSounds = muted;
 }
 
 export function getHousingUuid(): string | null {
@@ -310,21 +187,65 @@ export function setKnowledgeRows(rows: KnowledgeStatusRow[]): void {
     knowledgeRows = rows;
 }
 
-export function getImportProgress(): ImportProgressView | null {
+export function getImportProgress(): ImportProgress | null {
     return importProgress;
 }
-export function setImportProgress(p: ImportProgressView | null): void {
+export type ImportProgressInit =
+    & Pick<ImportProgress, "currentIdentity">
+    & Partial<ImportProgress>;
+
+export function createImportProgress(init: ImportProgressInit): ImportProgress {
+    const unitTotal = init.unitTotal ?? 1;
+    const estimatedTotal = init.estimatedTotal ?? Math.max(1, unitTotal);
+    return normalizeImportProgress({
+        weightCompleted: init.weightCompleted ?? 0,
+        weightTotal: init.weightTotal ?? estimatedTotal,
+        weightCurrent: init.weightCurrent ?? 0,
+        currentKey: init.currentKey ?? "",
+        currentType: init.currentType ?? null,
+        currentIdentity: init.currentIdentity,
+        orderIndex: init.orderIndex ?? -1,
+        rowStatus: init.rowStatus ?? null,
+        currentLabel: init.currentLabel ?? init.currentIdentity,
+        phase: init.phase ?? "starting",
+        phaseLabel: init.phaseLabel ?? init.currentLabel ?? init.currentIdentity,
+        unitCompleted: init.unitCompleted ?? 0,
+        unitTotal,
+        estimatedCompleted: init.estimatedCompleted ?? 0,
+        estimatedTotal,
+        etaConfidence: init.etaConfidence ?? "rough",
+        phaseBudget: init.phaseBudget ?? null,
+        weights: init.weights ?? [],
+        completed: init.completed ?? 0,
+        total: init.total ?? 1,
+        failed: init.failed ?? 0,
+    });
+}
+
+function normalizeImportProgress(p: ImportProgress): ImportProgress {
+    const estimatedCompleted = Math.max(0, p.estimatedCompleted);
+    const estimatedTotal = Math.max(1, p.estimatedTotal, estimatedCompleted);
+    return {
+        ...p,
+        estimatedCompleted,
+        estimatedTotal,
+    };
+}
+
+export function setImportProgress(p: ImportProgress | null): void {
     const wasNull = importProgress === null;
     if (p !== null && importProgress === null) {
         importStartedAt = Date.now();
-        lastEstimatedCompleted = Math.max(0, p.estimatedCompleted);
-        lastEstimatedTotal = Math.max(1, p.estimatedTotal);
     } else if (p === null) {
         importStartedAt = null;
-        lastEstimatedCompleted = 0;
-        lastEstimatedTotal = 1;
+        importProgressUpdatedAt = null;
     }
-    importProgress = p;
+    importProgress = p === null ? null : normalizeImportProgress(p);
+    if (p !== null) {
+        importProgressUpdatedAt = Date.now();
+    }
+    // Force ETA recompute on the next read so the new event's data is used.
+    resetEtaCache();
     // On import start, flip the right panel to the Import tab so the
     // user sees the live progress without having to click. On end,
     // flip back to View (where they were before the import) — but only
@@ -345,6 +266,111 @@ export function getCurrentImportingPath(): string | null {
 }
 export function setCurrentImportingPath(p: string | null): void {
     currentImportingPath = p;
+}
+
+/**
+ * Render-state for a queue row's mini progress bar. "queued" → empty bar;
+ * "done" → full green; "failed" → full red; "current" → phase-segmented
+ * showing how far through each phase we are within this importable.
+ */
+export type QueueItemRunState =
+    | { kind: "queued" }
+    | { kind: "done" }
+    | { kind: "failed" }
+    | {
+          kind: "current";
+          /**
+           * Per-phase fill, each in [0,1]. 0 = phase not started, 1 =
+           * phase complete. Phases are weighted by their relative budget
+           * so they take up proportional widths in the bar.
+           */
+          readFraction: number;
+          hydrateFraction: number;
+          applyFraction: number;
+          /** Relative widths of the three phases (sum = 1). */
+          readWeight: number;
+          hydrateWeight: number;
+          applyWeight: number;
+      };
+
+export function getQueueItemRunState(item: QueueItem): QueueItemRunState {
+    const runState = importRunState;
+    if (runState === null || importProgress === null) {
+        return { kind: "queued" };
+    }
+    if (item.kind !== "importable") {
+        // importJson rows aren't tracked individually; treat as queued.
+        return { kind: "queued" };
+    }
+    const key = trustPlanKey(item.type, item.identity);
+    const row = runState.rows.get(key);
+    if (row === undefined) return { kind: "queued" };
+    if (row.status === "imported" || row.status === "skipped") {
+        return { kind: "done" };
+    }
+    if (row.status === "failed") {
+        // The session halts on first failure, so everything after this
+        // stays queued. We render the failed row with the error color
+        // (distinct from the green "done" fill) so the user can see at a
+        // glance which importable aborted the run.
+        return { kind: "failed" };
+    }
+    if (row.status === "queued") return { kind: "queued" };
+    // "current" — break down by phase using the live phaseBudget.
+    const p = importProgress;
+    if (p.phaseBudget === null) {
+        // Pre-action-list phase (opening). Show empty bar — the row is
+        // marked "current" by the stripe; we just don't fill yet.
+        return {
+            kind: "current",
+            readFraction: 0,
+            hydrateFraction: 0,
+            applyFraction: 0,
+            readWeight: 0.33,
+            hydrateWeight: 0.33,
+            applyWeight: 0.34,
+        };
+    }
+    const pb = p.phaseBudget;
+    const total = Math.max(1, pb.readPart + pb.hydratePart + pb.applyPart);
+    const within = Math.max(0, p.estimatedCompleted - p.weightCompleted);
+    const readDone = Math.min(pb.readPart, within);
+    const hydrateDone = Math.min(
+        pb.hydratePart,
+        Math.max(0, within - pb.readPart)
+    );
+    const applyDone = Math.min(
+        pb.applyPart,
+        Math.max(0, within - pb.readPart - pb.hydratePart)
+    );
+    return {
+        kind: "current",
+        readFraction: pb.readPart > 0 ? readDone / pb.readPart : 1,
+        hydrateFraction: pb.hydratePart > 0 ? hydrateDone / pb.hydratePart : 1,
+        applyFraction: pb.applyPart > 0 ? applyDone / pb.applyPart : 0,
+        readWeight: pb.readPart / total,
+        hydrateWeight: pb.hydratePart / total,
+        applyWeight: pb.applyPart / total,
+    };
+}
+
+/**
+ * True iff this queue item corresponds to the importable currently being
+ * processed by the in-flight import session. For "importable" items we
+ * match by `${type}:${identity}` (the trustPlanKey shape used as
+ * `currentKey` in ImportProgress). For "importJson" items we match
+ * whenever the current importable is sourced from that import.json file.
+ */
+export function isCurrentQueueItem(item: QueueItem): boolean {
+    if (importProgress === null) return false;
+    if (importProgress.currentKey.length === 0) return false;
+    if (item.kind === "importable") {
+        return importProgress.currentKey === trustPlanKey(item.type, item.identity);
+    }
+    // importJson: match by source file path against the current importable's
+    // source file (the live diff sink uses currentImportingPath for this).
+    if (currentImportingPath === null) return false;
+    return canonicalPath(item.sourcePath) === canonicalPath(currentImportingPath);
 }
 
 export function beginImportRun(importables: readonly Importable[]): void {
@@ -368,25 +394,6 @@ export function beginImportRun(importables: readonly Importable[]): void {
         });
     }
     importRunState = { rows, order, startedAt: Date.now() };
-}
-
-export function getImportRunState(): ImportRunState | null {
-    return importRunState;
-}
-
-export function getImportRunRow(key: string): ImportRunRow | null {
-    if (importRunState === null) return null;
-    return importRunState.rows.get(key) ?? null;
-}
-
-export function markImportRunRowDone(
-    key: string,
-    status: "imported" | "skipped" | "failed"
-): void {
-    if (importRunState === null) return;
-    const row = importRunState.rows.get(key);
-    if (row === undefined) return;
-    importRunState.rows.set(key, { ...row, status });
 }
 
 export function updateImportRunFromProgress(progress: ImportProgress): void {
@@ -416,33 +423,3 @@ export function clearImportRun(): void {
     importRunState = null;
 }
 
-export function applyImportProgress(p: ImportProgress): void {
-    const rawCompleted = p.estimatedCompleted;
-    const rawTotal = Math.max(1, p.estimatedTotal);
-    const estimatedCompleted = Math.max(lastEstimatedCompleted, rawCompleted);
-    const estimatedTotal = Math.max(lastEstimatedTotal, rawTotal, estimatedCompleted);
-    lastEstimatedCompleted = estimatedCompleted;
-    lastEstimatedTotal = estimatedTotal;
-    importProgress = {
-        weightCompleted: p.weightCompleted,
-        weightTotal: p.weightTotal,
-        weightCurrent: p.weightCurrent,
-        currentKey: p.currentKey,
-        currentType: p.currentType,
-        currentIdentity: p.currentIdentity,
-        orderIndex: p.orderIndex,
-        rowStatus: p.rowStatus,
-        currentLabel: p.currentLabel,
-        phase: p.phase,
-        phaseLabel: p.phaseLabel,
-        unitCompleted: p.unitCompleted,
-        unitTotal: p.unitTotal,
-        estimatedCompleted,
-        estimatedTotal,
-        etaConfidence: p.etaConfidence,
-        completed: p.completed,
-        total: p.total,
-        failed: p.failed,
-        inFlight: p.completed < p.total,
-    };
-}

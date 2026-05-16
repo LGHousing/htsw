@@ -12,7 +12,12 @@ import { FileSystemFileLoader } from "./utils/files";
 import { commandKnowledge } from "./knowledge/commands";
 import { toggleHtswGui, armHtswGuiDebug } from "./gui/overlay";
 import { runDiffDemo } from "./gui/popovers/diff-demo";
-import { getTimingStats, resetTimingStats } from "./importer/progress/timing";
+import {
+    getPhaseStats,
+    getTimingStats,
+    resetPhaseStats,
+    resetTimingStats,
+} from "./importer/progress/timing";
 
 function printCommandError(sm: SourceMap, err: unknown): void {
     if (err instanceof Diagnostic) {
@@ -98,7 +103,7 @@ function commandHtsw(args: string[]) {
     ChatLib.chat("&f/import &7- Import actions from HTSL files");
     ChatLib.chat("&f/simulator &7- Simulate actions from HTSL files");
     ChatLib.chat("&f/htsw knowledge &7- Inspect local import/export knowledge");
-    ChatLib.chat("&f/htsw eta &7- Show importer ETA timing samples");
+    ChatLib.chat("&f/htsw eta [reset|dump] &7- Show / reset / dump importer ETA samples");
     ChatLib.chat("&f/htsw packet-probe [seconds] &7- Safely log relevant packets");
     ChatLib.chat("&f/htsw gui &7- Open the in-game HTSW dashboard");
     ChatLib.chat(`&7${chatSeparator()}`);
@@ -107,10 +112,47 @@ function commandHtsw(args: string[]) {
 function commandEta(args: string[]): void {
     if (args.length > 0 && (args[0] === "reset" || args[0] === "clear")) {
         resetTimingStats();
-        ChatLib.chat("&7[eta] timing samples reset");
+        resetPhaseStats();
+        ChatLib.chat("&7[eta] timing samples + phase stats reset");
         return;
     }
 
+    if (args.length > 0 && args[0] === "dump") {
+        dumpEtaToFile();
+        return;
+    }
+
+    printPhaseStats();
+    ChatLib.chat("");
+    printOpKindStats();
+}
+
+function printPhaseStats(): void {
+    // Diffing is in-process compute (no menu round-trips, ~1-5ms) — not
+    // tracked in phaseStats. Only reading/hydrating/applying matter for
+    // ETA calibration.
+    const phases = ["reading", "hydrating", "applying"] as const;
+    ChatLib.chat("&7[eta] per-phase ms/budget-unit (measured)");
+    const phaseStats = getPhaseStats();
+    let any = false;
+    for (let i = 0; i < phases.length; i++) {
+        const ph = phases[i];
+        const entry = phaseStats[ph];
+        if (entry === undefined || entry.totalBudgetUnits <= 0) {
+            ChatLib.chat(`&7  ${ph}: &8(no samples)`);
+            continue;
+        }
+        any = true;
+        ChatLib.chat(
+            `&7  ${ph}: &f${entry.msPerBudgetUnit.toFixed(1)}ms/u &7(${entry.totalMs.toFixed(0)}ms over ${entry.totalBudgetUnits.toFixed(2)}u)`
+        );
+    }
+    if (!any) {
+        ChatLib.chat("&7  (run an import to gather data, then re-run /htsw eta)");
+    }
+}
+
+function printOpKindStats(): void {
     const stats = getTimingStats();
     const kinds = [
         "commandMenuWait",
@@ -125,7 +167,7 @@ function commandEta(args: string[]): void {
         "reorderStep",
         "sleep1000",
     ];
-    ChatLib.chat("&7[eta] timing samples");
+    ChatLib.chat("&7[eta] per-op-kind ms/budget-unit");
     let printed = false;
     for (let i = 0; i < kinds.length; i++) {
         const kind = kinds[i];
@@ -135,11 +177,28 @@ function commandEta(args: string[]): void {
         const expected =
             entry.count === 0 ? 0 : entry.totalExpectedUnits / entry.count;
         ChatLib.chat(
-            `&7${kind}: &f${entry.count} samples&7, avg &f${entry.avgMs.toFixed(0)}ms&7, expected &f${expected.toFixed(2)}u&7 => &f${entry.avgMsPerExpectedUnit.toFixed(0)}ms/u`
+            `&7  ${kind}: &f${entry.count} samples&7, avg &f${entry.avgMs.toFixed(0)}ms&7, expected &f${expected.toFixed(2)}u&7 => &f${entry.avgMsPerExpectedUnit.toFixed(0)}ms/u`
         );
     }
     if (!printed) {
-        ChatLib.chat("&7[eta] no samples yet");
+        ChatLib.chat("&7  (no samples yet)");
+    }
+}
+
+function dumpEtaToFile(): void {
+    const stats = getTimingStats();
+    const phaseStats = getPhaseStats();
+    const dump = {
+        capturedAt: new Date().toISOString(),
+        perPhase: phaseStats,
+        perOpKind: stats,
+    };
+    const path = `./htsw/eta-${Date.now()}.json`;
+    try {
+        FileLib.write(path, JSON.stringify(dump, null, 2), true);
+        ChatLib.chat(`&a[eta] wrote ${path}`);
+    } catch (e) {
+        ChatLib.chat(`&c[eta] failed to write ${path}: ${e}`);
     }
 }
 

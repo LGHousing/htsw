@@ -6,7 +6,7 @@ import { importableIdentity } from "./paths";
 import { readKnowledge } from "./cache";
 import { sameHashList } from "./status";
 
-export type TrustedListPath = string;
+type TrustedListPath = string;
 
 export type ImportableTrustPlan = {
     importable: Importable;
@@ -27,9 +27,20 @@ export function trustPlanKey(type: Importable["type"], identity: string): string
     return `${type}:${identity}`;
 }
 
+/**
+ * Build per-importable cache + trust info for an import session.
+ *
+ * Always loads each importable's knowledge entry (when one exists) so
+ * the cached state can flow into ETA estimation regardless of
+ * trust-mode. The `trustMode` flag only controls whether matching
+ * hashes get registered as `trustedListPaths` (which cause the
+ * importer to *skip* those lists). Pass `false` to get cache data
+ * without any skip behavior.
+ */
 export function buildKnowledgeTrustPlan(
     housingUuid: string,
-    importables: readonly Importable[]
+    importables: readonly Importable[],
+    trustMode: boolean = true
 ): KnowledgeTrustPlan {
     const plans = new Map<string, ImportableTrustPlan>();
 
@@ -40,7 +51,7 @@ export function buildKnowledgeTrustPlan(
         const desiredLists = listHashes(importable);
         const trustedListPaths = new Set<TrustedListPath>();
 
-        if (entry !== null) {
+        if (trustMode && entry !== null) {
             for (const path of Object.keys(desiredLists)) {
                 if (sameHashList(entry.lists[path], desiredLists[path])) {
                     trustedListPaths.add(path);
@@ -54,7 +65,8 @@ export function buildKnowledgeTrustPlan(
             entry,
             sourceHash,
             cacheHash: entry?.hash ?? null,
-            wholeImportableTrusted: entry !== null && entry.hash === sourceHash,
+            wholeImportableTrusted:
+                trustMode && entry !== null && entry.hash === sourceHash,
             trustedListPaths,
         });
     }

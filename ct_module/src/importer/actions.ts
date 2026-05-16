@@ -53,48 +53,34 @@ import {
     setNumberValue,
     readBooleanValue,
     readStringValue,
-} from "./helpers";
-import {
-    readConditionList,
-    syncConditionList,
-} from "./conditions";
+} from "./gui/helpers";
+import { readConditionList } from "./conditions/readList";
+import { syncConditionList } from "./conditions/sync";
 import {
     normalizeActionCompare,
     normalizeConditionCompare,
-} from "./compare";
+} from "./fields/compare";
 import {
     ACTION_MAPPINGS,
     getActionFieldLabel,
-} from "./actionMappings";
-import { diffActionList } from "./actions/diff";
+} from "./fields/actionMappings";
 import type {
     NestedPropsToRead,
     Observed,
 } from "./types";
-import { setItemValue } from "./items";
+import { setItemValue } from "./items/items";
 import type { ActionPath } from "./diffSink";
-import { resolveImportableItem } from "./resolveItem";
+import { resolveImportableItem } from "./items/resolveItem";
 import { readActionList } from "./actions/readList";
 import { syncActionList } from "./actions/sync";
+import type { ActionListProgressSink } from "./progress/types";
 
-// Public re-exports — external callers import these names from "./actions".
-export { diffActionList };
-export { readActionList, readActionsListPage } from "./actions/readList";
-export { syncActionList } from "./actions/sync";
-export { importAction } from "./actions/applyDiff";
-export type {
-    SyncActionListOptions,
-    SyncActionListResult,
-} from "./actions/sync";
-export type {
-    ActionListDiff,
-    ActionListOperation,
-    ActionListProgress,
-    NestedListProp,
-    NestedPropsToRead,
-    ObservedActionSlot as ObservedAction,
-    ActionListTrust,
-} from "./types";
+export type WriteActionOptions<T extends Action = Action> = {
+    current?: Observed<T>;
+    itemRegistry?: ItemRegistry;
+    pathPrefix?: ActionPath;
+    onProgress?: ActionListProgressSink;
+};
 
 type ActionSpec<T extends Action = Action> = {
     displayName: string;
@@ -106,38 +92,14 @@ type ActionSpec<T extends Action = Action> = {
     write?: (
         ctx: TaskContext,
         desired: T,
-        current?: Observed<T>,
-        itemRegistry?: ItemRegistry
+        options?: WriteActionOptions<T>
     ) => Promise<void>;
 };
-
-// Ambient path tracker. `applyDiff.ts` wraps each edit/add in
-// `withWritingActionPath`; the nested writers below
-// (`writeConditional`, `writeRandom`) read `currentWritingActionPath`
-// to compute pathPrefix for recursive `syncActionList` calls.
-// Threading the path through every spec.write signature would change 35
-// writers for two consumers — not worth it.
-let currentWritingActionPath: ActionPath | null = null;
 
 export function actionPathForIndex(pathPrefix: string | undefined, index: number): ActionPath {
     return pathPrefix && pathPrefix.length > 0
         ? `${pathPrefix}.${index}`
         : String(index);
-}
-
-export function withWritingActionPath<T>(path: ActionPath | null, fn: () => Promise<T>): Promise<T> {
-    const previous = currentWritingActionPath;
-    currentWritingActionPath = path;
-    return fn().then(
-        (value) => {
-            currentWritingActionPath = previous;
-            return value;
-        },
-        (err) => {
-            currentWritingActionPath = previous;
-            throw err;
-        }
-    );
 }
 
 type ActionSpecMap = {
@@ -210,9 +172,11 @@ async function readOpenConditional(
 async function writeConditional(
     ctx: TaskContext,
     action: ActionConditional,
-    current?: Observed<ActionConditional>,
-    itemRegistry?: ItemRegistry
+    options?: WriteActionOptions<ActionConditional>
 ): Promise<void> {
+    const current = options?.current;
+    const itemRegistry = options?.itemRegistry;
+    const pathPrefix = options?.pathPrefix;
     if (
         !conditionListsEqual(current?.conditions, action.conditions) &&
         (action.conditions.length > 0 || (current?.conditions?.length ?? 0) > 0)
@@ -220,7 +184,11 @@ async function writeConditional(
         ctx.getMenuItemSlot(getActionFieldLabel("CONDITIONAL", "conditions")).click();
         await waitForMenu(ctx);
 
-        await syncConditionList(ctx, action.conditions, { itemRegistry });
+        await syncConditionList(ctx, action.conditions, {
+            itemRegistry,
+            cached: observedConditionsAsCached(current?.conditions),
+            onProgress: options?.onProgress,
+        });
         await clickGoBack(ctx);
     }
 
@@ -239,9 +207,9 @@ async function writeConditional(
         await waitForMenu(ctx);
         await syncActionList(ctx, action.ifActions, {
             itemRegistry,
-            pathPrefix: currentWritingActionPath === null
-                ? undefined
-                : `${currentWritingActionPath}.ifActions`,
+            pathPrefix: pathPrefix === undefined ? undefined : `${pathPrefix}.ifActions`,
+            cached: observedActionsAsCached(current?.ifActions),
+            onProgress: options?.onProgress,
         });
         await clickGoBack(ctx);
     }
@@ -255,12 +223,42 @@ async function writeConditional(
         await waitForMenu(ctx);
         await syncActionList(ctx, action.elseActions, {
             itemRegistry,
-            pathPrefix: currentWritingActionPath === null
-                ? undefined
-                : `${currentWritingActionPath}.elseActions`,
+            pathPrefix: pathPrefix === undefined ? undefined : `${pathPrefix}.elseActions`,
+            cached: observedActionsAsCached(current?.elseActions),
+            onProgress: options?.onProgress,
         });
         await clickGoBack(ctx);
     }
+}
+
+/**
+ * Drop null slots and erase the `Observed<>` brand so a freshly-observed
+ * nested body can be fed to `syncActionList`'s `cached` option. The
+ * structural difference (Observed nests as nullable arrays, plain Action
+ * doesn't) doesn't matter for budget computation: CONDITIONAL/RANDOM
+ * can't nest inside other CONDITIONAL/RANDOM bodies, so the inner
+ * actions never carry nested arrays of their own.
+ */
+function observedActionsAsCached(
+    observed: ReadonlyArray<Observed<Action> | null> | undefined
+): readonly Action[] | undefined {
+    if (observed === undefined) return undefined;
+    const out: Action[] = [];
+    for (const entry of observed) {
+        if (entry !== null) out.push(entry as Action);
+    }
+    return out;
+}
+
+function observedConditionsAsCached(
+    observed: ReadonlyArray<Condition | null> | undefined
+): readonly Condition[] | undefined {
+    if (observed === undefined) return undefined;
+    const out: Condition[] = [];
+    for (const entry of observed) {
+        if (entry !== null) out.push(entry);
+    }
+    return out;
 }
 
 function observedActionListsEqual(
@@ -382,9 +380,9 @@ async function writeChangeMaxHealth(
 async function writeGiveItem(
     ctx: TaskContext,
     action: ActionGiveItem,
-    _current?: Observed<ActionGiveItem>,
-    itemRegistry?: ItemRegistry
+    options?: WriteActionOptions<ActionGiveItem>
 ): Promise<void> {
+    const itemRegistry = options?.itemRegistry;
     await setItemValue(
         ctx,
         getActionFieldLabel("GIVE_ITEM", "itemName"),
@@ -419,9 +417,9 @@ async function writeGiveItem(
 async function writeRemoveItem(
     ctx: TaskContext,
     action: ActionRemoveItem,
-    _current?: Observed<ActionRemoveItem>,
-    itemRegistry?: ItemRegistry
+    options?: WriteActionOptions<ActionRemoveItem>
 ): Promise<void> {
+    const itemRegistry = options?.itemRegistry;
     if (action.itemName !== undefined) {
         await setItemValue(
             ctx,
@@ -682,9 +680,11 @@ async function readOpenRandom(
 async function writeRandom(
     ctx: TaskContext,
     action: ActionRandom,
-    current?: Observed<ActionRandom>,
-    itemRegistry?: ItemRegistry
+    options?: WriteActionOptions<ActionRandom>
 ): Promise<void> {
+    const current = options?.current;
+    const itemRegistry = options?.itemRegistry;
+    const pathPrefix = options?.pathPrefix;
     if (observedActionListsEqual(current?.actions, action.actions)) return;
     if (action.actions.length === 0 && (current?.actions?.length ?? 0) === 0) return;
 
@@ -692,9 +692,9 @@ async function writeRandom(
     await waitForMenu(ctx);
     await syncActionList(ctx, action.actions, {
         itemRegistry,
-        pathPrefix: currentWritingActionPath === null
-            ? undefined
-            : `${currentWritingActionPath}.actions`,
+        pathPrefix: pathPrefix === undefined ? undefined : `${pathPrefix}.actions`,
+        cached: observedActionsAsCached(current?.actions),
+        onProgress: options?.onProgress,
     });
     await clickGoBack(ctx);
 }
@@ -764,9 +764,9 @@ async function writeDisplayMenu(
 async function writeDropItem(
     ctx: TaskContext,
     action: ActionDropItem,
-    _current?: Observed<ActionDropItem>,
-    itemRegistry?: ItemRegistry
+    options?: WriteActionOptions<ActionDropItem>
 ): Promise<void> {
+    const itemRegistry = options?.itemRegistry;
     await setItemValue(
         ctx,
         getActionFieldLabel("DROP_ITEM", "itemName"),
@@ -1056,21 +1056,23 @@ const ACTION_SPECS = {
 export async function writeOpenAction(
     ctx: TaskContext,
     desired: Action,
-    current?: Observed<Action>,
-    itemRegistry?: ItemRegistry
+    opts?: WriteActionOptions<Action>
 ): Promise<void> {
     const spec = getActionSpec(desired.type);
     // When adding new actions, read the current values to avoid
     // unnecessarily overwriting fields that aren't changing.
-    let resolvedCurrent = current;
+    let resolvedCurrent = opts?.current;
 
     if (resolvedCurrent === undefined && spec.read) {
-        resolvedCurrent = await spec.read(ctx, new Set(), itemRegistry);
+        resolvedCurrent = await spec.read(ctx, new Set(), opts?.itemRegistry);
     }
 
     if (!spec.write) {
         throw new Error(`Writing action "${desired.type}" is not implemented.`);
     }
 
-    await spec.write(ctx, desired, resolvedCurrent, itemRegistry);
+    await spec.write(ctx, desired, {
+        ...opts,
+        current: resolvedCurrent,
+    });
 }

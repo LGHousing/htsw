@@ -4,10 +4,10 @@ import TaskContext from "../../tasks/context";
 import { type ItemRegistry } from "../../importables/itemRegistry";
 import type {
     ActionListDiff,
-    ActionListProgressSink,
     ActionListTrust,
     ObservedActionSlot,
 } from "../types";
+import type { ActionListProgressSink } from "../progress/types";
 import { diffActionList } from "./diff";
 import { applyActionListDiff } from "./applyDiff";
 import {
@@ -16,6 +16,7 @@ import {
     readActionList,
 } from "./readList";
 import { actionLogLabel, editDiffSummary } from "./log";
+import { estimateActionListPhaseBudget } from "../progress/costs";
 
 export type SyncActionListOptions = {
     /**
@@ -32,6 +33,14 @@ export type SyncActionListOptions = {
     onProgress?: ActionListProgressSink;
     /** Source path prefix for nested lists, e.g. `4.ifActions`. */
     pathPrefix?: string;
+    /**
+     * Last-known cached state of this action list, if the knowledge cache
+     * has a snapshot for this importable. Used to seed `phaseBudget` with
+     * realistic read + hydrate + apply estimates — see
+     * `estimateActionListPhaseBudget`. Omit (or pass `undefined`) when no
+     * cache exists; the budget then assumes an empty housing.
+     */
+    cached?: readonly Action[];
 };
 
 export type SyncActionListResult = {
@@ -48,6 +57,18 @@ export async function syncActionList(
     desired: Action[],
     options?: SyncActionListOptions
 ): Promise<SyncActionListResult> {
+    // Single mutable phase budget shared across read + apply so all four
+    // phases emit estimatedCompleted/Total against the same scale. Both
+    // sides update its parts in place when actual work exceeds estimate.
+    // Cache priority: explicit `options.cached` wins, else fall back to
+    // the cached snapshot already plumbed via `options.trust` (every
+    // typed import builds this via `actionListTrustFor` whenever a
+    // knowledge entry exists for the importable, independent of whether
+    // trust-mode is actually enabled). Result: the phase budget uses
+    // real cached state whenever we have any.
+    const cachedForPhase = options?.cached ?? options?.trust?.cachedActions;
+    const phaseBudget = estimateActionListPhaseBudget(desired, cachedForPhase);
+    const progress = options?.onProgress;
     const observed =
         options?.observed ??
         (await readActionList(ctx, {
@@ -55,7 +76,8 @@ export async function syncActionList(
             desired,
             itemRegistry: options?.itemRegistry,
             trust: options?.trust,
-            onProgress: options?.onProgress,
+            onProgress: progress,
+            phaseBudget,
         }));
     canonicalizeObservedActionItemNames(observed, options?.itemRegistry);
     if (options?.itemRegistry) {
@@ -71,8 +93,9 @@ export async function syncActionList(
         desired,
         diff,
         options?.itemRegistry,
-        options?.onProgress,
-        options?.pathPrefix
+        progress,
+        options?.pathPrefix,
+        phaseBudget
     );
     return { usedObserved: observed };
 }

@@ -6,7 +6,7 @@ import { getCurrentHousingUuid } from "../knowledge";
 import { removedFormatting, unique } from "../utils/helpers";
 import { getItemFromNbt, readItemDisplayAliases } from "../utils/nbt";
 
-export interface ItemRegistryEntry {
+interface ItemRegistryEntry {
     name: string;
     item: Item;
     aliases: string[];

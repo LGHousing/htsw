@@ -1,13 +1,13 @@
 import { CONDITION_NAMES, type Condition, type ConditionCompareVar } from "htsw/types";
 
-import { ItemSlot } from "../tasks/specifics/slots";
-import { removedFormatting } from "../utils/helpers";
+import { ItemSlot } from "../../tasks/specifics/slots";
+import { removedFormatting } from "../../utils/helpers";
 import {
     parseHolderField,
     parseLoreFields,
     readListItemNote,
 } from "./loreParsing";
-import type { ConditionLoreSpec, UiFieldKind } from "./types";
+import type { ConditionLoreSpec, UiFieldKind } from "../types";
 
 export const CONDITION_MAPPINGS = {
     REQUIRE_GROUP: {

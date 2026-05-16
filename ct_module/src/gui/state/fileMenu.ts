@@ -4,7 +4,7 @@ import type { MenuAction } from "../lib/menu";
 import { showInExplorer, openInVSCode } from "../../utils/osShell";
 import {
     isInQueue,
-    queueItemForPath,
+    
     queueItemKey,
     queueItemsForPath,
     removeFromQueueKey,
@@ -60,7 +60,7 @@ function queueActionForPath(filePath: string): MenuAction {
  * from queue, then the generic OS-shell actions. Compose with side-
  * specific extras via `composeFileMenu`.
  */
-export function genericFileActions(filePath: string): MenuAction[] {
+function genericFileActions(filePath: string): MenuAction[] {
     return [
         queueActionForPath(filePath),
         { label: "Show in explorer", onClick: () => showInExplorer(filePath) },
@@ -108,6 +108,3 @@ export function composeImportableMenu(
     if (specific.length === 0) return generics;
     return specific.concat([{ kind: "separator" }], generics);
 }
-
-// Re-export so callers don't have to reach across modules for the resolver.
-export { queueItemForPath };

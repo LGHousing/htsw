@@ -6,7 +6,6 @@ import {
     canonicalPath,
     forEachCachedParse,
     getParseAt,
-    parseImportJsonAt,
 } from "./parses";
 import { importableSourcePath } from "./importablePaths";
 import { importableIdentity } from "../../knowledge/paths";
@@ -78,11 +77,6 @@ export function addToQueue(item: QueueItem): boolean {
 export function removeFromQueueKey(key: string): void {
     items = items.filter((i) => queueItemKey(i) !== key);
 }
-
-export function removeFromQueue(item: QueueItem): void {
-    removeFromQueueKey(queueItemKey(item));
-}
-
 /** Toggle membership. Returns the *new* state (true = now in the queue). */
 export function toggleQueue(item: QueueItem): boolean {
     const key = queueItemKey(item);
@@ -110,11 +104,6 @@ export function clearQueue(): void {
  *     just take the first — callers wanting all matches should iterate
  *     `queueItemsForPath` instead.
  */
-export function queueItemForPath(filePath: string): QueueItem | null {
-    const all = queueItemsForPath(filePath);
-    return all.length === 0 ? null : all[0];
-}
-
 export function queueItemsForPath(filePath: string): QueueItem[] {
     const target = canonicalPath(filePath);
 
@@ -180,16 +169,4 @@ export function makeImportableQueueItem(
         type: imp.type,
         label: importableLabel(imp),
     };
-}
-
-/**
- * Convenience: the bulk queue item for an entire import.json. Used by
- * the Explore right-click on an import.json file row.
- */
-export function makeImportJsonQueueItem(importJsonPath: string): QueueItem {
-    const canon = canonicalPath(importJsonPath);
-    // Parse it now if we haven't yet, so size estimates / labels are
-    // available immediately.
-    parseImportJsonAt(importJsonPath);
-    return { kind: "importJson", sourcePath: canon, label: basename(canon) };
 }

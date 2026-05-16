@@ -2,9 +2,7 @@
 
 import { Rect, intersectRect } from "./layout";
 import { getEffectiveOverlayScale, getOverlayScreenH } from "./overlayScale";
-
-// @ts-ignore
-const GL11 = org.lwjgl.opengl.GL11;
+import { GL11 } from "./java";
 
 const scissorStack: Rect[] = [];
 

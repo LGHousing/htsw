@@ -1,6 +1,6 @@
-import TaskContext from "../tasks/context";
-import { ItemSlot } from "../tasks/specifics/slots";
-import { removedFormatting } from "../utils/helpers";
+import TaskContext from "../../tasks/context";
+import { ItemSlot } from "../../tasks/specifics/slots";
+import { removedFormatting } from "../../utils/helpers";
 import { timedWaitForMenu } from "./menuWait";
 
 const ITEMS_PER_PAGE = 21;
@@ -70,7 +70,7 @@ function hasPrevPage(ctx: TaskContext): boolean {
     return ctx.tryGetItemSlot((slot) => slot.getSlotId() === PREV_PAGE_SLOT_ID) !== null;
 }
 
-export function getCurrentPaginatedListPageState(
+function getCurrentPaginatedListPageState(
     ctx: TaskContext,
     config: PaginatedListConfig
 ): {
@@ -107,7 +107,7 @@ export function getPaginatedListPageForIndex(index: number): number {
     return Math.floor(index / ITEMS_PER_PAGE) + 1;
 }
 
-export function getPaginatedListLocalIndex(index: number): number {
+function getPaginatedListLocalIndex(index: number): number {
     return index % ITEMS_PER_PAGE;
 }
 
@@ -188,7 +188,7 @@ export async function getPaginatedListSlotAtIndex(
     return slot;
 }
 
-export function clickPaginatedNextPage(ctx: TaskContext): void {
+function clickPaginatedNextPage(ctx: TaskContext): void {
     ctx.getItemSlot((slot) => slot.getSlotId() === NEXT_PAGE_SLOT_ID).click();
 }
 

@@ -1,23 +1,21 @@
-import type { Condition } from "htsw/types";
-
 import TaskContext from "../../tasks/context";
 import { type ItemRegistry } from "../../importables/itemRegistry";
-import { canonicalizeItemFields } from "../canonicalizeItems";
+import { canonicalizeItemFields } from "../fields/canonicalizeItems";
 import {
     CONDITION_MAPPINGS,
     parseConditionListItem,
     tryGetConditionTypeFromDisplayName,
-} from "../conditionMappings";
+} from "../fields/conditionMappings";
 import type { ObservedConditionSlot } from "../types";
 import {
     getVisiblePaginatedItemSlots,
     isEmptyPaginatedPlaceholder,
     readPaginatedList,
-} from "../paginatedList";
+} from "../gui/paginatedList";
 import { CONDITION_LIST_CONFIG } from "./listConfig";
 import { isConditionListItemInverted } from "../conditions";
 
-export async function readConditionsListPage(
+async function readConditionsListPage(
     ctx: TaskContext
 ): Promise<ObservedConditionSlot[]> {
     return getVisiblePaginatedItemSlots(ctx)
@@ -70,18 +68,6 @@ function canonicalizeObservedConditionSlots(
     for (const entry of observed) {
         if (entry.condition !== null) {
             canonicalizeItemFields(entry.condition, CONDITION_MAPPINGS, itemRegistry);
-        }
-    }
-}
-
-export function canonicalizeObservedConditionItemNames(
-    conditions: readonly (Condition | null)[],
-    itemRegistry?: ItemRegistry
-): void {
-    if (itemRegistry === undefined) return;
-    for (const condition of conditions) {
-        if (condition !== null) {
-            canonicalizeItemFields(condition, CONDITION_MAPPINGS, itemRegistry);
         }
     }
 }

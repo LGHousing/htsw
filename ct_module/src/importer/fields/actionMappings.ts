@@ -1,13 +1,13 @@
 import type { Action, ActionChangeVar } from "htsw/types";
 
-import type { ItemSlot } from "../tasks/specifics/slots";
-import { removedFormatting } from "../utils/helpers";
+import type { ItemSlot } from "../../tasks/specifics/slots";
+import { removedFormatting } from "../../utils/helpers";
 import {
     parseHolderField,
     parseLoreFields,
     readListItemNote,
 } from "./loreParsing";
-import type { ActionLoreSpec, UiFieldKind } from "./types";
+import type { ActionLoreSpec, UiFieldKind } from "../types";
 
 export const ACTION_MAPPINGS = {
     CONDITIONAL: {

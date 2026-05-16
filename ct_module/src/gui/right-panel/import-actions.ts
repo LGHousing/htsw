@@ -1,9 +1,9 @@
 /// <reference types="../../../CTAutocomplete" />
 
 import {
-    applyImportProgress,
     beginImportRun,
     clearImportRun,
+    createImportProgress,
     getExportImportJsonPath,
     getHousingUuid,
     getImportJsonPath,
@@ -223,28 +223,17 @@ export function startImport(explicit?: readonly QueueItem[]): void {
     for (const b of batches) for (const imp of b.importables) allOrdered.push(imp);
     beginImportRun(allOrdered);
 
-    setImportProgress({
-        weightCompleted: 0,
-        weightTotal: 1,
-        weightCurrent: 0,
-        currentKey: "",
-        currentType: null,
+    setImportProgress(createImportProgress({
         currentIdentity: "starting",
-        orderIndex: -1,
-        rowStatus: null,
         currentLabel: "starting…",
         phase: "starting",
         phaseLabel: "starting import",
         unitCompleted: 0,
         unitTotal: 0,
-        estimatedCompleted: 0,
         estimatedTotal: 1,
         etaConfidence: "rough",
-        completed: 0,
         total,
-        failed: 0,
-        inFlight: true,
-    });
+    }));
 
     TaskManager.run(async (ctx) => {
         const startedAt = Date.now();
@@ -270,7 +259,7 @@ export function startImport(explicit?: readonly QueueItem[]): void {
                     housingUuid,
                     sourcePath: batch.sourcePath,
                     onProgress: (p) => {
-                        applyImportProgress(p);
+                        setImportProgress(p);
                         updateImportRunFromProgress(p);
                         if (p.currentKey.length === 0) {
                             setCurrentImportingPath(null);

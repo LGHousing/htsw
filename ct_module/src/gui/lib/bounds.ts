@@ -3,8 +3,6 @@
 import { Rect } from "./layout";
 
 export const SCREEN_PAD = 4;
-export const FRAME_GAP = 4;
-export const TOP_BAR_H = 22;
 
 export type ContainerBounds = {
     screenW: number;

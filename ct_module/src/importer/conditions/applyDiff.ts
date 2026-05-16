@@ -16,16 +16,17 @@ import {
     setListItemNote,
     setNoteOnLastVisibleSlot,
     timedWaitForMenu,
-} from "../helpers";
+} from "../gui/helpers";
 import { ItemSlot, MouseButton } from "../../tasks/specifics/slots";
 import { removedFormatting } from "../../utils/helpers";
-import { CONDITION_MAPPINGS } from "../conditionMappings";
+import { CONDITION_MAPPINGS } from "../fields/conditionMappings";
 import type {
     ConditionListDiff,
     ConditionListOperation,
     ObservedConditionSlot,
 } from "../types";
-import { getPaginatedListSlotAtIndex } from "../paginatedList";
+import type { ActionListProgressSink } from "../progress/types";
+import { getPaginatedListSlotAtIndex } from "../gui/paginatedList";
 import { CONDITION_LIST_CONFIG } from "./listConfig";
 import { getConditionSpec, writeOpenCondition } from "../conditions";
 
@@ -36,7 +37,7 @@ function getInvertSlot(ctx: TaskContext): ItemSlot {
     });
 }
 
-export async function setOpenConditionInverted(
+async function setOpenConditionInverted(
     ctx: TaskContext,
     desiredInverted: boolean,
     knownCurrentInverted?: boolean
@@ -52,7 +53,7 @@ export async function setOpenConditionInverted(
     await timedWaitForMenu(ctx, "menuClickWait");
 }
 
-export async function importCondition(
+async function importCondition(
     ctx: TaskContext,
     condition: Condition,
     itemRegistry?: ItemRegistry
@@ -95,7 +96,8 @@ export async function applyConditionListDiff(
     ctx: TaskContext,
     observed: ObservedConditionSlot[],
     diff: ConditionListDiff,
-    itemRegistry?: ItemRegistry
+    itemRegistry?: ItemRegistry,
+    progress?: ActionListProgressSink
 ): Promise<void> {
     const currentObserved = [...observed];
     const edits: Array<Extract<ConditionListOperation, { kind: "edit" }>> = [];
@@ -107,6 +109,23 @@ export async function applyConditionListDiff(
         else adds.push(op);
     }
 
+    let completedOps = 0;
+    const totalOps = diff.operations.length;
+    const emitConditionOp = (label: string): void => {
+        if (progress === undefined) return;
+        if (totalOps === 0) return;
+        progress({
+            phase: "applying",
+            phaseLabel: label,
+            unitCompleted: completedOps,
+            unitTotal: totalOps,
+            estimatedCompleted: completedOps,
+            estimatedTotal: totalOps,
+            etaConfidence: "planned",
+            phaseBudget: null,
+        });
+    };
+
     // Edits first: indices don't shift while editing in place. Then deletes
     // (descending) so prior indices stay valid. Adds last — they append.
     for (const op of edits) {
@@ -114,6 +133,12 @@ export async function applyConditionListDiff(
         if (currentIndex === -1) {
             continue;
         }
+
+        const observedName =
+            op.observed.condition === null
+                ? "condition"
+                : CONDITION_MAPPINGS[op.observed.condition.type].displayName;
+        emitConditionOp(`edit condition ${observedName}`);
 
         const conditionSlot = await getPaginatedListSlotAtIndex(
             ctx,
@@ -126,6 +151,7 @@ export async function applyConditionListDiff(
 
         if (op.noteOnly) {
             await setListItemNote(ctx, conditionSlot, op.desired.note);
+            completedOps++;
             continue;
         }
 
@@ -152,6 +178,7 @@ export async function applyConditionListDiff(
         await clickGoBack(ctx);
 
         await setListItemNote(ctx, conditionSlot, op.desired.note);
+        completedOps++;
     }
 
     deletes.sort((a, b) => b.observed.index - a.observed.index);
@@ -161,13 +188,26 @@ export async function applyConditionListDiff(
             continue;
         }
 
+        const observedName =
+            op.observed.condition === null
+                ? "condition"
+                : CONDITION_MAPPINGS[op.observed.condition.type].displayName;
+        emitConditionOp(`delete condition ${observedName}`);
+
         await deleteObservedCondition(ctx, index, currentObserved.length);
         currentObserved.splice(index, 1);
+        completedOps++;
     }
 
     for (const op of adds) {
+        emitConditionOp(
+            `add condition ${CONDITION_MAPPINGS[op.desired.type].displayName}`
+        );
         await importCondition(ctx, op.desired, itemRegistry);
+        completedOps++;
     }
+
+    emitConditionOp("applied condition diff");
 }
 
 export function logConditionSyncState(ctx: TaskContext, diff: ConditionListDiff): void {

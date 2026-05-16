@@ -10,6 +10,7 @@
         "build:java": "node --experimental-strip-types ./scripts/compileJava.ts",
         "typecheck": "tsc --noEmit",
         "lint": "eslint src",
+        "knip": "knip",
         "test": "vitest run",
         "build": "npm run generate:icons && npm run typecheck && npm run lint && vite build --mode production && npm run build:java",
         "generate:icons": "node --experimental-strip-types ./scripts/generateIconsList.ts",
@@ -21,7 +22,6 @@
     "dependencies": {
         "htsw": "file:../language",
         "jsonc-parser": "^3.3.1",
-        "long": "^5.3.2",
         "promise-polyfill": "^8.3.0"
     },
     "devDependencies": {
@@ -32,6 +32,7 @@
         "@rollup/plugin-babel": "^6.0.0",
         "@types/node": "^25.6.0",
         "eslint": "^10.3.0",
+        "knip": "^6.13.1",
         "prettier": "^3.8.3",
         "typescript": "^5.9.3",
         "typescript-eslint": "^8.59.1",

@@ -7,7 +7,7 @@ import type {
     ObservedActionSlot,
 } from "../src/importer/types";
 
-import { message, observedSlot as obs, playSound } from "./utils";
+import { conditional, message, observedSlot as obs, playSound, random } from "./utils";
 
 function ops(observed: ObservedActionSlot[], desired: Action[]): ActionListOperation[] {
     return diffActionList(observed, desired).operations;
@@ -71,7 +71,9 @@ describe("diffActionList — edits", () => {
         expect(kindCounts(result)).toMatchObject({ edit: 1, add: 0, delete: 0, move: 0 });
         const edit = result.find((op) => op.kind === "edit")!;
         expect(edit.kind).toBe("edit");
-        expect((edit as Extract<ActionListOperation, { kind: "edit" }>).noteOnly).toBe(false);
+        const editOp = edit as Extract<ActionListOperation, { kind: "edit" }>;
+        expect(editOp.noteOnly).toBe(false);
+        expect(editOp.nestedDiffs).toEqual([]);
     });
 
     test("fields equal under canonicalisation produce no edit op", () => {
@@ -116,6 +118,42 @@ describe("diffActionList — edits", () => {
             | undefined;
         expect(edit).toBeDefined();
         expect(edit!.noteOnly).toBe(false);
+        expect(edit!.noteDiffers).toBe(true);
+    });
+
+    test("conditional edit carries nested action list diffs", () => {
+        const observed = [
+            obs(0, conditional({ ifActions: [message("old")], elseActions: [] })),
+        ];
+        const desired = [
+            conditional({ ifActions: [message("new")], elseActions: [] }),
+        ];
+
+        const result = ops(observed, desired);
+        const edit = result.find((op) => op.kind === "edit") as
+            | Extract<ActionListOperation, { kind: "edit" }>
+            | undefined;
+
+        expect(edit).toBeDefined();
+        expect(edit!.nestedDiffs).toHaveLength(1);
+        expect(edit!.nestedDiffs[0].prop).toBe("ifActions");
+        expect(edit!.nestedDiffs[0].diff.operations).toHaveLength(1);
+        expect(edit!.nestedDiffs[0].diff.operations[0].kind).toBe("edit");
+    });
+
+    test("random edit carries nested action list diffs", () => {
+        const observed = [obs(0, random({ actions: [message("old")] }))];
+        const desired = [random({ actions: [message("old"), playSound()] })];
+
+        const result = ops(observed, desired);
+        const edit = result.find((op) => op.kind === "edit") as
+            | Extract<ActionListOperation, { kind: "edit" }>
+            | undefined;
+
+        expect(edit).toBeDefined();
+        expect(edit!.nestedDiffs).toHaveLength(1);
+        expect(edit!.nestedDiffs[0].prop).toBe("actions");
+        expect(edit!.nestedDiffs[0].diff.operations.some((op) => op.kind === "add")).toBe(true);
     });
 });
 

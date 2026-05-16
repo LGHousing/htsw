@@ -5,9 +5,9 @@ import {
     getSlotPaginate,
     setNumberValue,
     timedWaitForMenu,
-} from "../../importer/helpers";
-import { setItemValue } from "../../importer/items";
-import { parseLoreKeyValueLine } from "../../importer/loreParsing";
+} from "../../importer/gui/helpers";
+import { setItemValue } from "../../importer/items/items";
+import { parseLoreKeyValueLine } from "../../importer/fields/loreParsing";
 import TaskContext from "../../tasks/context";
 import { MouseButton } from "../../tasks/specifics/slots";
 import { removedFormatting, unique } from "../../utils/helpers";

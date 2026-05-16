@@ -3,6 +3,7 @@
 import { Element, Rect } from "../lib/layout";
 import { Button, Col, Input, Row, Text } from "../lib/components";
 import { closePopover, openPopover, type PopoverHandle } from "../lib/popovers";
+import { javaType } from "../lib/java";
 
 let editingValue = "";
 let editingPath = "";
@@ -50,10 +51,8 @@ function save(fullPath: string): void {
     const dir = dirname(fullPath);
     const target = dir.length === 0 ? trimmed : `${dir}/${trimmed}`;
     try {
-        // @ts-ignore
-        const Paths = Java.type("java.nio.file.Paths");
-        // @ts-ignore
-        const Files = Java.type("java.nio.file.Files");
+        const Paths = javaType("java.nio.file.Paths");
+        const Files = javaType("java.nio.file.Files");
         const src = Paths.get(String(fullPath));
         const dst = Paths.get(String(target));
         if (Files.exists(dst)) {
