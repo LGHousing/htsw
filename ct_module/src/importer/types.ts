@@ -1,6 +1,7 @@
 import type { Action, Condition } from "htsw/types";
 import type { ItemSlot } from "../tasks/specifics/slots";
 import type { ItemRegistry } from "../importables/itemRegistry";
+import type { ItemCaptureRegistry } from "./itemCapture";
 import type { EtaConfidence } from "./progress/costs";
 
 export type UiFieldKind =
@@ -62,7 +63,20 @@ export type NestedReadState = "none" | "summary" | "full" | "trusted";
 export type NestedSummaries = Partial<Record<NestedListProp, string[]>>;
 
 export type ActionListReadMode =
-    | { kind: "full"; itemRegistry?: ItemRegistry; onProgress?: ActionListProgressSink }
+    | {
+          kind: "full";
+          itemRegistry?: ItemRegistry;
+          /**
+           * When set, item-bearing actions (GIVE_ITEM / REMOVE_ITEM /
+           * DROP_ITEM) join the hydration plan and have their real
+           * housing-tagged NBT captured into this registry via the
+           * click-to-copy flow in `itemCapture.ts`. Nested item-bearing
+           * conditions inside CONDITIONAL bodies inherit the same
+           * registry so a single export run dedups across the whole tree.
+           */
+          itemCaptures?: ItemCaptureRegistry;
+          onProgress?: ActionListProgressSink;
+      }
     | {
           kind: "sync";
           desired: readonly Action[];

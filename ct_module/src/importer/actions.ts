@@ -76,6 +76,10 @@ import type { ActionPath } from "./diffSink";
 import { resolveImportableItem } from "./resolveItem";
 import { readActionList } from "./actions/readList";
 import { syncActionList } from "./actions/sync";
+import {
+    captureItemFromOpenActionField,
+    type ItemCaptureRegistry,
+} from "./itemCapture";
 
 // Public re-exports — external callers import these names from "./actions".
 export { diffActionList };
@@ -101,7 +105,9 @@ type ActionSpec<T extends Action = Action> = {
     read?: (
         ctx: TaskContext,
         propsToRead: NestedPropsToRead,
-        itemRegistry?: ItemRegistry
+        itemRegistry?: ItemRegistry,
+        itemCaptures?: ItemCaptureRegistry,
+        current?: Observed<T>
     ) => Promise<Observed<T>>;
     write?: (
         ctx: TaskContext,
@@ -153,7 +159,8 @@ export function getActionSpec<T extends Action["type"]>(
 async function readOpenConditional(
     ctx: TaskContext,
     propsToRead: NestedPropsToRead,
-    itemRegistry?: ItemRegistry
+    itemRegistry?: ItemRegistry,
+    itemCaptures?: ItemCaptureRegistry
 ): Promise<Observed<ActionConditional>> {
     const conditionsLabel = getActionFieldLabel("CONDITIONAL", "conditions");
     const matchAnyLabel = getActionFieldLabel("CONDITIONAL", "matchAny");
@@ -164,9 +171,9 @@ async function readOpenConditional(
     if (propsToRead.has("conditions")) {
         ctx.getMenuItemSlot(conditionsLabel).click();
         await waitForMenu(ctx);
-        conditions = (await readConditionList(ctx, { itemRegistry })).map(
-            (entry) => entry.condition
-        );
+        conditions = (
+            await readConditionList(ctx, { itemRegistry, itemCaptures })
+        ).map((entry) => entry.condition);
         await clickGoBack(ctx);
     }
 
@@ -179,6 +186,7 @@ async function readOpenConditional(
         for (const entry of await readActionList(ctx, {
             kind: "full",
             itemRegistry,
+            itemCaptures,
         })) {
             ifActions.push(entry.action);
         }
@@ -192,6 +200,7 @@ async function readOpenConditional(
         for (const entry of await readActionList(ctx, {
             kind: "full",
             itemRegistry,
+            itemCaptures,
         })) {
             elseActions.push(entry.action);
         }
@@ -442,13 +451,109 @@ async function writeSendMessage(
     );
 }
 
-async function readOpenMessage(ctx: TaskContext): Promise<Observed<ActionSendMessage>> {
+async function readOpenMessage(
+    _ctx: TaskContext,
+    _propsToRead: NestedPropsToRead,
+    _itemRegistry?: ItemRegistry,
+    _itemCaptures?: ItemCaptureRegistry,
+    _current?: Observed<ActionSendMessage>
+): Promise<Observed<ActionSendMessage>> {
     return {
         type: "MESSAGE",
         message:
-            readStringValue(ctx.getMenuItemSlot(getActionFieldLabel("MESSAGE", "message"))) ??
+            readStringValue(_ctx.getMenuItemSlot(getActionFieldLabel("MESSAGE", "message"))) ??
             "",
     };
+}
+
+/**
+ * Capture the real housing-tagged NBT for an item-bearing action's Item
+ * field, leaving every other field on the action object intact. We
+ * preserve `current` (the lore-parsed version) rather than re-reading
+ * each scalar field from the editor because the lore-parsed values are
+ * known good and re-reading would add 4+ extra slot reads per action.
+ *
+ * When `itemCaptures` is undefined we shouldn't have been in the
+ * hydration plan at all, but defensively no-op rather than throwing.
+ */
+async function readOpenItemBearingAction<T extends Action>(
+    ctx: TaskContext,
+    itemCaptures: ItemCaptureRegistry | undefined,
+    current: Observed<T> | undefined,
+    fieldLabel: string,
+    fallbackTypeForName: T["type"]
+): Promise<Observed<T>> {
+    const base: Observed<T> =
+        current !== undefined
+            ? current
+            : ({ type: fallbackTypeForName } as unknown as Observed<T>);
+    if (itemCaptures === undefined) return base;
+
+    const loreItemName =
+        typeof (base as Record<string, unknown>).itemName === "string"
+            ? ((base as Record<string, unknown>).itemName as string)
+            : "";
+    const displayNameHint =
+        loreItemName.length > 0 ? loreItemName : String(fallbackTypeForName);
+
+    const captured = await captureItemFromOpenActionField(
+        ctx,
+        fieldLabel,
+        itemCaptures,
+        displayNameHint
+    );
+    if (captured !== null) {
+        (base as Record<string, unknown>).itemName = captured;
+    }
+    return base;
+}
+
+async function readOpenGiveItem(
+    ctx: TaskContext,
+    _propsToRead: NestedPropsToRead,
+    _itemRegistry?: ItemRegistry,
+    itemCaptures?: ItemCaptureRegistry,
+    current?: Observed<ActionGiveItem>
+): Promise<Observed<ActionGiveItem>> {
+    return readOpenItemBearingAction<ActionGiveItem>(
+        ctx,
+        itemCaptures,
+        current,
+        getActionFieldLabel("GIVE_ITEM", "itemName"),
+        "GIVE_ITEM"
+    );
+}
+
+async function readOpenRemoveItem(
+    ctx: TaskContext,
+    _propsToRead: NestedPropsToRead,
+    _itemRegistry?: ItemRegistry,
+    itemCaptures?: ItemCaptureRegistry,
+    current?: Observed<ActionRemoveItem>
+): Promise<Observed<ActionRemoveItem>> {
+    return readOpenItemBearingAction<ActionRemoveItem>(
+        ctx,
+        itemCaptures,
+        current,
+        getActionFieldLabel("REMOVE_ITEM", "itemName"),
+        "REMOVE_ITEM"
+    );
+}
+
+async function readOpenDropItem(
+    ctx: TaskContext,
+    _propsToRead: NestedPropsToRead,
+    _itemRegistry?: ItemRegistry,
+    itemCaptures?: ItemCaptureRegistry,
+    current?: Observed<ActionDropItem>
+): Promise<Observed<ActionDropItem>> {
+    return readOpenItemBearingAction<ActionDropItem>(
+        ctx,
+        itemCaptures,
+        current,
+        getActionFieldLabel("DROP_ITEM", "itemName"),
+        "DROP_ITEM"
+    );
 }
 
 async function writeApplyPotionEffect(
@@ -664,12 +769,17 @@ async function writeChangeHunger(
 async function readOpenRandom(
     ctx: TaskContext,
     propsToRead: NestedPropsToRead,
-    itemRegistry?: ItemRegistry
+    itemRegistry?: ItemRegistry,
+    itemCaptures?: ItemCaptureRegistry
 ): Promise<Observed<ActionRandom>> {
     const actions: (Observed<Action> | null)[] = [];
     ctx.getMenuItemSlot(getActionFieldLabel("RANDOM", "actions")).click();
     await waitForMenu(ctx);
-    for (const entry of await readActionList(ctx, { kind: "full", itemRegistry })) {
+    for (const entry of await readActionList(ctx, {
+        kind: "full",
+        itemRegistry,
+        itemCaptures,
+    })) {
         actions.push(entry.action);
     }
     await clickGoBack(ctx);
@@ -928,10 +1038,12 @@ const ACTION_SPECS = {
     },
     GIVE_ITEM: {
         displayName: ACTION_MAPPINGS.GIVE_ITEM.displayName,
+        read: readOpenGiveItem,
         write: writeGiveItem,
     },
     REMOVE_ITEM: {
         displayName: ACTION_MAPPINGS.REMOVE_ITEM.displayName,
+        read: readOpenRemoveItem,
         write: writeRemoveItem,
     },
     MESSAGE: {
@@ -1020,6 +1132,7 @@ const ACTION_SPECS = {
     },
     DROP_ITEM: {
         displayName: ACTION_MAPPINGS.DROP_ITEM.displayName,
+        read: readOpenDropItem,
         write: writeDropItem,
     },
     SET_VELOCITY: {

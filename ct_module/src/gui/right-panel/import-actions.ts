@@ -341,6 +341,7 @@ export function startCaptureExport(type: CaptureType): void {
                 importJsonPath,
                 htslPath: `${dir}/${filename}`,
                 htslReference: filename,
+                rootDir: dir,
             });
         } else {
             await exportImportable(ctx, {

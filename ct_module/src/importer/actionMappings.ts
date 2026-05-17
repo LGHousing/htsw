@@ -461,6 +461,19 @@ export function getActionScalarLoreFields(
     return result;
 }
 
+/**
+ * True if `type` has at least one `kind: "item"` lore field. Used by the
+ * export-time read path to decide which actions to add to the hydration
+ * plan for click-to-copy NBT capture.
+ */
+export function isItemBearingActionType(type: Action["type"]): boolean {
+    const loreFields = getActionLoreFields(type);
+    for (const label in loreFields) {
+        if (loreFields[label].kind === "item") return true;
+    }
+    return false;
+}
+
 export function tryGetActionTypeFromDisplayName(
     displayName: string
 ): Action["type"] | undefined {

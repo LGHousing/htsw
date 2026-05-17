@@ -124,3 +124,34 @@ export function htslFilename(importable: Importable): string {
 export function defaultExportRoot(housingUuid: string): string {
     return `./htsw/exports/${housingUuid}`;
 }
+
+/**
+ * Pick a filename for a captured item's `.snbt` file inside the export's
+ * `items/` directory. Mirrors the function-filename approach but doesn't
+ * scan `import.json` for existing references — items are emitted whole
+ * per export run, so the source of truth for collision avoidance is the
+ * filesystem itself.
+ *
+ * Returns just the basename (e.g. `"diamond_sword.snbt"`); the caller
+ * joins it with `<rootDir>/items/` to form the absolute path and stores
+ * `"items/<basename>"` as the `nbt` reference in `import.json`.
+ */
+export function snbtFilenameForItemExport(
+    itemsRootDir: string,
+    identity: string
+): string {
+    const slug = canonicalSlug(identity);
+    const preferred = `${slug}.snbt`;
+    if (!FileLib.exists(`${itemsRootDir}/${preferred}`)) {
+        return preferred;
+    }
+
+    for (let i = 2; i < 1000; i++) {
+        const candidate = `${slug}_${i}.snbt`;
+        if (!FileLib.exists(`${itemsRootDir}/${candidate}`)) {
+            return candidate;
+        }
+    }
+
+    throw new Error(`Could not find an unused .snbt filename for item "${identity}".`);
+}

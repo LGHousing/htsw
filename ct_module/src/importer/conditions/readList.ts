@@ -9,6 +9,7 @@ import {
     tryGetConditionTypeFromDisplayName,
 } from "../conditionMappings";
 import type { ObservedConditionSlot } from "../types";
+import type { ItemCaptureRegistry } from "../itemCapture";
 import {
     getVisiblePaginatedItemSlots,
     isEmptyPaginatedPlaceholder,
@@ -16,6 +17,7 @@ import {
 } from "../paginatedList";
 import { CONDITION_LIST_CONFIG } from "./listConfig";
 import { isConditionListItemInverted } from "../conditions";
+import { captureItemsForObservedConditions } from "../conditionItemCapture";
 
 export async function readConditionsListPage(
     ctx: TaskContext
@@ -47,6 +49,12 @@ export async function readConditionsListPage(
 
 export type ReadConditionListOptions = {
     itemRegistry?: ItemRegistry;
+    /**
+     * When set, item-bearing conditions (REQUIRE_ITEM / IS_ITEM /
+     * BLOCK_TYPE) have their real housing-tagged item NBT captured into
+     * this registry via the same click-to-copy flow used for actions.
+     */
+    itemCaptures?: ItemCaptureRegistry;
 };
 
 export async function readConditionList(
@@ -59,6 +67,9 @@ export async function readConditionList(
         () => readConditionsListPage(ctx)
     );
     canonicalizeObservedConditionSlots(observed, options?.itemRegistry);
+    if (options?.itemCaptures !== undefined) {
+        await captureItemsForObservedConditions(ctx, observed, options.itemCaptures);
+    }
     return observed;
 }
 

@@ -108,6 +108,7 @@ function commandExport(args: string[]): void {
                 importJsonPath,
                 htslPath,
                 htslReference,
+                rootDir,
             });
         }).catch((err) => {
             ChatLib.chat(`&cExport failed: ${err}`);

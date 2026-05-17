@@ -7,6 +7,12 @@ import {
     readSelectedOption,
     waitForMenu,
 } from "../../importer/helpers";
+import {
+    ItemCaptureRegistry,
+    restoreInventoryToSnapshot,
+    snapshotInventory,
+    type InventorySnapshot,
+} from "../../importer/itemCapture";
 import { getCurrentHousingUuid, writeKnowledge } from "../../knowledge";
 import TaskContext from "../../tasks/context";
 import { getAllItemSlots } from "../../tasks/specifics/slots";
@@ -14,7 +20,7 @@ import { ensureParentDirs } from "../../utils/filesystem";
 import { removedFormatting } from "../../utils/helpers";
 import { observedSlotsToActions } from "../../exporter/sanitize";
 import { upsertImportableEntry } from "../../exporter/importJsonWriter";
-import { canonicalSlug } from "../../exporter/paths";
+import { canonicalSlug, snbtFilenameForItemExport } from "../../exporter/paths";
 import { openMenuEditor } from "./shared";
 
 export type ExportMenuOptions = {
@@ -95,9 +101,44 @@ function snapshotMenuSlots(
 }
 
 /**
+ * Per-slot action lists may contain item-bearing actions/conditions
+ * referencing custom housing items. We share one `ItemCaptureRegistry`
+ * across all slots so the same item referenced from multiple slots
+ * dedups to one `.snbt` file and one `items[]` entry.
+ */
+function writeCapturedItems(
+    ctx: TaskContext,
+    registry: ItemCaptureRegistry,
+    rootDir: string,
+    importJsonPath: string
+): number {
+    const entries = registry.entries();
+    if (entries.length === 0) return 0;
+
+    const itemsRoot = `${rootDir}/items`;
+    for (const item of entries) {
+        const filename = snbtFilenameForItemExport(itemsRoot, item.name);
+        const snbtRel = `items/${filename}`;
+        const snbtAbs = `${itemsRoot}/${filename}`;
+        ensureParentDirs(snbtAbs);
+        FileLib.write(snbtAbs, item.snbt, true);
+
+        upsertImportableEntry(importJsonPath, "items", {
+            name: item.name,
+            nbt: snbtRel,
+        });
+        ctx.displayMessage(`&7  -> ${snbtAbs}`);
+    }
+
+    return entries.length;
+}
+
+/**
  * High-level export-a-menu flow. v1 writes per-slot SNBT files plus an
  * `import.json` upsert; HTSL serialization is skipped because no menu
- * syntax exists in the printer yet.
+ * syntax exists in the printer yet. Per-slot action lists do go through
+ * the item-capture pipeline so any GIVE_ITEM / HAS_ITEM etc. inside a
+ * slot's action list emits a real item reference.
  */
 export async function exportMenu(
     ctx: TaskContext,
@@ -105,100 +146,132 @@ export async function exportMenu(
 ): Promise<void> {
     const { name, importJsonPath, rootDir } = options;
 
-    if ((await openMenuEditor(ctx, name)) === "missing") {
-        throw new Error(`No menu named "${name}" exists in this housing.`);
-    }
+    const inventorySnapshot: InventorySnapshot = snapshotInventory();
+    const itemCaptures = new ItemCaptureRegistry();
 
-    const size = readMenuSize(ctx);
-    // If we can't read size, default to 6 lines for the snapshot scan so
-    // we don't accidentally truncate the grid; the exported menu just
-    // omits the `size` field and Housing's default applies on re-import.
-    const gridSize = (size ?? 6) * 9;
-
-    const snapshot = snapshotMenuSlots(gridSize);
-
-    // Now visit each populated slot to read its action list. We snapshot
-    // first so this loop's navigation doesn't invalidate slot positions.
-    const slug = canonicalSlug(name);
-    const menuRel = `menus/${slug}`;
-    const menuAbs = `${rootDir}/${menuRel}`;
-    const slots: MenuSlot[] = [];
-
-    for (const { slotId, snbt } of snapshot) {
-        const snbtRel = `${menuRel}/slot-${slotId}.snbt`;
-        const snbtAbs = `${menuAbs}/slot-${slotId}.snbt`;
-        // FileLib.write doesn't create parent dirs. ensureParentDirs is
-        // idempotent (Files.exists short-circuits) so calling it per slot
-        // is cheap, and avoids dropping a sentinel-path workaround.
-        ensureParentDirs(snbtAbs);
-        FileLib.write(snbtAbs, snbt, true);
-
-        // Left-click the slot to open its per-slot editor.
-        const container = Player.getContainer();
-        if (container == null) {
-            throw new Error("No open container while reading menu slot " + slotId);
+    let exportError: unknown = null;
+    try {
+        if ((await openMenuEditor(ctx, name)) === "missing") {
+            throw new Error(`No menu named "${name}" exists in this housing.`);
         }
-        container.click(slotId, false, "LEFT");
-        await waitForMenu(ctx);
 
-        let slotActions: import("htsw/types").Action[] = [];
-        const editActionsSlot = ctx.tryGetItemSlot("Edit Actions");
-        if (editActionsSlot !== null) {
-            editActionsSlot.click();
+        const size = readMenuSize(ctx);
+        // If we can't read size, default to 6 lines for the snapshot scan so
+        // we don't accidentally truncate the grid; the exported menu just
+        // omits the `size` field and Housing's default applies on re-import.
+        const gridSize = (size ?? 6) * 9;
+
+        const snapshot = snapshotMenuSlots(gridSize);
+
+        // Now visit each populated slot to read its action list. We snapshot
+        // first so this loop's navigation doesn't invalidate slot positions.
+        const slug = canonicalSlug(name);
+        const menuRel = `menus/${slug}`;
+        const menuAbs = `${rootDir}/${menuRel}`;
+        const slots: MenuSlot[] = [];
+
+        for (const { slotId, snbt } of snapshot) {
+            const snbtRel = `${menuRel}/slot-${slotId}.snbt`;
+            const snbtAbs = `${menuAbs}/slot-${slotId}.snbt`;
+            // FileLib.write doesn't create parent dirs. ensureParentDirs is
+            // idempotent (Files.exists short-circuits) so calling it per slot
+            // is cheap, and avoids dropping a sentinel-path workaround.
+            ensureParentDirs(snbtAbs);
+            FileLib.write(snbtAbs, snbt, true);
+
+            // Left-click the slot to open its per-slot editor.
+            const container = Player.getContainer();
+            if (container == null) {
+                throw new Error("No open container while reading menu slot " + slotId);
+            }
+            container.click(slotId, false, "LEFT");
             await waitForMenu(ctx);
 
-            const observed = await readActionList(ctx, { kind: "full" });
-            slotActions = observedSlotsToActions(observed);
+            let slotActions: import("htsw/types").Action[] = [];
+            const editActionsSlot = ctx.tryGetItemSlot("Edit Actions");
+            if (editActionsSlot !== null) {
+                editActionsSlot.click();
+                await waitForMenu(ctx);
 
-            await clickGoBack(ctx); // back to per-slot editor
+                const observed = await readActionList(ctx, {
+                    kind: "full",
+                    itemCaptures,
+                });
+                slotActions = observedSlotsToActions(observed);
+
+                await clickGoBack(ctx); // back to per-slot editor
+            }
+
+            await clickGoBack(ctx); // back to menu grid
+
+            slots.push({
+                slot: slotId,
+                // The parser's `parseNbt` accepts the relative SNBT path; the
+                // type expects a `Tag` but at the import.json level we ship a
+                // string and the parser resolves it. The exporter therefore
+                // emits the path string and we sidestep the type by casting
+                // through `unknown`: this matches how items are exported
+                // (they ship the same SNBT-path string in import.json).
+                nbt: snbtRel as unknown as MenuSlot["nbt"],
+                ...(slotActions.length > 0 ? { actions: slotActions } : {}),
+            });
         }
 
-        await clickGoBack(ctx); // back to menu grid
+        const importable: ImportableMenu = {
+            type: "MENU",
+            name,
+            ...(size !== undefined ? { size } : {}),
+            slots,
+        };
 
-        slots.push({
-            slot: slotId,
-            // The parser's `parseNbt` accepts the relative SNBT path; the
-            // type expects a `Tag` but at the import.json level we ship a
-            // string and the parser resolves it. The exporter therefore
-            // emits the path string and we sidestep the type by casting
-            // through `unknown`: this matches how items are exported
-            // (they ship the same SNBT-path string in import.json).
-            nbt: snbtRel as unknown as MenuSlot["nbt"],
-            ...(slotActions.length > 0 ? { actions: slotActions } : {}),
+        // Write captured items BEFORE the menu entry so the entry's
+        // referenced item names point at items that already exist.
+        const itemCount = writeCapturedItems(
+            ctx,
+            itemCaptures,
+            rootDir,
+            importJsonPath
+        );
+
+        upsertImportableEntry(importJsonPath, "menus", {
+            name,
+            ...(size !== undefined ? { size } : {}),
+            slots: slots.map((s) => ({
+                slot: s.slot,
+                nbt: s.nbt as unknown as string,
+                ...(s.actions !== undefined && s.actions.length > 0
+                    ? { actions: s.actions }
+                    : {}),
+            })),
         });
+
+        try {
+            const housingUuid = await getCurrentHousingUuid(ctx);
+            writeKnowledge(ctx, housingUuid, importable, "exporter");
+        } catch (error) {
+            ctx.displayMessage(`&7[export] &eCache write skipped: ${error}`);
+        }
+
+        ctx.displayMessage(
+            `&aExported menu '${name}' (${slots.length} slot${slots.length === 1 ? "" : "s"}, ${itemCount} item${itemCount === 1 ? "" : "s"})`
+        );
+        ctx.displayMessage(`&7  -> ${importJsonPath}`);
+        if (slots.length > 0) {
+            ctx.displayMessage(`&7  -> ${menuAbs}/slot-*.snbt`);
+        }
+    } catch (error) {
+        exportError = error;
     }
-
-    const importable: ImportableMenu = {
-        type: "MENU",
-        name,
-        ...(size !== undefined ? { size } : {}),
-        slots,
-    };
-
-    upsertImportableEntry(importJsonPath, "menus", {
-        name,
-        ...(size !== undefined ? { size } : {}),
-        slots: slots.map((s) => ({
-            slot: s.slot,
-            nbt: s.nbt as unknown as string,
-            ...(s.actions !== undefined && s.actions.length > 0
-                ? { actions: s.actions }
-                : {}),
-        })),
-    });
 
     try {
-        const housingUuid = await getCurrentHousingUuid(ctx);
-        writeKnowledge(ctx, housingUuid, importable, "exporter");
+        await restoreInventoryToSnapshot(ctx, inventorySnapshot);
     } catch (error) {
-        ctx.displayMessage(`&7[export] &eCache write skipped: ${error}`);
+        ctx.displayMessage(
+            `&7[export] &eInventory restore failed (export results still written): ${error}`
+        );
     }
 
-    ctx.displayMessage(
-        `&aExported menu '${name}' (${slots.length} slot${slots.length === 1 ? "" : "s"})`
-    );
-    ctx.displayMessage(`&7  -> ${importJsonPath}`);
-    if (slots.length > 0) {
-        ctx.displayMessage(`&7  -> ${menuAbs}/slot-*.snbt`);
+    if (exportError !== null) {
+        throw exportError;
     }
 }

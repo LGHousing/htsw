@@ -9,6 +9,7 @@ export type ExportRequest =
           importJsonPath: string;
           htslPath: string;
           htslReference: string;
+          rootDir: string;
       }
     | {
           type: "MENU";
@@ -32,6 +33,7 @@ export async function exportImportable(
             importJsonPath: request.importJsonPath,
             htslPath: request.htslPath,
             htslReference: request.htslReference,
+            rootDir: request.rootDir,
         });
         return;
     }

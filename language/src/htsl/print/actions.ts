@@ -147,11 +147,13 @@ function printActionHead(
         case "GIVE_EXPERIENCE_LEVELS":
             return `xpLevel ${printValue(action.amount)}`;
         case "GIVE_ITEM": {
-            ctx.diagnostics.push({
-                level: "warning",
-                message:
-                    "GIVE_ITEM was emitted with a placeholder item name; HTSL has no syntax for inline item NBT.",
-            });
+            if (!action.itemName) {
+                ctx.diagnostics.push({
+                    level: "warning",
+                    message:
+                        "GIVE_ITEM was emitted with a placeholder item name; HTSL has no syntax for inline item NBT.",
+                });
+            }
             const parts: string[] = ["giveItem", quoteName(action.itemName || ITEM_PLACEHOLDER)];
             const tail: Array<string | undefined> = [
                 action.allowMultiple !== undefined ? printBoolean(action.allowMultiple) : undefined,
@@ -198,11 +200,13 @@ function printActionHead(
         case "RANDOM":
             return printActionRandom(action, depth, ctx);
         case "REMOVE_ITEM": {
-            ctx.diagnostics.push({
-                level: "warning",
-                message:
-                    "REMOVE_ITEM was emitted with a placeholder item name; HTSL has no syntax for inline item NBT.",
-            });
+            if (!action.itemName) {
+                ctx.diagnostics.push({
+                    level: "warning",
+                    message:
+                        "REMOVE_ITEM was emitted with a placeholder item name; HTSL has no syntax for inline item NBT.",
+                });
+            }
             return `removeItem ${quoteName(action.itemName || ITEM_PLACEHOLDER)}`;
         }
         case "RESET_INVENTORY":
@@ -387,11 +391,13 @@ function printActionDropItem(
     action: Extract<Action, { type: "DROP_ITEM" }>,
     ctx: PrintActionsContext,
 ): string {
-    ctx.diagnostics.push({
-        level: "warning",
-        message:
-            "DROP_ITEM was emitted with a placeholder item name; HTSL has no syntax for inline item NBT.",
-    });
+    if (!action.itemName) {
+        ctx.diagnostics.push({
+            level: "warning",
+            message:
+                "DROP_ITEM was emitted with a placeholder item name; HTSL has no syntax for inline item NBT.",
+        });
+    }
     const parts: string[] = ["dropItem", quoteName(action.itemName || ITEM_PLACEHOLDER)];
     const tail: Array<string | undefined> = [
         action.location !== undefined ? printLocation(action.location) : undefined,

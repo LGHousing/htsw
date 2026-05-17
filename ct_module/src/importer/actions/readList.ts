@@ -11,6 +11,7 @@ import { removedFormatting } from "../../utils/helpers";
 import {
     ACTION_MAPPINGS,
     getNestedListFields,
+    isItemBearingActionType,
     parseActionListItem,
     tryGetActionTypeFromDisplayName,
 } from "../actionMappings";
@@ -29,6 +30,7 @@ import type {
     Observed,
     ObservedActionSlot,
 } from "../types";
+import type { ItemCaptureRegistry } from "../itemCapture";
 import { createNestedHydrationPlan } from "./hydrationPlan";
 import { matchObservedToDesired } from "./nestedMatching";
 import { applyActionListTrust } from "./trustHydration";
@@ -199,7 +201,20 @@ export async function readActionList(
         }
     }
     addScalarHydrationEntries(plan, observed);
-    await hydrateNestedActions(ctx, plan, observed.length, mode.itemRegistry, progress, readEstimatedCompleted);
+    const itemCaptures =
+        mode.kind === "full" ? mode.itemCaptures : undefined;
+    if (itemCaptures !== undefined) {
+        addItemCaptureHydrationEntries(plan, observed);
+    }
+    await hydrateNestedActions(
+        ctx,
+        plan,
+        observed.length,
+        mode.itemRegistry,
+        itemCaptures,
+        progress,
+        readEstimatedCompleted
+    );
     canonicalizeObservedActionItemNames(observed, mode.itemRegistry);
 
     await goToPaginatedListPage(ctx, 1, ACTION_LIST_CONFIG);
@@ -216,6 +231,26 @@ function addScalarHydrationEntries(
         }
 
         if (shouldHydrateScalarAction(entry.action)) {
+            plan.set(entry, new Set());
+        }
+    }
+}
+
+/**
+ * Item-bearing actions normally stay out of the hydration plan because
+ * their fields are fully recoverable from list-item lore. When the
+ * caller opts in via `itemCaptures`, we add them with an empty
+ * propsToRead so the framework will open each editor — the spec.read
+ * function then performs the click-to-copy NBT capture before clicking
+ * back.
+ */
+function addItemCaptureHydrationEntries(
+    plan: NestedHydrationPlan,
+    observed: readonly ObservedActionSlot[]
+): void {
+    for (const entry of observed) {
+        if (entry.action === null || plan.has(entry)) continue;
+        if (isItemBearingActionType(entry.action.type)) {
             plan.set(entry, new Set());
         }
     }
@@ -285,6 +320,7 @@ async function hydrateNestedActions(
     plan: NestedHydrationPlan,
     listLength: number,
     itemRegistry?: ItemRegistry,
+    itemCaptures?: ItemCaptureRegistry,
     progress?: ActionListProgressSink,
     baseEstimatedCompleted: number = 0
 ): Promise<void> {
@@ -307,7 +343,14 @@ async function hydrateNestedActions(
         });
         getActiveDiffSink()?.phase(`reading nested ${actionLogLabel(entry.action)}`);
         const beforeBudget = hydrationEntryBudget(entry, propsToRead);
-        await hydrateNestedAction(ctx, entry, propsToRead, listLength, itemRegistry);
+        await hydrateNestedAction(
+            ctx,
+            entry,
+            propsToRead,
+            listLength,
+            itemRegistry,
+            itemCaptures
+        );
         completedBudget += beforeBudget;
         completed++;
         progress?.({
@@ -327,7 +370,8 @@ async function hydrateNestedAction(
     entry: ObservedActionSlot,
     propsToRead: NestedPropsToRead,
     listLength: number,
-    itemRegistry?: ItemRegistry
+    itemRegistry?: ItemRegistry,
+    itemCaptures?: ItemCaptureRegistry
 ): Promise<void> {
     if (entry.action === null) {
         return;
@@ -347,7 +391,13 @@ async function hydrateNestedAction(
             throw new Error(`Reading action "${entry.action.type}" is not implemented.`);
         }
 
-        entry.action = await spec.read(ctx, propsToRead, itemRegistry);
+        entry.action = await spec.read(
+            ctx,
+            propsToRead,
+            itemRegistry,
+            itemCaptures,
+            entry.action
+        );
         entry.nestedReadState = "full";
         if (note) {
             entry.action.note = note;
