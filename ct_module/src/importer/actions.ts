@@ -73,6 +73,7 @@ import type {
 } from "./types";
 import { setItemValue } from "./items";
 import type { ActionPath } from "./diffSink";
+import { getActiveDiffSink } from "./diffSink";
 import { resolveImportableItem } from "./resolveItem";
 import { readActionList } from "./actions/readList";
 import { syncActionList } from "./actions/sync";
@@ -146,6 +147,17 @@ export function withWritingActionPath<T>(path: ActionPath | null, fn: () => Prom
     );
 }
 
+/**
+ * The action path the importer is currently writing into, or null when no
+ * writer is active. Read by `readList.ts` to decide whether a `kind: "sync"`
+ * read is the top-level import or a recursive nested sync inside a
+ * CONDITIONAL/RANDOM writer (which would otherwise blow away the live
+ * preview model with the inner list contents).
+ */
+export function getCurrentWritingActionPath(): ActionPath | null {
+    return currentWritingActionPath;
+}
+
 type ActionSpecMap = {
     [K in Action["type"]]: ActionSpec<Extract<Action, { type: K }>>;
 };
@@ -156,11 +168,35 @@ export function getActionSpec<T extends Action["type"]>(
     return ACTION_SPECS[type] as ActionSpec<Extract<Action, { type: T }>>;
 }
 
-async function readOpenConditional(
+/**
+ * Sub-step hooks for `readOpenConditional`. Optional. The visualization-
+ * aware caller (top-level hydration in `readList.ts`) passes one in to
+ * fire snapshot events and move the live-preview cursor between the
+ * conditions / ifActions / elseActions menus. The standard caller
+ * (recursive nested reads, exporter) leaves it undefined and the reader
+ * runs straight through.
+ */
+export type ConditionalReadHooks = {
+    /** Fired after the conditions list is read but before matchAny + the
+     *  inner-action menus are touched. `conditions` is the freshly-read
+     *  list. */
+    onConditionsRead?(conditions: ReadonlyArray<Condition | null>): Promise<void>;
+    /** Fired before opening the ifActions menu. */
+    onIfActionsBefore?(): Promise<void>;
+    /** Fired after ifActions are read. */
+    onIfActionsRead?(ifActions: ReadonlyArray<Observed<Action> | null>): Promise<void>;
+    /** Fired before opening the elseActions menu. */
+    onElseActionsBefore?(): Promise<void>;
+    /** Fired after elseActions are read. */
+    onElseActionsRead?(elseActions: ReadonlyArray<Observed<Action> | null>): Promise<void>;
+};
+
+export async function readOpenConditional(
     ctx: TaskContext,
     propsToRead: NestedPropsToRead,
     itemRegistry?: ItemRegistry,
-    itemCaptures?: ItemCaptureRegistry
+    itemCaptures?: ItemCaptureRegistry,
+    hooks?: ConditionalReadHooks
 ): Promise<Observed<ActionConditional>> {
     const conditionsLabel = getActionFieldLabel("CONDITIONAL", "conditions");
     const matchAnyLabel = getActionFieldLabel("CONDITIONAL", "matchAny");
@@ -175,12 +211,14 @@ async function readOpenConditional(
             await readConditionList(ctx, { itemRegistry, itemCaptures })
         ).map((entry) => entry.condition);
         await clickGoBack(ctx);
+        if (hooks?.onConditionsRead) await hooks.onConditionsRead(conditions);
     }
 
     const matchAny = readBooleanValue(ctx.getMenuItemSlot(matchAnyLabel)) ?? false;
 
     const ifActions: (Observed<Action> | null)[] = [];
     if (propsToRead.has("ifActions")) {
+        if (hooks?.onIfActionsBefore) await hooks.onIfActionsBefore();
         ctx.getMenuItemSlot(ifActionsLabel).click();
         await waitForMenu(ctx);
         for (const entry of await readActionList(ctx, {
@@ -191,10 +229,12 @@ async function readOpenConditional(
             ifActions.push(entry.action);
         }
         await clickGoBack(ctx);
+        if (hooks?.onIfActionsRead) await hooks.onIfActionsRead(ifActions);
     }
 
     const elseActions: (Observed<Action> | null)[] = [];
     if (propsToRead.has("elseActions")) {
+        if (hooks?.onElseActionsBefore) await hooks.onElseActionsBefore();
         ctx.getMenuItemSlot(elseActionsLabel).click();
         await waitForMenu(ctx);
         for (const entry of await readActionList(ctx, {
@@ -205,6 +245,7 @@ async function readOpenConditional(
             elseActions.push(entry.action);
         }
         await clickGoBack(ctx);
+        if (hooks?.onElseActionsRead) await hooks.onElseActionsRead(elseActions);
     }
 
     return {
@@ -238,6 +279,14 @@ async function writeConditional(
         ctx.getMenuItemSlot(getActionFieldLabel("CONDITIONAL", "matchAny")),
         action.matchAny
     );
+
+    // The conditional's head (conditions + matchAny) is now correct in
+    // housing. Tell the live preview so the `if (...) {`, `} else {`,
+    // and `}` lines flip to vibrant immediately — without this they'd
+    // stay gray until every nested ifAction/elseAction op completes.
+    if (currentWritingActionPath !== null) {
+        getActiveDiffSink()?.markActionHeadApplied?.(currentWritingActionPath);
+    }
 
     if (
         !observedActionListsEqual(current?.ifActions, action.ifActions) &&
@@ -1005,7 +1054,18 @@ async function writeToggleNametagDisplay(
 const ACTION_SPECS = {
     CONDITIONAL: {
         displayName: ACTION_MAPPINGS.CONDITIONAL.displayName,
-        read: readOpenConditional,
+        // CONDITIONAL doesn't use the `current` arg from ActionSpec.read — the
+        // 5th positional on `readOpenConditional` is `hooks?: ConditionalReadHooks`,
+        // not `current`. Top-level CONDITIONAL hydration in readList.ts calls
+        // readOpenConditional directly through `hydrateConditionalSubsteps` so
+        // hooks can be wired up; the spec.read path (recursive nested + write-
+        // side current-state probe) doesn't need hooks.
+        read: (
+            ctx: TaskContext,
+            propsToRead: NestedPropsToRead,
+            itemRegistry?: ItemRegistry,
+            itemCaptures?: ItemCaptureRegistry
+        ) => readOpenConditional(ctx, propsToRead, itemRegistry, itemCaptures),
         write: writeConditional,
     },
     SET_GROUP: {

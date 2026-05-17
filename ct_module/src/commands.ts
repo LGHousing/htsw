@@ -4,15 +4,16 @@ import { chatSeparator, stripSurroundingQuotes } from "./utils/helpers";
 import { Simulator } from "./simulator/simulator";
 import { printDiagnostic, printDiagnostics } from "./tui/diagnostics";
 import { recompile } from "./recompile";
-import { importImportable } from "./importables/imports";
-import { createItemRegistry } from "./importables/itemRegistry";
 import { TaskManager } from "./tasks/manager";
 import { S2FPacketSetSlot } from "./utils/packets";
 import { FileSystemFileLoader } from "./utils/files";
 import { commandKnowledge } from "./knowledge/commands";
-import { toggleHtswGui, armHtswGuiDebug } from "./gui/overlay";
+import { toggleHtswGui, openHtswGui, armHtswGuiDebug } from "./gui/overlay";
 import { runDiffDemo } from "./gui/popovers/diff-demo";
 import { getTimingStats, resetTimingStats } from "./importer/progress/timing";
+import { startImport } from "./gui/right-panel/import-actions";
+import { makeImportJsonQueueItem } from "./gui/state/queue";
+import { isTraceEnabled, setTraceEnabled } from "./importer/traceLog";
 
 function printCommandError(sm: SourceMap, err: unknown): void {
     if (err instanceof Diagnostic) {
@@ -89,6 +90,33 @@ function commandHtsw(args: string[]) {
         return;
     }
 
+    if (args.length > 0 && args[0] === "trace") {
+        if (args.length === 1) {
+            ChatLib.chat(
+                `&e[htsw] trace is ${isTraceEnabled() ? "&aON" : "&cOFF"}&e. ` +
+                    `Use &f/htsw trace on|off&e to toggle.`
+            );
+            ChatLib.chat(
+                `&7When ON, each import writes ./htsw/imports-trace/<timestamp>.json ` +
+                    `with the full observed/desired state and every plan/apply op.`
+            );
+            return;
+        }
+        const arg = args[1].toLowerCase();
+        if (arg === "on" || arg === "true" || arg === "1") {
+            setTraceEnabled(true);
+            ChatLib.chat("&e[htsw] trace &aON&e — next import will write ./htsw/imports-trace/<timestamp>.json");
+            return;
+        }
+        if (arg === "off" || arg === "false" || arg === "0") {
+            setTraceEnabled(false);
+            ChatLib.chat("&e[htsw] trace &cOFF");
+            return;
+        }
+        ChatLib.chat(`&c[htsw] unknown trace arg "${args[1]}". Use on|off.`);
+        return;
+    }
+
     ChatLib.chat(`&7${chatSeparator()}`);
     const title = `&e&lHTSW &f&l${VERSION}`;
     ChatLib.chat(`${ChatLib.getCenteredText(title)}`);
@@ -101,6 +129,7 @@ function commandHtsw(args: string[]) {
     ChatLib.chat("&f/htsw eta &7- Show importer ETA timing samples");
     ChatLib.chat("&f/htsw packet-probe [seconds] &7- Safely log relevant packets");
     ChatLib.chat("&f/htsw gui &7- Open the in-game HTSW dashboard");
+    ChatLib.chat("&f/htsw trace [on|off] &7- Per-import JSON debug trace");
     ChatLib.chat(`&7${chatSeparator()}`);
 }
 
@@ -329,6 +358,9 @@ function commandImport(args: string[]) {
         return;
     }
 
+    // Pre-flight parse so we can surface diagnostics in chat BEFORE we
+    // hand off to startImport (which would otherwise log a less-friendly
+    // error if the parse fails inside the task).
     const sm = new SourceMap(new FileSystemFileLoader());
     const importPath = stripSurroundingQuotes(args.join(" "));
     let result: ReturnType<typeof parseImportablesResult>;
@@ -350,31 +382,17 @@ function commandImport(args: string[]) {
         return;
     }
 
-    TaskManager.run(async (ctx) => {
-        ctx.displayMessage("&aImport started.");
-        const itemRegistry = createItemRegistry(result.value, result.gcx);
-        const ordered = [
-            ...result.value.filter((i) => i.type === "ITEM"),
-            ...result.value.filter((i) => i.type !== "ITEM"),
-        ];
-        for (const importable of ordered) {
-            try {
-                await importImportable(ctx, importable, itemRegistry);
-            } catch (e) {
-                if (e instanceof Diagnostic) {
-                    printDiagnostic(sm, e);
-                } else {
-                    ctx.displayMessage(`&cFailed to import: ${e}`);
-                }
-                ctx.displayMessage("&cImport aborted.");
-                return;
-            }
-        }
-        ctx.displayMessage("&aImport complete.");
-    }).catch((err) => {
-        ChatLib.chat("&cImport failed.");
-        printCommandError(sm, err);
-    });
+    // Delegate to the GUI's `startImport` with a single `importJson`
+    // queue item — same code path the "Import" button takes. This wires
+    // up the live preview animation, trust mode, /gmc auto-switch, sound
+    // muting, level-up chime on success, and the step-debug gate.
+    //
+    // Force the overlay enabled so the live preview is visible once the
+    // importer opens its first housing menu (panels need a chest GUI
+    // for their bounds anyway, so this is idempotent if already on).
+    openHtswGui();
+    const item = makeImportJsonQueueItem(importPath);
+    startImport([item]);
 }
 
 function commandSimulator(args: string[]) {

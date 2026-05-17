@@ -51,7 +51,11 @@ Each package builds independently. No top-level workspace script.
 
 ## Commands
 
-`/htsw`, `/import`, `/simulator` (alias `/sim`), `/export`. `/htsw recompile` shells out to `python install.py` and `ct reload`. `/import` and `/export` parse via `SourceMap(new FileSystemFileLoader())` and run work through `TaskManager.run(...)`. `commands.ts` also has live debug hooks (menu dump, condition diff) — not production UX.
+`/htsw`, `/import`, `/simulator` (alias `/sim`), `/export`. `/htsw recompile` shells out to `python install.py` and `ct reload`. `/import` delegates to `startImport` (the same code path the GUI's Import button uses) so it inherits live preview, trust mode, sound mute, /gmc, and finish chime. `/export` parses via `SourceMap(new FileSystemFileLoader())` and runs work through `TaskManager.run(...)`. `commands.ts` also has live debug hooks (menu dump, condition diff) — not production UX.
+
+## Debugging imports
+
+When an import does something unexpected and chat output is too truncated to diagnose: enable the **import trace log** with `/htsw trace on`, run the import, then read `./htsw/imports-trace/<timestamp>.json` (relative to the deployed `HTSW/` module folder). The trace contains full untruncated observed/desired payloads, every plan/apply operation with field-level diffs, and timing per op. See `docs/debugging-imports.md` for event phase reference and `jq` query examples. Always prefer the trace over chat scrollback for "why did this import edit something it shouldn't have?" — the trace's `diff-computed` event with its `fieldDiffs[]` array shows the exact observed-vs-desired mismatch.
 
 ## Task System
 

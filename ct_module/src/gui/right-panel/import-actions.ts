@@ -50,8 +50,31 @@ import {
     setDiffSummary,
     setPlannedOp,
 } from "../state/diff";
+import {
+    finalizeFromSource,
+    markHeadApplied,
+    markPlannedAdd,
+    markPlannedDelete,
+    markPlannedEdit,
+    markPlannedMove,
+    previewLineIdForPath,
+    primeWithCache,
+    resetPreview,
+    setObservedTopLevel,
+    applyComplete as applyPreviewComplete,
+} from "../state/importPreviewState";
+import { setFocusLineId } from "../state/codeViewState";
 import { importableSourcePath } from "../state/importablePaths";
 import type { ImportDiffSink } from "../../importer/diffSink";
+import { readKnowledge } from "../../knowledge/cache";
+import { gmcOnImportStart, playImportSuccessSound } from "../../importer/sideEffects";
+import { setImportRunning } from "../../importer/runtimeState";
+import {
+    beginTraceRun,
+    endTraceRun,
+    setTraceImportable,
+    traceEvent,
+} from "../../importer/traceLog";
 
 export const CAPTURE_TYPES: CaptureType[] = ["FUNCTION", "MENU"];
 
@@ -87,9 +110,37 @@ function refreshKnowledgeRows(): void {
     setKnowledgeRows(buildKnowledgeStatusRows(uuid, all));
 }
 
-function makeDiffSink(sourcePath: string): ImportDiffSink {
+function makeDiffSink(sourcePath: string, importable: Importable): ImportDiffSink {
     const key = diffKey(sourcePath);
     clearDiff(key);
+    resetPreview(sourcePath);
+    // Trace tagging: subsequent trace events belong to this importable
+    // until the next setTraceImportable call (or run end).
+    const importableId = `${importable.type}:${importableIdentity(importable)}`;
+    setTraceImportable(importableId, {
+        type: importable.type,
+        identity: importableIdentity(importable),
+        sourcePath,
+    });
+    // Prime the preview from the HTSW knowledge cache so the user sees
+    // SOMETHING immediately while the importer's first read packet is
+    // still in flight. Best-effort: missing UUID or missing cache entry
+    // both fall through to an empty model.
+    const uuid = getHousingUuid();
+    let cachedImportable: Importable | null = null;
+    if (uuid !== null) {
+        const cache = readKnowledge(uuid, importable.type, importableIdentity(importable));
+        cachedImportable = cache === null ? null : cache.importable;
+        primeWithCache(sourcePath, cachedImportable);
+    } else {
+        primeWithCache(sourcePath, null);
+    }
+    traceEvent("importable-prime", {
+        sourcePath,
+        cacheHit: cachedImportable !== null,
+        cachedImportable,
+        desired: importable,
+    });
     return {
         phase: (label) => setDiffPhase(key, label),
         summary: (summary) => setDiffSummary(key, summary),
@@ -101,15 +152,65 @@ function makeDiffSink(sourcePath: string): ImportDiffSink {
             setDiffPhase(key, label);
             setCurrent(key, path, label);
             setPlannedOp(key, path, kind, label, "");
+            // Drive Spotify-lyrics-style auto-scroll. Pending-add lines
+            // carry an `__add::` prefix on their id; previewLineIdForPath
+            // returns the id that's actually present in the model so the
+            // auto-follow lookup hits.
+            setFocusLineId(sourcePath, previewLineIdForPath(sourcePath, path));
         },
         completeOp: (path, state) => {
             setDiffState(key, path, state);
             markCompleted(key, path);
-            setCurrent(key, null, "");
+            // Park the cursor on the op that just finished. Two reasons:
+            // 1) avoids a flicker between ops (clearing → re-setting on
+            //    next beginOp would briefly drop ▶ and the tint).
+            // 2) after a nested CONDITIONAL's inner ops finish (which
+            //    leave currentPath on the LAST inner action), the outer
+            //    completeOp here pulls the cursor back up to the outer
+            //    action's path — so when the step-gate pauses before the
+            //    next outer op the user sees the cursor on the correct
+            //    just-completed conditional, not stale on its last child.
+            setCurrent(key, path, "");
+            setFocusLineId(sourcePath, previewLineIdForPath(sourcePath, path));
         },
         end: () => {
             setCurrent(key, null, "");
+            setFocusLineId(sourcePath, null);
             refreshKnowledgeRows();
+        },
+        setObservedSnapshot: (actions) => {
+            setObservedTopLevel(sourcePath, actions);
+        },
+        setReading: (path, label) => {
+            // Same wiring as beginOp, minus the planned-state side
+            // effect — we don't want hydration to paint diff colors on
+            // lines, just show the cursor and auto-scroll to it.
+            setCurrent(key, path, label);
+            setFocusLineId(sourcePath, previewLineIdForPath(sourcePath, path));
+        },
+        clearReading: () => {
+            setCurrent(key, null, "");
+        },
+        planAdd: (path, desired, toIndex) => {
+            markPlannedAdd(sourcePath, path, desired, toIndex);
+        },
+        planEdit: (path, observed, desired) => {
+            markPlannedEdit(sourcePath, path, observed, desired);
+        },
+        planDelete: (path) => {
+            markPlannedDelete(sourcePath, path);
+        },
+        planMove: (path, fromIndex, toIndex) => {
+            markPlannedMove(sourcePath, path, fromIndex, toIndex);
+        },
+        applyDone: (path, finalState, kind) => {
+            applyPreviewComplete(sourcePath, path, finalState, kind);
+        },
+        finalizeSource: (actions) => {
+            finalizeFromSource(sourcePath, actions);
+        },
+        markActionHeadApplied: (path) => {
+            markHeadApplied(sourcePath, path);
         },
     };
 }
@@ -216,6 +317,19 @@ export function startImport(explicit?: readonly QueueItem[]): void {
     const trustMode = isCurrentHouseTrusted();
     const total = totalImportableCount(batches);
 
+    // Auto-switch to creative — housing edits require it. Fires AFTER
+    // the empty-queue early-return so we don't /gmc for a no-op invocation.
+    gmcOnImportStart();
+
+    // Open a trace run if `/htsw trace on` is active. The path here is
+    // the planned write location; the file is actually written in the
+    // finally block below. No-op when tracing is off.
+    const tracePath = beginTraceRun({
+        queueSize: total,
+        sourcePath: batches.length === 1 ? batches[0].sourcePath : undefined,
+        trustMode,
+    });
+
     // Concatenate every batch's ordered importables for the run-row
     // tracking; the per-row UI only needs the flat list, not the
     // per-batch grouping.
@@ -246,8 +360,16 @@ export function startImport(explicit?: readonly QueueItem[]): void {
         inFlight: true,
     });
 
+    setImportRunning(true);
     TaskManager.run(async (ctx) => {
         const startedAt = Date.now();
+        let success = false;
+        // Hoisted out of try so the `finally` can pass them to
+        // endTraceRun's summary even if the loop throws/cancels.
+        let totalImported = 0;
+        let totalSkipped = 0;
+        let totalFailed = 0;
+        let cancelled = false;
         try {
             ctx.displayMessage(
                 `&7[import] starting ${total} importable${total === 1 ? "" : "s"} ` +
@@ -260,9 +382,6 @@ export function startImport(explicit?: readonly QueueItem[]): void {
                 housingUuid = await getCurrentHousingUuid(ctx);
                 setHousingUuid(housingUuid);
             }
-            let totalImported = 0;
-            let totalSkipped = 0;
-            let totalFailed = 0;
             for (const batch of batches) {
                 const selection: ImportSelection = {
                     importables: batch.importables,
@@ -283,8 +402,8 @@ export function startImport(explicit?: readonly QueueItem[]): void {
                                 : (importableSourcePath(imp, batch.parsed) ?? null);
                         setCurrentImportingPath(path);
                     },
-                    diffSinkForImportable: (_imp, path) =>
-                        path === null ? null : makeDiffSink(path),
+                    diffSinkForImportable: (imp, path) =>
+                        path === null ? null : makeDiffSink(path, imp),
                 };
                 const result = await importSelectedImportables(ctx, selection);
                 totalImported += result.imported;
@@ -295,16 +414,48 @@ export function startImport(explicit?: readonly QueueItem[]): void {
             ctx.displayMessage(
                 `&7[import] done · imported ${totalImported}, skipped ${totalSkipped}, failed ${totalFailed}, ${elapsed}s`
             );
+            success = (totalFailed === 0);
             // Only clear the queue when this run came from the queue. An
             // ad-hoc "Import selected" run leaves the queue alone since it
             // was never the source of the work.
             if (explicit === undefined) clearQueue();
+        } catch (err) {
+            // Detect TaskManager cancellation so the trace summary can
+            // distinguish user-cancel from a genuine import failure.
+            // Re-throw to keep the existing .catch() chat output intact.
+            const message = err instanceof Error ? err.message : String(err);
+            if (message.indexOf("cancelled") >= 0 || message.indexOf("Cancelled") >= 0) {
+                cancelled = true;
+            }
+            throw err;
         } finally {
             setImportProgress(null);
             setCurrentImportingPath(null);
             clearImportRun();
             refreshKnowledgeRows();
+            // Clear the importer's run flag BEFORE the chime fires so the
+            // soundPlay cancel hook in `sideEffects` no longer swallows it.
+            setImportRunning(false);
+            // Untag the active importable BEFORE writing the trace so
+            // the run-end event isn't attributed to a specific one.
+            setTraceImportable(null);
+            const writtenTracePath = endTraceRun({
+                imported: totalImported,
+                skipped: totalSkipped,
+                failed: totalFailed,
+                cancelled,
+            });
+            if (writtenTracePath !== null) {
+                ChatLib.chat(`&7[trace] wrote ${writtenTracePath}`);
+            } else if (tracePath !== null) {
+                // Trace was enabled but the write failed — note it.
+                ChatLib.chat(`&c[trace] failed to write trace file (was planned at ${tracePath})`);
+            }
         }
+        // After finally: import progress is cleared, so the soundPlay
+        // cancel hook no longer swallows sounds and this chime can play.
+        // Cancellation throws BEFORE this line — no chime on cancel.
+        if (success) playImportSuccessSound();
     }).catch((err: unknown) => {
         ChatLib.chat(`&c[htsw] Import failed: ${err}`);
     });

@@ -203,6 +203,15 @@ function renderItem(
         } else {
             Renderer.drawString(text, r.x, ty);
         }
+        // Underline support — drawn as a 1-px tall rect just below the text
+        // baseline. Color tracks the text color (or full white if unset).
+        const underlineFlag =
+            e.style.underline !== undefined ? extract(e.style.underline) : undefined;
+        if (underlineFlag === true) {
+            const tw = Renderer.getStringWidth(text);
+            const uColor = color !== undefined ? color : 0xffffffff | 0;
+            Renderer.drawRect(uColor, r.x, ty + LINE_H, tw, 1);
+        }
         if (hovered && e.tooltip !== undefined) {
             const tt = extract(e.tooltip);
             if (tt.length > 0) {
@@ -291,6 +300,23 @@ export function dispatchClick(
             if (item.element.kind !== "scroll") continue;
             const s = getScrollState(item.element.id);
             if (s.contentHeight <= s.viewportRect.h) continue;
+            // Locked scroll: don't start a drag. Consume the click so
+            // it doesn't fall through to the underlying clickable.
+            const elLocked =
+                item.element.locked !== undefined &&
+                extract(item.element.locked) === true;
+            if (elLocked) {
+                const v = s.viewportRect;
+                const trackXl = v.x + v.w - SCROLLBAR_WIDTH;
+                if (pointInRect(
+                    { x: trackXl, y: v.y, w: SCROLLBAR_WIDTH, h: v.h },
+                    mouseX,
+                    mouseY
+                )) {
+                    return true;
+                }
+                continue;
+            }
             const v = s.viewportRect;
             const trackX = v.x + v.w - SCROLLBAR_WIDTH;
             const thumbH = Math.max(8, Math.floor((v.h * v.h) / s.contentHeight));
@@ -429,6 +455,12 @@ export function dispatchWheel(
         if (item.element.kind !== "scroll") continue;
         const s = getScrollState(item.element.id);
         if (!pointInRect(s.viewportRect, mouseX, mouseY)) continue;
+        // Locked scrolls (e.g. live-preview during import auto-follow)
+        // consume the event without moving — caller cancels at the
+        // Forge layer so MC's vanilla scroll handlers don't react.
+        if (item.element.locked !== undefined && extract(item.element.locked) === true) {
+            return true;
+        }
         if (s.contentHeight <= s.viewportRect.h) return true;
         s.offset = Math.max(
             0,

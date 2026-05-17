@@ -392,6 +392,11 @@ export function toggleHtswGui(): boolean {
     return enabled;
 }
 
+/** Force the HTSW GUI overlay enabled. Idempotent. */
+export function openHtswGui(): void {
+    enabled = true;
+}
+
 export function armHtswGuiDebug(seconds: number): void {
     debugUntilMs = Date.now() + seconds * 1000;
     debugBuffer = `[${Date.now()}] armed for ${seconds}s\n`;
