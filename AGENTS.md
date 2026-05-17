@@ -185,4 +185,5 @@ When in doubt: delete the comment, build, see if the next reader (you, one week 
 
 - Short progress updates before edits, builds, installs, and when findings change the plan.
 - Be direct about what changed and why. No vague reassurance.
+- When answering architecture or code questions, do not only describe current behavior. Always evaluate whether the current architecture makes sense: what it does now, whether it should do that, and what should change if the design is accidental, overbuilt, or misleading.
 - For meaningful code changes, especially under `ct_module/`, `language/`, importer/exporter logic, or editor behavior, run CodeRabbit CLI before handing work back when available: `cr --type uncommitted`.

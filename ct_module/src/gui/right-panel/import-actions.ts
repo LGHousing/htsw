@@ -1,8 +1,7 @@
 /// <reference types="../../../CTAutocomplete" />
 
 import {
-    beginImportRun,
-    clearImportRun,
+    createImportRows,
     createImportProgress,
     getExportImportJsonPath,
     getHousingUuid,
@@ -12,7 +11,6 @@ import {
     setHousingUuid,
     setImportProgress,
     setKnowledgeRows,
-    updateImportRunFromProgress,
 } from "../state";
 import {
     clearQueue,
@@ -221,18 +219,10 @@ export function startImport(explicit?: readonly QueueItem[]): void {
     // per-batch grouping.
     const allOrdered: Importable[] = [];
     for (const b of batches) for (const imp of b.importables) allOrdered.push(imp);
-    beginImportRun(allOrdered);
-
     setImportProgress(createImportProgress({
-        currentIdentity: "starting",
-        currentLabel: "starting…",
-        phase: "starting",
-        phaseLabel: "starting import",
-        unitCompleted: 0,
-        unitTotal: 0,
-        estimatedTotal: 1,
-        etaConfidence: "rough",
-        total,
+        totalImportables: total,
+        totalUnits: 1,
+        rows: createImportRows(allOrdered),
     }));
 
     TaskManager.run(async (ctx) => {
@@ -260,12 +250,11 @@ export function startImport(explicit?: readonly QueueItem[]): void {
                     sourcePath: batch.sourcePath,
                     onProgress: (p) => {
                         setImportProgress(p);
-                        updateImportRunFromProgress(p);
-                        if (p.currentKey.length === 0) {
+                        if (p.current === null) {
                             setCurrentImportingPath(null);
                             return;
                         }
-                        const imp = findImportableByKey(batch.parsed, p.currentKey);
+                        const imp = findImportableByKey(batch.parsed, p.current.key);
                         const path =
                             imp === null
                                 ? null
@@ -291,7 +280,6 @@ export function startImport(explicit?: readonly QueueItem[]): void {
         } finally {
             setImportProgress(null);
             setCurrentImportingPath(null);
-            clearImportRun();
             refreshKnowledgeRows();
         }
     }).catch((err: unknown) => {

@@ -1,28 +1,29 @@
-import type { ActionListPhaseBudget } from "./costs";
+import type { ActionListPhaseUnits } from "./costs";
+import { phaseUnitsFromParts } from "./costs";
 import type { ActionListProgressSink } from "./types";
 
 export type ApplyProgressAdapter = {
-    emitOuter(label: string, unitCompleted: number, appliedBudget: number): void;
+    emitOuter(label: string, unitCompleted: number, appliedUnits: number): void;
     nestedSink(parent?: {
         label: string;
         unitCompleted: number;
         unitTotal: number;
     }): ActionListProgressSink | undefined;
-    getAppliedBudget(): number;
+    getAppliedUnits(): number;
 };
 
 export function createApplyProgressAdapter(args: {
-    phaseBudget: ActionListPhaseBudget;
+    phaseUnits: ActionListPhaseUnits;
     baseline: number;
     unitTotal: number;
     sink?: ActionListProgressSink;
 }): ApplyProgressAdapter {
-    let appliedBudget = 0;
+    let appliedUnits = 0;
 
     const growApplyPart = (applied: number): void => {
-        if (applied > args.phaseBudget.applyPart) {
-            args.phaseBudget.applyPart = applied;
-            args.phaseBudget.total = recomputeTotal(args.phaseBudget);
+        if (applied > args.phaseUnits.applyPart) {
+            args.phaseUnits.applyPart = applied;
+            args.phaseUnits.total = recomputeTotal(args.phaseUnits);
         }
     };
 
@@ -37,8 +38,8 @@ export function createApplyProgressAdapter(args: {
             unitTotal: number;
         }
     ): void => {
-        appliedBudget = Math.max(appliedBudget, applied);
-        growApplyPart(appliedBudget);
+        appliedUnits = Math.max(appliedUnits, applied);
+        growApplyPart(appliedUnits);
         args.sink?.({
             phase: "applying",
             phaseLabel: label,
@@ -47,10 +48,9 @@ export function createApplyProgressAdapter(args: {
             parentUnitCompleted: parent?.unitCompleted,
             parentUnitTotal: parent?.unitTotal,
             parentPhaseLabel: parent?.label,
-            estimatedCompleted: args.baseline + appliedBudget,
-            estimatedTotal: args.phaseBudget.total,
-            etaConfidence: "planned",
-            phaseBudget: args.phaseBudget,
+            completedUnits: args.baseline + appliedUnits,
+            totalUnits: args.phaseUnits.total,
+            phaseUnits: phaseUnitsFromParts(args.phaseUnits),
         });
     };
 
@@ -60,9 +60,9 @@ export function createApplyProgressAdapter(args: {
         },
         nestedSink(parent): ActionListProgressSink | undefined {
             if (args.sink === undefined) return undefined;
-            const nestedStart = appliedBudget;
+            const nestedStart = appliedUnits;
             return (inner) => {
-                const nestedCompleted = Math.max(0, inner.estimatedCompleted);
+                const nestedCompleted = Math.max(0, inner.completedUnits);
                 emitParent(
                     inner.phaseLabel,
                     inner.unitCompleted,
@@ -72,12 +72,12 @@ export function createApplyProgressAdapter(args: {
                 );
             };
         },
-        getAppliedBudget(): number {
-            return appliedBudget;
+        getAppliedUnits(): number {
+            return appliedUnits;
         },
     };
 }
 
-function recomputeTotal(b: ActionListPhaseBudget): number {
+function recomputeTotal(b: ActionListPhaseUnits): number {
     return b.readPart + b.hydratePart + b.applyPart;
 }

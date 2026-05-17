@@ -186,7 +186,7 @@ async function writeConditional(
 
         await syncConditionList(ctx, action.conditions, {
             itemRegistry,
-            cached: observedConditionsAsCached(current?.conditions),
+            knownCurrent: current?.conditions,
             onProgress: options?.onProgress,
         });
         await clickGoBack(ctx);
@@ -208,7 +208,7 @@ async function writeConditional(
         await syncActionList(ctx, action.ifActions, {
             itemRegistry,
             pathPrefix: pathPrefix === undefined ? undefined : `${pathPrefix}.ifActions`,
-            cached: observedActionsAsCached(current?.ifActions),
+            knownCurrent: observedActionsAsKnownCurrent(current?.ifActions),
             onProgress: options?.onProgress,
         });
         await clickGoBack(ctx);
@@ -224,39 +224,20 @@ async function writeConditional(
         await syncActionList(ctx, action.elseActions, {
             itemRegistry,
             pathPrefix: pathPrefix === undefined ? undefined : `${pathPrefix}.elseActions`,
-            cached: observedActionsAsCached(current?.elseActions),
+            knownCurrent: observedActionsAsKnownCurrent(current?.elseActions),
             onProgress: options?.onProgress,
         });
         await clickGoBack(ctx);
     }
 }
 
-/**
- * Drop null slots and erase the `Observed<>` brand so a freshly-observed
- * nested body can be fed to `syncActionList`'s `cached` option. The
- * structural difference (Observed nests as nullable arrays, plain Action
- * doesn't) doesn't matter for budget computation: CONDITIONAL/RANDOM
- * can't nest inside other CONDITIONAL/RANDOM bodies, so the inner
- * actions never carry nested arrays of their own.
- */
-function observedActionsAsCached(
+function observedActionsAsKnownCurrent(
     observed: ReadonlyArray<Observed<Action> | null> | undefined
 ): readonly Action[] | undefined {
     if (observed === undefined) return undefined;
     const out: Action[] = [];
     for (const entry of observed) {
         if (entry !== null) out.push(entry as Action);
-    }
-    return out;
-}
-
-function observedConditionsAsCached(
-    observed: ReadonlyArray<Condition | null> | undefined
-): readonly Condition[] | undefined {
-    if (observed === undefined) return undefined;
-    const out: Condition[] = [];
-    for (const entry of observed) {
-        if (entry !== null) out.push(entry);
     }
     return out;
 }
@@ -693,7 +674,7 @@ async function writeRandom(
     await syncActionList(ctx, action.actions, {
         itemRegistry,
         pathPrefix: pathPrefix === undefined ? undefined : `${pathPrefix}.actions`,
-        cached: observedActionsAsCached(current?.actions),
+        knownCurrent: observedActionsAsKnownCurrent(current?.actions),
         onProgress: options?.onProgress,
     });
     await clickGoBack(ctx);

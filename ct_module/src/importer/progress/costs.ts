@@ -1,4 +1,4 @@
-import type { Action, Importable } from "htsw/types";
+import type { Action, Condition, Importable } from "htsw/types";
 
 import type {
     ActionListDiff,
@@ -9,14 +9,17 @@ import type {
     ObservedActionSlot,
     UiFieldKind,
 } from "../types";
-import { diffActionList } from "../actions/diff";
+import type { PhaseUnits } from "./types";
+import { currentActionListFromActions, diffActionList } from "../actions/diff";
+import {
+    currentConditionListFromConditions,
+    diffConditionList,
+} from "../conditions/diff";
 import { getActionScalarLoreFields } from "../fields/actionMappings";
 import { scalarFieldDiffers } from "../fields/compare";
 
-export type EtaConfidence = "rough" | "informed" | "planned";
-
 /**
- * Per-op-kind budget costs in abstract "units". Calibrated against
+ * Per-op-kind costs in abstract units. Calibrated against
  * `guaranteedSleep1000 = 4` as the 1-second anchor, so 1 unit ≈ 250ms.
  *
  * Costs are tuned so each kind's *real* avg ms / unit lands close to a
@@ -60,17 +63,17 @@ export const COST = {
     itemInject: 1,
 };
 
-const ACTIONS_PER_PAGE = 21;
+const LIST_ITEMS_PER_PAGE = 21;
 
-function pagesForActionCount(count: number): number {
-    return Math.max(1, Math.ceil(Math.max(0, count) / ACTIONS_PER_PAGE));
+function pagesForListItemCount(count: number): number {
+    return Math.max(1, Math.ceil(Math.max(0, count) / LIST_ITEMS_PER_PAGE));
 }
 
-function pageTurnBudgetForActionCount(count: number): number {
-    return Math.max(0, pagesForActionCount(count) - 1) * COST.pageTurnWait;
+function pageTurnUnitsForListItemCount(count: number): number {
+    return Math.max(0, pagesForListItemCount(count) - 1) * COST.pageTurnWait;
 }
 
-function fieldKindEditBudget(kind: UiFieldKind): number {
+function fieldKindEditUnits(kind: UiFieldKind): number {
     if (kind === "boolean") return COST.menuClickWait;
     if (kind === "cycle") return COST.menuClickWait * 2;
     if (kind === "select") return COST.menuClickWait + COST.menuClickWait;
@@ -80,24 +83,24 @@ function fieldKindEditBudget(kind: UiFieldKind): number {
     return COST.menuClickWait;
 }
 
-export function scalarFieldEditBudgetForOp(
+export function scalarFieldEditUnitsForOp(
     op: Extract<ActionListOperation, { kind: "edit" }>
 ): number {
-    const action = op.observed.action;
-    if (action === null || op.noteOnly) return 0;
+    const action = op.currentAction;
+    if (op.noteOnly) return 0;
 
     let total = 0;
     const fields = getActionScalarLoreFields(action.type);
     for (let i = 0; i < fields.length; i++) {
         const field = fields[i];
         if (scalarFieldDiffers(action, op.desired, action.type, field.prop)) {
-            total += fieldKindEditBudget(field.kind);
+            total += fieldKindEditUnits(field.kind);
         }
     }
     return total;
 }
 
-export function moveBudget(fromIndex: number, toIndex: number, listLength: number): number {
+function moveUnits(fromIndex: number, toIndex: number, listLength: number): number {
     if (listLength <= 1) return 0;
     const from = ((fromIndex % listLength) + listLength) % listLength;
     const to = ((toIndex % listLength) + listLength) % listLength;
@@ -106,17 +109,21 @@ export function moveBudget(fromIndex: number, toIndex: number, listLength: numbe
     return Math.min(leftDistance, rightDistance) * COST.reorderStep;
 }
 
-function nestedActionReadBudget(nestedCount: number): number {
+export function conditionListReadUnits(conditionCount: number): number {
+    return pageTurnUnitsForListItemCount(conditionCount);
+}
+
+function nestedActionReadUnits(nestedCount: number): number {
     return (
         COST.menuClickWait +
         COST.menuClickWait +
-        pageTurnBudgetForActionCount(nestedCount) +
+        pageTurnUnitsForListItemCount(nestedCount) +
         COST.goBackWait +
         COST.goBackWait
     );
 }
 
-export function hydrationEntryBudget(
+export function hydrationEntryUnits(
     entry: ObservedActionSlot,
     propsToRead: NestedPropsToRead
 ): number {
@@ -124,22 +131,22 @@ export function hydrationEntryBudget(
 
     let total = COST.menuClickWait + COST.goBackWait;
     propsToRead.forEach((prop) => {
-        total += nestedPropReadBudget(entry, prop);
+        total += nestedPropReadUnits(entry, prop);
     });
     return total;
 }
 
-function nestedPropReadBudget(entry: ObservedActionSlot, prop: NestedListProp): number {
+function nestedPropReadUnits(entry: ObservedActionSlot, prop: NestedListProp): number {
     const summary = entry.nestedSummaries ? entry.nestedSummaries[prop] : undefined;
     const count = summary === undefined ? 1 : summary.length;
-    return COST.menuClickWait + pageTurnBudgetForActionCount(count) + COST.goBackWait;
+    return COST.menuClickWait + pageTurnUnitsForListItemCount(count) + COST.goBackWait;
 }
 
-function noteEditBudget(): number {
+function noteEditUnits(): number {
     return COST.chatInput;
 }
 
-function actionAddShellBudget(): number {
+function actionAddShellUnits(): number {
     return COST.menuClickWait + COST.menuClickWait;
 }
 
@@ -150,26 +157,37 @@ function actionAddShellBudget(): number {
  * close the editor. Conditions can't contain nested action lists, so
  * this stays flat per condition.
  */
-function conditionRoughBudget(): number {
+function conditionRoughUnits(): number {
     return COST.menuClickWait + COST.chatInput + COST.menuClickWait;
 }
 
-function conditionListRoughBudget(conditions: readonly unknown[]): number {
-    return conditions.length * conditionRoughBudget();
+function conditionListRoughUnits(conditions: readonly Condition[]): number {
+    let total = 0;
+    for (let i = 0; i < conditions.length; i++) {
+        total += conditionRoughUnits();
+        if (conditions[i].note !== undefined) total += noteEditUnits();
+    }
+    return total;
 }
 
-export function conditionListDiffApplyBudget(diff: ConditionListDiff): number {
+export function conditionOperationUnits(
+    op: ConditionListDiff["operations"][number]
+): number {
+    if (op.kind === "delete") return COST.menuClickWait;
+    if (op.kind === "add") {
+        let total = conditionRoughUnits();
+        if (op.desired.note !== undefined) total += noteEditUnits();
+        return total;
+    }
+    let total = op.noteOnly ? noteEditUnits() : conditionRoughUnits();
+    if (op.desired.note !== op.currentCondition.note) total += noteEditUnits();
+    return total;
+}
+
+export function conditionListDiffApplyUnits(diff: ConditionListDiff): number {
     let total = 0;
     for (let i = 0; i < diff.operations.length; i++) {
-        const op = diff.operations[i];
-        if (op.kind === "delete") {
-            total += COST.menuClickWait;
-        } else if (op.kind === "add") {
-            total += conditionRoughBudget();
-        } else {
-            total += op.noteOnly ? noteEditBudget() : conditionRoughBudget();
-            if (op.desired.note !== op.observed.condition?.note) total += noteEditBudget();
-        }
+        total += conditionOperationUnits(diff.operations[i]);
     }
     return total;
 }
@@ -178,8 +196,8 @@ export function conditionListDiffApplyBudget(diff: ConditionListDiff): number {
  * Cost of writing one action's payload (scalar fields + any nested
  * action/condition lists) once its shell has been added. Scalar fields
  * each cost a `chatInput`; array fields recurse — `conditions` via
- * `conditionListRoughBudget`, action-list arrays (e.g. `ifActions`,
- * `elseActions`, `actions` for RANDOM) via `actionListRoughApplyBudget`.
+ * `conditionListRoughUnits`, action-list arrays (e.g. `ifActions`,
+ * `elseActions`, `actions` for RANDOM) via `actionListRoughApplyUnits`.
  *
  * Recursion terminates because CONDITIONAL/RANDOM aren't allowed to
  * nest — the inner action lists only contain non-CONDITIONAL,
@@ -187,7 +205,7 @@ export function conditionListDiffApplyBudget(diff: ConditionListDiff): number {
  * at least `menuClickWait` so a fieldless action (e.g. Kill Player)
  * still costs the menu round-trip to commit the add.
  */
-function actionWriteRoughBudget(action: Action): number {
+function actionWriteRoughUnits(action: Action): number {
     let total = 0;
     for (const key in action) {
         if (key === "type" || key === "note") continue;
@@ -195,9 +213,9 @@ function actionWriteRoughBudget(action: Action): number {
         if (value === undefined) continue;
         if (Array.isArray(value)) {
             if (key === "conditions") {
-                total += conditionListRoughBudget(value);
+                total += conditionListRoughUnits(value as Condition[]);
             } else {
-                total += actionListRoughApplyBudget(value as Action[]);
+                total += actionListRoughApplyUnits(value as Action[]);
             }
             continue;
         }
@@ -206,93 +224,107 @@ function actionWriteRoughBudget(action: Action): number {
     return Math.max(COST.menuClickWait, total);
 }
 
-function actionListRoughApplyBudget(actions: readonly Action[]): number {
+function actionListRoughApplyUnits(actions: readonly Action[]): number {
     let total = 0;
     for (let i = 0; i < actions.length; i++) {
-        total += actionAddShellBudget() + actionWriteRoughBudget(actions[i]);
-        if (actions[i].note !== undefined) total += noteEditBudget();
+        total += actionAddShellUnits() + actionWriteRoughUnits(actions[i]);
+        if (actions[i].note !== undefined) total += noteEditUnits();
     }
     return total;
 }
 
-export function actionListDiffApplyBudget(
+export function actionListDiffApplyUnits(
     diff: ActionListDiff,
-    fieldBudgetForEdit: (op: Extract<ActionListOperation, { kind: "edit" }>) => number,
+    editUnitsForFields: (op: Extract<ActionListOperation, { kind: "edit" }>) => number,
     desiredLength: number
 ): number {
     let total = 0;
     for (let i = 0; i < diff.operations.length; i++) {
-        const op = diff.operations[i];
-        if (op.kind === "delete") {
-            total += COST.menuClickWait;
-        } else if (op.kind === "move") {
-            total += moveBudget(op.observed.index, op.toIndex, desiredLength);
-        } else if (op.kind === "add") {
-            total += actionAddShellBudget() + actionWriteRoughBudget(op.desired);
-            total += moveBudget(desiredLength, op.toIndex, desiredLength + 1);
-            if (op.desired.note !== undefined) total += noteEditBudget();
-        } else {
-            total += op.noteOnly
-                ? noteEditBudget()
-                : COST.menuClickWait + fieldBudgetForEdit(op) + COST.goBackWait;
-            if (op.desired.note !== op.observed.action?.note) total += noteEditBudget();
-        }
+        total += actionOperationApplyUnits(
+            diff.operations[i],
+            editUnitsForFields,
+            desiredLength
+        );
     }
     return total;
 }
 
+export function actionOperationApplyUnits(
+    op: ActionListOperation,
+    editUnitsForFields: (op: Extract<ActionListOperation, { kind: "edit" }>) => number,
+    desiredLength: number
+): number {
+    if (op.kind === "delete") return COST.menuClickWait;
+    if (op.kind === "move") {
+        return moveUnits(op.fromIndex, op.toIndex, desiredLength);
+    }
+    if (op.kind === "add") {
+        let total = actionAddShellUnits() + actionWriteRoughUnits(op.desired);
+        total += moveUnits(desiredLength, op.toIndex, desiredLength + 1);
+        if (op.desired.note !== undefined) total += noteEditUnits();
+        return total;
+    }
+
+    let total = op.noteOnly
+        ? noteEditUnits()
+        : COST.menuClickWait + editUnitsForFields(op) + COST.goBackWait;
+    if (op.desired.note !== op.currentAction.note) total += noteEditUnits();
+    return total;
+}
+
 /**
- * Per-phase work budget for a single action-list sync call. Lets `readList`
- * + `applyDiff` emit `estimatedCompleted` / `estimatedTotal` in a single
- * coherent scale across the three real phases (reading → hydrating →
- * applying), and lets the GUI's ETA split remaining work by phase.
- *
- * Diffing is intentionally not tracked — it's pure in-process compute
- * with no menu round-trips, takes ~1-5ms, and would just add noise to
- * the timing data. The `phase: "diffing"` progress event still fires
- * for the GUI's diff-sink visualization but contributes nothing to ETA.
+ * Per-phase work estimate for a single action-list sync call. `readList` and
+ * `applyDiff` emit completed/total units on this shared scale.
  *
  * `readPart` / `hydratePart` cover this list only — nested `syncActionList`
  * calls inside CONDITIONAL/RANDOM bodies aren't separately tracked because
  * their reading is folded into the parent's hydrate phase (via
- * `topLevelHydrateBudget`). `applyPart` does include nested-body apply
+ * `topLevelHydrateUnits`). `applyPart` does include nested-body apply
  * work via the cache-aware diff recursing one level into
- * `ifActions` / `elseActions` / `actions` (see `editBudgetWithNested`).
+ * `ifActions` / `elseActions` / `actions` (see `editUnitsWithNested`).
  */
-export type ActionListPhaseBudget = {
+export type ListPhaseUnits = {
     readPart: number;
     hydratePart: number;
     applyPart: number;
     total: number;
 };
 
-function topLevelHydrateBudget(desired: readonly Action[]): number {
+export type ActionListPhaseUnits = ListPhaseUnits;
+
+export function phaseUnitsFromParts(b: ListPhaseUnits): PhaseUnits {
+    return {
+        reading: b.readPart,
+        hydrating: b.hydratePart,
+        applying: b.applyPart,
+    };
+}
+
+function topLevelHydrateUnits(desired: readonly Action[]): number {
     let total = 0;
     for (let i = 0; i < desired.length; i++) {
         const a = desired[i];
         if (a.type === "CONDITIONAL") {
-            total += nestedActionReadBudget(a.ifActions.length);
-            total += nestedActionReadBudget(a.elseActions.length);
+            total += nestedActionReadUnits(a.ifActions.length);
+            total += nestedActionReadUnits(a.elseActions.length);
             if (a.conditions.length > 0) total += COST.menuClickWait + COST.goBackWait;
         } else if (a.type === "RANDOM") {
-            total += nestedActionReadBudget(a.actions.length);
+            total += nestedActionReadUnits(a.actions.length);
         }
     }
     return total;
 }
 
 /**
- * Predict per-phase budget for a single action-list sync.
+ * Predict per-phase units for a single action-list sync.
  *
  * Two cases, no mixed worldviews:
  *
- * 1. **Cache available** (`cached !== undefined`): we have a snapshot
- *    of what the housing looked like last time. Use it as the ground
- *    truth for the read + hydrate phases (housing is *probably* still
- *    in that state), and run the real diff `cached → desired` to price
- *    the apply phase.
+ * 1. **Known current list available** (`knownCurrent !== undefined`):
+ *    use it for read + hydrate estimates, and run the real diff
+ *    `knownCurrent → desired` to price the apply phase.
  *
- * 2. **No cache** (`cached === undefined`): we don't know what the
+ * 2. **No known current list** (`knownCurrent === undefined`): we don't know what the
  *    housing has — first-ever import for this house, or cache was
  *    wiped. Assume the housing is *empty*: zero pages to turn, nothing
  *    to hydrate, and every desired action must be added from scratch.
@@ -303,17 +335,17 @@ function topLevelHydrateBudget(desired: readonly Action[]): number {
  * `readActionList` + `diffActionList` have observed the actual
  * housing.
  */
-export function estimateActionListPhaseBudget(
+export function estimateActionListPhaseUnits(
     desired: readonly Action[],
-    cached?: readonly Action[]
-): ActionListPhaseBudget {
-    if (cached === undefined) {
-        const applyPart = actionListRoughApplyBudget(desired);
+    knownCurrent?: readonly Action[]
+): ActionListPhaseUnits {
+    if (knownCurrent === undefined) {
+        const applyPart = actionListRoughApplyUnits(desired);
         return { readPart: 0, hydratePart: 0, applyPart, total: applyPart };
     }
-    const readPart = pageTurnBudgetForActionCount(cached.length);
-    const hydratePart = topLevelHydrateBudget(cached);
-    const applyPart = cacheAwareApplyBudget(desired, cached);
+    const readPart = pageTurnUnitsForListItemCount(knownCurrent.length);
+    const hydratePart = topLevelHydrateUnits(knownCurrent);
+    const applyPart = cacheAwareApplyUnits(desired, knownCurrent);
     return {
         readPart,
         hydratePart,
@@ -322,45 +354,42 @@ export function estimateActionListPhaseBudget(
     };
 }
 
-/**
- * Convert a cached `Action[]` (snapshot of last-known housing state) into
- * a hypothetical `ObservedActionSlot[]` so it can be fed into
- * `diffActionList`. The slots are stubs — no real `ItemSlot` references —
- * which is fine since `diffActionList` only reads `index` + `action`.
- *
- * Structural typing accepts the plain `Action` here because
- * `diffActionList` only consumes the action data and never inspects the
- * `Observed<>` brand.
- */
-function cachedActionsAsObserved(cached: readonly Action[]): ObservedActionSlot[] {
-    const out: ObservedActionSlot[] = [];
-    for (let i = 0; i < cached.length; i++) {
-        out.push({
-            index: i,
-            slotId: -1,
-            slot: null as never,
-            action: cached[i],
-            nestedReadState: "full",
-        });
+export function estimateConditionListPhaseUnits(
+    desired: readonly Condition[],
+    knownCurrent?: ReadonlyArray<Condition | null>
+): ListPhaseUnits {
+    if (knownCurrent === undefined) {
+        const applyPart = conditionListRoughUnits(desired);
+        return { readPart: 0, hydratePart: 0, applyPart, total: applyPart };
     }
-    return out;
+
+    const current = currentConditionListFromConditions(knownCurrent);
+    const diff = diffConditionList(current, desired as Condition[]);
+    const readPart = conditionListReadUnits(knownCurrent.length);
+    const applyPart = conditionListDiffApplyUnits(diff);
+    return {
+        readPart,
+        hydratePart: 0,
+        applyPart,
+        total: readPart + applyPart,
+    };
 }
 
 /**
- * Compute the apply-phase budget for transforming `cached` → `desired`,
+ * Compute the apply-phase units for transforming `cached` → `desired`,
  * by running the real diff and pricing each operation. Used to tighten
  * ETA estimates when we have a recent knowledge cache for the housing.
  *
  * Returns 0 when cached and desired are identical (the bar predicts a
  * near-instant pass for this list).
  */
-function cacheAwareApplyBudget(
+function cacheAwareApplyUnits(
     desired: readonly Action[],
     cached: readonly Action[]
 ): number {
-    const observed = cachedActionsAsObserved(cached);
-    const diff = diffActionList(observed, desired as Action[]);
-    return actionListDiffApplyBudget(diff, editBudgetWithNested, desired.length);
+    const current = currentActionListFromActions(cached);
+    const diff = diffActionList(current, desired as Action[]);
+    return actionListDiffApplyUnits(diff, editUnitsWithNested, desired.length);
 }
 
 /**
@@ -374,7 +403,7 @@ function cacheAwareApplyBudget(
  * deep compare). Without this wrapper, a CONDITIONAL whose ifActions
  * grew by 30 actions would be priced as `menuClickWait + 0 + goBackWait`
  * and the bar would silently under-count by the cost of those 30
- * additions, making the live `refinedWeightCurrent` widening do all
+ * additions, making the live current-unit widening do all
  * the catch-up work.
  *
  * We re-run the diff one level deeper for any CONDITIONAL/RANDOM edit
@@ -382,19 +411,19 @@ function cacheAwareApplyBudget(
  * CONDITIONAL/RANDOM can't appear inside another CONDITIONAL/RANDOM
  * body bounds the recursion at one level.
  */
-function editBudgetWithNested(op: Extract<ActionListOperation, { kind: "edit" }>): number {
-    let total = scalarFieldEditBudgetForOp(op);
+function editUnitsWithNested(op: Extract<ActionListOperation, { kind: "edit" }>): number {
+    let total = scalarFieldEditUnitsForOp(op);
 
     for (let i = 0; i < op.nestedDiffs.length; i++) {
         const nested = op.nestedDiffs[i];
         if (nested.diff.operations.length === 0) continue;
         total += COST.menuClickWait + COST.goBackWait;
         if (nested.prop === "conditions") {
-            total += conditionListDiffApplyBudget(nested.diff);
+            total += conditionListDiffApplyUnits(nested.diff);
         } else {
-            total += actionListDiffApplyBudget(
+            total += actionListDiffApplyUnits(
                 nested.diff,
-                editBudgetWithNested,
+                editUnitsWithNested,
                 nested.diff.desiredLength
             );
         }
@@ -404,22 +433,22 @@ function editBudgetWithNested(op: Extract<ActionListOperation, { kind: "edit" }>
 
 /**
  * Total work for one action-list sync (read + hydrate + apply). Wraps
- * `estimateActionListPhaseBudget`'s three parts back into a single
- * number. Used by `estimateImportableCost` to weight importables.
+ * `estimateActionListPhaseUnits`'s three parts back into a single
+ * number. Used by `estimateImportableCost`.
  */
 function actionListCost(
     desired: readonly Action[],
-    cached: readonly Action[] | undefined
+    knownCurrent: readonly Action[] | undefined
 ): number {
-    return estimateActionListPhaseBudget(desired, cached).total;
+    return estimateActionListPhaseUnits(desired, knownCurrent).total;
 }
 
 /**
- * Total work estimate for one importable in budget units. The optional
+ * Total work estimate for one importable in units. The optional
  * `getCached(basePath)` callback returns the last-known cached actions
  * for the importable's action-list fields (e.g. `"actions"`,
  * `"onEnterActions"`). Pass `undefined` for the no-cache path; phase
- * budgets fall back to "assume housing is empty" → predict only the
+ * estimates fall back to "assume housing is empty" → predict only the
  * worst-case apply work.
  *
  * MENU / NPC fall through to a cache-blind rough estimate — their slots

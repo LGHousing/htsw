@@ -15,7 +15,7 @@ function submitChat(): void {
     if (text.length === 0) return;
     try {
         if (text.startsWith("/")) {
-            ChatLib.command(text.substring(1));
+            ChatLib.command(text.substring(1), true);
         } else {
             ChatLib.say(text);
         }

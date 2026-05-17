@@ -12,12 +12,14 @@ import { setActiveDiffSink, type ImportDiffSink } from "../importer/diffSink";
 import type {
     ActionListProgressFields,
     ImportProgress,
+    ImportProgressCurrent,
+    ImportProgressRow,
     ImportRunRowStatus,
+    PhaseUnits,
 } from "../importer/progress/types";
 import { estimateImportableCost } from "../importer/progress/costs";
 import { readKnowledge } from "../knowledge/cache";
 import { readCachedActionList } from "./actionListTrust";
-import { savePhaseStatsToDisk } from "../importer/progress/timing";
 
 export type ImportSelection = {
     importables: Importable[];
@@ -50,22 +52,6 @@ export type ImportSessionResult = {
     failed: number;
 };
 
-function terminalActionListProgress(
-    phaseLabel: string,
-    units: number
-): ActionListProgressFields {
-    return {
-        phase: "done",
-        phaseLabel,
-        unitCompleted: 1,
-        unitTotal: 1,
-        estimatedCompleted: units,
-        estimatedTotal: units,
-        etaConfidence: "planned",
-        phaseBudget: null,
-    };
-}
-
 export function orderImportablesForImportSession(
     allImportables: readonly Importable[],
     selectedImportables: readonly Importable[]
@@ -91,12 +77,6 @@ export async function importSelectedImportables(
     const parsed = parseImportablesResult(sm, selection.sourcePath);
     const registry = createItemRegistry(parsed.value, parsed.gcx);
     const ordered = orderImportablesForImportSession(parsed.value, selection.importables);
-    // Always build the trust plan, even in non-trust mode — we want the
-    // cached state for accurate phase-budget ETA estimation regardless.
-    // The `trustMode` flag only controls whether matching hashes promote
-    // to trustedListPaths (which skip work); when false, those stay
-    // empty so nothing is skipped, but the cached snapshots still flow
-    // through `actionListTrustFor` → `syncActionList`'s phase budget.
     const trustPlan = buildKnowledgeTrustPlan(
         selection.housingUuid,
         parsed.value,
@@ -109,106 +89,141 @@ export async function importSelectedImportables(
         failed: 0,
     };
 
-    // Use the knowledge cache (last-known observed state) to predict each
-    // importable's apply-phase budget — even when trust mode is off. If
-    // the cache says nothing changed, the predicted diff is empty and the
-    // bar correctly anticipates a near-instant pass. Falls back to the
-    // worst-case all-adds estimate when cache is missing for that
-    // importable (e.g., first-ever import for this house).
-    const weights: number[] = ordered.map((importable) =>
-        estimateImportableWeightWithCache(importable, selection.housingUuid)
+    const importableUnits: number[] = ordered.map((importable) =>
+        estimateImportableUnitsWithCache(importable, selection.housingUuid)
     );
-    let weightTotal = 0;
-    for (let i = 0; i < weights.length; i++) weightTotal += weights[i];
-    if (weightTotal === 0) weightTotal = 1;
+    let initialTotalUnits = 0;
+    for (let i = 0; i < importableUnits.length; i++) {
+        initialTotalUnits += importableUnits[i];
+    }
+    if (initialTotalUnits === 0) initialTotalUnits = 1;
     let completed = 0;
     let completedSessionUnits = 0;
-    let totalSessionUnits = weightTotal;
-    let lastEmittedCompleted = 0;
+    let totalSessionUnits = initialTotalUnits;
     let lastEmittedSessionUnits = 0;
+    const rows: ImportProgressRow[] = ordered.map((importable, i) => {
+        const identity = importableIdentity(importable);
+        return {
+            key: trustPlanKey(importable.type, identity),
+            status: "queued",
+            units: importableUnits[i],
+        };
+    });
 
     for (let i = 0; i < ordered.length; i++) {
         const importable = ordered[i];
-        const initialCurrentUnits = weights[i];
+        const initialCurrentUnits = importableUnits[i];
         const identity = importableIdentity(importable);
         const importableKey = trustPlanKey(importable.type, identity);
         const plan = trustPlan?.importables.get(importableKey);
         let currentTotalUnits = initialCurrentUnits;
         let currentCompletedUnits = 0;
-        const finishCurrentWeight = (): void => {
+        let currentPhaseUnits: PhaseUnits = {
+            reading: 0,
+            hydrating: 0,
+            applying: currentTotalUnits,
+        };
+        const finishCurrentUnits = (): void => {
             totalSessionUnits += currentTotalUnits - initialCurrentUnits;
-            weights[i] = currentTotalUnits;
+            importableUnits[i] = currentTotalUnits;
+            rows[i].units = currentTotalUnits;
         };
         const finishCompletedImportable = (): void => {
-            finishCurrentWeight();
+            finishCurrentUnits();
             completed++;
             completedSessionUnits += currentTotalUnits;
         };
         const finishFailedImportable = (): void => {
-            finishCurrentWeight();
+            finishCurrentUnits();
         };
-        const emitProgress = (
-            inner: ActionListProgressFields,
-            rowStatus: ImportRunRowStatus = "current"
-        ): void => {
+        const emitProgress = (inner: ActionListProgressFields): void => {
             const eventTotalUnits =
-                inner.estimatedTotal > 0 ? inner.estimatedTotal : initialCurrentUnits;
+                inner.totalUnits > 0 ? inner.totalUnits : initialCurrentUnits;
             if (eventTotalUnits > currentTotalUnits) {
                 currentTotalUnits = eventTotalUnits;
+                rows[i].units = currentTotalUnits;
             }
 
-            let eventCurrentUnits =
-                rowStatus === "current"
-                    ? inner.estimatedCompleted
-                    : currentTotalUnits;
-            eventCurrentUnits = Math.min(
+            currentPhaseUnits = inner.phaseUnits;
+            currentCompletedUnits = Math.min(
                 currentTotalUnits,
-                Math.max(0, eventCurrentUnits)
+                Math.max(currentCompletedUnits, inner.completedUnits)
             );
-            if (eventCurrentUnits > currentCompletedUnits) {
-                currentCompletedUnits = eventCurrentUnits;
-            }
+            emitSessionProgress("current", inner.phase, inner.phaseLabel, inner);
+        };
+        const emitTerminalProgress = (
+            rowStatus: Extract<ImportRunRowStatus, "imported" | "skipped" | "failed">,
+            phaseLabel: string
+        ): void => {
+            currentCompletedUnits = currentTotalUnits;
+            emitSessionProgress(rowStatus, "done", phaseLabel);
+        };
+        // Update row state without emitting a "done" event — used between
+        // importables so the GUI doesn't flash a "Done: imported" line
+        // before the next importable's first phase event arrives. The
+        // next emit (or the session-end emit) carries the updated rows
+        // array to the GUI, which is what flips the queue row green.
+        const finishImportableRowSilently = (
+            rowStatus: Extract<ImportRunRowStatus, "imported" | "skipped">
+        ): void => {
+            currentCompletedUnits = currentTotalUnits;
+            rows[i].status = rowStatus;
+        };
+        const emitSessionProgress = (
+            rowStatus: Exclude<ImportRunRowStatus, "queued">,
+            phase: ImportProgressCurrent["phase"],
+            phaseLabel: string,
+            inner?: ActionListProgressFields
+        ): void => {
+            rows[i].status = rowStatus;
+            const clampedCurrentUnits = Math.min(
+                currentTotalUnits,
+                Math.max(0, currentCompletedUnits)
+            );
+            currentCompletedUnits = clampedCurrentUnits;
             if (!selection.onProgress) return;
 
             const remainingSessionUnits =
                 totalSessionUnits - completedSessionUnits - initialCurrentUnits;
+            const sessionCompletedUnits = completedSessionUnits + clampedCurrentUnits;
+            const sessionTotalUnits =
+                completedSessionUnits + currentTotalUnits + remainingSessionUnits;
+            const current: ImportProgressCurrent = {
+                key: importableKey,
+                type: importable.type,
+                identity,
+                status: rowStatus,
+                phase,
+                label: `${importable.type} ${identity}`,
+                phaseLabel,
+                completedUnits: clampedCurrentUnits,
+                totalUnits: currentTotalUnits,
+                phaseUnits: currentPhaseUnits,
+                unitCompleted: inner?.unitCompleted,
+                unitTotal: inner?.unitTotal,
+                parentUnitCompleted: inner?.parentUnitCompleted,
+                parentUnitTotal: inner?.parentUnitTotal,
+                parentPhaseLabel: inner?.parentPhaseLabel,
+            };
             const payload: ImportProgress = {
-                ...inner,
-                completed,
-                total: ordered.length,
-                weightCompleted: completedSessionUnits,
-                weightTotal:
-                    completedSessionUnits + currentTotalUnits + remainingSessionUnits,
-                weightCurrent: currentTotalUnits,
-                currentKey: importableKey,
-                currentType: importable.type,
-                currentIdentity: identity,
-                orderIndex: i,
-                rowStatus,
-                currentLabel: `${importable.type} ${identity}`,
-                estimatedCompleted: completedSessionUnits + currentCompletedUnits,
-                estimatedTotal:
-                    completedSessionUnits + currentTotalUnits + remainingSessionUnits,
-                weights,
+                completedImportables: completed,
+                totalImportables: ordered.length,
+                completedUnits: sessionCompletedUnits,
+                totalUnits: sessionTotalUnits,
+                current,
+                rows,
                 failed: result.failed,
             };
             selection.onProgress(payload);
-            lastEmittedCompleted = Math.max(lastEmittedCompleted, payload.completed);
             lastEmittedSessionUnits = Math.max(
                 lastEmittedSessionUnits,
-                payload.estimatedCompleted
+                payload.completedUnits
             );
         };
 
         if (plan?.wholeImportableTrusted) {
             result.skippedTrusted++;
-            emitProgress(
-                terminalActionListProgress(
-                    "trusted cache current; skipped",
-                    currentTotalUnits
-                ),
-                "skipped"
-            );
+            finishImportableRowSilently("skipped");
             finishCompletedImportable();
             continue;
         }
@@ -227,10 +242,7 @@ export async function importSelectedImportables(
             if (!plan?.wholeImportableTrusted) {
                 result.imported++;
             }
-            emitProgress(
-                terminalActionListProgress("imported", currentTotalUnits),
-                "imported"
-            );
+            finishImportableRowSilently("imported");
             finishCompletedImportable();
         } catch (error) {
             // User-initiated cancel — propagate so TaskManager logs "Task
@@ -241,10 +253,7 @@ export async function importSelectedImportables(
                 throw error;
             }
             result.failed++;
-            emitProgress(
-                terminalActionListProgress("failed", currentTotalUnits),
-                "failed"
-            );
+            emitTerminalProgress("failed", "failed");
             if (error instanceof Diagnostic) {
                 printDiagnostic(sm, error);
             } else {
@@ -266,55 +275,28 @@ export async function importSelectedImportables(
     }
 
     if (selection.onProgress) {
-        const finalCompleted = Math.max(completed, lastEmittedCompleted);
         const finalSessionUnits = Math.max(
             completedSessionUnits,
             lastEmittedSessionUnits
         );
         selection.onProgress({
-            completed: finalCompleted,
-            total: ordered.length,
-            weightCompleted: finalSessionUnits,
-            weightTotal: totalSessionUnits,
-            weightCurrent: 0,
-            currentKey: "",
-            currentType: null,
-            currentIdentity: "done",
-            orderIndex: -1,
-            rowStatus: null,
-            currentLabel: "done",
-            phase: "done",
-            phaseLabel: "done",
-            unitCompleted: 1,
-            unitTotal: 1,
-            estimatedCompleted: finalSessionUnits,
-            estimatedTotal: totalSessionUnits,
-            etaConfidence: "planned",
-            phaseBudget: null,
-            weights,
+            completedImportables: completed,
+            totalImportables: ordered.length,
+            completedUnits: finalSessionUnits,
+            totalUnits: totalSessionUnits,
+            current: null,
+            rows,
             failed: result.failed,
         });
-    }
-
-    try {
-        savePhaseStatsToDisk();
-    } catch (error) {
-        ctx.displayMessage(`&e[htsw] Failed to save import timing stats: ${error}`);
     }
 
     return result;
 }
 
 /**
- * Cache-aware work estimate for an importable. Used to weight the
- * progress bar so a function with 50 actions advances it much more than
- * a function with 2 actions. Looks up the housing's last-known observed
- * state if one exists and uses it to predict reading / hydrating /
- * applying work; falls back silently to the "assume empty housing"
- * worst-case when no cache exists for the importable. `Math.max(1, …)`
- * guards against zero-cost importables breaking ratio math.
+ * Cache-aware work estimate for an importable, in progress units.
  */
-function estimateImportableWeightWithCache(
+function estimateImportableUnitsWithCache(
     importable: Importable,
     housingUuid: string
 ): number {

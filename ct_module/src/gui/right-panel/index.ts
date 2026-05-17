@@ -756,7 +756,9 @@ function progressEtaText(): string {
 function progressEtaIsStable(): boolean {
     const p = getImportProgress();
     if (p === null) return false;
-    return p.etaConfidence === "planned" || p.phase === "applying" || p.phase === "done";
+    return p.current === null ||
+        p.current.phase === "done" ||
+        p.current.phase === "applying";
 }
 
 function progressElapsedText(): string {
@@ -765,9 +767,15 @@ function progressElapsedText(): string {
     return `elapsed ${formatElapsedSeconds((Date.now() - startedAt) / 1000)}`;
 }
 
-/** What's happening *right now* — pulled from the diff entry's per-action
- * label first (most specific), then the importer's phase-level label. */
+/** What's happening *right now* — prefer the importer's live phase label
+ * (updated by nested work, e.g. "add condition X" while adding a Conditional),
+ * then the diff entry's per-action label (the outer op like "add Conditional"
+ * — pinned by beginOp and not updated during nested work). */
 function progressCurrentLabel(): string {
+    const p = getImportProgress();
+    if (p !== null && p.current !== null && p.current.phaseLabel.length > 0) {
+        return p.current.phaseLabel;
+    }
     const path = getCurrentImportingPath();
     if (path !== null) {
         const entry = getDiffEntry(diffKey(path));
@@ -775,10 +783,9 @@ function progressCurrentLabel(): string {
             return entry.currentLabel;
         }
     }
-    const p = getImportProgress();
-    if (p === null) return "";
-    if (p.currentLabel.length > 0) return p.currentLabel;
-    if (p.phaseLabel.length > 0) return p.phaseLabel;
+    if (p !== null && p.current !== null && p.current.label.length > 0) {
+        return p.current.label;
+    }
     return "working";
 }
 
@@ -1006,11 +1013,11 @@ function shortSource(p: string): string {
     return slash < 0 ? norm : norm.substring(slash + 1);
 }
 
-function phaseSegment(weight: number, fraction: number, color: number): Element {
+function phaseSegment(widthFactor: number, fraction: number, color: number): Element {
     return Container({
         style: {
             direction: "row",
-            width: { kind: "grow", factor: Math.max(0.0001, weight) },
+            width: { kind: "grow", factor: Math.max(0.0001, widthFactor) },
             height: { kind: "grow" },
         },
         children: [
@@ -1062,9 +1069,6 @@ function queueRowMiniBar(item: QueueItem): Element {
             children: [],
         });
     }
-    // current — three phase segments side-by-side, each filled per its
-    // own fraction. Widths are proportional to phase budget so a hydrate-
-    // heavy importable shows a wider purple region.
     return Container({
         style: {
             direction: "row",
@@ -1072,9 +1076,9 @@ function queueRowMiniBar(item: QueueItem): Element {
             height: { kind: "px", value: 2 },
         },
         children: [
-            phaseSegment(state.readWeight, state.readFraction, PHASE_READING),
-            phaseSegment(state.hydrateWeight, state.hydrateFraction, PHASE_HYDRATING),
-            phaseSegment(state.applyWeight, state.applyFraction, PHASE_APPLYING),
+            phaseSegment(state.readWidth, state.readFraction, PHASE_READING),
+            phaseSegment(state.hydrateWidth, state.hydrateFraction, PHASE_HYDRATING),
+            phaseSegment(state.applyWidth, state.applyFraction, PHASE_APPLYING),
         ],
     });
 }
@@ -1285,38 +1289,42 @@ const PROGRESS_BAR_H = 6;
 
 function progressPhaseColor(): number {
     const p = getImportProgress();
-    if (p === null) return COLOR_BAR_FG;
-    const phase = p.phase === "diffing" ? "applying" : p.phase;
-    if (phase === "reading") return PHASE_READING;
-    if (phase === "hydrating") return PHASE_HYDRATING;
-    if (phase === "applying") return PHASE_APPLYING;
+    if (p === null || p.current === null) return COLOR_BAR_FG;
+    if (p.current.phase === "reading") return PHASE_READING;
+    if (p.current.phase === "hydrating") return PHASE_HYDRATING;
+    if (p.current.phase === "applying") return PHASE_APPLYING;
     return COLOR_BAR_FG;
 }
 
 function currentImportablePhaseSegments(p: NonNullable<ReturnType<typeof getImportProgress>>): Child[] {
-    const pb = p.phaseBudget;
-    if (pb === null) return [];
-    const total = Math.max(1, pb.readPart + pb.hydratePart + pb.applyPart);
-    const within = Math.max(0, p.estimatedCompleted - p.weightCompleted);
-    const readDone = Math.min(pb.readPart, within);
+    const current = p.current;
+    if (current === null) return [];
+    const units = current.phaseUnits;
+    const total = Math.max(1, units.reading + units.hydrating + units.applying);
+    const within = Math.max(0, current.completedUnits);
+    const readDone = Math.min(units.reading, within);
     const hydrateDone = Math.min(
-        pb.hydratePart,
-        Math.max(0, within - pb.readPart)
+        units.hydrating,
+        Math.max(0, within - units.reading)
     );
     const applyDone = Math.min(
-        pb.applyPart,
-        Math.max(0, within - pb.readPart - pb.hydratePart)
+        units.applying,
+        Math.max(0, within - units.reading - units.hydrating)
     );
     return [
-        phaseSegment(pb.readPart / total, pb.readPart > 0 ? readDone / pb.readPart : 1, PHASE_READING),
         phaseSegment(
-            pb.hydratePart / total,
-            pb.hydratePart > 0 ? hydrateDone / pb.hydratePart : 1,
+            units.reading / total,
+            units.reading > 0 ? readDone / units.reading : 1,
+            PHASE_READING
+        ),
+        phaseSegment(
+            units.hydrating / total,
+            units.hydrating > 0 ? hydrateDone / units.hydrating : 1,
             PHASE_HYDRATING
         ),
         phaseSegment(
-            pb.applyPart / total,
-            pb.applyPart > 0 ? applyDone / pb.applyPart : 0,
+            units.applying / total,
+            units.applying > 0 ? applyDone / units.applying : 0,
             PHASE_APPLYING
         ),
     ];
@@ -1332,11 +1340,8 @@ function progressBar(): Element {
         },
         children: () => {
             const p = getImportProgress();
-            if (p === null || p.weightTotal <= 0) return [];
-            // If we don't have per-importable weights (synthetic events
-            // like the diff-demo), fall back to the simple single-fill
-            // bar so we don't render an empty bar.
-            if (p.weights.length === 0) {
+            if (p === null || p.totalUnits <= 0) return [];
+            if (p.rows.length === 0) {
                 const ratio = getImportProgressFraction();
                 return [
                     Container({
@@ -1356,46 +1361,27 @@ function progressBar(): Element {
                     }),
                 ];
             }
-            // Per-importable segments. Each segment's width is proportional
-            // to its initial weight estimate; fill is solid green for done
-            // importables, partially filled for the current one, empty for
-            // queued. 1px dark dividers between segments mark importable
-            // boundaries so you can see roughly where each one will land.
-            //
-            // Refinement: when the current importable's *live* weight
-            // (post-diff `phaseBudget.total`) exceeds its initial cache-
-            // aware estimate, widen its segment to match. Without this,
-            // the bar would jump from e.g. 20% → 90% as we finish the
-            // prior importable, because cache underestimated how much
-            // work the next one would take. Completed segments keep their
-            // initial widths — refining them too would jiggle the layout.
-            const liveWeights = p.weights.slice();
-            if (p.orderIndex >= 0 && p.orderIndex < liveWeights.length) {
-                liveWeights[p.orderIndex] = Math.max(
-                    p.weights[p.orderIndex],
-                    p.weightCurrent
-                );
-            }
-            let totalWeight = 0;
-            for (let i = 0; i < liveWeights.length; i++) totalWeight += liveWeights[i];
-            if (totalWeight <= 0) totalWeight = 1;
+            let rowUnitsTotal = 0;
+            for (let i = 0; i < p.rows.length; i++) rowUnitsTotal += p.rows[i].units;
+            if (rowUnitsTotal <= 0) rowUnitsTotal = 1;
             const out: Child[] = [];
-            for (let i = 0; i < liveWeights.length; i++) {
-                const w = liveWeights[i];
-                const flexFactor = Math.max(0.0001, w / totalWeight);
+            for (let i = 0; i < p.rows.length; i++) {
+                const row = p.rows[i];
+                const w = row.units;
+                const flexFactor = Math.max(0.0001, w / rowUnitsTotal);
                 let fill: number;
-                if (i < p.completed) {
+                if (row.status === "imported" || row.status === "skipped") {
                     fill = 1;
-                } else if (i === p.orderIndex) {
-                    const within =
-                        p.estimatedCompleted - p.weightCompleted;
-                    const denom = Math.max(0.0001, liveWeights[p.orderIndex]);
-                    fill = Math.min(1, Math.max(0, within / denom));
+                } else if (p.current !== null && row.key === p.current.key) {
+                    const denom = Math.max(0.0001, p.current.totalUnits);
+                    fill = Math.min(1, Math.max(0, p.current.completedUnits / denom));
                 } else {
                     fill = 0;
                 }
                 const currentPhaseSegments =
-                    i === p.orderIndex ? currentImportablePhaseSegments(p) : [];
+                    p.current !== null && row.key === p.current.key
+                        ? currentImportablePhaseSegments(p)
+                        : [];
                 out.push(
                     Container({
                         style: {
@@ -1411,7 +1397,10 @@ function progressBar(): Element {
                                           style: {
                                               width: { kind: "grow", factor: Math.max(0.0001, fill) },
                                               height: { kind: "grow" },
-                                              background: i === p.orderIndex ? progressPhaseColor() : COLOR_BAR_FG,
+                                              background:
+                                                  p.current !== null && row.key === p.current.key
+                                                      ? progressPhaseColor()
+                                                      : COLOR_BAR_FG,
                                           },
                                           children: [],
                                       }),
@@ -1425,7 +1414,7 @@ function progressBar(): Element {
                                   ],
                     })
                 );
-                if (i < liveWeights.length - 1) {
+                if (i < p.rows.length - 1) {
                     out.push(
                         Container({
                             style: {
@@ -1450,13 +1439,14 @@ function capitalizePhase(phase: string): string {
 
 function currentPhaseEtaText(): string {
     const p = getImportProgress();
-    if (p === null) return "";
-    const phase = p.phase === "diffing" ? "applying" : p.phase;
+    if (p === null || p.current === null) return "";
     const secs = getCurrentPhaseEtaSeconds();
     if (secs === null || secs <= 0) return "";
-    if (phase === "reading") return `${formatEtaSeconds(secs)} left reading`;
-    if (phase === "hydrating") return `${formatEtaSeconds(secs)} left hydrating`;
-    if (phase === "applying") return `${formatEtaSeconds(secs)} left applying`;
+    if (p.current.phase === "reading") return `${formatEtaSeconds(secs)} left reading`;
+    if (p.current.phase === "hydrating") {
+        return `${formatEtaSeconds(secs)} left hydrating`;
+    }
+    if (p.current.phase === "applying") return `${formatEtaSeconds(secs)} left applying`;
     return "";
 }
 
@@ -1496,6 +1486,16 @@ function liveImporterPanel(): Element {
                     }),
                 ];
             }
+            const current = p.current;
+            let currentNumber = p.completedImportables + 1;
+            if (current !== null) {
+                for (let i = 0; i < p.rows.length; i++) {
+                    if (p.rows[i].key === current.key) {
+                        currentNumber = i + 1;
+                        break;
+                    }
+                }
+            }
             return [
                 Col({
                     style: { gap: 3, width: { kind: "grow" } },
@@ -1503,14 +1503,18 @@ function liveImporterPanel(): Element {
                         // WHO — which importable (1-of-N) we're working on.
                         Text({
                             text: () =>
-                                `Importable ${p.completed + 1} of ${p.total} · ${p.currentIdentity}`,
+                                current === null
+                                    ? `Importable ${p.completedImportables} of ${p.totalImportables}`
+                                    : `Importable ${currentNumber} of ${p.totalImportables} · ${current.identity}`,
                             color: COLOR_TEXT,
                         }),
                         // WHAT — capitalized phase + the specific action label,
                         // bold via §l so it's the most visible line.
                         Text({
                             text: () =>
-                                `§l${capitalizePhase(p.phase)}: ${progressCurrentLabel()}`,
+                                current === null
+                                    ? `§lDone`
+                                    : `§l${capitalizePhase(current.phase)}: ${progressCurrentLabel()}`,
                             color: COLOR_TEXT,
                         }),
                         // HOW FAR (in this importable) — step counter +
@@ -1521,39 +1525,41 @@ function liveImporterPanel(): Element {
                         Text({
                             text: () => {
                                 const prog = getImportProgress();
-                                if (prog === null) return "";
+                                if (prog === null || prog.current === null) return "";
+                                const currentProgress = prog.current;
                                 const parts: string[] = [];
                                 const isActionListPhase =
-                                    prog.phase === "reading" ||
-                                    prog.phase === "hydrating" ||
-                                    prog.phase === "diffing" ||
-                                    prog.phase === "applying";
-                                if (isActionListPhase && prog.unitTotal > 1) {
-                                    if (prog.phase === "reading") {
-                                        parts.push(`${prog.unitCompleted} read so far`);
-                                    } else if (prog.phase === "hydrating") {
+                                    currentProgress.phase === "reading" ||
+                                    currentProgress.phase === "hydrating" ||
+                                    currentProgress.phase === "applying";
+                                const unitTotal = currentProgress.unitTotal ?? 0;
+                                const unitCompleted = currentProgress.unitCompleted ?? 0;
+                                if (isActionListPhase && unitTotal > 1) {
+                                    if (currentProgress.phase === "reading") {
+                                        parts.push(`${unitCompleted} read so far`);
+                                    } else if (currentProgress.phase === "hydrating") {
                                         parts.push(
-                                            `${prog.unitCompleted} of ${prog.unitTotal} nested reads`
+                                            `${unitCompleted} of ${unitTotal} nested reads`
                                         );
-                                    } else if (prog.phase === "applying") {
+                                    } else if (currentProgress.phase === "applying") {
                                         if (
-                                            prog.parentUnitCompleted !== undefined &&
-                                            prog.parentUnitTotal !== undefined
+                                            currentProgress.parentUnitCompleted !== undefined &&
+                                            currentProgress.parentUnitTotal !== undefined
                                         ) {
                                             parts.push(
-                                                `operation ${prog.parentUnitCompleted} of ${prog.parentUnitTotal}`
+                                                `operation ${currentProgress.parentUnitCompleted} of ${currentProgress.parentUnitTotal}`
                                             );
                                             parts.push(
-                                                `nested operation ${prog.unitCompleted} of ${prog.unitTotal}`
+                                                `nested operation ${unitCompleted} of ${unitTotal}`
                                             );
                                         } else {
                                             parts.push(
-                                                `operation ${prog.unitCompleted} of ${prog.unitTotal}`
+                                                `operation ${unitCompleted} of ${unitTotal}`
                                             );
                                         }
                                     } else {
                                         parts.push(
-                                            `step ${prog.unitCompleted} of ${prog.unitTotal}`
+                                            `step ${unitCompleted} of ${unitTotal}`
                                         );
                                     }
                                 }

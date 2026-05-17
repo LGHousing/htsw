@@ -4,29 +4,22 @@ import TaskContext from "../../tasks/context";
 import { type ItemRegistry } from "../../importables/itemRegistry";
 import type { ObservedConditionSlot } from "../types";
 import type { ActionListProgressSink } from "../progress/types";
-import { diffConditionList } from "./diff";
+import { currentConditionListFromSlots, diffConditionList } from "./diff";
 import { readConditionList } from "./readList";
 import {
     applyConditionListDiff,
     logConditionSyncState,
 } from "./applyDiff";
+import {
+    conditionListReadUnits,
+    estimateConditionListPhaseUnits,
+    phaseUnitsFromParts,
+} from "../progress/costs";
 
 export type SyncConditionListOptions = {
-    /**
-     * Pre-read observed list to use instead of reading from the menu.
-     * Mirrors `SyncActionListOptions.observed`.
-     */
     observed?: ObservedConditionSlot[];
     itemRegistry?: ItemRegistry;
-    /**
-     * Last-known cached state of this condition list — typically the
-     * observed conditions on the parent CONDITIONAL action.
-     */
-    cached?: readonly Condition[];
-    /**
-     * Progress sink that receives one event per condition operation
-     * during the apply phase.
-     */
+    knownCurrent?: ReadonlyArray<Condition | null>;
     onProgress?: ActionListProgressSink;
 };
 
@@ -39,19 +32,48 @@ export async function syncConditionList(
     desired: Condition[],
     options?: SyncConditionListOptions
 ): Promise<SyncConditionListResult> {
+    const phaseUnits = estimateConditionListPhaseUnits(
+        desired,
+        options?.knownCurrent
+    );
+    const progress = options?.onProgress;
+    progress?.({
+        phase: "reading",
+        phaseLabel: "reading conditions",
+        unitCompleted: 0,
+        unitTotal: 1,
+        completedUnits: 0,
+        totalUnits: phaseUnits.total,
+        phaseUnits: phaseUnitsFromParts(phaseUnits),
+    });
     const observed =
         options?.observed ??
         (await readConditionList(ctx, { itemRegistry: options?.itemRegistry }));
-    const diff = diffConditionList(observed, desired);
+    const readUnits = conditionListReadUnits(observed.length);
+    if (readUnits > phaseUnits.readPart) {
+        phaseUnits.readPart = readUnits;
+        phaseUnits.total =
+            phaseUnits.readPart + phaseUnits.hydratePart + phaseUnits.applyPart;
+    }
+    progress?.({
+        phase: "reading",
+        phaseLabel: "read conditions",
+        unitCompleted: 1,
+        unitTotal: 1,
+        completedUnits: phaseUnits.readPart,
+        totalUnits: phaseUnits.total,
+        phaseUnits: phaseUnitsFromParts(phaseUnits),
+    });
+    const diff = diffConditionList(currentConditionListFromSlots(observed), desired);
     logConditionSyncState(ctx, diff);
-    const progress = options?.onProgress;
 
     await applyConditionListDiff(
         ctx,
         observed,
         diff,
         options?.itemRegistry,
-        progress
+        progress,
+        phaseUnits
     );
     return { usedObserved: observed };
 }

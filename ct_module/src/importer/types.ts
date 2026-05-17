@@ -93,22 +93,50 @@ export type ObservedConditionSlot = {
     condition: Condition | null;
 };
 
+export type CurrentActionListEntry = {
+    entryId: number;
+    index: number;
+    action: Observed<Action> | null;
+    nestedReadState?: NestedReadState;
+    nestedSummaries?: NestedSummaries;
+};
+
+export type CurrentConditionListEntry = {
+    entryId: number;
+    index: number;
+    condition: Condition | null;
+};
+
 export type NestedListDiff =
     | { prop: "conditions"; diff: ConditionListDiff }
     | { prop: "ifActions" | "elseActions" | "actions"; diff: ActionListDiff };
 
 export type ActionListOperation =
-    | { kind: "move"; observed: ObservedActionSlot; toIndex: number; action: Action }
+    | {
+          kind: "move";
+          entryId: number;
+          fromIndex: number;
+          toIndex: number;
+          action: Action;
+      }
     | {
           kind: "edit";
-          observed: ObservedActionSlot;
+          entryId: number;
+          fromIndex: number;
+          desiredIndex: number;
+          currentAction: Observed<Action>;
           desired: Action;
           noteOnly: boolean;
           noteDiffers: boolean;
           nestedDiffs: NestedListDiff[];
       }
-    | { kind: "add"; desired: Action; toIndex: number }
-    | { kind: "delete"; observed: ObservedActionSlot };
+    | { kind: "add"; desiredIndex: number; desired: Action; toIndex: number }
+    | {
+          kind: "delete";
+          entryId: number;
+          fromIndex: number;
+          currentAction: Observed<Action> | null;
+      };
 
 export type ActionListDiff = {
     operations: ActionListOperation[];
@@ -125,12 +153,17 @@ export type ActionListDiff = {
 export type ConditionListOperation =
     | {
           kind: "edit";
-          observed: ObservedConditionSlot;
+          entryId: number;
+          currentCondition: Condition;
           desired: Condition;
           noteOnly: boolean;
       }
     | { kind: "add"; desired: Condition }
-    | { kind: "delete"; observed: ObservedConditionSlot };
+    | {
+          kind: "delete";
+          entryId: number;
+          currentCondition: Condition | null;
+      };
 
 export type ConditionListDiff = {
     operations: ConditionListOperation[];

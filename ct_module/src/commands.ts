@@ -11,11 +11,8 @@ import { S2FPacketSetSlot } from "./utils/packets";
 import { FileSystemFileLoader } from "./utils/files";
 import { commandKnowledge } from "./knowledge/commands";
 import { toggleHtswGui, armHtswGuiDebug } from "./gui/overlay";
-import { runDiffDemo } from "./gui/popovers/diff-demo";
 import {
-    getPhaseStats,
     getTimingStats,
-    resetPhaseStats,
     resetTimingStats,
 } from "./importer/progress/timing";
 
@@ -89,11 +86,6 @@ function commandHtsw(args: string[]) {
         return;
     }
 
-    if (args.length > 0 && args[0] === "diff-demo") {
-        runDiffDemo();
-        return;
-    }
-
     ChatLib.chat(`&7${chatSeparator()}`);
     const title = `&e&lHTSW &f&l${VERSION}`;
     ChatLib.chat(`${ChatLib.getCenteredText(title)}`);
@@ -112,8 +104,7 @@ function commandHtsw(args: string[]) {
 function commandEta(args: string[]): void {
     if (args.length > 0 && (args[0] === "reset" || args[0] === "clear")) {
         resetTimingStats();
-        resetPhaseStats();
-        ChatLib.chat("&7[eta] timing samples + phase stats reset");
+        ChatLib.chat("&7[eta] timing samples reset");
         return;
     }
 
@@ -122,34 +113,7 @@ function commandEta(args: string[]): void {
         return;
     }
 
-    printPhaseStats();
-    ChatLib.chat("");
     printOpKindStats();
-}
-
-function printPhaseStats(): void {
-    // Diffing is in-process compute (no menu round-trips, ~1-5ms) — not
-    // tracked in phaseStats. Only reading/hydrating/applying matter for
-    // ETA calibration.
-    const phases = ["reading", "hydrating", "applying"] as const;
-    ChatLib.chat("&7[eta] per-phase ms/budget-unit (measured)");
-    const phaseStats = getPhaseStats();
-    let any = false;
-    for (let i = 0; i < phases.length; i++) {
-        const ph = phases[i];
-        const entry = phaseStats[ph];
-        if (entry === undefined || entry.totalBudgetUnits <= 0) {
-            ChatLib.chat(`&7  ${ph}: &8(no samples)`);
-            continue;
-        }
-        any = true;
-        ChatLib.chat(
-            `&7  ${ph}: &f${entry.msPerBudgetUnit.toFixed(1)}ms/u &7(${entry.totalMs.toFixed(0)}ms over ${entry.totalBudgetUnits.toFixed(2)}u)`
-        );
-    }
-    if (!any) {
-        ChatLib.chat("&7  (run an import to gather data, then re-run /htsw eta)");
-    }
 }
 
 function printOpKindStats(): void {
@@ -167,7 +131,7 @@ function printOpKindStats(): void {
         "reorderStep",
         "sleep1000",
     ];
-    ChatLib.chat("&7[eta] per-op-kind ms/budget-unit");
+    ChatLib.chat("&7[eta] per-op-kind ms/unit");
     let printed = false;
     for (let i = 0; i < kinds.length; i++) {
         const kind = kinds[i];
@@ -187,10 +151,8 @@ function printOpKindStats(): void {
 
 function dumpEtaToFile(): void {
     const stats = getTimingStats();
-    const phaseStats = getPhaseStats();
     const dump = {
         capturedAt: new Date().toISOString(),
-        perPhase: phaseStats,
         perOpKind: stats,
     };
     const path = `./htsw/eta-${Date.now()}.json`;

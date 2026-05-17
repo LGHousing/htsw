@@ -8,7 +8,7 @@ import type {
     ObservedActionSlot,
 } from "../types";
 import type { ActionListProgressSink } from "../progress/types";
-import { diffActionList } from "./diff";
+import { currentActionListFromSlots, diffActionList } from "./diff";
 import { applyActionListDiff } from "./applyDiff";
 import {
     canonicalizeActionItemName,
@@ -16,7 +16,7 @@ import {
     readActionList,
 } from "./readList";
 import { actionLogLabel, editDiffSummary } from "./log";
-import { estimateActionListPhaseBudget } from "../progress/costs";
+import { estimateActionListPhaseUnits } from "../progress/costs";
 
 export type SyncActionListOptions = {
     /**
@@ -33,14 +33,7 @@ export type SyncActionListOptions = {
     onProgress?: ActionListProgressSink;
     /** Source path prefix for nested lists, e.g. `4.ifActions`. */
     pathPrefix?: string;
-    /**
-     * Last-known cached state of this action list, if the knowledge cache
-     * has a snapshot for this importable. Used to seed `phaseBudget` with
-     * realistic read + hydrate + apply estimates — see
-     * `estimateActionListPhaseBudget`. Omit (or pass `undefined`) when no
-     * cache exists; the budget then assumes an empty housing.
-     */
-    cached?: readonly Action[];
+    knownCurrent?: readonly Action[];
 };
 
 export type SyncActionListResult = {
@@ -57,17 +50,8 @@ export async function syncActionList(
     desired: Action[],
     options?: SyncActionListOptions
 ): Promise<SyncActionListResult> {
-    // Single mutable phase budget shared across read + apply so all four
-    // phases emit estimatedCompleted/Total against the same scale. Both
-    // sides update its parts in place when actual work exceeds estimate.
-    // Cache priority: explicit `options.cached` wins, else fall back to
-    // the cached snapshot already plumbed via `options.trust` (every
-    // typed import builds this via `actionListTrustFor` whenever a
-    // knowledge entry exists for the importable, independent of whether
-    // trust-mode is actually enabled). Result: the phase budget uses
-    // real cached state whenever we have any.
-    const cachedForPhase = options?.cached ?? options?.trust?.cachedActions;
-    const phaseBudget = estimateActionListPhaseBudget(desired, cachedForPhase);
+    const knownCurrent = options?.knownCurrent ?? options?.trust?.cachedActions;
+    const phaseUnits = estimateActionListPhaseUnits(desired, knownCurrent);
     const progress = options?.onProgress;
     const observed =
         options?.observed ??
@@ -77,7 +61,7 @@ export async function syncActionList(
             itemRegistry: options?.itemRegistry,
             trust: options?.trust,
             onProgress: progress,
-            phaseBudget,
+            phaseUnits,
         }));
     canonicalizeObservedActionItemNames(observed, options?.itemRegistry);
     if (options?.itemRegistry) {
@@ -85,7 +69,7 @@ export async function syncActionList(
             canonicalizeActionItemName(action, options.itemRegistry);
         }
     }
-    const diff = diffActionList(observed, desired);
+    const diff = diffActionList(currentActionListFromSlots(observed), desired);
     logActionSyncState(ctx, diff);
     await applyActionListDiff(
         ctx,
@@ -95,7 +79,7 @@ export async function syncActionList(
         options?.itemRegistry,
         progress,
         options?.pathPrefix,
-        phaseBudget
+        phaseUnits
     );
     return { usedObserved: observed };
 }
@@ -119,17 +103,17 @@ function logActionSyncState(ctx: TaskContext, diff: ActionListDiff): void {
         switch (op.kind) {
             case "delete":
                 ctx.displayMessage(
-                    `&7  &c-DEL [${op.observed.index}] ${actionLogLabel(op.observed.action)}`
+                    `&7  &c-DEL [${op.fromIndex}] ${actionLogLabel(op.currentAction)}`
                 );
                 break;
             case "edit":
                 if (op.noteOnly) {
                     ctx.displayMessage(
-                        `&7  &6~NOTE [${op.observed.index}] ${actionLogLabel(op.observed.action)}`
+                        `&7  &6~NOTE [${op.fromIndex}] ${actionLogLabel(op.currentAction)}`
                     );
                 } else {
                     ctx.displayMessage(
-                        `&7  &6~EDIT [${op.observed.index}] ${actionLogLabel(op.observed.action)}: ${editDiffSummary(op)}`
+                        `&7  &6~EDIT [${op.fromIndex}] ${actionLogLabel(op.currentAction)}: ${editDiffSummary(op)}`
                     );
                 }
                 break;
@@ -140,7 +124,7 @@ function logActionSyncState(ctx: TaskContext, diff: ActionListDiff): void {
                 break;
             case "move":
                 ctx.displayMessage(
-                    `&7  &e>MOV [${op.observed.index} -> ${op.toIndex}] ${actionLogLabel(op.action)}`
+                    `&7  &e>MOV [${op.fromIndex} -> ${op.toIndex}] ${actionLogLabel(op.action)}`
                 );
                 break;
         }
