@@ -620,8 +620,15 @@ function printActionDropItem(
             // Defaults for missing positional fields. The parser order is:
             // location, dropNaturally, disableMerging, prioritizePlayer,
             // inventoryFallback, despawnDurationTicks, pickupDelayTicks.
+            //
+            // Location uses `null` (not `current_location`) when undefined
+            // because the housing "Not Set" state is distinct from
+            // "Current Location" — same convention `printPlaySound` uses.
+            // The parser recognizes `null` here as "skip" rather than as
+            // an explicit location, leaving location undefined on
+            // round-trip.
             switch (i) {
-                case 0: parts.push(printLocation({ type: "Current Location" })); break;
+                case 0: parts.push("null"); break;
                 case 1: parts.push(printBoolean(true)); break;
                 case 2: parts.push(printBoolean(false)); break;
                 case 3: parts.push(printBoolean(false)); break;

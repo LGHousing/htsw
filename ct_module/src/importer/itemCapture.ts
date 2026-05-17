@@ -1,6 +1,8 @@
+import * as htsw from "htsw";
+
 import TaskContext from "../tasks/context";
 import { canonicalSlug } from "../exporter/paths";
-import { getItemFromSnbt } from "../utils/nbt";
+import { getItemFromSnbt, itemToHtswTag } from "../utils/nbt";
 import { removedFormatting } from "../utils/helpers";
 import { clickGoBack, timedWaitForMenu } from "./helpers";
 import {
@@ -131,10 +133,17 @@ export function snapshotInventory(): InventorySnapshot {
             snapshot.push({ slotId: i, nbt: null, count: 0 });
             continue;
         }
-        const nbt = stack.getRawNBT();
+        // Walk the MC NBT graph structurally instead of going through
+        // `getRawNBT()`. The structured walk emits canonical SNBT (sandy's
+        // printer format) that round-trips cleanly. `getRawNBT()` uses
+        // `NBTTagCompound.toString()` which in 1.8.9 produces a debugging
+        // list format (`[0:val,1:val]`) that neither HTSW's parser nor
+        // MC's `JsonToNBT` will parse — fine for compare-equality between
+        // before/after snapshots, but fragile when used downstream.
+        const canonical = snbtFromItem(stack, { pretty: false });
         snapshot.push({
             slotId: i,
-            nbt: typeof nbt === "string" ? nbt : null,
+            nbt: canonical,
             count: getStackCount(stack),
         });
     }
@@ -152,27 +161,104 @@ export function isInventoryFull(): boolean {
 }
 
 /**
- * Find the inventory slot whose contents changed between `before` and
- * `after`. Returns the captured NBT, or null if no change was observed.
+ * Find ANY inventory slot whose contents changed between `before` and
+ * `after`, and produce the captured NBT with the `Count` field rewritten
+ * to `actionItemCount` (read directly from the housing "Current Item"
+ * slot before the click). Returns null if no change was observed.
  *
- * When the server stacks the copy onto an existing matching slot, the
- * NBT at that slot is unchanged (Minecraft 1.8.9 stacking only merges if
- * NBTs already match, so the existing NBT IS the housing NBT). Otherwise
- * the copy lands in a previously-empty slot.
+ * Why we don't need delta math: the Current Item slot's stack size IS
+ * the count the action gives — read from the source of truth directly,
+ * not inferred from inventory side effects. So for a `diamond × 5`
+ * action that lands in 2 slots due to stacking + overflow, we don't
+ * care which slots changed or by how much; we just need ONE slot's NBT
+ * (the housing-tagged version) and stamp Count:5 on it.
+ *
+ * Any changed slot works as the NBT source — Minecraft's stacking rule
+ * guarantees they all share the same NBT identity. We pick the first.
  */
 function diffForCapture(
     before: InventorySnapshot,
-    after: InventorySnapshot
+    after: InventorySnapshot,
+    actionItemCount: number
 ): { snbt: string } | null {
     for (let i = 0; i < before.length; i++) {
         const b = before[i];
         const a = after[i];
         if (a === undefined) continue;
-        if (b.nbt === a.nbt && b.count === a.count) continue;
         if (a.nbt === null) continue;
-        return { snbt: a.nbt };
+        if (a.nbt === b.nbt && a.count === b.count) continue;
+        return { snbt: rewriteSnbtCount(a.nbt, actionItemCount) };
     }
     return null;
+}
+
+/**
+ * Replace the root-level `Count:Nb` field in an item SNBT string with
+ * `Count:<newCount>b`. ItemStack SNBT always has Count at the root.
+ *
+ * Stays inside sandy's canonical pipeline: parse with `parseSnbtText`,
+ * mutate the Tag, re-print with `printSnbt`. The earlier MC-NBT path
+ * (`JsonToNBT.parse` → `setByte` → `toString`) corrupted the output by
+ * routing through `NBTTagCompound.toString()`, which in 1.8.9 emits
+ * the debugging `[0:val]` list format — undoing every bit of cleanup
+ * `snbtFromItem` had just done with the structured walk.
+ *
+ * Falls back to a regex replacement if the parse fails for any reason
+ * (shouldn't happen for canonical input).
+ */
+function rewriteSnbtCount(snbt: string, newCount: number): string {
+    try {
+        const tag = htsw.nbt.parseSnbtText(snbt);
+        if (tag.type === "compound") {
+            (tag.value as Record<string, unknown>).Count = {
+                type: "byte",
+                value: newCount,
+            };
+            return htsw.nbt.printSnbt(tag, { pretty: false });
+        }
+    } catch (_error) {
+        // fall through
+    }
+    return snbt.replace(/(^|[{,])Count:-?\d+b/, `$1Count:${newCount}b`);
+}
+
+/**
+ * Pretty-print a canonical SNBT string into the multi-line, indented
+ * form HTSW uses for hand-edited examples. Parses with sandy's holy
+ * parser then re-emits via the same printer.
+ *
+ * Pre-condition: the input must already be canonical SNBT (the format
+ * `htsw.nbt.printSnbt` produces, or hand-written `.snbt` files). DO
+ * NOT pass raw `Item.getRawNBT()` output directly — 1.8.9's NBT
+ * `toString()` uses a debugging `[0:val,1:val]` list format that
+ * neither HTSW's parser nor MC's own `JsonToNBT` will parse back. Use
+ * `prettySnbtFromItem` instead, which goes through the structured
+ * walk in `utils/nbt.ts`.
+ *
+ * On parse failure (malformed input), falls back to the raw string so
+ * a write at least produces SOMETHING readable.
+ */
+export function prettySnbt(snbt: string): string {
+    try {
+        const tag = htsw.nbt.parseSnbtText(snbt);
+        return htsw.nbt.printSnbt(tag, { pretty: true });
+    } catch (_error) {
+        return snbt;
+    }
+}
+
+/**
+ * Produce canonical SNBT text (pretty or compact) directly from a CT
+ * `Item`. Walks the live MC NBT graph via `itemToHtswTag` rather than
+ * stringifying through `getRawNBT()`, so the output is genuinely
+ * canonical with no MC 1.8.9 `toString` quirks to clean up afterwards.
+ *
+ * Returns null if the item is missing/empty.
+ */
+export function snbtFromItem(item: Item, opts: { pretty: boolean }): string | null {
+    const tag = itemToHtswTag(item);
+    if (tag === null) return null;
+    return htsw.nbt.printSnbt(tag, { pretty: opts.pretty });
 }
 
 /**
@@ -240,6 +326,13 @@ export async function captureItemFromOpenActionField(
             await ctx.waitFor("tick");
         }
 
+        // The Current Item slot's stack size IS the count the action
+        // configures. The slot's own NBT is the housing UI overlay (not
+        // usable directly), but its stack size is real. Grab it before
+        // we click — once we click, the slot may be consumed or change
+        // state.
+        const actionItemCount = getStackCount(currentItemSlot.getItem());
+
         const before = snapshotInventory();
         currentItemSlot.click();
         try {
@@ -255,7 +348,7 @@ export async function captureItemFromOpenActionField(
         await ctx.waitFor("tick");
 
         const after = snapshotInventory();
-        const captured = diffForCapture(before, after);
+        const captured = diffForCapture(before, after, actionItemCount);
         if (captured === null) {
             ctx.displayMessage(
                 `&7[item-capture] &eNo inventory change for "${displayNameHint}".`

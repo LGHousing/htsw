@@ -14,6 +14,7 @@ import { getTimingStats, resetTimingStats } from "./importer/progress/timing";
 import { startImport } from "./gui/right-panel/import-actions";
 import { makeImportJsonQueueItem } from "./gui/state/queue";
 import { isTraceEnabled, setTraceEnabled } from "./importer/traceLog";
+import { resolveModuleRelativePath } from "./exporter/paths";
 
 function printCommandError(sm: SourceMap, err: unknown): void {
     if (err instanceof Diagnostic) {
@@ -362,7 +363,13 @@ function commandImport(args: string[]) {
     // hand off to startImport (which would otherwise log a less-friendly
     // error if the parse fails inside the task).
     const sm = new SourceMap(new FileSystemFileLoader());
-    const importPath = stripSurroundingQuotes(args.join(" "));
+    // Bare and simple-relative arg paths (`htswtest`, `htswtest/
+    // import.json`) resolve under the module's imports/ folder. Same
+    // rule /export uses, see resolveModuleRelativePath. Explicit `./`
+    // or absolute paths keep today's MC-root-relative semantics.
+    const importPath = resolveModuleRelativePath(
+        stripSurroundingQuotes(args.join(" "))
+    );
     let result: ReturnType<typeof parseImportablesResult>;
     try {
         result = parseImportablesResult(sm, importPath);

@@ -54,6 +54,7 @@ import {
 import { actionLogLabel } from "./log";
 import { waitIfStepPaused } from "../stepGate";
 import { traceEvent } from "../traceLog";
+import { isInExportSession } from "../../importables/exportSession";
 
 function readNestedSummaries(
     action: Observed<Action>,
@@ -211,17 +212,29 @@ export async function readActionList(
     // Nested action lists are mostly null at this point — they fill in
     // as `hydrateNestedActions` walks them below.
     //
-    // Gated to BOTH `kind: "sync"` AND no active writer:
-    //   - `kind: "sync"` rules out nested CONDITIONAL/RANDOM hydration
-    //     reads (which use `kind: "full"`) during the read phase.
-    //   - No active writer rules out the apply phase's nested
-    //     `syncActionList` calls — those ALSO use `kind: "sync"` but
-    //     run from inside a writer (`withWritingActionPath`). Without
-    //     this second guard, editing a CONDITIONAL would blow away the
-    //     model with the inner ifActions list mid-apply.
-    const isTopLevelImport =
+    // Gated so that nested recursive reads (inside CONDITIONAL/RANDOM
+    // bodies) and apply-phase reads don't blow away the live preview
+    // model with partial inner content. Two top-level entry points
+    // qualify:
+    //
+    //   - `/import` session: `kind: "sync"` with no active writer.
+    //     The first guard rules out nested CONDITIONAL/RANDOM hydration
+    //     reads (which use `kind: "full"` — different branch). The
+    //     second rules out the apply phase's nested `syncActionList`
+    //     calls — those ALSO use `kind: "sync"` but run inside
+    //     `withWritingActionPath`.
+    //
+    //   - `/export function` / `/export menu`: `kind: "full"` with
+    //     `mode.topLevel === true`. The exporter sets the flag
+    //     explicitly at its top-level call. Recursive full-mode reads
+    //     inside `readOpenConditional` / `readOpenRandom` omit it (it
+    //     defaults to false) so they self-identify as nested.
+    const isTopLevelSyncImport =
         mode.kind === "sync" && getCurrentWritingActionPath() === null;
-    if (isTopLevelImport) {
+    const isTopLevelExport =
+        mode.kind === "full" && mode.topLevel === true && isInExportSession();
+    const isTopLevelReadOperation = isTopLevelSyncImport || isTopLevelExport;
+    if (isTopLevelReadOperation) {
         emitObservedSnapshot(observed);
         // Trace: full top-level observed snapshot (with the still-null
         // nested entries — count is known from summaries even though
@@ -264,17 +277,18 @@ export async function readActionList(
         itemCaptures,
         progress,
         readEstimatedCompleted,
-        isTopLevelImport
+        isTopLevelReadOperation
     );
     canonicalizeObservedActionItemNames(observed, mode.itemRegistry);
     // Final snapshot after canonicalization. Only at the top level — a
     // recursive nested read would otherwise wipe the unrelated rest of
     // the model.
-    if (isTopLevelImport) {
+    if (isTopLevelReadOperation) {
         emitObservedSnapshot(observed);
         // Hydration is done — drop the read cursor before the diff
-        // planning fires so the blue ▶ doesn't ghost-stick onto the
-        // last-read line through the diff phase.
+        // planning (or export-write) phase fires so the blue ▶ doesn't
+        // ghost-stick onto the last-read line through whatever comes
+        // next.
         getActiveDiffSink()?.clearReading?.();
     }
 
@@ -406,7 +420,7 @@ async function hydrateNestedActions(
     itemCaptures?: ItemCaptureRegistry,
     progress?: ActionListProgressSink,
     baseEstimatedCompleted: number = 0,
-    isTopLevelImport: boolean = false
+    isTopLevelReadOperation: boolean = false
 ): Promise<void> {
     const listLength = observed.length;
     let completed = 0;
@@ -435,11 +449,11 @@ async function hydrateNestedActions(
         // would otherwise jump the cursor to inner indices that aren't
         // even rendered as their own lines yet. `entry.index` IS the
         // top-level source index when invoked from the top-level read.
-        if (isTopLevelImport && sinkRef !== null && sinkRef.setReading !== undefined) {
+        if (isTopLevelReadOperation && sinkRef !== null && sinkRef.setReading !== undefined) {
             sinkRef.setReading(String(entry.index), entryLabel);
         }
         const beforeBudget = hydrationEntryBudget(entry, propsToRead);
-        if (isTopLevelImport) {
+        if (isTopLevelReadOperation) {
             traceEvent("hydrate-entry-begin", {
                 index: entry.index,
                 actionType: entry.action?.type ?? null,
@@ -454,15 +468,15 @@ async function hydrateNestedActions(
             listLength,
             itemRegistry,
             itemCaptures,
-            isTopLevelImport ? observed : undefined
+            isTopLevelReadOperation ? observed : undefined
         );
         // After each top-level entry's hydration, push a fresh full
         // snapshot so the preview re-renders with the now-known
         // children AND the now-known conditions inside the conditional's
         // head line (a surgical nested-only emit would miss the head).
-        // The `isTopLevelImport` guard keeps nested writer-driven reads
+        // The `isTopLevelReadOperation` guard keeps nested writer-driven reads
         // from blowing away the model.
-        if (isTopLevelImport) {
+        if (isTopLevelReadOperation) {
             traceEvent("hydrate-entry-complete", {
                 index: entry.index,
                 actionAfter: entry.action,

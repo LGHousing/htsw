@@ -1,8 +1,13 @@
 import { TaskManager } from "../tasks/manager";
 import { exportImportable } from "../importables/exports";
 import { getCurrentHousingUuid } from "../knowledge";
-import { htslFilenameForFunctionExport } from "./paths";
+import {
+    defaultExportRoot,
+    htslFilenameForFunctionExport,
+    resolveModuleRelativePath,
+} from "./paths";
 import { chatSeparator, stripSurroundingQuotes } from "../utils/helpers";
+import { beginTraceRun, endTraceRun, setTraceImportable } from "../importer/traceLog";
 import { VERSION } from "htsw";
 
 export { exportImportable } from "../importables/exports";
@@ -37,7 +42,9 @@ function exportDestination(
     explicitPath: string | undefined
 ): { rootDir: string; importJsonPath: string } | null {
     if (explicitPath === undefined) return null;
-    const path = trimTrailingSlashes(explicitPath);
+    // Resolve under the module's imports/ folder for bare/simple-
+    // relative names. Same rule as /import, see resolveModuleRelativePath.
+    const path = resolveModuleRelativePath(trimTrailingSlashes(explicitPath));
     if (endsWithIgnoreCase(path, ".json")) {
         return { rootDir: dirname(path), importJsonPath: normalizeSlashes(path) };
     }
@@ -59,7 +66,7 @@ function printExportHelp(): void {
     ChatLib.chat("&7  [path] may be a directory or a specific import.json.");
     ChatLib.chat("&f/export menu <name> [path]");
     ChatLib.chat("&7  Reads a Hypixel menu and writes per-slot .snbt + import.json.");
-    ChatLib.chat("&7  Default path: ./htsw/exports/<housingUuid>/");
+    ChatLib.chat("&7  Default path: ./config/ChatTriggers/modules/HTSW/imports/<housingUuid>/");
     ChatLib.chat(`&7${chatSeparator()}`);
 }
 
@@ -93,7 +100,7 @@ function commandExport(args: string[]): void {
                 importJsonPath = explicitDestination.importJsonPath;
             } else {
                 const uuid = await getCurrentHousingUuid(ctx);
-                rootDir = `./htsw/exports/${uuid}`;
+                rootDir = defaultExportRoot(uuid);
                 importJsonPath = `${rootDir}/import.json`;
             }
 
@@ -102,14 +109,45 @@ function commandExport(args: string[]): void {
             const htslReference = filename;
 
             ctx.displayMessage(`&aExporting function '${name}'...`);
-            await exportImportable(ctx, {
-                type: "FUNCTION",
-                name,
-                importJsonPath,
-                htslPath,
-                htslReference,
-                rootDir,
+
+            // Open a trace run so detailed JSON events land in
+            // ./htsw/imports-trace/<timestamp>.json when /htsw trace is
+            // on. The "imports-trace" filename reflects the original
+            // import-side feature but the same machinery now captures
+            // export reads too — both go through readActionList.
+            const tracePath = beginTraceRun({
+                queueSize: 1,
+                sourcePath: htslPath,
+                trustMode: false,
             });
+            setTraceImportable(`FUNCTION:${name}`, {
+                type: "FUNCTION",
+                identity: name,
+                sourcePath: htslPath,
+            });
+
+            let imported = 0;
+            let failed = 0;
+            try {
+                await exportImportable(ctx, {
+                    type: "FUNCTION",
+                    name,
+                    importJsonPath,
+                    htslPath,
+                    htslReference,
+                    rootDir,
+                });
+                imported = 1;
+            } catch (err) {
+                failed = 1;
+                throw err;
+            } finally {
+                setTraceImportable(null);
+                const written = endTraceRun({ imported, skipped: 0, failed });
+                if (written !== null && tracePath !== null) {
+                    ctx.displayMessage(`&7[trace] &fwrote ${written}`);
+                }
+            }
         }).catch((err) => {
             ChatLib.chat(`&cExport failed: ${err}`);
         });
@@ -136,17 +174,43 @@ function commandExport(args: string[]): void {
                 importJsonPath = explicitDestination.importJsonPath;
             } else {
                 const uuid = await getCurrentHousingUuid(ctx);
-                rootDir = `./htsw/exports/${uuid}`;
+                rootDir = defaultExportRoot(uuid);
                 importJsonPath = `${rootDir}/import.json`;
             }
 
             ctx.displayMessage(`&aExporting menu '${name}'...`);
-            await exportImportable(ctx, {
-                type: "MENU",
-                name,
-                importJsonPath,
-                rootDir,
+
+            const tracePath = beginTraceRun({
+                queueSize: 1,
+                sourcePath: rootDir,
+                trustMode: false,
             });
+            setTraceImportable(`MENU:${name}`, {
+                type: "MENU",
+                identity: name,
+                sourcePath: rootDir,
+            });
+
+            let imported = 0;
+            let failed = 0;
+            try {
+                await exportImportable(ctx, {
+                    type: "MENU",
+                    name,
+                    importJsonPath,
+                    rootDir,
+                });
+                imported = 1;
+            } catch (err) {
+                failed = 1;
+                throw err;
+            } finally {
+                setTraceImportable(null);
+                const written = endTraceRun({ imported, skipped: 0, failed });
+                if (written !== null && tracePath !== null) {
+                    ctx.displayMessage(`&7[trace] &fwrote ${written}`);
+                }
+            }
         }).catch((err) => {
             ChatLib.chat(`&cExport failed: ${err}`);
         });

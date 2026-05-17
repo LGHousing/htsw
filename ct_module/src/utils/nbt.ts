@@ -1,4 +1,5 @@
 import type { Tag, TagCompound } from "htsw/nbt";
+import { Long } from "htsw";
 import { removedFormatting } from "./helpers";
 
 const NBTTagByte = Java.type("net.minecraft.nbt.NBTTagByte");
@@ -77,6 +78,145 @@ export function toMinecraftTag(tag: Tag): any {
 
 const ItemStack = Java.type("net.minecraft.item.ItemStack");
 const JsonToNBT = Java.type("net.minecraft.nbt.JsonToNBT");
+
+/**
+ * Convert a Minecraft NBT object (from the live MC NBT graph — e.g. an
+ * ItemStack's tag compound) into the HTSW `Tag` shape. Inverse of
+ * `toMinecraftTag` above.
+ *
+ * Walks via `getClass().getSimpleName()` to dispatch on tag type, then
+ * reads through 1.8.9's obfuscated accessors. The class-name approach
+ * avoids guessing at `instanceof` semantics in Rhino (which doesn't
+ * cleanly do JS `instanceof` against Java classes); the obfuscated
+ * accessors are the stable public API in 1.8.9.
+ *
+ * Use this instead of `getRawNBT()` + string parsing when you need
+ * round-trip-safe canonical NBT. `NBTTagList.toString()` in 1.8.9 emits
+ * a debugging-only `[0:val,1:val]` format that neither `JsonToNBT` nor
+ * HTSW's SNBT parser accept — walking the structured NBT directly
+ * sidesteps that quirk entirely.
+ */
+export function fromMinecraftTag(tag: any): Tag {
+    const kind = String(tag.getClass().getSimpleName());
+
+    if (kind === "NBTTagByte") {
+        return { type: "byte", value: tag.func_150290_f() };
+    }
+    if (kind === "NBTTagShort") {
+        return { type: "short", value: tag.func_150289_e() };
+    }
+    if (kind === "NBTTagInt") {
+        return { type: "int", value: tag.func_150287_d() };
+    }
+    if (kind === "NBTTagLong") {
+        // 1.8.9 returns a java.lang.Long (64-bit, doesn't fit in JS
+        // number safely). String-round-trip via htsw.Long preserves the
+        // full 64 bits and matches what htsw.nbt.printSnbt expects in
+        // a TagLong's value field.
+        const javaLong = tag.func_150291_c();
+        return { type: "long", value: Long.fromString(String(javaLong)) };
+    }
+    if (kind === "NBTTagFloat") {
+        return { type: "float", value: tag.func_150288_h() };
+    }
+    if (kind === "NBTTagDouble") {
+        return { type: "double", value: tag.func_150286_g() };
+    }
+    if (kind === "NBTTagString") {
+        return { type: "string", value: String(tag.func_150285_a_()) };
+    }
+    if (kind === "NBTTagByteArray") {
+        const arr = tag.func_150292_c();
+        const out: number[] = [];
+        for (let i = 0; i < arr.length; i++) out.push(arr[i]);
+        return { type: "byte_array", value: out };
+    }
+    if (kind === "NBTTagIntArray") {
+        const arr = tag.func_150302_c();
+        const out: number[] = [];
+        for (let i = 0; i < arr.length; i++) out.push(arr[i]);
+        return { type: "int_array", value: out };
+    }
+    if (kind === "NBTTagCompound") {
+        const value: Record<string, Tag | undefined> = {};
+        // getKeySet() / func_150296_c() — return type varies. Some MCP
+        // mappings give Set<String>, this CT build hands back a raw
+        // Java Object[] (`[Ljava.lang.Object;`). Rhino's Java bridge
+        // THROWS when you access a non-existent field/method on a
+        // Java instance (instead of returning undefined like JS would),
+        // so `typeof keys.toArray === "function"` would throw on an
+        // Object[]. Detect via try/catch instead.
+        const keys = tag.func_150296_c();
+        let keyArray: any;
+        try {
+            keyArray = keys.toArray();
+        } catch (_error) {
+            // No toArray method → it's already a Java array.
+            keyArray = keys;
+        }
+        const length: number = keyArray.length;
+        for (let i = 0; i < length; i++) {
+            const key = String(keyArray[i]);
+            const child = tag.func_74781_a(key); // getTag(key)
+            value[key] = fromMinecraftTag(child);
+        }
+        return { type: "compound", value };
+    }
+    if (kind === "NBTTagList") {
+        const count: number = tag.func_74745_c(); // tagCount()
+        const elements: Tag[] = [];
+        for (let i = 0; i < count; i++) {
+            // func_179238_g(i) → get(i) — returns the raw NBTBase at
+            // index i. Without copying first via func_74737_b (which
+            // returns a clone in some versions), some accessors return
+            // a stripped view; .get() is the canonical read.
+            const child = tag.func_179238_g(i);
+            elements.push(fromMinecraftTag(child));
+        }
+        if (elements.length === 0) {
+            // Empty list — use byte as the canonical "no element type
+            // yet" marker. The MC list still has a tagType but for the
+            // HTSW Tag shape it doesn't matter for empty.
+            return { type: "list", value: { type: "byte", value: [] } };
+        }
+        const elementType = elements[0].type;
+        // The language Tag shape models a list as
+        // { type: "list", value: { type: <elementType>, value: <innerValues> } }
+        // where innerValues is the array of raw values (not Tag wrappers)
+        // for that element type. Strip the wrappers from each element.
+        const innerValues: unknown[] = [];
+        for (const el of elements) {
+            innerValues.push((el as { value: unknown }).value);
+        }
+        return {
+            type: "list",
+            value: { type: elementType, value: innerValues } as Tag["value"],
+        } as Tag;
+    }
+
+    // NBTTagEnd or unknown — fall back to a placeholder string so
+    // serialization doesn't crash. Shouldn't happen for real item NBT.
+    return { type: "string", value: `<unknown NBT type ${kind}>` };
+}
+
+/**
+ * Convert a CT `Item` into the structured HTSW `Tag` shape by walking
+ * the underlying MC NBT graph. Goes via `ItemStack.writeToNBT` so the
+ * resulting Tag has the full stack metadata (`id`, `Count`, `Damage`,
+ * and optionally `tag`). Returns null if the item is missing/empty.
+ *
+ * Callers wanting SNBT text just feed this through
+ * `htsw.nbt.printSnbt(tag, options)` — pretty or compact.
+ */
+export function itemToHtswTag(item: Item): Tag | null {
+    const stack = item.getItemStack();
+    if (stack === null || stack === undefined) return null;
+    const compound = new NBTTagCompound();
+    // ItemStack.writeToNBT(NBTTagCompound) — populates with id, Damage,
+    // Count, and tag (if present). Returns the same compound.
+    stack.func_77955_b(compound);
+    return fromMinecraftTag(compound);
+}
 
 export function getItemFromNbt(nbt: Tag): Item {
     const mcTag = toMinecraftTag(normalizeItemNbtColorCodes(nbt));

@@ -109,9 +109,16 @@ export class Parser {
     }
 
     parseBoolean(): boolean {
+        // Use `if / else if`, NOT two separate `if`s. The lone-`if` form
+        // would greedily eat BOTH a `true` AND a following `false` because
+        // `eatIdent` advances the cursor on a match, so the second `if`
+        // would test the NEW current token rather than the same one. That
+        // bug silently halved the field count of any action whose source
+        // had two adjacent boolean fields with values `true` then `false`
+        // (e.g. DROP_ITEM with `true false ...`).
         let value;
         if (this.eatIdent("true")) value = true;
-        if (this.eatIdent("false")) value = false;
+        else if (this.eatIdent("false")) value = false;
         if (value === undefined) {
             throw Diagnostic.error("Expected true/false value")
                 .addPrimarySpan(this.token.span);

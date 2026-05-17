@@ -75,6 +75,16 @@ export type ActionListReadMode =
            * registry so a single export run dedups across the whole tree.
            */
           itemCaptures?: ItemCaptureRegistry;
+          /**
+           * Marks this `readActionList(...)` call as the OUTERMOST one in
+           * an `/export` operation. Nested recursive `kind: "full"` reads
+           * inside `readOpenConditional` / `readOpenRandom` MUST omit this
+           * (default false) so the live-preview animation hooks know not
+           * to re-emit top-level snapshots from inner lists. The exporter
+           * (`functions/export.ts`, `menus/export.ts`) sets this to true
+           * for its single top-level call.
+           */
+          topLevel?: boolean;
           onProgress?: ActionListProgressSink;
       }
     | {

@@ -19,8 +19,16 @@ import { quoteString, isPlaceholderOnly } from "./helpers";
  * `parseOption` normalizes by stripping spaces/underscores and lowercasing,
  * so any of `Custom_Coordinates`, `custom_coordinates`, `customcoordinates`
  * round-trip equivalently. We pick the canonical underscore form.
+ *
+ * Defensive against `undefined`/`null` because the export read path can
+ * produce actions whose enum lore field never matched a known label
+ * (e.g. a housing version we don't recognize, or a corrupt action). Rather
+ * than crashing the whole emit with "Cannot call method 'split' of
+ * undefined", we emit a visible `<unset>` placeholder so the operator
+ * sees exactly which field needs attention in the resulting `.htsl`.
  */
-export function printOption(option: string): string {
+export function printOption(option: string | undefined | null): string {
+    if (option === undefined || option === null) return "<unset>";
     // Use split/join instead of `replaceAll` — the language bundle is
     // consumed by ct_module which runs on a Rhino runtime targeting ES5.
     return option.split(" ").join("_");

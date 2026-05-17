@@ -3,6 +3,44 @@ import * as json from "jsonc-parser";
 import { encodeFilesystemComponent } from "../utils/filesystem";
 
 /**
+ * The module's `imports/` folder — the default workspace where HTSW
+ * users keep their `.htsl` projects. Both `/export` defaults and the
+ * relative-path resolution for `/import` anchor here so users can
+ * type bare project names like `htswtest` or `htswtest/import.json`
+ * and have them land where they expect.
+ *
+ * Matches the deploy path hardcoded in `recompile.ts` and
+ * `injectLong.ts`. If `install.py` ever ships under a different
+ * module name, this needs to change too.
+ */
+export const MODULE_IMPORTS_ROOT =
+    "./config/ChatTriggers/modules/HTSW/imports";
+
+/**
+ * Resolve a user-typed path arg from `/import` or `/export` against the
+ * CT module's imports folder when it's bare or simple-relative. Lets
+ * the user type `htswtest` or `htswtest/import.json` and get the file
+ * inside `<MC>/config/ChatTriggers/modules/HTSW/imports/...`, which
+ * is typically symlinked to a vault folder.
+ *
+ * Pass-through cases (keep today's semantics):
+ *   - `./x`, `../x`     — explicit MC-root-relative
+ *   - `/x`               — POSIX absolute
+ *   - `C:/x`, `D:/x`     — Windows drive-letter absolute
+ *
+ * Anything else (`htswtest`, `htswtest/import.json`, `subdir/foo.json`)
+ * is prepended with the imports root.
+ */
+export function resolveModuleRelativePath(path: string): string {
+    if (path.length === 0) return path;
+    const normalized = path.split("\\").join("/");
+    if (normalized.charAt(0) === ".") return path; // ./x, ../x
+    if (normalized.charAt(0) === "/") return path; // /abs
+    if (/^[A-Za-z]:/.test(normalized)) return path; // C:/x
+    return `${MODULE_IMPORTS_ROOT}/${normalized}`;
+}
+
+/**
  * Filesystem-safe encoding for an importable's identity, used to derive
  * `.htsl` filenames during export.
  *
@@ -120,9 +158,16 @@ export function htslFilename(importable: Importable): string {
     return canonicalSlug(importable.name) + ".htsl";
 }
 
-/** Default export root: `./htsw/exports/<housingUuid>/`. */
+/**
+ * Default export root.
+ *
+ * Lands inside the CT module's `imports/` folder under a per-housing UUID
+ * subfolder. This mirrors where source `.htsl` files already live for
+ * `/import`, so a captured housing's export is immediately available as
+ * its own importable project rooted alongside the user's other ones.
+ */
 export function defaultExportRoot(housingUuid: string): string {
-    return `./htsw/exports/${housingUuid}`;
+    return `${MODULE_IMPORTS_ROOT}/${housingUuid}`;
 }
 
 /**

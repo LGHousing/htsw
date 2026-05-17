@@ -110,7 +110,7 @@ function refreshKnowledgeRows(): void {
     setKnowledgeRows(buildKnowledgeStatusRows(uuid, all));
 }
 
-function makeDiffSink(sourcePath: string, importable: Importable): ImportDiffSink {
+export function makeDiffSink(sourcePath: string, importable: Importable): ImportDiffSink {
     const key = diffKey(sourcePath);
     clearDiff(key);
     resetPreview(sourcePath);

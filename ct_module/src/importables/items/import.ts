@@ -13,6 +13,7 @@ import TaskContext from "../../tasks/context";
 import { ensureParentDirs } from "../../utils/filesystem";
 import { stableStringify } from "../../utils/helpers";
 import { getItemFromNbt, getItemFromSnbt } from "../../utils/nbt";
+import { snbtFromItem } from "../../importer/itemCapture";
 import {
     HOTBAR_ZERO_PACKET_SLOT,
     SET_SLOT_ACK_TIMEOUT_MS,
@@ -142,8 +143,15 @@ export async function importImportableItem(
 
     await timed("sleep1000", COST.guaranteedSleep1000, () => ctx.sleep(1000));
 
-    const snbt = Player.getInventory()?.getStackInSlot(selectedHotbarSlot())?.getRawNBT();
-    if (!snbt) throw Error("Why don't we have the item?");
+    const heldItem = Player.getInventory()?.getStackInSlot(selectedHotbarSlot());
+    if (!heldItem) throw Error("Why don't we have the item?");
+    // Cached `.snbt` files are user-readable artifacts under
+    // ./htsw/.cache/<uuid>/items/. Walk the live MC NBT graph through
+    // `snbtFromItem` (canonical pretty output) rather than going via
+    // `getRawNBT()` + string preprocessor — round-trip-safe and avoids
+    // the 1.8.9 NBTTagList toString quirks.
+    const snbt = snbtFromItem(heldItem, { pretty: true });
+    if (snbt === null) throw Error("Why don't we have the item?");
 
     ensureParentDirs(cachePath);
     FileLib.write(cachePath, snbt, true);

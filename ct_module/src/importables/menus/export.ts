@@ -9,10 +9,18 @@ import {
 } from "../../importer/helpers";
 import {
     ItemCaptureRegistry,
+    prettySnbt,
     restoreInventoryToSnapshot,
     snapshotInventory,
+    snbtFromItem,
     type InventorySnapshot,
 } from "../../importer/itemCapture";
+import { setActiveDiffSink } from "../../importer/diffSink";
+import { withExportSession } from "../exportSession";
+import { makeDiffSink } from "../../gui/right-panel/import-actions";
+import { openHtswGui } from "../../gui/overlay";
+import { setActiveRightTab } from "../../gui/state/selection";
+import { setCurrentImportingPath } from "../../gui/state";
 import { getCurrentHousingUuid, writeKnowledge } from "../../knowledge";
 import TaskContext from "../../tasks/context";
 import { getAllItemSlots } from "../../tasks/specifics/slots";
@@ -91,7 +99,10 @@ function snapshotMenuSlots(
         const slotId = itemSlot.getSlotId();
         if (slotId >= menuSlotCount) continue;
 
-        const snbt = itemSlot.getItem().getRawNBT();
+        // Canonical SNBT via the structured MC NBT walk — avoids the
+        // 1.8.9 `getRawNBT()` toString quirks (indexed list format) so
+        // the snapshot result parses cleanly back through HTSW's parser.
+        const snbt = snbtFromItem(itemSlot.getItem(), { pretty: false });
         if (typeof snbt !== "string" || snbt.length === 0) continue;
 
         result.push({ slotId, snbt });
@@ -121,7 +132,7 @@ function writeCapturedItems(
         const snbtRel = `items/${filename}`;
         const snbtAbs = `${itemsRoot}/${filename}`;
         ensureParentDirs(snbtAbs);
-        FileLib.write(snbtAbs, item.snbt, true);
+        FileLib.write(snbtAbs, prettySnbt(item.snbt), true);
 
         upsertImportableEntry(importJsonPath, "items", {
             name: item.name,
@@ -144,10 +155,37 @@ export async function exportMenu(
     ctx: TaskContext,
     options: ExportMenuOptions
 ): Promise<void> {
+    return withExportSession(() => exportMenuInner(ctx, options));
+}
+
+async function exportMenuInner(
+    ctx: TaskContext,
+    options: ExportMenuOptions
+): Promise<void> {
     const { name, importJsonPath, rootDir } = options;
 
     const inventorySnapshot: InventorySnapshot = snapshotInventory();
     const itemCaptures = new ItemCaptureRegistry();
+
+    // Synthetic source path for the diff sink — there's no single .htsl
+    // for a menu, but the preview state machine just needs a stable key
+    // and a place to anchor its line model. Per-slot actions don't get
+    // their own preview today (HTSL has no menu syntax), so all the
+    // animation will surface is the read of action lists inside each
+    // slot. Keying by `<rootDir>/menus/<slug>` keeps it scoped + stable.
+    const menuPreviewKey = `${rootDir}/menus/${canonicalSlug(name)}`;
+    const menuShell: ImportableMenu = {
+        type: "MENU",
+        name,
+        slots: [],
+    };
+    const sink = makeDiffSink(menuPreviewKey, menuShell);
+    setActiveDiffSink(sink);
+
+    // Surface the live preview — same wiring as function export.
+    openHtswGui();
+    setActiveRightTab("import");
+    setCurrentImportingPath(menuPreviewKey);
 
     let exportError: unknown = null;
     try {
@@ -177,7 +215,7 @@ export async function exportMenu(
             // idempotent (Files.exists short-circuits) so calling it per slot
             // is cheap, and avoids dropping a sentinel-path workaround.
             ensureParentDirs(snbtAbs);
-            FileLib.write(snbtAbs, snbt, true);
+            FileLib.write(snbtAbs, prettySnbt(snbt), true);
 
             // Left-click the slot to open its per-slot editor.
             const container = Player.getContainer();
@@ -196,6 +234,7 @@ export async function exportMenu(
                 const observed = await readActionList(ctx, {
                     kind: "full",
                     itemCaptures,
+                    topLevel: true,
                 });
                 slotActions = observedSlotsToActions(observed);
 
@@ -270,6 +309,14 @@ export async function exportMenu(
             `&7[export] &eInventory restore failed (export results still written): ${error}`
         );
     }
+
+    try {
+        sink.end();
+    } catch (_error) {
+        // Sink teardown is best-effort.
+    }
+    setActiveDiffSink(null);
+    setCurrentImportingPath(null);
 
     if (exportError !== null) {
         throw exportError;
