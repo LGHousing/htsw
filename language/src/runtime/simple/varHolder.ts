@@ -1,11 +1,5 @@
 import { VarString, type Var } from "../vars";
 
-// Default storage for a single variable scope. SimpleVars composes three of
-// these (player, global, plus one per team) to provide the opinionated
-// three-scope storage that HTSL programs expect by default. Consumers that
-// want different storage semantics (multi-player simulators, logging
-// wrappers, etc.) can subclass this or build their own Vars implementation
-// from scratch.
 export class VarHolder<T> {
     private vars: Map<string, { raw: T; value: Var<any> }>;
 

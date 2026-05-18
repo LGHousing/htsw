@@ -382,8 +382,15 @@ export async function restoreInventoryToSnapshot(
 
     for (const entry of snapshot) {
         const current = inv.getStackInSlot(entry.slotId);
+        // Read current state with the SAME canonical SNBT path the
+        // snapshot used. Using `getRawNBT()` here would compare against
+        // 1.8.9's debugging `[0:val,1:val]` format, which never matches
+        // the canonical SNBT in `entry.nbt` — so every non-empty slot
+        // would get "restored" unnecessarily on every export.
         const currentNbt =
-            current === null || current === undefined ? null : current.getRawNBT();
+            current === null || current === undefined
+                ? null
+                : snbtFromItem(current, { pretty: false });
         const currentCount = getStackCount(current);
 
         if (currentNbt === entry.nbt && currentCount === entry.count) continue;

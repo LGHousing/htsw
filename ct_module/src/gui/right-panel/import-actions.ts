@@ -69,6 +69,7 @@ import type { ImportDiffSink } from "../../importer/diffSink";
 import { readKnowledge } from "../../knowledge/cache";
 import { gmcOnImportStart, playImportSuccessSound } from "../../importer/sideEffects";
 import { setImportRunning } from "../../importer/runtimeState";
+import { resetStepGate } from "../../importer/stepGate";
 import {
     beginTraceRun,
     endTraceRun,
@@ -432,6 +433,9 @@ export function startImport(explicit?: readonly QueueItem[]): void {
             setImportProgress(null);
             setCurrentImportingPath(null);
             clearImportRun();
+            // Reset step-debug gate so leftover paused state from a
+            // cancelled run can't sandbag the next import.
+            resetStepGate();
             refreshKnowledgeRows();
             // Clear the importer's run flag BEFORE the chime fires so the
             // soundPlay cancel hook in `sideEffects` no longer swallows it.

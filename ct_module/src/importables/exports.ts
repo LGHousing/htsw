@@ -1,5 +1,6 @@
 import TaskContext from "../tasks/context";
 import { exportFunction } from "./functions/export";
+import { exportAllFunctions } from "./functions/exportAll";
 import { exportMenu } from "./menus/export";
 
 export type ExportRequest =
@@ -14,6 +15,11 @@ export type ExportRequest =
     | {
           type: "MENU";
           name: string;
+          importJsonPath: string;
+          rootDir: string;
+      }
+    | {
+          type: "ALL_FUNCTIONS";
           importJsonPath: string;
           rootDir: string;
       };
@@ -40,6 +46,13 @@ export async function exportImportable(
     if (request.type === "MENU") {
         await exportMenu(ctx, {
             name: request.name,
+            importJsonPath: request.importJsonPath,
+            rootDir: request.rootDir,
+        });
+        return;
+    }
+    if (request.type === "ALL_FUNCTIONS") {
+        await exportAllFunctions(ctx, {
             importJsonPath: request.importJsonPath,
             rootDir: request.rootDir,
         });

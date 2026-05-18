@@ -15,6 +15,32 @@ import { removedFormatting, unique } from "../../utils/helpers";
 const McItem = Java.type("net.minecraft.item.Item");
 const ItemStack = Java.type("net.minecraft.item.ItemStack");
 
+/**
+ * Strip Hypixel's `(#NNNN)` per-housing function id off a function-list
+ * slot's display name and filter out non-function nav slots.
+ *
+ * Used by both the user-click capture flow (`captureFromHousing`) and
+ * the `/export all function` walker (`listFunctions`). Returns the
+ * bare function name (usable directly with `/function edit`), or null
+ * if the slot isn't a function (nav button, Create Function, empty).
+ */
+export function extractFunctionNameFromSlot(rawDisplayName: string): string | null {
+    const trimmed = rawDisplayName.trim();
+    if (trimmed.length === 0) return null;
+    const lower = trimmed.toLowerCase();
+    if (
+        lower === "go back" ||
+        lower === "close" ||
+        lower === "create function" ||
+        lower.indexOf("previous page") >= 0 ||
+        lower.indexOf("next page") >= 0
+    ) {
+        return null;
+    }
+    const m = trimmed.match(/^(.+?)\s*\(#\d+\)\s*$/);
+    return m !== null ? m[1] : trimmed;
+}
+
 export async function openFunctionEditor(
     ctx: TaskContext,
     name: string

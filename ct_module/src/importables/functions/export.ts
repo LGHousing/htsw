@@ -5,7 +5,6 @@ import { readActionList } from "../../importer/actions";
 import { clickGoBack } from "../../importer/helpers";
 import {
     ItemCaptureRegistry,
-    prettySnbt,
     restoreInventoryToSnapshot,
     snapshotInventory,
     type InventorySnapshot,
@@ -15,7 +14,7 @@ import { getCurrentHousingUuid, writeKnowledge } from "../../knowledge";
 import TaskContext from "../../tasks/context";
 import { observedSlotsToActions } from "../../exporter/sanitize";
 import { upsertImportableEntry } from "../../exporter/importJsonWriter";
-import { snbtFilenameForItemExport } from "../../exporter/paths";
+import { writeCapturedItems } from "../../exporter/writeCapturedItems";
 import { ensureParentDirs } from "../../utils/filesystem";
 import { withExportSession } from "../exportSession";
 import { makeDiffSink } from "../../gui/right-panel/import-actions";
@@ -96,38 +95,20 @@ async function readFunction(
 }
 
 /**
- * Write each captured item to disk as `<rootDir>/items/<slug>.snbt` and
- * upsert an `items[]` entry into `import.json` pointing at that path.
- *
- * Dedup happens earlier in the registry — by the time we reach here
- * each entry has a unique NBT and a unique canonical name.
+ * Shared state for a batch export (e.g. `/export all function`). The
+ * orchestrator snapshots inventory once at the start of the batch and
+ * builds one registry so items appearing in multiple functions are
+ * captured once, written once, and referenced N times.
  */
-function writeCapturedItems(
-    ctx: TaskContext,
-    registry: ItemCaptureRegistry,
-    rootDir: string,
-    importJsonPath: string
-): number {
-    const entries = registry.entries();
-    if (entries.length === 0) return 0;
-
-    const itemsRoot = `${rootDir}/items`;
-    for (const item of entries) {
-        const filename = snbtFilenameForItemExport(itemsRoot, item.name);
-        const snbtRel = `items/${filename}`;
-        const snbtAbs = `${itemsRoot}/${filename}`;
-        ensureParentDirs(snbtAbs);
-        FileLib.write(snbtAbs, prettySnbt(item.snbt), true);
-
-        upsertImportableEntry(importJsonPath, "items", {
-            name: item.name,
-            nbt: snbtRel,
-        });
-        ctx.displayMessage(`&7  -> ${snbtAbs}`);
-    }
-
-    return entries.length;
-}
+export type SharedExportState = {
+    itemCaptures: ItemCaptureRegistry;
+    /**
+     * Captured at batch start. NOT restored by
+     * `exportFunctionWithSharedState` — the orchestrator restores once
+     * after the batch finishes.
+     */
+    inventorySnapshot: InventorySnapshot;
+};
 
 /**
  * High-level export-a-function flow: snapshot inventory, open in GUI,
@@ -149,14 +130,70 @@ async function exportFunctionInner(
     ctx: TaskContext,
     options: ExportFunctionOptions
 ): Promise<void> {
-    const { name, importJsonPath, htslPath, htslReference, rootDir } = options;
-
     // Snapshot inventory BEFORE any captures so we can restore it after.
     // Captured items get added to the player's inventory by Hypixel during
     // the click-to-copy flow; without this snapshot/restore they'd
     // accumulate across exports.
     const inventorySnapshot: InventorySnapshot = snapshotInventory();
     const itemCaptures = new ItemCaptureRegistry();
+
+    let exportError: unknown = null;
+    try {
+        await exportFunctionWithSharedState(ctx, options, {
+            itemCaptures,
+            inventorySnapshot,
+        });
+    } catch (error) {
+        exportError = error;
+    }
+
+    // Single-function: write the captured items here. The batch
+    // orchestrator calls `writeCapturedItems` itself once after every
+    // function completes against the shared registry, which is why
+    // `exportFunctionWithSharedState` no longer does it.
+    const itemCount = writeCapturedItems(
+        ctx,
+        itemCaptures,
+        options.rootDir,
+        options.importJsonPath
+    );
+    if (exportError === null) {
+        ctx.displayMessage(
+            `&7[export] &fItems captured: ${itemCount}`
+        );
+        ctx.displayMessage(`&7  -> ${options.importJsonPath}`);
+    }
+
+    // Restore inventory unconditionally — even on partial-export failure
+    // the player shouldn't be left with leftover captured items.
+    try {
+        await restoreInventoryToSnapshot(ctx, inventorySnapshot);
+    } catch (error) {
+        ctx.displayMessage(
+            `&7[export] &eInventory restore failed (export results still written): ${error}`
+        );
+    }
+
+    if (exportError !== null) {
+        throw exportError;
+    }
+}
+
+/**
+ * Per-function export body that reuses inventory snapshot + item
+ * registry supplied by the caller. Manages its own diff sink,
+ * `setCurrentImportingPath`, and trace tagging so the live-preview
+ * panel resets cleanly for each function. Does NOT snapshot or restore
+ * inventory and does NOT write captured items — both belong to the
+ * caller, which spans the batch.
+ */
+export async function exportFunctionWithSharedState(
+    ctx: TaskContext,
+    options: ExportFunctionOptions,
+    shared: SharedExportState
+): Promise<void> {
+    const { name, importJsonPath, htslPath, htslReference } = options;
+    const { itemCaptures } = shared;
 
     // Wire up the same live-preview diff sink the importer uses, keyed by
     // the planned .htsl output path. The sink primes the preview from the
@@ -238,15 +275,6 @@ async function exportFunctionInner(
 
         FileLib.write(htslPath, source, true);
 
-        // Write captured items BEFORE the function entry so a partial
-        // failure leaves the .htsl pointing at items that actually exist.
-        const itemCount = writeCapturedItems(
-            ctx,
-            itemCaptures,
-            rootDir,
-            importJsonPath
-        );
-
         upsertImportableEntry(importJsonPath, "functions", {
             name,
             actions: htslReference,
@@ -262,20 +290,9 @@ async function exportFunctionInner(
         }
 
         ctx.displayMessage(
-            `&aExported function '${name}' (${actions.length} action${actions.length === 1 ? "" : "s"}, ${itemCount} item${itemCount === 1 ? "" : "s"})`
+            `&aExported function '${name}' (${actions.length} action${actions.length === 1 ? "" : "s"})`
         );
         ctx.displayMessage(`&7  -> ${htslPath}`);
-        ctx.displayMessage(`&7  -> ${importJsonPath}`);
-    }
-
-    // Restore inventory unconditionally — even on partial-export failure
-    // the player shouldn't be left with leftover captured items.
-    try {
-        await restoreInventoryToSnapshot(ctx, inventorySnapshot);
-    } catch (error) {
-        ctx.displayMessage(
-            `&7[export] &eInventory restore failed (export results still written): ${error}`
-        );
     }
 
     // Drop the diff sink so the next /import or /export starts clean.

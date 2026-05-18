@@ -1,18 +1,13 @@
 import { VarHolder } from "./varHolder";
 
-// The storage contract that SimpleActionBehaviors / SimpleConditionBehaviors /
-// SimplePlaceholderBehaviors expect. Consumers that need different storage
-// semantics (e.g. the multi-player harness) implement this interface with
-// their own player/global/team holders.
+// Storage contract for the Simple*Behaviors family. Implement this for
+// custom storage semantics (multi-player harness, logging wrapper, etc.).
 export interface Vars {
     readonly player: VarHolder<string>;
     readonly global: VarHolder<string>;
     team(name: string): VarHolder<string>;
 }
 
-// The default opinionated implementation: one VarHolder for player, one for
-// global, and a lazily-created VarHolder per team name. This is what casual
-// users instantiate alongside a barebones Runtime.
 export class SimpleVars implements Vars {
     readonly player = new VarHolder<string>();
     readonly global = new VarHolder<string>();

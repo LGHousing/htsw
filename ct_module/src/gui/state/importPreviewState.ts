@@ -121,27 +121,11 @@ export function previewLinesForFile(path: string): readonly PreviewLine[] {
     return s ? s.lines : [];
 }
 
-export function previewRevisionForFile(path: string): number {
-    const k = keyForFile(path);
-    const s = states[k];
-    return s ? s.revision : 0;
-}
-
-export function previewHasContent(path: string): boolean {
-    const k = keyForFile(path);
-    const s = states[k];
-    return s ? s.hasContent : false;
-}
-
 // ── Reset ───────────────────────────────────────────────────────────────
 
 export function resetPreview(path: string): void {
     const k = keyForFile(path);
     delete states[k];
-}
-
-export function resetAllPreviews(): void {
-    for (const k in states) delete states[k];
 }
 
 // ── Cache priming + read-phase mutators ─────────────────────────────────

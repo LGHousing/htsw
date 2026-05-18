@@ -38,6 +38,59 @@ function endsWithIgnoreCase(value: string, suffix: string): boolean {
     return value.substring(value.length - suffix.length).toLowerCase() === suffix.toLowerCase();
 }
 
+/**
+ * Re-tokenize CT command args, respecting double-quoted groups. CT's
+ * command framework splits the chat line by whitespace, so a quoted
+ * arg like `"Button Blessing"` arrives as separate tokens `["Button`
+ * and `Blessing"]`. This walks the token list and rejoins anything
+ * between a token that opens with `"` and a token that closes with
+ * `"` into a single logical arg, with the surrounding quotes stripped.
+ *
+ * Same rule chat / shell parsers use. Examples:
+ *   ['"Button',  'Blessing"', 'path']       → ['Button Blessing', 'path']
+ *   ['"single"', 'path']                    → ['single', 'path']
+ *   ['plain',    'arg']                     → ['plain', 'arg']
+ *   ['"unclosed', 'name', 'forever']         → ['unclosed name forever']  (best-effort: treat unclosed as run-to-end)
+ */
+function tokenizeQuoted(args: readonly string[]): string[] {
+    const out: string[] = [];
+    let i = 0;
+    while (i < args.length) {
+        const arg = args[i];
+        // Single-token quoted: `"foo"` — strip both quotes.
+        if (arg.length >= 2 && arg.charAt(0) === '"' && arg.charAt(arg.length - 1) === '"') {
+            out.push(arg.substring(1, arg.length - 1));
+            i++;
+            continue;
+        }
+        // Multi-token quoted: `"foo` ... `bar"`. Collect until a token ends
+        // with `"`. If no closing quote is ever found, run to end of args
+        // (still strip the leading `"`).
+        if (arg.charAt(0) === '"') {
+            const parts: string[] = [arg.substring(1)];
+            i++;
+            let closed = false;
+            while (i < args.length) {
+                const next = args[i];
+                if (next.length > 0 && next.charAt(next.length - 1) === '"') {
+                    parts.push(next.substring(0, next.length - 1));
+                    i++;
+                    closed = true;
+                    break;
+                }
+                parts.push(next);
+                i++;
+            }
+            void closed;
+            out.push(parts.join(" "));
+            continue;
+        }
+        out.push(arg);
+        i++;
+    }
+    return out;
+}
+
 function exportDestination(
     explicitPath: string | undefined
 ): { rootDir: string; importJsonPath: string } | null {
@@ -64,8 +117,13 @@ function printExportHelp(): void {
     ChatLib.chat("&f/export function <name> [path]");
     ChatLib.chat("&7  Reads a Hypixel function and writes a .htsl + import.json.");
     ChatLib.chat("&7  [path] may be a directory or a specific import.json.");
+    ChatLib.chat("&f/export all function [path]");
+    ChatLib.chat("&7  Exports every function in this housing in menu order.");
     ChatLib.chat("&f/export menu <name> [path]");
     ChatLib.chat("&7  Reads a Hypixel menu and writes per-slot .snbt + import.json.");
+    ChatLib.chat("&f/export stop");
+    ChatLib.chat("&7  Cancels any running export (or import) task.");
+    ChatLib.chat('&7  Quote multi-word names: /export function "Button Blessing" my/path/');
     ChatLib.chat("&7  Default path: ./config/ChatTriggers/modules/HTSW/imports/<housingUuid>/");
     ChatLib.chat(`&7${chatSeparator()}`);
 }
@@ -80,13 +138,86 @@ function commandExport(args: string[]): void {
         return;
     }
 
-    if (args[0] === "function") {
-        const name = args[1];
+    // Re-tokenize so `"multi word"` collapses to one logical arg. CT's
+    // command framework splits the chat line by whitespace, so without
+    // this `/export function "Button Blessing" path` would arrive as 4
+    // tokens with the function half-eaten on either side of the quotes.
+    const tokens = tokenizeQuoted(args);
+
+    if (tokens[0] === "stop" || tokens[0] === "cancel") {
+        // Cancels EVERY running task, not just exports — same call the
+        // GUI's red cancel button uses. Matches existing behavior: if
+        // something else is in flight (e.g. a /import) it'd be cancelled
+        // too. Acceptable since the user clearly wants out.
+        TaskManager.cancelAll();
+        ChatLib.chat("&c[htsw] cancelling running task...");
+        return;
+    }
+
+    if (tokens[0] === "all" && tokens[1] === "function") {
+        const pathParts = tokens.slice(2);
+        const rawPath = pathParts.length > 0 ? pathParts.join(" ") : "";
+        const explicitPath =
+            rawPath.length > 0 ? stripSurroundingQuotes(rawPath) : undefined;
+
+        TaskManager.run(async (ctx) => {
+            let rootDir: string;
+            let importJsonPath: string;
+            const explicitDestination = exportDestination(explicitPath);
+            if (explicitDestination !== null) {
+                rootDir = explicitDestination.rootDir;
+                importJsonPath = explicitDestination.importJsonPath;
+            } else {
+                const uuid = await getCurrentHousingUuid(ctx);
+                rootDir = defaultExportRoot(uuid);
+                importJsonPath = `${rootDir}/import.json`;
+            }
+
+            // Per-function trace tagging happens inside
+            // `exportFunctionWithSharedState` via `makeDiffSink`, so the
+            // batch-level run begins untagged. We pass `queueSize: 0`
+            // because we don't know the count until we open the function
+            // list — the per-importable events still get emitted as each
+            // function's read kicks off.
+            const tracePath = beginTraceRun({
+                queueSize: 0,
+                sourcePath: importJsonPath,
+                trustMode: false,
+            });
+
+            let imported = 0;
+            let failed = 0;
+            try {
+                await exportImportable(ctx, {
+                    type: "ALL_FUNCTIONS",
+                    importJsonPath,
+                    rootDir,
+                });
+                imported = 1;
+            } catch (err) {
+                failed = 1;
+                throw err;
+            } finally {
+                setTraceImportable(null);
+                const written = endTraceRun({ imported, skipped: 0, failed });
+                if (written !== null && tracePath !== null) {
+                    ctx.displayMessage(`&7[trace] &fwrote ${written}`);
+                }
+            }
+        }).catch((err) => {
+            ChatLib.chat(`&cExport failed: ${err}`);
+        });
+        return;
+    }
+
+    if (tokens[0] === "function") {
+        const name = tokens[1];
         if (!name) {
             ChatLib.chat("&cUsage: /export function <name> [path]");
+            ChatLib.chat('&7  Quote multi-word names: /export function "Button Blessing" my/path/');
             return;
         }
-        const pathParts = args.slice(2);
+        const pathParts = tokens.slice(2);
         const rawPath = pathParts.length > 0 ? pathParts.join(" ") : "";
         const explicitPath =
             rawPath.length > 0 ? stripSurroundingQuotes(rawPath) : undefined;
@@ -154,13 +285,14 @@ function commandExport(args: string[]): void {
         return;
     }
 
-    if (args[0] === "menu") {
-        const name = args[1];
+    if (tokens[0] === "menu") {
+        const name = tokens[1];
         if (!name) {
             ChatLib.chat("&cUsage: /export menu <name> [path]");
+            ChatLib.chat('&7  Quote multi-word names: /export menu "My Shop" my/path/');
             return;
         }
-        const pathParts = args.slice(2);
+        const pathParts = tokens.slice(2);
         const rawPath = pathParts.length > 0 ? pathParts.join(" ") : "";
         const explicitPath =
             rawPath.length > 0 ? stripSurroundingQuotes(rawPath) : undefined;
@@ -217,7 +349,7 @@ function commandExport(args: string[]): void {
         return;
     }
 
-    ChatLib.chat(`&cUnknown subcommand "${args[0]}".`);
+    ChatLib.chat(`&cUnknown subcommand "${tokens[0]}".`);
     printExportHelp();
 }
 

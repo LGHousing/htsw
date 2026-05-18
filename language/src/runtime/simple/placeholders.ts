@@ -3,33 +3,22 @@ import {
     type PlaceholderBehavior,
 } from "../behaviors/placeholders";
 import { parseValue, type Var } from "../vars";
+import { behaviorEntries } from "./helpers";
 import type { VarHolder } from "./varHolder";
 import type { Vars } from "./vars";
 
-// Opinionated default PlaceholderBehaviors with var.player / var.global /
-// var.team resolution wired to the supplied storage. Extends
-// PlaceholderBehaviors.default() so random.* and any user-defined .with(...)
-// continue to work.
 export class SimplePlaceholderBehaviors extends PlaceholderBehaviors {
     constructor(vars: Vars) {
         super();
-        const defaults = PlaceholderBehaviors.default();
-        for (const [type, handler] of entriesOf(defaults)) {
+        for (const [type, handler] of behaviorEntries<PlaceholderBehavior>(
+            PlaceholderBehaviors.default(),
+        )) {
             this.with(type, handler);
         }
         this.with("var.player", makeVarPlayer(vars))
             .with("var.global", makeVarGlobal(vars))
             .with("var.team", makeVarTeam(vars));
     }
-}
-
-function entriesOf(
-    behaviors: PlaceholderBehaviors,
-): Array<[any, PlaceholderBehavior]> {
-    const handlers = (behaviors as unknown as {
-        handlers: Record<string, PlaceholderBehavior>;
-    }).handlers;
-    return Object.entries(handlers) as Array<[any, PlaceholderBehavior]>;
 }
 
 function makeVarPlayer(vars: Vars): PlaceholderBehavior {

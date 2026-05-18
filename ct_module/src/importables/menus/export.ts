@@ -28,7 +28,8 @@ import { ensureParentDirs } from "../../utils/filesystem";
 import { removedFormatting } from "../../utils/helpers";
 import { observedSlotsToActions } from "../../exporter/sanitize";
 import { upsertImportableEntry } from "../../exporter/importJsonWriter";
-import { canonicalSlug, snbtFilenameForItemExport } from "../../exporter/paths";
+import { canonicalSlug } from "../../exporter/paths";
+import { writeCapturedItems } from "../../exporter/writeCapturedItems";
 import { openMenuEditor } from "./shared";
 
 export type ExportMenuOptions = {
@@ -109,39 +110,6 @@ function snapshotMenuSlots(
     }
     result.sort((a, b) => a.slotId - b.slotId);
     return result;
-}
-
-/**
- * Per-slot action lists may contain item-bearing actions/conditions
- * referencing custom housing items. We share one `ItemCaptureRegistry`
- * across all slots so the same item referenced from multiple slots
- * dedups to one `.snbt` file and one `items[]` entry.
- */
-function writeCapturedItems(
-    ctx: TaskContext,
-    registry: ItemCaptureRegistry,
-    rootDir: string,
-    importJsonPath: string
-): number {
-    const entries = registry.entries();
-    if (entries.length === 0) return 0;
-
-    const itemsRoot = `${rootDir}/items`;
-    for (const item of entries) {
-        const filename = snbtFilenameForItemExport(itemsRoot, item.name);
-        const snbtRel = `items/${filename}`;
-        const snbtAbs = `${itemsRoot}/${filename}`;
-        ensureParentDirs(snbtAbs);
-        FileLib.write(snbtAbs, prettySnbt(item.snbt), true);
-
-        upsertImportableEntry(importJsonPath, "items", {
-            name: item.name,
-            nbt: snbtRel,
-        });
-        ctx.displayMessage(`&7  -> ${snbtAbs}`);
-    }
-
-    return entries.length;
 }
 
 /**
