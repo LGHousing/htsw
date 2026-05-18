@@ -149,9 +149,13 @@ function conditionListCost(
         desiredIndex--
     ) {
         const desiredEntry = unmatchedDesired[desiredIndex];
-        const observedIndex = unmatchedObserved.findIndex((entry) =>
-            conditionsEqual(entry.condition, desiredEntry.condition)
-        );
+        let observedIndex = -1;
+        for (let i = 0; i < unmatchedObserved.length; i++) {
+            if (conditionsEqual(unmatchedObserved[i].condition, desiredEntry.condition)) {
+                observedIndex = i;
+                break;
+            }
+        }
 
         if (observedIndex === -1) {
             continue;
@@ -220,6 +224,32 @@ function conditionListCost(
     }
 
     return cost;
+}
+
+function indexOfExactAction(
+    current: readonly KnownCurrentAction[],
+    desired: DesiredActionEntry,
+    sameIndexOnly: boolean
+): number {
+    for (let i = 0; i < current.length; i++) {
+        const entry = current[i];
+        if (sameIndexOnly && entry.index !== desired.index) continue;
+        if (actionsEqual(entry.action, desired.action)) return i;
+    }
+    return -1;
+}
+
+function indexOfNoteOnlyAction(
+    current: readonly KnownCurrentAction[],
+    desired: DesiredActionEntry,
+    sameIndexOnly: boolean
+): number {
+    for (let i = 0; i < current.length; i++) {
+        const entry = current[i];
+        if (sameIndexOnly && entry.index !== desired.index) continue;
+        if (actionOnlyNoteDiffers(desired.action, entry.action)) return i;
+    }
+    return -1;
 }
 
 function actionCost(
@@ -305,21 +335,11 @@ function matchActions(
     const unmatchedDesired = desired.map((action, index) => ({ index, action }));
     const matches: ActionMatch[] = [];
 
-    // Pass 1: Exact matching with position preference.
-    // When multiple observed actions are identical (e.g. repeated `var z = "d"`),
-    // prefer the one at the same index to avoid unnecessary moves.
     for (let desiredIndex = 0; desiredIndex < unmatchedDesired.length; desiredIndex++) {
         const desiredEntry = unmatchedDesired[desiredIndex];
-
-        // Prefer same-index match first to preserve positional stability
-        let currentIndex = unmatchedCurrent.findIndex((entry) =>
-            entry.index === desiredEntry.index && actionsEqual(entry.action, desiredEntry.action)
-        );
-        // Fall back to any matching observed action
+        let currentIndex = indexOfExactAction(unmatchedCurrent, desiredEntry, true);
         if (currentIndex === -1) {
-            currentIndex = unmatchedCurrent.findIndex((entry) =>
-                actionsEqual(entry.action, desiredEntry.action)
-            );
+            currentIndex = indexOfExactAction(unmatchedCurrent, desiredEntry, false);
         }
         if (currentIndex === -1) {
             continue;
@@ -340,13 +360,9 @@ function matchActions(
     // Pass 2: Note-only matching with same position preference.
     for (let desiredIndex = 0; desiredIndex < unmatchedDesired.length; desiredIndex++) {
         const desiredEntry = unmatchedDesired[desiredIndex];
-        let currentIndex = unmatchedCurrent.findIndex((entry) =>
-            entry.index === desiredEntry.index && actionOnlyNoteDiffers(desiredEntry.action, entry.action)
-        );
+        let currentIndex = indexOfNoteOnlyAction(unmatchedCurrent, desiredEntry, true);
         if (currentIndex === -1) {
-            currentIndex = unmatchedCurrent.findIndex((entry) =>
-                actionOnlyNoteDiffers(desiredEntry.action, entry.action)
-            );
+            currentIndex = indexOfNoteOnlyAction(unmatchedCurrent, desiredEntry, false);
         }
         if (currentIndex === -1) {
             continue;

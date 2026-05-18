@@ -38,6 +38,36 @@ export function currentConditionListFromConditions(
     return out;
 }
 
+function indexOfEqualCondition(
+    entries: readonly CurrentConditionListEntry[],
+    desired: Condition
+): number {
+    for (let i = 0; i < entries.length; i++) {
+        if (conditionsEqual(entries[i].condition, desired)) return i;
+    }
+    return -1;
+}
+
+function indexOfNoteOnlyCondition(
+    entries: readonly CurrentConditionListEntry[],
+    desired: Condition
+): number {
+    for (let i = 0; i < entries.length; i++) {
+        if (conditionOnlyNoteDiffers(desired, entries[i].condition)) return i;
+    }
+    return -1;
+}
+
+function indexOfConditionType(
+    entries: readonly CurrentConditionListEntry[],
+    desired: Condition
+): number {
+    for (let i = 0; i < entries.length; i++) {
+        if (entries[i].condition?.type === desired.type) return i;
+    }
+    return -1;
+}
+
 export function diffConditionList(
     current: CurrentConditionListEntry[],
     desired: Condition[]
@@ -53,9 +83,7 @@ export function diffConditionList(
         desiredIndex--
     ) {
         const desiredCondition = unmatchedDesired[desiredIndex];
-        const currentIndex = unmatchedCurrent.findIndex((entry) =>
-            conditionsEqual(entry.condition, desiredCondition)
-        );
+        const currentIndex = indexOfEqualCondition(unmatchedCurrent, desiredCondition);
 
         if (currentIndex === -1) {
             continue;
@@ -74,8 +102,9 @@ export function diffConditionList(
         desiredIndex--
     ) {
         const desiredCondition = unmatchedDesired[desiredIndex];
-        const currentIndex = unmatchedCurrent.findIndex((entry) =>
-            conditionOnlyNoteDiffers(desiredCondition, entry.condition)
+        const currentIndex = indexOfNoteOnlyCondition(
+            unmatchedCurrent,
+            desiredCondition
         );
 
         if (currentIndex === -1) {
@@ -98,9 +127,7 @@ export function diffConditionList(
 
     // Pass 3: same-type edits, else adds.
     for (const desiredCondition of unmatchedDesired) {
-        const currentIndex = unmatchedCurrent.findIndex(
-            (entry) => entry.condition?.type === desiredCondition.type
-        );
+        const currentIndex = indexOfConditionType(unmatchedCurrent, desiredCondition);
 
         if (currentIndex === -1) {
             operations.push({ kind: "add", desired: desiredCondition });

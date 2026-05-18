@@ -151,9 +151,13 @@ export function readCurrentValue(slot: ItemSlot): string | null {
 
 function readCurrentValueLines(slot: ItemSlot): string[] | null {
     const lore = slot.getItem().getLore();
-    const index = lore.findIndex(
-        (line, _i) => removedFormatting(line) === "Current Value:"
-    );
+    let index = -1;
+    for (let i = 0; i < lore.length; i++) {
+        if (removedFormatting(lore[i]) === "Current Value:") {
+            index = i;
+            break;
+        }
+    }
     if (index === -1) return null;
 
     if (index + 1 >= lore.length) {

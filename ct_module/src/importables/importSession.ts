@@ -17,6 +17,7 @@ import type {
     ImportRunRowStatus,
     PhaseUnits,
 } from "../importer/progress/types";
+import { importProgressKey } from "../importer/progress/keys";
 import { estimateImportableCost } from "../importer/progress/costs";
 import { readKnowledge } from "../knowledge/cache";
 import { readCachedActionList } from "./actionListTrust";
@@ -104,7 +105,7 @@ export async function importSelectedImportables(
     const rows: ImportProgressRow[] = ordered.map((importable, i) => {
         const identity = importableIdentity(importable);
         return {
-            key: trustPlanKey(importable.type, identity),
+            key: importProgressKey(importable.type, identity, selection.sourcePath),
             status: "queued",
             units: importableUnits[i],
         };
@@ -114,8 +115,13 @@ export async function importSelectedImportables(
         const importable = ordered[i];
         const initialCurrentUnits = importableUnits[i];
         const identity = importableIdentity(importable);
-        const importableKey = trustPlanKey(importable.type, identity);
-        const plan = trustPlan?.importables.get(importableKey);
+        const trustKey = trustPlanKey(importable.type, identity);
+        const importableKey = importProgressKey(
+            importable.type,
+            identity,
+            selection.sourcePath
+        );
+        const plan = trustPlan?.importables.get(trustKey);
         let currentTotalUnits = initialCurrentUnits;
         let currentCompletedUnits = 0;
         let currentPhaseUnits: PhaseUnits = {

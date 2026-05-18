@@ -50,16 +50,22 @@ import {
 } from "../state/diff";
 import { importableSourcePath } from "../state/importablePaths";
 import type { ImportDiffSink } from "../../importer/diffSink";
+import { importProgressKey } from "../../importer/progress/keys";
 
 export const CAPTURE_TYPES: CaptureType[] = ["FUNCTION", "MENU"];
 
 function findImportableByKey(
     parsed: ParseResult<Importable[]>,
-    key: string
+    key: string,
+    sourcePath: string
 ): Importable | null {
     for (let i = 0; i < parsed.value.length; i++) {
         const imp = parsed.value[i];
-        if (trustPlanKey(imp.type, importableIdentity(imp)) === key) return imp;
+        if (
+            importProgressKey(imp.type, importableIdentity(imp), sourcePath) === key
+        ) {
+            return imp;
+        }
     }
     return null;
 }
@@ -217,12 +223,14 @@ export function startImport(explicit?: readonly QueueItem[]): void {
     // Concatenate every batch's ordered importables for the run-row
     // tracking; the per-row UI only needs the flat list, not the
     // per-batch grouping.
-    const allOrdered: Importable[] = [];
-    for (const b of batches) for (const imp of b.importables) allOrdered.push(imp);
+    let rows = createImportRows(batches[0].importables, batches[0].sourcePath);
+    for (let i = 1; i < batches.length; i++) {
+        rows = rows.concat(createImportRows(batches[i].importables, batches[i].sourcePath));
+    }
     setImportProgress(createImportProgress({
         totalImportables: total,
         totalUnits: 1,
-        rows: createImportRows(allOrdered),
+        rows,
     }));
 
     TaskManager.run(async (ctx) => {
@@ -254,7 +262,11 @@ export function startImport(explicit?: readonly QueueItem[]): void {
                             setCurrentImportingPath(null);
                             return;
                         }
-                        const imp = findImportableByKey(batch.parsed, p.current.key);
+                        const imp = findImportableByKey(
+                            batch.parsed,
+                            p.current.key,
+                            batch.sourcePath
+                        );
                         const path =
                             imp === null
                                 ? null

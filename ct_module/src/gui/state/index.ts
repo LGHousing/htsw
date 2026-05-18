@@ -8,6 +8,7 @@ import type {
     ImportProgress,
     ImportProgressRow,
 } from "../../importer/progress/types";
+import { importProgressKey } from "../../importer/progress/keys";
 import { normalizeHtswPath } from "../lib/pathDisplay";
 import {
     getImportEtaBreakdown as etaGetImportEtaBreakdown,
@@ -15,7 +16,6 @@ import {
     resetEtaCache,
 } from "../../importer/progress/eta";
 import { importableIdentity } from "../../knowledge/paths";
-import { trustPlanKey } from "../../knowledge/trust";
 import type { QueueItem } from "./queue";
 import { canonicalPath } from "./parses";
 import { getActiveRightTab, setActiveRightTab } from "./selection";
@@ -172,14 +172,15 @@ export function getImportProgress(): ImportProgress | null {
 }
 
 export function createImportRows(
-    importables: readonly Importable[]
+    importables: readonly Importable[],
+    sourcePath: string
 ): ImportProgressRow[] {
     const rows: ImportProgressRow[] = [];
     for (let i = 0; i < importables.length; i++) {
         const importable = importables[i];
         const identity = importableIdentity(importable);
         rows.push({
-            key: trustPlanKey(importable.type, identity),
+            key: importProgressKey(importable.type, identity, sourcePath),
             status: "queued",
             units: 1,
         });
@@ -273,7 +274,7 @@ export function getQueueItemRunState(item: QueueItem): QueueItemRunState {
         // importJson rows aren't tracked individually; treat as queued.
         return { kind: "queued" };
     }
-    const key = trustPlanKey(item.type, item.identity);
+    const key = importProgressKey(item.type, item.identity, item.sourcePath);
     let row: ImportProgressRow | undefined;
     for (let i = 0; i < importProgress.rows.length; i++) {
         if (importProgress.rows[i].key === key) {
@@ -337,7 +338,11 @@ export function isCurrentQueueItem(item: QueueItem): boolean {
     const current = importProgress.current;
     if (current === null) return false;
     if (item.kind === "importable") {
-        return current.key === trustPlanKey(item.type, item.identity);
+        return current.key === importProgressKey(
+            item.type,
+            item.identity,
+            item.sourcePath
+        );
     }
     if (currentImportingPath === null) return false;
     return canonicalPath(item.sourcePath) === canonicalPath(currentImportingPath);
