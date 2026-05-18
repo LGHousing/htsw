@@ -11,8 +11,10 @@ import { S2FPacketSetSlot } from "./utils/packets";
 import { FileSystemFileLoader } from "./utils/files";
 import { commandKnowledge } from "./knowledge/commands";
 import { toggleHtswGui, armHtswGuiDebug } from "./gui/overlay";
-import { runDiffDemo } from "./gui/popovers/diff-demo";
-import { getTimingStats, resetTimingStats } from "./importer/progress/timing";
+import {
+    getTimingStats,
+    resetTimingStats,
+} from "./importer/progress/timing";
 
 function printCommandError(sm: SourceMap, err: unknown): void {
     if (err instanceof Diagnostic) {
@@ -84,11 +86,6 @@ function commandHtsw(args: string[]) {
         return;
     }
 
-    if (args.length > 0 && args[0] === "diff-demo") {
-        runDiffDemo();
-        return;
-    }
-
     ChatLib.chat(`&7${chatSeparator()}`);
     const title = `&e&lHTSW &f&l${VERSION}`;
     ChatLib.chat(`${ChatLib.getCenteredText(title)}`);
@@ -98,7 +95,7 @@ function commandHtsw(args: string[]) {
     ChatLib.chat("&f/import &7- Import actions from HTSL files");
     ChatLib.chat("&f/simulator &7- Simulate actions from HTSL files");
     ChatLib.chat("&f/htsw knowledge &7- Inspect local import/export knowledge");
-    ChatLib.chat("&f/htsw eta &7- Show importer ETA timing samples");
+    ChatLib.chat("&f/htsw eta [reset|dump] &7- Show / reset / dump importer ETA samples");
     ChatLib.chat("&f/htsw packet-probe [seconds] &7- Safely log relevant packets");
     ChatLib.chat("&f/htsw gui &7- Open the in-game HTSW dashboard");
     ChatLib.chat(`&7${chatSeparator()}`);
@@ -111,6 +108,15 @@ function commandEta(args: string[]): void {
         return;
     }
 
+    if (args.length > 0 && args[0] === "dump") {
+        dumpEtaToFile();
+        return;
+    }
+
+    printOpKindStats();
+}
+
+function printOpKindStats(): void {
     const stats = getTimingStats();
     const kinds = [
         "commandMenuWait",
@@ -125,7 +131,7 @@ function commandEta(args: string[]): void {
         "reorderStep",
         "sleep1000",
     ];
-    ChatLib.chat("&7[eta] timing samples");
+    ChatLib.chat("&7[eta] per-op-kind ms/unit");
     let printed = false;
     for (let i = 0; i < kinds.length; i++) {
         const kind = kinds[i];
@@ -135,11 +141,26 @@ function commandEta(args: string[]): void {
         const expected =
             entry.count === 0 ? 0 : entry.totalExpectedUnits / entry.count;
         ChatLib.chat(
-            `&7${kind}: &f${entry.count} samples&7, avg &f${entry.avgMs.toFixed(0)}ms&7, expected &f${expected.toFixed(2)}u&7 => &f${entry.avgMsPerExpectedUnit.toFixed(0)}ms/u`
+            `&7  ${kind}: &f${entry.count} samples&7, avg &f${entry.avgMs.toFixed(0)}ms&7, expected &f${expected.toFixed(2)}u&7 => &f${entry.avgMsPerExpectedUnit.toFixed(0)}ms/u`
         );
     }
     if (!printed) {
-        ChatLib.chat("&7[eta] no samples yet");
+        ChatLib.chat("&7  (no samples yet)");
+    }
+}
+
+function dumpEtaToFile(): void {
+    const stats = getTimingStats();
+    const dump = {
+        capturedAt: new Date().toISOString(),
+        perOpKind: stats,
+    };
+    const path = `./htsw/eta-${Date.now()}.json`;
+    try {
+        FileLib.write(path, JSON.stringify(dump, null, 2), true);
+        ChatLib.chat(`&a[eta] wrote ${path}`);
+    } catch (e) {
+        ChatLib.chat(`&c[eta] failed to write ${path}: ${e}`);
     }
 }
 

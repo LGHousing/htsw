@@ -1,5 +1,5 @@
-import type { ItemRegistry } from "../importables/itemRegistry";
-import type { UiFieldKind } from "./types";
+import type { ItemRegistry } from "../../importables/itemRegistry";
+import type { UiFieldKind } from "../types";
 
 type FieldSpec = { prop: string; kind: UiFieldKind };
 type MappingTable = Record<string, { loreFields: Record<string, FieldSpec> }>;

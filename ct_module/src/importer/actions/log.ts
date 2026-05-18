@@ -1,6 +1,5 @@
 import type { Action } from "htsw/types";
 
-import { getEditFieldDiffs } from "../compare";
 import type {
     ActionListOperation,
     Observed,
@@ -47,28 +46,11 @@ export function actionLogLabel(action: Action | Observed<Action> | null | undefi
     return action.type;
 }
 
-export function shortVal(v: unknown): string {
-    if (v === undefined) return "unset";
-    if (v === null) return "null";
-    if (typeof v === "boolean") return v ? "true" : "false";
-    if (typeof v === "string") {
-        const quoted = `"${v}"`;
-        return quoted.length > 35 ? `"${v.slice(0, 30)}..."` : quoted;
-    }
-    if (typeof v === "object") {
-        const json = JSON.stringify(v);
-        return json.length > 35 ? json.slice(0, 32) + "..." : json;
-    }
-    const s = String(v);
-    return s.length > 35 ? s.slice(0, 32) + "..." : s;
-}
-
 export function editDiffSummary(op: Extract<ActionListOperation, { kind: "edit" }>): string {
-    const { fieldDiffs, noteDiffers } = getEditFieldDiffs(op);
     const parts: string[] = [];
-    for (const diff of fieldDiffs) {
-        parts.push(`${diff.prop} ${shortVal(diff.observed)} -> ${shortVal(diff.desired)}`);
+    if (op.noteDiffers) parts.push("note changed");
+    for (const nested of op.nestedDiffs) {
+        parts.push(`${nested.prop} ${nested.diff.operations.length} nested ops`);
     }
-    if (noteDiffers) parts.push("note changed");
-    return parts.join(", ");
+    return parts.length === 0 ? "fields changed" : parts.join(", ");
 }

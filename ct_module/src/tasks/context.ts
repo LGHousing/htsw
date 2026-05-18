@@ -9,11 +9,31 @@ import {
 } from "./specifics/slots";
 import { waitFor } from "./specifics/waitFor";
 
-const COMMAND_INTERVAL_MS = 250;
+/**
+ * Hypixel's chat anti-spam works as a heat budget: every chat sent to
+ * the server costs `HEAT_PER_CHAT`, heat dissipates one unit per server
+ * tick (20 ticks/sec), and crossing `HEAT_KICK_THRESHOLD` disconnects
+ * the player. We mirror that accounting client-side and throttle
+ * just-in-time — at low heat commands fire instantly, only backing off
+ * when sending one more would cross the safety line.
+ *
+ * `HEAT_SAFETY_MARGIN` reserves a buffer below the kick threshold for
+ * clock skew and the round-trip between our send and the server
+ * registering it; without it a burst that lands at exactly the limit
+ * gets booted. A 25-unit margin permits an 8-chat instant burst from
+ * cold and falls back to ~1 chat/sec sustained, matching the
+ * dissipation rate.
+ */
+const HEAT_PER_CHAT = 20;
+const HEAT_DISSIPATION_PER_MS = 20 / 1000;
+const HEAT_KICK_THRESHOLD = 200;
+const HEAT_SAFETY_MARGIN = 25;
+const HEAT_MAX_POST_SEND = HEAT_KICK_THRESHOLD - HEAT_SAFETY_MARGIN;
 
 export default class TaskContext {
     private cancelled: boolean = false;
-    private nextCommandAt: number = 0;
+    private heatLevel: number = 0;
+    private heatLastUpdate: number = 0;
 
     public cancel() {
         this.cancelled = true;
@@ -29,22 +49,46 @@ export default class TaskContext {
         }
     }
 
+    private decayHeatToNow(): number {
+        const now = Date.now();
+        if (this.heatLastUpdate !== 0) {
+            const elapsed = now - this.heatLastUpdate;
+            const dissipated = elapsed * HEAT_DISSIPATION_PER_MS;
+            this.heatLevel = Math.max(0, this.heatLevel - dissipated);
+        }
+        this.heatLastUpdate = now;
+        return this.heatLevel;
+    }
+
+    /**
+     * Wait just long enough that the next chat lands at or under
+     * `HEAT_MAX_POST_SEND`, then record its heat cost. Returns instantly
+     * when there's room in the budget — bursts at low heat fire as fast
+     * as the JS event loop can dispatch them.
+     */
+    private async awaitChatBudget(): Promise<void> {
+        const heat = this.decayHeatToNow();
+        const overshoot = heat + HEAT_PER_CHAT - HEAT_MAX_POST_SEND;
+        if (overshoot > 0) {
+            await this.sleep(Math.ceil(overshoot / HEAT_DISSIPATION_PER_MS));
+            this.decayHeatToNow();
+        }
+        this.heatLevel += HEAT_PER_CHAT;
+    }
+
     public async runCommand(command: string): Promise<void> {
         if (!command.startsWith("/")) {
             throw new Error(`Invalid command: ${command}`);
         }
-        const waitMs = this.nextCommandAt - Date.now();
-        if (waitMs > 0) {
-            await this.sleep(waitMs);
-        }
-        this.nextCommandAt = Date.now() + COMMAND_INTERVAL_MS;
+        await this.awaitChatBudget();
         ChatLib.say(command);
     }
 
-    public sendMessage(message: string) {
+    public async sendMessage(message: string): Promise<void> {
         if (message.startsWith("/")) {
             throw new Error(`Invalid message: ${message}`);
         }
+        await this.awaitChatBudget();
         ChatLib.say(message);
     }
 

@@ -7,12 +7,12 @@
  * Anything here is: synchronous-feeling wait, no clicking, no field setting.
  * Click + wait pairs live in helpers.ts.
  */
-import TaskContext from "../tasks/context";
-import { removedFormatting } from "../utils/helpers";
-import { S30PacketWindowItems } from "../utils/packets";
-import { lastWindowID___FromS30PacketWindowItemsPacketReceived__ThisIsNecessary_sadly_itIncrementsFrom1To100ThenItGoesBackAround_ButSometimesItSkipsOneOrMoreWeAreNotSureMaybeMore_AndItWillNeverBeZero } from "../tasks/specifics/waitFor";
-import { COST } from "./progress/costs";
-import { timed } from "./progress/timing";
+import TaskContext from "../../tasks/context";
+import { removedFormatting } from "../../utils/helpers";
+import { S30PacketWindowItems } from "../../utils/packets";
+import { lastWindowID___FromS30PacketWindowItemsPacketReceived__ThisIsNecessary_sadly_itIncrementsFrom1To100ThenItGoesBackAround_ButSometimesItSkipsOneOrMoreWeAreNotSureMaybeMore_AndItWillNeverBeZero } from "../../tasks/specifics/waitFor";
+import { COST } from "../progress/costs";
+import { timed } from "../progress/timing";
 
 export async function waitForMenu(ctx: TaskContext): Promise<void> {
     await ctx.withTimeout(async () => {
@@ -49,7 +49,7 @@ export async function timedWaitForMenu(
     await timed(kind, expected, () => waitForMenu(ctx));
 }
 
-export async function waitForUnformattedMessage(
+async function waitForUnformattedMessage(
     ctx: TaskContext,
     message: string
 ): Promise<void> {

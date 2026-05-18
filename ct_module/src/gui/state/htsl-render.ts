@@ -4,6 +4,7 @@ import { SourceMap, parseActionsResult } from "htsw";
 import * as htsw from "htsw";
 import type { Action } from "htsw/types";
 import { FileSystemFileLoader } from "../../utils/files";
+import { javaType } from "../lib/java";
 
 export type HtslLine = {
     /** Index into the action list this line belongs to. -1 for synthetic header/blank lines. */
@@ -28,10 +29,8 @@ const parseCache = new Map<string, ParsedFile>();
 
 function getMtimeMs(path: string): number {
     try {
-        // @ts-ignore
-        const Paths = Java.type("java.nio.file.Paths");
-        // @ts-ignore
-        const Files = Java.type("java.nio.file.Files");
+        const Paths = javaType("java.nio.file.Paths");
+        const Files = javaType("java.nio.file.Files");
         return Number(Files.getLastModifiedTime(Paths.get(String(path))).toMillis());
     } catch (_e) {
         return 0;
@@ -85,7 +84,7 @@ function isStructuralLine(text: string): boolean {
     return text === "}" || text.indexOf("} else") === 0 || text === "else {";
 }
 
-export function actionToLines(action: Action, actionIndex: number): HtslLine[] {
+function actionToLines(action: Action, actionIndex: number): HtslLine[] {
     const basePath = String(actionIndex);
     let src: string;
     try {

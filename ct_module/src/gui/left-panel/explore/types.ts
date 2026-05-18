@@ -23,8 +23,8 @@ export type ResultImport = {
     parse: ParseResult<Importable[]> | null;
     parseError?: string;
 };
-export type ResultScript = { type: "script"; path: string; fullPath: string };
-export type ResultItem = { type: "item"; path: string; fullPath: string };
+type ResultScript = { type: "script"; path: string; fullPath: string };
+type ResultItem = { type: "item"; path: string; fullPath: string };
 export type Result = ResultImport | ResultScript | ResultItem;
 
 export const TYPE_COLORS: { [k in ResultType]: number } = {

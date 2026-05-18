@@ -50,8 +50,3 @@ export function addRecent(path: string): void {
     recents = next;
     persist();
 }
-
-export function clearRecents(): void {
-    recents = [];
-    persist();
-}

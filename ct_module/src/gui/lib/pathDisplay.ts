@@ -1,5 +1,7 @@
 /// <reference types="../../CTAutocomplete" />
 
+import { javaType } from "./java";
+
 // Shared path-shortening helpers used by both the topbar Input and the
 // right-pane source-preview header. Both places want paths that read as
 // `./htsw/imports/...` rather than the raw absolute Windows form.
@@ -16,8 +18,7 @@ function toForwardSlashes(s: string): string {
 function mcRoot(): string {
     if (cachedMcRoot !== null) return cachedMcRoot;
     try {
-        // @ts-ignore
-        const Paths = Java.type("java.nio.file.Paths");
+        const Paths = javaType("java.nio.file.Paths");
         cachedMcRoot = toForwardSlashes(
             Paths.get(".").toAbsolutePath().normalize().toString()
         );
@@ -48,18 +49,4 @@ export function normalizeHtswPath(p: string): string {
     }
     if (root.length > 0 && norm === root) return ".";
     return norm;
-}
-
-/**
- * Compact a path by keeping only the last `n` segments, joined by `/`.
- * Used by Explore's row labels — no `~/` prefix, no MC-root anchoring,
- * just the last few directories so a deep absolute path renders as
- * `bar/baz/file.htsl` rather than `C:/long/winding/path/.../file.htsl`.
- */
-export function tailSegments(p: string, n: number): string {
-    if (p === undefined || p === null || p === "") return p;
-    const norm = toForwardSlashes(p);
-    const parts = norm.split("/").filter((s) => s.length > 0);
-    if (parts.length <= n) return parts.join("/");
-    return parts.slice(parts.length - n).join("/");
 }

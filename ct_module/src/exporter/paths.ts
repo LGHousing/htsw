@@ -1,4 +1,3 @@
-import type { Importable } from "htsw/types";
 import * as json from "jsonc-parser";
 import { encodeFilesystemComponent } from "../utils/filesystem";
 
@@ -110,17 +109,4 @@ function sanitizeRelativeReference(raw: string): string | null {
     }
 
     return normalized;
-}
-
-/** Filename for an importable's `.htsl` source file. */
-export function htslFilename(importable: Importable): string {
-    if (importable.type === "EVENT") {
-        return canonicalSlug(importable.event) + ".htsl";
-    }
-    return canonicalSlug(importable.name) + ".htsl";
-}
-
-/** Default export root: `./htsw/exports/<housingUuid>/`. */
-export function defaultExportRoot(housingUuid: string): string {
-    return `./htsw/exports/${housingUuid}`;
 }

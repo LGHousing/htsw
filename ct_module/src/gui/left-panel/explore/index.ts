@@ -119,7 +119,6 @@ function isImportableExpandable(imp: Importable): boolean {
     return subListsOf(imp).length > 0;
 }
 
-const STANDALONE_KEY = "__standalone__";
 const ROOT_DIR_PREFIX = "dir:";
 
 function dirRootKey(s: SourceDir): string {
@@ -651,7 +650,7 @@ function composeTreeRow(r: TreeRow): Element {
 
 type Root =
     | { kind: "dir"; source: SourceDir; key: string }
-    | { kind: "standalone"; files: SourceFile[]; key: string };
+    | { kind: "standalone"; files: SourceFile[] };
 
 function buildRoots(): Root[] {
     const sources = getSources();
@@ -667,22 +666,13 @@ function buildRoots(): Root[] {
         out.push({ kind: "dir", source: dirs[i], key: dirRootKey(dirs[i]) });
     }
     if (files.length > 0) {
-        out.push({ kind: "standalone", files, key: STANDALONE_KEY });
+        out.push({ kind: "standalone", files });
     }
     return out;
 }
 
 function buildTreeRows(): TreeRow[] {
     const roots = buildRoots();
-    // Per-root header visibility:
-    //   - dir roots: always show the header so the user can collapse / get
-    //     context, even when only one folder is open.
-    //   - standalone files render directly; a synthetic group label adds
-    //     noise when the files are already named import.json / .htsl / .snbt.
-    const showHeaderFor = (root: Root): boolean => {
-        if (root.kind === "dir") return true;
-        return false;
-    };
     // Count imports across every opened source (unfiltered — search/type
     // filtering shouldn't change the default). When there's exactly one,
     // its row defaults to expanded.
@@ -719,22 +709,19 @@ function buildTreeRows(): TreeRow[] {
 
     for (let ri = 0; ri < roots.length; ri++) {
         const root = roots[ri];
-        const headered = showHeaderFor(root);
 
         if (root.kind === "dir") {
-            if (headered) {
-                out.push({
-                    levels: [],
-                    branch: null,
-                    content: () => rootRow(
-                        formatFullDir(root.source.fullPath),
-                        root.key,
-                        dirRootActions(root.source)
-                    ),
-                    height: 18,
-                });
-                if (collapsedRoots.has(root.key)) continue;
-            }
+            out.push({
+                levels: [],
+                branch: null,
+                content: () => rootRow(
+                    formatFullDir(root.source.fullPath),
+                    root.key,
+                    dirRootActions(root.source)
+                ),
+                height: 18,
+            });
+            if (collapsedRoots.has(root.key)) continue;
 
             const dirSourceKey = root.key;
             const results = filterAndSort(enumerateForSource(root.source));
@@ -745,7 +732,7 @@ function buildTreeRows(): TreeRow[] {
                 const defaultExpanded = expKey === soleImportKey;
                 out.push({
                     levels: [],
-                    branch: headered ? (isLastResult ? "ell" : "tee") : null,
+                    branch: isLastResult ? "ell" : "tee",
                     content: () => resultRow(r, dirSourceKey, defaultExpanded),
                     height: 18,
                 });
@@ -755,9 +742,9 @@ function buildTreeRows(): TreeRow[] {
                     for (let j = 0; j < importables.length; j++) {
                         const imp = importables[j];
                         const isLastImp = j === importables.length - 1;
-                        const impLevels: LevelGuide[] = headered
-                            ? [isLastResult ? "empty" : "vertical"]
-                            : [];
+                        const impLevels: LevelGuide[] = [
+                            isLastResult ? "empty" : "vertical",
+                        ];
                         out.push({
                             levels: impLevels,
                             branch: isLastImp ? "ell" : "tee",
@@ -784,27 +771,19 @@ function buildTreeRows(): TreeRow[] {
                 }
             }
         } else {
-            // Run each standalone file through the same enumeration that
-            // a folder-rooted source uses. That gives us a real `Result`
-            // (typed import.json / htsl / snbt) so the rows render with
-            // `resultRow` and inherit its actions, expansion, and entry
-            // sub-rows. Per-file `Close` is layered on via `extraActions`.
             for (let i = 0; i < root.files.length; i++) {
                 const file = root.files[i];
-                // Each standalone file is its own source for expansion-key
-                // purposes, so two adds of the same path keep independent
-                // [+]/[-] state from each other and from any folder root.
+                // `alreadyHas` dedups source fullPath entries, so a file path
+                // owns one expansion key.
                 const fileSourceKey = `file:${file.fullPath}`;
-                const isLastFile = i === root.files.length - 1;
                 const fileResults = filterAndSort(enumerateForSource(file));
                 for (let j = 0; j < fileResults.length; j++) {
                     const r = fileResults[j];
-                    const isLastResult = isLastFile && j === fileResults.length - 1;
                     const expKey = expansionKey(fileSourceKey, r.fullPath);
                     const defaultExpanded = expKey === soleImportKey;
                     out.push({
                         levels: [],
-                        branch: headered ? (isLastResult ? "ell" : "tee") : null,
+                        branch: null,
                         content: () => resultRow(
                             r,
                             fileSourceKey,
@@ -823,11 +802,8 @@ function buildTreeRows(): TreeRow[] {
                         for (let k = 0; k < importables.length; k++) {
                             const imp = importables[k];
                             const isLastImp = k === importables.length - 1;
-                            const impLevels: LevelGuide[] = headered
-                                ? [isLastResult ? "empty" : "vertical"]
-                                : [];
                             out.push({
-                                levels: impLevels,
+                                levels: [],
                                 branch: isLastImp ? "ell" : "tee",
                                 content: () => importableRow(r, imp),
                                 height: ENTRY_ROW_H,
@@ -837,9 +813,9 @@ function buildTreeRows(): TreeRow[] {
                                 const subs = subListsOf(imp);
                                 for (let s = 0; s < subs.length; s++) {
                                     const isLastSub = s === subs.length - 1;
-                                    const subLevels: LevelGuide[] = impLevels.concat([
+                                    const subLevels: LevelGuide[] = [
                                         isLastImp ? "empty" : "vertical",
-                                    ]);
+                                    ];
                                     out.push({
                                         levels: subLevels,
                                         branch: isLastSub ? "ell" : "tee",

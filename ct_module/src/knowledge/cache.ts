@@ -11,7 +11,7 @@ import { cachePathFor, cachePathForId } from "./paths";
  * mis-interpret. `readKnowledge` rejects entries with a different
  * version so stale caches don't poison a future trust-mode.
  */
-export const KNOWLEDGE_SCHEMA_VERSION = 1;
+const KNOWLEDGE_SCHEMA_VERSION = 1;
 
 export type KnowledgeWriter = "exporter" | "importer";
 
@@ -36,7 +36,7 @@ export type KnowledgeEntry = {
 /**
  * Build a fresh cache entry for the given importable. Pure: no I/O.
  */
-export function buildKnowledgeEntry(
+function buildKnowledgeEntry(
     importable: Importable,
     writer: KnowledgeWriter
 ): KnowledgeEntry {

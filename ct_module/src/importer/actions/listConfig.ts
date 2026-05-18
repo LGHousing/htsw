@@ -1,4 +1,4 @@
-import type { PaginatedListConfig } from "../paginatedList";
+import type { PaginatedListConfig } from "../gui/paginatedList";
 
 export const ACTION_LIST_CONFIG: PaginatedListConfig = {
     label: "action",

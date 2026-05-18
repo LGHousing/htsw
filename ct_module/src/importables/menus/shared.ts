@@ -2,7 +2,7 @@ import {
     clickGoBack,
     timedWaitForMenu,
     timedWaitForUnformattedMessage,
-} from "../../importer/helpers";
+} from "../../importer/gui/helpers";
 import TaskContext from "../../tasks/context";
 import { removedFormatting, unique } from "../../utils/helpers";
 

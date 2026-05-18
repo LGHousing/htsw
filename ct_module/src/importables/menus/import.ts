@@ -1,15 +1,15 @@
 import type { ImportableMenu } from "htsw/types";
 
-import { syncActionList } from "../../importer/actions";
+import { syncActionList } from "../../importer/actions/sync";
 import {
     clickGoBack,
     setCycleValue,
     timedWaitForMenu,
     timedWaitForUnformattedMessage,
-} from "../../importer/helpers";
-import { selectItemFromOpenInventory } from "../../importer/items";
+} from "../../importer/gui/helpers";
+import { selectItemFromOpenInventory } from "../../importer/items/items";
 import type { ImportableTrustPlan } from "../../knowledge";
-import type { ActionListProgress } from "../../importer/types";
+import type { ActionListProgressFields } from "../../importer/progress/types";
 import TaskContext from "../../tasks/context";
 import { getItemFromNbt } from "../../utils/nbt";
 import { actionListTrustFor } from "../actionListTrust";
@@ -24,7 +24,7 @@ export async function importImportableMenu(
     importable: ImportableMenu,
     itemRegistry: ItemRegistry,
     trustPlan?: ImportableTrustPlan,
-    onActionListProgress?: (progress: ActionListProgress) => void
+    onActionListProgress?: (progress: ActionListProgressFields) => void
 ): Promise<void> {
     await ensureReferencedImportablesExist(ctx, importable);
 

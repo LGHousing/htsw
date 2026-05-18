@@ -270,9 +270,6 @@ function renderScrollbar(id: string, mouseX: number, mouseY: number): void {
         thumbRect.h
     );
 }
-
-export type ClickResult = "consumed" | "passthrough" | "miss";
-
 // Returns "consumed" if a clickable was hit, "miss" otherwise.
 // Also handles input focusing and scrollbar drag start. `button` is the LWJGL mouse button
 // (0 = left, 1 = right, 2 = middle); only left clicks engage scrollbar drag and double-click logic.

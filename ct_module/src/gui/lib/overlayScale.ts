@@ -1,7 +1,7 @@
 /// <reference types="../../CTAutocomplete" />
 
-import { Rect } from "./layout";
 import { ContainerBounds, getContainerBounds } from "./bounds";
+import { javaType } from "./java";
 
 // The overlay renders at MC's current GUI scale, capped at `OVERLAY_SCALE_TARGET` (4) so a
 // modded scale of 5+ doesn't make the overlay unusably large. The per-frame effective scale is
@@ -11,14 +11,13 @@ import { ContainerBounds, getContainerBounds } from "./bounds";
 // applies a GL scale transform so Renderer.* calls (which interpret coords in MC's scaled
 // space) produce the correct real-pixel output.
 
-// @ts-ignore
-const ScaledResolutionClass = net.minecraft.client.gui.ScaledResolution;
+const ScaledResolutionClass = javaType("net.minecraft.client.gui.ScaledResolution");
 
 // Target overlay scale (real pixels per overlay unit) — the cap on how big we'll render. The
 // actual per-frame scale is `getEffectiveOverlayScale()`, which is MC's current scale capped at
 // this target. We never render bigger than MC's own GUI; we only render smaller when a modded
 // MC scale exceeds our cap.
-export const OVERLAY_SCALE_TARGET = 4;
+const OVERLAY_SCALE_TARGET = 4;
 
 // Effective overlay scale this frame: MC's current real scale capped at OVERLAY_SCALE_TARGET.
 // When MC is at-or-below the cap (the common case — vanilla maxes at 4), we match it exactly so
@@ -61,17 +60,6 @@ export function getOverlayScreenH(): number {
     const dh = (Client.getMinecraft() as any).field_71440_d;
     return Math.floor(dh / getEffectiveOverlayScale());
 }
-
-// Convert an MC scaled-coord rect into overlay coords.
-export function mcRectToOverlay(r: Rect): Rect {
-    return {
-        x: mcToOverlay(r.x),
-        y: mcToOverlay(r.y),
-        w: mcToOverlay(r.w),
-        h: mcToOverlay(r.h),
-    };
-}
-
 // Same as `getContainerBounds` from `bounds.ts`, but with every field converted into overlay
 // coords. Use this for layout / panel positioning; use the bounds.ts version when you need raw
 // MC coords (e.g. forwarding to a Java API that expects them).

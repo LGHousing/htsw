@@ -9,10 +9,18 @@ import { printDiagnostic } from "../tui/diagnostics";
 import { createItemRegistry } from "./itemRegistry";
 import { importImportable } from "./imports";
 import { setActiveDiffSink, type ImportDiffSink } from "../importer/diffSink";
-import type { ActionListProgress, ActionListProgressPhase } from "../importer/types";
-import { estimateImportableCost, type EtaConfidence } from "../importer/progress/costs";
-
-// TODO: Make this work with GUI
+import type {
+    ActionListProgressFields,
+    ImportProgress,
+    ImportProgressCurrent,
+    ImportProgressRow,
+    ImportRunRowStatus,
+    PhaseUnits,
+} from "../importer/progress/types";
+import { importProgressKey } from "../importer/progress/keys";
+import { estimateImportableCost } from "../importer/progress/costs";
+import { readKnowledge } from "../knowledge/cache";
+import { readCachedActionList } from "./actionListTrust";
 
 export type ImportSelection = {
     importables: Importable[];
@@ -39,66 +47,11 @@ export type ImportSelection = {
     ) => ImportDiffSink | null;
 };
 
-export type ImportRunRowStatus =
-    | "queued"
-    | "current"
-    | "imported"
-    | "skipped"
-    | "failed";
-
-export type ImportProgress = {
-    completed: number;
-    total: number;
-    /**
-     * Cumulative "weight" of work completed (sum of estimated step counts of
-     * importables that have finished). Better signal for the progress bar
-     * than `completed/total` because importables vary wildly in size — a
-     * function with 50 actions is much more work than one with 2.
-     */
-    weightCompleted: number;
-    weightTotal: number;
-    /**
-     * Estimated weight of the importable currently being processed. The UI
-     * can render an in-flight indicator between weightCompleted and
-     * weightCompleted + weightCurrent for nicer mid-importable feedback.
-     */
-    weightCurrent: number;
-    currentKey: string;
-    currentType: Importable["type"] | null;
-    currentIdentity: string;
-    orderIndex: number;
-    rowStatus: ImportRunRowStatus | null;
-    currentLabel: string;
-    phase:
-        | "starting"
-        | "opening"
-        | "reading"
-        | "hydrating"
-        | "diffing"
-        | "applying"
-        | "writingKnowledge"
-        | "done";
-    phaseLabel: string;
-    unitCompleted: number;
-    unitTotal: number;
-    estimatedCompleted: number;
-    estimatedTotal: number;
-    etaConfidence: EtaConfidence;
-    failed: number;
-};
-
 export type ImportSessionResult = {
     imported: number;
     skippedTrusted: number;
     failed: number;
 };
-
-function importPhaseFromActionPhase(phase: ActionListProgressPhase): ImportProgress["phase"] {
-    if (phase === "reading") return "reading";
-    if (phase === "hydrating") return "hydrating";
-    if (phase === "diffing") return "diffing";
-    return "applying";
-}
 
 export function orderImportablesForImportSession(
     allImportables: readonly Importable[],
@@ -125,9 +78,11 @@ export async function importSelectedImportables(
     const parsed = parseImportablesResult(sm, selection.sourcePath);
     const registry = createItemRegistry(parsed.value, parsed.gcx);
     const ordered = orderImportablesForImportSession(parsed.value, selection.importables);
-    const trustPlan = selection.trustMode
-        ? buildKnowledgeTrustPlan(selection.housingUuid, parsed.value)
-        : undefined;
+    const trustPlan = buildKnowledgeTrustPlan(
+        selection.housingUuid,
+        parsed.value,
+        selection.trustMode
+    );
 
     const result: ImportSessionResult = {
         imported: 0,
@@ -135,76 +90,147 @@ export async function importSelectedImportables(
         failed: 0,
     };
 
-    const weights: number[] = ordered.map(estimateImportableWeight);
-    let weightTotal = 0;
-    for (let i = 0; i < weights.length; i++) weightTotal += weights[i];
-    if (weightTotal === 0) weightTotal = 1;
-
+    const importableUnits: number[] = ordered.map((importable) =>
+        estimateImportableUnitsWithCache(importable, selection.housingUuid)
+    );
+    let initialTotalUnits = 0;
+    for (let i = 0; i < importableUnits.length; i++) {
+        initialTotalUnits += importableUnits[i];
+    }
+    if (initialTotalUnits === 0) initialTotalUnits = 1;
     let completed = 0;
-    let weightCompleted = 0;
+    let completedSessionUnits = 0;
+    let totalSessionUnits = initialTotalUnits;
+    let lastEmittedSessionUnits = 0;
+    const rows: ImportProgressRow[] = ordered.map((importable, i) => {
+        const identity = importableIdentity(importable);
+        return {
+            key: importProgressKey(importable.type, identity, selection.sourcePath),
+            status: "queued",
+            units: importableUnits[i],
+        };
+    });
+
     for (let i = 0; i < ordered.length; i++) {
         const importable = ordered[i];
-        const weightCurrent = weights[i];
-        const key = trustPlanKey(importable.type, importableIdentity(importable));
+        const initialCurrentUnits = importableUnits[i];
         const identity = importableIdentity(importable);
-        const plan = trustPlan?.importables.get(key);
-        const label = `${importable.type} ${identity}`;
-        const emitProgress = (
-            phase: ImportProgress["phase"],
-            phaseLabel: string,
-            unitCompleted: number,
-            unitTotal: number,
-            estimatedCompleted?: number,
-            estimatedTotal?: number,
-            etaConfidence?: ImportProgress["etaConfidence"],
-            rowStatus: ImportRunRowStatus = "current"
-        ) => {
-            if (!selection.onProgress) return;
-            const remainingWeight = weightTotal - weightCompleted - weightCurrent;
-            const refinedCurrentTotal = estimatedTotal ?? weightCurrent;
-            const refinedCurrentCompleted =
-                estimatedCompleted ??
-                (unitTotal > 0
-                    ? weightCurrent * Math.min(1, Math.max(0, unitCompleted / unitTotal))
-                    : 0);
-            selection.onProgress({
-                completed,
-                total: ordered.length,
-                weightCompleted,
-                weightTotal: weightCompleted + refinedCurrentTotal + remainingWeight,
-                weightCurrent: refinedCurrentTotal,
-                currentKey: key,
-                currentType: importable.type,
-                currentIdentity: identity,
-                orderIndex: i,
-                rowStatus,
-                currentLabel: label,
-                phase,
-                phaseLabel,
-                unitCompleted,
-                unitTotal,
-                estimatedCompleted: weightCompleted + refinedCurrentCompleted,
-                estimatedTotal: weightCompleted + refinedCurrentTotal + remainingWeight,
-                etaConfidence: etaConfidence ?? "rough",
-                failed: result.failed,
-            });
+        const trustKey = trustPlanKey(importable.type, identity);
+        const importableKey = importProgressKey(
+            importable.type,
+            identity,
+            selection.sourcePath
+        );
+        const plan = trustPlan?.importables.get(trustKey);
+        let currentTotalUnits = initialCurrentUnits;
+        let currentCompletedUnits = 0;
+        let currentPhaseUnits: PhaseUnits = {
+            reading: 0,
+            hydrating: 0,
+            applying: currentTotalUnits,
         };
-        emitProgress("opening", "opening importable", 0, Math.max(1, weightCurrent));
+        const finishCurrentUnits = (): void => {
+            totalSessionUnits += currentTotalUnits - initialCurrentUnits;
+            importableUnits[i] = currentTotalUnits;
+            rows[i].units = currentTotalUnits;
+        };
+        const finishCompletedImportable = (): void => {
+            finishCurrentUnits();
+            completed++;
+            completedSessionUnits += currentTotalUnits;
+        };
+        const finishFailedImportable = (): void => {
+            finishCurrentUnits();
+        };
+        const emitProgress = (inner: ActionListProgressFields): void => {
+            const eventTotalUnits =
+                inner.totalUnits > 0 ? inner.totalUnits : initialCurrentUnits;
+            if (eventTotalUnits > currentTotalUnits) {
+                currentTotalUnits = eventTotalUnits;
+                rows[i].units = currentTotalUnits;
+            }
+
+            currentPhaseUnits = inner.phaseUnits;
+            currentCompletedUnits = Math.min(
+                currentTotalUnits,
+                Math.max(currentCompletedUnits, inner.completedUnits)
+            );
+            emitSessionProgress("current", inner.phase, inner.phaseLabel, inner);
+        };
+        const emitTerminalProgress = (
+            rowStatus: Extract<ImportRunRowStatus, "imported" | "skipped" | "failed">,
+            phaseLabel: string
+        ): void => {
+            currentCompletedUnits = currentTotalUnits;
+            emitSessionProgress(rowStatus, "done", phaseLabel);
+        };
+        // Update row state without emitting a "done" event — used between
+        // importables so the GUI doesn't flash a "Done: imported" line
+        // before the next importable's first phase event arrives. The
+        // next emit (or the session-end emit) carries the updated rows
+        // array to the GUI, which is what flips the queue row green.
+        const finishImportableRowSilently = (
+            rowStatus: Extract<ImportRunRowStatus, "imported" | "skipped">
+        ): void => {
+            currentCompletedUnits = currentTotalUnits;
+            rows[i].status = rowStatus;
+        };
+        const emitSessionProgress = (
+            rowStatus: Exclude<ImportRunRowStatus, "queued">,
+            phase: ImportProgressCurrent["phase"],
+            phaseLabel: string,
+            inner?: ActionListProgressFields
+        ): void => {
+            rows[i].status = rowStatus;
+            const clampedCurrentUnits = Math.min(
+                currentTotalUnits,
+                Math.max(0, currentCompletedUnits)
+            );
+            currentCompletedUnits = clampedCurrentUnits;
+            if (!selection.onProgress) return;
+
+            const remainingSessionUnits =
+                totalSessionUnits - completedSessionUnits - initialCurrentUnits;
+            const sessionCompletedUnits = completedSessionUnits + clampedCurrentUnits;
+            const sessionTotalUnits =
+                completedSessionUnits + currentTotalUnits + remainingSessionUnits;
+            const current: ImportProgressCurrent = {
+                key: importableKey,
+                type: importable.type,
+                identity,
+                status: rowStatus,
+                phase,
+                label: `${importable.type} ${identity}`,
+                phaseLabel,
+                completedUnits: clampedCurrentUnits,
+                totalUnits: currentTotalUnits,
+                phaseUnits: currentPhaseUnits,
+                unitCompleted: inner?.unitCompleted,
+                unitTotal: inner?.unitTotal,
+                parentUnitCompleted: inner?.parentUnitCompleted,
+                parentUnitTotal: inner?.parentUnitTotal,
+                parentPhaseLabel: inner?.parentPhaseLabel,
+            };
+            const payload: ImportProgress = {
+                completedImportables: completed,
+                totalImportables: ordered.length,
+                completedUnits: sessionCompletedUnits,
+                totalUnits: sessionTotalUnits,
+                current,
+                rows,
+                failed: result.failed,
+            };
+            selection.onProgress(payload);
+            lastEmittedSessionUnits = Math.max(
+                lastEmittedSessionUnits,
+                payload.completedUnits
+            );
+        };
 
         if (plan?.wholeImportableTrusted) {
             result.skippedTrusted++;
-            emitProgress(
-                "done",
-                "trusted cache current; skipped",
-                1,
-                1,
-                weightCurrent,
-                weightCurrent,
-                "planned",
-                "skipped"
-            );
-            completed++;
-            weightCompleted += weightCurrent;
+            finishImportableRowSilently("skipped");
+            finishCompletedImportable();
             continue;
         }
 
@@ -217,31 +243,13 @@ export async function importSelectedImportables(
             await importImportable(ctx, importable, registry, {
                 plan,
                 housingUuid: selection.housingUuid,
-                onActionListProgress: (progress: ActionListProgress) => {
-                    emitProgress(
-                        importPhaseFromActionPhase(progress.phase),
-                        progress.label,
-                        progress.completed,
-                        progress.total,
-                        progress.estimatedCompleted,
-                        progress.estimatedTotal,
-                        progress.confidence
-                    );
-                },
+                onActionListProgress: emitProgress,
             });
             if (!plan?.wholeImportableTrusted) {
                 result.imported++;
             }
-            emitProgress(
-                "done",
-                "imported",
-                1,
-                1,
-                weightCurrent,
-                weightCurrent,
-                "planned",
-                "imported"
-            );
+            finishImportableRowSilently("imported");
+            finishCompletedImportable();
         } catch (error) {
             // User-initiated cancel — propagate so TaskManager logs "Task
             // cancelled" once and the GUI's progress UI clears, instead of
@@ -251,31 +259,11 @@ export async function importSelectedImportables(
                 throw error;
             }
             result.failed++;
-            emitProgress(
-                "done",
-                "failed",
-                1,
-                1,
-                weightCurrent,
-                weightCurrent,
-                "planned",
-                "failed"
-            );
+            emitTerminalProgress("failed", "failed");
             if (error instanceof Diagnostic) {
                 printDiagnostic(sm, error);
             } else {
                 ctx.displayMessage(`&cFailed to import ${importable.type}: ${error}`);
-                const e = error as {
-                    stack?: string;
-                    fileName?: string;
-                    lineNumber?: number;
-                };
-                if (typeof e?.fileName === "string" && typeof e?.lineNumber === "number") {
-                    ctx.displayMessage(`&7thrown at ${e.fileName}:${e.lineNumber}`);
-                }
-                if (typeof e?.stack === "string" && e.stack.length > 0) {
-                    ctx.displayMessage(`&7${e.stack}`);
-                }
             }
             // Halt the session on first failure rather than ploughing
             // through the remaining importables — they're often dependent
@@ -285,34 +273,25 @@ export async function importSelectedImportables(
                 `&c[htsw] Import aborted after failure on ${importable.type} ${importableIdentity(importable)}`
             );
             setActiveDiffSink(null);
+            finishFailedImportable();
             break;
         } finally {
             setActiveDiffSink(null);
         }
-        completed++;
-        weightCompleted += weightCurrent;
     }
 
     if (selection.onProgress) {
+        const finalSessionUnits = Math.max(
+            completedSessionUnits,
+            lastEmittedSessionUnits
+        );
         selection.onProgress({
-            completed,
-            total: ordered.length,
-            weightCompleted,
-            weightTotal,
-            weightCurrent: 0,
-            currentKey: "",
-            currentType: null,
-            currentIdentity: "done",
-            orderIndex: -1,
-            rowStatus: null,
-            currentLabel: "done",
-            phase: "done",
-            phaseLabel: "done",
-            unitCompleted: 1,
-            unitTotal: 1,
-            estimatedCompleted: weightCompleted,
-            estimatedTotal: weightTotal,
-            etaConfidence: "planned",
+            completedImportables: completed,
+            totalImportables: ordered.length,
+            completedUnits: finalSessionUnits,
+            totalUnits: totalSessionUnits,
+            current: null,
+            rows,
             failed: result.failed,
         });
     }
@@ -321,11 +300,21 @@ export async function importSelectedImportables(
 }
 
 /**
- * Rough work estimate for an importable. Used to weight the progress bar so
- * a function with 50 actions advances the bar much more than a function
- * with 2 actions. Numbers are heuristic — they don't need to be accurate,
- * just monotonic with how long the import will take.
+ * Cache-aware work estimate for an importable, in progress units.
  */
-function estimateImportableWeight(importable: Importable): number {
-    return Math.max(1, estimateImportableCost(importable));
+function estimateImportableUnitsWithCache(
+    importable: Importable,
+    housingUuid: string
+): number {
+    const entry = readKnowledge(
+        housingUuid,
+        importable.type,
+        importableIdentity(importable)
+    );
+    if (entry === null) {
+        return Math.max(1, estimateImportableCost(importable));
+    }
+    const getCached = (basePath: string) =>
+        readCachedActionList(entry.importable, basePath);
+    return Math.max(1, estimateImportableCost(importable, getCached));
 }

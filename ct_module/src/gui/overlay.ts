@@ -2,22 +2,23 @@
 
 import { Panel } from "./lib/panel";
 import { Element, Rect, layoutElement, pointInRect, getScrollState } from "./lib/layout";
+import { javaType } from "./lib/java";
 
-// LWJGL globals not in CT autocomplete.
-// @ts-ignore
-const MouseClass = Java.type("org.lwjgl.input.Mouse");
-// @ts-ignore
-const KeyboardClass = Java.type("org.lwjgl.input.Keyboard");
-// Forge inner-class path uses $ separators with Java.type.
-// @ts-ignore
-const ForgeMouseInputEventPre = Java.type(
+declare const JavaAdapter: new (baseClass: any, implementation: object) => any;
+
+const MouseClass = javaType("org.lwjgl.input.Mouse");
+const KeyboardClass = javaType("org.lwjgl.input.Keyboard");
+const ForgeMouseInputEventPre = javaType(
     "net.minecraftforge.client.event.GuiScreenEvent$MouseInputEvent$Pre"
 );
-// @ts-ignore
-const ForgeKeyboardInputEventPre = Java.type(
+const ForgeKeyboardInputEventPre = javaType(
     "net.minecraftforge.client.event.GuiScreenEvent$KeyboardInputEvent$Pre"
 );
-import { RootTree } from "./root";
+const GuiScreenClass = javaType("net.minecraft.client.gui.GuiScreen");
+const RenderGameOverlayEventPost = javaType(
+    "net.minecraftforge.client.event.RenderGameOverlayEvent$Post"
+);
+import { RootTree, getImportCachedBounds } from "./root";
 import { getContainerBounds, getFullscreenPanelRect } from "./lib/bounds";
 import { autoDiscoverImportJson, reparseImportJson, tickReparse } from "./state/reparse";
 import { CHAT_INPUT_ID } from "./chat-input";
@@ -27,10 +28,13 @@ import {
     closeAllPopovers,
     getOpenPopoverContents,
     tryDispatchPopoverWheel,
+    mouseIsOverPopover,
 } from "./lib/popovers";
 import {
     getHousingUuid,
+    getImportProgress,
     getParsedResult,
+    isImportSoundsMuted,
     setHousingUuid,
     setKnowledgeRows,
 } from "./state";
@@ -45,10 +49,18 @@ import {
     updateScrollbarDrag,
     endScrollbarDrag,
     setRenderDebugLog,
+    renderElement,
 } from "./lib/render";
 import { getFocusedInput, setFocusedInput } from "./lib/focus";
 import { applyFocus, getRecord, readAndSync, tickAllFields } from "./lib/inputState";
-import { getEffectiveOverlayScale, mcToOverlay, getContainerBoundsOverlay } from "./lib/overlayScale";
+import {
+    getEffectiveOverlayScale,
+    mcToOverlay,
+    getContainerBoundsOverlay,
+    getOverlayScreenW,
+    getOverlayScreenH,
+} from "./lib/overlayScale";
+import { beginHtswOverlayDraw, endHtswOverlayDraw } from "./lib/panel";
 
 let enabled = true;
 let initialized = false;
@@ -66,26 +78,25 @@ function debug(msg: string): void {
     if (!debugActive()) return;
     debugBuffer += `[${Date.now()}] ${msg}\n`;
     FileLib.write(DEBUG_LOG_PATH, debugBuffer);
-}
-
-export function debugLog(msg: string): void {
-    debug(msg);
-}
-export function debugIsActive(): boolean {
-    return debugActive();
-}
-
-function frameBounds(): Rect {
+}function frameBounds(): Rect {
     // Use the overlay-converted bounds so the panel rect lives in overlay coords (1 unit =
     // OVERLAY_SCALE real pixels). bounds.ts itself is left untouched.
     const b = getContainerBoundsOverlay();
-    if (b === null) return ZERO_RECT;
-    return getFullscreenPanelRect(b);
+    if (b !== null) return getFullscreenPanelRect(b);
+    // Mid-import gap (Hypixel closed the housing menu to prompt for chat
+    // input). Reuse the bounds we captured the last time the menu was open
+    // so the panel layout stays put instead of collapsing to nothing.
+    if (getImportProgress() !== null) {
+        const cached = getImportCachedBounds();
+        if (cached !== null) return getFullscreenPanelRect(cached);
+    }
+    return ZERO_RECT;
 }
 
 function frameVisible(): boolean {
     if (!enabled) return false;
-    return getContainerBounds() !== null;
+    if (getContainerBounds() !== null) return true;
+    return getImportProgress() !== null && getImportCachedBounds() !== null;
 }
 
 // Housing-UUID auto-fetch. We only run `/wtfmap` when we actually need
@@ -144,6 +155,78 @@ function laidOutTrees(): { root: Element; rect: Rect }[] {
     return out;
 }
 
+/**
+ * Paint the overlay's dim shade + panel tree using the cached menu rect,
+ * for the brief gaps when no GuiContainer is open during an import.
+ * No-op outside of those gaps so the regular `guiRender` panel paint is
+ * the source of truth whenever a GuiContainer is up. Coords come in as
+ * MC-scaled and are converted to overlay space.
+ */
+// Semi-transparent dark scrim matching MC's `drawDefaultBackground`
+// gradient (top of MC's gradient is 0xC0101010 = 75% near-black). This is
+// what the user sees behind a normal inventory, so painting it during the
+// import gap reproduces the "inventory-open" feel rather than a hard
+// blackout. Bleed-through is fine for the world; HUD text elements
+// (chat/scoreboard/title/etc.) are suppressed separately via per-element
+// Pre cancellations so they don't bleed through this 25% window.
+const COLOR_IMPORT_GAP_SHADE = 0xc0101010 | 0;
+
+let shadeFrameTick = 0;
+function paintImportShade(rawX: number, rawY: number, root: Element, source: string): void {
+    if (!enabled) return;
+    if (getImportProgress() === null) return;
+    if (getContainerBounds() !== null) return;
+    const cached = getImportCachedBounds();
+    if (cached === null) return;
+    if (debugActive() && shadeFrameTick++ % 30 === 0) {
+        const mc = Client.getMinecraft() as any;
+        const cur = mc.field_71462_r;
+        const curName = cur === null || cur === undefined ? "null" : String(cur.getClass().getName());
+        debug(`paintImportShade via=${source} current=${curName} placeholder=${isPlaceholderScreen(cur)}`);
+    }
+    const b = getFullscreenPanelRect(cached);
+    const x = mcToOverlay(rawX);
+    const y = mcToOverlay(rawY);
+    beginHtswOverlayDraw();
+    Renderer.drawRect(
+        COLOR_IMPORT_GAP_SHADE,
+        0,
+        0,
+        getOverlayScreenW(),
+        getOverlayScreenH()
+    );
+    const interactive = !mouseIsOverPopover(x, y);
+    renderElement(root, b.x, b.y, b.w, b.h, x, y, interactive);
+    endHtswOverlayDraw();
+}
+
+// Stand-in GuiScreen we swap in when Hypixel briefly closes the housing
+// menu mid-import. Real fix for three problems that previously surfaced
+// during that gap:
+//   1. World/HUD flashed visible for a frame.
+//   2. Chat lit up (full-bright + on top) because `currentScreen == null`
+//      put MC back in "in-game" rendering mode.
+//   3. Cursor snapped to screen center on the next GUI open.
+// All three stem from the same cause: MC's `displayGuiScreen(null)` flips
+// `inGameHasFocus` to true via `grabMouseCursor`; the next non-null open
+// then calls `setIngameNotInFocus` → `ungrabMouseCursor` →
+// `Mouse.setCursorPosition(W/2, H/2)`. Going GuiScreen-to-GuiScreen skips
+// that path entirely (the `inGameHasFocus` guard short-circuits), so by
+// redirecting null → placeholder we keep the cursor put AND keep MC in
+// "GUI is open" rendering mode (chat dim, no HUD).
+//
+// Created lazily on first need so we don't pay the Java alloc until an
+// import actually runs.
+let placeholderScreen: any = null;
+function getPlaceholderScreen(): any {
+    if (placeholderScreen === null) placeholderScreen = new JavaAdapter(GuiScreenClass, {});
+    return placeholderScreen;
+}
+
+function isPlaceholderScreen(s: any): boolean {
+    return placeholderScreen !== null && s === placeholderScreen;
+}
+
 export function initHtswGui(): void {
     if (initialized) return;
     initialized = true;
@@ -178,6 +261,160 @@ export function initHtswGui(): void {
         getBounds: frameBounds,
         getRoot: () => frame.getRoot(),
         isVisible: frameVisible,
+    });
+
+    // Mid-import fallback paint. When Hypixel closes the housing menu to
+    // prompt for a chat-entered value, `getContainerBounds()` flips to
+    // null and the regular `guiRender` (Forge BackgroundDrawnEvent) stops
+    // firing — leaving a visible flash between menus. Paint via the
+    // raw Forge `RenderGameOverlayEvent.Post` (CT's `renderOverlay`
+    // trigger is the Pre event — running our paint before MC draws the
+    // HUD, which lets chat/hotbar text bleed through ON TOP of our
+    // scrim). Post fires once per frame after the entire vanilla HUD has
+    // been drawn, so a fully opaque scrim there hides every HUD element.
+    // `postGuiRender` covers the other state (any GuiScreen open, including
+    // GuiChat) where `DrawScreenEvent.Post` is the natural late hook.
+    register(RenderGameOverlayEventPost, (_event: any) => {
+        const screen = (Client.getMinecraft() as any).field_71462_r;
+        if (screen !== null && screen !== undefined) return;
+        paintImportShade(0, 0, frame.getRoot(), "renderGameOverlayPost");
+    });
+    register("postGuiRender", (mouseX: number, mouseY: number) =>
+        paintImportShade(mouseX, mouseY, frame.getRoot(), "postGuiRender")
+    );
+
+    // Suppress HUD text elements during the import gap. Forge 1.8.9
+    // renders renderChat, renderPlayerList, renderScoreboard, etc. inside
+    // renderGameOverlay; cancelling their Pre events skips that draw
+    // entirely. We keep the overlay scrim semi-transparent (matching MC's
+    // inventory dim), and these cancellations make sure no bright chat /
+    // scoreboard sidebar / title bleeds through that 25% bleed.
+    //
+    // Each cancellation is guarded to "import in flight + cached bounds +
+    // no real container open" so normal play is untouched. We do NOT
+    // cancel the hotbar/health/food/etc. icons — those are aesthetic only
+    // and the scrim already dims them like any inventory would.
+    function inImportGap(): boolean {
+        if (!enabled) return false;
+        if (getImportProgress() === null) return false;
+        if (getImportCachedBounds() === null) return false;
+        if (getContainerBounds() !== null) return false;
+        return true;
+    }
+    register("renderChat", (event: any) => {
+        if (inImportGap()) cancel(event);
+    });
+    register("renderScoreboard", (event: any) => {
+        if (inImportGap()) cancel(event);
+    });
+    register("renderTitle", (event: any) => {
+        if (inImportGap()) cancel(event);
+    });
+    register("renderPlayerList", (event: any) => {
+        if (inImportGap()) cancel(event);
+    });
+    register("renderBossHealth", (event: any) => {
+        if (inImportGap()) cancel(event);
+    });
+
+    // Cursor recenter mitigation. When MC closes a screen mid-import
+    // (`displayGuiScreen(null)` somewhere in packet processing), it sets
+    // `inGameHasFocus = true` via `grabMouseCursor` and hides the cursor.
+    // The next `displayGuiScreen(non-null)` then runs `setIngameNotInFocus`
+    // → `ungrabMouseCursor` → `Mouse.setCursorPosition(W/2, H/2)`, which
+    // visually snaps the cursor to screen center.
+    //
+    // We can't reasonably hook the LWJGL call, but we can save the cursor
+    // position every frame while not-in-grab, and immediately after a
+    // grab→ungrab transition (mid-import only) restore it. The user sees
+    // at most one frame at center before it pops back to where it was.
+    let savedCursorX = -1;
+    let savedCursorY = -1;
+    let prevInGameHasFocus = false;
+    register("step", () => {
+        // Runs ~60Hz alongside the render loop, the finest granularity CT
+        // exposes for cheap polling. Tick (20Hz) drops 2/3 of frames and
+        // misses brief grab→ungrab cycles.
+        const mc = Client.getMinecraft() as any;
+        const inGame = mc.field_71415_G === true;
+        if (prevInGameHasFocus && !inGame && getImportProgress() !== null) {
+            // Just transitioned grab → ungrab while an import is in flight:
+            // MC just centered the cursor inside `ungrabMouseCursor`. Put
+            // it back where the user had it before the grab. Don't update
+            // saved on this frame — the current cursor position IS the
+            // center MC just snapped to.
+            if (savedCursorX >= 0 && savedCursorY >= 0) {
+                MouseClass.setCursorPosition(savedCursorX, savedCursorY);
+            }
+        } else if (!inGame) {
+            // Stable not-in-grab — record the cursor position so we can
+            // restore here if MC later grabs + ungrabs around an import.
+            savedCursorX = MouseClass.getX();
+            savedCursorY = MouseClass.getY();
+        }
+        prevInGameHasFocus = inGame;
+    }).setFps(60);
+
+    // Catch `displayGuiScreen(null)` mid-import and redirect to a
+    // placeholder GuiScreen. See `getPlaceholderScreen` for the three
+    // visual artifacts this addresses (flash, chat brightness flip,
+    // cursor snap). Guarded so we only intercept when:
+    //   - an import is actually in flight (don't mess with normal play)
+    //   - we have cached bounds to paint into (so the placeholder isn't
+    //     blank — the overlay shade + panels render via paintImportShade)
+    //   - the outgoing screen is either a real inventory or our existing
+    //     placeholder (so closing chat / pause menu still works normally)
+    register("guiOpened", (event: any) => {
+        const incoming = event.gui;
+        const current = (Client.getMinecraft() as any).field_71462_r;
+        const currentName =
+            current === null || current === undefined
+                ? "null"
+                : String(current.getClass().getName());
+        const incomingName =
+            incoming === null || incoming === undefined
+                ? "null"
+                : String(incoming.getClass().getName());
+        debug(
+            `guiOpened from=${currentName} to=${incomingName} import=${
+                getImportProgress() !== null
+            } cached=${getImportCachedBounds() !== null} containerBounds=${
+                getContainerBounds() !== null
+            }`
+        );
+        if (!enabled) return;
+        if (incoming !== null && incoming !== undefined) return;
+        if (getImportProgress() === null) return;
+        if (getImportCachedBounds() === null) return;
+        const isInterceptable =
+            isPlaceholderScreen(current) || getContainerBounds() !== null;
+        if (!isInterceptable) {
+            debug(`guiOpened intercept skipped — current not interceptable`);
+            return;
+        }
+        event.gui = getPlaceholderScreen();
+        debug(`guiOpened intercepted — redirected null → placeholder`);
+    });
+
+    // Sound mute. While `muteImportSounds` is on and an import is in
+    // flight, cancel every `Forge.PlaySoundEvent` so the repetitive
+    // ding/click sounds Hypixel plays on every menu open during a sync
+    // don't fire. This is a broad cancel — chat dings and ambient audio
+    // are also suppressed during the import. Master volume itself is
+    // untouched, so audio resumes the moment the import ends or the
+    // toggle is turned off.
+    register("soundPlay", (
+        _position: any,
+        _name: string,
+        _vol: number,
+        _pitch: number,
+        _category: any,
+        event: any
+    ) => {
+        if (!enabled) return;
+        if (getImportProgress() === null) return;
+        if (!isImportSoundsMuted()) return;
+        cancel(event);
     });
 
     // Mouse wheel: hook Forge's GuiScreenEvent.MouseInputEvent.Pre, which fires per Mouse.next()
@@ -316,6 +553,18 @@ export function initHtswGui(): void {
         tickAllFields();
         applyFocus(getFocusedInput());
         tickReparse();
+        // If the import ended while our placeholder is still up (Hypixel
+        // didn't reopen a menu — e.g. the import finished naturally on
+        // the last menu close), dismiss it so the player isn't trapped
+        // in a phantom GUI. Going placeholder → null calls
+        // `grabMouseCursor` which doesn't move the cursor, so this is
+        // snap-free even at import end.
+        if (getImportProgress() === null) {
+            const mc = Client.getMinecraft() as any;
+            if (isPlaceholderScreen(mc.field_71462_r)) {
+                mc.func_147108_a(null);
+            }
+        }
         if (getContainerBounds() === null) {
             if (popoverIsOpen()) closeAllPopovers();
             if (getFocusedInput() !== null) setFocusedInput(null);

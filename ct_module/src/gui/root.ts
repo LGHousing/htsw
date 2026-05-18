@@ -64,6 +64,17 @@ function getStableBounds(): ContainerBounds | null {
     return cachedImportBounds ?? live;
 }
 
+/**
+ * Cached inventory bounds from the most recent menu open during the
+ * in-flight import. Used by `overlay.ts` to keep panels visible (and to
+ * draw the inventory dim shade) during the transient gap when Hypixel
+ * closes the housing menu to prompt for a chat-entered value. Null when
+ * no import is in flight or no menu has been observed yet this run.
+ */
+export function getImportCachedBounds(): ContainerBounds | null {
+    return cachedImportBounds;
+}
+
 function buildLayout(b: ContainerBounds): Element {
     const chat = getChatBounds(b);
     const contentRowY = SCREEN_PAD;

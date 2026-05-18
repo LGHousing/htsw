@@ -35,30 +35,16 @@ import {
     setSelectValue,
     setStringValue,
     waitForMenu,
-} from "./helpers";
+} from "./gui/helpers";
 import { ItemSlot } from "../tasks/specifics/slots";
 import { removedFormatting } from "../utils/helpers";
 import {
     CONDITION_MAPPINGS,
     getConditionFieldLabel,
-} from "./conditionMappings";
+} from "./fields/conditionMappings";
 import { onlyNoteDiffers } from "./conditions/diff";
-import { setItemValue } from "./items";
-import { resolveImportableItem } from "./resolveItem";
-
-export {
-    readConditionList,
-    readConditionsListPage,
-    canonicalizeObservedConditionItemNames,
-} from "./conditions/readList";
-export type { ReadConditionListOptions } from "./conditions/readList";
-export {
-    syncConditionList,
-} from "./conditions/sync";
-export type {
-    SyncConditionListOptions,
-    SyncConditionListResult,
-} from "./conditions/sync";
+import { setItemValue } from "./items/items";
+import { resolveImportableItem } from "./items/resolveItem";
 
 type ConditionSpec<T extends Condition> = {
     displayName: string;

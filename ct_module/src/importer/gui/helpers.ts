@@ -1,21 +1,21 @@
 import type { Location } from "htsw/types";
 
-import TaskContext from "../tasks/context";
-import { ItemSlot, MouseButton } from "../tasks/specifics/slots";
-import { removedFormatting } from "../utils/helpers";
-import { S2DPacketOpenWindow } from "../utils/packets";
+import TaskContext from "../../tasks/context";
+import { ItemSlot, MouseButton } from "../../tasks/specifics/slots";
+import { removedFormatting } from "../../utils/helpers";
+import { S2DPacketOpenWindow } from "../../utils/packets";
 import {
     normalizeLoreValueFormatting,
     normalizeNoteText,
     readListItemNote,
-} from "./loreParsing";
+} from "../fields/loreParsing";
 import {
     timedWaitForMenu,
     waitForMenu,
 } from "./menuWait";
 import { getVisiblePaginatedItemSlots } from "./paginatedList";
-import { COST } from "./progress/costs";
-import { recordTimedOp } from "./progress/timing";
+import { COST } from "../progress/costs";
+import { recordTimedOp } from "../progress/timing";
 
 // Re-exported so existing consumers don't need to change their imports.
 // Module-graph-wise these now live in `menuWait.ts` so `paginatedList.ts`
@@ -25,7 +25,6 @@ export {
     timedWaitForMenu,
     timedWaitForUnformattedMessage,
     waitForMenu,
-    waitForUnformattedMessage,
 } from "./menuWait";
 
 /** Cycle options shared by `CHANGE_VAR` (action) and `COMPARE_VAR` (condition). */
@@ -86,7 +85,7 @@ export async function openSubmenu(ctx: TaskContext, slotName: string): Promise<v
     await timedWaitForMenu(ctx, "menuClickWait");
 }
 
-export function setAnvilItemName(newName: string) {
+function setAnvilItemName(newName: string) {
     const inventory = Player.getContainer();
     if (inventory == null) {
         throw new Error("No open container found");
@@ -104,7 +103,7 @@ export function setAnvilItemName(newName: string) {
     outputSlotItemField.set(outputSlot, outputSlotItem);
 }
 
-export function acceptNewAnvilItem(): void {
+function acceptNewAnvilItem(): void {
     const inventory = Player.getContainer();
     if (inventory == null) {
         throw new Error("No open container found");
@@ -152,9 +151,13 @@ export function readCurrentValue(slot: ItemSlot): string | null {
 
 function readCurrentValueLines(slot: ItemSlot): string[] | null {
     const lore = slot.getItem().getLore();
-    const index = lore.findIndex(
-        (line, _i) => removedFormatting(line) === "Current Value:"
-    );
+    let index = -1;
+    for (let i = 0; i < lore.length; i++) {
+        if (removedFormatting(lore[i]) === "Current Value:") {
+            index = i;
+            break;
+        }
+    }
     if (index === -1) return null;
 
     if (index + 1 >= lore.length) {
@@ -185,7 +188,7 @@ function readCurrentValueLines(slot: ItemSlot): string[] | null {
     return lines.length === 0 ? null : lines;
 }
 
-export function normalizeSelectedOption(line: string): string {
+function normalizeSelectedOption(line: string): string {
     return removedFormatting(line)
         .trim()
         .replace(/^[^A-Za-z0-9]+/, "")
@@ -374,7 +377,7 @@ export async function enterValue(ctx: TaskContext, value: string): Promise<"CHAT
 
     switch (inputMode) {
         case "CHAT":
-            ctx.sendMessage(value);
+            await ctx.sendMessage(value);
             return "CHAT";
         case "ANVIL":
             await waitForMenu(ctx);
@@ -462,7 +465,7 @@ export async function setStringOrPaginatedOptionValue(
 
     switch (inputMode) {
         case "CHAT":
-            ctx.sendMessage(newValue);
+            await ctx.sendMessage(newValue);
             await waitForMenu(ctx);
             return;
         case "ANVIL":

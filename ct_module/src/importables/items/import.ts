@@ -1,7 +1,8 @@
 import type { Action, ImportableItem } from "htsw/types";
 
-import { syncActionList } from "../../importer/actions";
-import { clickGoBack, timedWaitForMenu } from "../../importer/helpers";
+import { syncActionList } from "../../importer/actions/sync";
+import type { ActionListProgressFields } from "../../importer/progress/types";
+import { clickGoBack, timedWaitForMenu } from "../../importer/gui/helpers";
 import {
     getCurrentHousingUuid,
     importableHash,
@@ -20,11 +21,10 @@ import {
     selectedHotbarSlot,
     sendCreativeInventoryAction,
     waitForAnySetSlot,
-} from "../../importer/packets";
+} from "../../importer/gui/packets";
 import { actionListTrustFor } from "../actionListTrust";
 import type { ItemRegistry } from "../itemRegistry";
 import { ensureReferencedImportablesExist } from "../references";
-import type { ActionListProgress } from "../../importer/types";
 import { COST } from "../../importer/progress/costs";
 import { timed } from "../../importer/progress/timing";
 
@@ -104,7 +104,7 @@ export async function importImportableItem(
     itemRegistry: ItemRegistry,
     trustPlan?: ImportableTrustPlan,
     cachedUuid?: string,
-    onActionListProgress?: (progress: ActionListProgress) => void
+    onActionListProgress?: (progress: ActionListProgressFields) => void
 ): Promise<void> {
     await ensureReferencedImportablesExist(ctx, importable);
 
@@ -195,7 +195,6 @@ async function injectHeldItem(ctx: TaskContext, item: Item): Promise<void> {
             selectHotbarSlot(
                 ctx,
                 0,
-                "selecting hotbar slot 0 for already-present import item"
             );
         }
         return;
@@ -207,7 +206,6 @@ async function injectHeldItem(ctx: TaskContext, item: Item): Promise<void> {
             selectHotbarSlot(
                 ctx,
                 existingHotbarSlot,
-                `selecting existing hotbar slot ${existingHotbarSlot} for import item`
             );
         }
         return;
@@ -219,7 +217,6 @@ async function injectHeldItem(ctx: TaskContext, item: Item): Promise<void> {
             ctx,
             HOTBAR_ZERO_PACKET_SLOT,
             stack,
-            `injecting import item &f${item.getName()}`
         );
         await ctx.withTimeout(
             ack,
@@ -240,7 +237,6 @@ async function injectHeldItem(ctx: TaskContext, item: Item): Promise<void> {
         selectHotbarSlot(
             ctx,
             0,
-            "selecting hotbar slot 0 after import item injection"
         );
     }
     await timed("sleep1000", COST.guaranteedSleep1000, () => ctx.sleep(1000));
@@ -252,7 +248,7 @@ async function syncItemActionLists(
     itemRegistry: ItemRegistry,
     trustPlan: ImportableTrustPlan | undefined,
     start: ItemStart,
-    onActionListProgress?: (progress: ActionListProgress) => void
+    onActionListProgress?: (progress: ActionListProgressFields) => void
 ): Promise<void> {
     const leftDesired = actionListToSync(
         importable.leftClickActions,

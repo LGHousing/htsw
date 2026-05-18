@@ -1,7 +1,7 @@
 import type { Action, Condition, Importable } from "htsw/types";
 
 import { cyrb53, stableStringify } from "../utils/helpers";
-import { normalizeActionCompare, normalizeConditionCompare } from "../importer/compare";
+import { normalizeActionCompare, normalizeConditionCompare } from "../importer/fields/compare";
 
 /**
  * Knowledge-cache hashing.
@@ -30,29 +30,15 @@ export function actionHash(action: Action): string {
 }
 
 /** Hash a single normalized condition. */
-export function conditionHash(cond: Condition): string {
+function conditionHash(cond: Condition): string {
     const normalized = normalizeConditionCompare(cond);
     return hashHex(stableStringify(normalized));
-}
-
-/** Hash an entire normalized action list (used for top-level / nested lists). */
-export function actionListHash(actions: readonly Action[]): string {
-    const parts = actions.map((a) => stableStringify(normalizeActionCompare(a)));
-    return hashHex("[" + parts.join(",") + "]");
-}
-
-/** Hash an entire normalized condition list. */
-export function conditionListHash(conditions: readonly Condition[]): string {
-    const parts = conditions.map((c) => stableStringify(normalizeConditionCompare(c)));
-    return hashHex("[" + parts.join(",") + "]");
-}
-
-/**
+}/**
  * Per-slot hashes for an action list. These are written into the cache
  * so a future trust-mode can verify a single sub-tree without a deep
  * structural comparison.
  */
-export function perSlotActionHashes(actions: readonly Action[]): string[] {
+function perSlotActionHashes(actions: readonly Action[]): string[] {
     return actions.map(actionHash);
 }
 

@@ -1,9 +1,8 @@
 /// <reference types="../../../CTAutocomplete" />
 
 import {
-    applyImportProgress,
-    beginImportRun,
-    clearImportRun,
+    createImportRows,
+    createImportProgress,
     getExportImportJsonPath,
     getHousingUuid,
     getImportJsonPath,
@@ -12,7 +11,6 @@ import {
     setHousingUuid,
     setImportProgress,
     setKnowledgeRows,
-    updateImportRunFromProgress,
 } from "../state";
 import {
     clearQueue,
@@ -52,16 +50,22 @@ import {
 } from "../state/diff";
 import { importableSourcePath } from "../state/importablePaths";
 import type { ImportDiffSink } from "../../importer/diffSink";
+import { importProgressKey } from "../../importer/progress/keys";
 
 export const CAPTURE_TYPES: CaptureType[] = ["FUNCTION", "MENU"];
 
 function findImportableByKey(
     parsed: ParseResult<Importable[]>,
-    key: string
+    key: string,
+    sourcePath: string
 ): Importable | null {
     for (let i = 0; i < parsed.value.length; i++) {
         const imp = parsed.value[i];
-        if (trustPlanKey(imp.type, importableIdentity(imp)) === key) return imp;
+        if (
+            importProgressKey(imp.type, importableIdentity(imp), sourcePath) === key
+        ) {
+            return imp;
+        }
     }
     return null;
 }
@@ -219,32 +223,15 @@ export function startImport(explicit?: readonly QueueItem[]): void {
     // Concatenate every batch's ordered importables for the run-row
     // tracking; the per-row UI only needs the flat list, not the
     // per-batch grouping.
-    const allOrdered: Importable[] = [];
-    for (const b of batches) for (const imp of b.importables) allOrdered.push(imp);
-    beginImportRun(allOrdered);
-
-    setImportProgress({
-        weightCompleted: 0,
-        weightTotal: 1,
-        weightCurrent: 0,
-        currentKey: "",
-        currentType: null,
-        currentIdentity: "starting",
-        orderIndex: -1,
-        rowStatus: null,
-        currentLabel: "starting…",
-        phase: "starting",
-        phaseLabel: "starting import",
-        unitCompleted: 0,
-        unitTotal: 0,
-        estimatedCompleted: 0,
-        estimatedTotal: 1,
-        etaConfidence: "rough",
-        completed: 0,
-        total,
-        failed: 0,
-        inFlight: true,
-    });
+    let rows = createImportRows(batches[0].importables, batches[0].sourcePath);
+    for (let i = 1; i < batches.length; i++) {
+        rows = rows.concat(createImportRows(batches[i].importables, batches[i].sourcePath));
+    }
+    setImportProgress(createImportProgress({
+        totalImportables: total,
+        totalUnits: 1,
+        rows,
+    }));
 
     TaskManager.run(async (ctx) => {
         const startedAt = Date.now();
@@ -270,13 +257,16 @@ export function startImport(explicit?: readonly QueueItem[]): void {
                     housingUuid,
                     sourcePath: batch.sourcePath,
                     onProgress: (p) => {
-                        applyImportProgress(p);
-                        updateImportRunFromProgress(p);
-                        if (p.currentKey.length === 0) {
+                        setImportProgress(p);
+                        if (p.current === null) {
                             setCurrentImportingPath(null);
                             return;
                         }
-                        const imp = findImportableByKey(batch.parsed, p.currentKey);
+                        const imp = findImportableByKey(
+                            batch.parsed,
+                            p.current.key,
+                            batch.sourcePath
+                        );
                         const path =
                             imp === null
                                 ? null
@@ -302,7 +292,6 @@ export function startImport(explicit?: readonly QueueItem[]): void {
         } finally {
             setImportProgress(null);
             setCurrentImportingPath(null);
-            clearImportRun();
             refreshKnowledgeRows();
         }
     }).catch((err: unknown) => {

@@ -1,10 +1,10 @@
 import { Diagnostic } from "htsw";
 import type { Action, Condition } from "htsw/types";
 
-import TaskContext from "../tasks/context";
-import { type ItemRegistry, getMemoizedHousingUuid } from "../importables/itemRegistry";
-import { getItemFromSnbt } from "../utils/nbt";
-import { importableHash, itemSnbtCachePath } from "../knowledge";
+import TaskContext from "../../tasks/context";
+import { type ItemRegistry, getMemoizedHousingUuid } from "../../importables/itemRegistry";
+import { getItemFromSnbt } from "../../utils/nbt";
+import { importableHash, itemSnbtCachePath } from "../../knowledge";
 
 type Owner = Action | Condition;
 

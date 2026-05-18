@@ -53,7 +53,7 @@ export type DiffLineInfo = {
     completed?: boolean;
 };
 
-export type DiffDeleteInfo = {
+type DiffDeleteInfo = {
     index: number;
     label: string;
     detail: string;
@@ -168,11 +168,6 @@ export function setCurrent(
 export function clearDiff(key: DiffKey): void {
     entries.delete(key);
 }
-
-export function clearAllDiffs(): void {
-    entries.clear();
-}
-
 export const COLOR_BY_STATE: { [k in DiffState]: number } = {
     unknown: 0xff666666 | 0,
     match: 0xffe5e5e5 | 0,

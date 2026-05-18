@@ -6,7 +6,7 @@ import { ensureFunctionNamesExist } from "./functions/shared";
 import { ensureMenuNamesExist } from "./menus/shared";
 import { ensureRegionNamesExist } from "./regions/shared";
 
-export type ReferencedImportables = {
+type ReferencedImportables = {
     functions: string[];
     menus: string[];
     regions: string[];
@@ -28,7 +28,7 @@ export async function ensureReferencedImportablesExist(
     }
 }
 
-export function collectReferencedImportables(
+function collectReferencedImportables(
     importable: Importable
 ): ReferencedImportables {
     const refs: ReferencedImportables = {

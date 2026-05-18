@@ -1,7 +1,5 @@
 import type { Action, Condition } from "htsw/types";
 import type { ItemSlot } from "../tasks/specifics/slots";
-import type { ItemRegistry } from "../importables/itemRegistry";
-import type { EtaConfidence } from "./progress/costs";
 
 export type UiFieldKind =
     | "boolean"
@@ -16,7 +14,7 @@ type ConditionDataKey<T extends Condition> = Exclude<
     "type" | "inverted" | "note"
 >;
 
-export type ConditionLoreFieldSpec<T extends Condition> = {
+type ConditionLoreFieldSpec<T extends Condition> = {
     prop: ConditionDataKey<T>;
     kind: UiFieldKind;
     /**
@@ -35,7 +33,7 @@ export type ConditionLoreSpec<T extends Condition> = {
 
 type ActionDataKey<T extends Action> = Exclude<keyof T, "type" | "note">;
 
-export type ActionLoreFieldSpec<T extends Action> = {
+type ActionLoreFieldSpec<T extends Action> = {
     prop: ActionDataKey<T>;
     kind: UiFieldKind;
     /**
@@ -57,37 +55,9 @@ export type NestedListProp = "conditions" | "ifActions" | "elseActions" | "actio
 /** Nested list properties that still need to be read by clicking in. */
 export type NestedPropsToRead = Set<NestedListProp>;
 
-export type NestedReadState = "none" | "summary" | "full" | "trusted";
+type NestedReadState = "none" | "summary" | "full" | "trusted";
 
 export type NestedSummaries = Partial<Record<NestedListProp, string[]>>;
-
-export type ActionListReadMode =
-    | { kind: "full"; itemRegistry?: ItemRegistry; onProgress?: ActionListProgressSink }
-    | {
-          kind: "sync";
-          desired: readonly Action[];
-          itemRegistry?: ItemRegistry;
-          trust?: ActionListTrust;
-          onProgress?: ActionListProgressSink;
-      };
-
-export type ActionListProgressPhase =
-    | "reading"
-    | "hydrating"
-    | "diffing"
-    | "applying";
-
-export type ActionListProgress = {
-    phase: ActionListProgressPhase;
-    completed: number;
-    total: number;
-    label: string;
-    estimatedCompleted: number;
-    estimatedTotal: number;
-    confidence: EtaConfidence;
-};
-
-export type ActionListProgressSink = (progress: ActionListProgress) => void;
 
 export type ActionListTrust = {
     basePath: string;
@@ -123,26 +93,54 @@ export type ObservedConditionSlot = {
     condition: Condition | null;
 };
 
-export type ScalarFieldDiff = {
-    prop: string;
-    kind: UiFieldKind;
-    observed: unknown;
-    desired: unknown;
+export type CurrentActionListEntry = {
+    entryId: number;
+    index: number;
+    action: Observed<Action> | null;
+    nestedReadState?: NestedReadState;
+    nestedSummaries?: NestedSummaries;
 };
 
+export type CurrentConditionListEntry = {
+    entryId: number;
+    index: number;
+    condition: Condition | null;
+};
+
+export type NestedListDiff =
+    | { prop: "conditions"; diff: ConditionListDiff }
+    | { prop: "ifActions" | "elseActions" | "actions"; diff: ActionListDiff };
+
 export type ActionListOperation =
-    | { kind: "move"; observed: ObservedActionSlot; toIndex: number; action: Action }
+    | {
+          kind: "move";
+          entryId: number;
+          fromIndex: number;
+          toIndex: number;
+          action: Action;
+      }
     | {
           kind: "edit";
-          observed: ObservedActionSlot;
+          entryId: number;
+          fromIndex: number;
+          desiredIndex: number;
+          currentAction: Observed<Action>;
           desired: Action;
           noteOnly: boolean;
+          noteDiffers: boolean;
+          nestedDiffs: NestedListDiff[];
       }
-    | { kind: "add"; desired: Action; toIndex: number }
-    | { kind: "delete"; observed: ObservedActionSlot };
+    | { kind: "add"; desiredIndex: number; desired: Action; toIndex: number }
+    | {
+          kind: "delete";
+          entryId: number;
+          fromIndex: number;
+          currentAction: Observed<Action> | null;
+      };
 
 export type ActionListDiff = {
     operations: ActionListOperation[];
+    desiredLength: number;
 };
 
 /**
@@ -155,12 +153,17 @@ export type ActionListDiff = {
 export type ConditionListOperation =
     | {
           kind: "edit";
-          observed: ObservedConditionSlot;
+          entryId: number;
+          currentCondition: Condition;
           desired: Condition;
           noteOnly: boolean;
       }
     | { kind: "add"; desired: Condition }
-    | { kind: "delete"; observed: ObservedConditionSlot };
+    | {
+          kind: "delete";
+          entryId: number;
+          currentCondition: Condition | null;
+      };
 
 export type ConditionListDiff = {
     operations: ConditionListOperation[];

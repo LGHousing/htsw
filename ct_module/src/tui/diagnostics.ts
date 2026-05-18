@@ -22,7 +22,7 @@ export function printDiagnostic(sm: SourceMap, diag: Diagnostic) {
     printUI(new UIElementDiagnostic(sm, diag));
 }
 
-export const DIAGNOSTIC_LEVEL_NAMES: {
+const DIAGNOSTIC_LEVEL_NAMES: {
     [key in DiagnosticLevel]: string;
 } = {
     bug: "bug",
@@ -32,7 +32,7 @@ export const DIAGNOSTIC_LEVEL_NAMES: {
     help: "help",
 };
 
-export const DIAGNOSTIC_LEVEL_COLORS: {
+const DIAGNOSTIC_LEVEL_COLORS: {
     [key in DiagnosticLevel]: string;
 } = {
     bug: "&4",
@@ -42,7 +42,7 @@ export const DIAGNOSTIC_LEVEL_COLORS: {
     help: "&a",
 };
 
-export const DIAGNOSTIC_LEVEL_UNDERLINE_CHARS: {
+const DIAGNOSTIC_LEVEL_UNDERLINE_CHARS: {
     [key in DiagnosticLevel]: string;
 } = {
     bug: "^",
@@ -52,7 +52,7 @@ export const DIAGNOSTIC_LEVEL_UNDERLINE_CHARS: {
     help: "+",
 };
 
-export class UIElementDiagnostic extends UIElementVStack {
+class UIElementDiagnostic extends UIElementVStack {
     constructor(sm: SourceMap, diag: Diagnostic, isPrimary: boolean = true) {
         super();
 
@@ -79,7 +79,7 @@ export class UIElementDiagnostic extends UIElementVStack {
     }
 }
 
-export class UIElementSnippet extends UIElementVStack {
+class UIElementSnippet extends UIElementVStack {
     constructor(sm: SourceMap, spans: DiagnosticSpan[], level: DiagnosticLevel) {
         super();
 
@@ -106,7 +106,7 @@ export class UIElementSnippet extends UIElementVStack {
     }
 }
 
-export class UIElementSnippetLines extends UIElementCanvas {
+class UIElementSnippetLines extends UIElementCanvas {
     constructor(file: SourceFile, spans: DiagnosticSpan[], level: DiagnosticLevel) {
         super();
 
@@ -161,7 +161,7 @@ export class UIElementSnippetLines extends UIElementCanvas {
     }
 }
 
-export class UIElementSnippetLine extends UIElementCanvas {
+class UIElementSnippetLine extends UIElementCanvas {
     constructor(
         _FuckingStupidlineContent: string,
         lineStartPos: number,

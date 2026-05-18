@@ -2,12 +2,12 @@
 
 import { Extractable, extract } from "./extractable";
 
-export type PaddingSide = "all" | "x" | "y" | "top" | "right" | "bottom" | "left";
+type PaddingSide = "all" | "x" | "y" | "top" | "right" | "bottom" | "left";
 
-export type PaddingEntry = { side: PaddingSide; value: number };
-export type Padding = number | PaddingEntry | PaddingEntry[];
+type PaddingEntry = { side: PaddingSide; value: number };
+type Padding = number | PaddingEntry | PaddingEntry[];
 
-export type Size =
+type Size =
     | { kind: "px"; value: number }
     | { kind: "auto" }
     | { kind: "grow"; factor?: number };
@@ -89,7 +89,7 @@ export type Element =
           name: Extractable<string>;
       };
 
-export function extractChildren(c: Extractable<Child[]>): Element[] {
+function extractChildren(c: Extractable<Child[]>): Element[] {
     const raw = extract(c);
     const out: Element[] = [];
     for (let i = 0; i < raw.length; i++) {
@@ -109,7 +109,7 @@ const INPUT_PAD_Y = 6;
 const TEXT_PAD = 0;
 const SCROLLBAR_W = 4;
 
-export function resolvePadding(p: Padding | undefined): ResolvedPadding {
+function resolvePadding(p: Padding | undefined): ResolvedPadding {
     const out: ResolvedPadding = { t: 0, r: 0, b: 0, l: 0 };
     if (p === undefined) return out;
     if (typeof p === "number") {
@@ -231,29 +231,6 @@ export function getScrollState(id: string): ScrollState {
         scrollStates[id] = s;
     }
     return s;
-}
-
-export function scrollBy(id: string, delta: number): void {
-    const s = getScrollState(id);
-    s.offset = Math.max(
-        0,
-        Math.min(s.contentHeight - s.viewportRect.h, s.offset + delta)
-    );
-    if (s.offset < 0) s.offset = 0;
-}
-
-export function setScrollOffset(id: string, offset: number): void {
-    const s = getScrollState(id);
-    s.offset = Math.max(
-        0,
-        Math.min(Math.max(0, s.contentHeight - s.viewportRect.h), offset)
-    );
-}
-
-export function getAllScrollIds(): string[] {
-    const out: string[] = [];
-    for (const k in scrollStates) out.push(k);
-    return out;
 }
 
 export const SCROLLBAR_WIDTH = SCROLLBAR_W;
@@ -420,12 +397,30 @@ function layoutScroll(
 
     // Place children with offset applied. The scrollbar is drawn inside the
     // viewport, so reserve its track width instead of letting right-aligned
-    // row labels sit underneath it.
+    // row labels sit underneath it. Viewport-cull off-screen children so a
+    // 1000-line source file doesn't pay layout + render cost for the 950
+    // lines you can't see this frame. The cull is purely a fast-skip; we
+    // still update `cursor` so subsequent children land at the same y as
+    // they would without culling, and `contentHeight` was already computed
+    // above the loop so the scrollbar math is unaffected.
+    //
+    // The buffer lets a few rows just off-screen still lay out, so a tiny
+    // scroll delta doesn't reveal an un-laid-out gap before the next frame.
     const contentW = Math.max(0, innerW - SCROLLBAR_W);
+    const CULL_BUFFER = 32;
+    const cullTop = viewportRect.y - CULL_BUFFER;
+    const cullBottom = viewportRect.y + viewportRect.h + CULL_BUFFER;
     let cursor = y + pad.t - state.offset;
     for (let i = 0; i < n; i++) {
         const ch = children[i];
         const mSize = sizes[i];
+
+        const top = cursor;
+        const bottom = cursor + mSize;
+        if (bottom < cullTop || top > cullBottom) {
+            cursor += mSize + gap;
+            continue;
+        }
 
         const explicitCross = ch.style.width;
         const crossResolved = resolveAxis(ch, "w");

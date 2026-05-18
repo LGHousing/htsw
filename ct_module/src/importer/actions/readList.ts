@@ -5,7 +5,7 @@ import { type ItemRegistry } from "../../importables/itemRegistry";
 import {
     clickGoBack,
     timedWaitForMenu,
-} from "../helpers";
+} from "../gui/helpers";
 import { ItemSlot } from "../../tasks/specifics/slots";
 import { removedFormatting } from "../../utils/helpers";
 import {
@@ -13,15 +13,14 @@ import {
     getNestedListFields,
     parseActionListItem,
     tryGetActionTypeFromDisplayName,
-} from "../actionMappings";
+} from "../fields/actionMappings";
 import {
     CONDITION_MAPPINGS,
     tryGetConditionTypeFromDisplayName,
-} from "../conditionMappings";
-import { canonicalizeItemFields } from "../canonicalizeItems";
+} from "../fields/conditionMappings";
+import { canonicalizeItemFields } from "../fields/canonicalizeItems";
 import type {
-    ActionListProgressSink,
-    ActionListReadMode,
+    ActionListTrust,
     NestedHydrationPlan,
     NestedListProp,
     NestedPropsToRead,
@@ -29,6 +28,7 @@ import type {
     Observed,
     ObservedActionSlot,
 } from "../types";
+import type { ActionListProgressSink } from "../progress/types";
 import { createNestedHydrationPlan } from "./hydrationPlan";
 import { matchObservedToDesired } from "./nestedMatching";
 import { applyActionListTrust } from "./trustHydration";
@@ -39,12 +39,33 @@ import {
     goToPaginatedListPage,
     isEmptyPaginatedPlaceholder,
     readPaginatedList,
-} from "../paginatedList";
+} from "../gui/paginatedList";
 import { getActiveDiffSink } from "../diffSink";
-import { COST, actionListRoughBudget, hydrationEntryBudget } from "../progress/costs";
+import {
+    COST,
+    hydrationEntryUnits,
+    phaseUnitsFromParts,
+    type ActionListPhaseUnits,
+} from "../progress/costs";
 import { ACTION_LIST_CONFIG } from "./listConfig";
 import { getActionSpec } from "../actions";
 import { actionLogLabel } from "./log";
+
+export type ActionListReadMode =
+    | {
+          kind: "full";
+          itemRegistry?: ItemRegistry;
+          onProgress?: ActionListProgressSink;
+          phaseUnits?: ActionListPhaseUnits;
+      }
+    | {
+          kind: "sync";
+          desired: readonly Action[];
+          itemRegistry?: ItemRegistry;
+          trust?: ActionListTrust;
+          onProgress?: ActionListProgressSink;
+          phaseUnits?: ActionListPhaseUnits;
+      };
 
 function readNestedSummaries(
     action: Observed<Action>,
@@ -112,7 +133,7 @@ function readNestedSummaries(
     return { summaries, propsToRead };
 }
 
-export async function readActionsListPage(
+async function readActionsListPage(
     ctx: TaskContext
 ): Promise<ObservedActionSlot[]> {
     const slots = getVisiblePaginatedItemSlots(ctx).filter(
@@ -158,36 +179,47 @@ export async function readActionList(
     const progress = mode.onProgress;
     const desiredTotal =
         mode.kind === "sync" ? Math.max(1, mode.desired.length) : 1;
-    const roughEstimate =
-        mode.kind === "sync" ? Math.max(1, actionListRoughBudget(mode.desired)) : 1;
-    let readEstimatedCompleted = 0;
-    progress?.({
-        phase: "reading",
-        completed: 0,
-        total: desiredTotal,
-        label: "reading housing state",
-        estimatedCompleted: 0,
-        estimatedTotal: roughEstimate,
-        confidence: "rough",
-    });
+    const phaseUnits = mode.phaseUnits;
+    let readCompletedUnits = 0;
+    let observed: ObservedActionSlot[] = [];
+    if (phaseUnits !== undefined) {
+        progress?.({
+            phase: "reading",
+            phaseLabel: "reading housing state",
+            unitCompleted: 0,
+            unitTotal: desiredTotal,
+            completedUnits: 0,
+            totalUnits: phaseUnits.total,
+            phaseUnits: phaseUnitsFromParts(phaseUnits),
+        });
+    }
     getActiveDiffSink()?.phase("reading housing state");
-    const observed = await readPaginatedList(
+    observed = await readPaginatedList(
         ctx,
         ACTION_LIST_CONFIG,
         () => readActionsListPage(ctx),
         ({ totalEntries, pagesRead }) => {
-            readEstimatedCompleted = Math.max(0, pagesRead - 1) * COST.pageTurnWait;
+            readCompletedUnits = Math.max(0, pagesRead - 1) * COST.pageTurnWait;
+            if (phaseUnits === undefined) return;
+            if (readCompletedUnits > phaseUnits.readPart) {
+                phaseUnits.readPart = readCompletedUnits;
+                phaseUnits.total = recomputeTotal(phaseUnits);
+            }
             progress?.({
                 phase: "reading",
-                completed: totalEntries,
-                total: Math.max(desiredTotal, totalEntries),
-                label: `${totalEntries} actions read`,
-                estimatedCompleted: readEstimatedCompleted,
-                estimatedTotal: Math.max(roughEstimate, readEstimatedCompleted),
-                confidence: "rough",
+                phaseLabel: `${totalEntries} actions read`,
+                unitCompleted: totalEntries,
+                unitTotal: Math.max(desiredTotal, totalEntries),
+                completedUnits: readCompletedUnits,
+                totalUnits: phaseUnits.total,
+                phaseUnits: phaseUnitsFromParts(phaseUnits),
             });
         }
     );
+    if (phaseUnits !== undefined && readCompletedUnits > phaseUnits.readPart) {
+        phaseUnits.readPart = readCompletedUnits;
+        phaseUnits.total = recomputeTotal(phaseUnits);
+    }
     let plan: NestedHydrationPlan;
     if (mode.kind === "full") {
         plan = buildFullHydrationPlan(observed);
@@ -199,11 +231,21 @@ export async function readActionList(
         }
     }
     addScalarHydrationEntries(plan, observed);
-    await hydrateNestedActions(ctx, plan, observed.length, mode.itemRegistry, progress, readEstimatedCompleted);
-    canonicalizeObservedActionItemNames(observed, mode.itemRegistry);
-
+    await hydrateNestedActions(
+        ctx,
+        plan,
+        observed.length,
+        mode.itemRegistry,
+        progress,
+        phaseUnits
+    );
     await goToPaginatedListPage(ctx, 1, ACTION_LIST_CONFIG);
+    canonicalizeObservedActionItemNames(observed, mode.itemRegistry);
     return observed;
+}
+
+function recomputeTotal(b: ActionListPhaseUnits): number {
+    return b.readPart + b.hydratePart + b.applyPart;
 }
 
 function addScalarHydrationEntries(
@@ -286,39 +328,39 @@ async function hydrateNestedActions(
     listLength: number,
     itemRegistry?: ItemRegistry,
     progress?: ActionListProgressSink,
-    baseEstimatedCompleted: number = 0
+    phaseUnits?: ActionListPhaseUnits
 ): Promise<void> {
     let completed = 0;
     const total = plan.size;
-    let completedBudget = 0;
-    let totalBudget = 0;
+    let completedHydrateUnits = 0;
+    let totalHydrateUnits = 0;
     plan.forEach((propsToRead, entry) => {
-        totalBudget += hydrationEntryBudget(entry, propsToRead);
+        totalHydrateUnits += hydrationEntryUnits(entry, propsToRead);
     });
+    if (phaseUnits !== undefined && totalHydrateUnits > phaseUnits.hydratePart) {
+        phaseUnits.hydratePart = totalHydrateUnits;
+        phaseUnits.total = recomputeTotal(phaseUnits);
+    }
+    const emit = (label: string) => {
+        if (phaseUnits === undefined) return;
+        progress?.({
+            phase: "hydrating",
+            phaseLabel: label,
+            unitCompleted: completed,
+            unitTotal: total,
+            completedUnits: phaseUnits.readPart + completedHydrateUnits,
+            totalUnits: phaseUnits.total,
+            phaseUnits: phaseUnitsFromParts(phaseUnits),
+        });
+    };
     for (const [entry, propsToRead] of plan) {
-        progress?.({
-            phase: "hydrating",
-            completed,
-            total,
-            label: `reading nested ${actionLogLabel(entry.action)}`,
-            estimatedCompleted: baseEstimatedCompleted + completedBudget,
-            estimatedTotal: baseEstimatedCompleted + totalBudget,
-            confidence: "informed",
-        });
+        emit(`reading nested ${actionLogLabel(entry.action)}`);
         getActiveDiffSink()?.phase(`reading nested ${actionLogLabel(entry.action)}`);
-        const beforeBudget = hydrationEntryBudget(entry, propsToRead);
+        const entryUnits = hydrationEntryUnits(entry, propsToRead);
         await hydrateNestedAction(ctx, entry, propsToRead, listLength, itemRegistry);
-        completedBudget += beforeBudget;
+        completedHydrateUnits += entryUnits;
         completed++;
-        progress?.({
-            phase: "hydrating",
-            completed,
-            total,
-            label: `${completed}/${total} nested actions read`,
-            estimatedCompleted: baseEstimatedCompleted + completedBudget,
-            estimatedTotal: baseEstimatedCompleted + totalBudget,
-            confidence: "informed",
-        });
+        emit(`${completed}/${total} nested actions read`);
     }
 }
 

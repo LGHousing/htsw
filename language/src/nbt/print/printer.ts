@@ -176,8 +176,11 @@ export class Printer {
             return out;
         }
 
-        // For tiny lists of scalars, keep them on one line for readability.
-        if (isScalarType(elementType) && elements.length <= 8) {
+        // For tiny lists of numeric scalars, keep them on one line for
+        // readability. Strings are excluded: they're typically meaningful
+        // text (Lore is the common case) and reading them one-per-line is
+        // strictly better than a single comma-separated row.
+        if (isInlineScalarType(elementType) && elements.length <= 8) {
             let out = "[";
             for (let i = 0; i < elements.length; i++) {
                 if (i > 0) out += ", ";
@@ -265,14 +268,13 @@ export class Printer {
     }
 }
 
-function isScalarType(type: Tag["type"]): boolean {
+function isInlineScalarType(type: Tag["type"]): boolean {
     return (
         type === "byte" ||
         type === "short" ||
         type === "int" ||
         type === "long" ||
         type === "float" ||
-        type === "double" ||
-        type === "string"
+        type === "double"
     );
 }

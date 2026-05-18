@@ -4,7 +4,7 @@
  * is its only caller.
  *
  * Module graph note: this file imports `writeOpenAction`,
- * `withWritingActionPath`, `actionPathForIndex`, `getActionSpec`, and
+ * `actionPathForIndex`, `getActionSpec`, and
  * `isLimitExceeded` from `../actions`. The writers in `../actions` reach
  * back into `./sync` (which itself imports from this file) for nested
  * `syncActionList` calls. This is a function-reference cycle that resolves
@@ -23,19 +23,20 @@ import {
     setNoteOnLastVisibleSlot,
     timedWaitForMenu,
     waitForMenu,
-} from "../helpers";
+} from "../gui/helpers";
 import { MouseButton } from "../../tasks/specifics/slots";
-import { getEditFieldDiffs } from "../compare";
 import type {
     ActionListDiff,
     ActionListOperation,
-    ActionListProgressSink,
+    Observed,
     ObservedActionSlot,
 } from "../types";
+import type { ActionListProgressSink } from "../progress/types";
+import { createApplyProgressAdapter } from "../progress/nested";
 import {
     getPaginatedListSlotAtIndex,
     goToPaginatedListPage,
-} from "../paginatedList";
+} from "../gui/paginatedList";
 import {
     getActiveDiffSink,
     type ImportDiffSink,
@@ -43,24 +44,33 @@ import {
 } from "../diffSink";
 import {
     COST,
-    actionListDiffApplyBudget,
-    moveBudget,
-    scalarFieldEditBudget,
+    actionOperationApplyUnits,
+    actionListDiffApplyUnits,
+    conditionListDiffApplyUnits,
+    phaseUnitsFromParts,
+    scalarFieldEditUnitsForOp,
+    type ActionListPhaseUnits,
 } from "../progress/costs";
 import { timed } from "../progress/timing";
 import { ACTION_LIST_CONFIG } from "./listConfig";
 import {
     actionPathForIndex,
     getActionSpec,
-    withWritingActionPath,
     writeOpenAction,
 } from "../actions";
 import { actionLogLabel, editDiffSummary } from "./log";
 
-export async function importAction(
+type LiveActionListEntry = {
+    entryId: number;
+    action: Observed<Action> | null;
+};
+
+async function importAction(
     ctx: TaskContext,
     action: Action,
-    itemRegistry?: ItemRegistry
+    itemRegistry?: ItemRegistry,
+    progress?: ActionListProgressSink,
+    pathPrefix?: string
 ): Promise<void> {
     ctx.getMenuItemSlot("Add Action").click();
     await timedWaitForMenu(ctx, "menuClickWait");
@@ -80,7 +90,11 @@ export async function importAction(
     // No-field actions (e.g. Kill Player, Exit) add directly to the list
     // without opening an editor.
     if (spec.write) {
-        await writeOpenAction(ctx, action, undefined, itemRegistry);
+        await writeOpenAction(ctx, action, {
+            itemRegistry,
+            pathPrefix,
+            onProgress: progress,
+        });
         await clickGoBack(ctx);
     }
 
@@ -141,7 +155,8 @@ export async function applyActionListDiff(
     diff: ActionListDiff,
     itemRegistry?: ItemRegistry,
     progress?: ActionListProgressSink,
-    pathPrefix?: string
+    pathPrefix?: string,
+    phaseUnits?: ActionListPhaseUnits
 ): Promise<void> {
     const sink = getActiveDiffSink();
     await applyActionListDiffInner(
@@ -152,18 +167,23 @@ export async function applyActionListDiff(
         sink,
         itemRegistry,
         progress,
-        pathPrefix
+        pathPrefix,
+        phaseUnits
     );
 }
 
-function srcIndexForOp(op: ActionListOperation, desired: Action[]): number {
-    if (op.kind === "add" || op.kind === "move") return op.toIndex;
-    if (op.kind === "edit") return desired.indexOf(op.desired);
-    return -1; // delete: action isn't in source
+function recomputeTotal(b: ActionListPhaseUnits): number {
+    return b.readPart + b.hydratePart + b.applyPart;
+}
+
+function desiredIndexForOp(op: ActionListOperation): number {
+    if (op.kind === "add" || op.kind === "edit") return op.desiredIndex;
+    if (op.kind === "move") return op.toIndex;
+    return -1;
 }
 
 function opLabel(op: ActionListOperation): string {
-    if (op.kind === "delete") return `delete ${actionLogLabel(op.observed.action)}`;
+    if (op.kind === "delete") return `delete ${actionLogLabel(op.currentAction)}`;
     if (op.kind === "edit") return `edit → ${actionLogLabel(op.desired)}`;
     if (op.kind === "move") return `move ${actionLogLabel(op.action)} → #${op.toIndex + 1}`;
     return `add ${actionLogLabel(op.desired)}`;
@@ -171,38 +191,48 @@ function opLabel(op: ActionListOperation): string {
 
 function opDetail(op: ActionListOperation): string {
     if (op.kind === "edit") return editDiffSummary(op);
-    if (op.kind === "move") return `#${op.observed.index + 1} -> #${op.toIndex + 1}`;
+    if (op.kind === "move") return `#${op.fromIndex + 1} -> #${op.toIndex + 1}`;
     if (op.kind === "add") return "add source action";
     return "delete Housing-only action";
 }
 
-function editOperationFieldBudget(
+function editOperationFieldUnits(
     op: Extract<ActionListOperation, { kind: "edit" }>
 ): number {
-    const { fieldDiffs } = getEditFieldDiffs(op);
-    return scalarFieldEditBudget(fieldDiffs);
+    let total = scalarFieldEditUnitsForOp(op);
+    for (const nested of op.nestedDiffs) {
+        if (nested.diff.operations.length === 0) continue;
+        total += COST.menuClickWait + COST.goBackWait;
+        if (nested.prop === "conditions") {
+            total += conditionListDiffApplyUnits(nested.diff);
+        } else {
+            total += actionListDiffApplyUnits(
+                nested.diff,
+                editOperationFieldUnits,
+                nested.diff.desiredLength
+            );
+        }
+    }
+    return total;
 }
 
-function operationApplyBudget(
-    op: ActionListOperation,
-    desiredLength: number
+function operationApplyUnits(op: ActionListOperation, desiredLength: number): number {
+    return actionOperationApplyUnits(op, editOperationFieldUnits, desiredLength);
+}
+
+function findCurrentIndex(
+    remaining: readonly LiveActionListEntry[],
+    entryId: number
 ): number {
-    if (op.kind === "delete") return COST.menuClickWait;
-    if (op.kind === "move") {
-        return moveBudget(op.observed.index, op.toIndex, desiredLength);
+    for (let i = 0; i < remaining.length; i++) {
+        if (remaining[i].entryId === entryId) return i;
     }
-    if (op.kind === "add") {
-        const fakeDiff: ActionListDiff = { operations: [op] };
-        return actionListDiffApplyBudget(fakeDiff, editOperationFieldBudget, desiredLength);
-    }
-    const fakeDiff: ActionListDiff = { operations: [op] };
-    return actionListDiffApplyBudget(fakeDiff, editOperationFieldBudget, desiredLength);
+    return -1;
 }
 
 function summarizeDiff(
     diff: ActionListDiff,
-    desiredLength: number,
-    desired: Action[]
+    desiredLength: number
 ): DiffSummary {
     let edits = 0;
     let moves = 0;
@@ -210,7 +240,7 @@ function summarizeDiff(
     let deletes = 0;
     const touched = new Set<number>();
     for (const op of diff.operations) {
-        const idx = srcIndexForOp(op, desired);
+        const idx = desiredIndexForOp(op);
         if (idx >= 0) touched.add(idx);
         if (op.kind === "edit") edits++;
         else if (op.kind === "move") moves++;
@@ -234,43 +264,77 @@ async function applyActionListDiffInner(
     sink: ImportDiffSink | null,
     itemRegistry?: ItemRegistry,
     progress?: ActionListProgressSink,
-    pathPrefix?: string
+    pathPrefix?: string,
+    phaseUnits?: ActionListPhaseUnits
 ): Promise<void> {
-    const summary = summarizeDiff(diff, desired.length, desired);
-    const plannedApplyBudget = actionListDiffApplyBudget(
+    const summary = summarizeDiff(diff, desired.length);
+    const plannedApplyUnits = actionListDiffApplyUnits(
         diff,
-        editOperationFieldBudget,
+        editOperationFieldUnits,
         desired.length
     );
+    if (phaseUnits !== undefined) {
+        phaseUnits.applyPart = Math.max(plannedApplyUnits, 1);
+        phaseUnits.total = recomputeTotal(phaseUnits);
+    }
+    const baseline = phaseUnits !== undefined
+        ? phaseUnits.readPart + phaseUnits.hydratePart
+        : 0;
+    const applyProgress =
+        phaseUnits === undefined
+            ? null
+            : createApplyProgressAdapter({
+                  phaseUnits,
+                  unitTotal: Math.max(1, diff.operations.length),
+                  baseline,
+                  sink: progress,
+              });
     if (sink !== null) {
         sink.summary(summary);
         sink.phase("computed diff");
         for (const op of diff.operations) {
-            const idx = srcIndexForOp(op, desired);
+            const idx = desiredIndexForOp(op);
             if (idx >= 0) {
                 sink.planOp(actionPathForIndex(pathPrefix, idx), op.kind, opLabel(op), opDetail(op));
             } else if (op.kind === "delete") {
-                sink.deleteOp(op.observed.index, opLabel(op), opDetail(op));
+                sink.deleteOp(op.fromIndex, opLabel(op), opDetail(op));
             }
         }
     }
-    progress?.({
-        phase: "diffing",
-        completed: 1,
-        total: 1,
-        label: `${summary.edits} edits · ${summary.adds} adds · ${summary.deletes} deletes · ${summary.moves} moves`,
-        estimatedCompleted: 0,
-        estimatedTotal: plannedApplyBudget,
-        confidence: "planned",
-    });
-
+    const diffLabel =
+        `${summary.edits} edits · ${summary.adds} adds · ${summary.deletes} deletes · ${summary.moves} moves`;
+    if (phaseUnits !== undefined) {
+        progress?.({
+            phase: "applying",
+            phaseLabel: diffLabel,
+            unitCompleted: 1,
+            unitTotal: 1,
+            completedUnits: baseline,
+            totalUnits: phaseUnits.total,
+            phaseUnits: phaseUnitsFromParts(phaseUnits),
+        });
+    } else {
+        progress?.({
+            phase: "applying",
+            phaseLabel: diffLabel,
+            unitCompleted: 1,
+            unitTotal: 1,
+            completedUnits: 0,
+            totalUnits: plannedApplyUnits,
+            phaseUnits: {
+                reading: 0,
+                hydrating: 0,
+                applying: plannedApplyUnits,
+            },
+        });
+    }
     // Pre-mark already-matching desired actions. Anything not touched by an
     // op is "match" (white) from the start; ops will paint their own state
     // on completion.
     if (sink !== null) {
         const touched = new Set<number>();
         for (const op of diff.operations) {
-            const idx = srcIndexForOp(op, desired);
+            const idx = desiredIndexForOp(op);
             if (idx >= 0) touched.add(idx);
         }
         for (let i = 0; i < desired.length; i++) {
@@ -282,6 +346,26 @@ async function applyActionListDiffInner(
         if (sink !== null) sink.end();
         return;
     }
+
+    const emitApplying = (label: string, completedOps: number, applied: number): void => {
+        if (applyProgress !== null) {
+            applyProgress.emitOuter(label, completedOps, applied);
+        } else {
+            progress?.({
+                phase: "applying",
+                phaseLabel: label,
+                unitCompleted: completedOps,
+                unitTotal: diff.operations.length,
+                completedUnits: applied,
+                totalUnits: plannedApplyUnits,
+                phaseUnits: {
+                    reading: 0,
+                    hydrating: 0,
+                    applying: plannedApplyUnits,
+                },
+            });
+        }
+    };
 
     const deletes: Array<ActionListOperation & { kind: "delete" }> = [];
     const edits: Array<ActionListOperation & { kind: "edit" }> = [];
@@ -305,79 +389,61 @@ async function applyActionListDiffInner(
         }
     }
 
-    let appliedBudget = 0;
+    let appliedUnits = 0;
+    let nextRuntimeEntryId = observed.length;
+    const remaining: LiveActionListEntry[] = [];
+    for (let i = 0; i < observed.length; i++) {
+        remaining.push({
+            entryId: i,
+            action: observed[i].action,
+        });
+    }
 
     // Deletes first (reverse order so indices stay valid), then refresh slot refs.
     if (deletes.length > 0) {
-        deletes.sort((a, b) => b.observed.index - a.observed.index);
-        const currentObserved = [...observed];
+        deletes.sort((a, b) => b.fromIndex - a.fromIndex);
 
         for (let i = 0; i < deletes.length; i++) {
             const op = deletes[i];
-            const index = currentObserved.indexOf(op.observed);
+            const index = findCurrentIndex(remaining, op.entryId);
             if (index === -1) {
                 continue;
             }
 
-            progress?.({
-                phase: "applying",
-                completed: i,
-                total: diff.operations.length,
-                label: opLabel(op),
-                estimatedCompleted: appliedBudget,
-                estimatedTotal: plannedApplyBudget,
-                confidence: "planned",
-            });
+            emitApplying(opLabel(op), i, appliedUnits);
             if (sink !== null) sink.phase(opLabel(op));
-            await deleteObservedAction(ctx, index, currentObserved.length);
-            appliedBudget += operationApplyBudget(op, desired.length);
-            currentObserved.splice(index, 1);
+            await deleteObservedAction(ctx, index, remaining.length);
+            appliedUnits += operationApplyUnits(op, desired.length);
+            remaining.splice(index, 1);
         }
     }
 
-    const remainingObserved = observed.filter(
-        (entry) => !deletes.some((op) => op.observed === entry)
-    );
-    for (let i = 0; i < remainingObserved.length; i++) {
-        remainingObserved[i].index = i;
-    }
-
-    // Edits before moves: edits use slot refs from readActionList which
-    // become stale after moves shift actions around. Moves re-read slots
-    // internally so they're unaffected by prior edits.
+    // Edits before moves keep current entry positions stable while editors open.
     let appliedOps = deletes.length;
     for (const op of edits) {
-        const currentIndex = remainingObserved.indexOf(op.observed);
+        const currentIndex = findCurrentIndex(remaining, op.entryId);
         if (currentIndex === -1) {
             continue;
         }
 
-        const srcIdx = srcIndexForOp(op, desired);
+        const srcIdx = desiredIndexForOp(op);
         const srcPath = srcIdx >= 0 ? actionPathForIndex(pathPrefix, srcIdx) : null;
         if (sink !== null && srcPath !== null) sink.beginOp(srcPath, "edit", opLabel(op));
-        progress?.({
-            phase: "applying",
-            completed: appliedOps,
-            total: diff.operations.length,
-            label: opLabel(op),
-            estimatedCompleted: appliedBudget,
-            estimatedTotal: plannedApplyBudget,
-            confidence: "planned",
-        });
+        emitApplying(opLabel(op), appliedOps, appliedUnits);
         appliedOps++;
+        const opStartUnits = appliedUnits;
 
         const actionSlot = await getPaginatedListSlotAtIndex(
             ctx,
             currentIndex,
-            remainingObserved.length,
+            remaining.length,
             ACTION_LIST_CONFIG
         );
-        op.observed.slot = actionSlot;
-        op.observed.slotId = actionSlot.getSlotId();
 
         if (op.noteOnly) {
             await setListItemNote(ctx, actionSlot, op.desired.note);
-            appliedBudget += operationApplyBudget(op, desired.length);
+            appliedUnits += operationApplyUnits(op, desired.length);
+            remaining[currentIndex].action = op.desired;
             if (sink !== null && srcPath !== null) sink.completeOp(srcPath, "edit");
             continue;
         }
@@ -387,111 +453,105 @@ async function applyActionListDiffInner(
             actionSlot.click();
             await timedWaitForMenu(ctx, "menuClickWait");
 
-            if (!op.observed.action) {
-                throw new Error(
-                    "Observed action should always be present for edit operations."
-                );
-            }
-            const currentAction = op.observed.action;
+            const currentAction = op.currentAction;
 
-            await withWritingActionPath(srcPath, () =>
-                writeOpenAction(ctx, op.desired, currentAction, itemRegistry)
-            );
+            await writeOpenAction(ctx, op.desired, {
+                current: currentAction,
+                itemRegistry,
+                pathPrefix: srcPath ?? undefined,
+                onProgress:
+                    applyProgress?.nestedSink({
+                        label: opLabel(op),
+                        unitCompleted: appliedOps,
+                        unitTotal: diff.operations.length,
+                    }) ?? progress,
+            });
+            if (applyProgress !== null) {
+                appliedUnits = Math.max(appliedUnits, applyProgress.getAppliedUnits());
+            }
             await clickGoBack(ctx);
         }
 
         await setListItemNote(ctx, actionSlot, op.desired.note);
-        appliedBudget += operationApplyBudget(op, desired.length);
+        appliedUnits = Math.max(
+            appliedUnits,
+            opStartUnits + operationApplyUnits(op, desired.length)
+        );
+        remaining[currentIndex].action = op.desired;
         if (sink !== null && srcPath !== null) sink.completeOp(srcPath, "edit");
     }
 
     moves.sort((a, b) => a.toIndex - b.toIndex);
     for (const op of moves) {
-        const fromIndex = remainingObserved.indexOf(op.observed);
+        const fromIndex = findCurrentIndex(remaining, op.entryId);
         if (fromIndex === -1) {
             continue;
         }
 
-        const srcIdx = srcIndexForOp(op, desired);
+        const srcIdx = desiredIndexForOp(op);
         const srcPath = srcIdx >= 0 ? actionPathForIndex(pathPrefix, srcIdx) : null;
         if (sink !== null && srcPath !== null) sink.beginOp(srcPath, "move", opLabel(op));
-        progress?.({
-            phase: "applying",
-            completed: appliedOps,
-            total: diff.operations.length,
-            label: opLabel(op),
-            estimatedCompleted: appliedBudget,
-            estimatedTotal: plannedApplyBudget,
-            confidence: "planned",
-        });
+        emitApplying(opLabel(op), appliedOps, appliedUnits);
         appliedOps++;
 
-        await moveActionToIndex(ctx, fromIndex, op.toIndex, remainingObserved.length);
-        appliedBudget += operationApplyBudget(op, desired.length);
+        await moveActionToIndex(ctx, fromIndex, op.toIndex, remaining.length);
+        appliedUnits += operationApplyUnits(op, desired.length);
 
-        remainingObserved.splice(fromIndex, 1);
-        remainingObserved.splice(op.toIndex, 0, op.observed);
-        for (let i = 0; i < remainingObserved.length; i++) {
-            remainingObserved[i].index = i;
-        }
+        const entry = remaining[fromIndex];
+        remaining.splice(fromIndex, 1);
+        remaining.splice(op.toIndex, 0, entry);
         if (sink !== null && srcPath !== null) sink.completeOp(srcPath, "match");
     }
 
     adds.sort((a, b) => a.toIndex - b.toIndex);
-    let currentLength = remainingObserved.length;
+    let currentLength = remaining.length;
     for (const op of adds) {
-        const srcIdx = srcIndexForOp(op, desired);
+        const srcIdx = desiredIndexForOp(op);
         const srcPath = srcIdx >= 0 ? actionPathForIndex(pathPrefix, srcIdx) : null;
         if (sink !== null && srcPath !== null) sink.beginOp(srcPath, "add", opLabel(op));
-        progress?.({
-            phase: "applying",
-            completed: appliedOps,
-            total: diff.operations.length,
-            label: opLabel(op),
-            estimatedCompleted: appliedBudget,
-            estimatedTotal: plannedApplyBudget,
-            confidence: "planned",
-        });
+        emitApplying(opLabel(op), appliedOps, appliedUnits);
         appliedOps++;
+        const opStartUnits = appliedUnits;
 
         const actionToImport =
             op.desired.note === undefined
                 ? op.desired
                 : ({ ...op.desired, note: undefined } as Action);
 
-        await withWritingActionPath(srcPath, () => importAction(ctx, actionToImport, itemRegistry));
+        await importAction(
+            ctx,
+            actionToImport,
+            itemRegistry,
+            applyProgress?.nestedSink({
+                label: opLabel(op),
+                unitCompleted: appliedOps,
+                unitTotal: diff.operations.length,
+            }) ?? progress,
+            srcPath ?? undefined
+        );
+        if (applyProgress !== null) {
+            appliedUnits = Math.max(appliedUnits, applyProgress.getAppliedUnits());
+        }
         await moveActionToIndex(ctx, currentLength, op.toIndex, currentLength + 1);
 
-        const insertedAction: ObservedActionSlot = {
-            index: op.toIndex,
-            slotId: -1,
-            slot: null as never,
+        remaining.splice(op.toIndex, 0, {
+            entryId: nextRuntimeEntryId++,
             action: op.desired,
-        };
-        remainingObserved.splice(op.toIndex, 0, insertedAction);
+        });
         currentLength += 1;
-        for (let i = 0; i < remainingObserved.length; i++) {
-            remainingObserved[i].index = i;
-        }
 
         if (op.desired.note !== undefined) {
             const addedSlot = await getPaginatedListSlotAtIndex(ctx, op.toIndex, currentLength, ACTION_LIST_CONFIG);
             await setListItemNote(ctx, addedSlot, op.desired.note);
         }
-        appliedBudget += operationApplyBudget(op, desired.length);
+        appliedUnits = Math.max(
+            appliedUnits,
+            opStartUnits + operationApplyUnits(op, desired.length)
+        );
         if (sink !== null && srcPath !== null) sink.completeOp(srcPath, "add");
     }
 
     await goToPaginatedListPage(ctx, 1, ACTION_LIST_CONFIG);
-    progress?.({
-        phase: "applying",
-        completed: diff.operations.length,
-        total: diff.operations.length,
-        label: "applied action diff",
-        estimatedCompleted: plannedApplyBudget,
-        estimatedTotal: plannedApplyBudget,
-        confidence: "planned",
-    });
 
     if (sink !== null) sink.end();
 }

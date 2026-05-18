@@ -5,7 +5,6 @@ import { htslFilenameForFunctionExport } from "./paths";
 import { chatSeparator, stripSurroundingQuotes } from "../utils/helpers";
 import { VERSION } from "htsw";
 
-export { exportImportable } from "../importables/exports";
 
 function trimTrailingSlashes(path: string): string {
     let end = path.length;

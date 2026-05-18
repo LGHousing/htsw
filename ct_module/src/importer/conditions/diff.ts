@@ -1,19 +1,78 @@
 import type { Condition } from "htsw/types";
 
-import { conditionOnlyNoteDiffers, conditionsEqual } from "../compare";
+import { conditionOnlyNoteDiffers, conditionsEqual } from "../fields/compare";
 import type {
     ConditionListDiff,
     ConditionListOperation,
+    CurrentConditionListEntry,
     ObservedConditionSlot,
 } from "../types";
 
-export { conditionOnlyNoteDiffers as onlyNoteDiffers } from "../compare";
+export { conditionOnlyNoteDiffers as onlyNoteDiffers } from "../fields/compare";
+
+export function currentConditionListFromSlots(
+    slots: readonly ObservedConditionSlot[]
+): CurrentConditionListEntry[] {
+    const out: CurrentConditionListEntry[] = [];
+    for (let i = 0; i < slots.length; i++) {
+        out.push({
+            entryId: i,
+            index: slots[i].index,
+            condition: slots[i].condition,
+        });
+    }
+    return out;
+}
+
+export function currentConditionListFromConditions(
+    conditions: ReadonlyArray<Condition | null>
+): CurrentConditionListEntry[] {
+    const out: CurrentConditionListEntry[] = [];
+    for (let i = 0; i < conditions.length; i++) {
+        out.push({
+            entryId: i,
+            index: i,
+            condition: conditions[i],
+        });
+    }
+    return out;
+}
+
+function indexOfEqualCondition(
+    entries: readonly CurrentConditionListEntry[],
+    desired: Condition
+): number {
+    for (let i = 0; i < entries.length; i++) {
+        if (conditionsEqual(entries[i].condition, desired)) return i;
+    }
+    return -1;
+}
+
+function indexOfNoteOnlyCondition(
+    entries: readonly CurrentConditionListEntry[],
+    desired: Condition
+): number {
+    for (let i = 0; i < entries.length; i++) {
+        if (conditionOnlyNoteDiffers(desired, entries[i].condition)) return i;
+    }
+    return -1;
+}
+
+function indexOfConditionType(
+    entries: readonly CurrentConditionListEntry[],
+    desired: Condition
+): number {
+    for (let i = 0; i < entries.length; i++) {
+        if (entries[i].condition?.type === desired.type) return i;
+    }
+    return -1;
+}
 
 export function diffConditionList(
-    observed: ObservedConditionSlot[],
+    current: CurrentConditionListEntry[],
     desired: Condition[]
 ): ConditionListDiff {
-    const unmatchedObserved = [...observed];
+    const unmatchedCurrent = [...current];
     const unmatchedDesired = [...desired];
     const operations: ConditionListOperation[] = [];
 
@@ -24,15 +83,13 @@ export function diffConditionList(
         desiredIndex--
     ) {
         const desiredCondition = unmatchedDesired[desiredIndex];
-        const observedIndex = unmatchedObserved.findIndex((entry) =>
-            conditionsEqual(entry.condition, desiredCondition)
-        );
+        const currentIndex = indexOfEqualCondition(unmatchedCurrent, desiredCondition);
 
-        if (observedIndex === -1) {
+        if (currentIndex === -1) {
             continue;
         }
 
-        unmatchedObserved.splice(observedIndex, 1);
+        unmatchedCurrent.splice(currentIndex, 1);
         unmatchedDesired.splice(desiredIndex, 1);
     }
 
@@ -45,19 +102,24 @@ export function diffConditionList(
         desiredIndex--
     ) {
         const desiredCondition = unmatchedDesired[desiredIndex];
-        const observedIndex = unmatchedObserved.findIndex((entry) =>
-            conditionOnlyNoteDiffers(desiredCondition, entry.condition)
+        const currentIndex = indexOfNoteOnlyCondition(
+            unmatchedCurrent,
+            desiredCondition
         );
 
-        if (observedIndex === -1) {
+        if (currentIndex === -1) {
             continue;
         }
 
-        const [observedCondition] = unmatchedObserved.splice(observedIndex, 1);
+        const [currentCondition] = unmatchedCurrent.splice(currentIndex, 1);
+        if (currentCondition.condition === null) {
+            continue;
+        }
         unmatchedDesired.splice(desiredIndex, 1);
         operations.push({
             kind: "edit",
-            observed: observedCondition,
+            entryId: currentCondition.entryId,
+            currentCondition: currentCondition.condition,
             desired: desiredCondition,
             noteOnly: true,
         });
@@ -65,27 +127,34 @@ export function diffConditionList(
 
     // Pass 3: same-type edits, else adds.
     for (const desiredCondition of unmatchedDesired) {
-        const observedIndex = unmatchedObserved.findIndex(
-            (entry) => entry.condition?.type === desiredCondition.type
-        );
+        const currentIndex = indexOfConditionType(unmatchedCurrent, desiredCondition);
 
-        if (observedIndex === -1) {
+        if (currentIndex === -1) {
             operations.push({ kind: "add", desired: desiredCondition });
             continue;
         }
 
-        const [observedCondition] = unmatchedObserved.splice(observedIndex, 1);
+        const [currentCondition] = unmatchedCurrent.splice(currentIndex, 1);
+        if (currentCondition.condition === null) {
+            operations.push({ kind: "add", desired: desiredCondition });
+            continue;
+        }
         operations.push({
             kind: "edit",
-            observed: observedCondition,
+            entryId: currentCondition.entryId,
+            currentCondition: currentCondition.condition,
             desired: desiredCondition,
             noteOnly: false,
         });
     }
 
     // Pass 4: leftover observed entries are deletes.
-    for (const observed of unmatchedObserved) {
-        operations.push({ kind: "delete", observed });
+    for (const currentEntry of unmatchedCurrent) {
+        operations.push({
+            kind: "delete",
+            entryId: currentEntry.entryId,
+            currentCondition: currentEntry.condition,
+        });
     }
 
     return { operations };

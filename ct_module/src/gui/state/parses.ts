@@ -4,6 +4,7 @@ import { ParseResult, parseImportablesResult, SourceMap } from "htsw";
 import type { Importable } from "htsw/types";
 
 import { FileSystemFileLoader } from "../../utils/files";
+import { javaType } from "../lib/java";
 
 /**
  * Per-file `import.json` parse cache. Lets the Explore tree show
@@ -32,8 +33,7 @@ export type CachedParse = {
 export function canonicalPath(p: string): string {
     if (!p) return p;
     try {
-        // @ts-ignore
-        const Paths = Java.type("java.nio.file.Paths");
+        const Paths = javaType("java.nio.file.Paths");
         return String(Paths.get(String(p)).toAbsolutePath().normalize().toString())
             .replace(/\\/g, "/");
     } catch (_e) {
@@ -43,10 +43,8 @@ export function canonicalPath(p: string): string {
 
 function getMtimeMs(path: string): number {
     try {
-        // @ts-ignore
-        const Paths = Java.type("java.nio.file.Paths");
-        // @ts-ignore
-        const Files = Java.type("java.nio.file.Files");
+        const Paths = javaType("java.nio.file.Paths");
+        const Files = javaType("java.nio.file.Files");
         return Number(Files.getLastModifiedTime(Paths.get(String(path))).toMillis());
     } catch (_e) {
         return 0;
@@ -94,16 +92,6 @@ export function getParseAt(path: string): CachedParse | null {
     const canon = canonicalPath(path);
     return cache.get(canon) ?? null;
 }
-
-/**
- * Drop the cached parse for `path`. Used when the source file is removed
- * from the Explore tree so we don't grow the cache forever.
- */
-export function evictParseAt(path: string): void {
-    const canon = canonicalPath(path);
-    cache.delete(canon);
-}
-
 /**
  * Iterate every parsed import.json. Used by the queue layer to find a
  * `QueueItem`'s importable when only its source path is known.

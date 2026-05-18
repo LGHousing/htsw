@@ -1,0 +1,20 @@
+{
+    "$schema": "https://unpkg.com/knip@6/schema.json",
+    "entry": [
+        "src/mcp/bridge.stub.ts",
+        "scripts/*.ts",
+        "test/**/*.test.ts"
+    ],
+    "project": ["src/**/*.ts", "scripts/**/*.ts", "test/**/*.ts"],
+    "ignoreDependencies": [
+        "@babel/plugin-proposal-class-properties",
+        "@babel/plugin-transform-classes",
+        "@babel/preset-env",
+        "@babel/preset-typescript"
+    ],
+    "ignoreIssues": {
+        "src/gui/lib/theme.ts": ["duplicates"]
+    },
+    "ignoreBinaries": ["tsx"],
+    "ignoreUnresolved": ["../../CTAutocomplete"]
+}

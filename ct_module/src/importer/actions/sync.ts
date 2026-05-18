@@ -4,11 +4,11 @@ import TaskContext from "../../tasks/context";
 import { type ItemRegistry } from "../../importables/itemRegistry";
 import type {
     ActionListDiff,
-    ActionListProgressSink,
     ActionListTrust,
     ObservedActionSlot,
 } from "../types";
-import { diffActionList } from "./diff";
+import type { ActionListProgressSink } from "../progress/types";
+import { currentActionListFromSlots, diffActionList } from "./diff";
 import { applyActionListDiff } from "./applyDiff";
 import {
     canonicalizeActionItemName,
@@ -16,6 +16,7 @@ import {
     readActionList,
 } from "./readList";
 import { actionLogLabel, editDiffSummary } from "./log";
+import { estimateActionListPhaseUnits } from "../progress/costs";
 
 export type SyncActionListOptions = {
     /**
@@ -32,6 +33,7 @@ export type SyncActionListOptions = {
     onProgress?: ActionListProgressSink;
     /** Source path prefix for nested lists, e.g. `4.ifActions`. */
     pathPrefix?: string;
+    knownCurrent?: readonly Action[];
 };
 
 export type SyncActionListResult = {
@@ -48,6 +50,9 @@ export async function syncActionList(
     desired: Action[],
     options?: SyncActionListOptions
 ): Promise<SyncActionListResult> {
+    const knownCurrent = options?.knownCurrent ?? options?.trust?.cachedActions;
+    const phaseUnits = estimateActionListPhaseUnits(desired, knownCurrent);
+    const progress = options?.onProgress;
     const observed =
         options?.observed ??
         (await readActionList(ctx, {
@@ -55,7 +60,8 @@ export async function syncActionList(
             desired,
             itemRegistry: options?.itemRegistry,
             trust: options?.trust,
-            onProgress: options?.onProgress,
+            onProgress: progress,
+            phaseUnits,
         }));
     canonicalizeObservedActionItemNames(observed, options?.itemRegistry);
     if (options?.itemRegistry) {
@@ -63,7 +69,7 @@ export async function syncActionList(
             canonicalizeActionItemName(action, options.itemRegistry);
         }
     }
-    const diff = diffActionList(observed, desired);
+    const diff = diffActionList(currentActionListFromSlots(observed), desired);
     logActionSyncState(ctx, diff);
     await applyActionListDiff(
         ctx,
@@ -71,8 +77,9 @@ export async function syncActionList(
         desired,
         diff,
         options?.itemRegistry,
-        options?.onProgress,
-        options?.pathPrefix
+        progress,
+        options?.pathPrefix,
+        phaseUnits
     );
     return { usedObserved: observed };
 }
@@ -96,17 +103,17 @@ function logActionSyncState(ctx: TaskContext, diff: ActionListDiff): void {
         switch (op.kind) {
             case "delete":
                 ctx.displayMessage(
-                    `&7  &c-DEL [${op.observed.index}] ${actionLogLabel(op.observed.action)}`
+                    `&7  &c-DEL [${op.fromIndex}] ${actionLogLabel(op.currentAction)}`
                 );
                 break;
             case "edit":
                 if (op.noteOnly) {
                     ctx.displayMessage(
-                        `&7  &6~NOTE [${op.observed.index}] ${actionLogLabel(op.observed.action)}`
+                        `&7  &6~NOTE [${op.fromIndex}] ${actionLogLabel(op.currentAction)}`
                     );
                 } else {
                     ctx.displayMessage(
-                        `&7  &6~EDIT [${op.observed.index}] ${actionLogLabel(op.observed.action)}: ${editDiffSummary(op)}`
+                        `&7  &6~EDIT [${op.fromIndex}] ${actionLogLabel(op.currentAction)}: ${editDiffSummary(op)}`
                     );
                 }
                 break;
@@ -117,7 +124,7 @@ function logActionSyncState(ctx: TaskContext, diff: ActionListDiff): void {
                 break;
             case "move":
                 ctx.displayMessage(
-                    `&7  &e>MOV [${op.observed.index} -> ${op.toIndex}] ${actionLogLabel(op.action)}`
+                    `&7  &e>MOV [${op.fromIndex} -> ${op.toIndex}] ${actionLogLabel(op.action)}`
                 );
                 break;
         }

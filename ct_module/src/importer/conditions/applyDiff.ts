@@ -16,18 +16,30 @@ import {
     setListItemNote,
     setNoteOnLastVisibleSlot,
     timedWaitForMenu,
-} from "../helpers";
+} from "../gui/helpers";
 import { ItemSlot, MouseButton } from "../../tasks/specifics/slots";
 import { removedFormatting } from "../../utils/helpers";
-import { CONDITION_MAPPINGS } from "../conditionMappings";
+import { CONDITION_MAPPINGS } from "../fields/conditionMappings";
 import type {
     ConditionListDiff,
     ConditionListOperation,
     ObservedConditionSlot,
 } from "../types";
-import { getPaginatedListSlotAtIndex } from "../paginatedList";
+import type { ActionListProgressSink } from "../progress/types";
+import { getPaginatedListSlotAtIndex } from "../gui/paginatedList";
 import { CONDITION_LIST_CONFIG } from "./listConfig";
 import { getConditionSpec, writeOpenCondition } from "../conditions";
+import {
+    conditionListDiffApplyUnits,
+    conditionOperationUnits,
+    phaseUnitsFromParts,
+    type ListPhaseUnits,
+} from "../progress/costs";
+
+type LiveConditionListEntry = {
+    entryId: number;
+    condition: Condition | null;
+};
 
 function getInvertSlot(ctx: TaskContext): ItemSlot {
     return ctx.getMenuItemSlot((slot) => {
@@ -36,7 +48,7 @@ function getInvertSlot(ctx: TaskContext): ItemSlot {
     });
 }
 
-export async function setOpenConditionInverted(
+async function setOpenConditionInverted(
     ctx: TaskContext,
     desiredInverted: boolean,
     knownCurrentInverted?: boolean
@@ -52,7 +64,7 @@ export async function setOpenConditionInverted(
     await timedWaitForMenu(ctx, "menuClickWait");
 }
 
-export async function importCondition(
+async function importCondition(
     ctx: TaskContext,
     condition: Condition,
     itemRegistry?: ItemRegistry
@@ -91,13 +103,36 @@ async function deleteObservedCondition(
     await timedWaitForMenu(ctx, "menuClickWait");
 }
 
+function findCurrentConditionIndex(
+    entries: readonly LiveConditionListEntry[],
+    entryId: number
+): number {
+    for (let i = 0; i < entries.length; i++) {
+        if (entries[i].entryId === entryId) return i;
+    }
+    return -1;
+}
+
+function recomputeTotal(units: ListPhaseUnits): number {
+    return units.readPart + units.hydratePart + units.applyPart;
+}
+
 export async function applyConditionListDiff(
     ctx: TaskContext,
     observed: ObservedConditionSlot[],
     diff: ConditionListDiff,
-    itemRegistry?: ItemRegistry
+    itemRegistry?: ItemRegistry,
+    progress?: ActionListProgressSink,
+    phaseUnits?: ListPhaseUnits
 ): Promise<void> {
-    const currentObserved = [...observed];
+    const currentEntries: LiveConditionListEntry[] = [];
+    for (let i = 0; i < observed.length; i++) {
+        currentEntries.push({
+            entryId: i,
+            condition: observed[i].condition,
+        });
+    }
+    let nextRuntimeEntryId = observed.length;
     const edits: Array<Extract<ConditionListOperation, { kind: "edit" }>> = [];
     const deletes: Array<Extract<ConditionListOperation, { kind: "delete" }>> = [];
     const adds: Array<Extract<ConditionListOperation, { kind: "add" }>> = [];
@@ -107,67 +142,143 @@ export async function applyConditionListDiff(
         else adds.push(op);
     }
 
-    // Edits first: indices don't shift while editing in place. Then deletes
-    // (descending) so prior indices stay valid. Adds last — they append.
+    let completedOps = 0;
+    let completedUnits = 0;
+    const totalOps = diff.operations.length;
+    const plannedApplyUnits = conditionListDiffApplyUnits(diff);
+    if (phaseUnits !== undefined) {
+        phaseUnits.applyPart = plannedApplyUnits;
+        phaseUnits.total = recomputeTotal(phaseUnits);
+    }
+    const baseline = phaseUnits === undefined
+        ? 0
+        : phaseUnits.readPart + phaseUnits.hydratePart;
+    const emitConditionOp = (label: string): void => {
+        if (progress === undefined) return;
+        if (totalOps === 0) return;
+        progress({
+            phase: "applying",
+            phaseLabel: label,
+            unitCompleted: completedOps,
+            unitTotal: totalOps,
+            completedUnits: baseline + completedUnits,
+            totalUnits: phaseUnits === undefined
+                ? plannedApplyUnits
+                : phaseUnits.total,
+            phaseUnits: phaseUnits === undefined
+                ? {
+                      reading: 0,
+                      hydrating: 0,
+                      applying: plannedApplyUnits,
+                  }
+                : phaseUnitsFromParts(phaseUnits),
+        });
+    };
+
+    if (totalOps === 0) {
+        progress?.({
+            phase: "applying",
+            phaseLabel: "condition diff up to date",
+            unitCompleted: 1,
+            unitTotal: 1,
+            completedUnits: baseline + plannedApplyUnits,
+            totalUnits: phaseUnits === undefined
+                ? plannedApplyUnits
+                : phaseUnits.total,
+            phaseUnits: phaseUnits === undefined
+                ? {
+                      reading: 0,
+                      hydrating: 0,
+                      applying: plannedApplyUnits,
+                  }
+                : phaseUnitsFromParts(phaseUnits),
+        });
+        return;
+    }
+
     for (const op of edits) {
-        const currentIndex = currentObserved.indexOf(op.observed);
+        const currentIndex = findCurrentConditionIndex(currentEntries, op.entryId);
         if (currentIndex === -1) {
             continue;
         }
 
+        const observedName = CONDITION_MAPPINGS[op.currentCondition.type].displayName;
+        emitConditionOp(`edit condition ${observedName}`);
+
         const conditionSlot = await getPaginatedListSlotAtIndex(
             ctx,
             currentIndex,
-            currentObserved.length,
+            currentEntries.length,
             CONDITION_LIST_CONFIG
         );
-        op.observed.slot = conditionSlot;
-        op.observed.slotId = conditionSlot.getSlotId();
 
         if (op.noteOnly) {
             await setListItemNote(ctx, conditionSlot, op.desired.note);
+            completedUnits += conditionOperationUnits(op);
+            completedOps++;
+            currentEntries[currentIndex].condition = op.desired;
             continue;
         }
 
         conditionSlot.click();
         await timedWaitForMenu(ctx, "menuClickWait");
 
-        if (!op.observed.condition) {
-            throw new Error(
-                "Observed condition should always be present for edit operations."
-            );
-        }
-
         await writeOpenCondition(
             ctx,
             op.desired,
-            op.observed.condition,
+            op.currentCondition,
             itemRegistry
         );
 
-        const currentInverted = op.observed.condition.inverted === true;
+        const currentInverted = op.currentCondition.inverted === true;
         const desiredInverted = op.desired.inverted === true;
         await setOpenConditionInverted(ctx, desiredInverted, currentInverted);
 
         await clickGoBack(ctx);
 
         await setListItemNote(ctx, conditionSlot, op.desired.note);
+        completedUnits += conditionOperationUnits(op);
+        completedOps++;
+        currentEntries[currentIndex].condition = op.desired;
     }
 
-    deletes.sort((a, b) => b.observed.index - a.observed.index);
+    deletes.sort((a, b) => {
+        const bIndex = findCurrentConditionIndex(currentEntries, b.entryId);
+        const aIndex = findCurrentConditionIndex(currentEntries, a.entryId);
+        return bIndex - aIndex;
+    });
     for (const op of deletes) {
-        const index = currentObserved.indexOf(op.observed);
+        const index = findCurrentConditionIndex(currentEntries, op.entryId);
         if (index === -1) {
             continue;
         }
 
-        await deleteObservedCondition(ctx, index, currentObserved.length);
-        currentObserved.splice(index, 1);
+        const observedName =
+            op.currentCondition === null
+                ? "condition"
+                : CONDITION_MAPPINGS[op.currentCondition.type].displayName;
+        emitConditionOp(`delete condition ${observedName}`);
+
+        await deleteObservedCondition(ctx, index, currentEntries.length);
+        currentEntries.splice(index, 1);
+        completedUnits += conditionOperationUnits(op);
+        completedOps++;
     }
 
     for (const op of adds) {
+        emitConditionOp(
+            `add condition ${CONDITION_MAPPINGS[op.desired.type].displayName}`
+        );
         await importCondition(ctx, op.desired, itemRegistry);
+        currentEntries.push({
+            entryId: nextRuntimeEntryId++,
+            condition: op.desired,
+        });
+        completedUnits += conditionOperationUnits(op);
+        completedOps++;
     }
+
+    emitConditionOp("applied condition diff");
 }
 
 export function logConditionSyncState(ctx: TaskContext, diff: ConditionListDiff): void {
@@ -180,19 +291,16 @@ export function logConditionSyncState(ctx: TaskContext, diff: ConditionListDiff)
     let addIndex = 0;
     for (const op of diff.operations) {
         if (op.kind === "edit") {
-            const observedName =
-                op.observed.condition === null
-                    ? "Unknown Condition"
-                    : CONDITION_MAPPINGS[op.observed.condition.type].displayName;
+            const observedName = CONDITION_MAPPINGS[op.currentCondition.type].displayName;
             ctx.displayMessage(
-                `&7  &6~ [${op.observed.index}] ${observedName} &7-> &6${CONDITION_MAPPINGS[op.desired.type].displayName}`
+                `&7  &6~ ${observedName} &7-> &6${CONDITION_MAPPINGS[op.desired.type].displayName}`
             );
         } else if (op.kind === "delete") {
             const deleteName =
-                op.observed.condition === null
+                op.currentCondition === null
                     ? "Unknown Condition"
-                    : CONDITION_MAPPINGS[op.observed.condition.type].displayName;
-            ctx.displayMessage(`&7  &c- [${op.observed.index}] ${deleteName}`);
+                    : CONDITION_MAPPINGS[op.currentCondition.type].displayName;
+            ctx.displayMessage(`&7  &c- ${deleteName}`);
         } else {
             ctx.displayMessage(
                 `&7  &a+ [${addIndex}] ${CONDITION_MAPPINGS[op.desired.type].displayName}`

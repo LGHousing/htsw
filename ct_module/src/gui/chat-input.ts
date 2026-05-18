@@ -5,36 +5,46 @@ import { Container, Input, Text } from "./lib/components";
 import { ACCENT_INFO, COLOR_INPUT_BG, COLOR_TEXT_DIM } from "./lib/theme";
 import { setFocusedInput } from "./lib/focus";
 import { getChatKeyName } from "./keybinds";
+import { Simulator } from "../simulator/simulator";
 
 export const CHAT_INPUT_ID = "htsw-chat-input";
 
 let chatText = "";
 
-export function getChatText(): string {
-    return chatText;
+function commandNameOf(text: string): string {
+    if (text.substring(0, 2) === "//") return "/";
+    const withoutSlash = text.substring(1).trim();
+    const space = withoutSlash.indexOf(" ");
+    return (space === -1 ? withoutSlash : withoutSlash.substring(0, space))
+        .toLowerCase();
 }
 
-export function setChatText(v: string): void {
-    chatText = v;
+function isClientCommand(text: string): boolean {
+    const name = commandNameOf(text);
+    if (
+        name === "htsw" ||
+        name === "import" ||
+        name === "export" ||
+        name === "simulator" ||
+        name === "sim"
+    ) {
+        return true;
+    }
+
+    return Simulator.isActive && (
+        name === "function" ||
+        name === "var" ||
+        name === "eval" ||
+        name === "/"
+    );
 }
 
-export function focusChatInput(): void {
-    setFocusedInput(CHAT_INPUT_ID);
-}
-
-/**
- * Send the current input text to chat and clear the field.
- *
- * Distinguishes commands (lines starting with "/") from messages — commands
- * route through `ChatLib.command` which fires them as the player. Messages
- * use `ChatLib.say` which is the same as typing in the vanilla chat.
- */
-export function submitChat(): void {
+function submitChat(): void {
     const text = chatText.trim();
     if (text.length === 0) return;
     try {
-        if (text.startsWith("/")) {
-            ChatLib.command(text.substring(1));
+        if (text.charAt(0) === "/" && isClientCommand(text)) {
+            ChatLib.command(text.substring(1), true);
         } else {
             ChatLib.say(text);
         }

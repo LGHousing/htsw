@@ -6,7 +6,7 @@ import { togglePopover } from "../lib/popovers";
 import { COLOR_ROW, COLOR_ROW_HOVER, COLOR_TEXT, SIZE_ROW_H } from "../lib/theme";
 
 /** Hypixel housing chat-command shortcuts surfaced in the toolbar dropdown. */
-export type OpenTargetId =
+type OpenTargetId =
     | "functions"
     | "eventactions"
     | "regions"
@@ -14,7 +14,7 @@ export type OpenTargetId =
 
 type OpenTarget = { id: OpenTargetId; label: string; command: string };
 
-export const OPEN_TARGETS: OpenTarget[] = [
+const OPEN_TARGETS: OpenTarget[] = [
     { id: "functions", label: "Functions", command: "/functions" },
     { id: "eventactions", label: "Event Actions", command: "/eventactions" },
     { id: "regions", label: "Regions", command: "/regions" },

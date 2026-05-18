@@ -45,7 +45,7 @@ export function importableIdentity(importable: Importable): string {
  * avoiding odd path segment edge cases. Export filenames use the same encoder
  * with dots preserved for readability.
  */
-export function slug(identity: string): string {
+function slug(identity: string): string {
     return encodeFilesystemComponent(identity, { escapeDots: true });
 }
 

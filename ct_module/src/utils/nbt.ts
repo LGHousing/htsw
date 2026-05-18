@@ -22,7 +22,7 @@ function toJavaLong(value: any): any {
     return JLong.valueOf(value.toString());
 }
 
-export function toMinecraftTag(tag: Tag): any {
+function toMinecraftTag(tag: Tag): any {
     if (tag.type === "byte") return new NBTTagByte(tag.value);
     if (tag.type === "short") return new NBTTagShort(tag.value);
     if (tag.type === "int") return new NBTTagInt(tag.value);

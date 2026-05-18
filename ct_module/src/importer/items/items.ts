@@ -1,12 +1,12 @@
-import TaskContext from "../tasks/context";
-import { timedWaitForMenu, waitForMenu } from "./helpers";
+import TaskContext from "../../tasks/context";
+import { timedWaitForMenu, waitForMenu } from "../gui/helpers";
 import {
     SET_SLOT_ACK_TIMEOUT_MS,
     sendCreativeInventoryAction,
     waitForAnySetSlot,
-} from "./packets";
-import { COST } from "./progress/costs";
-import { timed } from "./progress/timing";
+} from "../gui/packets";
+import { COST } from "../progress/costs";
+import { timed } from "../progress/timing";
 
 const INV_PACKET_SLOT = 26; // inventory row 2, column 9 (for HasItem and similar, rightmost, out of the way — matches BHTSL)
 
@@ -107,7 +107,6 @@ export async function selectItemFromOpenInventory(
         ctx,
         INV_PACKET_SLOT,
         desiredStack,
-        `injecting item-field value for &f${label}`
     );
 
     try {
@@ -124,9 +123,6 @@ export async function selectItemFromOpenInventory(
         if (matchedSlot === null) {
             throw error;
         }
-        ctx.displayMessage(
-            `&e[packet] item-field ack was not observed for &f${label}&e, but the scratch slot matches; continuing.`
-        );
     }
     await ctx.waitFor("tick");
 
