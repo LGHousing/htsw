@@ -81,6 +81,7 @@ import {
     captureItemFromOpenActionField,
     type ItemCaptureRegistry,
 } from "./itemCapture";
+import { parseLocationField } from "./loreParsing";
 
 // Public re-exports — external callers import these names from "./actions".
 export { diffActionList };
@@ -515,6 +516,137 @@ async function readOpenMessage(
     };
 }
 
+async function readOpenActionBar(
+    ctx: TaskContext,
+    _propsToRead: NestedPropsToRead,
+    _itemRegistry?: ItemRegistry,
+    _itemCaptures?: ItemCaptureRegistry,
+    _current?: Observed<ActionActionBar>
+): Promise<Observed<ActionActionBar>> {
+    return {
+        type: "ACTION_BAR",
+        message:
+            readStringValue(ctx.getMenuItemSlot(getActionFieldLabel("ACTION_BAR", "message"))) ??
+            "",
+    };
+}
+
+async function readOpenTitle(
+    ctx: TaskContext,
+    _propsToRead: NestedPropsToRead,
+    _itemRegistry?: ItemRegistry,
+    _itemCaptures?: ItemCaptureRegistry,
+    current?: Observed<ActionTitle>
+): Promise<Observed<ActionTitle>> {
+    // Preserve numeric timing fields (fadein/stay/fadeout) and subtitle
+    // when the editor doesn't yield a value — fall through to whatever
+    // the lore parse already produced.
+    const base: Observed<ActionTitle> =
+        current ?? ({ type: "TITLE", title: "" } as unknown as Observed<ActionTitle>);
+    const title = readStringValue(
+        ctx.getMenuItemSlot(getActionFieldLabel("TITLE", "title")),
+    );
+    if (title !== null) base.title = title;
+    const subtitle = readStringValue(
+        ctx.getMenuItemSlot(getActionFieldLabel("TITLE", "subtitle")),
+    );
+    if (subtitle !== null) base.subtitle = subtitle;
+    return base;
+}
+
+/**
+ * Refresh one named field on `base` from the open editor's slot. Used
+ * by single-string-field actions (FAIL_PARKOUR.message, FUNCTION.function,
+ * SET_MENU.menu, APPLY_INVENTORY_LAYOUT.layout) whose list-item lore
+ * truncates with `...` for long values. No-op when the slot isn't
+ * present or `readStringValue` returns null — preserves the lore-parsed
+ * value in that case.
+ */
+function refreshStringFieldFromEditor(
+    ctx: TaskContext,
+    base: Observed<Action>,
+    fieldLabel: string,
+    prop: string,
+): void {
+    const slot = ctx.tryGetItemSlot(fieldLabel);
+    if (slot === null) return;
+    const value = readStringValue(slot);
+    if (value === null) return;
+    (base as Record<string, unknown>)[prop] = value;
+}
+
+async function readOpenFailParkour(
+    ctx: TaskContext,
+    _propsToRead: NestedPropsToRead,
+    _itemRegistry?: ItemRegistry,
+    _itemCaptures?: ItemCaptureRegistry,
+    current?: Observed<ActionFailParkour>
+): Promise<Observed<ActionFailParkour>> {
+    const base: Observed<ActionFailParkour> =
+        current ?? ({ type: "FAIL_PARKOUR" } as unknown as Observed<ActionFailParkour>);
+    refreshStringFieldFromEditor(
+        ctx,
+        base,
+        getActionFieldLabel("FAIL_PARKOUR", "message"),
+        "message",
+    );
+    return base;
+}
+
+async function readOpenFunction(
+    ctx: TaskContext,
+    _propsToRead: NestedPropsToRead,
+    _itemRegistry?: ItemRegistry,
+    _itemCaptures?: ItemCaptureRegistry,
+    current?: Observed<ActionFunction>
+): Promise<Observed<ActionFunction>> {
+    const base: Observed<ActionFunction> =
+        current ?? ({ type: "FUNCTION", function: "" } as unknown as Observed<ActionFunction>);
+    refreshStringFieldFromEditor(
+        ctx,
+        base,
+        getActionFieldLabel("FUNCTION", "function"),
+        "function",
+    );
+    return base;
+}
+
+async function readOpenSetMenu(
+    ctx: TaskContext,
+    _propsToRead: NestedPropsToRead,
+    _itemRegistry?: ItemRegistry,
+    _itemCaptures?: ItemCaptureRegistry,
+    current?: Observed<ActionDisplayMenu>
+): Promise<Observed<ActionDisplayMenu>> {
+    const base: Observed<ActionDisplayMenu> =
+        current ?? ({ type: "SET_MENU", menu: "" } as unknown as Observed<ActionDisplayMenu>);
+    refreshStringFieldFromEditor(
+        ctx,
+        base,
+        getActionFieldLabel("SET_MENU", "menu"),
+        "menu",
+    );
+    return base;
+}
+
+async function readOpenApplyInventoryLayout(
+    ctx: TaskContext,
+    _propsToRead: NestedPropsToRead,
+    _itemRegistry?: ItemRegistry,
+    _itemCaptures?: ItemCaptureRegistry,
+    current?: Observed<ActionApplyInventoryLayout>
+): Promise<Observed<ActionApplyInventoryLayout>> {
+    const base: Observed<ActionApplyInventoryLayout> =
+        current ?? ({ type: "APPLY_INVENTORY_LAYOUT", layout: "" } as unknown as Observed<ActionApplyInventoryLayout>);
+    refreshStringFieldFromEditor(
+        ctx,
+        base,
+        getActionFieldLabel("APPLY_INVENTORY_LAYOUT", "layout"),
+        "layout",
+    );
+    return base;
+}
+
 /**
  * Capture the real housing-tagged NBT for an item-bearing action's Item
  * field, leaving every other field on the action object intact. We
@@ -596,13 +728,96 @@ async function readOpenDropItem(
     itemCaptures?: ItemCaptureRegistry,
     current?: Observed<ActionDropItem>
 ): Promise<Observed<ActionDropItem>> {
-    return readOpenItemBearingAction<ActionDropItem>(
+    const base = await readOpenItemBearingAction<ActionDropItem>(
         ctx,
         itemCaptures,
         current,
         getActionFieldLabel("DROP_ITEM", "itemName"),
         "DROP_ITEM"
     );
+    refreshLocationFromEditor(ctx, base, getActionFieldLabel("DROP_ITEM", "location"));
+    return base;
+}
+
+/**
+ * Re-read the Location field from the open editor and overwrite it on
+ * `base`. List-item lore truncates long coord strings to `...`; the
+ * editor's slot shows the full value via the `Current Value:` lore
+ * convention, so `readStringValue` recovers it.
+ *
+ * No-op when the editor isn't showing the field or `readStringValue`
+ * returns null — preserves whatever the lore-parse already produced.
+ */
+function refreshLocationFromEditor(
+    ctx: TaskContext,
+    base: Observed<Action>,
+    fieldLabel: string
+): void {
+    const slot = ctx.tryGetItemSlot(fieldLabel);
+    if (slot === null) return;
+    const editorValue = readStringValue(slot);
+    if (editorValue === null) return;
+    (base as Record<string, unknown>).location = parseLocationField(editorValue);
+}
+
+async function readOpenTeleport(
+    ctx: TaskContext,
+    _propsToRead: NestedPropsToRead,
+    _itemRegistry?: ItemRegistry,
+    _itemCaptures?: ItemCaptureRegistry,
+    current?: Observed<ActionTeleport>
+): Promise<Observed<ActionTeleport>> {
+    const base: Observed<ActionTeleport> =
+        current ?? ({ type: "TELEPORT" } as unknown as Observed<ActionTeleport>);
+    refreshLocationFromEditor(ctx, base, getActionFieldLabel("TELEPORT", "location"));
+    return base;
+}
+
+async function readOpenPlaySound(
+    ctx: TaskContext,
+    _propsToRead: NestedPropsToRead,
+    _itemRegistry?: ItemRegistry,
+    _itemCaptures?: ItemCaptureRegistry,
+    current?: Observed<ActionPlaySound>
+): Promise<Observed<ActionPlaySound>> {
+    const base: Observed<ActionPlaySound> =
+        current ?? ({ type: "PLAY_SOUND" } as unknown as Observed<ActionPlaySound>);
+    // Custom sound paths can also truncate in the list-item lore; the
+    // editor's Sound slot exposes the full string via `Current Value:`.
+    refreshStringFieldFromEditor(
+        ctx,
+        base,
+        getActionFieldLabel("PLAY_SOUND", "sound"),
+        "sound",
+    );
+    refreshLocationFromEditor(ctx, base, getActionFieldLabel("PLAY_SOUND", "location"));
+    return base;
+}
+
+async function readOpenSetCompassTarget(
+    ctx: TaskContext,
+    _propsToRead: NestedPropsToRead,
+    _itemRegistry?: ItemRegistry,
+    _itemCaptures?: ItemCaptureRegistry,
+    current?: Observed<ActionSetCompassTarget>
+): Promise<Observed<ActionSetCompassTarget>> {
+    const base: Observed<ActionSetCompassTarget> =
+        current ?? ({ type: "SET_COMPASS_TARGET" } as unknown as Observed<ActionSetCompassTarget>);
+    refreshLocationFromEditor(ctx, base, getActionFieldLabel("SET_COMPASS_TARGET", "location"));
+    return base;
+}
+
+async function readOpenLaunch(
+    ctx: TaskContext,
+    _propsToRead: NestedPropsToRead,
+    _itemRegistry?: ItemRegistry,
+    _itemCaptures?: ItemCaptureRegistry,
+    current?: Observed<ActionLaunch>
+): Promise<Observed<ActionLaunch>> {
+    const base: Observed<ActionLaunch> =
+        current ?? ({ type: "LAUNCH" } as unknown as Observed<ActionLaunch>);
+    refreshLocationFromEditor(ctx, base, getActionFieldLabel("LAUNCH", "location"));
+    return base;
 }
 
 async function writeApplyPotionEffect(
@@ -1080,10 +1295,12 @@ const ACTION_SPECS = {
     },
     TITLE: {
         displayName: ACTION_MAPPINGS.TITLE.displayName,
+        read: readOpenTitle,
         write: writeTitle,
     },
     ACTION_BAR: {
         displayName: ACTION_MAPPINGS.ACTION_BAR.displayName,
+        read: readOpenActionBar,
         write: writeActionBar,
     },
     RESET_INVENTORY: {
@@ -1132,18 +1349,22 @@ const ACTION_SPECS = {
     },
     TELEPORT: {
         displayName: ACTION_MAPPINGS.TELEPORT.displayName,
+        read: readOpenTeleport,
         write: writeTeleport,
     },
     FAIL_PARKOUR: {
         displayName: ACTION_MAPPINGS.FAIL_PARKOUR.displayName,
+        read: readOpenFailParkour,
         write: writeFailParkour,
     },
     PLAY_SOUND: {
         displayName: ACTION_MAPPINGS.PLAY_SOUND.displayName,
+        read: readOpenPlaySound,
         write: writePlaySound,
     },
     SET_COMPASS_TARGET: {
         displayName: ACTION_MAPPINGS.SET_COMPASS_TARGET.displayName,
+        read: readOpenSetCompassTarget,
         write: writeSetCompassTarget,
     },
     SET_GAMEMODE: {
@@ -1165,10 +1386,12 @@ const ACTION_SPECS = {
     },
     FUNCTION: {
         displayName: ACTION_MAPPINGS.FUNCTION.displayName,
+        read: readOpenFunction,
         write: writeFunction,
     },
     APPLY_INVENTORY_LAYOUT: {
         displayName: ACTION_MAPPINGS.APPLY_INVENTORY_LAYOUT.displayName,
+        read: readOpenApplyInventoryLayout,
         write: writeApplyInventoryLayout,
     },
     ENCHANT_HELD_ITEM: {
@@ -1185,6 +1408,7 @@ const ACTION_SPECS = {
     },
     SET_MENU: {
         displayName: ACTION_MAPPINGS.SET_MENU.displayName,
+        read: readOpenSetMenu,
         write: writeDisplayMenu,
     },
     CLOSE_MENU: {
@@ -1201,6 +1425,7 @@ const ACTION_SPECS = {
     },
     LAUNCH: {
         displayName: ACTION_MAPPINGS.LAUNCH.displayName,
+        read: readOpenLaunch,
         write: writeLaunch,
     },
     SET_PLAYER_WEATHER: {

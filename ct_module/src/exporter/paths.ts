@@ -53,6 +53,35 @@ export function canonicalSlug(identity: string): string {
     });
 }
 
+/**
+ * Read the `functions[].name` array from an `import.json` in declaration
+ * order. Returns `[]` if the file doesn't exist, is empty, isn't valid
+ * JSON(C), or has no `functions` section. Used by `/export import.json`
+ * to drive a re-export pass over a known subset of functions.
+ */
+export function readFunctionNamesFromImportJson(importJsonPath: string): string[] {
+    const names: string[] = [];
+    if (!FileLib.exists(importJsonPath)) return names;
+
+    const text = String(FileLib.read(importJsonPath) ?? "");
+    if (text.trim() === "") return names;
+
+    const tree = json.parseTree(text);
+    if (!tree) return names;
+
+    const sectionNode = json.findNodeAtLocation(tree, ["functions"]);
+    if (!sectionNode || sectionNode.type !== "array") return names;
+
+    const items = sectionNode.children ?? [];
+    for (let i = 0; i < items.length; i++) {
+        const nameNode = json.findNodeAtLocation(items[i], ["name"]);
+        if (nameNode && nameNode.type === "string") {
+            names.push(String(nameNode.value));
+        }
+    }
+    return names;
+}
+
 function readFunctionActionReferences(
     importJsonPath: string,
     identity: string

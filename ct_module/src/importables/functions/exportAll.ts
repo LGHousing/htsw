@@ -17,6 +17,15 @@ import { listAllFunctionNames } from "./listFunctions";
 export type ExportAllFunctionsOptions = {
     importJsonPath: string;
     rootDir: string;
+    /**
+     * If provided, export exactly these functions in this order. Skips
+     * the Housing `/functions` list walk entirely — useful for the
+     * `/export import.json` flow where the caller already knows which
+     * subset to re-export. A name that doesn't exist in the housing
+     * falls through the existing per-function `catch` and the batch
+     * continues with the next one.
+     */
+    names?: readonly string[];
 };
 
 /**
@@ -54,7 +63,10 @@ async function exportAllFunctionsInner(
     const inventorySnapshot: InventorySnapshot = snapshotInventory();
     const itemCaptures = new ItemCaptureRegistry();
 
-    const names = await listAllFunctionNames(ctx);
+    const names =
+        options.names !== undefined
+            ? options.names
+            : await listAllFunctionNames(ctx);
     if (names.length === 0) {
         ctx.displayMessage("&7No functions to export.");
         try {

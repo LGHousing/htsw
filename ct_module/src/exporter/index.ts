@@ -4,6 +4,7 @@ import { getCurrentHousingUuid } from "../knowledge";
 import {
     defaultExportRoot,
     htslFilenameForFunctionExport,
+    readFunctionNamesFromImportJson,
     resolveModuleRelativePath,
 } from "./paths";
 import { chatSeparator, stripSurroundingQuotes } from "../utils/helpers";
@@ -119,6 +120,8 @@ function printExportHelp(): void {
     ChatLib.chat("&7  [path] may be a directory or a specific import.json.");
     ChatLib.chat("&f/export all function [path]");
     ChatLib.chat("&7  Exports every function in this housing in menu order.");
+    ChatLib.chat("&f/export existing [path]");
+    ChatLib.chat("&7  Re-exports every function listed in the target import.json.");
     ChatLib.chat("&f/export menu <name> [path]");
     ChatLib.chat("&7  Reads a Hypixel menu and writes per-slot .snbt + import.json.");
     ChatLib.chat("&f/export stop");
@@ -151,6 +154,67 @@ function commandExport(args: string[]): void {
         // too. Acceptable since the user clearly wants out.
         TaskManager.cancelAll();
         ChatLib.chat("&c[htsw] cancelling running task...");
+        return;
+    }
+
+    if (tokens[0] === "existing") {
+        const pathParts = tokens.slice(1);
+        const rawPath = pathParts.length > 0 ? pathParts.join(" ") : "";
+        const explicitPath =
+            rawPath.length > 0 ? stripSurroundingQuotes(rawPath) : undefined;
+
+        TaskManager.run(async (ctx) => {
+            let rootDir: string;
+            let importJsonPath: string;
+            const explicitDestination = exportDestination(explicitPath);
+            if (explicitDestination !== null) {
+                rootDir = explicitDestination.rootDir;
+                importJsonPath = explicitDestination.importJsonPath;
+            } else {
+                const uuid = await getCurrentHousingUuid(ctx);
+                rootDir = defaultExportRoot(uuid);
+                importJsonPath = `${rootDir}/import.json`;
+            }
+
+            const names = readFunctionNamesFromImportJson(importJsonPath);
+            if (names.length === 0) {
+                ctx.displayMessage(
+                    `&cNo functions[] entries found in ${importJsonPath}`
+                );
+                return;
+            }
+            ctx.displayMessage(
+                `&aRe-exporting ${names.length} function${names.length === 1 ? "" : "s"} listed in ${importJsonPath}`
+            );
+
+            const tracePath = beginTraceRun({
+                queueSize: 0,
+                sourcePath: importJsonPath,
+                trustMode: false,
+            });
+            let imported = 0;
+            let failed = 0;
+            try {
+                await exportImportable(ctx, {
+                    type: "ALL_FUNCTIONS",
+                    importJsonPath,
+                    rootDir,
+                    names,
+                });
+                imported = 1;
+            } catch (err) {
+                failed = 1;
+                throw err;
+            } finally {
+                setTraceImportable(null);
+                const written = endTraceRun({ imported, skipped: 0, failed });
+                if (written !== null && tracePath !== null) {
+                    ctx.displayMessage(`&7[trace] &fwrote ${written}`);
+                }
+            }
+        }).catch((err) => {
+            ChatLib.chat(`&cExport failed: ${err}`);
+        });
         return;
     }
 

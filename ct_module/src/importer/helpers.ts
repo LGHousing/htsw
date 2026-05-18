@@ -232,11 +232,31 @@ export function readStringValue(slot: ItemSlot): string | null {
         return null;
     }
 
+    // The action editor renders value-text lines with a sticky `&5&o&7&a`
+    // prefix — that's the "Current Value:" header style (purple italic)
+    // leaking onto the next line plus Hypixel's gray+green value-text
+    // styling. Strip exactly that prefix; user-meaningful codes that
+    // follow (e.g. `&c&l`) survive. The previous blanket leading-strip
+    // killed user codes, and leaving line 0 alone leaks the editor
+    // styling into the exported HTSL.
+    //
+    // Continuation lines (idx > 0) get the same treatment plus the
+    // permissive `stripLeadingFormattingCodes`, since MC wraps re-emit
+    // the previous line's color codes and those aren't user content.
     return currentValueLines
-        .map((line) =>
-            stripLeadingFormattingCodes(normalizeLoreValueFormatting(line)).trim()
-        )
+        .map((line, idx) => {
+            let normalized = normalizeLoreValueFormatting(line);
+            normalized = stripHousingEditorValuePrefix(normalized);
+            const cleaned = idx === 0 ? normalized : stripLeadingFormattingCodes(normalized);
+            return cleaned.trim();
+        })
         .join(" ");
+}
+
+const HOUSING_EDITOR_VALUE_PREFIX = /^(?:&5&o&7&a|&5&o|&7&a)/i;
+
+function stripHousingEditorValuePrefix(value: string): string {
+    return value.replace(HOUSING_EDITOR_VALUE_PREFIX, "");
 }
 
 function stripLeadingFormattingCodes(value: string): string {

@@ -10,6 +10,7 @@ export type UiFieldKind =
     | "cycle"
     | "select"
     | "item"
+    | "location"
     | "nestedList";
 
 type ConditionDataKey<T extends Condition> = Exclude<

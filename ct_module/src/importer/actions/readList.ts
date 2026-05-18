@@ -358,6 +358,75 @@ function shouldHydrateScalarAction(action: Observed<Action>): boolean {
         return removedFormatting(action.message).trim().endsWith("...");
     }
 
+    if (action.type === "ACTION_BAR") {
+        return removedFormatting(action.message).trim().endsWith("...");
+    }
+
+    if (action.type === "TITLE") {
+        const title = action.title;
+        const subtitle = action.subtitle;
+        return (
+            (typeof title === "string" &&
+                removedFormatting(title).trim().endsWith("...")) ||
+            (typeof subtitle === "string" &&
+                removedFormatting(subtitle).trim().endsWith("..."))
+        );
+    }
+
+    if (action.type === "FAIL_PARKOUR") {
+        return (
+            typeof action.message === "string" &&
+            removedFormatting(action.message).trim().endsWith("...")
+        );
+    }
+
+    if (action.type === "FUNCTION") {
+        return removedFormatting(action.function).trim().endsWith("...");
+    }
+
+    if (action.type === "SET_MENU") {
+        return removedFormatting(action.menu).trim().endsWith("...");
+    }
+
+    if (action.type === "APPLY_INVENTORY_LAYOUT") {
+        return removedFormatting(action.layout).trim().endsWith("...");
+    }
+
+    if (action.type === "PLAY_SOUND") {
+        const sound = (action as { sound?: unknown }).sound;
+        if (
+            typeof sound === "string" &&
+            removedFormatting(sound).trim().endsWith("...")
+        ) {
+            return true;
+        }
+        // PLAY_SOUND's location-truncation case is handled by the
+        // location-bearing block below; fall through.
+    }
+
+    // Location-bearing actions: hydrate when Hypixel truncated the
+    // coord string with `...` in the list-item lore. The editor's slot
+    // shows the full untruncated value.
+    if (
+        action.type === "TELEPORT" ||
+        action.type === "PLAY_SOUND" ||
+        action.type === "SET_COMPASS_TARGET" ||
+        action.type === "DROP_ITEM" ||
+        action.type === "LAUNCH"
+    ) {
+        const loc = (action as { location?: unknown }).location;
+        if (
+            typeof loc === "object" &&
+            loc !== null &&
+            (loc as { type?: unknown }).type === "Custom Coordinates"
+        ) {
+            const value = (loc as { value?: unknown }).value;
+            if (typeof value === "string" && value.endsWith("...")) {
+                return true;
+            }
+        }
+    }
+
     return false;
 }
 

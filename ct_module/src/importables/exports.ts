@@ -22,6 +22,8 @@ export type ExportRequest =
           type: "ALL_FUNCTIONS";
           importJsonPath: string;
           rootDir: string;
+          /** If set, export exactly these names instead of walking Housing's function list. */
+          names?: readonly string[];
       };
 
 /**
@@ -55,6 +57,7 @@ export async function exportImportable(
         await exportAllFunctions(ctx, {
             importJsonPath: request.importJsonPath,
             rootDir: request.rootDir,
+            ...(request.names !== undefined ? { names: request.names } : {}),
         });
         return;
     }

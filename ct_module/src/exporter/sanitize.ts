@@ -122,5 +122,16 @@ function shallowEqual(a: unknown, b: unknown): boolean {
     if (typeof b === "string" && typeof a === "object" && a !== null) {
         return (a as { type?: unknown }).type === b;
     }
+    // Both objects: compare the `type` discriminator and any `value`.
+    // Used for Location defaults like `{ type: "Not Set" }` matching the
+    // lore-parsed observation of the same shape.
+    if (
+        typeof a === "object" && a !== null &&
+        typeof b === "object" && b !== null
+    ) {
+        const aRec = a as { type?: unknown; value?: unknown };
+        const bRec = b as { type?: unknown; value?: unknown };
+        return aRec.type === bRec.type && aRec.value === bRec.value;
+    }
     return false;
 }

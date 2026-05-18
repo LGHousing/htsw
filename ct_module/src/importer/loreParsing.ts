@@ -82,7 +82,7 @@ function stripNumericGroupingCommas(value: string): string {
 export function parseFieldValue(
     kind: UiFieldKind,
     value: string
-): string | boolean | undefined {
+): string | boolean | LocationFieldValue | undefined {
     switch (kind) {
         case "value":
             return stripNumericGroupingCommas(normalizeLoreValueFormatting(value));
@@ -92,6 +92,8 @@ export function parseFieldValue(
             return removedFormatting(value).trim();
         case "boolean":
             return parseBooleanText(value);
+        case "location":
+            return parseLocationField(value);
         case "nestedList":
             return undefined;
         default:
@@ -100,11 +102,78 @@ export function parseFieldValue(
     }
 }
 
+/**
+ * Lore-parsed shape for a Location-typed field. Matches the HTSL
+ * `Location` union (`language/src/types/types.ts`). For `Custom
+ * Coordinates`, `value` is the coord string verbatim from the lore —
+ * which may end with `...` if Hypixel truncated it for display. Callers
+ * detect that suffix to decide whether to hydrate the action from the
+ * editor.
+ */
+export type LocationFieldValue =
+    | { type: "House Spawn Location" }
+    | { type: "Invokers Location" }
+    | { type: "Current Location" }
+    | { type: "Custom Coordinates"; value: string }
+    | { type: "Not Set" };
+
+const KNOWN_LOCATION_LABELS = [
+    "House Spawn Location",
+    "Invokers Location",
+    "Current Location",
+    "Not Set",
+] as const;
+
+export function parseLocationField(value: string): LocationFieldValue {
+    const cleaned = removedFormatting(value).trim();
+    for (let i = 0; i < KNOWN_LOCATION_LABELS.length; i++) {
+        const label = KNOWN_LOCATION_LABELS[i];
+        if (cleaned === label) {
+            return { type: label };
+        }
+    }
+    // Anything else is the coord string Hypixel shows for `Custom
+    // Coordinates`. May end with `...` if the value didn't fit on the
+    // lore line — hydration recovers the full string from the editor.
+    return {
+        type: "Custom Coordinates",
+        value: normalizeCoordinateString(cleaned),
+    };
+}
+
+/**
+ * Hypixel shows coord components separated by `, ` (e.g.
+ * `~0.7, ~50, ~2`), and labels yaw/pitch positionally with their key
+ * names (e.g. `1, 2, 3, yaw: 4, pitch: 5`). HTSW's `parseCoordinates`
+ * splits by single space and expects bare values (`~0.7 ~50 ~2`,
+ * `1 2 3 4 5`).
+ *
+ * Split on comma, trim each component, strip any leading `yaw:` /
+ * `pitch:` label, rejoin with a single space. Idempotent: input
+ * already in HTSL form has no commas and no labels, so the loop
+ * passes it through unchanged.
+ */
+const COORDINATE_LABEL_PREFIX = /^(?:yaw|pitch):\s*/i;
+
+function normalizeCoordinateString(raw: string): string {
+    const parts = raw.split(",");
+    const out: string[] = [];
+    for (let i = 0; i < parts.length; i++) {
+        let trimmed = parts[i].trim();
+        const labelMatch = trimmed.match(COORDINATE_LABEL_PREFIX);
+        if (labelMatch !== null) {
+            trimmed = trimmed.substring(labelMatch[0].length);
+        }
+        if (trimmed.length > 0) out.push(trimmed);
+    }
+    return out.join(" ");
+}
+
 export function parseLoreFields<TProp extends string>(
     slot: ItemSlot,
     loreFields: Record<string, { prop: TProp; kind: UiFieldKind }>
-): Partial<Record<TProp, string | boolean>> {
-    const parsed: Partial<Record<TProp, string | boolean>> = {};
+): Partial<Record<TProp, string | boolean | LocationFieldValue>> {
+    const parsed: Partial<Record<TProp, string | boolean | LocationFieldValue>> = {};
 
     for (const line of slot.getItem().getLore()) {
         const keyValue = parseLoreKeyValueLine(line);

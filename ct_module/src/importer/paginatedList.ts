@@ -55,7 +55,11 @@ function parsePaginatedTitlePage(
         return { currentPage, totalPages };
     }
 
-    if (/\([^)]*\)\s*$/.test(trimmedTitle) || /^\([^)]*\)\s+/.test(trimmedTitle)) {
+    // Only treat parens as "malformed pagination" when their contents look
+    // pagination-shaped (start with a digit). Function names can legitimately
+    // contain trailing parens like `Actions: Sca (Schrodinger Check)`, and the
+    // previous unconditional check rejected them as broken pagination.
+    if (/\(\d[^)]*\)\s*$/.test(trimmedTitle) || /^\(\d[^)]*\)\s+/.test(trimmedTitle)) {
         throw new Error(`Malformed paginated ${config.label} title: "${title}"`);
     }
 
