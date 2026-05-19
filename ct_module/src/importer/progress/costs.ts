@@ -146,8 +146,19 @@ function noteEditUnits(): number {
     return COST.chatInput;
 }
 
+/**
+ * Per-add shell cost: what `importAction` does *outside* the field-write
+ * loop. Click "Add Action", page-turn to find the action type in the
+ * paginated add menu, click the action-type slot. The post-write
+ * `clickGoBack` is priced inside `actionWriteRoughUnits` instead,
+ * because fieldless actions (e.g. Kill Player) skip the editor entirely
+ * and so don't pay the goBack.
+ *
+ * The page-turn term assumes ~1 turn on average to reach the desired
+ * action type. Most action types fit within the first two pages.
+ */
 function actionAddShellUnits(): number {
-    return COST.menuClickWait + COST.menuClickWait;
+    return COST.menuClickWait + COST.pageTurnWait + COST.menuClickWait;
 }
 
 /**
@@ -201,16 +212,28 @@ export function conditionListDiffApplyUnits(diff: ConditionListDiff): number {
  *
  * Recursion terminates because CONDITIONAL/RANDOM aren't allowed to
  * nest — the inner action lists only contain non-CONDITIONAL,
- * non-RANDOM actions, none of which carry action-list arrays. Returns
- * at least `menuClickWait` so a fieldless action (e.g. Kill Player)
- * still costs the menu round-trip to commit the add.
+ * non-RANDOM actions, none of which carry action-list arrays.
+ *
+ * When the action has any writable fields, also includes the
+ * `goBackWait` for the `clickGoBack` that `importAction` issues to exit
+ * the action editor. Fieldless actions (e.g. Kill Player) take the
+ * `Math.max(menuClickWait, total)` floor because `importAction` skips
+ * the editor entirely (`if (spec.write)` is false) — they only pay the
+ * shell cost.
  */
 function actionWriteRoughUnits(action: Action): number {
     let total = 0;
+    let hasFields = false;
+    const scalarKinds = new Map<string, UiFieldKind>();
+    const scalars = getActionScalarLoreFields(action.type);
+    for (let i = 0; i < scalars.length; i++) {
+        scalarKinds.set(scalars[i].prop, scalars[i].kind);
+    }
     for (const key in action) {
         if (key === "type" || key === "note") continue;
         const value = (action as { [key: string]: unknown })[key];
         if (value === undefined) continue;
+        hasFields = true;
         if (Array.isArray(value)) {
             if (key === "conditions") {
                 total += conditionListRoughUnits(value as Condition[]);
@@ -219,8 +242,10 @@ function actionWriteRoughUnits(action: Action): number {
             }
             continue;
         }
-        total += COST.chatInput;
+        const kind = scalarKinds.get(key);
+        total += kind !== undefined ? fieldKindEditUnits(kind) : COST.chatInput;
     }
+    if (hasFields) total += COST.goBackWait;
     return Math.max(COST.menuClickWait, total);
 }
 

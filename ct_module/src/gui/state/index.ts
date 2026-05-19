@@ -4,14 +4,11 @@ import type { ParseResult } from "htsw";
 import type { Importable } from "htsw/types";
 
 import type { KnowledgeStatusRow } from "../../knowledge/status";
-import type {
-    ImportProgress,
-    ImportProgressRow,
-} from "../../importer/progress/types";
+import type { ImportProgress, ImportProgressRow } from "../../importer/progress/types";
 import { importProgressKey } from "../../importer/progress/keys";
 import { normalizeHtswPath } from "../lib/pathDisplay";
 import {
-    getImportEtaBreakdown as etaGetImportEtaBreakdown,
+    getCurrentPhaseEtaSecondsCached as etaGetCurrentPhaseEtaSeconds,
     getImportEtaSeconds as etaGetImportEtaSeconds,
     resetEtaCache,
 } from "../../importer/progress/eta";
@@ -55,7 +52,6 @@ let importProgress: ImportProgress | null = null;
  * cleared on the inverse transition.
  */
 let importStartedAt: number | null = null;
-let importProgressUpdatedAt: number | null = null;
 
 export function getImportProgressFraction(): number {
     const p = importProgress;
@@ -63,29 +59,13 @@ export function getImportProgressFraction(): number {
     return Math.min(1, Math.max(0, p.completedUnits / p.totalUnits));
 }
 
-/**
- * Total remaining seconds for the in-flight import. Phase-aware, with
- * a guard that prevents the cached/decayed value from undershooting
- * the current importable's recomputed remaining. See
- * `importer/progress/eta.ts` for the math.
- */
 export function getImportEtaSeconds(): number | null {
     if (importStartedAt === null) return null;
-    return etaGetImportEtaSeconds(importProgress);
+    return etaGetImportEtaSeconds(importProgress, importStartedAt);
 }
-/** Remaining seconds for the active read/hydrate/apply phase. */
-export function getCurrentPhaseEtaSeconds(): number | null {
-    const p = importProgress;
-    if (p === null || p.current === null) return null;
-    const breakdown = etaGetImportEtaBreakdown(p);
-    if (breakdown === null) return null;
 
-    let secs: number | null = null;
-    if (p.current.phase === "reading") secs = breakdown.readSeconds;
-    else if (p.current.phase === "hydrating") secs = breakdown.hydrateSeconds;
-    else if (p.current.phase === "applying") secs = breakdown.applySeconds;
-    if (secs === null || importProgressUpdatedAt === null) return secs;
-    return Math.max(0, secs - (Date.now() - importProgressUpdatedAt) / 1000);
+export function getCurrentPhaseEtaSeconds(): number | null {
+    return etaGetCurrentPhaseEtaSeconds(importProgress, importStartedAt);
 }
 export function getImportJsonPath(): string {
     return importJsonPath;
@@ -212,18 +192,19 @@ function normalizeImportProgress(p: ImportProgress): ImportProgress {
 
 export function setImportProgress(p: ImportProgress | null): void {
     const wasNull = importProgress === null;
+    const prevPhase = importProgress?.current?.phase ?? null;
+    const prevKey = importProgress?.current?.key ?? null;
     if (p !== null && importProgress === null) {
         importStartedAt = Date.now();
     } else if (p === null) {
         importStartedAt = null;
-        importProgressUpdatedAt = null;
     }
     importProgress = p === null ? null : normalizeImportProgress(p);
-    if (p !== null) {
-        importProgressUpdatedAt = Date.now();
+    const nextPhase = p?.current?.phase ?? null;
+    const nextKey = p?.current?.key ?? null;
+    if (wasNull || p === null || prevPhase !== nextPhase || prevKey !== nextKey) {
+        resetEtaCache();
     }
-    // Force ETA recompute on the next read so the new event's data is used.
-    resetEtaCache();
     // On import start, flip the right panel to the Import tab so the
     // user sees the live progress without having to click. On end,
     // flip back to View (where they were before the import) — but only
@@ -347,4 +328,3 @@ export function isCurrentQueueItem(item: QueueItem): boolean {
     if (currentImportingPath === null) return false;
     return canonicalPath(item.sourcePath) === canonicalPath(currentImportingPath);
 }
-

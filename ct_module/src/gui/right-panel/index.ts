@@ -1534,10 +1534,16 @@ function liveImporterPanel(): Element {
                                     currentProgress.phase === "applying";
                                 const unitTotal = currentProgress.unitTotal ?? 0;
                                 const unitCompleted = currentProgress.unitCompleted ?? 0;
-                                if (isActionListPhase && unitTotal > 1) {
-                                    if (currentProgress.phase === "reading") {
+                                if (isActionListPhase) {
+                                    if (
+                                        currentProgress.phase === "reading" &&
+                                        unitTotal > 1
+                                    ) {
                                         parts.push(`${unitCompleted} read so far`);
-                                    } else if (currentProgress.phase === "hydrating") {
+                                    } else if (
+                                        currentProgress.phase === "hydrating" &&
+                                        unitTotal > 1
+                                    ) {
                                         parts.push(
                                             `${unitCompleted} of ${unitTotal} nested reads`
                                         );
@@ -1549,18 +1555,16 @@ function liveImporterPanel(): Element {
                                             parts.push(
                                                 `operation ${currentProgress.parentUnitCompleted} of ${currentProgress.parentUnitTotal}`
                                             );
-                                            parts.push(
-                                                `nested operation ${unitCompleted} of ${unitTotal}`
-                                            );
-                                        } else {
+                                            if (unitTotal > 1) {
+                                                parts.push(
+                                                    `nested operation ${unitCompleted} of ${unitTotal}`
+                                                );
+                                            }
+                                        } else if (unitTotal > 1) {
                                             parts.push(
                                                 `operation ${unitCompleted} of ${unitTotal}`
                                             );
                                         }
-                                    } else {
-                                        parts.push(
-                                            `step ${unitCompleted} of ${unitTotal}`
-                                        );
                                     }
                                 }
                                 const eta = currentPhaseEtaText();

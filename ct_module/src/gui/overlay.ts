@@ -18,6 +18,11 @@ const GuiScreenClass = javaType("net.minecraft.client.gui.GuiScreen");
 const RenderGameOverlayEventPost = javaType(
     "net.minecraftforge.client.event.RenderGameOverlayEvent$Post"
 );
+// Subscribed via raw Forge instead of CT's `guiOpened` trigger because
+// CT's `ClientListener.onGuiOpened` has `if (event.gui == null) return;`
+// — verified by disassembly. The null transitions are exactly the ones
+// we need to catch to stop the placeholder-screen flash mid-import.
+const ForgeGuiOpenEvent = javaType("net.minecraftforge.client.event.GuiOpenEvent");
 import { RootTree, getImportCachedBounds } from "./root";
 import { getContainerBounds, getFullscreenPanelRect } from "./lib/bounds";
 import { autoDiscoverImportJson, reparseImportJson, tickReparse } from "./state/reparse";
@@ -364,7 +369,7 @@ export function initHtswGui(): void {
     //     blank — the overlay shade + panels render via paintImportShade)
     //   - the outgoing screen is either a real inventory or our existing
     //     placeholder (so closing chat / pause menu still works normally)
-    register("guiOpened", (event: any) => {
+    register(ForgeGuiOpenEvent, (event: any) => {
         const incoming = event.gui;
         const current = (Client.getMinecraft() as any).field_71462_r;
         const currentName =

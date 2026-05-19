@@ -153,9 +153,17 @@ export async function applyConditionListDiff(
     const baseline = phaseUnits === undefined
         ? 0
         : phaseUnits.readPart + phaseUnits.hydratePart;
+    // Emits happen at the START of each op (so the label reflects what's
+    // about to run), then `completedUnits` is bumped after the op
+    // finishes. Track the last emitted label so the post-loop flush can
+    // reuse it instead of overwriting the screen with a "diff applied"
+    // placeholder that lingers through the next non-emitting work
+    // (clickGoBack, setBoolean, etc.) inside the parent's writer.
+    let lastLabel = "";
     const emitConditionOp = (label: string): void => {
         if (progress === undefined) return;
         if (totalOps === 0) return;
+        lastLabel = label;
         progress({
             phase: "applying",
             phaseLabel: label,
@@ -278,7 +286,9 @@ export async function applyConditionListDiff(
         completedOps++;
     }
 
-    emitConditionOp("applied condition diff");
+    // Flush final completedUnits/Ops to the GUI but keep the last
+    // meaningful label visible.
+    if (lastLabel.length > 0) emitConditionOp(lastLabel);
 }
 
 export function logConditionSyncState(ctx: TaskContext, diff: ConditionListDiff): void {

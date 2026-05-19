@@ -56,6 +56,27 @@ export function createApplyProgressAdapter(args: {
 
     return {
         emitOuter(label, unitCompleted, applied): void {
+            // Forward-project the apply budget from observed per-op
+            // cost so the bar reflects "more ops left at the rate I'm
+            // running." Without this, `growApplyPart` only floors at
+            // `applied`, so once actual cost exceeds the initial
+            // estimate the bar pegs at 100% for every remaining op
+            // (and ETA collapses to 0). `unitCompleted` here is the
+            // outer ops completed before this emit (callers pass it
+            // pre-increment), and `args.unitTotal` is the outer op
+            // count, so the ratio is a real "observed rate × remaining
+            // work" projection.
+            if (
+                unitCompleted > 0 &&
+                unitCompleted < args.unitTotal &&
+                applied > 0
+            ) {
+                const projected = (applied * args.unitTotal) / unitCompleted;
+                if (projected > args.phaseUnits.applyPart) {
+                    args.phaseUnits.applyPart = projected;
+                    args.phaseUnits.total = recomputeTotal(args.phaseUnits);
+                }
+            }
             emitParent(label, unitCompleted, args.unitTotal, applied);
         },
         nestedSink(parent): ActionListProgressSink | undefined {

@@ -223,6 +223,7 @@ These bit us; they will bite you again. Read these before touching CT trigger co
 
 - `register("scrolled", ...)` doesn't expose the event so you can't cancel it — useless for suppressing vanilla wheel handling. Use Forge `GuiScreenEvent$MouseInputEvent$Pre` instead (see Mouse wheel section).
 - `register(ForgeEventClass, ...)` *does* work for at least `GuiScreenEvent$MouseInputEvent$Pre`. Earlier notes claiming it didn't fire were wrong (or specific to a different event class).
+- `register("guiOpened", ...)` **silently drops null gui events.** CT's `ClientListener.onGuiOpened` opens with `if (event.gui == null) return;` (verified by disassembling `ctjs-2.2.1-1.8.9.jar`), so the JS handler never sees `displayGuiScreen(null)`. If you need to intercept screen *closures* — e.g. the placeholder-screen swap in `overlay.ts` that hides the mid-import flash and keeps the cursor put — subscribe to `javaType("net.minecraftforge.client.event.GuiOpenEvent")` directly.
 - `guiKey` fires (good), but its `char` argument is `undefined`. Use `keyCode` and translate manually.
 - `cancel(event)` cancels the underlying Forge event but does **not** stop other CT handlers from firing — those handlers must check `event.isCanceled()` themselves.
 - CT's chat trigger does **not** fire for messages we display via `ChatLib.chat()`. The MCP bridge can't see our own debug chat, so the diagnostic loop writes to a file (`gui-debug.log`) instead. See `armHtswGuiDebug` and `debug()` in `overlay.ts`.

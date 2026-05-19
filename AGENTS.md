@@ -28,7 +28,7 @@ Each package builds independently. No top-level workspace script.
 
 `ct_module` runs on a Rhino-like JS engine. `tsconfig.json` sets `lib: ["ES5", "DOM"]` deliberately so the editor surfaces missing methods. **Anything that ends up in the ChatTriggers bundle** is constrained, including emitted `language/` JS.
 
-- **Avoid newer prototype methods.** No `String.padStart`/`replaceAll`/`matchAll`/`at`, no `Array.flat`/`flatMap`/`at`, no `Object.entries`/`values`/`fromEntries`. Use ES5 equivalents (`while` loops, `split(...).join(...)`, `Object.keys(o).map(k => [k, o[k]])`).
+- **Avoid newer prototype methods.** No `String.padStart`/`replaceAll`/`matchAll`/`at`, no `Array.flat`/`flatMap`/`at`, no `Object.entries`/`values`/`fromEntries`. Use ES5 equivalents (e.g. `while` loops, `split(...).join(...)`, `Object.keys(o).map(k => [k, o[k]])`).
 - **Syntax features are fine** — `??`, `?.`, async/await, classes, spread, etc. are transpiled.
 - **`tsc --noEmit` may not catch this.** Trust the IDE squiggles. Bundling won't catch it either (host has V8).
 - **Polyfill** in `ct_module/src/polyfills/` and import before first use if you really need a modern method.
@@ -153,11 +153,13 @@ Spec-driven invariants:
 Before writing a comment: **did you verify this, or are you narrating your mental model?** If you didn't verify it (an assumed MC/Rhino quirk, a guessed "this is needed because…"), leave it out. If the reader can recover the WHY from the code, leave it out.
 
 Write a comment only when ALL hold:
+
 - The WHY cannot be recovered from reading the code.
 - It is non-obvious AND load-bearing — a future edit that ignores it would introduce a real bug.
 - You actually know the reason — verified by tracing, testing, or repo history, not inferred.
 
 **Do not write:**
+
 - Restatements of the next line — `// increment i`, `// dark slate, primary panel bg` next to `COLOR_PANEL`.
 - Narration of removed code or past bugs — `// previously this re-called scheduleReparse() here…`, `// removed Y`, `// fix for ticket X`. Git has the diff; PRs have the context. Comments rot, history doesn't.
 - Task / PR breadcrumbs — `// added for the export flow`, `// used by the importer`. Renames and call-site changes silently make these wrong.
@@ -168,6 +170,7 @@ Write a comment only when ALL hold:
 - Docstrings that restate the type signature or list every parameter.
 
 **Comments worth keeping (good patterns already in this repo):**
+
 - Hidden MC / CT 1.8.9 quirks you can demonstrate — placeholder `GuiScreen` swap, `displayGuiScreen(null)` side effects, `Image.fromAsset` being non-functional in this CT build.
 - Concrete race-condition or timing assumptions in async / event code (e.g. capturing a GuiScreen ref before listener registration to avoid a close-event race).
 - Non-obvious design choices a future agent would otherwise undo — fixed overlay scale of 4, action sync order `delete → edit → move → add`, per-housing item SNBT cache.
@@ -177,7 +180,7 @@ When in doubt: delete the comment, build, see if the next reader (you, one week 
 
 ## Code Style
 
-- Prefer rename / extract over explanatory comments. See **Comments** above. 
+- Prefer rename / extract over explanatory comments. See **Comments** above.
 
 - Feel free to delete unnecessary comments you come across.
 
@@ -186,4 +189,3 @@ When in doubt: delete the comment, build, see if the next reader (you, one week 
 - Short progress updates before edits, builds, installs, and when findings change the plan.
 - Be direct about what changed and why. No vague reassurance.
 - When answering architecture or code questions, do not only describe current behavior. Always evaluate whether the current architecture makes sense: what it does now, whether it should do that, and what should change if the design is accidental, overbuilt, or misleading.
-- For meaningful code changes, especially under `ct_module/`, `language/`, importer/exporter logic, or editor behavior, run CodeRabbit CLI before handing work back when available: `cr --type uncommitted`.
