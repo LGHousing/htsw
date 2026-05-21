@@ -29,7 +29,7 @@ import type {
 import type { ActionListProgressHandler } from "../progress/types";
 import { createNestedHydrationPlan } from "./hydrationPlan";
 import { matchObservedToDesired } from "./nestedMatching";
-import { applyActionListTrust } from "./trustHydration";
+import { applyActionListTrust } from "./applyTrust";
 import {
     getPaginatedListPageForIndex,
     getPaginatedListSlotAtIndex,
