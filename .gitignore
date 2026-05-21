@@ -2,6 +2,7 @@ node_modules/
 dist/
 .vscode
 .idea
+coverage/
 
 # extension
 *.vsix
