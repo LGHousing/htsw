@@ -8,7 +8,7 @@ import {
     getParseAt,
 } from "./parses";
 import { importableSourcePath } from "./importablePaths";
-import { importableIdentity } from "../../knowledge/paths";
+import { importableIdentity } from "../../importCache/paths";
 
 /**
  * Dynamic import queue. Replaces the old `selectedImportableIds: Set<string>`

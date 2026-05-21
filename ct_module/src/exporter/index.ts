@@ -1,6 +1,6 @@
 import { TaskManager } from "../tasks/manager";
 import { exportImportable } from "../importables/exports";
-import { getCurrentHousingUuid } from "../knowledge";
+import { getCurrentHousingUuid } from "../importCache";
 import { htslFilenameForFunctionExport } from "./paths";
 import { chatSeparator, stripSurroundingQuotes } from "../utils/helpers";
 import { VERSION } from "htsw";

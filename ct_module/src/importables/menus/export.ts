@@ -5,9 +5,9 @@ import {
     clickGoBack,
     readCurrentValue,
     readSelectedOption,
-    waitForMenu,
 } from "../../importer/gui/helpers";
-import { getCurrentHousingUuid, writeKnowledge } from "../../knowledge";
+import { waitForMenu } from "../../importer/gui/menuWait";
+import { getCurrentHousingUuid, writeImportableCache } from "../../importCache";
 import TaskContext from "../../tasks/context";
 import { getAllItemSlots } from "../../tasks/specifics/slots";
 import { ensureParentDirs } from "../../utils/filesystem";
@@ -189,7 +189,7 @@ export async function exportMenu(
 
     try {
         const housingUuid = await getCurrentHousingUuid(ctx);
-        writeKnowledge(ctx, housingUuid, importable, "exporter");
+        writeImportableCache(ctx, housingUuid, importable, "exporter");
     } catch (error) {
         ctx.displayMessage(`&7[export] &eCache write skipped: ${error}`);
     }

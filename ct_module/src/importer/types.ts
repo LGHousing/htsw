@@ -61,8 +61,6 @@ export type NestedSummaries = Partial<Record<NestedListProp, string[]>>;
 
 export type ActionListTrust = {
     basePath: string;
-    cachedActions: readonly Action[];
-    desiredActions: readonly Action[];
     trustedListPaths: ReadonlySet<string>;
 };
 

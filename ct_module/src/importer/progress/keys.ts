@@ -1,6 +1,6 @@
 import type { Importable } from "htsw/types";
 
-import { trustPlanKey } from "../../knowledge/trust";
+import { trustPlanKey } from "../../importCache/trust";
 
 export function importProgressKey(
     type: Importable["type"],

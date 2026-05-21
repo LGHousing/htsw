@@ -1,24 +1,30 @@
 import type { Action, Importable } from "htsw/types";
 
 import type { ActionListTrust } from "../importer/types";
-import type { ImportableTrustPlan } from "../knowledge";
+import type { ImportableTrustPlan } from "../importCache";
 
-export function actionListTrustFor(
+export function getBaselineActionList(
     plan: ImportableTrustPlan | undefined,
-    basePath: string,
-    desiredActions: readonly Action[]
-): ActionListTrust | undefined {
+    basePath: string
+): readonly Action[] | undefined {
     if (plan === undefined || plan.entry === null) {
         return undefined;
     }
+    return readCachedActionList(plan.entry.importable, basePath);
+}
 
-    const cachedActions = readCachedActionList(plan.entry.importable, basePath);
-    return {
-        basePath,
-        cachedActions: cachedActions ?? [],
-        desiredActions,
-        trustedListPaths: plan.trustedListPaths,
-    };
+export function getActionListTrust(
+    plan: ImportableTrustPlan | undefined,
+    basePath: string
+): ActionListTrust | undefined {
+    if (
+        plan === undefined ||
+        plan.entry === null ||
+        plan.trustedListPaths.size === 0
+    ) {
+        return undefined;
+    }
+    return { basePath, trustedListPaths: plan.trustedListPaths };
 }
 
 export function readCachedActionList(

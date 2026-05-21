@@ -34,8 +34,8 @@ import {
     setCycleValue,
     setSelectValue,
     setStringValue,
-    waitForMenu,
 } from "./gui/helpers";
+import { waitForMenu } from "./gui/menuWait";
 import { ItemSlot } from "../tasks/specifics/slots";
 import { removedFormatting } from "../utils/helpers";
 import {

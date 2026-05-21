@@ -1,18 +1,18 @@
 import type { Importable } from "htsw/types";
 
-import type { KnowledgeEntry } from "./cache";
+import type { ImportableCacheEntry } from "./cache";
 import { importableHash } from "./hash";
 import { importableIdentity } from "./paths";
-import { readKnowledge } from "./cache";
+import { readImportableCache } from "./cache";
 
-export type KnowledgeState = "current" | "modified" | "unknown";
+export type CacheState = "current" | "modified" | "unknown";
 
-export type KnowledgeStatusRow = {
+export type CacheStatusRow = {
     importable: Importable;
     identity: string;
     hash: string;
-    state: KnowledgeState;
-    entry: KnowledgeEntry | null;
+    state: CacheState;
+    entry: ImportableCacheEntry | null;
 };
 
 export function sameHashList(
@@ -27,14 +27,14 @@ export function sameHashList(
     return true;
 }
 
-export function buildKnowledgeStatusRows(
+export function buildCacheStatusRows(
     housingUuid: string,
     importables: readonly Importable[]
-): KnowledgeStatusRow[] {
+): CacheStatusRow[] {
     return importables.map((importable) => {
         const identity = importableIdentity(importable);
         const hash = importableHash(importable);
-        const entry = readKnowledge(housingUuid, importable.type, identity);
+        const entry = readImportableCache(housingUuid, importable.type, identity);
         const state =
             entry === null ? "unknown" : entry.hash === hash ? "current" : "modified";
         return {

@@ -58,7 +58,7 @@ export const COST = {
     readVisiblePage: 0,
     scalarRead: 0,
     diffCompute: 0,
-    knowledgeWrite: 0.25,
+    cacheWrite: 0.25,
     nbtCapture: 0.25,
     itemInject: 1,
 };
@@ -345,11 +345,11 @@ function topLevelHydrateUnits(desired: readonly Action[]): number {
  *
  * Two cases, no mixed worldviews:
  *
- * 1. **Known current list available** (`knownCurrent !== undefined`):
+ * 1. **Baseline current list available** (`baselineCurrent !== undefined`):
  *    use it for read + hydrate estimates, and run the real diff
- *    `knownCurrent → desired` to price the apply phase.
+ *    `baselineCurrent -> desired` to price the apply phase.
  *
- * 2. **No known current list** (`knownCurrent === undefined`): we don't know what the
+ * 2. **No baseline current list** (`baselineCurrent === undefined`): we don't know what the
  *    housing has — first-ever import for this house, or cache was
  *    wiped. Assume the housing is *empty*: zero pages to turn, nothing
  *    to hydrate, and every desired action must be added from scratch.
@@ -362,15 +362,15 @@ function topLevelHydrateUnits(desired: readonly Action[]): number {
  */
 export function estimateActionListPhaseUnits(
     desired: readonly Action[],
-    knownCurrent?: readonly Action[]
+    baselineCurrent?: readonly Action[]
 ): ActionListPhaseUnits {
-    if (knownCurrent === undefined) {
+    if (baselineCurrent === undefined) {
         const applyPart = actionListRoughApplyUnits(desired);
         return { readPart: 0, hydratePart: 0, applyPart, total: applyPart };
     }
-    const readPart = pageTurnUnitsForListItemCount(knownCurrent.length);
-    const hydratePart = topLevelHydrateUnits(knownCurrent);
-    const applyPart = cacheAwareApplyUnits(desired, knownCurrent);
+    const readPart = pageTurnUnitsForListItemCount(baselineCurrent.length);
+    const hydratePart = topLevelHydrateUnits(baselineCurrent);
+    const applyPart = baselineAwareApplyUnits(desired, baselineCurrent);
     return {
         readPart,
         hydratePart,
@@ -381,16 +381,16 @@ export function estimateActionListPhaseUnits(
 
 export function estimateConditionListPhaseUnits(
     desired: readonly Condition[],
-    knownCurrent?: ReadonlyArray<Condition | null>
+    baselineCurrent?: ReadonlyArray<Condition | null>
 ): ListPhaseUnits {
-    if (knownCurrent === undefined) {
+    if (baselineCurrent === undefined) {
         const applyPart = conditionListRoughUnits(desired);
         return { readPart: 0, hydratePart: 0, applyPart, total: applyPart };
     }
 
-    const current = currentConditionListFromConditions(knownCurrent);
+    const current = currentConditionListFromConditions(baselineCurrent);
     const diff = diffConditionList(current, desired as Condition[]);
-    const readPart = conditionListReadUnits(knownCurrent.length);
+    const readPart = conditionListReadUnits(baselineCurrent.length);
     const applyPart = conditionListDiffApplyUnits(diff);
     return {
         readPart,
@@ -401,24 +401,24 @@ export function estimateConditionListPhaseUnits(
 }
 
 /**
- * Compute the apply-phase units for transforming `cached` → `desired`,
+ * Compute the apply-phase units for transforming `baseline` -> `desired`,
  * by running the real diff and pricing each operation. Used to tighten
- * ETA estimates when we have a recent knowledge cache for the housing.
+ * ETA estimates when we have a recent baseline for the housing.
  *
- * Returns 0 when cached and desired are identical (the bar predicts a
+ * Returns 0 when baseline and desired are identical (the bar predicts a
  * near-instant pass for this list).
  */
-function cacheAwareApplyUnits(
+function baselineAwareApplyUnits(
     desired: readonly Action[],
-    cached: readonly Action[]
+    baseline: readonly Action[]
 ): number {
-    const current = currentActionListFromActions(cached);
+    const current = currentActionListFromActions(baseline);
     const diff = diffActionList(current, desired as Action[]);
     return actionListDiffApplyUnits(diff, editUnitsWithNested, desired.length);
 }
 
 /**
- * Edit-op cost for the cache-aware apply path. Scalar field changes are
+ * Edit-op cost for the baseline-aware apply path. Scalar field changes are
  * derived from the edit op's observed/desired pair.
  *
  * `getActionScalarLoreFields` strips out `nestedList` field kinds, so
@@ -463,9 +463,9 @@ function editUnitsWithNested(op: Extract<ActionListOperation, { kind: "edit" }>)
  */
 function actionListCost(
     desired: readonly Action[],
-    knownCurrent: readonly Action[] | undefined
+    baselineCurrent: readonly Action[] | undefined
 ): number {
-    return estimateActionListPhaseUnits(desired, knownCurrent).total;
+    return estimateActionListPhaseUnits(desired, baselineCurrent).total;
 }
 
 /**
@@ -490,7 +490,7 @@ export function estimateImportableCost(
         return (
             COST.commandMenuWait +
             actionListCost(importable.actions, get("actions")) +
-            COST.knowledgeWrite
+            COST.cacheWrite
         );
     }
     if (importable.type === "EVENT") {
@@ -498,7 +498,7 @@ export function estimateImportableCost(
             COST.commandMenuWait +
             COST.menuClickWait +
             actionListCost(importable.actions, get("actions")) +
-            COST.knowledgeWrite
+            COST.cacheWrite
         );
     }
     if (importable.type === "REGION") {
@@ -507,14 +507,14 @@ export function estimateImportableCost(
             COST.commandMenuWait +
             actionListCost(importable.onEnterActions ?? [], get("onEnterActions")) +
             actionListCost(importable.onExitActions ?? [], get("onExitActions")) +
-            COST.knowledgeWrite
+            COST.cacheWrite
         );
     }
     if (importable.type === "ITEM") {
         const left = importable.leftClickActions ?? [];
         const right = importable.rightClickActions ?? [];
         if (left.length === 0 && right.length === 0) {
-            return COST.itemInject + COST.knowledgeWrite;
+            return COST.itemInject + COST.cacheWrite;
         }
         return (
             COST.itemInject +
@@ -524,15 +524,15 @@ export function estimateImportableCost(
             actionListCost(right, get("rightClickActions")) +
             COST.guaranteedSleep1000 +
             COST.nbtCapture +
-            COST.knowledgeWrite
+            COST.cacheWrite
         );
     }
     if (importable.type === "MENU") {
         return (
             COST.commandMenuWait +
             (importable.slots?.length ?? 0) * COST.menuClickWait +
-            COST.knowledgeWrite
+            COST.cacheWrite
         );
     }
-    return COST.commandMenuWait + COST.knowledgeWrite;
+    return COST.commandMenuWait + COST.cacheWrite;
 }

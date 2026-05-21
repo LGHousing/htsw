@@ -6,21 +6,21 @@ import { importableHash, listHashes } from "./hash";
 import { cachePathFor, cachePathForId } from "./paths";
 
 /**
- * Schema version for the knowledge cache format. Bump this when the
- * shape of `KnowledgeEntry` changes in a way that prior readers would
- * mis-interpret. `readKnowledge` rejects entries with a different
+ * Schema version for the importable cache format. Bump this when the
+ * shape of `ImportableCacheEntry` changes in a way that prior readers would
+ * mis-interpret. `readImportableCache` rejects entries with a different
  * version so stale caches don't poison a future trust-mode.
  */
-const KNOWLEDGE_SCHEMA_VERSION = 1;
+const CACHE_SCHEMA_VERSION = 1;
 
-export type KnowledgeWriter = "exporter" | "importer";
+export type CacheWriter = "exporter" | "importer";
 
-export type KnowledgeEntry = {
-    schemaVersion: typeof KNOWLEDGE_SCHEMA_VERSION;
+export type ImportableCacheEntry = {
+    schemaVersion: typeof CACHE_SCHEMA_VERSION;
     /** ISO 8601 instant the entry was last written. Informational only. */
     writtenAt: string;
     /** Which subsystem populated the cache last. */
-    writer: KnowledgeWriter;
+    writer: CacheWriter;
     /** The full importable, canonical-shaped (sorted keys, no undefined). */
     importable: Importable;
     /** `importableHash(importable)` at write time. */
@@ -36,12 +36,12 @@ export type KnowledgeEntry = {
 /**
  * Build a fresh cache entry for the given importable. Pure: no I/O.
  */
-function buildKnowledgeEntry(
+function buildImportableCacheEntry(
     importable: Importable,
-    writer: KnowledgeWriter
-): KnowledgeEntry {
+    writer: CacheWriter
+): ImportableCacheEntry {
     return {
-        schemaVersion: KNOWLEDGE_SCHEMA_VERSION,
+        schemaVersion: CACHE_SCHEMA_VERSION,
         writtenAt: new Date().toISOString(),
         writer,
         importable,
@@ -51,19 +51,19 @@ function buildKnowledgeEntry(
 }
 
 /**
- * Persist a knowledge entry to disk. Best-effort: filesystem failures
+ * Persist an importable cache entry to disk. Best-effort: filesystem failures
  * are surfaced to chat as warnings but never abort the parent task —
  * the importer/exporter has already done its real work and the cache
  * is just a hint.
  */
-export function writeKnowledge(
+export function writeImportableCache(
     ctx: TaskContext,
     housingUuid: string,
     importable: Importable,
-    writer: KnowledgeWriter
+    writer: CacheWriter
 ): void {
     const path = cachePathFor(housingUuid, importable);
-    const entry = buildKnowledgeEntry(importable, writer);
+    const entry = buildImportableCacheEntry(importable, writer);
     try {
         ensureParentDirs(path);
         FileLib.write(path, JSON.stringify(entry, null, 4), true);
@@ -74,15 +74,15 @@ export function writeKnowledge(
 }
 
 /**
- * Load a knowledge entry, or null if the file is missing, unreadable,
+ * Load an importable cache entry, or null if the file is missing, unreadable,
  * malformed, or schema-mismatched. Never throws — callers treat null
  * as "no trusted state".
  */
-export function readKnowledge(
+export function readImportableCache(
     housingUuid: string,
     type: Importable["type"],
     identity: string
-): KnowledgeEntry | null {
+): ImportableCacheEntry | null {
     const path = cachePathForId(housingUuid, type, identity);
     if (!FileLib.exists(path)) return null;
 
@@ -104,15 +104,15 @@ export function readKnowledge(
     if (
         !parsed ||
         typeof parsed !== "object" ||
-        (parsed as { schemaVersion?: unknown }).schemaVersion !== KNOWLEDGE_SCHEMA_VERSION
+        (parsed as { schemaVersion?: unknown }).schemaVersion !== CACHE_SCHEMA_VERSION
     ) {
         return null;
     }
-    return parsed as KnowledgeEntry;
+    return parsed as ImportableCacheEntry;
 }
 
-/** Remove a knowledge entry. No-op if it doesn't exist. */
-export function deleteKnowledge(
+/** Remove an importable cache entry. No-op if it doesn't exist. */
+export function deleteImportableCache(
     housingUuid: string,
     type: Importable["type"],
     identity: string

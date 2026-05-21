@@ -4,8 +4,8 @@ import {
     clickGoBack,
     getSlotPaginate,
     setNumberValue,
-    timedWaitForMenu,
 } from "../../importer/gui/helpers";
+import { timedWaitForMenu } from "../../importer/gui/menuWait";
 import { setItemValue } from "../../importer/items/items";
 import { parseLoreKeyValueLine } from "../../importer/fields/loreParsing";
 import TaskContext from "../../tasks/context";

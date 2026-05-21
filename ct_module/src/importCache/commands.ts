@@ -6,9 +6,9 @@ import { FileSystemFileLoader } from "../utils/files";
 import { chatSeparator, stripSurroundingQuotes } from "../utils/helpers";
 import {
     getCurrentHousingUuid,
-    buildKnowledgeStatusRows,
-    readKnowledge,
-    deleteKnowledge,
+    buildCacheStatusRows,
+    readImportableCache,
+    deleteImportableCache,
 } from ".";
 import { printDiagnostic, printDiagnostics } from "../tui/diagnostics";
 
@@ -69,7 +69,7 @@ function knowledgeStatus(args: string[]): void {
 
     TaskManager.run(async (ctx) => {
         const housingUuid = await getCurrentHousingUuid(ctx);
-        const rows = buildKnowledgeStatusRows(housingUuid, result.value);
+        const rows = buildCacheStatusRows(housingUuid, result.value);
         const hits = rows.filter((row) => row.state === "current").length;
         const modified = rows.filter((row) => row.state === "modified").length;
         const unknown = rows.filter((row) => row.state === "unknown").length;
@@ -97,10 +97,10 @@ function knowledgeInspect(args: string[]): void {
 
     TaskManager.run(async (ctx) => {
         const housingUuid = await getCurrentHousingUuid(ctx);
-        const entry = readKnowledge(housingUuid, parsed.type, parsed.identity);
+        const entry = readImportableCache(housingUuid, parsed.type, parsed.identity);
         if (entry === null) {
             ctx.displayMessage(
-                `&cNo knowledge entry for ${parsed.type} ${parsed.identity}`
+                `&cNo cache entry for ${parsed.type} ${parsed.identity}`
             );
             return;
         }
@@ -129,7 +129,7 @@ function knowledgeForget(args: string[]): void {
 
     TaskManager.run(async (ctx) => {
         const housingUuid = await getCurrentHousingUuid(ctx);
-        deleteKnowledge(housingUuid, parsed.type, parsed.identity);
+        deleteImportableCache(housingUuid, parsed.type, parsed.identity);
         ctx.displayMessage(`&aDeleted knowledge for ${parsed.type} ${parsed.identity}`);
     }).catch((err) => {
         ChatLib.chat(`&cKnowledge forget failed: ${err}`);
@@ -137,7 +137,7 @@ function knowledgeForget(args: string[]): void {
 }
 
 function formatStatusRow(
-    row: ReturnType<typeof buildKnowledgeStatusRows>[number]
+    row: ReturnType<typeof buildCacheStatusRows>[number]
 ): string {
     if (row.state === "current") {
         return `&aOK &f${row.importable.type} &7${row.identity} &8${row.hash} &7${row.entry?.writer}`;

@@ -1,14 +1,14 @@
 import type { ActionListPhaseUnits } from "./costs";
 import { phaseUnitsFromParts } from "./costs";
-import type { ActionListProgressSink } from "./types";
+import type { ActionListProgressHandler } from "./types";
 
 export type ApplyProgressAdapter = {
     emitOuter(label: string, unitCompleted: number, appliedUnits: number): void;
-    nestedSink(parent?: {
+    nestedHandler(parent?: {
         label: string;
         unitCompleted: number;
         unitTotal: number;
-    }): ActionListProgressSink | undefined;
+    }): ActionListProgressHandler | undefined;
     getAppliedUnits(): number;
 };
 
@@ -16,7 +16,7 @@ export function createApplyProgressAdapter(args: {
     phaseUnits: ActionListPhaseUnits;
     baseline: number;
     unitTotal: number;
-    sink?: ActionListProgressSink;
+    handler?: ActionListProgressHandler;
 }): ApplyProgressAdapter {
     let appliedUnits = 0;
 
@@ -40,7 +40,7 @@ export function createApplyProgressAdapter(args: {
     ): void => {
         appliedUnits = Math.max(appliedUnits, applied);
         growApplyPart(appliedUnits);
-        args.sink?.({
+        args.handler?.({
             phase: "applying",
             phaseLabel: label,
             unitCompleted,
@@ -79,8 +79,8 @@ export function createApplyProgressAdapter(args: {
             }
             emitParent(label, unitCompleted, args.unitTotal, applied);
         },
-        nestedSink(parent): ActionListProgressSink | undefined {
-            if (args.sink === undefined) return undefined;
+        nestedHandler(parent): ActionListProgressHandler | undefined {
+            if (args.handler === undefined) return undefined;
             const nestedStart = appliedUnits;
             return (inner) => {
                 const nestedCompleted = Math.max(0, inner.completedUnits);

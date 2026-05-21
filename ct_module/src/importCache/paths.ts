@@ -1,12 +1,12 @@
 import type { Importable } from "htsw/types";
 import { encodeFilesystemComponent } from "../utils/filesystem";
 
-export const KNOWLEDGE_ROOT = "./htsw/.cache";
+export const IMPORT_CACHE_ROOT = "./htsw/.cache";
 
 /**
  * Per-importable-type subdirectory under the per-housing cache root.
  * Lowercase, plural-free, matches existing convention (`items/` is already
- * used for the SNBT cache so item knowledge lives next to it under
+ * used for the SNBT cache so item importable-cache entries live next to it under
  * `item/`, intentionally singular for the new tree).
  */
 function dirFor(type: Importable["type"]): string {
@@ -49,9 +49,9 @@ function slug(identity: string): string {
     return encodeFilesystemComponent(identity, { escapeDots: true });
 }
 
-/** Full path to the knowledge JSON file for a (housing, importable) pair. */
+/** Full path to the cache JSON file for a (housing, importable) pair. */
 export function cachePathFor(housingUuid: string, importable: Importable): string {
-    return `${KNOWLEDGE_ROOT}/${housingUuid}/${dirFor(importable.type)}/${slug(importableIdentity(importable))}.knowledge.json`;
+    return `${IMPORT_CACHE_ROOT}/${housingUuid}/${dirFor(importable.type)}/${slug(importableIdentity(importable))}.knowledge.json`;
 }
 
 /** Path used by callers that only know the type + identity (e.g. delete). */
@@ -60,15 +60,15 @@ export function cachePathForId(
     type: Importable["type"],
     identity: string
 ): string {
-    return `${KNOWLEDGE_ROOT}/${housingUuid}/${dirFor(type)}/${slug(identity)}.knowledge.json`;
+    return `${IMPORT_CACHE_ROOT}/${housingUuid}/${dirFor(type)}/${slug(identity)}.knowledge.json`;
 }
 
 /**
  * Per-housing SNBT cache for items with click actions. Distinct from the
- * `item/` knowledge dir (which holds the .knowledge.json metadata) — this
+ * `item/` importable-cache dir (which holds the .knowledge.json metadata) — this
  * stores the raw NBT we captured after editing so a later reference can
  * inject the same item without redoing the edits.
  */
 export function itemSnbtCachePath(housingUuid: string, hash: string): string {
-    return `${KNOWLEDGE_ROOT}/${housingUuid}/items/${hash}.snbt`;
+    return `${IMPORT_CACHE_ROOT}/${housingUuid}/items/${hash}.snbt`;
 }

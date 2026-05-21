@@ -63,4 +63,4 @@ export type ImportProgress = {
 };
 
 /** Callback shape that `readActionList` / `applyActionListDiff` invoke. */
-export type ActionListProgressSink = (progress: ActionListProgressFields) => void;
+export type ActionListProgressHandler = (progress: ActionListProgressFields) => void;

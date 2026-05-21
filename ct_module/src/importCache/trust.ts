@@ -1,9 +1,9 @@
 import type { Importable } from "htsw/types";
 
-import type { KnowledgeEntry } from "./cache";
+import type { ImportableCacheEntry } from "./cache";
 import { importableHash, listHashes } from "./hash";
 import { importableIdentity } from "./paths";
-import { readKnowledge } from "./cache";
+import { readImportableCache } from "./cache";
 import { sameHashList } from "./status";
 
 type TrustedListPath = string;
@@ -11,14 +11,14 @@ type TrustedListPath = string;
 export type ImportableTrustPlan = {
     importable: Importable;
     identity: string;
-    entry: KnowledgeEntry | null;
+    entry: ImportableCacheEntry | null;
     sourceHash: string;
     cacheHash: string | null;
     wholeImportableTrusted: boolean;
     trustedListPaths: Set<TrustedListPath>;
 };
 
-export type KnowledgeTrustPlan = {
+export type TrustPlan = {
     housingUuid: string;
     importables: Map<string, ImportableTrustPlan>;
 };
@@ -30,24 +30,24 @@ export function trustPlanKey(type: Importable["type"], identity: string): string
 /**
  * Build per-importable cache + trust info for an import session.
  *
- * Always loads each importable's knowledge entry (when one exists) so
+ * Always loads each importable's cache entry (when one exists) so
  * the cached state can flow into ETA estimation regardless of
  * trust-mode. The `trustMode` flag only controls whether matching
  * hashes get registered as `trustedListPaths` (which cause the
  * importer to *skip* those lists). Pass `false` to get cache data
  * without any skip behavior.
  */
-export function buildKnowledgeTrustPlan(
+export function buildTrustPlan(
     housingUuid: string,
     importables: readonly Importable[],
     trustMode: boolean = true
-): KnowledgeTrustPlan {
+): TrustPlan {
     const plans = new Map<string, ImportableTrustPlan>();
 
     for (const importable of importables) {
         const identity = importableIdentity(importable);
         const sourceHash = importableHash(importable);
-        const entry = readKnowledge(housingUuid, importable.type, identity);
+        const entry = readImportableCache(housingUuid, importable.type, identity);
         const desiredLists = listHashes(importable);
         const trustedListPaths = new Set<TrustedListPath>();
 

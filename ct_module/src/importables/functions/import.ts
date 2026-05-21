@@ -2,10 +2,10 @@ import type { ImportableFunction } from "htsw/types";
 
 import { syncActionList } from "../../importer/actions/sync";
 import { clickGoBack } from "../../importer/gui/helpers";
-import type { ImportableTrustPlan } from "../../knowledge";
-import type { ActionListProgressFields } from "../../importer/progress/types";
+import type { ImportableTrustPlan } from "../../importCache";
+import type { ImportPreviewEventHandler } from "../../importer/importPreviewEvents";
 import TaskContext from "../../tasks/context";
-import { actionListTrustFor } from "../actionListTrust";
+import { getActionListTrust, getBaselineActionList } from "../actionListHelpers";
 import type { ItemRegistry } from "../itemRegistry";
 import { ensureReferencedImportablesExist } from "../references";
 import {
@@ -20,20 +20,19 @@ export async function importImportableFunction(
     importable: ImportableFunction,
     itemRegistry: ItemRegistry,
     trustPlan?: ImportableTrustPlan,
-    onActionListProgress?: (progress: ActionListProgressFields) => void
+    previewHandler?: ImportPreviewEventHandler
 ): Promise<void> {
     await ensureReferencedImportablesExist(ctx, importable);
     await ensureFunctionExists(ctx, importable.name);
 
-    const actionsTrust = actionListTrustFor(trustPlan, "actions", importable.actions);
-    const actionsTrusted =
-        actionsTrust !== undefined && trustPlan?.trustedListPaths.has("actions");
+    const actionsTrusted = trustPlan?.trustedListPaths.has("actions") ?? false;
     if (!actionsTrusted) {
         ctx.displayMessage(`&b&l[import] &r&bSyncing function: &f${importable.name} &7(${importable.actions.length} actions)`);
         await syncActionList(ctx, importable.actions, {
             itemRegistry,
-            trust: actionsTrust,
-            onProgress: onActionListProgress,
+            baselineCurrent: getBaselineActionList(trustPlan, "actions"),
+            trust: getActionListTrust(trustPlan, "actions"),
+            previewHandler,
         });
     } else {
         ctx.displayMessage(`&b&l[import] &r&7Function "${importable.name}" trusted, skipped.`);

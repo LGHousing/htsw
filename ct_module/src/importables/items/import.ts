@@ -1,15 +1,16 @@
 import type { Action, ImportableItem } from "htsw/types";
 
 import { syncActionList } from "../../importer/actions/sync";
-import type { ActionListProgressFields } from "../../importer/progress/types";
-import { clickGoBack, timedWaitForMenu } from "../../importer/gui/helpers";
+import type { ImportPreviewEventHandler } from "../../importer/importPreviewEvents";
+import { clickGoBack } from "../../importer/gui/helpers";
+import { timedWaitForMenu } from "../../importer/gui/menuWait";
 import {
     getCurrentHousingUuid,
     importableHash,
     itemSnbtCachePath,
-    writeKnowledge,
+    writeImportableCache,
     type ImportableTrustPlan,
-} from "../../knowledge";
+} from "../../importCache";
 import TaskContext from "../../tasks/context";
 import { ensureParentDirs } from "../../utils/filesystem";
 import { stableStringify } from "../../utils/helpers";
@@ -22,7 +23,7 @@ import {
     sendCreativeInventoryAction,
     waitForAnySetSlot,
 } from "../../importer/gui/packets";
-import { actionListTrustFor } from "../actionListTrust";
+import { getActionListTrust, getBaselineActionList } from "../actionListHelpers";
 import type { ItemRegistry } from "../itemRegistry";
 import { ensureReferencedImportablesExist } from "../references";
 import { COST } from "../../importer/progress/costs";
@@ -104,21 +105,21 @@ export async function importImportableItem(
     itemRegistry: ItemRegistry,
     trustPlan?: ImportableTrustPlan,
     cachedUuid?: string,
-    onActionListProgress?: (progress: ActionListProgressFields) => void
+    previewHandler?: ImportPreviewEventHandler
 ): Promise<void> {
     await ensureReferencedImportablesExist(ctx, importable);
 
     const uuid = cachedUuid ?? (await getCurrentHousingUuid(ctx));
     if (!hasItemClickActions(importable)) {
         await injectHeldItem(ctx, getItemFromNbt(importable.nbt));
-        writeItemKnowledge(ctx, uuid, importable);
+        writeItemCache(ctx, uuid, importable);
         return;
     }
 
     const hash = importableHash(importable);
     const cachePath = itemSnbtCachePath(uuid, hash);
     if (FileLib.exists(cachePath)) {
-        writeItemKnowledge(ctx, uuid, importable);
+        writeItemCache(ctx, uuid, importable);
         return;
     }
 
@@ -137,7 +138,7 @@ export async function importImportableItem(
         itemRegistry,
         trustPlan,
         start,
-        onActionListProgress
+        previewHandler
     );
 
     await timed("sleep1000", COST.guaranteedSleep1000, () => ctx.sleep(1000));
@@ -147,7 +148,7 @@ export async function importImportableItem(
 
     ensureParentDirs(cachePath);
     FileLib.write(cachePath, snbt, true);
-    writeItemKnowledge(ctx, uuid, importable);
+    writeItemCache(ctx, uuid, importable);
 }
 
 function chooseItemStart(
@@ -248,7 +249,7 @@ async function syncItemActionLists(
     itemRegistry: ItemRegistry,
     trustPlan: ImportableTrustPlan | undefined,
     start: ItemStart,
-    onActionListProgress?: (progress: ActionListProgressFields) => void
+    previewHandler?: ImportPreviewEventHandler
 ): Promise<void> {
     const leftDesired = actionListToSync(
         importable.leftClickActions,
@@ -270,8 +271,9 @@ async function syncItemActionLists(
 
         await syncActionList(ctx, leftDesired, {
             itemRegistry,
-            trust: actionListTrustFor(trustPlan, "leftClickActions", leftDesired),
-            onProgress: onActionListProgress,
+            baselineCurrent: getBaselineActionList(trustPlan, "leftClickActions"),
+            trust: getActionListTrust(trustPlan, "leftClickActions"),
+            previewHandler,
         });
 
         if (
@@ -291,8 +293,9 @@ async function syncItemActionLists(
 
         await syncActionList(ctx, rightDesired, {
             itemRegistry,
-            trust: actionListTrustFor(trustPlan, "rightClickActions", rightDesired),
-            onProgress: onActionListProgress,
+            baselineCurrent: getBaselineActionList(trustPlan, "rightClickActions"),
+            trust: getActionListTrust(trustPlan, "rightClickActions"),
+            previewHandler,
         });
     }
 }
@@ -313,13 +316,13 @@ function actionListToSync(
     return undefined;
 }
 
-function writeItemKnowledge(
+function writeItemCache(
     ctx: TaskContext,
     housingUuid: string,
     importable: ImportableItem
 ): void {
     try {
-        writeKnowledge(ctx, housingUuid, importable, "importer");
+        writeImportableCache(ctx, housingUuid, importable, "importer");
     } catch (error) {
         ctx.displayMessage(`&7[knowledge] &eSkipped cache write for ITEM: ${error}`);
     }

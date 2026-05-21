@@ -15,8 +15,8 @@ import {
     readBooleanValue,
     setListItemNote,
     setNoteOnLastVisibleSlot,
-    timedWaitForMenu,
 } from "../gui/helpers";
+import { timedWaitForMenu } from "../gui/menuWait";
 import { ItemSlot, MouseButton } from "../../tasks/specifics/slots";
 import { removedFormatting } from "../../utils/helpers";
 import { CONDITION_MAPPINGS } from "../fields/conditionMappings";
@@ -25,7 +25,7 @@ import type {
     ConditionListOperation,
     ObservedConditionSlot,
 } from "../types";
-import type { ActionListProgressSink } from "../progress/types";
+import type { ActionListProgressHandler } from "../progress/types";
 import { getPaginatedListSlotAtIndex } from "../gui/paginatedList";
 import { CONDITION_LIST_CONFIG } from "./listConfig";
 import { getConditionSpec, writeOpenCondition } from "../conditions";
@@ -122,7 +122,7 @@ export async function applyConditionListDiff(
     observed: ObservedConditionSlot[],
     diff: ConditionListDiff,
     itemRegistry?: ItemRegistry,
-    progress?: ActionListProgressSink,
+    progress?: ActionListProgressHandler,
     phaseUnits?: ListPhaseUnits
 ): Promise<void> {
     const currentEntries: LiveConditionListEntry[] = [];

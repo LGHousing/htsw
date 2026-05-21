@@ -3,7 +3,7 @@
 import { SourceMap, parseImportablesResult } from "htsw";
 
 import { FileSystemFileLoader } from "../../utils/files";
-import { buildKnowledgeStatusRows } from "../../knowledge/status";
+import { buildCacheStatusRows } from "../../importCache/status";
 import {
     getHousingUuid,
     getImportJsonPath,
@@ -201,7 +201,7 @@ export function reparseImportJson(): void {
         addRecent(path);
         const housingUuid = getHousingUuid();
         if (housingUuid !== null) {
-            setKnowledgeRows(buildKnowledgeStatusRows(housingUuid, result.value));
+            setKnowledgeRows(buildCacheStatusRows(housingUuid, result.value));
         } else {
             setKnowledgeRows([]);
         }

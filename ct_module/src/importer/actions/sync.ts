@@ -7,7 +7,7 @@ import type {
     ActionListTrust,
     ObservedActionSlot,
 } from "../types";
-import type { ActionListProgressSink } from "../progress/types";
+import type { ActionListProgressHandler } from "../progress/types";
 import { currentActionListFromSlots, diffActionList } from "./diff";
 import { applyActionListDiff } from "./applyDiff";
 import {
@@ -17,6 +17,7 @@ import {
 } from "./readList";
 import { actionLogLabel, editDiffSummary } from "./log";
 import { estimateActionListPhaseUnits } from "../progress/costs";
+import type { ImportPreviewEventHandler } from "../importPreviewEvents";
 
 export type SyncActionListOptions = {
     /**
@@ -30,10 +31,10 @@ export type SyncActionListOptions = {
     observed?: ObservedActionSlot[];
     itemRegistry?: ItemRegistry;
     trust?: ActionListTrust;
-    onProgress?: ActionListProgressSink;
     /** Source path prefix for nested lists, e.g. `4.ifActions`. */
     pathPrefix?: string;
-    knownCurrent?: readonly Action[];
+    baselineCurrent?: readonly Action[];
+    previewHandler?: ImportPreviewEventHandler;
 };
 
 export type SyncActionListResult = {
@@ -50,9 +51,14 @@ export async function syncActionList(
     desired: Action[],
     options?: SyncActionListOptions
 ): Promise<SyncActionListResult> {
-    const knownCurrent = options?.knownCurrent ?? options?.trust?.cachedActions;
-    const phaseUnits = estimateActionListPhaseUnits(desired, knownCurrent);
-    const progress = options?.onProgress;
+    const phaseUnits = estimateActionListPhaseUnits(desired, options?.baselineCurrent);
+    const progress: ActionListProgressHandler | undefined =
+        options?.previewHandler === undefined
+            ? undefined
+            : (event) => options.previewHandler?.emit({
+                  kind: "progress",
+                  progress: event,
+              });
     const observed =
         options?.observed ??
         (await readActionList(ctx, {
@@ -62,6 +68,8 @@ export async function syncActionList(
             trust: options?.trust,
             onProgress: progress,
             phaseUnits,
+            pathPrefix: options?.pathPrefix,
+            previewHandler: options?.previewHandler,
         }));
     canonicalizeObservedActionItemNames(observed, options?.itemRegistry);
     if (options?.itemRegistry) {
@@ -79,7 +87,8 @@ export async function syncActionList(
         options?.itemRegistry,
         progress,
         options?.pathPrefix,
-        phaseUnits
+        phaseUnits,
+        options?.previewHandler
     );
     return { usedObserved: observed };
 }

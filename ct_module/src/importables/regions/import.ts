@@ -1,15 +1,15 @@
 import type { ImportableRegion, Pos } from "htsw/types";
 
 import { syncActionList } from "../../importer/actions/sync";
+import { clickGoBack } from "../../importer/gui/helpers";
 import {
-    clickGoBack,
     timedWaitForMenu,
     timedWaitForUnformattedMessage,
-} from "../../importer/gui/helpers";
-import type { ImportableTrustPlan } from "../../knowledge";
-import type { ActionListProgressFields } from "../../importer/progress/types";
+} from "../../importer/gui/menuWait";
+import type { ImportableTrustPlan } from "../../importCache";
+import type { ImportPreviewEventHandler } from "../../importer/importPreviewEvents";
 import TaskContext from "../../tasks/context";
-import { actionListTrustFor } from "../actionListTrust";
+import { getActionListTrust, getBaselineActionList } from "../actionListHelpers";
 import type { ItemRegistry } from "../itemRegistry";
 import { ensureReferencedImportablesExist } from "../references";
 import { openRegionEditor } from "./shared";
@@ -19,7 +19,7 @@ export async function importImportableRegion(
     importable: ImportableRegion,
     itemRegistry: ItemRegistry,
     trustPlan?: ImportableTrustPlan,
-    onActionListProgress?: (progress: ActionListProgressFields) => void
+    previewHandler?: ImportPreviewEventHandler
 ): Promise<void> {
     await ensureReferencedImportablesExist(ctx, importable);
 
@@ -60,12 +60,9 @@ export async function importImportableRegion(
 
         await syncActionList(ctx, importable.onEnterActions, {
             itemRegistry,
-            trust: actionListTrustFor(
-                trustPlan,
-                "onEnterActions",
-                importable.onEnterActions
-            ),
-            onProgress: onActionListProgress,
+            baselineCurrent: getBaselineActionList(trustPlan, "onEnterActions"),
+            trust: getActionListTrust(trustPlan, "onEnterActions"),
+            previewHandler,
         });
 
         if (
@@ -82,12 +79,9 @@ export async function importImportableRegion(
 
         await syncActionList(ctx, importable.onExitActions, {
             itemRegistry,
-            trust: actionListTrustFor(
-                trustPlan,
-                "onExitActions",
-                importable.onExitActions
-            ),
-            onProgress: onActionListProgress,
+            baselineCurrent: getBaselineActionList(trustPlan, "onExitActions"),
+            trust: getActionListTrust(trustPlan, "onExitActions"),
+            previewHandler,
         });
     }
 }

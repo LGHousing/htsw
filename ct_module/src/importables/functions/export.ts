@@ -3,7 +3,7 @@ import * as htsw from "htsw";
 
 import { readActionList } from "../../importer/actions/readList";
 import { clickGoBack } from "../../importer/gui/helpers";
-import { getCurrentHousingUuid, writeKnowledge } from "../../knowledge";
+import { getCurrentHousingUuid, writeImportableCache } from "../../importCache";
 import TaskContext from "../../tasks/context";
 import { observedSlotsToActions } from "../../exporter/sanitize";
 import { upsertImportableEntry } from "../../exporter/importJsonWriter";
@@ -62,7 +62,7 @@ async function readFunction(
 
 /**
  * High-level export-a-function flow: open in GUI, read state, write
- * `.htsl`, upsert `import.json`, refresh knowledge cache, report to chat.
+ * `.htsl`, upsert `import.json`, refresh import cache, report to chat.
  *
  * Best-effort cache writes (filesystem failures don't abort the export);
  * the printer's item-NBT diagnostics surface in chat so the user knows
@@ -103,10 +103,10 @@ export async function exportFunction(
         ...(repeatTicks !== undefined ? { repeatTicks } : {}),
     });
 
-    // Knowledge cache reflects what was just on the housing: exporter writer.
+    // Import cache reflects what was just on the housing: exporter writer.
     try {
         const housingUuid = await getCurrentHousingUuid(ctx);
-        writeKnowledge(ctx, housingUuid, importable, "exporter");
+        writeImportableCache(ctx, housingUuid, importable, "exporter");
     } catch (error) {
         ctx.displayMessage(`&7[export] &eCache write skipped: ${error}`);
     }

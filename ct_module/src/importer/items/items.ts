@@ -1,5 +1,5 @@
 import TaskContext from "../../tasks/context";
-import { timedWaitForMenu, waitForMenu } from "../gui/helpers";
+import { timedWaitForMenu, waitForMenu } from "../gui/menuWait";
 import {
     SET_SLOT_ACK_TIMEOUT_MS,
     sendCreativeInventoryAction,

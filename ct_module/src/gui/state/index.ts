@@ -3,7 +3,7 @@
 import type { ParseResult } from "htsw";
 import type { Importable } from "htsw/types";
 
-import type { KnowledgeStatusRow } from "../../knowledge/status";
+import type { CacheStatusRow } from "../../importCache/status";
 import type { ImportProgress, ImportProgressRow } from "../../importer/progress/types";
 import { importProgressKey } from "../../importer/progress/keys";
 import { normalizeHtswPath } from "../lib/pathDisplay";
@@ -12,7 +12,7 @@ import {
     getImportEtaSeconds as etaGetImportEtaSeconds,
     resetEtaCache,
 } from "../../importer/progress/eta";
-import { importableIdentity } from "../../knowledge/paths";
+import { importableIdentity } from "../../importCache/paths";
 import type { QueueItem } from "./queue";
 import { canonicalPath } from "./parses";
 import { getActiveRightTab, setActiveRightTab } from "./selection";
@@ -44,7 +44,7 @@ const trustedHouses: Set<string> = new Set();
  */
 let muteImportSounds: boolean = false;
 let housingUuid: string | null = null;
-let knowledgeRows: KnowledgeStatusRow[] = [];
+let knowledgeRows: CacheStatusRow[] = [];
 let importProgress: ImportProgress | null = null;
 /**
  * `Date.now()` of the moment the in-flight import started. Captured the
@@ -140,10 +140,10 @@ export function setHousingUuid(uuid: string | null): void {
     housingUuid = uuid;
 }
 
-export function getKnowledgeRows(): KnowledgeStatusRow[] {
+export function getKnowledgeRows(): CacheStatusRow[] {
     return knowledgeRows;
 }
-export function setKnowledgeRows(rows: KnowledgeStatusRow[]): void {
+export function setKnowledgeRows(rows: CacheStatusRow[]): void {
     knowledgeRows = rows;
 }
 

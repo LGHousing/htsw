@@ -4,9 +4,9 @@ import { cyrb53, stableStringify } from "../utils/helpers";
 import { normalizeActionCompare, normalizeConditionCompare } from "../importer/fields/compare";
 
 /**
- * Knowledge-cache hashing.
+ * Importable-cache hashing.
  *
- * The exporter writes a knowledge entry after a fresh GUI read; the
+ * The exporter writes an importable cache entry after a fresh GUI read; the
  * importer writes one after every successful sync. Both must produce
  * **identical** hashes for identical importables, otherwise the
  * future trust-mode will treat them as drift.
@@ -71,7 +71,7 @@ function collectActionListHashes(
 }
 
 /**
- * Build the `lists` map for a knowledge entry. The top-level key depends
+ * Build the `lists` map for an importable cache entry. The top-level key depends
  * on which action lists the importable exposes (functions/events have one,
  * regions have up to two, items have up to two).
  */

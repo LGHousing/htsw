@@ -17,16 +17,6 @@ import { getVisiblePaginatedItemSlots } from "./paginatedList";
 import { COST } from "../progress/costs";
 import { recordTimedOp } from "../progress/timing";
 
-// Re-exported so existing consumers don't need to change their imports.
-// Module-graph-wise these now live in `menuWait.ts` so `paginatedList.ts`
-// can pull `timedWaitForMenu` from there without creating a helpers ↔
-// paginatedList cycle.
-export {
-    timedWaitForMenu,
-    timedWaitForUnformattedMessage,
-    waitForMenu,
-} from "./menuWait";
-
 /** Cycle options shared by `CHANGE_VAR` (action) and `COMPARE_VAR` (condition). */
 export const VAR_HOLDER_OPTIONS = ["Player", "Global", "Team"] as const;
 

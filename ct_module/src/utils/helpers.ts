@@ -42,7 +42,7 @@ export function cyrb53(str: string, seed: number = 0) {
 
 /**
  * Deterministic JSON stringify: sorts object keys, drops `undefined` fields,
- * and drops empty arrays. Used by importable hashing (`knowledge/hash.ts`)
+ * and drops empty arrays. Used by importable hashing (`importCache/hash.ts`)
  * and item shell comparison (`importables/items/import.ts`) so identical
  * importables always serialize to identical strings regardless of insertion
  * order or incidental empty-array fields.

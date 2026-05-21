@@ -40,7 +40,6 @@ import { type ItemRegistry } from "../importables/itemRegistry";
 import {
     VAR_HOLDER_OPTIONS,
     clickGoBack,
-    waitForMenu,
     getSlotPaginate,
     openSubmenu,
     enterValue,
@@ -54,6 +53,7 @@ import {
     readBooleanValue,
     readStringValue,
 } from "./gui/helpers";
+import { waitForMenu } from "./gui/menuWait";
 import { readConditionList } from "./conditions/readList";
 import { syncConditionList } from "./conditions/sync";
 import {
@@ -69,17 +69,18 @@ import type {
     Observed,
 } from "./types";
 import { setItemValue } from "./items/items";
-import type { ActionPath } from "./diffSink";
+import type { ActionPath, ImportPreviewEventHandler } from "./importPreviewEvents";
 import { resolveImportableItem } from "./items/resolveItem";
 import { readActionList } from "./actions/readList";
 import { syncActionList } from "./actions/sync";
-import type { ActionListProgressSink } from "./progress/types";
+import type { ActionListProgressHandler } from "./progress/types";
 
 export type WriteActionOptions<T extends Action = Action> = {
     current?: Observed<T>;
     itemRegistry?: ItemRegistry;
     pathPrefix?: ActionPath;
-    onProgress?: ActionListProgressSink;
+    onProgress?: ActionListProgressHandler;
+    previewHandler?: ImportPreviewEventHandler;
 };
 
 type ActionSpec<T extends Action = Action> = {
@@ -87,7 +88,9 @@ type ActionSpec<T extends Action = Action> = {
     read?: (
         ctx: TaskContext,
         propsToRead: NestedPropsToRead,
-        itemRegistry?: ItemRegistry
+        itemRegistry?: ItemRegistry,
+        pathPrefix?: ActionPath,
+        previewHandler?: ImportPreviewEventHandler
     ) => Promise<Observed<T>>;
     write?: (
         ctx: TaskContext,
@@ -115,7 +118,9 @@ export function getActionSpec<T extends Action["type"]>(
 async function readOpenConditional(
     ctx: TaskContext,
     propsToRead: NestedPropsToRead,
-    itemRegistry?: ItemRegistry
+    itemRegistry?: ItemRegistry,
+    pathPrefix?: ActionPath,
+    previewHandler?: ImportPreviewEventHandler
 ): Promise<Observed<ActionConditional>> {
     const conditionsLabel = getActionFieldLabel("CONDITIONAL", "conditions");
     const matchAnyLabel = getActionFieldLabel("CONDITIONAL", "matchAny");
@@ -141,6 +146,8 @@ async function readOpenConditional(
         for (const entry of await readActionList(ctx, {
             kind: "full",
             itemRegistry,
+            pathPrefix: pathPrefix === undefined ? undefined : `${pathPrefix}.ifActions`,
+            previewHandler,
         })) {
             ifActions.push(entry.action);
         }
@@ -154,6 +161,8 @@ async function readOpenConditional(
         for (const entry of await readActionList(ctx, {
             kind: "full",
             itemRegistry,
+            pathPrefix: pathPrefix === undefined ? undefined : `${pathPrefix}.elseActions`,
+            previewHandler,
         })) {
             elseActions.push(entry.action);
         }
@@ -186,8 +195,7 @@ async function writeConditional(
 
         await syncConditionList(ctx, action.conditions, {
             itemRegistry,
-            knownCurrent: current?.conditions,
-            onProgress: options?.onProgress,
+            baselineCurrent: current?.conditions,
         });
         await clickGoBack(ctx);
     }
@@ -197,6 +205,13 @@ async function writeConditional(
         ctx.getMenuItemSlot(getActionFieldLabel("CONDITIONAL", "matchAny")),
         action.matchAny
     );
+
+    if (pathPrefix !== undefined) {
+        options?.previewHandler?.emit({
+            kind: "blockActionHeaderApplied",
+            path: pathPrefix,
+        });
+    }
 
     if (
         !observedActionListsEqual(current?.ifActions, action.ifActions) &&
@@ -208,8 +223,8 @@ async function writeConditional(
         await syncActionList(ctx, action.ifActions, {
             itemRegistry,
             pathPrefix: pathPrefix === undefined ? undefined : `${pathPrefix}.ifActions`,
-            knownCurrent: observedActionsAsKnownCurrent(current?.ifActions),
-            onProgress: options?.onProgress,
+            baselineCurrent: observedActionsAsBaselineCurrent(current?.ifActions),
+            previewHandler: options?.previewHandler,
         });
         await clickGoBack(ctx);
     }
@@ -224,14 +239,14 @@ async function writeConditional(
         await syncActionList(ctx, action.elseActions, {
             itemRegistry,
             pathPrefix: pathPrefix === undefined ? undefined : `${pathPrefix}.elseActions`,
-            knownCurrent: observedActionsAsKnownCurrent(current?.elseActions),
-            onProgress: options?.onProgress,
+            baselineCurrent: observedActionsAsBaselineCurrent(current?.elseActions),
+            previewHandler: options?.previewHandler,
         });
         await clickGoBack(ctx);
     }
 }
 
-function observedActionsAsKnownCurrent(
+function observedActionsAsBaselineCurrent(
     observed: ReadonlyArray<Observed<Action> | null> | undefined
 ): readonly Action[] | undefined {
     if (observed === undefined) return undefined;
@@ -643,12 +658,19 @@ async function writeChangeHunger(
 async function readOpenRandom(
     ctx: TaskContext,
     propsToRead: NestedPropsToRead,
-    itemRegistry?: ItemRegistry
+    itemRegistry?: ItemRegistry,
+    pathPrefix?: ActionPath,
+    previewHandler?: ImportPreviewEventHandler
 ): Promise<Observed<ActionRandom>> {
     const actions: (Observed<Action> | null)[] = [];
     ctx.getMenuItemSlot(getActionFieldLabel("RANDOM", "actions")).click();
     await waitForMenu(ctx);
-    for (const entry of await readActionList(ctx, { kind: "full", itemRegistry })) {
+    for (const entry of await readActionList(ctx, {
+        kind: "full",
+        itemRegistry,
+        pathPrefix: pathPrefix === undefined ? undefined : `${pathPrefix}.actions`,
+        previewHandler,
+    })) {
         actions.push(entry.action);
     }
     await clickGoBack(ctx);
@@ -669,13 +691,20 @@ async function writeRandom(
     if (observedActionListsEqual(current?.actions, action.actions)) return;
     if (action.actions.length === 0 && (current?.actions?.length ?? 0) === 0) return;
 
+    if (pathPrefix !== undefined) {
+        options?.previewHandler?.emit({
+            kind: "blockActionHeaderApplied",
+            path: pathPrefix,
+        });
+    }
+
     ctx.getMenuItemSlot(getActionFieldLabel("RANDOM", "actions")).click();
     await waitForMenu(ctx);
     await syncActionList(ctx, action.actions, {
         itemRegistry,
         pathPrefix: pathPrefix === undefined ? undefined : `${pathPrefix}.actions`,
-        knownCurrent: observedActionsAsKnownCurrent(current?.actions),
-        onProgress: options?.onProgress,
+        baselineCurrent: observedActionsAsBaselineCurrent(current?.actions),
+        previewHandler: options?.previewHandler,
     });
     await clickGoBack(ctx);
 }
@@ -1045,7 +1074,13 @@ export async function writeOpenAction(
     let resolvedCurrent = opts?.current;
 
     if (resolvedCurrent === undefined && spec.read) {
-        resolvedCurrent = await spec.read(ctx, new Set(), opts?.itemRegistry);
+        resolvedCurrent = await spec.read(
+            ctx,
+            new Set(),
+            opts?.itemRegistry,
+            opts?.pathPrefix,
+            opts?.previewHandler
+        );
     }
 
     if (!spec.write) {

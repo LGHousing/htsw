@@ -21,9 +21,8 @@ import {
     isLimitExceeded,
     setListItemNote,
     setNoteOnLastVisibleSlot,
-    timedWaitForMenu,
-    waitForMenu,
 } from "../gui/helpers";
+import { timedWaitForMenu, waitForMenu } from "../gui/menuWait";
 import { MouseButton } from "../../tasks/specifics/slots";
 import type {
     ActionListDiff,
@@ -31,17 +30,13 @@ import type {
     Observed,
     ObservedActionSlot,
 } from "../types";
-import type { ActionListProgressSink } from "../progress/types";
+import type { ActionListProgressHandler } from "../progress/types";
 import { createApplyProgressAdapter } from "../progress/nested";
 import {
     getPaginatedListSlotAtIndex,
     goToPaginatedListPage,
 } from "../gui/paginatedList";
-import {
-    getActiveDiffSink,
-    type ImportDiffSink,
-    type DiffSummary,
-} from "../diffSink";
+import type { ImportPreviewEventHandler, DiffSummary } from "../importPreviewEvents";
 import {
     COST,
     actionOperationApplyUnits,
@@ -58,7 +53,10 @@ import {
     getActionSpec,
     writeOpenAction,
 } from "../actions";
-import { actionLogLabel, editDiffSummary } from "./log";
+import { actionLogLabel } from "./log";
+import { waitIfStepPaused } from "../stepGate";
+import { getActionScalarLoreFields } from "../fields/actionMappings";
+import { scalarFieldDiffers } from "../fields/compare";
 
 type LiveActionListEntry = {
     entryId: number;
@@ -69,8 +67,9 @@ async function importAction(
     ctx: TaskContext,
     action: Action,
     itemRegistry?: ItemRegistry,
-    progress?: ActionListProgressSink,
-    pathPrefix?: string
+    progress?: ActionListProgressHandler,
+    pathPrefix?: string,
+    previewHandler?: ImportPreviewEventHandler
 ): Promise<void> {
     ctx.getMenuItemSlot("Add Action").click();
     await timedWaitForMenu(ctx, "menuClickWait");
@@ -94,6 +93,7 @@ async function importAction(
             itemRegistry,
             pathPrefix,
             onProgress: progress,
+            previewHandler,
         });
         await clickGoBack(ctx);
     }
@@ -154,21 +154,21 @@ export async function applyActionListDiff(
     desired: Action[],
     diff: ActionListDiff,
     itemRegistry?: ItemRegistry,
-    progress?: ActionListProgressSink,
+    progress?: ActionListProgressHandler,
     pathPrefix?: string,
-    phaseUnits?: ActionListPhaseUnits
+    phaseUnits?: ActionListPhaseUnits,
+    previewHandler?: ImportPreviewEventHandler
 ): Promise<void> {
-    const sink = getActiveDiffSink();
     await applyActionListDiffInner(
         ctx,
         observed,
         desired,
         diff,
-        sink,
         itemRegistry,
         progress,
         pathPrefix,
-        phaseUnits
+        phaseUnits,
+        previewHandler ?? null
     );
 }
 
@@ -189,11 +189,44 @@ function opLabel(op: ActionListOperation): string {
     return `add ${actionLogLabel(op.desired)}`;
 }
 
-function opDetail(op: ActionListOperation): string {
-    if (op.kind === "edit") return editDiffSummary(op);
-    if (op.kind === "move") return `#${op.fromIndex + 1} -> #${op.toIndex + 1}`;
-    if (op.kind === "add") return "add source action";
-    return "delete Housing-only action";
+function actionTypeForOp(op: ActionListOperation): Action["type"] | null {
+    if (op.kind === "add" || op.kind === "edit") return op.desired.type;
+    if (op.kind === "move") return op.action.type;
+    return op.currentAction?.type ?? null;
+}
+
+function fieldsChangedForEdit(
+    op: Extract<ActionListOperation, { kind: "edit" }>
+): string[] {
+    const fields: string[] = [];
+    if (op.noteDiffers) fields.push("note");
+    if (!op.noteOnly) {
+        const scalarFields = getActionScalarLoreFields(op.currentAction.type);
+        for (let i = 0; i < scalarFields.length; i++) {
+            const field = scalarFields[i];
+            if (
+                scalarFieldDiffers(
+                    op.currentAction,
+                    op.desired,
+                    op.currentAction.type,
+                    field.prop
+                )
+            ) {
+                fields.push(String(field.prop));
+            }
+        }
+        for (let i = 0; i < op.nestedDiffs.length; i++) {
+            const nested = op.nestedDiffs[i];
+            if (nested.diff.operations.length > 0) fields.push(nested.prop);
+        }
+    }
+    return fields;
+}
+
+function fieldsChangedForOp(op: ActionListOperation): string[] | undefined {
+    if (op.kind !== "edit") return undefined;
+    const fields = fieldsChangedForEdit(op);
+    return fields.length === 0 ? undefined : fields;
 }
 
 function editOperationFieldUnits(
@@ -261,12 +294,13 @@ async function applyActionListDiffInner(
     observed: ObservedActionSlot[],
     desired: Action[],
     diff: ActionListDiff,
-    sink: ImportDiffSink | null,
     itemRegistry?: ItemRegistry,
-    progress?: ActionListProgressSink,
+    progress?: ActionListProgressHandler,
     pathPrefix?: string,
-    phaseUnits?: ActionListPhaseUnits
+    phaseUnits?: ActionListPhaseUnits,
+    previewHandler?: ImportPreviewEventHandler | null
 ): Promise<void> {
+    const isTopLevel = pathPrefix === undefined;
     const summary = summarizeDiff(diff, desired.length);
     const plannedApplyUnits = actionListDiffApplyUnits(
         diff,
@@ -287,17 +321,72 @@ async function applyActionListDiffInner(
                   phaseUnits,
                   unitTotal: Math.max(1, diff.operations.length),
                   baseline,
-                  sink: progress,
+                  handler: progress,
               });
-    if (sink !== null) {
-        sink.summary(summary);
-        sink.phase("computed diff");
+    if (previewHandler != null) {
+        previewHandler.emit({ kind: "diffComputed", summary });
         for (const op of diff.operations) {
             const idx = desiredIndexForOp(op);
             if (idx >= 0) {
-                sink.planOp(actionPathForIndex(pathPrefix, idx), op.kind, opLabel(op), opDetail(op));
+                const srcPath = actionPathForIndex(pathPrefix, idx);
+                const actionType = actionTypeForOp(op);
+                if (actionType === null) continue;
+                previewHandler.emit({
+                    kind: "operationPlanned",
+                    path: srcPath,
+                    op: op.kind,
+                    actionType,
+                    fromIndex:
+                        op.kind === "edit" || op.kind === "move"
+                            ? op.fromIndex
+                            : undefined,
+                    toIndex:
+                        op.kind === "add"
+                            ? op.toIndex
+                            : op.kind === "move"
+                              ? op.toIndex
+                              : op.kind === "edit"
+                                ? op.desiredIndex
+                                : undefined,
+                    fieldsChanged: fieldsChangedForOp(op),
+                });
+                if (op.kind === "add") {
+                    previewHandler?.emit({
+                        kind: "plannedAdd",
+                        path: srcPath,
+                        desired: op.desired,
+                        toIndex: op.toIndex,
+                    });
+                } else if (op.kind === "edit") {
+                    previewHandler?.emit({
+                        kind: "plannedEdit",
+                        path: srcPath,
+                        observed: op.currentAction as Action,
+                        desired: op.desired,
+                    });
+                } else if (op.kind === "move") {
+                    previewHandler?.emit({
+                        kind: "plannedMove",
+                        path: srcPath,
+                        fromIndex: op.fromIndex,
+                        toIndex: op.toIndex,
+                    });
+                }
             } else if (op.kind === "delete") {
-                sink.deleteOp(op.fromIndex, opLabel(op), opDetail(op));
+                previewHandler.emit({
+                    kind: "extraActionPlanned",
+                    observedEntryId: op.entryId,
+                    index: op.fromIndex,
+                    actionType: op.currentAction?.type ?? null,
+                });
+                const obsPath = actionPathForIndex(pathPrefix, op.fromIndex);
+                if (op.currentAction !== null) {
+                    previewHandler?.emit({
+                        kind: "plannedDelete",
+                        path: obsPath,
+                        observed: op.currentAction as Action,
+                    });
+                }
             }
         }
     }
@@ -331,19 +420,21 @@ async function applyActionListDiffInner(
     // Pre-mark already-matching desired actions. Anything not touched by an
     // op is "match" (white) from the start; ops will paint their own state
     // on completion.
-    if (sink !== null) {
+    if (previewHandler != null) {
         const touched = new Set<number>();
         for (const op of diff.operations) {
             const idx = desiredIndexForOp(op);
             if (idx >= 0) touched.add(idx);
         }
         for (let i = 0; i < desired.length; i++) {
-            if (!touched.has(i)) sink.markMatch(actionPathForIndex(pathPrefix, i));
+            if (!touched.has(i)) {
+                previewHandler.emit({ kind: "match", path: actionPathForIndex(pathPrefix, i) });
+            }
         }
     }
 
     if (diff.operations.length === 0) {
-        if (sink !== null) sink.end();
+        if (previewHandler != null && isTopLevel) previewHandler.emit({ kind: "syncCompleted" });
         return;
     }
 
@@ -411,10 +502,23 @@ async function applyActionListDiffInner(
             }
 
             emitApplying(opLabel(op), i, appliedUnits);
-            if (sink !== null) sink.phase(opLabel(op));
+            if (isTopLevel) await waitIfStepPaused(ctx);
+            const obsPath = actionPathForIndex(pathPrefix, op.fromIndex);
             await deleteObservedAction(ctx, index, remaining.length);
             appliedUnits += operationApplyUnits(op, desired.length);
             remaining.splice(index, 1);
+            if (previewHandler != null) {
+                previewHandler.emit({
+                    kind: "extraActionDeleted",
+                    observedEntryId: op.entryId,
+                });
+                previewHandler?.emit({
+                    kind: "applyDone",
+                    path: obsPath,
+                    finalState: "delete",
+                    op: "delete",
+                });
+            }
         }
     }
 
@@ -428,9 +532,20 @@ async function applyActionListDiffInner(
 
         const srcIdx = desiredIndexForOp(op);
         const srcPath = srcIdx >= 0 ? actionPathForIndex(pathPrefix, srcIdx) : null;
-        if (sink !== null && srcPath !== null) sink.beginOp(srcPath, "edit", opLabel(op));
+        if (previewHandler != null && srcPath !== null) {
+            previewHandler.emit({
+                kind: "operationStarted",
+                path: srcPath,
+                op: "edit",
+                actionType: op.desired.type,
+                fromIndex: op.fromIndex,
+                toIndex: op.desiredIndex,
+                fieldsChanged: fieldsChangedForOp(op),
+            });
+        }
         emitApplying(opLabel(op), appliedOps, appliedUnits);
         appliedOps++;
+        if (isTopLevel) await waitIfStepPaused(ctx);
         const opStartUnits = appliedUnits;
 
         const actionSlot = await getPaginatedListSlotAtIndex(
@@ -444,7 +559,20 @@ async function applyActionListDiffInner(
             await setListItemNote(ctx, actionSlot, op.desired.note);
             appliedUnits += operationApplyUnits(op, desired.length);
             remaining[currentIndex].action = op.desired;
-            if (sink !== null && srcPath !== null) sink.completeOp(srcPath, "edit");
+            if (previewHandler != null && srcPath !== null) {
+                previewHandler.emit({
+                    kind: "operationCompleted",
+                    path: srcPath,
+                    op: "edit",
+                    finalState: "edit",
+                });
+                previewHandler?.emit({
+                    kind: "applyDone",
+                    path: srcPath,
+                    finalState: "edit",
+                    op: "edit",
+                });
+            }
             continue;
         }
 
@@ -460,11 +588,12 @@ async function applyActionListDiffInner(
                 itemRegistry,
                 pathPrefix: srcPath ?? undefined,
                 onProgress:
-                    applyProgress?.nestedSink({
+                    applyProgress?.nestedHandler({
                         label: opLabel(op),
                         unitCompleted: appliedOps,
                         unitTotal: diff.operations.length,
                     }) ?? progress,
+                previewHandler: previewHandler ?? undefined,
             });
             if (applyProgress !== null) {
                 appliedUnits = Math.max(appliedUnits, applyProgress.getAppliedUnits());
@@ -478,7 +607,20 @@ async function applyActionListDiffInner(
             opStartUnits + operationApplyUnits(op, desired.length)
         );
         remaining[currentIndex].action = op.desired;
-        if (sink !== null && srcPath !== null) sink.completeOp(srcPath, "edit");
+        if (previewHandler != null && srcPath !== null) {
+            previewHandler.emit({
+                kind: "operationCompleted",
+                path: srcPath,
+                op: "edit",
+                finalState: "edit",
+            });
+            previewHandler?.emit({
+                kind: "applyDone",
+                path: srcPath,
+                finalState: "edit",
+                op: "edit",
+            });
+        }
     }
 
     moves.sort((a, b) => a.toIndex - b.toIndex);
@@ -490,9 +632,19 @@ async function applyActionListDiffInner(
 
         const srcIdx = desiredIndexForOp(op);
         const srcPath = srcIdx >= 0 ? actionPathForIndex(pathPrefix, srcIdx) : null;
-        if (sink !== null && srcPath !== null) sink.beginOp(srcPath, "move", opLabel(op));
+        if (previewHandler != null && srcPath !== null) {
+            previewHandler.emit({
+                kind: "operationStarted",
+                path: srcPath,
+                op: "move",
+                actionType: op.action.type,
+                fromIndex: op.fromIndex,
+                toIndex: op.toIndex,
+            });
+        }
         emitApplying(opLabel(op), appliedOps, appliedUnits);
         appliedOps++;
+        if (isTopLevel) await waitIfStepPaused(ctx);
 
         await moveActionToIndex(ctx, fromIndex, op.toIndex, remaining.length);
         appliedUnits += operationApplyUnits(op, desired.length);
@@ -500,7 +652,20 @@ async function applyActionListDiffInner(
         const entry = remaining[fromIndex];
         remaining.splice(fromIndex, 1);
         remaining.splice(op.toIndex, 0, entry);
-        if (sink !== null && srcPath !== null) sink.completeOp(srcPath, "match");
+        if (previewHandler != null && srcPath !== null) {
+            previewHandler.emit({
+                kind: "operationCompleted",
+                path: srcPath,
+                op: "move",
+                finalState: "match",
+            });
+            previewHandler?.emit({
+                kind: "applyDone",
+                path: srcPath,
+                finalState: "match",
+                op: "move",
+            });
+        }
     }
 
     adds.sort((a, b) => a.toIndex - b.toIndex);
@@ -508,9 +673,18 @@ async function applyActionListDiffInner(
     for (const op of adds) {
         const srcIdx = desiredIndexForOp(op);
         const srcPath = srcIdx >= 0 ? actionPathForIndex(pathPrefix, srcIdx) : null;
-        if (sink !== null && srcPath !== null) sink.beginOp(srcPath, "add", opLabel(op));
+        if (previewHandler != null && srcPath !== null) {
+            previewHandler.emit({
+                kind: "operationStarted",
+                path: srcPath,
+                op: "add",
+                actionType: op.desired.type,
+                toIndex: op.toIndex,
+            });
+        }
         emitApplying(opLabel(op), appliedOps, appliedUnits);
         appliedOps++;
+        if (isTopLevel) await waitIfStepPaused(ctx);
         const opStartUnits = appliedUnits;
 
         const actionToImport =
@@ -522,12 +696,13 @@ async function applyActionListDiffInner(
             ctx,
             actionToImport,
             itemRegistry,
-            applyProgress?.nestedSink({
+            applyProgress?.nestedHandler({
                 label: opLabel(op),
                 unitCompleted: appliedOps,
                 unitTotal: diff.operations.length,
             }) ?? progress,
-            srcPath ?? undefined
+            srcPath ?? undefined,
+            previewHandler ?? undefined
         );
         if (applyProgress !== null) {
             appliedUnits = Math.max(appliedUnits, applyProgress.getAppliedUnits());
@@ -548,10 +723,26 @@ async function applyActionListDiffInner(
             appliedUnits,
             opStartUnits + operationApplyUnits(op, desired.length)
         );
-        if (sink !== null && srcPath !== null) sink.completeOp(srcPath, "add");
+        if (previewHandler != null && srcPath !== null) {
+            previewHandler.emit({
+                kind: "operationCompleted",
+                path: srcPath,
+                op: "add",
+                finalState: "add",
+            });
+            previewHandler?.emit({
+                kind: "applyDone",
+                path: srcPath,
+                finalState: "add",
+                op: "add",
+            });
+        }
     }
 
     await goToPaginatedListPage(ctx, 1, ACTION_LIST_CONFIG);
 
-    if (sink !== null) sink.end();
+    if (previewHandler != null && isTopLevel) {
+        previewHandler?.emit({ kind: "finalizeSource", actions: desired });
+        previewHandler.emit({ kind: "syncCompleted" });
+    }
 }

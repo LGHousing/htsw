@@ -4,11 +4,14 @@ import type { Importable } from "htsw/types";
 import TaskContext from "../tasks/context";
 import { isTaskCancelled } from "../tasks/manager";
 import { FileSystemFileLoader } from "../utils/files";
-import { buildKnowledgeTrustPlan, importableIdentity, trustPlanKey } from "../knowledge";
+import { buildTrustPlan, importableIdentity, trustPlanKey } from "../importCache";
 import { printDiagnostic } from "../tui/diagnostics";
 import { createItemRegistry } from "./itemRegistry";
 import { importImportable } from "./imports";
-import { setActiveDiffSink, type ImportDiffSink } from "../importer/diffSink";
+import type {
+    ImportPreviewEvent,
+    ImportPreviewEventHandler,
+} from "../importer/importPreviewEvents";
 import type {
     ActionListProgressFields,
     ImportProgress,
@@ -19,8 +22,8 @@ import type {
 } from "../importer/progress/types";
 import { importProgressKey } from "../importer/progress/keys";
 import { estimateImportableCost } from "../importer/progress/costs";
-import { readKnowledge } from "../knowledge/cache";
-import { readCachedActionList } from "./actionListTrust";
+import { readImportableCache } from "../importCache/cache";
+import { readCachedActionList } from "./actionListHelpers";
 
 export type ImportSelection = {
     importables: Importable[];
@@ -35,16 +38,12 @@ export type ImportSelection = {
     onProgress?: (progress: ImportProgress) => void;
     /**
      * Optional factory the session calls before each importable to obtain a
-     * per-importable diff sink. When non-null, the sink receives action-level
-     * events (`markMatch` / `beginOp` / `completeOp` / `end`) as the importer
-     * walks the action list — driving the live HTSL diff view above the
-     * inventory. The session sets/clears the active sink around each
-     * importable so events route to the right listener.
+     * per-importable preview event handler for the import UI.
      */
-    diffSinkForImportable?: (
+    previewHandlerForImportable?: (
         importable: Importable,
         sourcePath: string | null
-    ) => ImportDiffSink | null;
+    ) => ImportPreviewEventHandler | null;
 };
 
 export type ImportSessionResult = {
@@ -78,7 +77,7 @@ export async function importSelectedImportables(
     const parsed = parseImportablesResult(sm, selection.sourcePath);
     const registry = createItemRegistry(parsed.value, parsed.gcx);
     const ordered = orderImportablesForImportSession(parsed.value, selection.importables);
-    const trustPlan = buildKnowledgeTrustPlan(
+    const trustPlan = buildTrustPlan(
         selection.housingUuid,
         parsed.value,
         selection.trustMode
@@ -235,15 +234,22 @@ export async function importSelectedImportables(
         }
 
         const sourcePath = parsed.gcx.sourceFiles.get(importable) ?? null;
-        const sink = selection.diffSinkForImportable
-            ? selection.diffSinkForImportable(importable, sourcePath)
+        const previewHandler = selection.previewHandlerForImportable
+            ? selection.previewHandlerForImportable(importable, sourcePath)
             : null;
-        setActiveDiffSink(sink);
+        const sessionPreviewHandler: ImportPreviewEventHandler = {
+            emit(event: ImportPreviewEvent): void {
+                if (event.kind === "progress") {
+                    emitProgress(event.progress);
+                }
+                previewHandler?.emit(event);
+            },
+        };
         try {
             await importImportable(ctx, importable, registry, {
                 plan,
                 housingUuid: selection.housingUuid,
-                onActionListProgress: emitProgress,
+                previewHandler: sessionPreviewHandler,
             });
             if (!plan?.wholeImportableTrusted) {
                 result.imported++;
@@ -255,7 +261,6 @@ export async function importSelectedImportables(
             // cancelled" once and the GUI's progress UI clears, instead of
             // surfacing "Failed to import ...: [object Object]".
             if (isTaskCancelled(error)) {
-                setActiveDiffSink(null);
                 throw error;
             }
             result.failed++;
@@ -272,11 +277,8 @@ export async function importSelectedImportables(
             ctx.displayMessage(
                 `&c[htsw] Import aborted after failure on ${importable.type} ${importableIdentity(importable)}`
             );
-            setActiveDiffSink(null);
             finishFailedImportable();
             break;
-        } finally {
-            setActiveDiffSink(null);
         }
     }
 
@@ -306,7 +308,7 @@ function estimateImportableUnitsWithCache(
     importable: Importable,
     housingUuid: string
 ): number {
-    const entry = readKnowledge(
+    const entry = readImportableCache(
         housingUuid,
         importable.type,
         importableIdentity(importable)

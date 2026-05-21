@@ -18,7 +18,7 @@ import {
     type QueueItem,
 } from "../state/queue";
 import { forEachCachedParse, getParseAt, parseImportJsonAt } from "../state/parses";
-import { buildKnowledgeStatusRows } from "../../knowledge/status";
+import { buildCacheStatusRows } from "../../importCache/status";
 import {
     importSelectedImportables,
     orderImportablesForImportSession,
@@ -29,11 +29,11 @@ import {
     captureFromHousing,
     type CaptureType,
 } from "../../exporter/captureFromHousing";
-import { importableIdentity } from "../../knowledge/paths";
-import { trustPlanKey } from "../../knowledge/trust";
-import { getCurrentHousingUuid } from "../../knowledge/housingId";
+import { importableIdentity } from "../../importCache/paths";
+import { trustPlanKey } from "../../importCache/trust";
+import { getCurrentHousingUuid } from "../../importCache/housingId";
 import { TaskManager } from "../../tasks/manager";
-import type { Importable } from "htsw/types";
+import type { Action, Importable } from "htsw/types";
 import type { ParseResult } from "htsw";
 import { closeAllPopovers } from "../lib/popovers";
 import { htslFilenameForFunctionExport } from "../../exporter/paths";
@@ -42,6 +42,7 @@ import {
     addDeleteOp,
     diffKey,
     markCompleted,
+    markDeleteCompleted,
     setCurrent,
     setDiffState,
     setDiffPhase,
@@ -49,8 +50,31 @@ import {
     setPlannedOp,
 } from "../state/diff";
 import { importableSourcePath } from "../state/importablePaths";
-import type { ImportDiffSink } from "../../importer/diffSink";
+import type {
+    ActionDiffOperationPayload,
+    ImportPreviewEventHandler,
+    ImportPreviewEvent,
+} from "../../importer/importPreviewEvents";
 import { importProgressKey } from "../../importer/progress/keys";
+import { setImportRunning } from "../../importer/runtimeState";
+import { gmcOnImportStart, playImportSuccessSound } from "../../importer/sideEffects";
+import { resetStepGate } from "../../importer/stepGate";
+import {
+    applyComplete,
+    finalizeFromSource,
+    markHeadApplied,
+    markPlannedAdd,
+    markPlannedDelete,
+    markPlannedEdit,
+    markPlannedMove,
+    previewLineIdForPath,
+    primeWithCache,
+    resetPreview,
+    setObservedTopLevel,
+} from "../state/importPreviewState";
+import { setFocusLineId } from "../state/codeViewState";
+import { readImportableCache } from "../../importCache/cache";
+import { ACTION_MAPPINGS } from "../../importer/fields/actionMappings";
 
 export const CAPTURE_TYPES: CaptureType[] = ["FUNCTION", "MENU"];
 
@@ -88,33 +112,170 @@ function refreshKnowledgeRows(): void {
             all.push(imp);
         }
     }
-    setKnowledgeRows(buildKnowledgeStatusRows(uuid, all));
+    setKnowledgeRows(buildCacheStatusRows(uuid, all));
 }
 
-function makeDiffSink(sourcePath: string): ImportDiffSink {
+function displayNameForActionType(type: Action["type"] | null): string {
+    return type === null ? "Unknown Action" : ACTION_MAPPINGS[type].displayName;
+}
+
+function operationVerb(op: ActionDiffOperationPayload["op"]): string {
+    if (op === "add") return "Add";
+    if (op === "edit") return "Edit";
+    if (op === "move") return "Move";
+    return "Delete";
+}
+
+function operationLabel(event: ActionDiffOperationPayload): string {
+    const name = displayNameForActionType(event.actionType);
+    if (event.op === "move" && event.toIndex !== undefined) {
+        return `${operationVerb(event.op)} ${name} -> #${event.toIndex + 1}`;
+    }
+    return `${operationVerb(event.op)} ${name}`;
+}
+
+function operationDetail(event: ActionDiffOperationPayload): string {
+    if (event.op === "add") return "add source action";
+    if (event.op === "move") {
+        if (event.fromIndex !== undefined && event.toIndex !== undefined) {
+            return `#${event.fromIndex + 1} -> #${event.toIndex + 1}`;
+        }
+        return "move source action";
+    }
+    if (event.op === "edit") {
+        const fields = event.fieldsChanged ?? [];
+        return fields.length === 0 ? "fields changed" : fields.join(", ");
+    }
+    return "delete source action";
+}
+
+function readingLabel(actionType: Action["type"] | null): string {
+    return `Reading nested ${displayNameForActionType(actionType)}`;
+}
+
+function makeImportPreviewHandler(
+    sourcePath: string,
+    importable: Importable,
+    housingUuid: string | null
+): ImportPreviewEventHandler {
     const key = diffKey(sourcePath);
     clearDiff(key);
+    resetPreview(sourcePath);
+    const cached = housingUuid === null
+        ? null
+        : readImportableCache(housingUuid, importable.type, importableIdentity(importable));
+    primeWithCache(sourcePath, cached === null ? null : cached.importable);
+    const renderPreviewEvent = (event: ImportPreviewEvent): void => {
+        switch (event.kind) {
+            case "progress":
+                return;
+            case "readStarted":
+                setDiffPhase(key, `Reading ${event.listPath}`);
+                return;
+            case "readCompleted":
+                setDiffPhase(key, `${event.observedCount} actions read`);
+                return;
+            case "hydrationStarted":
+                setDiffPhase(key, readingLabel(event.actionType));
+                return;
+            case "hydrationCompleted":
+                return;
+            case "diffComputed":
+                setDiffSummary(key, event.summary);
+                setDiffPhase(key, "Diff computed");
+                return;
+            case "operationPlanned":
+                setPlannedOp(
+                    key,
+                    event.path,
+                    event.op,
+                    operationLabel(event),
+                    operationDetail(event)
+                );
+                return;
+            case "extraActionPlanned":
+                addDeleteOp(
+                    key,
+                    event.observedEntryId,
+                    event.index,
+                    `Delete extra ${displayNameForActionType(event.actionType)}`,
+                    "delete unneeded action"
+                );
+                return;
+            case "match":
+                setDiffState(key, event.path, "match");
+                return;
+            case "operationStarted":
+                setDiffPhase(key, operationLabel(event));
+                setCurrent(key, event.path, operationLabel(event));
+                setPlannedOp(key, event.path, event.op, operationLabel(event), "");
+                setFocusLineId(
+                    sourcePath,
+                    previewLineIdForPath(sourcePath, event.path)
+                );
+                return;
+            case "operationCompleted":
+                setDiffState(key, event.path, event.finalState);
+                markCompleted(key, event.path);
+                setCurrent(key, null, "");
+                return;
+            case "extraActionDeleted":
+                markDeleteCompleted(key, event.observedEntryId);
+                return;
+            case "syncCompleted":
+                setCurrent(key, null, "");
+                setFocusLineId(sourcePath, null);
+                refreshKnowledgeRows();
+                return;
+            case "observedSnapshot":
+                setObservedTopLevel(sourcePath, event.actions);
+                return;
+            case "reading":
+                setCurrent(key, event.path, readingLabel(event.actionType));
+                setFocusLineId(
+                    sourcePath,
+                    previewLineIdForPath(sourcePath, event.path)
+                );
+                return;
+            case "clearReading":
+                setCurrent(key, null, "");
+                setFocusLineId(sourcePath, null);
+                return;
+            case "blockActionHeaderApplied":
+                markHeadApplied(sourcePath, event.path);
+                return;
+            case "plannedAdd":
+                markPlannedAdd(sourcePath, event.path, event.desired, event.toIndex);
+                return;
+            case "plannedEdit":
+                markPlannedEdit(
+                    sourcePath,
+                    event.path,
+                    event.observed,
+                    event.desired
+                );
+                return;
+            case "plannedDelete":
+                markPlannedDelete(sourcePath, event.path);
+                return;
+            case "plannedMove":
+                markPlannedMove(
+                    sourcePath,
+                    event.path,
+                    event.fromIndex,
+                    event.toIndex
+                );
+                return;
+            case "applyDone":
+                applyComplete(sourcePath, event.path, event.finalState, event.op);
+                return;
+            case "finalizeSource":
+                finalizeFromSource(sourcePath, event.actions);
+                return;
+        }
+    };
     return {
-        phase: (label) => setDiffPhase(key, label),
-        summary: (summary) => setDiffSummary(key, summary),
-        planOp: (path, kind, label, detail) =>
-            setPlannedOp(key, path, kind, label, detail),
-        deleteOp: (idx, label, detail) => addDeleteOp(key, idx, label, detail),
-        markMatch: (path) => setDiffState(key, path, "match"),
-        beginOp: (path, kind, label) => {
-            setDiffPhase(key, label);
-            setCurrent(key, path, label);
-            setPlannedOp(key, path, kind, label, "");
-        },
-        completeOp: (path, state) => {
-            setDiffState(key, path, state);
-            markCompleted(key, path);
-            setCurrent(key, null, "");
-        },
-        end: () => {
-            setCurrent(key, null, "");
-            refreshKnowledgeRows();
-        },
+        emit: renderPreviewEvent,
     };
 }
 
@@ -233,8 +394,13 @@ export function startImport(explicit?: readonly QueueItem[]): void {
         rows,
     }));
 
+    setImportRunning(true);
+    resetStepGate();
+    gmcOnImportStart();
+
     TaskManager.run(async (ctx) => {
         const startedAt = Date.now();
+        let importSucceeded = false;
         try {
             ctx.displayMessage(
                 `&7[import] starting ${total} importable${total === 1 ? "" : "s"} ` +
@@ -273,8 +439,8 @@ export function startImport(explicit?: readonly QueueItem[]): void {
                                 : (importableSourcePath(imp, batch.parsed) ?? null);
                         setCurrentImportingPath(path);
                     },
-                    diffSinkForImportable: (_imp, path) =>
-                        path === null ? null : makeDiffSink(path),
+                    previewHandlerForImportable: (imp, path) =>
+                        path === null ? null : makeImportPreviewHandler(path, imp, housingUuid),
                 };
                 const result = await importSelectedImportables(ctx, selection);
                 totalImported += result.imported;
@@ -289,12 +455,16 @@ export function startImport(explicit?: readonly QueueItem[]): void {
             // ad-hoc "Import selected" run leaves the queue alone since it
             // was never the source of the work.
             if (explicit === undefined) clearQueue();
+            importSucceeded = totalFailed === 0;
         } finally {
             setImportProgress(null);
             setCurrentImportingPath(null);
             refreshKnowledgeRows();
+            setImportRunning(false);
+            if (importSucceeded) playImportSuccessSound();
         }
     }).catch((err: unknown) => {
+        setImportRunning(false);
         ChatLib.chat(`&c[htsw] Import failed: ${err}`);
     });
 }

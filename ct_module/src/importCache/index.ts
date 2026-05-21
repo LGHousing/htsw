@@ -1,16 +1,16 @@
 /**
- * Local knowledge cache — last-known canonical state of a Housing's
+ * Local import cache — last-known canonical state of a Housing's
  * importables, written after every successful importer sync and after
- * every exporter run. Future trust-mode will use this cache to skip
+ * every exporter run. Trust mode uses this cache to skip
  * GUI reads when the on-disk source still matches the cached state.
  *
  * This module is intentionally side-effect-free at import time.
  */
 
 export {
-    writeKnowledge,
-    readKnowledge,
-    deleteKnowledge,
+    writeImportableCache,
+    readImportableCache,
+    deleteImportableCache,
 } from "./cache";
 
 export {
@@ -24,7 +24,7 @@ export {
 
 export { getCurrentHousingUuid } from "./housingId";
 
-export { buildKnowledgeStatusRows } from "./status";
+export { buildCacheStatusRows } from "./status";
 
-export { buildKnowledgeTrustPlan, trustPlanKey } from "./trust";
+export { buildTrustPlan, trustPlanKey } from "./trust";
 export type { ImportableTrustPlan } from "./trust";

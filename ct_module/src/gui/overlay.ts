@@ -43,8 +43,8 @@ import {
     setHousingUuid,
     setKnowledgeRows,
 } from "./state";
-import { buildKnowledgeStatusRows } from "../knowledge/status";
-import { getCurrentHousingUuid } from "../knowledge/housingId";
+import { buildCacheStatusRows } from "../importCache/status";
+import { getCurrentHousingUuid } from "../importCache/housingId";
 import { TaskManager } from "../tasks/manager";
 
 import { getChatKeyCode } from "./keybinds";
@@ -120,7 +120,7 @@ const UUID_FETCH_COOLDOWN_MS = 60_000;
 function refreshKnowledgeFromUuid(uuid: string): void {
     const parsed = getParsedResult();
     if (parsed === null) return;
-    setKnowledgeRows(buildKnowledgeStatusRows(uuid, parsed.value));
+    setKnowledgeRows(buildCacheStatusRows(uuid, parsed.value));
 }
 
 function maybeAutoFetchHousingUuid(): void {

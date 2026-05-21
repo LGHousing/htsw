@@ -3,9 +3,9 @@
 import type { ParseResult } from "htsw";
 import type { Action, Importable } from "htsw/types";
 
-import { readKnowledge } from "../../knowledge/cache";
-import { actionHash } from "../../knowledge/hash";
-import { cachePathFor, importableIdentity } from "../../knowledge/paths";
+import { readImportableCache } from "../../importCache/cache";
+import { actionHash } from "../../importCache/hash";
+import { cachePathFor, importableIdentity } from "../../importCache/paths";
 
 import {
     importableSourcePath,
@@ -21,7 +21,7 @@ import { javaType } from "../lib/java";
  * Source-vs-knowledge-cache diff for an `.htsl` source file.
  *
  * Compares each parsed source action's hash against the per-slot hash stored
- * in the knowledge cache (see `knowledge/hash.ts:listHashes`) and tags each
+ * in the import cache (see `importCache/hash.ts:listHashes`) and tags each
  * `actionPath` (matching the shape produced by `htsl-render.ts`) with:
  *
  *   - "match"   — slot hash present and equal
@@ -106,7 +106,7 @@ function walk(
 
 /**
  * Build the per-action diff map for `filePath`'s parsed `actions` against
- * the knowledge cache. Returns an empty map when there is no parsed
+ * the import cache. Returns an empty map when there is no parsed
  * import.json, no housing UUID, no matching importable for the path, or no
  * cache entry yet — the renderer treats missing entries as "unknown".
  */
@@ -121,7 +121,7 @@ export function computeCacheDiff(
     if (uuid === null) return out;
     const r = resolvePrefix(parsed, filePath);
     if (r === null) return out;
-    const cache = readKnowledge(uuid, r.imp.type, importableIdentity(r.imp));
+    const cache = readImportableCache(uuid, r.imp.type, importableIdentity(r.imp));
     if (cache === null) return out;
     walk(out, r.prefix, "", sourceActions, cache.lists);
     return out;
@@ -140,7 +140,7 @@ function mtimeOf(path: string): number {
 }
 
 /**
- * Mtime of the knowledge cache file backing `filePath`, or 0 when either
+ * Mtime of the import cache file backing `filePath`, or 0 when either
  * the importable isn't resolved or the cache file doesn't exist. Cheap
  * (one filesystem stat) — intended as an invalidation key for callers
  * that memoize cache-diff results.

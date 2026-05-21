@@ -1,11 +1,11 @@
 import type { ImportableEvent } from "htsw/types";
 
 import { syncActionList } from "../../importer/actions/sync";
-import { timedWaitForMenu } from "../../importer/gui/helpers";
-import type { ImportableTrustPlan } from "../../knowledge";
-import type { ActionListProgressFields } from "../../importer/progress/types";
+import { timedWaitForMenu } from "../../importer/gui/menuWait";
+import type { ImportableTrustPlan } from "../../importCache";
+import type { ImportPreviewEventHandler } from "../../importer/importPreviewEvents";
 import TaskContext from "../../tasks/context";
-import { actionListTrustFor } from "../actionListTrust";
+import { getActionListTrust, getBaselineActionList } from "../actionListHelpers";
 import type { ItemRegistry } from "../itemRegistry";
 import { ensureReferencedImportablesExist } from "../references";
 
@@ -14,7 +14,7 @@ export async function importImportableEvent(
     importable: ImportableEvent,
     itemRegistry: ItemRegistry,
     trustPlan?: ImportableTrustPlan,
-    onActionListProgress?: (progress: ActionListProgressFields) => void
+    previewHandler?: ImportPreviewEventHandler
 ): Promise<void> {
     await ensureReferencedImportablesExist(ctx, importable);
 
@@ -26,7 +26,8 @@ export async function importImportableEvent(
 
     await syncActionList(ctx, importable.actions, {
         itemRegistry,
-        trust: actionListTrustFor(trustPlan, "actions", importable.actions),
-        onProgress: onActionListProgress,
+        baselineCurrent: getBaselineActionList(trustPlan, "actions"),
+        trust: getActionListTrust(trustPlan, "actions"),
+        previewHandler,
     });
 }

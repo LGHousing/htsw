@@ -2,7 +2,7 @@ import { items as itemReferences, type GlobalCtxt } from "htsw";
 import type { Importable, ImportableItem } from "htsw/types";
 
 import TaskContext from "../tasks/context";
-import { getCurrentHousingUuid } from "../knowledge";
+import { getCurrentHousingUuid } from "../importCache";
 import { removedFormatting, unique } from "../utils/helpers";
 import { getItemFromNbt, readItemDisplayAliases } from "../utils/nbt";
 

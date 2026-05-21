@@ -9,7 +9,7 @@ import { createItemRegistry } from "./importables/itemRegistry";
 import { TaskManager } from "./tasks/manager";
 import { S2FPacketSetSlot } from "./utils/packets";
 import { FileSystemFileLoader } from "./utils/files";
-import { commandKnowledge } from "./knowledge/commands";
+import { commandKnowledge } from "./importCache/commands";
 import { toggleHtswGui, armHtswGuiDebug } from "./gui/overlay";
 import {
     getTimingStats,

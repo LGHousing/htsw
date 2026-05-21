@@ -3,7 +3,7 @@ import type { Condition } from "htsw/types";
 import TaskContext from "../../tasks/context";
 import { type ItemRegistry } from "../../importables/itemRegistry";
 import type { ObservedConditionSlot } from "../types";
-import type { ActionListProgressSink } from "../progress/types";
+import type { ActionListProgressHandler } from "../progress/types";
 import { currentConditionListFromSlots, diffConditionList } from "./diff";
 import { readConditionList } from "./readList";
 import {
@@ -19,8 +19,8 @@ import {
 export type SyncConditionListOptions = {
     observed?: ObservedConditionSlot[];
     itemRegistry?: ItemRegistry;
-    knownCurrent?: ReadonlyArray<Condition | null>;
-    onProgress?: ActionListProgressSink;
+    baselineCurrent?: ReadonlyArray<Condition | null>;
+    onProgress?: ActionListProgressHandler;
 };
 
 export type SyncConditionListResult = {
@@ -34,7 +34,7 @@ export async function syncConditionList(
 ): Promise<SyncConditionListResult> {
     const phaseUnits = estimateConditionListPhaseUnits(
         desired,
-        options?.knownCurrent
+        options?.baselineCurrent
     );
     const progress = options?.onProgress;
     progress?.({

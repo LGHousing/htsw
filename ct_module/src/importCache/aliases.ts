@@ -1,6 +1,6 @@
 /// <reference types="../../CTAutocomplete" />
 
-import { KNOWLEDGE_ROOT } from "./paths";
+import { IMPORT_CACHE_ROOT } from "./paths";
 
 /**
  * Plain-English nicknames for Housing UUIDs. The UUID is the canonical
@@ -8,13 +8,13 @@ import { KNOWLEDGE_ROOT } from "./paths";
  * string that's painful to read in the GUI; the alias is what the user
  * actually sees.
  *
- * Storage: a single JSON file under the knowledge cache root. Reads are
+ * Storage: a single JSON file under the import cache root. Reads are
  * on-demand (no in-memory cache — the file is small and only consulted
  * when the GUI needs to render a header). Writes are full-rewrites that
  * preserve every other UUID's alias.
  */
 
-const ALIAS_FILE = `${KNOWLEDGE_ROOT}/housing-aliases.json`;
+const ALIAS_FILE = `${IMPORT_CACHE_ROOT}/housing-aliases.json`;
 
 type AliasMap = { [uuid: string]: string };
 

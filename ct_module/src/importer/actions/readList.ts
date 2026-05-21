@@ -2,10 +2,8 @@ import type { Action } from "htsw/types";
 
 import TaskContext from "../../tasks/context";
 import { type ItemRegistry } from "../../importables/itemRegistry";
-import {
-    clickGoBack,
-    timedWaitForMenu,
-} from "../gui/helpers";
+import { clickGoBack } from "../gui/helpers";
+import { timedWaitForMenu } from "../gui/menuWait";
 import { ItemSlot } from "../../tasks/specifics/slots";
 import { removedFormatting } from "../../utils/helpers";
 import {
@@ -28,7 +26,7 @@ import type {
     Observed,
     ObservedActionSlot,
 } from "../types";
-import type { ActionListProgressSink } from "../progress/types";
+import type { ActionListProgressHandler } from "../progress/types";
 import { createNestedHydrationPlan } from "./hydrationPlan";
 import { matchObservedToDesired } from "./nestedMatching";
 import { applyActionListTrust } from "./trustHydration";
@@ -40,7 +38,7 @@ import {
     isEmptyPaginatedPlaceholder,
     readPaginatedList,
 } from "../gui/paginatedList";
-import { getActiveDiffSink } from "../diffSink";
+import type { ImportPreviewEventHandler } from "../importPreviewEvents";
 import {
     COST,
     hydrationEntryUnits,
@@ -48,23 +46,27 @@ import {
     type ActionListPhaseUnits,
 } from "../progress/costs";
 import { ACTION_LIST_CONFIG } from "./listConfig";
-import { getActionSpec } from "../actions";
+import { actionPathForIndex, getActionSpec } from "../actions";
 import { actionLogLabel } from "./log";
 
 export type ActionListReadMode =
     | {
           kind: "full";
           itemRegistry?: ItemRegistry;
-          onProgress?: ActionListProgressSink;
+          onProgress?: ActionListProgressHandler;
           phaseUnits?: ActionListPhaseUnits;
+          previewHandler?: ImportPreviewEventHandler;
+          pathPrefix?: string;
       }
     | {
           kind: "sync";
           desired: readonly Action[];
           itemRegistry?: ItemRegistry;
           trust?: ActionListTrust;
-          onProgress?: ActionListProgressSink;
+          onProgress?: ActionListProgressHandler;
           phaseUnits?: ActionListPhaseUnits;
+          previewHandler?: ImportPreviewEventHandler;
+          pathPrefix?: string;
       };
 
 function readNestedSummaries(
@@ -177,6 +179,7 @@ export async function readActionList(
     mode: ActionListReadMode = { kind: "full" }
 ): Promise<ObservedActionSlot[]> {
     const progress = mode.onProgress;
+    const previewHandler = mode.previewHandler;
     const desiredTotal =
         mode.kind === "sync" ? Math.max(1, mode.desired.length) : 1;
     const phaseUnits = mode.phaseUnits;
@@ -193,7 +196,10 @@ export async function readActionList(
             phaseUnits: phaseUnitsFromParts(phaseUnits),
         });
     }
-    getActiveDiffSink()?.phase("reading housing state");
+    previewHandler?.emit({
+        kind: "readStarted",
+        listPath: mode.pathPrefix ?? "actions",
+    });
     observed = await readPaginatedList(
         ctx,
         ACTION_LIST_CONFIG,
@@ -220,6 +226,10 @@ export async function readActionList(
         phaseUnits.readPart = readCompletedUnits;
         phaseUnits.total = recomputeTotal(phaseUnits);
     }
+    const isTopLevelRead = mode.pathPrefix === undefined;
+    if (isTopLevelRead) {
+        emitObservedSnapshot(observed, previewHandler);
+    }
     let plan: NestedHydrationPlan;
     if (mode.kind === "full") {
         plan = buildFullHydrationPlan(observed);
@@ -234,14 +244,42 @@ export async function readActionList(
     await hydrateNestedActions(
         ctx,
         plan,
-        observed.length,
+        observed,
         mode.itemRegistry,
         progress,
-        phaseUnits
+        phaseUnits,
+        isTopLevelRead,
+        mode.pathPrefix,
+        previewHandler
     );
     await goToPaginatedListPage(ctx, 1, ACTION_LIST_CONFIG);
     canonicalizeObservedActionItemNames(observed, mode.itemRegistry);
+    if (isTopLevelRead) {
+        emitObservedSnapshot(observed, previewHandler);
+        previewHandler?.emit({ kind: "clearReading" });
+    }
+    previewHandler?.emit({
+        kind: "readCompleted",
+        listPath: mode.pathPrefix ?? "actions",
+        observedCount: observed.length,
+    });
     return observed;
+}
+
+function emitObservedSnapshot(
+    observed: readonly ObservedActionSlot[],
+    previewHandler?: ImportPreviewEventHandler
+): void {
+    if (previewHandler === undefined) return;
+    const snapshot: Array<Action | null> = [];
+    for (const entry of observed) {
+        snapshot.push(entry.action as Action | null);
+    }
+    try {
+        previewHandler.emit({ kind: "observedSnapshot", actions: snapshot });
+    } catch (_e) {
+        // Preview-side rendering errors must never abort the importer.
+    }
 }
 
 function recomputeTotal(b: ActionListPhaseUnits): number {
@@ -325,10 +363,13 @@ export function canonicalizeActionItemName(
 async function hydrateNestedActions(
     ctx: TaskContext,
     plan: NestedHydrationPlan,
-    listLength: number,
+    observed: readonly ObservedActionSlot[],
     itemRegistry?: ItemRegistry,
-    progress?: ActionListProgressSink,
-    phaseUnits?: ActionListPhaseUnits
+    progress?: ActionListProgressHandler,
+    phaseUnits?: ActionListPhaseUnits,
+    isTopLevelRead: boolean = false,
+    pathPrefix?: string,
+    previewHandler?: ImportPreviewEventHandler
 ): Promise<void> {
     let completed = 0;
     const total = plan.size;
@@ -354,13 +395,38 @@ async function hydrateNestedActions(
         });
     };
     for (const [entry, propsToRead] of plan) {
-        emit(`reading nested ${actionLogLabel(entry.action)}`);
-        getActiveDiffSink()?.phase(`reading nested ${actionLogLabel(entry.action)}`);
+        const entryPath = actionPathForIndex(pathPrefix, entry.index);
+        const entryLabel = `reading nested ${actionLogLabel(entry.action)}`;
+        emit(entryLabel);
+        previewHandler?.emit({
+            kind: "hydrationStarted",
+            path: entryPath,
+            actionType: entry.action?.type ?? null,
+        });
+        if (isTopLevelRead) {
+            previewHandler?.emit({
+                kind: "reading",
+                path: entryPath,
+                actionType: entry.action?.type ?? null,
+            });
+        }
         const entryUnits = hydrationEntryUnits(entry, propsToRead);
-        await hydrateNestedAction(ctx, entry, propsToRead, listLength, itemRegistry);
+        await hydrateNestedAction(
+            ctx,
+            entry,
+            propsToRead,
+            observed.length,
+            itemRegistry,
+            entryPath,
+            previewHandler
+        );
+        previewHandler?.emit({ kind: "hydrationCompleted", path: entryPath });
         completedHydrateUnits += entryUnits;
         completed++;
         emit(`${completed}/${total} nested actions read`);
+        if (isTopLevelRead) {
+            emitObservedSnapshot(observed, previewHandler);
+        }
     }
 }
 
@@ -369,7 +435,9 @@ async function hydrateNestedAction(
     entry: ObservedActionSlot,
     propsToRead: NestedPropsToRead,
     listLength: number,
-    itemRegistry?: ItemRegistry
+    itemRegistry?: ItemRegistry,
+    entryPath?: string,
+    previewHandler?: ImportPreviewEventHandler
 ): Promise<void> {
     if (entry.action === null) {
         return;
@@ -389,7 +457,13 @@ async function hydrateNestedAction(
             throw new Error(`Reading action "${entry.action.type}" is not implemented.`);
         }
 
-        entry.action = await spec.read(ctx, propsToRead, itemRegistry);
+        entry.action = await spec.read(
+            ctx,
+            propsToRead,
+            itemRegistry,
+            entryPath,
+            previewHandler
+        );
         entry.nestedReadState = "full";
         if (note) {
             entry.action.note = note;
