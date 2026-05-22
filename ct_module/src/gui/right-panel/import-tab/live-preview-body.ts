@@ -1,11 +1,11 @@
-/// <reference types="../../../CTAutocomplete" />
+/// <reference types="../../../../CTAutocomplete" />
 
-import type { Element } from "../lib/layout";
-import { getCurrentImportingPath } from "../state";
-import { CodeView } from "../code-view/CodeView";
-import { progressDecorator } from "../code-view/decorators";
-import { previewLinesForFile } from "../state/importPreviewState";
-import type { RenderableLine } from "../code-view/types";
+import type { Element } from "../../lib/layout";
+import { getCurrentImportingPath } from "../../state";
+import { CodeView } from "../../code-view/codeView";
+import { progressDecorator } from "../../code-view/decorators";
+import { previewLinesForFile } from "../../state/importPreviewState";
+import type { RenderableLine } from "../../code-view/types";
 
 export function livePreviewBody(): Element {
     return CodeView({

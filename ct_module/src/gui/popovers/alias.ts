@@ -3,7 +3,7 @@
 import { Element, Rect } from "../lib/layout";
 import { Button, Col, Input, Row, Text } from "../lib/components";
 import { closeAllPopovers, openPopover } from "../lib/popovers";
-import { getAlias, setAlias, clearAlias } from "../../knowledge/aliases";
+import { getAlias, setAlias, clearAlias } from "../../importCache/aliases";
 
 let editingUuid: string | null = null;
 let editingValue = "";

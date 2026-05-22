@@ -5,6 +5,13 @@ export type ScrollProps = {
     id: string;
     children: Extractable<Child[]>;
     style?: ContainerStyle;
+    /**
+     * When true, mouse-wheel and scrollbar-drag input is consumed
+     * instead of moving the viewport. Used by the live-preview during
+     * an import — autoFollow re-centres each frame anyway, so user
+     * scrolls would just snap back glitchily.
+     */
+    locked?: Extractable<boolean>;
 };
 
 export function Scroll(props: ScrollProps): Element {
@@ -13,5 +20,6 @@ export function Scroll(props: ScrollProps): Element {
         id: props.id,
         style: props.style ?? {},
         children: props.children,
+        locked: props.locked,
     };
 }

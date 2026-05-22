@@ -1,19 +1,34 @@
+import type { Condition } from "htsw/types";
+
 import TaskContext from "../../tasks/context";
 import { type ItemRegistry } from "../../importables/itemRegistry";
 import { canonicalizeItemFields } from "../fields/canonicalizeItems";
 import {
     CONDITION_MAPPINGS,
+    getConditionScalarLoreFields,
     parseConditionListItem,
     tryGetConditionTypeFromDisplayName,
 } from "../fields/conditionMappings";
+import { isTruncatableKind, looksTruncated } from "../fields/loreParsing";
 import type { ObservedConditionSlot } from "../types";
 import {
+    getPaginatedListPageForIndex,
+    getPaginatedListSlotAtIndex,
     getVisiblePaginatedItemSlots,
+    goToPaginatedListPage,
     isEmptyPaginatedPlaceholder,
     readPaginatedList,
 } from "../gui/paginatedList";
+import { timedWaitForMenu } from "../gui/menuWait";
+import { clickGoBack } from "../gui/helpers";
 import { CONDITION_LIST_CONFIG } from "./listConfig";
-import { isConditionListItemInverted } from "../conditions";
+import { getConditionSpec, isConditionListItemInverted } from "../conditions";
+import {
+    COST,
+    phaseUnitsFromParts,
+    type ListPhaseUnits,
+} from "../progress/costs";
+import type { ActionListProgressHandler } from "../progress/types";
 
 async function readConditionsListPage(
     ctx: TaskContext
@@ -45,6 +60,8 @@ async function readConditionsListPage(
 
 export type ReadConditionListOptions = {
     itemRegistry?: ItemRegistry;
+    phaseUnits?: ListPhaseUnits;
+    onProgress?: ActionListProgressHandler;
 };
 
 export async function readConditionList(
@@ -56,6 +73,8 @@ export async function readConditionList(
         CONDITION_LIST_CONFIG,
         () => readConditionsListPage(ctx)
     );
+    await hydrateScalarConditions(ctx, observed, options);
+    await goToPaginatedListPage(ctx, 1, CONDITION_LIST_CONFIG);
     canonicalizeObservedConditionSlots(observed, options?.itemRegistry);
     return observed;
 }
@@ -68,6 +87,114 @@ function canonicalizeObservedConditionSlots(
     for (const entry of observed) {
         if (entry.condition !== null) {
             canonicalizeItemFields(entry.condition, CONDITION_MAPPINGS, itemRegistry);
+        }
+    }
+}
+
+const SCALAR_CONDITION_HYDRATION_UNITS = COST.menuClickWait + COST.goBackWait;
+
+function shouldHydrateScalarCondition(condition: Condition): boolean {
+    if (!getConditionSpec(condition.type).read) return false;
+    const fields = getConditionScalarLoreFields(condition.type);
+    for (let i = 0; i < fields.length; i++) {
+        const field = fields[i];
+        if (!isTruncatableKind(field.kind)) continue;
+        const value = (condition as Record<string, unknown>)[field.prop];
+        if (typeof value === "string" && looksTruncated(value)) return true;
+    }
+    if (condition.type === "COMPARE_VAR" && condition.holder?.type === "Team") {
+        const team = condition.holder.team;
+        if (typeof team === "string" && looksTruncated(team)) return true;
+    }
+    return false;
+}
+
+async function hydrateScalarConditions(
+    ctx: TaskContext,
+    observed: readonly ObservedConditionSlot[],
+    options: ReadConditionListOptions | undefined
+): Promise<void> {
+    const entries: ObservedConditionSlot[] = [];
+    for (const entry of observed) {
+        if (entry.condition === null) continue;
+        if (shouldHydrateScalarCondition(entry.condition)) entries.push(entry);
+    }
+    if (entries.length === 0) return;
+
+    const phaseUnits = options?.phaseUnits;
+    const progress = options?.onProgress;
+    const totalHydrate = entries.length * SCALAR_CONDITION_HYDRATION_UNITS;
+    if (phaseUnits !== undefined && totalHydrate > phaseUnits.hydratePart) {
+        phaseUnits.hydratePart = totalHydrate;
+        phaseUnits.total =
+            phaseUnits.readPart + phaseUnits.hydratePart + phaseUnits.applyPart;
+    }
+
+    let completed = 0;
+    let completedHydrateUnits = 0;
+    const emit = (label: string): void => {
+        if (phaseUnits === undefined || progress === undefined) return;
+        progress({
+            phase: "hydrating",
+            phaseLabel: label,
+            unitCompleted: completed,
+            unitTotal: entries.length,
+            completedUnits: phaseUnits.readPart + completedHydrateUnits,
+            totalUnits: phaseUnits.total,
+            phaseUnits: phaseUnitsFromParts(phaseUnits),
+        });
+    };
+
+    for (const entry of entries) {
+        emit(`reading condition ${entry.condition?.type ?? ""}`);
+        await hydrateScalarCondition(ctx, entry, observed.length);
+        completed++;
+        completedHydrateUnits += SCALAR_CONDITION_HYDRATION_UNITS;
+        emit(`${completed}/${entries.length} conditions read`);
+    }
+}
+
+async function hydrateScalarCondition(
+    ctx: TaskContext,
+    entry: ObservedConditionSlot,
+    listLength: number
+): Promise<void> {
+    if (entry.condition === null) return;
+    const note = entry.condition.note;
+    const inverted = entry.condition.inverted;
+    try {
+        await goToPaginatedListPage(
+            ctx,
+            getPaginatedListPageForIndex(entry.index),
+            CONDITION_LIST_CONFIG
+        );
+        const slot = await getPaginatedListSlotAtIndex(
+            ctx,
+            entry.index,
+            listLength,
+            CONDITION_LIST_CONFIG
+        );
+        entry.slot = slot;
+        entry.slotId = slot.getSlotId();
+        slot.click();
+        await timedWaitForMenu(ctx, "menuClickWait");
+        const spec = getConditionSpec(entry.condition.type);
+        if (!spec.read) {
+            await clickGoBack(ctx);
+            return;
+        }
+        const refreshed = await spec.read(ctx);
+        if (note) refreshed.note = note;
+        if (inverted) refreshed.inverted = true;
+        entry.condition = refreshed;
+        await clickGoBack(ctx);
+    } catch (error) {
+        ctx.displayMessage(
+            `&7[condition-read] &cFailed to read scalar condition at ` +
+                `index ${entry.index} (${entry.condition.type}): ${error}`
+        );
+        if (ctx.tryGetMenuItemSlot("Go Back") !== null) {
+            await clickGoBack(ctx);
         }
     }
 }

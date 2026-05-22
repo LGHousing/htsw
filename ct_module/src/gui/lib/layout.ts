@@ -79,6 +79,8 @@ export type Element =
           style: ContainerStyle;
           id: string;
           children: Extractable<Child[]>;
+          /** When true, scroll input is consumed without moving the viewport. */
+          locked?: Extractable<boolean>;
       }
     | {
           kind: "image";
@@ -231,6 +233,14 @@ export function getScrollState(id: string): ScrollState {
         scrollStates[id] = s;
     }
     return s;
+}
+
+export function setScrollOffset(id: string, offset: number): void {
+    const s = getScrollState(id);
+    s.offset = Math.max(
+        0,
+        Math.min(Math.max(0, s.contentHeight - s.viewportRect.h), offset)
+    );
 }
 
 export const SCROLLBAR_WIDTH = SCROLLBAR_W;

@@ -42,8 +42,8 @@ import {
     importableSubListPath,
     type SubListKind,
 } from "../../state/importablePaths";
-import { importableIdentity } from "../../../knowledge/paths";
-import { trustPlanKey } from "../../../knowledge/trust";
+import { importableIdentity } from "../../../importCache/paths";
+import { trustPlanKey } from "../../../importCache/trust";
 import { makeImportableQueueItem } from "../../state/queue";
 import { composeFileMenu, composeImportableMenu } from "../../state/fileMenu";
 import {

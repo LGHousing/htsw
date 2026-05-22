@@ -268,31 +268,6 @@ export function applyComplete(
             s.lines[i].diffState = undefined;
             s.lines[i].completed = true;
         }
-        // TODO(htsw#41-followup): move+add at the same actionPath can produce
-        // two `<path>:body` lines after prefix strip. The matcher emits both a
-        // MOVE for the observed and an ADD for the desired at the same source
-        // path. The real fix is importer-side (one or the other should win).
-        // For now: dedup positionally, keeping the latest insertion.
-        const idCounts: { [id: string]: number[] } = {};
-        for (let i = 0; i < s.lines.length; i++) {
-            const id = s.lines[i].id;
-            if (idCounts[id] === undefined) idCounts[id] = [];
-            idCounts[id].push(i);
-        }
-        const dupIdsToRemove: number[] = [];
-        for (const id in idCounts) {
-            const positions = idCounts[id];
-            if (positions.length <= 1) continue;
-            for (let k = 0; k < positions.length - 1; k++) {
-                dupIdsToRemove.push(positions[k]);
-            }
-        }
-        if (dupIdsToRemove.length > 0) {
-            dupIdsToRemove.sort((a, b) => b - a);
-            for (let i = 0; i < dupIdsToRemove.length; i++) {
-                s.lines.splice(dupIdsToRemove[i], 1);
-            }
-        }
         renumberLines(s.lines);
         bump(s);
         return;

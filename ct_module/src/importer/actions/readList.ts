@@ -8,10 +8,12 @@ import { ItemSlot } from "../../tasks/specifics/slots";
 import { removedFormatting } from "../../utils/helpers";
 import {
     ACTION_MAPPINGS,
+    getActionScalarLoreFields,
     getNestedListFields,
     parseActionListItem,
     tryGetActionTypeFromDisplayName,
 } from "../fields/actionMappings";
+import { isTruncatableKind, looksTruncated } from "../fields/loreParsing";
 import {
     CONDITION_MAPPINGS,
     tryGetConditionTypeFromDisplayName,
@@ -302,10 +304,18 @@ function addScalarHydrationEntries(
 }
 
 function shouldHydrateScalarAction(action: Observed<Action>): boolean {
-    if (action.type === "MESSAGE") {
-        return removedFormatting(action.message).trim().endsWith("...");
+    if (!getActionSpec(action.type).read) return false;
+    const fields = getActionScalarLoreFields(action.type);
+    for (let i = 0; i < fields.length; i++) {
+        const field = fields[i];
+        if (!isTruncatableKind(field.kind)) continue;
+        const value = (action as Record<string, unknown>)[field.prop];
+        if (typeof value === "string" && looksTruncated(value)) return true;
     }
-
+    if (action.type === "CHANGE_VAR" && action.holder?.type === "Team") {
+        const team = action.holder.team;
+        if (typeof team === "string" && looksTruncated(team)) return true;
+    }
     return false;
 }
 

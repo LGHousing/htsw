@@ -10,7 +10,6 @@ import {
     getParsedResult,
     setImportJsonPath,
     setKnowledgeRows,
-    setParseError,
     setParsedResult,
 } from "./index";
 import { addRecent, getRecents } from "./recents";
@@ -185,7 +184,6 @@ export function reparseImportJson(): void {
     lastSeenPath = path;
     if (!fileExistsSafe(path)) {
         setParsedResult(null);
-        setParseError(null);
         setKnowledgeRows([]);
         refreshWatchedMtimes();
         return;
@@ -194,7 +192,6 @@ export function reparseImportJson(): void {
     try {
         const result = parseImportablesResult(sm, path);
         setParsedResult(result);
-        setParseError(null);
         // Any successful parse adds the path to the recents dropdown — covers loads from the
         // file browser, the path input, the recents dropdown itself (re-bumps to top), and
         // auto-discover. Dedup is handled inside addRecent.
@@ -205,10 +202,8 @@ export function reparseImportJson(): void {
         } else {
             setKnowledgeRows([]);
         }
-    } catch (err) {
-        const msg = err && (err as any).message ? (err as any).message : String(err);
+    } catch (_err) {
         setParsedResult(null);
-        setParseError(msg);
         setKnowledgeRows([]);
     }
     refreshWatchedMtimes();

@@ -48,7 +48,11 @@ export async function syncConditionList(
     });
     const observed =
         options?.observed ??
-        (await readConditionList(ctx, { itemRegistry: options?.itemRegistry }));
+        (await readConditionList(ctx, {
+            itemRegistry: options?.itemRegistry,
+            phaseUnits,
+            onProgress: progress,
+        }));
     const readUnits = conditionListReadUnits(observed.length);
     if (readUnits > phaseUnits.readPart) {
         phaseUnits.readPart = readUnits;

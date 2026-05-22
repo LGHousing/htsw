@@ -239,6 +239,23 @@ export function getConditionFieldLabel<T extends Condition["type"]>(
     );
 }
 
+export function getConditionScalarLoreFields(
+    type: Condition["type"]
+): { prop: string; kind: UiFieldKind }[] {
+    const loreFields = CONDITION_MAPPINGS[type].loreFields as Record<
+        string,
+        { prop: string; kind: UiFieldKind }
+    >;
+    const result: { prop: string; kind: UiFieldKind }[] = [];
+    for (const label in loreFields) {
+        const field = loreFields[label];
+        if (field.kind !== "nestedList") {
+            result.push({ prop: field.prop, kind: field.kind });
+        }
+    }
+    return result;
+}
+
 export function tryGetConditionTypeFromDisplayName(
     displayName: string
 ): Condition["type"] | undefined {

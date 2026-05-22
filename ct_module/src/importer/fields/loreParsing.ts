@@ -46,6 +46,14 @@ function parseBooleanText(value: string): boolean | undefined {
     return undefined;
 }
 
+export function looksTruncated(value: string): boolean {
+    return removedFormatting(value).trim().endsWith("...");
+}
+
+export function isTruncatableKind(kind: UiFieldKind): boolean {
+    return kind === "value" || kind === "select" || kind === "item";
+}
+
 export function normalizeLoreValueFormatting(value: string): string {
     const normalized = normalizeFormattingCodes(value);
     let index = 0;

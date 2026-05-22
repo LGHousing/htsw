@@ -1,4 +1,4 @@
-/// <reference types="../../../CTAutocomplete" />
+/// <reference types="../../../../CTAutocomplete" />
 
 import {
     createImportRows,
@@ -11,32 +11,32 @@ import {
     setHousingUuid,
     setImportProgress,
     setKnowledgeRows,
-} from "../state";
+} from "../../state";
 import {
     clearQueue,
     getQueue,
     type QueueItem,
-} from "../state/queue";
-import { forEachCachedParse, getParseAt, parseImportJsonAt } from "../state/parses";
-import { buildCacheStatusRows } from "../../importCache/status";
+} from "../../state/queue";
+import { forEachCachedParse, getParseAt, parseImportJsonAt } from "../../state/parses";
+import { buildCacheStatusRows } from "../../../importCache/status";
 import {
     importSelectedImportables,
     orderImportablesForImportSession,
     type ImportSelection,
-} from "../../importables/importSession";
-import { exportImportable } from "../../importables/exports";
+} from "../../../importables/importSession";
+import { exportImportable } from "../../../importables/exports";
 import {
     captureFromHousing,
     type CaptureType,
-} from "../../exporter/captureFromHousing";
-import { importableIdentity } from "../../importCache/paths";
-import { trustPlanKey } from "../../importCache/trust";
-import { getCurrentHousingUuid } from "../../importCache/housingId";
-import { TaskManager } from "../../tasks/manager";
+} from "../../../exporter/captureFromHousing";
+import { importableIdentity } from "../../../importCache/paths";
+import { trustPlanKey } from "../../../importCache/trust";
+import { getCurrentHousingUuid } from "../../../importCache/housingId";
+import { TaskManager } from "../../../tasks/manager";
 import type { Action, Importable } from "htsw/types";
 import type { ParseResult } from "htsw";
-import { closeAllPopovers } from "../lib/popovers";
-import { htslFilenameForFunctionExport } from "../../exporter/paths";
+import { closeAllPopovers } from "../../lib/popovers";
+import { htslFilenameForFunctionExport } from "../../../exporter/paths";
 import {
     clearDiff,
     addDeleteOp,
@@ -48,17 +48,17 @@ import {
     setDiffPhase,
     setDiffSummary,
     setPlannedOp,
-} from "../state/diff";
-import { importableSourcePath } from "../state/importablePaths";
+} from "../../state/diff";
+import { importableSourcePath } from "../../state/importablePaths";
 import type {
     ActionDiffOperationPayload,
     ImportPreviewEventHandler,
     ImportPreviewEvent,
-} from "../../importer/importPreviewEvents";
-import { importProgressKey } from "../../importer/progress/keys";
-import { setImportRunning } from "../../importer/runtimeState";
-import { gmcOnImportStart, playImportSuccessSound } from "../../importer/sideEffects";
-import { resetStepGate } from "../../importer/stepGate";
+} from "../../../importer/importPreviewEvents";
+import { importProgressKey } from "../../../importer/progress/keys";
+import { setImportRunning } from "../../../importer/runtimeState";
+import { gmcOnImportStart, playImportSuccessSound } from "../../../importer/sideEffects";
+import { resetStepGate } from "../../../importer/stepGate";
 import {
     applyComplete,
     finalizeFromSource,
@@ -71,10 +71,10 @@ import {
     primeWithCache,
     resetPreview,
     setObservedTopLevel,
-} from "../state/importPreviewState";
-import { setFocusLineId } from "../state/codeViewState";
-import { readImportableCache } from "../../importCache/cache";
-import { ACTION_MAPPINGS } from "../../importer/fields/actionMappings";
+} from "../../state/importPreviewState";
+import { setFocusLineId } from "../../state/codeViewState";
+import { readImportableCache } from "../../../importCache/cache";
+import { ACTION_MAPPINGS } from "../../../importer/fields/actionMappings";
 
 export const CAPTURE_TYPES: CaptureType[] = ["FUNCTION", "MENU"];
 
@@ -165,117 +165,77 @@ function makeImportPreviewHandler(
         ? null
         : readImportableCache(housingUuid, importable.type, importableIdentity(importable));
     primeWithCache(sourcePath, cached === null ? null : cached.importable);
-    const renderPreviewEvent = (event: ImportPreviewEvent): void => {
-        switch (event.kind) {
-            case "progress":
-                return;
-            case "readStarted":
-                setDiffPhase(key, `Reading ${event.listPath}`);
-                return;
-            case "readCompleted":
-                setDiffPhase(key, `${event.observedCount} actions read`);
-                return;
-            case "hydrationStarted":
-                setDiffPhase(key, readingLabel(event.actionType));
-                return;
-            case "hydrationCompleted":
-                return;
-            case "diffComputed":
-                setDiffSummary(key, event.summary);
-                setDiffPhase(key, "Diff computed");
-                return;
-            case "operationPlanned":
-                setPlannedOp(
-                    key,
-                    event.path,
-                    event.op,
-                    operationLabel(event),
-                    operationDetail(event)
-                );
-                return;
-            case "extraActionPlanned":
-                addDeleteOp(
-                    key,
-                    event.observedEntryId,
-                    event.index,
-                    `Delete extra ${displayNameForActionType(event.actionType)}`,
-                    "delete unneeded action"
-                );
-                return;
-            case "match":
-                setDiffState(key, event.path, "match");
-                return;
-            case "operationStarted":
-                setDiffPhase(key, operationLabel(event));
-                setCurrent(key, event.path, operationLabel(event));
-                setPlannedOp(key, event.path, event.op, operationLabel(event), "");
-                setFocusLineId(
-                    sourcePath,
-                    previewLineIdForPath(sourcePath, event.path)
-                );
-                return;
-            case "operationCompleted":
-                setDiffState(key, event.path, event.finalState);
-                markCompleted(key, event.path);
-                setCurrent(key, null, "");
-                return;
-            case "extraActionDeleted":
-                markDeleteCompleted(key, event.observedEntryId);
-                return;
-            case "syncCompleted":
-                setCurrent(key, null, "");
-                setFocusLineId(sourcePath, null);
-                refreshKnowledgeRows();
-                return;
-            case "observedSnapshot":
-                setObservedTopLevel(sourcePath, event.actions);
-                return;
-            case "reading":
-                setCurrent(key, event.path, readingLabel(event.actionType));
-                setFocusLineId(
-                    sourcePath,
-                    previewLineIdForPath(sourcePath, event.path)
-                );
-                return;
-            case "clearReading":
-                setCurrent(key, null, "");
-                setFocusLineId(sourcePath, null);
-                return;
-            case "blockActionHeaderApplied":
-                markHeadApplied(sourcePath, event.path);
-                return;
-            case "plannedAdd":
-                markPlannedAdd(sourcePath, event.path, event.desired, event.toIndex);
-                return;
-            case "plannedEdit":
-                markPlannedEdit(
-                    sourcePath,
-                    event.path,
-                    event.observed,
-                    event.desired
-                );
-                return;
-            case "plannedDelete":
-                markPlannedDelete(sourcePath, event.path);
-                return;
-            case "plannedMove":
-                markPlannedMove(
-                    sourcePath,
-                    event.path,
-                    event.fromIndex,
-                    event.toIndex
-                );
-                return;
-            case "applyDone":
-                applyComplete(sourcePath, event.path, event.finalState, event.op);
-                return;
-            case "finalizeSource":
-                finalizeFromSource(sourcePath, event.actions);
-                return;
-        }
+    // Mapped type: one handler per event kind, parameter narrowed to the
+    // specific event shape. TS enforces exhaustiveness on the handlers
+    // object — adding a new event kind here surfaces as a typecheck error
+    // until the corresponding handler is filled in.
+    type Handlers = {
+        [E in ImportPreviewEvent as E["kind"]]: (event: E) => void;
+    };
+    const handlers: Handlers = {
+        progress: () => {},
+        readStarted: (e) => setDiffPhase(key, `Reading ${e.listPath}`),
+        readCompleted: (e) => setDiffPhase(key, `${e.observedCount} actions read`),
+        hydrationStarted: (e) => setDiffPhase(key, readingLabel(e.actionType)),
+        hydrationCompleted: () => {},
+        diffComputed: (e) => {
+            setDiffSummary(key, e.summary);
+            setDiffPhase(key, "Diff computed");
+        },
+        operationPlanned: (e) =>
+            setPlannedOp(key, e.path, e.op, operationLabel(e), operationDetail(e)),
+        extraActionPlanned: (e) =>
+            addDeleteOp(
+                key,
+                e.observedEntryId,
+                e.index,
+                `Delete extra ${displayNameForActionType(e.actionType)}`,
+                "delete unneeded action"
+            ),
+        match: (e) => setDiffState(key, e.path, "match"),
+        operationStarted: (e) => {
+            setDiffPhase(key, operationLabel(e));
+            setCurrent(key, e.path, operationLabel(e));
+            setPlannedOp(key, e.path, e.op, operationLabel(e), "");
+            setFocusLineId(sourcePath, previewLineIdForPath(sourcePath, e.path));
+        },
+        operationCompleted: (e) => {
+            setDiffState(key, e.path, e.finalState);
+            markCompleted(key, e.path);
+            setCurrent(key, null, "");
+        },
+        extraActionDeleted: (e) => markDeleteCompleted(key, e.observedEntryId),
+        syncCompleted: () => {
+            setCurrent(key, null, "");
+            setFocusLineId(sourcePath, null);
+            refreshKnowledgeRows();
+        },
+        observedSnapshot: (e) => setObservedTopLevel(sourcePath, e.actions),
+        reading: (e) => {
+            setCurrent(key, e.path, readingLabel(e.actionType));
+            setFocusLineId(sourcePath, previewLineIdForPath(sourcePath, e.path));
+        },
+        clearReading: () => {
+            setCurrent(key, null, "");
+            setFocusLineId(sourcePath, null);
+        },
+        blockActionHeaderApplied: (e) => markHeadApplied(sourcePath, e.path),
+        plannedAdd: (e) => markPlannedAdd(sourcePath, e.path, e.desired, e.toIndex),
+        plannedEdit: (e) =>
+            markPlannedEdit(sourcePath, e.path, e.observed, e.desired),
+        plannedDelete: (e) => markPlannedDelete(sourcePath, e.path),
+        plannedMove: (e) =>
+            markPlannedMove(sourcePath, e.path, e.fromIndex, e.toIndex),
+        applyDone: (e) => applyComplete(sourcePath, e.path, e.finalState, e.op),
+        finalizeSource: (e) => finalizeFromSource(sourcePath, e.actions),
     };
     return {
-        emit: renderPreviewEvent,
+        emit: (event) => {
+            // Cast: TS sees `handlers[event.kind]` as the union of all handler
+            // signatures (so its parameter is the intersection — `never`).
+            // We know the runtime kind matches the handler's narrowed type.
+            (handlers[event.kind] as (e: typeof event) => void)(event);
+        },
     };
 }
 

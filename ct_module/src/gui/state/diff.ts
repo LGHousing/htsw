@@ -1,7 +1,7 @@
 /// <reference types="../../../CTAutocomplete" />
 
 import { normalizeHtswPath } from "../lib/pathDisplay";
-import type { ActionPath, DiffOpKind, DiffSummary } from "../../importer/diffSink";
+import type { ActionPath, DiffOpKind, DiffSummary } from "../../importer/importPreviewEvents";
 
 /**
  * Diff state model for the right-panel HTSL animation.
@@ -53,10 +53,12 @@ export type DiffLineInfo = {
     completed?: boolean;
 };
 
-type DiffDeleteInfo = {
+export type DiffDeleteInfo = {
+    entryId: number;
     index: number;
     label: string;
     detail: string;
+    completed?: boolean;
 };
 
 const entries: Map<DiffKey, DiffEntry> = new Map();
@@ -137,13 +139,24 @@ export function setPlannedOp(
 
 export function addDeleteOp(
     key: DiffKey,
+    entryId: number,
     index: number,
     label: string,
     detail: string
 ): void {
     const e = ensureEntry(key);
-    e.deletes.push({ index, label, detail });
+    e.deletes.push({ entryId, index, label, detail });
     e.updatedAt = Date.now();
+}
+
+export function markDeleteCompleted(key: DiffKey, entryId: number): void {
+    const e = ensureEntry(key);
+    for (let i = 0; i < e.deletes.length; i++) {
+        if (e.deletes[i].entryId !== entryId) continue;
+        e.deletes[i] = { ...e.deletes[i], completed: true };
+        e.updatedAt = Date.now();
+        return;
+    }
 }
 
 export function markCompleted(key: DiffKey, actionPath: ActionPath): void {
@@ -168,20 +181,25 @@ export function setCurrent(
 export function clearDiff(key: DiffKey): void {
     entries.delete(key);
 }
+
+export function clearAllDiffs(): void {
+    entries.clear();
+}
+
 export const COLOR_BY_STATE: { [k in DiffState]: number } = {
     unknown: 0xff666666 | 0,
     match: 0xffe5e5e5 | 0,
-    edit: 0xffe5bc4b | 0,
-    delete: 0xffe85c5c | 0,
-    add: 0xff5cb85c | 0,
-    current: 0xff67a7e8 | 0,
+    edit: 0xffe3b341 | 0,
+    delete: 0xfff85149 | 0,
+    add: 0xff7ee787 | 0,
+    current: 0xff79b8ff | 0,
 };
 
 export const ROW_BG_BY_STATE: { [k in DiffState]: number | undefined } = {
     unknown: undefined,
     match: undefined,
-    edit: 0x40e5bc4b | 0,
-    delete: 0x40e85c5c | 0,
-    add: 0x405cb85c | 0,
-    current: 0x4067a7e8 | 0,
+    edit: 0x55403110 | 0,
+    delete: 0x55491212 | 0,
+    add: 0x55114a25 | 0,
+    current: 0x5018365d | 0,
 };

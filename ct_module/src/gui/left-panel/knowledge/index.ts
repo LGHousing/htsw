@@ -12,11 +12,11 @@ import {
 } from "../../state";
 import { STATUS_COLOR, STATUS_LABEL } from "../../knowledge-status";
 import { GLYPH_DOT } from "../../lib/theme";
-import { getCurrentHousingUuid } from "../../../knowledge/housingId";
-import { getAlias, listAliases } from "../../../knowledge/aliases";
+import { getCurrentHousingUuid } from "../../../importCache/housingId";
+import { getAlias, listAliases } from "../../../importCache/aliases";
 import { openAliasPopover } from "../../popovers/alias";
 import { TaskManager } from "../../../tasks/manager";
-import { KNOWLEDGE_ROOT } from "../../../knowledge/paths";
+import { IMPORT_CACHE_ROOT } from "../../../importCache/paths";
 import { javaType } from "../../lib/java";
 import {
     COLOR_BUTTON,
@@ -53,13 +53,13 @@ function shortUuid(uuid: string): string {
     return `${uuid.substring(0, 8)}…${uuid.substring(uuid.length - 6)}`;
 }
 
-/** Enumerate every UUID dir under the knowledge cache root. Best-effort:
+/** Enumerate every UUID dir under the import cache root. Best-effort:
  *  failures (missing dir, permissions) yield an empty list. */
 function listCachedHousingUuids(): string[] {
     try {
         const Paths = javaType("java.nio.file.Paths");
         const Files = javaType("java.nio.file.Files");
-        const root = Paths.get(String(KNOWLEDGE_ROOT));
+        const root = Paths.get(String(IMPORT_CACHE_ROOT));
         if (!Files.exists(root) || !Files.isDirectory(root)) return [];
         const stream = Files.newDirectoryStream(root);
         const out: string[] = [];

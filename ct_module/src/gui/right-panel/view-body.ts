@@ -2,7 +2,7 @@
 
 import type { Element } from "../lib/layout";
 import { getActivePath } from "../state/selection";
-import { CodeView } from "../code-view/CodeView";
+import { CodeView } from "../code-view/codeView";
 import { diffDecorator } from "../code-view/decorators";
 
 export function viewBody(): Element {
