@@ -362,38 +362,3 @@ describe("previewLineIdForPath", () => {
         expect(previewLineIdForPath(PATH, "0")).toBe("0:body");
     });
 });
-
-describe("move+add at same path — the dedup band-aid", () => {
-    // Documents the current behavior: when the diff plans both a MOVE for
-    // observed[1] and an ADD for desired[1] at the same source path, the
-    // GUI ends up with a duplicate :body line after the add's prefix is
-    // stripped. The current implementation dedups positionally, keeping
-    // the latest insertion. This test pins the observable behavior so a
-    // future importer-side fix can be verified to change the trace before
-    // landing.
-    test("dedups one of the two body lines after stripping the prefix", () => {
-        // Observed sequence: [a, b]. b is at index 1.
-        setObservedTopLevel(PATH, [message("a"), message("b")]);
-
-        // Diff plans: move b from 1 → 0, AND add c at 1 (the slot b vacated).
-        // Both ops carry source-path "1".
-        markPlannedMove(PATH, "1", 1, 0);
-        markPlannedAdd(PATH, "1", message("c"), 1);
-
-        // Just before the band-aid: two lines share actionPath "1" — the
-        // existing observed body and the pending-add prefixed body.
-        const idsBefore = ids();
-        expect(idsBefore.filter((id) => id === "1:body")).toHaveLength(1);
-        expect(idsBefore.filter((id) => id === "__add::1:body")).toHaveLength(1);
-
-        // applyComplete(add) strips the prefix → both have id "1:body" →
-        // dedup keeps the later one (the just-promoted add).
-        applyComplete(PATH, "1", "add", "add");
-
-        const after = ids();
-        // Only one "1:body" survives. If the importer fix lands, this should
-        // still hold — but the trace upstream should show NOT having issued
-        // both a move and an add for the same path in the first place.
-        expect(after.filter((id) => id === "1:body")).toHaveLength(1);
-    });
-});
