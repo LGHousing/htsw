@@ -22,29 +22,43 @@ export async function importImportableFunction(
     trustPlan?: ImportableTrustPlan,
     onActionListProgress?: (progress: ActionListProgress) => void
 ): Promise<void> {
-    await ensureReferencedImportablesExist(ctx, importable);
-    await ensureFunctionExists(ctx, importable.name);
+    const hasActions = importable.actions !== undefined && importable.actions.length > 0;
+    const hasSettings = importable.repeatTicks !== undefined || importable.icon !== undefined;
 
-    const actionsTrust = actionListTrustFor(trustPlan, "actions", importable.actions);
-    const actionsTrusted =
-        actionsTrust !== undefined && trustPlan?.trustedListPaths.has("actions");
-    if (!actionsTrusted) {
-        ctx.displayMessage(`&b&l[import] &r&bSyncing function: &f${importable.name} &7(${importable.actions.length} actions)`);
-        await syncActionList(ctx, importable.actions, {
-            itemRegistry,
-            trust: actionsTrust,
-            onProgress: onActionListProgress,
-        });
-    } else {
-        ctx.displayMessage(`&b&l[import] &r&7Function "${importable.name}" trusted, skipped.`);
-    }
+    if (hasActions) {
+        await ensureReferencedImportablesExist(ctx, importable);
+        await ensureFunctionExists(ctx, importable.name);
 
-    if (
-        (importable.repeatTicks || importable.icon) &&
-        !functionSettingsTrusted(importable, trustPlan)
-    ) {
+        const actionsTrust = actionListTrustFor(trustPlan, "actions", importable.actions!);
+        const actionsTrusted =
+            actionsTrust !== undefined && trustPlan?.trustedListPaths.has("actions");
+        if (!actionsTrusted) {
+            ctx.displayMessage(`&b&l[import] &r&bSyncing function: &f${importable.name} &7(${importable.actions!.length} actions)`);
+            await syncActionList(ctx, importable.actions!, {
+                itemRegistry,
+                trust: actionsTrust,
+                onProgress: onActionListProgress,
+            });
+        } else {
+            ctx.displayMessage(`&b&l[import] &r&7Function "${importable.name}" trusted, skipped.`);
+        }
+
+        if (hasSettings && !functionSettingsTrusted(importable, trustPlan)) {
+            await clickGoBack(ctx);
+            await openFunctionSettings(ctx, importable.name);
+            if (importable.icon) {
+                await setFunctionIconIfNeeded(ctx, importable.icon);
+            }
+            if (importable.repeatTicks) {
+                await setAutomaticExecutionTicksIfNeeded(ctx, importable.repeatTicks);
+            }
+            await clickGoBack(ctx);
+        }
+    } else if (hasSettings && !functionSettingsTrusted(importable, trustPlan)) {
+        await ensureFunctionExists(ctx, importable.name);
         await clickGoBack(ctx);
 
+        ctx.displayMessage(`&b&l[import] &r&bSetting function properties: &f${importable.name}`);
         await openFunctionSettings(ctx, importable.name);
         if (importable.icon) {
             await setFunctionIconIfNeeded(ctx, importable.icon);

@@ -189,7 +189,7 @@ export function estimateImportableCost(importable: Importable): number {
     if (importable.type === "FUNCTION") {
         return (
             COST.commandMenuWait +
-            actionListRoughBudget(importable.actions) +
+            actionListRoughBudget(importable.actions ?? []) +
             COST.knowledgeWrite
         );
     }
@@ -197,7 +197,7 @@ export function estimateImportableCost(importable: Importable): number {
         return (
             COST.commandMenuWait +
             COST.menuClickWait +
-            actionListRoughBudget(importable.actions) +
+            actionListRoughBudget(importable.actions ?? []) +
             COST.knowledgeWrite
         );
     }

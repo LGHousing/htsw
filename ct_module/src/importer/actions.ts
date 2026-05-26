@@ -75,6 +75,7 @@ import { setItemValue } from "./items";
 import type { ActionPath } from "./diffSink";
 import { getActiveDiffSink } from "./diffSink";
 import { resolveImportableItem } from "./resolveItem";
+import { removedFormatting } from "../utils/helpers";
 import { readActionList } from "./actions/readList";
 import { syncActionList } from "./actions/sync";
 import {
@@ -959,7 +960,18 @@ async function writePlaySound(ctx: TaskContext, action: ActionPlaySound): Promis
     const currentSound = readStringValue(ctx.getMenuItemSlot(soundLabel));
     if (currentSound !== action.sound) {
         await openSubmenu(ctx, soundLabel);
-        const customSoundSlot = await getSlotPaginate(ctx, "Custom Sound");
+        // When no custom sound is set the slot is called "Custom Sound".
+        // When one IS set, the slot takes the sound's name but keeps
+        // "Click to edit!" in its lore — match either in a single pass.
+        const customSoundSlot = await getSlotPaginate(ctx, (slot) => {
+            const item = slot.getItem();
+            if (removedFormatting(item.getName()).trim() === "Custom Sound") return true;
+            const lore = item.getLore();
+            for (let i = 0; i < lore.length; i++) {
+                if (removedFormatting(lore[i]).trim() === "Click to edit!") return true;
+            }
+            return false;
+        }, "Custom Sound");
         customSoundSlot.click();
         await enterValue(ctx, action.sound);
         await waitForMenu(ctx);

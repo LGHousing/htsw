@@ -690,7 +690,7 @@ function insertionIndexForPath(lines: PreviewLine[], actionPath: string): number
 function linesForImportable(importable: Importable): PreviewLine[] {
     const out: PreviewLine[] = [];
     if (importable.type === "FUNCTION" || importable.type === "EVENT") {
-        appendActions(out, importable.actions, undefined, 0);
+        appendActions(out, importable.actions ?? [], undefined, 0);
     } else if (importable.type === "REGION") {
         // For now we render the entry actions only. A future iteration
         // can add a divider header + exit actions.

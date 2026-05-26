@@ -1,4 +1,4 @@
-import type { Action, ImportableFunction } from "htsw/types";
+import type { Action, FunctionIcon, ImportableFunction } from "htsw/types";
 import * as htsw from "htsw";
 
 import { readActionList } from "../../importer/actions";
@@ -25,6 +25,7 @@ import {
     openFunctionEditor,
     openFunctionSettings,
     readAutomaticExecutionTicks,
+    readFunctionIcon,
 } from "./shared";
 
 export type ExportFunctionOptions = {
@@ -65,7 +66,7 @@ async function readFunction(
     ctx: TaskContext,
     name: string,
     itemCaptures: ItemCaptureRegistry
-): Promise<{ actions: Action[]; repeatTicks?: number }> {
+): Promise<{ actions: Action[]; repeatTicks?: number; icon?: FunctionIcon }> {
     if ((await openFunctionEditor(ctx, name)) === "missing") {
         throw new Error(`No function named "${name}" exists in this housing.`);
     }
@@ -90,8 +91,13 @@ async function readFunction(
     await openFunctionSettings(ctx, name);
 
     const repeatTicks = readAutomaticExecutionTicks(ctx);
+    const icon = readFunctionIcon(ctx);
     await clickGoBack(ctx);
-    return repeatTicks !== undefined ? { actions, repeatTicks } : { actions };
+    return {
+        actions,
+        ...(repeatTicks !== undefined ? { repeatTicks } : {}),
+        ...(icon !== undefined ? { icon } : {}),
+    };
 }
 
 /**
@@ -226,10 +232,12 @@ export async function exportFunctionWithSharedState(
     let exportError: unknown = null;
     let actions: Action[] = [];
     let repeatTicks: number | undefined;
+    let icon: FunctionIcon | undefined;
     try {
         const result = await readFunction(ctx, name, itemCaptures);
         actions = result.actions;
         repeatTicks = result.repeatTicks;
+        icon = result.icon;
     } catch (error) {
         exportError = error;
     }
@@ -240,6 +248,7 @@ export async function exportFunctionWithSharedState(
             name,
             actions,
             ...(repeatTicks !== undefined ? { repeatTicks } : {}),
+            ...(icon !== undefined ? { icon } : {}),
         };
 
         // Dump the read action tree to a debug file BEFORE we attempt
@@ -252,7 +261,7 @@ export async function exportFunctionWithSharedState(
             ensureParentDirs(dumpPath);
             FileLib.write(
                 dumpPath,
-                JSON.stringify({ name, repeatTicks, actions }, null, 2),
+                JSON.stringify({ name, repeatTicks, icon, actions }, null, 2),
                 true
             );
         } catch (_error) {
@@ -279,6 +288,7 @@ export async function exportFunctionWithSharedState(
             name,
             actions: htslReference,
             ...(repeatTicks !== undefined ? { repeatTicks } : {}),
+            ...(icon !== undefined ? { icon } : {}),
         });
 
         // Knowledge cache reflects what was just on the housing: exporter writer.

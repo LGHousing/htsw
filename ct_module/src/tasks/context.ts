@@ -10,7 +10,7 @@ import {
 import { waitFor } from "./specifics/waitFor";
 import { C01PacketChatMessage } from "../utils/packets";
 
-const COMMAND_INTERVAL_MS = 250;
+const COMMAND_INTERVAL_MS = 500;
 
 export default class TaskContext {
     private cancelled: boolean = false;
@@ -87,7 +87,7 @@ export default class TaskContext {
     public async withTimeout<T>(
         promise: Promise<T> | (() => Promise<T>),
         reason: string,
-        duration: number = 2000
+        duration: number = 4000
     ): Promise<T> {
         if (this.cancelled) {
             throw { __taskCancelled: true, reason: "Task cancelled" };

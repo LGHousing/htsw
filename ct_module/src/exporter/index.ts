@@ -4,6 +4,7 @@ import { getCurrentHousingUuid } from "../knowledge";
 import {
     defaultExportRoot,
     htslFilenameForFunctionExport,
+    readEventNamesFromImportJson,
     readFunctionNamesFromImportJson,
     resolveModuleRelativePath,
 } from "./paths";
@@ -120,8 +121,10 @@ function printExportHelp(): void {
     ChatLib.chat("&7  [path] may be a directory or a specific import.json.");
     ChatLib.chat("&f/export all function [path]");
     ChatLib.chat("&7  Exports every function in this housing in menu order.");
+    ChatLib.chat("&f/export all event [path]");
+    ChatLib.chat("&7  Exports every event in this housing's /eventactions menu.");
     ChatLib.chat("&f/export existing [path]");
-    ChatLib.chat("&7  Re-exports every function listed in the target import.json.");
+    ChatLib.chat("&7  Re-exports every function and event listed in the target import.json.");
     ChatLib.chat("&f/export menu <name> [path]");
     ChatLib.chat("&7  Reads a Hypixel menu and writes per-slot .snbt + import.json.");
     ChatLib.chat("&f/export stop");
@@ -176,15 +179,27 @@ function commandExport(args: string[]): void {
                 importJsonPath = `${rootDir}/import.json`;
             }
 
-            const names = readFunctionNamesFromImportJson(importJsonPath);
-            if (names.length === 0) {
+            const functionNames = readFunctionNamesFromImportJson(importJsonPath);
+            const eventNames = readEventNamesFromImportJson(importJsonPath);
+            if (functionNames.length === 0 && eventNames.length === 0) {
                 ctx.displayMessage(
-                    `&cNo functions[] entries found in ${importJsonPath}`
+                    `&cNo functions[] or events[] entries found in ${importJsonPath}`
                 );
                 return;
             }
+            const parts: string[] = [];
+            if (functionNames.length > 0) {
+                parts.push(
+                    `${functionNames.length} function${functionNames.length === 1 ? "" : "s"}`
+                );
+            }
+            if (eventNames.length > 0) {
+                parts.push(
+                    `${eventNames.length} event${eventNames.length === 1 ? "" : "s"}`
+                );
+            }
             ctx.displayMessage(
-                `&aRe-exporting ${names.length} function${names.length === 1 ? "" : "s"} listed in ${importJsonPath}`
+                `&aRe-exporting ${parts.join(" and ")} listed in ${importJsonPath}`
             );
 
             const tracePath = beginTraceRun({
@@ -195,11 +210,75 @@ function commandExport(args: string[]): void {
             let imported = 0;
             let failed = 0;
             try {
+                if (functionNames.length > 0) {
+                    await exportImportable(ctx, {
+                        type: "ALL_FUNCTIONS",
+                        importJsonPath,
+                        rootDir,
+                        names: functionNames,
+                    });
+                }
+                if (eventNames.length > 0) {
+                    await exportImportable(ctx, {
+                        type: "ALL_EVENTS",
+                        importJsonPath,
+                        rootDir,
+                        names: eventNames,
+                    });
+                }
+                imported = 1;
+            } catch (err) {
+                failed = 1;
+                throw err;
+            } finally {
+                setTraceImportable(null);
+                const written = endTraceRun({ imported, skipped: 0, failed });
+                if (written !== null && tracePath !== null) {
+                    ctx.displayMessage(`&7[trace] &fwrote ${written}`);
+                }
+            }
+        }).catch((err) => {
+            ChatLib.chat(`&cExport failed: ${err}`);
+        });
+        return;
+    }
+
+    if (tokens[0] === "all" && tokens[1] === "event") {
+        const pathParts = tokens.slice(2);
+        const rawPath = pathParts.length > 0 ? pathParts.join(" ") : "";
+        const explicitPath =
+            rawPath.length > 0 ? stripSurroundingQuotes(rawPath) : undefined;
+
+        TaskManager.run(async (ctx) => {
+            let rootDir: string;
+            let importJsonPath: string;
+            const explicitDestination = exportDestination(explicitPath);
+            if (explicitDestination !== null) {
+                rootDir = explicitDestination.rootDir;
+                importJsonPath = explicitDestination.importJsonPath;
+            } else {
+                const uuid = await getCurrentHousingUuid(ctx);
+                rootDir = defaultExportRoot(uuid);
+                importJsonPath = `${rootDir}/import.json`;
+            }
+
+            // Per-event trace tagging happens inside
+            // `exportEventWithSharedState` via `makeDiffSink`. The
+            // batch-level run begins untagged with queueSize 0 because
+            // we don't know the count until we open `/eventactions`.
+            const tracePath = beginTraceRun({
+                queueSize: 0,
+                sourcePath: importJsonPath,
+                trustMode: false,
+            });
+
+            let imported = 0;
+            let failed = 0;
+            try {
                 await exportImportable(ctx, {
-                    type: "ALL_FUNCTIONS",
+                    type: "ALL_EVENTS",
                     importJsonPath,
                     rootDir,
-                    names,
                 });
                 imported = 1;
             } catch (err) {

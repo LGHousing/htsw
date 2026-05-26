@@ -31,11 +31,15 @@ export {
 /** Cycle options shared by `CHANGE_VAR` (action) and `COMPARE_VAR` (condition). */
 export const VAR_HOLDER_OPTIONS = ["Player", "Global", "Team"] as const;
 
-export async function getSlotPaginate(ctx: TaskContext, name: string): Promise<ItemSlot> {
+export async function getSlotPaginate(
+    ctx: TaskContext,
+    check: string | ((slot: ItemSlot) => boolean),
+    label?: string,
+): Promise<ItemSlot> {
     await goToFirstPaginatedOptionPage(ctx);
 
     for (let page = 0; page < 100; page++) {
-        const slot = ctx.tryGetMenuItemSlot(name);
+        const slot = ctx.tryGetMenuItemSlot(check);
         if (slot !== null) return slot;
 
         const nextPageSlot = findPaginationControl(ctx, "next");
@@ -44,7 +48,8 @@ export async function getSlotPaginate(ctx: TaskContext, name: string): Promise<I
         await timedWaitForMenu(ctx, "pageTurnWait");
     }
 
-    throw new Error(`Could not find "${name}" on any page.`);
+    const errorLabel = typeof check === "string" ? check : (label ?? "matching slot");
+    throw new Error(`Could not find "${errorLabel}" on any page.`);
 }
 
 async function goToFirstPaginatedOptionPage(ctx: TaskContext): Promise<void> {

@@ -14,7 +14,17 @@ import { getTimingStats, resetTimingStats } from "./importer/progress/timing";
 import { startImport } from "./gui/right-panel/import-actions";
 import { makeImportJsonQueueItem } from "./gui/state/queue";
 import { isTraceEnabled, setTraceEnabled } from "./importer/traceLog";
-import { resolveModuleRelativePath } from "./exporter/paths";
+import {
+    defaultExportRoot,
+    resolveModuleRelativePath,
+    snbtFilenameForItemExport,
+} from "./exporter/paths";
+import { snbtFromItem } from "./importer/itemCapture";
+import { upsertImportableEntry } from "./exporter/importJsonWriter";
+import { ensureParentDirs } from "./utils/filesystem";
+import { getCurrentHousingUuid } from "./knowledge";
+import { getItemFromSnbt } from "./utils/nbt";
+import { C10PacketCreativeInventoryAction } from "./utils/packets";
 
 function printCommandError(sm: SourceMap, err: unknown): void {
     if (err instanceof Diagnostic) {
@@ -118,6 +128,16 @@ function commandHtsw(args: string[]) {
         return;
     }
 
+    if (args.length > 0 && args[0] === "saveitem") {
+        saveItem(args.slice(1));
+        return;
+    }
+
+    if (args.length > 0 && args[0] === "giveitem") {
+        giveItem(args.slice(1));
+        return;
+    }
+
     ChatLib.chat(`&7${chatSeparator()}`);
     const title = `&e&lHTSW &f&l${VERSION}`;
     ChatLib.chat(`${ChatLib.getCenteredText(title)}`);
@@ -127,6 +147,8 @@ function commandHtsw(args: string[]) {
     ChatLib.chat("&f/import &7- Import actions from HTSL files");
     ChatLib.chat("&f/simulator &7- Simulate actions from HTSL files");
     ChatLib.chat("&f/htsw knowledge &7- Inspect local import/export knowledge");
+    ChatLib.chat("&f/htsw saveitem <name> [path] &7- Save held item as .snbt");
+    ChatLib.chat("&f/htsw giveitem <path> &7- Spawn an item from a .snbt file");
     ChatLib.chat("&f/htsw eta &7- Show importer ETA timing samples");
     ChatLib.chat("&f/htsw packet-probe [seconds] &7- Safely log relevant packets");
     ChatLib.chat("&f/htsw gui &7- Open the in-game HTSW dashboard");
@@ -346,6 +368,126 @@ function probeItem() {
     }).catch((err) => {
         ChatLib.chat(`&c[probe] task failed: ${err}`);
     });
+}
+
+function saveItem(args: string[]): void {
+    if (args.length === 0) {
+        ChatLib.chat("&cUsage: /htsw saveitem <name> [path]");
+        ChatLib.chat("&7  Saves your held item as .snbt and adds it to import.json.");
+        ChatLib.chat("&7  [path] may be a directory or a specific import.json.");
+        return;
+    }
+
+    const name = stripSurroundingQuotes(args[0]);
+    const held = Player.getHeldItem();
+    if (held === null || held === undefined) {
+        ChatLib.chat("&c[htsw] You're not holding an item.");
+        return;
+    }
+
+    const snbt = snbtFromItem(held, { pretty: true });
+    if (snbt === null) {
+        ChatLib.chat("&c[htsw] Could not read NBT from held item.");
+        return;
+    }
+
+    const rawPath = args.length > 1
+        ? stripSurroundingQuotes(args.slice(1).join(" "))
+        : undefined;
+
+    if (rawPath !== undefined) {
+        const dest = resolveItemSavePath(rawPath);
+        writeSavedItem(name, snbt, dest.rootDir, dest.importJsonPath);
+    } else {
+        TaskManager.run(async (ctx) => {
+            const uuid = await getCurrentHousingUuid(ctx);
+            const rootDir = defaultExportRoot(uuid);
+            writeSavedItem(name, snbt, rootDir, `${rootDir}/import.json`);
+        }).catch((err) => {
+            ChatLib.chat(`&c[htsw] saveitem failed: ${err}`);
+        });
+    }
+}
+
+function resolveItemSavePath(rawPath: string): { rootDir: string; importJsonPath: string } {
+    let path = rawPath;
+    while (path.length > 0 && (path.charAt(path.length - 1) === "/" || path.charAt(path.length - 1) === "\\")) {
+        path = path.substring(0, path.length - 1);
+    }
+    path = resolveModuleRelativePath(path);
+    const norm = path.split("\\").join("/");
+    if (norm.length > 5 && norm.substring(norm.length - 5).toLowerCase() === ".json") {
+        const slash = norm.lastIndexOf("/");
+        return { rootDir: slash > 0 ? norm.substring(0, slash) : ".", importJsonPath: norm };
+    }
+    return { rootDir: norm, importJsonPath: `${norm}/import.json` };
+}
+
+function writeSavedItem(
+    name: string,
+    snbt: string,
+    rootDir: string,
+    importJsonPath: string
+): void {
+    const itemsRoot = `${rootDir}/items`;
+    const filename = snbtFilenameForItemExport(itemsRoot, name);
+    const snbtPath = `${itemsRoot}/${filename}`;
+    const snbtRef = `items/${filename}`;
+
+    ensureParentDirs(snbtPath);
+    FileLib.write(snbtPath, snbt, true);
+
+    upsertImportableEntry(importJsonPath, "items", { name, nbt: snbtRef });
+
+    ChatLib.chat(`&a[htsw] Saved item '${name}'`);
+    ChatLib.chat(`&7  -> ${snbtPath}`);
+    ChatLib.chat(`&7  -> ${importJsonPath}`);
+}
+
+function giveItem(args: string[]): void {
+    if (args.length === 0) {
+        ChatLib.chat("&cUsage: /htsw giveitem <path>");
+        ChatLib.chat("&7  Spawns an item from a .snbt file into your inventory.");
+        return;
+    }
+
+    // @ts-ignore field_71075_bZ = PlayerCapabilities, field_75098_d = isCreativeMode
+    if (Player.asPlayerMP().player.field_71075_bZ.field_75098_d === false) {
+        ChatLib.chat("&c[htsw] Must be in creative mode to give an item.");
+        return;
+    }
+
+    let path = resolveModuleRelativePath(stripSurroundingQuotes(args.join(" ")));
+    if (!path.endsWith(".snbt")) path += ".snbt";
+
+    if (!FileLib.exists(path)) {
+        ChatLib.chat(`&c[htsw] File not found: ${path}`);
+        return;
+    }
+
+    const snbt = String(FileLib.read(path) ?? "");
+    if (snbt.trim() === "") {
+        ChatLib.chat(`&c[htsw] File is empty: ${path}`);
+        return;
+    }
+
+    const item = getItemFromSnbt(snbt);
+    const inv = Player.getInventory()!;
+    let slot = -1;
+    for (let i = 0; i < 36; i++) {
+        if (inv.getStackInSlot(i) === null) {
+            slot = i;
+            break;
+        }
+    }
+    if (slot === -1) {
+        ChatLib.chat("&c[htsw] No empty inventory slot.");
+        return;
+    }
+
+    const packetSlot = slot < 9 ? slot + 36 : slot;
+    Client.sendPacket(new C10PacketCreativeInventoryAction(packetSlot, item.getItemStack()));
+    ChatLib.chat(`&a[htsw] Gave item from ${path}`);
 }
 
 function commandImport(args: string[]) {

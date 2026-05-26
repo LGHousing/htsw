@@ -11,9 +11,12 @@ import { parseLoreKeyValueLine } from "../../importer/loreParsing";
 import TaskContext from "../../tasks/context";
 import { MouseButton } from "../../tasks/specifics/slots";
 import { removedFormatting, unique } from "../../utils/helpers";
+import { S30PacketWindowItems } from "../../utils/packets";
+import { lastWindowID___FromS30PacketWindowItemsPacketReceived__ThisIsNecessary_sadly_itIncrementsFrom1To100ThenItGoesBackAround_ButSometimesItSkipsOneOrMoreWeAreNotSureMaybeMore_AndItWillNeverBeZero } from "../../tasks/specifics/waitFor";
 
 const McItem = Java.type("net.minecraft.item.Item");
 const ItemStack = Java.type("net.minecraft.item.ItemStack");
+const NBTTagCompound = Java.type("net.minecraft.nbt.NBTTagCompound");
 
 /**
  * Strip Hypixel's `(#NNNN)` per-housing function id off a function-list
@@ -47,20 +50,36 @@ export async function openFunctionEditor(
 ): Promise<"opened" | "missing"> {
     await ctx.runCommand(`/function edit ${name}`);
 
+    const menuWaiter = ctx.waitFor("packetReceived", (packet) => {
+        if (!(packet instanceof S30PacketWindowItems)) return false;
+        const windowID = packet.func_148911_c();
+        return (
+            windowID !== 0 &&
+            windowID !==
+                lastWindowID___FromS30PacketWindowItemsPacketReceived__ThisIsNecessary_sadly_itIncrementsFrom1To100ThenItGoesBackAround_ButSometimesItSkipsOneOrMoreWeAreNotSureMaybeMore_AndItWillNeverBeZero
+        );
+    });
+    const messageWaiter = ctx.waitFor(
+        "message",
+        (message) =>
+            removedFormatting(message) ===
+            "Could not find a function with that name!"
+    );
+
     const exists = await ctx.withTimeout(
         Promise.race([
-            timedWaitForMenu(ctx, "commandMenuWait").then(() => true),
-            ctx
-                .waitFor(
-                    "message",
-                    (message) =>
-                        removedFormatting(message) ===
-                        "Could not find a function with that name!"
-                )
-                .then(() => false),
+            menuWaiter.then(() => true),
+            messageWaiter.then(() => false),
         ]),
         "Waiting for function to open"
     );
+
+    if (exists) {
+        messageWaiter.cleanupWaiter?.();
+        await ctx.waitFor("tick");
+    } else {
+        menuWaiter.cleanupWaiter?.();
+    }
 
     return exists ? "opened" : "missing";
 }
@@ -88,6 +107,7 @@ export async function ensureFunctionNamesExist(
     for (let i = 0; i < names.length; i++) {
         const name = names[i];
         ctx.displayMessage(`&7  [shell ${i + 1}/${names.length}] ${String(name)}`);
+        if (i > 0) await ctx.sleep(300);
         await ensureFunctionExists(ctx, name);
         await clickGoBack(ctx);
     }
@@ -134,10 +154,36 @@ export async function setAutomaticExecutionTicksIfNeeded(
     await setNumberValue(ctx, autoExecSlot, repeatTicks);
 }
 
+export function readFunctionIcon(ctx: TaskContext): FunctionIcon | undefined {
+    const iconSlot = ctx.tryGetItemSlot("Edit Icon");
+    if (iconSlot === null) return undefined;
+
+    const stack = iconSlot.getItem().getItemStack();
+    if (stack === null || stack === undefined) return undefined;
+
+    const compound = new NBTTagCompound();
+    stack.func_77955_b(compound);
+    const id: string = compound.func_74779_i("id");
+    const count: number = compound.func_74771_c("Count");
+
+    if (!id) return undefined;
+
+    return count > 1 ? { item: id, count } : { item: id };
+}
+
 export async function setFunctionIconIfNeeded(
     ctx: TaskContext,
     icon: FunctionIcon
 ): Promise<void> {
+    const current = readFunctionIcon(ctx);
+    if (
+        current !== undefined &&
+        current.item === icon.item &&
+        (current.count ?? 1) === (icon.count ?? 1)
+    ) {
+        return;
+    }
+
     await setItemValue(ctx, "Edit Icon", createPlainIconItem(icon));
 }
 

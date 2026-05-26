@@ -5,7 +5,7 @@ import type { Bounds, Event, MenuSlot } from "./types";
 export type ImportableFunction = {
     type: "FUNCTION";
     name: string;
-    actions: Action[];
+    actions?: Action[];
     repeatTicks?: number;
     icon?: FunctionIcon;
 };

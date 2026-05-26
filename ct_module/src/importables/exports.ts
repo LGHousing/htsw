@@ -1,6 +1,7 @@
 import TaskContext from "../tasks/context";
 import { exportFunction } from "./functions/export";
 import { exportAllFunctions } from "./functions/exportAll";
+import { exportAllEvents } from "./events/exportAll";
 import { exportMenu } from "./menus/export";
 
 export type ExportRequest =
@@ -23,6 +24,13 @@ export type ExportRequest =
           importJsonPath: string;
           rootDir: string;
           /** If set, export exactly these names instead of walking Housing's function list. */
+          names?: readonly string[];
+      }
+    | {
+          type: "ALL_EVENTS";
+          importJsonPath: string;
+          rootDir: string;
+          /** If set, export exactly these event names instead of walking Housing's `/eventactions` menu. */
           names?: readonly string[];
       };
 
@@ -55,6 +63,14 @@ export async function exportImportable(
     }
     if (request.type === "ALL_FUNCTIONS") {
         await exportAllFunctions(ctx, {
+            importJsonPath: request.importJsonPath,
+            rootDir: request.rootDir,
+            ...(request.names !== undefined ? { names: request.names } : {}),
+        });
+        return;
+    }
+    if (request.type === "ALL_EVENTS") {
+        await exportAllEvents(ctx, {
             importJsonPath: request.importJsonPath,
             rootDir: request.rootDir,
             ...(request.names !== undefined ? { names: request.names } : {}),

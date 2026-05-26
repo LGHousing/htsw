@@ -7,7 +7,7 @@ export function getActions(gcx: GlobalCtxt): Action[] {
 
     for (const importable of gcx.importables) {
         if (importable.type === "FUNCTION") {
-            res.push(...importable.actions);
+            res.push(...importable.actions ?? []);
         }
 
         else if (importable.type === "REGION") {

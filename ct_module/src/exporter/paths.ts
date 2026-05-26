@@ -54,12 +54,17 @@ export function canonicalSlug(identity: string): string {
 }
 
 /**
- * Read the `functions[].name` array from an `import.json` in declaration
- * order. Returns `[]` if the file doesn't exist, is empty, isn't valid
- * JSON(C), or has no `functions` section. Used by `/export import.json`
- * to drive a re-export pass over a known subset of functions.
+ * Read the identity field of every entry in `<section>[]` from an
+ * `import.json` in declaration order. Returns `[]` if the file doesn't
+ * exist, is empty, isn't valid JSON(C), or has no matching section.
+ * Used by `/export existing` to drive a re-export pass over a known
+ * subset of importables.
  */
-export function readFunctionNamesFromImportJson(importJsonPath: string): string[] {
+function readIdentitiesFromImportJson(
+    importJsonPath: string,
+    section: string,
+    identityField: string
+): string[] {
     const names: string[] = [];
     if (!FileLib.exists(importJsonPath)) return names;
 
@@ -69,12 +74,12 @@ export function readFunctionNamesFromImportJson(importJsonPath: string): string[
     const tree = json.parseTree(text);
     if (!tree) return names;
 
-    const sectionNode = json.findNodeAtLocation(tree, ["functions"]);
+    const sectionNode = json.findNodeAtLocation(tree, [section]);
     if (!sectionNode || sectionNode.type !== "array") return names;
 
     const items = sectionNode.children ?? [];
     for (let i = 0; i < items.length; i++) {
-        const nameNode = json.findNodeAtLocation(items[i], ["name"]);
+        const nameNode = json.findNodeAtLocation(items[i], [identityField]);
         if (nameNode && nameNode.type === "string") {
             names.push(String(nameNode.value));
         }
@@ -82,8 +87,56 @@ export function readFunctionNamesFromImportJson(importJsonPath: string): string[
     return names;
 }
 
-function readFunctionActionReferences(
+export function readFunctionNamesFromImportJson(importJsonPath: string): string[] {
+    return readIdentitiesFromImportJson(importJsonPath, "functions", "name");
+}
+
+export function readEventNamesFromImportJson(importJsonPath: string): string[] {
+    return readIdentitiesFromImportJson(importJsonPath, "events", "event");
+}
+
+/**
+ * Look up the `nbt` reference path for an item by its `name` in
+ * `import.json`'s `items[]` section. Returns the raw string (e.g.
+ * `"items/my_sword.snbt"`) or null if not found.
+ */
+export function readItemNbtRefFromImportJson(
     importJsonPath: string,
+    itemName: string
+): string | null {
+    if (!FileLib.exists(importJsonPath)) return null;
+
+    const text = String(FileLib.read(importJsonPath) ?? "");
+    if (text.trim() === "") return null;
+
+    const tree = json.parseTree(text);
+    if (!tree) return null;
+
+    const sectionNode = json.findNodeAtLocation(tree, ["items"]);
+    if (!sectionNode || sectionNode.type !== "array") return null;
+
+    const items = sectionNode.children ?? [];
+    for (let i = 0; i < items.length; i++) {
+        const nameNode = json.findNodeAtLocation(items[i], ["name"]);
+        if (!nameNode || nameNode.type !== "string" || nameNode.value !== itemName) continue;
+        const nbtNode = json.findNodeAtLocation(items[i], ["nbt"]);
+        if (nbtNode && nbtNode.type === "string") {
+            return String(nbtNode.value);
+        }
+    }
+    return null;
+}
+
+/**
+ * Walk a `<section>[]` array in `import.json` looking for `actions`
+ * references. Returns the reference associated with `identity` (if any)
+ * plus the set of references used by every other entry. Used to pick
+ * collision-free `.htsl` filenames on export.
+ */
+function readActionReferencesForSection(
+    importJsonPath: string,
+    section: string,
+    identityField: string,
     identity: string
 ): { current: string | null; usedByOthers: Set<string> } {
     const result = { current: null as string | null, usedByOthers: new Set<string>() };
@@ -95,13 +148,13 @@ function readFunctionActionReferences(
     const tree = json.parseTree(text);
     if (!tree) return result;
 
-    const sectionNode = json.findNodeAtLocation(tree, ["functions"]);
+    const sectionNode = json.findNodeAtLocation(tree, [section]);
     if (!sectionNode || sectionNode.type !== "array") return result;
 
     const items = sectionNode.children ?? [];
     for (let i = 0; i < items.length; i++) {
         const item = items[i];
-        const nameNode = json.findNodeAtLocation(item, ["name"]);
+        const nameNode = json.findNodeAtLocation(item, [identityField]);
         const actionsNode = json.findNodeAtLocation(item, ["actions"]);
         if (
             !nameNode ||
@@ -123,11 +176,11 @@ function readFunctionActionReferences(
     return result;
 }
 
-export function htslFilenameForFunctionExport(
-    importJsonPath: string,
-    identity: string
+function pickHtslFilename(
+    refs: { current: string | null; usedByOthers: Set<string> },
+    identity: string,
+    label: string
 ): string {
-    const refs = readFunctionActionReferences(importJsonPath, identity);
     if (refs.current !== null) {
         const sanitized = sanitizeRelativeReference(refs.current);
         if (sanitized !== null) return sanitized;
@@ -153,7 +206,23 @@ export function htslFilenameForFunctionExport(
         if (!usedLower.has(candidate.toLowerCase())) return candidate;
     }
 
-    throw new Error(`Could not find an unused filename for function "${identity}".`);
+    throw new Error(`Could not find an unused filename for ${label} "${identity}".`);
+}
+
+export function htslFilenameForFunctionExport(
+    importJsonPath: string,
+    identity: string
+): string {
+    const refs = readActionReferencesForSection(importJsonPath, "functions", "name", identity);
+    return pickHtslFilename(refs, identity, "function");
+}
+
+export function htslFilenameForEventExport(
+    importJsonPath: string,
+    identity: string
+): string {
+    const refs = readActionReferencesForSection(importJsonPath, "events", "event", identity);
+    return pickHtslFilename(refs, identity, "event");
 }
 
 /**
