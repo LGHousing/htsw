@@ -10,13 +10,15 @@ import type {
     UiFieldKind,
 } from "../types";
 import type { PhaseUnits } from "./types";
-import { currentActionListFromActions, diffActionList } from "../actions/diff";
+export type { PhaseUnits };
+import { baselineActionListFromActions, diffActionList } from "../actions/diff";
 import {
-    currentConditionListFromConditions,
+    baselineConditionListFromConditions,
     diffConditionList,
 } from "../conditions/diff";
 import { getActionScalarLoreFields } from "../fields/actionMappings";
 import { scalarFieldDiffers } from "../fields/compare";
+import { countReferencedShells } from "../../importables/references";
 
 /**
  * Per-op-kind costs in abstract units. Calibrated against
@@ -76,7 +78,9 @@ function pageTurnUnitsForListItemCount(count: number): number {
 function fieldKindEditUnits(kind: UiFieldKind): number {
     if (kind === "boolean") return COST.menuClickWait;
     if (kind === "cycle") return COST.menuClickWait * 2;
-    if (kind === "select") return COST.menuClickWait + COST.menuClickWait;
+    if (kind === "select" || kind === "location") {
+        return COST.menuClickWait + COST.menuClickWait;
+    }
     if (kind === "item") return COST.itemSelect;
     if (kind === "value") return COST.chatInput;
     if (kind === "nestedList") return COST.menuClickWait;
@@ -86,7 +90,7 @@ function fieldKindEditUnits(kind: UiFieldKind): number {
 export function scalarFieldEditUnitsForOp(
     op: Extract<ActionListOperation, { kind: "edit" }>
 ): number {
-    const action = op.currentAction;
+    const action = op.baselineAction;
     if (op.noteOnly) return 0;
 
     let total = 0;
@@ -191,7 +195,7 @@ export function conditionOperationUnits(
         return total;
     }
     let total = op.noteOnly ? noteEditUnits() : conditionRoughUnits();
-    if (op.desired.note !== op.currentCondition.note) total += noteEditUnits();
+    if (op.desired.note !== op.baselineCondition.note) total += noteEditUnits();
     return total;
 }
 
@@ -293,7 +297,7 @@ export function actionOperationApplyUnits(
     let total = op.noteOnly
         ? noteEditUnits()
         : COST.menuClickWait + editUnitsForFields(op) + COST.goBackWait;
-    if (op.desired.note !== op.currentAction.note) total += noteEditUnits();
+    if (op.desired.note !== op.baselineAction.note) total += noteEditUnits();
     return total;
 }
 
@@ -308,21 +312,40 @@ export function actionOperationApplyUnits(
  * work via the cache-aware diff recursing one level into
  * `ifActions` / `elseActions` / `actions` (see `editUnitsWithNested`).
  */
-export type ListPhaseUnits = {
-    readPart: number;
-    hydratePart: number;
-    applyPart: number;
-    total: number;
-};
+/** Sum of the four phase fields. Computed on demand — no cached `total`. */
+export function phaseUnitsTotal(p: PhaseUnits): number {
+    return p.setup + p.reading + p.hydrating + p.applying;
+}
 
-export type ActionListPhaseUnits = ListPhaseUnits;
+/**
+ * Cost of the per-importable setup work that happens BEFORE `syncActionList`
+ * is called: shell-creating any referenced functions/menus/regions, then
+ * opening the housing editor for this importable (e.g. `/function edit X`,
+ * `/region edit X`, item inject + `/edit`, ...). Tracked as its own phase
+ * so its wall-clock time doesn't get attributed to "reading" and inflate
+ * observed ms/unit.
+ */
+export function setupUnitsForImportable(importable: Importable): number {
+    const refShellUnits = countReferencedShells(importable) * COST.commandMenuWait;
+    return refShellUnits + ownSetupUnits(importable);
+}
 
-export function phaseUnitsFromParts(b: ListPhaseUnits): PhaseUnits {
-    return {
-        reading: b.readPart,
-        hydrating: b.hydratePart,
-        applying: b.applyPart,
-    };
+function ownSetupUnits(importable: Importable): number {
+    if (importable.type === "FUNCTION") return COST.commandMenuWait;
+    if (importable.type === "EVENT") return COST.commandMenuWait + COST.menuClickWait;
+    if (importable.type === "REGION") {
+        return COST.commandMessageWait * 3 + COST.commandMenuWait;
+    }
+    if (importable.type === "ITEM") {
+        const hasActions =
+            (importable.leftClickActions?.length ?? 0) > 0 ||
+            (importable.rightClickActions?.length ?? 0) > 0;
+        return hasActions
+            ? COST.itemInject + COST.commandMenuWait + COST.menuClickWait
+            : COST.itemInject;
+    }
+    if (importable.type === "MENU") return COST.commandMenuWait;
+    return COST.commandMenuWait;
 }
 
 function topLevelHydrateUnits(desired: readonly Action[]): number {
@@ -363,40 +386,42 @@ function topLevelHydrateUnits(desired: readonly Action[]): number {
 export function estimateActionListPhaseUnits(
     desired: readonly Action[],
     baselineCurrent?: readonly Action[]
-): ActionListPhaseUnits {
+): PhaseUnits {
     if (baselineCurrent === undefined) {
-        const applyPart = actionListRoughApplyUnits(desired);
-        return { readPart: 0, hydratePart: 0, applyPart, total: applyPart };
+        return {
+            setup: 0,
+            reading: 0,
+            hydrating: 0,
+            applying: actionListRoughApplyUnits(desired),
+        };
     }
-    const readPart = pageTurnUnitsForListItemCount(baselineCurrent.length);
-    const hydratePart = topLevelHydrateUnits(baselineCurrent);
-    const applyPart = baselineAwareApplyUnits(desired, baselineCurrent);
     return {
-        readPart,
-        hydratePart,
-        applyPart,
-        total: readPart + hydratePart + applyPart,
+        setup: 0,
+        reading: pageTurnUnitsForListItemCount(baselineCurrent.length),
+        hydrating: topLevelHydrateUnits(baselineCurrent),
+        applying: baselineAwareApplyUnits(desired, baselineCurrent),
     };
 }
 
 export function estimateConditionListPhaseUnits(
     desired: readonly Condition[],
     baselineCurrent?: ReadonlyArray<Condition | null>
-): ListPhaseUnits {
+): PhaseUnits {
     if (baselineCurrent === undefined) {
-        const applyPart = conditionListRoughUnits(desired);
-        return { readPart: 0, hydratePart: 0, applyPart, total: applyPart };
+        return {
+            setup: 0,
+            reading: 0,
+            hydrating: 0,
+            applying: conditionListRoughUnits(desired),
+        };
     }
-
-    const current = currentConditionListFromConditions(baselineCurrent);
+    const current = baselineConditionListFromConditions(baselineCurrent);
     const diff = diffConditionList(current, desired as Condition[]);
-    const readPart = conditionListReadUnits(baselineCurrent.length);
-    const applyPart = conditionListDiffApplyUnits(diff);
     return {
-        readPart,
-        hydratePart: 0,
-        applyPart,
-        total: readPart + applyPart,
+        setup: 0,
+        reading: conditionListReadUnits(baselineCurrent.length),
+        hydrating: 0,
+        applying: conditionListDiffApplyUnits(diff),
     };
 }
 
@@ -412,7 +437,7 @@ function baselineAwareApplyUnits(
     desired: readonly Action[],
     baseline: readonly Action[]
 ): number {
-    const current = currentActionListFromActions(baseline);
+    const current = baselineActionListFromActions(baseline);
     const diff = diffActionList(current, desired as Action[]);
     return actionListDiffApplyUnits(diff, editUnitsWithNested, desired.length);
 }
@@ -436,7 +461,7 @@ function baselineAwareApplyUnits(
  * CONDITIONAL/RANDOM can't appear inside another CONDITIONAL/RANDOM
  * body bounds the recursion at one level.
  */
-function editUnitsWithNested(op: Extract<ActionListOperation, { kind: "edit" }>): number {
+export function editUnitsWithNested(op: Extract<ActionListOperation, { kind: "edit" }>): number {
     let total = scalarFieldEditUnitsForOp(op);
 
     for (let i = 0; i < op.nestedDiffs.length; i++) {
@@ -444,16 +469,65 @@ function editUnitsWithNested(op: Extract<ActionListOperation, { kind: "edit" }>)
         if (nested.diff.operations.length === 0) continue;
         total += COST.menuClickWait + COST.goBackWait;
         if (nested.prop === "conditions") {
-            total += conditionListDiffApplyUnits(nested.diff);
+            const baseline = nestedConditionBaseline(op.baselineAction);
+            const desired = nestedConditionDesired(op.desired);
+            total += phaseUnitsTotal(estimateConditionListPhaseUnits(desired, baseline));
         } else {
-            total += actionListDiffApplyUnits(
-                nested.diff,
-                editUnitsWithNested,
-                nested.diff.desiredLength
-            );
+            const baseline = nestedActionBaseline(op.baselineAction, nested.prop);
+            const desired = nestedActionDesired(op.desired, nested.prop);
+            total += phaseUnitsTotal(estimateActionListPhaseUnits(desired, baseline));
         }
     }
     return total;
+}
+
+function nestedConditionBaseline(
+    action: ObservedActionSlot["action"] | Action
+): ReadonlyArray<Condition | null> | undefined {
+    if (action === null || action.type !== "CONDITIONAL") return undefined;
+    return action.conditions;
+}
+
+function nestedConditionDesired(action: Action): Condition[] {
+    return action.type === "CONDITIONAL" ? action.conditions : [];
+}
+
+function nestedActionBaseline(
+    action: ObservedActionSlot["action"] | Action,
+    prop: "ifActions" | "elseActions" | "actions"
+): readonly Action[] | undefined {
+    if (action === null) return undefined;
+    if (action.type === "CONDITIONAL") {
+        const value = prop === "ifActions" ? action.ifActions : action.elseActions;
+        return observedActionsAsBaseline(value);
+    }
+    if (action.type === "RANDOM" && prop === "actions") {
+        return observedActionsAsBaseline(action.actions);
+    }
+    return undefined;
+}
+
+function nestedActionDesired(
+    action: Action,
+    prop: "ifActions" | "elseActions" | "actions"
+): readonly Action[] {
+    if (action.type === "CONDITIONAL") {
+        return prop === "ifActions" ? action.ifActions : action.elseActions;
+    }
+    if (action.type === "RANDOM" && prop === "actions") return action.actions;
+    return [];
+}
+
+function observedActionsAsBaseline(
+    actions: ReadonlyArray<ObservedActionSlot["action"] | Action> | undefined
+): readonly Action[] | undefined {
+    if (actions === undefined) return undefined;
+    const out: Action[] = [];
+    for (let i = 0; i < actions.length; i++) {
+        const action = actions[i];
+        if (action !== null) out.push(action as Action);
+    }
+    return out;
 }
 
 /**
@@ -465,7 +539,7 @@ function actionListCost(
     desired: readonly Action[],
     baselineCurrent: readonly Action[] | undefined
 ): number {
-    return estimateActionListPhaseUnits(desired, baselineCurrent).total;
+    return phaseUnitsTotal(estimateActionListPhaseUnits(desired, baselineCurrent));
 }
 
 /**

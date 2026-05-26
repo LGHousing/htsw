@@ -1,8 +1,9 @@
 import type { Importable } from "htsw/types";
 
-export type ProgressPhase = "reading" | "hydrating" | "applying";
+export type ProgressPhase = "setup" | "reading" | "hydrating" | "applying";
 
 export type PhaseUnits = {
+    setup: number;
     reading: number;
     hydrating: number;
     applying: number;
@@ -15,52 +16,73 @@ export type ImportRunRowStatus =
     | "skipped"
     | "failed";
 
-export type ActionListProgressFields = {
+export type SyncProgress = {
+    completedUnits: number;
+    totalUnits: number;
+    parent: {
+        completedUnits: number;
+        totalUnits: number;
+    } | null;
+};
+
+export type ProgressPayload = {
     phase: ProgressPhase;
-    phaseLabel: string;
-    unitCompleted: number;
-    unitTotal: number;
-    parentUnitCompleted?: number;
-    parentUnitTotal?: number;
-    parentPhaseLabel?: string;
     completedUnits: number;
     totalUnits: number;
     phaseUnits: PhaseUnits;
+    sync: SyncProgress;
 };
 
-export type ImportProgressRow = {
+export type ImportableEntry = {
     key: string;
     status: ImportRunRowStatus;
-    units: number;
+    totalUnits: number;
 };
 
-export type ImportProgressCurrent = {
+export type ImportProgressActive = {
     key: string;
     type: Importable["type"];
     identity: string;
-    status: Exclude<ImportRunRowStatus, "queued">;
     phase: ProgressPhase | "done";
-    label: string;
-    phaseLabel: string;
     completedUnits: number;
     totalUnits: number;
     phaseUnits: PhaseUnits;
-    unitCompleted?: number;
-    unitTotal?: number;
-    parentUnitCompleted?: number;
-    parentUnitTotal?: number;
-    parentPhaseLabel?: string;
+    sync: SyncProgress | null;
 };
 
 export type ImportProgress = {
-    completedImportables: number;
-    totalImportables: number;
     completedUnits: number;
     totalUnits: number;
-    current: ImportProgressCurrent | null;
-    rows: readonly ImportProgressRow[];
-    failed: number;
+    active: ImportProgressActive | null;
+    rows: readonly ImportableEntry[];
 };
 
+/**
+ * True when the running total is locked — no future event can widen it.
+ *
+ * Setup/reading/hydrating phases can still discover work (longer lists
+ * than predicted, deeper nested bodies, more pages), so the total may
+ * grow mid-run. The applying phase runs against a computed diff with a
+ * fixed op count: the total is known, and the bar/ETA can be displayed
+ * as exact rather than approximate.
+ */
+export function isImportTotalLocked(progress: ImportProgress): boolean {
+    if (progress.active === null) return true;
+    return progress.active.phase === "applying" || progress.active.phase === "done";
+}
+
+export function countImportablesByStatus(
+    progress: ImportProgress
+): { completed: number; failed: number; total: number } {
+    let completed = 0;
+    let failed = 0;
+    for (let i = 0; i < progress.rows.length; i++) {
+        const s = progress.rows[i].status;
+        if (s === "imported" || s === "skipped") completed++;
+        else if (s === "failed") failed++;
+    }
+    return { completed, failed, total: progress.rows.length };
+}
+
 /** Callback shape that `readActionList` / `applyActionListDiff` invoke. */
-export type ActionListProgressHandler = (progress: ActionListProgressFields) => void;
+export type ProgressHandler = (progress: ProgressPayload) => void;

@@ -6,6 +6,7 @@ export type UiFieldKind =
     | "value"
     | "cycle"
     | "select"
+    | "location"
     | "item"
     | "nestedList";
 
@@ -122,7 +123,7 @@ export type ActionListOperation =
           entryId: number;
           fromIndex: number;
           desiredIndex: number;
-          currentAction: Observed<Action>;
+          baselineAction: Observed<Action>;
           desired: Action;
           noteOnly: boolean;
           noteDiffers: boolean;
@@ -133,7 +134,7 @@ export type ActionListOperation =
           kind: "delete";
           entryId: number;
           fromIndex: number;
-          currentAction: Observed<Action> | null;
+          baselineAction: Observed<Action> | null;
       };
 
 export type ActionListDiff = {
@@ -152,7 +153,7 @@ export type ConditionListOperation =
     | {
           kind: "edit";
           entryId: number;
-          currentCondition: Condition;
+          baselineCondition: Condition;
           desired: Condition;
           noteOnly: boolean;
       }
@@ -160,7 +161,7 @@ export type ConditionListOperation =
     | {
           kind: "delete";
           entryId: number;
-          currentCondition: Condition | null;
+          baselineCondition: Condition | null;
       };
 
 export type ConditionListDiff = {

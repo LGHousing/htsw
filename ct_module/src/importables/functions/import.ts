@@ -3,11 +3,15 @@ import type { ImportableFunction } from "htsw/types";
 import { syncActionList } from "../../importer/actions/sync";
 import { clickGoBack } from "../../importer/gui/helpers";
 import type { ImportableTrustPlan } from "../../importCache";
-import type { ImportPreviewEventHandler } from "../../importer/importPreviewEvents";
+import type { ImportEventHandler } from "../../importer/importEvents";
+import { createSetupStepEmitter } from "../../importer/progress/setupStepEmitter";
 import TaskContext from "../../tasks/context";
 import { getActionListTrust, getBaselineActionList } from "../actionListHelpers";
 import type { ItemRegistry } from "../itemRegistry";
-import { ensureReferencedImportablesExist } from "../references";
+import {
+    countReferencedShells,
+    ensureReferencedImportablesExist,
+} from "../references";
 import {
     ensureFunctionExists,
     openFunctionSettings,
@@ -20,10 +24,15 @@ export async function importImportableFunction(
     importable: ImportableFunction,
     itemRegistry: ItemRegistry,
     trustPlan?: ImportableTrustPlan,
-    previewHandler?: ImportPreviewEventHandler
+    events?: ImportEventHandler
 ): Promise<void> {
-    await ensureReferencedImportablesExist(ctx, importable);
+    const setup = createSetupStepEmitter(events, countReferencedShells(importable) + 1);
+
+    await ensureReferencedImportablesExist(ctx, importable, (kind, name) => {
+        setup(`created ${kind} ${name}`);
+    });
     await ensureFunctionExists(ctx, importable.name);
+    setup(`opened function ${importable.name}`);
 
     const actionsTrusted = trustPlan?.trustedListPaths.has("actions") ?? false;
     if (!actionsTrusted) {
@@ -32,7 +41,7 @@ export async function importImportableFunction(
             itemRegistry,
             baselineCurrent: getBaselineActionList(trustPlan, "actions"),
             trust: getActionListTrust(trustPlan, "actions"),
-            previewHandler,
+            events,
         });
     } else {
         ctx.displayMessage(`&b&l[import] &r&7Function "${importable.name}" trusted, skipped.`);

@@ -32,7 +32,8 @@ export async function openRegionEditor(
 
 export async function ensureRegionNamesExist(
     ctx: TaskContext,
-    regionNames: readonly string[]
+    regionNames: readonly string[],
+    onEach?: (name: string) => void
 ): Promise<void> {
     const names = unique(regionNames);
     if (names.length === 0) return;
@@ -43,6 +44,7 @@ export async function ensureRegionNamesExist(
         const status = await openRegionEditor(ctx, name);
         if (status === "opened") {
             await clickGoBack(ctx);
+            onEach?.(name);
             continue;
         }
         await ctx.runCommand(`/pos1`);
@@ -50,5 +52,6 @@ export async function ensureRegionNamesExist(
 
         await ctx.runCommand(`/region create ${name}`);
         await timedWaitForUnformattedMessage(ctx, `Created region ${name}!`);
+        onEach?.(name);
     }
 }

@@ -13,11 +13,11 @@ import { importImportableItem } from "./items/import";
 import { importImportableMenu } from "./menus/import";
 import { importImportableRegion } from "./regions/import";
 import type { ItemRegistry } from "./itemRegistry";
-import type { ImportPreviewEventHandler } from "../importer/importPreviewEvents";
+import type { ImportEventHandler } from "../importer/importEvents";
 
 export type ImportTrustOptions = {
     plan?: ImportableTrustPlan;
-    previewHandler?: ImportPreviewEventHandler;
+    events?: ImportEventHandler;
     /**
      * Session-level housing UUID. When provided, `maybeWriteImportCache`
      * skips the `/wtfmap` round trip — the session already resolved the
@@ -42,54 +42,23 @@ export async function importImportable(
 
     switch (importable.type) {
         case "FUNCTION":
-            await importImportableFunction(
-                ctx,
-                importable,
-                itemRegistry,
-                options?.plan,
-                options?.previewHandler
-            );
-            await maybeWriteImportCache(ctx, importable, options?.housingUuid);
-            return;
+            await importImportableFunction(ctx, importable, itemRegistry, options?.plan, options?.events);
+            break;
         case "EVENT":
-            await importImportableEvent(
-                ctx,
-                importable,
-                itemRegistry,
-                options?.plan,
-                options?.previewHandler
-            );
-            await maybeWriteImportCache(ctx, importable, options?.housingUuid);
-            return;
+            await importImportableEvent(ctx, importable, itemRegistry, options?.plan, options?.events);
+            break;
         case "REGION":
-            await importImportableRegion(
-                ctx,
-                importable,
-                itemRegistry,
-                options?.plan,
-                options?.previewHandler
-            );
-            await maybeWriteImportCache(ctx, importable, options?.housingUuid);
-            return;
-        case "ITEM":
-            await importImportableItem(
-                ctx,
-                importable,
-                itemRegistry,
-                options?.plan,
-                options?.housingUuid,
-                options?.previewHandler
-            );
-            return;
+            await importImportableRegion(ctx, importable, itemRegistry, options?.plan, options?.events);
+            break;
         case "MENU":
-            await importImportableMenu(
-                ctx,
-                importable,
-                itemRegistry,
-                options?.plan,
-                options?.previewHandler
+            await importImportableMenu(ctx, importable, itemRegistry, options?.plan, options?.events);
+            break;
+        case "ITEM":
+            // Items manage their own per-NBT cache; skip the generic write.
+            await importImportableItem(
+                ctx, importable, itemRegistry,
+                options?.plan, options?.housingUuid, options?.events
             );
-            await maybeWriteImportCache(ctx, importable, options?.housingUuid);
             return;
         case "NPC":
             throw Diagnostic.error("NPC imports are not implemented in the ChatTriggers module.");
@@ -98,6 +67,7 @@ export async function importImportable(
             return _exhaustiveCheck;
         }
     }
+    await maybeWriteImportCache(ctx, importable, options?.housingUuid);
 }
 
 /**

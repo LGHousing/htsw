@@ -52,7 +52,8 @@ export async function ensureFunctionExists(
 
 export async function ensureFunctionNamesExist(
     ctx: TaskContext,
-    functionNames: readonly string[]
+    functionNames: readonly string[],
+    onEach?: (name: string) => void
 ): Promise<void> {
     const names = unique(functionNames);
     if (names.length === 0) return;
@@ -64,6 +65,7 @@ export async function ensureFunctionNamesExist(
         ctx.displayMessage(`&7  [shell ${i + 1}/${names.length}] ${String(name)}`);
         await ensureFunctionExists(ctx, name);
         await clickGoBack(ctx);
+        onEach?.(name);
     }
 }
 

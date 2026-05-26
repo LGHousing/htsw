@@ -7,7 +7,7 @@ import {
     getHousingUuid,
     getImportJsonPath,
     isCurrentHouseTrusted,
-    setCurrentImportingPath,
+    setActiveImportPath,
     setHousingUuid,
     setImportProgress,
     setKnowledgeRows,
@@ -22,7 +22,6 @@ import { buildCacheStatusRows } from "../../../importCache/status";
 import {
     importSelectedImportables,
     orderImportablesForImportSession,
-    type ImportSelection,
 } from "../../../importables/importSession";
 import { exportImportable } from "../../../importables/exports";
 import {
@@ -37,32 +36,25 @@ import type { Action, Importable } from "htsw/types";
 import type { ParseResult } from "htsw";
 import { closeAllPopovers } from "../../lib/popovers";
 import { htslFilenameForFunctionExport } from "../../../exporter/paths";
-import {
-    clearDiff,
-    addDeleteOp,
-    diffKey,
-    markCompleted,
-    markDeleteCompleted,
-    setCurrent,
-    setDiffState,
-    setDiffPhase,
-    setDiffSummary,
-    setPlannedOp,
-} from "../../state/diff";
 import { importableSourcePath } from "../../state/importablePaths";
 import type {
     ActionDiffOperationPayload,
-    ImportPreviewEventHandler,
-    ImportPreviewEvent,
-} from "../../../importer/importPreviewEvents";
+    ImportEventHandler,
+    ImportEvent,
+} from "../../../importer/importEvents";
 import { importProgressKey } from "../../../importer/progress/keys";
+import { initialReducerState, reduce } from "../../../importer/progress/reducer";
+import { traceProgressEvent } from "../../../importer/progress/trace";
+import { invalidateKnowledgeOverlayForImportable } from "../../state/knowledgeOverlay";
 import { setImportRunning } from "../../../importer/runtimeState";
 import { gmcOnImportStart, playImportSuccessSound } from "../../../importer/sideEffects";
 import { resetStepGate } from "../../../importer/stepGate";
 import {
     applyComplete,
+    clearLiveOverlay,
     finalizeFromSource,
     markHeadApplied,
+    markLiveCompleted,
     markPlannedAdd,
     markPlannedDelete,
     markPlannedEdit,
@@ -70,29 +62,16 @@ import {
     previewLineIdForPath,
     primeWithCache,
     resetPreview,
+    setLiveCurrent,
+    setLiveState,
+    setLiveSummary,
     setObservedTopLevel,
+    setPlannedOp,
 } from "../../state/importPreviewState";
 import { setFocusLineId } from "../../state/codeViewState";
-import { readImportableCache } from "../../../importCache/cache";
 import { ACTION_MAPPINGS } from "../../../importer/fields/actionMappings";
 
 export const CAPTURE_TYPES: CaptureType[] = ["FUNCTION", "MENU"];
-
-function findImportableByKey(
-    parsed: ParseResult<Importable[]>,
-    key: string,
-    sourcePath: string
-): Importable | null {
-    for (let i = 0; i < parsed.value.length; i++) {
-        const imp = parsed.value[i];
-        if (
-            importProgressKey(imp.type, importableIdentity(imp), sourcePath) === key
-        ) {
-            return imp;
-        }
-    }
-    return null;
-}
 
 function refreshKnowledgeRows(): void {
     const uuid = getHousingUuid();
@@ -128,7 +107,7 @@ function operationVerb(op: ActionDiffOperationPayload["op"]): string {
 
 function operationLabel(event: ActionDiffOperationPayload): string {
     const name = displayNameForActionType(event.actionType);
-    if (event.op === "move" && event.toIndex !== undefined) {
+    if (event.op === "move") {
         return `${operationVerb(event.op)} ${name} -> #${event.toIndex + 1}`;
     }
     return `${operationVerb(event.op)} ${name}`;
@@ -136,105 +115,149 @@ function operationLabel(event: ActionDiffOperationPayload): string {
 
 function operationDetail(event: ActionDiffOperationPayload): string {
     if (event.op === "add") return "add source action";
-    if (event.op === "move") {
-        if (event.fromIndex !== undefined && event.toIndex !== undefined) {
-            return `#${event.fromIndex + 1} -> #${event.toIndex + 1}`;
-        }
-        return "move source action";
-    }
+    if (event.op === "move") return `#${event.fromIndex + 1} -> #${event.toIndex + 1}`;
     if (event.op === "edit") {
-        const fields = event.fieldsChanged ?? [];
-        return fields.length === 0 ? "fields changed" : fields.join(", ");
+        return event.fieldsChanged.length === 0 ? "fields changed" : event.fieldsChanged.join(", ");
     }
     return "delete source action";
 }
 
 function readingLabel(actionType: Action["type"] | null): string {
-    return `Reading nested ${displayNameForActionType(actionType)}`;
+    return `Reading ${displayNameForActionType(actionType)}`;
 }
 
-function makeImportPreviewHandler(
-    sourcePath: string,
-    importable: Importable,
-    housingUuid: string | null
-): ImportPreviewEventHandler {
-    const key = diffKey(sourcePath);
-    clearDiff(key);
-    resetPreview(sourcePath);
-    const cached = housingUuid === null
-        ? null
-        : readImportableCache(housingUuid, importable.type, importableIdentity(importable));
-    primeWithCache(sourcePath, cached === null ? null : cached.importable);
+type SessionEventHandler = ImportEventHandler & {
+    counts(): { imported: number; skipped: number; failed: number };
+};
+
+function createImportEventHandler(args: {
+    parsed: ParseResult<Importable[]>;
+    sessionSourcePath: string;
+}): SessionEventHandler {
+    let state = initialReducerState();
+    let activeViewPath: string | null = null;
+
+    // Precompute key → importable so importableStarted handler is O(1).
+    const importablesByKey = new Map<string, Importable>();
+    for (const imp of args.parsed.value) {
+        importablesByKey.set(
+            importProgressKey(imp.type, importableIdentity(imp), args.sessionSourcePath),
+            imp
+        );
+    }
+
+    const sync = (): void => {
+        setImportProgress(state.progress);
+        setActiveImportPath(activeViewPath);
+    };
+
     // Mapped type: one handler per event kind, parameter narrowed to the
-    // specific event shape. TS enforces exhaustiveness on the handlers
-    // object — adding a new event kind here surfaces as a typecheck error
-    // until the corresponding handler is filled in.
+    // specific event shape. TS enforces exhaustiveness — a new kind on the
+    // union surfaces here as a typecheck error.
     type Handlers = {
-        [E in ImportPreviewEvent as E["kind"]]: (event: E) => void;
+        [E in ImportEvent as E["kind"]]: (event: E) => void;
     };
     const handlers: Handlers = {
-        progress: () => {},
-        readStarted: (e) => setDiffPhase(key, `Reading ${e.listPath}`),
-        readCompleted: (e) => setDiffPhase(key, `${e.observedCount} actions read`),
-        hydrationStarted: (e) => setDiffPhase(key, readingLabel(e.actionType)),
-        hydrationCompleted: () => {},
-        diffComputed: (e) => {
-            setDiffSummary(key, e.summary);
-            setDiffPhase(key, "Diff computed");
+        sessionStarted: () => {},
+        importableStarted: (e) => {
+            const imp = importablesByKey.get(e.key) ?? null;
+            activeViewPath =
+                imp === null ? null : (importableSourcePath(imp, args.parsed) ?? null);
+            if (activeViewPath !== null) {
+                clearLiveOverlay(activeViewPath);
+                resetPreview(activeViewPath);
+                primeWithCache(activeViewPath, e.cached);
+            }
         },
-        operationPlanned: (e) =>
-            setPlannedOp(key, e.path, e.op, operationLabel(e), operationDetail(e)),
-        extraActionPlanned: (e) =>
-            addDeleteOp(
-                key,
-                e.observedEntryId,
-                e.index,
-                `Delete extra ${displayNameForActionType(e.actionType)}`,
-                "delete unneeded action"
-            ),
-        match: (e) => setDiffState(key, e.path, "match"),
+        importableFinished: (e) => {
+            refreshKnowledgeRows();
+            if (e.status === "imported") {
+                const imp = importablesByKey.get(e.key);
+                if (imp !== undefined) {
+                    invalidateKnowledgeOverlayForImportable(imp, args.parsed);
+                }
+            }
+        },
+        sessionFinished: () => {
+            activeViewPath = null;
+        },
+        progress: () => {},
+        setupStep: () => {},
+        readStarted: () => {},
+        nestedReadStarted: (e) => {
+            if (activeViewPath === null) return;
+            const label = readingLabel(e.actionType);
+            setLiveCurrent(activeViewPath, e.path, label);
+            setFocusLineId(activeViewPath, previewLineIdForPath(activeViewPath, e.path));
+        },
+        diffPlanned: (e) => {
+            if (activeViewPath === null) return;
+            setLiveSummary(activeViewPath, e.summary);
+            for (const op of e.operations) {
+                if (op.op === "delete") {
+                    if (op.observed !== null) {
+                        markPlannedDelete(activeViewPath, op.path);
+                    }
+                    continue;
+                }
+                setPlannedOp(activeViewPath, op.path, op.op, operationLabel(op), operationDetail(op));
+                if (op.op === "add") {
+                    markPlannedAdd(activeViewPath, op.path, op.desired, op.toIndex);
+                } else if (op.op === "edit") {
+                    markPlannedEdit(activeViewPath, op.path, op.observed, op.desired);
+                } else if (op.op === "move") {
+                    markPlannedMove(activeViewPath, op.path, op.fromIndex, op.toIndex);
+                }
+            }
+            for (const p of e.matches) setLiveState(activeViewPath, p, "match");
+        },
         operationStarted: (e) => {
-            setDiffPhase(key, operationLabel(e));
-            setCurrent(key, e.path, operationLabel(e));
-            setPlannedOp(key, e.path, e.op, operationLabel(e), "");
-            setFocusLineId(sourcePath, previewLineIdForPath(sourcePath, e.path));
+            if (activeViewPath === null) return;
+            setLiveCurrent(activeViewPath, e.path, operationLabel(e));
+            setPlannedOp(activeViewPath, e.path, e.op, operationLabel(e), "");
+            setFocusLineId(activeViewPath, previewLineIdForPath(activeViewPath, e.path));
         },
         operationCompleted: (e) => {
-            setDiffState(key, e.path, e.finalState);
-            markCompleted(key, e.path);
-            setCurrent(key, null, "");
+            if (activeViewPath === null) return;
+            setLiveState(activeViewPath, e.path, e.finalState);
+            markLiveCompleted(activeViewPath, e.path);
+            setLiveCurrent(activeViewPath, null, "");
+            applyComplete(activeViewPath, e.path, e.finalState, e.op);
         },
-        extraActionDeleted: (e) => markDeleteCompleted(key, e.observedEntryId),
-        syncCompleted: () => {
-            setCurrent(key, null, "");
-            setFocusLineId(sourcePath, null);
-            refreshKnowledgeRows();
+        listSyncCompleted: () => {
+            if (activeViewPath === null) return;
+            setLiveCurrent(activeViewPath, null, "");
+            setFocusLineId(activeViewPath, null);
         },
-        observedSnapshot: (e) => setObservedTopLevel(sourcePath, e.actions),
-        reading: (e) => {
-            setCurrent(key, e.path, readingLabel(e.actionType));
-            setFocusLineId(sourcePath, previewLineIdForPath(sourcePath, e.path));
+        observedSnapshot: (e) => {
+            if (activeViewPath !== null) setObservedTopLevel(activeViewPath, e.actions);
         },
-        clearReading: () => {
-            setCurrent(key, null, "");
-            setFocusLineId(sourcePath, null);
+        blockActionHeaderApplied: (e) => {
+            if (activeViewPath !== null) markHeadApplied(activeViewPath, e.path);
         },
-        blockActionHeaderApplied: (e) => markHeadApplied(sourcePath, e.path),
-        plannedAdd: (e) => markPlannedAdd(sourcePath, e.path, e.desired, e.toIndex),
-        plannedEdit: (e) =>
-            markPlannedEdit(sourcePath, e.path, e.observed, e.desired),
-        plannedDelete: (e) => markPlannedDelete(sourcePath, e.path),
-        plannedMove: (e) =>
-            markPlannedMove(sourcePath, e.path, e.fromIndex, e.toIndex),
-        applyDone: (e) => applyComplete(sourcePath, e.path, e.finalState, e.op),
-        finalizeSource: (e) => finalizeFromSource(sourcePath, e.actions),
+        finalizeSource: (e) => {
+            if (activeViewPath !== null) finalizeFromSource(activeViewPath, e.actions);
+        },
     };
+
     return {
         emit: (event) => {
-            // Cast: TS sees `handlers[event.kind]` as the union of all handler
-            // signatures (so its parameter is the intersection — `never`).
-            // We know the runtime kind matches the handler's narrowed type.
+            const before = state.progress;
+            state = reduce(state, event);
+            traceProgressEvent(event, before, state.progress);
             (handlers[event.kind] as (e: typeof event) => void)(event);
+            sync();
+        },
+        counts: () => {
+            let imported = 0;
+            let skipped = 0;
+            let failed = 0;
+            for (const row of state.progress.rows) {
+                if (row.status === "imported") imported++;
+                else if (row.status === "skipped") skipped++;
+                else if (row.status === "failed") failed++;
+            }
+            return { imported, skipped, failed };
         },
     };
 }
@@ -349,7 +372,6 @@ export function startImport(explicit?: readonly QueueItem[]): void {
         rows = rows.concat(createImportRows(batches[i].importables, batches[i].sourcePath));
     }
     setImportProgress(createImportProgress({
-        totalImportables: total,
         totalUnits: 1,
         rows,
     }));
@@ -377,35 +399,21 @@ export function startImport(explicit?: readonly QueueItem[]): void {
             let totalSkipped = 0;
             let totalFailed = 0;
             for (const batch of batches) {
-                const selection: ImportSelection = {
+                const events = createImportEventHandler({
+                    parsed: batch.parsed,
+                    sessionSourcePath: batch.sourcePath,
+                });
+                await importSelectedImportables(ctx, {
                     importables: batch.importables,
                     trustMode,
                     housingUuid,
                     sourcePath: batch.sourcePath,
-                    onProgress: (p) => {
-                        setImportProgress(p);
-                        if (p.current === null) {
-                            setCurrentImportingPath(null);
-                            return;
-                        }
-                        const imp = findImportableByKey(
-                            batch.parsed,
-                            p.current.key,
-                            batch.sourcePath
-                        );
-                        const path =
-                            imp === null
-                                ? null
-                                : (importableSourcePath(imp, batch.parsed) ?? null);
-                        setCurrentImportingPath(path);
-                    },
-                    previewHandlerForImportable: (imp, path) =>
-                        path === null ? null : makeImportPreviewHandler(path, imp, housingUuid),
-                };
-                const result = await importSelectedImportables(ctx, selection);
-                totalImported += result.imported;
-                totalSkipped += result.skippedTrusted;
-                totalFailed += result.failed;
+                    events,
+                });
+                const c = events.counts();
+                totalImported += c.imported;
+                totalSkipped += c.skipped;
+                totalFailed += c.failed;
             }
             const elapsed = Math.max(0, Math.round((Date.now() - startedAt) / 1000));
             ctx.displayMessage(
@@ -418,7 +426,7 @@ export function startImport(explicit?: readonly QueueItem[]): void {
             importSucceeded = totalFailed === 0;
         } finally {
             setImportProgress(null);
-            setCurrentImportingPath(null);
+            setActiveImportPath(null);
             refreshKnowledgeRows();
             setImportRunning(false);
             if (importSucceeded) playImportSuccessSound();

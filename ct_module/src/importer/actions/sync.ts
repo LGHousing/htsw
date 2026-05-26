@@ -7,17 +7,13 @@ import type {
     ActionListTrust,
     ObservedActionSlot,
 } from "../types";
-import type { ActionListProgressHandler } from "../progress/types";
-import { currentActionListFromSlots, diffActionList } from "./diff";
+import type { ProgressHandler } from "../progress/types";
+import { baselineActionListFromSlots, diffActionList } from "./diff";
 import { applyActionListDiff } from "./applyDiff";
-import {
-    canonicalizeActionItemName,
-    canonicalizeObservedActionItemNames,
-    readActionList,
-} from "./readList";
+import { canonicalizeActionItemName, readActionList } from "./readList";
 import { actionLogLabel, editDiffSummary } from "./log";
 import { estimateActionListPhaseUnits } from "../progress/costs";
-import type { ImportPreviewEventHandler } from "../importPreviewEvents";
+import type { ImportEventHandler, ProgressScope } from "../importEvents";
 
 export type SyncActionListOptions = {
     /**
@@ -34,7 +30,8 @@ export type SyncActionListOptions = {
     /** Source path prefix for nested lists, e.g. `4.ifActions`. */
     pathPrefix?: string;
     baselineCurrent?: readonly Action[];
-    previewHandler?: ImportPreviewEventHandler;
+    progressScope?: ProgressScope;
+    events?: ImportEventHandler;
 };
 
 export type SyncActionListResult = {
@@ -52,11 +49,13 @@ export async function syncActionList(
     options?: SyncActionListOptions
 ): Promise<SyncActionListResult> {
     const phaseUnits = estimateActionListPhaseUnits(desired, options?.baselineCurrent);
-    const progress: ActionListProgressHandler | undefined =
-        options?.previewHandler === undefined
+    const progressScope: ProgressScope = options?.progressScope ?? { kind: "topLevel" };
+    const progress: ProgressHandler | undefined =
+        options?.events === undefined
             ? undefined
-            : (event) => options.previewHandler?.emit({
+            : (event) => options.events?.emit({
                   kind: "progress",
+                  scope: progressScope,
                   progress: event,
               });
     const observed =
@@ -66,18 +65,22 @@ export async function syncActionList(
             desired,
             itemRegistry: options?.itemRegistry,
             trust: options?.trust,
-            onProgress: progress,
+            progress,
             phaseUnits,
             pathPrefix: options?.pathPrefix,
-            previewHandler: options?.previewHandler,
+            events: options?.events,
         }));
-    canonicalizeObservedActionItemNames(observed, options?.itemRegistry);
-    if (options?.itemRegistry) {
+    if (options?.itemRegistry !== undefined) {
+        for (const entry of observed) {
+            if (entry.action !== null) {
+                canonicalizeActionItemName(entry.action, options.itemRegistry);
+            }
+        }
         for (const action of desired) {
             canonicalizeActionItemName(action, options.itemRegistry);
         }
     }
-    const diff = diffActionList(currentActionListFromSlots(observed), desired);
+    const diff = diffActionList(baselineActionListFromSlots(observed), desired);
     logActionSyncState(ctx, diff);
     await applyActionListDiff(
         ctx,
@@ -85,10 +88,10 @@ export async function syncActionList(
         desired,
         diff,
         options?.itemRegistry,
-        progress,
         options?.pathPrefix,
         phaseUnits,
-        options?.previewHandler
+        options?.events,
+        progressScope
     );
     return { usedObserved: observed };
 }
@@ -112,17 +115,17 @@ function logActionSyncState(ctx: TaskContext, diff: ActionListDiff): void {
         switch (op.kind) {
             case "delete":
                 ctx.displayMessage(
-                    `&7  &c-DEL [${op.fromIndex}] ${actionLogLabel(op.currentAction)}`
+                    `&7  &c-DEL [${op.fromIndex}] ${actionLogLabel(op.baselineAction)}`
                 );
                 break;
             case "edit":
                 if (op.noteOnly) {
                     ctx.displayMessage(
-                        `&7  &6~NOTE [${op.fromIndex}] ${actionLogLabel(op.currentAction)}`
+                        `&7  &6~NOTE [${op.fromIndex}] ${actionLogLabel(op.baselineAction)}`
                     );
                 } else {
                     ctx.displayMessage(
-                        `&7  &6~EDIT [${op.fromIndex}] ${actionLogLabel(op.currentAction)}: ${editDiffSummary(op)}`
+                        `&7  &6~EDIT [${op.fromIndex}] ${actionLogLabel(op.baselineAction)}: ${editDiffSummary(op)}`
                     );
                 }
                 break;

@@ -38,6 +38,9 @@ type MutableTimingStatsEntry = {
 };
 
 const stats: { [kind: string]: MutableTimingStatsEntry | undefined } = {};
+const PERSIST_PATH = "./htsw/eta-stats.json";
+let loadedPersistedStats = false;
+let persistScheduled = false;
 
 function beginTimedOp(
     kind: TimedOperationKind,
@@ -60,6 +63,7 @@ export function recordTimedOp(
     expectedUnits: number,
     elapsedMs: number
 ): void {
+    loadPersistedStats();
     const key = kind;
     let entry = stats[key];
     if (entry === undefined) {
@@ -69,6 +73,7 @@ export function recordTimedOp(
     entry.count++;
     entry.totalMs += Math.max(0, elapsedMs);
     entry.totalExpectedUnits += expectedUnits;
+    schedulePersist();
 }
 
 export async function timed<T>(
@@ -85,6 +90,7 @@ export async function timed<T>(
 }
 
 export function getTimingStats(): TimingStats {
+    loadPersistedStats();
     const out: TimingStats = {};
     for (const kind in stats) {
         const entry = stats[kind];
@@ -104,7 +110,70 @@ export function getTimingStats(): TimingStats {
 }
 
 export function resetTimingStats(): void {
+    loadPersistedStats();
     for (const kind in stats) {
         delete stats[kind];
+    }
+    persistTimingStats();
+}
+
+function loadPersistedStats(): void {
+    if (loadedPersistedStats) return;
+    loadedPersistedStats = true;
+    if (!FileLib.exists(PERSIST_PATH)) return;
+    try {
+        const raw = String(FileLib.read(PERSIST_PATH) ?? "");
+        const parsed = JSON.parse(raw) as {
+            stats?: { [kind: string]: MutableTimingStatsEntry | undefined };
+        };
+        const persisted = parsed.stats;
+        if (persisted === undefined) return;
+        for (const kind in persisted) {
+            const entry = persisted[kind];
+            if (entry === undefined) continue;
+            if (
+                typeof entry.count !== "number" ||
+                typeof entry.totalMs !== "number" ||
+                typeof entry.totalExpectedUnits !== "number"
+            ) {
+                continue;
+            }
+            stats[kind] = {
+                count: Math.max(0, entry.count),
+                totalMs: Math.max(0, entry.totalMs),
+                totalExpectedUnits: Math.max(0, entry.totalExpectedUnits),
+            };
+        }
+    } catch (_error) {
+        return;
+    }
+}
+
+function schedulePersist(): void {
+    if (persistScheduled) return;
+    persistScheduled = true;
+    setTimeout(() => {
+        persistScheduled = false;
+        persistTimingStats();
+    }, 5000);
+}
+
+function persistTimingStats(): void {
+    try {
+        FileLib.write(
+            PERSIST_PATH,
+            JSON.stringify(
+                {
+                    version: 1,
+                    updatedAt: new Date().toISOString(),
+                    stats,
+                },
+                null,
+                2
+            ),
+            true
+        );
+    } catch (_error) {
+        return;
     }
 }

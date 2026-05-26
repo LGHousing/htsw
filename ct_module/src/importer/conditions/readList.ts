@@ -23,12 +23,8 @@ import { timedWaitForMenu } from "../gui/menuWait";
 import { clickGoBack } from "../gui/helpers";
 import { CONDITION_LIST_CONFIG } from "./listConfig";
 import { getConditionSpec, isConditionListItemInverted } from "../conditions";
-import {
-    COST,
-    phaseUnitsFromParts,
-    type ListPhaseUnits,
-} from "../progress/costs";
-import type { ActionListProgressHandler } from "../progress/types";
+import { COST, phaseUnitsTotal, type PhaseUnits } from "../progress/costs";
+import type { ProgressHandler } from "../progress/types";
 
 async function readConditionsListPage(
     ctx: TaskContext
@@ -60,8 +56,8 @@ async function readConditionsListPage(
 
 export type ReadConditionListOptions = {
     itemRegistry?: ItemRegistry;
-    phaseUnits?: ListPhaseUnits;
-    onProgress?: ActionListProgressHandler;
+    phaseUnits?: PhaseUnits;
+    progress?: ProgressHandler;
 };
 
 export async function readConditionList(
@@ -122,26 +118,20 @@ async function hydrateScalarConditions(
     if (entries.length === 0) return;
 
     const phaseUnits = options?.phaseUnits;
-    const progress = options?.onProgress;
+    const progress = options?.progress;
     const totalHydrate = entries.length * SCALAR_CONDITION_HYDRATION_UNITS;
-    if (phaseUnits !== undefined && totalHydrate > phaseUnits.hydratePart) {
-        phaseUnits.hydratePart = totalHydrate;
-        phaseUnits.total =
-            phaseUnits.readPart + phaseUnits.hydratePart + phaseUnits.applyPart;
-    }
+    if (phaseUnits !== undefined) phaseUnits.hydrating = totalHydrate;
 
     let completed = 0;
     let completedHydrateUnits = 0;
-    const emit = (label: string): void => {
+    const emit = (_label: string): void => {
         if (phaseUnits === undefined || progress === undefined) return;
         progress({
             phase: "hydrating",
-            phaseLabel: label,
-            unitCompleted: completed,
-            unitTotal: entries.length,
-            completedUnits: phaseUnits.readPart + completedHydrateUnits,
-            totalUnits: phaseUnits.total,
-            phaseUnits: phaseUnitsFromParts(phaseUnits),
+            completedUnits: phaseUnits.reading + completedHydrateUnits,
+            totalUnits: phaseUnitsTotal(phaseUnits),
+            phaseUnits: phaseUnits,
+            sync: { completedUnits: completed, totalUnits: entries.length, parent: null },
         });
     };
 

@@ -12,12 +12,12 @@
 
 import type { Importable } from "htsw/types";
 
-import type { ImportProgress, ImportProgressRow } from "../../importer/progress/types";
+import type { ImportProgress, ImportableEntry } from "../../importer/progress/types";
 import { importProgressKey } from "../../importer/progress/keys";
 import {
-    getCurrentPhaseEtaSecondsCached as etaGetCurrentPhaseEtaSeconds,
-    getImportEtaSeconds as etaGetImportEtaSeconds,
-    resetEtaCache,
+    createEtaCalculator,
+    currentMsPerUnit,
+    type EtaCalculator,
 } from "../../importer/progress/eta";
 import { importableIdentity } from "../../importCache/paths";
 import type { QueueItem } from "./queue";
@@ -31,6 +31,8 @@ let importProgress: ImportProgress | null = null;
  * cleared on the inverse transition.
  */
 let importStartedAt: number | null = null;
+/** Fresh per import session — cleared when `importProgress` returns to null. */
+let etaCalc: EtaCalculator | null = null;
 /**
  * Resolved filesystem path of the importable currently being processed
  * by the in-flight import session. Drives the LiveImporter panel above
@@ -39,7 +41,7 @@ let importStartedAt: number | null = null;
  * import's progress callback when the session reports no current
  * importable.
  */
-let currentImportingPath: string | null = null;
+let activeImportPath: string | null = null;
 
 export function getImportProgress(): ImportProgress | null {
     return importProgress;
@@ -52,37 +54,40 @@ export function getImportProgressFraction(): number {
 }
 
 export function getImportEtaSeconds(): number | null {
-    if (importStartedAt === null) return null;
-    return etaGetImportEtaSeconds(importProgress, importStartedAt);
+    return etaCalc === null ? null : etaCalc.getTotal(importProgress, importStartedAt);
 }
 
 export function getCurrentPhaseEtaSeconds(): number | null {
-    return etaGetCurrentPhaseEtaSeconds(importProgress, importStartedAt);
+    return etaCalc === null ? null : etaCalc.getPhase(importProgress, importStartedAt);
+}
+
+export function getImportMsPerUnit(): number {
+    return currentMsPerUnit();
 }
 
 export function getImportStartedAt(): number | null {
     return importStartedAt;
 }
 
-export function getCurrentImportingPath(): string | null {
-    return currentImportingPath;
+export function getActiveImportPath(): string | null {
+    return activeImportPath;
 }
-export function setCurrentImportingPath(p: string | null): void {
-    currentImportingPath = p;
+export function setActiveImportPath(p: string | null): void {
+    activeImportPath = p;
 }
 
 export function createImportRows(
     importables: readonly Importable[],
     sourcePath: string
-): ImportProgressRow[] {
-    const rows: ImportProgressRow[] = [];
+): ImportableEntry[] {
+    const rows: ImportableEntry[] = [];
     for (let i = 0; i < importables.length; i++) {
         const importable = importables[i];
         const identity = importableIdentity(importable);
         rows.push({
             key: importProgressKey(importable.type, identity, sourcePath),
             status: "queued",
-            units: 1,
+            totalUnits: 1,
         });
     }
     return rows;
@@ -90,13 +95,10 @@ export function createImportRows(
 
 export function createImportProgress(init: Partial<ImportProgress>): ImportProgress {
     return normalizeImportProgress({
-        completedImportables: init.completedImportables ?? 0,
-        totalImportables: init.totalImportables ?? 1,
         completedUnits: init.completedUnits ?? 0,
         totalUnits: init.totalUnits ?? 1,
-        current: init.current ?? null,
+        active: init.active ?? null,
         rows: init.rows ?? [],
-        failed: init.failed ?? 0,
     });
 }
 
@@ -112,19 +114,14 @@ function normalizeImportProgress(p: ImportProgress): ImportProgress {
 
 export function setImportProgress(p: ImportProgress | null): void {
     const wasNull = importProgress === null;
-    const prevPhase = importProgress?.current?.phase ?? null;
-    const prevKey = importProgress?.current?.key ?? null;
     if (p !== null && importProgress === null) {
         importStartedAt = Date.now();
+        etaCalc = createEtaCalculator();
     } else if (p === null) {
         importStartedAt = null;
+        etaCalc = null;
     }
     importProgress = p === null ? null : normalizeImportProgress(p);
-    const nextPhase = p?.current?.phase ?? null;
-    const nextKey = p?.current?.key ?? null;
-    if (wasNull || p === null || prevPhase !== nextPhase || prevKey !== nextKey) {
-        resetEtaCache();
-    }
     onImportRunningChanged(!wasNull, p !== null);
 }
 
@@ -142,7 +139,8 @@ export type QueueItemRunState =
           readFraction: number;
           hydrateFraction: number;
           applyFraction: number;
-          /** Relative widths of the three phases (sum = 1). */
+          /** Relative widths of the three phases (sum = 1). Setup work is
+           *  folded into the reading phase. */
           readWidth: number;
           hydrateWidth: number;
           applyWidth: number;
@@ -157,7 +155,7 @@ export function getQueueItemRunState(item: QueueItem): QueueItemRunState {
         return { kind: "queued" };
     }
     const key = importProgressKey(item.type, item.identity, item.sourcePath);
-    let row: ImportProgressRow | undefined;
+    let row: ImportableEntry | undefined;
     for (let i = 0; i < importProgress.rows.length; i++) {
         if (importProgress.rows[i].key === key) {
             row = importProgress.rows[i];
@@ -176,36 +174,40 @@ export function getQueueItemRunState(item: QueueItem): QueueItemRunState {
         return { kind: "failed" };
     }
     if (row.status === "queued") return { kind: "queued" };
-    const current = importProgress.current;
+    const current = importProgress.active;
     if (current === null || current.key !== key) {
         return {
             kind: "current",
             readFraction: 0,
             hydrateFraction: 0,
             applyFraction: 0,
-            readWidth: 0.33,
+            readWidth: 0.34,
             hydrateWidth: 0.33,
-            applyWidth: 0.34,
+            applyWidth: 0.33,
         };
     }
     const units = current.phaseUnits;
-    const total = Math.max(1, units.reading + units.hydrating + units.applying);
+    const total = Math.max(
+        1,
+        units.setup + units.reading + units.hydrating + units.applying
+    );
+    const readingUnits = units.setup + units.reading;
     const within = Math.max(0, current.completedUnits);
-    const readDone = Math.min(units.reading, within);
+    const readingDone = Math.min(readingUnits, within);
     const hydrateDone = Math.min(
         units.hydrating,
-        Math.max(0, within - units.reading)
+        Math.max(0, within - readingUnits)
     );
     const applyDone = Math.min(
         units.applying,
-        Math.max(0, within - units.reading - units.hydrating)
+        Math.max(0, within - readingUnits - units.hydrating)
     );
     return {
         kind: "current",
-        readFraction: units.reading > 0 ? readDone / units.reading : 1,
+        readFraction: readingUnits > 0 ? readingDone / readingUnits : 1,
         hydrateFraction: units.hydrating > 0 ? hydrateDone / units.hydrating : 1,
         applyFraction: units.applying > 0 ? applyDone / units.applying : 0,
-        readWidth: units.reading / total,
+        readWidth: readingUnits / total,
         hydrateWidth: units.hydrating / total,
         applyWidth: units.applying / total,
     };
@@ -217,7 +219,7 @@ export function getQueueItemRunState(item: QueueItem): QueueItemRunState {
  */
 export function isCurrentQueueItem(item: QueueItem): boolean {
     if (importProgress === null) return false;
-    const current = importProgress.current;
+    const current = importProgress.active;
     if (current === null) return false;
     if (item.kind === "importable") {
         return current.key === importProgressKey(
@@ -226,6 +228,6 @@ export function isCurrentQueueItem(item: QueueItem): boolean {
             item.sourcePath
         );
     }
-    if (currentImportingPath === null) return false;
-    return canonicalPath(item.sourcePath) === canonicalPath(currentImportingPath);
+    if (activeImportPath === null) return false;
+    return canonicalPath(item.sourcePath) === canonicalPath(activeImportPath);
 }

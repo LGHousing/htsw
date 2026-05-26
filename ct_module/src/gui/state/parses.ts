@@ -5,6 +5,7 @@ import type { Importable } from "htsw/types";
 
 import { FileSystemFileLoader } from "../../utils/files";
 import { javaType } from "../lib/java";
+import { invalidateKnowledgeOverlayForParse } from "./knowledgeOverlay";
 
 /**
  * Per-file `import.json` parse cache. Lets the Explore tree show
@@ -84,6 +85,7 @@ export function parseImportJsonAt(rawPath: string): CachedParse {
         error,
     };
     cache.set(canon, entry);
+    if (parsed !== null) invalidateKnowledgeOverlayForParse(parsed);
     return entry;
 }
 

@@ -1,7 +1,8 @@
 import type { Action, ImportableItem } from "htsw/types";
 
 import { syncActionList } from "../../importer/actions/sync";
-import type { ImportPreviewEventHandler } from "../../importer/importPreviewEvents";
+import type { ImportEventHandler } from "../../importer/importEvents";
+import { createSetupStepEmitter } from "../../importer/progress/setupStepEmitter";
 import { clickGoBack } from "../../importer/gui/helpers";
 import { timedWaitForMenu } from "../../importer/gui/menuWait";
 import {
@@ -25,7 +26,10 @@ import {
 } from "../../importer/gui/packets";
 import { getActionListTrust, getBaselineActionList } from "../actionListHelpers";
 import type { ItemRegistry } from "../itemRegistry";
-import { ensureReferencedImportablesExist } from "../references";
+import {
+    countReferencedShells,
+    ensureReferencedImportablesExist,
+} from "../references";
 import { COST } from "../../importer/progress/costs";
 import { timed } from "../../importer/progress/timing";
 
@@ -105,13 +109,19 @@ export async function importImportableItem(
     itemRegistry: ItemRegistry,
     trustPlan?: ImportableTrustPlan,
     cachedUuid?: string,
-    previewHandler?: ImportPreviewEventHandler
+    events?: ImportEventHandler
 ): Promise<void> {
-    await ensureReferencedImportablesExist(ctx, importable);
+    const ownSteps = hasItemClickActions(importable) ? 3 : 1;
+    const setup = createSetupStepEmitter(events, countReferencedShells(importable) + ownSteps);
+
+    await ensureReferencedImportablesExist(ctx, importable, (kind, name) => {
+        setup(`created ${kind} ${name}`);
+    });
 
     const uuid = cachedUuid ?? (await getCurrentHousingUuid(ctx));
     if (!hasItemClickActions(importable)) {
         await injectHeldItem(ctx, getItemFromNbt(importable.nbt));
+        setup(`injected item ${importable.name}`);
         writeItemCache(ctx, uuid, importable);
         return;
     }
@@ -125,12 +135,15 @@ export async function importImportableItem(
 
     const start = chooseItemStart(uuid, importable, trustPlan);
     await injectHeldItem(ctx, start.item);
+    setup(`injected item ${importable.name}`);
 
     await ctx.runCommand("/edit");
     await timedWaitForMenu(ctx, "commandMenuWait");
+    setup(`opened item editor`);
 
     ctx.getItemSlot("Edit Actions").click();
     await timedWaitForMenu(ctx, "menuClickWait");
+    setup(`opened Edit Actions for ${importable.name}`);
 
     await syncItemActionLists(
         ctx,
@@ -138,7 +151,7 @@ export async function importImportableItem(
         itemRegistry,
         trustPlan,
         start,
-        previewHandler
+        events
     );
 
     await timed("sleep1000", COST.guaranteedSleep1000, () => ctx.sleep(1000));
@@ -249,7 +262,7 @@ async function syncItemActionLists(
     itemRegistry: ItemRegistry,
     trustPlan: ImportableTrustPlan | undefined,
     start: ItemStart,
-    previewHandler?: ImportPreviewEventHandler
+    events?: ImportEventHandler
 ): Promise<void> {
     const leftDesired = actionListToSync(
         importable.leftClickActions,
@@ -273,7 +286,7 @@ async function syncItemActionLists(
             itemRegistry,
             baselineCurrent: getBaselineActionList(trustPlan, "leftClickActions"),
             trust: getActionListTrust(trustPlan, "leftClickActions"),
-            previewHandler,
+            events,
         });
 
         if (
@@ -295,7 +308,7 @@ async function syncItemActionLists(
             itemRegistry,
             baselineCurrent: getBaselineActionList(trustPlan, "rightClickActions"),
             trust: getActionListTrust(trustPlan, "rightClickActions"),
-            previewHandler,
+            events,
         });
     }
 }

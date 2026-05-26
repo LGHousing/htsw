@@ -1,39 +1,25 @@
 /// <reference types="../../../CTAutocomplete" />
 
-import { diffKey, getDiffEntry, ROW_BG_BY_STATE, type DiffState } from "../state/diff";
+import { ROW_BG_BY_STATE } from "../state/diff";
+import { ensureKnowledgeOverlay } from "../state/knowledgeOverlay";
 import { focusLineIdForFile } from "../state/codeViewState";
 import type { LineDecorations, LineDecorator, RenderableLine } from "./types";
-import type { PreviewLine } from "../state/importPreviewState";
+import { getLiveOverlay, type PreviewLine } from "../state/importPreviewState";
 
 const COLOR_PENDING_GRAY = 0xff666666 | 0;
 const COLOR_GHOST_GRAY = 0xff444444 | 0;
 const COLOR_READ_FOCUS_ROW_BG = 0x5018365d | 0;
 const COLOR_APPLY_FOCUS_COLUMN_BG = 0xa067a7e8 | 0;
 
-function idEndsWith(id: string, suffix: string): boolean {
-    return (
-        id.length >= suffix.length
-        && id.substring(id.length - suffix.length) === suffix
-    );
-}
-
 export function diffDecorator(path: string | null): LineDecorator {
-    const key = path === null ? null : diffKey(path);
     return {
         decorateLine(line: RenderableLine): LineDecorations {
-            if (key === null || line.actionPath === undefined) return {};
-            const entry = getDiffEntry(key);
-            if (entry === undefined) return {};
-            const state = entry.states.get(line.actionPath);
-            if (state === undefined) {
-                if (entry.currentPath === line.actionPath) {
-                    return { state: "current", isFocused: true };
-                }
-                return {};
-            }
-            const isFocused = entry.currentPath === line.actionPath;
-            const effective: DiffState = isFocused ? "current" : state;
-            return { state: effective, isFocused };
+            if (path === null || line.actionPath === undefined) return {};
+            const overlay = ensureKnowledgeOverlay(path);
+            if (overlay === undefined) return {};
+            const state = overlay.get(line.actionPath);
+            if (state === undefined) return {};
+            return { state };
         },
         focusedLineId(): string | null {
             return null;
@@ -43,19 +29,18 @@ export function diffDecorator(path: string | null): LineDecorator {
 
 export function progressDecorator(path: string | null): LineDecorator {
     const base = diffDecorator(path);
-    const key = path === null ? null : diffKey(path);
     return {
         decorateLine(line: RenderableLine): LineDecorations {
             const preview = line as PreviewLine;
-            const entry = key === null ? undefined : getDiffEntry(key);
+            const entry = path === null ? undefined : getLiveOverlay(path);
 
             const isApplyPhase = entry !== undefined && entry.summary !== null;
 
-            const isBody = idEndsWith(line.id, ":body");
-            // `<subListPath>:placeholder` is the consolidated placeholder;
-            // `:slot<N>:placeholder` ids represent per-slot unhydrated lists.
+            const isBody = preview.variant === "body";
+            // Consolidated placeholder ids end in `:placeholder` only;
+            // per-slot placeholders embed `:slot<N>:` in the id.
             const isConsolidatedPlaceholder =
-                idEndsWith(line.id, ":placeholder") && line.id.indexOf(":slot") < 0;
+                preview.variant === "placeholder" && line.id.indexOf(":slot") < 0;
 
             // Read phase: highlight the whole subtree being walked.
             // Apply phase: narrow to the body line — nested children get their own focus.
@@ -94,7 +79,7 @@ export function progressDecorator(path: string | null): LineDecorator {
                     cursorColumnBackground: focusColBg,
                 };
             }
-            if (preview.isGhost === true) {
+            if (preview.variant === "ghost") {
                 // Ghost shares actionPath with its body partner above; the cursor stays
                 // on the body. Background set directly (not via state: "edit") so the
                 // `~` glyph doesn't reappear here — the body line above already carries it.
@@ -107,7 +92,7 @@ export function progressDecorator(path: string | null): LineDecorator {
                     cursorColumnBackground: focusColBg,
                 };
             }
-            if (preview.isPlaceholder === true) {
+            if (preview.variant === "placeholder") {
                 return {
                     foregroundColor: COLOR_PENDING_GRAY,
                     italic: true,
@@ -126,7 +111,7 @@ export function progressDecorator(path: string | null): LineDecorator {
                 };
             }
 
-            if (path === null || key === null || line.actionPath === undefined) {
+            if (path === null || line.actionPath === undefined) {
                 return base.decorateLine(line);
             }
             if (entry === undefined) {

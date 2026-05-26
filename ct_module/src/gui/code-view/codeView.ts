@@ -29,6 +29,7 @@ export type CodeViewProps = {
      */
     lineDecorator: Extractable<LineDecorator>;
     autoFollow?: boolean;
+    autoFollowDelayMs?: number;
     scrollLocked?: Extractable<boolean>;
     emptyMessage?: string;
 };
@@ -37,6 +38,8 @@ const FOLLOW_THROTTLE_MS = 80;
 
 type FollowMeta = {
     lastFollowAt: number;
+    focusedId: string | null;
+    focusedSeenAt: number;
 };
 
 const followStates: { [id: string]: FollowMeta } = {};
@@ -49,7 +52,7 @@ type DecoratedLine = {
 function getFollowMeta(scrollId: string): FollowMeta {
     let m = followStates[scrollId];
     if (!m) {
-        m = { lastFollowAt: 0 };
+        m = { lastFollowAt: 0, focusedId: null, focusedSeenAt: 0 };
         followStates[scrollId] = m;
     }
     return m;
@@ -146,7 +149,12 @@ export function CodeView(props: CodeViewProps): Element {
                 pos += rows.length;
             }
             if (props.autoFollow === true) {
-                applyAutoFollow(props.scrollId, lineDecorator, lineIdToIndex);
+                applyAutoFollow(
+                    props.scrollId,
+                    lineDecorator,
+                    lineIdToIndex,
+                    props.autoFollowDelayMs ?? 0
+                );
             }
             return out;
         },
@@ -215,13 +223,19 @@ function buildEmptyMessageRows(message: string, bodyMaxWidth: number): Element[]
 function applyAutoFollow(
     scrollId: string,
     lineDecorator: LineDecorator,
-    lineIdToIndex: { [id: string]: number }
+    lineIdToIndex: { [id: string]: number },
+    delayMs: number
 ): void {
     const focusedId = lineDecorator.focusedLineId();
     if (focusedId === null) return;
     const meta = getFollowMeta(scrollId);
     const state = getScrollState(scrollId);
     const now = Date.now();
+    if (meta.focusedId !== focusedId) {
+        meta.focusedId = focusedId;
+        meta.focusedSeenAt = now;
+    }
+    if (delayMs > 0 && now - meta.focusedSeenAt < delayMs) return;
     if (now - meta.lastFollowAt < FOLLOW_THROTTLE_MS) return;
 
     const idx = lineIdToIndex[focusedId];

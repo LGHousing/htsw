@@ -159,7 +159,7 @@ export const ACTION_MAPPINGS = {
     TELEPORT: {
         displayName: "Teleport Player",
         loreFields: {
-            Location: { prop: "location", kind: "select" },
+            Location: { prop: "location", kind: "location" },
             "Prevent Teleport Inside Blocks": {
                 prop: "preventTeleportInsideBlocks",
                 kind: "boolean",
@@ -181,14 +181,14 @@ export const ACTION_MAPPINGS = {
             Sound: { prop: "sound", kind: "select" },
             Volume: { prop: "volume", kind: "value", default: 0.7 },
             Pitch: { prop: "pitch", kind: "value", default: 1.0 },
-            Location: { prop: "location", kind: "select", default: "Not Set" },
+            Location: { prop: "location", kind: "location" },
         },
     },
 
     SET_COMPASS_TARGET: {
         displayName: "Set Compass Target",
         loreFields: {
-            Location: { prop: "location", kind: "select" },
+            Location: { prop: "location", kind: "location" },
         },
     },
 
@@ -279,7 +279,7 @@ export const ACTION_MAPPINGS = {
         displayName: "Drop Item",
         loreFields: {
             "Item": { prop: "itemName", kind: "item" },
-            "Location": { prop: "location", kind: "select", default: "Not Set" },
+            "Location": { prop: "location", kind: "location" },
             "Drop Naturally": { prop: "dropNaturally", kind: "boolean", default: true },
             "Prevent Item Merging": {
                 prop: "disableMerging",
@@ -321,7 +321,7 @@ export const ACTION_MAPPINGS = {
     LAUNCH: {
         displayName: "Launch to Target",
         loreFields: {
-            "Target Location": { prop: "location", kind: "select" },
+            "Target Location": { prop: "location", kind: "location" },
             "Launch Strength": { prop: "strength", kind: "value" },
         },
     },

@@ -7,37 +7,42 @@
  * `queue.ts`) can reuse the same segmented look.
  */
 
-import type { Child, Element } from "../../lib/layout";
+import type { Element } from "../../lib/layout";
 import { Button, Col, Container, Row, Text } from "../../lib/components";
 import { Icons } from "../../lib/icons.generated";
 import {
+    ACCENT_DANGER,
     ACCENT_SUCCESS,
     COLOR_BUTTON_DANGER,
     COLOR_BUTTON_DANGER_HOVER,
-    COLOR_PANEL,
     COLOR_PANEL_BORDER,
     COLOR_PANEL_RAISED,
     COLOR_TEXT,
     COLOR_TEXT_DIM,
-    COLOR_TEXT_FAINT,
     PHASE_APPLYING,
     PHASE_HYDRATING,
     PHASE_READING,
 } from "../../lib/theme";
 import { TaskManager } from "../../../tasks/manager";
 import {
-    getCurrentImportingPath,
+    getActiveImportPath,
     getCurrentPhaseEtaSeconds,
     getImportEtaSeconds,
+    getImportMsPerUnit,
     getImportProgress,
     getImportProgressFraction,
-    getImportStartedAt,
 } from "../../state";
-import { diffKey, getDiffEntry } from "../../state/diff";
+import { getLiveOverlay } from "../../state/importPreviewState";
+import {
+    countImportablesByStatus,
+    isImportTotalLocked,
+} from "../../../importer/progress/types";
+import { traceDebugSnapshot } from "../../../importer/progress/trace";
 
 const COLOR_BAR_BG = COLOR_PANEL_BORDER;
 const COLOR_BAR_FG = ACCENT_SUCCESS;
 const PROGRESS_BAR_H = 6;
+let lastProgressBarTrace = "";
 
 // ── Time formatting ────────────────────────────────────────────────────
 
@@ -52,30 +57,9 @@ export function formatEtaSeconds(secs: number): string {
     return mm === 0 ? `${h}h` : `${h}h${mm}m`;
 }
 
-function formatElapsedSeconds(secs: number): string {
-    const total = Math.max(0, Math.floor(secs));
-    if (total < 60) return `${total}s`;
-    const m = Math.floor(total / 60);
-    const s = total % 60;
-    if (m < 60) return s === 0 ? `${m}m` : `${m}m${s}s`;
-    const h = Math.floor(m / 60);
-    const mm = m % 60;
-    return mm === 0 ? `${h}h` : `${h}h${mm}m`;
-}
-
-function formatClockTime(d: Date): string {
-    // Local-time HH:MM with AM/PM. Uses MC's ambient locale via the JS
-    // Date methods so Java client-locale isn't needed.
-    let h = d.getHours();
-    const m = d.getMinutes();
-    const ampm = h >= 12 ? "PM" : "AM";
-    h = h % 12;
-    if (h === 0) h = 12;
-    const mm = m < 10 ? `0${m}` : String(m);
-    return `${h}:${mm} ${ampm}`;
-}
-
 function capitalizePhase(phase: string): string {
+    // Setup work is rendered as part of the "Reading" phase from the user's POV.
+    if (phase === "setup") return "Reading";
     if (phase.length === 0) return phase;
     return phase.charAt(0).toUpperCase() + phase.slice(1);
 }
@@ -89,56 +73,37 @@ function progressEtaText(): string {
     return formatEtaSeconds(secs);
 }
 
-function progressEtaIsStable(): boolean {
-    const p = getImportProgress();
-    if (p === null) return false;
-    return p.current === null ||
-        p.current.phase === "done" ||
-        p.current.phase === "applying";
-}
-
-function progressElapsedText(): string {
-    const startedAt = getImportStartedAt();
-    if (startedAt === null) return "";
-    return `elapsed ${formatElapsedSeconds((Date.now() - startedAt) / 1000)}`;
-}
-
-function progressFinishTimeText(): string {
-    const secs = getImportEtaSeconds();
-    if (secs === null) return "";
-    const finish = new Date(Date.now() + secs * 1000);
-    return `done ${formatClockTime(finish)}`;
+function progressMsPerUnitText(): string {
+    return `${Math.round(getImportMsPerUnit())}ms/u`;
 }
 
 function currentPhaseEtaText(): string {
     const p = getImportProgress();
-    if (p === null || p.current === null) return "";
+    if (p === null || p.active === null) return "";
     const secs = getCurrentPhaseEtaSeconds();
     if (secs === null || secs <= 0) return "";
-    if (p.current.phase === "reading") return `${formatEtaSeconds(secs)} left reading`;
-    if (p.current.phase === "hydrating") {
-        return `${formatEtaSeconds(secs)} left hydrating`;
+    if (p.active.phase === "setup" || p.active.phase === "reading") {
+        return `${formatEtaSeconds(secs)} left reading`;
     }
-    if (p.current.phase === "applying") return `${formatEtaSeconds(secs)} left applying`;
+    if (p.active.phase === "hydrating") {
+        return `${formatEtaSeconds(secs)} left hydrate`;
+    }
+    if (p.active.phase === "applying") return `${formatEtaSeconds(secs)} left apply`;
     return "";
 }
 
-/** What's happening *right now* — prefer the importer's live progress label,
- * then the diff entry's current action label. */
+/** What's happening *right now* — the live overlay's current action label. */
 function progressCurrentLabel(): string {
-    const p = getImportProgress();
-    if (p !== null && p.current !== null && p.current.phaseLabel.length > 0) {
-        return p.current.phaseLabel;
-    }
-    const path = getCurrentImportingPath();
+    const path = getActiveImportPath();
     if (path !== null) {
-        const entry = getDiffEntry(diffKey(path));
-        if (entry !== undefined && entry.currentLabel.length > 0) {
-            return entry.currentLabel;
+        const overlay = getLiveOverlay(path);
+        if (overlay !== undefined && overlay.currentLabel.length > 0) {
+            return overlay.currentLabel;
         }
     }
-    if (p !== null && p.current !== null && p.current.label.length > 0) {
-        return p.current.label;
+    const p = getImportProgress();
+    if (p !== null && p.active !== null) {
+        return `${p.active.type} ${p.active.identity}`;
     }
     return "working";
 }
@@ -147,10 +112,10 @@ function progressCurrentLabel(): string {
 
 function progressPhaseColor(): number {
     const p = getImportProgress();
-    if (p === null || p.current === null) return COLOR_BAR_FG;
-    if (p.current.phase === "reading") return PHASE_READING;
-    if (p.current.phase === "hydrating") return PHASE_HYDRATING;
-    if (p.current.phase === "applying") return PHASE_APPLYING;
+    if (p === null || p.active === null) return COLOR_BAR_FG;
+    if (p.active.phase === "setup" || p.active.phase === "reading") return PHASE_READING;
+    if (p.active.phase === "hydrating") return PHASE_HYDRATING;
+    if (p.active.phase === "applying") return PHASE_APPLYING;
     return COLOR_BAR_FG;
 }
 
@@ -187,42 +152,6 @@ export function phaseSegment(widthFactor: number, fraction: number, color: numbe
     });
 }
 
-function currentImportablePhaseSegments(
-    p: NonNullable<ReturnType<typeof getImportProgress>>
-): Child[] {
-    const current = p.current;
-    if (current === null) return [];
-    const units = current.phaseUnits;
-    const total = Math.max(1, units.reading + units.hydrating + units.applying);
-    const within = Math.max(0, current.completedUnits);
-    const readDone = Math.min(units.reading, within);
-    const hydrateDone = Math.min(
-        units.hydrating,
-        Math.max(0, within - units.reading)
-    );
-    const applyDone = Math.min(
-        units.applying,
-        Math.max(0, within - units.reading - units.hydrating)
-    );
-    return [
-        phaseSegment(
-            units.reading / total,
-            units.reading > 0 ? readDone / units.reading : 1,
-            PHASE_READING
-        ),
-        phaseSegment(
-            units.hydrating / total,
-            units.hydrating > 0 ? hydrateDone / units.hydrating : 1,
-            PHASE_HYDRATING
-        ),
-        phaseSegment(
-            units.applying / total,
-            units.applying > 0 ? applyDone / units.applying : 0,
-            PHASE_APPLYING
-        ),
-    ];
-}
-
 function progressBar(): Element {
     return Container({
         style: {
@@ -234,93 +163,58 @@ function progressBar(): Element {
         children: () => {
             const p = getImportProgress();
             if (p === null || p.totalUnits <= 0) return [];
-            if (p.rows.length === 0) {
-                const ratio = getImportProgressFraction();
-                return [
-                    Container({
-                        style: {
-                            width: { kind: "grow", factor: Math.max(0.0001, ratio) },
-                            height: { kind: "grow" },
-                            background: progressPhaseColor(),
-                        },
-                        children: [],
-                    }),
-                    Container({
-                        style: {
-                            width: { kind: "grow", factor: Math.max(0.0001, 1 - ratio) },
-                            height: { kind: "grow" },
-                        },
-                        children: [],
-                    }),
-                ];
-            }
-            let rowUnitsTotal = 0;
-            for (let i = 0; i < p.rows.length; i++) rowUnitsTotal += p.rows[i].units;
-            if (rowUnitsTotal <= 0) rowUnitsTotal = 1;
-            const out: Child[] = [];
+            const children: Element[] = [];
+            const traceRows: unknown[] = [];
             for (let i = 0; i < p.rows.length; i++) {
                 const row = p.rows[i];
-                const w = row.units;
-                const flexFactor = Math.max(0.0001, w / rowUnitsTotal);
-                let fill: number;
+                let fraction = 0;
+                let color = ACCENT_SUCCESS;
                 if (row.status === "imported" || row.status === "skipped") {
-                    fill = 1;
-                } else if (p.current !== null && row.key === p.current.key) {
-                    const denom = Math.max(0.0001, p.current.totalUnits);
-                    fill = Math.min(1, Math.max(0, p.current.completedUnits / denom));
-                } else {
-                    fill = 0;
+                    fraction = 1;
+                } else if (row.status === "failed") {
+                    fraction = 1;
+                    color = ACCENT_DANGER;
+                } else if (p.active !== null && p.active.key === row.key) {
+                    const total = Math.max(1, p.active.totalUnits);
+                    fraction = Math.min(1, Math.max(0, p.active.completedUnits / total));
+                    color = progressPhaseColor();
                 }
-                const currentPhaseSegments =
-                    p.current !== null && row.key === p.current.key
-                        ? currentImportablePhaseSegments(p)
-                        : [];
-                out.push(
-                    Container({
+
+                traceRows.push({
+                    index: i,
+                    key: row.key,
+                    status: row.status,
+                    rowTotalUnits: row.totalUnits,
+                    widthFactor: 1,
+                    fillFraction: fraction,
+                    color,
+                });
+
+                if (i > 0) {
+                    children.push(Container({
                         style: {
-                            direction: "row",
-                            width: { kind: "grow", factor: flexFactor },
+                            width: { kind: "px", value: 1 },
                             height: { kind: "grow" },
+                            background: COLOR_PANEL_BORDER,
                         },
-                        children:
-                            currentPhaseSegments.length > 0
-                                ? currentPhaseSegments
-                                : [
-                                      Container({
-                                          style: {
-                                              width: { kind: "grow", factor: Math.max(0.0001, fill) },
-                                              height: { kind: "grow" },
-                                              background:
-                                                  p.current !== null && row.key === p.current.key
-                                                      ? progressPhaseColor()
-                                                      : COLOR_BAR_FG,
-                                          },
-                                          children: [],
-                                      }),
-                                      Container({
-                                          style: {
-                                              width: { kind: "grow", factor: Math.max(0.0001, 1 - fill) },
-                                              height: { kind: "grow" },
-                                          },
-                                          children: [],
-                                      }),
-                                  ],
-                    })
-                );
-                if (i < p.rows.length - 1) {
-                    out.push(
-                        Container({
-                            style: {
-                                width: { kind: "px", value: 1 },
-                                height: { kind: "grow" },
-                                background: COLOR_PANEL,
-                            },
-                            children: [],
-                        })
-                    );
+                        children: [],
+                    }));
                 }
+                children.push(phaseSegment(1, fraction, color));
             }
-            return out;
+            const traceKey = JSON.stringify({
+                completedUnits: p.completedUnits,
+                totalUnits: p.totalUnits,
+                activeKey: p.active === null ? null : p.active.key,
+                activeCompletedUnits: p.active === null ? null : p.active.completedUnits,
+                activeTotalUnits: p.active === null ? null : p.active.totalUnits,
+                rows: traceRows,
+            });
+            if (traceKey !== lastProgressBarTrace) {
+                lastProgressBarTrace = traceKey;
+                traceDebugSnapshot("guiProgressBar", JSON.parse(traceKey));
+            }
+            return children;
         },
     });
 }
@@ -329,26 +223,21 @@ function progressBar(): Element {
 
 function progressDetailLine(): string {
     const prog = getImportProgress();
-    if (prog === null || prog.current === null) return "";
-    const cur = prog.current;
+    if (prog === null || prog.active === null) return "";
+    const cur = prog.active;
     const parts: string[] = [];
-    const isActionListPhase =
-        cur.phase === "reading" || cur.phase === "hydrating" || cur.phase === "applying";
-    const unitTotal = cur.unitTotal ?? 0;
-    const unitCompleted = cur.unitCompleted ?? 0;
-    if (isActionListPhase) {
-        if (cur.phase === "reading" && unitTotal > 1) {
-            parts.push(`${unitCompleted} read so far`);
-        } else if (cur.phase === "hydrating" && unitTotal > 1) {
-            parts.push(`${unitCompleted} of ${unitTotal} nested reads`);
+    const sync = cur.sync;
+    if (sync !== null) {
+        const { completedUnits, totalUnits, parent } = sync;
+        if (cur.phase === "reading" && totalUnits > 1) {
+            parts.push(`${completedUnits} read so far`);
+        } else if (cur.phase === "hydrating" && totalUnits > 1) {
+            parts.push(`${completedUnits} of ${totalUnits} nested reads`);
         } else if (cur.phase === "applying") {
-            if (cur.parentUnitCompleted !== undefined && cur.parentUnitTotal !== undefined) {
-                parts.push(`operation ${cur.parentUnitCompleted} of ${cur.parentUnitTotal}`);
-                if (unitTotal > 1) {
-                    parts.push(`nested operation ${unitCompleted} of ${unitTotal}`);
-                }
-            } else if (unitTotal > 1) {
-                parts.push(`operation ${unitCompleted} of ${unitTotal}`);
+            if (parent !== null) {
+                parts.push(operationProgressText(parent.completedUnits, parent.totalUnits));
+            } else if (totalUnits > 1) {
+                parts.push(operationProgressText(completedUnits, totalUnits));
             }
         }
     }
@@ -357,14 +246,20 @@ function progressDetailLine(): string {
     return parts.join("  ·  ");
 }
 
+function operationProgressText(completed: number, total: number): string {
+    const safeTotal = Math.max(1, total);
+    const current = Math.min(safeTotal, Math.max(1, completed + 1));
+    return `op ${current}/${safeTotal}`;
+}
+
 function progressTotalEtaLine(): string {
     const eta = progressEtaText();
     if (eta === "") return "";
     if (eta === "total ETA calculating…") return eta;
-    if (!progressEtaIsStable()) return `total ~${eta} left`;
-    const finish = progressFinishTimeText();
-    if (finish === "") return `total ${eta} left`;
-    return `total ${eta} left · ${finish}`;
+    const p = getImportProgress();
+    const rate = progressMsPerUnitText();
+    if (p === null || !isImportTotalLocked(p)) return `total ~${eta} · ${rate}`;
+    return `total ${eta} · ${rate}`;
 }
 
 export function liveImporterPanel(): Element {
@@ -379,8 +274,10 @@ export function liveImporterPanel(): Element {
             if (p === null) {
                 return [Text({ text: "No import in progress.", color: COLOR_TEXT_DIM })];
             }
-            const current = p.current;
-            let currentNumber = p.completedImportables + 1;
+            const current = p.active;
+            const { completed: completedImportables, total: totalImportables } =
+                countImportablesByStatus(p);
+            let currentNumber = completedImportables + 1;
             if (current !== null) {
                 for (let i = 0; i < p.rows.length; i++) {
                     if (p.rows[i].key === current.key) {
@@ -397,8 +294,8 @@ export function liveImporterPanel(): Element {
                         Text({
                             text: () =>
                                 current === null
-                                    ? `Importable ${p.completedImportables} of ${p.totalImportables}`
-                                    : `Importable ${currentNumber} of ${p.totalImportables} · ${current.identity}`,
+                                    ? `Importable ${completedImportables} of ${totalImportables}`
+                                    : `Importable ${currentNumber} of ${totalImportables} · ${current.identity}`,
                             color: COLOR_TEXT,
                         }),
                         // WHAT — phase + current action label, bolded so it dominates.
@@ -433,10 +330,6 @@ export function liveImporterPanel(): Element {
                                     text: () => progressTotalEtaLine(),
                                     color: COLOR_TEXT_DIM,
                                     style: { width: { kind: "grow" } },
-                                }),
-                                Text({
-                                    text: () => progressElapsedText(),
-                                    color: COLOR_TEXT_FAINT,
                                 }),
                                 Button({
                                     icon: Icons.x,

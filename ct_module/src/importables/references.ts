@@ -6,29 +6,47 @@ import { ensureFunctionNamesExist } from "./functions/shared";
 import { ensureMenuNamesExist } from "./menus/shared";
 import { ensureRegionNamesExist } from "./regions/shared";
 
-type ReferencedImportables = {
+export type ReferencedImportables = {
     functions: string[];
     menus: string[];
     regions: string[];
 };
 
+export type RefShellKind = "function" | "menu" | "region";
+
+export type OnRefShellCreated = (kind: RefShellKind, name: string) => void;
+
 export async function ensureReferencedImportablesExist(
     ctx: TaskContext,
-    importable: Importable
+    importable: Importable,
+    onShellCreated?: OnRefShellCreated
 ): Promise<void> {
     const refs = collectReferencedImportables(importable);
     if (refs.functions.length > 0) {
-        await ensureFunctionNamesExist(ctx, refs.functions);
+        await ensureFunctionNamesExist(ctx, refs.functions, (name) =>
+            onShellCreated?.("function", name)
+        );
     }
     if (refs.menus.length > 0) {
-        await ensureMenuNamesExist(ctx, refs.menus);
+        await ensureMenuNamesExist(ctx, refs.menus, (name) =>
+            onShellCreated?.("menu", name)
+        );
     }
     if (refs.regions.length > 0) {
-        await ensureRegionNamesExist(ctx, refs.regions);
+        await ensureRegionNamesExist(ctx, refs.regions, (name) =>
+            onShellCreated?.("region", name)
+        );
     }
 }
 
-function collectReferencedImportables(
+/** Count of unique referenced function/menu/region shells this importable
+ *  will have to create up-front. Drives the per-importable setup-step total. */
+export function countReferencedShells(importable: Importable): number {
+    const refs = collectReferencedImportables(importable);
+    return refs.functions.length + refs.menus.length + refs.regions.length;
+}
+
+export function collectReferencedImportables(
     importable: Importable
 ): ReferencedImportables {
     const refs: ReferencedImportables = {

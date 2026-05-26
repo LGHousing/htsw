@@ -14,6 +14,8 @@ import { lastWindowID___FromS30PacketWindowItemsPacketReceived__ThisIsNecessary_
 import { COST } from "../progress/costs";
 import { timed } from "../progress/timing";
 
+const MENU_WAIT_TIMEOUT_MS = 6000;
+
 export async function waitForMenu(ctx: TaskContext): Promise<void> {
     await ctx.withTimeout(async () => {
         await ctx.waitFor("packetReceived", (packet) => {
@@ -31,7 +33,7 @@ export async function waitForMenu(ctx: TaskContext): Promise<void> {
         // thread. So we have to wait for the next tick so the packet will be
         // processed and the window items will be in the container.
         await ctx.waitFor("tick");
-    }, "Waiting for menu to load");
+    }, "Waiting for menu to load", MENU_WAIT_TIMEOUT_MS);
 }
 
 export async function timedWaitForMenu(

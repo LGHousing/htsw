@@ -7,11 +7,15 @@ import {
     timedWaitForUnformattedMessage,
 } from "../../importer/gui/menuWait";
 import type { ImportableTrustPlan } from "../../importCache";
-import type { ImportPreviewEventHandler } from "../../importer/importPreviewEvents";
+import type { ImportEventHandler } from "../../importer/importEvents";
+import { createSetupStepEmitter } from "../../importer/progress/setupStepEmitter";
 import TaskContext from "../../tasks/context";
 import { getActionListTrust, getBaselineActionList } from "../actionListHelpers";
 import type { ItemRegistry } from "../itemRegistry";
-import { ensureReferencedImportablesExist } from "../references";
+import {
+    countReferencedShells,
+    ensureReferencedImportablesExist,
+} from "../references";
 import { openRegionEditor } from "./shared";
 
 export async function importImportableRegion(
@@ -19,9 +23,13 @@ export async function importImportableRegion(
     importable: ImportableRegion,
     itemRegistry: ItemRegistry,
     trustPlan?: ImportableTrustPlan,
-    previewHandler?: ImportPreviewEventHandler
+    events?: ImportEventHandler
 ): Promise<void> {
-    await ensureReferencedImportablesExist(ctx, importable);
+    const setup = createSetupStepEmitter(events, countReferencedShells(importable) + 3);
+
+    await ensureReferencedImportablesExist(ctx, importable, (kind, name) => {
+        setup(`created ${kind} ${name}`);
+    });
 
     const setPos = async (pos: Pos, corner: "A" | "B") => {
         await ctx.runCommand(`/tp ${pos.x} ${pos.y} ${pos.z}`);
@@ -38,7 +46,10 @@ export async function importImportableRegion(
     };
 
     await setPos(importable.bounds.from, "A");
+    setup(`set region corner A`);
+
     await setPos(importable.bounds.to, "B");
+    setup(`set region corner B`);
 
     const alreadyExists = (await openRegionEditor(ctx, importable.name)) === "opened";
 
@@ -53,6 +64,7 @@ export async function importImportableRegion(
 
         await openRegionEditor(ctx, importable.name);
     }
+    setup(`opened region ${importable.name}`);
 
     if (importable.onEnterActions && !trustPlan?.trustedListPaths.has("onEnterActions")) {
         ctx.getItemSlot("Entry Actions").click();
@@ -62,7 +74,7 @@ export async function importImportableRegion(
             itemRegistry,
             baselineCurrent: getBaselineActionList(trustPlan, "onEnterActions"),
             trust: getActionListTrust(trustPlan, "onEnterActions"),
-            previewHandler,
+            events,
         });
 
         if (
@@ -81,7 +93,7 @@ export async function importImportableRegion(
             itemRegistry,
             baselineCurrent: getBaselineActionList(trustPlan, "onExitActions"),
             trust: getActionListTrust(trustPlan, "onExitActions"),
-            previewHandler,
+            events,
         });
     }
 }

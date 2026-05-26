@@ -5,11 +5,12 @@ import {
     actionOnlyNoteDiffers,
     actionsEqual,
     conditionsEqual,
+    normalizeActionCompare,
     scalarFieldDiffers,
 } from "../fields/compare";
 import { CONDITION_MAPPINGS } from "../fields/conditionMappings";
 import {
-    currentConditionListFromConditions,
+    baselineConditionListFromConditions,
     diffConditionList,
 } from "../conditions/diff";
 import type {
@@ -22,6 +23,7 @@ import type {
     ObservedActionSlot,
     UiFieldKind,
 } from "../types";
+import { traceDebugSnapshot } from "../progress/trace";
 
 type KnownCurrentAction = Omit<CurrentActionListEntry, "action"> & {
     action: NonNullable<CurrentActionListEntry["action"]>;
@@ -56,6 +58,7 @@ const FIELD_KIND_COST: Record<string, number> = {
     boolean: 1,   // setBooleanValue: 1 click (toggle)
     cycle: 2,     // setCycleValue: avg ~2 clicks (shortest direction)
     select: 2,    // setSelectValue: 1 click open submenu + 1 click option
+    location: 2,
     value: 2,     // setStringValue/setNumberValue: 1 click field + 1 chat/anvil input
     item: 2,      // setItemValue: 1 click field + 1 click item
     nestedList: 50, // recursive sync — extremely expensive
@@ -487,7 +490,7 @@ function actionListCost(
     observed: Array<Observed<Action> | null>,
     desired: Action[]
 ): number {
-    const current = currentActionListFromActions(observed);
+    const current = baselineActionListFromActions(observed);
     const knownCurrent = current.filter(
         (entry): entry is KnownCurrentAction => entry.action !== null
     );
@@ -499,7 +502,7 @@ function actionListCost(
     return cost;
 }
 
-export function currentActionListFromSlots(
+export function baselineActionListFromSlots(
     slots: readonly ObservedActionSlot[]
 ): CurrentActionListEntry[] {
     const out: CurrentActionListEntry[] = [];
@@ -515,7 +518,7 @@ export function currentActionListFromSlots(
     return out;
 }
 
-export function currentActionListFromActions(
+export function baselineActionListFromActions(
     actions: ReadonlyArray<Observed<Action> | Action | null>
 ): CurrentActionListEntry[] {
     const out: CurrentActionListEntry[] = [];
@@ -540,7 +543,7 @@ function nestedActionDiff(
         ? (observed as Array<Observed<Action> | null>)
         : [];
     const desiredList = Array.isArray(desired) ? (desired as Action[]) : [];
-    const diff = diffActionListInner(currentActionListFromActions(observedList), desiredList, false);
+    const diff = diffActionListInner(baselineActionListFromActions(observedList), desiredList, false);
     if (diff.operations.length === 0) return null;
     return { prop, diff };
 }
@@ -554,7 +557,7 @@ function nestedConditionDiff(
         : [];
     const desiredList = Array.isArray(desired) ? (desired as Condition[]) : [];
     const diff = diffConditionList(
-        currentConditionListFromConditions(observedList),
+        baselineConditionListFromConditions(observedList),
         desiredList
     );
     if (diff.operations.length === 0) return null;
@@ -599,7 +602,7 @@ function createEditOperation(
         entryId: match.current.entryId,
         fromIndex: match.current.index,
         desiredIndex: match.desiredIndex,
-        currentAction: match.current.action,
+        baselineAction: match.current.action,
         desired: match.desired,
         noteOnly,
         noteDiffers: match.current.action.note !== match.desired.note,
@@ -633,7 +636,7 @@ function diffActionListInner(
             kind: "delete",
             entryId: currentEntry.entryId,
             fromIndex: currentEntry.index,
-            currentAction: currentEntry.action,
+            baselineAction: currentEntry.action,
         });
     }
 
@@ -642,7 +645,7 @@ function diffActionListInner(
             kind: "delete",
             entryId: currentEntry.entryId,
             fromIndex: currentEntry.index,
-            currentAction: currentEntry.action,
+            baselineAction: currentEntry.action,
         });
     }
 
@@ -667,6 +670,16 @@ function diffActionListInner(
         }
 
         if (!actionsEqual(match.current.action, match.desired)) {
+            traceDebugSnapshot("actionCompareMismatch", {
+                currentIndex: match.current.index,
+                desiredIndex: match.desiredIndex,
+                matchKind: match.kind,
+                cost: match.cost,
+                current: match.current.action,
+                desired: match.desired,
+                normalizedCurrent: normalizeActionCompare(match.current.action),
+                normalizedDesired: normalizeActionCompare(match.desired),
+            });
             operations.push(createEditOperation(match, includeNested));
         }
     }

@@ -28,7 +28,7 @@ import type {
     Observed,
     ObservedActionSlot,
 } from "../types";
-import type { ActionListProgressHandler } from "../progress/types";
+import type { ProgressHandler } from "../progress/types";
 import { createNestedHydrationPlan } from "./hydrationPlan";
 import { matchObservedToDesired } from "./nestedMatching";
 import { applyActionListTrust } from "./applyTrust";
@@ -40,12 +40,12 @@ import {
     isEmptyPaginatedPlaceholder,
     readPaginatedList,
 } from "../gui/paginatedList";
-import type { ImportPreviewEventHandler } from "../importPreviewEvents";
+import type { ImportEventHandler } from "../importEvents";
 import {
     COST,
     hydrationEntryUnits,
-    phaseUnitsFromParts,
-    type ActionListPhaseUnits,
+    phaseUnitsTotal,
+    type PhaseUnits,
 } from "../progress/costs";
 import { ACTION_LIST_CONFIG } from "./listConfig";
 import { actionPathForIndex, getActionSpec } from "../actions";
@@ -55,9 +55,9 @@ export type ActionListReadMode =
     | {
           kind: "full";
           itemRegistry?: ItemRegistry;
-          onProgress?: ActionListProgressHandler;
-          phaseUnits?: ActionListPhaseUnits;
-          previewHandler?: ImportPreviewEventHandler;
+          progress?: ProgressHandler;
+          phaseUnits?: PhaseUnits;
+          events?: ImportEventHandler;
           pathPrefix?: string;
       }
     | {
@@ -65,9 +65,9 @@ export type ActionListReadMode =
           desired: readonly Action[];
           itemRegistry?: ItemRegistry;
           trust?: ActionListTrust;
-          onProgress?: ActionListProgressHandler;
-          phaseUnits?: ActionListPhaseUnits;
-          previewHandler?: ImportPreviewEventHandler;
+          progress?: ProgressHandler;
+          phaseUnits?: PhaseUnits;
+          events?: ImportEventHandler;
           pathPrefix?: string;
       };
 
@@ -180,8 +180,8 @@ export async function readActionList(
     ctx: TaskContext,
     mode: ActionListReadMode = { kind: "full" }
 ): Promise<ObservedActionSlot[]> {
-    const progress = mode.onProgress;
-    const previewHandler = mode.previewHandler;
+    const progress = mode.progress;
+    const events = mode.events;
     const desiredTotal =
         mode.kind === "sync" ? Math.max(1, mode.desired.length) : 1;
     const phaseUnits = mode.phaseUnits;
@@ -190,15 +190,13 @@ export async function readActionList(
     if (phaseUnits !== undefined) {
         progress?.({
             phase: "reading",
-            phaseLabel: "reading housing state",
-            unitCompleted: 0,
-            unitTotal: desiredTotal,
             completedUnits: 0,
-            totalUnits: phaseUnits.total,
-            phaseUnits: phaseUnitsFromParts(phaseUnits),
+            totalUnits: phaseUnitsTotal(phaseUnits),
+            phaseUnits: phaseUnits,
+            sync: { completedUnits: 0, totalUnits: desiredTotal, parent: null },
         });
     }
-    previewHandler?.emit({
+    events?.emit({
         kind: "readStarted",
         listPath: mode.pathPrefix ?? "actions",
     });
@@ -209,28 +207,24 @@ export async function readActionList(
         ({ totalEntries, pagesRead }) => {
             readCompletedUnits = Math.max(0, pagesRead - 1) * COST.pageTurnWait;
             if (phaseUnits === undefined) return;
-            if (readCompletedUnits > phaseUnits.readPart) {
-                phaseUnits.readPart = readCompletedUnits;
-                phaseUnits.total = recomputeTotal(phaseUnits);
-            }
+            phaseUnits.reading = readCompletedUnits;
             progress?.({
                 phase: "reading",
-                phaseLabel: `${totalEntries} actions read`,
-                unitCompleted: totalEntries,
-                unitTotal: Math.max(desiredTotal, totalEntries),
                 completedUnits: readCompletedUnits,
-                totalUnits: phaseUnits.total,
-                phaseUnits: phaseUnitsFromParts(phaseUnits),
+                totalUnits: phaseUnitsTotal(phaseUnits),
+                phaseUnits: phaseUnits,
+                sync: {
+                    completedUnits: totalEntries,
+                    totalUnits: Math.max(desiredTotal, totalEntries),
+                    parent: null,
+                },
             });
         }
     );
-    if (phaseUnits !== undefined && readCompletedUnits > phaseUnits.readPart) {
-        phaseUnits.readPart = readCompletedUnits;
-        phaseUnits.total = recomputeTotal(phaseUnits);
-    }
+    if (phaseUnits !== undefined) phaseUnits.reading = readCompletedUnits;
     const isTopLevelRead = mode.pathPrefix === undefined;
     if (isTopLevelRead) {
-        emitObservedSnapshot(observed, previewHandler);
+        emitObservedSnapshot(observed, events);
     }
     let plan: NestedHydrationPlan;
     if (mode.kind === "full") {
@@ -252,40 +246,36 @@ export async function readActionList(
         phaseUnits,
         isTopLevelRead,
         mode.pathPrefix,
-        previewHandler
+        events
     );
     await goToPaginatedListPage(ctx, 1, ACTION_LIST_CONFIG);
-    canonicalizeObservedActionItemNames(observed, mode.itemRegistry);
-    if (isTopLevelRead) {
-        emitObservedSnapshot(observed, previewHandler);
-        previewHandler?.emit({ kind: "clearReading" });
+    if (mode.itemRegistry !== undefined) {
+        for (const entry of observed) {
+            if (entry.action !== null) {
+                canonicalizeActionItemName(entry.action, mode.itemRegistry);
+            }
+        }
     }
-    previewHandler?.emit({
-        kind: "readCompleted",
-        listPath: mode.pathPrefix ?? "actions",
-        observedCount: observed.length,
-    });
+    if (isTopLevelRead) {
+        emitObservedSnapshot(observed, events);
+    }
     return observed;
 }
 
 function emitObservedSnapshot(
     observed: readonly ObservedActionSlot[],
-    previewHandler?: ImportPreviewEventHandler
+    events?: ImportEventHandler
 ): void {
-    if (previewHandler === undefined) return;
+    if (events === undefined) return;
     const snapshot: Array<Action | null> = [];
     for (const entry of observed) {
         snapshot.push(entry.action as Action | null);
     }
     try {
-        previewHandler.emit({ kind: "observedSnapshot", actions: snapshot });
+        events.emit({ kind: "observedSnapshot", actions: snapshot });
     } catch (_e) {
         // Preview-side rendering errors must never abort the importer.
     }
-}
-
-function recomputeTotal(b: ActionListPhaseUnits): number {
-    return b.readPart + b.hydratePart + b.applyPart;
 }
 
 function addScalarHydrationEntries(
@@ -311,6 +301,15 @@ function shouldHydrateScalarAction(action: Observed<Action>): boolean {
         if (!isTruncatableKind(field.kind)) continue;
         const value = (action as Record<string, unknown>)[field.prop];
         if (typeof value === "string" && looksTruncated(value)) return true;
+        if (
+            field.kind === "location" &&
+            typeof value === "object" &&
+            value !== null &&
+            (value as { type?: unknown }).type === "Custom Coordinates"
+        ) {
+            const coord = (value as { value?: unknown }).value;
+            if (typeof coord === "string" && looksTruncated(coord)) return true;
+        }
     }
     if (action.type === "CHANGE_VAR" && action.holder?.type === "Team") {
         const team = action.holder.team;
@@ -329,21 +328,6 @@ function buildFullHydrationPlan(
         }
     }
     return plan;
-}
-
-export function canonicalizeObservedActionItemNames(
-    observed: readonly ObservedActionSlot[],
-    itemRegistry?: ItemRegistry
-): void {
-    if (itemRegistry === undefined) {
-        return;
-    }
-
-    for (const entry of observed) {
-        if (entry.action !== null) {
-            canonicalizeActionItemName(entry.action, itemRegistry);
-        }
-    }
 }
 
 export function canonicalizeActionItemName(
@@ -375,11 +359,11 @@ async function hydrateNestedActions(
     plan: NestedHydrationPlan,
     observed: readonly ObservedActionSlot[],
     itemRegistry?: ItemRegistry,
-    progress?: ActionListProgressHandler,
-    phaseUnits?: ActionListPhaseUnits,
+    progress?: ProgressHandler,
+    phaseUnits?: PhaseUnits,
     isTopLevelRead: boolean = false,
     pathPrefix?: string,
-    previewHandler?: ImportPreviewEventHandler
+    events?: ImportEventHandler
 ): Promise<void> {
     let completed = 0;
     const total = plan.size;
@@ -388,38 +372,26 @@ async function hydrateNestedActions(
     plan.forEach((propsToRead, entry) => {
         totalHydrateUnits += hydrationEntryUnits(entry, propsToRead);
     });
-    if (phaseUnits !== undefined && totalHydrateUnits > phaseUnits.hydratePart) {
-        phaseUnits.hydratePart = totalHydrateUnits;
-        phaseUnits.total = recomputeTotal(phaseUnits);
-    }
-    const emit = (label: string) => {
+    if (phaseUnits !== undefined) phaseUnits.hydrating = totalHydrateUnits;
+    const emit = (_label: string) => {
         if (phaseUnits === undefined) return;
         progress?.({
             phase: "hydrating",
-            phaseLabel: label,
-            unitCompleted: completed,
-            unitTotal: total,
-            completedUnits: phaseUnits.readPart + completedHydrateUnits,
-            totalUnits: phaseUnits.total,
-            phaseUnits: phaseUnitsFromParts(phaseUnits),
+            completedUnits: phaseUnits.reading + completedHydrateUnits,
+            totalUnits: phaseUnitsTotal(phaseUnits),
+            phaseUnits: phaseUnits,
+            sync: { completedUnits: completed, totalUnits: total, parent: null },
         });
     };
     for (const [entry, propsToRead] of plan) {
         const entryPath = actionPathForIndex(pathPrefix, entry.index);
         const entryLabel = `reading nested ${actionLogLabel(entry.action)}`;
         emit(entryLabel);
-        previewHandler?.emit({
-            kind: "hydrationStarted",
+        events?.emit({
+            kind: "nestedReadStarted",
             path: entryPath,
             actionType: entry.action?.type ?? null,
         });
-        if (isTopLevelRead) {
-            previewHandler?.emit({
-                kind: "reading",
-                path: entryPath,
-                actionType: entry.action?.type ?? null,
-            });
-        }
         const entryUnits = hydrationEntryUnits(entry, propsToRead);
         await hydrateNestedAction(
             ctx,
@@ -428,14 +400,13 @@ async function hydrateNestedActions(
             observed.length,
             itemRegistry,
             entryPath,
-            previewHandler
+            events
         );
-        previewHandler?.emit({ kind: "hydrationCompleted", path: entryPath });
         completedHydrateUnits += entryUnits;
         completed++;
         emit(`${completed}/${total} nested actions read`);
         if (isTopLevelRead) {
-            emitObservedSnapshot(observed, previewHandler);
+            emitObservedSnapshot(observed, events);
         }
     }
 }
@@ -447,7 +418,7 @@ async function hydrateNestedAction(
     listLength: number,
     itemRegistry?: ItemRegistry,
     entryPath?: string,
-    previewHandler?: ImportPreviewEventHandler
+    events?: ImportEventHandler
 ): Promise<void> {
     if (entry.action === null) {
         return;
@@ -472,7 +443,8 @@ async function hydrateNestedAction(
             propsToRead,
             itemRegistry,
             entryPath,
-            previewHandler
+            events,
+            entry.action
         );
         entry.nestedReadState = "full";
         if (note) {

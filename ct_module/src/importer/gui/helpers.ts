@@ -8,6 +8,8 @@ import {
     normalizeLoreValueFormatting,
     normalizeNoteText,
     readListItemNote,
+    stripHousingEditorValuePrefix,
+    stripRedundantLeadingFormattingCodes,
 } from "../fields/loreParsing";
 import {
     timedWaitForMenu,
@@ -226,14 +228,13 @@ export function readStringValue(slot: ItemSlot): string | null {
     }
 
     return currentValueLines
-        .map((line) =>
-            stripLeadingFormattingCodes(normalizeLoreValueFormatting(line)).trim()
-        )
+        .map((line, i) => {
+            const normalized = stripHousingEditorValuePrefix(
+                normalizeLoreValueFormatting(line)
+            ).trim();
+            return i === 0 ? normalized : stripRedundantLeadingFormattingCodes(normalized);
+        })
         .join(" ");
-}
-
-function stripLeadingFormattingCodes(value: string): string {
-    return value.replace(/^(?:&[0-9a-fklmnor])+/i, "");
 }
 
 export function findMenuOptionByLore(
@@ -391,8 +392,13 @@ function waitForChatInputPrompt(ctx: TaskContext): Promise<unknown> {
 export async function setNumberValue(ctx: TaskContext, slot: ItemSlot, value: number) {
     const newValue = value.toString();
     const currentValue = readCurrentValue(slot);
-    if (currentValue !== null && removedFormatting(currentValue).trim() === newValue) {
-        return;
+    if (currentValue !== null) {
+        const currentNumber = Number(
+            removedFormatting(currentValue).trim().split(",").join("")
+        );
+        if (Number.isFinite(currentNumber) && currentNumber === value) {
+            return;
+        }
     }
 
     slot.click();

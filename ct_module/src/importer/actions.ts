@@ -40,7 +40,7 @@ import { type ItemRegistry } from "../importables/itemRegistry";
 import {
     VAR_HOLDER_OPTIONS,
     clickGoBack,
-    getSlotPaginate,
+    findMenuOptionByLore,
     openSubmenu,
     enterValue,
     setStringValue,
@@ -64,23 +64,24 @@ import {
     ACTION_MAPPINGS,
     getActionFieldLabel,
 } from "./fields/actionMappings";
+import { normalizeSoundKey } from "./fields/sounds";
+import { parseLocationField } from "./fields/loreParsing";
 import type {
     NestedPropsToRead,
     Observed,
 } from "./types";
 import { setItemValue } from "./items/items";
-import type { ActionPath, ImportPreviewEventHandler } from "./importPreviewEvents";
+import type { ActionPath, ImportEventHandler, ProgressScope } from "./importEvents";
 import { resolveImportableItem } from "./items/resolveItem";
 import { readActionList } from "./actions/readList";
 import { syncActionList } from "./actions/sync";
-import type { ActionListProgressHandler } from "./progress/types";
 
 export type WriteActionOptions<T extends Action = Action> = {
     current?: Observed<T>;
     itemRegistry?: ItemRegistry;
     pathPrefix?: ActionPath;
-    onProgress?: ActionListProgressHandler;
-    previewHandler?: ImportPreviewEventHandler;
+    nestedProgressScope?: (path: ActionPath) => ProgressScope | undefined;
+    events?: ImportEventHandler;
 };
 
 type ActionSpec<T extends Action = Action> = {
@@ -90,7 +91,8 @@ type ActionSpec<T extends Action = Action> = {
         propsToRead: NestedPropsToRead,
         itemRegistry?: ItemRegistry,
         pathPrefix?: ActionPath,
-        previewHandler?: ImportPreviewEventHandler
+        events?: ImportEventHandler,
+        current?: Observed<T>
     ) => Promise<Observed<T>>;
     write?: (
         ctx: TaskContext,
@@ -120,7 +122,7 @@ async function readOpenConditional(
     propsToRead: NestedPropsToRead,
     itemRegistry?: ItemRegistry,
     pathPrefix?: ActionPath,
-    previewHandler?: ImportPreviewEventHandler
+    events?: ImportEventHandler
 ): Promise<Observed<ActionConditional>> {
     const conditionsLabel = getActionFieldLabel("CONDITIONAL", "conditions");
     const matchAnyLabel = getActionFieldLabel("CONDITIONAL", "matchAny");
@@ -147,7 +149,7 @@ async function readOpenConditional(
             kind: "full",
             itemRegistry,
             pathPrefix: pathPrefix === undefined ? undefined : `${pathPrefix}.ifActions`,
-            previewHandler,
+            events,
         })) {
             ifActions.push(entry.action);
         }
@@ -162,7 +164,7 @@ async function readOpenConditional(
             kind: "full",
             itemRegistry,
             pathPrefix: pathPrefix === undefined ? undefined : `${pathPrefix}.elseActions`,
-            previewHandler,
+            events,
         })) {
             elseActions.push(entry.action);
         }
@@ -207,7 +209,7 @@ async function writeConditional(
     );
 
     if (pathPrefix !== undefined) {
-        options?.previewHandler?.emit({
+        options?.events?.emit({
             kind: "blockActionHeaderApplied",
             path: pathPrefix,
         });
@@ -217,14 +219,16 @@ async function writeConditional(
         !observedActionListsEqual(current?.ifActions, action.ifActions) &&
         (action.ifActions.length > 0 || (current?.ifActions?.length ?? 0) > 0)
     ) {
+        const nestedPath = pathPrefix === undefined ? "ifActions" : `${pathPrefix}.ifActions`;
         ctx.displayMessage(`&7  [cond] syncing ifActions (${action.ifActions.length} desired)`);
         ctx.getMenuItemSlot(getActionFieldLabel("CONDITIONAL", "ifActions")).click();
         await waitForMenu(ctx);
         await syncActionList(ctx, action.ifActions, {
             itemRegistry,
-            pathPrefix: pathPrefix === undefined ? undefined : `${pathPrefix}.ifActions`,
+            pathPrefix: nestedPath,
             baselineCurrent: observedActionsAsBaselineCurrent(current?.ifActions),
-            previewHandler: options?.previewHandler,
+            progressScope: options?.nestedProgressScope?.(nestedPath),
+            events: options?.events,
         });
         await clickGoBack(ctx);
     }
@@ -233,14 +237,16 @@ async function writeConditional(
         !observedActionListsEqual(current?.elseActions, action.elseActions) &&
         (action.elseActions.length > 0 || (current?.elseActions?.length ?? 0) > 0)
     ) {
+        const nestedPath = pathPrefix === undefined ? "elseActions" : `${pathPrefix}.elseActions`;
         ctx.displayMessage(`&7  [cond] syncing elseActions (${action.elseActions.length} desired)`);
         ctx.getMenuItemSlot(getActionFieldLabel("CONDITIONAL", "elseActions")).click();
         await waitForMenu(ctx);
         await syncActionList(ctx, action.elseActions, {
             itemRegistry,
-            pathPrefix: pathPrefix === undefined ? undefined : `${pathPrefix}.elseActions`,
+            pathPrefix: nestedPath,
             baselineCurrent: observedActionsAsBaselineCurrent(current?.elseActions),
-            previewHandler: options?.previewHandler,
+            progressScope: options?.nestedProgressScope?.(nestedPath),
+            events: options?.events,
         });
         await clickGoBack(ctx);
     }
@@ -345,12 +351,56 @@ async function writeTitle(ctx: TaskContext, action: ActionTitle): Promise<void> 
     }
 }
 
+async function readOpenTitle(
+    ctx: TaskContext,
+    _propsToRead: NestedPropsToRead,
+    _itemRegistry?: ItemRegistry,
+    _pathPrefix?: ActionPath,
+    _events?: ImportEventHandler,
+    current?: Observed<ActionTitle>
+): Promise<Observed<ActionTitle>> {
+    const base: Observed<ActionTitle> =
+        current ?? { type: "TITLE", title: "" };
+    refreshStringFieldFromEditor(
+        ctx,
+        base,
+        getActionFieldLabel("TITLE", "title"),
+        "title"
+    );
+    refreshStringFieldFromEditor(
+        ctx,
+        base,
+        getActionFieldLabel("TITLE", "subtitle"),
+        "subtitle"
+    );
+    return base;
+}
+
 async function writeActionBar(ctx: TaskContext, action: ActionActionBar): Promise<void> {
     await setStringValue(
         ctx,
         ctx.getMenuItemSlot(getActionFieldLabel("ACTION_BAR", "message")),
         action.message
     );
+}
+
+async function readOpenActionBar(
+    ctx: TaskContext,
+    _propsToRead: NestedPropsToRead,
+    _itemRegistry?: ItemRegistry,
+    _pathPrefix?: ActionPath,
+    _events?: ImportEventHandler,
+    current?: Observed<ActionActionBar>
+): Promise<Observed<ActionActionBar>> {
+    const base: Observed<ActionActionBar> =
+        current ?? { type: "ACTION_BAR", message: "" };
+    refreshStringFieldFromEditor(
+        ctx,
+        base,
+        getActionFieldLabel("ACTION_BAR", "message"),
+        "message"
+    );
+    return base;
 }
 
 async function writeChangeMaxHealth(
@@ -443,6 +493,31 @@ async function readOpenMessage(ctx: TaskContext): Promise<Observed<ActionSendMes
             readStringValue(ctx.getMenuItemSlot(getActionFieldLabel("MESSAGE", "message"))) ??
             "",
     };
+}
+
+function refreshStringFieldFromEditor(
+    ctx: TaskContext,
+    base: Observed<Action>,
+    fieldLabel: string,
+    prop: string
+): void {
+    const slot = ctx.tryGetItemSlot(fieldLabel);
+    if (slot === null) return;
+    const value = readStringValue(slot);
+    if (value === null) return;
+    (base as Record<string, unknown>)[prop] = value;
+}
+
+function refreshLocationFromEditor(
+    ctx: TaskContext,
+    base: Observed<Action>,
+    fieldLabel: string
+): void {
+    const slot = ctx.tryGetItemSlot(fieldLabel);
+    if (slot === null) return;
+    const value = readStringValue(slot);
+    if (value === null) return;
+    (base as Record<string, unknown>).location = parseLocationField(value);
 }
 
 async function writeApplyPotionEffect(
@@ -566,6 +641,20 @@ async function writeTeleport(ctx: TaskContext, action: ActionTeleport): Promise<
     }
 }
 
+async function readOpenTeleport(
+    ctx: TaskContext,
+    _propsToRead: NestedPropsToRead,
+    _itemRegistry?: ItemRegistry,
+    _pathPrefix?: ActionPath,
+    _events?: ImportEventHandler,
+    current?: Observed<ActionTeleport>
+): Promise<Observed<ActionTeleport>> {
+    const base: Observed<ActionTeleport> =
+        current ?? { type: "TELEPORT", location: { type: "Current Location" } };
+    refreshLocationFromEditor(ctx, base, getActionFieldLabel("TELEPORT", "location"));
+    return base;
+}
+
 async function writeFailParkour(
     ctx: TaskContext,
     action: ActionFailParkour
@@ -579,14 +668,40 @@ async function writeFailParkour(
     }
 }
 
-async function writePlaySound(ctx: TaskContext, action: ActionPlaySound): Promise<void> {
+async function readOpenFailParkour(
+    ctx: TaskContext,
+    _propsToRead: NestedPropsToRead,
+    _itemRegistry?: ItemRegistry,
+    _pathPrefix?: ActionPath,
+    _events?: ImportEventHandler,
+    current?: Observed<ActionFailParkour>
+): Promise<Observed<ActionFailParkour>> {
+    const base: Observed<ActionFailParkour> =
+        current ?? { type: "FAIL_PARKOUR" };
+    refreshStringFieldFromEditor(
+        ctx,
+        base,
+        getActionFieldLabel("FAIL_PARKOUR", "message"),
+        "message"
+    );
+    return base;
+}
+
+async function writePlaySound(
+    ctx: TaskContext,
+    action: ActionPlaySound
+): Promise<void> {
     const soundLabel = getActionFieldLabel("PLAY_SOUND", "sound");
-    const currentSound = readStringValue(ctx.getMenuItemSlot(soundLabel));
-    if (currentSound !== action.sound) {
+    const desiredSound = normalizeSoundKey(action.sound) ?? action.sound;
+    const editorSound = normalizeSoundKey(readStringValue(ctx.getMenuItemSlot(soundLabel)));
+    if (editorSound !== desiredSound) {
         await openSubmenu(ctx, soundLabel);
-        const customSoundSlot = await getSlotPaginate(ctx, "Custom Sound");
+        const customSoundSlot = findMenuOptionByLore(ctx, "Click to edit!");
+        if (customSoundSlot === null) {
+            throw new Error("Could not find custom sound editor slot");
+        }
         customSoundSlot.click();
-        await enterValue(ctx, action.sound);
+        await enterValue(ctx, desiredSound);
         await waitForMenu(ctx);
     }
 
@@ -612,12 +727,46 @@ async function writePlaySound(ctx: TaskContext, action: ActionPlaySound): Promis
     }
 }
 
+async function readOpenPlaySound(
+    ctx: TaskContext,
+    _propsToRead: NestedPropsToRead,
+    _itemRegistry?: ItemRegistry,
+    _pathPrefix?: ActionPath,
+    _events?: ImportEventHandler,
+    current?: Observed<ActionPlaySound>
+): Promise<Observed<ActionPlaySound>> {
+    const base: Observed<ActionPlaySound> =
+        current ?? { type: "PLAY_SOUND", sound: "random.orb" };
+    refreshStringFieldFromEditor(
+        ctx,
+        base,
+        getActionFieldLabel("PLAY_SOUND", "sound"),
+        "sound"
+    );
+    refreshLocationFromEditor(ctx, base, getActionFieldLabel("PLAY_SOUND", "location"));
+    return base;
+}
+
 async function writeSetCompassTarget(
     ctx: TaskContext,
     action: ActionSetCompassTarget
 ): Promise<void> {
     const locationLabel = getActionFieldLabel("SET_COMPASS_TARGET", "location");
     await setLocationValue(ctx, locationLabel, action.location);
+}
+
+async function readOpenSetCompassTarget(
+    ctx: TaskContext,
+    _propsToRead: NestedPropsToRead,
+    _itemRegistry?: ItemRegistry,
+    _pathPrefix?: ActionPath,
+    _events?: ImportEventHandler,
+    current?: Observed<ActionSetCompassTarget>
+): Promise<Observed<ActionSetCompassTarget>> {
+    const base: Observed<ActionSetCompassTarget> =
+        current ?? { type: "SET_COMPASS_TARGET", location: { type: "Current Location" } };
+    refreshLocationFromEditor(ctx, base, getActionFieldLabel("SET_COMPASS_TARGET", "location"));
+    return base;
 }
 
 async function writeSetGamemode(
@@ -660,7 +809,7 @@ async function readOpenRandom(
     propsToRead: NestedPropsToRead,
     itemRegistry?: ItemRegistry,
     pathPrefix?: ActionPath,
-    previewHandler?: ImportPreviewEventHandler
+    events?: ImportEventHandler
 ): Promise<Observed<ActionRandom>> {
     const actions: (Observed<Action> | null)[] = [];
     ctx.getMenuItemSlot(getActionFieldLabel("RANDOM", "actions")).click();
@@ -669,7 +818,7 @@ async function readOpenRandom(
         kind: "full",
         itemRegistry,
         pathPrefix: pathPrefix === undefined ? undefined : `${pathPrefix}.actions`,
-        previewHandler,
+        events,
     })) {
         actions.push(entry.action);
     }
@@ -692,7 +841,7 @@ async function writeRandom(
     if (action.actions.length === 0 && (current?.actions?.length ?? 0) === 0) return;
 
     if (pathPrefix !== undefined) {
-        options?.previewHandler?.emit({
+        options?.events?.emit({
             kind: "blockActionHeaderApplied",
             path: pathPrefix,
         });
@@ -700,11 +849,13 @@ async function writeRandom(
 
     ctx.getMenuItemSlot(getActionFieldLabel("RANDOM", "actions")).click();
     await waitForMenu(ctx);
+    const nestedPath = pathPrefix === undefined ? "actions" : `${pathPrefix}.actions`;
     await syncActionList(ctx, action.actions, {
         itemRegistry,
-        pathPrefix: pathPrefix === undefined ? undefined : `${pathPrefix}.actions`,
+        pathPrefix: nestedPath,
         baselineCurrent: observedActionsAsBaselineCurrent(current?.actions),
-        previewHandler: options?.previewHandler,
+        progressScope: options?.nestedProgressScope?.(nestedPath),
+        events: options?.events,
     });
     await clickGoBack(ctx);
 }
@@ -725,6 +876,25 @@ async function writeFunction(ctx: TaskContext, action: ActionFunction): Promise<
     }
 }
 
+async function readOpenFunction(
+    ctx: TaskContext,
+    _propsToRead: NestedPropsToRead,
+    _itemRegistry?: ItemRegistry,
+    _pathPrefix?: ActionPath,
+    _events?: ImportEventHandler,
+    current?: Observed<ActionFunction>
+): Promise<Observed<ActionFunction>> {
+    const base: Observed<ActionFunction> =
+        current ?? { type: "FUNCTION", function: "" };
+    refreshStringFieldFromEditor(
+        ctx,
+        base,
+        getActionFieldLabel("FUNCTION", "function"),
+        "function"
+    );
+    return base;
+}
+
 async function writeApplyInventoryLayout(
     ctx: TaskContext,
     action: ActionApplyInventoryLayout
@@ -734,6 +904,25 @@ async function writeApplyInventoryLayout(
         getActionFieldLabel("APPLY_INVENTORY_LAYOUT", "layout"),
         action.layout
     );
+}
+
+async function readOpenApplyInventoryLayout(
+    ctx: TaskContext,
+    _propsToRead: NestedPropsToRead,
+    _itemRegistry?: ItemRegistry,
+    _pathPrefix?: ActionPath,
+    _events?: ImportEventHandler,
+    current?: Observed<ActionApplyInventoryLayout>
+): Promise<Observed<ActionApplyInventoryLayout>> {
+    const base: Observed<ActionApplyInventoryLayout> =
+        current ?? { type: "APPLY_INVENTORY_LAYOUT", layout: "" };
+    refreshStringFieldFromEditor(
+        ctx,
+        base,
+        getActionFieldLabel("APPLY_INVENTORY_LAYOUT", "layout"),
+        "layout"
+    );
+    return base;
 }
 
 async function writeEnchantHeldItem(
@@ -769,6 +958,25 @@ async function writeDisplayMenu(
     action: ActionDisplayMenu
 ): Promise<void> {
     await setSelectValue(ctx, getActionFieldLabel("SET_MENU", "menu"), action.menu);
+}
+
+async function readOpenSetMenu(
+    ctx: TaskContext,
+    _propsToRead: NestedPropsToRead,
+    _itemRegistry?: ItemRegistry,
+    _pathPrefix?: ActionPath,
+    _events?: ImportEventHandler,
+    current?: Observed<ActionDisplayMenu>
+): Promise<Observed<ActionDisplayMenu>> {
+    const base: Observed<ActionDisplayMenu> =
+        current ?? { type: "SET_MENU", menu: "" };
+    refreshStringFieldFromEditor(
+        ctx,
+        base,
+        getActionFieldLabel("SET_MENU", "menu"),
+        "menu"
+    );
+    return base;
 }
 
 async function writeDropItem(
@@ -837,6 +1045,24 @@ async function writeDropItem(
     }
 }
 
+async function readOpenDropItem(
+    ctx: TaskContext,
+    _propsToRead: NestedPropsToRead,
+    _itemRegistry?: ItemRegistry,
+    _pathPrefix?: ActionPath,
+    _events?: ImportEventHandler,
+    current?: Observed<ActionDropItem>
+): Promise<Observed<ActionDropItem>> {
+    const base: Observed<ActionDropItem> =
+        current ?? { type: "DROP_ITEM", itemName: "" };
+    refreshLocationFromEditor(
+        ctx,
+        base,
+        getActionFieldLabel("DROP_ITEM", "location")
+    );
+    return base;
+}
+
 async function writeSetVelocity(
     ctx: TaskContext,
     action: ActionSetVelocity
@@ -866,6 +1092,24 @@ async function writeLaunch(ctx: TaskContext, action: ActionLaunch): Promise<void
         ctx.getMenuItemSlot(getActionFieldLabel("LAUNCH", "strength")),
         action.strength
     );
+}
+
+async function readOpenLaunch(
+    ctx: TaskContext,
+    _propsToRead: NestedPropsToRead,
+    _itemRegistry?: ItemRegistry,
+    _pathPrefix?: ActionPath,
+    _events?: ImportEventHandler,
+    current?: Observed<ActionLaunch>
+): Promise<Observed<ActionLaunch>> {
+    const base: Observed<ActionLaunch> =
+        current ?? { type: "LAUNCH", location: { type: "Current Location" }, strength: 0 };
+    refreshLocationFromEditor(
+        ctx,
+        base,
+        getActionFieldLabel("LAUNCH", "location")
+    );
+    return base;
 }
 
 async function writeSetPlayerWeather(
@@ -920,10 +1164,12 @@ const ACTION_SPECS = {
     },
     TITLE: {
         displayName: ACTION_MAPPINGS.TITLE.displayName,
+        read: readOpenTitle,
         write: writeTitle,
     },
     ACTION_BAR: {
         displayName: ACTION_MAPPINGS.ACTION_BAR.displayName,
+        read: readOpenActionBar,
         write: writeActionBar,
     },
     RESET_INVENTORY: {
@@ -970,18 +1216,22 @@ const ACTION_SPECS = {
     },
     TELEPORT: {
         displayName: ACTION_MAPPINGS.TELEPORT.displayName,
+        read: readOpenTeleport,
         write: writeTeleport,
     },
     FAIL_PARKOUR: {
         displayName: ACTION_MAPPINGS.FAIL_PARKOUR.displayName,
+        read: readOpenFailParkour,
         write: writeFailParkour,
     },
     PLAY_SOUND: {
         displayName: ACTION_MAPPINGS.PLAY_SOUND.displayName,
+        read: readOpenPlaySound,
         write: writePlaySound,
     },
     SET_COMPASS_TARGET: {
         displayName: ACTION_MAPPINGS.SET_COMPASS_TARGET.displayName,
+        read: readOpenSetCompassTarget,
         write: writeSetCompassTarget,
     },
     SET_GAMEMODE: {
@@ -1003,10 +1253,12 @@ const ACTION_SPECS = {
     },
     FUNCTION: {
         displayName: ACTION_MAPPINGS.FUNCTION.displayName,
+        read: readOpenFunction,
         write: writeFunction,
     },
     APPLY_INVENTORY_LAYOUT: {
         displayName: ACTION_MAPPINGS.APPLY_INVENTORY_LAYOUT.displayName,
+        read: readOpenApplyInventoryLayout,
         write: writeApplyInventoryLayout,
     },
     ENCHANT_HELD_ITEM: {
@@ -1023,6 +1275,7 @@ const ACTION_SPECS = {
     },
     SET_MENU: {
         displayName: ACTION_MAPPINGS.SET_MENU.displayName,
+        read: readOpenSetMenu,
         write: writeDisplayMenu,
     },
     CLOSE_MENU: {
@@ -1030,6 +1283,7 @@ const ACTION_SPECS = {
     },
     DROP_ITEM: {
         displayName: ACTION_MAPPINGS.DROP_ITEM.displayName,
+        read: readOpenDropItem,
         write: writeDropItem,
     },
     SET_VELOCITY: {
@@ -1038,6 +1292,7 @@ const ACTION_SPECS = {
     },
     LAUNCH: {
         displayName: ACTION_MAPPINGS.LAUNCH.displayName,
+        read: readOpenLaunch,
         write: writeLaunch,
     },
     SET_PLAYER_WEATHER: {
@@ -1079,7 +1334,8 @@ export async function writeOpenAction(
             new Set(),
             opts?.itemRegistry,
             opts?.pathPrefix,
-            opts?.previewHandler
+            opts?.events,
+            opts?.current
         );
     }
 

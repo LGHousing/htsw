@@ -1,6 +1,11 @@
 import { VERSION, SourceMap, parseImportablesResult, Diagnostic } from "htsw";
 
-import { chatSeparator, stripSurroundingQuotes } from "./utils/helpers";
+import {
+    chatSeparator,
+    normalizeFormattingCodes,
+    removedFormatting,
+    stripSurroundingQuotes,
+} from "./utils/helpers";
 import { Simulator } from "./simulator/simulator";
 import { printDiagnostic, printDiagnostics } from "./tui/diagnostics";
 import { recompile } from "./recompile";
@@ -15,6 +20,13 @@ import {
     getTimingStats,
     resetTimingStats,
 } from "./importer/progress/timing";
+import {
+    getProgressTracePath,
+    isProgressTraceEnabled,
+    setProgressTraceEnabled,
+} from "./importer/progress/trace";
+import { getAllItemSlots, ItemSlot } from "./tasks/specifics/slots";
+import { readStringValue } from "./importer/gui/helpers";
 
 function printCommandError(sm: SourceMap, err: unknown): void {
     if (err instanceof Diagnostic) {
@@ -59,6 +71,11 @@ function commandHtsw(args: string[]) {
         return;
     }
 
+    if (args.length > 0 && args[0] === "dump-item") {
+        dumpOpenContainerItem(args.slice(1));
+        return;
+    }
+
     if (args.length > 0 && args[0] === "packet-probe") {
         const seconds = args.length > 1 ? parseInt(args[1], 10) : 30;
         packetProbe(Number.isFinite(seconds) && seconds > 0 ? seconds : 30);
@@ -95,13 +112,19 @@ function commandHtsw(args: string[]) {
     ChatLib.chat("&f/import &7- Import actions from HTSL files");
     ChatLib.chat("&f/simulator &7- Simulate actions from HTSL files");
     ChatLib.chat("&f/htsw knowledge &7- Inspect local import/export knowledge");
-    ChatLib.chat("&f/htsw eta [reset|dump] &7- Show / reset / dump importer ETA samples");
+    ChatLib.chat("&f/htsw eta [reset|dump|trace] &7- Show / reset / dump importer ETA samples");
+    ChatLib.chat("&f/htsw dump-item [slot|name] &7- Dump open-container item lore");
     ChatLib.chat("&f/htsw packet-probe [seconds] &7- Safely log relevant packets");
     ChatLib.chat("&f/htsw gui &7- Open the in-game HTSW dashboard");
     ChatLib.chat(`&7${chatSeparator()}`);
 }
 
 function commandEta(args: string[]): void {
+    if (args.length > 0 && args[0] === "trace") {
+        commandEtaTrace(args.slice(1));
+        return;
+    }
+
     if (args.length > 0 && (args[0] === "reset" || args[0] === "clear")) {
         resetTimingStats();
         ChatLib.chat("&7[eta] timing samples reset");
@@ -114,6 +137,32 @@ function commandEta(args: string[]): void {
     }
 
     printOpKindStats();
+}
+
+function commandEtaTrace(args: string[]): void {
+    if (args.length === 0) {
+        const state = isProgressTraceEnabled() ? "&aon" : "&coff";
+        const path = getProgressTracePath();
+        ChatLib.chat(`&7[eta] progress trace ${state}`);
+        if (path !== null) ChatLib.chat(`&7[eta] trace file: &f${path}`);
+        return;
+    }
+
+    if (args[0] === "on" || args[0] === "start") {
+        const path = setProgressTraceEnabled(true);
+        ChatLib.chat(`&a[eta] progress trace on: &f${path}`);
+        return;
+    }
+
+    if (args[0] === "off" || args[0] === "stop") {
+        const path = getProgressTracePath();
+        setProgressTraceEnabled(false);
+        ChatLib.chat("&7[eta] progress trace off");
+        if (path !== null) ChatLib.chat(`&7[eta] trace file: &f${path}`);
+        return;
+    }
+
+    ChatLib.chat("&f/htsw eta trace [on|off] &7- Write progress/ETA trace");
 }
 
 function printOpKindStats(): void {
@@ -161,6 +210,100 @@ function dumpEtaToFile(): void {
         ChatLib.chat(`&a[eta] wrote ${path}`);
     } catch (e) {
         ChatLib.chat(`&c[eta] failed to write ${path}: ${e}`);
+    }
+}
+
+function dumpOpenContainerItem(args: string[]): void {
+    const slots = getAllItemSlots();
+    if (slots === null) {
+        ChatLib.chat("&c[dump-item] no open container");
+        return;
+    }
+
+    const target = args.join(" ").trim();
+    const selected = selectDumpSlots(slots, target);
+    if (selected.length === 0) {
+        ChatLib.chat(`&c[dump-item] no slot matched "${target}"`);
+        return;
+    }
+
+    const container = Player.getContainer();
+    const containerInfo = container === null || container === undefined ? null : {
+        name: safeCall(() => String(container.getName())),
+        size: safeCall(() => Number(container.getSize())),
+    };
+    const dump = {
+        capturedAt: new Date().toISOString(),
+        container: containerInfo,
+        target,
+        slots: selected.map(dumpSlot),
+    };
+    const path = `./htsw/item-dump-${Date.now()}.json`;
+    try {
+        FileLib.write(path, JSON.stringify(dump, null, 2), true);
+        ChatLib.chat(`&a[dump-item] wrote ${path}`);
+        ChatLib.chat(`&7[dump-item] dumped ${selected.length} slot${selected.length === 1 ? "" : "s"}`);
+    } catch (e) {
+        ChatLib.chat(`&c[dump-item] failed to write ${path}: ${e}`);
+    }
+}
+
+function selectDumpSlots(slots: ItemSlot[], target: string): ItemSlot[] {
+    if (target.length === 0) return slots;
+
+    const slotId = parseInt(target, 10);
+    if (String(slotId) === target) {
+        return slots.filter((slot) => slot.getSlotId() === slotId);
+    }
+
+    const needle = target.toLowerCase();
+    return slots.filter((slot) =>
+        removedFormatting(slot.getItem().getName()).toLowerCase().indexOf(needle) !== -1
+    );
+}
+
+function dumpSlot(slot: ItemSlot): unknown {
+    const item = slot.getItem();
+    const lore = item.getLore();
+    return {
+        slotId: slot.getSlotId(),
+        name: dumpString(item.getName()),
+        lore: lore.map((line, index) => ({
+            index,
+            value: dumpString(line),
+        })),
+        readStringValue: dumpNullableString(readStringValue(slot)),
+        rawNBT: safeCall(() => String(item.getRawNBT())),
+    };
+}
+
+function dumpNullableString(value: string | null): unknown {
+    return value === null ? null : dumpString(value);
+}
+
+function dumpString(value: string): unknown {
+    return {
+        raw: value,
+        json: JSON.stringify(value),
+        ampCodes: normalizeFormattingCodes(value),
+        stripped: removedFormatting(value),
+        chars: charsOf(value),
+    };
+}
+
+function charsOf(value: string): Array<{ index: number; char: string; code: number }> {
+    const out: Array<{ index: number; char: string; code: number }> = [];
+    for (let i = 0; i < value.length; i++) {
+        out.push({ index: i, char: value.charAt(i), code: value.charCodeAt(i) });
+    }
+    return out;
+}
+
+function safeCall<T>(fn: () => T): T | string {
+    try {
+        return fn();
+    } catch (e) {
+        return `ERROR: ${e}`;
     }
 }
 

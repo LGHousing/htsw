@@ -57,10 +57,11 @@ export const ACCENT_PURPLE = 0xffce7be0 | 0;
 export const ACCENT_TEAL = 0xff7be0c0 | 0;
 export const ACCENT_ORANGE = 0xffe87a4b | 0;
 
-// ── Importer phase colors (queue-row mini bars + future overall-bar
-// segmentation). Distinct hues so reading vs hydrating vs applying are
-// instantly distinguishable; matched in chroma so they read as siblings.
-export const PHASE_READING = ACCENT_INFO;     // blue — paginated reads
+// ── Importer phase colors (queue-row mini bars + overall-bar segmentation).
+// Setup work shares the reading hue because it's part of "preparing before
+// changes" from the user's POV; only hydrating and applying get their own
+// distinct hues.
+export const PHASE_READING = ACCENT_INFO;     // blue — setup + paginated reads
 export const PHASE_HYDRATING = ACCENT_PURPLE; // purple — nested-action opens
 export const PHASE_APPLYING = ACCENT_SUCCESS; // green — actual edits
 

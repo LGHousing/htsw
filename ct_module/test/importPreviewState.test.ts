@@ -36,7 +36,7 @@ function func(actions: Action[]): Importable {
 function pendingAddedIds(): string[] {
     return previewLinesForFile(PATH)
         .map((l) => l.id)
-        .filter((id) => id.indexOf("__add::") === 0);
+        .filter((id) => id.indexOf("pending:") === 0);
 }
 
 beforeEach(() => {
@@ -104,17 +104,17 @@ describe("setObservedTopLevel", () => {
             l.id === "0.ifActions:placeholder"
         );
         expect(line).toBeDefined();
-        expect(line!.isPlaceholder).toBe(true);
+        expect(line!.variant).toBe("placeholder");
         // The text reports the count so the user sees how big the unhydrated body is.
         expect(line!.tokens.map((t) => t.text).join("")).toContain("3 actions");
     });
 });
 
 describe("markPlannedAdd", () => {
-    test("inserts a pending-add line with the __add:: prefix", () => {
+    test("inserts a pending-add line with the pending: prefix", () => {
         primeWithCache(PATH, func([]));
         markPlannedAdd(PATH, "0", message("new"), 0);
-        expect(ids()).toEqual(["__add::0:body"]);
+        expect(ids()).toEqual(["pending:0:body"]);
         const added = previewLinesForFile(PATH)[0];
         expect(added.diffState).toBe("add");
     });
@@ -128,9 +128,9 @@ describe("markPlannedAdd", () => {
         markPlannedAdd(PATH, "1", message("b"), 1);
         markPlannedAdd(PATH, "2", message("c"), 2);
         expect(ids()).toEqual([
-            "__add::0:body",
-            "__add::1:body",
-            "__add::2:body",
+            "pending:0:body",
+            "pending:1:body",
+            "pending:2:body",
         ]);
     });
 
@@ -138,7 +138,7 @@ describe("markPlannedAdd", () => {
         primeWithCache(PATH, func([]));
         markPlannedAdd(PATH, "0", message("new"), 0);
         markPlannedAdd(PATH, "0", message("new"), 0);
-        expect(ids()).toEqual(["__add::0:body"]);
+        expect(ids()).toEqual(["pending:0:body"]);
     });
 
     test("adds a CONDITIONAL with inner content as one contiguous prefixed block", () => {
@@ -150,9 +150,9 @@ describe("markPlannedAdd", () => {
             0
         );
         expect(ids()).toEqual([
-            "__add::0:body",
-            "__add::0.ifActions.0:body",
-            "__add::0:close",
+            "pending:0:body",
+            "pending:0.ifActions.0:body",
+            "pending:0:close",
         ]);
     });
 });
@@ -163,7 +163,7 @@ describe("markPlannedEdit", () => {
         markPlannedEdit(PATH, "0", message("old"), message("new"));
         expect(ids()).toEqual(["0:body", "0:ghost"]);
         const ghost = previewLinesForFile(PATH)[1];
-        expect(ghost.isGhost).toBe(true);
+        expect(ghost.variant).toBe("ghost");
         expect(ghost.italic).toBe(true);
         expect(ghost.diffState).toBe("edit");
         // Ghost takes no line number — it isn't part of the file's numbering.
@@ -206,7 +206,7 @@ describe("markPlannedMove", () => {
 });
 
 describe("applyComplete(add)", () => {
-    test("strips the __add:: prefix and marks completed", () => {
+    test("strips the pending: prefix and marks completed", () => {
         primeWithCache(PATH, func([]));
         markPlannedAdd(PATH, "0", message("x"), 0);
         applyComplete(PATH, "0", "add", "add");
@@ -216,7 +216,7 @@ describe("applyComplete(add)", () => {
     });
 
     test("bottom-up apply (nested first, then outer) is idempotent on prefix strip", () => {
-        // CONDITIONAL add inserts outer + inner with __add:: prefix.
+        // CONDITIONAL add inserts outer + inner with pending: prefix.
         // Inner applyComplete fires first; it should strip the inner's
         // prefix without affecting the outer. Outer applyComplete then
         // strips its own prefix without touching the already-stripped inner.
@@ -262,7 +262,7 @@ describe("applyComplete(edit)", () => {
         expect(ids()).toEqual(["0:body"]);
         const body = bodyAt("0")!;
         expect(body.completed).toBe(true);
-        expect(body.isGhost).toBeFalsy();
+        expect(body.variant).toBe("body");
         expect(body.italic).toBeFalsy();
     });
 
@@ -309,7 +309,7 @@ describe("markHeadApplied", () => {
         expect(after).toContain("0:body");
         expect(after).toContain("0:close");
         // Inner child keeps its prefix until its own applyComplete fires.
-        expect(after).toContain("__add::0.ifActions.0:body");
+        expect(after).toContain("pending:0.ifActions.0:body");
     });
 
     test("promotes a ghost when planEdit happened before markHeadApplied", () => {
@@ -348,7 +348,7 @@ describe("previewLineIdForPath", () => {
     test("returns the prefixed id when a pending-add exists at that path", () => {
         primeWithCache(PATH, func([]));
         markPlannedAdd(PATH, "0", message("x"), 0);
-        expect(previewLineIdForPath(PATH, "0")).toBe("__add::0:body");
+        expect(previewLineIdForPath(PATH, "0")).toBe("pending:0:body");
     });
 
     test("returns the unprefixed id when the path is observed", () => {

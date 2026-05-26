@@ -32,7 +32,8 @@ export async function openMenuEditor(
 
 export async function ensureMenuNamesExist(
     ctx: TaskContext,
-    menuNames: readonly string[]
+    menuNames: readonly string[],
+    onEach?: (name: string) => void
 ): Promise<void> {
     const names = unique(menuNames);
     if (names.length === 0) return;
@@ -43,10 +44,12 @@ export async function ensureMenuNamesExist(
         const status = await openMenuEditor(ctx, name);
         if (status === "opened") {
             await clickGoBack(ctx);
+            onEach?.(name);
             continue;
         }
 
         await ctx.runCommand(`/menu create ${name}`);
         await timedWaitForUnformattedMessage(ctx, `Created menu ${name}!`);
+        onEach?.(name);
     }
 }

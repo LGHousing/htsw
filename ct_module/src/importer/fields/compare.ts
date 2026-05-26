@@ -4,12 +4,15 @@ import {
     DECIMAL_DISPLAY_VALUE_PATTERN,
     INTEGER_DISPLAY_VALUE_PATTERN,
     normalizeNoteText,
+    stripHousingEditorValuePrefix,
+    stripRedundantLeadingFormattingCodes,
 } from "./loreParsing";
 import {
     getActionFieldDefault,
     getActionFieldKind,
 } from "./actionMappings";
 import { getConditionFieldDefault, getConditionFieldKind } from "./conditionMappings";
+import { normalizeSoundKey } from "./sounds";
 
 export function normalizeConditionCompare(
     value: Condition | Observed<Condition> | null
@@ -105,6 +108,16 @@ function canonicalizeFieldValue(
     prop: string,
     value: unknown
 ): unknown {
+    if (type === "PLAY_SOUND" && prop === "sound" && typeof value === "string") {
+        value = normalizeSoundKey(value) ?? value;
+    }
+    if (
+        (type === "MESSAGE" || type === "ACTION_BAR" || type === "FAIL_PARKOUR") &&
+        prop === "message" &&
+        typeof value === "string"
+    ) {
+        value = normalizeMessageFormatting(value);
+    }
     const kind = getFieldKind(type, prop);
     if (kind === "value") {
         const def = getFieldDefault(type, prop);
@@ -183,6 +196,69 @@ function normalizeComparableString(value: string): string {
     return normalized;
 }
 
+function normalizeMessageFormatting(value: string): string {
+    return collapseRedundantFormattingCodes(
+        stripRedundantLeadingFormattingCodes(stripHousingEditorValuePrefix(value))
+    );
+}
+
+function collapseRedundantFormattingCodes(value: string): string {
+    let color: string | null = null;
+    const formats: { [code: string]: boolean } = {};
+    let out = "";
+
+    for (let i = 0; i < value.length; i++) {
+        const ch = value.charAt(i);
+        if (ch !== "&" || i + 1 >= value.length) {
+            out += ch;
+            continue;
+        }
+
+        const code = value.charAt(i + 1).toLowerCase();
+        if (!/[0-9a-fk-or]/.test(code)) {
+            out += ch;
+            continue;
+        }
+
+        if (/[0-9a-f]/.test(code)) {
+            if (color !== code) {
+                out += "&" + code;
+            }
+            color = code;
+            for (const key in formats) {
+                delete formats[key];
+            }
+            i++;
+            continue;
+        }
+
+        if (code === "r") {
+            let hasFormats = false;
+            for (const _key in formats) {
+                hasFormats = true;
+                break;
+            }
+            if (color !== null || hasFormats) {
+                out += "&r";
+            }
+            color = null;
+            for (const key in formats) {
+                delete formats[key];
+            }
+            i++;
+            continue;
+        }
+
+        if (!formats[code]) {
+            out += "&" + code;
+            formats[code] = true;
+        }
+        i++;
+    }
+
+    return out;
+}
+
 export function scalarFieldDiffers(
     observed: Record<string, unknown>,
     desired: Record<string, unknown>,
@@ -201,6 +277,13 @@ function canonicalizeForCompare(
 ): unknown {
     if (value === undefined) return undefined;
     const coerced = canonicalizeFieldValue(type, prop, value);
+    if (
+        (type === "MESSAGE" || type === "ACTION_BAR" || type === "FAIL_PARKOUR") &&
+        prop === "message" &&
+        typeof coerced === "string"
+    ) {
+        return normalizeMessageFormatting(coerced);
+    }
     const def = canonicalizeFieldValue(type, prop, getFieldDefault(type, prop));
     if (def !== undefined && fieldsAreEqual(coerced, def)) return undefined;
     return normalizeValue(coerced);

@@ -1,25 +1,173 @@
 import type { ImportProgress, ProgressPhase } from "./types";
+import { traceEtaSnapshot } from "./trace";
+import { getTimingStats } from "./timing";
 
 const MS_PER_UNIT_PRIOR = 150;
 
-function effectiveMsPerUnit(progress: ImportProgress, elapsedMs: number): number {
-    if (progress.completedUnits <= 0 || elapsedMs <= 0) {
-        return MS_PER_UNIT_PRIOR;
+type EtaSnapshot = {
+    etaSeconds: number;
+    computedAt: number;
+    phase: ProgressPhase | "done" | null;
+    key: string;
+    completedUnits: number;
+    totalUnits: number;
+    remainingUnits: number;
+    msPerUnit: number;
+};
+
+export type EtaCalculator = {
+    getTotal(progress: ImportProgress | null, importStartedAt: number | null): number | null;
+    getPhase(progress: ImportProgress | null, importStartedAt: number | null): number | null;
+};
+
+export function createEtaCalculator(): EtaCalculator {
+    let totalEta: EtaSnapshot | null = null;
+    let phaseEta: EtaSnapshot | null = null;
+
+    return {
+        getTotal(progress, _importStartedAt) {
+            if (progress === null) return null;
+            const now = Date.now();
+            let recomputed = false;
+            if (isTotalStale(totalEta, progress)) {
+                const msPerUnit = currentMsPerUnit();
+                const remainingUnits = Math.max(
+                    0,
+                    progress.totalUnits - progress.completedUnits
+                );
+                totalEta = {
+                    etaSeconds: (remainingUnits * msPerUnit) / 1000,
+                    computedAt: now,
+                    phase: progress.active?.phase ?? null,
+                    key: progress.active?.key ?? "",
+                    completedUnits: progress.completedUnits,
+                    totalUnits: progress.totalUnits,
+                    remainingUnits,
+                    msPerUnit,
+                };
+                recomputed = true;
+                traceEtaSnapshot({
+                    kind: "total",
+                    msPerUnit,
+                    remainingUnits,
+                    etaSeconds: totalEta.etaSeconds,
+                    completedUnits: progress.completedUnits,
+                    totalUnits: progress.totalUnits,
+                    active: progress.active === null
+                        ? null
+                        : {
+                              key: progress.active.key,
+                              phase: progress.active.phase,
+                              completedUnits: progress.active.completedUnits,
+                              totalUnits: progress.active.totalUnits,
+                              phaseUnits: progress.active.phaseUnits,
+                        },
+                });
+            }
+            const elapsed = (now - totalEta!.computedAt) / 1000;
+            const displayedEtaSeconds = Math.max(0, totalEta!.etaSeconds - elapsed);
+            traceEtaSnapshot({
+                kind: "totalDisplay",
+                recomputed,
+                displayedEtaSeconds,
+                snapshotEtaSeconds: totalEta!.etaSeconds,
+                elapsedSinceSnapshotSeconds: elapsed,
+                msPerUnit: totalEta!.msPerUnit,
+                remainingUnits: totalEta!.remainingUnits,
+                completedUnits: progress.completedUnits,
+                totalUnits: progress.totalUnits,
+                activePhase: progress.active?.phase ?? null,
+                activeCompletedUnits: progress.active?.completedUnits ?? null,
+                activeTotalUnits: progress.active?.totalUnits ?? null,
+                activePhaseUnits: progress.active?.phaseUnits ?? null,
+            });
+            return displayedEtaSeconds;
+        },
+        getPhase(progress, _importStartedAt) {
+            if (progress === null || progress.active === null) {
+                return null;
+            }
+            const phase = progress.active.phase;
+            if (phase === "done") return null;
+            const now = Date.now();
+            let recomputed = false;
+            if (isPhaseStale(phaseEta, progress)) {
+                const msPerUnit = currentMsPerUnit();
+                const remainingUnits = phaseRemainingUnits(progress, phase);
+                phaseEta = {
+                    etaSeconds: (remainingUnits * msPerUnit) / 1000,
+                    computedAt: now,
+                    phase,
+                    key: progress.active.key,
+                    completedUnits: progress.active.completedUnits,
+                    totalUnits: progress.active.totalUnits,
+                    remainingUnits,
+                    msPerUnit,
+                };
+                recomputed = true;
+                traceEtaSnapshot({
+                    kind: "phase",
+                    phase,
+                    msPerUnit,
+                    remainingUnits,
+                    etaSeconds: phaseEta.etaSeconds,
+                    sessionCompletedUnits: progress.completedUnits,
+                    sessionTotalUnits: progress.totalUnits,
+                    activeCompletedUnits: progress.active.completedUnits,
+                    activeTotalUnits: progress.active.totalUnits,
+                    phaseUnits: progress.active.phaseUnits,
+                });
+            }
+            const elapsed = (now - phaseEta!.computedAt) / 1000;
+            const displayedEtaSeconds = Math.max(0, phaseEta!.etaSeconds - elapsed);
+            traceEtaSnapshot({
+                kind: "phaseDisplay",
+                phase,
+                recomputed,
+                displayedEtaSeconds,
+                snapshotEtaSeconds: phaseEta!.etaSeconds,
+                elapsedSinceSnapshotSeconds: elapsed,
+                msPerUnit: phaseEta!.msPerUnit,
+                remainingUnits: phaseEta!.remainingUnits,
+                sessionCompletedUnits: progress.completedUnits,
+                sessionTotalUnits: progress.totalUnits,
+                activeCompletedUnits: progress.active.completedUnits,
+                activeTotalUnits: progress.active.totalUnits,
+                activePhaseUnits: progress.active.phaseUnits,
+                sync: progress.active.sync,
+            });
+            return displayedEtaSeconds;
+        },
+    };
+}
+
+export function currentMsPerUnit(): number {
+    const stats = getTimingStats();
+    let totalMs = 0;
+    let totalUnits = 0;
+    for (const kind in stats) {
+        const entry = stats[kind];
+        if (entry === undefined) continue;
+        totalMs += entry.totalMs;
+        totalUnits += entry.totalExpectedUnits;
     }
-    const observed = elapsedMs / progress.completedUnits;
-    return Math.max(MS_PER_UNIT_PRIOR, observed);
+    if (totalUnits <= 0) return MS_PER_UNIT_PRIOR;
+    return totalMs / totalUnits;
 }
 
 function phaseRemainingUnits(progress: ImportProgress, phase: ProgressPhase): number {
-    const current = progress.current;
+    const current = progress.active;
     if (current === null) return 0;
+    const units = current.phaseUnits;
     const phaseStart =
-        phase === "reading"
+        phase === "setup"
             ? 0
-            : phase === "hydrating"
-              ? current.phaseUnits.reading
-              : current.phaseUnits.reading + current.phaseUnits.hydrating;
-    const phaseLength = current.phaseUnits[phase];
+            : phase === "reading"
+              ? units.setup
+              : phase === "hydrating"
+                ? units.setup + units.reading
+                : units.setup + units.reading + units.hydrating;
+    const phaseLength = units[phase];
     const phaseEnd = phaseStart + phaseLength;
     const within = current.completedUnits;
     if (within >= phaseEnd) return 0;
@@ -27,69 +175,30 @@ function phaseRemainingUnits(progress: ImportProgress, phase: ProgressPhase): nu
     return Math.max(0, phaseEnd - within);
 }
 
-function recompute(progress: ImportProgress, msPerUnit: number): number | null {
-    const remainingUnits = Math.max(0, progress.totalUnits - progress.completedUnits);
-    if (!isFinite(remainingUnits)) return null;
-    return (remainingUnits * msPerUnit) / 1000;
+function isTotalStale(
+    snap: EtaSnapshot | null,
+    progress: ImportProgress
+): boolean {
+    if (snap === null) return true;
+    const curPhase = progress.active?.phase ?? null;
+    const curKey = progress.active?.key ?? "";
+    if (snap.phase !== curPhase) return true;
+    if (snap.key !== curKey) return true;
+    if (snap.completedUnits !== progress.completedUnits) return true;
+    if (snap.totalUnits !== progress.totalUnits) return true;
+    return false;
 }
 
-let cachedEtaSeconds: number | null = null;
-let cachedEtaComputedAt: number | null = null;
-let cachedPhaseEtaSeconds: number | null = null;
-let cachedPhaseEtaComputedAt: number | null = null;
-let cachedPhaseEtaPhase: ProgressPhase | null = null;
-
-export function resetEtaCache(): void {
-    cachedEtaSeconds = null;
-    cachedEtaComputedAt = null;
-    cachedPhaseEtaSeconds = null;
-    cachedPhaseEtaComputedAt = null;
-    cachedPhaseEtaPhase = null;
-}
-
-export function getImportEtaSeconds(
-    progress: ImportProgress | null,
-    importStartedAt: number | null
-): number | null {
-    if (progress === null) return null;
-    if (cachedEtaSeconds === null || cachedEtaComputedAt === null) {
-        cachedEtaSeconds = takeSnapshot(progress, importStartedAt);
-        cachedEtaComputedAt = Date.now();
-        if (cachedEtaSeconds === null) return null;
-    }
-    const elapsed = (Date.now() - cachedEtaComputedAt) / 1000;
-    return Math.max(0, cachedEtaSeconds - elapsed);
-}
-
-function takeSnapshot(
-    progress: ImportProgress,
-    importStartedAt: number | null
-): number | null {
-    const elapsedMs =
-        importStartedAt === null ? 0 : Math.max(0, Date.now() - importStartedAt);
-    const msPerUnit = effectiveMsPerUnit(progress, elapsedMs);
-    return recompute(progress, msPerUnit);
-}
-
-export function getCurrentPhaseEtaSecondsCached(
-    progress: ImportProgress | null,
-    importStartedAt: number | null
-): number | null {
-    if (progress === null || progress.current === null) return null;
-    const phase = progress.current.phase;
-    if (phase === "done") return null;
-    if (
-        cachedPhaseEtaSeconds === null ||
-        cachedPhaseEtaComputedAt === null ||
-        cachedPhaseEtaPhase !== phase
-    ) {
-        const elapsedMs =
-            importStartedAt === null ? 0 : Math.max(0, Date.now() - importStartedAt);
-        const msPerUnit = effectiveMsPerUnit(progress, elapsedMs);
-        cachedPhaseEtaSeconds = (phaseRemainingUnits(progress, phase) * msPerUnit) / 1000;
-        cachedPhaseEtaComputedAt = Date.now();
-        cachedPhaseEtaPhase = phase;
-    }
-    const elapsed = (Date.now() - cachedPhaseEtaComputedAt) / 1000;
-    return Math.max(0, cachedPhaseEtaSeconds - elapsed);
+function isPhaseStale(
+    snap: EtaSnapshot | null,
+    progress: ImportProgress
+): boolean {
+    if (snap === null) return true;
+    const active = progress.active;
+    if (active === null) return true;
+    if (snap.phase !== active.phase) return true;
+    if (snap.key !== active.key) return true;
+    if (snap.completedUnits !== active.completedUnits) return true;
+    if (snap.totalUnits !== active.totalUnits) return true;
+    return false;
 }

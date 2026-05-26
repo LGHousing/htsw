@@ -8,20 +8,13 @@ import { buildTrustPlan, importableIdentity, trustPlanKey } from "../importCache
 import { printDiagnostic } from "../tui/diagnostics";
 import { createItemRegistry } from "./itemRegistry";
 import { importImportable } from "./imports";
-import type {
-    ImportPreviewEvent,
-    ImportPreviewEventHandler,
-} from "../importer/importPreviewEvents";
-import type {
-    ActionListProgressFields,
-    ImportProgress,
-    ImportProgressCurrent,
-    ImportProgressRow,
-    ImportRunRowStatus,
-    PhaseUnits,
-} from "../importer/progress/types";
+import type { ImportEventHandler } from "../importer/importEvents";
+import type { ImportableEntry } from "../importer/progress/types";
 import { importProgressKey } from "../importer/progress/keys";
-import { estimateImportableCost } from "../importer/progress/costs";
+import {
+    estimateImportableCost,
+    setupUnitsForImportable,
+} from "../importer/progress/costs";
 import { readImportableCache } from "../importCache/cache";
 import { readCachedActionList } from "./actionListHelpers";
 
@@ -30,26 +23,7 @@ export type ImportSelection = {
     trustMode: boolean;
     housingUuid: string;
     sourcePath: string;
-    /**
-     * Optional progress callback fired *before* each importable is processed
-     * and once on completion. Lets a UI (e.g. the dashboard overlay) reflect
-     * how far through the import we are.
-     */
-    onProgress?: (progress: ImportProgress) => void;
-    /**
-     * Optional factory the session calls before each importable to obtain a
-     * per-importable preview event handler for the import UI.
-     */
-    previewHandlerForImportable?: (
-        importable: Importable,
-        sourcePath: string | null
-    ) => ImportPreviewEventHandler | null;
-};
-
-export type ImportSessionResult = {
-    imported: number;
-    skippedTrusted: number;
-    failed: number;
+    events?: ImportEventHandler;
 };
 
 export function orderImportablesForImportSession(
@@ -72,7 +46,7 @@ export function orderImportablesForImportSession(
 export async function importSelectedImportables(
     ctx: TaskContext,
     selection: ImportSelection
-): Promise<ImportSessionResult> {
+): Promise<void> {
     const sm = new SourceMap(new FileSystemFileLoader());
     const parsed = parseImportablesResult(sm, selection.sourcePath);
     const registry = createItemRegistry(parsed.value, parsed.gcx);
@@ -83,12 +57,7 @@ export async function importSelectedImportables(
         selection.trustMode
     );
 
-    const result: ImportSessionResult = {
-        imported: 0,
-        skippedTrusted: 0,
-        failed: 0,
-    };
-
+    const events = selection.events;
     const importableUnits: number[] = ordered.map((importable) =>
         estimateImportableUnitsWithCache(importable, selection.housingUuid)
     );
@@ -97,174 +66,56 @@ export async function importSelectedImportables(
         initialTotalUnits += importableUnits[i];
     }
     if (initialTotalUnits === 0) initialTotalUnits = 1;
-    let completed = 0;
-    let completedSessionUnits = 0;
-    let totalSessionUnits = initialTotalUnits;
-    let lastEmittedSessionUnits = 0;
-    const rows: ImportProgressRow[] = ordered.map((importable, i) => {
-        const identity = importableIdentity(importable);
-        return {
-            key: importProgressKey(importable.type, identity, selection.sourcePath),
-            status: "queued",
-            units: importableUnits[i],
-        };
-    });
+    const rows: ImportableEntry[] = ordered.map((importable, i) => ({
+        key: importProgressKey(
+            importable.type,
+            importableIdentity(importable),
+            selection.sourcePath
+        ),
+        status: "queued",
+        totalUnits: importableUnits[i],
+    }));
+    events?.emit({ kind: "sessionStarted", rows, initialTotalUnits });
 
     for (let i = 0; i < ordered.length; i++) {
         const importable = ordered[i];
-        const initialCurrentUnits = importableUnits[i];
         const identity = importableIdentity(importable);
         const trustKey = trustPlanKey(importable.type, identity);
-        const importableKey = importProgressKey(
-            importable.type,
-            identity,
-            selection.sourcePath
-        );
         const plan = trustPlan?.importables.get(trustKey);
-        let currentTotalUnits = initialCurrentUnits;
-        let currentCompletedUnits = 0;
-        let currentPhaseUnits: PhaseUnits = {
-            reading: 0,
-            hydrating: 0,
-            applying: currentTotalUnits,
-        };
-        const finishCurrentUnits = (): void => {
-            totalSessionUnits += currentTotalUnits - initialCurrentUnits;
-            importableUnits[i] = currentTotalUnits;
-            rows[i].units = currentTotalUnits;
-        };
-        const finishCompletedImportable = (): void => {
-            finishCurrentUnits();
-            completed++;
-            completedSessionUnits += currentTotalUnits;
-        };
-        const finishFailedImportable = (): void => {
-            finishCurrentUnits();
-        };
-        const emitProgress = (inner: ActionListProgressFields): void => {
-            const eventTotalUnits =
-                inner.totalUnits > 0 ? inner.totalUnits : initialCurrentUnits;
-            if (eventTotalUnits > currentTotalUnits) {
-                currentTotalUnits = eventTotalUnits;
-                rows[i].units = currentTotalUnits;
-            }
-
-            currentPhaseUnits = inner.phaseUnits;
-            currentCompletedUnits = Math.min(
-                currentTotalUnits,
-                Math.max(currentCompletedUnits, inner.completedUnits)
-            );
-            emitSessionProgress("current", inner.phase, inner.phaseLabel, inner);
-        };
-        const emitTerminalProgress = (
-            rowStatus: Extract<ImportRunRowStatus, "imported" | "skipped" | "failed">,
-            phaseLabel: string
-        ): void => {
-            currentCompletedUnits = currentTotalUnits;
-            emitSessionProgress(rowStatus, "done", phaseLabel);
-        };
-        // Update row state without emitting a "done" event — used between
-        // importables so the GUI doesn't flash a "Done: imported" line
-        // before the next importable's first phase event arrives. The
-        // next emit (or the session-end emit) carries the updated rows
-        // array to the GUI, which is what flips the queue row green.
-        const finishImportableRowSilently = (
-            rowStatus: Extract<ImportRunRowStatus, "imported" | "skipped">
-        ): void => {
-            currentCompletedUnits = currentTotalUnits;
-            rows[i].status = rowStatus;
-        };
-        const emitSessionProgress = (
-            rowStatus: Exclude<ImportRunRowStatus, "queued">,
-            phase: ImportProgressCurrent["phase"],
-            phaseLabel: string,
-            inner?: ActionListProgressFields
-        ): void => {
-            rows[i].status = rowStatus;
-            const clampedCurrentUnits = Math.min(
-                currentTotalUnits,
-                Math.max(0, currentCompletedUnits)
-            );
-            currentCompletedUnits = clampedCurrentUnits;
-            if (!selection.onProgress) return;
-
-            const remainingSessionUnits =
-                totalSessionUnits - completedSessionUnits - initialCurrentUnits;
-            const sessionCompletedUnits = completedSessionUnits + clampedCurrentUnits;
-            const sessionTotalUnits =
-                completedSessionUnits + currentTotalUnits + remainingSessionUnits;
-            const current: ImportProgressCurrent = {
-                key: importableKey,
-                type: importable.type,
-                identity,
-                status: rowStatus,
-                phase,
-                label: `${importable.type} ${identity}`,
-                phaseLabel,
-                completedUnits: clampedCurrentUnits,
-                totalUnits: currentTotalUnits,
-                phaseUnits: currentPhaseUnits,
-                unitCompleted: inner?.unitCompleted,
-                unitTotal: inner?.unitTotal,
-                parentUnitCompleted: inner?.parentUnitCompleted,
-                parentUnitTotal: inner?.parentUnitTotal,
-                parentPhaseLabel: inner?.parentPhaseLabel,
-            };
-            const payload: ImportProgress = {
-                completedImportables: completed,
-                totalImportables: ordered.length,
-                completedUnits: sessionCompletedUnits,
-                totalUnits: sessionTotalUnits,
-                current,
-                rows,
-                failed: result.failed,
-            };
-            selection.onProgress(payload);
-            lastEmittedSessionUnits = Math.max(
-                lastEmittedSessionUnits,
-                payload.completedUnits
-            );
-        };
+        const key = importProgressKey(importable.type, identity, selection.sourcePath);
+        const cacheEntry = readImportableCache(
+            selection.housingUuid,
+            importable.type,
+            identity
+        );
+        events?.emit({
+            kind: "importableStarted",
+            key,
+            type: importable.type,
+            identity,
+            setupUnits: setupUnitsForImportable(importable),
+            initialUnits: importableUnits[i],
+            rowIndex: i,
+            cached: cacheEntry === null ? null : cacheEntry.importable,
+        });
 
         if (plan?.wholeImportableTrusted) {
-            result.skippedTrusted++;
-            finishImportableRowSilently("skipped");
-            finishCompletedImportable();
+            events?.emit({ kind: "importableFinished", key, status: "skipped" });
             continue;
         }
 
-        const sourcePath = parsed.gcx.sourceFiles.get(importable) ?? null;
-        const previewHandler = selection.previewHandlerForImportable
-            ? selection.previewHandlerForImportable(importable, sourcePath)
-            : null;
-        const sessionPreviewHandler: ImportPreviewEventHandler = {
-            emit(event: ImportPreviewEvent): void {
-                if (event.kind === "progress") {
-                    emitProgress(event.progress);
-                }
-                previewHandler?.emit(event);
-            },
-        };
         try {
             await importImportable(ctx, importable, registry, {
                 plan,
                 housingUuid: selection.housingUuid,
-                previewHandler: sessionPreviewHandler,
+                events,
             });
-            if (!plan?.wholeImportableTrusted) {
-                result.imported++;
-            }
-            finishImportableRowSilently("imported");
-            finishCompletedImportable();
+            events?.emit({ kind: "importableFinished", key, status: "imported" });
         } catch (error) {
-            // User-initiated cancel — propagate so TaskManager logs "Task
-            // cancelled" once and the GUI's progress UI clears, instead of
-            // surfacing "Failed to import ...: [object Object]".
             if (isTaskCancelled(error)) {
                 throw error;
             }
-            result.failed++;
-            emitTerminalProgress("failed", "failed");
+            events?.emit({ kind: "importableFinished", key, status: "failed" });
             if (error instanceof Diagnostic) {
                 printDiagnostic(sm, error);
             } else {
@@ -275,35 +126,15 @@ export async function importSelectedImportables(
             // on each other and a partial import is worse than a clean
             // abort. The user can fix the failing importable and retry.
             ctx.displayMessage(
-                `&c[htsw] Import aborted after failure on ${importable.type} ${importableIdentity(importable)}`
+                `&c[htsw] Import aborted after failure on ${importable.type} ${identity}`
             );
-            finishFailedImportable();
             break;
         }
     }
 
-    if (selection.onProgress) {
-        const finalSessionUnits = Math.max(
-            completedSessionUnits,
-            lastEmittedSessionUnits
-        );
-        selection.onProgress({
-            completedImportables: completed,
-            totalImportables: ordered.length,
-            completedUnits: finalSessionUnits,
-            totalUnits: totalSessionUnits,
-            current: null,
-            rows,
-            failed: result.failed,
-        });
-    }
-
-    return result;
+    events?.emit({ kind: "sessionFinished" });
 }
 
-/**
- * Cache-aware work estimate for an importable, in progress units.
- */
 function estimateImportableUnitsWithCache(
     importable: Importable,
     housingUuid: string

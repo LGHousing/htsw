@@ -8,6 +8,7 @@
 // is not. Read-then-click pairs (e.g. readBooleanValue / setBooleanValue)
 // stay together in helpers.ts.
 
+import type { Location } from "htsw/types";
 import type { ItemSlot } from "../../tasks/specifics/slots";
 import { normalizeFormattingCodes, removedFormatting } from "../../utils/helpers";
 import type { UiFieldKind } from "../types";
@@ -51,7 +52,7 @@ export function looksTruncated(value: string): boolean {
 }
 
 export function isTruncatableKind(kind: UiFieldKind): boolean {
-    return kind === "value" || kind === "select" || kind === "item";
+    return kind === "value" || kind === "select" || kind === "location" || kind === "item";
 }
 
 export function normalizeLoreValueFormatting(value: string): string {
@@ -73,6 +74,45 @@ export function normalizeLoreValueFormatting(value: string): string {
     return normalized.slice(index);
 }
 
+export function stripLeadingFormattingCodes(value: string): string {
+    let index = 0;
+    while (
+        index + 1 < value.length &&
+        value.charAt(index) === "&" &&
+        /[0-9a-fk-or]/i.test(value.charAt(index + 1))
+    ) {
+        index += 2;
+    }
+    return value.slice(index);
+}
+
+const HOUSING_EDITOR_VALUE_PREFIX = /^(?:&5&o&7&a|&5&o|&7&a)/i;
+
+export function stripHousingEditorValuePrefix(value: string): string {
+    return value.replace(HOUSING_EDITOR_VALUE_PREFIX, "");
+}
+
+export function stripRedundantLeadingFormattingCodes(value: string): string {
+    let index = 0;
+    let lastColorStart = -1;
+    while (
+        index + 1 < value.length &&
+        value.charAt(index) === "&" &&
+        /[0-9a-fk-or]/i.test(value.charAt(index + 1))
+    ) {
+        const code = value.charAt(index + 1).toLowerCase();
+        if (/[0-9a-fr]/.test(code)) {
+            lastColorStart = index;
+        }
+        index += 2;
+    }
+
+    if (lastColorStart > 0) {
+        return value.slice(lastColorStart);
+    }
+    return value;
+}
+
 export const INTEGER_DISPLAY_VALUE_PATTERN = /^[+-]?(?:(?:\d{1,3}(?:,\d{3})+)|\d+)$/;
 export const DECIMAL_DISPLAY_VALUE_PATTERN = /^[+-]?(?:(?:\d{1,3}(?:,\d{3})+)|\d+)\.\d+$/;
 
@@ -90,14 +130,18 @@ function stripNumericGroupingCommas(value: string): string {
 function parseFieldValue(
     kind: UiFieldKind,
     value: string
-): string | boolean | undefined {
+): string | boolean | Location | undefined {
     switch (kind) {
         case "value":
-            return stripNumericGroupingCommas(normalizeLoreValueFormatting(value));
+            return stripNumericGroupingCommas(
+                stripHousingEditorValuePrefix(normalizeLoreValueFormatting(value))
+            );
         case "cycle":
         case "select":
         case "item":
             return removedFormatting(value).trim();
+        case "location":
+            return parseLocationField(value);
         case "boolean":
             return parseBooleanText(value);
         case "nestedList":
@@ -108,11 +152,49 @@ function parseFieldValue(
     }
 }
 
+const KNOWN_LOCATION_LABELS = [
+    "House Spawn Location",
+    "Invokers Location",
+    "Current Location",
+] as const;
+
+const COORDINATE_LABEL_PREFIX = /^(?:yaw|pitch):\s*/i;
+
+export function parseLocationField(value: string): Location | undefined {
+    const cleaned = removedFormatting(value).trim();
+    if (cleaned === "Not Set") return undefined;
+    for (let i = 0; i < KNOWN_LOCATION_LABELS.length; i++) {
+        const label = KNOWN_LOCATION_LABELS[i];
+        if (cleaned === label) {
+            return { type: label };
+        }
+    }
+
+    return {
+        type: "Custom Coordinates",
+        value: normalizeCoordinateString(cleaned),
+    };
+}
+
+function normalizeCoordinateString(raw: string): string {
+    const parts = raw.split(",");
+    const out: string[] = [];
+    for (let i = 0; i < parts.length; i++) {
+        let trimmed = parts[i].trim();
+        const labelMatch = trimmed.match(COORDINATE_LABEL_PREFIX);
+        if (labelMatch !== null) {
+            trimmed = trimmed.substring(labelMatch[0].length);
+        }
+        if (trimmed.length > 0) out.push(trimmed);
+    }
+    return out.join(" ");
+}
+
 export function parseLoreFields<TProp extends string>(
     slot: ItemSlot,
     loreFields: Record<string, { prop: TProp; kind: UiFieldKind }>
-): Partial<Record<TProp, string | boolean>> {
-    const parsed: Partial<Record<TProp, string | boolean>> = {};
+): Partial<Record<TProp, string | boolean | Location>> {
+    const parsed: Partial<Record<TProp, string | boolean | Location>> = {};
 
     for (const line of slot.getItem().getLore()) {
         const keyValue = parseLoreKeyValueLine(line);

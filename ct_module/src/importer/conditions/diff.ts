@@ -24,7 +24,7 @@ export function currentConditionListFromSlots(
     return out;
 }
 
-export function currentConditionListFromConditions(
+export function baselineConditionListFromConditions(
     conditions: ReadonlyArray<Condition | null>
 ): CurrentConditionListEntry[] {
     const out: CurrentConditionListEntry[] = [];
@@ -111,15 +111,15 @@ export function diffConditionList(
             continue;
         }
 
-        const [currentCondition] = unmatchedCurrent.splice(currentIndex, 1);
-        if (currentCondition.condition === null) {
+        const [baselineCondition] = unmatchedCurrent.splice(currentIndex, 1);
+        if (baselineCondition.condition === null) {
             continue;
         }
         unmatchedDesired.splice(desiredIndex, 1);
         operations.push({
             kind: "edit",
-            entryId: currentCondition.entryId,
-            currentCondition: currentCondition.condition,
+            entryId: baselineCondition.entryId,
+            baselineCondition: baselineCondition.condition,
             desired: desiredCondition,
             noteOnly: true,
         });
@@ -134,15 +134,15 @@ export function diffConditionList(
             continue;
         }
 
-        const [currentCondition] = unmatchedCurrent.splice(currentIndex, 1);
-        if (currentCondition.condition === null) {
+        const [baselineCondition] = unmatchedCurrent.splice(currentIndex, 1);
+        if (baselineCondition.condition === null) {
             operations.push({ kind: "add", desired: desiredCondition });
             continue;
         }
         operations.push({
             kind: "edit",
-            entryId: currentCondition.entryId,
-            currentCondition: currentCondition.condition,
+            entryId: baselineCondition.entryId,
+            baselineCondition: baselineCondition.condition,
             desired: desiredCondition,
             noteOnly: false,
         });
@@ -153,7 +153,7 @@ export function diffConditionList(
         operations.push({
             kind: "delete",
             entryId: currentEntry.entryId,
-            currentCondition: currentEntry.condition,
+            baselineCondition: currentEntry.condition,
         });
     }
 

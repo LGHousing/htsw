@@ -8,12 +8,16 @@ import {
 } from "../../importer/gui/menuWait";
 import { selectItemFromOpenInventory } from "../../importer/items/items";
 import type { ImportableTrustPlan } from "../../importCache";
-import type { ImportPreviewEventHandler } from "../../importer/importPreviewEvents";
+import type { ImportEventHandler } from "../../importer/importEvents";
+import { createSetupStepEmitter } from "../../importer/progress/setupStepEmitter";
 import TaskContext from "../../tasks/context";
 import { getItemFromNbt } from "../../utils/nbt";
 import { getActionListTrust, getBaselineActionList } from "../actionListHelpers";
 import type { ItemRegistry } from "../itemRegistry";
-import { ensureReferencedImportablesExist } from "../references";
+import {
+    countReferencedShells,
+    ensureReferencedImportablesExist,
+} from "../references";
 import { openMenuEditor } from "./shared";
 
 const MENU_SIZE_OPTIONS = ["1", "2", "3", "4", "5", "6"];
@@ -23,9 +27,13 @@ export async function importImportableMenu(
     importable: ImportableMenu,
     itemRegistry: ItemRegistry,
     trustPlan?: ImportableTrustPlan,
-    previewHandler?: ImportPreviewEventHandler
+    events?: ImportEventHandler
 ): Promise<void> {
-    await ensureReferencedImportablesExist(ctx, importable);
+    const setup = createSetupStepEmitter(events, countReferencedShells(importable) + 1);
+
+    await ensureReferencedImportablesExist(ctx, importable, (kind, name) => {
+        setup(`created ${kind} ${name}`);
+    });
 
     const alreadyExists = (await openMenuEditor(ctx, importable.name)) === "opened";
 
@@ -35,6 +43,7 @@ export async function importImportableMenu(
 
         await openMenuEditor(ctx, importable.name);
     }
+    setup(`opened menu ${importable.name}`);
 
     if (importable.size !== undefined && !menuTopLevelTrusted(importable, trustPlan)) {
         await setCycleValue(
@@ -71,7 +80,7 @@ export async function importImportableMenu(
                 itemRegistry,
                 baselineCurrent: getBaselineActionList(trustPlan, slotActionsPath),
                 trust: getActionListTrust(trustPlan, slotActionsPath),
-                previewHandler,
+                events,
             });
 
             await clickGoBack(ctx);
