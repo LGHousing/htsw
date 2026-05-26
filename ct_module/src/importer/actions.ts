@@ -460,11 +460,19 @@ async function writeGiveItem(
     }
 
     if (action.slot !== undefined) {
-        await setSelectValue(
-            ctx,
-            getActionFieldLabel("GIVE_ITEM", "slot"),
-            String(action.slot)
-        );
+        const slotLabel = getActionFieldLabel("GIVE_ITEM", "slot");
+        const slotValue = String(action.slot);
+        if (/^\d+$/.test(slotValue) || slotValue.indexOf("%") >= 0) {
+            // Numeric index or placeholder — use Housing's "Manual Input"
+            // button (mirrors BHTSL's slot-type handling).
+            await openSubmenu(ctx, slotLabel);
+            const manualSlot = await getSlotPaginate(ctx, "Manual Input");
+            manualSlot.click();
+            await enterValue(ctx, slotValue);
+            await waitForMenu(ctx);
+        } else {
+            await setSelectValue(ctx, slotLabel, slotValue);
+        }
     }
 
     if (action.replaceExisting !== undefined) {

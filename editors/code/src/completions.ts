@@ -63,7 +63,9 @@ export class CompletionAdapter implements vscode.CompletionItemProvider {
                 this.toVscodeCompletionKind(completion.kind)
             );
             item.detail = completion.detail;
-            item.range = range;
+            item.range = range
+                ? new vscode.Range(range.start, position)
+                : undefined;
             const insertText = this.trimDuplicateClosingQuote(
                 document,
                 position,
@@ -146,7 +148,9 @@ export class SnbtCompletionAdapter implements vscode.CompletionItemProvider {
                 this.toVscodeCompletionKind(completion.kind)
             );
             item.detail = completion.detail;
-            item.range = range;
+            item.range = range
+                ? new vscode.Range(range.start, position)
+                : undefined;
             item.insertText = completion.snippet
                 ? new vscode.SnippetString(completion.insertText)
                 : completion.insertText;
