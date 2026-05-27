@@ -22,7 +22,7 @@ import {
 import { timedWaitForMenu } from "../gui/menuWait";
 import { clickGoBack } from "../gui/helpers";
 import { CONDITION_LIST_CONFIG } from "./listConfig";
-import { getConditionSpec, isConditionListItemInverted } from "../conditions";
+import { getConditionSpec, isConditionListItemInverted } from "./specs";
 import { COST, phaseUnitsTotal, type PhaseUnits } from "../progress/costs";
 import type { ProgressHandler } from "../progress/types";
 

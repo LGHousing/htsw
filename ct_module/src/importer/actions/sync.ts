@@ -7,12 +7,17 @@ import type {
     ActionListTrust,
     ObservedActionSlot,
 } from "../types";
-import type { ProgressHandler } from "../progress/types";
+import type { PhaseUnits, ProgressHandler } from "../progress/types";
 import { baselineActionListFromSlots, diffActionList } from "./diff";
 import { applyActionListDiff } from "./applyDiff";
 import { canonicalizeActionItemName, readActionList } from "./readList";
 import { actionLogLabel, editDiffSummary } from "./log";
-import { estimateActionListPhaseUnits } from "../progress/costs";
+import {
+    actionListDiffApplyUnits,
+    editUnitsWithNested,
+    estimateActionListPhaseUnits,
+    phaseUnitsTotal,
+} from "../progress/costs";
 import type { ImportEventHandler, ProgressScope } from "../importEvents";
 
 export type SyncActionListOptions = {
@@ -43,11 +48,26 @@ export type SyncActionListResult = {
     usedObserved: ObservedActionSlot[];
 };
 
-export async function syncActionList(
+/**
+ * A pre-read plan: the observed list, the desired list, the diff, and
+ * the phase-unit predictions computed from them. Stored between the
+ * two-pass orchestrator's pre-read and apply passes. The `observed`
+ * array's ItemSlot references go stale when the menu closes between
+ * passes, but `applyActionListDiff` re-acquires slots via
+ * `getPaginatedListSlotAtIndex`, so the data survives.
+ */
+export type ActionListPlan = {
+    desired: Action[];
+    observed: ObservedActionSlot[];
+    diff: ActionListDiff;
+    phaseUnits: PhaseUnits;
+};
+
+export async function prereadActionList(
     ctx: TaskContext,
     desired: Action[],
     options?: SyncActionListOptions
-): Promise<SyncActionListResult> {
+): Promise<ActionListPlan> {
     const phaseUnits = estimateActionListPhaseUnits(desired, options?.baselineCurrent);
     const progressScope: ProgressScope = options?.progressScope ?? { kind: "topLevel" };
     const progress: ProgressHandler | undefined =
@@ -60,16 +80,20 @@ export async function syncActionList(
               });
     const observed =
         options?.observed ??
-        (await readActionList(ctx, {
-            kind: "sync",
-            desired,
-            itemRegistry: options?.itemRegistry,
-            trust: options?.trust,
-            progress,
-            phaseUnits,
-            pathPrefix: options?.pathPrefix,
-            events: options?.events,
-        }));
+        (await readActionList(ctx,
+            {
+                kind: "sync",
+                desired,
+                trust: options?.trust,
+            },
+            {
+                itemRegistry: options?.itemRegistry,
+                progress,
+                phaseUnits,
+                pathPrefix: options?.pathPrefix,
+                events: options?.events,
+            }
+        ));
     if (options?.itemRegistry !== undefined) {
         for (const entry of observed) {
             if (entry.action !== null) {
@@ -82,18 +106,57 @@ export async function syncActionList(
     }
     const diff = diffActionList(baselineActionListFromSlots(observed), desired);
     logActionSyncState(ctx, diff);
+
+    // Replace the rough applying estimate with the diff-aware cost now
+    // that we know the actual operations. Emit a progress event so the
+    // reducer parks this importable with a precise apply estimate;
+    // otherwise the queue + big bar segments stay sized against the
+    // upfront rough estimate until pass-2 actually starts and
+    // applyActionListDiff resets phaseUnits.applying itself.
+    const exactApplyUnits = actionListDiffApplyUnits(
+        diff,
+        editUnitsWithNested,
+        desired.length
+    );
+    phaseUnits.applying = Math.max(exactApplyUnits, 1);
+    progress?.({
+        phase: "hydrating",
+        completedUnits: phaseUnits.reading + phaseUnits.hydrating,
+        totalUnits: phaseUnitsTotal(phaseUnits),
+        phaseUnits,
+        sync: { completedUnits: 1, totalUnits: 1, parent: null },
+    });
+
+    return { desired, observed, diff, phaseUnits };
+}
+
+export async function applyActionListPlan(
+    ctx: TaskContext,
+    plan: ActionListPlan,
+    options?: SyncActionListOptions
+): Promise<void> {
+    const progressScope: ProgressScope = options?.progressScope ?? { kind: "topLevel" };
     await applyActionListDiff(
         ctx,
-        observed,
-        desired,
-        diff,
+        plan.observed,
+        plan.desired,
+        plan.diff,
         options?.itemRegistry,
         options?.pathPrefix,
-        phaseUnits,
+        plan.phaseUnits,
         options?.events,
         progressScope
     );
-    return { usedObserved: observed };
+}
+
+export async function syncActionList(
+    ctx: TaskContext,
+    desired: Action[],
+    options?: SyncActionListOptions
+): Promise<SyncActionListResult> {
+    const plan = await prereadActionList(ctx, desired, options);
+    await applyActionListPlan(ctx, plan, options);
+    return { usedObserved: plan.observed };
 }
 
 function logActionSyncState(ctx: TaskContext, diff: ActionListDiff): void {

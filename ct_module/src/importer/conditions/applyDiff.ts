@@ -28,7 +28,7 @@ import type {
 import type { ProgressHandler } from "../progress/types";
 import { getPaginatedListSlotAtIndex } from "../gui/paginatedList";
 import { CONDITION_LIST_CONFIG } from "./listConfig";
-import { getConditionSpec, writeOpenCondition } from "../conditions";
+import { getConditionSpec, writeOpenCondition } from "./specs";
 import {
     conditionListDiffApplyUnits,
     conditionOperationUnits,

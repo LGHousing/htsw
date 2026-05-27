@@ -1,5 +1,9 @@
 import type { Action, Condition } from "htsw/types";
 import type { ItemSlot } from "../tasks/specifics/slots";
+import type { ItemRegistry } from "../importables/itemRegistry";
+import type { ItemCaptureRegistry } from "./itemCapture";
+import type { ProgressHandler, PhaseUnits } from "./progress/types";
+import type { ImportEventHandler } from "./importEvents";
 
 export type UiFieldKind =
     | "boolean"
@@ -166,4 +170,13 @@ export type ConditionListOperation =
 
 export type ConditionListDiff = {
     operations: ConditionListOperation[];
+};
+
+export type ListReadOptions = {
+    itemRegistry?: ItemRegistry;
+    itemCaptures?: ItemCaptureRegistry;
+    progress?: ProgressHandler;
+    phaseUnits?: PhaseUnits;
+    events?: ImportEventHandler;
+    pathPrefix?: string;
 };

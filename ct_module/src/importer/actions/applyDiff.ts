@@ -4,11 +4,11 @@
  * is its only caller.
  *
  * Module graph note: this file imports `writeOpenAction`,
- * `actionPathForIndex`, `getActionSpec`, and
- * `isLimitExceeded` from `../actions`. The writers in `../actions` reach
- * back into `./sync` (which itself imports from this file) for nested
- * `syncActionList` calls. This is a function-reference cycle that resolves
- * fine at runtime — don't try to "fix" it by relocating `writeOpenAction`.
+ * `actionPathForIndex`, `getActionSpec` from `./specs`. The writers in
+ * `./writers` reach back into `./sync` (which itself imports from this file)
+ * for nested `syncActionList` calls. This is a function-reference cycle that
+ * resolves fine at runtime — don't try to "fix" it by relocating
+ * `writeOpenAction`.
  */
 import { Diagnostic } from "htsw";
 import type { Action } from "htsw/types";
@@ -55,7 +55,7 @@ import {
     actionPathForIndex,
     getActionSpec,
     writeOpenAction,
-} from "../actions";
+} from "./specs";
 import { waitIfStepPaused } from "../stepGate";
 import { getActionScalarLoreFields } from "../fields/actionMappings";
 import { scalarFieldDiffers } from "../fields/compare";

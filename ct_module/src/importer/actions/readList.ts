@@ -1,18 +1,20 @@
 import type { Action } from "htsw/types";
 
 import TaskContext from "../../tasks/context";
-import { type ItemRegistry } from "../../importables/itemRegistry";
+import type { ItemRegistry } from "../../importables/itemRegistry";
 import { clickGoBack } from "../gui/helpers";
 import { timedWaitForMenu } from "../gui/menuWait";
 import { ItemSlot } from "../../tasks/specifics/slots";
 import { removedFormatting } from "../../utils/helpers";
 import {
     ACTION_MAPPINGS,
+    getActionLoreFields,
     getActionScalarLoreFields,
     getNestedListFields,
     parseActionListItem,
     tryGetActionTypeFromDisplayName,
 } from "../fields/actionMappings";
+import { captureItemFromOpenEditorField } from "../itemCapture";
 import { isTruncatableKind, looksTruncated } from "../fields/loreParsing";
 import {
     CONDITION_MAPPINGS,
@@ -27,8 +29,8 @@ import type {
     NestedSummaries,
     Observed,
     ObservedActionSlot,
+    ListReadOptions,
 } from "../types";
-import type { ProgressHandler } from "../progress/types";
 import { createNestedHydrationPlan } from "./hydrationPlan";
 import { matchObservedToDesired } from "./nestedMatching";
 import { applyActionListTrust } from "./applyTrust";
@@ -45,31 +47,14 @@ import {
     COST,
     hydrationEntryUnits,
     phaseUnitsTotal,
-    type PhaseUnits,
 } from "../progress/costs";
 import { ACTION_LIST_CONFIG } from "./listConfig";
-import { actionPathForIndex, getActionSpec } from "../actions";
+import { actionPathForIndex, getActionSpec } from "./specs";
 import { actionLogLabel } from "./log";
 
 export type ActionListReadMode =
-    | {
-          kind: "full";
-          itemRegistry?: ItemRegistry;
-          progress?: ProgressHandler;
-          phaseUnits?: PhaseUnits;
-          events?: ImportEventHandler;
-          pathPrefix?: string;
-      }
-    | {
-          kind: "sync";
-          desired: readonly Action[];
-          itemRegistry?: ItemRegistry;
-          trust?: ActionListTrust;
-          progress?: ProgressHandler;
-          phaseUnits?: PhaseUnits;
-          events?: ImportEventHandler;
-          pathPrefix?: string;
-      };
+    | { kind: "full" }
+    | { kind: "sync"; desired: readonly Action[]; trust?: ActionListTrust };
 
 function readNestedSummaries(
     action: Observed<Action>,
@@ -178,13 +163,14 @@ async function readActionsListPage(
 
 export async function readActionList(
     ctx: TaskContext,
-    mode: ActionListReadMode = { kind: "full" }
+    mode: ActionListReadMode = { kind: "full" },
+    read?: ListReadOptions
 ): Promise<ObservedActionSlot[]> {
-    const progress = mode.progress;
-    const events = mode.events;
+    const progress = read?.progress;
+    const events = read?.events;
     const desiredTotal =
         mode.kind === "sync" ? Math.max(1, mode.desired.length) : 1;
-    const phaseUnits = mode.phaseUnits;
+    const phaseUnits = read?.phaseUnits;
     let readCompletedUnits = 0;
     let observed: ObservedActionSlot[] = [];
     if (phaseUnits !== undefined) {
@@ -198,16 +184,24 @@ export async function readActionList(
     }
     events?.emit({
         kind: "readStarted",
-        listPath: mode.pathPrefix ?? "actions",
+        listPath: read?.pathPrefix ?? "actions",
     });
     observed = await readPaginatedList(
         ctx,
         ACTION_LIST_CONFIG,
         () => readActionsListPage(ctx),
-        ({ totalEntries, pagesRead }) => {
+        ({ totalEntries, pagesRead, entries }) => {
             readCompletedUnits = Math.max(0, pagesRead - 1) * COST.pageTurnWait;
             if (phaseUnits === undefined) return;
             phaseUnits.reading = readCompletedUnits;
+            // Incrementally refine hydrate cost from the entries observed
+            // so far. Each entry already carries its parsed
+            // `nestedSummaries` (lengths of inner if/else/conditions
+            // lists), so the partial hydrate cost is exact for the rows
+            // we've seen. By the time the final page arrives, this
+            // matches what `hydrateNestedActions` will compute, so the
+            // read→hydrate transition no longer bumps totalUnits.
+            phaseUnits.hydrating = sumHydrationCost(entries);
             progress?.({
                 phase: "reading",
                 completedUnits: readCompletedUnits,
@@ -222,37 +216,45 @@ export async function readActionList(
         }
     );
     if (phaseUnits !== undefined) phaseUnits.reading = readCompletedUnits;
-    const isTopLevelRead = mode.pathPrefix === undefined;
+    const isTopLevelRead = read?.pathPrefix === undefined;
     if (isTopLevelRead) {
         emitObservedSnapshot(observed, events);
     }
     let plan: NestedHydrationPlan;
-    if (mode.kind === "full") {
-        plan = buildFullHydrationPlan(observed);
-    } else {
-        const matches = matchObservedToDesired(observed, mode.desired);
-        plan = createNestedHydrationPlan(matches);
-        if (mode.trust !== undefined) {
-            applyActionListTrust(matches, plan, mode.trust);
+    if (isTopLevelRead) {
+        // Only the top-level read can encounter nested-list-bearing
+        // actions (CONDITIONAL/RANDOM). CONDITIONAL/RANDOM are disallowed
+        // inside their own ifActions/elseActions/actions, so any inner
+        // read's hydration plan can only carry scalar truncation entries.
+        // Skip the nested-plan computation entirely at inner levels.
+        if (mode.kind === "full") {
+            plan = buildFullHydrationPlan(observed);
+        } else {
+            const matches = matchObservedToDesired(observed, mode.desired);
+            plan = createNestedHydrationPlan(matches);
+            if (mode.trust !== undefined) {
+                applyActionListTrust(matches, plan, mode.trust);
+            }
         }
+    } else {
+        plan = new Map();
     }
     addScalarHydrationEntries(plan, observed);
+    if (read?.itemCaptures !== undefined) {
+        addItemCaptureEntries(plan, observed);
+    }
     await hydrateNestedActions(
         ctx,
         plan,
         observed,
-        mode.itemRegistry,
-        progress,
-        phaseUnits,
         isTopLevelRead,
-        mode.pathPrefix,
-        events
+        read
     );
     await goToPaginatedListPage(ctx, 1, ACTION_LIST_CONFIG);
-    if (mode.itemRegistry !== undefined) {
+    if (read?.itemRegistry !== undefined) {
         for (const entry of observed) {
             if (entry.action !== null) {
-                canonicalizeActionItemName(entry.action, mode.itemRegistry);
+                canonicalizeActionItemName(entry.action, read.itemRegistry);
             }
         }
     }
@@ -293,6 +295,31 @@ function addScalarHydrationEntries(
     }
 }
 
+function getItemFieldsForCapture(
+    actionType: Action["type"]
+): Array<{ label: string; prop: string }> {
+    const loreFields = getActionLoreFields(actionType);
+    const result: Array<{ label: string; prop: string }> = [];
+    for (const label in loreFields) {
+        if (loreFields[label].kind === "item") {
+            result.push({ label: label, prop: loreFields[label].prop });
+        }
+    }
+    return result;
+}
+
+function addItemCaptureEntries(
+    plan: NestedHydrationPlan,
+    observed: readonly ObservedActionSlot[]
+): void {
+    for (const entry of observed) {
+        if (entry.action === null || plan.has(entry)) continue;
+        if (getItemFieldsForCapture(entry.action.type).length > 0) {
+            plan.set(entry, new Set());
+        }
+    }
+}
+
 function shouldHydrateScalarAction(action: Observed<Action>): boolean {
     if (!getActionSpec(action.type).read) return false;
     const fields = getActionScalarLoreFields(action.type);
@@ -318,6 +345,16 @@ function shouldHydrateScalarAction(action: Observed<Action>): boolean {
     return false;
 }
 
+function sumHydrationCost(entries: readonly ObservedActionSlot[]): number {
+    let total = 0;
+    for (const entry of entries) {
+        const propsToRead = entry.nestedPropsToRead;
+        if (propsToRead === undefined || propsToRead.size === 0) continue;
+        total += hydrationEntryUnits(entry, propsToRead);
+    }
+    return total;
+}
+
 function buildFullHydrationPlan(
     observed: readonly ObservedActionSlot[]
 ): NestedHydrationPlan {
@@ -336,20 +373,21 @@ export function canonicalizeActionItemName(
 ): void {
     canonicalizeItemFields(action, ACTION_MAPPINGS, itemRegistry);
 
+    // Only CONDITIONAL/RANDOM carry nested lists, and their inner actions
+    // are guaranteed non-CONDITIONAL/non-RANDOM by spec — so the inner
+    // pass is one level deep, no recursion needed.
     for (const nestedField of getNestedListFields(action.type)) {
         const value = (action as Record<string, unknown>)[nestedField.prop];
         if (!Array.isArray(value)) continue;
+        const childMapping =
+            nestedField.prop === "conditions" ? CONDITION_MAPPINGS : ACTION_MAPPINGS;
         for (const child of value) {
             if (child === null) continue;
-            if (nestedField.prop === "conditions") {
-                canonicalizeItemFields(
-                    child as { type: string },
-                    CONDITION_MAPPINGS,
-                    itemRegistry
-                );
-            } else {
-                canonicalizeActionItemName(child as Action, itemRegistry);
-            }
+            canonicalizeItemFields(
+                child as { type: string },
+                childMapping,
+                itemRegistry
+            );
         }
     }
 }
@@ -358,13 +396,13 @@ async function hydrateNestedActions(
     ctx: TaskContext,
     plan: NestedHydrationPlan,
     observed: readonly ObservedActionSlot[],
-    itemRegistry?: ItemRegistry,
-    progress?: ProgressHandler,
-    phaseUnits?: PhaseUnits,
     isTopLevelRead: boolean = false,
-    pathPrefix?: string,
-    events?: ImportEventHandler
+    read?: ListReadOptions
 ): Promise<void> {
+    const progress = read?.progress;
+    const phaseUnits = read?.phaseUnits;
+    const events = read?.events;
+    const pathPrefix = read?.pathPrefix;
     let completed = 0;
     const total = plan.size;
     let completedHydrateUnits = 0;
@@ -398,9 +436,8 @@ async function hydrateNestedActions(
             entry,
             propsToRead,
             observed.length,
-            itemRegistry,
-            entryPath,
-            events
+            read,
+            entryPath
         );
         completedHydrateUnits += entryUnits;
         completed++;
@@ -416,9 +453,8 @@ async function hydrateNestedAction(
     entry: ObservedActionSlot,
     propsToRead: NestedPropsToRead,
     listLength: number,
-    itemRegistry?: ItemRegistry,
-    entryPath?: string,
-    events?: ImportEventHandler
+    read?: ListReadOptions,
+    entryPath?: string
 ): Promise<void> {
     if (entry.action === null) {
         return;
@@ -434,22 +470,41 @@ async function hydrateNestedAction(
         actionSlot.click();
         await timedWaitForMenu(ctx, "menuClickWait");
         const spec = getActionSpec(entry.action.type);
-        if (!spec.read) {
+
+        if (spec.read) {
+            entry.action = await spec.read({
+                ctx,
+                propsToRead,
+                read: read !== undefined ? { ...read, pathPrefix: entryPath } : undefined,
+                current: entry.action,
+            });
+            entry.nestedReadState = "full";
+            if (note) {
+                entry.action.note = note;
+            }
+        } else if (propsToRead.size > 0) {
             throw new Error(`Reading action "${entry.action.type}" is not implemented.`);
         }
 
-        entry.action = await spec.read(
-            ctx,
-            propsToRead,
-            itemRegistry,
-            entryPath,
-            events,
-            entry.action
-        );
-        entry.nestedReadState = "full";
-        if (note) {
-            entry.action.note = note;
+        if (read?.itemCaptures !== undefined && entry.action !== null) {
+            const itemFields = getItemFieldsForCapture(entry.action.type);
+            for (let i = 0; i < itemFields.length; i++) {
+                const field = itemFields[i];
+                const displayName = (entry.action as Record<string, unknown>)[field.prop];
+                if (typeof displayName === "string" && displayName.length > 0) {
+                    const captured = await captureItemFromOpenEditorField(
+                        ctx,
+                        field.label,
+                        read.itemCaptures,
+                        displayName
+                    );
+                    if (captured !== null) {
+                        (entry.action as Record<string, unknown>)[field.prop] = captured;
+                    }
+                }
+            }
         }
+
         await clickGoBack(ctx);
     } catch (error) {
         ctx.displayMessage(
