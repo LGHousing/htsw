@@ -172,11 +172,14 @@ export type ConditionListDiff = {
     operations: ConditionListOperation[];
 };
 
-export type ListReadOptions = {
+export type ReadContext = {
     itemRegistry?: ItemRegistry;
     itemCaptures?: ItemCaptureRegistry;
-    progress?: ProgressHandler;
-    phaseUnits?: PhaseUnits;
     events?: ImportEventHandler;
     pathPrefix?: string;
+};
+
+export type ListReadOptions = ReadContext & {
+    progress?: ProgressHandler;
+    phaseUnits?: PhaseUnits;
 };

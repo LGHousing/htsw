@@ -6,15 +6,22 @@ import {
     getExportImportJsonPath,
     getHousingUuid,
     getImportJsonPath,
+    clearImportableChecks,
+    getAutoTrackSources,
+    isAnyAutoTrackEnabled,
     isCurrentHouseTrusted,
+    isImportableChecked,
     setActiveImportPath,
     setHousingUuid,
     setImportProgress,
     setKnowledgeRows,
+    toggleImportableChecked,
 } from "../../state";
 import {
+    addToQueue,
     clearQueue,
     getQueue,
+    makeImportableQueueItem,
     type QueueItem,
 } from "../../state/queue";
 import { forEachCachedParse, getParseAt, parseImportJsonAt } from "../../state/parses";
@@ -36,6 +43,7 @@ import { TaskManager } from "../../../tasks/manager";
 import type { Action, Importable } from "htsw/types";
 import type { ParseResult } from "htsw";
 import { closeAllPopovers } from "../../lib/popovers";
+import { statusForImportable } from "../../knowledge-status";
 import { htslFilenameForFunctionExport } from "../../../exporter/paths";
 import { importableSourcePath } from "../../state/importablePaths";
 import type {
@@ -94,6 +102,34 @@ function refreshKnowledgeRows(): void {
         }
     }
     setKnowledgeRows(buildCacheStatusRows(uuid, all));
+    autoTrackRefresh();
+}
+
+export function autoTrackRefresh(): void {
+    if (!isAnyAutoTrackEnabled()) return;
+    const uuid = getHousingUuid();
+    if (uuid === null) return;
+    const tracked = getAutoTrackSources();
+    forEachCachedParse((entry) => {
+        if (entry.parsed === null) return;
+        if (!tracked.has(entry.canonicalPath)) return;
+        queueModifiedFromParse(entry.canonicalPath, entry.parsed.value);
+    });
+}
+
+export function queueModifiedFromParse(
+    sourcePath: string,
+    importables: readonly Importable[]
+): void {
+    for (const imp of importables) {
+        const status = statusForImportable(imp);
+        if (status === "modified" || status === "unknown") {
+            const item = makeImportableQueueItem(imp, sourcePath);
+            addToQueue(item);
+            const key = trustPlanKey(imp.type, importableIdentity(imp));
+            if (!isImportableChecked(key)) toggleImportableChecked(key);
+        }
+    }
 }
 
 function displayNameForActionType(type: Action["type"] | null): string {
@@ -450,7 +486,7 @@ export function startImport(explicit?: readonly QueueItem[]): void {
             }
             setTimeout(() => {
                 setImportProgress(null);
-                if (explicit === undefined) clearQueue();
+                if (explicit === undefined) { clearQueue(); clearImportableChecks(); }
             }, 5000);
         }
     }).catch((err: unknown) => {

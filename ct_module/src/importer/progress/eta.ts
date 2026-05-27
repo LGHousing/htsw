@@ -29,11 +29,12 @@ export function createEtaCalculator(): EtaCalculator {
             if (progress === null) return null;
             const now = Date.now();
             let recomputed = false;
-            const msPerUnit = currentMsPerUnit();
+            const globalMsPerUnit = currentMsPerUnit();
             const remainingUnits = Math.max(
                 0,
                 progress.totalUnits - progress.completedUnits
             );
+            const msPerUnit = observedMsPerUnit(totalEta, progress, now, globalMsPerUnit);
             const candidateEtaSeconds = (remainingUnits * msPerUnit) / 1000;
             const phaseOrKeyChanged =
                 totalEta !== null &&
@@ -121,8 +122,9 @@ export function createEtaCalculator(): EtaCalculator {
             if (phase === "done") return null;
             const now = Date.now();
             let recomputed = false;
-            const msPerUnit = currentMsPerUnit();
+            const globalMsPerUnit = currentMsPerUnit();
             const remainingUnits = phaseRemainingUnits(progress, phase);
+            const msPerUnit = observedMsPerUnit(phaseEta, progress, now, globalMsPerUnit);
             const candidateEtaSeconds = (remainingUnits * msPerUnit) / 1000;
             const phaseOrKeyChanged =
                 phaseEta !== null &&
@@ -215,6 +217,23 @@ export function currentMsPerUnit(): number {
     const value = n === 0 ? MS_PER_UNIT_PRIOR : sum / n;
     cachedMsPerUnit = { at: now, value };
     return value;
+}
+
+const OBSERVED_MIN_UNITS = 3;
+const OBSERVED_MIN_MS = 500;
+
+function observedMsPerUnit(
+    snap: EtaSnapshot | null,
+    progress: ImportProgress,
+    now: number,
+    globalRate: number
+): number {
+    if (snap === null) return globalRate;
+    const unitsSince = progress.completedUnits - snap.completedUnits;
+    const msSince = now - snap.computedAt;
+    if (unitsSince < OBSERVED_MIN_UNITS || msSince < OBSERVED_MIN_MS) return globalRate;
+    const localRate = msSince / unitsSince;
+    return Math.min(globalRate, localRate);
 }
 
 function phaseRemainingUnits(progress: ImportProgress, phase: ProgressPhase): number {

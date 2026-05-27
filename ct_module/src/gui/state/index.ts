@@ -5,6 +5,7 @@ import type { Importable } from "htsw/types";
 
 import type { CacheStatusRow } from "../../importCache/status";
 import { normalizeHtswPath } from "../lib/pathDisplay";
+import { canonicalPath } from "./parses";
 
 // Re-export the import-session subset so consumers can keep `import { ... } from "./state"`.
 export * from "./importProgress";
@@ -19,8 +20,30 @@ let parsedResult: ParseResult<Importable[]> | null = null;
  * selected" and the queue-bulk paths.
  */
 const checkedImportableKeys: Set<string> = new Set();
-/** Housing UUIDs the user has explicitly opted in to "trust the cache for". */
+const TRUSTED_HOUSES_FILE = "./htsw/.cache/trusted-houses.json";
+let trustedHousesLoaded = false;
 const trustedHouses: Set<string> = new Set();
+function loadTrustedHouses(): void {
+    if (trustedHousesLoaded) return;
+    trustedHousesLoaded = true;
+    try {
+        if (!FileLib.exists(TRUSTED_HOUSES_FILE)) return;
+        const raw = String(FileLib.read(TRUSTED_HOUSES_FILE) ?? "");
+        if (raw.trim() === "") return;
+        const arr = JSON.parse(raw) as unknown;
+        if (!Array.isArray(arr)) return;
+        for (let i = 0; i < arr.length; i++) {
+            if (typeof arr[i] === "string") trustedHouses.add(arr[i] as string);
+        }
+    } catch (_e) {}
+}
+function saveTrustedHouses(): void {
+    try {
+        const arr: string[] = [];
+        trustedHouses.forEach((uuid) => arr.push(uuid));
+        FileLib.write(TRUSTED_HOUSES_FILE, JSON.stringify(arr), true);
+    } catch (_e) {}
+}
 /**
  * When true, sound effects fired by `Forge.PlaySoundEvent` are cancelled
  * while an import is in flight. Suppresses the repetitive ding/click
@@ -80,16 +103,36 @@ export function getCheckedImportableCount(): number {
     return checkedImportableKeys.size;
 }
 
+const autoTrackSources: Set<string> = new Set();
+export function isAutoTrackSource(sourcePath: string): boolean {
+    return autoTrackSources.has(canonicalPath(sourcePath));
+}
+export function toggleAutoTrackSource(sourcePath: string): boolean {
+    const canon = canonicalPath(sourcePath);
+    if (autoTrackSources.has(canon)) {
+        autoTrackSources.delete(canon);
+        return false;
+    }
+    autoTrackSources.add(canon);
+    return true;
+}
+export function isAnyAutoTrackEnabled(): boolean { return autoTrackSources.size > 0; }
+export function getAutoTrackSources(): ReadonlySet<string> { return autoTrackSources; }
+
 export function isHouseTrusted(uuid: string): boolean {
+    loadTrustedHouses();
     return trustedHouses.has(uuid);
 }
 export function setHouseTrust(uuid: string, trusted: boolean): void {
+    loadTrustedHouses();
     if (trusted) trustedHouses.add(uuid);
     else trustedHouses.delete(uuid);
+    saveTrustedHouses();
 }
 /** Trust mode is now per-house: an in-flight import trusts the cache iff
  *  the current housing UUID is in the trusted-houses set. */
 export function isCurrentHouseTrusted(): boolean {
+    loadTrustedHouses();
     return housingUuid !== null && trustedHouses.has(housingUuid);
 }
 

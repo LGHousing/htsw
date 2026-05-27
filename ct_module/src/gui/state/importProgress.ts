@@ -142,6 +142,7 @@ type QueuePhase = "reading" | "hydrating" | "applying";
 export type QueueItemRunState =
     | { kind: "queued" }
     | { kind: "done" }
+    | { kind: "skipped" }
     | { kind: "failed" }
     | {
           kind: "current";
@@ -167,9 +168,8 @@ export function getQueueItemRunState(item: QueueItem): QueueItemRunState {
         }
     }
     if (row === undefined) return { kind: "queued" };
-    if (row.status === "imported" || row.status === "skipped") {
-        return { kind: "done" };
-    }
+    if (row.status === "imported") return { kind: "done" };
+    if (row.status === "skipped") return { kind: "skipped" };
     if (row.status === "failed") {
         // The session halts on first failure, so everything after this
         // stays queued. We render the failed row with the error color

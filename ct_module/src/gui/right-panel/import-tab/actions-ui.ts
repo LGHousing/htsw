@@ -28,20 +28,18 @@ import {
 import { closeAllPopovers, togglePopover } from "../../lib/popovers";
 import { normalizeHtswPath } from "../../lib/pathDisplay";
 import {
-    getCheckedImportableCount,
-    getCheckedImportableKeys,
     clearImportableChecks,
+    getAutoTrackSources,
     getExportImportJsonPath,
     getImportJsonPath,
     setExportImportJsonPath,
 } from "../../state";
-import { addToQueue, getQueueLength } from "../../state/queue";
+import { getQueueLength } from "../../state/queue";
 import { addRecent, getRecents } from "../../state/recents";
 import { forEachCachedParse } from "../../state/parses";
 import { openFileBrowserWithImportJsonSelection } from "../../popovers/file-browser";
 import {
     CAPTURE_TYPES,
-    queueItemsForCheckedKeys,
     startCaptureExport,
     startExportAllFunctions,
     startImport,
@@ -275,22 +273,17 @@ function importCaretPopoverContent(): Element {
         style: { padding: 4, gap: 2, height: { kind: "grow" } },
         children: [
             Button({
-                text: () => `Add selected to queue (${getCheckedImportableCount()})`,
+                text: () => {
+                    const n = getAutoTrackSources().size;
+                    return n === 0 ? "Auto-Track: OFF" : `Auto-Track: ${n} source${n === 1 ? "" : "s"}`;
+                },
                 style: {
                     width: { kind: "grow" },
                     height: { kind: "px", value: 20 },
                     background: COLOR_BUTTON,
                     hoverBackground: COLOR_BUTTON_HOVER,
                 },
-                onClick: () => {
-                    const items = queueItemsForCheckedKeys(getCheckedImportableKeys());
-                    let added = 0;
-                    for (let i = 0; i < items.length; i++) {
-                        if (addToQueue(items[i])) added++;
-                    }
-                    closeAllPopovers();
-                    ChatLib.chat(`&a[htsw] Added ${added} to queue.`);
-                },
+                onClick: () => {},
             }),
             Button({
                 text: "Clear selection",

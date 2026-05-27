@@ -46,8 +46,8 @@ import { importActionRow } from "./actions-ui";
 import { livePreviewBody } from "./live-preview-body";
 
 // Trust toggle colours mirror the Knowledge tab — green = on, blue = off.
-const TRUST_ON_BG = 0xff2d4d2d | 0;
-const TRUST_ON_HOVER = 0xff3a5d3a | 0;
+const TRUST_ON_BG = 0xff1e3d3d | 0;
+const TRUST_ON_HOVER = 0xff2a4f4f | 0;
 const TRUST_OFF_BG = 0xff2d333d | 0;
 const TRUST_OFF_HOVER = 0xff3a4350 | 0;
 

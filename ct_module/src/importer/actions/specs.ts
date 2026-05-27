@@ -6,7 +6,7 @@ import { ACTION_MAPPINGS } from "../fields/actionMappings";
 import type {
     NestedPropsToRead,
     Observed,
-    ListReadOptions,
+    ReadContext,
 } from "../types";
 import type { ActionPath, ImportEventHandler, ProgressScope } from "../importEvents";
 import {
@@ -71,7 +71,7 @@ export type WriteActionOptions<T extends Action = Action> = {
 export type ActionReadArgs<T extends Action> = {
     ctx: TaskContext;
     propsToRead: NestedPropsToRead;
-    read?: ListReadOptions;
+    read?: ReadContext;
     current?: Observed<T>;
 };
 

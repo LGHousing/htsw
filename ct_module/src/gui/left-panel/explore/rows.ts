@@ -10,7 +10,9 @@ import { Icons } from "../../lib/icons.generated";
 import { openMenu, MenuAction } from "../../lib/menu";
 import { openRenameImportablePopover } from "../../popovers/rename-importable";
 import {
+    isAutoTrackSource,
     isImportableChecked,
+    toggleAutoTrackSource,
     toggleImportableChecked,
 } from "../../state";
 import { ACCENT_SUCCESS, COLOR_TEXT_DIM, GLYPH_DOT } from "../../lib/theme";
@@ -24,8 +26,9 @@ import {
 } from "../../state/importablePaths";
 import { importableIdentity } from "../../../importCache/paths";
 import { trustPlanKey } from "../../../importCache/trust";
-import { makeImportableQueueItem } from "../../state/queue";
+import { addToQueue, makeImportableQueueItem, queueItemKey, removeFromQueueKey } from "../../state/queue";
 import { composeFileMenu, composeImportableMenu } from "../../state/fileMenu";
+import { autoTrackRefresh, queueModifiedFromParse } from "../../right-panel/import-tab/actions";
 import { SourceDir, SourceFile, removeSource } from "./source";
 import { showInExplorer, openInVSCode } from "../../../utils/osShell";
 import { previewSelect, confirmSelect } from "../../state/selection";
@@ -200,6 +203,19 @@ export function resultRow(
     const fileExtras: MenuAction[] = isImport && r.type === "import"
         ? [
               {
+                  label: "Queue all modified",
+                  onClick: () => {
+                      queueModifiedFromParse(r.fullPath, r.importables);
+                  },
+              },
+              {
+                  label: isAutoTrackSource(r.fullPath) ? "Auto-Track: ON" : "Auto-Track: OFF",
+                  onClick: () => {
+                      const nowOn = toggleAutoTrackSource(r.fullPath);
+                      if (nowOn) autoTrackRefresh();
+                  },
+              },
+              {
                   label: "Open in VSCode (with references)",
                   onClick: () => {
                       const paths = allReferencedPaths(r.fullPath, r.parse);
@@ -271,7 +287,10 @@ export function importableRow(parent: ResultImport, imp: Importable): Element {
             hoverBackground: ROW_HOVER_BG,
         },
         onClick: rowHandler(importableActions(parent, imp), () => {
-            toggleImportableChecked(checkKey);
+            const nowChecked = toggleImportableChecked(checkKey);
+            const item = makeImportableQueueItem(imp, parent.fullPath);
+            if (nowChecked) addToQueue(item);
+            else removeFromQueueKey(queueItemKey(item));
         }),
         onDoubleClick: () => confirmSelect(previewPath),
         children: [

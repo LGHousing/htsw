@@ -13,6 +13,7 @@ import { Icons } from "../../lib/icons.generated";
 import {
     ACCENT_DANGER,
     ACCENT_SUCCESS,
+    ACCENT_TEAL,
     COLOR_BUTTON_DANGER,
     COLOR_BUTTON_DANGER_HOVER,
     COLOR_PANEL_BORDER,
@@ -77,9 +78,13 @@ function currentPhaseLabel(): string {
     if (p === null || p.active === null) return "";
     const phase = p.active.phase;
     if (phase === "setup" || phase === "reading") {
-        return `§lReading ${p.active.identity}`;
+        const detail = phaseDetailText();
+        return detail.length > 0 ? `§lReading§r  ·  ${detail}` : "§lReading";
     }
-    if (phase === "hydrating") return "§lHydrating";
+    if (phase === "hydrating") {
+        const detail = phaseDetailText();
+        return detail.length > 0 ? `§lHydrating§r  ·  ${detail}` : "§lHydrating";
+    }
     if (phase === "applying") {
         const counter = applyOpCounterText();
         return counter.length > 0 ? `§lApplying§r  ·  ${counter}` : "§lApplying";
@@ -212,16 +217,19 @@ function progressBar(): Element {
                 if (i > 0) {
                     children.push(Container({
                         style: {
-                            width: { kind: "px", value: 1 },
+                            width: { kind: "px", value: 2 },
                             height: { kind: "grow" },
-                            background: COLOR_PANEL_BORDER,
+                            background: COLOR_TEXT_DIM,
                         },
                         children: [],
                     }));
                 }
-                if (row.status === "imported" || row.status === "skipped") {
+                if (row.status === "imported") {
                     children.push(phaseSegment(1, 1, ACCENT_SUCCESS));
                     traceRows.push({ index: i, key: row.key, status: row.status, kind: "done" });
+                } else if (row.status === "skipped") {
+                    children.push(phaseSegment(1, 1, ACCENT_TEAL));
+                    traceRows.push({ index: i, key: row.key, status: row.status, kind: "skipped" });
                 } else if (row.status === "failed") {
                     children.push(phaseSegment(1, 1, ACCENT_DANGER));
                     traceRows.push({ index: i, key: row.key, status: row.status, kind: "failed" });
@@ -284,7 +292,7 @@ function progressBar(): Element {
 
 // ── The "live importer" panel ──────────────────────────────────────────
 
-function progressDetailLine(): string {
+function phaseDetailText(): string {
     const prog = getImportProgress();
     if (prog === null || prog.active === null) return "";
     const cur = prog.active;
@@ -351,25 +359,17 @@ export function liveImporterPanel(): Element {
                 Col({
                     style: { gap: 3, width: { kind: "grow" } },
                     children: [
-                        // WHO — importable (i of N) being worked on.
                         Text({
                             text: () =>
                                 current === null
                                     ? `Importable ${completedImportables} of ${totalImportables}`
-                                    : `Importable ${currentNumber} of ${totalImportables} · ${current.identity}`,
+                                    : `Importable ${currentNumber} of ${totalImportables}  ·  §b§l${current.identity}`,
                             color: COLOR_TEXT,
                         }),
-                        // WHAT — phase-only label, bolded so it dominates.
                         Text({
                             text: () => current === null ? `§lDone` : currentPhaseLabel(),
                             color: COLOR_TEXT,
                         }),
-                        // HOW FAR within this importable — step counter + per-phase ETA.
-                        Text({
-                            text: () => progressDetailLine(),
-                            color: COLOR_TEXT_DIM,
-                        }),
-                        // Visual rule before the progress bar.
                         Container({
                             style: { width: { kind: "grow" }, height: { kind: "px", value: 2 } },
                             children: [],

@@ -29,6 +29,7 @@ import type {
     NestedSummaries,
     Observed,
     ObservedActionSlot,
+    ReadContext,
     ListReadOptions,
 } from "../types";
 import { createNestedHydrationPlan } from "./hydrationPlan";
@@ -472,10 +473,13 @@ async function hydrateNestedAction(
         const spec = getActionSpec(entry.action.type);
 
         if (spec.read) {
+            const readCtx: ReadContext | undefined = read !== undefined
+                ? { itemRegistry: read.itemRegistry, itemCaptures: read.itemCaptures, events: read.events, pathPrefix: entryPath }
+                : undefined;
             entry.action = await spec.read({
                 ctx,
                 propsToRead,
-                read: read !== undefined ? { ...read, pathPrefix: entryPath } : undefined,
+                read: readCtx,
                 current: entry.action,
             });
             entry.nestedReadState = "full";

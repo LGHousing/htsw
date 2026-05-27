@@ -14,18 +14,20 @@ import { Icons } from "../../lib/icons.generated";
 import {
     ACCENT_DANGER,
     ACCENT_SUCCESS,
+    ACCENT_TEAL,
     COLOR_BUTTON,
     COLOR_BUTTON_HOVER,
     COLOR_ROW,
     COLOR_ROW_HOVER,
     COLOR_TEXT_DIM,
     COLOR_TEXT_FAINT,
+    GLYPH_DOT,
     PHASE_APPLYING,
     PHASE_HYDRATING,
     PHASE_READING,
     SIZE_ROW_H,
 } from "../../lib/theme";
-import { getQueueItemRunState, isCurrentQueueItem } from "../../state";
+import { clearImportableChecks, getKnowledgeRows, getQueueItemRunState, isCurrentHouseTrusted, isCurrentQueueItem } from "../../state";
 import {
     clearQueue,
     getQueueLength,
@@ -37,6 +39,18 @@ import { parseImportJsonAt } from "../../state/parses";
 import { importableIdentity } from "../../../importCache/paths";
 import { orderImportablesForImportSession } from "../../../importables/importSession";
 import { phaseSegment } from "./progress";
+
+function willBeSkipped(item: QueueItem): boolean {
+    if (!isCurrentHouseTrusted()) return false;
+    if (item.kind !== "importable") return false;
+    const rows = getKnowledgeRows();
+    for (let i = 0; i < rows.length; i++) {
+        if (rows[i].identity === item.identity && rows[i].importable.type === item.type) {
+            return rows[i].state === "current";
+        }
+    }
+    return false;
+}
 
 const collapsedQueueImportJsonRows: Set<string> = new Set();
 
@@ -61,6 +75,16 @@ function queueRowMiniBar(item: QueueItem): Element {
                 width: { kind: "grow" },
                 height: { kind: "px", value: 2 },
                 background: ACCENT_SUCCESS,
+            },
+            children: [],
+        });
+    }
+    if (state.kind === "skipped") {
+        return Container({
+            style: {
+                width: { kind: "grow" },
+                height: { kind: "px", value: 2 },
+                background: ACCENT_TEAL,
             },
             children: [],
         });
@@ -169,7 +193,9 @@ export function queueRow(item: QueueItem): Element {
                         },
                         children: canExpand
                             ? [Icon({ name: expanded ? Icons.chevronDown : Icons.chevronRight })]
-                            : [],
+                            : willBeSkipped(item)
+                              ? [Text({ text: GLYPH_DOT, color: ACCENT_TEAL, tooltip: "Trusted — will skip", tooltipColor: ACCENT_TEAL })]
+                              : [],
                     }),
                     Text({
                         text: typeText,
@@ -238,8 +264,16 @@ export function queueImportJsonChildRow(parent: QueueItem, item: QueueItem): Ele
                         children: [],
                     }),
                     Container({
-                        style: { width: { kind: "px", value: 14 }, height: { kind: "grow" } },
-                        children: [],
+                        style: {
+                            direction: "col",
+                            align: "center",
+                            justify: "center",
+                            width: { kind: "px", value: 14 },
+                            height: { kind: "grow" },
+                        },
+                        children: willBeSkipped(item)
+                            ? [Text({ text: GLYPH_DOT, color: ACCENT_TEAL, tooltip: "Trusted — will skip", tooltipColor: ACCENT_TEAL })]
+                            : [],
                     }),
                     Text({
                         text: item.kind === "importable" ? item.type : "ALL",
@@ -285,7 +319,7 @@ export function queueHeader(): Element {
                     background: COLOR_BUTTON,
                     hoverBackground: COLOR_BUTTON_HOVER,
                 },
-                onClick: () => clearQueue(),
+                onClick: () => { clearQueue(); clearImportableChecks(); },
             }),
         ],
     });
