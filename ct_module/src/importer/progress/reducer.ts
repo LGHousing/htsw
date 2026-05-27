@@ -34,6 +34,13 @@ type ActiveBookkeeping = {
 export type ProgressReducerState = {
     progress: ImportProgress;
     active: ActiveBookkeeping | null;
+    /**
+     * Per-importable bookkeeping preserved across active-key switches.
+     * Used by the two-pass importer: pass-1 reads/hydrates importable A,
+     * then moves on to B (saving A's bookkeeping here); pass-2 later
+     * re-activates A from this map without resetting its progress.
+     */
+    parkedRows: { [key: string]: ActiveBookkeeping };
     completedSessionUnits: number;
     totalSessionUnits: number;
 };
@@ -44,9 +51,11 @@ export function initialReducerState(): ProgressReducerState {
             completedUnits: 0,
             totalUnits: 1,
             active: null,
+            parked: {},
             rows: [],
         },
         active: null,
+        parkedRows: {},
         completedSessionUnits: 0,
         totalSessionUnits: 1,
     };
@@ -61,6 +70,8 @@ export function reduce(
             return startSession(event.rows, event.initialTotalUnits);
         case "importableStarted":
             return startImportable(state, event);
+        case "importableReactivated":
+            return reactivateImportable(state, event.key, event.rowIndex);
         case "setupStep":
             return applySetupStep(state, event.completed, event.total);
         case "progress":
@@ -93,9 +104,11 @@ function startSession(
             completedUnits: 0,
             totalUnits: total,
             active: null,
+            parked: {},
             rows: rows.map((r) => ({ ...r })),
         },
         active: null,
+        parkedRows: {},
         completedSessionUnits: 0,
         totalSessionUnits: total,
     };
@@ -105,6 +118,12 @@ function startImportable(
     state: ProgressReducerState,
     event: Extract<ImportEvent, { kind: "importableStarted" }>
 ): ProgressReducerState {
+    const parked = state.parkedRows[event.key];
+    const carriedActive = parkActiveIfNeeded(state, event.key);
+    if (parked !== undefined) {
+        const { [event.key]: _consumed, ...rest } = carriedActive.parkedRows;
+        return rebuildSnapshot({ ...carriedActive, parkedRows: rest }, parked);
+    }
     const active: ActiveBookkeeping = {
         key: event.key,
         rowIndex: event.rowIndex,
@@ -123,7 +142,45 @@ function startImportable(
         phase: "setup",
         sync: null,
     };
-    return rebuildSnapshot(state, active);
+    return rebuildSnapshot(carriedActive, active);
+}
+
+function reactivateImportable(
+    state: ProgressReducerState,
+    key: string,
+    rowIndex: number
+): ProgressReducerState {
+    const carried = parkActiveIfNeeded(state, key);
+    const parked = carried.parkedRows[key];
+    if (parked === undefined) {
+        // Defensive: nothing parked under this key (e.g. session restart);
+        // ignore the event rather than crash.
+        return carried;
+    }
+    const { [key]: _consumed, ...rest } = carried.parkedRows;
+    const restored: ActiveBookkeeping = { ...parked, rowIndex };
+    return rebuildSnapshot({ ...carried, parkedRows: rest }, restored);
+}
+
+/**
+ * If `state.active` exists and points to a different key than the one
+ * we're about to activate, move it into `parkedRows` so the importable
+ * can be reactivated later with its progress intact.
+ */
+function parkActiveIfNeeded(
+    state: ProgressReducerState,
+    incomingKey: string
+): ProgressReducerState {
+    if (state.active === null || state.active.key === incomingKey) {
+        return state;
+    }
+    return {
+        ...state,
+        parkedRows: {
+            ...state.parkedRows,
+            [state.active.key]: state.active,
+        },
+    };
 }
 
 function applySetupStep(
@@ -165,6 +222,16 @@ function applyProgress(
         state.active.currentTotalUnits,
         eventTotalUnits
     );
+    // Read/hydrate-phase progress payloads emit phaseUnits.applying = 0
+    // because the diff isn't yet known. Preserve the prior (initial or
+    // pre-read-seeded) apply estimate so the bar's apply sub-segment
+    // doesn't collapse to zero width during the read/hydrate pass.
+    const prevApplying = state.active.currentPhaseUnits.applying;
+    const incomingApplying = payload.phaseUnits.applying;
+    const applying =
+        incomingApplying === 0 && prevApplying > 0
+            ? prevApplying
+            : incomingApplying;
     const next: ActiveBookkeeping = {
         ...state.active,
         phase: payload.phase,
@@ -173,7 +240,7 @@ function applyProgress(
             setup: setupUnits,
             reading: payload.phaseUnits.reading,
             hydrating: payload.phaseUnits.hydrating,
-            applying: payload.phaseUnits.applying,
+            applying,
         },
         currentCompletedUnits: clamp(
             setupUnits + payload.completedUnits,
@@ -239,6 +306,7 @@ function finishImportable(
         progress: {
             ...state.progress,
             active: null,
+            parked: snapshotParked(state.parkedRows),
             rows,
             completedUnits: state.completedSessionUnits + completedAddend,
             totalUnits: state.totalSessionUnits + totalAddend,
@@ -255,10 +323,12 @@ function finishSession(state: ProgressReducerState): ProgressReducerState {
         progress: {
             ...state.progress,
             active: null,
+            parked: {},
             completedUnits: state.completedSessionUnits,
             totalUnits: state.totalSessionUnits,
         },
         active: null,
+        parkedRows: {},
     };
 }
 
@@ -309,9 +379,31 @@ function rebuildSnapshot(
             completedUnits: sessionCompletedUnits,
             totalUnits: Math.max(1, sessionTotalUnits),
             active: activeSnapshot,
+            parked: snapshotParked(state.parkedRows),
             rows,
         },
     };
+}
+
+function snapshotParked(parkedRows: {
+    [key: string]: ActiveBookkeeping;
+}): { [key: string]: ImportProgressActive } {
+    const out: { [key: string]: ImportProgressActive } = {};
+    for (const k in parkedRows) {
+        const b = parkedRows[k];
+        if (b === undefined) continue;
+        out[k] = {
+            key: b.key,
+            type: b.type,
+            identity: b.identity,
+            phase: b.phase,
+            completedUnits: b.currentCompletedUnits,
+            totalUnits: b.currentTotalUnits,
+            phaseUnits: b.currentPhaseUnits,
+            sync: b.sync,
+        };
+    }
+    return out;
 }
 
 function clamp(value: number, floor: number, ceiling: number): number {

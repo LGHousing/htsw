@@ -17,6 +17,7 @@ import {
     diffConditionList,
 } from "../conditions/diff";
 import { getActionScalarLoreFields } from "../fields/actionMappings";
+import { isTruncatableKind } from "../fields/loreParsing";
 import { scalarFieldDiffers } from "../fields/compare";
 import { countReferencedShells } from "../../importables/references";
 
@@ -25,36 +26,37 @@ import { countReferencedShells } from "../../importables/references";
  * `guaranteedSleep1000 = 4` as the 1-second anchor, so 1 unit ≈ 250ms.
  *
  * Costs are tuned so each kind's *real* avg ms / unit lands close to a
- * common ~150-160 ms/u band — that way ETA projections stay accurate
- * even when an importable's op mix is skewed (e.g. lots of `itemSelect`
- * vs lots of `anvilInput`). When a per-op ms/u drifts noticeably from
- * the band, bump the cost to compensate. Latest sample basis (n=samples):
- *   commandMenuWait 2.9 (n=26 @ 433ms → ~150 ms/u)
- *   menuClickWait 2.0  (n=1451 @ 283ms → ~141 ms/u)
- *   pageTurnWait 1.7   (n=36 @ 258ms → ~152 ms/u)
- *   goBackWait 2.0     (n=521 @ 316ms → ~158 ms/u)
- *   chatInput 3.0      (n=497 @ 472ms → ~157 ms/u)
- *   anvilInput 4.0     (n=6 @ 605ms → ~151 ms/u)
- *   itemSelect 1.6     (n=4 @ 238ms → ~149 ms/u)
+ * common ~250 ms/u band — that way ETA projections stay accurate even
+ * when an importable's op mix is skewed (e.g. lots of `itemSelect` vs
+ * lots of `anvilInput`). When a per-op ms/u drifts noticeably from the
+ * band, bump the cost to compensate. Latest sample basis (n=samples):
+ *   commandMenuWait 2.3 (n=214 @ 585ms → ~254 ms/u)
+ *   menuClickWait 1.7   (n=3414 @ 430ms → ~253 ms/u)
+ *   pageTurnWait 1.7    (n=222 @ 427ms → ~251 ms/u)
+ *   goBackWait 1.8      (n=3422 @ 451ms → ~251 ms/u)
+ *   chatInput 3.0       (n=846 @ 751ms → ~250 ms/u)
+ *   anvilInput 3.8      (n=11 @ 937ms → ~247 ms/u)
+ *   itemSelect 1.6      (n=54 @ 388ms → ~243 ms/u)
+ *   reorderStep 1.8     (n=145 @ 454ms → ~252 ms/u)
  *
- * Re-tune via `/htsw eta dump`, then divide each kind's `avgMs` by the
+ * Re-tune via `/htsw eta`, then divide each kind's `avgMs` by the
  * target band rate to get the new unit value.
  */
 export const COST = {
     commandInterval: 1,
-    commandMenuWait: 2.9,
+    commandMenuWait: 2.3,
     commandMessageWait: 2,
 
-    menuClickWait: 2,
+    menuClickWait: 1.7,
     messageClickWait: 2,
     pageTurnWait: 1.7,
-    goBackWait: 2,
+    goBackWait: 1.8,
 
     chatInput: 3,
-    anvilInput: 4,
+    anvilInput: 3.8,
     itemSelect: 1.6,
 
-    reorderStep: 1.5,
+    reorderStep: 1.8,
     guaranteedSleep1000: 4,
 
     readVisiblePage: 0,
@@ -87,7 +89,7 @@ function fieldKindEditUnits(kind: UiFieldKind): number {
     return COST.menuClickWait;
 }
 
-export function scalarFieldEditUnitsForOp(
+function scalarFieldEditUnitsForOp(
     op: Extract<ActionListOperation, { kind: "edit" }>
 ): number {
     const action = op.baselineAction;
@@ -143,7 +145,30 @@ export function hydrationEntryUnits(
 function nestedPropReadUnits(entry: ObservedActionSlot, prop: NestedListProp): number {
     const summary = entry.nestedSummaries ? entry.nestedSummaries[prop] : undefined;
     const count = summary === undefined ? 1 : summary.length;
-    return COST.menuClickWait + pageTurnUnitsForListItemCount(count) + COST.goBackWait;
+    const base = COST.menuClickWait + pageTurnUnitsForListItemCount(count) + COST.goBackWait;
+    // The recursive readActionList that hydrates this nested list will
+    // also do scalar truncation hydration on its inner rows (clicking
+    // into each truncated MESSAGE/PLAY_SOUND/... and back). Add a
+    // conservative estimate of that cost so the parent's hydrate ETA
+    // doesn't undercount and let the displayed time finish before the
+    // actual work does.
+    if (prop === "conditions" || summary === undefined) return base;
+    let scalarHydrate = 0;
+    for (let i = 0; i < summary.length; i++) {
+        if (typeMaybeNeedsScalarHydrate(summary[i])) {
+            scalarHydrate += COST.menuClickWait + COST.goBackWait;
+        }
+    }
+    return base + scalarHydrate;
+}
+
+function typeMaybeNeedsScalarHydrate(typeName: string): boolean {
+    const fields = getActionScalarLoreFields(typeName as Action["type"]);
+    if (fields.length === 0) return false;
+    for (let i = 0; i < fields.length; i++) {
+        if (isTruncatableKind(fields[i].kind)) return true;
+    }
+    return false;
 }
 
 function noteEditUnits(): number {
@@ -388,6 +413,12 @@ export function estimateActionListPhaseUnits(
     baselineCurrent?: readonly Action[]
 ): PhaseUnits {
     if (baselineCurrent === undefined) {
+        // No cache: we don't know what's in housing yet, so the read and
+        // hydrate costs are unknowable upfront. They get filled in with
+        // exact values from observed `nestedSummaries` once the read
+        // pass finishes (readList.ts:hydrateNestedActions). The UI's
+        // never-jump-up ETA guard masks the one-time totalUnits step at
+        // the read→hydrate transition.
         return {
             setup: 0,
             reading: 0,

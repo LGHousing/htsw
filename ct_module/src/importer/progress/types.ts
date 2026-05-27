@@ -9,14 +9,14 @@ export type PhaseUnits = {
     applying: number;
 };
 
-export type ImportRunRowStatus =
+type ImportRunRowStatus =
     | "queued"
     | "current"
     | "imported"
     | "skipped"
     | "failed";
 
-export type SyncProgress = {
+type SyncProgress = {
     completedUnits: number;
     totalUnits: number;
     parent: {
@@ -54,6 +54,13 @@ export type ImportProgress = {
     completedUnits: number;
     totalUnits: number;
     active: ImportProgressActive | null;
+    /**
+     * Per-key snapshots of importables that completed pass-1 (read +
+     * hydrate) but haven't reached pass-2 (apply). The queue mini bar
+     * uses these to keep showing pass-1 progress on rows the active
+     * cursor has moved past.
+     */
+    parked: { [key: string]: ImportProgressActive };
     rows: readonly ImportableEntry[];
 };
 
