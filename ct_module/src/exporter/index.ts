@@ -1,9 +1,15 @@
 import { TaskManager } from "../tasks/manager";
 import { exportImportable } from "../importables/exports";
+import { exportAllFunctions } from "../importables/functions/exportAll";
 import { getCurrentHousingUuid } from "../importCache";
 import { htslFilenameForFunctionExport } from "./paths";
 import { chatSeparator, stripSurroundingQuotes } from "../utils/helpers";
 import { VERSION } from "htsw";
+import {
+    beginTraceRun,
+    endTraceRun,
+    setTraceImportable,
+} from "./traceLog";
 
 
 function trimTrailingSlashes(path: string): string {
@@ -32,6 +38,41 @@ function endsWithIgnoreCase(value: string, suffix: string): boolean {
     return value.substring(value.length - suffix.length).toLowerCase() === suffix.toLowerCase();
 }
 
+function tokenizeQuoted(args: readonly string[]): string[] {
+    const out: string[] = [];
+    let i = 0;
+    while (i < args.length) {
+        const arg = args[i];
+        if (arg.length >= 2 && arg.charAt(0) === '"' && arg.charAt(arg.length - 1) === '"') {
+            out.push(arg.substring(1, arg.length - 1));
+            i++;
+            continue;
+        }
+        if (arg.charAt(0) === '"') {
+            const parts: string[] = [arg.substring(1)];
+            i++;
+            let closed = false;
+            while (i < args.length) {
+                const next = args[i];
+                if (next.length > 0 && next.charAt(next.length - 1) === '"') {
+                    parts.push(next.substring(0, next.length - 1));
+                    i++;
+                    closed = true;
+                    break;
+                }
+                parts.push(next);
+                i++;
+            }
+            void closed;
+            out.push(parts.join(" "));
+            continue;
+        }
+        out.push(arg);
+        i++;
+    }
+    return out;
+}
+
 function exportDestination(
     explicitPath: string | undefined
 ): { rootDir: string; importJsonPath: string } | null {
@@ -44,10 +85,6 @@ function exportDestination(
     return { rootDir, importJsonPath: `${rootDir}/import.json` };
 }
 
-/**
- * Print a short usage block to chat. Mirrors the `/import` and
- * `/simulator` command help blocks for consistency.
- */
 function printExportHelp(): void {
     ChatLib.chat(`&7${chatSeparator()}`);
     const title = `&e&lHTSW &fExporter &f&l${VERSION}`;
@@ -56,29 +93,85 @@ function printExportHelp(): void {
     ChatLib.chat("&f/export function <name> [path]");
     ChatLib.chat("&7  Reads a Hypixel function and writes a .htsl + import.json.");
     ChatLib.chat("&7  [path] may be a directory or a specific import.json.");
+    ChatLib.chat("&f/export all function [path]");
+    ChatLib.chat("&7  Exports every function in this housing in menu order.");
     ChatLib.chat("&f/export menu <name> [path]");
     ChatLib.chat("&7  Reads a Hypixel menu and writes per-slot .snbt + import.json.");
+    ChatLib.chat("&f/export stop");
+    ChatLib.chat("&7  Cancels any running export (or import) task.");
+    ChatLib.chat('&7  Quote multi-word names: /export function "Button Blessing" my/path/');
     ChatLib.chat("&7  Default path: ./htsw/exports/<housingUuid>/");
     ChatLib.chat(`&7${chatSeparator()}`);
 }
 
-/**
- * Top-level dispatcher for `/export <subcommand>`. v1 only handles
- * `function <name> [path]`.
- */
 function commandExport(args: string[]): void {
     if (args.length === 0) {
         printExportHelp();
         return;
     }
 
-    if (args[0] === "function") {
-        const name = args[1];
+    const tokens = tokenizeQuoted(args);
+
+    if (tokens[0] === "stop" || tokens[0] === "cancel") {
+        TaskManager.cancelAll();
+        ChatLib.chat("&c[htsw] cancelling running task...");
+        return;
+    }
+
+    if (tokens[0] === "all" && tokens[1] === "function") {
+        const pathParts = tokens.slice(2);
+        const rawPath = pathParts.length > 0 ? pathParts.join(" ") : "";
+        const explicitPath =
+            rawPath.length > 0 ? stripSurroundingQuotes(rawPath) : undefined;
+
+        TaskManager.run(async (ctx) => {
+            let rootDir: string;
+            let importJsonPath: string;
+            const explicitDestination = exportDestination(explicitPath);
+            if (explicitDestination !== null) {
+                rootDir = explicitDestination.rootDir;
+                importJsonPath = explicitDestination.importJsonPath;
+            } else {
+                const uuid = await getCurrentHousingUuid(ctx);
+                rootDir = `./htsw/exports/${uuid}`;
+                importJsonPath = `${rootDir}/import.json`;
+            }
+
+            const tracePath = beginTraceRun({
+                queueSize: 0,
+                sourcePath: importJsonPath,
+                trustMode: false,
+            });
+
+            let imported = 0;
+            let failed = 0;
+            try {
+                await exportAllFunctions(ctx, { importJsonPath, rootDir });
+                imported = 1;
+            } catch (err) {
+                failed = 1;
+                throw err;
+            } finally {
+                setTraceImportable(null);
+                const written = endTraceRun({ imported, skipped: 0, failed });
+                if (written !== null && tracePath !== null) {
+                    ctx.displayMessage(`&7[trace] &fwrote ${written}`);
+                }
+            }
+        }).catch((err) => {
+            ChatLib.chat(`&cExport failed: ${err}`);
+        });
+        return;
+    }
+
+    if (tokens[0] === "function") {
+        const name = tokens[1];
         if (!name) {
             ChatLib.chat("&cUsage: /export function <name> [path]");
+            ChatLib.chat('&7  Quote multi-word names: /export function "Button Blessing" my/path/');
             return;
         }
-        const pathParts = args.slice(2);
+        const pathParts = tokens.slice(2);
         const rawPath = pathParts.length > 0 ? pathParts.join(" ") : "";
         const explicitPath =
             rawPath.length > 0 ? stripSurroundingQuotes(rawPath) : undefined;
@@ -107,6 +200,7 @@ function commandExport(args: string[]): void {
                 importJsonPath,
                 htslPath,
                 htslReference,
+                rootDir,
             });
         }).catch((err) => {
             ChatLib.chat(`&cExport failed: ${err}`);
@@ -114,13 +208,14 @@ function commandExport(args: string[]): void {
         return;
     }
 
-    if (args[0] === "menu") {
-        const name = args[1];
+    if (tokens[0] === "menu") {
+        const name = tokens[1];
         if (!name) {
             ChatLib.chat("&cUsage: /export menu <name> [path]");
+            ChatLib.chat('&7  Quote multi-word names: /export menu "My Shop" my/path/');
             return;
         }
-        const pathParts = args.slice(2);
+        const pathParts = tokens.slice(2);
         const rawPath = pathParts.length > 0 ? pathParts.join(" ") : "";
         const explicitPath =
             rawPath.length > 0 ? stripSurroundingQuotes(rawPath) : undefined;
@@ -151,13 +246,10 @@ function commandExport(args: string[]): void {
         return;
     }
 
-    ChatLib.chat(`&cUnknown subcommand "${args[0]}".`);
+    ChatLib.chat(`&cUnknown subcommand "${tokens[0]}".`);
     printExportHelp();
 }
 
-/**
- * Wire up `/export` with ChatTriggers. Called once during module init.
- */
 export function registerExportCommands(): void {
     register("command", (...args: string[]) => commandExport(args)).setName("export");
 }

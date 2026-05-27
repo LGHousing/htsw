@@ -110,3 +110,19 @@ function sanitizeRelativeReference(raw: string): string | null {
 
     return normalized;
 }
+
+export function snbtFilenameForItemExport(
+    itemsRoot: string,
+    itemName: string
+): string {
+    const slug = canonicalSlug(itemName);
+    const preferred = `${slug}.snbt`;
+    if (!FileLib.exists(`${itemsRoot}/${preferred}`)) return preferred;
+
+    for (let i = 2; i < 1000; i++) {
+        const candidate = `${slug}_${i}.snbt`;
+        if (!FileLib.exists(`${itemsRoot}/${candidate}`)) return candidate;
+    }
+
+    throw new Error(`Could not find an unused SNBT filename for item "${itemName}".`);
+}
