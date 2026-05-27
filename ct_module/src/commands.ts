@@ -9,7 +9,7 @@ import {
 import { Simulator } from "./simulator/simulator";
 import { printDiagnostic, printDiagnostics } from "./tui/diagnostics";
 import { recompile } from "./recompile";
-import { importImportable } from "./importables/imports";
+import { applyImportablePlan, prereadImportable } from "./importables/imports";
 import { createItemRegistry } from "./importables/itemRegistry";
 import { TaskManager } from "./tasks/manager";
 import { S2FPacketSetSlot } from "./utils/packets";
@@ -523,7 +523,8 @@ function commandImport(args: string[]) {
         ];
         for (const importable of ordered) {
             try {
-                await importImportable(ctx, importable, itemRegistry);
+                const plan = await prereadImportable(ctx, importable, itemRegistry);
+                await applyImportablePlan(ctx, plan, itemRegistry);
             } catch (e) {
                 if (e instanceof Diagnostic) {
                     printDiagnostic(sm, e);
