@@ -12,8 +12,8 @@ import {
     getSources,
 } from "./source";
 import { sortResults } from "./sort";
-import { isTypeActive } from "./filter";
-import { Result, ROW_BG } from "./types";
+import { isImportableTypeActive, isFilterDefault } from "./filter";
+import { Result, ResultImport, ROW_BG } from "./types";
 import {
     searchQuery,
     expansionKey,
@@ -22,12 +22,14 @@ import {
     importableExpansion,
     importableExpansionKey,
     subListsOf,
+    metadataFieldsOf,
     dirRootKey,
     dirRootActions,
     rootRow,
     resultRow,
     importableRow,
     subRow,
+    metadataRow,
     standaloneCloseAction,
 } from "./rows";
 
@@ -198,13 +200,37 @@ function buildRoots(): Root[] {
     return out;
 }
 
+function importableName(imp: { type: string; name?: string; event?: string }): string {
+    return imp.type === "EVENT" ? (imp as any).event : (imp as any).name;
+}
+
+function filterImportables(r: ResultImport): ResultImport["importables"] {
+    const q = searchQuery.toLowerCase();
+    const pathMatch = q.length === 0 || r.path.toLowerCase().indexOf(q) >= 0;
+    const out: ResultImport["importables"] = [];
+    for (let j = 0; j < r.importables.length; j++) {
+        const imp = r.importables[j];
+        if (!isImportableTypeActive(imp.type)) continue;
+        if (q.length > 0 && !pathMatch) {
+            if (importableName(imp).toLowerCase().indexOf(q) < 0) continue;
+        }
+        out.push(imp);
+    }
+    return out;
+}
+
 function filterAndSort(all: Result[]): Result[] {
+    const hasTypeFilter = !isFilterDefault();
     const q = searchQuery.toLowerCase();
     const out: Result[] = [];
     for (let i = 0; i < all.length; i++) {
         const r = all[i];
-        if (!isTypeActive(r.type)) continue;
-        if (q.length > 0 && r.path.toLowerCase().indexOf(q) < 0) continue;
+        if (hasTypeFilter && r.type !== "import") continue;
+        if (r.type === "import") {
+            if (filterImportables(r).length === 0) continue;
+        } else {
+            if (q.length > 0 && r.path.toLowerCase().indexOf(q) < 0) continue;
+        }
         out.push(r);
     }
     return sortResults(out);
@@ -287,7 +313,7 @@ function buildTreeRows(): TreeRow[] {
                 });
 
                 if (r.type === "import" && isImportExpanded(expKey, defaultExpanded)) {
-                    const importables = r.importables;
+                    const importables = filterImportables(r);
                     for (let j = 0; j < importables.length; j++) {
                         const imp = importables[j];
                         const isLastImp = j === importables.length - 1;
@@ -303,15 +329,27 @@ function buildTreeRows(): TreeRow[] {
                         const subKey = importableExpansionKey(r.fullPath, imp);
                         if (importableExpansion.has(subKey)) {
                             const subs = subListsOf(imp);
+                            const meta = metadataFieldsOf(imp);
+                            const totalChildren = subs.length + meta.length;
+                            let childIdx = 0;
+                            const childLevels: LevelGuide[] = impLevels.concat([
+                                isLastImp ? "empty" : "vertical",
+                            ]);
                             for (let k = 0; k < subs.length; k++) {
-                                const isLastSub = k === subs.length - 1;
-                                const subLevels: LevelGuide[] = impLevels.concat([
-                                    isLastImp ? "empty" : "vertical",
-                                ]);
+                                childIdx++;
                                 out.push({
-                                    levels: subLevels,
-                                    branch: isLastSub ? "ell" : "tee",
+                                    levels: childLevels,
+                                    branch: childIdx === totalChildren ? "ell" : "tee",
                                     content: () => subRow(r, imp, subs[k]),
+                                    height: ENTRY_ROW_H,
+                                });
+                            }
+                            for (let k = 0; k < meta.length; k++) {
+                                childIdx++;
+                                out.push({
+                                    levels: childLevels,
+                                    branch: childIdx === totalChildren ? "ell" : "tee",
+                                    content: () => metadataRow(r, imp, meta[k]),
                                     height: ENTRY_ROW_H,
                                 });
                             }
@@ -342,7 +380,7 @@ function buildTreeRows(): TreeRow[] {
                     });
 
                     if (r.type === "import" && isImportExpanded(expKey, defaultExpanded)) {
-                        const importables = r.importables;
+                        const importables = filterImportables(r);
                         for (let k = 0; k < importables.length; k++) {
                             const imp = importables[k];
                             const isLastImp = k === importables.length - 1;
@@ -355,15 +393,27 @@ function buildTreeRows(): TreeRow[] {
                             const subKey = importableExpansionKey(r.fullPath, imp);
                             if (importableExpansion.has(subKey)) {
                                 const subs = subListsOf(imp);
+                                const meta = metadataFieldsOf(imp);
+                                const totalChildren = subs.length + meta.length;
+                                let childIdx = 0;
+                                const childLevels: LevelGuide[] = [
+                                    isLastImp ? "empty" : "vertical",
+                                ];
                                 for (let s = 0; s < subs.length; s++) {
-                                    const isLastSub = s === subs.length - 1;
-                                    const subLevels: LevelGuide[] = [
-                                        isLastImp ? "empty" : "vertical",
-                                    ];
+                                    childIdx++;
                                     out.push({
-                                        levels: subLevels,
-                                        branch: isLastSub ? "ell" : "tee",
+                                        levels: childLevels,
+                                        branch: childIdx === totalChildren ? "ell" : "tee",
                                         content: () => subRow(r, imp, subs[s]),
+                                        height: ENTRY_ROW_H,
+                                    });
+                                }
+                                for (let s = 0; s < meta.length; s++) {
+                                    childIdx++;
+                                    out.push({
+                                        levels: childLevels,
+                                        branch: childIdx === totalChildren ? "ell" : "tee",
+                                        content: () => metadataRow(r, imp, meta[s]),
                                         height: ENTRY_ROW_H,
                                     });
                                 }

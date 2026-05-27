@@ -348,8 +348,12 @@ function parseActionDropItem(p: Parser, note: Note): Action {
     return parseActionRecovering(p, "DROP_ITEM", note, (action) => {
         setField(p, action, "itemName", p.parseName);
         if (p.checkEol()) return;
-        setField(p, action, "location", parseLocation);
-        if (p.checkEol()) return;
+        if (p.eatIdent("null") || p.eatString("null")) {
+            if (p.checkEol()) return;
+        } else {
+            setField(p, action, "location", parseLocation);
+            if (p.checkEol()) return;
+        }
         setField(p, action, "dropNaturally", p.parseBoolean);
         if (p.checkEol()) return;
         setField(p, action, "disableMerging", p.parseBoolean);

@@ -89,6 +89,12 @@ export type Element =
           // The Vite icon plugin scans the bundled output for these literals
           // and copies only the matched PNGs into dist/assets/icons/.
           name: Extractable<string>;
+      }
+    | {
+          kind: "mcItem";
+          style: Style;
+          item: string;
+          count: number;
       };
 
 function extractChildren(c: Extractable<Child[]>): Element[] {
@@ -197,6 +203,7 @@ function measure(e: Element): { w: number; h: number } {
     else if (e.kind === "input") content = inputContent(extract(e.value));
     else if (e.kind === "scroll") content = { w: 0, h: 0 };
     else if (e.kind === "image") content = imageContent();
+    else if (e.kind === "mcItem") content = { w: 16, h: 16 };
     else content = containerContent(e);
     const w = e.style.width;
     const h = e.style.height;

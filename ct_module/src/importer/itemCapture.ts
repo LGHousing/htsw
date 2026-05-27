@@ -130,15 +130,17 @@ function diffForCapture(
     after: InventorySnapshot,
     actionItemCount: number
 ): { snbt: string } | null {
+    let found: { snbt: string } | null = null;
     for (let i = 0; i < before.length; i++) {
         const b = before[i];
         const a = after[i];
         if (a === undefined) continue;
         if (a.nbt === null) continue;
         if (a.nbt === b.nbt && a.count === b.count) continue;
-        return { snbt: rewriteSnbtCount(a.nbt, actionItemCount) };
+        if (found !== null) return null;
+        found = { snbt: rewriteSnbtCount(a.nbt, actionItemCount) };
     }
-    return null;
+    return found;
 }
 
 function rewriteSnbtCount(snbt: string, newCount: number): string {

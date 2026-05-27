@@ -111,7 +111,7 @@ export class Parser {
     parseBoolean(): boolean {
         let value;
         if (this.eatIdent("true")) value = true;
-        if (this.eatIdent("false")) value = false;
+        else if (this.eatIdent("false")) value = false;
         if (value === undefined) {
             throw Diagnostic.error("Expected true/false value")
                 .addPrimarySpan(this.token.span);

@@ -11,6 +11,7 @@ import { parseLoreKeyValueLine } from "../../importer/fields/loreParsing";
 import TaskContext from "../../tasks/context";
 import { MouseButton } from "../../tasks/specifics/slots";
 import { removedFormatting, unique } from "../../utils/helpers";
+import { listAllFunctionNames } from "./listFunctions";
 
 const McItem = Java.type("net.minecraft.item.Item");
 const ItemStack = Java.type("net.minecraft.item.ItemStack");
@@ -77,10 +78,31 @@ export async function ensureFunctionNamesExist(
 
     ctx.displayMessage(`&7Ensuring ${names.length} function shell(s) exist.`);
 
+    const existing = await listAllFunctionNames(ctx);
+    const existingSet: { [name: string]: true } = {};
+    for (let i = 0; i < existing.length; i++) {
+        existingSet[existing[i].toLowerCase()] = true;
+    }
+    await clickGoBack(ctx);
+
+    const missing: string[] = [];
     for (let i = 0; i < names.length; i++) {
-        const name = names[i];
-        ctx.displayMessage(`&7  [shell ${i + 1}/${names.length}] ${String(name)}`);
-        await ensureFunctionExists(ctx, name);
+        if (existingSet[names[i].toLowerCase()] !== true) {
+            missing.push(names[i]);
+        }
+    }
+
+    if (missing.length === 0) {
+        ctx.displayMessage(`&7All ${names.length} function shell(s) already exist.`);
+        return;
+    }
+
+    ctx.displayMessage(`&7Creating ${missing.length} missing function shell(s).`);
+    for (let i = 0; i < missing.length; i++) {
+        const name = missing[i];
+        ctx.displayMessage(`&7  [create ${i + 1}/${missing.length}] ${String(name)}`);
+        await ctx.runCommand(`/function create ${name}`);
+        await timedWaitForMenu(ctx, "commandMenuWait");
         await clickGoBack(ctx);
         onEach?.(name);
     }

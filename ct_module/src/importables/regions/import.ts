@@ -74,12 +74,6 @@ export async function prereadImportableRegion(
     trustPlan?: ImportableTrustPlan,
     events?: ImportEventHandler
 ): Promise<RegionImportPlan> {
-    const setup = createSetupStepEmitter(events, countReferencedShells(importable) + 3);
-
-    await ensureReferencedImportablesExist(ctx, importable, (kind, name) => {
-        setup(`created ${kind} ${name}`);
-    });
-
     const enterEligible =
         importable.onEnterActions !== undefined &&
         !trustPlan?.trustedListPaths.has("onEnterActions");
@@ -87,9 +81,14 @@ export async function prereadImportableRegion(
         importable.onExitActions !== undefined &&
         !trustPlan?.trustedListPaths.has("onExitActions");
 
+    const regionOpenSteps = (enterEligible || exitEligible) ? 3 : 0;
+    const setup = createSetupStepEmitter(events, countReferencedShells(importable) + regionOpenSteps);
+
+    await ensureReferencedImportablesExist(ctx, importable, (kind, name) => {
+        setup(`created ${kind} ${name}`);
+    });
+
     if (!enterEligible && !exitEligible) {
-        // Still need to set positions / move region in apply pass — but we
-        // record no action-list reads.
         return { kind: "REGION", importable, trustPlan, enterPlan: null, exitPlan: null };
     }
 

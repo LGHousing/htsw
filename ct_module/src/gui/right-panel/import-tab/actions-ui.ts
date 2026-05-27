@@ -38,6 +38,7 @@ import { getQueueLength } from "../../state/queue";
 import { addRecent, getRecents } from "../../state/recents";
 import { forEachCachedParse } from "../../state/parses";
 import { openFileBrowserWithImportJsonSelection } from "../../popovers/file-browser";
+import { TaskManager } from "../../../tasks/manager";
 import {
     CAPTURE_TYPES,
     startCaptureExport,
@@ -245,7 +246,7 @@ function captureMenuPopoverContent(): Element {
                     }),
                 ],
             }),
-            Container({
+            ...(TaskManager.hasRunningTasks() ? [Container({
                 style: {
                     direction: "row",
                     align: "center",
@@ -263,7 +264,7 @@ function captureMenuPopoverContent(): Element {
                         style: { width: { kind: "grow" } },
                     }),
                 ],
-            }),
+            })] : []),
         ],
     });
 }

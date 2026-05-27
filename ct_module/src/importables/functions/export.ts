@@ -83,25 +83,27 @@ async function exportFunctionInner(
         exportError = error;
     }
 
-    const itemCount = writeCapturedItems(
-        ctx,
-        itemCaptures,
-        options.rootDir,
-        options.importJsonPath
-    );
-    if (exportError === null) {
-        ctx.displayMessage(
-            `&7[export] &fItems captured: ${itemCount}`
-        );
-        ctx.displayMessage(`&7  -> ${options.importJsonPath}`);
-    }
-
     try {
-        await restoreInventoryToSnapshot(ctx, inventorySnapshot);
-    } catch (error) {
-        ctx.displayMessage(
-            `&7[export] &eInventory restore failed (export results still written): ${error}`
+        const itemCount = writeCapturedItems(
+            ctx,
+            itemCaptures,
+            options.rootDir,
+            options.importJsonPath
         );
+        if (exportError === null) {
+            ctx.displayMessage(
+                `&7[export] &fItems captured: ${itemCount}`
+            );
+            ctx.displayMessage(`&7  -> ${options.importJsonPath}`);
+        }
+    } finally {
+        try {
+            await restoreInventoryToSnapshot(ctx, inventorySnapshot);
+        } catch (error) {
+            ctx.displayMessage(
+                `&7[export] &eInventory restore failed (export results still written): ${error}`
+            );
+        }
     }
 
     if (exportError !== null) {

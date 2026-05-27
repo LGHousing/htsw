@@ -17,6 +17,11 @@ import { FileSystemFileLoader } from "./utils/files";
 import { commandKnowledge } from "./importCache/commands";
 import { toggleHtswGui, armHtswGuiDebug } from "./gui/overlay";
 import {
+    getLastParseTiming,
+    invalidateParseSnapshot,
+    scheduleReparse,
+} from "./gui/state/reparse";
+import {
     getTimingStats,
     resetTimingStats,
 } from "./importer/progress/timing";
@@ -92,6 +97,11 @@ function commandHtsw(args: string[]) {
         return;
     }
 
+    if (args.length > 0 && args[0] === "parse-timing") {
+        commandParseTiming(args.slice(1));
+        return;
+    }
+
     if (args.length > 0 && args[0] === "gui") {
         if (args.length > 1 && args[1] === "debug") {
             const frames = args.length > 2 ? parseInt(args[2], 10) : 30;
@@ -113,6 +123,7 @@ function commandHtsw(args: string[]) {
     ChatLib.chat("&f/simulator &7- Simulate actions from HTSL files");
     ChatLib.chat("&f/htsw knowledge &7- Inspect local import/export knowledge");
     ChatLib.chat("&f/htsw eta [reset|dump|trace] &7- Show / reset / dump importer ETA samples");
+    ChatLib.chat("&f/htsw parse-timing [invalidate] &7- Show parse timing / invalidate snapshot");
     ChatLib.chat("&f/htsw dump-item [slot|name] &7- Dump open-container item lore");
     ChatLib.chat("&f/htsw packet-probe [seconds] &7- Safely log relevant packets");
     ChatLib.chat("&f/htsw gui &7- Open the in-game HTSW dashboard");
@@ -163,6 +174,59 @@ function commandEtaTrace(args: string[]): void {
     }
 
     ChatLib.chat("&f/htsw eta trace [on|off] &7- Write progress/ETA trace");
+}
+
+function commandParseTiming(args: string[]): void {
+    if (args.length > 0 && args[0] === "invalidate") {
+        const deleted = invalidateParseSnapshot();
+        if (deleted) {
+            ChatLib.chat("&a[parse] snapshot deleted — next reparse will be a full parse");
+            scheduleReparse();
+        } else {
+            ChatLib.chat("&7[parse] no snapshot to delete");
+        }
+        return;
+    }
+
+    const timing = getLastParseTiming();
+    if (timing === null) {
+        ChatLib.chat("&7[parse] no timing data yet — reparse hasn't run");
+        return;
+    }
+
+    ChatLib.chat("&7[parse] last reparse timing:");
+    ChatLib.chat(`&7  path: &f${timing.path}`);
+    ChatLib.chat(`&7  snapshot load: &f${timing.snapshotLoadMs}ms`);
+    ChatLib.chat(`&7  snapshot validate: &f${timing.snapshotValidateMs}ms`);
+    ChatLib.chat(`&7  snapshot hit: &f${timing.snapshotHit}`);
+    if (timing.fullParseMs !== null) {
+        ChatLib.chat(`&7  full parse: &f${timing.fullParseMs}ms`);
+    }
+    if (timing.innerParseMs !== null) {
+        ChatLib.chat(`&7    import.json + htsl: &f${timing.innerParseMs}ms`);
+    }
+    if (timing.fileCount !== null) {
+        const cacheInfo = timing.cacheHits !== null && timing.cacheHits > 0
+            ? ` (${timing.cacheHits} cached)`
+            : "";
+        ChatLib.chat(`&7      ${timing.fileCount} htsl files${cacheInfo}`);
+    }
+    if (timing.fileReadMs !== null) {
+        ChatLib.chat(`&7      file read: &f${timing.fileReadMs}ms`);
+    }
+    if (timing.lexParseMs !== null) {
+        ChatLib.chat(`&7      lex+parse: &f${timing.lexParseMs}ms`);
+    }
+    if (timing.typeflowMs !== null) {
+        ChatLib.chat(`&7      typeflow: &f${timing.typeflowMs}ms`);
+    }
+    if (timing.importJsonMs !== null) {
+        ChatLib.chat(`&7      import.json overhead: &f${timing.importJsonMs}ms`);
+    }
+    if (timing.innerCheckMs !== null) {
+        ChatLib.chat(`&7    checker: &f${timing.innerCheckMs}ms`);
+    }
+    ChatLib.chat(`&7  total: &f${timing.totalMs}ms`);
 }
 
 function printOpKindStats(): void {

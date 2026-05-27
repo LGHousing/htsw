@@ -29,8 +29,8 @@ import {
     SIZE_ROW_H,
 } from "../../lib/theme";
 
-const TRUST_ON_BG = 0xff2d4d2d | 0;
-const TRUST_ON_HOVER = 0xff3a5d3a | 0;
+const TRUST_ON_BG = 0xff1e3d3d | 0;
+const TRUST_ON_HOVER = 0xff2a4f4f | 0;
 const TRUST_OFF_BG = 0xff2d333d | 0;
 const TRUST_OFF_HOVER = 0xff3a4350 | 0;
 

@@ -5,17 +5,19 @@ import {
     Element,
     Rect,
 } from "../../lib/layout";
-import { Container, Icon, Text } from "../../lib/components";
+import { Container, Icon, McItem, Text } from "../../lib/components";
 import { Icons } from "../../lib/icons.generated";
 import { openMenu, MenuAction } from "../../lib/menu";
 import { openRenameImportablePopover } from "../../popovers/rename-importable";
 import {
+    getKnowledgeRows,
     isAutoTrackSource,
     isImportableChecked,
     toggleAutoTrackSource,
     toggleImportableChecked,
 } from "../../state";
-import { ACCENT_SUCCESS, COLOR_TEXT_DIM, GLYPH_DOT } from "../../lib/theme";
+import { ACCENT_SUCCESS, COLOR_TEXT_DIM, COLOR_TEXT_FAINT, GLYPH_DOT } from "../../lib/theme";
+import { openEditFunctionFieldPopover } from "../../popovers/edit-function";
 import { STATUS_COLOR, STATUS_LABEL, statusForImportable } from "../../knowledge-status";
 import {
     allReferencedPaths,
@@ -86,8 +88,90 @@ export function subListsOf(imp: Importable): SubListKind[] {
     return [];
 }
 
+export type FieldDiff = "changed" | "added" | "removed";
+export type MetadataField = { key: string; label: string; value: string; diff?: FieldDiff };
+
+function formatPos(p: { x: number; y: number; z: number }): string {
+    return p.x + ", " + p.y + ", " + p.z;
+}
+
+function getCachedImportable(imp: Importable): Importable | null {
+    const rows = getKnowledgeRows();
+    const id = importableIdentity(imp);
+    for (let i = 0; i < rows.length; i++) {
+        if (rows[i].identity === id && rows[i].importable.type === imp.type && rows[i].entry !== null) {
+            return rows[i].entry!.importable;
+        }
+    }
+    return null;
+}
+
+function valDiff(a: unknown, b: unknown): FieldDiff | undefined {
+    const aj = JSON.stringify(a ?? null);
+    const bj = JSON.stringify(b ?? null);
+    if (aj === bj) return undefined;
+    if (aj === "null" && bj !== "null") return "removed";
+    if (aj !== "null" && bj === "null") return "added";
+    return "changed";
+}
+
+export function metadataFieldsOf(imp: Importable): MetadataField[] {
+    const cached = getCachedImportable(imp);
+    if (imp.type === "FUNCTION") {
+        const cf = cached !== null && cached.type === "FUNCTION" ? cached : null;
+        const fields: MetadataField[] = [
+            {
+                key: "repeatTicks",
+                label: "Repeat",
+                value: imp.repeatTicks !== undefined ? imp.repeatTicks + "t" : "off",
+                diff: cf !== null ? valDiff(imp.repeatTicks, cf.repeatTicks) : undefined,
+            },
+            {
+                key: "icon",
+                label: "Icon",
+                value: imp.icon !== undefined ? imp.icon.item : "default",
+                diff: cf !== null ? valDiff(imp.icon?.item, cf.icon?.item) : undefined,
+            },
+        ];
+        if (imp.icon !== undefined) {
+            fields.push({
+                key: "iconCount",
+                label: "Count",
+                value: imp.icon.count !== undefined ? String(imp.icon.count) : "1",
+                diff: cf !== null ? valDiff(imp.icon.count, cf?.icon?.count) : undefined,
+            });
+        }
+        return fields;
+    }
+    if (imp.type === "REGION") {
+        const cr = cached !== null && cached.type === "REGION" ? cached : null;
+        return [
+            {
+                key: "boundsFrom", label: "From", value: formatPos(imp.bounds.from),
+                diff: cr !== null ? valDiff(imp.bounds.from, cr.bounds.from) : undefined,
+            },
+            {
+                key: "boundsTo", label: "To", value: formatPos(imp.bounds.to),
+                diff: cr !== null ? valDiff(imp.bounds.to, cr.bounds.to) : undefined,
+            },
+        ];
+    }
+    if (imp.type === "MENU") {
+        const cm = cached !== null && cached.type === "MENU" ? cached : null;
+        return [
+            {
+                key: "size",
+                label: "Size",
+                value: imp.size !== undefined ? imp.size + " lines" : "default",
+                diff: cm !== null ? valDiff(imp.size, cm.size) : undefined,
+            },
+        ];
+    }
+    return [];
+}
+
 function isImportableExpandable(imp: Importable): boolean {
-    return subListsOf(imp).length > 0;
+    return subListsOf(imp).length > 0 || metadataFieldsOf(imp).length > 0;
 }
 
 function importableLabel(imp: Importable): string {
@@ -292,7 +376,13 @@ export function importableRow(parent: ResultImport, imp: Importable): Element {
             if (nowChecked) addToQueue(item);
             else removeFromQueueKey(queueItemKey(item));
         }),
-        onDoubleClick: () => confirmSelect(previewPath),
+        onDoubleClick: () => {
+            const reverted = toggleImportableChecked(checkKey);
+            const item = makeImportableQueueItem(imp, parent.fullPath);
+            if (reverted) addToQueue(item);
+            else removeFromQueueKey(queueItemKey(item));
+            confirmSelect(previewPath);
+        },
         children: [
             Text({
                 text: checked ? "[x]" : "[ ]",
@@ -314,6 +404,8 @@ export function importableRow(parent: ResultImport, imp: Importable): Element {
                 tooltipColor: STATUS_COLOR[status],
                 style: { width: { kind: "px", value: 6 } },
             }),
+            imp.type === "FUNCTION" && imp.icon !== undefined &&
+                McItem({ item: imp.icon.item, count: imp.icon.count ?? 1 }),
             Text({
                 text: importableLabel(imp),
                 style: { width: { kind: "grow" } },
@@ -364,6 +456,52 @@ export function subRow(parent: ResultImport, imp: Importable, kind: SubListKind)
             Text({
                 text: label,
                 color: 0xff8a92a3 | 0,
+                style: { width: { kind: "grow" } },
+            }),
+        ],
+    });
+}
+
+const DIFF_SYMBOL: { [k in FieldDiff]: string } = { changed: "~", added: "+", removed: "-" };
+const DIFF_COLOR: { [k in FieldDiff]: number } = {
+    changed: 0xffe5bc4b | 0,
+    added: 0xff5cb85c | 0,
+    removed: 0xffe85c5c | 0,
+};
+
+export function metadataRow(parent: ResultImport, imp: Importable, field: MetadataField): Element {
+    return Container({
+        style: {
+            direction: "row",
+            width: { kind: "grow" },
+            height: { kind: "grow" },
+            padding: { side: "x", value: 3 },
+            gap: 6,
+            align: "center",
+            background: ROW_BG,
+            hoverBackground: ROW_HOVER_BG,
+        },
+        onClick: (rect, info) => {
+            if (info.button !== 0) return;
+            openEditFunctionFieldPopover(rect, parent.fullPath, imp, field.key);
+        },
+        children: [
+            field.diff !== undefined
+                ? Text({
+                      text: DIFF_SYMBOL[field.diff],
+                      color: DIFF_COLOR[field.diff],
+                      tooltip: field.diff,
+                      tooltipColor: DIFF_COLOR[field.diff],
+                      style: { width: { kind: "px", value: 8 } },
+                  })
+                : Text({ text: "", style: { width: { kind: "px", value: 8 } } }),
+            Text({
+                text: field.label,
+                color: COLOR_TEXT_FAINT,
+            }),
+            Text({
+                text: field.value,
+                color: field.diff !== undefined ? DIFF_COLOR[field.diff] : COLOR_TEXT_DIM,
                 style: { width: { kind: "grow" } },
             }),
         ],

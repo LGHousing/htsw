@@ -178,10 +178,7 @@ function buildVisualLineRow(
     children.push(
         Text({
             text: lineNumText,
-            color: applyAlpha(
-                dec.state !== undefined ? COLOR_BY_STATE[state] : CodeViewColors.gutter,
-                alpha
-            ),
+            color: applyAlpha(CodeViewColors.gutter, alpha),
             style: { width: { kind: "px", value: options.gutterWidth } },
         }),
         Container({

@@ -1,6 +1,7 @@
 import type { Action } from "htsw/types";
 
 import TaskContext from "../../tasks/context";
+import { isTaskCancelled } from "../../tasks/manager";
 import type { ItemRegistry } from "../../importables/itemRegistry";
 import { clickGoBack } from "../gui/helpers";
 import { timedWaitForMenu } from "../gui/menuWait";
@@ -511,6 +512,7 @@ async function hydrateNestedAction(
 
         await clickGoBack(ctx);
     } catch (error) {
+        if (isTaskCancelled(error)) throw error;
         ctx.displayMessage(
             `&7[action-read] &cFailed to read nested action at index ${entry.index} (${entry.action.type}): ${error}`
         );

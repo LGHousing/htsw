@@ -7,6 +7,10 @@ import { registerExportCommands } from "./exporter";
 import { initMcpBridge } from "./mcp/bridge";
 import { initHtswGui } from "./gui/overlay";
 import { registerImportSoundCancel } from "./importer/sideEffects";
+import { htsl } from "htsw";
+import { getMtimeMs } from "./gui/lib/java";
+
+htsl.setHtslCacheMtimeProvider(getMtimeMs);
 
 registerCommands();
 registerExportCommands();

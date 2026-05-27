@@ -91,18 +91,20 @@ async function exportAllFunctionsInner(
             }
         }
     } finally {
-        writeCapturedItems(ctx, itemCaptures, rootDir, importJsonPath);
+        try {
+            writeCapturedItems(ctx, itemCaptures, rootDir, importJsonPath);
+        } finally {
+            try {
+                await restoreInventoryToSnapshot(ctx, inventorySnapshot);
+            } catch (error) {
+                ctx.displayMessage(
+                    `&7[export] &eInventory restore failed (export results still written): ${error}`
+                );
+            }
+        }
     }
 
     const itemCount = itemCaptures.size();
-
-    try {
-        await restoreInventoryToSnapshot(ctx, inventorySnapshot);
-    } catch (error) {
-        ctx.displayMessage(
-            `&7[export] &eInventory restore failed (export results still written): ${error}`
-        );
-    }
 
     ctx.displayMessage(
         `&aExported ${succeeded} of ${names.length} function${names.length === 1 ? "" : "s"} (${itemCount} item${itemCount === 1 ? "" : "s"} captured)${failed > 0 ? ` &c[${failed} failed]` : ""}`

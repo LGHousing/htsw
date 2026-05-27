@@ -55,9 +55,6 @@ export function renderToast(): void {
 
     beginHtswOverlayDraw();
     Renderer.drawRect(bg, x, y, boxW, boxH);
-    Renderer.drawString(active.message, x + PADDING_X, y + PADDING_Y + 2, false);
-    // drawString ignores our color arg in this CT build, so draw with
-    // the Renderer.color helper that sets GL state before the draw.
     Renderer.colorize(
         ((textColor >>> 16) & 0xff) / 255,
         ((textColor >>> 8) & 0xff) / 255,

@@ -1,11 +1,10 @@
 /// <reference types="../../../CTAutocomplete" />
 
-import { SourceMap, parseImportablesResult } from "htsw";
+import { SourceMap, parseImportablesResult, htsl } from "htsw";
 
 import { FileSystemFileLoader } from "../../utils/files";
 import { buildCacheStatusRows } from "../../importCache/status";
 import {
-    appendKnowledgeRows,
     getHousingUuid,
     getImportJsonPath,
     getParsedResult,
@@ -18,12 +17,43 @@ import { addRecent, getRecents } from "./recents";
 import { allReferencedPaths } from "./importablePaths";
 import {
     buildLiteParseResult,
+    deleteSnapshot,
     loadSnapshot,
     saveSnapshot,
     snapshotExists,
     snapshotIsCurrent,
 } from "./parseSnapshot";
 import { getMtimeMs, javaType } from "../lib/java";
+
+let lastParseTiming: ParseTiming | null = null;
+
+export type ParseTiming = {
+    path: string;
+    snapshotLoadMs: number;
+    snapshotValidateMs: number;
+    snapshotHit: boolean;
+    fullParseMs: number | null;
+    innerParseMs: number | null;
+    innerCheckMs: number | null;
+    fileCount: number | null;
+    cacheHits: number | null;
+    fileReadMs: number | null;
+    lexParseMs: number | null;
+    typeflowMs: number | null;
+    importJsonMs: number | null;
+    totalMs: number;
+};
+
+export function getLastParseTiming(): ParseTiming | null {
+    return lastParseTiming;
+}
+
+export function invalidateParseSnapshot(): boolean {
+    const path = getImportJsonPath();
+    if (path.length === 0) return false;
+    htsl.clearHtslCache();
+    return deleteSnapshot(path);
+}
 
 
 let lastReparseAtMs = 0;
@@ -138,6 +168,11 @@ export function scheduleReparse(): void {
     lastReparseAtMs = Date.now();
 }
 
+export function reparseNow(): void {
+    pendingReparse = false;
+    runReparseDeferred();
+}
+
 function watch(path: string | undefined): void {
     if (path === undefined) return;
     if (watchedMtimes[path] !== undefined) return;
@@ -165,32 +200,86 @@ export function reparseImportJson(): void {
         return;
     }
 
-    // Fast path: a previous full parse left a snapshot on disk and
-    // every referenced file still has the recorded mtime. Skip the
-    // expensive htsw parse (which can freeze for ~1s on 300+-file
-    // projects) and populate state from the lite snapshot.
+    const t0 = Date.now();
+
     const snapshot = loadSnapshot(path);
+    const t1 = Date.now();
+
     if (snapshot !== null && snapshotIsCurrent(snapshot)) {
+        const t2 = Date.now();
         const lite = buildLiteParseResult(snapshot);
         setParsedResult(lite);
         addRecent(path);
-        setKnowledgeRows([]);
+        const tEnd = Date.now();
+        lastParseTiming = {
+            path,
+            snapshotLoadMs: t1 - t0,
+            snapshotValidateMs: t2 - t1,
+            snapshotHit: true,
+            fullParseMs: null,
+            innerParseMs: null,
+            innerCheckMs: null,
+            fileCount: null,
+            cacheHits: null,
+            fileReadMs: null,
+            lexParseMs: null,
+            typeflowMs: null,
+            importJsonMs: null,
+            totalMs: tEnd - t0,
+        };
         scheduleDeferredPostParse(lite, path, /*persist=*/ false);
         return;
     }
 
+    const tPreParse = Date.now();
     const sm = new SourceMap(new FileSystemFileLoader());
     try {
         const result = parseImportablesResult(sm, path);
+        const tParsed = Date.now();
         setParsedResult(result);
-        // Any successful parse adds the path to the recents dropdown — covers loads from the
-        // file browser, the path input, the recents dropdown itself (re-bumps to top), and
-        // auto-discover. Dedup is handled inside addRecent.
         addRecent(path);
-        setKnowledgeRows([]);
+        const tm = result.timingMs;
+        ChatLib.chat(
+            `&7[parse] ${tParsed - t0}ms (snap ${tPreParse - t0}ms, parse ${tParsed - tPreParse}ms` +
+            (tm ? `, read ${tm.fileReadMs ?? "?"}ms, lex ${tm.lexParseMs ?? "?"}ms, hits ${tm.cacheHits ?? 0}/${tm.fileCount ?? 0}` : "") +
+            `)`
+        );
+        lastParseTiming = {
+            path,
+            snapshotLoadMs: t1 - t0,
+            snapshotValidateMs: tPreParse - t1,
+            snapshotHit: false,
+            fullParseMs: tParsed - tPreParse,
+            innerParseMs: tm?.parseMs ?? null,
+            innerCheckMs: tm?.checkMs ?? null,
+            fileCount: tm?.fileCount ?? null,
+            cacheHits: tm?.cacheHits ?? null,
+            fileReadMs: tm?.fileReadMs ?? null,
+            lexParseMs: tm?.lexParseMs ?? null,
+            typeflowMs: tm?.typeflowMs ?? null,
+            importJsonMs: tm?.importJsonMs ?? null,
+            totalMs: tParsed - t0,
+        };
         scheduleDeferredPostParse(result, path, /*persist=*/ true);
         return;
     } catch (_err) {
+        const tFail = Date.now();
+        lastParseTiming = {
+            path,
+            snapshotLoadMs: t1 - t0,
+            snapshotValidateMs: tPreParse - t1,
+            snapshotHit: false,
+            fullParseMs: tFail - tPreParse,
+            innerParseMs: null,
+            innerCheckMs: null,
+            fileCount: null,
+            cacheHits: null,
+            fileReadMs: null,
+            lexParseMs: null,
+            typeflowMs: null,
+            importJsonMs: null,
+            totalMs: tFail - t0,
+        };
         setParsedResult(null);
         setKnowledgeRows([]);
     }
@@ -205,21 +294,25 @@ export function reparseImportJson(): void {
  * batches via `setTimeout` so the GUI re-renders with the populated
  * importables list before knowledge dots / watching catch up.
  */
+let postParseGeneration = 0;
+
 function scheduleDeferredPostParse(
     result: import("htsw").ParseResult<import("htsw/types").Importable[]>,
     path: string,
     persist: boolean
 ): void {
+    const gen = ++postParseGeneration;
     const housingUuid = getHousingUuid();
     const importables = result.value;
     const BATCH = 40;
+    const allRows: ReturnType<typeof buildCacheStatusRows> = [];
 
     function processBatch(start: number): void {
+        if (gen !== postParseGeneration) return;
         if (housingUuid === null || start >= importables.length) {
-            // Knowledge dots done (or skipped). Now refresh watched
-            // mtimes + persist snapshot — also potentially expensive
-            // (N filesystem stats) so it gets its own yield.
+            setKnowledgeRows(allRows);
             setTimeout(() => {
+                if (gen !== postParseGeneration) return;
                 refreshWatchedMtimes();
                 if (persist) saveSnapshot(path, result, watchedMtimes);
             }, 0);
@@ -228,7 +321,7 @@ function scheduleDeferredPostParse(
         const end = Math.min(importables.length, start + BATCH);
         const slice = importables.slice(start, end);
         const rows = buildCacheStatusRows(housingUuid, slice);
-        appendKnowledgeRows(rows);
+        for (let i = 0; i < rows.length; i++) allRows.push(rows[i]);
         setTimeout(() => processBatch(end), 0);
     }
 
@@ -250,16 +343,6 @@ let mtimeCheckSlicePos = 0;
 const MTIME_CHECK_SLICE = 40;
 
 function runReparseDeferred(): void {
-    // Defer the actual parse off the tick so its synchronous cost
-    // doesn't extend the current frame. The user's scroll / input
-    // finishes painting; the parse-freeze (if any) lands on a later
-    // tick by itself.
-    //
-    // Show the "Loading…" indicator only when the next parse is likely
-    // to actually freeze — i.e. no snapshot on disk for this path. If a
-    // snapshot exists, the fast path takes a few ms and the loading UI
-    // would just flash. (`snapshotExists` skips the expensive
-    // fingerprint validation that `snapshotIsCurrent` does.)
     const path = getImportJsonPath();
     const willLikelyFreeze = !snapshotExists(path);
     if (willLikelyFreeze) setParseInProgress(true);

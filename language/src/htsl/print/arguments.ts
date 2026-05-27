@@ -20,7 +20,8 @@ import { quoteString, isPlaceholderOnly } from "./helpers";
  * so any of `Custom_Coordinates`, `custom_coordinates`, `customcoordinates`
  * round-trip equivalently. We pick the canonical underscore form.
  */
-export function printOption(option: string): string {
+export function printOption(option: string | undefined | null): string {
+    if (option === undefined || option === null) return "<unset>";
     // Use split/join instead of `replaceAll` — the language bundle is
     // consumed by ct_module which runs on a Rhino runtime targeting ES5.
     return option.split(" ").join("_");

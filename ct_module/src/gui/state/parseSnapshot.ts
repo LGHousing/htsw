@@ -74,6 +74,7 @@ export function loadSnapshot(importJsonPath: string): Snapshot | null {
         if (!Array.isArray(parsed.importables)) return null;
         if (!Array.isArray(parsed.sourcePaths)) return null;
         if (parsed.importables.length !== parsed.sourcePaths.length) return null;
+        if (parsed.fingerprint === null || typeof parsed.fingerprint !== "object" || Array.isArray(parsed.fingerprint)) return null;
         return parsed;
     } catch (_e) {
         return null;
@@ -92,6 +93,19 @@ export function snapshotIsCurrent(snapshot: Snapshot): boolean {
         if (actual === 0 || actual !== expected) return false;
     }
     return true;
+}
+
+export function deleteSnapshot(importJsonPath: string): boolean {
+    const p = snapshotPath(importJsonPath);
+    if (!FileLib.exists(p)) return false;
+    try {
+        const Files = Java.type("java.nio.file.Files");
+        const Paths = Java.type("java.nio.file.Paths");
+        Files.deleteIfExists(Paths.get(String(p)));
+        return true;
+    } catch (_e) {
+        return false;
+    }
 }
 
 export function saveSnapshot(

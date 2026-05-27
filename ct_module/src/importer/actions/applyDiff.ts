@@ -395,7 +395,10 @@ async function applyActionListDiffInner(
         diff.operations.length
     );
     if (diff.operations.length === 0) {
-        if (events != null && isTopLevel) events.emit({ kind: "listSyncCompleted" });
+        if (events != null && isTopLevel) {
+            events.emit({ kind: "finalizeSource", actions: desired });
+            events.emit({ kind: "listSyncCompleted" });
+        }
         return;
     }
 

@@ -221,7 +221,12 @@ function collapseRedundantFormattingCodes(value: string): string {
         }
 
         if (/[0-9a-f]/.test(code)) {
-            if (color !== code) {
+            let hasFormats = false;
+            for (const _key in formats) {
+                hasFormats = true;
+                break;
+            }
+            if (color !== code || hasFormats) {
                 out += "&" + code;
             }
             color = code;

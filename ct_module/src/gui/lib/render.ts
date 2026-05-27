@@ -16,6 +16,7 @@ import { pushScissor, popScissor } from "./scissor";
 import { getInputField } from "./inputState";
 import { COLOR_PANEL, COLOR_PANEL_BORDER } from "./theme";
 import { getOverlayScreenW, getOverlayScreenH } from "./overlayScale";
+import { GL11, javaType } from "./java";
 
 let dbgLog: (m: string) => void = () => {};
 export function setRenderDebugLog(fn: (m: string) => void): void {
@@ -28,6 +29,50 @@ const COLOR_INPUT_BORDER_HOVER = 0xffa2a2a2 | 0;
 const COLOR_INPUT_BORDER_FOCUS = 0xff67a7e8 | 0;
 const COLOR_SCROLLBAR_TRACK = 0x40000000 | 0;
 const COLOR_SCROLLBAR_THUMB = 0xff888888 | 0;
+
+const RenderHelper: any = javaType("net.minecraft.client.renderer.RenderHelper");
+const GlStateManager: any = javaType("net.minecraft.client.renderer.GlStateManager");
+const ItemClass: any = javaType("net.minecraft.item.Item");
+const ItemStackClass: any = javaType("net.minecraft.item.ItemStack");
+const mcItemCache: { [key: string]: any } = {};
+
+function getCachedItemStack(itemId: string, count: number): any {
+    const key = itemId + ":" + count;
+    if (key in mcItemCache) return mcItemCache[key];
+    try {
+        const id = itemId.indexOf(":") >= 0 ? itemId : "minecraft:" + itemId;
+        const item = ItemClass.func_111206_d(id);
+        if (item === null || item === undefined) { mcItemCache[key] = null; return null; }
+        const stack = new ItemStackClass(item, count);
+        mcItemCache[key] = stack;
+        return stack;
+    } catch (_e) {
+        mcItemCache[key] = null;
+        return null;
+    }
+}
+
+function renderMcItem(itemId: string, count: number, x: number, y: number): void {
+    const stack = getCachedItemStack(itemId, count);
+    if (stack === null) return;
+    try {
+        const mc = Client.getMinecraft();
+        const ri = mc.func_175599_af();
+        GlStateManager.func_179126_j();
+        GL11.glDepthMask(true);
+        RenderHelper.func_74520_c();
+        ri.func_180450_b(stack, x, y);
+        RenderHelper.func_74518_a();
+        GlStateManager.func_179097_i();
+        GL11.glDepthMask(false);
+        GlStateManager.func_179131_c(1.0, 1.0, 1.0, 1.0);
+    } catch (_e) {}
+    if (count > 1) {
+        const s = String(count);
+        const fw = Renderer.getStringWidth(s);
+        Renderer.drawStringWithShadow(s, x + 17 - fw, y + 9);
+    }
+}
 const COLOR_SCROLLBAR_THUMB_HOVER = 0xffaaaaaa | 0;
 
 const LINE_H = 8;
@@ -247,6 +292,8 @@ function renderItem(
         // The DOM lib's HTMLImageElement collides with CT's global `Image` class for `as Image`
         // typing — go through `unknown` so the cast lands on CT's runtime Image.
         if (img !== null) Renderer.drawImage(img as unknown as Parameters<typeof Renderer.drawImage>[0], r.x, r.y, r.w, r.h);
+    } else if (e.kind === "mcItem") {
+        renderMcItem(e.item, e.count, r.x, r.y);
     }
 
     if (item.clipRect) popScissor();
@@ -431,7 +478,7 @@ export function dispatchWheel(
         if (s.contentHeight <= s.viewportRect.h) return true;
         s.offset = Math.max(
             0,
-            Math.min(s.contentHeight - s.viewportRect.h, s.offset - delta * 20)
+            Math.min(s.contentHeight - s.viewportRect.h, s.offset - delta * 40)
         );
         markUserScroll(item.element.id);
         return true;

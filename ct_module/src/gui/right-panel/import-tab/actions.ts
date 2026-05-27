@@ -83,6 +83,8 @@ import { ACTION_MAPPINGS } from "../../../importer/fields/actionMappings";
 
 export const CAPTURE_TYPES: CaptureType[] = ["FUNCTION", "MENU"];
 
+let importSessionId = 0;
+
 function refreshKnowledgeRows(): void {
     const uuid = getHousingUuid();
     if (uuid === null) return;
@@ -424,6 +426,7 @@ export function startImport(explicit?: readonly QueueItem[]): void {
     }));
 
     setImportRunning(true);
+    const sessionId = ++importSessionId;
     resetStepGate();
     gmcOnImportStart();
 
@@ -485,6 +488,7 @@ export function startImport(explicit?: readonly QueueItem[]): void {
                 );
             }
             setTimeout(() => {
+                if (importSessionId !== sessionId) return;
                 setImportProgress(null);
                 if (explicit === undefined) { clearQueue(); clearImportableChecks(); }
             }, 5000);
