@@ -223,13 +223,29 @@ function growFactorOf(e: Element, axis: "w" | "h"): number {
 }
 
 // Per-id scroll state. Reset across reloads but persists across frames.
-type ScrollState = { offset: number; contentHeight: number; viewportRect: Rect };
+type ScrollState = {
+    offset: number;
+    contentHeight: number;
+    viewportRect: Rect;
+    /**
+     * True when the user has manually scrolled (wheel or drag). While
+     * set, autoscroll-following code (e.g. CodeView's applyAutoFollow)
+     * suppresses its scroll updates. Cleared by `clearUserScrollOverride`
+     * — typically when the user clicks a "jump to current" pip.
+     */
+    userOverridden: boolean;
+};
 const scrollStates: { [id: string]: ScrollState } = {};
 
 export function getScrollState(id: string): ScrollState {
     let s = scrollStates[id];
     if (!s) {
-        s = { offset: 0, contentHeight: 0, viewportRect: { x: 0, y: 0, w: 0, h: 0 } };
+        s = {
+            offset: 0,
+            contentHeight: 0,
+            viewportRect: { x: 0, y: 0, w: 0, h: 0 },
+            userOverridden: false,
+        };
         scrollStates[id] = s;
     }
     return s;
@@ -241,6 +257,18 @@ export function setScrollOffset(id: string, offset: number): void {
         0,
         Math.min(Math.max(0, s.contentHeight - s.viewportRect.h), offset)
     );
+}
+
+export function markUserScroll(id: string): void {
+    getScrollState(id).userOverridden = true;
+}
+
+export function clearUserScrollOverride(id: string): void {
+    getScrollState(id).userOverridden = false;
+}
+
+export function isScrollUserOverridden(id: string): boolean {
+    return getScrollState(id).userOverridden;
 }
 
 export const SCROLLBAR_WIDTH = SCROLLBAR_W;

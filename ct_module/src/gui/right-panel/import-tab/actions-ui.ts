@@ -11,6 +11,8 @@ import { Button, Col, Container, Icon, Row, Text } from "../../lib/components";
 import { Icons } from "../../lib/icons.generated";
 import {
     COLOR_BUTTON,
+    COLOR_BUTTON_DANGER,
+    COLOR_BUTTON_DANGER_HOVER,
     COLOR_BUTTON_HOVER,
     COLOR_BUTTON_PRIMARY,
     COLOR_BUTTON_PRIMARY_HOVER,
@@ -41,7 +43,9 @@ import {
     CAPTURE_TYPES,
     queueItemsForCheckedKeys,
     startCaptureExport,
+    startExportAllFunctions,
     startImport,
+    stopAllTasks,
 } from "./actions";
 
 // ── Path helpers (used only by the destination picker) ────────────────
@@ -224,6 +228,44 @@ function captureMenuPopoverContent(): Element {
                     ],
                 })
             ),
+            Container({
+                style: {
+                    direction: "row",
+                    align: "center",
+                    padding: { side: "x", value: 8 },
+                    gap: 6,
+                    height: { kind: "px", value: SIZE_ROW_H },
+                    background: COLOR_ROW,
+                    hoverBackground: COLOR_ROW_HOVER,
+                },
+                onClick: () => startExportAllFunctions(),
+                children: [
+                    Text({
+                        text: "Export All Functions",
+                        color: COLOR_TEXT,
+                        style: { width: { kind: "grow" } },
+                    }),
+                ],
+            }),
+            Container({
+                style: {
+                    direction: "row",
+                    align: "center",
+                    padding: { side: "x", value: 8 },
+                    gap: 6,
+                    height: { kind: "px", value: SIZE_ROW_H },
+                    background: COLOR_BUTTON_DANGER,
+                    hoverBackground: COLOR_BUTTON_DANGER_HOVER,
+                },
+                onClick: () => stopAllTasks(),
+                children: [
+                    Text({
+                        text: "Stop",
+                        color: COLOR_TEXT,
+                        style: { width: { kind: "grow" } },
+                    }),
+                ],
+            }),
         ],
     });
 }
@@ -291,7 +333,7 @@ export function importActionRow(): Element {
                         anchor: rect,
                         content: captureMenuPopoverContent(),
                         width: 260,
-                        height: (CAPTURE_TYPES.length + 1) * 20 + 8,
+                        height: (CAPTURE_TYPES.length + 3) * 20 + 8,
                     }),
             }),
             Button({

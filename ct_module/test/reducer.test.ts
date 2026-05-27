@@ -102,6 +102,7 @@ describe("progress reducer", () => {
             },
             {
                 kind: "progress",
+                scope: { kind: "topLevel" },
                 progress: {
                     phase: "applying",
                     completedUnits: 5,
@@ -113,6 +114,7 @@ describe("progress reducer", () => {
             // Regression: a later event reports a smaller completedUnits.
             {
                 kind: "progress",
+                scope: { kind: "topLevel" },
                 progress: {
                     phase: "applying",
                     completedUnits: 4,

@@ -113,21 +113,20 @@ function computeFor(filePath: string): KnowledgeOverlayEntry | null {
         match.importable.type,
         importableIdentity(match.importable)
     );
-    if (cache === null) return null;
     const sourceActions = readCachedActionList(match.importable, match.prefix);
     if (sourceActions === undefined) return null;
     const out: KnowledgeOverlayEntry = new Map();
-    walk(out, match.prefix, "", sourceActions, cache.lists);
+    walk(out, match.prefix, "", sourceActions, cache !== null ? cache.lists : {});
     return out;
 }
 
-type FileTarget = {
+export type FileTarget = {
     importable: Importable;
     /** Cache-list prefix: "actions" / "onEnterActions" / "leftClickActions" / ... */
     prefix: string;
 };
 
-function findFileTarget(filePath: string): FileTarget | null {
+export function findFileTarget(filePath: string): FileTarget | null {
     const norm = canonicalPath(filePath);
     let found: FileTarget | null = null;
     forEachCachedParse((entry) => {

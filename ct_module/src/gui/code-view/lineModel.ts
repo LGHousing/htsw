@@ -1,5 +1,9 @@
 /// <reference types="../../../CTAutocomplete" />
 
+import type { Action } from "htsw/types";
+import type { SourceFile, SpanTable } from "htsw";
+
+import { getMtimeMs } from "../lib/java";
 import { FileSystemFileLoader } from "../../utils/files";
 import { actionsToLines, parseHtslFile, type HtslLine } from "../state/htslRender";
 import { getParsedResult } from "../state";
@@ -12,11 +16,7 @@ const COLOR_GUTTER = 0xff666666 | 0;
 const DIAG_ERROR_BG = 0x40e85c5c | 0;
 const DIAG_WARN_BG = 0x40e5bc4b | 0;
 
-export type LineModelOptions = {
-    focus?: { actionPath: string; before: number; after: number } | null;
-};
-
-export function attachFieldSpans(
+function attachFieldSpans(
     tokens: SyntaxToken[],
     fieldSpans: readonly FieldSpan[] | undefined
 ): TokenSpan[] {
@@ -116,17 +116,6 @@ type HtslCacheEntry = {
 };
 const htslCache = new Map<string, HtslCacheEntry>();
 
-function getMtimeMs(path: string): number {
-    try {
-        // @ts-ignore
-        const Paths = Java.type("java.nio.file.Paths");
-        // @ts-ignore
-        const Files = Java.type("java.nio.file.Files");
-        return Number(Files.getLastModifiedTime(Paths.get(String(path))).toMillis());
-    } catch (_e) {
-        return 0;
-    }
-}
 
 function htslRenderableLines(path: string): RenderableLine[] {
     const mtime = getMtimeMs(path);
@@ -204,9 +193,6 @@ function htslRenderableLines(path: string): RenderableLine[] {
     return out;
 }
 
-export function lineIdForActionPath(actionPath: string): string {
-    return `htsl:${actionPath}`;
-}
 
 function readPlainLines(path: string): string[] {
     const mtime = getMtimeMs(path);
@@ -240,10 +226,168 @@ function plainTextRenderableLines(path: string): RenderableLine[] {
     return out;
 }
 
+type ActionLineRange = {
+    actionPath: string;
+    startLine: number;
+    endLine: number;
+    depth: number;
+};
+
+/**
+ * Walks the parsed action tree, looking up each node's byte-offset span
+ * and converting to a `[startLine, endLine]` range on the raw source.
+ * Mirrors the actionPath naming used by `appendActions` in
+ * `importPreviewState.ts`: top-level → `"i"`, CONDITIONAL inner →
+ * `"i.ifActions.j"` / `"i.elseActions.j"`, RANDOM inner → `"i.actions.j"`.
+ */
+function collectActionLineRanges(
+    actions: readonly Action[],
+    spans: SpanTable,
+    file: SourceFile
+): ActionLineRange[] {
+    const out: ActionLineRange[] = [];
+    visit(actions, undefined, 0);
+    return out;
+
+    function visit(list: readonly Action[], pathPrefix: string | undefined, depth: number): void {
+        for (let i = 0; i < list.length; i++) {
+            const a = list[i];
+            if (a === null || a === undefined) continue;
+            const actionPath = pathPrefix === undefined ? String(i) : `${pathPrefix}.${i}`;
+            let span;
+            try {
+                span = spans.get(a);
+            } catch (_e) {
+                continue;
+            }
+            let startLine = 0;
+            let endLine = 0;
+            try {
+                startLine = file.getPosition(span.start).line;
+                endLine = file.getPosition(span.end).line;
+            } catch (_e) {
+                continue;
+            }
+            out.push({ actionPath, startLine, endLine, depth });
+            if (a.type === "CONDITIONAL") {
+                visit(a.ifActions ?? [], `${actionPath}.ifActions`, depth + 1);
+                visit(a.elseActions ?? [], `${actionPath}.elseActions`, depth + 1);
+            } else if (a.type === "RANDOM") {
+                visit(a.actions ?? [], `${actionPath}.actions`, depth + 1);
+            }
+        }
+    }
+}
+
+/**
+ * For each raw source line, pick the innermost (deepest) action whose
+ * span covers it. Returns a parallel array: `pathPerLine[N-1]` is the
+ * actionPath for line N, or `undefined` if no action covers that line
+ * (comments, blanks, structural braces outside an action body).
+ */
+function pathPerLine(
+    lineCount: number,
+    ranges: readonly ActionLineRange[]
+): Array<string | undefined> {
+    const paths: Array<string | undefined> = new Array(lineCount);
+    const depths: Array<number> = new Array(lineCount);
+    for (let i = 0; i < lineCount; i++) {
+        paths[i] = undefined;
+        depths[i] = -1;
+    }
+    for (let r = 0; r < ranges.length; r++) {
+        const range = ranges[r];
+        for (let ln = range.startLine; ln <= range.endLine; ln++) {
+            const idx = ln - 1;
+            if (idx < 0 || idx >= lineCount) continue;
+            if (range.depth > depths[idx]) {
+                depths[idx] = range.depth;
+                paths[idx] = range.actionPath;
+            }
+        }
+    }
+    return paths;
+}
+
+function depthPerLine(
+    lineCount: number,
+    ranges: readonly ActionLineRange[]
+): number[] {
+    const depths: number[] = new Array(lineCount);
+    for (let i = 0; i < lineCount; i++) depths[i] = 0;
+    for (let r = 0; r < ranges.length; r++) {
+        const range = ranges[r];
+        for (let ln = range.startLine; ln <= range.endLine; ln++) {
+            const idx = ln - 1;
+            if (idx < 0 || idx >= lineCount) continue;
+            if (range.depth > depths[idx]) {
+                depths[idx] = range.depth;
+            }
+        }
+    }
+    return depths;
+}
+
+const htslRawCache = new Map<string, { mtime: number; parsedRef: object | null; lines: RenderableLine[] }>();
+
+function htslRawRenderableLines(path: string): RenderableLine[] {
+    const mtime = getMtimeMs(path);
+    const projectParsed = getParsedResult();
+    const parsedRef: object | null = projectParsed === null ? null : projectParsed;
+    const cached = htslRawCache.get(path);
+    if (cached !== undefined && cached.mtime === mtime && cached.parsedRef === parsedRef) {
+        return cached.lines;
+    }
+
+    const parsed = parseHtslFile(path);
+    if (parsed.parseError !== null || parsed.file === null || parsed.spans === null) {
+        // Fall back to the reconstruction renderer; it has its own error
+        // path that surfaces the parse failure message.
+        return htslRenderableLines(path);
+    }
+
+    const ranges = collectActionLineRanges(parsed.actions, parsed.spans, parsed.file);
+    const rawLines = parsed.file.src.split("\n");
+    const linePaths = pathPerLine(rawLines.length, ranges);
+    const lineDepths = depthPerLine(rawLines.length, ranges);
+    const diags = diagBackgroundsForFile(path);
+
+    const seenPaths: { [p: string]: number } = {};
+    const out: RenderableLine[] = [];
+    for (let i = 0; i < rawLines.length; i++) {
+        const text = rawLines[i];
+        const tokens: TokenSpan[] = attachFieldSpans(tokenizeHtsl(text), undefined);
+        const actionPath = linePaths[i];
+        let id: string;
+        if (actionPath !== undefined) {
+            const seenAt = seenPaths[actionPath];
+            if (seenAt === undefined) {
+                seenPaths[actionPath] = i;
+                id = `htsl:${actionPath}`;
+            } else {
+                id = `htsl:${actionPath}:c${i - seenAt}`;
+            }
+        } else {
+            id = `htsl:line${i + 1}`;
+        }
+        const lineNum = i + 1;
+        out.push({
+            id,
+            lineNum,
+            depth: lineDepths[i],
+            tokens,
+            actionPath,
+            staticBackground: diags.get(lineNum),
+        });
+    }
+    htslRawCache.set(path, { mtime, parsedRef, lines: out });
+    return out;
+}
+
 export function linesForFile(path: string | null): RenderableLine[] {
     if (path === null || path.length === 0) return [];
     const norm = path.split("\\").join("/").toLowerCase();
-    if (endsWith(norm, ".htsl")) return htslRenderableLines(path);
+    if (endsWith(norm, ".htsl")) return htslRawRenderableLines(path);
     return plainTextRenderableLines(path);
 }
 

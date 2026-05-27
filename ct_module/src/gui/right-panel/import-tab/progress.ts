@@ -25,14 +25,13 @@ import {
 } from "../../lib/theme";
 import { TaskManager } from "../../../tasks/manager";
 import {
-    getActiveImportPath,
     getCurrentPhaseEtaSeconds,
     getImportEtaSeconds,
+    getImportEtcMs,
     getImportMsPerUnit,
     getImportProgress,
     getImportProgressFraction,
 } from "../../state";
-import { getLiveOverlay } from "../../state/importPreviewState";
 import {
     countImportablesByStatus,
     isImportTotalLocked,
@@ -40,13 +39,12 @@ import {
 import { traceDebugSnapshot } from "../../../importer/progress/trace";
 
 const COLOR_BAR_BG = COLOR_PANEL_BORDER;
-const COLOR_BAR_FG = ACCENT_SUCCESS;
 const PROGRESS_BAR_H = 6;
 let lastProgressBarTrace = "";
 
 // ── Time formatting ────────────────────────────────────────────────────
 
-export function formatEtaSeconds(secs: number): string {
+function formatEtaSeconds(secs: number): string {
     const total = Math.max(0, Math.round(secs));
     if (total < 60) return `${total}s`;
     const m = Math.floor(total / 60);
@@ -57,67 +55,67 @@ export function formatEtaSeconds(secs: number): string {
     return mm === 0 ? `${h}h` : `${h}h${mm}m`;
 }
 
-function capitalizePhase(phase: string): string {
-    // Setup work is rendered as part of the "Reading" phase from the user's POV.
-    if (phase === "setup") return "Reading";
-    if (phase.length === 0) return phase;
-    return phase.charAt(0).toUpperCase() + phase.slice(1);
+function formatClockTime(ms: number): string {
+    const d = new Date(ms);
+    let h = d.getHours();
+    const m = d.getMinutes();
+    const ampm = h >= 12 ? "PM" : "AM";
+    h = h % 12;
+    if (h === 0) h = 12;
+    const mm = m < 10 ? `0${m}` : `${m}`;
+    return `${h}:${mm} ${ampm}`;
 }
 
 // ── ETA + label text ───────────────────────────────────────────────────
-
-function progressEtaText(): string {
-    const p = getImportProgress();
-    const secs = getImportEtaSeconds();
-    if (secs === null) return p === null ? "" : "total ETA calculating…";
-    return formatEtaSeconds(secs);
-}
 
 function progressMsPerUnitText(): string {
     return `${Math.round(getImportMsPerUnit())}ms/u`;
 }
 
-function currentPhaseEtaText(): string {
+function currentPhaseLabel(): string {
     const p = getImportProgress();
     if (p === null || p.active === null) return "";
-    const secs = getCurrentPhaseEtaSeconds();
-    if (secs === null || secs <= 0) return "";
-    if (p.active.phase === "setup" || p.active.phase === "reading") {
-        return `${formatEtaSeconds(secs)} left reading`;
+    const phase = p.active.phase;
+    if (phase === "setup" || phase === "reading") {
+        return `§lReading ${p.active.identity}`;
     }
-    if (p.active.phase === "hydrating") {
-        return `${formatEtaSeconds(secs)} left hydrate`;
+    if (phase === "hydrating") return "§lHydrating";
+    if (phase === "applying") {
+        const counter = applyOpCounterText();
+        return counter.length > 0 ? `§lApplying§r  ·  ${counter}` : "§lApplying";
     }
-    if (p.active.phase === "applying") return `${formatEtaSeconds(secs)} left apply`;
+    return "§lDone";
+}
+
+function applyOpCounterText(): string {
+    const prog = getImportProgress();
+    if (prog === null || prog.active === null) return "";
+    const sync = prog.active.sync;
+    if (sync === null) return "";
+    if (sync.parent !== null) {
+        return operationProgressText(sync.parent.completedUnits, sync.parent.totalUnits);
+    }
+    if (sync.totalUnits > 1) {
+        return operationProgressText(sync.completedUnits, sync.totalUnits);
+    }
     return "";
 }
 
-/** What's happening *right now* — the live overlay's current action label. */
-function progressCurrentLabel(): string {
-    const path = getActiveImportPath();
-    if (path !== null) {
-        const overlay = getLiveOverlay(path);
-        if (overlay !== undefined && overlay.currentLabel.length > 0) {
-            return overlay.currentLabel;
-        }
-    }
+function currentPhaseEtaText(): string {
     const p = getImportProgress();
-    if (p !== null && p.active !== null) {
-        return `${p.active.type} ${p.active.identity}`;
+    if (p === null || p.active === null) return "";
+    const phase = p.active.phase;
+    if (phase === "applying") return "";
+    const secs = getCurrentPhaseEtaSeconds();
+    if (secs === null || secs <= 0) return "";
+    if (phase === "setup" || phase === "reading") {
+        return `${formatEtaSeconds(secs)} left read`;
     }
-    return "working";
+    if (phase === "hydrating") return `${formatEtaSeconds(secs)} left hydrate`;
+    return "";
 }
 
 // ── Progress bar geometry ──────────────────────────────────────────────
-
-function progressPhaseColor(): number {
-    const p = getImportProgress();
-    if (p === null || p.active === null) return COLOR_BAR_FG;
-    if (p.active.phase === "setup" || p.active.phase === "reading") return PHASE_READING;
-    if (p.active.phase === "hydrating") return PHASE_HYDRATING;
-    if (p.active.phase === "applying") return PHASE_APPLYING;
-    return COLOR_BAR_FG;
-}
 
 /**
  * A horizontal track slice that fills proportionally with `fraction` (0–1)
@@ -152,6 +150,50 @@ export function phaseSegment(widthFactor: number, fraction: number, color: numbe
     });
 }
 
+function rowPhaseChildrenFor(snapshot: {
+    phaseUnits: { setup: number; reading: number; hydrating: number; applying: number };
+    completedUnits: number;
+}): Element[] {
+    const units = snapshot.phaseUnits;
+    const total = Math.max(
+        1,
+        units.setup + units.reading + units.hydrating + units.applying
+    );
+    const readingUnits = units.setup + units.reading;
+    const within = Math.max(0, snapshot.completedUnits);
+    const readingDone = Math.min(readingUnits, within);
+    const hydrateDone = Math.min(
+        units.hydrating,
+        Math.max(0, within - readingUnits)
+    );
+    const applyDone = Math.min(
+        units.applying,
+        Math.max(0, within - readingUnits - units.hydrating)
+    );
+    const readFraction = readingUnits > 0 ? readingDone / readingUnits : 1;
+    const hydrateFraction = units.hydrating > 0 ? hydrateDone / units.hydrating : 1;
+    const applyFraction = units.applying > 0 ? applyDone / units.applying : 0;
+    return [
+        phaseSegment(readingUnits / total, readFraction, PHASE_READING),
+        phaseSegment(units.hydrating / total, hydrateFraction, PHASE_HYDRATING),
+        phaseSegment(units.applying / total, applyFraction, PHASE_APPLYING),
+    ];
+}
+
+function activeRowPhaseChildren(): Element[] {
+    const p = getImportProgress();
+    if (p === null || p.active === null) return [];
+    return rowPhaseChildrenFor(p.active);
+}
+
+function parkedRowPhaseChildren(key: string): Element[] {
+    const p = getImportProgress();
+    if (p === null) return [];
+    const parked = p.parked[key];
+    if (parked === undefined) return [];
+    return rowPhaseChildrenFor(parked);
+}
+
 function progressBar(): Element {
     return Container({
         style: {
@@ -167,29 +209,6 @@ function progressBar(): Element {
             const traceRows: unknown[] = [];
             for (let i = 0; i < p.rows.length; i++) {
                 const row = p.rows[i];
-                let fraction = 0;
-                let color = ACCENT_SUCCESS;
-                if (row.status === "imported" || row.status === "skipped") {
-                    fraction = 1;
-                } else if (row.status === "failed") {
-                    fraction = 1;
-                    color = ACCENT_DANGER;
-                } else if (p.active !== null && p.active.key === row.key) {
-                    const total = Math.max(1, p.active.totalUnits);
-                    fraction = Math.min(1, Math.max(0, p.active.completedUnits / total));
-                    color = progressPhaseColor();
-                }
-
-                traceRows.push({
-                    index: i,
-                    key: row.key,
-                    status: row.status,
-                    rowTotalUnits: row.totalUnits,
-                    widthFactor: 1,
-                    fillFraction: fraction,
-                    color,
-                });
-
                 if (i > 0) {
                     children.push(Container({
                         style: {
@@ -200,7 +219,51 @@ function progressBar(): Element {
                         children: [],
                     }));
                 }
-                children.push(phaseSegment(1, fraction, color));
+                if (row.status === "imported" || row.status === "skipped") {
+                    children.push(phaseSegment(1, 1, ACCENT_SUCCESS));
+                    traceRows.push({ index: i, key: row.key, status: row.status, kind: "done" });
+                } else if (row.status === "failed") {
+                    children.push(phaseSegment(1, 1, ACCENT_DANGER));
+                    traceRows.push({ index: i, key: row.key, status: row.status, kind: "failed" });
+                } else if (p.active !== null && p.active.key === row.key) {
+                    children.push(Container({
+                        style: {
+                            direction: "row",
+                            width: { kind: "grow" },
+                            height: { kind: "grow" },
+                        },
+                        children: activeRowPhaseChildren(),
+                    }));
+                    traceRows.push({
+                        index: i,
+                        key: row.key,
+                        status: row.status,
+                        kind: "active",
+                        activePhase: p.active.phase,
+                    });
+                } else if (p.parked[row.key] !== undefined) {
+                    // Pass-1 finished read/hydrate for this row but pass-2
+                    // hasn't reached it yet. Show the parked phase fill so
+                    // the segment doesn't visually rewind.
+                    children.push(Container({
+                        style: {
+                            direction: "row",
+                            width: { kind: "grow" },
+                            height: { kind: "grow" },
+                        },
+                        children: parkedRowPhaseChildren(row.key),
+                    }));
+                    traceRows.push({
+                        index: i,
+                        key: row.key,
+                        status: row.status,
+                        kind: "parked",
+                        parkedPhase: p.parked[row.key].phase,
+                    });
+                } else {
+                    children.push(phaseSegment(1, 0, ACCENT_SUCCESS));
+                    traceRows.push({ index: i, key: row.key, status: row.status, kind: "queued" });
+                }
             }
             const traceKey = JSON.stringify({
                 completedUnits: p.completedUnits,
@@ -225,21 +288,11 @@ function progressDetailLine(): string {
     const prog = getImportProgress();
     if (prog === null || prog.active === null) return "";
     const cur = prog.active;
+    if (cur.phase === "applying") return "";
     const parts: string[] = [];
     const sync = cur.sync;
-    if (sync !== null) {
-        const { completedUnits, totalUnits, parent } = sync;
-        if (cur.phase === "reading" && totalUnits > 1) {
-            parts.push(`${completedUnits} read so far`);
-        } else if (cur.phase === "hydrating" && totalUnits > 1) {
-            parts.push(`${completedUnits} of ${totalUnits} nested reads`);
-        } else if (cur.phase === "applying") {
-            if (parent !== null) {
-                parts.push(operationProgressText(parent.completedUnits, parent.totalUnits));
-            } else if (totalUnits > 1) {
-                parts.push(operationProgressText(completedUnits, totalUnits));
-            }
-        }
+    if (sync !== null && sync.totalUnits > 1) {
+        parts.push(operationProgressText(sync.completedUnits, sync.totalUnits));
     }
     const eta = currentPhaseEtaText();
     if (eta.length > 0) parts.push(eta);
@@ -253,13 +306,21 @@ function operationProgressText(completed: number, total: number): string {
 }
 
 function progressTotalEtaLine(): string {
-    const eta = progressEtaText();
-    if (eta === "") return "";
-    if (eta === "total ETA calculating…") return eta;
     const p = getImportProgress();
+    if (p === null) return "";
     const rate = progressMsPerUnitText();
-    if (p === null || !isImportTotalLocked(p)) return `total ~${eta} · ${rate}`;
-    return `total ${eta} · ${rate}`;
+    const secs = getImportEtaSeconds();
+    if (secs === null) return `total ETA calculating… · ${rate}`;
+    const phase = p.active?.phase ?? null;
+    if (phase === "setup" || phase === "reading") {
+        return `total ~?m?s · ${rate}`;
+    }
+    if (phase === "applying" || phase === "done" || isImportTotalLocked(p)) {
+        const etc = getImportEtcMs();
+        const etcText = etc === null ? "" : ` · ETC ${formatClockTime(etc)}`;
+        return `total ${formatEtaSeconds(secs)}${etcText} · ${rate}`;
+    }
+    return `total ~${formatEtaSeconds(secs)} · ${rate}`;
 }
 
 export function liveImporterPanel(): Element {
@@ -298,12 +359,9 @@ export function liveImporterPanel(): Element {
                                     : `Importable ${currentNumber} of ${totalImportables} · ${current.identity}`,
                             color: COLOR_TEXT,
                         }),
-                        // WHAT — phase + current action label, bolded so it dominates.
+                        // WHAT — phase-only label, bolded so it dominates.
                         Text({
-                            text: () =>
-                                current === null
-                                    ? `§lDone`
-                                    : `§l${capitalizePhase(current.phase)}: ${progressCurrentLabel()}`,
+                            text: () => current === null ? `§lDone` : currentPhaseLabel(),
                             color: COLOR_TEXT,
                         }),
                         // HOW FAR within this importable — step counter + per-phase ETA.

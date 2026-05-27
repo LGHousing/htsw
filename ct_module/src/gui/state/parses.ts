@@ -4,8 +4,62 @@ import { ParseResult, parseImportablesResult, SourceMap } from "htsw";
 import type { Importable } from "htsw/types";
 
 import { FileSystemFileLoader } from "../../utils/files";
-import { javaType } from "../lib/java";
+import { getMtimeMs, javaType } from "../lib/java";
 import { invalidateKnowledgeOverlayForParse } from "./knowledgeOverlay";
+import {
+    hasSubList,
+    importableSourcePath,
+    importableSubListPath,
+    type SubListKind,
+} from "./importablePaths";
+import {
+    buildLiteParseResult,
+    loadSnapshot,
+    saveSnapshot,
+    snapshotIsCurrent,
+} from "./parseSnapshot";
+
+const SUB_LIST_KINDS: SubListKind[] = [
+    "onEnterActions",
+    "onExitActions",
+    "leftClickActions",
+    "rightClickActions",
+];
+
+/**
+ * Build the full mtime fingerprint for a parsed import.json — matches
+ * what `refreshWatchedMtimes` in reparse.ts watches: the import.json
+ * itself, every importable's primary source file, its smart-source
+ * resolution (e.g. .snbt for ITEM), and every sub-list path
+ * (REGION onEnter/onExit, ITEM left/right-click).
+ *
+ * Shared between the two snapshot-save sites so a snapshot written by
+ * the Explore tree walker invalidates on the same edits as one written
+ * by the main reparse path.
+ */
+function buildParseFingerprint(
+    importJsonPath: string,
+    importJsonMtime: number,
+    parsed: ParseResult<Importable[]>
+): { [path: string]: number } {
+    const out: { [path: string]: number } = {};
+    out[importJsonPath] = importJsonMtime;
+    const add = (p: string | undefined): void => {
+        if (p === undefined || out[p] !== undefined) return;
+        out[p] = getMtimeMs(p);
+    };
+    for (let i = 0; i < parsed.value.length; i++) {
+        const imp = parsed.value[i];
+        add(parsed.gcx.sourceFiles.get(imp));
+        add(importableSourcePath(imp, parsed));
+        for (let j = 0; j < SUB_LIST_KINDS.length; j++) {
+            const kind = SUB_LIST_KINDS[j];
+            if (!hasSubList(imp, kind)) continue;
+            add(importableSubListPath(imp, kind, parsed));
+        }
+    }
+    return out;
+}
 
 /**
  * Per-file `import.json` parse cache. Lets the Explore tree show
@@ -42,16 +96,6 @@ export function canonicalPath(p: string): string {
     }
 }
 
-function getMtimeMs(path: string): number {
-    try {
-        const Paths = javaType("java.nio.file.Paths");
-        const Files = javaType("java.nio.file.Files");
-        return Number(Files.getLastModifiedTime(Paths.get(String(path))).toMillis());
-    } catch (_e) {
-        return 0;
-    }
-}
-
 const cache = new Map<string, CachedParse>();
 
 /**
@@ -66,16 +110,36 @@ export function parseImportJsonAt(rawPath: string): CachedParse {
     const existing = cache.get(canon);
     if (existing !== undefined && existing.mtime === mtime) return existing;
 
-    const sm = new SourceMap(new FileSystemFileLoader());
+    // Disk snapshot fast path: avoids a full htsw parse when the
+    // import.json + every referenced .htsl still has the recorded
+    // mtime. Critical for the Explore tree walker — without it,
+    // discovering each large import.json freezes the main thread for
+    // its full parse cost on first sighting per session, even though
+    // `reparseImportJson` already used the snapshot.
     let parsed: ParseResult<Importable[]> | null = null;
     let error: string | null = null;
-    try {
-        parsed = parseImportablesResult(sm, rawPath);
-    } catch (e) {
-        const msg = e && (e as { message?: string }).message
-            ? (e as { message: string }).message
-            : String(e);
-        error = msg;
+    const snapshot = loadSnapshot(canon);
+    if (snapshot !== null && snapshotIsCurrent(snapshot)) {
+        parsed = buildLiteParseResult(snapshot);
+    } else {
+        const sm = new SourceMap(new FileSystemFileLoader());
+        try {
+            parsed = parseImportablesResult(sm, rawPath);
+        } catch (e) {
+            const msg = e && (e as { message?: string }).message
+                ? (e as { message: string }).message
+                : String(e);
+            error = msg;
+        }
+        // Save snapshot so the next session's tree walker (and the
+        // main reparse path) can skip this parse. Use the full
+        // fingerprint shared with refreshWatchedMtimes so edits to
+        // sub-list .htsl files (REGION enter/exit, ITEM click actions)
+        // invalidate just as they do in the main reparse path.
+        if (parsed !== null) {
+            const fingerprint = buildParseFingerprint(canon, mtime, parsed);
+            saveSnapshot(canon, parsed, fingerprint);
+        }
     }
     const entry: CachedParse = {
         canonicalPath: canon,

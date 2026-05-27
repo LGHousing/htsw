@@ -1,10 +1,15 @@
 /// <reference types="../../../CTAutocomplete" />
 
-import { SourceMap, parseActionsResult } from "htsw";
+import {
+    SourceMap,
+    parseActionsResult,
+    type SourceFile,
+    type SpanTable,
+} from "htsw";
 import * as htsw from "htsw";
 import type { Action } from "htsw/types";
 import { FileSystemFileLoader } from "../../utils/files";
-import { javaType } from "../lib/java";
+import { getMtimeMs } from "../lib/java";
 
 export type HtslLine = {
     /** Index into the action list this line belongs to. -1 for synthetic header/blank lines. */
@@ -19,23 +24,18 @@ export type HtslLine = {
 
 const fileLoader = new FileSystemFileLoader();
 
-type ParsedFile = {
+export type ParsedFile = {
     mtime: number;
     actions: Action[];
     parseError: string | null;
+    /** Span table for the parsed actions (and their nested children). Null on parse error. */
+    spans: SpanTable | null;
+    /** Source file with raw text and byte→line mapping. Null on parse error. */
+    file: SourceFile | null;
 };
 
 const parseCache = new Map<string, ParsedFile>();
 
-function getMtimeMs(path: string): number {
-    try {
-        const Paths = javaType("java.nio.file.Paths");
-        const Files = javaType("java.nio.file.Files");
-        return Number(Files.getLastModifiedTime(Paths.get(String(path))).toMillis());
-    } catch (_e) {
-        return 0;
-    }
-}
 
 export function parseHtslFile(path: string): ParsedFile {
     const mtime = getMtimeMs(path);
@@ -43,14 +43,22 @@ export function parseHtslFile(path: string): ParsedFile {
     if (cached !== undefined && cached.mtime === mtime) return cached;
     let actions: Action[] = [];
     let parseError: string | null = null;
+    let spans: SpanTable | null = null;
+    let file: SourceFile | null = null;
     try {
         const sm = new SourceMap(fileLoader);
         const r = parseActionsResult(sm, path);
         actions = r.value;
+        spans = r.spans;
+        try {
+            file = sm.getFile(path);
+        } catch (_e) {
+            file = null;
+        }
     } catch (err) {
         parseError = err && (err as any).message ? (err as any).message : String(err);
     }
-    const entry: ParsedFile = { mtime, actions, parseError };
+    const entry: ParsedFile = { mtime, actions, parseError, spans, file };
     parseCache.set(path, entry);
     return entry;
 }

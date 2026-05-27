@@ -1,5 +1,6 @@
 import type { GlobalCtxt } from "../../context";
 import { Diagnostic } from "../../diagnostic";
+import { SpanTable } from "../../spanTable";
 import type { Tag } from "../types";
 import { Lexer } from "./lexer";
 import { Parser } from "./parser";
@@ -23,4 +24,15 @@ export function parseSnbt(gcx: GlobalCtxt, path: string): Tag | undefined {
         }
         return undefined;
     }
+}
+
+export function parseSnbtText(text: string): Tag {
+    const spans = new SpanTable();
+    const gcxStub = {
+        spans,
+        addDiagnostic(diag: Diagnostic): void {
+            throw diag;
+        },
+    } as unknown as GlobalCtxt;
+    return new Parser(gcxStub, new Lexer(text, 0)).parseCompletely();
 }

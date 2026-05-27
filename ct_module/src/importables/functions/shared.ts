@@ -15,6 +15,23 @@ import { removedFormatting, unique } from "../../utils/helpers";
 const McItem = Java.type("net.minecraft.item.Item");
 const ItemStack = Java.type("net.minecraft.item.ItemStack");
 
+export function extractFunctionNameFromSlot(rawDisplayName: string): string | null {
+    const trimmed = rawDisplayName.trim();
+    if (trimmed.length === 0) return null;
+    const lower = trimmed.toLowerCase();
+    if (
+        lower === "go back" ||
+        lower === "close" ||
+        lower === "create function" ||
+        lower.indexOf("previous page") >= 0 ||
+        lower.indexOf("next page") >= 0
+    ) {
+        return null;
+    }
+    const m = trimmed.match(/^(.+?)\s*\(#\d+\)\s*$/);
+    return m !== null ? m[1] : trimmed;
+}
+
 export async function openFunctionEditor(
     ctx: TaskContext,
     name: string

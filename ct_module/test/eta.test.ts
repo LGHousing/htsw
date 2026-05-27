@@ -53,17 +53,17 @@ describe("import ETA", () => {
         expect(eta.getTotal(p, 0)).toBe(16.5);
     });
 
-    test("ETA decays smoothly within the cache window, then re-snaps", () => {
+    test("ETA decays smoothly within the cache window", () => {
         const p = progress(10, "hydrating");
         // Initial snapshot at t=0 with no data: phase ETA = 15s.
         expect(eta.getPhase(p, 0)).toBe(15);
         // Within the 2s cache window: decay by clock, no re-snap.
         now = 1_000;
         expect(eta.getPhase(p, 0)).toBe(14);
-        // Past the cache window with stuck completedUnits, observed ms/u
-        // climbs and the re-snap pushes ETA back up — self-healing.
+        // Without recorded timing data, ms/u stays at the prior (150ms),
+        // so the candidate ETA stays at 15s and decays by elapsed time.
         now = 3_000;
-        expect(eta.getPhase(p, 0)!).toBeGreaterThan(15);
+        expect(eta.getPhase(p, 0)).toBe(12);
     });
 
     test("a bad early sample is corrected once enough units accumulate", () => {

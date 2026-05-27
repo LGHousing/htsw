@@ -29,14 +29,25 @@ export function createEtaCalculator(): EtaCalculator {
             if (progress === null) return null;
             const now = Date.now();
             let recomputed = false;
-            if (isTotalStale(totalEta, progress)) {
-                const msPerUnit = currentMsPerUnit();
-                const remainingUnits = Math.max(
-                    0,
-                    progress.totalUnits - progress.completedUnits
-                );
+            const msPerUnit = currentMsPerUnit();
+            const remainingUnits = Math.max(
+                0,
+                progress.totalUnits - progress.completedUnits
+            );
+            const candidateEtaSeconds = (remainingUnits * msPerUnit) / 1000;
+            const phaseOrKeyChanged =
+                totalEta !== null &&
+                (totalEta.phase !== (progress.active?.phase ?? null) ||
+                    totalEta.key !== (progress.active?.key ?? ""));
+            // Display countdown should never jump *up* mid-phase. When the
+            // importer discovers more work (totalUnits grows), the naive
+            // recompute makes the displayed ETA spike back; the user sees
+            // "10,9,8,7,10,9,8,7". Keep the current snapshot unless the
+            // candidate is lower (we're ahead of schedule) or the phase /
+            // active importable changed (new context, fresh estimate).
+            if (totalEta === null || phaseOrKeyChanged) {
                 totalEta = {
-                    etaSeconds: (remainingUnits * msPerUnit) / 1000,
+                    etaSeconds: candidateEtaSeconds,
                     computedAt: now,
                     phase: progress.active?.phase ?? null,
                     key: progress.active?.key ?? "",
@@ -46,6 +57,24 @@ export function createEtaCalculator(): EtaCalculator {
                     msPerUnit,
                 };
                 recomputed = true;
+            } else {
+                const elapsedSoFar = (now - totalEta.computedAt) / 1000;
+                const currentDisplayed = Math.max(0, totalEta.etaSeconds - elapsedSoFar);
+                if (candidateEtaSeconds < currentDisplayed) {
+                    totalEta = {
+                        etaSeconds: candidateEtaSeconds,
+                        computedAt: now,
+                        phase: progress.active?.phase ?? null,
+                        key: progress.active?.key ?? "",
+                        completedUnits: progress.completedUnits,
+                        totalUnits: progress.totalUnits,
+                        remainingUnits,
+                        msPerUnit,
+                    };
+                    recomputed = true;
+                }
+            }
+            if (recomputed) {
                 traceEtaSnapshot({
                     kind: "total",
                     msPerUnit,
@@ -64,16 +93,17 @@ export function createEtaCalculator(): EtaCalculator {
                         },
                 });
             }
-            const elapsed = (now - totalEta!.computedAt) / 1000;
-            const displayedEtaSeconds = Math.max(0, totalEta!.etaSeconds - elapsed);
+            const snap = totalEta;
+            const elapsed = (now - snap.computedAt) / 1000;
+            const displayedEtaSeconds = Math.max(0, snap.etaSeconds - elapsed);
             traceEtaSnapshot({
                 kind: "totalDisplay",
                 recomputed,
                 displayedEtaSeconds,
-                snapshotEtaSeconds: totalEta!.etaSeconds,
+                snapshotEtaSeconds: snap.etaSeconds,
                 elapsedSinceSnapshotSeconds: elapsed,
-                msPerUnit: totalEta!.msPerUnit,
-                remainingUnits: totalEta!.remainingUnits,
+                msPerUnit: snap.msPerUnit,
+                remainingUnits: snap.remainingUnits,
                 completedUnits: progress.completedUnits,
                 totalUnits: progress.totalUnits,
                 activePhase: progress.active?.phase ?? null,
@@ -91,11 +121,15 @@ export function createEtaCalculator(): EtaCalculator {
             if (phase === "done") return null;
             const now = Date.now();
             let recomputed = false;
-            if (isPhaseStale(phaseEta, progress)) {
-                const msPerUnit = currentMsPerUnit();
-                const remainingUnits = phaseRemainingUnits(progress, phase);
+            const msPerUnit = currentMsPerUnit();
+            const remainingUnits = phaseRemainingUnits(progress, phase);
+            const candidateEtaSeconds = (remainingUnits * msPerUnit) / 1000;
+            const phaseOrKeyChanged =
+                phaseEta !== null &&
+                (phaseEta.phase !== phase || phaseEta.key !== progress.active.key);
+            if (phaseEta === null || phaseOrKeyChanged) {
                 phaseEta = {
-                    etaSeconds: (remainingUnits * msPerUnit) / 1000,
+                    etaSeconds: candidateEtaSeconds,
                     computedAt: now,
                     phase,
                     key: progress.active.key,
@@ -105,6 +139,24 @@ export function createEtaCalculator(): EtaCalculator {
                     msPerUnit,
                 };
                 recomputed = true;
+            } else {
+                const elapsedSoFar = (now - phaseEta.computedAt) / 1000;
+                const currentDisplayed = Math.max(0, phaseEta.etaSeconds - elapsedSoFar);
+                if (candidateEtaSeconds < currentDisplayed) {
+                    phaseEta = {
+                        etaSeconds: candidateEtaSeconds,
+                        computedAt: now,
+                        phase,
+                        key: progress.active.key,
+                        completedUnits: progress.active.completedUnits,
+                        totalUnits: progress.active.totalUnits,
+                        remainingUnits,
+                        msPerUnit,
+                    };
+                    recomputed = true;
+                }
+            }
+            if (recomputed) {
                 traceEtaSnapshot({
                     kind: "phase",
                     phase,
@@ -118,17 +170,18 @@ export function createEtaCalculator(): EtaCalculator {
                     phaseUnits: progress.active.phaseUnits,
                 });
             }
-            const elapsed = (now - phaseEta!.computedAt) / 1000;
-            const displayedEtaSeconds = Math.max(0, phaseEta!.etaSeconds - elapsed);
+            const psnap = phaseEta;
+            const elapsed = (now - psnap.computedAt) / 1000;
+            const displayedEtaSeconds = Math.max(0, psnap.etaSeconds - elapsed);
             traceEtaSnapshot({
                 kind: "phaseDisplay",
                 phase,
                 recomputed,
                 displayedEtaSeconds,
-                snapshotEtaSeconds: phaseEta!.etaSeconds,
+                snapshotEtaSeconds: psnap.etaSeconds,
                 elapsedSinceSnapshotSeconds: elapsed,
-                msPerUnit: phaseEta!.msPerUnit,
-                remainingUnits: phaseEta!.remainingUnits,
+                msPerUnit: psnap.msPerUnit,
+                remainingUnits: psnap.remainingUnits,
                 sessionCompletedUnits: progress.completedUnits,
                 sessionTotalUnits: progress.totalUnits,
                 activeCompletedUnits: progress.active.completedUnits,
@@ -141,18 +194,27 @@ export function createEtaCalculator(): EtaCalculator {
     };
 }
 
+const MS_PER_UNIT_TTL_MS = 1000;
+let cachedMsPerUnit: { at: number; value: number } | null = null;
+
 export function currentMsPerUnit(): number {
+    const now = Date.now();
+    if (cachedMsPerUnit !== null && now - cachedMsPerUnit.at < MS_PER_UNIT_TTL_MS) {
+        return cachedMsPerUnit.value;
+    }
     const stats = getTimingStats();
-    let totalMs = 0;
-    let totalUnits = 0;
+    let sum = 0;
+    let n = 0;
     for (const kind in stats) {
         const entry = stats[kind];
-        if (entry === undefined) continue;
-        totalMs += entry.totalMs;
-        totalUnits += entry.totalExpectedUnits;
+        if (entry === undefined || entry.count === 0) continue;
+        if (entry.avgMsPerExpectedUnit <= 0) continue;
+        sum += entry.avgMsPerExpectedUnit;
+        n++;
     }
-    if (totalUnits <= 0) return MS_PER_UNIT_PRIOR;
-    return totalMs / totalUnits;
+    const value = n === 0 ? MS_PER_UNIT_PRIOR : sum / n;
+    cachedMsPerUnit = { at: now, value };
+    return value;
 }
 
 function phaseRemainingUnits(progress: ImportProgress, phase: ProgressPhase): number {
@@ -175,30 +237,3 @@ function phaseRemainingUnits(progress: ImportProgress, phase: ProgressPhase): nu
     return Math.max(0, phaseEnd - within);
 }
 
-function isTotalStale(
-    snap: EtaSnapshot | null,
-    progress: ImportProgress
-): boolean {
-    if (snap === null) return true;
-    const curPhase = progress.active?.phase ?? null;
-    const curKey = progress.active?.key ?? "";
-    if (snap.phase !== curPhase) return true;
-    if (snap.key !== curKey) return true;
-    if (snap.completedUnits !== progress.completedUnits) return true;
-    if (snap.totalUnits !== progress.totalUnits) return true;
-    return false;
-}
-
-function isPhaseStale(
-    snap: EtaSnapshot | null,
-    progress: ImportProgress
-): boolean {
-    if (snap === null) return true;
-    const active = progress.active;
-    if (active === null) return true;
-    if (snap.phase !== active.phase) return true;
-    if (snap.key !== active.key) return true;
-    if (snap.completedUnits !== active.completedUnits) return true;
-    if (snap.totalUnits !== active.totalUnits) return true;
-    return false;
-}

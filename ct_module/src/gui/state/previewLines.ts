@@ -48,7 +48,7 @@ type FileState = {
     overlay: LiveOverlay;
 };
 
-export function emptyOverlay(): LiveOverlay {
+function emptyOverlay(): LiveOverlay {
     return {
         states: new Map(),
         details: new Map(),
@@ -58,13 +58,13 @@ export function emptyOverlay(): LiveOverlay {
     };
 }
 
-export const states: { [key: string]: FileState } = {};
+const states: { [key: string]: FileState } = {};
 
-export function keyForFile(path: string): string {
+function keyForFile(path: string): string {
     return normalizeHtswPath(path);
 }
 
-export function ensure(path: string): FileState {
+function ensure(path: string): FileState {
     const k = keyForFile(path);
     let s = states[k];
     if (!s) {
@@ -755,4 +755,68 @@ export function finalizeFromSource(
     s.lines = out;
     s.hasContent = true;
     bump(s);
+}
+
+// ── Live overlay mutations ────────────────────────────────────────────
+
+export function getLiveOverlay(path: string): LiveOverlay | undefined {
+    return states[keyForFile(path)]?.overlay;
+}
+
+export function setLiveState(
+    path: string,
+    actionPath: ActionPath,
+    state: DiffState
+): void {
+    const o = ensure(path).overlay;
+    o.states.set(actionPath, state);
+    const existing = o.details.get(actionPath);
+    o.details.set(actionPath, { ...(existing ?? { state }), state });
+}
+
+export function setLiveSummary(path: string, summary: DiffSummary): void {
+    ensure(path).overlay.summary = summary;
+}
+
+export function setPlannedOp(
+    path: string,
+    actionPath: ActionPath,
+    kind: DiffOpKind,
+    label: string,
+    detail: string
+): void {
+    const o = ensure(path).overlay;
+    const opState: DiffState =
+        kind === "edit" ? "edit" : kind === "add" ? "add" : kind === "move" ? "edit" : "delete";
+    const existing = o.details.get(actionPath);
+    o.states.set(actionPath, opState);
+    o.details.set(actionPath, {
+        state: opState,
+        kind,
+        label: label.length > 0 ? label : existing?.label,
+        detail: detail.length > 0 ? detail : existing?.detail,
+    });
+}
+
+export function markLiveCompleted(path: string, actionPath: ActionPath): void {
+    const o = ensure(path).overlay;
+    const existing = o.details.get(actionPath);
+    if (existing === undefined) return;
+    o.details.set(actionPath, { ...existing, completed: true });
+}
+
+export function setLiveCurrent(
+    path: string,
+    actionPath: ActionPath | null,
+    label: string = ""
+): void {
+    const o = ensure(path).overlay;
+    o.currentPath = actionPath;
+    o.currentLabel = label;
+}
+
+export function clearLiveOverlay(path: string): void {
+    const k = keyForFile(path);
+    const s = states[k];
+    if (s !== undefined) s.overlay = emptyOverlay();
 }

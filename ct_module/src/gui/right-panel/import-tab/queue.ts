@@ -75,17 +75,19 @@ function queueRowMiniBar(item: QueueItem): Element {
             children: [],
         });
     }
+    const color =
+        state.phase === "applying"
+            ? PHASE_APPLYING
+            : state.phase === "hydrating"
+              ? PHASE_HYDRATING
+              : PHASE_READING;
     return Container({
         style: {
             direction: "row",
             width: { kind: "grow" },
             height: { kind: "px", value: 2 },
         },
-        children: [
-            phaseSegment(state.readWidth, state.readFraction, PHASE_READING),
-            phaseSegment(state.hydrateWidth, state.hydrateFraction, PHASE_HYDRATING),
-            phaseSegment(state.applyWidth, state.applyFraction, PHASE_APPLYING),
-        ],
+        children: [phaseSegment(1, state.phaseFraction, color)],
     });
 }
 

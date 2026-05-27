@@ -4,7 +4,12 @@ import { ROW_BG_BY_STATE } from "../state/diff";
 import { ensureKnowledgeOverlay } from "../state/knowledgeOverlay";
 import { focusLineIdForFile } from "../state/codeViewState";
 import type { LineDecorations, LineDecorator, RenderableLine } from "./types";
-import { getLiveOverlay, type PreviewLine } from "../state/importPreviewState";
+import {
+    effectiveFocusActionPath,
+    getLiveOverlay,
+    previewLineIdForPath,
+    type PreviewLine,
+} from "../state/importPreviewState";
 
 const COLOR_PENDING_GRAY = 0xff666666 | 0;
 const COLOR_GHOST_GRAY = 0xff444444 | 0;
@@ -29,10 +34,21 @@ export function diffDecorator(path: string | null): LineDecorator {
 
 export function progressDecorator(path: string | null): LineDecorator {
     const base = diffDecorator(path);
+    // Resolve once per decorator construction: the deepest preview-line
+    // ancestor of `overlay.currentPath`. Both decorateLine (highlight)
+    // and focusedLineId (scroll target) need to agree on this — otherwise
+    // the scroll lands on one line and the highlight on a different one
+    // (or no line at all, when currentPath has no exact preview match).
+    const overlay = path === null ? undefined : getLiveOverlay(path);
+    const rawCurrentPath = overlay?.currentPath ?? null;
+    const focusPath =
+        path === null || rawCurrentPath === null
+            ? null
+            : effectiveFocusActionPath(path, rawCurrentPath);
     return {
         decorateLine(line: RenderableLine): LineDecorations {
             const preview = line as PreviewLine;
-            const entry = path === null ? undefined : getLiveOverlay(path);
+            const entry = overlay;
 
             const isApplyPhase = entry !== undefined && entry.summary !== null;
 
@@ -45,16 +61,12 @@ export function progressDecorator(path: string | null): LineDecorator {
             // Read phase: highlight the whole subtree being walked.
             // Apply phase: narrow to the body line — nested children get their own focus.
             let inFocusRange = false;
-            if (
-                entry !== undefined
-                && entry.currentPath !== null
-                && line.actionPath !== undefined
-            ) {
+            if (focusPath !== null && line.actionPath !== undefined) {
                 inFocusRange = isApplyPhase
-                    ? isBody && line.actionPath === entry.currentPath
+                    ? isBody && line.actionPath === focusPath
                     : (
-                        line.actionPath === entry.currentPath
-                        || line.actionPath.indexOf(entry.currentPath + ".") === 0
+                        line.actionPath === focusPath
+                        || line.actionPath.indexOf(focusPath + ".") === 0
                     );
             }
 
@@ -62,9 +74,9 @@ export function progressDecorator(path: string | null): LineDecorator {
                 ? isBody
                 : (isBody || isConsolidatedPlaceholder);
             const isFocused =
-                entry !== undefined
+                focusPath !== null
                 && line.actionPath !== undefined
-                && entry.currentPath === line.actionPath
+                && focusPath === line.actionPath
                 && isCursorTarget;
 
             const focusRowBg =
@@ -146,7 +158,12 @@ export function progressDecorator(path: string | null): LineDecorator {
             };
         },
         focusedLineId(): string | null {
-            return path === null ? null : focusLineIdForFile(path);
+            if (path === null) return null;
+            const overlay = getLiveOverlay(path);
+            if (overlay !== undefined && overlay.currentPath !== null) {
+                return previewLineIdForPath(path, overlay.currentPath);
+            }
+            return focusLineIdForFile(path);
         },
     };
 }

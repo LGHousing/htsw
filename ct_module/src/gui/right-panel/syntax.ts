@@ -26,6 +26,7 @@ const COLOR_STRING = ACCENT_SUCCESS;
 const COLOR_VAR_REF = ACCENT_TEAL;
 const COLOR_OPERATOR = COLOR_TEXT_DIM;
 const COLOR_PUNCT = COLOR_TEXT_DIM;
+const COLOR_COMMENT = 0xff707070 | 0;
 
 export type SyntaxToken = { text: string; color: number };
 
@@ -152,6 +153,15 @@ export function tokenizeHtsl(line: string): SyntaxToken[] {
 
     while (i < n) {
         const c = line.charAt(i);
+
+        // Line comment — consume to end of line. Matches the htsw lexer
+        // (`//` introduces a line comment, `///` a doc comment; either
+        // way the rest of the line is comment-colored in the view).
+        if (c === "/" && i + 1 < n && line.charAt(i + 1) === "/") {
+            tokens.push({ text: line.substring(i), color: COLOR_COMMENT });
+            i = n;
+            continue;
+        }
 
         // Whitespace run.
         if (c === " " || c === "\t") {

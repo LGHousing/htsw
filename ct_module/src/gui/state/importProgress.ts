@@ -61,6 +61,12 @@ export function getCurrentPhaseEtaSeconds(): number | null {
     return etaCalc === null ? null : etaCalc.getPhase(importProgress, importStartedAt);
 }
 
+export function getImportEtcMs(): number | null {
+    const secs = getImportEtaSeconds();
+    if (secs === null) return null;
+    return Date.now() + Math.max(0, Math.round(secs * 1000));
+}
+
 export function getImportMsPerUnit(): number {
     return currentMsPerUnit();
 }
@@ -98,6 +104,7 @@ export function createImportProgress(init: Partial<ImportProgress>): ImportProgr
         completedUnits: init.completedUnits ?? 0,
         totalUnits: init.totalUnits ?? 1,
         active: init.active ?? null,
+        parked: init.parked ?? {},
         rows: init.rows ?? [],
     });
 }
@@ -130,20 +137,17 @@ export function setImportProgress(p: ImportProgress | null): void {
  * "done" → full green; "failed" → full red; "current" → phase-segmented
  * showing how far through each phase we are within this importable.
  */
+type QueuePhase = "reading" | "hydrating" | "applying";
+
 export type QueueItemRunState =
     | { kind: "queued" }
     | { kind: "done" }
     | { kind: "failed" }
     | {
           kind: "current";
-          readFraction: number;
-          hydrateFraction: number;
-          applyFraction: number;
-          /** Relative widths of the three phases (sum = 1). Setup work is
-           *  folded into the reading phase. */
-          readWidth: number;
-          hydrateWidth: number;
-          applyWidth: number;
+          phase: QueuePhase;
+          /** 0..1 within the current phase. Resets to 0 when the phase advances. */
+          phaseFraction: number;
       };
 
 export function getQueueItemRunState(item: QueueItem): QueueItemRunState {
@@ -176,23 +180,27 @@ export function getQueueItemRunState(item: QueueItem): QueueItemRunState {
     if (row.status === "queued") return { kind: "queued" };
     const current = importProgress.active;
     if (current === null || current.key !== key) {
+        const parked = importProgress.parked[key];
+        if (parked !== undefined) {
+            return runStateFromActive(parked);
+        }
         return {
             kind: "current",
-            readFraction: 0,
-            hydrateFraction: 0,
-            applyFraction: 0,
-            readWidth: 0.34,
-            hydrateWidth: 0.33,
-            applyWidth: 0.33,
+            phase: "reading",
+            phaseFraction: 0,
         };
     }
-    const units = current.phaseUnits;
-    const total = Math.max(
-        1,
-        units.setup + units.reading + units.hydrating + units.applying
-    );
+    return runStateFromActive(current);
+}
+
+function runStateFromActive(active: {
+    phase: "setup" | "reading" | "hydrating" | "applying" | "done";
+    completedUnits: number;
+    phaseUnits: { setup: number; reading: number; hydrating: number; applying: number };
+}): Extract<QueueItemRunState, { kind: "current" }> {
+    const units = active.phaseUnits;
     const readingUnits = units.setup + units.reading;
-    const within = Math.max(0, current.completedUnits);
+    const within = Math.max(0, active.completedUnits);
     const readingDone = Math.min(readingUnits, within);
     const hydrateDone = Math.min(
         units.hydrating,
@@ -202,14 +210,22 @@ export function getQueueItemRunState(item: QueueItem): QueueItemRunState {
         units.applying,
         Math.max(0, within - readingUnits - units.hydrating)
     );
+    let phase: QueuePhase;
+    let phaseFraction: number;
+    if (active.phase === "applying") {
+        phase = "applying";
+        phaseFraction = units.applying > 0 ? applyDone / units.applying : 0;
+    } else if (active.phase === "hydrating") {
+        phase = "hydrating";
+        phaseFraction = units.hydrating > 0 ? hydrateDone / units.hydrating : 1;
+    } else {
+        phase = "reading";
+        phaseFraction = readingUnits > 0 ? readingDone / readingUnits : 1;
+    }
     return {
         kind: "current",
-        readFraction: readingUnits > 0 ? readingDone / readingUnits : 1,
-        hydrateFraction: units.hydrating > 0 ? hydrateDone / units.hydrating : 1,
-        applyFraction: units.applying > 0 ? applyDone / units.applying : 0,
-        readWidth: readingUnits / total,
-        hydrateWidth: units.hydrating / total,
-        applyWidth: units.applying / total,
+        phase,
+        phaseFraction,
     };
 }
 

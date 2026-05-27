@@ -5,6 +5,7 @@ import {
     LaidOut,
     Rect,
     layoutElement,
+    markUserScroll,
     pointInRect,
     getScrollState,
     SCROLLBAR_WIDTH,
@@ -408,6 +409,7 @@ export function updateScrollbarDrag(mouseY: number): void {
         0,
         Math.min(maxOffset, dragStartOffset + Math.floor(dy * (maxOffset / trackPx)))
     );
+    if (dy !== 0) markUserScroll(dragScrollId);
 }
 
 export function endScrollbarDrag(): void {
@@ -431,6 +433,7 @@ export function dispatchWheel(
             0,
             Math.min(s.contentHeight - s.viewportRect.h, s.offset - delta * 20)
         );
+        markUserScroll(item.element.id);
         return true;
     }
     return false;

@@ -22,7 +22,44 @@ import { openMenuEditor } from "./shared";
 
 const MENU_SIZE_OPTIONS = ["1", "2", "3", "4", "5", "6"];
 
-export async function importImportableMenu(
+export type MenuImportPlan = {
+    kind: "MENU";
+    importable: ImportableMenu;
+    trustPlan?: ImportableTrustPlan;
+};
+
+/**
+ * MENU stays single-pass: per-slot item-selection mutates the menu state,
+ * so we can't pre-read action lists for slots whose items aren't yet set.
+ * Preread records a minimal plan; all real work happens in
+ * `applyImportableMenuPlan`.
+ */
+export async function prereadImportableMenu(
+    _ctx: TaskContext,
+    importable: ImportableMenu,
+    _itemRegistry: ItemRegistry,
+    trustPlan?: ImportableTrustPlan,
+    _events?: ImportEventHandler
+): Promise<MenuImportPlan> {
+    return { kind: "MENU", importable, trustPlan };
+}
+
+export async function applyImportableMenuPlan(
+    ctx: TaskContext,
+    plan: MenuImportPlan,
+    itemRegistry: ItemRegistry,
+    events?: ImportEventHandler
+): Promise<void> {
+    await importImportableMenu(
+        ctx,
+        plan.importable,
+        itemRegistry,
+        plan.trustPlan,
+        events
+    );
+}
+
+async function importImportableMenu(
     ctx: TaskContext,
     importable: ImportableMenu,
     itemRegistry: ItemRegistry,

@@ -181,7 +181,7 @@ export const ACTION_MAPPINGS = {
             Sound: { prop: "sound", kind: "select" },
             Volume: { prop: "volume", kind: "value", default: 0.7 },
             Pitch: { prop: "pitch", kind: "value", default: 1.0 },
-            Location: { prop: "location", kind: "location" },
+            Location: { prop: "location", kind: "location", default: "Not Set" },
         },
     },
 

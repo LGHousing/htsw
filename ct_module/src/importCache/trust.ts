@@ -46,15 +46,22 @@ export function buildTrustPlan(
 
     for (const importable of importables) {
         const identity = importableIdentity(importable);
-        const sourceHash = importableHash(importable);
         const entry = readImportableCache(housingUuid, importable.type, identity);
-        const desiredLists = listHashes(importable);
         const trustedListPaths = new Set<TrustedListPath>();
 
+        let sourceHash: string | null = null;
+        let wholeImportableTrusted = false;
+
         if (trustMode && entry !== null) {
-            for (const path of Object.keys(desiredLists)) {
-                if (sameHashList(entry.lists[path], desiredLists[path])) {
-                    trustedListPaths.add(path);
+            sourceHash = importableHash(importable);
+            wholeImportableTrusted = entry.hash === sourceHash;
+
+            if (!wholeImportableTrusted) {
+                const desiredLists = listHashes(importable);
+                for (const path of Object.keys(desiredLists)) {
+                    if (sameHashList(entry.lists[path], desiredLists[path])) {
+                        trustedListPaths.add(path);
+                    }
                 }
             }
         }
@@ -63,10 +70,9 @@ export function buildTrustPlan(
             importable,
             identity,
             entry,
-            sourceHash,
+            sourceHash: sourceHash ?? "",
             cacheHash: entry?.hash ?? null,
-            wholeImportableTrusted:
-                trustMode && entry !== null && entry.hash === sourceHash,
+            wholeImportableTrusted,
             trustedListPaths,
         });
     }

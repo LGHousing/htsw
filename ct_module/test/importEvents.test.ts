@@ -34,7 +34,6 @@ describe("applyActionListDiff — top-level-only terminal events", () => {
             undefined,
             undefined,
             undefined,
-            undefined,
             handler
         );
         const kinds = handler.events.map((e) => e.kind);
@@ -48,7 +47,6 @@ describe("applyActionListDiff — top-level-only terminal events", () => {
             [],
             [],
             emptyDiff,
-            undefined,
             undefined,
             "5.ifActions",
             undefined,

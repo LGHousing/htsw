@@ -16,17 +16,9 @@ export function setActiveRightTab(id: RightPanelTabId): void {
     activeRightTab = id;
 }
 
-/**
- * Drive the right-panel tab in response to import-lifecycle transitions.
- * Flip to Import on start so the user sees live progress; flip back to View
- * on end (but only if we're still on Import — preserves explicit navigation
- * away mid-import).
- */
 export function onImportRunningChanged(wasRunning: boolean, isRunning: boolean): void {
     if (!wasRunning && isRunning) {
         setActiveRightTab("import");
-    } else if (wasRunning && !isRunning && activeRightTab === "import") {
-        setActiveRightTab("view");
     }
 }
 

@@ -48,7 +48,8 @@ function parseBooleanText(value: string): boolean | undefined {
 }
 
 export function looksTruncated(value: string): boolean {
-    return removedFormatting(value).trim().endsWith("...");
+    const trimmed = removedFormatting(value).trim();
+    return trimmed.endsWith("...") || trimmed.endsWith("…");
 }
 
 export function isTruncatableKind(kind: UiFieldKind): boolean {
@@ -72,18 +73,6 @@ export function normalizeLoreValueFormatting(value: string): string {
     }
 
     return normalized.slice(index);
-}
-
-export function stripLeadingFormattingCodes(value: string): string {
-    let index = 0;
-    while (
-        index + 1 < value.length &&
-        value.charAt(index) === "&" &&
-        /[0-9a-fk-or]/i.test(value.charAt(index + 1))
-    ) {
-        index += 2;
-    }
-    return value.slice(index);
 }
 
 const HOUSING_EDITOR_VALUE_PREFIX = /^(?:&5&o&7&a|&5&o|&7&a)/i;

@@ -10,13 +10,13 @@ import { joinTokenText, wrapTokensIntoVisualRows } from "./wrap";
 export const LINE_H = 10;
 export const FOCUS_GUTTER_W = 8;
 export const STATE_GUTTER_W = 8;
-export const LINE_NUM_MIN_W = 16;
-export const DETAIL_COLUMN_W = 180;
-export const DETAIL_TRUNCATE_CHARS = 41;
+const LINE_NUM_MIN_W = 16;
+const DETAIL_COLUMN_W = 180;
+const DETAIL_TRUNCATE_CHARS = 41;
 
-export const STATE_GLYPH: { [k in DiffState]: string } = {
+const STATE_GLYPH: { [k in DiffState]: string } = {
     unknown: " ",
-    match: "✓",
+    match: " ",
     edit: "~",
     delete: "-",
     add: "+",
@@ -44,25 +44,7 @@ export function gutterWidthForLines(maxLine: number): number {
     return Math.max(LINE_NUM_MIN_W, digitsOf(maxLine) * 6 + 4);
 }
 
-export function lerpColorToward(target: number, base: number, t: number): number {
-    if (t >= 1) return target;
-    if (t <= 0) return base;
-    const ta = (target >>> 24) & 0xff;
-    const tr = (target >>> 16) & 0xff;
-    const tg = (target >>> 8) & 0xff;
-    const tb = target & 0xff;
-    const ba = (base >>> 24) & 0xff;
-    const br = (base >>> 16) & 0xff;
-    const bg = (base >>> 8) & 0xff;
-    const bb = base & 0xff;
-    const a = Math.round(ba + (ta - ba) * t);
-    const r = Math.round(br + (tr - br) * t);
-    const g = Math.round(bg + (tg - bg) * t);
-    const b = Math.round(bb + (tb - bb) * t);
-    return ((a << 24) | (r << 16) | (g << 8) | b) | 0;
-}
-
-export function applyAlpha(color: number, factor: number): number {
+function applyAlpha(color: number, factor: number): number {
     if (factor >= 1) return color;
     if (factor <= 0) return color & 0x00ffffff;
     const a = (color >>> 24) & 0xff;

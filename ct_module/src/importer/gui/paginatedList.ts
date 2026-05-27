@@ -205,7 +205,11 @@ export async function readPaginatedList<T extends { index: number }>(
     ctx: TaskContext,
     config: PaginatedListConfig,
     readPage: () => Promise<T[]>,
-    onPageRead?: (state: { totalEntries: number; pagesRead: number }) => void
+    onPageRead?: (state: {
+        totalEntries: number;
+        pagesRead: number;
+        entries: readonly T[];
+    }) => void
 ): Promise<T[]> {
     await goToPaginatedListPage(ctx, 1, config);
     const entries: T[] = [];
@@ -218,7 +222,7 @@ export async function readPaginatedList<T extends { index: number }>(
                 entries.push(entry);
             }
             pagesRead++;
-            onPageRead?.({ totalEntries: entries.length, pagesRead });
+            onPageRead?.({ totalEntries: entries.length, pagesRead, entries });
             const stateBefore = getCurrentPaginatedListPageState(ctx, config);
             if (!stateBefore.hasNext) break;
 

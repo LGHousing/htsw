@@ -371,7 +371,7 @@ export async function enterValue(ctx: TaskContext, value: string): Promise<"CHAT
             await ctx.sendMessage(value);
             return "CHAT";
         case "ANVIL":
-            await waitForMenu(ctx);
+            await ctx.waitFor("tick");
             setAnvilItemName(value);
             acceptNewAnvilItem();
             return "ANVIL";

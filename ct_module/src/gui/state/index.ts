@@ -51,6 +51,14 @@ export function setParsedResult(r: ParseResult<Importable[]> | null): void {
     parsedResult = r;
 }
 
+let parseInProgress = false;
+export function isParseInProgress(): boolean {
+    return parseInProgress;
+}
+export function setParseInProgress(v: boolean): void {
+    parseInProgress = v;
+}
+
 export function isImportableChecked(key: string): boolean {
     return checkedImportableKeys.has(key);
 }
@@ -104,4 +112,8 @@ export function getKnowledgeRows(): CacheStatusRow[] {
 }
 export function setKnowledgeRows(rows: CacheStatusRow[]): void {
     knowledgeRows = rows;
+}
+export function appendKnowledgeRows(rows: CacheStatusRow[]): void {
+    if (rows.length === 0) return;
+    knowledgeRows = knowledgeRows.concat(rows);
 }

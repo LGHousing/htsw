@@ -126,7 +126,7 @@ function canonicalizeFieldValue(
             if (Number.isFinite(num)) return num;
         }
     }
-    if (kind === "select" || kind === "cycle") {
+    if (kind === "select" || kind === "cycle" || kind === "location") {
         if (typeof value === "string") return { type: value };
     }
     return value;

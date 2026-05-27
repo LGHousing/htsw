@@ -24,6 +24,7 @@ import {
     orderImportablesForImportSession,
 } from "../../../importables/importSession";
 import { exportImportable } from "../../../importables/exports";
+import { exportAllFunctions } from "../../../importables/functions/exportAll";
 import {
     captureFromHousing,
     type CaptureType,
@@ -46,6 +47,7 @@ import { importProgressKey } from "../../../importer/progress/keys";
 import { initialReducerState, reduce } from "../../../importer/progress/reducer";
 import { traceProgressEvent } from "../../../importer/progress/trace";
 import { invalidateKnowledgeOverlayForImportable } from "../../state/knowledgeOverlay";
+import { showToast } from "../../toast";
 import { setImportRunning } from "../../../importer/runtimeState";
 import { gmcOnImportStart, playImportSuccessSound } from "../../../importer/sideEffects";
 import { resetStepGate } from "../../../importer/stepGate";
@@ -177,6 +179,15 @@ function createImportEventHandler(args: {
                     invalidateKnowledgeOverlayForImportable(imp, args.parsed);
                 }
             }
+        },
+        importableReactivated: (e) => {
+            // Pass-2 (apply) re-activates an importable previously parked
+            // after pass-1 pre-read. Re-bind the preview to this row's
+            // source file so the apply-phase diff overlay lands in the
+            // right pane.
+            const imp = importablesByKey.get(e.key) ?? null;
+            activeViewPath =
+                imp === null ? null : (importableSourcePath(imp, args.parsed) ?? null);
         },
         sessionFinished: () => {
             activeViewPath = null;
@@ -383,6 +394,9 @@ export function startImport(explicit?: readonly QueueItem[]): void {
     TaskManager.run(async (ctx) => {
         const startedAt = Date.now();
         let importSucceeded = false;
+        let totalImported = 0;
+        let totalSkipped = 0;
+        let totalFailed = 0;
         try {
             ctx.displayMessage(
                 `&7[import] starting ${total} importable${total === 1 ? "" : "s"} ` +
@@ -395,9 +409,6 @@ export function startImport(explicit?: readonly QueueItem[]): void {
                 housingUuid = await getCurrentHousingUuid(ctx);
                 setHousingUuid(housingUuid);
             }
-            let totalImported = 0;
-            let totalSkipped = 0;
-            let totalFailed = 0;
             for (const batch of batches) {
                 const events = createImportEventHandler({
                     parsed: batch.parsed,
@@ -408,6 +419,7 @@ export function startImport(explicit?: readonly QueueItem[]): void {
                     trustMode,
                     housingUuid,
                     sourcePath: batch.sourcePath,
+                    parsed: batch.parsed,
                     events,
                 });
                 const c = events.counts();
@@ -419,17 +431,27 @@ export function startImport(explicit?: readonly QueueItem[]): void {
             ctx.displayMessage(
                 `&7[import] done · imported ${totalImported}, skipped ${totalSkipped}, failed ${totalFailed}, ${elapsed}s`
             );
-            // Only clear the queue when this run came from the queue. An
-            // ad-hoc "Import selected" run leaves the queue alone since it
-            // was never the source of the work.
-            if (explicit === undefined) clearQueue();
             importSucceeded = totalFailed === 0;
         } finally {
-            setImportProgress(null);
             setActiveImportPath(null);
             refreshKnowledgeRows();
             setImportRunning(false);
-            if (importSucceeded) playImportSuccessSound();
+            if (importSucceeded) {
+                playImportSuccessSound();
+                showToast(
+                    `Import complete · ${totalImported} imported, ${totalSkipped} skipped`,
+                    0xff5cb85c
+                );
+            } else {
+                showToast(
+                    `Import finished with ${totalFailed} failed`,
+                    0xffe85c5c
+                );
+            }
+            setTimeout(() => {
+                setImportProgress(null);
+                if (explicit === undefined) clearQueue();
+            }, 5000);
         }
     }).catch((err: unknown) => {
         setImportRunning(false);
@@ -437,7 +459,29 @@ export function startImport(explicit?: readonly QueueItem[]): void {
     });
 }
 
-// ── Capture flow (unchanged from prior version) ──────────────────────────
+// ── Batch export flow ─────────────────────────────────────────────────
+
+export function startExportAllFunctions(): void {
+    closeAllPopovers();
+    const importJsonPath = getExportImportJsonPath();
+    if (importJsonPath.trim() === "") {
+        ChatLib.chat("&c[htsw] No import.json loaded — load one first");
+        return;
+    }
+    const dir = importJsonDir(importJsonPath);
+    TaskManager.run(async (ctx) => {
+        await exportAllFunctions(ctx, { importJsonPath, rootDir: dir });
+    }).catch((err: unknown) => {
+        ChatLib.chat(`&c[htsw] Export all functions failed: ${err}`);
+    });
+}
+
+export function stopAllTasks(): void {
+    TaskManager.cancelAll();
+    ChatLib.chat("&c[htsw] cancelling running task...");
+}
+
+// ── Capture flow ──────────────────────────────────────────────────────
 
 function importJsonDir(path: string): string {
     const norm = path.split("\\").join("/");
@@ -468,6 +512,7 @@ export function startCaptureExport(type: CaptureType): void {
                 importJsonPath,
                 htslPath: `${dir}/${filename}`,
                 htslReference: filename,
+                rootDir: dir,
             });
         } else {
             await exportImportable(ctx, {

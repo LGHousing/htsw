@@ -109,6 +109,17 @@ export type ImportEvent =
           key: string;
           status: "imported" | "skipped" | "failed";
       }
+    | {
+          /**
+           * Re-activates an already-started importable as the current
+           * focus without resetting its progress. Used by the two-pass
+           * orchestrator to mark a row "current again" for its apply
+           * pass after pass-1 advanced past it.
+           */
+          kind: "importableReactivated";
+          key: string;
+          rowIndex: number;
+      }
     | { kind: "sessionFinished" }
     | { kind: "progress"; scope: ProgressScope; progress: ProgressPayload }
     | { kind: "setupStep"; label: string; completed: number; total: number }

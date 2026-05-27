@@ -103,7 +103,46 @@ async function waitForHotbarZeroMatch(ctx: TaskContext, stack: any): Promise<voi
     }
 }
 
-export async function importImportableItem(
+export type ItemImportPlan = {
+    kind: "ITEM";
+    importable: ImportableItem;
+    trustPlan?: ImportableTrustPlan;
+    housingUuid?: string;
+};
+
+/**
+ * ITEM stays single-pass: item injection, /edit, and SNBT capture form a
+ * tightly coupled sequence that doesn't split cleanly. Preread records a
+ * minimal plan; all real work happens in `applyImportableItemPlan`.
+ */
+export async function prereadImportableItem(
+    _ctx: TaskContext,
+    importable: ImportableItem,
+    _itemRegistry: ItemRegistry,
+    trustPlan?: ImportableTrustPlan,
+    cachedUuid?: string,
+    _events?: ImportEventHandler
+): Promise<ItemImportPlan> {
+    return { kind: "ITEM", importable, trustPlan, housingUuid: cachedUuid };
+}
+
+export async function applyImportableItemPlan(
+    ctx: TaskContext,
+    plan: ItemImportPlan,
+    itemRegistry: ItemRegistry,
+    events?: ImportEventHandler
+): Promise<void> {
+    await importImportableItem(
+        ctx,
+        plan.importable,
+        itemRegistry,
+        plan.trustPlan,
+        plan.housingUuid,
+        events
+    );
+}
+
+async function importImportableItem(
     ctx: TaskContext,
     importable: ImportableItem,
     itemRegistry: ItemRegistry,

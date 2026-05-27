@@ -28,9 +28,11 @@ import {
     COLOR_TAB_ACTIVE,
     COLOR_TAB_ACTIVE_HOVER,
     COLOR_TAB_HOVER,
+    GLYPH_DOT,
     SIZE_ROW_H,
     SIZE_TAB_H,
 } from "../lib/theme";
+import { statusForFile, STATUS_COLOR, STATUS_LABEL } from "../knowledge-status";
 import { FileSystemFileLoader, StringFileLoader } from "../../utils/files";
 import * as htsw from "htsw";
 import { viewBody } from "./view-body";
@@ -94,18 +96,17 @@ function tabReorderActions(path: string): MenuAction[] {
     return composeFileMenu(specific, path);
 }
 
+const TAB_DOT_W = 8;
+
 function tabButton(tab: Tab): Element {
     const isActive = getActivePath() === tab.path;
     const labelText = tab.confirmed ? stem(tab.path) : `§o${stem(tab.path)}`;
     const tabBg = isActive ? TAB_BG_ACTIVE : TAB_BG;
     const tabHoverBg = isActive ? TAB_BG_ACTIVE_HOVER : TAB_BG_HOVER;
-    // Width sized to: label width + horizontal padding + close-glyph cell +
-    // a tiny safety buffer (italic chars and `Renderer.getStringWidth`
-    // occasionally undercount by a pixel, which would otherwise shave the
-    // last char off a tightly-fitted label). Content-sized so the X sits
-    // next to the label instead of floating to the far end of the row.
+    const fileStatus = statusForFile(tab.path);
+    const hasDot = fileStatus !== null;
     const labelW = Renderer.getStringWidth(labelText);
-    const tabW = labelW + TAB_LABEL_PAD_X * 2 + TAB_CLOSE_W + TAB_W_BUFFER;
+    const tabW = (hasDot ? TAB_DOT_W : 0) + labelW + TAB_LABEL_PAD_X * 2 + TAB_CLOSE_W + TAB_W_BUFFER;
     return Container({
         style: {
             direction: "row",
@@ -133,10 +134,17 @@ function tabButton(tab: Tab): Element {
                     align: "center",
                     padding: { side: "x", value: TAB_LABEL_PAD_X },
                 },
-                children: [Text({ text: labelText })],
+                children: [
+                    hasDot && Text({
+                        text: GLYPH_DOT,
+                        color: STATUS_COLOR[fileStatus],
+                        tooltip: STATUS_LABEL[fileStatus],
+                        tooltipColor: STATUS_COLOR[fileStatus],
+                        style: { width: { kind: "px", value: TAB_DOT_W } },
+                    }),
+                    Text({ text: labelText }),
+                ],
             }),
-            // Close cell — direction:col + align/justify:center centers the
-            // icon both ways inside the close cell.
             Container({
                 style: {
                     direction: "col",

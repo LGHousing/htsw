@@ -1,4 +1,5 @@
 import * as htsw from "htsw";
+import type { Condition } from "htsw/types";
 
 import TaskContext from "../tasks/context";
 import { canonicalSlug } from "../exporter/paths";
@@ -11,6 +12,13 @@ import {
     sendCreativeInventoryAction,
     waitForAnySetSlot,
 } from "./gui/packets";
+import { CONDITION_LIST_CONFIG } from "./conditions/listConfig";
+import {
+    getPaginatedListPageForIndex,
+    getPaginatedListSlotAtIndex,
+    goToPaginatedListPage,
+} from "./gui/paginatedList";
+import type { ObservedConditionSlot } from "./types";
 
 const SCRATCH_PACKET_SLOT = 26;
 const INVENTORY_SIZE = 36;
@@ -228,6 +236,79 @@ export async function captureItemFromOpenEditorField(
     }
 
     return registered;
+}
+
+const CONDITION_ITEM_FIELD_LABEL = "Item";
+
+const ITEM_BEARING_CONDITION_TYPES: readonly Condition["type"][] = [
+    "REQUIRE_ITEM",
+    "IS_ITEM",
+    "BLOCK_TYPE",
+];
+
+function isItemBearingCondition(type: Condition["type"]): boolean {
+    for (let i = 0; i < ITEM_BEARING_CONDITION_TYPES.length; i++) {
+        if (ITEM_BEARING_CONDITION_TYPES[i] === type) return true;
+    }
+    return false;
+}
+
+export async function captureItemsForObservedConditions(
+    ctx: TaskContext,
+    observed: readonly ObservedConditionSlot[],
+    registry: ItemCaptureRegistry
+): Promise<void> {
+    const listLength = observed.length;
+    for (let i = 0; i < observed.length; i++) {
+        const entry = observed[i];
+        const condition = entry.condition;
+        if (condition === null) continue;
+        if (!isItemBearingCondition(condition.type)) continue;
+
+        const displayNameHint =
+            typeof (condition as Record<string, unknown>).itemName === "string"
+                ? ((condition as Record<string, unknown>).itemName as string)
+                : condition.type;
+
+        try {
+            await goToPaginatedListPage(
+                ctx,
+                getPaginatedListPageForIndex(entry.index),
+                CONDITION_LIST_CONFIG
+            );
+            const slot = await getPaginatedListSlotAtIndex(
+                ctx,
+                entry.index,
+                listLength,
+                CONDITION_LIST_CONFIG
+            );
+            slot.click();
+            await timedWaitForMenu(ctx, "menuClickWait");
+
+            try {
+                const captured = await captureItemFromOpenEditorField(
+                    ctx,
+                    CONDITION_ITEM_FIELD_LABEL,
+                    registry,
+                    displayNameHint
+                );
+                if (captured !== null) {
+                    (condition as Record<string, unknown>).itemName = captured;
+                }
+            } finally {
+                await clickGoBack(ctx);
+            }
+        } catch (error) {
+            ctx.displayMessage(
+                `&7[item-capture] &cFailed to capture item for ${condition.type} at index ${entry.index}: ${error}`
+            );
+            if (ctx.tryGetMenuItemSlot("Go Back") !== null) {
+                await clickGoBack(ctx);
+            }
+        }
+    }
+
+    await goToPaginatedListPage(ctx, 1, CONDITION_LIST_CONFIG);
 }
 
 export async function restoreInventoryToSnapshot(
