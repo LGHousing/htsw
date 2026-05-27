@@ -1,6 +1,7 @@
 import type { CacheState, CacheStatusRow } from "../importCache/status";
 import { importableIdentity } from "../importCache/paths";
 import { getKnowledgeRows } from "./state";
+import { findFileTarget } from "./state/knowledgeOverlay";
 import type { Importable } from "htsw/types";
 
 export const STATUS_COLOR: { [k in CacheState]: number } = {
@@ -25,4 +26,10 @@ export function statusForImportable(importable: Importable): CacheState {
         }
     }
     return "unknown";
+}
+
+export function statusForFile(filePath: string): CacheState | null {
+    const target = findFileTarget(filePath);
+    if (target === null) return null;
+    return statusForImportable(target.importable);
 }
