@@ -48,6 +48,7 @@ import { getCurrentHousingUuid } from "../importCache/housingId";
 import { TaskManager } from "../tasks/manager";
 
 import { getChatKeyCode } from "./keybinds";
+import { renderToast } from "./toast";
 import {
     dispatchWheel,
     isDraggingScrollbar,
@@ -284,9 +285,10 @@ export function initHtswGui(): void {
         if (screen !== null && screen !== undefined) return;
         paintImportShade(0, 0, frame.getRoot(), "renderGameOverlayPost");
     });
-    register("postGuiRender", (mouseX: number, mouseY: number) =>
-        paintImportShade(mouseX, mouseY, frame.getRoot(), "postGuiRender")
-    );
+    register("postGuiRender", (mouseX: number, mouseY: number) => {
+        paintImportShade(mouseX, mouseY, frame.getRoot(), "postGuiRender");
+        renderToast();
+    });
 
     // Suppress HUD text elements during the import gap. Forge 1.8.9
     // renders renderChat, renderPlayerList, renderScoreboard, etc. inside
@@ -600,12 +602,23 @@ export function initHtswGui(): void {
     // default path doesn't exist by walking ./htsw/imports for any
     // import.json. Failures are stored in state.parseError and surfaced
     // inline by the LeftRail empty-state.
+    //
+    // Path-discovery is cheap; the parse can freeze for ~1s on large
+    // import.json projects (hundreds of .htsl files). Defer the parse
+    // to the next tick so the empty GUI paints first — the user sees
+    // the panel immediately and the parse-driven population follows.
     try {
         autoDiscoverImportJson();
-        reparseImportJson();
     } catch (_e) {
-        // ignore — state.parseError will be set
+        // ignore
     }
+    setTimeout(() => {
+        try {
+            reparseImportJson();
+        } catch (_e) {
+            // ignore — state.parseError will be set
+        }
+    }, 0);
 }
 
 function findInput(id: string): Extract<Element, { kind: "input" }> | null {
