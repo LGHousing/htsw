@@ -14,6 +14,7 @@ import {
     setParsedResult,
 } from "./index";
 import { addRecent, getRecents } from "./recents";
+import { updateParseCache } from "./parses";
 import { allReferencedPaths } from "./importablePaths";
 import {
     buildLiteParseResult,
@@ -173,6 +174,17 @@ export function reparseNow(): void {
     runReparseDeferred();
 }
 
+/**
+ * Mark the given file as already in sync with what reparse would observe.
+ * Use this when something else (e.g. an in-place metadata edit) has
+ * already updated both the disk file AND the in-memory parsed state, so
+ * the mtime watcher shouldn't trigger a redundant reparse on next poll.
+ */
+export function markPathInSync(path: string): void {
+    if (watchedMtimes[path] === undefined) return;
+    watchedMtimes[path] = getMtimeMs(path);
+}
+
 function watch(path: string | undefined): void {
     if (path === undefined) return;
     if (watchedMtimes[path] !== undefined) return;
@@ -209,6 +221,7 @@ export function reparseImportJson(): void {
         const t2 = Date.now();
         const lite = buildLiteParseResult(snapshot);
         setParsedResult(lite);
+        updateParseCache(path, lite);
         addRecent(path);
         const tEnd = Date.now();
         lastParseTiming = {
@@ -237,13 +250,9 @@ export function reparseImportJson(): void {
         const result = parseImportablesResult(sm, path);
         const tParsed = Date.now();
         setParsedResult(result);
+        updateParseCache(path, result);
         addRecent(path);
         const tm = result.timingMs;
-        ChatLib.chat(
-            `&7[parse] ${tParsed - t0}ms (snap ${tPreParse - t0}ms, parse ${tParsed - tPreParse}ms` +
-            (tm ? `, read ${tm.fileReadMs ?? "?"}ms, lex ${tm.lexParseMs ?? "?"}ms, hits ${tm.cacheHits ?? 0}/${tm.fileCount ?? 0}` : "") +
-            `)`
-        );
         lastParseTiming = {
             path,
             snapshotLoadMs: t1 - t0,

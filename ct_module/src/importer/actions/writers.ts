@@ -37,7 +37,6 @@ import type {
 
 import TaskContext from "../../tasks/context";
 import {
-    VAR_HOLDER_OPTIONS,
     clickGoBack,
     findMenuOptionByLore,
     openSubmenu,
@@ -57,7 +56,7 @@ import {
     normalizeActionCompare,
     normalizeConditionCompare,
 } from "../fields/compare";
-import { getActionFieldLabel } from "../fields/actionMappings";
+import { getActionFieldCycleOptions, getActionFieldLabel } from "../fields/actionMappings";
 import { normalizeSoundKey } from "../fields/sounds";
 import type { Observed } from "../types";
 import { setItemValue } from "../items/items";
@@ -396,7 +395,7 @@ export async function writeChangeVar(ctx: TaskContext, action: ActionChangeVar):
         await setCycleValue(
             ctx,
             getActionFieldLabel("CHANGE_VAR", "holder"),
-            VAR_HOLDER_OPTIONS,
+            getActionFieldCycleOptions("CHANGE_VAR", "holder"),
             action.holder.type
         );
         if (action.holder.type === "Team" && action.holder.team !== undefined) {
@@ -513,9 +512,10 @@ export async function writeSetGamemode(
     ctx: TaskContext,
     action: ActionSetGamemode
 ): Promise<void> {
-    await setSelectValue(
+    await setCycleValue(
         ctx,
         getActionFieldLabel("SET_GAMEMODE", "gamemode"),
+        getActionFieldCycleOptions("SET_GAMEMODE", "gamemode"),
         action.gamemode
     );
 }

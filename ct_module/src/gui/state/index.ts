@@ -4,6 +4,8 @@ import type { ParseResult } from "htsw";
 import type { Importable } from "htsw/types";
 
 import type { CacheStatusRow } from "../../importCache/status";
+import { importableHash } from "../../importCache/hash";
+import { importableIdentity } from "../../importCache/paths";
 import { normalizeHtswPath } from "../lib/pathDisplay";
 import { canonicalPath } from "./parses";
 
@@ -159,4 +161,24 @@ export function setKnowledgeRows(rows: CacheStatusRow[]): void {
 export function appendKnowledgeRows(rows: CacheStatusRow[]): void {
     if (rows.length === 0) return;
     knowledgeRows = knowledgeRows.concat(rows);
+}
+
+/**
+ * Recompute the hash + state for the knowledge row matching this
+ * importable. Use after an in-place mutation so the diff dots stay
+ * accurate without rebuilding every row.
+ */
+export function refreshKnowledgeRowFor(imp: Importable): void {
+    const id = importableIdentity(imp);
+    for (let i = 0; i < knowledgeRows.length; i++) {
+        const row = knowledgeRows[i];
+        if (row.identity !== id || row.importable.type !== imp.type) continue;
+        const newHash = importableHash(imp);
+        row.importable = imp;
+        row.hash = newHash;
+        row.state = row.entry === null
+            ? "unknown"
+            : row.entry.hash === newHash ? "current" : "modified";
+        return;
+    }
 }

@@ -25,7 +25,7 @@ export const CONDITION_MAPPINGS = {
     COMPARE_VAR: {
         displayName: "Variable Requirement",
         loreFields: {
-            Holder: { prop: "holder", kind: "cycle" },
+            Holder: { prop: "holder", kind: "cycle", options: ["Player", "Global", "Team"] },
             Variable: { prop: "var", kind: "value" },
             Comparator: { prop: "op", kind: "select" },
             "Compare Value": { prop: "amount", kind: "value" },
@@ -51,13 +51,13 @@ export const CONDITION_MAPPINGS = {
         displayName: "Has Item",
         loreFields: {
             Item: { prop: "itemName", kind: "item" },
-            "What To Check": { prop: "whatToCheck", kind: "cycle", default: "Metadata" },
+            "What To Check": { prop: "whatToCheck", kind: "cycle", default: "Metadata", options: ["Item Type", "Metadata"] },
             "Where To Check": {
                 prop: "whereToCheck",
                 kind: "select",
                 default: "Anywhere",
             },
-            "Required Amount": { prop: "amount", kind: "cycle", default: "Any Amount" },
+            "Required Amount": { prop: "amount", kind: "cycle", default: "Any Amount", options: ["Any Amount", "Equal or Greater Amount"] },
         },
     },
 
@@ -110,7 +110,7 @@ export const CONDITION_MAPPINGS = {
     REQUIRE_GAMEMODE: {
         displayName: "Required Gamemode",
         loreFields: {
-            "Required Gamemode": { prop: "gamemode", kind: "cycle" },
+            "Required Gamemode": { prop: "gamemode", kind: "cycle", options: ["Adventure", "Survival", "Creative"] },
         },
     },
 
@@ -145,7 +145,7 @@ export const CONDITION_MAPPINGS = {
     FISHING_ENVIRONMENT: {
         displayName: "Fishing Environment",
         loreFields: {
-            Environment: { prop: "environment", kind: "cycle" },
+            Environment: { prop: "environment", kind: "cycle", options: ["Water", "Lava"] },
         },
     },
 
@@ -200,14 +200,14 @@ export function getConditionFieldKind(
 function getConditionFieldSpec(
     type: string,
     prop: string
-): { prop: string; kind: UiFieldKind; default?: unknown } | undefined {
+): { prop: string; kind: UiFieldKind; default?: unknown; options?: readonly string[] } | undefined {
     const mapping = (
         CONDITION_MAPPINGS as Record<
             string,
             | {
                   loreFields: Record<
                       string,
-                      { prop: string; kind: UiFieldKind; default?: unknown }
+                      { prop: string; kind: UiFieldKind; default?: unknown; options?: readonly string[] }
                   >;
               }
             | undefined
@@ -219,6 +219,14 @@ function getConditionFieldSpec(
         if (field.prop === prop) return field;
     }
     return undefined;
+}
+
+export function getConditionFieldCycleOptions(type: string, prop: string): readonly string[] {
+    const spec = getConditionFieldSpec(type, prop);
+    if (spec?.options === undefined) {
+        throw new Error(`No cycle options declared for condition ${type}.${prop}`);
+    }
+    return spec.options;
 }
 
 /**

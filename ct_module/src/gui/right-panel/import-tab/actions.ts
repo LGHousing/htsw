@@ -3,6 +3,7 @@
 import {
     createImportRows,
     createImportProgress,
+    clearLastFinishedProgress,
     getExportImportJsonPath,
     getHousingUuid,
     getImportJsonPath,
@@ -88,9 +89,6 @@ let importSessionId = 0;
 function refreshKnowledgeRows(): void {
     const uuid = getHousingUuid();
     if (uuid === null) return;
-    // Knowledge rows now aggregate across every cached parse so the
-    // knowledge tab reflects every house touched by any queued or
-    // recently-imported import.json, not just the legacy active one.
     const all: Importable[] = [];
     const seen = new Set<string>();
     const importJsonPath = getImportJsonPath();
@@ -103,8 +101,22 @@ function refreshKnowledgeRows(): void {
             all.push(imp);
         }
     }
-    setKnowledgeRows(buildCacheStatusRows(uuid, all));
-    autoTrackRefresh();
+
+    const BATCH = 40;
+    const allRows: ReturnType<typeof buildCacheStatusRows> = [];
+    function processBatch(start: number): void {
+        if (start >= all.length) {
+            setKnowledgeRows(allRows);
+            autoTrackRefresh();
+            return;
+        }
+        const end = Math.min(all.length, start + BATCH);
+        const slice = all.slice(start, end);
+        const rows = buildCacheStatusRows(uuid as string, slice);
+        for (let i = 0; i < rows.length; i++) allRows.push(rows[i]);
+        setTimeout(() => processBatch(end), 0);
+    }
+    setTimeout(() => processBatch(0), 0);
 }
 
 export function autoTrackRefresh(): void {
@@ -487,11 +499,20 @@ export function startImport(explicit?: readonly QueueItem[]): void {
                     0xffe85c5c
                 );
             }
-            setTimeout(() => {
-                if (importSessionId !== sessionId) return;
-                setImportProgress(null);
-                if (explicit === undefined) { clearQueue(); clearImportableChecks(); }
-            }, 5000);
+            setImportProgress(null);
+            if (explicit === undefined) {
+                setTimeout(() => {
+                    if (importSessionId !== sessionId) return;
+                    clearQueue();
+                    clearImportableChecks();
+                    clearLastFinishedProgress();
+                }, 1500);
+            } else {
+                setTimeout(() => {
+                    if (importSessionId !== sessionId) return;
+                    clearLastFinishedProgress();
+                }, 1500);
+            }
         }
     }).catch((err: unknown) => {
         setImportRunning(false);

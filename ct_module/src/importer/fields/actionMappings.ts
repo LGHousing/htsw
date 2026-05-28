@@ -148,7 +148,7 @@ export const ACTION_MAPPINGS = {
     CHANGE_VAR: {
         displayName: "Change Variable",
         loreFields: {
-            Holder: { prop: "holder", kind: "cycle" },
+            Holder: { prop: "holder", kind: "cycle", options: ["Player", "Global", "Team"] },
             Variable: { prop: "key", kind: "value" },
             Operation: { prop: "op", kind: "select" },
             Value: { prop: "value", kind: "value" },
@@ -195,7 +195,7 @@ export const ACTION_MAPPINGS = {
     SET_GAMEMODE: {
         displayName: "Set Gamemode",
         loreFields: {
-            Gamemode: { prop: "gamemode", kind: "select" },
+            Gamemode: { prop: "gamemode", kind: "cycle", options: ["Adventure", "Survival", "Creative"] },
         },
     },
 
@@ -391,14 +391,14 @@ export function getActionFieldKind(type: string, prop: string): UiFieldKind | un
 function getActionFieldSpec(
     type: string,
     prop: string
-): { prop: string; kind: UiFieldKind; default?: unknown } | undefined {
+): { prop: string; kind: UiFieldKind; default?: unknown; options?: readonly string[] } | undefined {
     const mapping = (
         ACTION_MAPPINGS as Record<
             string,
             | {
                   loreFields: Record<
                       string,
-                      { prop: string; kind: UiFieldKind; default?: unknown }
+                      { prop: string; kind: UiFieldKind; default?: unknown; options?: readonly string[] }
                   >;
               }
             | undefined
@@ -410,6 +410,14 @@ function getActionFieldSpec(
         if (field.prop === prop) return field;
     }
     return undefined;
+}
+
+export function getActionFieldCycleOptions(type: string, prop: string): readonly string[] {
+    const spec = getActionFieldSpec(type, prop);
+    if (spec?.options === undefined) {
+        throw new Error(`No cycle options declared for action ${type}.${prop}`);
+    }
+    return spec.options;
 }
 
 /**

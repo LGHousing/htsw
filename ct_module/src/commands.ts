@@ -30,6 +30,11 @@ import {
     isProgressTraceEnabled,
     setProgressTraceEnabled,
 } from "./importer/progress/trace";
+import {
+    getMenuTracePath,
+    isMenuTraceEnabled,
+    setMenuTraceEnabled,
+} from "./importer/diagnostics/menuTrace";
 import { getAllItemSlots, ItemSlot } from "./tasks/specifics/slots";
 import { readStringValue } from "./importer/gui/helpers";
 
@@ -102,6 +107,11 @@ function commandHtsw(args: string[]) {
         return;
     }
 
+    if (args.length > 0 && args[0] === "menu-trace") {
+        commandMenuTrace(args.slice(1));
+        return;
+    }
+
     if (args.length > 0 && args[0] === "gui") {
         if (args.length > 1 && args[1] === "debug") {
             const frames = args.length > 2 ? parseInt(args[2], 10) : 30;
@@ -124,6 +134,7 @@ function commandHtsw(args: string[]) {
     ChatLib.chat("&f/htsw knowledge &7- Inspect local import/export knowledge");
     ChatLib.chat("&f/htsw eta [reset|dump|trace] &7- Show / reset / dump importer ETA samples");
     ChatLib.chat("&f/htsw parse-timing [invalidate] &7- Show parse timing / invalidate snapshot");
+    ChatLib.chat("&f/htsw menu-trace [on|off] &7- Trace importer menu transitions to file");
     ChatLib.chat("&f/htsw dump-item [slot|name] &7- Dump open-container item lore");
     ChatLib.chat("&f/htsw packet-probe [seconds] &7- Safely log relevant packets");
     ChatLib.chat("&f/htsw gui &7- Open the in-game HTSW dashboard");
@@ -174,6 +185,32 @@ function commandEtaTrace(args: string[]): void {
     }
 
     ChatLib.chat("&f/htsw eta trace [on|off] &7- Write progress/ETA trace");
+}
+
+function commandMenuTrace(args: string[]): void {
+    if (args.length === 0) {
+        const state = isMenuTraceEnabled() ? "&aon" : "&coff";
+        const path = getMenuTracePath();
+        ChatLib.chat(`&7[menu-trace] ${state}`);
+        if (path !== null) ChatLib.chat(`&7[menu-trace] file: &f${path}`);
+        return;
+    }
+
+    if (args[0] === "on" || args[0] === "start") {
+        const path = setMenuTraceEnabled(true);
+        ChatLib.chat(`&a[menu-trace] on: &f${path}`);
+        return;
+    }
+
+    if (args[0] === "off" || args[0] === "stop") {
+        const path = getMenuTracePath();
+        setMenuTraceEnabled(false);
+        ChatLib.chat("&7[menu-trace] off");
+        if (path !== null) ChatLib.chat(`&7[menu-trace] file: &f${path}`);
+        return;
+    }
+
+    ChatLib.chat("&f/htsw menu-trace [on|off] &7- Trace menu transitions");
 }
 
 function commandParseTiming(args: string[]): void {

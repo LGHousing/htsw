@@ -15,8 +15,12 @@ import { GLYPH_DOT } from "../../lib/theme";
 import { getCurrentHousingUuid } from "../../../importCache/housingId";
 import { getAlias, listAliases } from "../../../importCache/aliases";
 import { openAliasPopover } from "../../popovers/alias";
+import { openMenu } from "../../lib/menu";
 import { TaskManager } from "../../../tasks/manager";
 import { IMPORT_CACHE_ROOT } from "../../../importCache/paths";
+import { deleteHousingCache } from "../../../importCache/cache";
+import { clearAlias } from "../../../importCache/aliases";
+import { setKnowledgeRows } from "../../state";
 import { javaType } from "../../lib/java";
 import {
     COLOR_BUTTON,
@@ -95,6 +99,19 @@ function knownHouses(): string[] {
     return out;
 }
 
+function deleteHouse(uuid: string): void {
+    const ok = deleteHousingCache(uuid);
+    clearAlias(uuid);
+    setHouseTrust(uuid, false);
+    if (getHousingUuid() === uuid) {
+        setHousingUuid(null);
+        setKnowledgeRows([]);
+    }
+    const label = getAlias(uuid) ?? shortUuid(uuid);
+    if (ok) ChatLib.chat(`&a[htsw] Removed tracked house ${label}.`);
+    else ChatLib.chat(`&e[htsw] No cache directory for ${label} (alias/trust cleared anyway).`);
+}
+
 function houseRow(uuid: string): Element {
     const isCurrent = getHousingUuid() === uuid;
     return Container({
@@ -106,6 +123,15 @@ function houseRow(uuid: string): Element {
             height: { kind: "px", value: SIZE_ROW_H + 4 },
             background: COLOR_ROW,
             hoverBackground: COLOR_ROW_HOVER,
+        },
+        onClick: (_rect, info) => {
+            if (info.button !== 1) return;
+            openMenu(info.x, info.y, [
+                {
+                    label: "Delete tracked house",
+                    onClick: () => deleteHouse(uuid),
+                },
+            ]);
         },
         children: [
             // Current-house marker. Filled-target when current, faint circle

@@ -8,7 +8,9 @@ import { Button, Col, Container, Input, Row, Scroll, Text } from "../lib/compone
 import { closeAllPopovers, openPopover } from "../lib/popovers";
 import { COLOR_ROW, COLOR_ROW_HOVER, COLOR_TEXT_DIM } from "../lib/theme";
 import { updateImportableField, type Section } from "../../exporter/importJsonWriter";
-import { reparseNow } from "../state/reparse";
+import { markPathInSync } from "../state/reparse";
+import { getParseAt, touchParseCacheMtime } from "../state/parses";
+import { refreshKnowledgeRowFor } from "../state";
 
 let editingValue = "";
 let editingX = "";
@@ -28,6 +30,48 @@ function sectionForType(type: Importable["type"]): Section | null {
         case "NPC": return "npcs";
     }
     return null;
+}
+
+const SECTION_TYPE: { [k in Section]: Importable["type"] } = {
+    functions: "FUNCTION", events: "EVENT", regions: "REGION",
+    items: "ITEM", menus: "MENU", npcs: "NPC",
+};
+
+function findImportableInList(
+    list: readonly Importable[],
+    section: Section,
+    identity: string
+): Importable | null {
+    const type = SECTION_TYPE[section];
+    for (let i = 0; i < list.length; i++) {
+        const imp = list[i];
+        if (imp.type !== type) continue;
+        const id = imp.type === "EVENT" ? imp.event : imp.name;
+        if (id === identity) return imp;
+    }
+    return null;
+}
+
+function setByPath(obj: object, field: string | string[], value: unknown): void {
+    const parts = typeof field === "string" ? [field] : field;
+    let cur = obj as unknown as Record<string, unknown>;
+    for (let i = 0; i < parts.length - 1; i++) {
+        const key = parts[i];
+        const next = cur[key];
+        if (next === undefined || next === null) {
+            if (value === undefined) return;
+            const made: Record<string, unknown> = {};
+            cur[key] = made;
+            cur = made;
+        } else if (typeof next === "object") {
+            cur = next as Record<string, unknown>;
+        } else {
+            return;
+        }
+    }
+    const lastKey = parts[parts.length - 1];
+    if (value === undefined) delete cur[lastKey];
+    else cur[lastKey] = value;
 }
 
 function identityOf(imp: Importable): string {
@@ -71,7 +115,7 @@ function saveField(jsonPath: string, imp: Importable, fieldKey: string): void {
             value = undefined;
         } else {
             const n = parseInt(trimmed, 10);
-            if (isNaN(n) || n < 1) { ChatLib.chat("&c[htsw] Invalid tick count."); return; }
+            if (isNaN(n) || n < 4 || n > 18000) { ChatLib.chat("&c[htsw] Repeat ticks must be 4-18000."); return; }
             value = n;
         }
     } else if (fieldKey === "icon") {
@@ -109,8 +153,22 @@ function saveField(jsonPath: string, imp: Importable, fieldKey: string): void {
     const ok = updateImportableField(jsonPath, section, identity, field, value);
     if (!ok) { ChatLib.chat("&c[htsw] Failed to update " + fieldKey + "."); return; }
 
+    // Mirror the same path/value change into the in-memory parse so the
+    // GUI updates without paying for a full reparse. Both the on-disk
+    // and in-memory representations are now consistent, so we tell the
+    // mtime watcher + parse cache not to re-fire.
+    const entry = getParseAt(jsonPath);
+    if (entry !== null && entry.parsed !== null) {
+        const imp = findImportableInList(entry.parsed.value, section, identity);
+        if (imp !== null) {
+            setByPath(imp, field, value);
+            refreshKnowledgeRowFor(imp);
+        }
+    }
+    touchParseCacheMtime(jsonPath);
+    markPathInSync(jsonPath);
+
     clearState();
-    reparseNow();
     closeAllPopovers();
 }
 
@@ -309,7 +367,7 @@ export function openEditFunctionFieldPopover(
         content = coordinateContent(jsonPath, imp, fieldKey, "Bounds to");
         width = 260;
     } else if (fieldKey === "repeatTicks") {
-        content = singleFieldContent(jsonPath, imp, fieldKey, "Repeat ticks", "ticks (0 = off)");
+        content = singleFieldContent(jsonPath, imp, fieldKey, "Repeat ticks", "4-18000 (0 = off)");
     } else if (fieldKey === "iconCount") {
         content = singleFieldContent(jsonPath, imp, fieldKey, "Icon count", "count (1-64)");
     } else if (fieldKey === "size") {

@@ -158,6 +158,37 @@ export function getParseAt(path: string): CachedParse | null {
     const canon = canonicalPath(path);
     return cache.get(canon) ?? null;
 }
+
+/**
+ * Mark the cache entry's mtime as the file's current mtime, without
+ * re-parsing. Use after an in-place mutation of the cached parse that
+ * mirrors an on-disk edit, so the mtime check in `parseImportJsonAt`
+ * doesn't force a full re-parse the next time it's called.
+ */
+export function touchParseCacheMtime(rawPath: string): void {
+    const canon = canonicalPath(rawPath);
+    const existing = cache.get(canon);
+    if (existing === undefined) return;
+    existing.mtime = getMtimeMs(canon);
+}
+
+/**
+ * Inject a parse result into the cache. Used by the main reparse path so
+ * the explore tree's mtime-keyed cache doesn't redo the same parse the
+ * global `parsedResult` just finished.
+ */
+export function updateParseCache(rawPath: string, result: ParseResult<Importable[]>): void {
+    const canon = canonicalPath(rawPath);
+    const mtime = getMtimeMs(canon);
+    cache.set(canon, {
+        canonicalPath: canon,
+        rawPath,
+        mtime,
+        parsed: result,
+        error: null,
+    });
+    invalidateKnowledgeOverlayForParse(result);
+}
 /**
  * Iterate every parsed import.json. Used by the queue layer to find a
  * `QueueItem`'s importable when only its source path is known.

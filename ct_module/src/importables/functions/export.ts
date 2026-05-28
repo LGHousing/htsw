@@ -56,7 +56,10 @@ async function readFunction(
 
     const repeatTicks = readAutomaticExecutionTicks(ctx);
     await clickGoBack(ctx);
-    return repeatTicks !== undefined ? { actions, repeatTicks } : { actions };
+    const validRepeatTicks = repeatTicks !== undefined && repeatTicks >= 4 && repeatTicks <= 18000
+        ? repeatTicks
+        : undefined;
+    return validRepeatTicks !== undefined ? { actions, repeatTicks: validRepeatTicks } : { actions };
 }
 
 export async function exportFunction(

@@ -284,6 +284,7 @@ export function initHtswGui(): void {
         const screen = (Client.getMinecraft() as any).field_71462_r;
         if (screen !== null && screen !== undefined) return;
         paintImportShade(0, 0, frame.getRoot(), "renderGameOverlayPost");
+        renderToast();
     });
     register("postGuiRender", (mouseX: number, mouseY: number) => {
         paintImportShade(mouseX, mouseY, frame.getRoot(), "postGuiRender");

@@ -73,51 +73,42 @@ function progressMsPerUnitText(): string {
     return `${Math.round(getImportMsPerUnit())}ms/u`;
 }
 
-function currentPhaseLabel(): string {
-    const p = getImportProgress();
-    if (p === null || p.active === null) return "";
-    const phase = p.active.phase;
-    if (phase === "setup" || phase === "reading") {
-        const detail = phaseDetailText();
-        return detail.length > 0 ? `§lReading§r  ·  ${detail}` : "§lReading";
-    }
-    if (phase === "hydrating") {
-        const detail = phaseDetailText();
-        return detail.length > 0 ? `§lHydrating§r  ·  ${detail}` : "§lHydrating";
-    }
-    if (phase === "applying") {
-        const counter = applyOpCounterText();
-        return counter.length > 0 ? `§lApplying§r  ·  ${counter}` : "§lApplying";
-    }
-    return "§lDone";
-}
+const PHASE_LABELS: { [k: string]: { title: string; etaSuffix: string } } = {
+    setup: { title: "Reading", etaSuffix: "read" },
+    reading: { title: "Reading", etaSuffix: "read" },
+    hydrating: { title: "Hydrating", etaSuffix: "hydrate" },
+    applying: { title: "Applying", etaSuffix: "apply" },
+};
 
-function applyOpCounterText(): string {
+function opCounterText(): string {
     const prog = getImportProgress();
     if (prog === null || prog.active === null) return "";
     const sync = prog.active.sync;
     if (sync === null) return "";
-    if (sync.parent !== null) {
-        return operationProgressText(sync.parent.completedUnits, sync.parent.totalUnits);
-    }
-    if (sync.totalUnits > 1) {
-        return operationProgressText(sync.completedUnits, sync.totalUnits);
-    }
-    return "";
+    const target = sync.parent ?? sync;
+    if (target.totalUnits <= 1) return "";
+    return operationProgressText(target.completedUnits, target.totalUnits);
 }
 
-function currentPhaseEtaText(): string {
-    const p = getImportProgress();
-    if (p === null || p.active === null) return "";
-    const phase = p.active.phase;
-    if (phase === "applying") return "";
+function phaseEtaText(suffix: string): string {
     const secs = getCurrentPhaseEtaSeconds();
     if (secs === null || secs <= 0) return "";
-    if (phase === "setup" || phase === "reading") {
-        return `${formatEtaSeconds(secs)} left read`;
-    }
-    if (phase === "hydrating") return `${formatEtaSeconds(secs)} left hydrate`;
-    return "";
+    return `${formatEtaSeconds(secs)} left ${suffix}`;
+}
+
+function currentPhaseLabel(): string {
+    const p = getImportProgress();
+    if (p === null || p.active === null) return "";
+    const labels = PHASE_LABELS[p.active.phase];
+    if (labels === undefined) return "§lDone";
+    const parts: string[] = [];
+    const counter = opCounterText();
+    if (counter.length > 0) parts.push(counter);
+    const eta = phaseEtaText(labels.etaSuffix);
+    if (eta.length > 0) parts.push(eta);
+    return parts.length > 0
+        ? `§l${labels.title}§r  ·  ${parts.join("  ·  ")}`
+        : `§l${labels.title}`;
 }
 
 // ── Progress bar geometry ──────────────────────────────────────────────
@@ -291,21 +282,6 @@ function progressBar(): Element {
 }
 
 // ── The "live importer" panel ──────────────────────────────────────────
-
-function phaseDetailText(): string {
-    const prog = getImportProgress();
-    if (prog === null || prog.active === null) return "";
-    const cur = prog.active;
-    if (cur.phase === "applying") return "";
-    const parts: string[] = [];
-    const sync = cur.sync;
-    if (sync !== null && sync.totalUnits > 1) {
-        parts.push(operationProgressText(sync.completedUnits, sync.totalUnits));
-    }
-    const eta = currentPhaseEtaText();
-    if (eta.length > 0) parts.push(eta);
-    return parts.join("  ·  ");
-}
 
 function operationProgressText(completed: number, total: number): string {
     const safeTotal = Math.max(1, total);

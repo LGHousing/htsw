@@ -26,6 +26,13 @@ import { onImportRunningChanged } from "./selection";
 
 let importProgress: ImportProgress | null = null;
 /**
+ * The last final import progress, kept after `importProgress` is cleared
+ * so the queue can still render done/skipped/failed states for a short
+ * window after the import completes (the queue items stay visible briefly
+ * for confirmation before being cleared).
+ */
+let lastFinishedProgress: ImportProgress | null = null;
+/**
  * `Date.now()` of the moment the in-flight import started. Captured the
  * first time `setImportProgress` transitions from null to non-null and
  * cleared on the inverse transition.
@@ -124,12 +131,18 @@ export function setImportProgress(p: ImportProgress | null): void {
     if (p !== null && importProgress === null) {
         importStartedAt = Date.now();
         etaCalc = createEtaCalculator();
+        lastFinishedProgress = null;
     } else if (p === null) {
+        lastFinishedProgress = importProgress;
         importStartedAt = null;
         etaCalc = null;
     }
     importProgress = p === null ? null : normalizeImportProgress(p);
     onImportRunningChanged(!wasNull, p !== null);
+}
+
+export function clearLastFinishedProgress(): void {
+    lastFinishedProgress = null;
 }
 
 /**
@@ -152,7 +165,8 @@ export type QueueItemRunState =
       };
 
 export function getQueueItemRunState(item: QueueItem): QueueItemRunState {
-    if (importProgress === null) {
+    const progress = importProgress ?? lastFinishedProgress;
+    if (progress === null) {
         return { kind: "queued" };
     }
     if (item.kind !== "importable") {
@@ -161,9 +175,9 @@ export function getQueueItemRunState(item: QueueItem): QueueItemRunState {
     }
     const key = importProgressKey(item.type, item.identity, item.sourcePath);
     let row: ImportableEntry | undefined;
-    for (let i = 0; i < importProgress.rows.length; i++) {
-        if (importProgress.rows[i].key === key) {
-            row = importProgress.rows[i];
+    for (let i = 0; i < progress.rows.length; i++) {
+        if (progress.rows[i].key === key) {
+            row = progress.rows[i];
             break;
         }
     }
@@ -178,9 +192,9 @@ export function getQueueItemRunState(item: QueueItem): QueueItemRunState {
         return { kind: "failed" };
     }
     if (row.status === "queued") return { kind: "queued" };
-    const current = importProgress.active;
+    const current = progress.active;
     if (current === null || current.key !== key) {
-        const parked = importProgress.parked[key];
+        const parked = progress.parked[key];
         if (parked !== undefined) {
             return runStateFromActive(parked);
         }

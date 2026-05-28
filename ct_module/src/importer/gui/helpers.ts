@@ -18,9 +18,8 @@ import {
 import { getVisiblePaginatedItemSlots } from "./paginatedList";
 import { COST } from "../progress/costs";
 import { recordTimedOp } from "../progress/timing";
+import { traceMenuOp } from "../diagnostics/menuTrace";
 
-/** Cycle options shared by `CHANGE_VAR` (action) and `COMPARE_VAR` (condition). */
-export const VAR_HOLDER_OPTIONS = ["Player", "Global", "Team"] as const;
 
 export async function getSlotPaginate(ctx: TaskContext, name: string): Promise<ItemSlot> {
     await goToFirstPaginatedOptionPage(ctx);
@@ -68,13 +67,17 @@ function findPaginationControl(
 }
 
 export async function clickGoBack(ctx: TaskContext): Promise<void> {
+    traceMenuOp("clickGoBack", "enter");
     ctx.getMenuItemSlot("Go Back").click();
     await timedWaitForMenu(ctx, "goBackWait");
+    traceMenuOp("clickGoBack", "exit");
 }
 
 export async function openSubmenu(ctx: TaskContext, slotName: string): Promise<void> {
+    traceMenuOp("openSubmenu", "enter", { slotName });
     ctx.getMenuItemSlot(slotName).click();
     await timedWaitForMenu(ctx, "menuClickWait");
+    traceMenuOp("openSubmenu", "exit", { slotName });
 }
 
 function setAnvilItemName(newName: string) {
@@ -274,11 +277,13 @@ export async function setSelectValue(
     slotName: string,
     value: string
 ): Promise<void> {
+    traceMenuOp("setSelectValue", "enter", { slotName, value });
     await openSubmenu(ctx, slotName);
 
     const optionSlot = await getSlotPaginate(ctx, value);
     if (isAlreadySelectedOption(optionSlot)) {
         await clickGoBack(ctx);
+        traceMenuOp("setSelectValue", "exit", { slotName, value, branch: "alreadySelected" });
         return;
     }
 
@@ -286,10 +291,12 @@ export async function setSelectValue(
     await timedWaitForMenu(ctx, "menuClickWait");
 
     if (ctx.tryGetMenuItemSlot(slotName) !== null) {
+        traceMenuOp("setSelectValue", "exit", { slotName, value, branch: "autoReturned" });
         return;
     }
 
     await clickGoBack(ctx);
+    traceMenuOp("setSelectValue", "exit", { slotName, value, branch: "manualGoBack" });
 }
 
 export async function setCycleValue(
@@ -416,14 +423,17 @@ export async function setStringValue(
     const newValue = value.toString();
     const currentValue = readStringValue(slot);
     if (currentValue !== null && currentValue === newValue) {
+        traceMenuOp("setStringValue", "exit", { value: newValue, branch: "unchanged" });
         return;
     }
 
+    traceMenuOp("setStringValue", "enter", { value: newValue });
     slot.click();
     const started = Date.now();
     const mode = await enterValue(ctx, newValue);
     await waitForMenu(ctx);
     recordTimedOp(mode === "CHAT" ? "chatInput" : "anvilInput", mode === "CHAT" ? COST.chatInput : COST.anvilInput, Date.now() - started);
+    traceMenuOp("setStringValue", "exit", { value: newValue, mode });
 }
 
 export async function setStringOrPaginatedOptionValue(

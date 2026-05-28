@@ -22,7 +22,6 @@ import {
 import TaskContext from "../../tasks/context";
 import { type ItemRegistry } from "../../importables/itemRegistry";
 import {
-    VAR_HOLDER_OPTIONS,
     clickGoBack,
     findMenuOptionByLore,
     getSlotPaginate,
@@ -36,14 +35,9 @@ import {
 } from "../gui/helpers";
 import { waitForMenu } from "../gui/menuWait";
 import { removedFormatting } from "../../utils/helpers";
-import { getConditionFieldLabel } from "../fields/conditionMappings";
+import { getConditionFieldCycleOptions, getConditionFieldLabel } from "../fields/conditionMappings";
 import { setItemValue } from "../items/items";
 import { resolveImportableItem } from "../items/resolveItem";
-
-const GAMEMODE_OPTIONS = ["Adventure", "Survival", "Creative"] as const;
-const FISHING_ENVIRONMENT_OPTIONS = ["Water", "Lava"] as const;
-const ITEM_PROPERTY_OPTIONS = ["Item Type", "Metadata"] as const;
-const ITEM_AMOUNT_OPTIONS = ["Any Amount", "Equal or Greater Amount"] as const;
 
 export async function readRequireGroup(ctx: TaskContext): Promise<ConditionRequireGroup> {
     const groupLabel = getConditionFieldLabel("REQUIRE_GROUP", "group");
@@ -117,7 +111,7 @@ export async function writeCompareVar(
         await setCycleValue(
             ctx,
             getConditionFieldLabel("COMPARE_VAR", "holder"),
-            VAR_HOLDER_OPTIONS,
+            getConditionFieldCycleOptions("COMPARE_VAR", "holder"),
             condition.holder.type
         );
         if (condition.holder.type === "Team" && condition.holder.team !== undefined) {
@@ -202,7 +196,7 @@ export async function writeRequireItem(
         await setCycleValue(
             ctx,
             getConditionFieldLabel("REQUIRE_ITEM", "whatToCheck"),
-            ITEM_PROPERTY_OPTIONS,
+            getConditionFieldCycleOptions("REQUIRE_ITEM", "whatToCheck"),
             condition.whatToCheck
         );
     }
@@ -219,7 +213,7 @@ export async function writeRequireItem(
         await setCycleValue(
             ctx,
             getConditionFieldLabel("REQUIRE_ITEM", "amount"),
-            ITEM_AMOUNT_OPTIONS,
+            getConditionFieldCycleOptions("REQUIRE_ITEM", "amount"),
             condition.amount
         );
     }
@@ -309,7 +303,7 @@ export async function writeRequireGamemode(
         await setCycleValue(
             ctx,
             getConditionFieldLabel("REQUIRE_GAMEMODE", "gamemode"),
-            GAMEMODE_OPTIONS,
+            getConditionFieldCycleOptions("REQUIRE_GAMEMODE", "gamemode"),
             condition.gamemode
         );
     }
@@ -378,7 +372,7 @@ export async function writeFishingEnvironment(
         await setCycleValue(
             ctx,
             getConditionFieldLabel("FISHING_ENVIRONMENT", "environment"),
-            FISHING_ENVIRONMENT_OPTIONS,
+            getConditionFieldCycleOptions("FISHING_ENVIRONMENT", "environment"),
             condition.environment
         );
     }

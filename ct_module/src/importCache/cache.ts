@@ -3,7 +3,7 @@ import type { Importable } from "htsw/types";
 import TaskContext from "../tasks/context";
 import { ensureParentDirs } from "../utils/filesystem";
 import { importableHash, listHashes } from "./hash";
-import { cachePathFor, cachePathForId } from "./paths";
+import { IMPORT_CACHE_ROOT, cachePathFor, cachePathForId } from "./paths";
 
 /**
  * Schema version for the importable cache format. Bump this when the
@@ -122,6 +122,44 @@ export function deleteImportableCache(
     try {
         FileLib.delete(path);
     } catch {
+        // best-effort
+    }
+}
+
+/**
+ * Recursively delete the entire per-housing cache directory:
+ * `./htsw/.cache/<uuid>/` and everything beneath it (all importable
+ * `.knowledge.json` files plus the `items/` SNBT cache). Best-effort —
+ * any individual delete failure is swallowed.
+ */
+export function deleteHousingCache(housingUuid: string): boolean {
+    try {
+        const Paths = Java.type("java.nio.file.Paths");
+        const Files = Java.type("java.nio.file.Files");
+        const root = Paths.get(String(`${IMPORT_CACHE_ROOT}/${housingUuid}`));
+        if (!Files.exists(root)) return false;
+        deletePathRecursive(Files, root);
+        return true;
+    } catch (_e) {
+        return false;
+    }
+}
+
+function deletePathRecursive(Files: any, path: any): void {
+    try {
+        if (Files.isDirectory(path)) {
+            const stream = Files.newDirectoryStream(path);
+            try {
+                const it = stream.iterator();
+                while (it.hasNext()) {
+                    deletePathRecursive(Files, it.next());
+                }
+            } finally {
+                try { stream.close(); } catch (_e) { /* ignore */ }
+            }
+        }
+        Files.delete(path);
+    } catch (_e) {
         // best-effort
     }
 }

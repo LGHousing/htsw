@@ -13,27 +13,37 @@ import { S30PacketWindowItems } from "../../utils/packets";
 import { lastWindowID___FromS30PacketWindowItemsPacketReceived__ThisIsNecessary_sadly_itIncrementsFrom1To100ThenItGoesBackAround_ButSometimesItSkipsOneOrMoreWeAreNotSureMaybeMore_AndItWillNeverBeZero } from "../../tasks/specifics/waitFor";
 import { COST } from "../progress/costs";
 import { timed } from "../progress/timing";
+import { traceWaitForMenuStart, traceWaitForMenuEnd } from "../diagnostics/menuTrace";
 
 const MENU_WAIT_TIMEOUT_MS = 6000;
 
 export async function waitForMenu(ctx: TaskContext): Promise<void> {
-    await ctx.withTimeout(async () => {
-        await ctx.waitFor("packetReceived", (packet) => {
-            if (!(packet instanceof S30PacketWindowItems)) return false;
-            const windowID = packet.func_148911_c();
-            return (
-                windowID !== 0 &&
-                windowID !==
-                    lastWindowID___FromS30PacketWindowItemsPacketReceived__ThisIsNecessary_sadly_itIncrementsFrom1To100ThenItGoesBackAround_ButSometimesItSkipsOneOrMoreWeAreNotSureMaybeMore_AndItWillNeverBeZero
-            );
-        });
+    const token = traceWaitForMenuStart("waitForMenu");
+    let timedOut = false;
+    try {
+        await ctx.withTimeout(async () => {
+            await ctx.waitFor("packetReceived", (packet) => {
+                if (!(packet instanceof S30PacketWindowItems)) return false;
+                const windowID = packet.func_148911_c();
+                return (
+                    windowID !== 0 &&
+                    windowID !==
+                        lastWindowID___FromS30PacketWindowItemsPacketReceived__ThisIsNecessary_sadly_itIncrementsFrom1To100ThenItGoesBackAround_ButSometimesItSkipsOneOrMoreWeAreNotSureMaybeMore_AndItWillNeverBeZero
+                );
+            });
 
-        // Netty handles packets from a worker thread but the packet is only
-        // actually handled by Minecraft once it is synchronized with the main
-        // thread. So we have to wait for the next tick so the packet will be
-        // processed and the window items will be in the container.
-        await ctx.waitFor("tick");
-    }, "Waiting for menu to load", MENU_WAIT_TIMEOUT_MS);
+            // Netty handles packets from a worker thread but the packet is only
+            // actually handled by Minecraft once it is synchronized with the main
+            // thread. So we have to wait for the next tick so the packet will be
+            // processed and the window items will be in the container.
+            await ctx.waitFor("tick");
+        }, "Waiting for menu to load", MENU_WAIT_TIMEOUT_MS);
+    } catch (e) {
+        timedOut = true;
+        throw e;
+    } finally {
+        traceWaitForMenuEnd(token, "waitForMenu", timedOut);
+    }
 }
 
 export async function timedWaitForMenu(

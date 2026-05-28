@@ -55,12 +55,12 @@ export function renderToast(): void {
 
     beginHtswOverlayDraw();
     Renderer.drawRect(bg, x, y, boxW, boxH);
-    Renderer.colorize(
-        ((textColor >>> 16) & 0xff) / 255,
-        ((textColor >>> 8) & 0xff) / 255,
-        (textColor & 0xff) / 255,
-        alpha
+    Client.getMinecraft().field_71466_p.func_175065_a(
+        active.message,
+        x + PADDING_X,
+        y + PADDING_Y + 2,
+        textColor,
+        true
     );
-    Renderer.drawStringWithShadow(active.message, x + PADDING_X, y + PADDING_Y + 2);
     endHtswOverlayDraw();
 }

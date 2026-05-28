@@ -83,7 +83,6 @@ export async function ensureFunctionNamesExist(
     for (let i = 0; i < existing.length; i++) {
         existingSet[existing[i].toLowerCase()] = true;
     }
-    await clickGoBack(ctx);
 
     const missing: string[] = [];
     for (let i = 0; i < names.length; i++) {
@@ -92,19 +91,21 @@ export async function ensureFunctionNamesExist(
         }
     }
 
-    if (missing.length === 0) {
+    if (missing.length > 0) {
+        ctx.displayMessage(`&7Creating ${missing.length} missing function shell(s).`);
+        for (let i = 0; i < missing.length; i++) {
+            const name = missing[i];
+            ctx.displayMessage(`&7  [create ${i + 1}/${missing.length}] ${String(name)}`);
+            await ctx.runCommand(`/function create ${name}`);
+            await timedWaitForMenu(ctx, "commandMenuWait");
+            await clickGoBack(ctx);
+        }
+    } else {
         ctx.displayMessage(`&7All ${names.length} function shell(s) already exist.`);
-        return;
     }
 
-    ctx.displayMessage(`&7Creating ${missing.length} missing function shell(s).`);
-    for (let i = 0; i < missing.length; i++) {
-        const name = missing[i];
-        ctx.displayMessage(`&7  [create ${i + 1}/${missing.length}] ${String(name)}`);
-        await ctx.runCommand(`/function create ${name}`);
-        await timedWaitForMenu(ctx, "commandMenuWait");
-        await clickGoBack(ctx);
-        onEach?.(name);
+    for (let i = 0; i < names.length; i++) {
+        onEach?.(names[i]);
     }
 }
 
@@ -141,7 +142,7 @@ export async function setAutomaticExecutionTicksIfNeeded(
     repeatTicks: number
 ): Promise<void> {
     const autoExecSlot = ctx.getItemSlot("Automatic Execution");
-    const currentTicks = readAutomaticExecutionTicks(ctx);
+    const currentTicks = readAutomaticExecutionTicks(ctx) ?? 0;
     if (currentTicks === repeatTicks) {
         return;
     }

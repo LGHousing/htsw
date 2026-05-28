@@ -6,6 +6,7 @@ import {
     type ActionListPlan,
 } from "../../importer/actions/sync";
 import { clickGoBack } from "../../importer/gui/helpers";
+import { timedWaitForMenu } from "../../importer/gui/menuWait";
 import type { ImportableTrustPlan } from "../../importCache";
 import type { ImportEventHandler } from "../../importer/importEvents";
 import { createSetupStepEmitter } from "../../importer/progress/setupStepEmitter";
@@ -42,14 +43,24 @@ export async function prereadImportableFunction(
     await ensureReferencedImportablesExist(ctx, importable, (kind, name) => {
         setup(`created ${kind} ${name}`);
     });
-    await ensureFunctionExists(ctx, importable.name);
-    setup(`opened function ${importable.name}`);
 
     const actionsTrusted = trustPlan?.trustedListPaths.has("actions") ?? false;
-    if (actionsTrusted) {
-        ctx.displayMessage(`&b&l[import] &r&7Function "${importable.name}" trusted, skipped.`);
+    const settingsTrusted = functionSettingsTrusted(importable, trustPlan);
+
+    if (actionsTrusted && settingsTrusted) {
+        ctx.displayMessage(`&b&l[import] &r&7Function "${importable.name}" fully trusted, skipped.`);
+        setup(`skipped ${importable.name}`);
         return { kind: "FUNCTION", importable, trustPlan, actionsPlan: null };
     }
+
+    if (actionsTrusted) {
+        ctx.displayMessage(`&b&l[import] &r&7Function "${importable.name}" actions trusted; updating settings.`);
+        setup(`settings-only ${importable.name}`);
+        return { kind: "FUNCTION", importable, trustPlan, actionsPlan: null };
+    }
+
+    await ensureFunctionExists(ctx, importable.name);
+    setup(`opened function ${importable.name}`);
     ctx.displayMessage(`&b&l[import] &r&bReading function: &f${importable.name} &7(${importable.actions.length} actions)`);
     const actionsPlan = await prereadActionList(ctx, importable.actions, {
         itemRegistry,
@@ -66,9 +77,7 @@ export async function applyImportableFunctionPlan(
     itemRegistry: ItemRegistry,
     events?: ImportEventHandler
 ): Promise<void> {
-    const needsSettings =
-        (plan.importable.repeatTicks || plan.importable.icon) &&
-        !functionSettingsTrusted(plan.importable, plan.trustPlan);
+    const needsSettings = !functionSettingsTrusted(plan.importable, plan.trustPlan);
 
     if (plan.actionsPlan !== null) {
         await ensureFunctionExists(ctx, plan.importable.name);
@@ -77,20 +86,21 @@ export async function applyImportableFunctionPlan(
             itemRegistry,
             events,
         });
-    } else if (needsSettings) {
-        await ensureFunctionExists(ctx, plan.importable.name);
+        if (needsSettings) {
+            await clickGoBack(ctx);
+        }
     }
 
     if (needsSettings) {
-        await clickGoBack(ctx);
+        if (plan.actionsPlan === null) {
+            await ctx.runCommand(`/functions`);
+            await timedWaitForMenu(ctx, "commandMenuWait");
+        }
         await openFunctionSettings(ctx, plan.importable.name);
         if (plan.importable.icon) {
             await setFunctionIconIfNeeded(ctx, plan.importable.icon);
         }
-        if (plan.importable.repeatTicks) {
-            await setAutomaticExecutionTicksIfNeeded(ctx, plan.importable.repeatTicks);
-        }
-        await clickGoBack(ctx);
+        await setAutomaticExecutionTicksIfNeeded(ctx, plan.importable.repeatTicks ?? 0);
     }
 }
 
