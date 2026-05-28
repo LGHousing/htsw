@@ -38,6 +38,20 @@ export default tseslint.config(
                     caughtErrorsIgnorePattern: "^_",
                 },
             ],
+            "no-restricted-syntax": [
+                "error",
+                {
+                    selector: "CallExpression[callee.object.name='Promise'][callee.property.name='race']",
+                    message:
+                        "Use ctx.race(...) instead of Promise.race(...). Raw Promise.race leaves WaitForPromise losers registered in EVENT_CONTAINERS, which silently consume future packets meant for unrelated waiters.",
+                },
+            ],
+        },
+    },
+    {
+        files: ["src/tasks/context.ts"],
+        rules: {
+            "no-restricted-syntax": "off",
         },
     }
 );
