@@ -1,4 +1,5 @@
 import "promise-polyfill/src/polyfill";
+import "./polyfills/promiseSyncDrain";
 import "./injectLong";
 import "./tasks/manager";
 
@@ -11,6 +12,7 @@ import { htsl } from "htsw";
 import { getMtimeMs } from "./gui/lib/java";
 import { setSlotLookupTracer } from "./tasks/specifics/slots";
 import { traceSlotLookup } from "./importer/diagnostics/menuTrace";
+import { backgroundPreloadIcons } from "./gui/lib/render";
 
 htsl.setHtslCacheMtimeProvider(getMtimeMs);
 setSlotLookupTracer(traceSlotLookup);
@@ -20,3 +22,4 @@ registerExportCommands();
 initMcpBridge();
 initHtswGui();
 registerImportSoundCancel();
+backgroundPreloadIcons();

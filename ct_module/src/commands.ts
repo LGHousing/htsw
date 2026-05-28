@@ -288,10 +288,16 @@ function printOpKindStats(): void {
         const entry = stats[kind];
         if (entry === undefined || entry.count === 0) continue;
         printed = true;
-        const expected =
-            entry.count === 0 ? 0 : entry.totalExpectedUnits / entry.count;
+        const current = entry.avgMsPerExpectedUnit;
+        const baseline = entry.baselineMsPerExpectedUnit;
+        const delta = current - baseline;
+        const pct = baseline > 0 ? (delta / baseline) * 100 : 0;
+        let trend: string;
+        if (Math.abs(pct) < 3) trend = "&7~";
+        else if (pct > 0) trend = `&c↑${pct.toFixed(0)}%`;
+        else trend = `&a↓${Math.abs(pct).toFixed(0)}%`;
         ChatLib.chat(
-            `&7  ${kind}: &f${entry.count} samples&7, avg &f${entry.avgMs.toFixed(0)}ms&7, expected &f${expected.toFixed(2)}u&7 => &f${entry.avgMsPerExpectedUnit.toFixed(0)}ms/u`
+            `&7  ${kind}: &f${entry.count}&7 samples => &f${current.toFixed(0)}ms/u &7(baseline &f${baseline.toFixed(0)}&7 ${trend}&7)`
         );
     }
     if (!printed) {
