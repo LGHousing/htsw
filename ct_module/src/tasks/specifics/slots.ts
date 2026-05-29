@@ -124,15 +124,9 @@ export function getMenuItemSlots(check: null | ((slot: ItemSlot) => boolean) = n
     return slots;
 }
 
-let slotLookupTracer: ((query: string, found: boolean) => void) | null = null;
-export function setSlotLookupTracer(fn: ((query: string, found: boolean) => void) | null): void {
-    slotLookupTracer = fn;
-}
-
 export function tryGetMenuItemSlot(
     check: string | ((slot: ItemSlot) => boolean),
 ): ItemSlot | null {
-    const originalQuery = typeof check === "string" ? check : null;
     if (typeof check === "string") {
         const name = removedFormatting(check);
         check = (slot: ItemSlot) => {
@@ -141,17 +135,10 @@ export function tryGetMenuItemSlot(
     }
 
     const slots = getMenuItemSlots();
-    if (slots == null) {
-        if (originalQuery !== null && slotLookupTracer !== null) slotLookupTracer(originalQuery, false);
-        return null;
-    }
+    if (slots == null) return null;
     for (const slot of slots) {
-        if (check(slot)) {
-            if (originalQuery !== null && slotLookupTracer !== null) slotLookupTracer(originalQuery, true);
-            return slot;
-        }
+        if (check(slot)) return slot;
     }
-    if (originalQuery !== null && slotLookupTracer !== null) slotLookupTracer(originalQuery, false);
     return null;
 }
 

@@ -37,11 +37,9 @@ import {
     countImportablesByStatus,
     isImportTotalLocked,
 } from "../../../importer/progress/types";
-import { traceDebugSnapshot } from "../../../importer/progress/trace";
 
 const COLOR_BAR_BG = COLOR_PANEL_BORDER;
 const PROGRESS_BAR_H = 6;
-let lastProgressBarTrace = "";
 
 // ── Time formatting ────────────────────────────────────────────────────
 
@@ -202,7 +200,6 @@ function progressBar(): Element {
             const p = getImportProgress();
             if (p === null || p.totalUnits <= 0) return [];
             const children: Element[] = [];
-            const traceRows: unknown[] = [];
             for (let i = 0; i < p.rows.length; i++) {
                 const row = p.rows[i];
                 if (i > 0) {
@@ -217,13 +214,10 @@ function progressBar(): Element {
                 }
                 if (row.status === "imported") {
                     children.push(phaseSegment(1, 1, ACCENT_SUCCESS));
-                    traceRows.push({ index: i, key: row.key, status: row.status, kind: "done" });
                 } else if (row.status === "skipped") {
                     children.push(phaseSegment(1, 1, ACCENT_TEAL));
-                    traceRows.push({ index: i, key: row.key, status: row.status, kind: "skipped" });
                 } else if (row.status === "failed") {
                     children.push(phaseSegment(1, 1, ACCENT_DANGER));
-                    traceRows.push({ index: i, key: row.key, status: row.status, kind: "failed" });
                 } else if (p.active !== null && p.active.key === row.key) {
                     children.push(Container({
                         style: {
@@ -233,13 +227,6 @@ function progressBar(): Element {
                         },
                         children: activeRowPhaseChildren(),
                     }));
-                    traceRows.push({
-                        index: i,
-                        key: row.key,
-                        status: row.status,
-                        kind: "active",
-                        activePhase: p.active.phase,
-                    });
                 } else if (p.parked[row.key] !== undefined) {
                     // Pass-1 finished read/hydrate for this row but pass-2
                     // hasn't reached it yet. Show the parked phase fill so
@@ -252,29 +239,9 @@ function progressBar(): Element {
                         },
                         children: parkedRowPhaseChildren(row.key),
                     }));
-                    traceRows.push({
-                        index: i,
-                        key: row.key,
-                        status: row.status,
-                        kind: "parked",
-                        parkedPhase: p.parked[row.key].phase,
-                    });
                 } else {
                     children.push(phaseSegment(1, 0, ACCENT_SUCCESS));
-                    traceRows.push({ index: i, key: row.key, status: row.status, kind: "queued" });
                 }
-            }
-            const traceKey = JSON.stringify({
-                completedUnits: p.completedUnits,
-                totalUnits: p.totalUnits,
-                activeKey: p.active === null ? null : p.active.key,
-                activeCompletedUnits: p.active === null ? null : p.active.completedUnits,
-                activeTotalUnits: p.active === null ? null : p.active.totalUnits,
-                rows: traceRows,
-            });
-            if (traceKey !== lastProgressBarTrace) {
-                lastProgressBarTrace = traceKey;
-                traceDebugSnapshot("guiProgressBar", JSON.parse(traceKey));
             }
             return children;
         },
