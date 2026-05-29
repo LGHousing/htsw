@@ -10,19 +10,25 @@
 import TaskContext from "../../tasks/context";
 import { removedFormatting } from "../../utils/helpers";
 import { S30PacketWindowItems } from "../../utils/packets";
-import { lastWindowID___FromS30PacketWindowItemsPacketReceived__ThisIsNecessary_sadly_itIncrementsFrom1To100ThenItGoesBackAround_ButSometimesItSkipsOneOrMoreWeAreNotSureMaybeMore_AndItWillNeverBeZero } from "../../tasks/specifics/waitFor";
+import {
+    lastWindowID___FromS30PacketWindowItemsPacketReceived__ThisIsNecessary_sadly_itIncrementsFrom1To100ThenItGoesBackAround_ButSometimesItSkipsOneOrMoreWeAreNotSureMaybeMore_AndItWillNeverBeZero,
+    type WaitForPromise,
+} from "../../tasks/specifics/waitFor";
 import { COST } from "../progress/costs";
 import { timed } from "../progress/timing";
-import { traceWaitForMenuStart, traceWaitForMenuEnd } from "../diagnostics/menuTrace";
 
 const MENU_WAIT_TIMEOUT_MS = 6000;
 
-export async function waitForMenu(ctx: TaskContext): Promise<void> {
-    const token = traceWaitForMenuStart("waitForMenu");
-    let timedOut = false;
-    try {
+export function waitForMenu(ctx: TaskContext): WaitForPromise<void> {
+    // Track the inner waiters so a caller racing this promise can cancel them
+    // via `cleanupWaiter` and prevent a leaked container from matching a
+    // future packet meant for someone else.
+    let packetWaiter: WaitForPromise<unknown> | null = null;
+    let tickWaiter: WaitForPromise<unknown> | null = null;
+
+    const promise = (async (): Promise<void> => {
         await ctx.withTimeout(async () => {
-            await ctx.waitFor("packetReceived", (packet) => {
+            packetWaiter = ctx.waitFor("packetReceived", (packet) => {
                 if (!(packet instanceof S30PacketWindowItems)) return false;
                 const windowID = packet.func_148911_c();
                 return (
@@ -31,25 +37,34 @@ export async function waitForMenu(ctx: TaskContext): Promise<void> {
                         lastWindowID___FromS30PacketWindowItemsPacketReceived__ThisIsNecessary_sadly_itIncrementsFrom1To100ThenItGoesBackAround_ButSometimesItSkipsOneOrMoreWeAreNotSureMaybeMore_AndItWillNeverBeZero
                 );
             });
+            await packetWaiter;
 
             // Netty handles packets from a worker thread but the packet is only
             // actually handled by Minecraft once it is synchronized with the main
             // thread. So we have to wait for the next tick so the packet will be
             // processed and the window items will be in the container.
-            await ctx.waitFor("tick");
+            tickWaiter = ctx.waitFor("tick");
+            await tickWaiter;
         }, "Waiting for menu to load", MENU_WAIT_TIMEOUT_MS);
-    } catch (e) {
-        timedOut = true;
-        throw e;
-    } finally {
-        traceWaitForMenuEnd(token, "waitForMenu", timedOut);
-    }
+    })() as WaitForPromise<void>;
+
+    promise.cleanupWaiter = () => {
+        packetWaiter?.cleanupWaiter?.();
+        tickWaiter?.cleanupWaiter?.();
+    };
+
+    // Pre-attach a no-op catch so when a racing caller calls cleanupWaiter and
+    // we eventually time out with no listener, the rejection isn't reported as
+    // unhandled.
+    promise.catch(() => {});
+
+    return promise;
 }
 
-export async function timedWaitForMenu(
+export function timedWaitForMenu(
     ctx: TaskContext,
     kind: "menuClickWait" | "pageTurnWait" | "goBackWait" | "commandMenuWait" = "menuClickWait"
-): Promise<void> {
+): WaitForPromise<void> {
     const expected =
         kind === "pageTurnWait"
             ? COST.pageTurnWait
@@ -58,7 +73,7 @@ export async function timedWaitForMenu(
               : kind === "commandMenuWait"
                 ? COST.commandMenuWait
                 : COST.menuClickWait;
-    await timed(kind, expected, () => waitForMenu(ctx));
+    return timed(kind, expected, () => waitForMenu(ctx));
 }
 
 async function waitForUnformattedMessage(

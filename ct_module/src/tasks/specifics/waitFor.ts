@@ -28,24 +28,24 @@ const EVENT_CONTAINERS: EventContainers = {
     message: [],
 };
 
+// FIFO. CRITICAL: when a match resolves, splice BEFORE calling
+// container.resolve. resolve can synchronously re-enter via sync-drain —
+// a ctx.race finally that cleans up the matched container and then
+// registers a new waiter would land that new waiter at the same index `i`
+// we'd splice, silently dropping it.
 function maybeResolve<E extends EventName>(event: E, ...args: ParametersFor<E>) {
     const containers = EVENT_CONTAINERS[event];
-
-    // FIFO
     for (let i = 0; i < containers.length; ) {
         const container = containers[i];
-
         // @ts-ignore
         if (container.check(...args)) {
             container.remaining--;
-
             if (container.remaining <= 0) {
-                container.resolve(args);
                 containers.splice(i, 1);
+                container.resolve(args);
                 continue;
             }
         }
-
         i++;
     }
 }
@@ -57,13 +57,9 @@ register("tick", () => {
 export let lastWindowID___FromS30PacketWindowItemsPacketReceived__ThisIsNecessary_sadly_itIncrementsFrom1To100ThenItGoesBackAround_ButSometimesItSkipsOneOrMoreWeAreNotSureMaybeMore_AndItWillNeverBeZero: number = 0;
 
 function maybeUpdateWindowID(packet: Packet) {
-    if (!(packet instanceof S30PacketWindowItems)) {
-        return;
-    }
+    if (!(packet instanceof S30PacketWindowItems)) return;
     const windowID = packet.func_148911_c();
-    if (windowID === 0) {
-        return;
-    }
+    if (windowID === 0) return;
     lastWindowID___FromS30PacketWindowItemsPacketReceived__ThisIsNecessary_sadly_itIncrementsFrom1To100ThenItGoesBackAround_ButSometimesItSkipsOneOrMoreWeAreNotSureMaybeMore_AndItWillNeverBeZero =
         windowID;
 }
@@ -108,7 +104,6 @@ export function waitFor<E extends EventName>(
             resolve,
             remaining: amount,
         };
-
         EVENT_CONTAINERS[event].push(container);
     }) as WaitForPromise<ParametersFor<E>>;
 

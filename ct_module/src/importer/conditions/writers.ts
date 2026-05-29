@@ -1,4 +1,5 @@
 import {
+    type Condition,
     type ConditionBlockType,
     type ConditionCompareDamage,
     type ConditionCompareHealth,
@@ -35,9 +36,17 @@ import {
 } from "../gui/helpers";
 import { waitForMenu } from "../gui/menuWait";
 import { removedFormatting } from "../../utils/helpers";
-import { getConditionFieldCycleOptions, getConditionFieldLabel } from "../fields/conditionMappings";
+import {
+    getConditionFieldCycleOptions,
+    getConditionFieldDefault,
+    getConditionFieldLabel,
+} from "../fields/conditionMappings";
 import { setItemValue } from "../items/items";
 import { resolveImportableItem } from "../items/resolveItem";
+
+function conditionDefault<T>(type: Condition["type"], prop: string): T {
+    return getConditionFieldDefault(type, prop) as T;
+}
 
 export async function readRequireGroup(ctx: TaskContext): Promise<ConditionRequireGroup> {
     const groupLabel = getConditionFieldLabel("REQUIRE_GROUP", "group");
@@ -99,7 +108,7 @@ export async function writeRequireGroup(
     await setBooleanValue(
         ctx,
         ctx.getMenuItemSlot(getConditionFieldLabel("REQUIRE_GROUP", "includeHigherGroups")),
-        condition.includeHigherGroups === true
+        condition.includeHigherGroups ?? conditionDefault<boolean>("REQUIRE_GROUP", "includeHigherGroups")
     );
 }
 
@@ -143,13 +152,11 @@ export async function writeCompareVar(
         );
     }
 
-    if (condition.fallback) {
-        await setStringValue(
-            ctx,
-            ctx.getMenuItemSlot(getConditionFieldLabel("COMPARE_VAR", "fallback")),
-            condition.fallback
-        );
-    }
+    await setStringValue(
+        ctx,
+        ctx.getMenuItemSlot(getConditionFieldLabel("COMPARE_VAR", "fallback")),
+        condition.fallback ?? conditionDefault<string>("COMPARE_VAR", "fallback")
+    );
 }
 
 export async function writeRequirePermission(
@@ -192,31 +199,25 @@ export async function writeRequireItem(
         );
     }
 
-    if (condition.whatToCheck) {
-        await setCycleValue(
-            ctx,
-            getConditionFieldLabel("REQUIRE_ITEM", "whatToCheck"),
-            getConditionFieldCycleOptions("REQUIRE_ITEM", "whatToCheck"),
-            condition.whatToCheck
-        );
-    }
+    await setCycleValue(
+        ctx,
+        getConditionFieldLabel("REQUIRE_ITEM", "whatToCheck"),
+        getConditionFieldCycleOptions("REQUIRE_ITEM", "whatToCheck"),
+        condition.whatToCheck ?? conditionDefault<string>("REQUIRE_ITEM", "whatToCheck")
+    );
 
-    if (condition.whereToCheck) {
-        await setSelectValue(
-            ctx,
-            getConditionFieldLabel("REQUIRE_ITEM", "whereToCheck"),
-            condition.whereToCheck
-        );
-    }
+    await setSelectValue(
+        ctx,
+        getConditionFieldLabel("REQUIRE_ITEM", "whereToCheck"),
+        condition.whereToCheck ?? conditionDefault<string>("REQUIRE_ITEM", "whereToCheck")
+    );
 
-    if (condition.amount) {
-        await setCycleValue(
-            ctx,
-            getConditionFieldLabel("REQUIRE_ITEM", "amount"),
-            getConditionFieldCycleOptions("REQUIRE_ITEM", "amount"),
-            condition.amount
-        );
-    }
+    await setCycleValue(
+        ctx,
+        getConditionFieldLabel("REQUIRE_ITEM", "amount"),
+        getConditionFieldCycleOptions("REQUIRE_ITEM", "amount"),
+        condition.amount ?? conditionDefault<string>("REQUIRE_ITEM", "amount")
+    );
 }
 
 export async function writeRequirePotionEffect(

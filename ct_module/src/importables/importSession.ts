@@ -38,20 +38,20 @@ export type ImportSelection = {
 };
 
 export function orderImportablesForImportSession(
-    allImportables: readonly Importable[],
+    _allImportables: readonly Importable[],
     selectedImportables: readonly Importable[]
 ): Importable[] {
-    const selectedKeys = new Set(
-        selectedImportables.map((importable) =>
-            trustPlanKey(importable.type, importableIdentity(importable))
-        )
-    );
-    return [
-        ...allImportables.filter((i) => i.type === "ITEM"),
-        ...allImportables.filter((i) => i.type !== "ITEM"),
-    ].filter((importable) =>
-        selectedKeys.has(trustPlanKey(importable.type, importableIdentity(importable)))
-    );
+    // ITEMs are hoisted to the front because action lists reference them
+    // by name (GIVE_ITEM, etc.) and need them to exist first. Within each
+    // group, original input order is preserved so the queue's display
+    // order matches the execution order.
+    const items: Importable[] = [];
+    const rest: Importable[] = [];
+    for (const imp of selectedImportables) {
+        if (imp.type === "ITEM") items.push(imp);
+        else rest.push(imp);
+    }
+    return items.concat(rest);
 }
 
 export async function importSelectedImportables(

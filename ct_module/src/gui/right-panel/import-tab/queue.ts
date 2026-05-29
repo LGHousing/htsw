@@ -99,12 +99,7 @@ function queueRowMiniBar(item: QueueItem): Element {
             children: [],
         });
     }
-    const color =
-        state.phase === "applying"
-            ? PHASE_APPLYING
-            : state.phase === "hydrating"
-              ? PHASE_HYDRATING
-              : PHASE_READING;
+    const color = phaseColor(state.phase);
     return Container({
         style: {
             direction: "row",
@@ -113,6 +108,21 @@ function queueRowMiniBar(item: QueueItem): Element {
         },
         children: [phaseSegment(1, state.phaseFraction, color)],
     });
+}
+
+function phaseColor(phase: "reading" | "hydrating" | "applying"): number {
+    if (phase === "applying") return PHASE_APPLYING;
+    if (phase === "hydrating") return PHASE_HYDRATING;
+    return PHASE_READING;
+}
+
+function currentRowStripeColor(item: QueueItem): number | undefined {
+    const state = getQueueItemRunState(item);
+    if (state.kind === "current") return phaseColor(state.phase);
+    if (state.kind === "done") return ACCENT_SUCCESS;
+    if (state.kind === "skipped") return ACCENT_TEAL;
+    if (state.kind === "failed") return ACCENT_DANGER;
+    return undefined;
 }
 
 function queueImportableLabel(imp: Importable): string {
@@ -166,13 +176,14 @@ export function queueRow(item: QueueItem): Element {
                     height: { kind: "grow" },
                 },
                 children: [
-                    // Left-edge stripe — green for the importable currently being
-                    // processed, otherwise an invisible 2px spacer.
+                    // Left-edge stripe — colored by the row's current state
+                    // (reading/hydrating/applying/done/skipped/failed),
+                    // invisible 2px spacer otherwise.
                     Container({
                         style: {
                             width: { kind: "px", value: 2 },
                             height: { kind: "grow" },
-                            background: isCurrent ? ACCENT_SUCCESS : undefined,
+                            background: currentRowStripeColor(item),
                         },
                         children: [],
                     }),

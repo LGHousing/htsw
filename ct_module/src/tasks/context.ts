@@ -7,7 +7,7 @@ import {
     getMenuItemSlot,
     getOpenContainerTitle,
 } from "./specifics/slots";
-import { waitFor } from "./specifics/waitFor";
+import { waitFor, type WaitForPromise } from "./specifics/waitFor";
 
 /**
  * Hypixel's chat anti-spam works as a heat budget: every chat sent to
@@ -157,6 +157,32 @@ export default class TaskContext {
             return await Promise.race([pending, timeoutPromise, cancellationPromise]);
         } finally {
             settled = true;
+        }
+    }
+
+    /**
+     * `Promise.race` that calls `cleanupWaiter` on every entry once a winner
+     * settles. Use this instead of `Promise.race` whenever any racer is a
+     * `WaitForPromise` — plain `Promise.race` leaves the loser's container
+     * in `EVENT_CONTAINERS`, where it can silently match a future packet
+     * meant for an unrelated `waitFor`.
+     *
+     * Each entry is `[promiseToRace, waiterToCleanup]`. The two are usually
+     * the same `WaitForPromise`, but the first can be a wrapper (e.g.
+     * `waiter.then(() => tag)`) when you need to discriminate which racer
+     * won. Pass `null` as the second element if the entry has nothing to
+     * clean up.
+     */
+    public async race<T>(
+        entries: ReadonlyArray<[Promise<T>, WaitForPromise<unknown> | null]>
+    ): Promise<T> {
+        try {
+            return await Promise.race(entries.map((e) => e[0]));
+        } finally {
+            for (let i = 0; i < entries.length; i++) {
+                const cleanup = entries[i][1]?.cleanupWaiter;
+                if (cleanup !== undefined) cleanup();
+            }
         }
     }
 

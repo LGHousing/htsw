@@ -178,12 +178,12 @@ function insertionIndexForPath(lines: PreviewLine[], actionPath: string): number
     return lines.length;
 }
 
-function linesForImportable(importable: Importable): PreviewLine[] {
+function linesForImportable(importable: Importable, shellOnly: boolean): PreviewLine[] {
     const out: PreviewLine[] = [];
     if (importable.type === "FUNCTION" || importable.type === "EVENT") {
-        appendActions(out, importable.actions, undefined, 0);
+        appendActions(out, importable.actions, undefined, 0, shellOnly);
     } else if (importable.type === "REGION") {
-        appendActions(out, importable.onEnterActions ?? [], undefined, 0);
+        appendActions(out, importable.onEnterActions ?? [], undefined, 0, shellOnly);
     }
     renumberLines(out);
     return out;
@@ -195,7 +195,7 @@ function buildLines(
     depth: number
 ): PreviewLine[] {
     const out: PreviewLine[] = [];
-    appendActions(out, actions, pathPrefix, depth);
+    appendActions(out, actions, pathPrefix, depth, false);
     renumberLines(out);
     return out;
 }
@@ -204,7 +204,8 @@ function appendActions(
     out: PreviewLine[],
     actions: ReadonlyArray<MaybeAction | null>,
     pathPrefix: string | undefined,
-    depth: number
+    depth: number,
+    shellOnly: boolean
 ): void {
     for (let i = 0; i < actions.length; i++) {
         const action = actions[i];
@@ -215,7 +216,7 @@ function appendActions(
             out.push(makePlaceholderSlot(parentDotted, i, depth, path));
             continue;
         }
-        appendActionLines(out, action, path, depth);
+        appendActionLines(out, action, path, depth, shellOnly);
     }
 }
 
@@ -223,26 +224,32 @@ function appendActionLines(
     out: PreviewLine[],
     action: MaybeAction,
     actionPath: string,
-    depth: number
+    depth: number,
+    shellOnly: boolean
 ): void {
     if (action.type === "CONDITIONAL") {
-        const headText = `${indent(depth)}if ${formatConditionsHead(action)} {`;
+        const condText = shellOnly
+            ? `${action.matchAny ? "or " : ""}(...conditions...)`
+            : formatConditionsHead(action);
+        const headText = `${indent(depth)}if ${condText} {`;
         out.push(makeLine({
             variant: "body",
             actionPath,
             text: headText,
             depth,
         }));
-        appendNestedListBody(out, action.ifActions, actionPath, "ifActions", depth + 1);
-        if (action.elseActions !== undefined && action.elseActions !== null && action.elseActions.length > 0) {
-            const elseText = `${indent(depth)}} else {`;
-            out.push(makeLine({
-                variant: "else",
-                actionPath,
-                text: elseText,
-                depth,
-            }));
-            appendNestedListBody(out, action.elseActions, actionPath, "elseActions", depth + 1);
+        if (!shellOnly) {
+            appendNestedListBody(out, action.ifActions, actionPath, "ifActions", depth + 1, shellOnly);
+            if (action.elseActions !== undefined && action.elseActions !== null && action.elseActions.length > 0) {
+                const elseText = `${indent(depth)}} else {`;
+                out.push(makeLine({
+                    variant: "else",
+                    actionPath,
+                    text: elseText,
+                    depth,
+                }));
+                appendNestedListBody(out, action.elseActions, actionPath, "elseActions", depth + 1, shellOnly);
+            }
         }
         out.push(makeLine({
             variant: "close",
@@ -259,7 +266,9 @@ function appendActionLines(
             text: `${indent(depth)}random {`,
             depth,
         }));
-        appendNestedListBody(out, action.actions, actionPath, "actions", depth + 1);
+        if (!shellOnly) {
+            appendNestedListBody(out, action.actions, actionPath, "actions", depth + 1, shellOnly);
+        }
         out.push(makeLine({
             variant: "close",
             actionPath,
@@ -281,7 +290,8 @@ function appendNestedListBody(
     nested: MaybeNestedActions | null | undefined,
     parentPath: string,
     prop: string,
-    depth: number
+    depth: number,
+    shellOnly: boolean
 ): void {
     if (nested === null || nested === undefined || nested.length === 0) {
         return;
@@ -293,7 +303,7 @@ function appendNestedListBody(
             break;
         }
     }
-    if (allNull) {
+    if (allNull || shellOnly) {
         const subListPath = `${parentPath}.${prop}`;
         const noun = nested.length === 1 ? "action" : "actions";
         out.push(makeLine({
@@ -306,7 +316,7 @@ function appendNestedListBody(
         }));
         return;
     }
-    appendActions(out, nested, `${parentPath}.${prop}`, depth);
+    appendActions(out, nested, `${parentPath}.${prop}`, depth, shellOnly);
 }
 
 function makePlaceholderSlot(
@@ -451,9 +461,14 @@ export function resetPreview(path: string): void {
     delete states[k];
 }
 
-export function primeWithCache(path: string, importable: Importable | null): void {
+export function primeWithCache(
+    path: string,
+    importable: Importable | null,
+    options?: { shellOnly?: boolean }
+): void {
     const s = ensure(path);
-    s.lines = importable === null ? [] : linesForImportable(importable);
+    const shellOnly = options?.shellOnly === true;
+    s.lines = importable === null ? [] : linesForImportable(importable, shellOnly);
     s.hasContent = importable !== null;
     bump(s);
 }
@@ -484,7 +499,7 @@ export function markPlannedAdd(
     const insertAt = insertionIndexForPath(s.lines, actionPath);
     const depth = depthForActionPath(actionPath);
     const newLines: PreviewLine[] = [];
-    appendActionLines(newLines, desired, actionPath, depth);
+    appendActionLines(newLines, desired, actionPath, depth, false);
     for (let i = 0; i < newLines.length; i++) {
         newLines[i].diffState = "add";
     }
@@ -746,7 +761,7 @@ export function finalizeFromSource(
 ): void {
     const s = ensure(path);
     const out: PreviewLine[] = [];
-    appendActions(out, actions, undefined, 0);
+    appendActions(out, actions, undefined, 0, false);
     for (let i = 0; i < out.length; i++) {
         out[i].completed = true;
         out[i].diffState = undefined;

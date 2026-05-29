@@ -119,12 +119,9 @@ function canonicalizeFieldValue(
         value = normalizeMessageFormatting(value);
     }
     const kind = getFieldKind(type, prop);
-    if (kind === "value") {
-        const def = getFieldDefault(type, prop);
-        if (typeof def === "number" && typeof value === "string") {
-            const num = Number(value);
-            if (Number.isFinite(num)) return num;
-        }
+    if (kind === "value" && typeof value === "string" && value !== "") {
+        const num = Number(value);
+        if (Number.isFinite(num)) return num;
     }
     if (kind === "select" || kind === "cycle" || kind === "location") {
         if (typeof value === "string") return { type: value };

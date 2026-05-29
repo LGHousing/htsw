@@ -27,6 +27,7 @@ import {
 } from "../../state/queue";
 import { forEachCachedParse, getParseAt, parseImportJsonAt } from "../../state/parses";
 import { buildCacheStatusRows } from "../../../importCache/status";
+import { printDiagnostics } from "../../../tui/diagnostics";
 import {
     importSelectedImportables,
     orderImportablesForImportSession,
@@ -54,7 +55,6 @@ import type {
 } from "../../../importer/importEvents";
 import { importProgressKey } from "../../../importer/progress/keys";
 import { initialReducerState, reduce } from "../../../importer/progress/reducer";
-import { traceProgressEvent } from "../../../importer/progress/trace";
 import { invalidateKnowledgeOverlayForImportable } from "../../state/knowledgeOverlay";
 import { showToast } from "../../toast";
 import { setImportRunning } from "../../../importer/runtimeState";
@@ -185,6 +185,7 @@ type SessionEventHandler = ImportEventHandler & {
 function createImportEventHandler(args: {
     parsed: ParseResult<Importable[]>;
     sessionSourcePath: string;
+    trustMode: boolean;
 }): SessionEventHandler {
     let state = initialReducerState();
     let activeViewPath: string | null = null;
@@ -218,7 +219,7 @@ function createImportEventHandler(args: {
             if (activeViewPath !== null) {
                 clearLiveOverlay(activeViewPath);
                 resetPreview(activeViewPath);
-                primeWithCache(activeViewPath, e.cached);
+                primeWithCache(activeViewPath, e.cached, { shellOnly: !args.trustMode });
             }
         },
         importableFinished: (e) => {
@@ -303,9 +304,7 @@ function createImportEventHandler(args: {
 
     return {
         emit: (event) => {
-            const before = state.progress;
             state = reduce(state, event);
-            traceProgressEvent(event, before, state.progress);
             (handlers[event.kind] as (e: typeof event) => void)(event);
             sync();
         },
@@ -344,9 +343,15 @@ type ImportBatch = {
 function buildBatches(explicit?: readonly QueueItem[]): ImportBatch[] | null {
     const queue = explicit ?? getQueue();
     if (queue.length === 0) return null;
-    const groups = new Map<string, { parsed: ParseResult<Importable[]>; ids: Set<string>; addAll: boolean }>();
+    type Group = {
+        parsed: ParseResult<Importable[]>;
+        /** Identity keys in queue insertion order. */
+        orderedIds: string[];
+        seen: Set<string>;
+        addAll: boolean;
+    };
+    const groups = new Map<string, Group>();
     for (const item of queue) {
-        // Make sure the parse is loaded (no-op if it's already cached).
         const cached = parseImportJsonAt(item.sourcePath);
         if (cached.parsed === null) {
             ChatLib.chat(`&c[htsw] Skipping ${item.sourcePath}: ${cached.error ?? "parse failed"}`);
@@ -354,37 +359,39 @@ function buildBatches(explicit?: readonly QueueItem[]): ImportBatch[] | null {
         }
         let group = groups.get(item.sourcePath);
         if (group === undefined) {
-            group = { parsed: cached.parsed, ids: new Set<string>(), addAll: false };
+            group = { parsed: cached.parsed, orderedIds: [], seen: new Set<string>(), addAll: false };
             groups.set(item.sourcePath, group);
         }
         if (item.kind === "importJson") {
             group.addAll = true;
         } else {
-            group.ids.add(`${item.type}:${item.identity}`);
+            const k = `${item.type}:${item.identity}`;
+            if (!group.seen.has(k)) {
+                group.seen.add(k);
+                group.orderedIds.push(k);
+            }
         }
     }
     const batches: ImportBatch[] = [];
     for (const [sourcePath, g] of groups.entries()) {
-        const wanted: Importable[] = [];
+        const byKey = new Map<string, Importable>();
         for (const imp of g.parsed.value) {
-            if (g.addAll) {
-                wanted.push(imp);
-                continue;
+            byKey.set(`${imp.type}:${importableIdentity(imp)}`, imp);
+        }
+        const wanted: Importable[] = [];
+        if (g.addAll) {
+            for (const imp of g.parsed.value) wanted.push(imp);
+        } else {
+            for (const k of g.orderedIds) {
+                const imp = byKey.get(k);
+                if (imp !== undefined) wanted.push(imp);
             }
-            const k = `${imp.type}:${importableIdentity(imp)}`;
-            if (g.ids.has(k)) wanted.push(imp);
         }
         if (wanted.length === 0) continue;
         const ordered = orderImportablesForImportSession(g.parsed.value, wanted);
         batches.push({ sourcePath, parsed: g.parsed, importables: ordered });
     }
     return batches.length === 0 ? null : batches;
-}
-
-function totalImportableCount(batches: ImportBatch[]): number {
-    let n = 0;
-    for (const b of batches) n += b.importables.length;
-    return n;
 }
 
 /**
@@ -422,8 +429,22 @@ export function startImport(explicit?: readonly QueueItem[]): void {
         ChatLib.chat(`&c[htsw] ${msg}`);
         return;
     }
+    const failed = batches.filter((b) => b.parsed.gcx.isFailed());
+    if (failed.length > 0) {
+        ChatLib.chat(
+            `&c[htsw] Import aborted — ${failed.length} file${failed.length === 1 ? "" : "s"} ` +
+                `with errors. Fix the diagnostics below and retry.`
+        );
+        for (const batch of failed) {
+            ChatLib.chat(`&7  in ${batch.sourcePath}:`);
+            const errors = batch.parsed.gcx.diagnostics.filter(
+                (d) => d.level === "error" || d.level === "bug"
+            );
+            printDiagnostics(batch.parsed.gcx.sourceMap, errors);
+        }
+        return;
+    }
     const trustMode = isCurrentHouseTrusted();
-    const total = totalImportableCount(batches);
 
     // Concatenate every batch's ordered importables for the run-row
     // tracking; the per-row UI only needs the flat list, not the
@@ -443,17 +464,11 @@ export function startImport(explicit?: readonly QueueItem[]): void {
     gmcOnImportStart();
 
     TaskManager.run(async (ctx) => {
-        const startedAt = Date.now();
         let importSucceeded = false;
         let totalImported = 0;
         let totalSkipped = 0;
         let totalFailed = 0;
         try {
-            ctx.displayMessage(
-                `&7[import] starting ${total} importable${total === 1 ? "" : "s"} ` +
-                    `across ${batches.length} import.json${batches.length === 1 ? "" : "s"} ` +
-                    `· trust ${trustMode ? "on" : "off"}`
-            );
             const cached = getHousingUuid();
             let housingUuid = cached;
             if (housingUuid === null) {
@@ -464,6 +479,7 @@ export function startImport(explicit?: readonly QueueItem[]): void {
                 const events = createImportEventHandler({
                     parsed: batch.parsed,
                     sessionSourcePath: batch.sourcePath,
+                    trustMode,
                 });
                 await importSelectedImportables(ctx, {
                     importables: batch.importables,
@@ -478,10 +494,6 @@ export function startImport(explicit?: readonly QueueItem[]): void {
                 totalSkipped += c.skipped;
                 totalFailed += c.failed;
             }
-            const elapsed = Math.max(0, Math.round((Date.now() - startedAt) / 1000));
-            ctx.displayMessage(
-                `&7[import] done · imported ${totalImported}, skipped ${totalSkipped}, failed ${totalFailed}, ${elapsed}s`
-            );
             importSucceeded = totalFailed === 0;
         } finally {
             setActiveImportPath(null);

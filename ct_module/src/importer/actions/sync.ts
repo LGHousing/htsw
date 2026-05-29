@@ -11,7 +11,6 @@ import type { PhaseUnits, ProgressHandler } from "../progress/types";
 import { baselineActionListFromSlots, diffActionList } from "./diff";
 import { applyActionListDiff } from "./applyDiff";
 import { canonicalizeActionItemName, readActionList } from "./readList";
-import { actionLogLabel, editDiffSummary } from "./log";
 import {
     actionListDiffApplyUnits,
     editUnitsWithNested,
@@ -105,7 +104,6 @@ export async function prereadActionList(
         }
     }
     const diff = diffActionList(baselineActionListFromSlots(observed), desired);
-    logActionSyncState(ctx, diff);
 
     // Replace the rough applying estimate with the diff-aware cost now
     // that we know the actual operations. Emit a progress event so the
@@ -159,49 +157,3 @@ export async function syncActionList(
     return { usedObserved: plan.observed };
 }
 
-function logActionSyncState(ctx: TaskContext, diff: ActionListDiff): void {
-    if (diff.operations.length === 0) {
-        ctx.displayMessage(`&7[sync] &aUp to date.`);
-        return;
-    }
-
-    const deletes = diff.operations.filter((op) => op.kind === "delete");
-    const edits = diff.operations.filter((op) => op.kind === "edit");
-    const moves = diff.operations.filter((op) => op.kind === "move");
-    const adds = diff.operations.filter((op) => op.kind === "add");
-
-    ctx.displayMessage(
-        `&7[sync] &d${diff.operations.length} ops &7(&c${deletes.length} del &6${edits.length} edit &e${moves.length} move &a${adds.length} add&7)`
-    );
-
-    for (const op of diff.operations) {
-        switch (op.kind) {
-            case "delete":
-                ctx.displayMessage(
-                    `&7  &c-DEL [${op.fromIndex}] ${actionLogLabel(op.baselineAction)}`
-                );
-                break;
-            case "edit":
-                if (op.noteOnly) {
-                    ctx.displayMessage(
-                        `&7  &6~NOTE [${op.fromIndex}] ${actionLogLabel(op.baselineAction)}`
-                    );
-                } else {
-                    ctx.displayMessage(
-                        `&7  &6~EDIT [${op.fromIndex}] ${actionLogLabel(op.baselineAction)}: ${editDiffSummary(op)}`
-                    );
-                }
-                break;
-            case "add":
-                ctx.displayMessage(
-                    `&7  &a+ADD [${op.toIndex}] ${actionLogLabel(op.desired)}`
-                );
-                break;
-            case "move":
-                ctx.displayMessage(
-                    `&7  &e>MOV [${op.fromIndex} -> ${op.toIndex}] ${actionLogLabel(op.action)}`
-                );
-                break;
-        }
-    }
-}

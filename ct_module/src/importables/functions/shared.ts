@@ -39,17 +39,17 @@ export async function openFunctionEditor(
 ): Promise<"opened" | "missing"> {
     await ctx.runCommand(`/function edit ${name}`);
 
+    const menuWait = timedWaitForMenu(ctx, "commandMenuWait");
+    const msgWait = ctx.waitFor(
+        "message",
+        (message) =>
+            removedFormatting(message) ===
+            "Could not find a function with that name!"
+    );
     const exists = await ctx.withTimeout(
-        Promise.race([
-            timedWaitForMenu(ctx, "commandMenuWait").then(() => true),
-            ctx
-                .waitFor(
-                    "message",
-                    (message) =>
-                        removedFormatting(message) ===
-                        "Could not find a function with that name!"
-                )
-                .then(() => false),
+        ctx.race<boolean>([
+            [menuWait.then(() => true), menuWait],
+            [msgWait.then(() => false), msgWait],
         ]),
         "Waiting for function to open"
     );
@@ -76,8 +76,6 @@ export async function ensureFunctionNamesExist(
     const names = unique(functionNames);
     if (names.length === 0) return;
 
-    ctx.displayMessage(`&7Ensuring ${names.length} function shell(s) exist.`);
-
     const existing = await listAllFunctionNames(ctx);
     const existingSet: { [name: string]: true } = {};
     for (let i = 0; i < existing.length; i++) {
@@ -91,17 +89,11 @@ export async function ensureFunctionNamesExist(
         }
     }
 
-    if (missing.length > 0) {
-        ctx.displayMessage(`&7Creating ${missing.length} missing function shell(s).`);
-        for (let i = 0; i < missing.length; i++) {
-            const name = missing[i];
-            ctx.displayMessage(`&7  [create ${i + 1}/${missing.length}] ${String(name)}`);
-            await ctx.runCommand(`/function create ${name}`);
-            await timedWaitForMenu(ctx, "commandMenuWait");
-            await clickGoBack(ctx);
-        }
-    } else {
-        ctx.displayMessage(`&7All ${names.length} function shell(s) already exist.`);
+    for (let i = 0; i < missing.length; i++) {
+        const name = missing[i];
+        await ctx.runCommand(`/function create ${name}`);
+        await timedWaitForMenu(ctx, "commandMenuWait");
+        await clickGoBack(ctx);
     }
 
     for (let i = 0; i < names.length; i++) {

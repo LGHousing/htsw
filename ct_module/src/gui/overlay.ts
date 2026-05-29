@@ -54,7 +54,6 @@ import {
     isDraggingScrollbar,
     updateScrollbarDrag,
     endScrollbarDrag,
-    setRenderDebugLog,
     renderElement,
 } from "./lib/render";
 import { getFocusedInput, setFocusedInput } from "./lib/focus";
@@ -70,21 +69,10 @@ import { beginHtswOverlayDraw, endHtswOverlayDraw } from "./lib/panel";
 
 let enabled = true;
 let initialized = false;
-let debugUntilMs = 0;
 
 const ZERO_RECT: Rect = { x: 0, y: 0, w: 0, h: 0 };
-const DEBUG_LOG_PATH = "./config/ChatTriggers/modules/HTSW/gui-debug.log";
-let debugBuffer = "";
 
-function debugActive(): boolean {
-    return Date.now() < debugUntilMs;
-}
-
-function debug(msg: string): void {
-    if (!debugActive()) return;
-    debugBuffer += `[${Date.now()}] ${msg}\n`;
-    FileLib.write(DEBUG_LOG_PATH, debugBuffer);
-}function frameBounds(): Rect {
+function frameBounds(): Rect {
     // Use the overlay-converted bounds so the panel rect lives in overlay coords (1 unit =
     // OVERLAY_SCALE real pixels). bounds.ts itself is left untouched.
     const b = getContainerBoundsOverlay();
@@ -118,10 +106,26 @@ let uuidFetchInFlight = false;
 let lastUuidFetchAt = 0;
 const UUID_FETCH_COOLDOWN_MS = 60_000;
 
+let knowledgeRefreshGeneration = 0;
 function refreshKnowledgeFromUuid(uuid: string): void {
     const parsed = getParsedResult();
     if (parsed === null) return;
-    setKnowledgeRows(buildCacheStatusRows(uuid, parsed.value));
+    const importables = parsed.value;
+    const BATCH = 40;
+    const gen = ++knowledgeRefreshGeneration;
+    const allRows: ReturnType<typeof buildCacheStatusRows> = [];
+    function processBatch(start: number): void {
+        if (gen !== knowledgeRefreshGeneration) return;
+        if (start >= importables.length) {
+            setKnowledgeRows(allRows);
+            return;
+        }
+        const end = Math.min(importables.length, start + BATCH);
+        const rows = buildCacheStatusRows(uuid, importables.slice(start, end));
+        for (let i = 0; i < rows.length; i++) allRows.push(rows[i]);
+        setTimeout(() => processBatch(end), 0);
+    }
+    setTimeout(() => processBatch(0), 0);
 }
 
 function maybeAutoFetchHousingUuid(): void {
@@ -177,19 +181,12 @@ function laidOutTrees(): { root: Element; rect: Rect }[] {
 // Pre cancellations so they don't bleed through this 25% window.
 const COLOR_IMPORT_GAP_SHADE = 0xc0101010 | 0;
 
-let shadeFrameTick = 0;
-function paintImportShade(rawX: number, rawY: number, root: Element, source: string): void {
+function paintImportShade(rawX: number, rawY: number, root: Element, _source: string): void {
     if (!enabled) return;
     if (getImportProgress() === null) return;
     if (getContainerBounds() !== null) return;
     const cached = getImportCachedBounds();
     if (cached === null) return;
-    if (debugActive() && shadeFrameTick++ % 30 === 0) {
-        const mc = Client.getMinecraft() as any;
-        const cur = mc.field_71462_r;
-        const curName = cur === null || cur === undefined ? "null" : String(cur.getClass().getName());
-        debug(`paintImportShade via=${source} current=${curName} placeholder=${isPlaceholderScreen(cur)}`);
-    }
     const b = getFullscreenPanelRect(cached);
     const x = mcToOverlay(rawX);
     const y = mcToOverlay(rawY);
@@ -236,8 +233,6 @@ function isPlaceholderScreen(s: any): boolean {
 export function initHtswGui(): void {
     if (initialized) return;
     initialized = true;
-
-    setRenderDebugLog(debug);
 
     // Hypixel server-transport messages are the cleanest "you may have
     // changed housings" signal. When we see one, drop the cached UUID and
@@ -375,33 +370,14 @@ export function initHtswGui(): void {
     register(ForgeGuiOpenEvent, (event: any) => {
         const incoming = event.gui;
         const current = (Client.getMinecraft() as any).field_71462_r;
-        const currentName =
-            current === null || current === undefined
-                ? "null"
-                : String(current.getClass().getName());
-        const incomingName =
-            incoming === null || incoming === undefined
-                ? "null"
-                : String(incoming.getClass().getName());
-        debug(
-            `guiOpened from=${currentName} to=${incomingName} import=${
-                getImportProgress() !== null
-            } cached=${getImportCachedBounds() !== null} containerBounds=${
-                getContainerBounds() !== null
-            }`
-        );
         if (!enabled) return;
         if (incoming !== null && incoming !== undefined) return;
         if (getImportProgress() === null) return;
         if (getImportCachedBounds() === null) return;
         const isInterceptable =
             isPlaceholderScreen(current) || getContainerBounds() !== null;
-        if (!isInterceptable) {
-            debug(`guiOpened intercept skipped — current not interceptable`);
-            return;
-        }
+        if (!isInterceptable) return;
         event.gui = getPlaceholderScreen();
-        debug(`guiOpened intercepted — redirected null → placeholder`);
     });
 
     // Sound mute. While `muteImportSounds` is on and an import is in
@@ -450,7 +426,6 @@ export function initHtswGui(): void {
         if (popoverIsOpen()) {
             const dir = dwheel > 0 ? 1 : -1;
             if (tryDispatchPopoverWheel(mx, my, dir)) {
-                debug(`wheel dwheel=${dwheel} dir=${dir} cancelled+dispatched (popover)`);
                 cancel(event);
                 return;
             }
@@ -465,7 +440,6 @@ export function initHtswGui(): void {
                 const s = getScrollState(el.id);
                 if (!pointInRect(s.viewportRect, mx, my)) continue;
                 const dir = dwheel > 0 ? 1 : -1;
-                debug(`wheel dwheel=${dwheel} dir=${dir} cancelled+dispatched`);
                 dispatchWheel(laid, mx, my, dir);
                 cancel(event);
                 return;
@@ -581,20 +555,6 @@ export function initHtswGui(): void {
         }
     });
 
-    // Per-frame state snapshot, ~once per second to avoid log spam.
-    let lastFrameLog = 0;
-    register("guiRender", () => {
-        if (!debugActive()) return;
-        const now = Date.now();
-        if (now - lastFrameLog < 500) return;
-        lastFrameLog = now;
-        const b = getContainerBounds();
-        debug(
-            `state focused=${getFocusedInput()} popoverOpen=${popoverIsOpen()} ` +
-                `bounds=${b === null ? "null" : `${b.screenW}x${b.screenH}`}`
-        );
-    });
-
     // Register popover rendering LAST so it paints on top of all panels.
     initPopoverRendering();
 
@@ -658,11 +618,4 @@ function walkForInput(
 export function toggleHtswGui(): boolean {
     enabled = !enabled;
     return enabled;
-}
-
-export function armHtswGuiDebug(seconds: number): void {
-    debugUntilMs = Date.now() + seconds * 1000;
-    debugBuffer = `[${Date.now()}] armed for ${seconds}s\n`;
-    FileLib.write(DEBUG_LOG_PATH, debugBuffer);
-    ChatLib.chat(`&7[htsw-gui] armed for ${seconds}s`);
 }

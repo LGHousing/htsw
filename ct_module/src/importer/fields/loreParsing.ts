@@ -102,6 +102,19 @@ export function stripRedundantLeadingFormattingCodes(value: string): string {
     return value;
 }
 
+/**
+ * Strip exactly one leading color/reset code (`&0`–`&9`, `&a`–`&f`, `&r`).
+ * When a lore value wraps, Housing re-emits the inherited color at the
+ * start of each continuation line — that's one code, and it's a display
+ * artifact. Any further codes after it are part of the source value.
+ */
+export function stripWrapInheritedColor(value: string): string {
+    if (value.length < 2) return value;
+    if (value.charAt(0) !== "&") return value;
+    if (!/[0-9a-fr]/i.test(value.charAt(1))) return value;
+    return value.slice(2);
+}
+
 export const INTEGER_DISPLAY_VALUE_PATTERN = /^[+-]?(?:(?:\d{1,3}(?:,\d{3})+)|\d+)$/;
 export const DECIMAL_DISPLAY_VALUE_PATTERN = /^[+-]?(?:(?:\d{1,3}(?:,\d{3})+)|\d+)\.\d+$/;
 
@@ -179,28 +192,55 @@ function normalizeCoordinateString(raw: string): string {
     return out.join(" ");
 }
 
+function isWrapStopLine(line: string): boolean {
+    const text = removedFormatting(line).trim();
+    if (text === "") return true;
+    if (text.startsWith("minecraft:") || text.startsWith("NBT:")) return true;
+    if (text.startsWith("LSHIFT ") || text.startsWith("SHIFT ")) return true;
+    if (
+        text === "Left Click to edit!" ||
+        text === "Right Click to remove!" ||
+        text === "Click to edit!" ||
+        text.startsWith("Use shift ")
+    ) {
+        return true;
+    }
+    return false;
+}
+
 export function parseLoreFields<TProp extends string>(
     slot: ItemSlot,
     loreFields: Record<string, { prop: TProp; kind: UiFieldKind }>
 ): Partial<Record<TProp, string | boolean | Location>> {
     const parsed: Partial<Record<TProp, string | boolean | Location>> = {};
+    const lore = slot.getItem().getLore();
 
-    for (const line of slot.getItem().getLore()) {
-        const keyValue = parseLoreKeyValueLine(line);
-        if (keyValue === null) {
-            continue;
-        }
+    for (let i = 0; i < lore.length; i++) {
+        const keyValue = parseLoreKeyValueLine(lore[i]);
+        if (keyValue === null) continue;
 
         const field = loreFields[keyValue.label];
-        if (!field) {
-            continue;
+        if (!field) continue;
+
+        let rawValue = keyValue.value;
+        if (field.kind === "value") {
+            for (let j = i + 1; j < lore.length; j++) {
+                const next = lore[j];
+                if (isWrapStopLine(next)) break;
+                const nextKv = parseLoreKeyValueLine(next);
+                if (nextKv !== null && loreFields[nextKv.label] !== undefined) break;
+                rawValue +=
+                    " " + stripWrapInheritedColor(
+                        stripHousingEditorValuePrefix(
+                            normalizeLoreValueFormatting(next)
+                        ).trim()
+                    );
+                i = j;
+            }
         }
 
-        const value = parseFieldValue(field.kind, keyValue.value);
-        if (value === undefined) {
-            continue;
-        }
-
+        const value = parseFieldValue(field.kind, rawValue);
+        if (value === undefined) continue;
         parsed[field.prop] = value;
     }
 

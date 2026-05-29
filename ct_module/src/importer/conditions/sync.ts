@@ -6,10 +6,7 @@ import type { ObservedConditionSlot } from "../types";
 import type { ProgressHandler } from "../progress/types";
 import { currentConditionListFromSlots, diffConditionList } from "./diff";
 import { readConditionList } from "./readList";
-import {
-    applyConditionListDiff,
-    logConditionSyncState,
-} from "./applyDiff";
+import { applyConditionListDiff } from "./applyDiff";
 import {
     conditionListReadUnits,
     estimateConditionListPhaseUnits,
@@ -60,7 +57,6 @@ export async function syncConditionList(
         sync: { completedUnits: 1, totalUnits: 1, parent: null },
     });
     const diff = diffConditionList(currentConditionListFromSlots(observed), desired);
-    logConditionSyncState(ctx, diff);
 
     await applyConditionListDiff(
         ctx,

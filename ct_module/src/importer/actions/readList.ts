@@ -1,7 +1,6 @@
 import type { Action } from "htsw/types";
 
 import TaskContext from "../../tasks/context";
-import { isTaskCancelled } from "../../tasks/manager";
 import type { ItemRegistry } from "../../importables/itemRegistry";
 import { clickGoBack } from "../gui/helpers";
 import { timedWaitForMenu } from "../gui/menuWait";
@@ -16,6 +15,7 @@ import {
     tryGetActionTypeFromDisplayName,
 } from "../fields/actionMappings";
 import { captureItemFromOpenEditorField } from "../itemCapture";
+import { refreshTruncatedScalarFields } from "./readers";
 import { isTruncatableKind, looksTruncated } from "../fields/loreParsing";
 import {
     CONDITION_MAPPINGS,
@@ -323,7 +323,6 @@ function addItemCaptureEntries(
 }
 
 function shouldHydrateScalarAction(action: Observed<Action>): boolean {
-    if (!getActionSpec(action.type).read) return false;
     const fields = getActionScalarLoreFields(action.type);
     for (let i = 0; i < fields.length; i++) {
         const field = fields[i];
@@ -463,61 +462,54 @@ async function hydrateNestedAction(
     }
 
     const note = entry.action.note;
-    try {
-        await goToPaginatedListPage(ctx, getPaginatedListPageForIndex(entry.index), ACTION_LIST_CONFIG);
-        const actionSlot = await getPaginatedListSlotAtIndex(ctx, entry.index, listLength, ACTION_LIST_CONFIG);
-        entry.slot = actionSlot;
-        entry.slotId = actionSlot.getSlotId();
+    await goToPaginatedListPage(ctx, getPaginatedListPageForIndex(entry.index), ACTION_LIST_CONFIG);
+    const actionSlot = await getPaginatedListSlotAtIndex(ctx, entry.index, listLength, ACTION_LIST_CONFIG);
+    entry.slot = actionSlot;
+    entry.slotId = actionSlot.getSlotId();
 
-        actionSlot.click();
-        await timedWaitForMenu(ctx, "menuClickWait");
-        const spec = getActionSpec(entry.action.type);
+    actionSlot.click();
+    await timedWaitForMenu(ctx, "menuClickWait");
+    const spec = getActionSpec(entry.action.type);
 
-        if (spec.read) {
-            const readCtx: ReadContext | undefined = read !== undefined
-                ? { itemRegistry: read.itemRegistry, itemCaptures: read.itemCaptures, events: read.events, pathPrefix: entryPath }
-                : undefined;
-            entry.action = await spec.read({
-                ctx,
-                propsToRead,
-                read: readCtx,
-                current: entry.action,
-            });
-            entry.nestedReadState = "full";
-            if (note) {
-                entry.action.note = note;
-            }
-        } else if (propsToRead.size > 0) {
-            throw new Error(`Reading action "${entry.action.type}" is not implemented.`);
+    if (spec.read) {
+        const readCtx: ReadContext | undefined = read !== undefined
+            ? { itemRegistry: read.itemRegistry, itemCaptures: read.itemCaptures, events: read.events, pathPrefix: entryPath }
+            : undefined;
+        entry.action = await spec.read({
+            ctx,
+            propsToRead,
+            read: readCtx,
+            current: entry.action,
+        });
+        entry.nestedReadState = "full";
+        if (note) {
+            entry.action.note = note;
         }
+    } else if (propsToRead.size > 0) {
+        throw new Error(`Reading action "${entry.action.type}" is not implemented.`);
+    } else {
+        refreshTruncatedScalarFields(ctx, entry.action);
+        entry.nestedReadState = "full";
+    }
 
-        if (read?.itemCaptures !== undefined && entry.action !== null) {
-            const itemFields = getItemFieldsForCapture(entry.action.type);
-            for (let i = 0; i < itemFields.length; i++) {
-                const field = itemFields[i];
-                const displayName = (entry.action as Record<string, unknown>)[field.prop];
-                if (typeof displayName === "string" && displayName.length > 0) {
-                    const captured = await captureItemFromOpenEditorField(
-                        ctx,
-                        field.label,
-                        read.itemCaptures,
-                        displayName
-                    );
-                    if (captured !== null) {
-                        (entry.action as Record<string, unknown>)[field.prop] = captured;
-                    }
+    if (read?.itemCaptures !== undefined && entry.action !== null) {
+        const itemFields = getItemFieldsForCapture(entry.action.type);
+        for (let i = 0; i < itemFields.length; i++) {
+            const field = itemFields[i];
+            const displayName = (entry.action as Record<string, unknown>)[field.prop];
+            if (typeof displayName === "string" && displayName.length > 0) {
+                const captured = await captureItemFromOpenEditorField(
+                    ctx,
+                    field.label,
+                    read.itemCaptures,
+                    displayName
+                );
+                if (captured !== null) {
+                    (entry.action as Record<string, unknown>)[field.prop] = captured;
                 }
             }
         }
-
-        await clickGoBack(ctx);
-    } catch (error) {
-        if (isTaskCancelled(error)) throw error;
-        ctx.displayMessage(
-            `&7[action-read] &cFailed to read nested action at index ${entry.index} (${entry.action.type}): ${error}`
-        );
-        if (ctx.tryGetMenuItemSlot("Go Back") !== null) {
-            await clickGoBack(ctx);
-        }
     }
+
+    await clickGoBack(ctx);
 }

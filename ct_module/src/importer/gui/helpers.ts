@@ -9,7 +9,7 @@ import {
     normalizeNoteText,
     readListItemNote,
     stripHousingEditorValuePrefix,
-    stripRedundantLeadingFormattingCodes,
+    stripWrapInheritedColor,
 } from "../fields/loreParsing";
 import {
     timedWaitForMenu,
@@ -18,7 +18,7 @@ import {
 import { getVisiblePaginatedItemSlots } from "./paginatedList";
 import { COST } from "../progress/costs";
 import { recordTimedOp } from "../progress/timing";
-import { traceMenuOp } from "../diagnostics/menuTrace";
+import type { WaitForPromise } from "../../tasks/specifics/waitFor";
 
 
 export async function getSlotPaginate(ctx: TaskContext, name: string): Promise<ItemSlot> {
@@ -67,17 +67,13 @@ function findPaginationControl(
 }
 
 export async function clickGoBack(ctx: TaskContext): Promise<void> {
-    traceMenuOp("clickGoBack", "enter");
     ctx.getMenuItemSlot("Go Back").click();
     await timedWaitForMenu(ctx, "goBackWait");
-    traceMenuOp("clickGoBack", "exit");
 }
 
 export async function openSubmenu(ctx: TaskContext, slotName: string): Promise<void> {
-    traceMenuOp("openSubmenu", "enter", { slotName });
     ctx.getMenuItemSlot(slotName).click();
     await timedWaitForMenu(ctx, "menuClickWait");
-    traceMenuOp("openSubmenu", "exit", { slotName });
 }
 
 function setAnvilItemName(newName: string) {
@@ -235,7 +231,7 @@ export function readStringValue(slot: ItemSlot): string | null {
             const normalized = stripHousingEditorValuePrefix(
                 normalizeLoreValueFormatting(line)
             ).trim();
-            return i === 0 ? normalized : stripRedundantLeadingFormattingCodes(normalized);
+            return i === 0 ? normalized : stripWrapInheritedColor(normalized);
         })
         .join(" ");
 }
@@ -264,9 +260,8 @@ function isAlreadySelectedOption(slot: ItemSlot): boolean {
 export async function setBooleanValue(ctx: TaskContext, slot: ItemSlot, value: boolean) {
     const newValue = value ? "Enabled" : "Disabled";
     const currentValue = readCurrentValue(slot);
-    if (currentValue !== null && removedFormatting(currentValue) === newValue) {
-        return;
-    }
+    const currentStripped = currentValue === null ? null : removedFormatting(currentValue);
+    if (currentStripped === newValue) return;
 
     slot.click();
     await timedWaitForMenu(ctx, "menuClickWait");
@@ -277,26 +272,20 @@ export async function setSelectValue(
     slotName: string,
     value: string
 ): Promise<void> {
-    traceMenuOp("setSelectValue", "enter", { slotName, value });
     await openSubmenu(ctx, slotName);
 
     const optionSlot = await getSlotPaginate(ctx, value);
     if (isAlreadySelectedOption(optionSlot)) {
         await clickGoBack(ctx);
-        traceMenuOp("setSelectValue", "exit", { slotName, value, branch: "alreadySelected" });
         return;
     }
 
     optionSlot.click();
     await timedWaitForMenu(ctx, "menuClickWait");
 
-    if (ctx.tryGetMenuItemSlot(slotName) !== null) {
-        traceMenuOp("setSelectValue", "exit", { slotName, value, branch: "autoReturned" });
-        return;
-    }
+    if (ctx.tryGetMenuItemSlot(slotName) !== null) return;
 
     await clickGoBack(ctx);
-    traceMenuOp("setSelectValue", "exit", { slotName, value, branch: "manualGoBack" });
 }
 
 export async function setCycleValue(
@@ -355,22 +344,23 @@ export async function setCycleValue(
 }
 
 export async function enterValue(ctx: TaskContext, value: string): Promise<"CHAT" | "ANVIL"> {
+    const chatWait = waitForChatInputPrompt(ctx);
+    const anvilWait = ctx.waitFor("packetReceived", (packet) => {
+        return (
+            packet instanceof S2DPacketOpenWindow &&
+            packet
+                .func_148902_e
+                /*getGuiId*/
+                () === "minecraft:anvil"
+        );
+    });
     const inputMode = await ctx.withTimeout(
-        Promise.race([
-            waitForChatInputPrompt(ctx).then(() => "CHAT" as const),
-            ctx
-                .waitFor("packetReceived", (packet) => {
-                    return (
-                        packet instanceof S2DPacketOpenWindow &&
-                        packet
-                            .func_148902_e
-                            /*getGuiId*/
-                            () === "minecraft:anvil"
-                    );
-                })
-                .then(() => "ANVIL" as const),
+        ctx.race<"CHAT" | "ANVIL">([
+            [chatWait.then(() => "CHAT" as const), chatWait],
+            [anvilWait.then(() => "ANVIL" as const), anvilWait],
         ]),
-        "Waiting for input mode to be determined"
+        "Waiting for input mode to be determined",
+        8000
     );
 
     switch (inputMode) {
@@ -378,7 +368,7 @@ export async function enterValue(ctx: TaskContext, value: string): Promise<"CHAT
             await ctx.sendMessage(value);
             return "CHAT";
         case "ANVIL":
-            await ctx.waitFor("tick");
+            await waitForMenu(ctx);
             setAnvilItemName(value);
             acceptNewAnvilItem();
             return "ANVIL";
@@ -388,7 +378,7 @@ export async function enterValue(ctx: TaskContext, value: string): Promise<"CHAT
     }
 }
 
-function waitForChatInputPrompt(ctx: TaskContext): Promise<unknown> {
+function waitForChatInputPrompt(ctx: TaskContext): WaitForPromise<unknown> {
     return ctx.waitFor("message", (message) => {
         return removedFormatting(message).includes(
             "Please use the chat to provide the value you wish to set."
@@ -422,18 +412,13 @@ export async function setStringValue(
 ): Promise<void> {
     const newValue = value.toString();
     const currentValue = readStringValue(slot);
-    if (currentValue !== null && currentValue === newValue) {
-        traceMenuOp("setStringValue", "exit", { value: newValue, branch: "unchanged" });
-        return;
-    }
+    if (currentValue !== null && currentValue === newValue) return;
 
-    traceMenuOp("setStringValue", "enter", { value: newValue });
     slot.click();
     const started = Date.now();
     const mode = await enterValue(ctx, newValue);
     await waitForMenu(ctx);
     recordTimedOp(mode === "CHAT" ? "chatInput" : "anvilInput", mode === "CHAT" ? COST.chatInput : COST.anvilInput, Date.now() - started);
-    traceMenuOp("setStringValue", "exit", { value: newValue, mode });
 }
 
 export async function setStringOrPaginatedOptionValue(
@@ -450,23 +435,25 @@ export async function setStringOrPaginatedOptionValue(
     const slotName = removedFormatting(slot.getItem().getName()).trim();
     slot.click();
 
+    const chatWait = waitForChatInputPrompt(ctx);
+    const anvilWait = ctx.waitFor("packetReceived", (packet) => {
+        return (
+            packet instanceof S2DPacketOpenWindow &&
+            packet
+                .func_148902_e
+                /*getGuiId*/
+                () === "minecraft:anvil"
+        );
+    });
+    const menuWait = waitForMenu(ctx);
     const inputMode = await ctx.withTimeout(
-        Promise.race([
-            waitForChatInputPrompt(ctx).then(() => "CHAT" as const),
-            ctx
-                .waitFor("packetReceived", (packet) => {
-                    return (
-                        packet instanceof S2DPacketOpenWindow &&
-                        packet
-                            .func_148902_e
-                            /*getGuiId*/
-                            () === "minecraft:anvil"
-                    );
-                })
-                .then(() => "ANVIL" as const),
-            waitForMenu(ctx).then(() => "MENU" as const),
+        ctx.race<"CHAT" | "ANVIL" | "MENU">([
+            [chatWait.then(() => "CHAT" as const), chatWait],
+            [anvilWait.then(() => "ANVIL" as const), anvilWait],
+            [menuWait.then(() => "MENU" as const), menuWait],
         ]),
-        `Waiting to edit "${slotName}"`
+        `Waiting to edit "${slotName}"`,
+        8000
     );
 
     switch (inputMode) {

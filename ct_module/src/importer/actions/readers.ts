@@ -25,11 +25,51 @@ import {
 } from "../gui/helpers";
 import { waitForMenu } from "../gui/menuWait";
 import { readConditionList } from "../conditions/readList";
-import { getActionFieldLabel } from "../fields/actionMappings";
-import { parseLocationField } from "../fields/loreParsing";
-import type { Observed } from "../types";
+import {
+    getActionFieldLabel,
+    getActionScalarLoreFields,
+} from "../fields/actionMappings";
+import {
+    isTruncatableKind,
+    looksTruncated,
+    parseLocationField,
+} from "../fields/loreParsing";
+import type { Observed, UiFieldKind } from "../types";
 import { readActionList } from "./readList";
 import type { ActionReadArgs } from "./specs";
+
+export function refreshTruncatedScalarFields(
+    ctx: TaskContext,
+    current: Observed<Action>
+): void {
+    const fields = getActionScalarLoreFields(current.type);
+    for (let i = 0; i < fields.length; i++) {
+        const field = fields[i];
+        if (!isTruncatableKind(field.kind)) continue;
+        const existing = (current as Record<string, unknown>)[field.prop];
+        if (!fieldLooksTruncated(existing, field.kind)) continue;
+        const slot = ctx.tryGetItemSlot(field.label);
+        if (slot === null) continue;
+        const value = readStringValue(slot);
+        if (value === null) continue;
+        if (field.kind === "location") {
+            (current as Record<string, unknown>)[field.prop] = parseLocationField(value);
+        } else {
+            (current as Record<string, unknown>)[field.prop] = value;
+        }
+    }
+}
+
+function fieldLooksTruncated(value: unknown, kind: UiFieldKind): boolean {
+    if (typeof value === "string") return looksTruncated(value);
+    if (kind === "location" && typeof value === "object" && value !== null) {
+        if ((value as { type?: unknown }).type === "Custom Coordinates") {
+            const coord = (value as { value?: unknown }).value;
+            return typeof coord === "string" && looksTruncated(coord);
+        }
+    }
+    return false;
+}
 
 export async function readOpenConditional({
     ctx,

@@ -285,31 +285,3 @@ export async function applyConditionListDiff(
     if (lastLabel.length > 0) emitConditionOp(lastLabel);
 }
 
-export function logConditionSyncState(ctx: TaskContext, diff: ConditionListDiff): void {
-    if (diff.operations.length === 0) {
-        ctx.displayMessage(`&7[cond-sync] &aUp to date.`);
-        return;
-    }
-
-    ctx.displayMessage(`&7[cond-sync] &d${diff.operations.length} operation(s):`);
-    let addIndex = 0;
-    for (const op of diff.operations) {
-        if (op.kind === "edit") {
-            const observedName = CONDITION_MAPPINGS[op.baselineCondition.type].displayName;
-            ctx.displayMessage(
-                `&7  &6~ ${observedName} &7-> &6${CONDITION_MAPPINGS[op.desired.type].displayName}`
-            );
-        } else if (op.kind === "delete") {
-            const deleteName =
-                op.baselineCondition === null
-                    ? "Unknown Condition"
-                    : CONDITION_MAPPINGS[op.baselineCondition.type].displayName;
-            ctx.displayMessage(`&7  &c- ${deleteName}`);
-        } else {
-            ctx.displayMessage(
-                `&7  &a+ [${addIndex}] ${CONDITION_MAPPINGS[op.desired.type].displayName}`
-            );
-            addIndex++;
-        }
-    }
-}

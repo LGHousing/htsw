@@ -162,6 +162,11 @@ export type QueueItemRunState =
           phase: QueuePhase;
           /** 0..1 within the current phase. Resets to 0 when the phase advances. */
           phaseFraction: number;
+      }
+    | {
+          kind: "parked";
+          phase: QueuePhase;
+          phaseFraction: number;
       };
 
 export function getQueueItemRunState(item: QueueItem): QueueItemRunState {
@@ -196,10 +201,11 @@ export function getQueueItemRunState(item: QueueItem): QueueItemRunState {
     if (current === null || current.key !== key) {
         const parked = progress.parked[key];
         if (parked !== undefined) {
-            return runStateFromActive(parked);
+            const snap = runStateFromActive(parked);
+            return { kind: "parked", phase: snap.phase, phaseFraction: snap.phaseFraction };
         }
         return {
-            kind: "current",
+            kind: "parked",
             phase: "reading",
             phaseFraction: 0,
         };

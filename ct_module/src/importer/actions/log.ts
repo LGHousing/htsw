@@ -1,5 +1,7 @@
 import type { Action } from "htsw/types";
 
+import { getActionScalarLoreFields } from "../fields/actionMappings";
+import { scalarFieldDiffers } from "../fields/compare";
 import type {
     ActionListOperation,
     Observed,
@@ -48,9 +50,25 @@ export function actionLogLabel(action: Action | Observed<Action> | null | undefi
 
 export function editDiffSummary(op: Extract<ActionListOperation, { kind: "edit" }>): string {
     const parts: string[] = [];
-    if (op.noteDiffers) parts.push("note changed");
+    if (op.noteDiffers) parts.push("note");
+    if (!op.noteOnly) {
+        const scalars = getActionScalarLoreFields(op.baselineAction.type);
+        for (let i = 0; i < scalars.length; i++) {
+            const field = scalars[i];
+            if (
+                scalarFieldDiffers(
+                    op.baselineAction,
+                    op.desired,
+                    op.baselineAction.type,
+                    field.prop
+                )
+            ) {
+                parts.push(field.prop);
+            }
+        }
+    }
     for (const nested of op.nestedDiffs) {
-        parts.push(`${nested.prop} ${nested.diff.operations.length} nested ops`);
+        parts.push(`${nested.prop}(${nested.diff.operations.length})`);
     }
     return parts.length === 0 ? "fields changed" : parts.join(", ");
 }

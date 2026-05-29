@@ -21,10 +21,8 @@ type TimedOp = {
 
 type TimingStatsEntry = {
     count: number;
-    totalMs: number;
-    totalExpectedUnits: number;
-    avgMs: number;
     avgMsPerExpectedUnit: number;
+    baselineMsPerExpectedUnit: number;
 };
 
 export type TimingStats = {
@@ -33,9 +31,13 @@ export type TimingStats = {
 
 type MutableTimingStatsEntry = {
     count: number;
-    totalMs: number;
-    totalExpectedUnits: number;
+    ewmaMsPerUnit: number;
+    ewmaSlowMsPerUnit: number;
 };
+
+const EWMA_ALPHA_FAST = 0.1;
+const EWMA_ALPHA_SLOW = 0.02;
+const EWMA_WARMUP = 10;
 
 const stats: { [kind: string]: MutableTimingStatsEntry | undefined } = {};
 const PERSIST_PATH = "./htsw/eta-stats.json";
@@ -64,29 +66,39 @@ export function recordTimedOp(
     elapsedMs: number
 ): void {
     loadPersistedStats();
+    if (expectedUnits <= 0) return;
+    const sample = Math.max(0, elapsedMs) / expectedUnits;
     const key = kind;
     let entry = stats[key];
     if (entry === undefined) {
-        entry = { count: 0, totalMs: 0, totalExpectedUnits: 0 };
+        entry = { count: 0, ewmaMsPerUnit: 0, ewmaSlowMsPerUnit: 0 };
         stats[key] = entry;
     }
     entry.count++;
-    entry.totalMs += Math.max(0, elapsedMs);
-    entry.totalExpectedUnits += expectedUnits;
+    const warmup = entry.count <= EWMA_WARMUP;
+    const alphaFast = warmup ? 1 / entry.count : EWMA_ALPHA_FAST;
+    const alphaSlow = warmup ? 1 / entry.count : EWMA_ALPHA_SLOW;
+    entry.ewmaMsPerUnit = alphaFast * sample + (1 - alphaFast) * entry.ewmaMsPerUnit;
+    entry.ewmaSlowMsPerUnit = alphaSlow * sample + (1 - alphaSlow) * entry.ewmaSlowMsPerUnit;
     schedulePersist();
 }
 
-export async function timed<T>(
+export function timed<T>(
     kind: TimedOperationKind,
     expectedUnits: number,
     fn: () => Promise<T>
-): Promise<T> {
+): Promise<T> & { cleanupWaiter?: () => void } {
     const op = beginTimedOp(kind, expectedUnits);
-    try {
-        return await fn();
-    } finally {
-        endTimedOp(op);
-    }
+    const inner = fn();
+    const wrapped = inner.then(
+        (v): T => { endTimedOp(op); return v; },
+        (e): T => { endTimedOp(op); throw e; }
+    ) as Promise<T> & { cleanupWaiter?: () => void };
+    // Forward cleanupWaiter from the inner waiter (if present) so a racing
+    // caller can cancel the underlying waitFor container before it leaks.
+    const innerCleanup = (inner as Promise<T> & { cleanupWaiter?: () => void }).cleanupWaiter;
+    if (innerCleanup !== undefined) wrapped.cleanupWaiter = innerCleanup;
+    return wrapped;
 }
 
 export function getTimingStats(): TimingStats {
@@ -97,13 +109,8 @@ export function getTimingStats(): TimingStats {
         if (entry === undefined) continue;
         out[kind] = {
             count: entry.count,
-            totalMs: entry.totalMs,
-            totalExpectedUnits: entry.totalExpectedUnits,
-            avgMs: entry.count === 0 ? 0 : entry.totalMs / entry.count,
-            avgMsPerExpectedUnit:
-                entry.totalExpectedUnits <= 0
-                    ? 0
-                    : entry.totalMs / entry.totalExpectedUnits,
+            avgMsPerExpectedUnit: entry.ewmaMsPerUnit,
+            baselineMsPerExpectedUnit: entry.ewmaSlowMsPerUnit,
         };
     }
     return out;
@@ -117,6 +124,14 @@ export function resetTimingStats(): void {
     persistTimingStats();
 }
 
+type PersistedEntry = {
+    count?: number;
+    ewmaMsPerUnit?: number;
+    ewmaSlowMsPerUnit?: number;
+    totalMs?: number;
+    totalExpectedUnits?: number;
+};
+
 function loadPersistedStats(): void {
     if (loadedPersistedStats) return;
     loadedPersistedStats = true;
@@ -124,24 +139,33 @@ function loadPersistedStats(): void {
     try {
         const raw = String(FileLib.read(PERSIST_PATH) ?? "");
         const parsed = JSON.parse(raw) as {
-            stats?: { [kind: string]: MutableTimingStatsEntry | undefined };
+            stats?: { [kind: string]: PersistedEntry | undefined };
         };
         const persisted = parsed.stats;
         if (persisted === undefined) return;
         for (const kind in persisted) {
             const entry = persisted[kind];
             if (entry === undefined) continue;
-            if (
-                typeof entry.count !== "number" ||
-                typeof entry.totalMs !== "number" ||
-                typeof entry.totalExpectedUnits !== "number"
+            if (typeof entry.count !== "number") continue;
+            let ewmaMsPerUnit: number | null = null;
+            if (typeof entry.ewmaMsPerUnit === "number") {
+                ewmaMsPerUnit = Math.max(0, entry.ewmaMsPerUnit);
+            } else if (
+                typeof entry.totalMs === "number" &&
+                typeof entry.totalExpectedUnits === "number" &&
+                entry.totalExpectedUnits > 0
             ) {
-                continue;
+                ewmaMsPerUnit = entry.totalMs / entry.totalExpectedUnits;
             }
+            if (ewmaMsPerUnit === null) continue;
+            const ewmaSlowMsPerUnit =
+                typeof entry.ewmaSlowMsPerUnit === "number"
+                    ? Math.max(0, entry.ewmaSlowMsPerUnit)
+                    : ewmaMsPerUnit;
             stats[kind] = {
                 count: Math.max(0, entry.count),
-                totalMs: Math.max(0, entry.totalMs),
-                totalExpectedUnits: Math.max(0, entry.totalExpectedUnits),
+                ewmaMsPerUnit,
+                ewmaSlowMsPerUnit,
             };
         }
     } catch (_error) {

@@ -457,13 +457,13 @@ export function getNestedListFields(
 
 export function getActionScalarLoreFields(
     type: Action["type"]
-): { prop: string; kind: UiFieldKind }[] {
+): { label: string; prop: string; kind: UiFieldKind }[] {
     const loreFields = getActionLoreFields(type);
-    const result: { prop: string; kind: UiFieldKind }[] = [];
+    const result: { label: string; prop: string; kind: UiFieldKind }[] = [];
     for (const label in loreFields) {
         const field = loreFields[label];
         if (field.kind !== "nestedList") {
-            result.push({ prop: field.prop, kind: field.kind });
+            result.push({ label, prop: field.prop, kind: field.kind });
         }
     }
     return result;

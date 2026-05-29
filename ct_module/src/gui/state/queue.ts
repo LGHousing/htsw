@@ -92,6 +92,26 @@ export function clearQueue(): void {
     items = [];
 }
 
+/**
+ * Returns the queue items sorted to match execution order: ITEMs first
+ * (because action lists reference items by name and need them to exist
+ * first), then the rest in queue insertion order. importJson group rows
+ * are kept in insertion order alongside the non-ITEM importables. Use
+ * this for display so the user sees the same order things will run in.
+ */
+export function sortedQueueForDisplay(queue: readonly QueueItem[]): QueueItem[] {
+    const itemImportables: QueueItem[] = [];
+    const rest: QueueItem[] = [];
+    for (const item of queue) {
+        if (item.kind === "importable" && item.type === "ITEM") {
+            itemImportables.push(item);
+        } else {
+            rest.push(item);
+        }
+    }
+    return itemImportables.concat(rest);
+}
+
 // ── Path-based helpers ─────────────────────────────────────────────────
 
 /**

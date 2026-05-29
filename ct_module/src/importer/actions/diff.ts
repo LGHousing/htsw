@@ -1,11 +1,13 @@
 import type { Action, Condition } from "htsw/types";
 
-import { ACTION_MAPPINGS } from "../fields/actionMappings";
+import {
+    ACTION_MAPPINGS,
+    getActionScalarLoreFields,
+} from "../fields/actionMappings";
 import {
     actionOnlyNoteDiffers,
     actionsEqual,
     conditionsEqual,
-    normalizeActionCompare,
     scalarFieldDiffers,
 } from "../fields/compare";
 import { CONDITION_MAPPINGS } from "../fields/conditionMappings";
@@ -23,7 +25,6 @@ import type {
     ObservedActionSlot,
     UiFieldKind,
 } from "../types";
-import { traceDebugSnapshot } from "../progress/trace";
 
 type KnownCurrentAction = Omit<CurrentActionListEntry, "action"> & {
     action: NonNullable<CurrentActionListEntry["action"]>;
@@ -619,6 +620,28 @@ export function diffActionList(
     return diffActionListInner(current, desired, true);
 }
 
+function editOpIsObservablyNoop(
+    op: Extract<ActionListOperation, { kind: "edit" }>
+): boolean {
+    if (op.noteDiffers) return false;
+    if (op.nestedDiffs.length > 0) return false;
+    const scalarFields = getActionScalarLoreFields(op.baselineAction.type);
+    for (let i = 0; i < scalarFields.length; i++) {
+        const field = scalarFields[i];
+        if (
+            scalarFieldDiffers(
+                op.baselineAction,
+                op.desired,
+                op.baselineAction.type,
+                field.prop
+            )
+        ) {
+            return false;
+        }
+    }
+    return true;
+}
+
 function diffActionListInner(
     current: CurrentActionListEntry[],
     desired: Action[],
@@ -670,17 +693,11 @@ function diffActionListInner(
         }
 
         if (!actionsEqual(match.current.action, match.desired)) {
-            traceDebugSnapshot("actionCompareMismatch", {
-                currentIndex: match.current.index,
-                desiredIndex: match.desiredIndex,
-                matchKind: match.kind,
-                cost: match.cost,
-                current: match.current.action,
-                desired: match.desired,
-                normalizedCurrent: normalizeActionCompare(match.current.action),
-                normalizedDesired: normalizeActionCompare(match.desired),
-            });
-            operations.push(createEditOperation(match, includeNested));
+            const editOp = createEditOperation(match, includeNested);
+            if (editOpIsObservablyNoop(editOp)) {
+                continue;
+            }
+            operations.push(editOp);
         }
     }
 

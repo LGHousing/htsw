@@ -13,6 +13,7 @@ import { COLOR_TEXT_FAINT } from "../lib/theme";
 import { linesForFile } from "./lineModel";
 import {
     buildLineRows,
+    effectiveBodyWidth,
     FOCUS_GUTTER_W,
     gutterWidthForLines,
     LINE_H,
@@ -145,13 +146,13 @@ export function CodeView(props: CodeViewProps): Element {
                         if (lineIdToIndex[extra.line.id] === undefined) {
                             lineIdToIndex[extra.line.id] = totalRows;
                         }
-                        totalRows += wrapRowCount(extra.line, bodyMaxWidth);
+                        totalRows += wrapRowCount(extra.line, bodyMaxWidth, extra.decorations);
                     }
                 }
                 if (lineIdToIndex[line.id] === undefined) {
                     lineIdToIndex[line.id] = totalRows;
                 }
-                totalRows += wrapRowCount(line, bodyMaxWidth);
+                totalRows += wrapRowCount(line, bodyMaxWidth, dec);
                 entryRowEnd[i] = totalRows;
             }
 
@@ -245,13 +246,14 @@ const wrapRowCountCache = new WeakMap<
     { width: number; count: number }
 >();
 
-function wrapRowCount(line: RenderableLine, bodyMaxWidth: number): number {
+function wrapRowCount(line: RenderableLine, bodyMaxWidth: number, dec: LineDecorations): number {
+    const effective = effectiveBodyWidth(bodyMaxWidth, dec);
     const cached = wrapRowCountCache.get(line);
-    if (cached !== undefined && cached.width === bodyMaxWidth) {
+    if (cached !== undefined && cached.width === effective) {
         return cached.count;
     }
-    const wrapped = wrapTokensIntoVisualRows(line.tokens, bodyMaxWidth);
-    wrapRowCountCache.set(line, { width: bodyMaxWidth, count: wrapped.length });
+    const wrapped = wrapTokensIntoVisualRows(line.tokens, effective);
+    wrapRowCountCache.set(line, { width: effective, count: wrapped.length });
     return wrapped.length;
 }
 

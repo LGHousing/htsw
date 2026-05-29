@@ -12,17 +12,17 @@ export async function openMenuEditor(
 ): Promise<"opened" | "missing"> {
     await ctx.runCommand(`/menu edit ${name}`);
 
+    const menuWait = timedWaitForMenu(ctx, "commandMenuWait");
+    const msgWait = ctx.waitFor(
+        "message",
+        (message) =>
+            removedFormatting(message) ===
+            "Could not find a menu with that name!"
+    );
     const opened = await ctx.withTimeout(
-        Promise.race([
-            timedWaitForMenu(ctx, "commandMenuWait").then(() => true),
-            ctx
-                .waitFor(
-                    "message",
-                    (message) =>
-                        removedFormatting(message) ===
-                        "Could not find a menu with that name!"
-                )
-                .then(() => false),
+        ctx.race<boolean>([
+            [menuWait.then(() => true), menuWait],
+            [msgWait.then(() => false), msgWait],
         ]),
         "Waiting for menu to open"
     );
@@ -37,8 +37,6 @@ export async function ensureMenuNamesExist(
 ): Promise<void> {
     const names = unique(menuNames);
     if (names.length === 0) return;
-
-    ctx.displayMessage(`&7Ensuring ${names.length} menu shell(s) exist.`);
 
     for (const name of names) {
         const status = await openMenuEditor(ctx, name);

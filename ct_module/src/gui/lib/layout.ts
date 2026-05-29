@@ -159,7 +159,8 @@ function isPaddingEntry(p: PaddingEntry | PaddingEntry[]): p is PaddingEntry {
 }
 
 function textContent(text: string): { w: number; h: number } {
-    return { w: Renderer.getStringWidth(text) + TEXT_PAD * 2, h: LINE_H + TEXT_PAD * 2 };
+    const w = Client.getMinecraft().field_71466_p.func_78256_a(text);
+    return { w: w + TEXT_PAD * 2, h: LINE_H + TEXT_PAD * 2 };
 }
 
 function inputContent(_: string): { w: number; h: number } {

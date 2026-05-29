@@ -26,7 +26,7 @@ import {
     setHouseTrust,
     setImportSoundsMuted,
 } from "../../state";
-import { getQueue } from "../../state/queue";
+import { getQueue, sortedQueueForDisplay } from "../../state/queue";
 import { getAlias } from "../../../importCache/aliases";
 import { openAliasPopover } from "../../popovers/alias";
 import {
@@ -212,7 +212,7 @@ export function importTab(): Element {
                 id: "right-import-queue-scroll",
                 style: { gap: 2, height: { kind: "px", value: 120 } },
                 children: () => {
-                    const items = getQueue();
+                    const items = sortedQueueForDisplay(getQueue());
                     if (items.length === 0) {
                         return [
                             Container({

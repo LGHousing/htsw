@@ -14,6 +14,10 @@ const LINE_NUM_MIN_W = 16;
 const DETAIL_COLUMN_W = 180;
 const DETAIL_TRUNCATE_CHARS = 41;
 
+export function effectiveBodyWidth(bodyMaxWidth: number, dec: LineDecorations): number {
+    return Math.max(1, bodyMaxWidth - (dec.detail !== undefined ? DETAIL_COLUMN_W + 4 : 0));
+}
+
 const STATE_GLYPH: { [k in DiffState]: string } = {
     unknown: " ",
     match: " ",
@@ -104,10 +108,7 @@ export function buildLineRows(
     dec: LineDecorations,
     options: LineRowOptions
 ): Element[] {
-    const effectiveBodyW = Math.max(
-        1,
-        options.bodyMaxWidth - (dec.detail !== undefined ? DETAIL_COLUMN_W + 4 : 0)
-    );
+    const effectiveBodyW = effectiveBodyWidth(options.bodyMaxWidth, dec);
     const visualRows = wrapTokensIntoVisualRows(line.tokens, effectiveBodyW);
     const out: Element[] = [];
     for (let i = 0; i < visualRows.length; i++) {

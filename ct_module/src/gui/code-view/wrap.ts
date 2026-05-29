@@ -1,11 +1,12 @@
 /// <reference types="../../../CTAutocomplete" />
 
+import { chatWidth } from "../../utils/helpers";
 import type { TokenSpan } from "./types";
 
 const MIN_WRAP_W = 6;
 
 function stringWidth(text: string): number {
-    return Renderer.getStringWidth(text);
+    return chatWidth(text, false);
 }
 
 function cloneToken(token: TokenSpan, text: string): TokenSpan {

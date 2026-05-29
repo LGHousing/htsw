@@ -152,39 +152,29 @@ async function hydrateScalarCondition(
     if (entry.condition === null) return;
     const note = entry.condition.note;
     const inverted = entry.condition.inverted;
-    try {
-        await goToPaginatedListPage(
-            ctx,
-            getPaginatedListPageForIndex(entry.index),
-            CONDITION_LIST_CONFIG
-        );
-        const slot = await getPaginatedListSlotAtIndex(
-            ctx,
-            entry.index,
-            listLength,
-            CONDITION_LIST_CONFIG
-        );
-        entry.slot = slot;
-        entry.slotId = slot.getSlotId();
-        slot.click();
-        await timedWaitForMenu(ctx, "menuClickWait");
-        const spec = getConditionSpec(entry.condition.type);
-        if (!spec.read) {
-            await clickGoBack(ctx);
-            return;
-        }
-        const refreshed = await spec.read(ctx);
-        if (note) refreshed.note = note;
-        if (inverted) refreshed.inverted = true;
-        entry.condition = refreshed;
+    await goToPaginatedListPage(
+        ctx,
+        getPaginatedListPageForIndex(entry.index),
+        CONDITION_LIST_CONFIG
+    );
+    const slot = await getPaginatedListSlotAtIndex(
+        ctx,
+        entry.index,
+        listLength,
+        CONDITION_LIST_CONFIG
+    );
+    entry.slot = slot;
+    entry.slotId = slot.getSlotId();
+    slot.click();
+    await timedWaitForMenu(ctx, "menuClickWait");
+    const spec = getConditionSpec(entry.condition.type);
+    if (!spec.read) {
         await clickGoBack(ctx);
-    } catch (error) {
-        ctx.displayMessage(
-            `&7[condition-read] &cFailed to read scalar condition at ` +
-                `index ${entry.index} (${entry.condition.type}): ${error}`
-        );
-        if (ctx.tryGetMenuItemSlot("Go Back") !== null) {
-            await clickGoBack(ctx);
-        }
+        return;
     }
+    const refreshed = await spec.read(ctx);
+    if (note) refreshed.note = note;
+    if (inverted) refreshed.inverted = true;
+    entry.condition = refreshed;
+    await clickGoBack(ctx);
 }

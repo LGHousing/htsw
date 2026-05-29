@@ -18,11 +18,6 @@ import { COLOR_PANEL, COLOR_PANEL_BORDER } from "./theme";
 import { getOverlayScreenW, getOverlayScreenH } from "./overlayScale";
 import { GL11, javaType } from "./java";
 
-let dbgLog: (m: string) => void = () => {};
-export function setRenderDebugLog(fn: (m: string) => void): void {
-    dbgLog = fn;
-}
-
 const COLOR_INPUT_BG = 0xff000000 | 0;
 const COLOR_INPUT_BORDER = 0xff444444 | 0;
 const COLOR_INPUT_BORDER_HOVER = 0xffa2a2a2 | 0;
@@ -114,12 +109,47 @@ function getIconImage(name: string): unknown {
         );
         const ImageCtor = Image as unknown as new (b: unknown) => unknown;
         img = new ImageCtor(buffered);
-    } catch (e) {
-        dbgLog(`icon load failed "${name}": ${(e as Error).message ?? e}`);
+    } catch (_e) {
         img = null;
     }
     iconCache[name] = img;
     return img;
+}
+
+export function backgroundPreloadIcons(): void {
+    try {
+        const FilesType = Java.type("java.nio.file.Files");
+        const PathsType = Java.type("java.nio.file.Paths");
+        // @ts-ignore
+        const dir = PathsType.get(ICON_BASE_PATH);
+        // @ts-ignore
+        if (!FilesType.exists(dir)) return;
+        // @ts-ignore
+        const stream = FilesType.newDirectoryStream(dir);
+        const names: string[] = [];
+        try {
+            const it = stream.iterator();
+            while (it.hasNext()) {
+                const p = it.next();
+                const filename = String(p.getFileName().toString());
+                if (filename.length > 4 && filename.substring(filename.length - 4) === ".png") {
+                    names.push(filename.substring(0, filename.length - 4));
+                }
+            }
+        } finally {
+            stream.close();
+        }
+        let i = 0;
+        const loadNext = (): void => {
+            if (i >= names.length) return;
+            getIconImage(names[i]);
+            i++;
+            setTimeout(loadNext, 0);
+        };
+        setTimeout(loadNext, 0);
+    } catch (_e) {
+        // ignore
+    }
 }
 
 export function renderElement(
@@ -327,7 +357,6 @@ export function dispatchClick(
     mouseY: number,
     button: number
 ): boolean {
-    dbgLog(`dispatchClick @(${mouseX},${mouseY}) btn=${button} laid.length=${laid.length}`);
     // Scrollbar thumb drag start uses the same interceptor predicate as hover suppression so the
     // two stay consistent. We still need the scroll id to start the drag, so look it up here.
     if (button === 0 && getClickInterceptor(laid, mouseX, mouseY) !== null) {
@@ -360,9 +389,6 @@ export function dispatchClick(
         if (item.clipRect && !pointInRect(item.clipRect, mouseX, mouseY)) continue;
         if (!pointInRect(item.rect, mouseX, mouseY)) continue;
         const e = item.element;
-        dbgLog(
-            `  hit kind=${e.kind} rect=(${item.rect.x},${item.rect.y} ${item.rect.w}x${item.rect.h})`
-        );
         if (e.kind === "container" && (e.onClick || e.onDoubleClick)) {
             setFocusedInput(null);
             const isDouble =
@@ -376,7 +402,6 @@ export function dispatchClick(
                 setFocusedInput(null);
                 return true;
             }
-            dbgLog(`  -> focusing input id=${e.id}`);
             setFocusedInput(e.id);
             // Forward click to the GuiTextField for cursor placement / drag-select start.
             // The field must already be marked focused for mouseClicked to set the cursor.
@@ -393,7 +418,6 @@ export function dispatchClick(
             return true;
         }
     }
-    dbgLog(`  no hit`);
     // Click landed on the panel but didn't hit anything clickable — still drop focus,
     // matching the behavior of clicking outside the panel entirely.
     setFocusedInput(null);

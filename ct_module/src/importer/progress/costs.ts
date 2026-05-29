@@ -67,6 +67,99 @@ export const COST = {
     itemInject: 1,
 };
 
+export const CALIBRATABLE_COST_KEYS = [
+    "commandMenuWait",
+    "commandMessageWait",
+    "menuClickWait",
+    "messageClickWait",
+    "pageTurnWait",
+    "goBackWait",
+    "chatInput",
+    "anvilInput",
+    "itemSelect",
+    "reorderStep",
+] as const;
+export type CalibratableCostKey = (typeof CALIBRATABLE_COST_KEYS)[number];
+
+const COST_OVERRIDES_PATH = "./htsw/cost-overrides.json";
+let costOverridesLoaded = false;
+
+export function loadPersistedCostOverrides(): void {
+    if (costOverridesLoaded) return;
+    costOverridesLoaded = true;
+    try {
+        if (!FileLib.exists(COST_OVERRIDES_PATH)) return;
+        const raw = String(FileLib.read(COST_OVERRIDES_PATH) ?? "");
+        if (raw.trim().length === 0) return;
+        const parsed = JSON.parse(raw) as { costs?: { [k: string]: number } };
+        const persisted = parsed.costs;
+        if (persisted === undefined) return;
+        for (let i = 0; i < CALIBRATABLE_COST_KEYS.length; i++) {
+            const k = CALIBRATABLE_COST_KEYS[i];
+            const value = persisted[k];
+            if (typeof value === "number" && isFinite(value) && value > 0) {
+                COST[k] = value;
+            }
+        }
+    } catch (_e) {
+        // ignore, fall back to defaults
+    }
+}
+
+export function applyCalibratedCosts(updated: Partial<Record<CalibratableCostKey, number>>): void {
+    for (let i = 0; i < CALIBRATABLE_COST_KEYS.length; i++) {
+        const k = CALIBRATABLE_COST_KEYS[i];
+        const v = updated[k];
+        if (typeof v === "number" && isFinite(v) && v > 0) {
+            COST[k] = v;
+        }
+    }
+    persistCostOverrides();
+}
+
+export function resetCalibratedCosts(): void {
+    const defaults: Record<CalibratableCostKey, number> = {
+        commandMenuWait: 2.3,
+        commandMessageWait: 2,
+        menuClickWait: 1.7,
+        messageClickWait: 2,
+        pageTurnWait: 1.7,
+        goBackWait: 1.8,
+        chatInput: 3,
+        anvilInput: 3.8,
+        itemSelect: 1.6,
+        reorderStep: 1.8,
+    };
+    for (let i = 0; i < CALIBRATABLE_COST_KEYS.length; i++) {
+        const k = CALIBRATABLE_COST_KEYS[i];
+        COST[k] = defaults[k];
+    }
+    try {
+        if (FileLib.exists(COST_OVERRIDES_PATH)) {
+            FileLib.write(COST_OVERRIDES_PATH, "{}", true);
+        }
+    } catch (_e) {
+        // ignore
+    }
+}
+
+function persistCostOverrides(): void {
+    try {
+        const out: Record<string, number> = {};
+        for (let i = 0; i < CALIBRATABLE_COST_KEYS.length; i++) {
+            const k = CALIBRATABLE_COST_KEYS[i];
+            out[k] = COST[k];
+        }
+        FileLib.write(
+            COST_OVERRIDES_PATH,
+            JSON.stringify({ version: 1, updatedAt: new Date().toISOString(), costs: out }, null, 2),
+            true
+        );
+    } catch (_e) {
+        // ignore
+    }
+}
+
 const LIST_ITEMS_PER_PAGE = 21;
 
 function pagesForListItemCount(count: number): number {

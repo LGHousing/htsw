@@ -48,20 +48,17 @@ export async function prereadImportableFunction(
     const settingsTrusted = functionSettingsTrusted(importable, trustPlan);
 
     if (actionsTrusted && settingsTrusted) {
-        ctx.displayMessage(`&b&l[import] &r&7Function "${importable.name}" fully trusted, skipped.`);
         setup(`skipped ${importable.name}`);
         return { kind: "FUNCTION", importable, trustPlan, actionsPlan: null };
     }
 
     if (actionsTrusted) {
-        ctx.displayMessage(`&b&l[import] &r&7Function "${importable.name}" actions trusted; updating settings.`);
         setup(`settings-only ${importable.name}`);
         return { kind: "FUNCTION", importable, trustPlan, actionsPlan: null };
     }
 
     await ensureFunctionExists(ctx, importable.name);
     setup(`opened function ${importable.name}`);
-    ctx.displayMessage(`&b&l[import] &r&bReading function: &f${importable.name} &7(${importable.actions.length} actions)`);
     const actionsPlan = await prereadActionList(ctx, importable.actions, {
         itemRegistry,
         baselineCurrent: getBaselineActionList(trustPlan, "actions"),
@@ -81,7 +78,6 @@ export async function applyImportableFunctionPlan(
 
     if (plan.actionsPlan !== null) {
         await ensureFunctionExists(ctx, plan.importable.name);
-        ctx.displayMessage(`&b&l[import] &r&aApplying function: &f${plan.importable.name}`);
         await applyActionListPlan(ctx, plan.actionsPlan, {
             itemRegistry,
             events,
