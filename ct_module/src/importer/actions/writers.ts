@@ -398,6 +398,7 @@ export async function writeChangeVar(ctx: TaskContext, action: ActionChangeVar):
     if (action.op) {
         await setSelectValue(ctx, getActionFieldLabel("CHANGE_VAR", "op"), action.op);
     }
+    if (action.op === "Unset") return;
 
     if (action.value) {
         await setStringValue(

@@ -108,6 +108,8 @@ export type ImportEvent =
           kind: "importableFinished";
           key: string;
           status: "imported" | "skipped" | "failed";
+          /** Failure reason (Diagnostic message), set only when status is "failed". */
+          error?: string;
       }
     | {
           /**

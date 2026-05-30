@@ -3,6 +3,7 @@ import type { Importable } from "htsw/types";
 
 import TaskContext from "../tasks/context";
 import { isTaskCancelled } from "../tasks/manager";
+import { IMPORT_DEBUG } from "../importer/diagnostics/importDebug";
 import { FileSystemFileLoader } from "../utils/files";
 import {
     buildTrustPlan,
@@ -36,6 +37,22 @@ export type ImportSelection = {
     parsed?: ParseResult<Importable[]>;
     events?: ImportEventHandler;
 };
+
+/**
+ * Normalise any thrown import failure into a single Diagnostic — the one error
+ * currency. Already-a-Diagnostic passes through (keeps spans, if any); a plain
+ * Error/value becomes a span-less `Diagnostic.error`. Both render uniformly via
+ * `printDiagnostic` (chat) and expose `.message` (GUI failure banner).
+ */
+function toImportDiagnostic(
+    error: unknown,
+    phase: "read" | "import",
+    type: Importable["type"]
+): Diagnostic {
+    if (error instanceof Diagnostic) return error;
+    const verb = phase === "read" ? "read" : "import";
+    return Diagnostic.error(`Failed to ${verb} ${type}: ${error}`);
+}
 
 export function orderImportablesForImportSession(
     _allImportables: readonly Importable[],
@@ -134,16 +151,25 @@ export async function importSelectedImportables(
                 housingUuid: selection.housingUuid,
                 events,
             });
+            // If hydration proved this importable needs no changes, mark it
+            // green now and skip the apply pass — there's nothing to do.
+            if (planIsNoOp(plan)) {
+                await maybeWriteImportCacheForTrust(ctx, row.importable, selection.housingUuid);
+                events?.emit({ kind: "importableFinished", key: row.key, status: "imported" });
+                continue;
+            }
             plans.push({ row, plan });
         } catch (error) {
             if (isTaskCancelled(error)) {
                 throw error;
             }
-            events?.emit({ kind: "importableFinished", key: row.key, status: "failed" });
-            if (error instanceof Diagnostic) {
-                printDiagnostic(sm, error);
-            } else {
-                ctx.displayMessage(`&cFailed to read ${row.importable.type}: ${error}`);
+            const diag = toImportDiagnostic(error, "read", row.importable.type);
+            events?.emit({ kind: "importableFinished", key: row.key, status: "failed", error: diag.message });
+            printDiagnostic(sm, diag);
+            if (IMPORT_DEBUG) {
+                const stack = error as { stack?: string; rhinoException?: { getScriptStackTrace?: () => string } };
+                const trace = stack.rhinoException?.getScriptStackTrace?.() ?? stack.stack;
+                if (trace) ctx.displayMessage(`&8[read-stack] ${String(trace).split("\n").slice(0, 8).join(" | ")}`);
             }
             ctx.displayMessage(
                 `&c[htsw] Import aborted during pre-read of ${row.importable.type} ${row.identity}; no changes applied.`
@@ -171,12 +197,9 @@ export async function importSelectedImportables(
             if (isTaskCancelled(error)) {
                 throw error;
             }
-            events?.emit({ kind: "importableFinished", key: row.key, status: "failed" });
-            if (error instanceof Diagnostic) {
-                printDiagnostic(sm, error);
-            } else {
-                ctx.displayMessage(`&cFailed to import ${row.importable.type}: ${error}`);
-            }
+            const diag = toImportDiagnostic(error, "import", row.importable.type);
+            events?.emit({ kind: "importableFinished", key: row.key, status: "failed", error: diag.message });
+            printDiagnostic(sm, diag);
             ctx.displayMessage(
                 `&c[htsw] Import aborted after failure on ${row.importable.type} ${row.identity}`
             );
@@ -196,10 +219,37 @@ async function maybeWriteImportCacheForTrust(
         const housingUuid = cachedUuid ?? (await getCurrentHousingUuid(ctx));
         writeImportableCache(ctx, housingUuid, importable, "importer");
     } catch (error) {
-        ctx.displayMessage(
-            `&7[knowledge] &eSkipped cache write for trusted ${importable.type}: ${error}`
-        );
+        if (IMPORT_DEBUG) {
+            ctx.displayMessage(
+                `&7[knowledge] &eSkipped cache write for trusted ${importable.type}: ${error}`
+            );
+        }
     }
+}
+
+/**
+ * True when a hydrated plan's apply pass would make zero changes, so the
+ * importable can be marked imported right after pass 1 and skip pass 2.
+ *
+ * Only EVENT and FUNCTION are provable from the preread: their plans carry
+ * the full action diff and have no separate apply-time work beyond it.
+ * FUNCTION's extra work — icon/repeatTicks — is captured by the plan's
+ * `settingsHandled` flag: when the action diff was empty the preread already
+ * applied the settings inline, so there's nothing left for pass 2. REGION
+ * always re-applies its bounds (TP + //pos + Move Region) regardless of the
+ * diff, and MENU/ITEM defer all work to the apply pass, so none of those can
+ * be proven no-op here.
+ */
+function planIsNoOp(plan: ImportablePlan): boolean {
+    if (plan.kind === "EVENT") {
+        return plan.actionsPlan === null || plan.actionsPlan.diff.operations.length === 0;
+    }
+    if (plan.kind === "FUNCTION") {
+        const actionsNoOp =
+            plan.actionsPlan === null || plan.actionsPlan.diff.operations.length === 0;
+        return actionsNoOp && plan.settingsHandled;
+    }
+    return false;
 }
 
 function estimateImportableUnitsFromTrustPlan(

@@ -1,4 +1,4 @@
-import type { FunctionIcon } from "htsw/types";
+import type { FunctionIcon, ImportableFunction } from "htsw/types";
 
 import {
     clickGoBack,
@@ -11,7 +11,10 @@ import { parseLoreKeyValueLine } from "../../importer/fields/loreParsing";
 import TaskContext from "../../tasks/context";
 import { MouseButton } from "../../tasks/specifics/slots";
 import { removedFormatting, unique } from "../../utils/helpers";
-import { listAllFunctionNames } from "./listFunctions";
+import {
+    getSessionFunctionNamesLower,
+    noteFunctionCreated,
+} from "./listFunctions";
 
 const McItem = Java.type("net.minecraft.item.Item");
 const ItemStack = Java.type("net.minecraft.item.ItemStack");
@@ -66,6 +69,7 @@ export async function ensureFunctionExists(
 
     await ctx.runCommand(`/function create ${name}`);
     await timedWaitForMenu(ctx, "commandMenuWait");
+    noteFunctionCreated(name);
 }
 
 export async function ensureFunctionNamesExist(
@@ -76,15 +80,13 @@ export async function ensureFunctionNamesExist(
     const names = unique(functionNames);
     if (names.length === 0) return;
 
-    const existing = await listAllFunctionNames(ctx);
-    const existingSet: { [name: string]: true } = {};
-    for (let i = 0; i < existing.length; i++) {
-        existingSet[existing[i].toLowerCase()] = true;
-    }
+    // Use the session-cached function name set — read once per import, not once
+    // per imported function.
+    const existing = await getSessionFunctionNamesLower(ctx);
 
     const missing: string[] = [];
     for (let i = 0; i < names.length; i++) {
-        if (existingSet[names[i].toLowerCase()] !== true) {
+        if (!existing.has(names[i].toLowerCase())) {
             missing.push(names[i]);
         }
     }
@@ -94,6 +96,7 @@ export async function ensureFunctionNamesExist(
         await ctx.runCommand(`/function create ${name}`);
         await timedWaitForMenu(ctx, "commandMenuWait");
         await clickGoBack(ctx);
+        noteFunctionCreated(name);
     }
 
     for (let i = 0; i < names.length; i++) {
@@ -147,6 +150,22 @@ export async function setFunctionIconIfNeeded(
     icon: FunctionIcon
 ): Promise<void> {
     await setItemValue(ctx, "Edit Icon", createPlainIconItem(icon));
+}
+
+/**
+ * Assuming the function-settings menu is open, apply the icon and
+ * automatic-execution tick count from `importable`. Both setters short-circuit
+ * when the current value already matches, so this is a no-op for an already
+ * in-sync function. Shared by the preread fast-path and the apply pass.
+ */
+export async function applyFunctionSettings(
+    ctx: TaskContext,
+    importable: ImportableFunction
+): Promise<void> {
+    if (importable.icon) {
+        await setFunctionIconIfNeeded(ctx, importable.icon);
+    }
+    await setAutomaticExecutionTicksIfNeeded(ctx, importable.repeatTicks ?? 0);
 }
 
 function createPlainIconItem(icon: FunctionIcon): Item {

@@ -53,6 +53,12 @@ export type ImportProgressActive = {
 export type ImportProgress = {
     completedUnits: number;
     totalUnits: number;
+    /**
+     * Set when an importable failed (the run halts on first failure). Carries
+     * the failed importable's key and the Diagnostic message, for the GUI
+     * failure banner. Null while the run is healthy.
+     */
+    failure?: { key: string; message: string } | null;
     active: ImportProgressActive | null;
     /**
      * Per-key snapshots of importables that completed pass-1 (read +

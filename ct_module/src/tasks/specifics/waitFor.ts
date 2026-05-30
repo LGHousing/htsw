@@ -28,25 +28,34 @@ const EVENT_CONTAINERS: EventContainers = {
     message: [],
 };
 
-// FIFO. CRITICAL: when a match resolves, splice BEFORE calling
-// container.resolve. resolve can synchronously re-enter via sync-drain —
-// a ctx.race finally that cleans up the matched container and then
-// registers a new waiter would land that new waiter at the same index `i`
-// we'd splice, silently dropping it.
+// Resolve only the waiters present when THIS event fired. We snapshot the list
+// first because `container.resolve(args)` can re-enter synchronously via the
+// sync-drain Promise polyfill: the awaiting continuation runs inline and often
+// registers a fresh waiter (e.g. a per-tick poll loop doing `await waitFor("tick")`
+// each iteration). That new waiter is pushed onto `containers`; if this same
+// pass were to see it, its always-true `tick` check would match immediately and
+// resolve it too — re-entering again — draining an entire await-loop inside ONE
+// real tick (observed: 80 loop iterations in 4ms). No real time passes, so menus
+// never finish opening and packets never apply. By iterating a snapshot, a
+// waiter registered during dispatch waits for the NEXT event, as intended.
+// Splicing from the live array by identity (not a fixed index) also avoids
+// dropping a newly-registered waiter that a re-entrant cleanup shifted into a
+// stale slot.
 function maybeResolve<E extends EventName>(event: E, ...args: ParametersFor<E>) {
     const containers = EVENT_CONTAINERS[event];
-    for (let i = 0; i < containers.length; ) {
-        const container = containers[i];
+    const snapshot = containers.slice();
+    for (let i = 0; i < snapshot.length; i++) {
+        const container = snapshot[i];
+        // Skip if a prior re-entrant resolve/cleanup already removed it.
+        if (containers.indexOf(container) === -1) continue;
         // @ts-ignore
-        if (container.check(...args)) {
-            container.remaining--;
-            if (container.remaining <= 0) {
-                containers.splice(i, 1);
-                container.resolve(args);
-                continue;
-            }
+        if (!container.check(...args)) continue;
+        container.remaining--;
+        if (container.remaining <= 0) {
+            const idx = containers.indexOf(container);
+            if (idx !== -1) containers.splice(idx, 1);
+            container.resolve(args);
         }
-        i++;
     }
 }
 
@@ -78,6 +87,21 @@ register("chat", (event) => {
     const message = ChatLib.getChatMessage(event, true);
     maybeResolve("message", message);
 });
+
+/**
+ * Live waiter count per event type. Every received packet / tick re-runs
+ * `.check()` on each entry, so a growing `packetReceived` or `tick` count is a
+ * leak and a direct cause of input/GUI lag. Use to diagnose: between imports
+ * these should all be ~0.
+ */
+export function getEventContainerCounts(): { [k: string]: number } {
+    return {
+        tick: EVENT_CONTAINERS.tick.length,
+        packetReceived: EVENT_CONTAINERS.packetReceived.length,
+        packetSent: EVENT_CONTAINERS.packetSent.length,
+        message: EVENT_CONTAINERS.message.length,
+    };
+}
 
 type EventName = keyof CheckPredicateMap;
 

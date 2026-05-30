@@ -13,6 +13,7 @@ import {
     waitForAnySetSlot,
 } from "./gui/packets";
 import { CONDITION_LIST_CONFIG } from "./conditions/listConfig";
+import { IMPORT_DEBUG } from "./diagnostics/importDebug";
 import {
     getPaginatedListPageForIndex,
     getPaginatedListSlotAtIndex,
@@ -206,7 +207,11 @@ export async function captureItemFromOpenEditorField(
                     "scratch clear ack",
                     SET_SLOT_ACK_TIMEOUT_MS
                 );
-            } catch (_error) {}
+            } catch (error) {
+                if (IMPORT_DEBUG) {
+                    ctx.displayMessage(`&7[item-capture] &escratch clear ack timeout: ${error}`);
+                }
+            }
             await ctx.waitFor("tick");
         }
 
@@ -220,7 +225,11 @@ export async function captureItemFromOpenEditorField(
                 "current-item copy ack",
                 SET_SLOT_ACK_TIMEOUT_MS
             );
-        } catch (_error) {}
+        } catch (error) {
+            if (IMPORT_DEBUG) {
+                ctx.displayMessage(`&7[item-capture] &ecurrent-item copy ack timeout for "${displayNameHint}": ${error}`);
+            }
+        }
         await ctx.waitFor("tick");
 
         const after = snapshotInventory();
@@ -354,6 +363,10 @@ export async function restoreInventoryToSnapshot(
                 `restore slot ${entry.slotId} ack`,
                 SET_SLOT_ACK_TIMEOUT_MS
             );
-        } catch (_error) {}
+        } catch (error) {
+            if (IMPORT_DEBUG) {
+                ctx.displayMessage(`&7[item-capture] &erestore slot ${entry.slotId} ack timeout: ${error}`);
+            }
+        }
     }
 }

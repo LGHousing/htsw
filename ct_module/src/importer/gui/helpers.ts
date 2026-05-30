@@ -1,7 +1,10 @@
 import type { Location } from "htsw/types";
 
 import TaskContext from "../../tasks/context";
-import { ItemSlot, MouseButton } from "../../tasks/specifics/slots";
+import { ItemSlot, MouseButton, menuStateDescription } from "../../tasks/specifics/slots";
+
+// MC 1.8.9 anvil rename field cap (GuiRepair name field maxStringLength).
+const ANVIL_NAME_MAX = 35;
 import { removedFormatting } from "../../utils/helpers";
 import { S2DPacketOpenWindow } from "../../utils/packets";
 import {
@@ -18,23 +21,85 @@ import {
 import { getVisiblePaginatedItemSlots } from "./paginatedList";
 import { COST } from "../progress/costs";
 import { recordTimedOp } from "../progress/timing";
+import { IMPORT_DEBUG } from "../diagnostics/importDebug";
 import type { WaitForPromise } from "../../tasks/specifics/waitFor";
 
+function describeVisibleOptions(ctx: TaskContext): string {
+    const names: string[] = [];
+    const slots = getVisiblePaginatedItemSlots(ctx);
+    for (let i = 0; i < slots.length && names.length < 40; i++) {
+        const n = removedFormatting(slots[i].getItem().getName()).trim();
+        if (n.length > 0) names.push(n);
+    }
+    return names.length === 0 ? "<empty>" : names.join(", ");
+}
 
-export async function getSlotPaginate(ctx: TaskContext, name: string): Promise<ItemSlot> {
+// Dump every filled menu slot as id:name, falling back to the first lore line
+// when the slot has no display name (e.g. unlabeled pagination arrows). Lets us
+// see where/how a paginated picker exposes its next/prev controls.
+function describeAllMenuSlots(ctx: TaskContext): string {
+    const slots = ctx.getMenuItemSlots();
+    if (slots === null) return "<no container>";
+    const parts: string[] = [];
+    for (let i = 0; i < slots.length; i++) {
+        const slot = slots[i];
+        const item = slot.getItem();
+        let label = removedFormatting(item.getName()).trim();
+        if (label.length === 0) {
+            const lore = item.getLore();
+            label = lore.length > 0 ? `lore:"${removedFormatting(lore[0]).trim()}"` : "<unnamed>";
+        }
+        parts.push(`${slot.getSlotId()}:${label}`);
+    }
+    return parts.length === 0 ? "<empty>" : parts.join(", ");
+}
+
+
+async function scanPagesForOption(
+    ctx: TaskContext,
+    name: string,
+    seenOptions: string[]
+): Promise<ItemSlot | null> {
     await goToFirstPaginatedOptionPage(ctx);
-
     for (let page = 0; page < 100; page++) {
         const slot = ctx.tryGetMenuItemSlot(name);
         if (slot !== null) return slot;
+
+        if (IMPORT_DEBUG) seenOptions.push(`[p${page}: ${describeVisibleOptions(ctx)}]`);
 
         const nextPageSlot = findPaginationControl(ctx, "next");
         if (nextPageSlot === null) break;
         nextPageSlot.click();
         await timedWaitForMenu(ctx, "pageTurnWait");
     }
+    return null;
+}
 
-    throw new Error(`Could not find "${name}" on any page.`);
+const PAGINATE_RESCAN_ATTEMPTS = 3;
+
+export async function getSlotPaginate(ctx: TaskContext, name: string): Promise<ItemSlot> {
+    const seenOptions: string[] = [];
+    for (let attempt = 0; attempt < PAGINATE_RESCAN_ATTEMPTS; attempt++) {
+        const found = await scanPagesForOption(ctx, name, seenOptions);
+        if (found !== null) {
+            if (IMPORT_DEBUG && attempt > 0) {
+                ChatLib.chat(
+                    `&e[paginate] found "${name}" only after ${attempt} rescan(s) — menu was still populating when first scanned.`
+                );
+            }
+            return found;
+        }
+        if (attempt < PAGINATE_RESCAN_ATTEMPTS - 1) {
+            // Menu may still be streaming items in (multi-packet population).
+            // Give it a tick and rescan from page 1 before concluding absence.
+            await ctx.waitFor("tick");
+        }
+    }
+
+    const detail = IMPORT_DEBUG
+        ? `${menuStateDescription()} — saw options: ${seenOptions.join(" ")} — all slots: [${describeAllMenuSlots(ctx)}]`
+        : "";
+    throw new Error(`Could not find "${name}" on any page after ${PAGINATE_RESCAN_ATTEMPTS} attempts.${detail}`);
 }
 
 async function goToFirstPaginatedOptionPage(ctx: TaskContext): Promise<void> {
@@ -368,7 +433,19 @@ export async function enterValue(ctx: TaskContext, value: string): Promise<"CHAT
             await ctx.sendMessage(value);
             return "CHAT";
         case "ANVIL":
-            await waitForMenu(ctx);
+            // The anvil name field caps at ANVIL_NAME_MAX chars, which would
+            // silently truncate (e.g. long variable coordinate expressions).
+            // Fail with actionable guidance rather than writing a bad value.
+            if (value.length > ANVIL_NAME_MAX) {
+                throw new Error(
+                    `Value is ${value.length} characters — too long for Housing's anvil ` +
+                    `input (max ${ANVIL_NAME_MAX}). Set "Preferred Input" to "Chat" in your ` +
+                    `Housing settings, then re-import.`
+                );
+            }
+            // Anvil result slot is computed client-side, so its live item count
+            // never reaches the WindowItems snapshot — skip that wait.
+            await waitForMenu(ctx, true);
             setAnvilItemName(value);
             acceptNewAnvilItem();
             return "ANVIL";

@@ -15,6 +15,7 @@ import {
     tryGetActionTypeFromDisplayName,
 } from "../fields/actionMappings";
 import { captureItemFromOpenEditorField } from "../itemCapture";
+import { IMPORT_DEBUG } from "../diagnostics/importDebug";
 import { refreshTruncatedScalarFields } from "./readers";
 import { isTruncatableKind, looksTruncated } from "../fields/loreParsing";
 import {
@@ -450,6 +451,27 @@ async function hydrateNestedActions(
 }
 
 async function hydrateNestedAction(
+    ctx: TaskContext,
+    entry: ObservedActionSlot,
+    propsToRead: NestedPropsToRead,
+    listLength: number,
+    read?: ListReadOptions,
+    entryPath?: string
+): Promise<void> {
+    if (IMPORT_DEBUG) {
+        try {
+            return await hydrateNestedActionInner(ctx, entry, propsToRead, listLength, read, entryPath);
+        } catch (error) {
+            const inner = error instanceof Error ? error.message : String(error);
+            const path = entryPath ?? `index ${entry.index}`;
+            const typeName = entry.action?.type ?? "<null>";
+            throw new Error(`(at ${path}, ${typeName}) ${inner}`);
+        }
+    }
+    return hydrateNestedActionInner(ctx, entry, propsToRead, listLength, read, entryPath);
+}
+
+async function hydrateNestedActionInner(
     ctx: TaskContext,
     entry: ObservedActionSlot,
     propsToRead: NestedPropsToRead,

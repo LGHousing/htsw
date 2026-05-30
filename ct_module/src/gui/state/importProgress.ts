@@ -82,6 +82,10 @@ export function getImportStartedAt(): number | null {
     return importStartedAt;
 }
 
+export function getImportElapsedMs(): number | null {
+    return importStartedAt === null ? null : Date.now() - importStartedAt;
+}
+
 export function getActiveImportPath(): string | null {
     return activeImportPath;
 }

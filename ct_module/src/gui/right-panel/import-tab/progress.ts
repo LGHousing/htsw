@@ -16,6 +16,7 @@ import {
     ACCENT_TEAL,
     COLOR_BUTTON_DANGER,
     COLOR_BUTTON_DANGER_HOVER,
+    COLOR_PANEL,
     COLOR_PANEL_BORDER,
     COLOR_PANEL_RAISED,
     COLOR_TEXT,
@@ -27,11 +28,14 @@ import {
 import { TaskManager } from "../../../tasks/manager";
 import {
     getCurrentPhaseEtaSeconds,
+    getImportElapsedMs,
     getImportEtaSeconds,
     getImportEtcMs,
     getImportMsPerUnit,
     getImportProgress,
     getImportProgressFraction,
+    setActiveImportPath,
+    setImportProgress,
 } from "../../state";
 import {
     countImportablesByStatus,
@@ -69,6 +73,12 @@ function formatClockTime(ms: number): string {
 
 function progressMsPerUnitText(): string {
     return `${Math.round(getImportMsPerUnit())}ms/u`;
+}
+
+function progressElapsedText(): string {
+    const ms = getImportElapsedMs();
+    if (ms === null) return "";
+    return `§7${formatEtaSeconds(ms / 1000)}`;
 }
 
 const PHASE_LABELS: { [k: string]: { title: string; etaSuffix: string } } = {
@@ -207,7 +217,7 @@ function progressBar(): Element {
                         style: {
                             width: { kind: "px", value: 2 },
                             height: { kind: "grow" },
-                            background: COLOR_TEXT_DIM,
+                            background: COLOR_PANEL,
                         },
                         children: [],
                     }));
@@ -287,8 +297,13 @@ export function liveImporterPanel(): Element {
                 return [Text({ text: "No import in progress.", color: COLOR_TEXT_DIM })];
             }
             const current = p.active;
-            const { completed: completedImportables, total: totalImportables } =
+            const { completed: completedImportables, failed: failedImportables, total: totalImportables } =
                 countImportablesByStatus(p);
+            // "Done" means every importable reached a terminal state — NOT just
+            // "no active importable right now". At the start of a run (all rows
+            // queued, nothing active yet) active is null but the session isn't
+            // done; rendering "Done" there is the stale-looking startup state.
+            const allDone = completedImportables + failedImportables >= totalImportables;
             let currentNumber = completedImportables + 1;
             if (current !== null) {
                 for (let i = 0; i < p.rows.length; i++) {
@@ -302,15 +317,34 @@ export function liveImporterPanel(): Element {
                 Col({
                     style: { gap: 3, width: { kind: "grow" } },
                     children: [
-                        Text({
-                            text: () =>
-                                current === null
-                                    ? `Importable ${completedImportables} of ${totalImportables}`
-                                    : `Importable ${currentNumber} of ${totalImportables}  ·  §b§l${current.identity}`,
-                            color: COLOR_TEXT,
+                        Row({
+                            style: { width: { kind: "grow" }, align: "center" },
+                            children: [
+                                Text({
+                                    text: () =>
+                                        current !== null
+                                            ? `Importable ${currentNumber} of ${totalImportables}  ·  §b§l${current.identity}`
+                                            : allDone
+                                              ? `Importable ${completedImportables} of ${totalImportables}`
+                                              : `Starting ${totalImportables} importable${totalImportables === 1 ? "" : "s"}…`,
+                                    color: COLOR_TEXT,
+                                    style: { width: { kind: "grow" } },
+                                }),
+                                Text({
+                                    text: () => progressElapsedText(),
+                                    color: COLOR_TEXT_DIM,
+                                }),
+                            ],
                         }),
                         Text({
-                            text: () => current === null ? `§lDone` : currentPhaseLabel(),
+                            text: () =>
+                                p.failure
+                                    ? `§c§l✖ ${p.failure.message}`
+                                    : current !== null
+                                      ? currentPhaseLabel()
+                                      : allDone
+                                        ? `§lDone`
+                                        : `§7Preparing…`,
                             color: COLOR_TEXT,
                         }),
                         Container({
@@ -344,6 +378,12 @@ export function liveImporterPanel(): Element {
                                     onClick: () => {
                                         if (getImportProgress() === null) return;
                                         TaskManager.cancelAll();
+                                        // Clear the live UI immediately rather than waiting
+                                        // for the cancelled task to unwind through its
+                                        // finally — otherwise the header lingers on a stale
+                                        // "Done" frame until the task notices the cancel.
+                                        setImportProgress(null);
+                                        setActiveImportPath(null);
                                         ChatLib.chat(`&c[htsw] cancelling import…`);
                                     },
                                 }),

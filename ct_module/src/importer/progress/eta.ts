@@ -142,16 +142,21 @@ export function currentMsPerUnit(): number {
         return cachedMsPerUnit.value;
     }
     const stats = getTimingStats();
-    let sum = 0;
-    let n = 0;
+    // Blend per-kind rates into one ms/unit, weighted by how much total work
+    // each kind does (its share of expected-units) — not a flat average. A
+    // kind that's both frequent and slow then pulls the estimate toward its
+    // own rate, instead of counting the same as a rare fast kind.
+    let weightedSum = 0;
+    let weightTotal = 0;
     for (const kind in stats) {
         const entry = stats[kind];
         if (entry === undefined || entry.count === 0) continue;
         if (entry.avgMsPerExpectedUnit <= 0) continue;
-        sum += entry.avgMsPerExpectedUnit;
-        n++;
+        const weight = entry.totalExpectedUnits > 0 ? entry.totalExpectedUnits : entry.count;
+        weightedSum += entry.avgMsPerExpectedUnit * weight;
+        weightTotal += weight;
     }
-    const value = n === 0 ? MS_PER_UNIT_PRIOR : sum / n;
+    const value = weightTotal === 0 ? MS_PER_UNIT_PRIOR : weightedSum / weightTotal;
     cachedMsPerUnit = { at: now, value };
     return value;
 }

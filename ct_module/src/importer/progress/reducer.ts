@@ -77,7 +77,7 @@ export function reduce(
         case "progress":
             return applyProgress(state, event.scope, event.progress);
         case "importableFinished":
-            return finishImportable(state, event.key, event.status);
+            return finishImportable(state, event.key, event.status, event.error);
         case "sessionFinished":
             return finishSession(state);
         // Diff-overlay / preview events don't affect the progress snapshot.
@@ -288,10 +288,11 @@ function applyNestedProgress(
 function finishImportable(
     state: ProgressReducerState,
     key: string,
-    status: "imported" | "skipped" | "failed"
+    status: "imported" | "skipped" | "failed",
+    error?: string
 ): ProgressReducerState {
     if (state.active === null || state.active.key !== key) {
-        return updateRowStatus(state, key, status);
+        return updateRowStatus(state, key, status, error);
     }
     const active = state.active;
     const completedAddend = active.currentTotalUnits;
@@ -305,6 +306,7 @@ function finishImportable(
         ...state,
         progress: {
             ...state.progress,
+            failure: status === "failed" ? { key, message: error ?? "Import failed" } : state.progress.failure,
             active: null,
             parked: snapshotParked(state.parkedRows),
             rows,
@@ -335,12 +337,20 @@ function finishSession(state: ProgressReducerState): ProgressReducerState {
 function updateRowStatus(
     state: ProgressReducerState,
     key: string,
-    status: "imported" | "skipped" | "failed"
+    status: "imported" | "skipped" | "failed",
+    error?: string
 ): ProgressReducerState {
     const rows = state.progress.rows.map((r): ImportableEntry =>
         r.key === key ? { ...r, status } : r
     );
-    return { ...state, progress: { ...state.progress, rows } };
+    return {
+        ...state,
+        progress: {
+            ...state.progress,
+            failure: status === "failed" ? { key, message: error ?? "Import failed" } : state.progress.failure,
+            rows,
+        },
+    };
 }
 
 function rebuildSnapshot(

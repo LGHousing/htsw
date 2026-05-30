@@ -4,6 +4,7 @@ import type { ParseResult } from "htsw";
 import type { Importable } from "htsw/types";
 
 import type { CacheStatusRow } from "../../importCache/status";
+import { buildCacheStatusRows } from "../../importCache/status";
 import { importableHash } from "../../importCache/hash";
 import { importableIdentity } from "../../importCache/paths";
 import { normalizeHtswPath } from "../lib/pathDisplay";
@@ -181,4 +182,26 @@ export function refreshKnowledgeRowFor(imp: Importable): void {
             : row.entry.hash === newHash ? "current" : "modified";
         return;
     }
+}
+
+/**
+ * Re-read ONE importable's cache from disk and upsert its knowledge row.
+ * Unlike `refreshKnowledgeRowFor` (which reuses the row's stale `entry`), this
+ * picks up a freshly-written cache file — so a dot turns green the instant its
+ * import finishes, without rebuilding all rows through the batched full refresh.
+ */
+export function refreshKnowledgeRowFromDisk(housingUuid: string, imp: Importable): void {
+    const built = buildCacheStatusRows(housingUuid, [imp]);
+    if (built.length === 0) return;
+    const newRow = built[0];
+    for (let i = 0; i < knowledgeRows.length; i++) {
+        if (
+            knowledgeRows[i].identity === newRow.identity &&
+            knowledgeRows[i].importable.type === newRow.importable.type
+        ) {
+            knowledgeRows[i] = newRow;
+            return;
+        }
+    }
+    knowledgeRows.push(newRow);
 }

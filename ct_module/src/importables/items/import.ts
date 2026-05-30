@@ -4,6 +4,7 @@ import { syncActionList } from "../../importer/actions/sync";
 import type { ImportEventHandler } from "../../importer/importEvents";
 import { createSetupStepEmitter } from "../../importer/progress/setupStepEmitter";
 import { clickGoBack } from "../../importer/gui/helpers";
+import { IMPORT_DEBUG } from "../../importer/diagnostics/importDebug";
 import { timedWaitForMenu } from "../../importer/gui/menuWait";
 import {
     getCurrentHousingUuid,
@@ -280,9 +281,11 @@ async function injectHeldItem(ctx: TaskContext, item: Item): Promise<void> {
         if (!hotbarZeroMatches(stack)) {
             throw error;
         }
-        ctx.displayMessage(
-            "&e[packet] held item ack was not observed, but hotbar slot 0 matches; continuing."
-        );
+        if (IMPORT_DEBUG) {
+            ctx.displayMessage(
+                "&e[packet] held item ack was not observed, but hotbar slot 0 matches; continuing."
+            );
+        }
     }
     await ctx.waitFor("tick");
 
@@ -376,6 +379,8 @@ function writeItemCache(
     try {
         writeImportableCache(ctx, housingUuid, importable, "importer");
     } catch (error) {
-        ctx.displayMessage(`&7[knowledge] &eSkipped cache write for ITEM: ${error}`);
+        if (IMPORT_DEBUG) {
+            ctx.displayMessage(`&7[knowledge] &eSkipped cache write for ITEM: ${error}`);
+        }
     }
 }

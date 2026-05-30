@@ -13,6 +13,7 @@ import { Button, Container, Icon, Row, Text } from "../../lib/components";
 import { Icons } from "../../lib/icons.generated";
 import {
     ACCENT_DANGER,
+    ACCENT_INFO,
     ACCENT_SUCCESS,
     ACCENT_TEAL,
     COLOR_BUTTON,
@@ -27,6 +28,8 @@ import {
     PHASE_READING,
     SIZE_ROW_H,
 } from "../../lib/theme";
+
+const GLYPH_CARET = "▶";
 import { clearImportableChecks, getKnowledgeRows, getQueueItemRunState, isCurrentHouseTrusted, isCurrentQueueItem } from "../../state";
 import {
     clearQueue,
@@ -62,8 +65,10 @@ function shortSource(p: string): string {
 
 function queueRowMiniBar(item: QueueItem): Element {
     const state = getQueueItemRunState(item);
-    if (state.kind === "queued") {
-        // Empty 2px slot — keeps row heights uniform.
+    if (state.kind === "queued" || state.kind === "parked") {
+        // Empty 2px slot — keeps row heights uniform. "parked" rows finished
+        // pass-1 hydration but pass-2 hasn't reached them; leave the bar blank
+        // (a fill there reads as "in progress" when it's just waiting).
         return Container({
             style: { width: { kind: "grow" }, height: { kind: "px", value: 2 } },
             children: [],
@@ -116,13 +121,8 @@ function phaseColor(phase: "reading" | "hydrating" | "applying"): number {
     return PHASE_READING;
 }
 
-function currentRowStripeColor(item: QueueItem): number | undefined {
-    const state = getQueueItemRunState(item);
-    if (state.kind === "current") return phaseColor(state.phase);
-    if (state.kind === "done") return ACCENT_SUCCESS;
-    if (state.kind === "skipped") return ACCENT_TEAL;
-    if (state.kind === "failed") return ACCENT_DANGER;
-    return undefined;
+function isActiveQueueItem(item: QueueItem): boolean {
+    return getQueueItemRunState(item).kind === "current";
 }
 
 function queueImportableLabel(imp: Importable): string {
@@ -176,14 +176,11 @@ export function queueRow(item: QueueItem): Element {
                     height: { kind: "grow" },
                 },
                 children: [
-                    // Left-edge stripe — colored by the row's current state
-                    // (reading/hydrating/applying/done/skipped/failed),
-                    // invisible 2px spacer otherwise.
+                    // 2px spacer keeps row text aligned with the header.
                     Container({
                         style: {
                             width: { kind: "px", value: 2 },
                             height: { kind: "grow" },
-                            background: currentRowStripeColor(item),
                         },
                         children: [],
                     }),
@@ -204,9 +201,11 @@ export function queueRow(item: QueueItem): Element {
                         },
                         children: canExpand
                             ? [Icon({ name: expanded ? Icons.chevronDown : Icons.chevronRight })]
-                            : willBeSkipped(item)
-                              ? [Text({ text: GLYPH_DOT, color: ACCENT_TEAL, tooltip: "Trusted — will skip", tooltipColor: ACCENT_TEAL })]
-                              : [],
+                            : isActiveQueueItem(item)
+                              ? [Text({ text: GLYPH_CARET, color: ACCENT_INFO })]
+                              : willBeSkipped(item)
+                                ? [Text({ text: GLYPH_DOT, color: ACCENT_TEAL, tooltip: "Trusted — will skip", tooltipColor: ACCENT_TEAL })]
+                                : [],
                     }),
                     Text({
                         text: typeText,
@@ -270,7 +269,6 @@ export function queueImportJsonChildRow(parent: QueueItem, item: QueueItem): Ele
                         style: {
                             width: { kind: "px", value: 2 },
                             height: { kind: "grow" },
-                            background: isCurrent ? ACCENT_SUCCESS : undefined,
                         },
                         children: [],
                     }),
@@ -282,9 +280,11 @@ export function queueImportJsonChildRow(parent: QueueItem, item: QueueItem): Ele
                             width: { kind: "px", value: 14 },
                             height: { kind: "grow" },
                         },
-                        children: willBeSkipped(item)
-                            ? [Text({ text: GLYPH_DOT, color: ACCENT_TEAL, tooltip: "Trusted — will skip", tooltipColor: ACCENT_TEAL })]
-                            : [],
+                        children: isActiveQueueItem(item)
+                            ? [Text({ text: GLYPH_CARET, color: ACCENT_INFO })]
+                            : willBeSkipped(item)
+                              ? [Text({ text: GLYPH_DOT, color: ACCENT_TEAL, tooltip: "Trusted — will skip", tooltipColor: ACCENT_TEAL })]
+                              : [],
                     }),
                     Text({
                         text: item.kind === "importable" ? item.type : "ALL",

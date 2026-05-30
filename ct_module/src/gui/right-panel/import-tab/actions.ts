@@ -11,7 +11,9 @@ import {
     getAutoTrackSources,
     isAnyAutoTrackEnabled,
     isCurrentHouseTrusted,
+    getImportProgress,
     isImportableChecked,
+    refreshKnowledgeRowFromDisk,
     setActiveImportPath,
     setHousingUuid,
     setImportProgress,
@@ -41,7 +43,7 @@ import {
 import { importableIdentity } from "../../../importCache/paths";
 import { trustPlanKey } from "../../../importCache/trust";
 import { getCurrentHousingUuid } from "../../../importCache/housingId";
-import { TaskManager } from "../../../tasks/manager";
+import { TaskManager, isTaskCancelled } from "../../../tasks/manager";
 import type { Action, Importable } from "htsw/types";
 import type { ParseResult } from "htsw";
 import { closeAllPopovers } from "../../lib/popovers";
@@ -57,9 +59,11 @@ import { importProgressKey } from "../../../importer/progress/keys";
 import { initialReducerState, reduce } from "../../../importer/progress/reducer";
 import { invalidateKnowledgeOverlayForImportable } from "../../state/knowledgeOverlay";
 import { showToast } from "../../toast";
-import { setImportRunning } from "../../../importer/runtimeState";
+import { isImportRunning, setImportRunning } from "../../../importer/runtimeState";
 import { gmcOnImportStart, playImportSuccessSound } from "../../../importer/sideEffects";
 import { resetStepGate } from "../../../importer/stepGate";
+import { startPacketOrderProbe, stopPacketOrderProbe } from "../../../importer/diagnostics/packetOrderProbe";
+import { flushMenuWaitTickSummary } from "../../../importer/gui/menuWait";
 import {
     applyComplete,
     clearLiveOverlay,
@@ -86,6 +90,17 @@ export const CAPTURE_TYPES: CaptureType[] = ["FUNCTION", "MENU"];
 
 let importSessionId = 0;
 
+function formatElapsedSeconds(secs: number): string {
+    const total = Math.max(0, Math.round(secs));
+    if (total < 60) return `${total}s`;
+    const m = Math.floor(total / 60);
+    const s = total % 60;
+    if (m < 60) return s === 0 ? `${m}m` : `${m}m${s}s`;
+    const h = Math.floor(m / 60);
+    const mm = m % 60;
+    return mm === 0 ? `${h}h` : `${h}h${mm}m`;
+}
+
 function refreshKnowledgeRows(): void {
     const uuid = getHousingUuid();
     if (uuid === null) return;
@@ -102,21 +117,12 @@ function refreshKnowledgeRows(): void {
         }
     }
 
-    const BATCH = 40;
-    const allRows: ReturnType<typeof buildCacheStatusRows> = [];
-    function processBatch(start: number): void {
-        if (start >= all.length) {
-            setKnowledgeRows(allRows);
-            autoTrackRefresh();
-            return;
-        }
-        const end = Math.min(all.length, start + BATCH);
-        const slice = all.slice(start, end);
-        const rows = buildCacheStatusRows(uuid as string, slice);
-        for (let i = 0; i < rows.length; i++) allRows.push(rows[i]);
-        setTimeout(() => processBatch(end), 0);
-    }
-    setTimeout(() => processBatch(0), 0);
+    // One synchronous pass. The cache reads + hashing for the whole file are
+    // sub-second; the old setTimeout-batched version routed every batch through
+    // CT's Java timer, which backs up under load and stalled the refresh for
+    // *minutes*. A brief, deterministic hitch beats that every time.
+    setKnowledgeRows(buildCacheStatusRows(uuid, all));
+    autoTrackRefresh();
 }
 
 export function autoTrackRefresh(): void {
@@ -186,6 +192,7 @@ function createImportEventHandler(args: {
     parsed: ParseResult<Importable[]>;
     sessionSourcePath: string;
     trustMode: boolean;
+    housingUuid: string;
 }): SessionEventHandler {
     let state = initialReducerState();
     let activeViewPath: string | null = null;
@@ -223,10 +230,14 @@ function createImportEventHandler(args: {
             }
         },
         importableFinished: (e) => {
-            refreshKnowledgeRows();
-            if (e.status === "imported") {
-                const imp = importablesByKey.get(e.key);
-                if (imp !== undefined) {
+            const imp = importablesByKey.get(e.key);
+            if (imp !== undefined) {
+                // Targeted single-row disk re-read: turns this importable's dot
+                // green the instant it finishes. The batched full refresh below
+                // re-reads all 193 rows through chained setTimeouts and can lag
+                // minutes; this one is synchronous and O(1).
+                refreshKnowledgeRowFromDisk(args.housingUuid, imp);
+                if (e.status === "imported") {
                     invalidateKnowledgeOverlayForImportable(imp, args.parsed);
                 }
             }
@@ -420,6 +431,15 @@ export function queueItemsForCheckedKeys(checked: Set<string>): QueueItem[] {
 }
 
 export function startImport(explicit?: readonly QueueItem[]): void {
+    // Re-entry guard. TaskManager.run does not serialise tasks, so without this
+    // a second click (or a click during the brief end-of-run window where the
+    // panel already reads "done" but the task hasn't fully unwound) would launch
+    // a SECOND concurrent import. Two tasks driving the same Housing menus
+    // deadlock — the classic "menu opened once then stopped".
+    if (isImportRunning() || TaskManager.hasRunningTasks()) {
+        ChatLib.chat("&c[htsw] An import (or another task) is already running — wait for it to finish or cancel it first.");
+        return;
+    }
     const batches = buildBatches(explicit);
     if (batches === null) {
         const msg =
@@ -460,11 +480,14 @@ export function startImport(explicit?: readonly QueueItem[]): void {
 
     setImportRunning(true);
     const sessionId = ++importSessionId;
+    const startedAt = Date.now();
     resetStepGate();
     gmcOnImportStart();
+    startPacketOrderProbe();
 
     TaskManager.run(async (ctx) => {
         let importSucceeded = false;
+        let cancelled = false;
         let totalImported = 0;
         let totalSkipped = 0;
         let totalFailed = 0;
@@ -480,6 +503,7 @@ export function startImport(explicit?: readonly QueueItem[]): void {
                     parsed: batch.parsed,
                     sessionSourcePath: batch.sourcePath,
                     trustMode,
+                    housingUuid,
                 });
                 await importSelectedImportables(ctx, {
                     importables: batch.importables,
@@ -495,24 +519,51 @@ export function startImport(explicit?: readonly QueueItem[]): void {
                 totalFailed += c.failed;
             }
             importSucceeded = totalFailed === 0;
+        } catch (err) {
+            if (isTaskCancelled(err)) {
+                cancelled = true;
+            } else {
+                throw err;
+            }
         } finally {
+            stopPacketOrderProbe();
+            flushMenuWaitTickSummary();
             setActiveImportPath(null);
             refreshKnowledgeRows();
             setImportRunning(false);
-            if (importSucceeded) {
+            const elapsed = formatElapsedSeconds((Date.now() - startedAt) / 1000);
+            if (cancelled) {
+                showToast(
+                    `Import cancelled after ${elapsed} · ${totalImported} imported`,
+                    0xffe5bc4b
+                );
+            } else if (importSucceeded) {
                 playImportSuccessSound();
                 showToast(
-                    `Import complete · ${totalImported} imported, ${totalSkipped} skipped`,
+                    `Import complete in ${elapsed} · ${totalImported} imported, ${totalSkipped} skipped`,
                     0xff5cb85c
                 );
+                ChatLib.chat(
+                    `&a[htsw] Import complete in ${elapsed} &7· &f${totalImported}&a imported, &f${totalSkipped}&7 skipped`
+                );
             } else {
+                // Surface the failure reason (read before clearing progress
+                // below) — a failure halts the whole run, so the *why* must be
+                // visible, not just "N failed".
+                const failure = getImportProgress()?.failure;
                 showToast(
-                    `Import finished with ${totalFailed} failed`,
-                    0xffe85c5c
+                    failure
+                        ? `Import failed: ${failure.message}`
+                        : `Import finished in ${elapsed} with ${totalFailed} failed`,
+                    0xffe85c5c,
+                    8000
                 );
             }
             setImportProgress(null);
-            if (explicit === undefined) {
+            // Only auto-clear the queue after a fully successful queue run.
+            // A cancelled or partially-failed import keeps the queue intact
+            // so the user can retry without re-adding everything.
+            if (explicit === undefined && importSucceeded) {
                 setTimeout(() => {
                     if (importSessionId !== sessionId) return;
                     clearQueue();

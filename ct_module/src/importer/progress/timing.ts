@@ -23,6 +23,12 @@ type TimingStatsEntry = {
     count: number;
     avgMsPerExpectedUnit: number;
     baselineMsPerExpectedUnit: number;
+    /**
+     * Total expected-units this kind has contributed over its lifetime. Used
+     * as the weight when blending per-kind rates into a single ms/unit: a kind
+     * that does more of the total work should pull the average toward its rate.
+     */
+    totalExpectedUnits: number;
 };
 
 export type TimingStats = {
@@ -33,6 +39,7 @@ type MutableTimingStatsEntry = {
     count: number;
     ewmaMsPerUnit: number;
     ewmaSlowMsPerUnit: number;
+    totalExpectedUnits: number;
 };
 
 const EWMA_ALPHA_FAST = 0.1;
@@ -71,10 +78,11 @@ export function recordTimedOp(
     const key = kind;
     let entry = stats[key];
     if (entry === undefined) {
-        entry = { count: 0, ewmaMsPerUnit: 0, ewmaSlowMsPerUnit: 0 };
+        entry = { count: 0, ewmaMsPerUnit: 0, ewmaSlowMsPerUnit: 0, totalExpectedUnits: 0 };
         stats[key] = entry;
     }
     entry.count++;
+    entry.totalExpectedUnits += expectedUnits;
     const warmup = entry.count <= EWMA_WARMUP;
     const alphaFast = warmup ? 1 / entry.count : EWMA_ALPHA_FAST;
     const alphaSlow = warmup ? 1 / entry.count : EWMA_ALPHA_SLOW;
@@ -92,7 +100,11 @@ export function timed<T>(
     const inner = fn();
     const wrapped = inner.then(
         (v): T => { endTimedOp(op); return v; },
-        (e): T => { endTimedOp(op); throw e; }
+        // Do NOT record on the error path. A timed-out, cancelled, or
+        // otherwise-failed operation isn't a representative duration — recording
+        // its (often multi-second) elapsed time poisons the EWMA cost model and
+        // wrecks the ETA. Only successful completions calibrate cost.
+        (e): T => { throw e; }
     ) as Promise<T> & { cleanupWaiter?: () => void };
     // Forward cleanupWaiter from the inner waiter (if present) so a racing
     // caller can cancel the underlying waitFor container before it leaks.
@@ -111,6 +123,7 @@ export function getTimingStats(): TimingStats {
             count: entry.count,
             avgMsPerExpectedUnit: entry.ewmaMsPerUnit,
             baselineMsPerExpectedUnit: entry.ewmaSlowMsPerUnit,
+            totalExpectedUnits: entry.totalExpectedUnits,
         };
     }
     return out;
@@ -131,6 +144,15 @@ type PersistedEntry = {
     totalMs?: number;
     totalExpectedUnits?: number;
 };
+
+function weightFromPersisted(entry: PersistedEntry, count: number): number {
+    if (typeof entry.totalExpectedUnits === "number" && entry.totalExpectedUnits > 0) {
+        return entry.totalExpectedUnits;
+    }
+    // Older persisted stats had no unit total — fall back to occurrence count
+    // (assume ~1 unit/op). Corrects itself as new samples accumulate.
+    return Math.max(0, count);
+}
 
 function loadPersistedStats(): void {
     if (loadedPersistedStats) return;
@@ -166,6 +188,7 @@ function loadPersistedStats(): void {
                 count: Math.max(0, entry.count),
                 ewmaMsPerUnit,
                 ewmaSlowMsPerUnit,
+                totalExpectedUnits: weightFromPersisted(entry, entry.count),
             };
         }
     } catch (_error) {

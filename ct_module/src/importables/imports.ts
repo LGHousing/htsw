@@ -2,6 +2,7 @@ import { Diagnostic } from "htsw";
 import { Importable } from "htsw/types";
 
 import TaskContext from "../tasks/context";
+import { IMPORT_DEBUG } from "../importer/diagnostics/importDebug";
 import {
     getCurrentHousingUuid,
     writeImportableCache,
@@ -167,8 +168,10 @@ async function maybeWriteImportCache(
         const housingUuid = cachedUuid ?? (await getCurrentHousingUuid(ctx));
         writeImportableCache(ctx, housingUuid, importable, "importer");
     } catch (error) {
-        ctx.displayMessage(
-            `&7[knowledge] &eSkipped cache write for ${importable.type}: ${error}`
-        );
+        if (IMPORT_DEBUG) {
+            ctx.displayMessage(
+                `&7[knowledge] &eSkipped cache write for ${importable.type}: ${error}`
+            );
+        }
     }
 }

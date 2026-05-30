@@ -24,6 +24,8 @@ import {
     resetCalibratedCosts,
     type CalibratableCostKey,
 } from "./importer/progress/costs";
+import { getEventContainerCounts } from "./tasks/specifics/waitFor";
+import { isPacketOrderProbeActive } from "./importer/diagnostics/packetOrderProbe";
 
 function printCommandError(sm: SourceMap, err: unknown): void {
     if (err instanceof Diagnostic) {
@@ -114,6 +116,20 @@ function commandEta(args: string[]): void {
     if (args.length > 0 && args[0] === "reset-costs") {
         resetCalibratedCosts();
         ChatLib.chat("&7[eta] cost overrides cleared; using source defaults");
+        return;
+    }
+
+    if (args.length > 0 && args[0] === "waiters") {
+        const counts = getEventContainerCounts();
+        ChatLib.chat(
+            `&7[waiters] live waitFor predicates — ` +
+            `tick: ${counts.tick}, packetReceived: ${counts.packetReceived}, ` +
+            `packetSent: ${counts.packetSent}, message: ${counts.message}`
+        );
+        ChatLib.chat(
+            `&7[waiters] packet-order probe: ${isPacketOrderProbeActive() ? "&cACTIVE" : "&aoff"}&7. ` +
+            `Idle baseline should be ~0 across the board; non-zero between imports = leak.`
+        );
         return;
     }
 

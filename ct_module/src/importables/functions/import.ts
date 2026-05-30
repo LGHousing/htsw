@@ -18,10 +18,9 @@ import {
     ensureReferencedImportablesExist,
 } from "../references";
 import {
+    applyFunctionSettings,
     ensureFunctionExists,
     openFunctionSettings,
-    setAutomaticExecutionTicksIfNeeded,
-    setFunctionIconIfNeeded,
 } from "./shared";
 
 export type FunctionImportPlan = {
@@ -29,6 +28,12 @@ export type FunctionImportPlan = {
     importable: ImportableFunction;
     trustPlan?: ImportableTrustPlan;
     actionsPlan: ActionListPlan | null;
+    /**
+     * True when the icon/tick settings need no further work — either trusted,
+     * or already applied inline during preread (which happens when the action
+     * diff was empty). When true, the apply pass skips the settings menu.
+     */
+    settingsHandled: boolean;
 };
 
 export async function prereadImportableFunction(
@@ -49,12 +54,12 @@ export async function prereadImportableFunction(
 
     if (actionsTrusted && settingsTrusted) {
         setup(`skipped ${importable.name}`);
-        return { kind: "FUNCTION", importable, trustPlan, actionsPlan: null };
+        return { kind: "FUNCTION", importable, trustPlan, actionsPlan: null, settingsHandled: true };
     }
 
     if (actionsTrusted) {
         setup(`settings-only ${importable.name}`);
-        return { kind: "FUNCTION", importable, trustPlan, actionsPlan: null };
+        return { kind: "FUNCTION", importable, trustPlan, actionsPlan: null, settingsHandled: false };
     }
 
     await ensureFunctionExists(ctx, importable.name);
@@ -65,7 +70,22 @@ export async function prereadImportableFunction(
         trust: getActionListTrust(trustPlan, "actions"),
         events,
     });
-    return { kind: "FUNCTION", importable, trustPlan, actionsPlan };
+
+    // When the actions already match, the only work left is icon/ticks. We're
+    // one go-back from the settings menu, so just apply them now (the setters
+    // short-circuit when unchanged) and let pass 2 skip this function entirely.
+    // Skipped when the diff is non-empty — pass 2 visits settings anyway, so a
+    // first import (everything changes) pays no extra round trip here.
+    let settingsHandled = settingsTrusted;
+    if (!settingsHandled && actionsPlan.diff.operations.length === 0) {
+        await clickGoBack(ctx); // actions editor -> function list
+        await openFunctionSettings(ctx, importable.name);
+        await applyFunctionSettings(ctx, importable);
+        await clickGoBack(ctx); // settings -> function list
+        settingsHandled = true;
+    }
+
+    return { kind: "FUNCTION", importable, trustPlan, actionsPlan, settingsHandled };
 }
 
 export async function applyImportableFunctionPlan(
@@ -74,7 +94,7 @@ export async function applyImportableFunctionPlan(
     itemRegistry: ItemRegistry,
     events?: ImportEventHandler
 ): Promise<void> {
-    const needsSettings = !functionSettingsTrusted(plan.importable, plan.trustPlan);
+    const needsSettings = !plan.settingsHandled;
 
     if (plan.actionsPlan !== null) {
         await ensureFunctionExists(ctx, plan.importable.name);
@@ -93,10 +113,7 @@ export async function applyImportableFunctionPlan(
             await timedWaitForMenu(ctx, "commandMenuWait");
         }
         await openFunctionSettings(ctx, plan.importable.name);
-        if (plan.importable.icon) {
-            await setFunctionIconIfNeeded(ctx, plan.importable.icon);
-        }
-        await setAutomaticExecutionTicksIfNeeded(ctx, plan.importable.repeatTicks ?? 0);
+        await applyFunctionSettings(ctx, plan.importable);
     }
 }
 

@@ -106,26 +106,14 @@ let uuidFetchInFlight = false;
 let lastUuidFetchAt = 0;
 const UUID_FETCH_COOLDOWN_MS = 60_000;
 
-let knowledgeRefreshGeneration = 0;
 function refreshKnowledgeFromUuid(uuid: string): void {
     const parsed = getParsedResult();
     if (parsed === null) return;
-    const importables = parsed.value;
-    const BATCH = 40;
-    const gen = ++knowledgeRefreshGeneration;
-    const allRows: ReturnType<typeof buildCacheStatusRows> = [];
-    function processBatch(start: number): void {
-        if (gen !== knowledgeRefreshGeneration) return;
-        if (start >= importables.length) {
-            setKnowledgeRows(allRows);
-            return;
-        }
-        const end = Math.min(importables.length, start + BATCH);
-        const rows = buildCacheStatusRows(uuid, importables.slice(start, end));
-        for (let i = 0; i < rows.length; i++) allRows.push(rows[i]);
-        setTimeout(() => processBatch(end), 0);
-    }
-    setTimeout(() => processBatch(0), 0);
+    // One synchronous pass — see refreshKnowledgeRows: the old setTimeout-batched
+    // version routed each batch through CT's Java timer, which backs up under
+    // load and stalled the dots for minutes. The whole-file read + hash is
+    // sub-second.
+    setKnowledgeRows(buildCacheStatusRows(uuid, parsed.value));
 }
 
 function maybeAutoFetchHousingUuid(): void {
@@ -547,10 +535,15 @@ export function initHtswGui(): void {
                 mc.func_147108_a(null);
             }
         }
-        if (getContainerBounds() === null) {
+        // Only tear down popovers + focus when the overlay isn't showing at all.
+        // frameVisible() stays true during an import gap (cached bounds), even
+        // though getContainerBounds() flickers null between menu operations —
+        // keying the teardown on getContainerBounds() here would drop overlay
+        // popover/focus state on every one of those flickers.
+        if (!frameVisible()) {
             if (popoverIsOpen()) closeAllPopovers();
             if (getFocusedInput() !== null) setFocusedInput(null);
-        } else {
+        } else if (getContainerBounds() !== null) {
             maybeAutoFetchHousingUuid();
         }
     });
