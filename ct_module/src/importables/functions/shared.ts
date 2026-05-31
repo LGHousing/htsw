@@ -8,6 +8,7 @@ import {
 import { timedWaitForMenu } from "../../importer/gui/menuWait";
 import { setItemValue } from "../../importer/items/items";
 import { parseLoreKeyValueLine } from "../../importer/fields/loreParsing";
+import { isUnspawnableItem } from "../../importer/fields/unspawnableItems";
 import TaskContext from "../../tasks/context";
 import { MouseButton } from "../../tasks/specifics/slots";
 import { removedFormatting, unique } from "../../utils/helpers";
@@ -149,6 +150,12 @@ export async function setFunctionIconIfNeeded(
     ctx: TaskContext,
     icon: FunctionIcon
 ): Promise<void> {
+    if (isUnspawnableItem(icon.item)) {
+        ctx.displayMessage(
+            `&e[htsw] Can't set icon to '${icon.item}' — Hypixel won't let you spawn that item.`
+        );
+        return;
+    }
     await setItemValue(ctx, "Edit Icon", createPlainIconItem(icon));
 }
 

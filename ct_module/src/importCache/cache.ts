@@ -73,6 +73,24 @@ export function writeImportableCache(
     }
 }
 
+function parseCacheEntry(raw: string | null): ImportableCacheEntry | null {
+    if (raw === null) return null;
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(String(raw));
+    } catch {
+        return null;
+    }
+    if (
+        !parsed ||
+        typeof parsed !== "object" ||
+        (parsed as { schemaVersion?: unknown }).schemaVersion !== CACHE_SCHEMA_VERSION
+    ) {
+        return null;
+    }
+    return parsed as ImportableCacheEntry;
+}
+
 /**
  * Load an importable cache entry, or null if the file is missing, unreadable,
  * malformed, or schema-mismatched. Never throws — callers treat null
@@ -84,31 +102,13 @@ export function readImportableCache(
     identity: string
 ): ImportableCacheEntry | null {
     const path = cachePathForId(housingUuid, type, identity);
-    if (!FileLib.exists(path)) return null;
-
     let raw: string | null;
     try {
         raw = FileLib.read(path);
     } catch {
         return null;
     }
-    if (raw === null) return null;
-
-    let parsed: unknown;
-    try {
-        parsed = JSON.parse(String(raw));
-    } catch {
-        return null;
-    }
-
-    if (
-        !parsed ||
-        typeof parsed !== "object" ||
-        (parsed as { schemaVersion?: unknown }).schemaVersion !== CACHE_SCHEMA_VERSION
-    ) {
-        return null;
-    }
-    return parsed as ImportableCacheEntry;
+    return parseCacheEntry(raw);
 }
 
 /** Remove an importable cache entry. No-op if it doesn't exist. */

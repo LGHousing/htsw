@@ -17,9 +17,9 @@ import {
     setActiveImportPath,
     setHousingUuid,
     setImportProgress,
-    setKnowledgeRows,
     toggleImportableChecked,
 } from "../../state";
+import { scheduleKnowledgeBuild } from "../../state/knowledgeBuild";
 import {
     addToQueue,
     clearQueue,
@@ -28,7 +28,6 @@ import {
     type QueueItem,
 } from "../../state/queue";
 import { forEachCachedParse, getParseAt, parseImportJsonAt } from "../../state/parses";
-import { buildCacheStatusRows } from "../../../importCache/status";
 import { printDiagnostics } from "../../../tui/diagnostics";
 import {
     importSelectedImportables,
@@ -63,6 +62,7 @@ import { isImportRunning, setImportRunning } from "../../../importer/runtimeStat
 import { gmcOnImportStart, playImportSuccessSound } from "../../../importer/sideEffects";
 import { resetStepGate } from "../../../importer/stepGate";
 import { startPacketOrderProbe, stopPacketOrderProbe } from "../../../importer/diagnostics/packetOrderProbe";
+import { resetEventContainers } from "../../../tasks/specifics/waitFor";
 import { flushMenuWaitTickSummary } from "../../../importer/gui/menuWait";
 import {
     applyComplete,
@@ -117,11 +117,11 @@ function refreshKnowledgeRows(): void {
         }
     }
 
-    // One synchronous pass. The cache reads + hashing for the whole file are
-    // sub-second; the old setTimeout-batched version routed every batch through
-    // CT's Java timer, which backs up under load and stalled the refresh for
-    // *minutes*. A brief, deterministic hitch beats that every time.
-    setKnowledgeRows(buildCacheStatusRows(uuid, all));
+    // Tick-batched rebuild (see knowledgeBuild): synchronous froze the client
+    // for ~1s on large files, and the old setTimeout batches stalled for minutes
+    // under load. autoTrackRefresh reads cached parses, not the rows, so it can
+    // run as soon as the build is scheduled.
+    scheduleKnowledgeBuild(uuid, all);
     autoTrackRefresh();
 }
 
@@ -492,6 +492,13 @@ export function startImport(explicit?: readonly QueueItem[]): void {
         let totalSkipped = 0;
         let totalFailed = 0;
         try {
+            // Purge any waiters left over from a prior import. Nothing legit is
+            // waiting at an import boundary, so survivors are leaks; a non-zero
+            // count is a canary that one slipped through the cleanup paths.
+            const purged = resetEventContainers();
+            if (purged > 0) {
+                ChatLib.chat(`&8[htsw] purged ${purged} leaked event waiter(s) from a prior import.`);
+            }
             const cached = getHousingUuid();
             let housingUuid = cached;
             if (housingUuid === null) {

@@ -43,7 +43,7 @@ import {
     setHousingUuid,
     setKnowledgeRows,
 } from "./state";
-import { buildCacheStatusRows } from "../importCache/status";
+import { scheduleKnowledgeBuild } from "./state/knowledgeBuild";
 import { getCurrentHousingUuid } from "../importCache/housingId";
 import { TaskManager } from "../tasks/manager";
 
@@ -109,11 +109,10 @@ const UUID_FETCH_COOLDOWN_MS = 60_000;
 function refreshKnowledgeFromUuid(uuid: string): void {
     const parsed = getParsedResult();
     if (parsed === null) return;
-    // One synchronous pass — see refreshKnowledgeRows: the old setTimeout-batched
-    // version routed each batch through CT's Java timer, which backs up under
-    // load and stalled the dots for minutes. The whole-file read + hash is
-    // sub-second.
-    setKnowledgeRows(buildCacheStatusRows(uuid, parsed.value));
+    // Tick-batched, not synchronous: a full rebuild is hundreds of cache
+    // reads + hashes and froze the client for ~1s on every lobby swap / GUI
+    // open when done in one frame.
+    scheduleKnowledgeBuild(uuid, parsed.value);
 }
 
 function maybeAutoFetchHousingUuid(): void {

@@ -173,17 +173,32 @@ export default class TaskContext {
      * won. Pass `null` as the second element if the entry has nothing to
      * clean up.
      */
-    public async race<T>(
+    public race<T>(
         entries: ReadonlyArray<[Promise<T>, WaitForPromise<unknown> | null]>
-    ): Promise<T> {
-        try {
-            return await Promise.race(entries.map((e) => e[0]));
-        } finally {
+    ): WaitForPromise<T> {
+        const cleanupAll = (): void => {
             for (let i = 0; i < entries.length; i++) {
-                const cleanup = entries[i][1]?.cleanupWaiter;
-                if (cleanup !== undefined) cleanup();
+                entries[i][1]?.cleanupWaiter?.();
             }
-        }
+        };
+        const promise = Promise.race(entries.map((e) => e[0])).then(
+            (value) => {
+                cleanupAll();
+                return value;
+            },
+            (err) => {
+                cleanupAll();
+                throw err;
+            }
+        ) as WaitForPromise<T>;
+        // Expose cleanup so an outer withTimeout (or a cancelling caller) that
+        // abandons this race still tears down the loser waiters. Without this,
+        // the `.then` above only runs when the race itself settles — if the
+        // outer timeout fires first, every entry's waiter leaks into
+        // EVENT_CONTAINERS. cleanupWaiter on each entry is idempotent, so the
+        // settle path and the timeout path can both call cleanupAll safely.
+        promise.cleanupWaiter = cleanupAll;
+        return promise;
     }
 
     getAllItemSlots = getAllItemSlots;

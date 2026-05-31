@@ -50,6 +50,9 @@ export function confirmSelect(path: string): void {
     if (preview === path) preview = null;
     if (confirmed.indexOf(path) < 0) confirmed.push(path);
     active = path;
+    // Double-clicking to pin a tab should bring the View panel forward so the
+    // pinned source is actually visible (no-op if already on View).
+    setActiveRightTab("view");
 }
 
 export function setActiveTab(path: string): void {

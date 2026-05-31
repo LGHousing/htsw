@@ -81,6 +81,20 @@ function commandHtsw(args: string[]) {
         return;
     }
 
+    if (args.length > 0 && args[0] === "waiters") {
+        const counts = getEventContainerCounts();
+        ChatLib.chat(
+            `&7[waiters] live waitFor predicates — ` +
+            `tick: ${counts.tick}, packetReceived: ${counts.packetReceived}, ` +
+            `packetSent: ${counts.packetSent}, message: ${counts.message}`
+        );
+        ChatLib.chat(
+            `&7[waiters] Idle baseline should be ~0 across the board; ` +
+            `non-zero between imports = a leaked waiter.`
+        );
+        return;
+    }
+
     ChatLib.chat(`&7${chatSeparator()}`);
     const title = `&e&lHTSW &f&l${VERSION}`;
     ChatLib.chat(`${ChatLib.getCenteredText(title)}`);
@@ -92,6 +106,7 @@ function commandHtsw(args: string[]) {
     ChatLib.chat("&f/htsw knowledge &7- Inspect local import/export knowledge");
     ChatLib.chat("&f/htsw eta [reset|dump|calibrate <ms>|reset-costs] &7- Show / reset / dump / calibrate ETA samples");
     ChatLib.chat("&f/htsw gui &7- Open the in-game HTSW dashboard");
+    ChatLib.chat("&f/htsw waiters &7- Show live waitFor counts (leak check; idle = ~0)");
     ChatLib.chat("&f/htsw recompile &7- Rebuild + reload the module");
     ChatLib.chat(`&7${chatSeparator()}`);
 }

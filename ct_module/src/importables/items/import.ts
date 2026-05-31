@@ -19,11 +19,10 @@ import { stableStringify } from "../../utils/helpers";
 import { getItemFromNbt, getItemFromSnbt } from "../../utils/nbt";
 import {
     HOTBAR_ZERO_PACKET_SLOT,
-    SET_SLOT_ACK_TIMEOUT_MS,
+    SET_SLOT_ACK_MAX_TICKS,
     selectHotbarSlot,
     selectedHotbarSlot,
     sendCreativeInventoryAction,
-    waitForAnySetSlot,
 } from "../../importer/gui/packets";
 import { getActionListTrust, getBaselineActionList } from "../actionListHelpers";
 import type { ItemRegistry } from "../itemRegistry";
@@ -97,11 +96,16 @@ function stacksEqual(left: any, right: any): boolean {
     return left.func_179549_c(right);
 }
 
-async function waitForHotbarZeroMatch(ctx: TaskContext, stack: any): Promise<void> {
-    while (!hotbarZeroMatches(stack)) {
-        await waitForAnySetSlot(ctx);
+// Poll hotbar slot 0 until it reflects `stack`, bounded by tick count. Finite
+// for-loop, NOT a `while (!match) await SetSlot` loop wrapped in a timeout: the
+// latter, once abandoned by a timeout, re-registers a SetSlot waiter on every
+// future SetSlot forever (a self-perpetuating EVENT_CONTAINERS leak).
+async function waitForHotbarZeroMatch(ctx: TaskContext, stack: any): Promise<boolean> {
+    for (let i = 0; i < SET_SLOT_ACK_MAX_TICKS; i++) {
+        if (hotbarZeroMatches(stack)) return true;
         await ctx.waitFor("tick");
     }
+    return hotbarZeroMatches(stack);
 }
 
 export type ItemImportPlan = {
@@ -265,27 +269,16 @@ async function injectHeldItem(ctx: TaskContext, item: Item): Promise<void> {
         return;
     }
 
-    try {
-        const ack = waitForHotbarZeroMatch(ctx, stack);
-        sendCreativeInventoryAction(
-            ctx,
-            HOTBAR_ZERO_PACKET_SLOT,
-            stack,
+    sendCreativeInventoryAction(
+        ctx,
+        HOTBAR_ZERO_PACKET_SLOT,
+        stack,
+    );
+    const landed = await waitForHotbarZeroMatch(ctx, stack);
+    if (!landed) {
+        throw new Error(
+            `held item injection never reached hotbar slot 0 within ${SET_SLOT_ACK_MAX_TICKS} ticks.`
         );
-        await ctx.withTimeout(
-            ack,
-            "held item injection ack",
-            SET_SLOT_ACK_TIMEOUT_MS
-        );
-    } catch (error) {
-        if (!hotbarZeroMatches(stack)) {
-            throw error;
-        }
-        if (IMPORT_DEBUG) {
-            ctx.displayMessage(
-                "&e[packet] held item ack was not observed, but hotbar slot 0 matches; continuing."
-            );
-        }
     }
     await ctx.waitFor("tick");
 

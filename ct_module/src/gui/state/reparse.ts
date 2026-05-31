@@ -3,7 +3,7 @@
 import { SourceMap, parseImportablesResult, htsl } from "htsw";
 
 import { FileSystemFileLoader } from "../../utils/files";
-import { buildCacheStatusRows } from "../../importCache/status";
+import { scheduleKnowledgeBuild } from "./knowledgeBuild";
 import {
     getHousingUuid,
     getImportJsonPath,
@@ -296,12 +296,11 @@ export function reparseImportJson(): void {
 }
 
 /**
- * Off-critical-path work that used to run synchronously inside
- * `reparseImportJson`: per-importable hash + cache-status lookup (346
- * file-IO calls on a big project), refreshing the watched-mtime map
- * (another N stats), and persisting the snapshot. Yields between
- * batches via `setTimeout` so the GUI re-renders with the populated
- * importables list before knowledge dots / watching catch up.
+ * Off-critical-path work after a parse. Knowledge rows go through the shared
+ * tick-driven builder (knowledgeBuild) — no separate batch loop here. The
+ * watched-mtime refresh + snapshot persist run once, generation-guarded so a
+ * newer reparse supersedes a stale one. All of this lags the importables list
+ * (set synchronously in reparseImportJson) by design.
  */
 let postParseGeneration = 0;
 
@@ -312,29 +311,16 @@ function scheduleDeferredPostParse(
 ): void {
     const gen = ++postParseGeneration;
     const housingUuid = getHousingUuid();
-    const importables = result.value;
-    const BATCH = 40;
-    const allRows: ReturnType<typeof buildCacheStatusRows> = [];
-
-    function processBatch(start: number): void {
-        if (gen !== postParseGeneration) return;
-        if (housingUuid === null || start >= importables.length) {
-            setKnowledgeRows(allRows);
-            setTimeout(() => {
-                if (gen !== postParseGeneration) return;
-                refreshWatchedMtimes();
-                if (persist) saveSnapshot(path, result, watchedMtimes);
-            }, 0);
-            return;
-        }
-        const end = Math.min(importables.length, start + BATCH);
-        const slice = importables.slice(start, end);
-        const rows = buildCacheStatusRows(housingUuid, slice);
-        for (let i = 0; i < rows.length; i++) allRows.push(rows[i]);
-        setTimeout(() => processBatch(end), 0);
+    if (housingUuid === null) {
+        scheduleKnowledgeBuild("", []);
+    } else {
+        scheduleKnowledgeBuild(housingUuid, result.value);
     }
-
-    setTimeout(() => processBatch(0), 0);
+    setTimeout(() => {
+        if (gen !== postParseGeneration) return;
+        refreshWatchedMtimes();
+        if (persist) saveSnapshot(path, result, watchedMtimes);
+    }, 0);
 }
 
 /**

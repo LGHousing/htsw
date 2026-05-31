@@ -103,6 +103,27 @@ export function getEventContainerCounts(): { [k: string]: number } {
     };
 }
 
+/**
+ * Drop every registered waiter. Safety net against leaked waiters (e.g. a
+ * `withTimeout` that abandons an inner waiter it can't clean up): the importer
+ * drives menus strictly sequentially, so at an import boundary nothing legit is
+ * waiting and any survivors are leaks. Returns how many were purged. Abandoned
+ * waiters whose promises are dropped on the floor will simply never resolve —
+ * which is correct, since nothing awaits them anymore.
+ */
+export function resetEventContainers(): number {
+    const total =
+        EVENT_CONTAINERS.tick.length +
+        EVENT_CONTAINERS.packetReceived.length +
+        EVENT_CONTAINERS.packetSent.length +
+        EVENT_CONTAINERS.message.length;
+    EVENT_CONTAINERS.tick.length = 0;
+    EVENT_CONTAINERS.packetReceived.length = 0;
+    EVENT_CONTAINERS.packetSent.length = 0;
+    EVENT_CONTAINERS.message.length = 0;
+    return total;
+}
+
 type EventName = keyof CheckPredicateMap;
 
 type ContainerFor<E extends EventName> = EventContainers[E][number];
