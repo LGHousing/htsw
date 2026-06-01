@@ -21,18 +21,10 @@ function stacksEqual(left: any, right: any): boolean {
     return left.func_179549_c(right);
 }
 
-/**
- * Poll the live container slot until it reflects `stack`, for a bounded number
- * of ticks. Returns true if it matched, false if it never did.
- *
- * CRITICAL: this is a finite for-loop, NOT a `while (!match) await SetSlot`
- * loop wrapped in a timeout. The old shape, once abandoned by a `withTimeout`
- * timeout, re-registered a SetSlot waiter on EVERY future SetSlot packet
- * forever — a self-perpetuating EVENT_CONTAINERS leak that thrashes the event
- * multiplexer and breaks timing across the rest of the session. We also poll
- * the slot directly instead of waiting on the ack packet, so a missing/late
- * server echo can't hang us.
- */
+// Must stay a finite for-loop, not a `while (!match) await SetSlot` wrapped in a
+// timeout: on timeout that leaks a SetSlot waiter that re-registers itself on
+// every future SetSlot. Polling the slot directly also means a missing server
+// ack can't hang us.
 async function waitForContainerSlotMatch(
     ctx: TaskContext,
     slotId: number,

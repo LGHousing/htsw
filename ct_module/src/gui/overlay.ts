@@ -43,7 +43,7 @@ import {
     setHousingUuid,
     setKnowledgeRows,
 } from "./state";
-import { scheduleKnowledgeBuild } from "./state/knowledgeBuild";
+import { rebuildKnowledgeRows } from "./state/knowledgeBuild";
 import { getCurrentHousingUuid } from "../importCache/housingId";
 import { TaskManager } from "../tasks/manager";
 
@@ -109,10 +109,7 @@ const UUID_FETCH_COOLDOWN_MS = 60_000;
 function refreshKnowledgeFromUuid(uuid: string): void {
     const parsed = getParsedResult();
     if (parsed === null) return;
-    // Tick-batched, not synchronous: a full rebuild is hundreds of cache
-    // reads + hashes and froze the client for ~1s on every lobby swap / GUI
-    // open when done in one frame.
-    scheduleKnowledgeBuild(uuid, parsed.value);
+    rebuildKnowledgeRows(uuid, parsed.value);
 }
 
 function maybeAutoFetchHousingUuid(): void {

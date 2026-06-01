@@ -9,7 +9,7 @@ import {
     buildTrustPlan,
     getCurrentHousingUuid,
     importableIdentity,
-    trustPlanKey,
+    importableKey,
     writeImportableCache,
 } from "../importCache";
 import { printDiagnostic } from "../tui/diagnostics";
@@ -92,7 +92,7 @@ export async function importSelectedImportables(
     const events = selection.events;
     const importableUnits: number[] = ordered.map((importable) => {
         const identity = importableIdentity(importable);
-        const tp = trustPlan.importables.get(trustPlanKey(importable.type, identity));
+        const tp = trustPlan.importables.get(importableKey(importable.type, identity));
         return estimateImportableUnitsFromTrustPlan(importable, tp?.entry ?? null);
     });
     let initialTotalUnits = 0;
@@ -113,7 +113,7 @@ export async function importSelectedImportables(
 
     const rowsMeta = ordered.map((importable, i) => {
         const identity = importableIdentity(importable);
-        const tp = trustPlan.importables.get(trustPlanKey(importable.type, identity));
+        const tp = trustPlan.importables.get(importableKey(importable.type, identity));
         return {
             importable,
             identity,

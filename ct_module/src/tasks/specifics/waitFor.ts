@@ -28,19 +28,13 @@ const EVENT_CONTAINERS: EventContainers = {
     message: [],
 };
 
-// Resolve only the waiters present when THIS event fired. We snapshot the list
-// first because `container.resolve(args)` can re-enter synchronously via the
-// sync-drain Promise polyfill: the awaiting continuation runs inline and often
-// registers a fresh waiter (e.g. a per-tick poll loop doing `await waitFor("tick")`
-// each iteration). That new waiter is pushed onto `containers`; if this same
-// pass were to see it, its always-true `tick` check would match immediately and
-// resolve it too — re-entering again — draining an entire await-loop inside ONE
-// real tick (observed: 80 loop iterations in 4ms). No real time passes, so menus
-// never finish opening and packets never apply. By iterating a snapshot, a
-// waiter registered during dispatch waits for the NEXT event, as intended.
-// Splicing from the live array by identity (not a fixed index) also avoids
-// dropping a newly-registered waiter that a re-entrant cleanup shifted into a
-// stale slot.
+// Resolve only the waiters present when this event fired. resolve() can re-enter
+// synchronously (sync-drain polyfill): the awaiting continuation runs inline and
+// may register a fresh waiter (e.g. a per-tick poll loop). Iterating a snapshot
+// keeps that waiter for the NEXT event — otherwise an always-true `tick` waiter
+// that re-registers itself resolves again in the same pass and spins an entire
+// await-loop inside one real tick. Splice by identity, not index, so a
+// re-entrant cleanup can't shift a live waiter into the slot being removed.
 function maybeResolve<E extends EventName>(event: E, ...args: ParametersFor<E>) {
     const containers = EVENT_CONTAINERS[event];
     const snapshot = containers.slice();

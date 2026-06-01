@@ -19,10 +19,11 @@ import {
     setImportProgress,
     toggleImportableChecked,
 } from "../../state";
-import { scheduleKnowledgeBuild } from "../../state/knowledgeBuild";
+import { rebuildKnowledgeRows } from "../../state/knowledgeBuild";
 import {
     addToQueue,
-    clearQueue,
+    beginQueueSession,
+    endQueueSession,
     getQueue,
     makeImportableQueueItem,
     type QueueItem,
@@ -39,16 +40,19 @@ import {
     captureFromHousing,
     type CaptureType,
 } from "../../../exporter/captureFromHousing";
-import { importableIdentity } from "../../../importCache/paths";
-import { trustPlanKey } from "../../../importCache/trust";
+import { importableIdentity, importableKey } from "../../../importCache/paths";
 import { getCurrentHousingUuid } from "../../../importCache/housingId";
 import { TaskManager, isTaskCancelled } from "../../../tasks/manager";
 import type { Action, Importable } from "htsw/types";
-import type { ParseResult } from "htsw";
+import type { Diagnostic, ParseResult } from "htsw";
 import { closeAllPopovers } from "../../lib/popovers";
 import { statusForImportable } from "../../knowledge-status";
 import { htslFilenameForFunctionExport } from "../../../exporter/paths";
-import { importableSourcePath } from "../../state/importablePaths";
+import {
+    importableSourcePath,
+    importableSubListPath,
+    SUB_LIST_KINDS,
+} from "../../state/importablePaths";
 import type {
     ActionDiffOperationPayload,
     ImportEventHandler,
@@ -117,11 +121,7 @@ function refreshKnowledgeRows(): void {
         }
     }
 
-    // Tick-batched rebuild (see knowledgeBuild): synchronous froze the client
-    // for ~1s on large files, and the old setTimeout batches stalled for minutes
-    // under load. autoTrackRefresh reads cached parses, not the rows, so it can
-    // run as soon as the build is scheduled.
-    scheduleKnowledgeBuild(uuid, all);
+    rebuildKnowledgeRows(uuid, all);
     autoTrackRefresh();
 }
 
@@ -146,7 +146,7 @@ export function queueModifiedFromParse(
         if (status === "modified" || status === "unknown") {
             const item = makeImportableQueueItem(imp, sourcePath);
             addToQueue(item);
-            const key = trustPlanKey(imp.type, importableIdentity(imp));
+            const key = importableKey(imp.type, importableIdentity(imp));
             if (!isImportableChecked(key)) toggleImportableChecked(key);
         }
     }
@@ -232,10 +232,6 @@ function createImportEventHandler(args: {
         importableFinished: (e) => {
             const imp = importablesByKey.get(e.key);
             if (imp !== undefined) {
-                // Targeted single-row disk re-read: turns this importable's dot
-                // green the instant it finishes. The batched full refresh below
-                // re-reads all 193 rows through chained setTimeouts and can lag
-                // minutes; this one is synchronous and O(1).
                 refreshKnowledgeRowFromDisk(args.housingUuid, imp);
                 if (e.status === "imported") {
                     invalidateKnowledgeOverlayForImportable(imp, args.parsed);
@@ -406,7 +402,7 @@ function buildBatches(explicit?: readonly QueueItem[]): ImportBatch[] | null {
 }
 
 /**
- * Build queue items for every importable whose `trustPlanKey` is in
+ * Build queue items for every importable whose `importableKey` is in
  * `checked`. Walks every cached parse so importables across multiple
  * loaded import.jsons all get picked up.
  */
@@ -416,7 +412,7 @@ export function queueItemsForCheckedKeys(checked: Set<string>): QueueItem[] {
     forEachCachedParse((entry) => {
         if (entry.parsed === null) return;
         for (const imp of entry.parsed.value) {
-            const key = trustPlanKey(imp.type, importableIdentity(imp));
+            const key = importableKey(imp.type, importableIdentity(imp));
             if (!checked.has(key)) continue;
             out.push({
                 kind: "importable",
@@ -427,6 +423,73 @@ export function queueItemsForCheckedKeys(checked: Set<string>): QueueItem[] {
             });
         }
     });
+    return out;
+}
+
+/**
+ * Source files (primary + known sub-lists) for a single importable, added
+ * into `out`. Sub-list coverage is whatever `SUB_LIST_KINDS` enumerates —
+ * deliberately treated as a lower bound, never a complete set (see
+ * `relevantParseErrors`).
+ */
+function collectImportableFiles(
+    imp: Importable,
+    parsed: ParseResult<Importable[]>,
+    out: Set<string>
+): void {
+    const src = importableSourcePath(imp, parsed);
+    if (src !== undefined) out.add(src);
+    for (let i = 0; i < SUB_LIST_KINDS.length; i++) {
+        const sub = importableSubListPath(imp, SUB_LIST_KINDS[i], parsed);
+        if (sub !== undefined) out.add(sub);
+    }
+}
+
+/**
+ * The parse errors worth blocking the import on: drop only those that
+ * clearly belong to a DIFFERENT importable's file (one not being imported
+ * this run), so importing one importable isn't blocked by, or made to
+ * surface, an unrelated sibling's error in the same import.json.
+ *
+ * Safe by construction: an error is excluded only when its file is owned
+ * by some other importable AND not by any imported one. Errors that are
+ * ours, span-less, or whose file we can't attribute to anyone (e.g. MENU
+ * slot lists, which `SUB_LIST_KINDS` doesn't enumerate) are always kept —
+ * so a real error in what you're importing can never be hidden.
+ */
+function relevantParseErrors(batch: ImportBatch): Diagnostic[] {
+    const all = batch.parsed.gcx.diagnostics.filter(
+        (d) => d.level === "error" || d.level === "bug"
+    );
+    if (all.length === 0) return [];
+
+    const importedSet = new Set<Importable>(batch.importables);
+    const importedFiles = new Set<string>();
+    const otherFiles = new Set<string>();
+    for (const imp of batch.parsed.value) {
+        collectImportableFiles(
+            imp,
+            batch.parsed,
+            importedSet.has(imp) ? importedFiles : otherFiles
+        );
+    }
+
+    const sm = batch.parsed.gcx.sourceMap;
+    const out: Diagnostic[] = [];
+    for (const d of all) {
+        const primary = d.spans.find((s) => s.kind === "primary") ?? d.spans[0];
+        let path: string | undefined;
+        if (primary !== undefined) {
+            try {
+                path = sm.getFileByPos(primary.span.start).path;
+            } catch (_e) {
+                path = undefined;
+            }
+        }
+        const ownedByOther =
+            path !== undefined && otherFiles.has(path) && !importedFiles.has(path);
+        if (!ownedByOther) out.push(d);
+    }
     return out;
 }
 
@@ -449,17 +512,16 @@ export function startImport(explicit?: readonly QueueItem[]): void {
         ChatLib.chat(`&c[htsw] ${msg}`);
         return;
     }
-    const failed = batches.filter((b) => b.parsed.gcx.isFailed());
+    const failed = batches
+        .map((batch) => ({ batch, errors: relevantParseErrors(batch) }))
+        .filter((f) => f.errors.length > 0);
     if (failed.length > 0) {
         ChatLib.chat(
             `&c[htsw] Import aborted — ${failed.length} file${failed.length === 1 ? "" : "s"} ` +
                 `with errors. Fix the diagnostics below and retry.`
         );
-        for (const batch of failed) {
+        for (const { batch, errors } of failed) {
             ChatLib.chat(`&7  in ${batch.sourcePath}:`);
-            const errors = batch.parsed.gcx.diagnostics.filter(
-                (d) => d.level === "error" || d.level === "bug"
-            );
             printDiagnostics(batch.parsed.gcx.sourceMap, errors);
         }
         return;
@@ -477,6 +539,12 @@ export function startImport(explicit?: readonly QueueItem[]): void {
         totalUnits: 1,
         rows,
     }));
+
+    // Mark the current queue items as this session's batch. Items added to
+    // the queue during the run become "pending" and survive the success
+    // clear (only session items are removed). The explicit path doesn't
+    // touch the queue, so no session is opened.
+    if (explicit === undefined) beginQueueSession();
 
     setImportRunning(true);
     const sessionId = ++importSessionId;
@@ -567,22 +635,17 @@ export function startImport(explicit?: readonly QueueItem[]): void {
                 );
             }
             setImportProgress(null);
-            // Only auto-clear the queue after a fully successful queue run.
-            // A cancelled or partially-failed import keeps the queue intact
-            // so the user can retry without re-adding everything.
-            if (explicit === undefined && importSucceeded) {
-                setTimeout(() => {
-                    if (importSessionId !== sessionId) return;
-                    clearQueue();
-                    clearImportableChecks();
-                    clearLastFinishedProgress();
-                }, 1500);
-            } else {
-                setTimeout(() => {
-                    if (importSessionId !== sessionId) return;
-                    clearLastFinishedProgress();
-                }, 1500);
-            }
+            // End the queue session after the 1.5s done-state window. A fully
+            // successful queue run removes the session items (pending adds
+            // stay); a cancel/failure keeps them for retry and just drops the
+            // session marking so they merge back into the normal queue.
+            const removeSessionItems = explicit === undefined && importSucceeded;
+            setTimeout(() => {
+                if (importSessionId !== sessionId) return;
+                endQueueSession(removeSessionItems);
+                if (removeSessionItems) clearImportableChecks();
+                clearLastFinishedProgress();
+            }, 1500);
         }
     }).catch((err: unknown) => {
         setImportRunning(false);

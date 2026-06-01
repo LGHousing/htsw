@@ -135,8 +135,10 @@ export function parseImportJsonAt(rawPath: string): CachedParse {
         // main reparse path) can skip this parse. Use the full
         // fingerprint shared with refreshWatchedMtimes so edits to
         // sub-list .htsl files (REGION enter/exit, ITEM click actions)
-        // invalidate just as they do in the main reparse path.
-        if (parsed !== null) {
+        // invalidate just as they do in the main reparse path. Errored
+        // parses are not snapshotted — they must re-parse fully so the
+        // import gate sees real, span-bearing diagnostics.
+        if (parsed !== null && !parsed.gcx.isFailed()) {
             const fingerprint = buildParseFingerprint(canon, mtime, parsed);
             saveSnapshot(canon, parsed, fingerprint);
         }

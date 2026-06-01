@@ -1,6 +1,6 @@
 import type { Importable } from "htsw/types";
 
-import { trustPlanKey } from "../../importCache/trust";
+import { importableKey } from "../../importCache/paths";
 
 /**
  * Canonicalize the path component so the same file referenced as
@@ -14,5 +14,5 @@ export function importProgressKey(
     identity: string,
     sourcePath: string
 ): string {
-    return `${sourcePath.split("\\").join("/")}|${trustPlanKey(type, identity)}`;
+    return `${sourcePath.split("\\").join("/")}|${importableKey(type, identity)}`;
 }

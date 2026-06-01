@@ -95,6 +95,11 @@ function commandHtsw(args: string[]) {
         return;
     }
 
+    if (args.length > 0 && args[0] === "lexbench") {
+        lexBench();
+        return;
+    }
+
     ChatLib.chat(`&7${chatSeparator()}`);
     const title = `&e&lHTSW &f&l${VERSION}`;
     ChatLib.chat(`${ChatLib.getCenteredText(title)}`);
@@ -109,6 +114,62 @@ function commandHtsw(args: string[]) {
     ChatLib.chat("&f/htsw waiters &7- Show live waitFor counts (leak check; idle = ~0)");
     ChatLib.chat("&f/htsw recompile &7- Rebuild + reload the module");
     ChatLib.chat(`&7${chatSeparator()}`);
+}
+
+/**
+ * Microbenchmark the lexer's per-character operations in Rhino, isolated, so we
+ * get engine-true numbers (Node JITs these to native and hides the cost). Pits
+ * the patterns the htsl lexer uses against their fast equivalents.
+ */
+function lexBench(): void {
+    const N = 300000;
+    const sample = "player_stat/value-1.0";
+    const len = sample.length;
+    let acc = 0;
+
+    const identRe = /[a-zA-Z_/\-0-9.-]/;
+    let t = Date.now();
+    for (let i = 0; i < N; i++) {
+        if (identRe.test(sample.charAt(i % len))) acc++;
+    }
+    const regexMs = Date.now() - t;
+
+    t = Date.now();
+    for (let i = 0; i < N; i++) {
+        const k = sample.charCodeAt(i % len);
+        if ((k >= 97 && k <= 122) || (k >= 65 && k <= 90) || (k >= 48 && k <= 57) ||
+            k === 95 || k === 47 || k === 45 || k === 46) acc++;
+    }
+    const codeMs = Date.now() - t;
+
+    t = Date.now();
+    for (let i = 0; i < N; i++) { if (sample.charAt(i % len) === "a") acc++; }
+    const charAtMs = Date.now() - t;
+    t = Date.now();
+    for (let i = 0; i < N; i++) { if (sample.charCodeAt(i % len) === 97) acc++; }
+    const charCodeMs = Date.now() - t;
+
+    const reps = 2000;
+    const tokLen = 40;
+    t = Date.now();
+    for (let r = 0; r < reps; r++) {
+        let v = "";
+        for (let i = 0; i < tokLen; i++) v += sample.charAt(i % len);
+        if (v.length < 0) acc++;
+    }
+    const plusEqMs = Date.now() - t;
+    t = Date.now();
+    for (let r = 0; r < reps; r++) {
+        const v = sample.substring(0, Math.min(tokLen, len));
+        if (v.length < 0) acc++;
+    }
+    const sliceMs = Date.now() - t;
+
+    const ratio = (a: number, b: number): string => (a / Math.max(1, b)).toFixed(1);
+    ChatLib.chat(`&8[lexbench] ${N} ops each (acc=${acc}):`);
+    ChatLib.chat(`&8  regex.test ${regexMs}ms vs charCode ${codeMs}ms  (${ratio(regexMs, codeMs)}x slower)`);
+    ChatLib.chat(`&8  charAt ${charAtMs}ms vs charCodeAt ${charCodeMs}ms  (${ratio(charAtMs, charCodeMs)}x)`);
+    ChatLib.chat(`&8  '+=' build ${plusEqMs}ms vs substring ${sliceMs}ms  (${ratio(plusEqMs, sliceMs)}x)  [${reps}x${tokLen}ch]`);
 }
 
 function commandEta(args: string[]): void {

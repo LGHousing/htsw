@@ -10,9 +10,14 @@
  * The snapshot stores `value` (the parsed `Importable[]`) and the
  * `sourceFiles` map as a parallel `sourcePaths` array. Spans and
  * diagnostics are NOT persisted — the lite ParseResult exposes empty
- * versions of those. The few consumers that need spans (live import,
- * raw-view rendering of nested actions) do their own per-file parse via
- * `parseHtslFile` and aren't affected.
+ * versions of those. This is sound because snapshots are only written
+ * for parses with no errors (see the `isFailed()` guards at the
+ * `saveSnapshot` call sites): a clean parse has no diagnostics, so an
+ * empty `diagnostics` is the correct value, and an import gated on
+ * `gcx.isFailed()` stays accurate. A file that parses WITH errors is
+ * never snapshotted, so it always falls through to a full parse — which
+ * carries real spans + sourceMap and renders through the language
+ * diagnostic system (file:line:column + source snippet).
  *
  * Validity is checked by mtime fingerprint: every file the previous
  * parse referenced (import.json + every linked .htsl) must match its
@@ -30,15 +35,19 @@ import type { Importable } from "htsw/types";
 import { FileSystemFileLoader } from "../../utils/files";
 import { ensureParentDirs } from "../../utils/filesystem";
 import { getMtimeMs } from "../lib/java";
+import { memoizedImportableHash, seedImportableHash } from "../../importCache/status";
 
 const SNAPSHOT_DIR = "./htsw/.parse-snapshots";
 
 type Snapshot = {
-    version: 1;
+    version: 3;
     importJsonPath: string;
     fingerprint: { [path: string]: number };
     importables: Importable[];
     sourcePaths: (string | null)[];
+    // importableHash per importable, index-aligned with `importables`. Persisted
+    // so a reload reuses them instead of re-hashing every action tree.
+    hashes: string[];
 };
 
 function snapshotPath(importJsonPath: string): string {
@@ -69,11 +78,13 @@ export function loadSnapshot(importJsonPath: string): Snapshot | null {
         const raw = String(FileLib.read(p) ?? "");
         if (raw.length === 0) return null;
         const parsed = JSON.parse(raw) as Snapshot;
-        if (parsed.version !== 1) return null;
+        if (parsed.version !== 3) return null;
         if (parsed.importJsonPath !== importJsonPath) return null;
         if (!Array.isArray(parsed.importables)) return null;
         if (!Array.isArray(parsed.sourcePaths)) return null;
+        if (!Array.isArray(parsed.hashes)) return null;
         if (parsed.importables.length !== parsed.sourcePaths.length) return null;
+        if (parsed.hashes.length !== parsed.importables.length) return null;
         if (parsed.fingerprint === null || typeof parsed.fingerprint !== "object" || Array.isArray(parsed.fingerprint)) return null;
         return parsed;
     } catch (_e) {
@@ -121,11 +132,12 @@ export function saveSnapshot(
     const fingerprint: { [path: string]: number } = {};
     for (const k in watchedMtimes) fingerprint[k] = watchedMtimes[k];
     const snapshot: Snapshot = {
-        version: 1,
+        version: 3,
         importJsonPath,
         fingerprint,
         importables: result.value,
         sourcePaths,
+        hashes: result.value.map(memoizedImportableHash),
     };
     try {
         const out = snapshotPath(importJsonPath);
@@ -138,11 +150,11 @@ export function saveSnapshot(
 
 /**
  * Constructs a lite `ParseResult<Importable[]>` from a cached snapshot.
- * `spans` is empty and `gcx.diagnostics` is empty — features that need
- * those degrade gracefully (no diagnostic backgrounds, no smart
- * .snbt-source lookups) until the next full parse replaces the state.
- * `gcx.sourceFiles` is rebuilt from `sourcePaths` so watching and
- * source-path resolution work unchanged.
+ * `spans` and `gcx.diagnostics` are empty — sound because only clean
+ * parses are snapshotted (see this module's header), so a snapshot
+ * always represents a zero-diagnostic parse. `gcx.sourceFiles` is
+ * rebuilt from `sourcePaths` so watching and source-path resolution
+ * work unchanged.
  */
 export function buildLiteParseResult(snapshot: Snapshot): ParseResult<Importable[]> {
     const sm = new SourceMap(new FileSystemFileLoader());
@@ -152,6 +164,7 @@ export function buildLiteParseResult(snapshot: Snapshot): ParseResult<Importable
         if (path !== null && path !== undefined) {
             gcx.sourceFiles.set(snapshot.importables[i], path);
         }
+        seedImportableHash(snapshot.importables[i], snapshot.hashes[i]);
     }
     return {
         value: snapshot.importables,

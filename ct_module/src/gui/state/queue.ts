@@ -54,8 +54,47 @@ export function queueItemKey(item: QueueItem): string {
 
 let items: QueueItem[] = [];
 
+/**
+ * Keys of the queue items that belong to the currently-running import
+ * session (snapshotted when the import started). Null when no import is
+ * running. Items added to the queue *after* an import starts are not in
+ * this set — they're "pending" and survive the post-success clear, which
+ * only removes session items. The display draws a divider between the two
+ * groups, and session items can't be removed mid-run.
+ */
+let sessionKeys: Set<string> | null = null;
+
 export function getQueue(): readonly QueueItem[] {
     return items;
+}
+
+export function beginQueueSession(): void {
+    sessionKeys = new Set<string>();
+    for (let i = 0; i < items.length; i++) {
+        sessionKeys.add(queueItemKey(items[i]));
+    }
+}
+
+/**
+ * End the active queue session. When `removeSessionItems` is true (a fully
+ * successful run) the session items are dropped from the queue, leaving
+ * only pending adds. When false (cancel / failure) the items stay so the
+ * user can retry; only the session marking is cleared.
+ */
+export function endQueueSession(removeSessionItems: boolean): void {
+    if (sessionKeys !== null && removeSessionItems) {
+        const keys = sessionKeys;
+        items = items.filter((i) => !keys.has(queueItemKey(i)));
+    }
+    sessionKeys = null;
+}
+
+export function hasQueueSession(): boolean {
+    return sessionKeys !== null;
+}
+
+export function isQueueSessionItem(key: string): boolean {
+    return sessionKeys !== null && sessionKeys.has(key);
 }
 
 export function getQueueLength(): number {
@@ -90,6 +129,36 @@ export function toggleQueue(item: QueueItem): boolean {
 
 export function clearQueue(): void {
     items = [];
+    sessionKeys = null;
+}
+
+/**
+ * Split the queue into the active-session group and the pending group for
+ * display, each sorted into execution order. When no import is running
+ * every item is "active" and `showDivider` is false. During a run, items
+ * added after the start fall into `pending`, and the divider shows only
+ * when there's something pending to separate.
+ */
+export function queueDisplayGroups(): {
+    active: QueueItem[];
+    pending: QueueItem[];
+    showDivider: boolean;
+} {
+    if (sessionKeys === null) {
+        return { active: sortedQueueForDisplay(items), pending: [], showDivider: false };
+    }
+    const keys = sessionKeys;
+    const active: QueueItem[] = [];
+    const pending: QueueItem[] = [];
+    for (const item of items) {
+        if (keys.has(queueItemKey(item))) active.push(item);
+        else pending.push(item);
+    }
+    return {
+        active: sortedQueueForDisplay(active),
+        pending: sortedQueueForDisplay(pending),
+        showDivider: pending.length > 0,
+    };
 }
 
 /**

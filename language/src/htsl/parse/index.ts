@@ -49,6 +49,7 @@ export function parseHtsl(gcx: GlobalCtxt, path: string): Action[] {
         const file = gcx.sourceMap.getFile(path);
         const t1 = timing ? Date.now() : 0;
 
+        const diagnosticsBefore = gcx.diagnostics.length;
         const lexer = new Lexer(file);
         const parser = new Parser(gcx, lexer);
         const actions = parser.parseCompletely();
@@ -57,8 +58,19 @@ export function parseHtsl(gcx: GlobalCtxt, path: string): Action[] {
         checkTypeflow(tcx, actions);
         const t3 = timing ? Date.now() : 0;
 
+        // Only cache clean parses. A parse that produced diagnostics is not
+        // cached: diagnostics carry absolute source spans tied to the
+        // SourceMap that produced them, and replaying them into a later
+        // parse with a different file layout yields out-of-range spans. So
+        // an errored file re-parses every time, surfacing fresh diagnostics
+        // whose spans are valid for the current SourceMap.
+        const producedDiagnostics = gcx.diagnostics.length > diagnosticsBefore;
         const mtime = mtimeProvider !== null ? mtimeProvider(path) : 0;
-        htslCache.set(path, { mtime, actions });
+        if (producedDiagnostics) {
+            htslCache.delete(path);
+        } else {
+            htslCache.set(path, { mtime, actions });
+        }
 
         if (timing) {
             timing.fileCount++;

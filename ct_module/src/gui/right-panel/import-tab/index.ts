@@ -26,7 +26,7 @@ import {
     setHouseTrust,
     setImportSoundsMuted,
 } from "../../state";
-import { getQueue, sortedQueueForDisplay } from "../../state/queue";
+import { queueDisplayGroups, type QueueItem } from "../../state/queue";
 import { getAlias } from "../../../importCache/aliases";
 import { openAliasPopover } from "../../popovers/alias";
 import {
@@ -202,6 +202,37 @@ function pauseControlRow(): Element {
     });
 }
 
+function appendQueueRows(rows: Child[], items: readonly QueueItem[]): void {
+    for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        rows.push(queueRow(item));
+        if (item.kind === "importJson" && isQueueImportJsonExpanded(item)) {
+            const children = queueImportJsonChildren(item);
+            for (let j = 0; j < children.length; j++) {
+                rows.push(queueImportJsonChildRow(item, children[j]));
+            }
+        }
+    }
+}
+
+function pendingDividerRow(): Element {
+    return Container({
+        style: {
+            direction: "row",
+            align: "center",
+            padding: { side: "left", value: 6 },
+            height: { kind: "px", value: 12 },
+            background: COLOR_ROW,
+        },
+        children: [
+            Text({
+                text: "Pending — added during import, runs next",
+                color: COLOR_TEXT_FAINT,
+            }),
+        ],
+    });
+}
+
 export function importTab(): Element {
     return Col({
         style: { gap: 4, width: { kind: "grow" }, height: { kind: "grow" } },
@@ -212,8 +243,8 @@ export function importTab(): Element {
                 id: "right-import-queue-scroll",
                 style: { gap: 2, height: { kind: "px", value: 120 } },
                 children: () => {
-                    const items = sortedQueueForDisplay(getQueue());
-                    if (items.length === 0) {
+                    const groups = queueDisplayGroups();
+                    if (groups.active.length === 0 && groups.pending.length === 0) {
                         return [
                             Container({
                                 style: { padding: 6 },
@@ -227,16 +258,11 @@ export function importTab(): Element {
                         ];
                     }
                     const rows: Child[] = [];
-                    for (let i = 0; i < items.length; i++) {
-                        const item = items[i];
-                        rows.push(queueRow(item));
-                        if (item.kind === "importJson" && isQueueImportJsonExpanded(item)) {
-                            const children = queueImportJsonChildren(item);
-                            for (let j = 0; j < children.length; j++) {
-                                rows.push(queueImportJsonChildRow(item, children[j]));
-                            }
-                        }
+                    appendQueueRows(rows, groups.active);
+                    if (groups.showDivider) {
+                        rows.push(pendingDividerRow());
                     }
+                    appendQueueRows(rows, groups.pending);
                     return rows;
                 },
             }),

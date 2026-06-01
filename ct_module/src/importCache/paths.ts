@@ -37,6 +37,16 @@ export function importableIdentity(importable: Importable): string {
 }
 
 /**
+ * Canonical `type:identity` key for an importable. The shared identity
+ * string used wherever importables are tracked by a Map/Set — trust
+ * plans, the Importables-tab checkbox set, queue items, progress keys.
+ * Not tied to any one of those subsystems; just "which importable."
+ */
+export function importableKey(type: Importable["type"], identity: string): string {
+    return `${type}:${identity}`;
+}
+
+/**
  * Encode an identity into something filesystem-safe. Hypixel allows
  * characters in function/region names that some filesystems do not (e.g.
  * `:` on Windows), so we normalize them rather than gambling on the host.

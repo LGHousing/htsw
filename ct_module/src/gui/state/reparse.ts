@@ -3,7 +3,7 @@
 import { SourceMap, parseImportablesResult, htsl } from "htsw";
 
 import { FileSystemFileLoader } from "../../utils/files";
-import { scheduleKnowledgeBuild } from "./knowledgeBuild";
+import { rebuildKnowledgeRows } from "./knowledgeBuild";
 import {
     getHousingUuid,
     getImportJsonPath,
@@ -22,7 +22,6 @@ import {
     loadSnapshot,
     saveSnapshot,
     snapshotExists,
-    snapshotIsCurrent,
 } from "./parseSnapshot";
 import { getMtimeMs, javaType } from "../lib/java";
 
@@ -217,7 +216,18 @@ export function reparseImportJson(): void {
     const snapshot = loadSnapshot(path);
     const t1 = Date.now();
 
-    if (snapshot !== null && snapshotIsCurrent(snapshot)) {
+    let snapMiss: string | null = snapshot === null ? "no valid snapshot on disk" : null;
+    if (snapshot !== null && snapMiss === null) {
+        for (const fp in snapshot.fingerprint) {
+            const actual = getMtimeMs(fp);
+            const tail = fp.split("/").slice(-2).join("/");
+            if (actual === 0) { snapMiss = `${tail} missing`; break; }
+            if (actual !== snapshot.fingerprint[fp]) { snapMiss = `${tail} changed (${snapshot.fingerprint[fp]} -> ${actual})`; break; }
+        }
+    }
+    ChatLib.chat(snapMiss === null ? "&8[snapshot] HIT" : `&8[snapshot] miss: ${snapMiss}`);
+
+    if (snapshot !== null && snapMiss === null) {
         const t2 = Date.now();
         const lite = buildLiteParseResult(snapshot);
         setParsedResult(lite);
@@ -269,6 +279,10 @@ export function reparseImportJson(): void {
             importJsonMs: tm?.importJsonMs ?? null,
             totalMs: tParsed - t0,
         };
+        ChatLib.chat(
+            `&8[parse-timing] ${tm?.fileCount ?? "?"} files (${tm?.cacheHits ?? "?"} cached) in ${tParsed - tPreParse}ms — ` +
+            `read ${tm?.fileReadMs ?? "?"} / lex+parse ${tm?.lexParseMs ?? "?"} / typecheck ${tm?.typeflowMs ?? "?"} / importjson ${tm?.importJsonMs ?? "?"}`
+        );
         scheduleDeferredPostParse(result, path, /*persist=*/ true);
         return;
     } catch (_err) {
@@ -296,11 +310,10 @@ export function reparseImportJson(): void {
 }
 
 /**
- * Off-critical-path work after a parse. Knowledge rows go through the shared
- * tick-driven builder (knowledgeBuild) — no separate batch loop here. The
- * watched-mtime refresh + snapshot persist run once, generation-guarded so a
- * newer reparse supersedes a stale one. All of this lags the importables list
- * (set synchronously in reparseImportJson) by design.
+ * Off-critical-path work after a parse. The watched-mtime refresh + snapshot
+ * persist run once, generation-guarded so a newer reparse supersedes a stale
+ * one. All of this lags the importables list (set synchronously in
+ * reparseImportJson) by design.
  */
 let postParseGeneration = 0;
 
@@ -311,15 +324,14 @@ function scheduleDeferredPostParse(
 ): void {
     const gen = ++postParseGeneration;
     const housingUuid = getHousingUuid();
-    if (housingUuid === null) {
-        scheduleKnowledgeBuild("", []);
-    } else {
-        scheduleKnowledgeBuild(housingUuid, result.value);
-    }
+    rebuildKnowledgeRows(housingUuid ?? "", housingUuid === null ? [] : result.value);
     setTimeout(() => {
-        if (gen !== postParseGeneration) return;
+        if (gen !== postParseGeneration) { ChatLib.chat(`&8[snap-save] skip: superseded (${gen} != ${postParseGeneration})`); return; }
         refreshWatchedMtimes();
-        if (persist) saveSnapshot(path, result, watchedMtimes);
+        if (!persist) { ChatLib.chat("&8[snap-save] skip: persist=false (was a snapshot hit)"); return; }
+        if (result.gcx.isFailed()) { ChatLib.chat("&8[snap-save] skip: parse has errors (isFailed)"); return; }
+        saveSnapshot(path, result, watchedMtimes);
+        ChatLib.chat("&8[snap-save] wrote snapshot ok");
     }, 0);
 }
 

@@ -30,10 +30,12 @@ import {
 } from "../../lib/theme";
 
 const GLYPH_CARET = "▶";
-import { clearImportableChecks, getKnowledgeRows, getQueueItemRunState, isCurrentHouseTrusted, isCurrentQueueItem } from "../../state";
+import { clearImportableChecks, getKnowledgeRows, getQueueItemRunState, isCurrentHouseTrusted, isCurrentQueueItem, isImportableChecked, toggleImportableChecked } from "../../state";
+import { importableKey } from "../../../importCache/paths";
 import {
     clearQueue,
     getQueueLength,
+    isQueueSessionItem,
     queueItemKey,
     removeFromQueueKey,
     type QueueItem,
@@ -56,6 +58,19 @@ function willBeSkipped(item: QueueItem): boolean {
 }
 
 const collapsedQueueImportJsonRows: Set<string> = new Set();
+
+/**
+ * Remove a queue item and, for a single importable, also clear its
+ * Importables-tab checkbox so the two stay in sync (the Explore row's
+ * checkbox both adds to the queue and marks itself checked, so removal
+ * has to undo both). importJson bundles have no single checkbox.
+ */
+function removeQueueItemAndUncheck(item: QueueItem): void {
+    removeFromQueueKey(queueItemKey(item));
+    if (item.kind !== "importable") return;
+    const checkKey = importableKey(item.type, item.identity);
+    if (isImportableChecked(checkKey)) toggleImportableChecked(checkKey);
+}
 
 function shortSource(p: string): string {
     const norm = p.split("\\").join("/");
@@ -220,21 +235,26 @@ export function queueRow(item: QueueItem): Element {
                         text: shortSource(item.sourcePath),
                         color: COLOR_TEXT_FAINT,
                     }),
-                    Container({
-                        style: {
-                            direction: "col",
-                            width: { kind: "px", value: 14 },
-                            height: { kind: "grow" },
-                            align: "center",
-                            justify: "center",
-                            hoverBackground: 0x40e85c5c | 0,
-                        },
-                        onClick: (_rect, info) => {
-                            if (info.button !== 0) return;
-                            removeFromQueueKey(queueItemKey(item));
-                        },
-                        children: [Icon({ name: Icons.x })],
-                    }),
+                    isQueueSessionItem(queueItemKey(item))
+                        ? Container({
+                              style: { width: { kind: "px", value: 14 }, height: { kind: "grow" } },
+                              children: [],
+                          })
+                        : Container({
+                              style: {
+                                  direction: "col",
+                                  width: { kind: "px", value: 14 },
+                                  height: { kind: "grow" },
+                                  align: "center",
+                                  justify: "center",
+                                  hoverBackground: 0x40e85c5c | 0,
+                              },
+                              onClick: (_rect, info) => {
+                                  if (info.button !== 0) return;
+                                  removeQueueItemAndUncheck(item);
+                              },
+                              children: [Icon({ name: Icons.x })],
+                          }),
                 ],
             }),
             queueRowMiniBar(item),

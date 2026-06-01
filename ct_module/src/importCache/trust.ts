@@ -2,7 +2,7 @@ import type { Importable } from "htsw/types";
 
 import type { ImportableCacheEntry } from "./cache";
 import { importableHash, listHashes } from "./hash";
-import { importableIdentity } from "./paths";
+import { importableIdentity, importableKey } from "./paths";
 import { readImportableCache } from "./cache";
 import { sameHashList } from "./status";
 
@@ -22,10 +22,6 @@ export type TrustPlan = {
     housingUuid: string;
     importables: Map<string, ImportableTrustPlan>;
 };
-
-export function trustPlanKey(type: Importable["type"], identity: string): string {
-    return `${type}:${identity}`;
-}
 
 /**
  * Build per-importable cache + trust info for an import session.
@@ -66,7 +62,7 @@ export function buildTrustPlan(
             }
         }
 
-        plans.set(trustPlanKey(importable.type, identity), {
+        plans.set(importableKey(importable.type, identity), {
             importable,
             identity,
             entry,

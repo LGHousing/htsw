@@ -139,7 +139,16 @@ export function listHashes(importable: Importable): Record<string, string[]> {
  * this is what the future trust-mode compares first to decide whether
  * a deep equality check is needed at all.
  */
+export let _normMs = 0;
+export let _strMs = 0;
+export let _digMs = 0;
+export function resetHashBreakdown(): void { _normMs = 0; _strMs = 0; _digMs = 0; }
+export function getHashBreakdown(): { normMs: number; strMs: number; digMs: number } {
+    return { normMs: _normMs, strMs: _strMs, digMs: _digMs };
+}
+
 export function importableHash(importable: Importable): string {
+    const _t0 = Date.now();
     // Walk into known list-bearing fields with the action normalizer so
     // the surrounding importable record gets canonicalized while its
     // action lists pick up the same default-stripping the importer's
@@ -174,7 +183,14 @@ export function importableHash(importable: Importable): string {
             canonical[key] = value;
         }
     }
-    return hashHex(stableStringify(canonical));
+    const _t1 = Date.now();
+    _normMs += _t1 - _t0;
+    const str = stableStringify(canonical);
+    const _t2 = Date.now();
+    _strMs += _t2 - _t1;
+    const digest = hashHex(str);
+    _digMs += Date.now() - _t2;
+    return digest;
 }
 
 function normalizeMenuSlotForHash(

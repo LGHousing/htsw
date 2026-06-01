@@ -17,8 +17,8 @@ let importJsonPath = "./htsw/imports/import.json";
 let exportImportJsonPath: string | null = null;
 let parsedResult: ParseResult<Importable[]> | null = null;
 /**
- * Multi-select for the Importables tab. Keyed by `${type}:${identity}`
- * (the `trustPlanKey` shape). Independent of `selectedImportableId` —
+ * Multi-select for the Importables tab. Keyed by `importableKey`
+ * (`${type}:${identity}`). Independent of `selectedImportableId` —
  * single-selection drives preview, multi-selection drives "Import
  * selected" and the queue-bulk paths.
  */

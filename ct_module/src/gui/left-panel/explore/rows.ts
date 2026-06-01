@@ -26,8 +26,7 @@ import {
     importableSubListPath,
     type SubListKind,
 } from "../../state/importablePaths";
-import { importableIdentity } from "../../../importCache/paths";
-import { trustPlanKey } from "../../../importCache/trust";
+import { importableIdentity, importableKey } from "../../../importCache/paths";
 import { addToQueue, makeImportableQueueItem, queueItemKey, removeFromQueueKey } from "../../state/queue";
 import { composeFileMenu, composeImportableMenu } from "../../state/fileMenu";
 import { autoTrackRefresh, queueModifiedFromParse } from "../../right-panel/import-tab/actions";
@@ -357,7 +356,7 @@ export function importableRow(parent: ResultImport, imp: Importable): Element {
     const expandable = isImportableExpandable(imp);
     const expKey = importableExpansionKey(parent.fullPath, imp);
     const expanded = importableExpansion.has(expKey);
-    const checkKey = trustPlanKey(imp.type, importableIdentity(imp));
+    const checkKey = importableKey(imp.type, importableIdentity(imp));
     const checked = isImportableChecked(checkKey);
     return Container({
         style: {

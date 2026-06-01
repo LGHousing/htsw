@@ -96,10 +96,9 @@ function stacksEqual(left: any, right: any): boolean {
     return left.func_179549_c(right);
 }
 
-// Poll hotbar slot 0 until it reflects `stack`, bounded by tick count. Finite
-// for-loop, NOT a `while (!match) await SetSlot` loop wrapped in a timeout: the
-// latter, once abandoned by a timeout, re-registers a SetSlot waiter on every
-// future SetSlot forever (a self-perpetuating EVENT_CONTAINERS leak).
+// Must stay a finite for-loop, not a `while (!match) await SetSlot` wrapped in a
+// timeout: on timeout that leaks a SetSlot waiter that re-registers itself on
+// every future SetSlot.
 async function waitForHotbarZeroMatch(ctx: TaskContext, stack: any): Promise<boolean> {
     for (let i = 0; i < SET_SLOT_ACK_MAX_TICKS; i++) {
         if (hotbarZeroMatches(stack)) return true;
