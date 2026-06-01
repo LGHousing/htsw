@@ -113,6 +113,47 @@ export function upsertImportableEntry(
 }
 
 /**
+ * Surgical single-field update: change one field on an importable entry.
+ * Pass `undefined` as value to remove the field. Returns true on success.
+ */
+export function updateImportableField(
+    importJsonPath: string,
+    section: Section,
+    identity: string,
+    field: string | string[],
+    value: unknown
+): boolean {
+    const idField = identityField(section);
+    if (!FileLib.exists(importJsonPath)) return false;
+    const text = String(FileLib.read(importJsonPath) ?? "");
+    if (text.trim() === "") return false;
+    const tree = json.parseTree(text);
+    if (!tree) return false;
+    const sectionNode = json.findNodeAtLocation(tree, [section]);
+    if (!sectionNode || sectionNode.type !== "array") return false;
+    const items = sectionNode.children ?? [];
+    let matchIndex = -1;
+    for (let i = 0; i < items.length; i++) {
+        const idNode = json.findNodeAtLocation(items[i], [idField]);
+        if (idNode && idNode.type === "string" && idNode.value === identity) {
+            matchIndex = i;
+            break;
+        }
+    }
+    if (matchIndex === -1) return false;
+    const basePath: json.JSONPath = [section, matchIndex];
+    const fieldParts = typeof field === "string" ? [field] : field;
+    for (let i = 0; i < fieldParts.length; i++) basePath.push(fieldParts[i]);
+    const edits = json.modify(text, basePath, value, {
+        formattingOptions: FORMATTING,
+    });
+    let next = json.applyEdits(text, edits);
+    if (!next.endsWith("\n")) next += "\n";
+    FileLib.write(importJsonPath, next, true);
+    return true;
+}
+
+/**
  * Surgical rename: change just the identity field of one entry in the
  * given section. Preserves every other field (and surrounding comments
  * / formatting) untouched. Returns true on success, false when no entry

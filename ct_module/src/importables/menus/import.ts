@@ -1,32 +1,76 @@
 import type { ImportableMenu } from "htsw/types";
 
 import { syncActionList } from "../../importer/actions/sync";
+import { clickGoBack, setCycleValue } from "../../importer/gui/helpers";
 import {
-    clickGoBack,
-    setCycleValue,
     timedWaitForMenu,
     timedWaitForUnformattedMessage,
-} from "../../importer/gui/helpers";
+} from "../../importer/gui/menuWait";
 import { selectItemFromOpenInventory } from "../../importer/items/items";
-import type { ImportableTrustPlan } from "../../knowledge";
-import type { ActionListProgressFields } from "../../importer/progress/types";
+import type { ImportableTrustPlan } from "../../importCache";
+import type { ImportEventHandler } from "../../importer/importEvents";
+import { createSetupStepEmitter } from "../../importer/progress/setupStepEmitter";
 import TaskContext from "../../tasks/context";
 import { getItemFromNbt } from "../../utils/nbt";
-import { actionListTrustFor } from "../actionListTrust";
+import { getActionListTrust, getBaselineActionList } from "../actionListHelpers";
 import type { ItemRegistry } from "../itemRegistry";
-import { ensureReferencedImportablesExist } from "../references";
+import {
+    countReferencedShells,
+    ensureReferencedImportablesExist,
+} from "../references";
 import { openMenuEditor } from "./shared";
 
 const MENU_SIZE_OPTIONS = ["1", "2", "3", "4", "5", "6"];
 
-export async function importImportableMenu(
+export type MenuImportPlan = {
+    kind: "MENU";
+    importable: ImportableMenu;
+    trustPlan?: ImportableTrustPlan;
+};
+
+/**
+ * MENU stays single-pass: per-slot item-selection mutates the menu state,
+ * so we can't pre-read action lists for slots whose items aren't yet set.
+ * Preread records a minimal plan; all real work happens in
+ * `applyImportableMenuPlan`.
+ */
+export async function prereadImportableMenu(
+    _ctx: TaskContext,
+    importable: ImportableMenu,
+    _itemRegistry: ItemRegistry,
+    trustPlan?: ImportableTrustPlan,
+    _events?: ImportEventHandler
+): Promise<MenuImportPlan> {
+    return { kind: "MENU", importable, trustPlan };
+}
+
+export async function applyImportableMenuPlan(
+    ctx: TaskContext,
+    plan: MenuImportPlan,
+    itemRegistry: ItemRegistry,
+    events?: ImportEventHandler
+): Promise<void> {
+    await importImportableMenu(
+        ctx,
+        plan.importable,
+        itemRegistry,
+        plan.trustPlan,
+        events
+    );
+}
+
+async function importImportableMenu(
     ctx: TaskContext,
     importable: ImportableMenu,
     itemRegistry: ItemRegistry,
     trustPlan?: ImportableTrustPlan,
-    onActionListProgress?: (progress: ActionListProgressFields) => void
+    events?: ImportEventHandler
 ): Promise<void> {
-    await ensureReferencedImportablesExist(ctx, importable);
+    const setup = createSetupStepEmitter(events, countReferencedShells(importable) + 1);
+
+    await ensureReferencedImportablesExist(ctx, importable, (kind, name) => {
+        setup(`created ${kind} ${name}`);
+    });
 
     const alreadyExists = (await openMenuEditor(ctx, importable.name)) === "opened";
 
@@ -36,6 +80,7 @@ export async function importImportableMenu(
 
         await openMenuEditor(ctx, importable.name);
     }
+    setup(`opened menu ${importable.name}`);
 
     if (importable.size !== undefined && !menuTopLevelTrusted(importable, trustPlan)) {
         await setCycleValue(
@@ -70,8 +115,9 @@ export async function importImportableMenu(
 
             await syncActionList(ctx, slot.actions!, {
                 itemRegistry,
-                trust: actionListTrustFor(trustPlan, slotActionsPath, slot.actions!),
-                onProgress: onActionListProgress,
+                baselineCurrent: getBaselineActionList(trustPlan, slotActionsPath),
+                trust: getActionListTrust(trustPlan, slotActionsPath),
+                events,
             });
 
             await clickGoBack(ctx);

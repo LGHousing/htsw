@@ -9,6 +9,7 @@ export type ExportRequest =
           importJsonPath: string;
           htslPath: string;
           htslReference: string;
+          rootDir: string;
       }
     | {
           type: "MENU";
@@ -17,11 +18,6 @@ export type ExportRequest =
           rootDir: string;
       };
 
-/**
- * Single entry point for the exporter. Mirrors the importer's
- * `importImportable(...)` pattern so the command layer doesn't have to
- * know which subsystem implements which type.
- */
 export async function exportImportable(
     ctx: TaskContext,
     request: ExportRequest
@@ -32,6 +28,7 @@ export async function exportImportable(
             importJsonPath: request.importJsonPath,
             htslPath: request.htslPath,
             htslReference: request.htslReference,
+            rootDir: request.rootDir,
         });
         return;
     }
@@ -43,7 +40,6 @@ export async function exportImportable(
         });
         return;
     }
-    // exhaustive
     const _check: never = request;
     void _check;
 }

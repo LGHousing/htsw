@@ -3,6 +3,14 @@ import type { SourceMap } from "./sourceMap";
 import type { Importable } from "./types";
 import { SpanTable } from "./spanTable";
 
+export type HtslTiming = {
+    fileCount: number;
+    cacheHits: number;
+    fileReadMs: number;
+    lexParseMs: number;
+    typeflowMs: number;
+};
+
 export class GlobalCtxt {
     path: string;
 
@@ -21,6 +29,7 @@ export class GlobalCtxt {
      * walks via Object.keys — see ct_module/src/knowledge/hash.ts).
      */
     sourceFiles: WeakMap<Importable, string>;
+    htslTiming: HtslTiming | null;
 
     constructor(
         sourceMap: SourceMap,
@@ -35,6 +44,7 @@ export class GlobalCtxt {
         this.activeImportJsonPaths = [];
         this.loadedImportJsonPaths = new Set<string>();
         this.sourceFiles = new WeakMap<Importable, string>();
+        this.htslTiming = null;
     }
 
     addDiagnostic(diag: Diagnostic) {
@@ -69,6 +79,7 @@ export class GlobalCtxt {
         gcx.activeImportJsonPaths = this.activeImportJsonPaths;
         gcx.loadedImportJsonPaths = this.loadedImportJsonPaths;
         gcx.sourceFiles = this.sourceFiles;
+        gcx.htslTiming = this.htslTiming;
         return gcx;
     }
 }

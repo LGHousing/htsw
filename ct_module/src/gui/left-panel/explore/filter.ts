@@ -1,18 +1,21 @@
+import type { Importable } from "htsw/types";
+
 import { Element } from "../../lib/layout";
 import { Container, Scroll, Text } from "../../lib/components";
 import {
-    ALL_TYPES,
-    ResultType,
-    TYPE_COLORS,
+    IMPORTABLE_TYPE_COLORS,
     ACTIVE_BG,
     ACTIVE_HOVER_BG,
     ROW_BG,
     ROW_HOVER_BG,
 } from "./types";
 
-const selectedTypes: Set<ResultType> = new Set();
+type ImportableType = Importable["type"];
+const ALL_IMPORTABLE_TYPES: ImportableType[] = ["FUNCTION", "EVENT", "REGION", "ITEM", "MENU", "NPC"];
 
-export function isTypeActive(t: ResultType): boolean {
+const selectedTypes: Set<ImportableType> = new Set();
+
+export function isImportableTypeActive(t: ImportableType): boolean {
     return selectedTypes.size === 0 || selectedTypes.has(t);
 }
 
@@ -20,19 +23,19 @@ export function isFilterDefault(): boolean {
     return selectedTypes.size === 0;
 }
 
-function toggleType(t: ResultType): void {
+function toggleType(t: ImportableType): void {
     if (selectedTypes.has(t)) selectedTypes.delete(t);
     else selectedTypes.add(t);
 }
 
-export const FILTER_POPOVER_HEIGHT = Math.min(160, ALL_TYPES.length * 20 + 6);
+export const FILTER_POPOVER_HEIGHT = Math.min(160, ALL_IMPORTABLE_TYPES.length * 20 + 6);
 
 export function filterPopoverContent(): Element {
     return Scroll({
         id: "left-filter-popover-scroll",
         style: { padding: 4, gap: 2 },
         children: () =>
-            ALL_TYPES.map((t) => {
+            ALL_IMPORTABLE_TYPES.map((t) => {
                 const on = selectedTypes.has(t);
                 return Container({
                     style: {
@@ -50,7 +53,7 @@ export function filterPopoverContent(): Element {
                             style: {
                                 width: { kind: "px", value: 6 },
                                 height: { kind: "px", value: 12 },
-                                background: TYPE_COLORS[t],
+                                background: IMPORTABLE_TYPE_COLORS[t],
                             },
                             children: [],
                         }),

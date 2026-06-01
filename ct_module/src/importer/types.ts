@@ -1,11 +1,16 @@
 import type { Action, Condition } from "htsw/types";
 import type { ItemSlot } from "../tasks/specifics/slots";
+import type { ItemRegistry } from "../importables/itemRegistry";
+import type { ItemCaptureRegistry } from "./itemCapture";
+import type { ProgressHandler, PhaseUnits } from "./progress/types";
+import type { ImportEventHandler } from "./importEvents";
 
 export type UiFieldKind =
     | "boolean"
     | "value"
     | "cycle"
     | "select"
+    | "location"
     | "item"
     | "nestedList";
 
@@ -24,6 +29,8 @@ type ConditionLoreFieldSpec<T extends Condition> = {
      * spurious diffs between parsed source and observed GUI state.
      */
     default?: unknown;
+    /** Required for `kind: "cycle"`: the ordered cycle options. */
+    options?: readonly string[];
 };
 
 export type ConditionLoreSpec<T extends Condition> = {
@@ -43,6 +50,8 @@ type ActionLoreFieldSpec<T extends Action> = {
      * spurious diffs between parsed source and observed GUI state.
      */
     default?: unknown;
+    /** Required for `kind: "cycle"`: the ordered cycle options. */
+    options?: readonly string[];
 };
 
 export type ActionLoreSpec<T extends Action> = {
@@ -61,8 +70,6 @@ export type NestedSummaries = Partial<Record<NestedListProp, string[]>>;
 
 export type ActionListTrust = {
     basePath: string;
-    cachedActions: readonly Action[];
-    desiredActions: readonly Action[];
     trustedListPaths: ReadonlySet<string>;
 };
 
@@ -124,7 +131,7 @@ export type ActionListOperation =
           entryId: number;
           fromIndex: number;
           desiredIndex: number;
-          currentAction: Observed<Action>;
+          baselineAction: Observed<Action>;
           desired: Action;
           noteOnly: boolean;
           noteDiffers: boolean;
@@ -135,7 +142,7 @@ export type ActionListOperation =
           kind: "delete";
           entryId: number;
           fromIndex: number;
-          currentAction: Observed<Action> | null;
+          baselineAction: Observed<Action> | null;
       };
 
 export type ActionListDiff = {
@@ -154,7 +161,7 @@ export type ConditionListOperation =
     | {
           kind: "edit";
           entryId: number;
-          currentCondition: Condition;
+          baselineCondition: Condition;
           desired: Condition;
           noteOnly: boolean;
       }
@@ -162,9 +169,21 @@ export type ConditionListOperation =
     | {
           kind: "delete";
           entryId: number;
-          currentCondition: Condition | null;
+          baselineCondition: Condition | null;
       };
 
 export type ConditionListDiff = {
     operations: ConditionListOperation[];
+};
+
+export type ReadContext = {
+    itemRegistry?: ItemRegistry;
+    itemCaptures?: ItemCaptureRegistry;
+    events?: ImportEventHandler;
+    pathPrefix?: string;
+};
+
+export type ListReadOptions = ReadContext & {
+    progress?: ProgressHandler;
+    phaseUnits?: PhaseUnits;
 };

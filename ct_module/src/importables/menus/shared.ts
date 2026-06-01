@@ -1,8 +1,8 @@
+import { clickGoBack } from "../../importer/gui/helpers";
 import {
-    clickGoBack,
     timedWaitForMenu,
     timedWaitForUnformattedMessage,
-} from "../../importer/gui/helpers";
+} from "../../importer/gui/menuWait";
 import TaskContext from "../../tasks/context";
 import { removedFormatting, unique } from "../../utils/helpers";
 
@@ -12,17 +12,17 @@ export async function openMenuEditor(
 ): Promise<"opened" | "missing"> {
     await ctx.runCommand(`/menu edit ${name}`);
 
+    const menuWait = timedWaitForMenu(ctx, "commandMenuWait");
+    const msgWait = ctx.waitFor(
+        "message",
+        (message) =>
+            removedFormatting(message) ===
+            "Could not find a menu with that name!"
+    );
     const opened = await ctx.withTimeout(
-        Promise.race([
-            timedWaitForMenu(ctx, "commandMenuWait").then(() => true),
-            ctx
-                .waitFor(
-                    "message",
-                    (message) =>
-                        removedFormatting(message) ===
-                        "Could not find a menu with that name!"
-                )
-                .then(() => false),
+        ctx.race<boolean>([
+            [menuWait.then(() => true), menuWait],
+            [msgWait.then(() => false), msgWait],
         ]),
         "Waiting for menu to open"
     );
@@ -32,21 +32,22 @@ export async function openMenuEditor(
 
 export async function ensureMenuNamesExist(
     ctx: TaskContext,
-    menuNames: readonly string[]
+    menuNames: readonly string[],
+    onEach?: (name: string) => void
 ): Promise<void> {
     const names = unique(menuNames);
     if (names.length === 0) return;
-
-    ctx.displayMessage(`&7Ensuring ${names.length} menu shell(s) exist.`);
 
     for (const name of names) {
         const status = await openMenuEditor(ctx, name);
         if (status === "opened") {
             await clickGoBack(ctx);
+            onEach?.(name);
             continue;
         }
 
         await ctx.runCommand(`/menu create ${name}`);
         await timedWaitForUnformattedMessage(ctx, `Created menu ${name}!`);
+        onEach?.(name);
     }
 }

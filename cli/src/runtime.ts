@@ -3,8 +3,9 @@ import { Importable, ImportableFunction } from "htsw/types";
 import { printDiagnostic } from "./diagnostics";
 
 export function run(sm: htsw.SourceMap, result: htsw.ParseResult<Importable[]>) {
-    const actionBehaviors = htsw.runtime.ActionBehaviors
-        .default()
+    const vars = new htsw.runtime.simple.SimpleVars();
+
+    const actionBehaviors = new htsw.runtime.simple.SimpleActionBehaviors(vars)
         .with("MESSAGE",
             (rt, action) => {
                 console.log(replacePlaceholders(rt, action.message));
@@ -31,6 +32,8 @@ export function run(sm: htsw.SourceMap, result: htsw.ParseResult<Importable[]>) 
     const rt = new htsw.runtime.Runtime({
         spans: result.spans,
         actionBehaviors,
+        conditionBehaviors: new htsw.runtime.simple.SimpleConditionBehaviors(vars),
+        placeholderBehaviors: new htsw.runtime.simple.SimplePlaceholderBehaviors(vars),
         onDiagnostic: (diag) => {
             printDiagnostic(sm, diag)
         }

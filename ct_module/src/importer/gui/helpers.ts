@@ -1,13 +1,18 @@
 import type { Location } from "htsw/types";
 
 import TaskContext from "../../tasks/context";
-import { ItemSlot, MouseButton } from "../../tasks/specifics/slots";
+import { ItemSlot, MouseButton, menuStateDescription } from "../../tasks/specifics/slots";
+
+// MC 1.8.9 anvil rename field cap (GuiRepair name field maxStringLength).
+const ANVIL_NAME_MAX = 35;
 import { removedFormatting } from "../../utils/helpers";
 import { S2DPacketOpenWindow } from "../../utils/packets";
 import {
     normalizeLoreValueFormatting,
     normalizeNoteText,
     readListItemNote,
+    stripHousingEditorValuePrefix,
+    stripWrapInheritedColor,
 } from "../fields/loreParsing";
 import {
     timedWaitForMenu,
@@ -16,34 +21,85 @@ import {
 import { getVisiblePaginatedItemSlots } from "./paginatedList";
 import { COST } from "../progress/costs";
 import { recordTimedOp } from "../progress/timing";
+import { IMPORT_DEBUG } from "../diagnostics/importDebug";
+import type { WaitForPromise } from "../../tasks/specifics/waitFor";
 
-// Re-exported so existing consumers don't need to change their imports.
-// Module-graph-wise these now live in `menuWait.ts` so `paginatedList.ts`
-// can pull `timedWaitForMenu` from there without creating a helpers ↔
-// paginatedList cycle.
-export {
-    timedWaitForMenu,
-    timedWaitForUnformattedMessage,
-    waitForMenu,
-} from "./menuWait";
+function describeVisibleOptions(ctx: TaskContext): string {
+    const names: string[] = [];
+    const slots = getVisiblePaginatedItemSlots(ctx);
+    for (let i = 0; i < slots.length && names.length < 40; i++) {
+        const n = removedFormatting(slots[i].getItem().getName()).trim();
+        if (n.length > 0) names.push(n);
+    }
+    return names.length === 0 ? "<empty>" : names.join(", ");
+}
 
-/** Cycle options shared by `CHANGE_VAR` (action) and `COMPARE_VAR` (condition). */
-export const VAR_HOLDER_OPTIONS = ["Player", "Global", "Team"] as const;
+// Dump every filled menu slot as id:name, falling back to the first lore line
+// when the slot has no display name (e.g. unlabeled pagination arrows). Lets us
+// see where/how a paginated picker exposes its next/prev controls.
+function describeAllMenuSlots(ctx: TaskContext): string {
+    const slots = ctx.getMenuItemSlots();
+    if (slots === null) return "<no container>";
+    const parts: string[] = [];
+    for (let i = 0; i < slots.length; i++) {
+        const slot = slots[i];
+        const item = slot.getItem();
+        let label = removedFormatting(item.getName()).trim();
+        if (label.length === 0) {
+            const lore = item.getLore();
+            label = lore.length > 0 ? `lore:"${removedFormatting(lore[0]).trim()}"` : "<unnamed>";
+        }
+        parts.push(`${slot.getSlotId()}:${label}`);
+    }
+    return parts.length === 0 ? "<empty>" : parts.join(", ");
+}
 
-export async function getSlotPaginate(ctx: TaskContext, name: string): Promise<ItemSlot> {
+
+async function scanPagesForOption(
+    ctx: TaskContext,
+    name: string,
+    seenOptions: string[]
+): Promise<ItemSlot | null> {
     await goToFirstPaginatedOptionPage(ctx);
-
     for (let page = 0; page < 100; page++) {
         const slot = ctx.tryGetMenuItemSlot(name);
         if (slot !== null) return slot;
+
+        if (IMPORT_DEBUG) seenOptions.push(`[p${page}: ${describeVisibleOptions(ctx)}]`);
 
         const nextPageSlot = findPaginationControl(ctx, "next");
         if (nextPageSlot === null) break;
         nextPageSlot.click();
         await timedWaitForMenu(ctx, "pageTurnWait");
     }
+    return null;
+}
 
-    throw new Error(`Could not find "${name}" on any page.`);
+const PAGINATE_RESCAN_ATTEMPTS = 3;
+
+export async function getSlotPaginate(ctx: TaskContext, name: string): Promise<ItemSlot> {
+    const seenOptions: string[] = [];
+    for (let attempt = 0; attempt < PAGINATE_RESCAN_ATTEMPTS; attempt++) {
+        const found = await scanPagesForOption(ctx, name, seenOptions);
+        if (found !== null) {
+            if (IMPORT_DEBUG && attempt > 0) {
+                ChatLib.chat(
+                    `&e[paginate] found "${name}" only after ${attempt} rescan(s) — menu was still populating when first scanned.`
+                );
+            }
+            return found;
+        }
+        if (attempt < PAGINATE_RESCAN_ATTEMPTS - 1) {
+            // Menu may still be streaming items in (multi-packet population).
+            // Give it a tick and rescan from page 1 before concluding absence.
+            await ctx.waitFor("tick");
+        }
+    }
+
+    const detail = IMPORT_DEBUG
+        ? `${menuStateDescription()} — saw options: ${seenOptions.join(" ")} — all slots: [${describeAllMenuSlots(ctx)}]`
+        : "";
+    throw new Error(`Could not find "${name}" on any page after ${PAGINATE_RESCAN_ATTEMPTS} attempts.${detail}`);
 }
 
 async function goToFirstPaginatedOptionPage(ctx: TaskContext): Promise<void> {
@@ -236,14 +292,13 @@ export function readStringValue(slot: ItemSlot): string | null {
     }
 
     return currentValueLines
-        .map((line) =>
-            stripLeadingFormattingCodes(normalizeLoreValueFormatting(line)).trim()
-        )
+        .map((line, i) => {
+            const normalized = stripHousingEditorValuePrefix(
+                normalizeLoreValueFormatting(line)
+            ).trim();
+            return i === 0 ? normalized : stripWrapInheritedColor(normalized);
+        })
         .join(" ");
-}
-
-function stripLeadingFormattingCodes(value: string): string {
-    return value.replace(/^(?:&[0-9a-fklmnor])+/i, "");
 }
 
 export function findMenuOptionByLore(
@@ -270,9 +325,8 @@ function isAlreadySelectedOption(slot: ItemSlot): boolean {
 export async function setBooleanValue(ctx: TaskContext, slot: ItemSlot, value: boolean) {
     const newValue = value ? "Enabled" : "Disabled";
     const currentValue = readCurrentValue(slot);
-    if (currentValue !== null && removedFormatting(currentValue) === newValue) {
-        return;
-    }
+    const currentStripped = currentValue === null ? null : removedFormatting(currentValue);
+    if (currentStripped === newValue) return;
 
     slot.click();
     await timedWaitForMenu(ctx, "menuClickWait");
@@ -294,9 +348,7 @@ export async function setSelectValue(
     optionSlot.click();
     await timedWaitForMenu(ctx, "menuClickWait");
 
-    if (ctx.tryGetMenuItemSlot(slotName) !== null) {
-        return;
-    }
+    if (ctx.tryGetMenuItemSlot(slotName) !== null) return;
 
     await clickGoBack(ctx);
 }
@@ -357,22 +409,23 @@ export async function setCycleValue(
 }
 
 export async function enterValue(ctx: TaskContext, value: string): Promise<"CHAT" | "ANVIL"> {
+    const chatWait = waitForChatInputPrompt(ctx);
+    const anvilWait = ctx.waitFor("packetReceived", (packet) => {
+        return (
+            packet instanceof S2DPacketOpenWindow &&
+            packet
+                .func_148902_e
+                /*getGuiId*/
+                () === "minecraft:anvil"
+        );
+    });
     const inputMode = await ctx.withTimeout(
-        Promise.race([
-            waitForChatInputPrompt(ctx).then(() => "CHAT" as const),
-            ctx
-                .waitFor("packetReceived", (packet) => {
-                    return (
-                        packet instanceof S2DPacketOpenWindow &&
-                        packet
-                            .func_148902_e
-                            /*getGuiId*/
-                            () === "minecraft:anvil"
-                    );
-                })
-                .then(() => "ANVIL" as const),
+        ctx.race<"CHAT" | "ANVIL">([
+            [chatWait.then(() => "CHAT" as const), chatWait],
+            [anvilWait.then(() => "ANVIL" as const), anvilWait],
         ]),
-        "Waiting for input mode to be determined"
+        "Waiting for input mode to be determined",
+        8000
     );
 
     switch (inputMode) {
@@ -380,7 +433,19 @@ export async function enterValue(ctx: TaskContext, value: string): Promise<"CHAT
             await ctx.sendMessage(value);
             return "CHAT";
         case "ANVIL":
-            await waitForMenu(ctx);
+            // The anvil name field caps at ANVIL_NAME_MAX chars, which would
+            // silently truncate (e.g. long variable coordinate expressions).
+            // Fail with actionable guidance rather than writing a bad value.
+            if (value.length > ANVIL_NAME_MAX) {
+                throw new Error(
+                    `Value is ${value.length} characters — too long for Housing's anvil ` +
+                    `input (max ${ANVIL_NAME_MAX}). Set "Preferred Input" to "Chat" in your ` +
+                    `Housing settings, then re-import.`
+                );
+            }
+            // Anvil result slot is computed client-side, so its live item count
+            // never reaches the WindowItems snapshot — skip that wait.
+            await waitForMenu(ctx, true);
             setAnvilItemName(value);
             acceptNewAnvilItem();
             return "ANVIL";
@@ -390,7 +455,7 @@ export async function enterValue(ctx: TaskContext, value: string): Promise<"CHAT
     }
 }
 
-function waitForChatInputPrompt(ctx: TaskContext): Promise<unknown> {
+function waitForChatInputPrompt(ctx: TaskContext): WaitForPromise<unknown> {
     return ctx.waitFor("message", (message) => {
         return removedFormatting(message).includes(
             "Please use the chat to provide the value you wish to set."
@@ -401,8 +466,13 @@ function waitForChatInputPrompt(ctx: TaskContext): Promise<unknown> {
 export async function setNumberValue(ctx: TaskContext, slot: ItemSlot, value: number) {
     const newValue = value.toString();
     const currentValue = readCurrentValue(slot);
-    if (currentValue !== null && removedFormatting(currentValue).trim() === newValue) {
-        return;
+    if (currentValue !== null) {
+        const currentNumber = Number(
+            removedFormatting(currentValue).trim().split(",").join("")
+        );
+        if (Number.isFinite(currentNumber) && currentNumber === value) {
+            return;
+        }
     }
 
     slot.click();
@@ -419,9 +489,7 @@ export async function setStringValue(
 ): Promise<void> {
     const newValue = value.toString();
     const currentValue = readStringValue(slot);
-    if (currentValue !== null && currentValue === newValue) {
-        return;
-    }
+    if (currentValue !== null && currentValue === newValue) return;
 
     slot.click();
     const started = Date.now();
@@ -444,23 +512,25 @@ export async function setStringOrPaginatedOptionValue(
     const slotName = removedFormatting(slot.getItem().getName()).trim();
     slot.click();
 
+    const chatWait = waitForChatInputPrompt(ctx);
+    const anvilWait = ctx.waitFor("packetReceived", (packet) => {
+        return (
+            packet instanceof S2DPacketOpenWindow &&
+            packet
+                .func_148902_e
+                /*getGuiId*/
+                () === "minecraft:anvil"
+        );
+    });
+    const menuWait = waitForMenu(ctx);
     const inputMode = await ctx.withTimeout(
-        Promise.race([
-            waitForChatInputPrompt(ctx).then(() => "CHAT" as const),
-            ctx
-                .waitFor("packetReceived", (packet) => {
-                    return (
-                        packet instanceof S2DPacketOpenWindow &&
-                        packet
-                            .func_148902_e
-                            /*getGuiId*/
-                            () === "minecraft:anvil"
-                    );
-                })
-                .then(() => "ANVIL" as const),
-            waitForMenu(ctx).then(() => "MENU" as const),
+        ctx.race<"CHAT" | "ANVIL" | "MENU">([
+            [chatWait.then(() => "CHAT" as const), chatWait],
+            [anvilWait.then(() => "ANVIL" as const), anvilWait],
+            [menuWait.then(() => "MENU" as const), menuWait],
         ]),
-        `Waiting to edit "${slotName}"`
+        `Waiting to edit "${slotName}"`,
+        8000
     );
 
     switch (inputMode) {

@@ -12,11 +12,15 @@ import {
 } from "../../state";
 import { STATUS_COLOR, STATUS_LABEL } from "../../knowledge-status";
 import { GLYPH_DOT } from "../../lib/theme";
-import { getCurrentHousingUuid } from "../../../knowledge/housingId";
-import { getAlias, listAliases } from "../../../knowledge/aliases";
+import { getCurrentHousingUuid } from "../../../importCache/housingId";
+import { getAlias, listAliases } from "../../../importCache/aliases";
 import { openAliasPopover } from "../../popovers/alias";
+import { openMenu } from "../../lib/menu";
 import { TaskManager } from "../../../tasks/manager";
-import { KNOWLEDGE_ROOT } from "../../../knowledge/paths";
+import { IMPORT_CACHE_ROOT } from "../../../importCache/paths";
+import { deleteHousingCache } from "../../../importCache/cache";
+import { clearAlias } from "../../../importCache/aliases";
+import { setKnowledgeRows } from "../../state";
 import { javaType } from "../../lib/java";
 import {
     COLOR_BUTTON,
@@ -29,8 +33,8 @@ import {
     SIZE_ROW_H,
 } from "../../lib/theme";
 
-const TRUST_ON_BG = 0xff2d4d2d | 0;
-const TRUST_ON_HOVER = 0xff3a5d3a | 0;
+const TRUST_ON_BG = 0xff1e3d3d | 0;
+const TRUST_ON_HOVER = 0xff2a4f4f | 0;
 const TRUST_OFF_BG = 0xff2d333d | 0;
 const TRUST_OFF_HOVER = 0xff3a4350 | 0;
 
@@ -53,13 +57,13 @@ function shortUuid(uuid: string): string {
     return `${uuid.substring(0, 8)}…${uuid.substring(uuid.length - 6)}`;
 }
 
-/** Enumerate every UUID dir under the knowledge cache root. Best-effort:
+/** Enumerate every UUID dir under the import cache root. Best-effort:
  *  failures (missing dir, permissions) yield an empty list. */
 function listCachedHousingUuids(): string[] {
     try {
         const Paths = javaType("java.nio.file.Paths");
         const Files = javaType("java.nio.file.Files");
-        const root = Paths.get(String(KNOWLEDGE_ROOT));
+        const root = Paths.get(String(IMPORT_CACHE_ROOT));
         if (!Files.exists(root) || !Files.isDirectory(root)) return [];
         const stream = Files.newDirectoryStream(root);
         const out: string[] = [];
@@ -95,6 +99,19 @@ function knownHouses(): string[] {
     return out;
 }
 
+function deleteHouse(uuid: string): void {
+    const ok = deleteHousingCache(uuid);
+    clearAlias(uuid);
+    setHouseTrust(uuid, false);
+    if (getHousingUuid() === uuid) {
+        setHousingUuid(null);
+        setKnowledgeRows([]);
+    }
+    const label = getAlias(uuid) ?? shortUuid(uuid);
+    if (ok) ChatLib.chat(`&a[htsw] Removed tracked house ${label}.`);
+    else ChatLib.chat(`&e[htsw] No cache directory for ${label} (alias/trust cleared anyway).`);
+}
+
 function houseRow(uuid: string): Element {
     const isCurrent = getHousingUuid() === uuid;
     return Container({
@@ -106,6 +123,15 @@ function houseRow(uuid: string): Element {
             height: { kind: "px", value: SIZE_ROW_H + 4 },
             background: COLOR_ROW,
             hoverBackground: COLOR_ROW_HOVER,
+        },
+        onClick: (_rect, info) => {
+            if (info.button !== 1) return;
+            openMenu(info.x, info.y, [
+                {
+                    label: "Delete tracked house",
+                    onClick: () => deleteHouse(uuid),
+                },
+            ]);
         },
         children: [
             // Current-house marker. Filled-target when current, faint circle
@@ -302,11 +328,13 @@ export function KnowledgeView(): Element {
                         }),
                     ],
                 }),
-                // Houses get a fixed slot (one row each, capped). The
-                // knowledge-rows section underneath gets the remaining grow
+                // Houses get a capped slot (≤4 rows tall) and scroll past that,
+                // so a 5th house doesn't overflow onto the knowledge list below.
+                // The knowledge-rows section underneath gets the remaining grow
                 // space — that's the per-importable list the user wants
                 // visibility on.
-                Col({
+                Scroll({
+                    id: "knowledge-houses-scroll",
                     style: { gap: 2, height: { kind: "px", value: Math.min(houses.length, 4) * (SIZE_ROW_H + 4) + 4 } },
                     children: houses.map(houseRow),
                 }),

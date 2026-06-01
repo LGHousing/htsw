@@ -28,25 +28,28 @@ const EVENT_CONTAINERS: EventContainers = {
     message: [],
 };
 
+// Resolve only the waiters present when this event fired. resolve() can re-enter
+// synchronously (sync-drain polyfill): the awaiting continuation runs inline and
+// may register a fresh waiter (e.g. a per-tick poll loop). Iterating a snapshot
+// keeps that waiter for the NEXT event — otherwise an always-true `tick` waiter
+// that re-registers itself resolves again in the same pass and spins an entire
+// await-loop inside one real tick. Splice by identity, not index, so a
+// re-entrant cleanup can't shift a live waiter into the slot being removed.
 function maybeResolve<E extends EventName>(event: E, ...args: ParametersFor<E>) {
     const containers = EVENT_CONTAINERS[event];
-
-    // FIFO
-    for (let i = 0; i < containers.length; ) {
-        const container = containers[i];
-
+    const snapshot = containers.slice();
+    for (let i = 0; i < snapshot.length; i++) {
+        const container = snapshot[i];
+        // Skip if a prior re-entrant resolve/cleanup already removed it.
+        if (containers.indexOf(container) === -1) continue;
         // @ts-ignore
-        if (container.check(...args)) {
-            container.remaining--;
-
-            if (container.remaining <= 0) {
-                container.resolve(args);
-                containers.splice(i, 1);
-                continue;
-            }
+        if (!container.check(...args)) continue;
+        container.remaining--;
+        if (container.remaining <= 0) {
+            const idx = containers.indexOf(container);
+            if (idx !== -1) containers.splice(idx, 1);
+            container.resolve(args);
         }
-
-        i++;
     }
 }
 
@@ -57,13 +60,9 @@ register("tick", () => {
 export let lastWindowID___FromS30PacketWindowItemsPacketReceived__ThisIsNecessary_sadly_itIncrementsFrom1To100ThenItGoesBackAround_ButSometimesItSkipsOneOrMoreWeAreNotSureMaybeMore_AndItWillNeverBeZero: number = 0;
 
 function maybeUpdateWindowID(packet: Packet) {
-    if (!(packet instanceof S30PacketWindowItems)) {
-        return;
-    }
+    if (!(packet instanceof S30PacketWindowItems)) return;
     const windowID = packet.func_148911_c();
-    if (windowID === 0) {
-        return;
-    }
+    if (windowID === 0) return;
     lastWindowID___FromS30PacketWindowItemsPacketReceived__ThisIsNecessary_sadly_itIncrementsFrom1To100ThenItGoesBackAround_ButSometimesItSkipsOneOrMoreWeAreNotSureMaybeMore_AndItWillNeverBeZero =
         windowID;
 }
@@ -82,6 +81,42 @@ register("chat", (event) => {
     const message = ChatLib.getChatMessage(event, true);
     maybeResolve("message", message);
 });
+
+/**
+ * Live waiter count per event type. Every received packet / tick re-runs
+ * `.check()` on each entry, so a growing `packetReceived` or `tick` count is a
+ * leak and a direct cause of input/GUI lag. Use to diagnose: between imports
+ * these should all be ~0.
+ */
+export function getEventContainerCounts(): { [k: string]: number } {
+    return {
+        tick: EVENT_CONTAINERS.tick.length,
+        packetReceived: EVENT_CONTAINERS.packetReceived.length,
+        packetSent: EVENT_CONTAINERS.packetSent.length,
+        message: EVENT_CONTAINERS.message.length,
+    };
+}
+
+/**
+ * Drop every registered waiter. Safety net against leaked waiters (e.g. a
+ * `withTimeout` that abandons an inner waiter it can't clean up): the importer
+ * drives menus strictly sequentially, so at an import boundary nothing legit is
+ * waiting and any survivors are leaks. Returns how many were purged. Abandoned
+ * waiters whose promises are dropped on the floor will simply never resolve —
+ * which is correct, since nothing awaits them anymore.
+ */
+export function resetEventContainers(): number {
+    const total =
+        EVENT_CONTAINERS.tick.length +
+        EVENT_CONTAINERS.packetReceived.length +
+        EVENT_CONTAINERS.packetSent.length +
+        EVENT_CONTAINERS.message.length;
+    EVENT_CONTAINERS.tick.length = 0;
+    EVENT_CONTAINERS.packetReceived.length = 0;
+    EVENT_CONTAINERS.packetSent.length = 0;
+    EVENT_CONTAINERS.message.length = 0;
+    return total;
+}
 
 type EventName = keyof CheckPredicateMap;
 
@@ -108,7 +143,6 @@ export function waitFor<E extends EventName>(
             resolve,
             remaining: amount,
         };
-
         EVENT_CONTAINERS[event].push(container);
     }) as WaitForPromise<ParametersFor<E>>;
 

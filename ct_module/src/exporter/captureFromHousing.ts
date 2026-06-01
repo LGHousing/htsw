@@ -1,7 +1,8 @@
 /// <reference types="../../CTAutocomplete" />
 
 import TaskContext from "../tasks/context";
-import { waitForMenu } from "../importer/gui/helpers";
+import { waitForMenu } from "../importer/gui/menuWait";
+import { extractFunctionNameFromSlot } from "../importables/functions/shared";
 import { removedFormatting } from "../utils/helpers";
 
 export type CaptureType = "FUNCTION" | "MENU";
@@ -26,22 +27,7 @@ type CaptureSpec = {
 const SPECS: Record<CaptureType, CaptureSpec> = {
     FUNCTION: {
         command: "/functions",
-        // "Find Free Slot (#0395)" -> "Find Free Slot"
-        // The trailing (#NNNN) is Hypixel's per-housing function id, not
-        // part of the function name we pass to /function edit.
-        extractName: (raw) => {
-            const ignored = raw.toLowerCase();
-            if (
-                ignored === "go back" ||
-                ignored === "close" ||
-                ignored.indexOf("previous page") >= 0 ||
-                ignored.indexOf("next page") >= 0
-            ) {
-                return null;
-            }
-            const m = raw.match(/^(.+?)\s*\(#\d+\)\s*$/);
-            return m !== null ? m[1] : raw.length > 0 ? raw : null;
-        },
+        extractName: extractFunctionNameFromSlot,
     },
     MENU: {
         command: "/menus",

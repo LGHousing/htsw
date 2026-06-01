@@ -1,10 +1,7 @@
 import TaskContext from "../../tasks/context";
-import { timedWaitForMenu, waitForMenu } from "../gui/helpers";
-import {
-    SET_SLOT_ACK_TIMEOUT_MS,
-    sendCreativeInventoryAction,
-    waitForAnySetSlot,
-} from "../gui/packets";
+import { removedFormatting } from "../../utils/helpers";
+import { timedWaitForMenu, waitForMenu } from "../gui/menuWait";
+import { SET_SLOT_ACK_MAX_TICKS, sendCreativeInventoryAction } from "../gui/packets";
 import { COST } from "../progress/costs";
 import { timed } from "../progress/timing";
 
@@ -24,15 +21,20 @@ function stacksEqual(left: any, right: any): boolean {
     return left.func_179549_c(right);
 }
 
+// Must stay a finite for-loop, not a `while (!match) await SetSlot` wrapped in a
+// timeout: on timeout that leaks a SetSlot waiter that re-registers itself on
+// every future SetSlot. Polling the slot directly also means a missing server
+// ack can't hang us.
 async function waitForContainerSlotMatch(
     ctx: TaskContext,
     slotId: number,
     stack: any
-): Promise<void> {
-    while (!slotMatchesStack(slotId, stack)) {
-        await waitForAnySetSlot(ctx);
+): Promise<boolean> {
+    for (let i = 0; i < SET_SLOT_ACK_MAX_TICKS; i++) {
+        if (slotMatchesStack(slotId, stack)) return true;
         await ctx.waitFor("tick");
     }
+    return slotMatchesStack(slotId, stack);
 }
 
 /**
@@ -102,27 +104,24 @@ export async function selectItemFromOpenInventory(
         return;
     }
 
-    const ack = waitForContainerSlotMatch(ctx, targetSlotInContainer, desiredStack);
     sendCreativeInventoryAction(
         ctx,
         INV_PACKET_SLOT,
         desiredStack,
     );
-
-    try {
-        await ctx.withTimeout(
-            ack,
-            `creative-inventory ack for "${label}"`,
-            SET_SLOT_ACK_TIMEOUT_MS
+    const landed = await waitForContainerSlotMatch(
+        ctx,
+        targetSlotInContainer,
+        desiredStack
+    );
+    if (!landed) {
+        const itemName = removedFormatting(item.getName());
+        throw new Error(
+            `Couldn't place "${itemName}" for "${label}" — it never appeared in your ` +
+            `inventory after a creative spawn. Hypixel blocks creative-spawning some ` +
+            `items (command blocks, mob spawners, etc.); if "${itemName}" is one, this ` +
+            `icon/item can't be imported automatically — use a normal item or set it by hand.`
         );
-    } catch (error) {
-        const matchedSlot = ctx.tryGetItemSlot((s) => {
-            if (s.getSlotId() !== targetSlotInContainer) return false;
-            return stacksEqual(s.getItem().getItemStack(), desiredStack);
-        });
-        if (matchedSlot === null) {
-            throw error;
-        }
     }
     await ctx.waitFor("tick");
 

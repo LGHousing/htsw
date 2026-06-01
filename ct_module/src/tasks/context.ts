@@ -7,7 +7,7 @@ import {
     getMenuItemSlot,
     getOpenContainerTitle,
 } from "./specifics/slots";
-import { waitFor } from "./specifics/waitFor";
+import { waitFor, type WaitForPromise } from "./specifics/waitFor";
 
 /**
  * Hypixel's chat anti-spam works as a heat budget: every chat sent to
@@ -158,6 +158,47 @@ export default class TaskContext {
         } finally {
             settled = true;
         }
+    }
+
+    /**
+     * `Promise.race` that calls `cleanupWaiter` on every entry once a winner
+     * settles. Use this instead of `Promise.race` whenever any racer is a
+     * `WaitForPromise` — plain `Promise.race` leaves the loser's container
+     * in `EVENT_CONTAINERS`, where it can silently match a future packet
+     * meant for an unrelated `waitFor`.
+     *
+     * Each entry is `[promiseToRace, waiterToCleanup]`. The two are usually
+     * the same `WaitForPromise`, but the first can be a wrapper (e.g.
+     * `waiter.then(() => tag)`) when you need to discriminate which racer
+     * won. Pass `null` as the second element if the entry has nothing to
+     * clean up.
+     */
+    public race<T>(
+        entries: ReadonlyArray<[Promise<T>, WaitForPromise<unknown> | null]>
+    ): WaitForPromise<T> {
+        const cleanupAll = (): void => {
+            for (let i = 0; i < entries.length; i++) {
+                entries[i][1]?.cleanupWaiter?.();
+            }
+        };
+        const promise = Promise.race(entries.map((e) => e[0])).then(
+            (value) => {
+                cleanupAll();
+                return value;
+            },
+            (err) => {
+                cleanupAll();
+                throw err;
+            }
+        ) as WaitForPromise<T>;
+        // Expose cleanup so an outer withTimeout (or a cancelling caller) that
+        // abandons this race still tears down the loser waiters. Without this,
+        // the `.then` above only runs when the race itself settles — if the
+        // outer timeout fires first, every entry's waiter leaks into
+        // EVENT_CONTAINERS. cleanupWaiter on each entry is idempotent, so the
+        // settle path and the timeout path can both call cleanupAll safely.
+        promise.cleanupWaiter = cleanupAll;
+        return promise;
     }
 
     getAllItemSlots = getAllItemSlots;

@@ -1,0 +1,407 @@
+/// <reference types="../../../../CTAutocomplete" />
+
+/**
+ * Live importer progress display: the panel that shows WHO/WHAT/HOW-FAR
+ * during an import, plus the multi-phase progress bar and ETA / clock-time
+ * text. `phaseSegment` is exported so the per-queue-row mini bar (in
+ * `queue.ts`) can reuse the same segmented look.
+ */
+
+import type { Element } from "../../lib/layout";
+import { Button, Col, Container, Row, Text } from "../../lib/components";
+import { Icons } from "../../lib/icons.generated";
+import {
+    ACCENT_DANGER,
+    ACCENT_SUCCESS,
+    ACCENT_TEAL,
+    COLOR_BUTTON_DANGER,
+    COLOR_BUTTON_DANGER_HOVER,
+    COLOR_PANEL,
+    COLOR_PANEL_BORDER,
+    COLOR_PANEL_RAISED,
+    COLOR_TEXT,
+    COLOR_TEXT_DIM,
+    PHASE_APPLYING,
+    PHASE_HYDRATING,
+    PHASE_READING,
+} from "../../lib/theme";
+import { cancelActiveImport } from "./actions";
+import {
+    getCurrentPhaseEtaSeconds,
+    getImportElapsedMs,
+    getImportEtaSeconds,
+    getImportEtcMs,
+    getImportMsPerUnit,
+    getImportProgress,
+    getImportProgressFraction,
+    isCurrentHouseTrusted,
+    setActiveImportPath,
+    setImportProgress,
+} from "../../state";
+import {
+    countImportablesByStatus,
+    isImportTotalLocked,
+} from "../../../importer/progress/types";
+
+const COLOR_BAR_BG = COLOR_PANEL_BORDER;
+const PROGRESS_BAR_H = 6;
+
+// ── Time formatting ────────────────────────────────────────────────────
+
+function formatEtaSeconds(secs: number): string {
+    const total = Math.max(0, Math.round(secs));
+    if (total < 60) return `${total}s`;
+    const m = Math.floor(total / 60);
+    const s = total % 60;
+    if (m < 60) return s === 0 ? `${m}m` : `${m}m${s}s`;
+    const h = Math.floor(m / 60);
+    const mm = m % 60;
+    return mm === 0 ? `${h}h` : `${h}h${mm}m`;
+}
+
+function formatClockTime(ms: number): string {
+    const d = new Date(ms);
+    let h = d.getHours();
+    const m = d.getMinutes();
+    const ampm = h >= 12 ? "PM" : "AM";
+    h = h % 12;
+    if (h === 0) h = 12;
+    const mm = m < 10 ? `0${m}` : `${m}`;
+    return `${h}:${mm} ${ampm}`;
+}
+
+// ── ETA + label text ───────────────────────────────────────────────────
+
+function progressMsPerUnitText(): string {
+    return `${Math.round(getImportMsPerUnit())}ms/u`;
+}
+
+function progressElapsedText(): string {
+    const ms = getImportElapsedMs();
+    if (ms === null) return "";
+    return `§7${formatEtaSeconds(ms / 1000)}`;
+}
+
+const PHASE_LABELS: { [k: string]: { title: string; etaSuffix: string } } = {
+    setup: { title: "Reading", etaSuffix: "read" },
+    reading: { title: "Reading", etaSuffix: "read" },
+    hydrating: { title: "Hydrating", etaSuffix: "hydrate" },
+    applying: { title: "Applying", etaSuffix: "apply" },
+};
+
+function opCounterText(): string {
+    const prog = getImportProgress();
+    if (prog === null || prog.active === null) return "";
+    const sync = prog.active.sync;
+    if (sync === null) return "";
+    const target = sync.parent ?? sync;
+    if (target.totalUnits <= 1) return "";
+    return operationProgressText(target.completedUnits, target.totalUnits);
+}
+
+function phaseEtaText(suffix: string): string {
+    // Only show a time estimate once we actually know the work. During
+    // setup/reading/hydrating the totals are still being discovered (the read
+    // pass is literally finding out how much there is), so any countdown
+    // there is made up. Show it only in the apply phase (diff known) or when
+    // trust gives the real counts up front.
+    const p = getImportProgress();
+    if (p !== null && !isImportTotalLocked(p) && !isCurrentHouseTrusted()) return "";
+    const secs = getCurrentPhaseEtaSeconds();
+    if (secs === null || secs <= 0) return "";
+    return `${formatEtaSeconds(secs)} left ${suffix}`;
+}
+
+function currentPhaseLabel(): string {
+    const p = getImportProgress();
+    if (p === null || p.active === null) return "";
+    const labels = PHASE_LABELS[p.active.phase];
+    if (labels === undefined) return "§lDone";
+    const parts: string[] = [];
+    const counter = opCounterText();
+    if (counter.length > 0) parts.push(counter);
+    const eta = phaseEtaText(labels.etaSuffix);
+    if (eta.length > 0) parts.push(eta);
+    return parts.length > 0
+        ? `§l${labels.title}§r  ·  ${parts.join("  ·  ")}`
+        : `§l${labels.title}`;
+}
+
+// ── Progress bar geometry ──────────────────────────────────────────────
+
+/**
+ * A horizontal track slice that fills proportionally with `fraction` (0–1)
+ * of its allotted `widthFactor`. Used for one phase of the multi-phase
+ * progress bar (reading/hydrating/applying) and reused by `queue.ts`'s
+ * per-row mini bar.
+ */
+export function phaseSegment(widthFactor: number, fraction: number, color: number): Element {
+    return Container({
+        style: {
+            direction: "row",
+            width: { kind: "grow", factor: Math.max(0.0001, widthFactor) },
+            height: { kind: "grow" },
+        },
+        children: [
+            Container({
+                style: {
+                    width: { kind: "grow", factor: Math.max(0.0001, fraction) },
+                    height: { kind: "grow" },
+                    background: color,
+                },
+                children: [],
+            }),
+            Container({
+                style: {
+                    width: { kind: "grow", factor: Math.max(0.0001, 1 - fraction) },
+                    height: { kind: "grow" },
+                },
+                children: [],
+            }),
+        ],
+    });
+}
+
+function rowPhaseChildrenFor(snapshot: {
+    phaseUnits: { setup: number; reading: number; hydrating: number; applying: number };
+    completedUnits: number;
+}): Element[] {
+    const units = snapshot.phaseUnits;
+    const total = Math.max(
+        1,
+        units.setup + units.reading + units.hydrating + units.applying
+    );
+    const readingUnits = units.setup + units.reading;
+    const within = Math.max(0, snapshot.completedUnits);
+    const readingDone = Math.min(readingUnits, within);
+    const hydrateDone = Math.min(
+        units.hydrating,
+        Math.max(0, within - readingUnits)
+    );
+    const applyDone = Math.min(
+        units.applying,
+        Math.max(0, within - readingUnits - units.hydrating)
+    );
+    const readFraction = readingUnits > 0 ? readingDone / readingUnits : 1;
+    const hydrateFraction = units.hydrating > 0 ? hydrateDone / units.hydrating : 1;
+    const applyFraction = units.applying > 0 ? applyDone / units.applying : 0;
+    return [
+        phaseSegment(readingUnits / total, readFraction, PHASE_READING),
+        phaseSegment(units.hydrating / total, hydrateFraction, PHASE_HYDRATING),
+        phaseSegment(units.applying / total, applyFraction, PHASE_APPLYING),
+    ];
+}
+
+function activeRowPhaseChildren(): Element[] {
+    const p = getImportProgress();
+    if (p === null || p.active === null) return [];
+    return rowPhaseChildrenFor(p.active);
+}
+
+function parkedRowPhaseChildren(key: string): Element[] {
+    const p = getImportProgress();
+    if (p === null) return [];
+    const parked = p.parked[key];
+    if (parked === undefined) return [];
+    return rowPhaseChildrenFor(parked);
+}
+
+function progressBar(): Element {
+    return Container({
+        style: {
+            direction: "row",
+            width: { kind: "grow" },
+            height: { kind: "px", value: PROGRESS_BAR_H },
+            background: COLOR_BAR_BG,
+        },
+        children: () => {
+            const p = getImportProgress();
+            if (p === null || p.totalUnits <= 0) return [];
+            const children: Element[] = [];
+            for (let i = 0; i < p.rows.length; i++) {
+                const row = p.rows[i];
+                if (i > 0) {
+                    children.push(Container({
+                        style: {
+                            width: { kind: "px", value: 2 },
+                            height: { kind: "grow" },
+                            background: COLOR_PANEL,
+                        },
+                        children: [],
+                    }));
+                }
+                if (row.status === "imported") {
+                    children.push(phaseSegment(1, 1, ACCENT_SUCCESS));
+                } else if (row.status === "skipped") {
+                    children.push(phaseSegment(1, 1, ACCENT_TEAL));
+                } else if (row.status === "failed") {
+                    children.push(phaseSegment(1, 1, ACCENT_DANGER));
+                } else if (p.active !== null && p.active.key === row.key) {
+                    children.push(Container({
+                        style: {
+                            direction: "row",
+                            width: { kind: "grow" },
+                            height: { kind: "grow" },
+                        },
+                        children: activeRowPhaseChildren(),
+                    }));
+                } else if (p.parked[row.key] !== undefined) {
+                    // Pass-1 finished read/hydrate for this row but pass-2
+                    // hasn't reached it yet. Show the parked phase fill so
+                    // the segment doesn't visually rewind.
+                    children.push(Container({
+                        style: {
+                            direction: "row",
+                            width: { kind: "grow" },
+                            height: { kind: "grow" },
+                        },
+                        children: parkedRowPhaseChildren(row.key),
+                    }));
+                } else {
+                    children.push(phaseSegment(1, 0, ACCENT_SUCCESS));
+                }
+            }
+            return children;
+        },
+    });
+}
+
+// ── The "live importer" panel ──────────────────────────────────────────
+
+function operationProgressText(completed: number, total: number): string {
+    const safeTotal = Math.max(1, total);
+    const current = Math.min(safeTotal, Math.max(1, completed + 1));
+    return `op ${current}/${safeTotal}`;
+}
+
+function progressTotalEtaLine(): string {
+    const p = getImportProgress();
+    if (p === null) return "";
+    const rate = progressMsPerUnitText();
+    // Until the apply phase, the per-importable apply cost is just a rough
+    // guess — the real op-by-op diff isn't known until each importable has
+    // been read + hydrated. Showing a total before then is fiction, so we
+    // withhold it (the per-phase ETA still ticks). Exception: trust on, where
+    // cache baselines make every importable's diff cost real from the start.
+    const ready = isImportTotalLocked(p) || isCurrentHouseTrusted();
+    if (!ready) {
+        return `total calculating… · ${rate}`;
+    }
+    const secs = getImportEtaSeconds();
+    if (secs === null) return `total calculating… · ${rate}`;
+    const etc = getImportEtcMs();
+    const etcText = etc === null ? "" : ` · ETC ${formatClockTime(etc)}`;
+    return `total ${formatEtaSeconds(secs)}${etcText} · ${rate}`;
+}
+
+export function liveImporterPanel(): Element {
+    return Container({
+        style: {
+            width: { kind: "grow" },
+            padding: 4,
+            background: COLOR_PANEL_RAISED,
+        },
+        children: () => {
+            const p = getImportProgress();
+            if (p === null) {
+                return [Text({ text: "No import in progress.", color: COLOR_TEXT_DIM })];
+            }
+            const current = p.active;
+            const { completed: completedImportables, failed: failedImportables, total: totalImportables } =
+                countImportablesByStatus(p);
+            // "Done" means every importable reached a terminal state — NOT just
+            // "no active importable right now". At the start of a run (all rows
+            // queued, nothing active yet) active is null but the session isn't
+            // done; rendering "Done" there is the stale-looking startup state.
+            const allDone = completedImportables + failedImportables >= totalImportables;
+            let currentNumber = completedImportables + 1;
+            if (current !== null) {
+                for (let i = 0; i < p.rows.length; i++) {
+                    if (p.rows[i].key === current.key) {
+                        currentNumber = i + 1;
+                        break;
+                    }
+                }
+            }
+            return [
+                Col({
+                    style: { gap: 3, width: { kind: "grow" } },
+                    children: [
+                        Row({
+                            style: { width: { kind: "grow" }, align: "center" },
+                            children: [
+                                Text({
+                                    text: () =>
+                                        current !== null
+                                            ? `Importable ${currentNumber} of ${totalImportables}  ·  §b§l${current.identity}`
+                                            : allDone
+                                              ? `Importable ${completedImportables} of ${totalImportables}`
+                                              : `Starting ${totalImportables} importable${totalImportables === 1 ? "" : "s"}…`,
+                                    color: COLOR_TEXT,
+                                    style: { width: { kind: "grow" } },
+                                }),
+                                Text({
+                                    text: () => progressElapsedText(),
+                                    color: COLOR_TEXT_DIM,
+                                }),
+                            ],
+                        }),
+                        Text({
+                            text: () =>
+                                p.failure
+                                    ? `§c§l✖ ${p.failure.message}`
+                                    : current !== null
+                                      ? currentPhaseLabel()
+                                      : allDone
+                                        ? `§lDone`
+                                        : `§7Preparing…`,
+                            color: COLOR_TEXT,
+                        }),
+                        Container({
+                            style: { width: { kind: "grow" }, height: { kind: "px", value: 2 } },
+                            children: [],
+                        }),
+                        progressBar(),
+                        Row({
+                            style: { gap: 6, height: { kind: "px", value: 12 }, align: "center" },
+                            children: [
+                                Text({
+                                    text: () =>
+                                        `${Math.floor(getImportProgressFraction() * 100)}%`,
+                                    color: COLOR_TEXT,
+                                    style: { width: { kind: "px", value: 30 } },
+                                }),
+                                Text({
+                                    text: () => progressTotalEtaLine(),
+                                    color: COLOR_TEXT_DIM,
+                                    style: { width: { kind: "grow" } },
+                                }),
+                                Button({
+                                    icon: Icons.x,
+                                    text: "Cancel",
+                                    style: {
+                                        width: { kind: "auto" },
+                                        height: { kind: "grow" },
+                                        background: COLOR_BUTTON_DANGER,
+                                        hoverBackground: COLOR_BUTTON_DANGER_HOVER,
+                                    },
+                                    onClick: () => {
+                                        if (getImportProgress() === null) return;
+                                        cancelActiveImport();
+                                        // Clear the live UI immediately rather than waiting
+                                        // for the cancelled task to unwind through its
+                                        // finally — otherwise the header lingers on a stale
+                                        // "Done" frame until the task notices the cancel.
+                                        setImportProgress(null);
+                                        setActiveImportPath(null);
+                                        ChatLib.chat(`&c[htsw] cancelling import…`);
+                                    },
+                                }),
+                            ],
+                        }),
+                    ],
+                }),
+            ];
+        },
+    });
+}

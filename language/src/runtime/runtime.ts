@@ -10,7 +10,7 @@ import {
     type PlaceholderInvocation,
 } from "./behaviors/index";
 import { DelayedActionScheduler, type ActionScheduler } from "./schedulers";
-import { VarHolder, type TeamVarKey, type Var } from "./vars";
+import { type Var } from "./vars";
 
 export type RuntimeConfig = {
     spans: SpanTable;
@@ -29,9 +29,6 @@ export class Runtime {
 
     readonly diagnostics: Diagnostic[] = [];
     readonly schedulers: ActionScheduler[] = [];
-    readonly playerVars = new VarHolder<string>();
-    readonly globalVars = new VarHolder<string>();
-    readonly teamVars = new VarHolder<TeamVarKey>();
 
     private readonly onDiagnostic?: (diagnostic: Diagnostic) => void;
 

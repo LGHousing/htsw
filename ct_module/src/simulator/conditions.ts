@@ -10,8 +10,8 @@ import type {
 
 import { getGamemode } from "./helpers";
 
-export function createConditionBehaviors(): runtime.ConditionBehaviors {
-    return runtime.ConditionBehaviors.default()
+export function createConditionBehaviors(vars: runtime.simple.Vars): runtime.ConditionBehaviors {
+    return new runtime.simple.SimpleConditionBehaviors(vars)
         .with("COMPARE_HEALTH", behaviorCompareHealth)
         .with("COMPARE_HUNGER", behaviorCompareHunger)
         .with("COMPARE_MAX_HEALTH", behaviorCompareMaxHealth)

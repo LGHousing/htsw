@@ -5,6 +5,7 @@ import {
     LaidOut,
     Rect,
     layoutElement,
+    markUserScroll,
     pointInRect,
     getScrollState,
     SCROLLBAR_WIDTH,
@@ -15,11 +16,7 @@ import { pushScissor, popScissor } from "./scissor";
 import { getInputField } from "./inputState";
 import { COLOR_PANEL, COLOR_PANEL_BORDER } from "./theme";
 import { getOverlayScreenW, getOverlayScreenH } from "./overlayScale";
-
-let dbgLog: (m: string) => void = () => {};
-export function setRenderDebugLog(fn: (m: string) => void): void {
-    dbgLog = fn;
-}
+import { GL11, javaType } from "./java";
 
 const COLOR_INPUT_BG = 0xff000000 | 0;
 const COLOR_INPUT_BORDER = 0xff444444 | 0;
@@ -27,6 +24,50 @@ const COLOR_INPUT_BORDER_HOVER = 0xffa2a2a2 | 0;
 const COLOR_INPUT_BORDER_FOCUS = 0xff67a7e8 | 0;
 const COLOR_SCROLLBAR_TRACK = 0x40000000 | 0;
 const COLOR_SCROLLBAR_THUMB = 0xff888888 | 0;
+
+const RenderHelper: any = javaType("net.minecraft.client.renderer.RenderHelper");
+const GlStateManager: any = javaType("net.minecraft.client.renderer.GlStateManager");
+const ItemClass: any = javaType("net.minecraft.item.Item");
+const ItemStackClass: any = javaType("net.minecraft.item.ItemStack");
+const mcItemCache: { [key: string]: any } = {};
+
+function getCachedItemStack(itemId: string, count: number): any {
+    const key = itemId + ":" + count;
+    if (key in mcItemCache) return mcItemCache[key];
+    try {
+        const id = itemId.indexOf(":") >= 0 ? itemId : "minecraft:" + itemId;
+        const item = ItemClass.func_111206_d(id);
+        if (item === null || item === undefined) { mcItemCache[key] = null; return null; }
+        const stack = new ItemStackClass(item, count);
+        mcItemCache[key] = stack;
+        return stack;
+    } catch (_e) {
+        mcItemCache[key] = null;
+        return null;
+    }
+}
+
+function renderMcItem(itemId: string, count: number, x: number, y: number): void {
+    const stack = getCachedItemStack(itemId, count);
+    if (stack === null) return;
+    try {
+        const mc = Client.getMinecraft();
+        const ri = mc.func_175599_af();
+        GlStateManager.func_179126_j();
+        GL11.glDepthMask(true);
+        RenderHelper.func_74520_c();
+        ri.func_180450_b(stack, x, y);
+        RenderHelper.func_74518_a();
+        GlStateManager.func_179097_i();
+        GL11.glDepthMask(false);
+        GlStateManager.func_179131_c(1.0, 1.0, 1.0, 1.0);
+    } catch (_e) {}
+    if (count > 1) {
+        const s = String(count);
+        const fw = Renderer.getStringWidth(s);
+        Renderer.drawStringWithShadow(s, x + 17 - fw, y + 9);
+    }
+}
 const COLOR_SCROLLBAR_THUMB_HOVER = 0xffaaaaaa | 0;
 
 const LINE_H = 8;
@@ -68,12 +109,47 @@ function getIconImage(name: string): unknown {
         );
         const ImageCtor = Image as unknown as new (b: unknown) => unknown;
         img = new ImageCtor(buffered);
-    } catch (e) {
-        dbgLog(`icon load failed "${name}": ${(e as Error).message ?? e}`);
+    } catch (_e) {
         img = null;
     }
     iconCache[name] = img;
     return img;
+}
+
+export function backgroundPreloadIcons(): void {
+    try {
+        const FilesType = Java.type("java.nio.file.Files");
+        const PathsType = Java.type("java.nio.file.Paths");
+        // @ts-ignore
+        const dir = PathsType.get(ICON_BASE_PATH);
+        // @ts-ignore
+        if (!FilesType.exists(dir)) return;
+        // @ts-ignore
+        const stream = FilesType.newDirectoryStream(dir);
+        const names: string[] = [];
+        try {
+            const it = stream.iterator();
+            while (it.hasNext()) {
+                const p = it.next();
+                const filename = String(p.getFileName().toString());
+                if (filename.length > 4 && filename.substring(filename.length - 4) === ".png") {
+                    names.push(filename.substring(0, filename.length - 4));
+                }
+            }
+        } finally {
+            stream.close();
+        }
+        let i = 0;
+        const loadNext = (): void => {
+            if (i >= names.length) return;
+            getIconImage(names[i]);
+            i++;
+            setTimeout(loadNext, 0);
+        };
+        setTimeout(loadNext, 0);
+    } catch (_e) {
+        // ignore
+    }
 }
 
 export function renderElement(
@@ -245,7 +321,30 @@ function renderItem(
         const img = getIconImage(name);
         // The DOM lib's HTMLImageElement collides with CT's global `Image` class for `as Image`
         // typing — go through `unknown` so the cast lands on CT's runtime Image.
-        if (img !== null) Renderer.drawImage(img as unknown as Parameters<typeof Renderer.drawImage>[0], r.x, r.y, r.w, r.h);
+        if (img !== null) {
+            const tint = e.color !== undefined ? extract(e.color) : undefined;
+            if (tint !== undefined) {
+                const a = ((tint >>> 24) & 0xff) / 255;
+                const rr = ((tint >>> 16) & 0xff) / 255;
+                const gg = ((tint >>> 8) & 0xff) / 255;
+                const bb = (tint & 0xff) / 255;
+                // CT's drawImage only forces white when `colorized` is null;
+                // colorize() sets it so the tint survives the draw. GlStateManager
+                // alone doesn't work — drawImage resets it.
+                Renderer.colorize(rr, gg, bb, a);
+            }
+            Renderer.drawImage(img as unknown as Parameters<typeof Renderer.drawImage>[0], r.x, r.y, r.w, r.h);
+            if (tint !== undefined) Renderer.colorize(1.0, 1.0, 1.0, 1.0);
+        }
+        if (hovered && e.tooltip !== undefined) {
+            const tt = extract(e.tooltip);
+            if (tt.length > 0) {
+                const tc = e.tooltipColor !== undefined ? extract(e.tooltipColor) : 0xffffffff | 0;
+                queuedTooltip = { text: tt, color: tc, anchor: r };
+            }
+        }
+    } else if (e.kind === "mcItem") {
+        renderMcItem(e.item, e.count, r.x, r.y);
     }
 
     if (item.clipRect) popScissor();
@@ -279,7 +378,6 @@ export function dispatchClick(
     mouseY: number,
     button: number
 ): boolean {
-    dbgLog(`dispatchClick @(${mouseX},${mouseY}) btn=${button} laid.length=${laid.length}`);
     // Scrollbar thumb drag start uses the same interceptor predicate as hover suppression so the
     // two stay consistent. We still need the scroll id to start the drag, so look it up here.
     if (button === 0 && getClickInterceptor(laid, mouseX, mouseY) !== null) {
@@ -312,9 +410,6 @@ export function dispatchClick(
         if (item.clipRect && !pointInRect(item.clipRect, mouseX, mouseY)) continue;
         if (!pointInRect(item.rect, mouseX, mouseY)) continue;
         const e = item.element;
-        dbgLog(
-            `  hit kind=${e.kind} rect=(${item.rect.x},${item.rect.y} ${item.rect.w}x${item.rect.h})`
-        );
         if (e.kind === "container" && (e.onClick || e.onDoubleClick)) {
             setFocusedInput(null);
             const isDouble =
@@ -328,7 +423,6 @@ export function dispatchClick(
                 setFocusedInput(null);
                 return true;
             }
-            dbgLog(`  -> focusing input id=${e.id}`);
             setFocusedInput(e.id);
             // Forward click to the GuiTextField for cursor placement / drag-select start.
             // The field must already be marked focused for mouseClicked to set the cursor.
@@ -345,7 +439,6 @@ export function dispatchClick(
             return true;
         }
     }
-    dbgLog(`  no hit`);
     // Click landed on the panel but didn't hit anything clickable — still drop focus,
     // matching the behavior of clicking outside the panel entirely.
     setFocusedInput(null);
@@ -408,6 +501,7 @@ export function updateScrollbarDrag(mouseY: number): void {
         0,
         Math.min(maxOffset, dragStartOffset + Math.floor(dy * (maxOffset / trackPx)))
     );
+    if (dy !== 0) markUserScroll(dragScrollId);
 }
 
 export function endScrollbarDrag(): void {
@@ -415,6 +509,9 @@ export function endScrollbarDrag(): void {
 }
 
 // --- Wheel scroll dispatch: find topmost scroll under cursor, scroll it ---
+// Overlay units moved per wheel notch. Rows are SIZE_ROW_H (18), so ~5 rows.
+const WHEEL_SCROLL_STEP = 90;
+
 export function dispatchWheel(
     laid: LaidOut[],
     mouseX: number,
@@ -429,8 +526,9 @@ export function dispatchWheel(
         if (s.contentHeight <= s.viewportRect.h) return true;
         s.offset = Math.max(
             0,
-            Math.min(s.contentHeight - s.viewportRect.h, s.offset - delta * 20)
+            Math.min(s.contentHeight - s.viewportRect.h, s.offset - delta * WHEEL_SCROLL_STEP)
         );
+        markUserScroll(item.element.id);
         return true;
     }
     return false;

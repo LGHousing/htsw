@@ -26,6 +26,7 @@ const COLOR_STRING = ACCENT_SUCCESS;
 const COLOR_VAR_REF = ACCENT_TEAL;
 const COLOR_OPERATOR = COLOR_TEXT_DIM;
 const COLOR_PUNCT = COLOR_TEXT_DIM;
+const COLOR_COMMENT = 0xff707070 | 0;
 
 export type SyntaxToken = { text: string; color: number };
 
@@ -42,14 +43,70 @@ const TYPE_WORDS: { [k: string]: true } = {
 
 // Control-flow / built-in actions.
 const KEYWORDS: { [k: string]: true } = {
+    actionBar: true,
+    applyLayout: true,
+    applyPotion: true,
+    balanceTeam: true,
+    blockType: true,
+    cancelEvent: true,
+    canPvp: true,
+    changeHealth: true,
+    changePlayerGroup: true,
+    changeVelocity: true,
+    clearEffects: true,
+    closeMenu: true,
+    compassTarget: true,
+    consumeItem: true,
+    damageAmount: true,
+    damageCause: true,
+    displayMenu: true,
+    displayNametag: true,
+    doingParkour: true,
+    dropItem: true,
+    enchant: true,
     if: true,
     else: true,
     elseif: true,
     exit: true,
+    failParkour: true,
+    fishingEnv: true,
+    fullHeal: true,
+    function: true,
+    gamemode: true,
+    giveItem: true,
+    hasGroup: true,
+    hasItem: true,
+    hasPermission: true,
+    hasPotion: true,
+    hasTeam: true,
+    health: true,
+    hunger: true,
+    hungerLevel: true,
+    inRegion: true,
+    isFlying: true,
+    isItem: true,
+    isSneaking: true,
+    kill: true,
+    launchTarget: true,
+    lobby: true,
+    maxHealth: true,
+    parkCheck: true,
+    placeholder: true,
+    playerTime: true,
+    playerWeather: true,
+    portal: true,
+    random: true,
+    removeItem: true,
+    resetInventory: true,
     return: true,
     chat: true,
     goto: true,
     pause: true,
+    sound: true,
+    setTeam: true,
+    title: true,
+    tp: true,
+    xpLevel: true,
     cancel: true,
     apply: true,
     reset: true,
@@ -62,6 +119,8 @@ const KEYWORDS: { [k: string]: true } = {
     and: true,
     or: true,
     not: true,
+    true: true,
+    false: true,
 };
 
 function isDigit(c: string): boolean {
@@ -94,6 +153,15 @@ export function tokenizeHtsl(line: string): SyntaxToken[] {
 
     while (i < n) {
         const c = line.charAt(i);
+
+        // Line comment — consume to end of line. Matches the htsw lexer
+        // (`//` introduces a line comment, `///` a doc comment; either
+        // way the rest of the line is comment-colored in the view).
+        if (c === "/" && i + 1 < n && line.charAt(i + 1) === "/") {
+            tokens.push({ text: line.substring(i), color: COLOR_COMMENT });
+            i = n;
+            continue;
+        }
 
         // Whitespace run.
         if (c === " " || c === "\t") {

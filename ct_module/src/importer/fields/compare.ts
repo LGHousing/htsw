@@ -4,12 +4,15 @@ import {
     DECIMAL_DISPLAY_VALUE_PATTERN,
     INTEGER_DISPLAY_VALUE_PATTERN,
     normalizeNoteText,
+    stripHousingEditorValuePrefix,
+    stripRedundantLeadingFormattingCodes,
 } from "./loreParsing";
 import {
     getActionFieldDefault,
     getActionFieldKind,
 } from "./actionMappings";
 import { getConditionFieldDefault, getConditionFieldKind } from "./conditionMappings";
+import { normalizeSoundKey } from "./sounds";
 
 export function normalizeConditionCompare(
     value: Condition | Observed<Condition> | null
@@ -105,15 +108,22 @@ function canonicalizeFieldValue(
     prop: string,
     value: unknown
 ): unknown {
-    const kind = getFieldKind(type, prop);
-    if (kind === "value") {
-        const def = getFieldDefault(type, prop);
-        if (typeof def === "number" && typeof value === "string") {
-            const num = Number(value);
-            if (Number.isFinite(num)) return num;
-        }
+    if (type === "PLAY_SOUND" && prop === "sound" && typeof value === "string") {
+        value = normalizeSoundKey(value) ?? value;
     }
-    if (kind === "select" || kind === "cycle") {
+    if (
+        (type === "MESSAGE" || type === "ACTION_BAR" || type === "FAIL_PARKOUR") &&
+        prop === "message" &&
+        typeof value === "string"
+    ) {
+        value = normalizeMessageFormatting(value);
+    }
+    const kind = getFieldKind(type, prop);
+    if (kind === "value" && typeof value === "string" && value !== "") {
+        const num = Number(value);
+        if (Number.isFinite(num)) return num;
+    }
+    if (kind === "select" || kind === "cycle" || kind === "location") {
         if (typeof value === "string") return { type: value };
     }
     return value;
@@ -142,12 +152,14 @@ function normalizeValue(value: unknown): unknown {
 
         if (recordType) {
             fieldValue = canonicalizeFieldValue(recordType, key, fieldValue);
-            const def = canonicalizeFieldValue(
-                recordType,
-                key,
-                getFieldDefault(recordType, key)
-            );
-            if (def !== undefined && fieldsAreEqual(fieldValue, def)) continue;
+            const cachedDef = canonicalDefaultFor(recordType, key);
+            if (cachedDef !== null) {
+                if (cachedDef.scalar) {
+                    if (fieldValue === cachedDef.value) continue;
+                } else if (JSON.stringify(fieldValue) === cachedDef.json) {
+                    continue;
+                }
+            }
         }
 
         if (Array.isArray(fieldValue) && fieldValue.length === 0) continue;
@@ -162,6 +174,84 @@ function normalizeValue(value: unknown): unknown {
 
 function fieldsAreEqual(a: unknown, b: unknown): boolean {
     return JSON.stringify(a) === JSON.stringify(b);
+}
+
+/**
+ * Emit `stableStringify(normalizeValue(value))` in a single pass, without
+ * materializing the intermediate normalized object tree. Output is byte-identical
+ * to the two-step form, so importable-cache hashes stay stable.
+ */
+export function canonicalStringify(value: unknown): string {
+    if (value === null) return "null";
+
+    if (Array.isArray(value)) {
+        const parts: string[] = [];
+        for (let i = 0; i < value.length; i++) {
+            parts.push(canonicalStringify(value[i]));
+        }
+        return "[" + parts.join(",") + "]";
+    }
+
+    if (typeof value === "string") {
+        return JSON.stringify(normalizeComparableString(value));
+    }
+
+    if (typeof value !== "object") {
+        return JSON.stringify(value);
+    }
+
+    const record = value as Record<string, unknown>;
+    const recordType = typeof record.type === "string" ? record.type : null;
+    const keys = Object.keys(record).sort();
+
+    const parts: string[] = [];
+    for (let i = 0; i < keys.length; i++) {
+        const key = keys[i];
+        let fieldValue = record[key];
+        if (fieldValue === undefined) continue;
+
+        if (recordType) {
+            fieldValue = canonicalizeFieldValue(recordType, key, fieldValue);
+            const cachedDef = canonicalDefaultFor(recordType, key);
+            if (cachedDef !== null) {
+                if (cachedDef.scalar) {
+                    if (fieldValue === cachedDef.value) continue;
+                } else if (JSON.stringify(fieldValue) === cachedDef.json) {
+                    continue;
+                }
+            }
+        }
+
+        if (Array.isArray(fieldValue) && fieldValue.length === 0) continue;
+
+        const serialized =
+            key === "note" && typeof fieldValue === "string"
+                ? JSON.stringify(normalizeNoteText(fieldValue))
+                : canonicalStringify(fieldValue);
+
+        parts.push(JSON.stringify(key) + ":" + serialized);
+    }
+    return "{" + parts.join(",") + "}";
+}
+
+// The canonicalized default for a (type, prop) is constant, but normalizeValue
+// touches it for every field of every action. Cache it so the hot path does one
+// stringify of the field value against a precomputed default string.
+type CachedDefault = { value: unknown; json: string; scalar: boolean };
+const canonicalDefaultCache = new Map<string, CachedDefault | null>();
+
+function canonicalDefaultFor(type: string, prop: string): CachedDefault | null {
+    const cacheKey = `${type} ${prop}`;
+    const hit = canonicalDefaultCache.get(cacheKey);
+    if (hit !== undefined) return hit;
+    const rawDefault = getFieldDefault(type, prop);
+    const def = canonicalizeFieldValue(type, prop, rawDefault);
+    const result: CachedDefault | null =
+        def === undefined
+            ? null
+            : { value: def, json: JSON.stringify(def), scalar: typeof def !== "object" || def === null };
+    canonicalDefaultCache.set(cacheKey, result);
+    return result;
 }
 
 function normalizeComparableString(value: string): string {
@@ -183,6 +273,74 @@ function normalizeComparableString(value: string): string {
     return normalized;
 }
 
+function normalizeMessageFormatting(value: string): string {
+    return collapseRedundantFormattingCodes(
+        stripRedundantLeadingFormattingCodes(stripHousingEditorValuePrefix(value))
+    );
+}
+
+function collapseRedundantFormattingCodes(value: string): string {
+    let color: string | null = null;
+    const formats: { [code: string]: boolean } = {};
+    let out = "";
+
+    for (let i = 0; i < value.length; i++) {
+        const ch = value.charAt(i);
+        if (ch !== "&" || i + 1 >= value.length) {
+            out += ch;
+            continue;
+        }
+
+        const code = value.charAt(i + 1).toLowerCase();
+        if (!/[0-9a-fk-or]/.test(code)) {
+            out += ch;
+            continue;
+        }
+
+        if (/[0-9a-f]/.test(code)) {
+            let hasFormats = false;
+            for (const _key in formats) {
+                hasFormats = true;
+                break;
+            }
+            if (color !== code || hasFormats) {
+                out += "&" + code;
+            }
+            color = code;
+            for (const key in formats) {
+                delete formats[key];
+            }
+            i++;
+            continue;
+        }
+
+        if (code === "r") {
+            let hasFormats = false;
+            for (const _key in formats) {
+                hasFormats = true;
+                break;
+            }
+            if (color !== null || hasFormats) {
+                out += "&r";
+            }
+            color = null;
+            for (const key in formats) {
+                delete formats[key];
+            }
+            i++;
+            continue;
+        }
+
+        if (!formats[code]) {
+            out += "&" + code;
+            formats[code] = true;
+        }
+        i++;
+    }
+
+    return out;
+}
+
 export function scalarFieldDiffers(
     observed: Record<string, unknown>,
     desired: Record<string, unknown>,
@@ -201,6 +359,13 @@ function canonicalizeForCompare(
 ): unknown {
     if (value === undefined) return undefined;
     const coerced = canonicalizeFieldValue(type, prop, value);
+    if (
+        (type === "MESSAGE" || type === "ACTION_BAR" || type === "FAIL_PARKOUR") &&
+        prop === "message" &&
+        typeof coerced === "string"
+    ) {
+        return normalizeMessageFormatting(coerced);
+    }
     const def = canonicalizeFieldValue(type, prop, getFieldDefault(type, prop));
     if (def !== undefined && fieldsAreEqual(coerced, def)) return undefined;
     return normalizeValue(coerced);

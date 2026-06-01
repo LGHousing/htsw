@@ -1,4 +1,5 @@
 import type { Tag, TagCompound } from "htsw/nbt";
+import { Long } from "htsw";
 import { removedFormatting } from "./helpers";
 
 const NBTTagByte = Java.type("net.minecraft.nbt.NBTTagByte");
@@ -33,9 +34,9 @@ function toMinecraftTag(tag: Tag): any {
 
     if (tag.type === "list") {
         const listTag = new NBTTagList();
-        for (const value of tag.value.value) {
+        for (let i = 0; i < tag.value.value.length; i++) {
             listTag.func_74742_a(
-                toMinecraftTag(tagFromListElement(tag.value.type, value))
+                toMinecraftTag(tagFromListElement(tag.value.type, tag.value.value[i]))
             );
         }
         return listTag;
@@ -43,10 +44,11 @@ function toMinecraftTag(tag: Tag): any {
 
     if (tag.type === "compound") {
         const compoundTag = new NBTTagCompound();
-        for (const key of Object.keys(tag.value)) {
-            const child = tag.value[key];
+        const compoundKeys = Object.keys(tag.value);
+        for (let i = 0; i < compoundKeys.length; i++) {
+            const child = tag.value[compoundKeys[i]];
             if (child === undefined) continue;
-            compoundTag.func_74782_a(key, toMinecraftTag(child));
+            compoundTag.func_74782_a(compoundKeys[i], toMinecraftTag(child));
         }
         return compoundTag;
     }
@@ -62,14 +64,14 @@ function toMinecraftTag(tag: Tag): any {
     // as list for now
     const listTag = new NBTTagList();
     if (tag.type === "short_array") {
-        for (const value of tag.value) {
-            listTag.func_74742_a(new NBTTagShort(value));
+        for (let i = 0; i < tag.value.length; i++) {
+            listTag.func_74742_a(new NBTTagShort(tag.value[i]));
         }
         return listTag;
     }
     if (tag.type === "long_array") {
-        for (const value of tag.value) {
-            listTag.func_74742_a(new NBTTagLong(toJavaLong(value)));
+        for (let i = 0; i < tag.value.length; i++) {
+            listTag.func_74742_a(new NBTTagLong(toJavaLong(tag.value[i])));
         }
         return listTag;
     }
@@ -77,6 +79,92 @@ function toMinecraftTag(tag: Tag): any {
 
 const ItemStack = Java.type("net.minecraft.item.ItemStack");
 const JsonToNBT = Java.type("net.minecraft.nbt.JsonToNBT");
+
+function fromMinecraftTag(tag: any): Tag {
+    const kind = String(tag.getClass().getSimpleName());
+
+    if (kind === "NBTTagByte") {
+        return { type: "byte", value: tag.func_150290_f() };
+    }
+    if (kind === "NBTTagShort") {
+        return { type: "short", value: tag.func_150289_e() };
+    }
+    if (kind === "NBTTagInt") {
+        return { type: "int", value: tag.func_150287_d() };
+    }
+    if (kind === "NBTTagLong") {
+        const javaLong = tag.func_150291_c();
+        return { type: "long", value: Long.fromString(String(javaLong)) };
+    }
+    if (kind === "NBTTagFloat") {
+        return { type: "float", value: tag.func_150288_h() };
+    }
+    if (kind === "NBTTagDouble") {
+        return { type: "double", value: tag.func_150286_g() };
+    }
+    if (kind === "NBTTagString") {
+        return { type: "string", value: String(tag.func_150285_a_()) };
+    }
+    if (kind === "NBTTagByteArray") {
+        const arr = tag.func_150292_c();
+        const out: number[] = [];
+        for (let i = 0; i < arr.length; i++) out.push(arr[i]);
+        return { type: "byte_array", value: out };
+    }
+    if (kind === "NBTTagIntArray") {
+        const arr = tag.func_150302_c();
+        const out: number[] = [];
+        for (let i = 0; i < arr.length; i++) out.push(arr[i]);
+        return { type: "int_array", value: out };
+    }
+    if (kind === "NBTTagCompound") {
+        const value: Record<string, Tag | undefined> = {};
+        const keys = tag.func_150296_c();
+        let keyArray: any;
+        try {
+            keyArray = keys.toArray();
+        } catch (_error) {
+            keyArray = keys;
+        }
+        const length: number = keyArray.length;
+        for (let i = 0; i < length; i++) {
+            const key = String(keyArray[i]);
+            const child = tag.func_74781_a(key);
+            value[key] = fromMinecraftTag(child);
+        }
+        return { type: "compound", value };
+    }
+    if (kind === "NBTTagList") {
+        const count: number = tag.func_74745_c();
+        const elements: Tag[] = [];
+        for (let i = 0; i < count; i++) {
+            const child = tag.func_179238_g(i);
+            elements.push(fromMinecraftTag(child));
+        }
+        if (elements.length === 0) {
+            return { type: "list", value: { type: "byte", value: [] } };
+        }
+        const elementType = elements[0].type;
+        const innerValues: unknown[] = [];
+        for (let i = 0; i < elements.length; i++) {
+            innerValues.push((elements[i] as { value: unknown }).value);
+        }
+        return {
+            type: "list",
+            value: { type: elementType, value: innerValues } as Tag["value"],
+        } as Tag;
+    }
+
+    return { type: "string", value: `<unknown NBT type ${kind}>` };
+}
+
+export function itemToHtswTag(item: Item): Tag | null {
+    const stack = item.getItemStack();
+    if (stack === null || stack === undefined) return null;
+    const compound = new NBTTagCompound();
+    stack.func_77955_b(compound);
+    return fromMinecraftTag(compound);
+}
 
 export function getItemFromNbt(nbt: Tag): Item {
     const mcTag = toMinecraftTag(normalizeItemNbtColorCodes(nbt));
@@ -128,13 +216,14 @@ function normalizeItemNbtColorCodes(tag: Tag): Tag {
         return normalized;
     }
 
-    for (const key of Object.keys(normalizedDisplay.value)) {
-        const child = normalizedDisplay.value[key];
+    const displayKeys = Object.keys(normalizedDisplay.value);
+    for (let i = 0; i < displayKeys.length; i++) {
+        const child = normalizedDisplay.value[displayKeys[i]];
         if (child === undefined) {
             continue;
         }
 
-        normalizedDisplay.value[key] = normalizeFormattingStringTags(child);
+        normalizedDisplay.value[displayKeys[i]] = normalizeFormattingStringTags(child);
     }
 
     return normalized;
@@ -181,11 +270,11 @@ function getNestedCompound(tag: Tag, path: string[]): TagCompound | undefined {
 
 function getNestedTag(tag: Tag, path: string[]): Tag | undefined {
     let current: Tag | undefined = tag;
-    for (const segment of path) {
+    for (let i = 0; i < path.length; i++) {
         if (current?.type !== "compound") {
             return undefined;
         }
-        current = current.value[segment];
+        current = current.value[path[i]];
     }
     return current;
 }
@@ -193,9 +282,10 @@ function getNestedTag(tag: Tag, path: string[]): Tag | undefined {
 function cloneTag(tag: Tag): Tag {
     if (tag.type === "compound") {
         const value: Record<string, Tag | undefined> = {};
-        for (const key of Object.keys(tag.value)) {
-            const child = tag.value[key];
-            value[key] = child === undefined ? undefined : cloneTag(child);
+        const cloneKeys = Object.keys(tag.value);
+        for (let i = 0; i < cloneKeys.length; i++) {
+            const child = tag.value[cloneKeys[i]];
+            value[cloneKeys[i]] = child === undefined ? undefined : cloneTag(child);
         }
         return { type: "compound", value };
     }

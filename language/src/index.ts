@@ -25,11 +25,23 @@ export * as runtime from "./runtime";
 
 export const VERSION = "v0.0.1-beta";
 
+export type ParseTimingMs = {
+    parseMs: number;
+    checkMs: number;
+    fileCount?: number;
+    cacheHits?: number;
+    fileReadMs?: number;
+    lexParseMs?: number;
+    typeflowMs?: number;
+    importJsonMs?: number;
+};
+
 export type ParseResult<T> = {
     value: T;
     spans: SpanTable;
     diagnostics: Diagnostic[];
     gcx: GlobalCtxt;
+    timingMs?: ParseTimingMs;
 };
 
 export function parseActionsResult(
@@ -59,15 +71,31 @@ export function parseImportablesResult(
     path: string,
 ): ParseResult<Importable[]> {
     const gcx = new GlobalCtxt(sm, path);
+    gcx.htslTiming = { fileCount: 0, cacheHits: 0, fileReadMs: 0, lexParseMs: 0, typeflowMs: 0 };
+    const t0 = Date.now();
     parseImportJson(gcx, path);
+    const t1 = Date.now();
+    let checkMs = 0;
     if (!gcx.isFailed()) {
         check(gcx);
+        checkMs = Date.now() - t1;
     }
+    const ht = gcx.htslTiming;
     return {
         value: gcx.importables,
         spans: gcx.spans,
         diagnostics: gcx.diagnostics,
-        gcx
+        gcx,
+        timingMs: {
+            parseMs: t1 - t0,
+            checkMs,
+            fileCount: ht.fileCount,
+            cacheHits: ht.cacheHits,
+            fileReadMs: ht.fileReadMs,
+            lexParseMs: ht.lexParseMs,
+            typeflowMs: ht.typeflowMs,
+            importJsonMs: (t1 - t0) - ht.fileReadMs - ht.lexParseMs - ht.typeflowMs,
+        },
     };
 }
 

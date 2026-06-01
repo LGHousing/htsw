@@ -8,6 +8,7 @@
 // is not. Read-then-click pairs (e.g. readBooleanValue / setBooleanValue)
 // stay together in helpers.ts.
 
+import type { Location } from "htsw/types";
 import type { ItemSlot } from "../../tasks/specifics/slots";
 import { normalizeFormattingCodes, removedFormatting } from "../../utils/helpers";
 import type { UiFieldKind } from "../types";
@@ -46,6 +47,15 @@ function parseBooleanText(value: string): boolean | undefined {
     return undefined;
 }
 
+export function looksTruncated(value: string): boolean {
+    const trimmed = removedFormatting(value).trim();
+    return trimmed.endsWith("...") || trimmed.endsWith("…");
+}
+
+export function isTruncatableKind(kind: UiFieldKind): boolean {
+    return kind === "value" || kind === "select" || kind === "location" || kind === "item";
+}
+
 export function normalizeLoreValueFormatting(value: string): string {
     const normalized = normalizeFormattingCodes(value);
     let index = 0;
@@ -65,6 +75,46 @@ export function normalizeLoreValueFormatting(value: string): string {
     return normalized.slice(index);
 }
 
+const HOUSING_EDITOR_VALUE_PREFIX = /^(?:&5&o&7&a|&5&o|&7&a)/i;
+
+export function stripHousingEditorValuePrefix(value: string): string {
+    return value.replace(HOUSING_EDITOR_VALUE_PREFIX, "");
+}
+
+export function stripRedundantLeadingFormattingCodes(value: string): string {
+    let index = 0;
+    let lastColorStart = -1;
+    while (
+        index + 1 < value.length &&
+        value.charAt(index) === "&" &&
+        /[0-9a-fk-or]/i.test(value.charAt(index + 1))
+    ) {
+        const code = value.charAt(index + 1).toLowerCase();
+        if (/[0-9a-fr]/.test(code)) {
+            lastColorStart = index;
+        }
+        index += 2;
+    }
+
+    if (lastColorStart > 0) {
+        return value.slice(lastColorStart);
+    }
+    return value;
+}
+
+/**
+ * Strip exactly one leading color/reset code (`&0`–`&9`, `&a`–`&f`, `&r`).
+ * When a lore value wraps, Housing re-emits the inherited color at the
+ * start of each continuation line — that's one code, and it's a display
+ * artifact. Any further codes after it are part of the source value.
+ */
+export function stripWrapInheritedColor(value: string): string {
+    if (value.length < 2) return value;
+    if (value.charAt(0) !== "&") return value;
+    if (!/[0-9a-fr]/i.test(value.charAt(1))) return value;
+    return value.slice(2);
+}
+
 export const INTEGER_DISPLAY_VALUE_PATTERN = /^[+-]?(?:(?:\d{1,3}(?:,\d{3})+)|\d+)$/;
 export const DECIMAL_DISPLAY_VALUE_PATTERN = /^[+-]?(?:(?:\d{1,3}(?:,\d{3})+)|\d+)\.\d+$/;
 
@@ -82,14 +132,18 @@ function stripNumericGroupingCommas(value: string): string {
 function parseFieldValue(
     kind: UiFieldKind,
     value: string
-): string | boolean | undefined {
+): string | boolean | Location | undefined {
     switch (kind) {
         case "value":
-            return stripNumericGroupingCommas(normalizeLoreValueFormatting(value));
+            return stripNumericGroupingCommas(
+                stripHousingEditorValuePrefix(normalizeLoreValueFormatting(value))
+            );
         case "cycle":
         case "select":
         case "item":
             return removedFormatting(value).trim();
+        case "location":
+            return parseLocationField(value);
         case "boolean":
             return parseBooleanText(value);
         case "nestedList":
@@ -100,28 +154,93 @@ function parseFieldValue(
     }
 }
 
+const KNOWN_LOCATION_LABELS = [
+    "House Spawn Location",
+    "Invokers Location",
+    "Current Location",
+] as const;
+
+const COORDINATE_LABEL_PREFIX = /^(?:yaw|pitch):\s*/i;
+
+export function parseLocationField(value: string): Location | undefined {
+    const cleaned = removedFormatting(value).trim();
+    if (cleaned === "Not Set") return undefined;
+    for (let i = 0; i < KNOWN_LOCATION_LABELS.length; i++) {
+        const label = KNOWN_LOCATION_LABELS[i];
+        if (cleaned === label) {
+            return { type: label };
+        }
+    }
+
+    return {
+        type: "Custom Coordinates",
+        value: normalizeCoordinateString(cleaned),
+    };
+}
+
+function normalizeCoordinateString(raw: string): string {
+    const parts = raw.split(",");
+    const out: string[] = [];
+    for (let i = 0; i < parts.length; i++) {
+        let trimmed = parts[i].trim();
+        const labelMatch = trimmed.match(COORDINATE_LABEL_PREFIX);
+        if (labelMatch !== null) {
+            trimmed = trimmed.substring(labelMatch[0].length);
+        }
+        if (trimmed.length > 0) out.push(trimmed);
+    }
+    return out.join(" ");
+}
+
+function isWrapStopLine(line: string): boolean {
+    const text = removedFormatting(line).trim();
+    if (text === "") return true;
+    if (text.startsWith("minecraft:") || text.startsWith("NBT:")) return true;
+    if (text.startsWith("LSHIFT ") || text.startsWith("SHIFT ")) return true;
+    if (
+        text === "Left Click to edit!" ||
+        text === "Right Click to remove!" ||
+        text === "Click to edit!" ||
+        text.startsWith("Use shift ")
+    ) {
+        return true;
+    }
+    return false;
+}
+
 export function parseLoreFields<TProp extends string>(
     slot: ItemSlot,
     loreFields: Record<string, { prop: TProp; kind: UiFieldKind }>
-): Partial<Record<TProp, string | boolean>> {
-    const parsed: Partial<Record<TProp, string | boolean>> = {};
+): Partial<Record<TProp, string | boolean | Location>> {
+    const parsed: Partial<Record<TProp, string | boolean | Location>> = {};
+    const lore = slot.getItem().getLore();
 
-    for (const line of slot.getItem().getLore()) {
-        const keyValue = parseLoreKeyValueLine(line);
-        if (keyValue === null) {
-            continue;
-        }
+    for (let i = 0; i < lore.length; i++) {
+        const keyValue = parseLoreKeyValueLine(lore[i]);
+        if (keyValue === null) continue;
 
         const field = loreFields[keyValue.label];
-        if (!field) {
-            continue;
+        if (!field) continue;
+
+        let rawValue = keyValue.value;
+        if (field.kind === "value") {
+            for (let j = i + 1; j < lore.length; j++) {
+                const next = lore[j];
+                if (isWrapStopLine(next)) break;
+                const nextKv = parseLoreKeyValueLine(next);
+                if (nextKv !== null && loreFields[nextKv.label] !== undefined) break;
+                rawValue +=
+                    " " + stripWrapInheritedColor(
+                        stripHousingEditorValuePrefix(
+                            normalizeLoreValueFormatting(next)
+                        ).trim()
+                    );
+                i = j;
+            }
         }
 
-        const value = parseFieldValue(field.kind, keyValue.value);
-        if (value === undefined) {
-            continue;
-        }
-
+        const value = parseFieldValue(field.kind, rawValue);
+        if (value === undefined) continue;
         parsed[field.prop] = value;
     }
 

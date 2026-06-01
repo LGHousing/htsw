@@ -8,6 +8,9 @@ type Packet = MCPacket<MCINetHandler>;
 
 export const HOTBAR_ZERO_PACKET_SLOT = 36;
 export const SET_SLOT_ACK_TIMEOUT_MS = 2000;
+// ~2s at 50ms/tick — tick budget for a creative inventory edit to show up in
+// the live slot when we poll for it instead of waiting on the ack packet.
+export const SET_SLOT_ACK_MAX_TICKS = 40;
 
 export function waitForAnySetSlot(ctx: TaskContext): Promise<[Packet]> {
     return ctx.waitFor("packetReceived", (packet) => packet instanceof S2FPacketSetSlot);

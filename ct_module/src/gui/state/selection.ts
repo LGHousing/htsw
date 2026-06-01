@@ -16,6 +16,12 @@ export function setActiveRightTab(id: RightPanelTabId): void {
     activeRightTab = id;
 }
 
+export function onImportRunningChanged(wasRunning: boolean, isRunning: boolean): void {
+    if (!wasRunning && isRunning) {
+        setActiveRightTab("import");
+    }
+}
+
 export type Tab = { path: string; confirmed: boolean };
 
 export function getTabs(): Tab[] {
@@ -44,6 +50,9 @@ export function confirmSelect(path: string): void {
     if (preview === path) preview = null;
     if (confirmed.indexOf(path) < 0) confirmed.push(path);
     active = path;
+    // Double-clicking to pin a tab should bring the View panel forward so the
+    // pinned source is actually visible (no-op if already on View).
+    setActiveRightTab("view");
 }
 
 export function setActiveTab(path: string): void {

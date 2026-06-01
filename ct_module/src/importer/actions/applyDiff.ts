@@ -4,11 +4,11 @@
  * is its only caller.
  *
  * Module graph note: this file imports `writeOpenAction`,
- * `actionPathForIndex`, `getActionSpec`, and
- * `isLimitExceeded` from `../actions`. The writers in `../actions` reach
- * back into `./sync` (which itself imports from this file) for nested
- * `syncActionList` calls. This is a function-reference cycle that resolves
- * fine at runtime — don't try to "fix" it by relocating `writeOpenAction`.
+ * `actionPathForIndex`, `getActionSpec` from `./specs`. The writers in
+ * `./writers` reach back into `./sync` (which itself imports from this file)
+ * for nested `syncActionList` calls. This is a function-reference cycle that
+ * resolves fine at runtime — don't try to "fix" it by relocating
+ * `writeOpenAction`.
  */
 import { Diagnostic } from "htsw";
 import type { Action } from "htsw/types";
@@ -21,9 +21,8 @@ import {
     isLimitExceeded,
     setListItemNote,
     setNoteOnLastVisibleSlot,
-    timedWaitForMenu,
-    waitForMenu,
 } from "../gui/helpers";
+import { timedWaitForMenu, waitForMenu } from "../gui/menuWait";
 import { MouseButton } from "../../tasks/specifics/slots";
 import type {
     ActionListDiff,
@@ -31,25 +30,24 @@ import type {
     Observed,
     ObservedActionSlot,
 } from "../types";
-import type { ActionListProgressSink } from "../progress/types";
-import { createApplyProgressAdapter } from "../progress/nested";
 import {
     getPaginatedListSlotAtIndex,
     goToPaginatedListPage,
 } from "../gui/paginatedList";
-import {
-    getActiveDiffSink,
-    type ImportDiffSink,
-    type DiffSummary,
-} from "../diffSink";
+import type {
+    ActionPath,
+    DiffSummary,
+    ImportEventHandler,
+    PlannedOp,
+    ProgressScope,
+} from "../importEvents";
 import {
     COST,
     actionOperationApplyUnits,
     actionListDiffApplyUnits,
-    conditionListDiffApplyUnits,
-    phaseUnitsFromParts,
-    scalarFieldEditUnitsForOp,
-    type ActionListPhaseUnits,
+    editUnitsWithNested,
+    phaseUnitsTotal,
+    type PhaseUnits,
 } from "../progress/costs";
 import { timed } from "../progress/timing";
 import { ACTION_LIST_CONFIG } from "./listConfig";
@@ -57,8 +55,10 @@ import {
     actionPathForIndex,
     getActionSpec,
     writeOpenAction,
-} from "../actions";
-import { actionLogLabel, editDiffSummary } from "./log";
+} from "./specs";
+import { waitIfStepPaused } from "../stepGate";
+import { getActionScalarLoreFields } from "../fields/actionMappings";
+import { scalarFieldDiffers } from "../fields/compare";
 
 type LiveActionListEntry = {
     entryId: number;
@@ -69,8 +69,9 @@ async function importAction(
     ctx: TaskContext,
     action: Action,
     itemRegistry?: ItemRegistry,
-    progress?: ActionListProgressSink,
-    pathPrefix?: string
+    nestedProgressScope?: (path: ActionPath, extraOffset?: number) => ProgressScope | undefined,
+    pathPrefix?: string,
+    events?: ImportEventHandler
 ): Promise<void> {
     ctx.getMenuItemSlot("Add Action").click();
     await timedWaitForMenu(ctx, "menuClickWait");
@@ -93,7 +94,8 @@ async function importAction(
         await writeOpenAction(ctx, action, {
             itemRegistry,
             pathPrefix,
-            onProgress: progress,
+            nestedProgressScope,
+            events,
         });
         await clickGoBack(ctx);
     }
@@ -154,26 +156,22 @@ export async function applyActionListDiff(
     desired: Action[],
     diff: ActionListDiff,
     itemRegistry?: ItemRegistry,
-    progress?: ActionListProgressSink,
     pathPrefix?: string,
-    phaseUnits?: ActionListPhaseUnits
+    phaseUnits?: PhaseUnits,
+    events?: ImportEventHandler,
+    progressScope?: ProgressScope
 ): Promise<void> {
-    const sink = getActiveDiffSink();
     await applyActionListDiffInner(
         ctx,
         observed,
         desired,
         diff,
-        sink,
         itemRegistry,
-        progress,
         pathPrefix,
-        phaseUnits
+        phaseUnits,
+        events ?? null,
+        progressScope ?? { kind: "topLevel" }
     );
-}
-
-function recomputeTotal(b: ActionListPhaseUnits): number {
-    return b.readPart + b.hydratePart + b.applyPart;
 }
 
 function desiredIndexForOp(op: ActionListOperation): number {
@@ -182,42 +180,42 @@ function desiredIndexForOp(op: ActionListOperation): number {
     return -1;
 }
 
-function opLabel(op: ActionListOperation): string {
-    if (op.kind === "delete") return `delete ${actionLogLabel(op.currentAction)}`;
-    if (op.kind === "edit") return `edit → ${actionLogLabel(op.desired)}`;
-    if (op.kind === "move") return `move ${actionLogLabel(op.action)} → #${op.toIndex + 1}`;
-    return `add ${actionLogLabel(op.desired)}`;
+function actionTypeForOp(op: ActionListOperation): Action["type"] | null {
+    if (op.kind === "add" || op.kind === "edit") return op.desired.type;
+    if (op.kind === "move") return op.action.type;
+    return op.baselineAction?.type ?? null;
 }
 
-function opDetail(op: ActionListOperation): string {
-    if (op.kind === "edit") return editDiffSummary(op);
-    if (op.kind === "move") return `#${op.fromIndex + 1} -> #${op.toIndex + 1}`;
-    if (op.kind === "add") return "add source action";
-    return "delete Housing-only action";
-}
-
-function editOperationFieldUnits(
+function fieldsChangedForEdit(
     op: Extract<ActionListOperation, { kind: "edit" }>
-): number {
-    let total = scalarFieldEditUnitsForOp(op);
-    for (const nested of op.nestedDiffs) {
-        if (nested.diff.operations.length === 0) continue;
-        total += COST.menuClickWait + COST.goBackWait;
-        if (nested.prop === "conditions") {
-            total += conditionListDiffApplyUnits(nested.diff);
-        } else {
-            total += actionListDiffApplyUnits(
-                nested.diff,
-                editOperationFieldUnits,
-                nested.diff.desiredLength
-            );
+): string[] {
+    const fields: string[] = [];
+    if (op.noteDiffers) fields.push("note");
+    if (!op.noteOnly) {
+        const scalarFields = getActionScalarLoreFields(op.baselineAction.type);
+        for (let i = 0; i < scalarFields.length; i++) {
+            const field = scalarFields[i];
+            if (
+                scalarFieldDiffers(
+                    op.baselineAction,
+                    op.desired,
+                    op.baselineAction.type,
+                    field.prop
+                )
+            ) {
+                fields.push(String(field.prop));
+            }
+        }
+        for (let i = 0; i < op.nestedDiffs.length; i++) {
+            const nested = op.nestedDiffs[i];
+            if (nested.diff.operations.length > 0) fields.push(nested.prop);
         }
     }
-    return total;
+    return fields;
 }
 
 function operationApplyUnits(op: ActionListOperation, desiredLength: number): number {
-    return actionOperationApplyUnits(op, editOperationFieldUnits, desiredLength);
+    return actionOperationApplyUnits(op, editUnitsWithNested, desiredLength);
 }
 
 function findCurrentIndex(
@@ -256,115 +254,168 @@ function summarizeDiff(
     };
 }
 
+function emitApplyProgress(
+    events: ImportEventHandler | null | undefined,
+    scope: ProgressScope,
+    phaseUnits: PhaseUnits,
+    completedUnits: number,
+    completedOps: number,
+    totalOps: number
+): void {
+    events?.emit({
+        kind: "progress",
+        scope,
+        progress: {
+            phase: "applying",
+            completedUnits,
+            totalUnits: phaseUnitsTotal(phaseUnits),
+            phaseUnits,
+            sync: {
+                completedUnits: completedOps,
+                totalUnits: totalOps,
+                parent: null,
+            },
+        },
+    });
+}
+
+function nestedApplyScope(
+    parentActionPath: ActionPath,
+    baselineApplyUnits: number,
+    completedOps: number,
+    totalOps: number
+): (path: ActionPath, extraOffset?: number) => ProgressScope {
+    // `extraOffset` lets a CONDITIONAL/RANDOM writer place each of its
+    // sub-lists (conditions, ifActions, elseActions) at its own slice of the
+    // op's apply budget — conditions at [base, base+condCost], ifActions
+    // after, etc. — so their progress doesn't collide on the same baseline.
+    return (path, extraOffset) => ({
+        kind: "nestedActionList",
+        path,
+        parentActionPath,
+        baselineApplyUnits: baselineApplyUnits + (extraOffset ?? 0),
+        parentSync: {
+            completedUnits: completedOps,
+            totalUnits: totalOps,
+        },
+    });
+}
+
 async function applyActionListDiffInner(
     ctx: TaskContext,
     observed: ObservedActionSlot[],
     desired: Action[],
     diff: ActionListDiff,
-    sink: ImportDiffSink | null,
     itemRegistry?: ItemRegistry,
-    progress?: ActionListProgressSink,
     pathPrefix?: string,
-    phaseUnits?: ActionListPhaseUnits
+    phaseUnits?: PhaseUnits,
+    events?: ImportEventHandler | null,
+    progressScope: ProgressScope = { kind: "topLevel" }
 ): Promise<void> {
+    const isTopLevel = pathPrefix === undefined;
     const summary = summarizeDiff(diff, desired.length);
     const plannedApplyUnits = actionListDiffApplyUnits(
         diff,
-        editOperationFieldUnits,
+        editUnitsWithNested,
         desired.length
     );
     if (phaseUnits !== undefined) {
-        phaseUnits.applyPart = Math.max(plannedApplyUnits, 1);
-        phaseUnits.total = recomputeTotal(phaseUnits);
+        phaseUnits.applying = Math.max(plannedApplyUnits, 1);
     }
     const baseline = phaseUnits !== undefined
-        ? phaseUnits.readPart + phaseUnits.hydratePart
+        ? phaseUnits.reading + phaseUnits.hydrating
         : 0;
-    const applyProgress =
-        phaseUnits === undefined
-            ? null
-            : createApplyProgressAdapter({
-                  phaseUnits,
-                  unitTotal: Math.max(1, diff.operations.length),
-                  baseline,
-                  sink: progress,
-              });
-    if (sink !== null) {
-        sink.summary(summary);
-        sink.phase("computed diff");
+    const fallbackPhaseUnits: PhaseUnits = {
+        setup: 0,
+        reading: 0,
+        hydrating: 0,
+        applying: plannedApplyUnits,
+    };
+    if (events != null) {
+        const operations: PlannedOp[] = [];
         for (const op of diff.operations) {
             const idx = desiredIndexForOp(op);
             if (idx >= 0) {
-                sink.planOp(actionPathForIndex(pathPrefix, idx), op.kind, opLabel(op), opDetail(op));
+                const srcPath = actionPathForIndex(pathPrefix, idx);
+                const actionType = actionTypeForOp(op);
+                if (actionType === null) continue;
+                if (op.kind === "add") {
+                    operations.push({
+                        op: "add",
+                        path: srcPath,
+                        actionType,
+                        desired: op.desired,
+                        toIndex: op.toIndex,
+                    });
+                } else if (op.kind === "edit") {
+                    operations.push({
+                        op: "edit",
+                        path: srcPath,
+                        actionType,
+                        observed: op.baselineAction as Action,
+                        desired: op.desired,
+                        fromIndex: op.fromIndex,
+                        toIndex: op.desiredIndex,
+                        fieldsChanged: fieldsChangedForEdit(op),
+                    });
+                } else if (op.kind === "move") {
+                    operations.push({
+                        op: "move",
+                        path: srcPath,
+                        actionType,
+                        fromIndex: op.fromIndex,
+                        toIndex: op.toIndex,
+                    });
+                }
             } else if (op.kind === "delete") {
-                sink.deleteOp(op.fromIndex, opLabel(op), opDetail(op));
+                const obsPath = actionPathForIndex(pathPrefix, op.fromIndex);
+                operations.push({
+                    op: "delete",
+                    path: obsPath,
+                    actionType: op.baselineAction?.type ?? null,
+                    observed: op.baselineAction as Action | null,
+                    observedEntryId: op.entryId,
+                    fromIndex: op.fromIndex,
+                });
             }
         }
-    }
-    const diffLabel =
-        `${summary.edits} edits · ${summary.adds} adds · ${summary.deletes} deletes · ${summary.moves} moves`;
-    if (phaseUnits !== undefined) {
-        progress?.({
-            phase: "applying",
-            phaseLabel: diffLabel,
-            unitCompleted: 1,
-            unitTotal: 1,
-            completedUnits: baseline,
-            totalUnits: phaseUnits.total,
-            phaseUnits: phaseUnitsFromParts(phaseUnits),
-        });
-    } else {
-        progress?.({
-            phase: "applying",
-            phaseLabel: diffLabel,
-            unitCompleted: 1,
-            unitTotal: 1,
-            completedUnits: 0,
-            totalUnits: plannedApplyUnits,
-            phaseUnits: {
-                reading: 0,
-                hydrating: 0,
-                applying: plannedApplyUnits,
-            },
-        });
-    }
-    // Pre-mark already-matching desired actions. Anything not touched by an
-    // op is "match" (white) from the start; ops will paint their own state
-    // on completion.
-    if (sink !== null) {
         const touched = new Set<number>();
         for (const op of diff.operations) {
             const idx = desiredIndexForOp(op);
             if (idx >= 0) touched.add(idx);
         }
+        const matches: ActionPath[] = [];
         for (let i = 0; i < desired.length; i++) {
-            if (!touched.has(i)) sink.markMatch(actionPathForIndex(pathPrefix, i));
+            if (!touched.has(i)) matches.push(actionPathForIndex(pathPrefix, i));
         }
+        events.emit({ kind: "diffPlanned", summary, operations, matches });
     }
-
+    emitApplyProgress(
+        events,
+        progressScope,
+        phaseUnits ?? fallbackPhaseUnits,
+        baseline,
+        0,
+        diff.operations.length
+    );
     if (diff.operations.length === 0) {
-        if (sink !== null) sink.end();
+        if (events != null && isTopLevel) {
+            events.emit({ kind: "finalizeSource", actions: desired });
+            events.emit({ kind: "listSyncCompleted" });
+        }
         return;
     }
 
-    const emitApplying = (label: string, completedOps: number, applied: number): void => {
-        if (applyProgress !== null) {
-            applyProgress.emitOuter(label, completedOps, applied);
-        } else {
-            progress?.({
-                phase: "applying",
-                phaseLabel: label,
-                unitCompleted: completedOps,
-                unitTotal: diff.operations.length,
-                completedUnits: applied,
-                totalUnits: plannedApplyUnits,
-                phaseUnits: {
-                    reading: 0,
-                    hydrating: 0,
-                    applying: plannedApplyUnits,
-                },
-            });
-        }
+    const emitApplying = (completedOps: number, applied: number): void => {
+        const activePhaseUnits = phaseUnits ?? fallbackPhaseUnits;
+        emitApplyProgress(
+            events,
+            progressScope,
+            activePhaseUnits,
+            baseline + Math.min(applied, activePhaseUnits.applying),
+            completedOps,
+            diff.operations.length
+        );
     };
 
     const deletes: Array<ActionListOperation & { kind: "delete" }> = [];
@@ -390,6 +441,7 @@ async function applyActionListDiffInner(
     }
 
     let appliedUnits = 0;
+    let completedOps = 0;
     let nextRuntimeEntryId = observed.length;
     const remaining: LiveActionListEntry[] = [];
     for (let i = 0; i < observed.length; i++) {
@@ -410,16 +462,26 @@ async function applyActionListDiffInner(
                 continue;
             }
 
-            emitApplying(opLabel(op), i, appliedUnits);
-            if (sink !== null) sink.phase(opLabel(op));
+            if (isTopLevel) await waitIfStepPaused(ctx);
+            const obsPath = actionPathForIndex(pathPrefix, op.fromIndex);
             await deleteObservedAction(ctx, index, remaining.length);
             appliedUnits += operationApplyUnits(op, desired.length);
             remaining.splice(index, 1);
+            completedOps++;
+            emitApplying(completedOps, appliedUnits);
+            if (events != null) {
+                events.emit({
+                    kind: "operationCompleted",
+                    path: obsPath,
+                    finalState: "delete",
+                    op: "delete",
+                    observedEntryId: op.entryId,
+                });
+            }
         }
     }
 
     // Edits before moves keep current entry positions stable while editors open.
-    let appliedOps = deletes.length;
     for (const op of edits) {
         const currentIndex = findCurrentIndex(remaining, op.entryId);
         if (currentIndex === -1) {
@@ -428,9 +490,18 @@ async function applyActionListDiffInner(
 
         const srcIdx = desiredIndexForOp(op);
         const srcPath = srcIdx >= 0 ? actionPathForIndex(pathPrefix, srcIdx) : null;
-        if (sink !== null && srcPath !== null) sink.beginOp(srcPath, "edit", opLabel(op));
-        emitApplying(opLabel(op), appliedOps, appliedUnits);
-        appliedOps++;
+        if (events != null && srcPath !== null) {
+            events.emit({
+                kind: "operationStarted",
+                path: srcPath,
+                op: "edit",
+                actionType: op.desired.type,
+                fromIndex: op.fromIndex,
+                toIndex: op.desiredIndex,
+                fieldsChanged: fieldsChangedForEdit(op),
+            });
+        }
+        if (isTopLevel) await waitIfStepPaused(ctx);
         const opStartUnits = appliedUnits;
 
         const actionSlot = await getPaginatedListSlotAtIndex(
@@ -444,7 +515,16 @@ async function applyActionListDiffInner(
             await setListItemNote(ctx, actionSlot, op.desired.note);
             appliedUnits += operationApplyUnits(op, desired.length);
             remaining[currentIndex].action = op.desired;
-            if (sink !== null && srcPath !== null) sink.completeOp(srcPath, "edit");
+            completedOps++;
+            emitApplying(completedOps, appliedUnits);
+            if (events != null && srcPath !== null) {
+                events.emit({
+                    kind: "operationCompleted",
+                    path: srcPath,
+                    op: "edit",
+                    finalState: "edit",
+                });
+            }
             continue;
         }
 
@@ -453,22 +533,23 @@ async function applyActionListDiffInner(
             actionSlot.click();
             await timedWaitForMenu(ctx, "menuClickWait");
 
-            const currentAction = op.currentAction;
+            const baselineAction = op.baselineAction;
 
             await writeOpenAction(ctx, op.desired, {
-                current: currentAction,
+                current: baselineAction,
                 itemRegistry,
                 pathPrefix: srcPath ?? undefined,
-                onProgress:
-                    applyProgress?.nestedSink({
-                        label: opLabel(op),
-                        unitCompleted: appliedOps,
-                        unitTotal: diff.operations.length,
-                    }) ?? progress,
+                nestedProgressScope:
+                    srcPath === null
+                        ? undefined
+                        : nestedApplyScope(
+                              srcPath,
+                              appliedUnits,
+                              completedOps,
+                              diff.operations.length
+                          ),
+                events: events ?? undefined,
             });
-            if (applyProgress !== null) {
-                appliedUnits = Math.max(appliedUnits, applyProgress.getAppliedUnits());
-            }
             await clickGoBack(ctx);
         }
 
@@ -478,7 +559,16 @@ async function applyActionListDiffInner(
             opStartUnits + operationApplyUnits(op, desired.length)
         );
         remaining[currentIndex].action = op.desired;
-        if (sink !== null && srcPath !== null) sink.completeOp(srcPath, "edit");
+        completedOps++;
+        emitApplying(completedOps, appliedUnits);
+        if (events != null && srcPath !== null) {
+            events.emit({
+                kind: "operationCompleted",
+                path: srcPath,
+                op: "edit",
+                finalState: "edit",
+            });
+        }
     }
 
     moves.sort((a, b) => a.toIndex - b.toIndex);
@@ -490,9 +580,17 @@ async function applyActionListDiffInner(
 
         const srcIdx = desiredIndexForOp(op);
         const srcPath = srcIdx >= 0 ? actionPathForIndex(pathPrefix, srcIdx) : null;
-        if (sink !== null && srcPath !== null) sink.beginOp(srcPath, "move", opLabel(op));
-        emitApplying(opLabel(op), appliedOps, appliedUnits);
-        appliedOps++;
+        if (events != null && srcPath !== null) {
+            events.emit({
+                kind: "operationStarted",
+                path: srcPath,
+                op: "move",
+                actionType: op.action.type,
+                fromIndex: op.fromIndex,
+                toIndex: op.toIndex,
+            });
+        }
+        if (isTopLevel) await waitIfStepPaused(ctx);
 
         await moveActionToIndex(ctx, fromIndex, op.toIndex, remaining.length);
         appliedUnits += operationApplyUnits(op, desired.length);
@@ -500,7 +598,16 @@ async function applyActionListDiffInner(
         const entry = remaining[fromIndex];
         remaining.splice(fromIndex, 1);
         remaining.splice(op.toIndex, 0, entry);
-        if (sink !== null && srcPath !== null) sink.completeOp(srcPath, "match");
+        completedOps++;
+        emitApplying(completedOps, appliedUnits);
+        if (events != null && srcPath !== null) {
+            events.emit({
+                kind: "operationCompleted",
+                path: srcPath,
+                op: "move",
+                finalState: "match",
+            });
+        }
     }
 
     adds.sort((a, b) => a.toIndex - b.toIndex);
@@ -508,9 +615,16 @@ async function applyActionListDiffInner(
     for (const op of adds) {
         const srcIdx = desiredIndexForOp(op);
         const srcPath = srcIdx >= 0 ? actionPathForIndex(pathPrefix, srcIdx) : null;
-        if (sink !== null && srcPath !== null) sink.beginOp(srcPath, "add", opLabel(op));
-        emitApplying(opLabel(op), appliedOps, appliedUnits);
-        appliedOps++;
+        if (events != null && srcPath !== null) {
+            events.emit({
+                kind: "operationStarted",
+                path: srcPath,
+                op: "add",
+                actionType: op.desired.type,
+                toIndex: op.toIndex,
+            });
+        }
+        if (isTopLevel) await waitIfStepPaused(ctx);
         const opStartUnits = appliedUnits;
 
         const actionToImport =
@@ -522,16 +636,17 @@ async function applyActionListDiffInner(
             ctx,
             actionToImport,
             itemRegistry,
-            applyProgress?.nestedSink({
-                label: opLabel(op),
-                unitCompleted: appliedOps,
-                unitTotal: diff.operations.length,
-            }) ?? progress,
-            srcPath ?? undefined
+            srcPath === null
+                ? undefined
+                : nestedApplyScope(
+                      srcPath,
+                      appliedUnits,
+                      completedOps,
+                      diff.operations.length
+                  ),
+            srcPath ?? undefined,
+            events ?? undefined
         );
-        if (applyProgress !== null) {
-            appliedUnits = Math.max(appliedUnits, applyProgress.getAppliedUnits());
-        }
         await moveActionToIndex(ctx, currentLength, op.toIndex, currentLength + 1);
 
         remaining.splice(op.toIndex, 0, {
@@ -548,10 +663,22 @@ async function applyActionListDiffInner(
             appliedUnits,
             opStartUnits + operationApplyUnits(op, desired.length)
         );
-        if (sink !== null && srcPath !== null) sink.completeOp(srcPath, "add");
+        completedOps++;
+        emitApplying(completedOps, appliedUnits);
+        if (events != null && srcPath !== null) {
+            events.emit({
+                kind: "operationCompleted",
+                path: srcPath,
+                op: "add",
+                finalState: "add",
+            });
+        }
     }
 
     await goToPaginatedListPage(ctx, 1, ACTION_LIST_CONFIG);
 
-    if (sink !== null) sink.end();
+    if (events != null && isTopLevel) {
+        events?.emit({ kind: "finalizeSource", actions: desired });
+        events.emit({ kind: "listSyncCompleted" });
+    }
 }

@@ -50,3 +50,24 @@ export function normalizeHtswPath(p: string): string {
     if (root.length > 0 && norm === root) return ".";
     return norm;
 }
+
+/**
+ * Shorten an arbitrary text (typically a diagnostic message or file path)
+ * for display by collapsing the MC-root prefix to `./` and truncating to
+ * `maxLen` characters with an ellipsis. Used by source viewers and error
+ * lines so absolute paths don't blow out the gutter width.
+ */
+export function shortenForDisplay(text: string, maxLen: number): string {
+    let s = text;
+    const root = mcRoot();
+    if (root.length > 0) {
+        const rootBack = root.split("/").join("\\");
+        s = s.split(`${root}/`).join("./");
+        s = s.split(`${root}\\`).join("./");
+        s = s.split(rootBack).join("./");
+    }
+    if (s.length > maxLen) {
+        return `${s.substring(0, maxLen - 1)}…`;
+    }
+    return s;
+}

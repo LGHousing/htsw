@@ -34,6 +34,10 @@ export class TaskManager {
         }
     }
 
+    public static hasRunningTasks(): boolean {
+        return this.runningContexts.size > 0;
+    }
+
     public static cancelAll() {
         for (const ctx of this.runningContexts) {
             ctx.cancel();

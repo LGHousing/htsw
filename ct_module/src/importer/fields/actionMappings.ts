@@ -13,7 +13,7 @@ export const ACTION_MAPPINGS = {
     CONDITIONAL: {
         displayName: "Conditional",
         loreFields: {
-            "Match Any Condition": { prop: "matchAny", kind: "boolean" },
+            "Match Any Condition": { prop: "matchAny", kind: "boolean", default: false },
             Conditions: { prop: "conditions", kind: "nestedList" },
             "If Actions": { prop: "ifActions", kind: "nestedList" },
             "Else Actions": { prop: "elseActions", kind: "nestedList" },
@@ -68,9 +68,9 @@ export const ACTION_MAPPINGS = {
     CHANGE_MAX_HEALTH: {
         displayName: "Change Max Health",
         loreFields: {
-            Mode: { prop: "op", kind: "select" },
+            Mode: { prop: "op", kind: "select", default: "Set" },
             "Max Health": { prop: "amount", kind: "value" },
-            "Heal On Change": { prop: "heal", kind: "boolean" },
+            "Heal On Change": { prop: "heal", kind: "boolean", default: true },
         },
     },
 
@@ -148,9 +148,9 @@ export const ACTION_MAPPINGS = {
     CHANGE_VAR: {
         displayName: "Change Variable",
         loreFields: {
-            Holder: { prop: "holder", kind: "cycle" },
+            Holder: { prop: "holder", kind: "cycle", options: ["Player", "Global", "Team"], default: "Player" },
             Variable: { prop: "key", kind: "value" },
-            Operation: { prop: "op", kind: "select" },
+            Operation: { prop: "op", kind: "select", default: "Increment" },
             Value: { prop: "value", kind: "value" },
             "Automatic Unset": { prop: "unset", kind: "boolean", default: false },
         },
@@ -159,7 +159,7 @@ export const ACTION_MAPPINGS = {
     TELEPORT: {
         displayName: "Teleport Player",
         loreFields: {
-            Location: { prop: "location", kind: "select" },
+            Location: { prop: "location", kind: "location" },
             "Prevent Teleport Inside Blocks": {
                 prop: "preventTeleportInsideBlocks",
                 kind: "boolean",
@@ -181,28 +181,28 @@ export const ACTION_MAPPINGS = {
             Sound: { prop: "sound", kind: "select" },
             Volume: { prop: "volume", kind: "value", default: 0.7 },
             Pitch: { prop: "pitch", kind: "value", default: 1.0 },
-            Location: { prop: "location", kind: "select", default: "Not Set" },
+            Location: { prop: "location", kind: "location", default: "Not Set" },
         },
     },
 
     SET_COMPASS_TARGET: {
         displayName: "Set Compass Target",
         loreFields: {
-            Location: { prop: "location", kind: "select" },
+            Location: { prop: "location", kind: "location" },
         },
     },
 
     SET_GAMEMODE: {
         displayName: "Set Gamemode",
         loreFields: {
-            Gamemode: { prop: "gamemode", kind: "select" },
+            Gamemode: { prop: "gamemode", kind: "cycle", options: ["Adventure", "Survival", "Creative"] },
         },
     },
 
     CHANGE_HEALTH: {
         displayName: "Change Health",
         loreFields: {
-            Mode: { prop: "op", kind: "select" },
+            Mode: { prop: "op", kind: "select", default: "Set" },
             Health: { prop: "amount", kind: "value" },
         },
     },
@@ -210,7 +210,7 @@ export const ACTION_MAPPINGS = {
     CHANGE_HUNGER: {
         displayName: "Change Hunger Level",
         loreFields: {
-            Mode: { prop: "op", kind: "select" },
+            Mode: { prop: "op", kind: "select", default: "Set" },
             Level: { prop: "amount", kind: "value" },
         },
     },
@@ -245,7 +245,7 @@ export const ACTION_MAPPINGS = {
         displayName: "Enchant Held Item",
         loreFields: {
             Enchantment: { prop: "enchant", kind: "select" },
-            Level: { prop: "level", kind: "value" },
+            Level: { prop: "level", kind: "value", default: 1 },
         },
     },
 
@@ -279,7 +279,7 @@ export const ACTION_MAPPINGS = {
         displayName: "Drop Item",
         loreFields: {
             "Item": { prop: "itemName", kind: "item" },
-            "Location": { prop: "location", kind: "select", default: "Not Set" },
+            "Location": { prop: "location", kind: "location" },
             "Drop Naturally": { prop: "dropNaturally", kind: "boolean", default: true },
             "Prevent Item Merging": {
                 prop: "disableMerging",
@@ -321,7 +321,7 @@ export const ACTION_MAPPINGS = {
     LAUNCH: {
         displayName: "Launch to Target",
         loreFields: {
-            "Target Location": { prop: "location", kind: "select" },
+            "Target Location": { prop: "location", kind: "location" },
             "Launch Strength": { prop: "strength", kind: "value" },
         },
     },
@@ -391,14 +391,14 @@ export function getActionFieldKind(type: string, prop: string): UiFieldKind | un
 function getActionFieldSpec(
     type: string,
     prop: string
-): { prop: string; kind: UiFieldKind; default?: unknown } | undefined {
+): { prop: string; kind: UiFieldKind; default?: unknown; options?: readonly string[] } | undefined {
     const mapping = (
         ACTION_MAPPINGS as Record<
             string,
             | {
                   loreFields: Record<
                       string,
-                      { prop: string; kind: UiFieldKind; default?: unknown }
+                      { prop: string; kind: UiFieldKind; default?: unknown; options?: readonly string[] }
                   >;
               }
             | undefined
@@ -410,6 +410,14 @@ function getActionFieldSpec(
         if (field.prop === prop) return field;
     }
     return undefined;
+}
+
+export function getActionFieldCycleOptions(type: string, prop: string): readonly string[] {
+    const spec = getActionFieldSpec(type, prop);
+    if (spec?.options === undefined) {
+        throw new Error(`No cycle options declared for action ${type}.${prop}`);
+    }
+    return spec.options;
 }
 
 /**
@@ -449,13 +457,13 @@ export function getNestedListFields(
 
 export function getActionScalarLoreFields(
     type: Action["type"]
-): { prop: string; kind: UiFieldKind }[] {
+): { label: string; prop: string; kind: UiFieldKind }[] {
     const loreFields = getActionLoreFields(type);
-    const result: { prop: string; kind: UiFieldKind }[] = [];
+    const result: { label: string; prop: string; kind: UiFieldKind }[] = [];
     for (const label in loreFields) {
         const field = loreFields[label];
         if (field.kind !== "nestedList") {
-            result.push({ prop: field.prop, kind: field.kind });
+            result.push({ label, prop: field.prop, kind: field.kind });
         }
     }
     return result;

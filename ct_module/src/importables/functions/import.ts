@@ -1,58 +1,119 @@
 import type { ImportableFunction } from "htsw/types";
 
-import { syncActionList } from "../../importer/actions/sync";
-import { clickGoBack } from "../../importer/gui/helpers";
-import type { ImportableTrustPlan } from "../../knowledge";
-import type { ActionListProgressFields } from "../../importer/progress/types";
-import TaskContext from "../../tasks/context";
-import { actionListTrustFor } from "../actionListTrust";
-import type { ItemRegistry } from "../itemRegistry";
-import { ensureReferencedImportablesExist } from "../references";
 import {
+    applyActionListPlan,
+    prereadActionList,
+    type ActionListPlan,
+} from "../../importer/actions/sync";
+import { clickGoBack } from "../../importer/gui/helpers";
+import { timedWaitForMenu } from "../../importer/gui/menuWait";
+import type { ImportableTrustPlan } from "../../importCache";
+import type { ImportEventHandler } from "../../importer/importEvents";
+import { createSetupStepEmitter } from "../../importer/progress/setupStepEmitter";
+import TaskContext from "../../tasks/context";
+import { getActionListTrust, getBaselineActionList } from "../actionListHelpers";
+import type { ItemRegistry } from "../itemRegistry";
+import {
+    countReferencedShells,
+    ensureReferencedImportablesExist,
+} from "../references";
+import {
+    applyFunctionSettings,
     ensureFunctionExists,
     openFunctionSettings,
-    setAutomaticExecutionTicksIfNeeded,
-    setFunctionIconIfNeeded,
 } from "./shared";
 
-export async function importImportableFunction(
+export type FunctionImportPlan = {
+    kind: "FUNCTION";
+    importable: ImportableFunction;
+    trustPlan?: ImportableTrustPlan;
+    actionsPlan: ActionListPlan | null;
+    /**
+     * True when the icon/tick settings need no further work — either trusted,
+     * or already applied inline during preread (which happens when the action
+     * diff was empty). When true, the apply pass skips the settings menu.
+     */
+    settingsHandled: boolean;
+};
+
+export async function prereadImportableFunction(
     ctx: TaskContext,
     importable: ImportableFunction,
     itemRegistry: ItemRegistry,
     trustPlan?: ImportableTrustPlan,
-    onActionListProgress?: (progress: ActionListProgressFields) => void
-): Promise<void> {
-    await ensureReferencedImportablesExist(ctx, importable);
-    await ensureFunctionExists(ctx, importable.name);
+    events?: ImportEventHandler
+): Promise<FunctionImportPlan> {
+    const setup = createSetupStepEmitter(events, countReferencedShells(importable) + 1);
 
-    const actionsTrust = actionListTrustFor(trustPlan, "actions", importable.actions);
-    const actionsTrusted =
-        actionsTrust !== undefined && trustPlan?.trustedListPaths.has("actions");
-    if (!actionsTrusted) {
-        ctx.displayMessage(`&b&l[import] &r&bSyncing function: &f${importable.name} &7(${importable.actions.length} actions)`);
-        await syncActionList(ctx, importable.actions, {
-            itemRegistry,
-            trust: actionsTrust,
-            onProgress: onActionListProgress,
-        });
-    } else {
-        ctx.displayMessage(`&b&l[import] &r&7Function "${importable.name}" trusted, skipped.`);
+    await ensureReferencedImportablesExist(ctx, importable, (kind, name) => {
+        setup(`created ${kind} ${name}`);
+    });
+
+    const actionsTrusted = trustPlan?.trustedListPaths.has("actions") ?? false;
+    const settingsTrusted = functionSettingsTrusted(importable, trustPlan);
+
+    if (actionsTrusted && settingsTrusted) {
+        setup(`skipped ${importable.name}`);
+        return { kind: "FUNCTION", importable, trustPlan, actionsPlan: null, settingsHandled: true };
     }
 
-    if (
-        (importable.repeatTicks || importable.icon) &&
-        !functionSettingsTrusted(importable, trustPlan)
-    ) {
-        await clickGoBack(ctx);
+    if (actionsTrusted) {
+        setup(`settings-only ${importable.name}`);
+        return { kind: "FUNCTION", importable, trustPlan, actionsPlan: null, settingsHandled: false };
+    }
 
+    await ensureFunctionExists(ctx, importable.name);
+    setup(`opened function ${importable.name}`);
+    const actionsPlan = await prereadActionList(ctx, importable.actions, {
+        itemRegistry,
+        baselineCurrent: getBaselineActionList(trustPlan, "actions"),
+        trust: getActionListTrust(trustPlan, "actions"),
+        events,
+    });
+
+    // When the actions already match, the only work left is icon/ticks. We're
+    // one go-back from the settings menu, so just apply them now (the setters
+    // short-circuit when unchanged) and let pass 2 skip this function entirely.
+    // Skipped when the diff is non-empty — pass 2 visits settings anyway, so a
+    // first import (everything changes) pays no extra round trip here.
+    let settingsHandled = settingsTrusted;
+    if (!settingsHandled && actionsPlan.diff.operations.length === 0) {
+        await clickGoBack(ctx); // actions editor -> function list
         await openFunctionSettings(ctx, importable.name);
-        if (importable.icon) {
-            await setFunctionIconIfNeeded(ctx, importable.icon);
+        await applyFunctionSettings(ctx, importable);
+        await clickGoBack(ctx); // settings -> function list
+        settingsHandled = true;
+    }
+
+    return { kind: "FUNCTION", importable, trustPlan, actionsPlan, settingsHandled };
+}
+
+export async function applyImportableFunctionPlan(
+    ctx: TaskContext,
+    plan: FunctionImportPlan,
+    itemRegistry: ItemRegistry,
+    events?: ImportEventHandler
+): Promise<void> {
+    const needsSettings = !plan.settingsHandled;
+
+    if (plan.actionsPlan !== null) {
+        await ensureFunctionExists(ctx, plan.importable.name);
+        await applyActionListPlan(ctx, plan.actionsPlan, {
+            itemRegistry,
+            events,
+        });
+        if (needsSettings) {
+            await clickGoBack(ctx);
         }
-        if (importable.repeatTicks) {
-            await setAutomaticExecutionTicksIfNeeded(ctx, importable.repeatTicks);
+    }
+
+    if (needsSettings) {
+        if (plan.actionsPlan === null) {
+            await ctx.runCommand(`/functions`);
+            await timedWaitForMenu(ctx, "commandMenuWait");
         }
-        await clickGoBack(ctx);
+        await openFunctionSettings(ctx, plan.importable.name);
+        await applyFunctionSettings(ctx, plan.importable);
     }
 }
 

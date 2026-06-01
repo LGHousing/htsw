@@ -79,6 +79,8 @@ export type Element =
           style: ContainerStyle;
           id: string;
           children: Extractable<Child[]>;
+          /** When true, scroll input is consumed without moving the viewport. */
+          locked?: Extractable<boolean>;
       }
     | {
           kind: "image";
@@ -87,6 +89,18 @@ export type Element =
           // The Vite icon plugin scans the bundled output for these literals
           // and copies only the matched PNGs into dist/assets/icons/.
           name: Extractable<string>;
+          // Optional ARGB tint multiplied over the (white) PNG at draw time.
+          // The icon set is monochrome white, so this recolors it.
+          color?: Extractable<number>;
+          // Hover chip, same semantics as the text element's tooltip.
+          tooltip?: Extractable<string>;
+          tooltipColor?: Extractable<number>;
+      }
+    | {
+          kind: "mcItem";
+          style: Style;
+          item: string;
+          count: number;
       };
 
 function extractChildren(c: Extractable<Child[]>): Element[] {
@@ -151,7 +165,8 @@ function isPaddingEntry(p: PaddingEntry | PaddingEntry[]): p is PaddingEntry {
 }
 
 function textContent(text: string): { w: number; h: number } {
-    return { w: Renderer.getStringWidth(text) + TEXT_PAD * 2, h: LINE_H + TEXT_PAD * 2 };
+    const w = Client.getMinecraft().field_71466_p.func_78256_a(text);
+    return { w: w + TEXT_PAD * 2, h: LINE_H + TEXT_PAD * 2 };
 }
 
 function inputContent(_: string): { w: number; h: number } {
@@ -195,6 +210,7 @@ function measure(e: Element): { w: number; h: number } {
     else if (e.kind === "input") content = inputContent(extract(e.value));
     else if (e.kind === "scroll") content = { w: 0, h: 0 };
     else if (e.kind === "image") content = imageContent();
+    else if (e.kind === "mcItem") content = { w: 16, h: 16 };
     else content = containerContent(e);
     const w = e.style.width;
     const h = e.style.height;
@@ -221,16 +237,52 @@ function growFactorOf(e: Element, axis: "w" | "h"): number {
 }
 
 // Per-id scroll state. Reset across reloads but persists across frames.
-type ScrollState = { offset: number; contentHeight: number; viewportRect: Rect };
+type ScrollState = {
+    offset: number;
+    contentHeight: number;
+    viewportRect: Rect;
+    /**
+     * True when the user has manually scrolled (wheel or drag). While
+     * set, autoscroll-following code (e.g. CodeView's applyAutoFollow)
+     * suppresses its scroll updates. Cleared by `clearUserScrollOverride`
+     * — typically when the user clicks a "jump to current" pip.
+     */
+    userOverridden: boolean;
+};
 const scrollStates: { [id: string]: ScrollState } = {};
 
 export function getScrollState(id: string): ScrollState {
     let s = scrollStates[id];
     if (!s) {
-        s = { offset: 0, contentHeight: 0, viewportRect: { x: 0, y: 0, w: 0, h: 0 } };
+        s = {
+            offset: 0,
+            contentHeight: 0,
+            viewportRect: { x: 0, y: 0, w: 0, h: 0 },
+            userOverridden: false,
+        };
         scrollStates[id] = s;
     }
     return s;
+}
+
+export function setScrollOffset(id: string, offset: number): void {
+    const s = getScrollState(id);
+    s.offset = Math.max(
+        0,
+        Math.min(Math.max(0, s.contentHeight - s.viewportRect.h), offset)
+    );
+}
+
+export function markUserScroll(id: string): void {
+    getScrollState(id).userOverridden = true;
+}
+
+export function clearUserScrollOverride(id: string): void {
+    getScrollState(id).userOverridden = false;
+}
+
+export function isScrollUserOverridden(id: string): boolean {
+    return getScrollState(id).userOverridden;
 }
 
 export const SCROLLBAR_WIDTH = SCROLLBAR_W;

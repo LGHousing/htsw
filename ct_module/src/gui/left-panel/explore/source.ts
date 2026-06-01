@@ -249,10 +249,23 @@ function enumerateForSourceUncached(s: Source): Result[] {
 export function enumerateForSource(s: Source): Result[] {
     const now = Date.now();
     const cached = enumerationCache.get(s.fullPath);
+    let results: Result[];
     if (cached !== undefined && now - cached.at < ENUMERATION_TTL_MS) {
-        return cached.results;
+        results = cached.results;
+    } else {
+        results = enumerateForSourceUncached(s);
+        enumerationCache.set(s.fullPath, { at: now, results });
     }
-    const results = enumerateForSourceUncached(s);
-    enumerationCache.set(s.fullPath, { at: now, results });
+    for (let i = 0; i < results.length; i++) {
+        const r = results[i];
+        if (r.type !== "import") continue;
+        const fresh = parseImportJsonAt(r.fullPath);
+        if (fresh.parsed !== r.parse) {
+            r.importables = fresh.parsed?.value ?? [];
+            r.parse = fresh.parsed;
+            if (fresh.error !== null) r.parseError = fresh.error;
+            else delete r.parseError;
+        }
+    }
     return results;
 }

@@ -3,40 +3,50 @@
 import type { ParseResult } from "htsw";
 import type { Importable } from "htsw/types";
 
-import type { KnowledgeStatusRow } from "../../knowledge/status";
-import type { ImportProgress, ImportProgressRow } from "../../importer/progress/types";
-import { importProgressKey } from "../../importer/progress/keys";
+import type { CacheStatusRow } from "../../importCache/status";
+import { buildCacheStatusRows } from "../../importCache/status";
+import { importableHash } from "../../importCache/hash";
+import { importableIdentity } from "../../importCache/paths";
 import { normalizeHtswPath } from "../lib/pathDisplay";
-import {
-    getCurrentPhaseEtaSecondsCached as etaGetCurrentPhaseEtaSeconds,
-    getImportEtaSeconds as etaGetImportEtaSeconds,
-    resetEtaCache,
-} from "../../importer/progress/eta";
-import { importableIdentity } from "../../knowledge/paths";
-import type { QueueItem } from "./queue";
 import { canonicalPath } from "./parses";
-import { getActiveRightTab, setActiveRightTab } from "./selection";
+
+// Re-export the import-session subset so consumers can keep `import { ... } from "./state"`.
+export * from "./importProgress";
 
 let importJsonPath = "./htsw/imports/import.json";
 let exportImportJsonPath: string | null = null;
 let parsedResult: ParseResult<Importable[]> | null = null;
 /**
- * Multi-select for the Importables tab. Keyed by `${type}:${identity}`
- * (the `trustPlanKey` shape). Independent of `selectedImportableId` —
+ * Multi-select for the Importables tab. Keyed by `importableKey`
+ * (`${type}:${identity}`). Independent of `selectedImportableId` —
  * single-selection drives preview, multi-selection drives "Import
  * selected" and the queue-bulk paths.
  */
 const checkedImportableKeys: Set<string> = new Set();
-/**
- * Resolved filesystem path of the importable currently being processed by
- * the in-flight import session. Drives the LiveImporter panel above the
- * inventory: when set, that file's HTSL is rendered with diff colors;
- * when null, the panel shows an idle state. Cleared by the import's
- * progress callback when the session reports no current importable.
- */
-let currentImportingPath: string | null = null;
-/** Housing UUIDs the user has explicitly opted in to "trust the cache for". */
+const TRUSTED_HOUSES_FILE = "./htsw/.cache/trusted-houses.json";
+let trustedHousesLoaded = false;
 const trustedHouses: Set<string> = new Set();
+function loadTrustedHouses(): void {
+    if (trustedHousesLoaded) return;
+    trustedHousesLoaded = true;
+    try {
+        if (!FileLib.exists(TRUSTED_HOUSES_FILE)) return;
+        const raw = String(FileLib.read(TRUSTED_HOUSES_FILE) ?? "");
+        if (raw.trim() === "") return;
+        const arr = JSON.parse(raw) as unknown;
+        if (!Array.isArray(arr)) return;
+        for (let i = 0; i < arr.length; i++) {
+            if (typeof arr[i] === "string") trustedHouses.add(arr[i] as string);
+        }
+    } catch (_e) {}
+}
+function saveTrustedHouses(): void {
+    try {
+        const arr: string[] = [];
+        trustedHouses.forEach((uuid) => arr.push(uuid));
+        FileLib.write(TRUSTED_HOUSES_FILE, JSON.stringify(arr), true);
+    } catch (_e) {}
+}
 /**
  * When true, sound effects fired by `Forge.PlaySoundEvent` are cancelled
  * while an import is in flight. Suppresses the repetitive ding/click
@@ -44,29 +54,8 @@ const trustedHouses: Set<string> = new Set();
  */
 let muteImportSounds: boolean = false;
 let housingUuid: string | null = null;
-let knowledgeRows: KnowledgeStatusRow[] = [];
-let importProgress: ImportProgress | null = null;
-/**
- * `Date.now()` of the moment the in-flight import started. Captured the
- * first time `setImportProgress` transitions from null to non-null and
- * cleared on the inverse transition.
- */
-let importStartedAt: number | null = null;
+let knowledgeRows: CacheStatusRow[] = [];
 
-export function getImportProgressFraction(): number {
-    const p = importProgress;
-    if (p === null || p.totalUnits <= 0) return 0;
-    return Math.min(1, Math.max(0, p.completedUnits / p.totalUnits));
-}
-
-export function getImportEtaSeconds(): number | null {
-    if (importStartedAt === null) return null;
-    return etaGetImportEtaSeconds(importProgress, importStartedAt);
-}
-
-export function getCurrentPhaseEtaSeconds(): number | null {
-    return etaGetCurrentPhaseEtaSeconds(importProgress, importStartedAt);
-}
 export function getImportJsonPath(): string {
     return importJsonPath;
 }
@@ -88,8 +77,12 @@ export function setParsedResult(r: ParseResult<Importable[]> | null): void {
     parsedResult = r;
 }
 
-export function setParseError(msg: string | null): void {
-    void msg;
+let parseInProgress = false;
+export function isParseInProgress(): boolean {
+    return parseInProgress;
+}
+export function setParseInProgress(v: boolean): void {
+    parseInProgress = v;
 }
 
 export function isImportableChecked(key: string): boolean {
@@ -113,16 +106,36 @@ export function getCheckedImportableCount(): number {
     return checkedImportableKeys.size;
 }
 
+const autoTrackSources: Set<string> = new Set();
+export function isAutoTrackSource(sourcePath: string): boolean {
+    return autoTrackSources.has(canonicalPath(sourcePath));
+}
+export function toggleAutoTrackSource(sourcePath: string): boolean {
+    const canon = canonicalPath(sourcePath);
+    if (autoTrackSources.has(canon)) {
+        autoTrackSources.delete(canon);
+        return false;
+    }
+    autoTrackSources.add(canon);
+    return true;
+}
+export function isAnyAutoTrackEnabled(): boolean { return autoTrackSources.size > 0; }
+export function getAutoTrackSources(): ReadonlySet<string> { return autoTrackSources; }
+
 export function isHouseTrusted(uuid: string): boolean {
+    loadTrustedHouses();
     return trustedHouses.has(uuid);
 }
 export function setHouseTrust(uuid: string, trusted: boolean): void {
+    loadTrustedHouses();
     if (trusted) trustedHouses.add(uuid);
     else trustedHouses.delete(uuid);
+    saveTrustedHouses();
 }
 /** Trust mode is now per-house: an in-flight import trusts the cache iff
  *  the current housing UUID is in the trusted-houses set. */
 export function isCurrentHouseTrusted(): boolean {
+    loadTrustedHouses();
     return housingUuid !== null && trustedHouses.has(housingUuid);
 }
 
@@ -140,191 +153,55 @@ export function setHousingUuid(uuid: string | null): void {
     housingUuid = uuid;
 }
 
-export function getKnowledgeRows(): KnowledgeStatusRow[] {
+export function getKnowledgeRows(): CacheStatusRow[] {
     return knowledgeRows;
 }
-export function setKnowledgeRows(rows: KnowledgeStatusRow[]): void {
+export function setKnowledgeRows(rows: CacheStatusRow[]): void {
     knowledgeRows = rows;
 }
-
-export function getImportProgress(): ImportProgress | null {
-    return importProgress;
-}
-
-export function createImportRows(
-    importables: readonly Importable[],
-    sourcePath: string
-): ImportProgressRow[] {
-    const rows: ImportProgressRow[] = [];
-    for (let i = 0; i < importables.length; i++) {
-        const importable = importables[i];
-        const identity = importableIdentity(importable);
-        rows.push({
-            key: importProgressKey(importable.type, identity, sourcePath),
-            status: "queued",
-            units: 1,
-        });
-    }
-    return rows;
-}
-
-export function createImportProgress(init: Partial<ImportProgress>): ImportProgress {
-    return normalizeImportProgress({
-        completedImportables: init.completedImportables ?? 0,
-        totalImportables: init.totalImportables ?? 1,
-        completedUnits: init.completedUnits ?? 0,
-        totalUnits: init.totalUnits ?? 1,
-        current: init.current ?? null,
-        rows: init.rows ?? [],
-        failed: init.failed ?? 0,
-    });
-}
-
-function normalizeImportProgress(p: ImportProgress): ImportProgress {
-    const completedUnits = Math.max(0, p.completedUnits);
-    const totalUnits = Math.max(1, p.totalUnits, completedUnits);
-    return {
-        ...p,
-        completedUnits,
-        totalUnits,
-    };
-}
-
-export function setImportProgress(p: ImportProgress | null): void {
-    const wasNull = importProgress === null;
-    const prevPhase = importProgress?.current?.phase ?? null;
-    const prevKey = importProgress?.current?.key ?? null;
-    if (p !== null && importProgress === null) {
-        importStartedAt = Date.now();
-    } else if (p === null) {
-        importStartedAt = null;
-    }
-    importProgress = p === null ? null : normalizeImportProgress(p);
-    const nextPhase = p?.current?.phase ?? null;
-    const nextKey = p?.current?.key ?? null;
-    if (wasNull || p === null || prevPhase !== nextPhase || prevKey !== nextKey) {
-        resetEtaCache();
-    }
-    // On import start, flip the right panel to the Import tab so the
-    // user sees the live progress without having to click. On end,
-    // flip back to View (where they were before the import) — but only
-    // if we're still on Import, so we don't override an explicit user
-    // navigation away mid-import.
-    if (p !== null && wasNull) {
-        setActiveRightTab("import");
-    } else if (p === null && !wasNull && getActiveRightTab() === "import") {
-        setActiveRightTab("view");
-    }
-}
-export function getImportStartedAt(): number | null {
-    return importStartedAt;
-}
-
-export function getCurrentImportingPath(): string | null {
-    return currentImportingPath;
-}
-export function setCurrentImportingPath(p: string | null): void {
-    currentImportingPath = p;
+export function appendKnowledgeRows(rows: CacheStatusRow[]): void {
+    if (rows.length === 0) return;
+    knowledgeRows = knowledgeRows.concat(rows);
 }
 
 /**
- * Render-state for a queue row's mini progress bar. "queued" → empty bar;
- * "done" → full green; "failed" → full red; "current" → phase-segmented
- * showing how far through each phase we are within this importable.
+ * Recompute the hash + state for the knowledge row matching this
+ * importable. Use after an in-place mutation so the diff dots stay
+ * accurate without rebuilding every row.
  */
-export type QueueItemRunState =
-    | { kind: "queued" }
-    | { kind: "done" }
-    | { kind: "failed" }
-    | {
-          kind: "current";
-          readFraction: number;
-          hydrateFraction: number;
-          applyFraction: number;
-          /** Relative widths of the three phases (sum = 1). */
-          readWidth: number;
-          hydrateWidth: number;
-          applyWidth: number;
-      };
+export function refreshKnowledgeRowFor(imp: Importable): void {
+    const id = importableIdentity(imp);
+    for (let i = 0; i < knowledgeRows.length; i++) {
+        const row = knowledgeRows[i];
+        if (row.identity !== id || row.importable.type !== imp.type) continue;
+        const newHash = importableHash(imp);
+        row.importable = imp;
+        row.hash = newHash;
+        row.state = row.entry === null
+            ? "unknown"
+            : row.entry.hash === newHash ? "current" : "modified";
+        return;
+    }
+}
 
-export function getQueueItemRunState(item: QueueItem): QueueItemRunState {
-    if (importProgress === null) {
-        return { kind: "queued" };
-    }
-    if (item.kind !== "importable") {
-        // importJson rows aren't tracked individually; treat as queued.
-        return { kind: "queued" };
-    }
-    const key = importProgressKey(item.type, item.identity, item.sourcePath);
-    let row: ImportProgressRow | undefined;
-    for (let i = 0; i < importProgress.rows.length; i++) {
-        if (importProgress.rows[i].key === key) {
-            row = importProgress.rows[i];
-            break;
+/**
+ * Re-read ONE importable's cache from disk and upsert its knowledge row.
+ * Unlike `refreshKnowledgeRowFor` (which reuses the row's stale `entry`), this
+ * picks up a freshly-written cache file — so a dot turns green the instant its
+ * import finishes, without rebuilding all rows through the batched full refresh.
+ */
+export function refreshKnowledgeRowFromDisk(housingUuid: string, imp: Importable): void {
+    const built = buildCacheStatusRows(housingUuid, [imp]);
+    if (built.length === 0) return;
+    const newRow = built[0];
+    for (let i = 0; i < knowledgeRows.length; i++) {
+        if (
+            knowledgeRows[i].identity === newRow.identity &&
+            knowledgeRows[i].importable.type === newRow.importable.type
+        ) {
+            knowledgeRows[i] = newRow;
+            return;
         }
     }
-    if (row === undefined) return { kind: "queued" };
-    if (row.status === "imported" || row.status === "skipped") {
-        return { kind: "done" };
-    }
-    if (row.status === "failed") {
-        // The session halts on first failure, so everything after this
-        // stays queued. We render the failed row with the error color
-        // (distinct from the green "done" fill) so the user can see at a
-        // glance which importable aborted the run.
-        return { kind: "failed" };
-    }
-    if (row.status === "queued") return { kind: "queued" };
-    const current = importProgress.current;
-    if (current === null || current.key !== key) {
-        return {
-            kind: "current",
-            readFraction: 0,
-            hydrateFraction: 0,
-            applyFraction: 0,
-            readWidth: 0.33,
-            hydrateWidth: 0.33,
-            applyWidth: 0.34,
-        };
-    }
-    const units = current.phaseUnits;
-    const total = Math.max(1, units.reading + units.hydrating + units.applying);
-    const within = Math.max(0, current.completedUnits);
-    const readDone = Math.min(units.reading, within);
-    const hydrateDone = Math.min(
-        units.hydrating,
-        Math.max(0, within - units.reading)
-    );
-    const applyDone = Math.min(
-        units.applying,
-        Math.max(0, within - units.reading - units.hydrating)
-    );
-    return {
-        kind: "current",
-        readFraction: units.reading > 0 ? readDone / units.reading : 1,
-        hydrateFraction: units.hydrating > 0 ? hydrateDone / units.hydrating : 1,
-        applyFraction: units.applying > 0 ? applyDone / units.applying : 0,
-        readWidth: units.reading / total,
-        hydrateWidth: units.hydrating / total,
-        applyWidth: units.applying / total,
-    };
-}
-
-/**
- * True iff this queue item corresponds to the importable currently being
- * processed by the in-flight import session.
- */
-export function isCurrentQueueItem(item: QueueItem): boolean {
-    if (importProgress === null) return false;
-    const current = importProgress.current;
-    if (current === null) return false;
-    if (item.kind === "importable") {
-        return current.key === importProgressKey(
-            item.type,
-            item.identity,
-            item.sourcePath
-        );
-    }
-    if (currentImportingPath === null) return false;
-    return canonicalPath(item.sourcePath) === canonicalPath(currentImportingPath);
+    knowledgeRows.push(newRow);
 }

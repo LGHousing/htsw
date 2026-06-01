@@ -11,6 +11,33 @@ import {
 } from ".";
 import { chatWidth, spaceWidth } from "../utils/helpers";
 
+/**
+ * The `--> path:line:column` location line, left-truncated so the
+ * filename and position survive when the absolute path is wider than the
+ * chat. The whole snippet is wrapped in a right-truncating
+ * `UIElementTruncate`, which would otherwise cut the filename off the end
+ * of a long path — exactly the part you need.
+ */
+function locationLine(path: string, line: number, column: number): string {
+    const prefix = " --> ";
+    const suffix = `:${line}:${column}`;
+    const max = ChatLib.getChatWidth();
+    if (chatWidth(prefix + path + suffix) <= max) return prefix + path + suffix;
+
+    const ellipsis = "...";
+    const budget = max - chatWidth(prefix) - chatWidth(suffix) - chatWidth(ellipsis);
+    let tail = "";
+    let w = 0;
+    for (let i = path.length - 1; i >= 0; i--) {
+        const ch = path.charAt(i);
+        const cw = chatWidth(ch);
+        if (w + cw > budget) break;
+        tail = ch + tail;
+        w += cw;
+    }
+    return prefix + ellipsis + tail + suffix;
+}
+
 export function printDiagnostics(sm: SourceMap, diags: Diagnostic[]) {
     for (let i = 0; i < diags.length; i++) {
         if (i !== 0) ChatLib.chat("");
@@ -100,7 +127,7 @@ class UIElementSnippet extends UIElementVStack {
 
             const { line, column } = file.getPosition(startPos);
 
-            this.add(new UIElementText(`&7 --> ${file.path}:${line}:${column}`));
+            this.add(new UIElementText("&7" + locationLine(file.path, line, column)));
             this.add(new UIElementSnippetLines(file, spans, level));
         }
     }

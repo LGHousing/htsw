@@ -190,7 +190,6 @@ export class UIElementHLine extends UIElementText {
             (color ?? "") + char.repeat(Math.max(1, Math.round(width / chatWidth(char))))
         );
 
-        console.log(this.text);
     }
 }
 

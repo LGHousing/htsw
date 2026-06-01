@@ -10,55 +10,64 @@ import type {
     UiFieldKind,
 } from "../types";
 import type { PhaseUnits } from "./types";
-import { currentActionListFromActions, diffActionList } from "../actions/diff";
+export type { PhaseUnits };
+import { baselineActionListFromActions, diffActionList } from "../actions/diff";
 import {
-    currentConditionListFromConditions,
+    baselineConditionListFromConditions,
     diffConditionList,
 } from "../conditions/diff";
 import { getActionScalarLoreFields } from "../fields/actionMappings";
-import { scalarFieldDiffers } from "../fields/compare";
+import { getConditionScalarLoreFields } from "../fields/conditionMappings";
+import { isTruncatableKind } from "../fields/loreParsing";
+import {
+    scalarFieldDiffers,
+    normalizeActionCompare,
+    normalizeConditionCompare,
+} from "../fields/compare";
+import { countReferencedShells } from "../../importables/references";
 
 /**
  * Per-op-kind costs in abstract units. Calibrated against
  * `guaranteedSleep1000 = 4` as the 1-second anchor, so 1 unit ≈ 250ms.
  *
  * Costs are tuned so each kind's *real* avg ms / unit lands close to a
- * common ~150-160 ms/u band — that way ETA projections stay accurate
- * even when an importable's op mix is skewed (e.g. lots of `itemSelect`
- * vs lots of `anvilInput`). When a per-op ms/u drifts noticeably from
- * the band, bump the cost to compensate. Latest sample basis (n=samples):
- *   commandMenuWait 2.9 (n=26 @ 433ms → ~150 ms/u)
- *   menuClickWait 2.0  (n=1451 @ 283ms → ~141 ms/u)
- *   pageTurnWait 1.7   (n=36 @ 258ms → ~152 ms/u)
- *   goBackWait 2.0     (n=521 @ 316ms → ~158 ms/u)
- *   chatInput 3.0      (n=497 @ 472ms → ~157 ms/u)
- *   anvilInput 4.0     (n=6 @ 605ms → ~151 ms/u)
- *   itemSelect 1.6     (n=4 @ 238ms → ~149 ms/u)
+ * common ~250 ms/u band — that way ETA projections stay accurate even
+ * when an importable's op mix is skewed (e.g. lots of `itemSelect` vs
+ * lots of `anvilInput`). When a per-op ms/u drifts noticeably from the
+ * band, bump the cost to compensate. Latest sample basis (n=samples):
+ *   commandMenuWait 2.3 (n=214 @ 585ms → ~254 ms/u)
+ *   menuClickWait 1.7   (n=3414 @ 430ms → ~253 ms/u)
+ *   pageTurnWait 1.7    (n=222 @ 427ms → ~251 ms/u)
+ *   goBackWait 1.8      (n=3422 @ 451ms → ~251 ms/u)
+ *   chatInput 3.0       (n=846 @ 751ms → ~250 ms/u)
+ *   anvilInput 3.8      (n=11 @ 937ms → ~247 ms/u)
+ *   itemSelect 1.6      (n=54 @ 388ms → ~243 ms/u)
+ *   reorderStep 1.8     (n=145 @ 454ms → ~252 ms/u)
  *
- * Re-tune via `/htsw eta dump`, then divide each kind's `avgMs` by the
+ * Re-tune via `/htsw eta`, then divide each kind's `avgMs` by the
  * target band rate to get the new unit value.
  */
 export const COST = {
     commandInterval: 1,
-    commandMenuWait: 2.9,
+    commandMenuWait: 2.3,
     commandMessageWait: 2,
 
-    menuClickWait: 2,
+    menuClickWait: 1.7,
     messageClickWait: 2,
     pageTurnWait: 1.7,
-    goBackWait: 2,
+    goBackWait: 1.8,
 
     chatInput: 3,
-    anvilInput: 4,
+    anvilInput: 3.8,
     itemSelect: 1.6,
 
-    reorderStep: 1.5,
+    reorderStep: 1.8,
     guaranteedSleep1000: 4,
 
     readVisiblePage: 0,
     scalarRead: 0,
     diffCompute: 0,
-    knowledgeWrite: 0.25,
+    cacheWrite: 0.25,
     nbtCapture: 0.25,
     itemInject: 1,
 };
@@ -76,17 +85,19 @@ function pageTurnUnitsForListItemCount(count: number): number {
 function fieldKindEditUnits(kind: UiFieldKind): number {
     if (kind === "boolean") return COST.menuClickWait;
     if (kind === "cycle") return COST.menuClickWait * 2;
-    if (kind === "select") return COST.menuClickWait + COST.menuClickWait;
+    if (kind === "select" || kind === "location") {
+        return COST.menuClickWait + COST.menuClickWait;
+    }
     if (kind === "item") return COST.itemSelect;
     if (kind === "value") return COST.chatInput;
     if (kind === "nestedList") return COST.menuClickWait;
     return COST.menuClickWait;
 }
 
-export function scalarFieldEditUnitsForOp(
+function scalarFieldEditUnitsForOp(
     op: Extract<ActionListOperation, { kind: "edit" }>
 ): number {
-    const action = op.currentAction;
+    const action = op.baselineAction;
     if (op.noteOnly) return 0;
 
     let total = 0;
@@ -139,7 +150,30 @@ export function hydrationEntryUnits(
 function nestedPropReadUnits(entry: ObservedActionSlot, prop: NestedListProp): number {
     const summary = entry.nestedSummaries ? entry.nestedSummaries[prop] : undefined;
     const count = summary === undefined ? 1 : summary.length;
-    return COST.menuClickWait + pageTurnUnitsForListItemCount(count) + COST.goBackWait;
+    const base = COST.menuClickWait + pageTurnUnitsForListItemCount(count) + COST.goBackWait;
+    // The recursive readActionList that hydrates this nested list will
+    // also do scalar truncation hydration on its inner rows (clicking
+    // into each truncated MESSAGE/PLAY_SOUND/... and back). Add a
+    // conservative estimate of that cost so the parent's hydrate ETA
+    // doesn't undercount and let the displayed time finish before the
+    // actual work does.
+    if (prop === "conditions" || summary === undefined) return base;
+    let scalarHydrate = 0;
+    for (let i = 0; i < summary.length; i++) {
+        if (typeMaybeNeedsScalarHydrate(summary[i])) {
+            scalarHydrate += COST.menuClickWait + COST.goBackWait;
+        }
+    }
+    return base + scalarHydrate;
+}
+
+function typeMaybeNeedsScalarHydrate(typeName: string): boolean {
+    const fields = getActionScalarLoreFields(typeName as Action["type"]);
+    if (fields.length === 0) return false;
+    for (let i = 0; i < fields.length; i++) {
+        if (isTruncatableKind(fields[i].kind)) return true;
+    }
+    return false;
 }
 
 function noteEditUnits(): number {
@@ -148,34 +182,60 @@ function noteEditUnits(): number {
 
 /**
  * Per-add shell cost: what `importAction` does *outside* the field-write
- * loop. Click "Add Action", page-turn to find the action type in the
- * paginated add menu, click the action-type slot. The post-write
- * `clickGoBack` is priced inside `actionWriteRoughUnits` instead,
- * because fieldless actions (e.g. Kill Player) skip the editor entirely
- * and so don't pay the goBack.
- *
- * The page-turn term assumes ~1 turn on average to reach the desired
- * action type. Most action types fit within the first two pages.
+ * loop — click "Add Action", click the action-type slot. No page-turn term:
+ * the add menu opens on page 1 and the common action types are there, so
+ * `getSlotPaginate` usually does zero turns; charging a guaranteed turn
+ * over-counts every add. The post-write `clickGoBack` is priced inside
+ * `actionWriteRoughUnits` instead, since fieldless actions skip the editor.
  */
 function actionAddShellUnits(): number {
-    return COST.menuClickWait + COST.pageTurnWait + COST.menuClickWait;
+    return COST.menuClickWait + COST.menuClickWait;
 }
 
-/**
- * Rough per-condition shell + scalar-fields cost: open the condition
- * editor (menu click), set its scalar fields (one chat input as a
- * reasonable average — most conditions have one configurable value),
- * close the editor. Conditions can't contain nested action lists, so
- * this stays flat per condition.
- */
-function conditionRoughUnits(): number {
-    return COST.menuClickWait + COST.chatInput + COST.menuClickWait;
+function conditionScalarFieldWriteUnits(condition: Condition): number {
+    const normalized = normalizeConditionCompare(condition) as
+        | { [key: string]: unknown }
+        | null;
+    if (normalized === null) return 0;
+    const kinds = new Map<string, UiFieldKind>();
+    const fields = getConditionScalarLoreFields(condition.type);
+    for (let i = 0; i < fields.length; i++) kinds.set(fields[i].prop, fields[i].kind);
+    let total = 0;
+    for (const key in normalized) {
+        if (key === "type" || key === "note" || key === "inverted") continue;
+        if (normalized[key] === undefined) continue;
+        const kind = kinds.get(key);
+        total += kind !== undefined ? fieldKindEditUnits(kind) : COST.chatInput;
+    }
+    return total;
+}
+
+function conditionAddUnits(condition: Condition): number {
+    let total = COST.menuClickWait + COST.menuClickWait + COST.goBackWait;
+    total += conditionScalarFieldWriteUnits(condition);
+    if (condition.inverted === true) total += COST.menuClickWait;
+    return total;
+}
+
+function conditionEditUnits(baseline: Condition, desired: Condition): number {
+    let total = COST.menuClickWait + COST.goBackWait;
+    const fields = getConditionScalarLoreFields(desired.type);
+    for (let i = 0; i < fields.length; i++) {
+        const field = fields[i];
+        if (scalarFieldDiffers(baseline, desired, desired.type, field.prop)) {
+            total += fieldKindEditUnits(field.kind);
+        }
+    }
+    if ((baseline.inverted === true) !== (desired.inverted === true)) {
+        total += COST.menuClickWait;
+    }
+    return total;
 }
 
 function conditionListRoughUnits(conditions: readonly Condition[]): number {
     let total = 0;
     for (let i = 0; i < conditions.length; i++) {
-        total += conditionRoughUnits();
+        total += conditionAddUnits(conditions[i]);
         if (conditions[i].note !== undefined) total += noteEditUnits();
     }
     return total;
@@ -186,12 +246,14 @@ export function conditionOperationUnits(
 ): number {
     if (op.kind === "delete") return COST.menuClickWait;
     if (op.kind === "add") {
-        let total = conditionRoughUnits();
+        let total = conditionAddUnits(op.desired);
         if (op.desired.note !== undefined) total += noteEditUnits();
         return total;
     }
-    let total = op.noteOnly ? noteEditUnits() : conditionRoughUnits();
-    if (op.desired.note !== op.currentCondition.note) total += noteEditUnits();
+    let total = op.noteOnly
+        ? noteEditUnits()
+        : conditionEditUnits(op.baselineCondition, op.desired);
+    if (op.desired.note !== op.baselineCondition.note) total += noteEditUnits();
     return total;
 }
 
@@ -229,9 +291,15 @@ function actionWriteRoughUnits(action: Action): number {
     for (let i = 0; i < scalars.length; i++) {
         scalarKinds.set(scalars[i].prop, scalars[i].kind);
     }
-    for (const key in action) {
+    // Normalize first: the writer short-circuits any field already at its
+    // (freshly-added) default, sending no input. `normalizeActionCompare`
+    // drops exactly those default-valued fields — the same rule the diff
+    // uses — so iterating the normalized action counts only the fields that
+    // are actually written. Single source of truth, no parallel default check.
+    const normalized = normalizeActionCompare(action) as { [key: string]: unknown };
+    for (const key in normalized) {
         if (key === "type" || key === "note") continue;
-        const value = (action as { [key: string]: unknown })[key];
+        const value = normalized[key];
         if (value === undefined) continue;
         hasFields = true;
         if (Array.isArray(value)) {
@@ -293,7 +361,7 @@ export function actionOperationApplyUnits(
     let total = op.noteOnly
         ? noteEditUnits()
         : COST.menuClickWait + editUnitsForFields(op) + COST.goBackWait;
-    if (op.desired.note !== op.currentAction.note) total += noteEditUnits();
+    if (op.desired.note !== op.baselineAction.note) total += noteEditUnits();
     return total;
 }
 
@@ -308,21 +376,40 @@ export function actionOperationApplyUnits(
  * work via the cache-aware diff recursing one level into
  * `ifActions` / `elseActions` / `actions` (see `editUnitsWithNested`).
  */
-export type ListPhaseUnits = {
-    readPart: number;
-    hydratePart: number;
-    applyPart: number;
-    total: number;
-};
+/** Sum of the four phase fields. Computed on demand — no cached `total`. */
+export function phaseUnitsTotal(p: PhaseUnits): number {
+    return p.setup + p.reading + p.hydrating + p.applying;
+}
 
-export type ActionListPhaseUnits = ListPhaseUnits;
+/**
+ * Cost of the per-importable setup work that happens BEFORE `syncActionList`
+ * is called: shell-creating any referenced functions/menus/regions, then
+ * opening the housing editor for this importable (e.g. `/function edit X`,
+ * `/region edit X`, item inject + `/edit`, ...). Tracked as its own phase
+ * so its wall-clock time doesn't get attributed to "reading" and inflate
+ * observed ms/unit.
+ */
+export function setupUnitsForImportable(importable: Importable): number {
+    const refShellUnits = countReferencedShells(importable) * COST.commandMenuWait;
+    return refShellUnits + ownSetupUnits(importable);
+}
 
-export function phaseUnitsFromParts(b: ListPhaseUnits): PhaseUnits {
-    return {
-        reading: b.readPart,
-        hydrating: b.hydratePart,
-        applying: b.applyPart,
-    };
+function ownSetupUnits(importable: Importable): number {
+    if (importable.type === "FUNCTION") return COST.commandMenuWait;
+    if (importable.type === "EVENT") return COST.commandMenuWait + COST.menuClickWait;
+    if (importable.type === "REGION") {
+        return COST.commandMessageWait * 3 + COST.commandMenuWait;
+    }
+    if (importable.type === "ITEM") {
+        const hasActions =
+            (importable.leftClickActions?.length ?? 0) > 0 ||
+            (importable.rightClickActions?.length ?? 0) > 0;
+        return hasActions
+            ? COST.itemInject + COST.commandMenuWait + COST.menuClickWait
+            : COST.itemInject;
+    }
+    if (importable.type === "MENU") return COST.commandMenuWait;
+    return COST.commandMenuWait;
 }
 
 function topLevelHydrateUnits(desired: readonly Action[]): number {
@@ -345,11 +432,11 @@ function topLevelHydrateUnits(desired: readonly Action[]): number {
  *
  * Two cases, no mixed worldviews:
  *
- * 1. **Known current list available** (`knownCurrent !== undefined`):
+ * 1. **Baseline current list available** (`baselineCurrent !== undefined`):
  *    use it for read + hydrate estimates, and run the real diff
- *    `knownCurrent → desired` to price the apply phase.
+ *    `baselineCurrent -> desired` to price the apply phase.
  *
- * 2. **No known current list** (`knownCurrent === undefined`): we don't know what the
+ * 2. **No baseline current list** (`baselineCurrent === undefined`): we don't know what the
  *    housing has — first-ever import for this house, or cache was
  *    wiped. Assume the housing is *empty*: zero pages to turn, nothing
  *    to hydrate, and every desired action must be added from scratch.
@@ -362,63 +449,71 @@ function topLevelHydrateUnits(desired: readonly Action[]): number {
  */
 export function estimateActionListPhaseUnits(
     desired: readonly Action[],
-    knownCurrent?: readonly Action[]
-): ActionListPhaseUnits {
-    if (knownCurrent === undefined) {
-        const applyPart = actionListRoughApplyUnits(desired);
-        return { readPart: 0, hydratePart: 0, applyPart, total: applyPart };
+    baselineCurrent?: readonly Action[]
+): PhaseUnits {
+    if (baselineCurrent === undefined) {
+        // No cache: we don't know what's in housing yet, so the read and
+        // hydrate costs are unknowable upfront. They get filled in with
+        // exact values from observed `nestedSummaries` once the read
+        // pass finishes (readList.ts:hydrateNestedActions). The UI's
+        // never-jump-up ETA guard masks the one-time totalUnits step at
+        // the read→hydrate transition.
+        return {
+            setup: 0,
+            reading: 0,
+            hydrating: 0,
+            applying: actionListRoughApplyUnits(desired),
+        };
     }
-    const readPart = pageTurnUnitsForListItemCount(knownCurrent.length);
-    const hydratePart = topLevelHydrateUnits(knownCurrent);
-    const applyPart = cacheAwareApplyUnits(desired, knownCurrent);
     return {
-        readPart,
-        hydratePart,
-        applyPart,
-        total: readPart + hydratePart + applyPart,
+        setup: 0,
+        reading: pageTurnUnitsForListItemCount(baselineCurrent.length),
+        hydrating: topLevelHydrateUnits(baselineCurrent),
+        applying: baselineAwareApplyUnits(desired, baselineCurrent),
     };
 }
 
 export function estimateConditionListPhaseUnits(
     desired: readonly Condition[],
-    knownCurrent?: ReadonlyArray<Condition | null>
-): ListPhaseUnits {
-    if (knownCurrent === undefined) {
-        const applyPart = conditionListRoughUnits(desired);
-        return { readPart: 0, hydratePart: 0, applyPart, total: applyPart };
+    baselineCurrent?: ReadonlyArray<Condition | null>
+): PhaseUnits {
+    if (baselineCurrent === undefined) {
+        return {
+            setup: 0,
+            reading: 0,
+            hydrating: 0,
+            applying: conditionListRoughUnits(desired),
+        };
     }
-
-    const current = currentConditionListFromConditions(knownCurrent);
+    const current = baselineConditionListFromConditions(baselineCurrent);
     const diff = diffConditionList(current, desired as Condition[]);
-    const readPart = conditionListReadUnits(knownCurrent.length);
-    const applyPart = conditionListDiffApplyUnits(diff);
     return {
-        readPart,
-        hydratePart: 0,
-        applyPart,
-        total: readPart + applyPart,
+        setup: 0,
+        reading: conditionListReadUnits(baselineCurrent.length),
+        hydrating: 0,
+        applying: conditionListDiffApplyUnits(diff),
     };
 }
 
 /**
- * Compute the apply-phase units for transforming `cached` → `desired`,
+ * Compute the apply-phase units for transforming `baseline` -> `desired`,
  * by running the real diff and pricing each operation. Used to tighten
- * ETA estimates when we have a recent knowledge cache for the housing.
+ * ETA estimates when we have a recent baseline for the housing.
  *
- * Returns 0 when cached and desired are identical (the bar predicts a
+ * Returns 0 when baseline and desired are identical (the bar predicts a
  * near-instant pass for this list).
  */
-function cacheAwareApplyUnits(
+function baselineAwareApplyUnits(
     desired: readonly Action[],
-    cached: readonly Action[]
+    baseline: readonly Action[]
 ): number {
-    const current = currentActionListFromActions(cached);
+    const current = baselineActionListFromActions(baseline);
     const diff = diffActionList(current, desired as Action[]);
     return actionListDiffApplyUnits(diff, editUnitsWithNested, desired.length);
 }
 
 /**
- * Edit-op cost for the cache-aware apply path. Scalar field changes are
+ * Edit-op cost for the baseline-aware apply path. Scalar field changes are
  * derived from the edit op's observed/desired pair.
  *
  * `getActionScalarLoreFields` strips out `nestedList` field kinds, so
@@ -436,7 +531,7 @@ function cacheAwareApplyUnits(
  * CONDITIONAL/RANDOM can't appear inside another CONDITIONAL/RANDOM
  * body bounds the recursion at one level.
  */
-function editUnitsWithNested(op: Extract<ActionListOperation, { kind: "edit" }>): number {
+export function editUnitsWithNested(op: Extract<ActionListOperation, { kind: "edit" }>): number {
     let total = scalarFieldEditUnitsForOp(op);
 
     for (let i = 0; i < op.nestedDiffs.length; i++) {
@@ -444,16 +539,65 @@ function editUnitsWithNested(op: Extract<ActionListOperation, { kind: "edit" }>)
         if (nested.diff.operations.length === 0) continue;
         total += COST.menuClickWait + COST.goBackWait;
         if (nested.prop === "conditions") {
-            total += conditionListDiffApplyUnits(nested.diff);
+            const baseline = nestedConditionBaseline(op.baselineAction);
+            const desired = nestedConditionDesired(op.desired);
+            total += phaseUnitsTotal(estimateConditionListPhaseUnits(desired, baseline));
         } else {
-            total += actionListDiffApplyUnits(
-                nested.diff,
-                editUnitsWithNested,
-                nested.diff.desiredLength
-            );
+            const baseline = nestedActionBaseline(op.baselineAction, nested.prop);
+            const desired = nestedActionDesired(op.desired, nested.prop);
+            total += phaseUnitsTotal(estimateActionListPhaseUnits(desired, baseline));
         }
     }
     return total;
+}
+
+function nestedConditionBaseline(
+    action: ObservedActionSlot["action"] | Action
+): ReadonlyArray<Condition | null> | undefined {
+    if (action === null || action.type !== "CONDITIONAL") return undefined;
+    return action.conditions;
+}
+
+function nestedConditionDesired(action: Action): Condition[] {
+    return action.type === "CONDITIONAL" ? action.conditions : [];
+}
+
+function nestedActionBaseline(
+    action: ObservedActionSlot["action"] | Action,
+    prop: "ifActions" | "elseActions" | "actions"
+): readonly Action[] | undefined {
+    if (action === null) return undefined;
+    if (action.type === "CONDITIONAL") {
+        const value = prop === "ifActions" ? action.ifActions : action.elseActions;
+        return observedActionsAsBaseline(value);
+    }
+    if (action.type === "RANDOM" && prop === "actions") {
+        return observedActionsAsBaseline(action.actions);
+    }
+    return undefined;
+}
+
+function nestedActionDesired(
+    action: Action,
+    prop: "ifActions" | "elseActions" | "actions"
+): readonly Action[] {
+    if (action.type === "CONDITIONAL") {
+        return prop === "ifActions" ? action.ifActions : action.elseActions;
+    }
+    if (action.type === "RANDOM" && prop === "actions") return action.actions;
+    return [];
+}
+
+function observedActionsAsBaseline(
+    actions: ReadonlyArray<ObservedActionSlot["action"] | Action> | undefined
+): readonly Action[] | undefined {
+    if (actions === undefined) return undefined;
+    const out: Action[] = [];
+    for (let i = 0; i < actions.length; i++) {
+        const action = actions[i];
+        if (action !== null) out.push(action as Action);
+    }
+    return out;
 }
 
 /**
@@ -463,9 +607,9 @@ function editUnitsWithNested(op: Extract<ActionListOperation, { kind: "edit" }>)
  */
 function actionListCost(
     desired: readonly Action[],
-    knownCurrent: readonly Action[] | undefined
+    baselineCurrent: readonly Action[] | undefined
 ): number {
-    return estimateActionListPhaseUnits(desired, knownCurrent).total;
+    return phaseUnitsTotal(estimateActionListPhaseUnits(desired, baselineCurrent));
 }
 
 /**
@@ -490,7 +634,7 @@ export function estimateImportableCost(
         return (
             COST.commandMenuWait +
             actionListCost(importable.actions, get("actions")) +
-            COST.knowledgeWrite
+            COST.cacheWrite
         );
     }
     if (importable.type === "EVENT") {
@@ -498,7 +642,7 @@ export function estimateImportableCost(
             COST.commandMenuWait +
             COST.menuClickWait +
             actionListCost(importable.actions, get("actions")) +
-            COST.knowledgeWrite
+            COST.cacheWrite
         );
     }
     if (importable.type === "REGION") {
@@ -507,14 +651,14 @@ export function estimateImportableCost(
             COST.commandMenuWait +
             actionListCost(importable.onEnterActions ?? [], get("onEnterActions")) +
             actionListCost(importable.onExitActions ?? [], get("onExitActions")) +
-            COST.knowledgeWrite
+            COST.cacheWrite
         );
     }
     if (importable.type === "ITEM") {
         const left = importable.leftClickActions ?? [];
         const right = importable.rightClickActions ?? [];
         if (left.length === 0 && right.length === 0) {
-            return COST.itemInject + COST.knowledgeWrite;
+            return COST.itemInject + COST.cacheWrite;
         }
         return (
             COST.itemInject +
@@ -524,15 +668,15 @@ export function estimateImportableCost(
             actionListCost(right, get("rightClickActions")) +
             COST.guaranteedSleep1000 +
             COST.nbtCapture +
-            COST.knowledgeWrite
+            COST.cacheWrite
         );
     }
     if (importable.type === "MENU") {
         return (
             COST.commandMenuWait +
             (importable.slots?.length ?? 0) * COST.menuClickWait +
-            COST.knowledgeWrite
+            COST.cacheWrite
         );
     }
-    return COST.commandMenuWait + COST.knowledgeWrite;
+    return COST.commandMenuWait + COST.cacheWrite;
 }

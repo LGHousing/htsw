@@ -8,6 +8,11 @@ export type IconProps = {
     // shake and fail at runtime — typing this as `IconName` is the guard.
     name: Extractable<IconName>;
     style?: Style;
+    // Optional ARGB tint for the (white) icon, e.g. ACCENT_DANGER.
+    color?: Extractable<number>;
+    // Optional hover chip.
+    tooltip?: Extractable<string>;
+    tooltipColor?: Extractable<number>;
 };
 
 const DEFAULT_SIZE: Style = {
@@ -20,5 +25,8 @@ export function Icon(props: IconProps): Element {
         kind: "image",
         style: props.style ?? DEFAULT_SIZE,
         name: props.name,
+        color: props.color,
+        tooltip: props.tooltip,
+        tooltipColor: props.tooltipColor,
     };
 }

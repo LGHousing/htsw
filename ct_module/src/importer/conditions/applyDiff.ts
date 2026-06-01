@@ -15,8 +15,8 @@ import {
     readBooleanValue,
     setListItemNote,
     setNoteOnLastVisibleSlot,
-    timedWaitForMenu,
 } from "../gui/helpers";
+import { timedWaitForMenu } from "../gui/menuWait";
 import { ItemSlot, MouseButton } from "../../tasks/specifics/slots";
 import { removedFormatting } from "../../utils/helpers";
 import { CONDITION_MAPPINGS } from "../fields/conditionMappings";
@@ -25,16 +25,17 @@ import type {
     ConditionListOperation,
     ObservedConditionSlot,
 } from "../types";
-import type { ActionListProgressSink } from "../progress/types";
+import type { ProgressHandler } from "../progress/types";
 import { getPaginatedListSlotAtIndex } from "../gui/paginatedList";
 import { CONDITION_LIST_CONFIG } from "./listConfig";
-import { getConditionSpec, writeOpenCondition } from "../conditions";
+import { getConditionSpec, writeOpenCondition } from "./specs";
 import {
     conditionListDiffApplyUnits,
     conditionOperationUnits,
-    phaseUnitsFromParts,
-    type ListPhaseUnits,
+    phaseUnitsTotal,
+    type PhaseUnits,
 } from "../progress/costs";
+import { traceConditionOp } from "../progress/trace";
 
 type LiveConditionListEntry = {
     entryId: number;
@@ -113,17 +114,14 @@ function findCurrentConditionIndex(
     return -1;
 }
 
-function recomputeTotal(units: ListPhaseUnits): number {
-    return units.readPart + units.hydratePart + units.applyPart;
-}
 
 export async function applyConditionListDiff(
     ctx: TaskContext,
     observed: ObservedConditionSlot[],
     diff: ConditionListDiff,
     itemRegistry?: ItemRegistry,
-    progress?: ActionListProgressSink,
-    phaseUnits?: ListPhaseUnits
+    progress?: ProgressHandler,
+    phaseUnits?: PhaseUnits
 ): Promise<void> {
     const currentEntries: LiveConditionListEntry[] = [];
     for (let i = 0; i < observed.length; i++) {
@@ -147,12 +145,11 @@ export async function applyConditionListDiff(
     const totalOps = diff.operations.length;
     const plannedApplyUnits = conditionListDiffApplyUnits(diff);
     if (phaseUnits !== undefined) {
-        phaseUnits.applyPart = plannedApplyUnits;
-        phaseUnits.total = recomputeTotal(phaseUnits);
+        phaseUnits.applying = plannedApplyUnits;
     }
     const baseline = phaseUnits === undefined
         ? 0
-        : phaseUnits.readPart + phaseUnits.hydratePart;
+        : phaseUnits.reading + phaseUnits.hydrating;
     // Emits happen at the START of each op (so the label reflects what's
     // about to run), then `completedUnits` is bumped after the op
     // finishes. Track the last emitted label so the post-loop flush can
@@ -166,40 +163,38 @@ export async function applyConditionListDiff(
         lastLabel = label;
         progress({
             phase: "applying",
-            phaseLabel: label,
-            unitCompleted: completedOps,
-            unitTotal: totalOps,
             completedUnits: baseline + completedUnits,
             totalUnits: phaseUnits === undefined
                 ? plannedApplyUnits
-                : phaseUnits.total,
+                : phaseUnitsTotal(phaseUnits),
             phaseUnits: phaseUnits === undefined
                 ? {
+                      setup: 0,
                       reading: 0,
                       hydrating: 0,
                       applying: plannedApplyUnits,
                   }
-                : phaseUnitsFromParts(phaseUnits),
+                : phaseUnits,
+            sync: { completedUnits: completedOps, totalUnits: totalOps, parent: null },
         });
     };
 
     if (totalOps === 0) {
         progress?.({
             phase: "applying",
-            phaseLabel: "condition diff up to date",
-            unitCompleted: 1,
-            unitTotal: 1,
             completedUnits: baseline + plannedApplyUnits,
             totalUnits: phaseUnits === undefined
                 ? plannedApplyUnits
-                : phaseUnits.total,
+                : phaseUnitsTotal(phaseUnits),
             phaseUnits: phaseUnits === undefined
                 ? {
+                      setup: 0,
                       reading: 0,
                       hydrating: 0,
                       applying: plannedApplyUnits,
                   }
-                : phaseUnitsFromParts(phaseUnits),
+                : phaseUnits,
+            sync: { completedUnits: 1, totalUnits: 1, parent: null },
         });
         return;
     }
@@ -210,8 +205,16 @@ export async function applyConditionListDiff(
             continue;
         }
 
-        const observedName = CONDITION_MAPPINGS[op.currentCondition.type].displayName;
+        const observedName = CONDITION_MAPPINGS[op.baselineCondition.type].displayName;
         emitConditionOp(`edit condition ${observedName}`);
+        traceConditionOp({
+            opKind: op.noteOnly ? "noteOnly" : "edit",
+            conditionType: op.desired.type,
+            units: conditionOperationUnits(op),
+            invertChanged:
+                (op.baselineCondition.inverted === true) !==
+                (op.desired.inverted === true),
+        });
 
         const conditionSlot = await getPaginatedListSlotAtIndex(
             ctx,
@@ -234,11 +237,11 @@ export async function applyConditionListDiff(
         await writeOpenCondition(
             ctx,
             op.desired,
-            op.currentCondition,
+            op.baselineCondition,
             itemRegistry
         );
 
-        const currentInverted = op.currentCondition.inverted === true;
+        const currentInverted = op.baselineCondition.inverted === true;
         const desiredInverted = op.desired.inverted === true;
         await setOpenConditionInverted(ctx, desiredInverted, currentInverted);
 
@@ -262,10 +265,15 @@ export async function applyConditionListDiff(
         }
 
         const observedName =
-            op.currentCondition === null
+            op.baselineCondition === null
                 ? "condition"
-                : CONDITION_MAPPINGS[op.currentCondition.type].displayName;
+                : CONDITION_MAPPINGS[op.baselineCondition.type].displayName;
         emitConditionOp(`delete condition ${observedName}`);
+        traceConditionOp({
+            opKind: "delete",
+            conditionType: op.baselineCondition?.type ?? "unknown",
+            units: conditionOperationUnits(op),
+        });
 
         await deleteObservedCondition(ctx, index, currentEntries.length);
         currentEntries.splice(index, 1);
@@ -277,6 +285,11 @@ export async function applyConditionListDiff(
         emitConditionOp(
             `add condition ${CONDITION_MAPPINGS[op.desired.type].displayName}`
         );
+        traceConditionOp({
+            opKind: "add",
+            conditionType: op.desired.type,
+            units: conditionOperationUnits(op),
+        });
         await importCondition(ctx, op.desired, itemRegistry);
         currentEntries.push({
             entryId: nextRuntimeEntryId++,
@@ -291,31 +304,3 @@ export async function applyConditionListDiff(
     if (lastLabel.length > 0) emitConditionOp(lastLabel);
 }
 
-export function logConditionSyncState(ctx: TaskContext, diff: ConditionListDiff): void {
-    if (diff.operations.length === 0) {
-        ctx.displayMessage(`&7[cond-sync] &aUp to date.`);
-        return;
-    }
-
-    ctx.displayMessage(`&7[cond-sync] &d${diff.operations.length} operation(s):`);
-    let addIndex = 0;
-    for (const op of diff.operations) {
-        if (op.kind === "edit") {
-            const observedName = CONDITION_MAPPINGS[op.currentCondition.type].displayName;
-            ctx.displayMessage(
-                `&7  &6~ ${observedName} &7-> &6${CONDITION_MAPPINGS[op.desired.type].displayName}`
-            );
-        } else if (op.kind === "delete") {
-            const deleteName =
-                op.currentCondition === null
-                    ? "Unknown Condition"
-                    : CONDITION_MAPPINGS[op.currentCondition.type].displayName;
-            ctx.displayMessage(`&7  &c- ${deleteName}`);
-        } else {
-            ctx.displayMessage(
-                `&7  &a+ [${addIndex}] ${CONDITION_MAPPINGS[op.desired.type].displayName}`
-            );
-            addIndex++;
-        }
-    }
-}

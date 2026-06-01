@@ -1,30 +1,35 @@
 import type { Action, ImportableItem } from "htsw/types";
 
 import { syncActionList } from "../../importer/actions/sync";
-import type { ActionListProgressFields } from "../../importer/progress/types";
-import { clickGoBack, timedWaitForMenu } from "../../importer/gui/helpers";
+import type { ImportEventHandler } from "../../importer/importEvents";
+import { createSetupStepEmitter } from "../../importer/progress/setupStepEmitter";
+import { clickGoBack } from "../../importer/gui/helpers";
+import { IMPORT_DEBUG } from "../../importer/diagnostics/importDebug";
+import { timedWaitForMenu } from "../../importer/gui/menuWait";
 import {
     getCurrentHousingUuid,
     importableHash,
     itemSnbtCachePath,
-    writeKnowledge,
+    writeImportableCache,
     type ImportableTrustPlan,
-} from "../../knowledge";
+} from "../../importCache";
 import TaskContext from "../../tasks/context";
 import { ensureParentDirs } from "../../utils/filesystem";
 import { stableStringify } from "../../utils/helpers";
 import { getItemFromNbt, getItemFromSnbt } from "../../utils/nbt";
 import {
     HOTBAR_ZERO_PACKET_SLOT,
-    SET_SLOT_ACK_TIMEOUT_MS,
+    SET_SLOT_ACK_MAX_TICKS,
     selectHotbarSlot,
     selectedHotbarSlot,
     sendCreativeInventoryAction,
-    waitForAnySetSlot,
 } from "../../importer/gui/packets";
-import { actionListTrustFor } from "../actionListTrust";
+import { getActionListTrust, getBaselineActionList } from "../actionListHelpers";
 import type { ItemRegistry } from "../itemRegistry";
-import { ensureReferencedImportablesExist } from "../references";
+import {
+    countReferencedShells,
+    ensureReferencedImportablesExist,
+} from "../references";
 import { COST } from "../../importer/progress/costs";
 import { timed } from "../../importer/progress/timing";
 
@@ -91,45 +96,97 @@ function stacksEqual(left: any, right: any): boolean {
     return left.func_179549_c(right);
 }
 
-async function waitForHotbarZeroMatch(ctx: TaskContext, stack: any): Promise<void> {
-    while (!hotbarZeroMatches(stack)) {
-        await waitForAnySetSlot(ctx);
+// Must stay a finite for-loop, not a `while (!match) await SetSlot` wrapped in a
+// timeout: on timeout that leaks a SetSlot waiter that re-registers itself on
+// every future SetSlot.
+async function waitForHotbarZeroMatch(ctx: TaskContext, stack: any): Promise<boolean> {
+    for (let i = 0; i < SET_SLOT_ACK_MAX_TICKS; i++) {
+        if (hotbarZeroMatches(stack)) return true;
         await ctx.waitFor("tick");
     }
+    return hotbarZeroMatches(stack);
 }
 
-export async function importImportableItem(
+export type ItemImportPlan = {
+    kind: "ITEM";
+    importable: ImportableItem;
+    trustPlan?: ImportableTrustPlan;
+    housingUuid?: string;
+};
+
+/**
+ * ITEM stays single-pass: item injection, /edit, and SNBT capture form a
+ * tightly coupled sequence that doesn't split cleanly. Preread records a
+ * minimal plan; all real work happens in `applyImportableItemPlan`.
+ */
+export async function prereadImportableItem(
+    _ctx: TaskContext,
+    importable: ImportableItem,
+    _itemRegistry: ItemRegistry,
+    trustPlan?: ImportableTrustPlan,
+    cachedUuid?: string,
+    _events?: ImportEventHandler
+): Promise<ItemImportPlan> {
+    return { kind: "ITEM", importable, trustPlan, housingUuid: cachedUuid };
+}
+
+export async function applyImportableItemPlan(
+    ctx: TaskContext,
+    plan: ItemImportPlan,
+    itemRegistry: ItemRegistry,
+    events?: ImportEventHandler
+): Promise<void> {
+    await importImportableItem(
+        ctx,
+        plan.importable,
+        itemRegistry,
+        plan.trustPlan,
+        plan.housingUuid,
+        events
+    );
+}
+
+async function importImportableItem(
     ctx: TaskContext,
     importable: ImportableItem,
     itemRegistry: ItemRegistry,
     trustPlan?: ImportableTrustPlan,
     cachedUuid?: string,
-    onActionListProgress?: (progress: ActionListProgressFields) => void
+    events?: ImportEventHandler
 ): Promise<void> {
-    await ensureReferencedImportablesExist(ctx, importable);
+    const ownSteps = hasItemClickActions(importable) ? 3 : 1;
+    const setup = createSetupStepEmitter(events, countReferencedShells(importable) + ownSteps);
+
+    await ensureReferencedImportablesExist(ctx, importable, (kind, name) => {
+        setup(`created ${kind} ${name}`);
+    });
 
     const uuid = cachedUuid ?? (await getCurrentHousingUuid(ctx));
     if (!hasItemClickActions(importable)) {
         await injectHeldItem(ctx, getItemFromNbt(importable.nbt));
-        writeItemKnowledge(ctx, uuid, importable);
+        setup(`injected item ${importable.name}`);
+        writeItemCache(ctx, uuid, importable);
         return;
     }
 
     const hash = importableHash(importable);
     const cachePath = itemSnbtCachePath(uuid, hash);
     if (FileLib.exists(cachePath)) {
-        writeItemKnowledge(ctx, uuid, importable);
+        writeItemCache(ctx, uuid, importable);
         return;
     }
 
     const start = chooseItemStart(uuid, importable, trustPlan);
     await injectHeldItem(ctx, start.item);
+    setup(`injected item ${importable.name}`);
 
     await ctx.runCommand("/edit");
     await timedWaitForMenu(ctx, "commandMenuWait");
+    setup(`opened item editor`);
 
     ctx.getItemSlot("Edit Actions").click();
     await timedWaitForMenu(ctx, "menuClickWait");
+    setup(`opened Edit Actions for ${importable.name}`);
 
     await syncItemActionLists(
         ctx,
@@ -137,7 +194,7 @@ export async function importImportableItem(
         itemRegistry,
         trustPlan,
         start,
-        onActionListProgress
+        events
     );
 
     await timed("sleep1000", COST.guaranteedSleep1000, () => ctx.sleep(1000));
@@ -147,7 +204,7 @@ export async function importImportableItem(
 
     ensureParentDirs(cachePath);
     FileLib.write(cachePath, snbt, true);
-    writeItemKnowledge(ctx, uuid, importable);
+    writeItemCache(ctx, uuid, importable);
 }
 
 function chooseItemStart(
@@ -211,24 +268,15 @@ async function injectHeldItem(ctx: TaskContext, item: Item): Promise<void> {
         return;
     }
 
-    try {
-        const ack = waitForHotbarZeroMatch(ctx, stack);
-        sendCreativeInventoryAction(
-            ctx,
-            HOTBAR_ZERO_PACKET_SLOT,
-            stack,
-        );
-        await ctx.withTimeout(
-            ack,
-            "held item injection ack",
-            SET_SLOT_ACK_TIMEOUT_MS
-        );
-    } catch (error) {
-        if (!hotbarZeroMatches(stack)) {
-            throw error;
-        }
-        ctx.displayMessage(
-            "&e[packet] held item ack was not observed, but hotbar slot 0 matches; continuing."
+    sendCreativeInventoryAction(
+        ctx,
+        HOTBAR_ZERO_PACKET_SLOT,
+        stack,
+    );
+    const landed = await waitForHotbarZeroMatch(ctx, stack);
+    if (!landed) {
+        throw new Error(
+            `held item injection never reached hotbar slot 0 within ${SET_SLOT_ACK_MAX_TICKS} ticks.`
         );
     }
     await ctx.waitFor("tick");
@@ -248,7 +296,7 @@ async function syncItemActionLists(
     itemRegistry: ItemRegistry,
     trustPlan: ImportableTrustPlan | undefined,
     start: ItemStart,
-    onActionListProgress?: (progress: ActionListProgressFields) => void
+    events?: ImportEventHandler
 ): Promise<void> {
     const leftDesired = actionListToSync(
         importable.leftClickActions,
@@ -270,8 +318,9 @@ async function syncItemActionLists(
 
         await syncActionList(ctx, leftDesired, {
             itemRegistry,
-            trust: actionListTrustFor(trustPlan, "leftClickActions", leftDesired),
-            onProgress: onActionListProgress,
+            baselineCurrent: getBaselineActionList(trustPlan, "leftClickActions"),
+            trust: getActionListTrust(trustPlan, "leftClickActions"),
+            events,
         });
 
         if (
@@ -291,8 +340,9 @@ async function syncItemActionLists(
 
         await syncActionList(ctx, rightDesired, {
             itemRegistry,
-            trust: actionListTrustFor(trustPlan, "rightClickActions", rightDesired),
-            onProgress: onActionListProgress,
+            baselineCurrent: getBaselineActionList(trustPlan, "rightClickActions"),
+            trust: getActionListTrust(trustPlan, "rightClickActions"),
+            events,
         });
     }
 }
@@ -313,14 +363,16 @@ function actionListToSync(
     return undefined;
 }
 
-function writeItemKnowledge(
+function writeItemCache(
     ctx: TaskContext,
     housingUuid: string,
     importable: ImportableItem
 ): void {
     try {
-        writeKnowledge(ctx, housingUuid, importable, "importer");
+        writeImportableCache(ctx, housingUuid, importable, "importer");
     } catch (error) {
-        ctx.displayMessage(`&7[knowledge] &eSkipped cache write for ITEM: ${error}`);
+        if (IMPORT_DEBUG) {
+            ctx.displayMessage(`&7[knowledge] &eSkipped cache write for ITEM: ${error}`);
+        }
     }
 }

@@ -1,8 +1,8 @@
+import { clickGoBack } from "../../importer/gui/helpers";
 import {
-    clickGoBack,
     timedWaitForMenu,
     timedWaitForUnformattedMessage,
-} from "../../importer/gui/helpers";
+} from "../../importer/gui/menuWait";
 import TaskContext from "../../tasks/context";
 import { removedFormatting, unique } from "../../utils/helpers";
 
@@ -12,17 +12,17 @@ export async function openRegionEditor(
 ): Promise<"opened" | "missing"> {
     await ctx.runCommand(`/region edit ${name}`);
 
+    const menuWait = timedWaitForMenu(ctx, "commandMenuWait");
+    const msgWait = ctx.waitFor(
+        "message",
+        (message) =>
+            removedFormatting(message) ===
+            "Could not find a region with that name!"
+    );
     const opened = await ctx.withTimeout(
-        Promise.race([
-            timedWaitForMenu(ctx, "commandMenuWait").then(() => true),
-            ctx
-                .waitFor(
-                    "message",
-                    (message) =>
-                        removedFormatting(message) ===
-                        "Could not find a region with that name!"
-                )
-                .then(() => false),
+        ctx.race<boolean>([
+            [menuWait.then(() => true), menuWait],
+            [msgWait.then(() => false), msgWait],
         ]),
         "Waiting for region to open"
     );
@@ -32,17 +32,17 @@ export async function openRegionEditor(
 
 export async function ensureRegionNamesExist(
     ctx: TaskContext,
-    regionNames: readonly string[]
+    regionNames: readonly string[],
+    onEach?: (name: string) => void
 ): Promise<void> {
     const names = unique(regionNames);
     if (names.length === 0) return;
-
-    ctx.displayMessage(`&7Ensuring ${names.length} region shell(s) exist.`);
 
     for (const name of names) {
         const status = await openRegionEditor(ctx, name);
         if (status === "opened") {
             await clickGoBack(ctx);
+            onEach?.(name);
             continue;
         }
         await ctx.runCommand(`/pos1`);
@@ -50,5 +50,6 @@ export async function ensureRegionNamesExist(
 
         await ctx.runCommand(`/region create ${name}`);
         await timedWaitForUnformattedMessage(ctx, `Created region ${name}!`);
+        onEach?.(name);
     }
 }

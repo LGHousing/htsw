@@ -60,8 +60,8 @@ export function replacePlaceholders(value: string): string {
     return value;
 }
 
-export function createPlaceholderBehaviors(): runtime.PlaceholderBehaviors {
-    return runtime.PlaceholderBehaviors.default()
+export function createPlaceholderBehaviors(vars: runtime.simple.Vars): runtime.PlaceholderBehaviors {
+    return new runtime.simple.SimplePlaceholderBehaviors(vars)
         .with("server.name", () => new runtime.VarString(MOCK_DATA.server.name))
         .with("server.shortname", () => new runtime.VarString(MOCK_DATA.server.shortname))
         .with("player.name", () => new runtime.VarString(Player.getName()))

@@ -1,20 +1,29 @@
 import { VERSION, SourceMap, parseImportablesResult, Diagnostic } from "htsw";
 
-import { chatSeparator, stripSurroundingQuotes } from "./utils/helpers";
+import {
+    chatSeparator,
+    stripSurroundingQuotes,
+} from "./utils/helpers";
 import { Simulator } from "./simulator/simulator";
 import { printDiagnostic, printDiagnostics } from "./tui/diagnostics";
 import { recompile } from "./recompile";
-import { importImportable } from "./importables/imports";
+import { applyImportablePlan, prereadImportable } from "./importables/imports";
 import { createItemRegistry } from "./importables/itemRegistry";
 import { TaskManager } from "./tasks/manager";
-import { S2FPacketSetSlot } from "./utils/packets";
 import { FileSystemFileLoader } from "./utils/files";
-import { commandKnowledge } from "./knowledge/commands";
-import { toggleHtswGui, armHtswGuiDebug } from "./gui/overlay";
+import { commandKnowledge } from "./importCache/commands";
+import { toggleHtswGui } from "./gui/overlay";
 import {
     getTimingStats,
     resetTimingStats,
 } from "./importer/progress/timing";
+import { COST } from "./importer/progress/costs";
+import { getEventContainerCounts } from "./tasks/specifics/waitFor";
+import { isPacketOrderProbeActive } from "./importer/diagnostics/packetOrderProbe";
+import {
+    getProgressTracePath,
+    setProgressTraceEnabled,
+} from "./importer/progress/trace";
 
 function printCommandError(sm: SourceMap, err: unknown): void {
     if (err instanceof Diagnostic) {
@@ -54,17 +63,6 @@ function commandHtsw(args: string[]) {
         return;
     }
 
-    if (args.length > 0 && args[0] === "probe-item") {
-        probeItem();
-        return;
-    }
-
-    if (args.length > 0 && args[0] === "packet-probe") {
-        const seconds = args.length > 1 ? parseInt(args[1], 10) : 30;
-        packetProbe(Number.isFinite(seconds) && seconds > 0 ? seconds : 30);
-        return;
-    }
-
     if (args.length > 0 && args[0] === "knowledge") {
         commandKnowledge(args.slice(1));
         return;
@@ -76,13 +74,22 @@ function commandHtsw(args: string[]) {
     }
 
     if (args.length > 0 && args[0] === "gui") {
-        if (args.length > 1 && args[1] === "debug") {
-            const frames = args.length > 2 ? parseInt(args[2], 10) : 30;
-            armHtswGuiDebug(Number.isFinite(frames) && frames > 0 ? frames : 30);
-            return;
-        }
         const nowEnabled = toggleHtswGui();
         ChatLib.chat(`&e[htsw] gui ${nowEnabled ? "&aenabled" : "&cdisabled"}`);
+        return;
+    }
+
+    if (args.length > 0 && args[0] === "waiters") {
+        const counts = getEventContainerCounts();
+        ChatLib.chat(
+            `&7[waiters] live waitFor predicates — ` +
+            `tick: ${counts.tick}, packetReceived: ${counts.packetReceived}, ` +
+            `packetSent: ${counts.packetSent}, message: ${counts.message}`
+        );
+        ChatLib.chat(
+            `&7[waiters] Idle baseline should be ~0 across the board; ` +
+            `non-zero between imports = a leaked waiter.`
+        );
         return;
     }
 
@@ -95,9 +102,10 @@ function commandHtsw(args: string[]) {
     ChatLib.chat("&f/import &7- Import actions from HTSL files");
     ChatLib.chat("&f/simulator &7- Simulate actions from HTSL files");
     ChatLib.chat("&f/htsw knowledge &7- Inspect local import/export knowledge");
-    ChatLib.chat("&f/htsw eta [reset|dump] &7- Show / reset / dump importer ETA samples");
-    ChatLib.chat("&f/htsw packet-probe [seconds] &7- Safely log relevant packets");
+    ChatLib.chat("&f/htsw eta [reset|dump|trace on|off] &7- Show / reset / dump / trace ETA samples");
     ChatLib.chat("&f/htsw gui &7- Open the in-game HTSW dashboard");
+    ChatLib.chat("&f/htsw waiters &7- Show live waitFor counts (leak check; idle = ~0)");
+    ChatLib.chat("&f/htsw recompile &7- Rebuild + reload the module");
     ChatLib.chat(`&7${chatSeparator()}`);
 }
 
@@ -113,12 +121,37 @@ function commandEta(args: string[]): void {
         return;
     }
 
+    if (args.length > 0 && args[0] === "trace") {
+        if (args[1] === "off" || args[1] === "stop") {
+            setProgressTraceEnabled(false);
+            ChatLib.chat(`&7[eta] progress trace off · &f${getProgressTracePath()}`);
+        } else {
+            const path = setProgressTraceEnabled(true);
+            ChatLib.chat(`&a[eta] progress trace on · &f${path}`);
+        }
+        return;
+    }
+
+    if (args.length > 0 && args[0] === "waiters") {
+        const counts = getEventContainerCounts();
+        ChatLib.chat(
+            `&7[waiters] live waitFor predicates — ` +
+            `tick: ${counts.tick}, packetReceived: ${counts.packetReceived}, ` +
+            `packetSent: ${counts.packetSent}, message: ${counts.message}`
+        );
+        ChatLib.chat(
+            `&7[waiters] packet-order probe: ${isPacketOrderProbeActive() ? "&cACTIVE" : "&aoff"}&7. ` +
+            `Idle baseline should be ~0 across the board; non-zero between imports = leak.`
+        );
+        return;
+    }
+
     printOpKindStats();
 }
 
 function printOpKindStats(): void {
     const stats = getTimingStats();
-    const kinds = [
+    const kinds: string[] = [
         "commandMenuWait",
         "commandMessageWait",
         "menuClickWait",
@@ -131,22 +164,36 @@ function printOpKindStats(): void {
         "reorderStep",
         "sleep1000",
     ];
-    ChatLib.chat("&7[eta] per-op-kind ms/unit");
+    ChatLib.chat("&7[eta] per-op-kind units / ms/unit");
     let printed = false;
     for (let i = 0; i < kinds.length; i++) {
         const kind = kinds[i];
         const entry = stats[kind];
         if (entry === undefined || entry.count === 0) continue;
         printed = true;
-        const expected =
-            entry.count === 0 ? 0 : entry.totalExpectedUnits / entry.count;
+        const units = costForKind(kind);
+        const current = entry.avgMsPerExpectedUnit;
+        const baseline = entry.baselineMsPerExpectedUnit;
+        const delta = current - baseline;
+        const pct = baseline > 0 ? (delta / baseline) * 100 : 0;
+        let trend: string;
+        if (Math.abs(pct) < 3) trend = "&7~";
+        else if (pct > 0) trend = `&c↑${pct.toFixed(0)}%`;
+        else trend = `&a↓${Math.abs(pct).toFixed(0)}%`;
+        const unitsStr = units !== null ? `&f${units.toFixed(2)}u/op` : "&7(no cost)";
         ChatLib.chat(
-            `&7  ${kind}: &f${entry.count} samples&7, avg &f${entry.avgMs.toFixed(0)}ms&7, expected &f${expected.toFixed(2)}u&7 => &f${entry.avgMsPerExpectedUnit.toFixed(0)}ms/u`
+            `&7  ${kind}: ${unitsStr} &7| &f${entry.count}&7 samples => &f${current.toFixed(0)}ms/u &7(baseline &f${baseline.toFixed(0)}&7 ${trend}&7)`
         );
     }
     if (!printed) {
         ChatLib.chat("&7  (no samples yet)");
     }
+}
+
+function costForKind(kind: string): number | null {
+    if (kind === "sleep1000") return COST.guaranteedSleep1000;
+    const v = (COST as Record<string, number>)[kind];
+    return typeof v === "number" ? v : null;
 }
 
 function dumpEtaToFile(): void {
@@ -162,181 +209,6 @@ function dumpEtaToFile(): void {
     } catch (e) {
         ChatLib.chat(`&c[eta] failed to write ${path}: ${e}`);
     }
-}
-
-function packetProbe(seconds: number): void {
-    const lines: string[] = [];
-    const started = Date.now();
-    const path = `./htsw/packet-probe-${started}.txt`;
-
-    function log(line: string): void {
-        const elapsed = ((Date.now() - started) / 1000).toFixed(2);
-        const full = `${elapsed}s ${line}`;
-        lines.push(full);
-        ChatLib.chat(`&7[pkt] &f${full}`);
-    }
-
-    function className(packet: any): string {
-        try {
-            return String(packet.getClass().getSimpleName());
-        } catch (_error) {
-            return String(packet);
-        }
-    }
-
-    function shouldLog(name: string): boolean {
-        return (
-            name.indexOf("CloseWindow") !== -1 ||
-            name.indexOf("CreativeInventoryAction") !== -1 ||
-            name.indexOf("SetSlot") !== -1 ||
-            name.indexOf("OpenWindow") !== -1 ||
-            name.indexOf("WindowItems") !== -1 ||
-            name.indexOf("HeldItemChange") !== -1
-        );
-    }
-
-    function fieldSummary(packet: any): string {
-        try {
-            const fields = packet.getClass().getDeclaredFields();
-            const parts: string[] = [];
-            for (let i = 0; i < fields.length; i++) {
-                const field = fields[i];
-                field.setAccessible(true);
-                const name = String(field.getName());
-                const value = field.get(packet);
-                if (value === null || value === undefined) {
-                    parts.push(`${name}=null`);
-                    continue;
-                }
-                const valueClass = String(value.getClass?.().getSimpleName?.() ?? "");
-                if (valueClass === "ItemStack") {
-                    parts.push(`${name}=ItemStack(${String(value.func_82833_r?.() ?? value)})`);
-                } else {
-                    parts.push(`${name}=${String(value)}`);
-                }
-            }
-            return parts.join(", ");
-        } catch (error) {
-            return `fields unavailable: ${error}`;
-        }
-    }
-
-    ChatLib.chat(`&e[pkt] probing relevant packets for ${seconds}s`);
-
-    const sent = register("packetSent", (packet) => {
-        const name = className(packet);
-        if (!shouldLog(name)) return;
-        log(`C->S ${name} ${fieldSummary(packet)}`);
-    });
-
-    const received = register("packetReceived", (packet) => {
-        const name = className(packet);
-        if (!shouldLog(name)) return;
-        log(`S->C ${name} ${fieldSummary(packet)}`);
-    });
-
-    setTimeout(() => {
-        sent.unregister();
-        received.unregister();
-        try {
-            FileLib.write(path, lines.join("\n"), true);
-            ChatLib.chat(`&a[pkt] wrote ${path}`);
-        } catch (error) {
-            ChatLib.chat(`&c[pkt] failed to write ${path}: ${error}`);
-        }
-    }, seconds * 1000);
-}
-
-/**
- * Diagnostic: dump the "Current Item" slot's overlay NBT, then click it
- * to copy the real item into the inventory and dump the inventory copy's
- * NBT.
- *
- * Used to validate the assumption that the slot's rendered NBT is the
- * Hypixel UI overlay, while the inventory copy carries the real housing-
- * tagged NBT we need to compare against the source/cache.
- *
- * Pre-armed: run the command in chat, then manually open a GIVE_ITEM /
- * REMOVE_ITEM / etc. action's Item field. The task waits up to 30s for a
- * container with a "Current Item" slot to appear, then probes it.
- *
- * Output goes to chat and also to `./htsw/probe-item-<timestamp>.txt`
- * because raw SNBT lines are usually too long for chat to render legibly.
- */
-function probeItem() {
-    TaskManager.run(async (ctx) => {
-        const lines: string[] = [];
-        const log = (line: string) => {
-            lines.push(line);
-            ctx.displayMessage(`&7[probe] &f${line}`);
-        };
-
-        ctx.displayMessage(
-            "&e[probe] Open a GIVE_ITEM action's Item field within 30s. " +
-                'Waiting for a "Current Item" slot to appear…'
-        );
-
-        const slot = await ctx.withTimeout(
-            (async () => {
-                while (true) {
-                    const found = ctx.tryGetItemSlot("Current Item");
-                    if (found !== null) return found;
-                    await ctx.waitFor("tick");
-                }
-            })(),
-            "Select an Item menu open",
-            30000
-        );
-
-        const overlay = slot.getItem();
-        log(`overlay name: ${overlay.getName()}`);
-        const overlayLore = overlay.getLore();
-        for (let i = 0; i < overlayLore.length; i++) {
-            log(`overlay lore[${i}]: ${overlayLore[i]}`);
-        }
-        log(`overlay rawNBT: ${overlay.getRawNBT()}`);
-
-        slot.click();
-
-        let ackedSlotId: number | null = null;
-        let ackedWindowId: number | null = null;
-        try {
-            await ctx.withTimeout(
-                ctx.waitFor("packetReceived", (packet) => {
-                    if (!(packet instanceof S2FPacketSetSlot)) return false;
-                    ackedWindowId = packet.func_149175_c();
-                    ackedSlotId = packet.func_149173_d();
-                    return true;
-                }),
-                "current-item copy ack",
-                3000
-            );
-            log(`copy ack: windowId=${ackedWindowId} slotId=${ackedSlotId}`);
-        } catch (e) {
-            log(`no S2FPacketSetSlot ack within 3s: ${e}`);
-        }
-        await ctx.waitFor("tick");
-
-        const inv = Player.getInventory();
-        for (let i = 0; i < 36; i++) {
-            const stack = inv?.getStackInSlot(i);
-            if (stack === null || stack === undefined) continue;
-            const name = stack.getName();
-            if (name === null || name === undefined) continue;
-            log(`inv[${i}] name: ${name}`);
-            log(`inv[${i}] rawNBT: ${stack.getRawNBT()}`);
-        }
-
-        const path = `./htsw/probe-item-${Date.now()}.txt`;
-        try {
-            FileLib.write(path, lines.join("\n"), true);
-            ctx.displayMessage(`&a[probe] wrote ${path}`);
-        } catch (e) {
-            ctx.displayMessage(`&c[probe] failed to write ${path}: ${e}`);
-        }
-    }).catch((err) => {
-        ChatLib.chat(`&c[probe] task failed: ${err}`);
-    });
 }
 
 function commandImport(args: string[]) {
@@ -380,7 +252,8 @@ function commandImport(args: string[]) {
         ];
         for (const importable of ordered) {
             try {
-                await importImportable(ctx, importable, itemRegistry);
+                const plan = await prereadImportable(ctx, importable, itemRegistry);
+                await applyImportablePlan(ctx, plan, itemRegistry);
             } catch (e) {
                 if (e instanceof Diagnostic) {
                     printDiagnostic(sm, e);

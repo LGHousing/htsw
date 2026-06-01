@@ -411,7 +411,7 @@ function printActionDropItem(
             // location, dropNaturally, disableMerging, prioritizePlayer,
             // inventoryFallback, despawnDurationTicks, pickupDelayTicks.
             switch (i) {
-                case 0: parts.push(printLocation({ type: "Current Location" })); break;
+                case 0: parts.push("null"); break;
                 case 1: parts.push(printBoolean(true)); break;
                 case 2: parts.push(printBoolean(false)); break;
                 case 3: parts.push(printBoolean(false)); break;

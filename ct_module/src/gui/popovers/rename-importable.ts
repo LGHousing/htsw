@@ -5,7 +5,7 @@ import { Button, Col, Input, Row, Text } from "../lib/components";
 import { closeAllPopovers, openPopover } from "../lib/popovers";
 import type { Importable } from "htsw/types";
 import { renameImportableEntry, type Section } from "../../exporter/importJsonWriter";
-import { scheduleReparse } from "../state/reparse";
+import { reparseNow } from "../state/reparse";
 
 let editingValue = "";
 let editingFor: string = "";
@@ -75,7 +75,7 @@ function save(jsonPath: string, imp: Importable): void {
     ChatLib.chat(`&a[htsw] Renamed ${currentIdentity(imp)} → ${trimmed}`);
     editingFor = "";
     editingValue = "";
-    scheduleReparse();
+    reparseNow();
     closeAllPopovers();
 }
 

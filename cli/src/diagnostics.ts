@@ -86,7 +86,7 @@ function printFileSnippet(spans: SpanWithMeta[], level: htsw.DiagnosticLevel): v
     const primary = spans.find((it) => it.kind === "primary") ?? spans[0];
     const width = String(lineNumbers[lineNumbers.length - 1] ?? 1).length;
     console.error(
-        `${" ".repeat(width)}${ansi("blue", "-->")} ${primary.file.path}:${primary.startLine}:${primary.startCol}`,
+        `${" ".repeat(width)}${ansi("blue", "-->")} "${primary.file.path}":${primary.startLine}:${primary.startCol}`,
     );
     console.error(`${" ".repeat(width + 1)}${ansi("blue", "|")}`);
 

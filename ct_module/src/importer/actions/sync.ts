@@ -7,16 +7,17 @@ import type {
     ActionListTrust,
     ObservedActionSlot,
 } from "../types";
-import type { ActionListProgressSink } from "../progress/types";
-import { currentActionListFromSlots, diffActionList } from "./diff";
+import type { PhaseUnits, ProgressHandler } from "../progress/types";
+import { baselineActionListFromSlots, diffActionList } from "./diff";
 import { applyActionListDiff } from "./applyDiff";
+import { canonicalizeActionItemName, readActionList } from "./readList";
 import {
-    canonicalizeActionItemName,
-    canonicalizeObservedActionItemNames,
-    readActionList,
-} from "./readList";
-import { actionLogLabel, editDiffSummary } from "./log";
-import { estimateActionListPhaseUnits } from "../progress/costs";
+    actionListDiffApplyUnits,
+    editUnitsWithNested,
+    estimateActionListPhaseUnits,
+    phaseUnitsTotal,
+} from "../progress/costs";
+import type { ImportEventHandler, ProgressScope } from "../importEvents";
 
 export type SyncActionListOptions = {
     /**
@@ -30,10 +31,11 @@ export type SyncActionListOptions = {
     observed?: ObservedActionSlot[];
     itemRegistry?: ItemRegistry;
     trust?: ActionListTrust;
-    onProgress?: ActionListProgressSink;
     /** Source path prefix for nested lists, e.g. `4.ifActions`. */
     pathPrefix?: string;
-    knownCurrent?: readonly Action[];
+    baselineCurrent?: readonly Action[];
+    progressScope?: ProgressScope;
+    events?: ImportEventHandler;
 };
 
 export type SyncActionListResult = {
@@ -45,88 +47,113 @@ export type SyncActionListResult = {
     usedObserved: ObservedActionSlot[];
 };
 
+/**
+ * A pre-read plan: the observed list, the desired list, the diff, and
+ * the phase-unit predictions computed from them. Stored between the
+ * two-pass orchestrator's pre-read and apply passes. The `observed`
+ * array's ItemSlot references go stale when the menu closes between
+ * passes, but `applyActionListDiff` re-acquires slots via
+ * `getPaginatedListSlotAtIndex`, so the data survives.
+ */
+export type ActionListPlan = {
+    desired: Action[];
+    observed: ObservedActionSlot[];
+    diff: ActionListDiff;
+    phaseUnits: PhaseUnits;
+};
+
+export async function prereadActionList(
+    ctx: TaskContext,
+    desired: Action[],
+    options?: SyncActionListOptions
+): Promise<ActionListPlan> {
+    const phaseUnits = estimateActionListPhaseUnits(desired, options?.baselineCurrent);
+    const progressScope: ProgressScope = options?.progressScope ?? { kind: "topLevel" };
+    const progress: ProgressHandler | undefined =
+        options?.events === undefined
+            ? undefined
+            : (event) => options.events?.emit({
+                  kind: "progress",
+                  scope: progressScope,
+                  progress: event,
+              });
+    const observed =
+        options?.observed ??
+        (await readActionList(ctx,
+            {
+                kind: "sync",
+                desired,
+                trust: options?.trust,
+            },
+            {
+                itemRegistry: options?.itemRegistry,
+                progress,
+                phaseUnits,
+                pathPrefix: options?.pathPrefix,
+                events: options?.events,
+            }
+        ));
+    if (options?.itemRegistry !== undefined) {
+        for (const entry of observed) {
+            if (entry.action !== null) {
+                canonicalizeActionItemName(entry.action, options.itemRegistry);
+            }
+        }
+        for (const action of desired) {
+            canonicalizeActionItemName(action, options.itemRegistry);
+        }
+    }
+    const diff = diffActionList(baselineActionListFromSlots(observed), desired);
+
+    // Replace the rough applying estimate with the diff-aware cost now
+    // that we know the actual operations. Emit a progress event so the
+    // reducer parks this importable with a precise apply estimate;
+    // otherwise the queue + big bar segments stay sized against the
+    // upfront rough estimate until pass-2 actually starts and
+    // applyActionListDiff resets phaseUnits.applying itself.
+    const exactApplyUnits = actionListDiffApplyUnits(
+        diff,
+        editUnitsWithNested,
+        desired.length
+    );
+    phaseUnits.applying = Math.max(exactApplyUnits, 1);
+    progress?.({
+        phase: "hydrating",
+        completedUnits: phaseUnits.reading + phaseUnits.hydrating,
+        totalUnits: phaseUnitsTotal(phaseUnits),
+        phaseUnits,
+        sync: { completedUnits: 1, totalUnits: 1, parent: null },
+    });
+
+    return { desired, observed, diff, phaseUnits };
+}
+
+export async function applyActionListPlan(
+    ctx: TaskContext,
+    plan: ActionListPlan,
+    options?: SyncActionListOptions
+): Promise<void> {
+    const progressScope: ProgressScope = options?.progressScope ?? { kind: "topLevel" };
+    await applyActionListDiff(
+        ctx,
+        plan.observed,
+        plan.desired,
+        plan.diff,
+        options?.itemRegistry,
+        options?.pathPrefix,
+        plan.phaseUnits,
+        options?.events,
+        progressScope
+    );
+}
+
 export async function syncActionList(
     ctx: TaskContext,
     desired: Action[],
     options?: SyncActionListOptions
 ): Promise<SyncActionListResult> {
-    const knownCurrent = options?.knownCurrent ?? options?.trust?.cachedActions;
-    const phaseUnits = estimateActionListPhaseUnits(desired, knownCurrent);
-    const progress = options?.onProgress;
-    const observed =
-        options?.observed ??
-        (await readActionList(ctx, {
-            kind: "sync",
-            desired,
-            itemRegistry: options?.itemRegistry,
-            trust: options?.trust,
-            onProgress: progress,
-            phaseUnits,
-        }));
-    canonicalizeObservedActionItemNames(observed, options?.itemRegistry);
-    if (options?.itemRegistry) {
-        for (const action of desired) {
-            canonicalizeActionItemName(action, options.itemRegistry);
-        }
-    }
-    const diff = diffActionList(currentActionListFromSlots(observed), desired);
-    logActionSyncState(ctx, diff);
-    await applyActionListDiff(
-        ctx,
-        observed,
-        desired,
-        diff,
-        options?.itemRegistry,
-        progress,
-        options?.pathPrefix,
-        phaseUnits
-    );
-    return { usedObserved: observed };
+    const plan = await prereadActionList(ctx, desired, options);
+    await applyActionListPlan(ctx, plan, options);
+    return { usedObserved: plan.observed };
 }
 
-function logActionSyncState(ctx: TaskContext, diff: ActionListDiff): void {
-    if (diff.operations.length === 0) {
-        ctx.displayMessage(`&7[sync] &aUp to date.`);
-        return;
-    }
-
-    const deletes = diff.operations.filter((op) => op.kind === "delete");
-    const edits = diff.operations.filter((op) => op.kind === "edit");
-    const moves = diff.operations.filter((op) => op.kind === "move");
-    const adds = diff.operations.filter((op) => op.kind === "add");
-
-    ctx.displayMessage(
-        `&7[sync] &d${diff.operations.length} ops &7(&c${deletes.length} del &6${edits.length} edit &e${moves.length} move &a${adds.length} add&7)`
-    );
-
-    for (const op of diff.operations) {
-        switch (op.kind) {
-            case "delete":
-                ctx.displayMessage(
-                    `&7  &c-DEL [${op.fromIndex}] ${actionLogLabel(op.currentAction)}`
-                );
-                break;
-            case "edit":
-                if (op.noteOnly) {
-                    ctx.displayMessage(
-                        `&7  &6~NOTE [${op.fromIndex}] ${actionLogLabel(op.currentAction)}`
-                    );
-                } else {
-                    ctx.displayMessage(
-                        `&7  &6~EDIT [${op.fromIndex}] ${actionLogLabel(op.currentAction)}: ${editDiffSummary(op)}`
-                    );
-                }
-                break;
-            case "add":
-                ctx.displayMessage(
-                    `&7  &a+ADD [${op.toIndex}] ${actionLogLabel(op.desired)}`
-                );
-                break;
-            case "move":
-                ctx.displayMessage(
-                    `&7  &e>MOV [${op.fromIndex} -> ${op.toIndex}] ${actionLogLabel(op.action)}`
-                );
-                break;
-        }
-    }
-}
