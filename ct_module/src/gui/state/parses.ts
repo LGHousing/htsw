@@ -6,12 +6,7 @@ import type { Importable } from "htsw/types";
 import { FileSystemFileLoader } from "../../utils/files";
 import { getMtimeMs, javaType } from "../lib/java";
 import { invalidateKnowledgeOverlayForParse } from "./knowledgeOverlay";
-import {
-    hasSubList,
-    importableSourcePath,
-    importableSubListPath,
-    type SubListKind,
-} from "./importablePaths";
+import { allReferencedPaths } from "./importablePaths";
 import {
     buildLiteParseResult,
     loadSnapshot,
@@ -19,23 +14,11 @@ import {
     snapshotIsCurrent,
 } from "./parseSnapshot";
 
-const SUB_LIST_KINDS: SubListKind[] = [
-    "onEnterActions",
-    "onExitActions",
-    "leftClickActions",
-    "rightClickActions",
-];
-
 /**
- * Build the full mtime fingerprint for a parsed import.json — matches
- * what `refreshWatchedMtimes` in reparse.ts watches: the import.json
- * itself, every importable's primary source file, its smart-source
- * resolution (e.g. .snbt for ITEM), and every sub-list path
- * (REGION onEnter/onExit, ITEM left/right-click).
- *
- * Shared between the two snapshot-save sites so a snapshot written by
- * the Explore tree walker invalidates on the same edits as one written
- * by the main reparse path.
+ * The mtime fingerprint for a parsed import.json: the import.json plus
+ * every file it references. Built on `allReferencedPaths` — the single
+ * source of "what files does this parse depend on" — so the parse cache,
+ * the snapshot, and the Explore tree all agree on the set.
  */
 function buildParseFingerprint(
     importJsonPath: string,
@@ -44,19 +27,10 @@ function buildParseFingerprint(
 ): { [path: string]: number } {
     const out: { [path: string]: number } = {};
     out[importJsonPath] = importJsonMtime;
-    const add = (p: string | undefined): void => {
-        if (p === undefined || out[p] !== undefined) return;
-        out[p] = getMtimeMs(p);
-    };
-    for (let i = 0; i < parsed.value.length; i++) {
-        const imp = parsed.value[i];
-        add(parsed.gcx.sourceFiles.get(imp));
-        add(importableSourcePath(imp, parsed));
-        for (let j = 0; j < SUB_LIST_KINDS.length; j++) {
-            const kind = SUB_LIST_KINDS[j];
-            if (!hasSubList(imp, kind)) continue;
-            add(importableSubListPath(imp, kind, parsed));
-        }
+    const paths = allReferencedPaths(importJsonPath, parsed);
+    for (let i = 0; i < paths.length; i++) {
+        const p = paths[i];
+        if (out[p] === undefined) out[p] = getMtimeMs(p);
     }
     return out;
 }
@@ -83,7 +57,73 @@ export type CachedParse = {
     parsed: ParseResult<Importable[]> | null;
     /** Non-null when the parse threw — e.g. malformed JSON. */
     error: string | null;
+    /**
+     * mtimes of the import.json AND every file it referenced at parse time
+     * (linked .htsl, .snbt, sub-list htsl). The import.json's own mtime is
+     * not enough: editing a referenced .htsl doesn't touch the import.json,
+     * so a mtime-only check would serve a stale parse. Validated (throttled)
+     * on every `parseImportJsonAt`.
+     */
+    fingerprint: { [path: string]: number };
+    /** `Date.now()` of the last fingerprint re-validation (throttle). */
+    fpCheckedAt: number;
+    /**
+     * Mtimes observed when a change was first noticed but not yet acted on.
+     * Re-parsing the instant a mtime moves reads a half-written file (editors
+     * save in bursts / temp+rename) and flaps the dots. We instead wait until
+     * the mtimes stop moving — re-parse only once a recheck sees the SAME new
+     * mtimes as the previous recheck. Null when no change is in flight.
+     */
+    pending: { [path: string]: number } | null;
 };
+
+// How often `parseImportJsonAt` re-stats the referenced-file fingerprint on
+// an import.json-mtime hit. Bounds the stat cost (≈ one stat per referenced
+// file per interval); a change is acted on after it stays stable for one
+// extra interval, so edit-to-refresh latency is ~1–2× this.
+const FP_RECHECK_MS = 400;
+
+function currentMtimes(fp: { [path: string]: number }): { [path: string]: number } {
+    const out: { [path: string]: number } = {};
+    for (const p in fp) out[p] = getMtimeMs(p);
+    return out;
+}
+
+// A real change: some file was successfully stat'd (mtime ≠ 0) with a
+// different mtime than recorded. `0` means un-stat-able right now (the brief
+// gap of an atomic temp+rename save) — not treated as a change.
+function mtimesDiffer(
+    fp: { [path: string]: number },
+    cur: { [path: string]: number }
+): boolean {
+    for (const p in fp) {
+        if (cur[p] !== 0 && cur[p] !== fp[p]) return true;
+    }
+    return false;
+}
+
+function sameMtimes(
+    a: { [path: string]: number },
+    b: { [path: string]: number }
+): boolean {
+    for (const p in a) {
+        if (a[p] !== b[p]) return false;
+    }
+    return true;
+}
+
+function fingerprintOf(
+    canon: string,
+    mtime: number,
+    parsed: ParseResult<Importable[]> | null
+): { [path: string]: number } {
+    if (parsed === null) {
+        const fp: { [path: string]: number } = {};
+        fp[canon] = mtime;
+        return fp;
+    }
+    return buildParseFingerprint(canon, mtime, parsed);
+}
 
 export function canonicalPath(p: string): string {
     if (!p) return p;
@@ -108,7 +148,28 @@ export function parseImportJsonAt(rawPath: string): CachedParse {
     const canon = canonicalPath(rawPath);
     const mtime = getMtimeMs(canon);
     const existing = cache.get(canon);
-    if (existing !== undefined && existing.mtime === mtime) return existing;
+    if (existing !== undefined && existing.mtime === mtime) {
+        // import.json unchanged, but a referenced .htsl/.snbt may have been
+        // edited (its mtime isn't `canon`'s). Re-validate the full
+        // fingerprint, throttled so we don't stat every referenced file each
+        // frame. Stale at most until the next check (≤ FP_RECHECK_MS).
+        const now = Date.now();
+        if (now - existing.fpCheckedAt < FP_RECHECK_MS) return existing;
+        existing.fpCheckedAt = now;
+        const cur = currentMtimes(existing.fingerprint);
+        if (!mtimesDiffer(existing.fingerprint, cur)) {
+            existing.pending = null;
+            return existing; // nothing changed
+        }
+        // A referenced file changed. Debounce until the mtimes settle so we
+        // don't re-parse mid-save and flap: act only when this recheck sees
+        // the same new mtimes as the previous one (i.e. the write finished).
+        if (existing.pending === null || !sameMtimes(existing.pending, cur)) {
+            existing.pending = cur; // first sighting, or still moving → wait
+            return existing;
+        }
+        existing.pending = null; // stable across two rechecks → re-parse below
+    }
 
     // Disk snapshot fast path: avoids a full htsw parse when the
     // import.json + every referenced .htsl still has the recorded
@@ -118,9 +179,15 @@ export function parseImportJsonAt(rawPath: string): CachedParse {
     // `reparseImportJson` already used the snapshot.
     let parsed: ParseResult<Importable[]> | null = null;
     let error: string | null = null;
+    // For a lite (snapshot) parse the rebuilt result has empty spans, so
+    // `fingerprintOf` would miss sub-list htsl paths. The snapshot already
+    // carries a full fingerprint (built from a full parse at save time) —
+    // use it so a sub-list edit is still detected.
+    let snapshotFingerprint: { [path: string]: number } | null = null;
     const snapshot = loadSnapshot(canon);
     if (snapshot !== null && snapshotIsCurrent(snapshot)) {
         parsed = buildLiteParseResult(snapshot);
+        snapshotFingerprint = snapshot.fingerprint;
     } else {
         const sm = new SourceMap(new FileSystemFileLoader());
         try {
@@ -131,13 +198,12 @@ export function parseImportJsonAt(rawPath: string): CachedParse {
                 : String(e);
             error = msg;
         }
-        // Save snapshot so the next session's tree walker (and the
-        // main reparse path) can skip this parse. Use the full
-        // fingerprint shared with refreshWatchedMtimes so edits to
-        // sub-list .htsl files (REGION enter/exit, ITEM click actions)
-        // invalidate just as they do in the main reparse path. Errored
-        // parses are not snapshotted — they must re-parse fully so the
-        // import gate sees real, span-bearing diagnostics.
+        // Save a snapshot so the next session can skip this parse. The
+        // fingerprint covers every referenced file (via allReferencedPaths)
+        // so edits to sub-list .htsl files (REGION enter/exit, ITEM click
+        // actions) invalidate it too. Errored parses are not snapshotted —
+        // they must re-parse fully so the import gate sees real,
+        // span-bearing diagnostics.
         if (parsed !== null && !parsed.gcx.isFailed()) {
             const fingerprint = buildParseFingerprint(canon, mtime, parsed);
             saveSnapshot(canon, parsed, fingerprint);
@@ -149,6 +215,9 @@ export function parseImportJsonAt(rawPath: string): CachedParse {
         mtime,
         parsed,
         error,
+        fingerprint: snapshotFingerprint ?? fingerprintOf(canon, mtime, parsed),
+        fpCheckedAt: Date.now(),
+        pending: null,
     };
     cache.set(canon, entry);
     if (parsed !== null) invalidateKnowledgeOverlayForParse(parsed);
@@ -172,24 +241,19 @@ export function touchParseCacheMtime(rawPath: string): void {
     const existing = cache.get(canon);
     if (existing === undefined) return;
     existing.mtime = getMtimeMs(canon);
+    existing.fingerprint = fingerprintOf(canon, existing.mtime, existing.parsed);
+    existing.fpCheckedAt = Date.now();
+    existing.pending = null;
 }
 
 /**
- * Inject a parse result into the cache. Used by the main reparse path so
- * the explore tree's mtime-keyed cache doesn't redo the same parse the
- * global `parsedResult` just finished.
+ * Drop the cached parse for `rawPath` so the next `parseImportJsonAt`
+ * re-parses from scratch. Used by the reparse driver for explicit
+ * reloads (file load, rename, manual reparse) where we want a fresh
+ * parse regardless of the fingerprint.
  */
-export function updateParseCache(rawPath: string, result: ParseResult<Importable[]>): void {
-    const canon = canonicalPath(rawPath);
-    const mtime = getMtimeMs(canon);
-    cache.set(canon, {
-        canonicalPath: canon,
-        rawPath,
-        mtime,
-        parsed: result,
-        error: null,
-    });
-    invalidateKnowledgeOverlayForParse(result);
+export function invalidateParseCacheEntry(rawPath: string): void {
+    cache.delete(canonicalPath(rawPath));
 }
 /**
  * Iterate every parsed import.json. Used by the queue layer to find a

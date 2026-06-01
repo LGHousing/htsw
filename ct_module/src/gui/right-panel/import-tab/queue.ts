@@ -43,6 +43,7 @@ import {
 import { parseImportJsonAt } from "../../state/parses";
 import { importableIdentity } from "../../../importCache/paths";
 import { orderImportablesForImportSession } from "../../../importables/importSession";
+import { isImportRunning } from "../../../importer/runtimeState";
 import { phaseSegment } from "./progress";
 
 function willBeSkipped(item: QueueItem): boolean {
@@ -235,7 +236,9 @@ export function queueRow(item: QueueItem): Element {
                         text: shortSource(item.sourcePath),
                         color: COLOR_TEXT_FAINT,
                     }),
-                    isQueueSessionItem(queueItemKey(item))
+                    // No removal while an import is running — the queue is
+                    // locked for the duration of the run.
+                    isImportRunning() || isQueueSessionItem(queueItemKey(item))
                         ? Container({
                               style: { width: { kind: "px", value: 14 }, height: { kind: "grow" } },
                               children: [],
@@ -350,7 +353,11 @@ export function queueHeader(): Element {
                     background: COLOR_BUTTON,
                     hoverBackground: COLOR_BUTTON_HOVER,
                 },
-                onClick: () => { clearQueue(); clearImportableChecks(); },
+                onClick: () => {
+                    if (isImportRunning()) return;
+                    clearQueue();
+                    clearImportableChecks();
+                },
             }),
         ],
     });

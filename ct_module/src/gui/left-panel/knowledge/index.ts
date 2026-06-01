@@ -328,11 +328,13 @@ export function KnowledgeView(): Element {
                         }),
                     ],
                 }),
-                // Houses get a fixed slot (one row each, capped). The
-                // knowledge-rows section underneath gets the remaining grow
+                // Houses get a capped slot (≤4 rows tall) and scroll past that,
+                // so a 5th house doesn't overflow onto the knowledge list below.
+                // The knowledge-rows section underneath gets the remaining grow
                 // space — that's the per-importable list the user wants
                 // visibility on.
-                Col({
+                Scroll({
+                    id: "knowledge-houses-scroll",
                     style: { gap: 2, height: { kind: "px", value: Math.min(houses.length, 4) * (SIZE_ROW_H + 4) + 4 } },
                     children: houses.map(houseRow),
                 }),

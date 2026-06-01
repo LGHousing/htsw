@@ -1,7 +1,7 @@
 import type { Action, Condition, Importable } from "htsw/types";
 
 import { cyrb53, stableStringify } from "../utils/helpers";
-import { normalizeActionCompare, normalizeConditionCompare } from "../importer/fields/compare";
+import { canonicalStringify } from "../importer/fields/compare";
 
 /**
  * Importable-cache hashing.
@@ -25,14 +25,12 @@ function hashHex(input: string): string {
 
 /** Hash a single normalized action. */
 export function actionHash(action: Action): string {
-    const normalized = normalizeActionCompare(action);
-    return hashHex(stableStringify(normalized));
+    return hashHex(canonicalStringify(action));
 }
 
 /** Hash a single normalized condition. */
-function conditionHash(cond: Condition): string {
-    const normalized = normalizeConditionCompare(cond);
-    return hashHex(stableStringify(normalized));
+export function conditionHash(cond: Condition): string {
+    return hashHex(canonicalStringify(cond));
 }/**
  * Per-slot hashes for an action list. These are written into the cache
  * so a future trust-mode can verify a single sub-tree without a deep
@@ -139,25 +137,16 @@ export function listHashes(importable: Importable): Record<string, string[]> {
  * this is what the future trust-mode compares first to decide whether
  * a deep equality check is needed at all.
  */
-export let _normMs = 0;
-export let _strMs = 0;
-export let _digMs = 0;
-export function resetHashBreakdown(): void { _normMs = 0; _strMs = 0; _digMs = 0; }
-export function getHashBreakdown(): { normMs: number; strMs: number; digMs: number } {
-    return { normMs: _normMs, strMs: _strMs, digMs: _digMs };
-}
-
 export function importableHash(importable: Importable): string {
-    const _t0 = Date.now();
-    // Walk into known list-bearing fields with the action normalizer so
-    // the surrounding importable record gets canonicalized while its
-    // action lists pick up the same default-stripping the importer's
-    // diff sees. Anything else is stringified verbatim by stableStringify.
-    const canonical: Record<string, unknown> = {};
-    for (const key of Object.keys(importable).sort()) {
+    const keys = Object.keys(importable).sort();
+    const parts: string[] = [];
+    for (let ki = 0; ki < keys.length; ki++) {
+        const key = keys[ki];
         const value = (importable as unknown as Record<string, unknown>)[key];
         if (value === undefined) continue;
         if (Array.isArray(value) && value.length === 0) continue;
+
+        let serialized: string;
         if (
             (key === "actions" ||
                 key === "ifActions" ||
@@ -168,44 +157,48 @@ export function importableHash(importable: Importable): string {
                 key === "rightClickActions") &&
             Array.isArray(value)
         ) {
-            canonical[key] = (value as Action[]).map((a) => normalizeActionCompare(a));
+            serialized = actionListCanonical(value as Action[]);
         } else if (
             importable.type === "MENU" &&
             key === "slots" &&
             Array.isArray(value)
         ) {
-            // Menu slots embed action lists; normalize them so the hash
-            // tracks the same canonical form the diff sees.
-            canonical[key] = (value as Array<Record<string, unknown>>).map((slot) =>
-                normalizeMenuSlotForHash(slot)
-            );
+            const slotParts: string[] = [];
+            for (let si = 0; si < value.length; si++) {
+                slotParts.push(menuSlotCanonical(value[si] as Record<string, unknown>));
+            }
+            serialized = "[" + slotParts.join(",") + "]";
         } else {
-            canonical[key] = value;
+            serialized = stableStringify(value);
         }
+
+        parts.push(JSON.stringify(key) + ":" + serialized);
     }
-    const _t1 = Date.now();
-    _normMs += _t1 - _t0;
-    const str = stableStringify(canonical);
-    const _t2 = Date.now();
-    _strMs += _t2 - _t1;
-    const digest = hashHex(str);
-    _digMs += Date.now() - _t2;
-    return digest;
+    const str = "{" + parts.join(",") + "}";
+    return hashHex(str);
 }
 
-function normalizeMenuSlotForHash(
-    slot: Record<string, unknown>
-): Record<string, unknown> {
-    const result: Record<string, unknown> = {};
-    for (const key of Object.keys(slot).sort()) {
+function actionListCanonical(actions: readonly Action[]): string {
+    const parts: string[] = [];
+    for (let i = 0; i < actions.length; i++) {
+        parts.push(canonicalStringify(actions[i]));
+    }
+    return "[" + parts.join(",") + "]";
+}
+
+function menuSlotCanonical(slot: Record<string, unknown>): string {
+    const keys = Object.keys(slot).sort();
+    const parts: string[] = [];
+    for (let i = 0; i < keys.length; i++) {
+        const key = keys[i];
         const value = slot[key];
         if (value === undefined) continue;
         if (Array.isArray(value) && value.length === 0) continue;
-        if (key === "actions" && Array.isArray(value)) {
-            result[key] = (value as Action[]).map((a) => normalizeActionCompare(a));
-        } else {
-            result[key] = value;
-        }
+        const serialized =
+            key === "actions" && Array.isArray(value)
+                ? actionListCanonical(value as Action[])
+                : stableStringify(value);
+        parts.push(JSON.stringify(key) + ":" + serialized);
     }
-    return result;
+    return "{" + parts.join(",") + "}";
 }

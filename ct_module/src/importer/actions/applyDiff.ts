@@ -69,7 +69,7 @@ async function importAction(
     ctx: TaskContext,
     action: Action,
     itemRegistry?: ItemRegistry,
-    nestedProgressScope?: (path: ActionPath) => ProgressScope | undefined,
+    nestedProgressScope?: (path: ActionPath, extraOffset?: number) => ProgressScope | undefined,
     pathPrefix?: string,
     events?: ImportEventHandler
 ): Promise<void> {
@@ -284,12 +284,16 @@ function nestedApplyScope(
     baselineApplyUnits: number,
     completedOps: number,
     totalOps: number
-): (path: ActionPath) => ProgressScope {
-    return (path) => ({
+): (path: ActionPath, extraOffset?: number) => ProgressScope {
+    // `extraOffset` lets a CONDITIONAL/RANDOM writer place each of its
+    // sub-lists (conditions, ifActions, elseActions) at its own slice of the
+    // op's apply budget — conditions at [base, base+condCost], ifActions
+    // after, etc. — so their progress doesn't collide on the same baseline.
+    return (path, extraOffset) => ({
         kind: "nestedActionList",
         path,
         parentActionPath,
-        baselineApplyUnits,
+        baselineApplyUnits: baselineApplyUnits + (extraOffset ?? 0),
         parentSync: {
             completedUnits: completedOps,
             totalUnits: totalOps,

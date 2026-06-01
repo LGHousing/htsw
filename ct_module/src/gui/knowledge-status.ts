@@ -16,7 +16,16 @@ export const STATUS_LABEL: { [k in CacheState]: string } = {
     unknown: "unknown",
 };
 
-export function statusForImportable(importable: Importable): CacheState {
+/**
+ * The cache state for an importable, or `null` when no knowledge row has
+ * been built for it yet. Callers that paint a dot must distinguish the two:
+ * a genuine `"unknown"` (cache doesn't recognise it) is red, but "no row
+ * yet" (mid-rebuild, or before the first build) is NOT — painting it red
+ * makes the whole list flash red whenever rows are catching up. The
+ * Knowledge pane sidesteps this by only rendering rows that exist; the
+ * Importables pane renders every importable, so it must check for null.
+ */
+export function knowledgeStateForImportable(importable: Importable): CacheState | null {
     const rows = getKnowledgeRows();
     const id = importableIdentity(importable);
     for (let i = 0; i < rows.length; i++) {
@@ -25,7 +34,11 @@ export function statusForImportable(importable: Importable): CacheState {
             return row.state;
         }
     }
-    return "unknown";
+    return null;
+}
+
+export function statusForImportable(importable: Importable): CacheState {
+    return knowledgeStateForImportable(importable) ?? "unknown";
 }
 
 export function statusForFile(filePath: string): CacheState | null {

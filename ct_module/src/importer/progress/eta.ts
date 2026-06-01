@@ -1,84 +1,75 @@
 import type { ImportProgress, ProgressPhase } from "./types";
-import { getTimingStats } from "./timing";
+import { getTimingStats, getSessionTimingUnits } from "./timing";
 
 const MS_PER_UNIT_PRIOR = 150;
+// Strength of the lifetime-mix prior (in units) before the current import's
+// observed op-mix dominates the rate blend.
+const PRIOR_UNITS = 40;
 
-type EtaSnapshot = {
-    etaSeconds: number;
-    computedAt: number;
-    phase: ProgressPhase | "done" | null;
-    key: string;
-    completedUnits: number;
-    totalUnits: number;
-    remainingUnits: number;
-    msPerUnit: number;
-};
+/**
+ * Smoothed ETA display: a wall-clock countdown gently corrected toward the
+ * honest candidate (`remaining × msPerUnit`).
+ *
+ * The candidate only moves on progress events — `remaining` is flat between
+ * them — so tracking it directly produces a chunky step (flat for seconds,
+ * then a multi-second drop). Real countdowns interpolate the gaps. So each
+ * frame we first tick the displayed value down by the elapsed wall-clock
+ * (`predicted = displayed − dt`), which keeps it moving at ~1s/sec through
+ * the no-event stretches, then ease that toward the candidate with a ~3s
+ * time constant. The countdown supplies steady motion; the ease keeps it
+ * honest and absorbs the candidate's steps into a smooth slope.
+ *
+ * During apply the candidate is monotonic-decreasing, so the correction only
+ * ever pulls the descent faster or decelerates it — it never snaps upward.
+ * In a long stall the down-tick runs ahead of the candidate, the correction
+ * grows to oppose it, and the value coasts to a near-stop a few seconds below
+ * the candidate rather than over-draining to zero and bouncing back.
+ */
+const EASE_TAU_MS = 3000;
+const SNAP_BELOW_SECONDS = 0.5;
+
+type EtaSmoother = { displayed: number; at: number };
 
 export type EtaCalculator = {
     getTotal(progress: ImportProgress | null, importStartedAt: number | null): number | null;
     getPhase(progress: ImportProgress | null, importStartedAt: number | null): number | null;
 };
 
+function ease(prev: EtaSmoother | null, candidate: number, now: number): EtaSmoother {
+    if (prev === null) return { displayed: candidate, at: now };
+    // Snap on a drastic jump rather than crawling over seconds. This is the
+    // startup case — the smoother first sees the placeholder `totalUnits: 1`
+    // (candidate ≈ 0) before `sessionStarted` installs the real total, and
+    // also any large mid-run re-estimate. Easing those would show a slow ramp
+    // up to the real ETA ("0 → 2min"). Normal tracking still eases.
+    if (candidate > prev.displayed * 2 + 3) {
+        return { displayed: candidate, at: now };
+    }
+    const dt = Math.max(0, now - prev.at);
+    const predicted = prev.displayed - dt / 1000;
+    const alpha = 1 - Math.exp(-dt / EASE_TAU_MS);
+    let next = predicted + (candidate - predicted) * alpha;
+    if (next < 0) next = 0;
+    // Don't let the ease leave a tiny residual hanging near the end.
+    if (candidate <= 0 && next < SNAP_BELOW_SECONDS) next = 0;
+    return { displayed: next, at: now };
+}
+
 export function createEtaCalculator(): EtaCalculator {
-    let totalEta: EtaSnapshot | null = null;
-    let phaseEta: EtaSnapshot | null = null;
+    let totalEta: EtaSmoother | null = null;
+    let phaseEta: EtaSmoother | null = null;
 
     return {
         getTotal(progress, _importStartedAt) {
             if (progress === null) return null;
             const now = Date.now();
-            let recomputed = false;
-            const msPerUnit = currentMsPerUnit();
             const remainingUnits = Math.max(
                 0,
                 progress.totalUnits - progress.completedUnits
             );
-            const candidateEtaSeconds = (remainingUnits * msPerUnit) / 1000;
-            const phaseOrKeyChanged =
-                totalEta !== null &&
-                (totalEta.phase !== (progress.active?.phase ?? null) ||
-                    totalEta.key !== (progress.active?.key ?? ""));
-            // Display countdown should never jump *up* mid-phase. When the
-            // importer discovers more work (totalUnits grows), the naive
-            // recompute makes the displayed ETA spike back; the user sees
-            // "10,9,8,7,10,9,8,7". Keep the current snapshot unless the
-            // candidate is lower (we're ahead of schedule) or the phase /
-            // active importable changed (new context, fresh estimate).
-            if (totalEta === null || phaseOrKeyChanged) {
-                totalEta = {
-                    etaSeconds: candidateEtaSeconds,
-                    computedAt: now,
-                    phase: progress.active?.phase ?? null,
-                    key: progress.active?.key ?? "",
-                    completedUnits: progress.completedUnits,
-                    totalUnits: progress.totalUnits,
-                    remainingUnits,
-                    msPerUnit,
-                };
-                recomputed = true;
-            } else {
-                const elapsedSoFar = (now - totalEta.computedAt) / 1000;
-                const currentDisplayed = Math.max(0, totalEta.etaSeconds - elapsedSoFar);
-                if (candidateEtaSeconds < currentDisplayed) {
-                    totalEta = {
-                        etaSeconds: candidateEtaSeconds,
-                        computedAt: now,
-                        phase: progress.active?.phase ?? null,
-                        key: progress.active?.key ?? "",
-                        completedUnits: progress.completedUnits,
-                        totalUnits: progress.totalUnits,
-                        remainingUnits,
-                        msPerUnit,
-                    };
-                    recomputed = true;
-                }
-            }
-            if (recomputed) {
-            }
-            const snap = totalEta;
-            const elapsed = (now - snap.computedAt) / 1000;
-            const displayedEtaSeconds = Math.max(0, snap.etaSeconds - elapsed);
-            return displayedEtaSeconds;
+            const candidate = (remainingUnits * currentMsPerUnit()) / 1000;
+            totalEta = ease(totalEta, candidate, now);
+            return totalEta.displayed;
         },
         getPhase(progress, _importStartedAt) {
             if (progress === null || progress.active === null) {
@@ -87,48 +78,10 @@ export function createEtaCalculator(): EtaCalculator {
             const phase = progress.active.phase;
             if (phase === "done") return null;
             const now = Date.now();
-            let recomputed = false;
-            const msPerUnit = currentMsPerUnit();
             const remainingUnits = phaseRemainingUnits(progress, phase);
-            const candidateEtaSeconds = (remainingUnits * msPerUnit) / 1000;
-            const phaseOrKeyChanged =
-                phaseEta !== null &&
-                (phaseEta.phase !== phase || phaseEta.key !== progress.active.key);
-            if (phaseEta === null || phaseOrKeyChanged) {
-                phaseEta = {
-                    etaSeconds: candidateEtaSeconds,
-                    computedAt: now,
-                    phase,
-                    key: progress.active.key,
-                    completedUnits: progress.active.completedUnits,
-                    totalUnits: progress.active.totalUnits,
-                    remainingUnits,
-                    msPerUnit,
-                };
-                recomputed = true;
-            } else {
-                const elapsedSoFar = (now - phaseEta.computedAt) / 1000;
-                const currentDisplayed = Math.max(0, phaseEta.etaSeconds - elapsedSoFar);
-                if (candidateEtaSeconds < currentDisplayed) {
-                    phaseEta = {
-                        etaSeconds: candidateEtaSeconds,
-                        computedAt: now,
-                        phase,
-                        key: progress.active.key,
-                        completedUnits: progress.active.completedUnits,
-                        totalUnits: progress.active.totalUnits,
-                        remainingUnits,
-                        msPerUnit,
-                    };
-                    recomputed = true;
-                }
-            }
-            if (recomputed) {
-            }
-            const psnap = phaseEta;
-            const elapsed = (now - psnap.computedAt) / 1000;
-            const displayedEtaSeconds = Math.max(0, psnap.etaSeconds - elapsed);
-            return displayedEtaSeconds;
+            const candidate = (remainingUnits * currentMsPerUnit()) / 1000;
+            phaseEta = ease(phaseEta, candidate, now);
+            return phaseEta.displayed;
         },
     };
 }
@@ -142,18 +95,32 @@ export function currentMsPerUnit(): number {
         return cachedMsPerUnit.value;
     }
     const stats = getTimingStats();
-    // Blend per-kind rates into one ms/unit, weighted by how much total work
-    // each kind does (its share of expected-units) — not a flat average. A
-    // kind that's both frequent and slow then pulls the estimate toward its
-    // own rate, instead of counting the same as a rare fast kind.
+    const session = getSessionTimingUnits();
+    // Blend per-kind rates into one ms/unit, weighted by THIS import's op mix
+    // — the per-kind units it has actually run so far — so the rate reflects
+    // the work being done now, not the lifetime average across all past
+    // imports. (Lifetime weighting prices a CHANGE_VAR-heavy import at the
+    // historical mix and runs ~30% high.) A lifetime-shaped prior of
+    // `PRIOR_UNITS` keeps the very start sane before enough ops are observed;
+    // the session mix takes over as it accumulates past the prior.
+    //
+    // Uses each kind's *slow* (baseline) EWMA — a stable rate, not one that
+    // chases every op. The fast EWMA is only for the `/htsw eta` trend arrow.
+    let lifeTotal = 0;
+    for (const kind in stats) {
+        const entry = stats[kind];
+        if (entry !== undefined) lifeTotal += entry.totalExpectedUnits;
+    }
     let weightedSum = 0;
     let weightTotal = 0;
     for (const kind in stats) {
         const entry = stats[kind];
         if (entry === undefined || entry.count === 0) continue;
-        if (entry.avgMsPerExpectedUnit <= 0) continue;
-        const weight = entry.totalExpectedUnits > 0 ? entry.totalExpectedUnits : entry.count;
-        weightedSum += entry.avgMsPerExpectedUnit * weight;
+        const rate = entry.baselineMsPerExpectedUnit;
+        if (rate <= 0) continue;
+        const lifeShare = lifeTotal > 0 ? entry.totalExpectedUnits / lifeTotal : 0;
+        const weight = (session[kind] ?? 0) + lifeShare * PRIOR_UNITS;
+        weightedSum += rate * weight;
         weightTotal += weight;
     }
     const value = weightTotal === 0 ? MS_PER_UNIT_PRIOR : weightedSum / weightTotal;

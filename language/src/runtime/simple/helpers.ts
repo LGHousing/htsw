@@ -9,7 +9,12 @@ export function behaviorEntries<H>(behaviors: object): Array<[any, H]> {
     const handlers = (behaviors as unknown as {
         handlers: Record<string, H>;
     }).handlers;
-    return Object.entries(handlers) as Array<[any, H]>;
+    const keys = Object.keys(handlers);
+    const out: Array<[any, H]> = [];
+    for (let i = 0; i < keys.length; i++) {
+        out.push([keys[i], handlers[keys[i]]]);
+    }
+    return out;
 }
 
 export function holderFor(

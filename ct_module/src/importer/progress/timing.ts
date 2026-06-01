@@ -45,11 +45,30 @@ type MutableTimingStatsEntry = {
 const EWMA_ALPHA_FAST = 0.1;
 const EWMA_ALPHA_SLOW = 0.02;
 const EWMA_WARMUP = 10;
+// A single op that stalls (server hiccup, GC pause) yields a per-unit sample
+// many times the real rate. Clamp each post-warmup sample into this band
+// around the stable (slow) EWMA before it feeds the averages, so one spike
+// can't yank ms/u. Sustained drift still tracks — many clamped samples in
+// the same direction still walk the average there.
+const SAMPLE_CLAMP_RATIO = 3;
 
 const stats: { [kind: string]: MutableTimingStatsEntry | undefined } = {};
 const PERSIST_PATH = "./htsw/eta-stats.json";
 let loadedPersistedStats = false;
 let persistScheduled = false;
+
+// Per-import tally of expected-units run per kind, reset at import start.
+// The ETA blends per-kind rates weighted by THIS import's op mix (not the
+// lifetime mix), so a CHANGE_VAR-heavy import is priced at CHANGE_VAR rates.
+const sessionUnits: { [kind: string]: number } = {};
+
+export function resetSessionTiming(): void {
+    for (const k in sessionUnits) delete sessionUnits[k];
+}
+
+export function getSessionTimingUnits(): { [kind: string]: number } {
+    return sessionUnits;
+}
 
 function beginTimedOp(
     kind: TimedOperationKind,
@@ -74,7 +93,7 @@ export function recordTimedOp(
 ): void {
     loadPersistedStats();
     if (expectedUnits <= 0) return;
-    const sample = Math.max(0, elapsedMs) / expectedUnits;
+    let sample = Math.max(0, elapsedMs) / expectedUnits;
     const key = kind;
     let entry = stats[key];
     if (entry === undefined) {
@@ -83,7 +102,13 @@ export function recordTimedOp(
     }
     entry.count++;
     entry.totalExpectedUnits += expectedUnits;
+    sessionUnits[key] = (sessionUnits[key] ?? 0) + expectedUnits;
     const warmup = entry.count <= EWMA_WARMUP;
+    if (!warmup && entry.ewmaSlowMsPerUnit > 0) {
+        const lo = entry.ewmaSlowMsPerUnit / SAMPLE_CLAMP_RATIO;
+        const hi = entry.ewmaSlowMsPerUnit * SAMPLE_CLAMP_RATIO;
+        sample = Math.min(hi, Math.max(lo, sample));
+    }
     const alphaFast = warmup ? 1 / entry.count : EWMA_ALPHA_FAST;
     const alphaSlow = warmup ? 1 / entry.count : EWMA_ALPHA_SLOW;
     entry.ewmaMsPerUnit = alphaFast * sample + (1 - alphaFast) * entry.ewmaMsPerUnit;

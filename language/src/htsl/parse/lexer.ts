@@ -2,6 +2,27 @@ import type { SourceFile } from "../../sourceMap";
 import { Span } from "../../span";
 import { token, type Token } from "./token";
 
+// Char-code classifiers. Rhino has no JIT, so a regex `.test()` per character —
+// and `charAt`'s per-char string allocation — are each ~2x slower than these.
+function isInlineWs(k: number): boolean {
+    // whitespace except newline (\n is its own token)
+    return k === 32 || k === 9 || k === 13 || k === 12 || k === 11;
+}
+function isDigit(k: number): boolean {
+    return k >= 48 && k <= 57;
+}
+function isDigitOrUnderscore(k: number): boolean {
+    return (k >= 48 && k <= 57) || k === 95;
+}
+function isIdentStart(k: number): boolean {
+    return (k >= 97 && k <= 122) || (k >= 65 && k <= 90) || k === 95;
+}
+function isIdentChar(k: number): boolean {
+    // matches /[a-zA-Z_/\-0-9.-]/: letters, digits, _ / - .
+    return (k >= 97 && k <= 122) || (k >= 65 && k <= 90) || (k >= 48 && k <= 57) ||
+        k === 95 || k === 47 || k === 45 || k === 46;
+}
+
 export class Lexer {
     src: string;
     pos: number;
@@ -15,8 +36,8 @@ export class Lexer {
 
     advanceToken(): Token {
         // eat whitespace
-        while (this.hasNext() && /^\s+$/.test(this.peek()) && this.peek() != "\n") {
-            this.next();
+        while (this.hasNext() && isInlineWs(this.src.charCodeAt(this.pos))) {
+            this.pos++;
         }
         if (!this.hasNext())
             return token("eof", new Span(this.posWithOffset, this.posWithOffset));
@@ -30,13 +51,13 @@ export class Lexer {
                 this.next();
 
                 // parse doc comment
-                let value = "";
-                
+                const start = this.pos;
+
                 do {
-                    value += this.next();
+                    this.next();
                 } while (this.hasNext() && this.peek() !== "\n");
 
-                // this is so cringe
+                let value = this.src.substring(start, this.pos);
                 if (value.endsWith("\r")) {
                     value = value.substring(0, value.length - 1);
                 }
@@ -176,7 +197,7 @@ export class Lexer {
 
         // literals
         if (c === '"') {
-            let value = "";
+            const parts: string[] = [];
             let escapeNext = false;
             while (this.hasNext()) {
                 const c = this.next();
@@ -186,47 +207,43 @@ export class Lexer {
                     continue;
                 }
                 escapeNext = false;
-                value += c;
+                parts.push(c);
             }
 
-            return token("str", new Span(lo, this.posWithOffset), { value });
+            return token("str", new Span(lo, this.posWithOffset), { value: parts.join("") });
         }
 
         if (c === "%") {
-            let value = "";
-            while (this.hasNext()) {
-                const c = this.next();
-                if (c === "%") break;
-                value += c;
-            }
-
+            const start = this.pos;
+            while (this.hasNext() && this.peek() !== "%") this.next();
+            const value = this.src.substring(start, this.pos);
+            if (this.hasNext()) this.next();
             return token("placeholder", new Span(lo, this.posWithOffset), { value });
         }
 
-        if (/[0-9]/.test(c)) {
-            let value = c;
-            while (this.hasNext()) {
-                if (!/[0-9_]/.test(this.peek())) break;
-                value += this.next();
+        if (isDigit(c.charCodeAt(0))) {
+            const start = this.pos - 1;
+            while (this.hasNext() && isDigitOrUnderscore(this.src.charCodeAt(this.pos))) {
+                this.pos++;
             }
             if (this.peek() === ".") {
-                value += ".";
                 this.next();
-                while (this.hasNext()) {
-                    if (!/[0-9_]/.test(this.peek())) break;
-                    value += this.next();
+                while (this.hasNext() && isDigitOrUnderscore(this.src.charCodeAt(this.pos))) {
+                    this.pos++;
                 }
+                const value = this.src.substring(start, this.pos);
                 return token("f64", new Span(lo, this.posWithOffset), { value });
             }
+            const value = this.src.substring(start, this.pos);
             return token("i64", new Span(lo, this.posWithOffset), { value });
         }
 
-        if (/[a-zA-Z_]/.test(c)) {
-            let value = c;
-            while (this.hasNext()) {
-                if (!/[a-zA-Z_/\-0-9.-]/.test(this.peek())) break;
-                value += this.next();
+        if (isIdentStart(c.charCodeAt(0))) {
+            const start = this.pos - 1;
+            while (this.hasNext() && isIdentChar(this.src.charCodeAt(this.pos))) {
+                this.pos++;
             }
+            const value = this.src.substring(start, this.pos);
             return token("ident", new Span(lo, this.posWithOffset), { value });
         }
 

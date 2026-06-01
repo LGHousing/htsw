@@ -67,6 +67,12 @@ import { setItemValue } from "../items/items";
 import { resolveImportableItem } from "../items/resolveItem";
 import { syncActionList } from "./sync";
 import type { WriteActionOptions } from "./specs";
+import {
+    estimateActionListPhaseUnits,
+    estimateConditionListPhaseUnits,
+    phaseUnitsTotal,
+} from "../progress/costs";
+import type { ProgressHandler } from "../progress/types";
 
 function actionDefault<T>(type: Action["type"], prop: string): T {
     return getActionFieldDefault(type, prop) as T;
@@ -127,6 +133,18 @@ export async function writeConditional(
     const current = options?.current;
     const itemRegistry = options?.itemRegistry;
     const pathPrefix = options?.pathPrefix;
+    const events = options?.events;
+    const scopeAt = options?.nestedProgressScope;
+
+    // Each sub-list (conditions, ifActions, elseActions) is applied in turn
+    // and occupies its own slice of the op's apply budget, placed at a
+    // cumulative `offset`. Without this they'd share one baseline and collide
+    // (and conditions emitted nothing at all, leaving a multi-second silent
+    // gap on the bar — the flat stretch before the inner actions stream). The
+    // slice size is each list's own phase-unit total, which equals what its
+    // sync emits as progress, so the credits chain seamlessly.
+    let offset = 0;
+
     if (
         !conditionListsEqual(current?.conditions, action.conditions) &&
         (action.conditions.length > 0 || (current?.conditions?.length ?? 0) > 0)
@@ -134,11 +152,21 @@ export async function writeConditional(
         ctx.getMenuItemSlot(getActionFieldLabel("CONDITIONAL", "conditions")).click();
         await waitForMenu(ctx);
 
+        const condPath = pathPrefix === undefined ? "conditions" : `${pathPrefix}.conditions`;
+        const condScope = scopeAt?.(condPath, offset);
+        const condProgress: ProgressHandler | undefined =
+            condScope === undefined || events === undefined
+                ? undefined
+                : (event) => events.emit({ kind: "progress", scope: condScope, progress: event });
         await syncConditionList(ctx, action.conditions, {
             itemRegistry,
             baselineCurrent: current?.conditions,
+            progress: condProgress,
         });
         await clickGoBack(ctx);
+        offset += phaseUnitsTotal(
+            estimateConditionListPhaseUnits(action.conditions, current?.conditions)
+        );
     }
 
     await setBooleanValue(
@@ -148,7 +176,7 @@ export async function writeConditional(
     );
 
     if (pathPrefix !== undefined) {
-        options?.events?.emit({
+        events?.emit({
             kind: "blockActionHeaderApplied",
             path: pathPrefix,
         });
@@ -161,14 +189,16 @@ export async function writeConditional(
         const nestedPath = pathPrefix === undefined ? "ifActions" : `${pathPrefix}.ifActions`;
         ctx.getMenuItemSlot(getActionFieldLabel("CONDITIONAL", "ifActions")).click();
         await waitForMenu(ctx);
+        const baseline = observedActionsAsBaselineCurrent(current?.ifActions);
         await syncActionList(ctx, action.ifActions, {
             itemRegistry,
             pathPrefix: nestedPath,
-            baselineCurrent: observedActionsAsBaselineCurrent(current?.ifActions),
-            progressScope: options?.nestedProgressScope?.(nestedPath),
-            events: options?.events,
+            baselineCurrent: baseline,
+            progressScope: scopeAt?.(nestedPath, offset),
+            events,
         });
         await clickGoBack(ctx);
+        offset += phaseUnitsTotal(estimateActionListPhaseUnits(action.ifActions, baseline));
     }
 
     if (
@@ -182,8 +212,8 @@ export async function writeConditional(
             itemRegistry,
             pathPrefix: nestedPath,
             baselineCurrent: observedActionsAsBaselineCurrent(current?.elseActions),
-            progressScope: options?.nestedProgressScope?.(nestedPath),
-            events: options?.events,
+            progressScope: scopeAt?.(nestedPath, offset),
+            events,
         });
         await clickGoBack(ctx);
     }

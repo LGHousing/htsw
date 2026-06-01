@@ -89,6 +89,12 @@ export type Element =
           // The Vite icon plugin scans the bundled output for these literals
           // and copies only the matched PNGs into dist/assets/icons/.
           name: Extractable<string>;
+          // Optional ARGB tint multiplied over the (white) PNG at draw time.
+          // The icon set is monochrome white, so this recolors it.
+          color?: Extractable<number>;
+          // Hover chip, same semantics as the text element's tooltip.
+          tooltip?: Extractable<string>;
+          tooltipColor?: Extractable<number>;
       }
     | {
           kind: "mcItem";

@@ -321,7 +321,28 @@ function renderItem(
         const img = getIconImage(name);
         // The DOM lib's HTMLImageElement collides with CT's global `Image` class for `as Image`
         // typing — go through `unknown` so the cast lands on CT's runtime Image.
-        if (img !== null) Renderer.drawImage(img as unknown as Parameters<typeof Renderer.drawImage>[0], r.x, r.y, r.w, r.h);
+        if (img !== null) {
+            const tint = e.color !== undefined ? extract(e.color) : undefined;
+            if (tint !== undefined) {
+                const a = ((tint >>> 24) & 0xff) / 255;
+                const rr = ((tint >>> 16) & 0xff) / 255;
+                const gg = ((tint >>> 8) & 0xff) / 255;
+                const bb = (tint & 0xff) / 255;
+                // CT's drawImage only forces white when `colorized` is null;
+                // colorize() sets it so the tint survives the draw. GlStateManager
+                // alone doesn't work — drawImage resets it.
+                Renderer.colorize(rr, gg, bb, a);
+            }
+            Renderer.drawImage(img as unknown as Parameters<typeof Renderer.drawImage>[0], r.x, r.y, r.w, r.h);
+            if (tint !== undefined) Renderer.colorize(1.0, 1.0, 1.0, 1.0);
+        }
+        if (hovered && e.tooltip !== undefined) {
+            const tt = extract(e.tooltip);
+            if (tt.length > 0) {
+                const tc = e.tooltipColor !== undefined ? extract(e.tooltipColor) : 0xffffffff | 0;
+                queuedTooltip = { text: tt, color: tc, anchor: r };
+            }
+        }
     } else if (e.kind === "mcItem") {
         renderMcItem(e.item, e.count, r.x, r.y);
     }
@@ -488,6 +509,9 @@ export function endScrollbarDrag(): void {
 }
 
 // --- Wheel scroll dispatch: find topmost scroll under cursor, scroll it ---
+// Overlay units moved per wheel notch. Rows are SIZE_ROW_H (18), so ~5 rows.
+const WHEEL_SCROLL_STEP = 90;
+
 export function dispatchWheel(
     laid: LaidOut[],
     mouseX: number,
@@ -502,7 +526,7 @@ export function dispatchWheel(
         if (s.contentHeight <= s.viewportRect.h) return true;
         s.offset = Math.max(
             0,
-            Math.min(s.contentHeight - s.viewportRect.h, s.offset - delta * 40)
+            Math.min(s.contentHeight - s.viewportRect.h, s.offset - delta * WHEEL_SCROLL_STEP)
         );
         markUserScroll(item.element.id);
         return true;

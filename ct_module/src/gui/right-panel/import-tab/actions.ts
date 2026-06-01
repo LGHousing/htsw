@@ -26,6 +26,8 @@ import {
     endQueueSession,
     getQueue,
     makeImportableQueueItem,
+    queueItemKey,
+    removeFromQueueKey,
     type QueueItem,
 } from "../../state/queue";
 import { forEachCachedParse, getParseAt, parseImportJsonAt } from "../../state/parses";
@@ -43,16 +45,14 @@ import {
 import { importableIdentity, importableKey } from "../../../importCache/paths";
 import { getCurrentHousingUuid } from "../../../importCache/housingId";
 import { TaskManager, isTaskCancelled } from "../../../tasks/manager";
+import type TaskContext from "../../../tasks/context";
 import type { Action, Importable } from "htsw/types";
 import type { Diagnostic, ParseResult } from "htsw";
 import { closeAllPopovers } from "../../lib/popovers";
 import { statusForImportable } from "../../knowledge-status";
 import { htslFilenameForFunctionExport } from "../../../exporter/paths";
-import {
-    importableSourcePath,
-    importableSubListPath,
-    SUB_LIST_KINDS,
-} from "../../state/importablePaths";
+import { importableSourcePath } from "../../state/importablePaths";
+import { attributeDiagnostics } from "../../state/diagnosticCounts";
 import type {
     ActionDiffOperationPayload,
     ImportEventHandler,
@@ -60,6 +60,7 @@ import type {
 } from "../../../importer/importEvents";
 import { importProgressKey } from "../../../importer/progress/keys";
 import { initialReducerState, reduce } from "../../../importer/progress/reducer";
+import { traceProgressEvent } from "../../../importer/progress/trace";
 import { invalidateKnowledgeOverlayForImportable } from "../../state/knowledgeOverlay";
 import { showToast } from "../../toast";
 import { isImportRunning, setImportRunning } from "../../../importer/runtimeState";
@@ -92,7 +93,19 @@ import { ACTION_MAPPINGS } from "../../../importer/fields/actionMappings";
 
 export const CAPTURE_TYPES: CaptureType[] = ["FUNCTION", "MENU"];
 
-let importSessionId = 0;
+
+/**
+ * The TaskContext of the in-flight import, or null when none is running.
+ * Captured so Cancel scopes to the import alone — `TaskManager.cancelAll()`
+ * would also abort unrelated background tasks (e.g. the housing-UUID
+ * auto-fetch in overlay.ts).
+ */
+let activeImportCtx: TaskContext | null = null;
+
+/** Cancel the running import (if any). Leaves other tasks untouched. */
+export function cancelActiveImport(): void {
+    if (activeImportCtx !== null) activeImportCtx.cancel();
+}
 
 function formatElapsedSeconds(secs: number): string {
     const total = Math.max(0, Math.round(secs));
@@ -121,7 +134,7 @@ function refreshKnowledgeRows(): void {
         }
     }
 
-    rebuildKnowledgeRows(uuid, all);
+    rebuildKnowledgeRows(uuid, all, /*progressive=*/ false);
     autoTrackRefresh();
 }
 
@@ -182,6 +195,25 @@ function operationDetail(event: ActionDiffOperationPayload): string {
 
 function readingLabel(actionType: Action["type"] | null): string {
     return `Reading ${displayNameForActionType(actionType)}`;
+}
+
+const BODY_LIST_PROPS: Record<string, true> = {
+    ifActions: true,
+    elseActions: true,
+    actions: true,
+};
+
+// True when an edit touches the action's head line. A CONDITIONAL/RANDOM whose
+// only changed fields are nested body lists (ifActions/elseActions/actions)
+// leaves its head — `if (conditions) {` / `random {` — unchanged; those body
+// ops mark their own lines, so flagging the head would falsely show the
+// conditions as changed. An empty list (note-only edit) keeps the head marked.
+function editAffectsHeadLine(fieldsChanged: readonly string[]): boolean {
+    if (fieldsChanged.length === 0) return true;
+    for (let i = 0; i < fieldsChanged.length; i++) {
+        if (!BODY_LIST_PROPS[fieldsChanged[i]]) return true;
+    }
+    return false;
 }
 
 type SessionEventHandler = ImportEventHandler & {
@@ -269,6 +301,10 @@ function createImportEventHandler(args: {
                     }
                     continue;
                 }
+                if (op.op === "edit" && !editAffectsHeadLine(op.fieldsChanged)) {
+                    setLiveState(activeViewPath, op.path, "match");
+                    continue;
+                }
                 setPlannedOp(activeViewPath, op.path, op.op, operationLabel(op), operationDetail(op));
                 if (op.op === "add") {
                     markPlannedAdd(activeViewPath, op.path, op.desired, op.toIndex);
@@ -283,7 +319,11 @@ function createImportEventHandler(args: {
         operationStarted: (e) => {
             if (activeViewPath === null) return;
             setLiveCurrent(activeViewPath, e.path, operationLabel(e));
-            setPlannedOp(activeViewPath, e.path, e.op, operationLabel(e), "");
+            if (e.op === "edit" && !editAffectsHeadLine(e.fieldsChanged)) {
+                setLiveState(activeViewPath, e.path, "match");
+            } else {
+                setPlannedOp(activeViewPath, e.path, e.op, operationLabel(e), "");
+            }
             setFocusLineId(activeViewPath, previewLineIdForPath(activeViewPath, e.path));
         },
         operationCompleted: (e) => {
@@ -311,7 +351,9 @@ function createImportEventHandler(args: {
 
     return {
         emit: (event) => {
+            const before = state.progress;
             state = reduce(state, event);
+            traceProgressEvent(event, before, state.progress);
             (handlers[event.kind] as (e: typeof event) => void)(event);
             sync();
         },
@@ -427,70 +469,28 @@ export function queueItemsForCheckedKeys(checked: Set<string>): QueueItem[] {
 }
 
 /**
- * Source files (primary + known sub-lists) for a single importable, added
- * into `out`. Sub-list coverage is whatever `SUB_LIST_KINDS` enumerates —
- * deliberately treated as a lower bound, never a complete set (see
- * `relevantParseErrors`).
- */
-function collectImportableFiles(
-    imp: Importable,
-    parsed: ParseResult<Importable[]>,
-    out: Set<string>
-): void {
-    const src = importableSourcePath(imp, parsed);
-    if (src !== undefined) out.add(src);
-    for (let i = 0; i < SUB_LIST_KINDS.length; i++) {
-        const sub = importableSubListPath(imp, SUB_LIST_KINDS[i], parsed);
-        if (sub !== undefined) out.add(sub);
-    }
-}
-
-/**
- * The parse errors worth blocking the import on: drop only those that
- * clearly belong to a DIFFERENT importable's file (one not being imported
- * this run), so importing one importable isn't blocked by, or made to
- * surface, an unrelated sibling's error in the same import.json.
+ * The parse errors worth blocking the import on: every error owned by an
+ * imported importable, plus every unattributed error (span-less, or a file
+ * we can't tie to any importable). Errors owned only by a DIFFERENT
+ * importable not being imported this run are dropped, so importing one
+ * importable isn't blocked by an unrelated sibling's error in the same
+ * import.json. Shares one attribution pass with the per-importable badges.
  *
- * Safe by construction: an error is excluded only when its file is owned
- * by some other importable AND not by any imported one. Errors that are
- * ours, span-less, or whose file we can't attribute to anyone (e.g. MENU
- * slot lists, which `SUB_LIST_KINDS` doesn't enumerate) are always kept —
- * so a real error in what you're importing can never be hidden.
+ * Safe by construction: an error is excluded only when it's attributed to
+ * other importables and none of ours — so a real error in what you're
+ * importing can never be hidden.
  */
 function relevantParseErrors(batch: ImportBatch): Diagnostic[] {
-    const all = batch.parsed.gcx.diagnostics.filter(
-        (d) => d.level === "error" || d.level === "bug"
+    const attr = attributeDiagnostics(batch.parsed);
+    const relevant = new Set<Diagnostic>();
+    for (const imp of batch.importables) {
+        const ds = attr.byImportable.get(imp);
+        if (ds !== undefined) for (const d of ds) relevant.add(d);
+    }
+    for (const d of attr.unattributed) relevant.add(d);
+    return batch.parsed.gcx.diagnostics.filter(
+        (d) => (d.level === "error" || d.level === "bug") && relevant.has(d)
     );
-    if (all.length === 0) return [];
-
-    const importedSet = new Set<Importable>(batch.importables);
-    const importedFiles = new Set<string>();
-    const otherFiles = new Set<string>();
-    for (const imp of batch.parsed.value) {
-        collectImportableFiles(
-            imp,
-            batch.parsed,
-            importedSet.has(imp) ? importedFiles : otherFiles
-        );
-    }
-
-    const sm = batch.parsed.gcx.sourceMap;
-    const out: Diagnostic[] = [];
-    for (const d of all) {
-        const primary = d.spans.find((s) => s.kind === "primary") ?? d.spans[0];
-        let path: string | undefined;
-        if (primary !== undefined) {
-            try {
-                path = sm.getFileByPos(primary.span.start).path;
-            } catch (_e) {
-                path = undefined;
-            }
-        }
-        const ownedByOther =
-            path !== undefined && otherFiles.has(path) && !importedFiles.has(path);
-        if (!ownedByOther) out.push(d);
-    }
-    return out;
 }
 
 export function startImport(explicit?: readonly QueueItem[]): void {
@@ -547,13 +547,17 @@ export function startImport(explicit?: readonly QueueItem[]): void {
     if (explicit === undefined) beginQueueSession();
 
     setImportRunning(true);
-    const sessionId = ++importSessionId;
+    // Snapshot this session's queue keys so the post-run cleanup can drop
+    // exactly these items even if a newer import supersedes the session.
+    const sessionItemKeys: string[] =
+        explicit === undefined ? getQueue().map(queueItemKey) : [];
     const startedAt = Date.now();
     resetStepGate();
     gmcOnImportStart();
     startPacketOrderProbe();
 
     TaskManager.run(async (ctx) => {
+        activeImportCtx = ctx;
         let importSucceeded = false;
         let cancelled = false;
         let totalImported = 0;
@@ -601,6 +605,7 @@ export function startImport(explicit?: readonly QueueItem[]): void {
                 throw err;
             }
         } finally {
+            activeImportCtx = null;
             stopPacketOrderProbe();
             flushMenuWaitTickSummary();
             setActiveImportPath(null);
@@ -641,10 +646,22 @@ export function startImport(explicit?: readonly QueueItem[]): void {
             // session marking so they merge back into the normal queue.
             const removeSessionItems = explicit === undefined && importSucceeded;
             setTimeout(() => {
-                if (importSessionId !== sessionId) return;
-                endQueueSession(removeSessionItems);
-                if (removeSessionItems) clearImportableChecks();
-                clearLastFinishedProgress();
+                // Drop this session's successful items even if a newer import
+                // has since started — otherwise a superseded cleanup leaves
+                // them (and their "done" bar) stuck in the queue forever.
+                if (removeSessionItems) {
+                    for (let i = 0; i < sessionItemKeys.length; i++) {
+                        removeFromQueueKey(sessionItemKeys[i]);
+                    }
+                }
+                // The global session marking + last-finished progress belong to
+                // whichever import is live. Only clear them when nothing is
+                // running, so a stranded session can't leave the divider stuck.
+                if (!isImportRunning()) {
+                    endQueueSession(false);
+                    if (removeSessionItems) clearImportableChecks();
+                    clearLastFinishedProgress();
+                }
             }, 1500);
         }
     }).catch((err: unknown) => {

@@ -17,8 +17,13 @@ import {
     diffConditionList,
 } from "../conditions/diff";
 import { getActionScalarLoreFields } from "../fields/actionMappings";
+import { getConditionScalarLoreFields } from "../fields/conditionMappings";
 import { isTruncatableKind } from "../fields/loreParsing";
-import { scalarFieldDiffers } from "../fields/compare";
+import {
+    scalarFieldDiffers,
+    normalizeActionCompare,
+    normalizeConditionCompare,
+} from "../fields/compare";
 import { countReferencedShells } from "../../importables/references";
 
 /**
@@ -66,99 +71,6 @@ export const COST = {
     nbtCapture: 0.25,
     itemInject: 1,
 };
-
-export const CALIBRATABLE_COST_KEYS = [
-    "commandMenuWait",
-    "commandMessageWait",
-    "menuClickWait",
-    "messageClickWait",
-    "pageTurnWait",
-    "goBackWait",
-    "chatInput",
-    "anvilInput",
-    "itemSelect",
-    "reorderStep",
-] as const;
-export type CalibratableCostKey = (typeof CALIBRATABLE_COST_KEYS)[number];
-
-const COST_OVERRIDES_PATH = "./htsw/cost-overrides.json";
-let costOverridesLoaded = false;
-
-export function loadPersistedCostOverrides(): void {
-    if (costOverridesLoaded) return;
-    costOverridesLoaded = true;
-    try {
-        if (!FileLib.exists(COST_OVERRIDES_PATH)) return;
-        const raw = String(FileLib.read(COST_OVERRIDES_PATH) ?? "");
-        if (raw.trim().length === 0) return;
-        const parsed = JSON.parse(raw) as { costs?: { [k: string]: number } };
-        const persisted = parsed.costs;
-        if (persisted === undefined) return;
-        for (let i = 0; i < CALIBRATABLE_COST_KEYS.length; i++) {
-            const k = CALIBRATABLE_COST_KEYS[i];
-            const value = persisted[k];
-            if (typeof value === "number" && isFinite(value) && value > 0) {
-                COST[k] = value;
-            }
-        }
-    } catch (_e) {
-        // ignore, fall back to defaults
-    }
-}
-
-export function applyCalibratedCosts(updated: Partial<Record<CalibratableCostKey, number>>): void {
-    for (let i = 0; i < CALIBRATABLE_COST_KEYS.length; i++) {
-        const k = CALIBRATABLE_COST_KEYS[i];
-        const v = updated[k];
-        if (typeof v === "number" && isFinite(v) && v > 0) {
-            COST[k] = v;
-        }
-    }
-    persistCostOverrides();
-}
-
-export function resetCalibratedCosts(): void {
-    const defaults: Record<CalibratableCostKey, number> = {
-        commandMenuWait: 2.3,
-        commandMessageWait: 2,
-        menuClickWait: 1.7,
-        messageClickWait: 2,
-        pageTurnWait: 1.7,
-        goBackWait: 1.8,
-        chatInput: 3,
-        anvilInput: 3.8,
-        itemSelect: 1.6,
-        reorderStep: 1.8,
-    };
-    for (let i = 0; i < CALIBRATABLE_COST_KEYS.length; i++) {
-        const k = CALIBRATABLE_COST_KEYS[i];
-        COST[k] = defaults[k];
-    }
-    try {
-        if (FileLib.exists(COST_OVERRIDES_PATH)) {
-            FileLib.write(COST_OVERRIDES_PATH, "{}", true);
-        }
-    } catch (_e) {
-        // ignore
-    }
-}
-
-function persistCostOverrides(): void {
-    try {
-        const out: Record<string, number> = {};
-        for (let i = 0; i < CALIBRATABLE_COST_KEYS.length; i++) {
-            const k = CALIBRATABLE_COST_KEYS[i];
-            out[k] = COST[k];
-        }
-        FileLib.write(
-            COST_OVERRIDES_PATH,
-            JSON.stringify({ version: 1, updatedAt: new Date().toISOString(), costs: out }, null, 2),
-            true
-        );
-    } catch (_e) {
-        // ignore
-    }
-}
 
 const LIST_ITEMS_PER_PAGE = 21;
 
@@ -270,34 +182,60 @@ function noteEditUnits(): number {
 
 /**
  * Per-add shell cost: what `importAction` does *outside* the field-write
- * loop. Click "Add Action", page-turn to find the action type in the
- * paginated add menu, click the action-type slot. The post-write
- * `clickGoBack` is priced inside `actionWriteRoughUnits` instead,
- * because fieldless actions (e.g. Kill Player) skip the editor entirely
- * and so don't pay the goBack.
- *
- * The page-turn term assumes ~1 turn on average to reach the desired
- * action type. Most action types fit within the first two pages.
+ * loop — click "Add Action", click the action-type slot. No page-turn term:
+ * the add menu opens on page 1 and the common action types are there, so
+ * `getSlotPaginate` usually does zero turns; charging a guaranteed turn
+ * over-counts every add. The post-write `clickGoBack` is priced inside
+ * `actionWriteRoughUnits` instead, since fieldless actions skip the editor.
  */
 function actionAddShellUnits(): number {
-    return COST.menuClickWait + COST.pageTurnWait + COST.menuClickWait;
+    return COST.menuClickWait + COST.menuClickWait;
 }
 
-/**
- * Rough per-condition shell + scalar-fields cost: open the condition
- * editor (menu click), set its scalar fields (one chat input as a
- * reasonable average — most conditions have one configurable value),
- * close the editor. Conditions can't contain nested action lists, so
- * this stays flat per condition.
- */
-function conditionRoughUnits(): number {
-    return COST.menuClickWait + COST.chatInput + COST.menuClickWait;
+function conditionScalarFieldWriteUnits(condition: Condition): number {
+    const normalized = normalizeConditionCompare(condition) as
+        | { [key: string]: unknown }
+        | null;
+    if (normalized === null) return 0;
+    const kinds = new Map<string, UiFieldKind>();
+    const fields = getConditionScalarLoreFields(condition.type);
+    for (let i = 0; i < fields.length; i++) kinds.set(fields[i].prop, fields[i].kind);
+    let total = 0;
+    for (const key in normalized) {
+        if (key === "type" || key === "note" || key === "inverted") continue;
+        if (normalized[key] === undefined) continue;
+        const kind = kinds.get(key);
+        total += kind !== undefined ? fieldKindEditUnits(kind) : COST.chatInput;
+    }
+    return total;
+}
+
+function conditionAddUnits(condition: Condition): number {
+    let total = COST.menuClickWait + COST.menuClickWait + COST.goBackWait;
+    total += conditionScalarFieldWriteUnits(condition);
+    if (condition.inverted === true) total += COST.menuClickWait;
+    return total;
+}
+
+function conditionEditUnits(baseline: Condition, desired: Condition): number {
+    let total = COST.menuClickWait + COST.goBackWait;
+    const fields = getConditionScalarLoreFields(desired.type);
+    for (let i = 0; i < fields.length; i++) {
+        const field = fields[i];
+        if (scalarFieldDiffers(baseline, desired, desired.type, field.prop)) {
+            total += fieldKindEditUnits(field.kind);
+        }
+    }
+    if ((baseline.inverted === true) !== (desired.inverted === true)) {
+        total += COST.menuClickWait;
+    }
+    return total;
 }
 
 function conditionListRoughUnits(conditions: readonly Condition[]): number {
     let total = 0;
     for (let i = 0; i < conditions.length; i++) {
-        total += conditionRoughUnits();
+        total += conditionAddUnits(conditions[i]);
         if (conditions[i].note !== undefined) total += noteEditUnits();
     }
     return total;
@@ -308,11 +246,13 @@ export function conditionOperationUnits(
 ): number {
     if (op.kind === "delete") return COST.menuClickWait;
     if (op.kind === "add") {
-        let total = conditionRoughUnits();
+        let total = conditionAddUnits(op.desired);
         if (op.desired.note !== undefined) total += noteEditUnits();
         return total;
     }
-    let total = op.noteOnly ? noteEditUnits() : conditionRoughUnits();
+    let total = op.noteOnly
+        ? noteEditUnits()
+        : conditionEditUnits(op.baselineCondition, op.desired);
     if (op.desired.note !== op.baselineCondition.note) total += noteEditUnits();
     return total;
 }
@@ -351,9 +291,15 @@ function actionWriteRoughUnits(action: Action): number {
     for (let i = 0; i < scalars.length; i++) {
         scalarKinds.set(scalars[i].prop, scalars[i].kind);
     }
-    for (const key in action) {
+    // Normalize first: the writer short-circuits any field already at its
+    // (freshly-added) default, sending no input. `normalizeActionCompare`
+    // drops exactly those default-valued fields — the same rule the diff
+    // uses — so iterating the normalized action counts only the fields that
+    // are actually written. Single source of truth, no parallel default check.
+    const normalized = normalizeActionCompare(action) as { [key: string]: unknown };
+    for (const key in normalized) {
         if (key === "type" || key === "note") continue;
-        const value = (action as { [key: string]: unknown })[key];
+        const value = normalized[key];
         if (value === undefined) continue;
         hasFields = true;
         if (Array.isArray(value)) {

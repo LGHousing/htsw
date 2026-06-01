@@ -178,7 +178,41 @@ function parkActiveIfNeeded(
         ...state,
         parkedRows: {
             ...state.parkedRows,
-            [state.active.key]: state.active,
+            [state.active.key]: trueUpReadHydrate(state.active),
+        },
+    };
+}
+
+/**
+ * An importable is parked once its pass-1 pre-read (read + hydrate) is done,
+ * so its completed units now reflect the *actual* read/hydrate work. The
+ * read/hydrate phase estimate, though, is often far larger than that — with
+ * selective hydration a list's estimated nested-read cost can be ~5× what's
+ * actually read. That over-estimate sits in `currentTotalUnits` but is never
+ * credited, so when the importable later finishes, `finishImportable` dumps
+ * the gap to force the bar to 100% — an ETA cliff (observed ~55s).
+ *
+ * Pin the total to real work: `total = completed-so-far (= setup + actual
+ * read/hydrate) + apply-diff cost`. Apply then credits completed exactly up
+ * to that total, so finishing adds nothing and the ETA stays continuous. The
+ * read/hydrate over-estimate is collapsed into the `reading` segment so the
+ * phase units still sum to the (corrected) total.
+ */
+function trueUpReadHydrate(active: ActiveBookkeeping): ActiveBookkeeping {
+    const setup = active.currentPhaseUnits.setup;
+    const applying = active.currentPhaseUnits.applying;
+    const truedTotal = Math.max(
+        active.currentCompletedUnits,
+        active.currentCompletedUnits + applying
+    );
+    return {
+        ...active,
+        currentTotalUnits: truedTotal,
+        currentPhaseUnits: {
+            setup,
+            reading: Math.max(0, active.currentCompletedUnits - setup),
+            hydrating: 0,
+            applying,
         },
     };
 }
@@ -218,10 +252,20 @@ function applyProgress(
         payload.totalUnits > 0
             ? payload.totalUnits + setupUnits
             : state.active.initialUnits;
-    const currentTotalUnits = Math.max(
-        state.active.currentTotalUnits,
-        eventTotalUnits
-    );
+    // During read/hydrate the total only ratchets *up* (work is still being
+    // discovered; anti-flicker). But applying-phase payloads carry the EXACT
+    // total — the diff is known and the read/hydrate phase units now reflect
+    // what was actually read, not the up-front `sumHydrationCost` over-
+    // estimate. So once applying, take the payload total directly (floored at
+    // completed) instead of `max`-ing against the latched read-pass estimate;
+    // otherwise that stale over-estimate sticks in the total and gets dumped
+    // as a phantom jump when the importable finishes. This also covers the
+    // single-importable case, which never gets parked (so the park-time
+    // true-up can't catch it).
+    const currentTotalUnits =
+        payload.phase === "applying"
+            ? Math.max(state.active.currentCompletedUnits, eventTotalUnits)
+            : Math.max(state.active.currentTotalUnits, eventTotalUnits);
     // Read/hydrate-phase progress payloads emit phaseUnits.applying = 0
     // because the diff isn't yet known. Preserve the prior (initial or
     // pre-read-seeded) apply estimate so the bar's apply sub-segment
@@ -302,6 +346,11 @@ function finishImportable(
             ? { ...r, status, totalUnits: active.currentTotalUnits }
             : r
     );
+    // Include still-parked importables in the displayed totals (the
+    // accumulators below stay parked-free — they're the finished/initial
+    // base). Without this the display drops parked contributions the instant
+    // an importable finishes, then re-adds them on the next reactivation.
+    const parked = parkedSums(state.parkedRows);
     return {
         ...state,
         progress: {
@@ -310,8 +359,8 @@ function finishImportable(
             active: null,
             parked: snapshotParked(state.parkedRows),
             rows,
-            completedUnits: state.completedSessionUnits + completedAddend,
-            totalUnits: state.totalSessionUnits + totalAddend,
+            completedUnits: state.completedSessionUnits + completedAddend + parked.completed,
+            totalUnits: state.totalSessionUnits + totalAddend + parked.refinement,
         },
         active: null,
         completedSessionUnits: state.completedSessionUnits + completedAddend,
@@ -362,15 +411,17 @@ function rebuildSnapshot(
             ? { ...r, status: "current", totalUnits: active.currentTotalUnits }
             : r
     );
+    const parked = parkedSums(state.parkedRows);
     const remainingSessionUnits =
         state.totalSessionUnits -
         state.completedSessionUnits -
         active.initialUnits;
     const sessionCompletedUnits =
-        state.completedSessionUnits + active.currentCompletedUnits;
+        state.completedSessionUnits + active.currentCompletedUnits + parked.completed;
     const sessionTotalUnits =
         state.completedSessionUnits +
         active.currentTotalUnits +
+        parked.refinement +
         remainingSessionUnits;
     const activeSnapshot: ImportProgressActive = {
         key: active.key,
@@ -393,6 +444,29 @@ function rebuildSnapshot(
             rows,
         },
     };
+}
+
+/**
+ * Parked importables' contribution to the session totals: the sum of their
+ * refinements (current − initial, since `totalSessionUnits` already carries
+ * each one's initial estimate) and their pass-1 completed units. Folding
+ * these in keeps the session total/completed stable across active-importable
+ * switches instead of dropping a parked importable's estimate until it's
+ * applied.
+ */
+function parkedSums(parkedRows: { [key: string]: ActiveBookkeeping }): {
+    refinement: number;
+    completed: number;
+} {
+    let refinement = 0;
+    let completed = 0;
+    for (const k in parkedRows) {
+        const b = parkedRows[k];
+        if (b === undefined) continue;
+        refinement += b.currentTotalUnits - b.initialUnits;
+        completed += b.currentCompletedUnits;
+    }
+    return { refinement, completed };
 }
 
 function snapshotParked(parkedRows: {

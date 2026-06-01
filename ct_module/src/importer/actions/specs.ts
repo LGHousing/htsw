@@ -64,7 +64,7 @@ export type WriteActionOptions<T extends Action = Action> = {
     current?: Observed<T>;
     itemRegistry?: ItemRegistry;
     pathPrefix?: ActionPath;
-    nestedProgressScope?: (path: ActionPath) => ProgressScope | undefined;
+    nestedProgressScope?: (path: ActionPath, extraOffset?: number) => ProgressScope | undefined;
     events?: ImportEventHandler;
 };
 

@@ -16,9 +16,10 @@ import {
     toggleAutoTrackSource,
     toggleImportableChecked,
 } from "../../state";
-import { ACCENT_SUCCESS, COLOR_TEXT_DIM, COLOR_TEXT_FAINT, GLYPH_DOT } from "../../lib/theme";
+import { ACCENT_DANGER, ACCENT_SUCCESS, ACCENT_WARN, COLOR_TEXT_DIM, COLOR_TEXT_FAINT, GLYPH_DOT } from "../../lib/theme";
+import { diagnosticCountsFor, type SeverityCounts } from "../../state/diagnosticCounts";
 import { openEditFunctionFieldPopover } from "../../popovers/edit-function";
-import { STATUS_COLOR, STATUS_LABEL, statusForImportable } from "../../knowledge-status";
+import { STATUS_COLOR, STATUS_LABEL, knowledgeStateForImportable } from "../../knowledge-status";
 import {
     allReferencedPaths,
     hasSubList,
@@ -28,6 +29,7 @@ import {
 } from "../../state/importablePaths";
 import { importableIdentity, importableKey } from "../../../importCache/paths";
 import { addToQueue, makeImportableQueueItem, queueItemKey, removeFromQueueKey } from "../../state/queue";
+import { isImportRunning } from "../../../importer/runtimeState";
 import { composeFileMenu, composeImportableMenu } from "../../state/fileMenu";
 import { autoTrackRefresh, queueModifiedFromParse } from "../../right-panel/import-tab/actions";
 import { SourceDir, SourceFile, removeSource } from "./source";
@@ -350,14 +352,80 @@ export function resultRow(
     });
 }
 
+/**
+ * Severity badge for an importable that has parse diagnostics in its own
+ * source: a red octagon for errors (taking precedence), else a yellow
+ * triangle for warnings, with the count of the shown severity. The tooltip
+ * carries the full breakdown.
+ */
+function diagnosticBadge(counts: SeverityCounts): Element {
+    const isError = counts.errors > 0;
+    const color = isError ? ACCENT_DANGER : ACCENT_WARN;
+    const name = isError ? Icons.octagonAlert : Icons.triangleAlert;
+    const shown = isError ? counts.errors : counts.warnings;
+    const tip =
+        `${counts.errors} error${counts.errors === 1 ? "" : "s"}, ` +
+        `${counts.warnings} warning${counts.warnings === 1 ? "" : "s"}`;
+    return Container({
+        style: { direction: "row", gap: 2, align: "center" },
+        children: [
+            Icon({
+                name,
+                color,
+                tooltip: tip,
+                tooltipColor: color,
+                style: { width: { kind: "px", value: 9 }, height: { kind: "px", value: 9 } },
+            }),
+            // The MC font digit sits ~1px high in its line box vs the icon's
+            // geometric centre; a 1px top pad drops it to match.
+            Container({
+                style: { padding: { side: "top", value: 1 } },
+                children: [
+                    Text({
+                        text: String(shown),
+                        color,
+                        tooltip: tip,
+                        tooltipColor: color,
+                    }),
+                ],
+            }),
+        ],
+    });
+}
+
+/**
+ * Toggle an importable's queue membership from an Explore row. Adding (an
+ * unchecked importable → checked) is always allowed, even mid-import — the
+ * queue session tracks late adds as "pending" and they survive the run.
+ * Removing (checked → unchecked) is blocked while an import is running: the
+ * queue is locked so a live run's items can't be yanked out from under it.
+ */
+function toggleImportableInQueue(
+    parent: ResultImport,
+    imp: Importable,
+    checkKey: string,
+    checked: boolean
+): void {
+    if (checked && isImportRunning()) return; // would remove — locked mid-run
+    const nowChecked = toggleImportableChecked(checkKey);
+    const item = makeImportableQueueItem(imp, parent.fullPath);
+    if (nowChecked) addToQueue(item);
+    else removeFromQueueKey(queueItemKey(item));
+}
+
 export function importableRow(parent: ResultImport, imp: Importable): Element {
     const previewPath = importablePreviewPath(parent, imp);
-    const status = statusForImportable(imp);
+    // null = no knowledge row built yet (mid-rebuild / pre-build) → a neutral
+    // dot, NOT red. Red is reserved for a genuine cache "unknown".
+    const knowState = knowledgeStateForImportable(imp);
+    const dotColor = knowState === null ? COLOR_TEXT_FAINT : STATUS_COLOR[knowState];
+    const dotLabel = knowState === null ? "loading…" : STATUS_LABEL[knowState];
     const expandable = isImportableExpandable(imp);
     const expKey = importableExpansionKey(parent.fullPath, imp);
     const expanded = importableExpansion.has(expKey);
     const checkKey = importableKey(imp.type, importableIdentity(imp));
     const checked = isImportableChecked(checkKey);
+    const diagCounts = diagnosticCountsFor(parent.parse, imp);
     return Container({
         style: {
             direction: "row",
@@ -370,16 +438,10 @@ export function importableRow(parent: ResultImport, imp: Importable): Element {
             hoverBackground: ROW_HOVER_BG,
         },
         onClick: rowHandler(importableActions(parent, imp), () => {
-            const nowChecked = toggleImportableChecked(checkKey);
-            const item = makeImportableQueueItem(imp, parent.fullPath);
-            if (nowChecked) addToQueue(item);
-            else removeFromQueueKey(queueItemKey(item));
+            toggleImportableInQueue(parent, imp, checkKey, checked);
         }),
         onDoubleClick: () => {
-            const reverted = toggleImportableChecked(checkKey);
-            const item = makeImportableQueueItem(imp, parent.fullPath);
-            if (reverted) addToQueue(item);
-            else removeFromQueueKey(queueItemKey(item));
+            toggleImportableInQueue(parent, imp, checkKey, checked);
             confirmSelect(previewPath);
         },
         children: [
@@ -398,9 +460,9 @@ export function importableRow(parent: ResultImport, imp: Importable): Element {
             }),
             Text({
                 text: GLYPH_DOT,
-                color: STATUS_COLOR[status],
-                tooltip: STATUS_LABEL[status],
-                tooltipColor: STATUS_COLOR[status],
+                color: dotColor,
+                tooltip: dotLabel,
+                tooltipColor: dotColor,
                 style: { width: { kind: "px", value: 6 } },
             }),
             imp.type === "FUNCTION" && imp.icon !== undefined &&
@@ -409,6 +471,8 @@ export function importableRow(parent: ResultImport, imp: Importable): Element {
                 text: importableLabel(imp),
                 style: { width: { kind: "grow" } },
             }),
+            (diagCounts.errors > 0 || diagCounts.warnings > 0) &&
+                diagnosticBadge(diagCounts),
             Text({ text: imp.type, color: 0xff8a92a3 | 0 }),
             expandable &&
                 Container({

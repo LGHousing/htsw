@@ -1,47 +1,47 @@
 /// <reference types="../../../CTAutocomplete" />
 
-import { SourceMap, parseImportablesResult, htsl } from "htsw";
+import { htsl } from "htsw";
+import type { ParseResult } from "htsw";
+import type { Importable } from "htsw/types";
 
-import { FileSystemFileLoader } from "../../utils/files";
 import { rebuildKnowledgeRows } from "./knowledgeBuild";
 import {
     getHousingUuid,
     getImportJsonPath,
-    getParsedResult,
     setImportJsonPath,
     setKnowledgeRows,
     setParseInProgress,
     setParsedResult,
 } from "./index";
 import { addRecent, getRecents } from "./recents";
-import { updateParseCache } from "./parses";
-import { allReferencedPaths } from "./importablePaths";
 import {
-    buildLiteParseResult,
-    deleteSnapshot,
-    loadSnapshot,
-    saveSnapshot,
-    snapshotExists,
-} from "./parseSnapshot";
-import { getMtimeMs, javaType } from "../lib/java";
+    invalidateParseCacheEntry,
+    parseImportJsonAt,
+    touchParseCacheMtime,
+    type CachedParse,
+} from "./parses";
+import { deleteSnapshot, snapshotExists } from "./parseSnapshot";
+import { javaType } from "../lib/java";
+
+/**
+ * `reparse` is a thin DRIVER over the single parse authority,
+ * `parseImportJsonAt` (parses.ts). It owns no parsing, snapshotting, or
+ * mtime-watching of its own — that all lives in `parses.ts` /
+ * `parseSnapshot.ts`, behind one fingerprint-based freshness check shared
+ * with the Explore tree. This driver only:
+ *   - tracks which import.json is active and debounces explicit reloads,
+ *   - polls the authority each tick (cheap — it re-parses only when a
+ *     referenced file's fingerprint changed, throttled internally),
+ *   - propagates a changed parse into global state (parsedResult,
+ *     knowledge rows, recents) for the *active* import.json.
+ */
 
 let lastParseTiming: ParseTiming | null = null;
 
 export type ParseTiming = {
     path: string;
-    snapshotLoadMs: number;
-    snapshotValidateMs: number;
-    snapshotHit: boolean;
-    fullParseMs: number | null;
-    innerParseMs: number | null;
-    innerCheckMs: number | null;
-    fileCount: number | null;
-    cacheHits: number | null;
-    fileReadMs: number | null;
-    lexParseMs: number | null;
-    typeflowMs: number | null;
-    importJsonMs: number | null;
     totalMs: number;
+    snapshotHit: boolean;
 };
 
 export function getLastParseTiming(): ParseTiming | null {
@@ -52,23 +52,12 @@ export function invalidateParseSnapshot(): boolean {
     const path = getImportJsonPath();
     if (path.length === 0) return false;
     htsl.clearHtslCache();
+    invalidateParseCacheEntry(path);
     return deleteSnapshot(path);
 }
 
-
-let lastReparseAtMs = 0;
-let lastMtimeCheckAt = 0;
-let pendingReparse = false;
-let lastSeenPath = "";
-// Mtime snapshot per watched file (the import.json + every htsl source it
-// referenced on the last successful parse). When any of these change on
-// disk we reparse so knowledge dots / right-pane / live importer reflect
-// the edit immediately.
-const watchedMtimes: { [path: string]: number } = {};
-const DEBOUNCE_MS = 300;
-const MTIME_CHECK_INTERVAL_MS = 500;
+// ── import.json auto-discovery ────────────────────────────────────────
 const IMPORTS_ROOT = "./htsw/imports";
-
 
 /**
  * Walk `./htsw/imports/**` for the first `import.json` we can find. Used
@@ -162,6 +151,13 @@ export function autoDiscoverImportJson(): void {
     }
 }
 
+// ── driver state ──────────────────────────────────────────────────────
+let lastReparseAtMs = 0;
+let pendingReparse = false;
+let lastSeenPath = "";
+let lastParsedRef: ParseResult<Importable[]> | null = null;
+let forceInFlight = false;
+const DEBOUNCE_MS = 300;
 
 export function scheduleReparse(): void {
     pendingReparse = true;
@@ -170,234 +166,114 @@ export function scheduleReparse(): void {
 
 export function reparseNow(): void {
     pendingReparse = false;
-    runReparseDeferred();
+    forceReparse(getImportJsonPath());
 }
 
-/**
- * Mark the given file as already in sync with what reparse would observe.
- * Use this when something else (e.g. an in-place metadata edit) has
- * already updated both the disk file AND the in-memory parsed state, so
- * the mtime watcher shouldn't trigger a redundant reparse on next poll.
- */
-export function markPathInSync(path: string): void {
-    if (watchedMtimes[path] === undefined) return;
-    watchedMtimes[path] = getMtimeMs(path);
-}
-
-function watch(path: string | undefined): void {
-    if (path === undefined) return;
-    if (watchedMtimes[path] !== undefined) return;
-    watchedMtimes[path] = getMtimeMs(path);
-}
-
-function refreshWatchedMtimes(): void {
-    for (const k in watchedMtimes) delete watchedMtimes[k];
-    const path = getImportJsonPath();
-    const parsed = getParsedResult();
-    const paths = allReferencedPaths(path, parsed);
-    for (let i = 0; i < paths.length; i++) {
-        watch(paths[i]);
-    }
-}
-
+/** Kept for the overlay-init caller; identical to `reparseNow`. */
 export function reparseImportJson(): void {
     pendingReparse = false;
-    const path = getImportJsonPath();
-    lastSeenPath = path;
-    if (!fileExistsSafe(path)) {
-        setParsedResult(null);
-        setKnowledgeRows([]);
-        refreshWatchedMtimes();
-        return;
-    }
-
-    const t0 = Date.now();
-
-    const snapshot = loadSnapshot(path);
-    const t1 = Date.now();
-
-    let snapMiss: string | null = snapshot === null ? "no valid snapshot on disk" : null;
-    if (snapshot !== null && snapMiss === null) {
-        for (const fp in snapshot.fingerprint) {
-            const actual = getMtimeMs(fp);
-            const tail = fp.split("/").slice(-2).join("/");
-            if (actual === 0) { snapMiss = `${tail} missing`; break; }
-            if (actual !== snapshot.fingerprint[fp]) { snapMiss = `${tail} changed (${snapshot.fingerprint[fp]} -> ${actual})`; break; }
-        }
-    }
-    ChatLib.chat(snapMiss === null ? "&8[snapshot] HIT" : `&8[snapshot] miss: ${snapMiss}`);
-
-    if (snapshot !== null && snapMiss === null) {
-        const t2 = Date.now();
-        const lite = buildLiteParseResult(snapshot);
-        setParsedResult(lite);
-        updateParseCache(path, lite);
-        addRecent(path);
-        const tEnd = Date.now();
-        lastParseTiming = {
-            path,
-            snapshotLoadMs: t1 - t0,
-            snapshotValidateMs: t2 - t1,
-            snapshotHit: true,
-            fullParseMs: null,
-            innerParseMs: null,
-            innerCheckMs: null,
-            fileCount: null,
-            cacheHits: null,
-            fileReadMs: null,
-            lexParseMs: null,
-            typeflowMs: null,
-            importJsonMs: null,
-            totalMs: tEnd - t0,
-        };
-        scheduleDeferredPostParse(lite, path, /*persist=*/ false);
-        return;
-    }
-
-    const tPreParse = Date.now();
-    const sm = new SourceMap(new FileSystemFileLoader());
-    try {
-        const result = parseImportablesResult(sm, path);
-        const tParsed = Date.now();
-        setParsedResult(result);
-        updateParseCache(path, result);
-        addRecent(path);
-        const tm = result.timingMs;
-        lastParseTiming = {
-            path,
-            snapshotLoadMs: t1 - t0,
-            snapshotValidateMs: tPreParse - t1,
-            snapshotHit: false,
-            fullParseMs: tParsed - tPreParse,
-            innerParseMs: tm?.parseMs ?? null,
-            innerCheckMs: tm?.checkMs ?? null,
-            fileCount: tm?.fileCount ?? null,
-            cacheHits: tm?.cacheHits ?? null,
-            fileReadMs: tm?.fileReadMs ?? null,
-            lexParseMs: tm?.lexParseMs ?? null,
-            typeflowMs: tm?.typeflowMs ?? null,
-            importJsonMs: tm?.importJsonMs ?? null,
-            totalMs: tParsed - t0,
-        };
-        ChatLib.chat(
-            `&8[parse-timing] ${tm?.fileCount ?? "?"} files (${tm?.cacheHits ?? "?"} cached) in ${tParsed - tPreParse}ms — ` +
-            `read ${tm?.fileReadMs ?? "?"} / lex+parse ${tm?.lexParseMs ?? "?"} / typecheck ${tm?.typeflowMs ?? "?"} / importjson ${tm?.importJsonMs ?? "?"}`
-        );
-        scheduleDeferredPostParse(result, path, /*persist=*/ true);
-        return;
-    } catch (_err) {
-        const tFail = Date.now();
-        lastParseTiming = {
-            path,
-            snapshotLoadMs: t1 - t0,
-            snapshotValidateMs: tPreParse - t1,
-            snapshotHit: false,
-            fullParseMs: tFail - tPreParse,
-            innerParseMs: null,
-            innerCheckMs: null,
-            fileCount: null,
-            cacheHits: null,
-            fileReadMs: null,
-            lexParseMs: null,
-            typeflowMs: null,
-            importJsonMs: null,
-            totalMs: tFail - t0,
-        };
-        setParsedResult(null);
-        setKnowledgeRows([]);
-    }
-    refreshWatchedMtimes();
+    forceReparse(getImportJsonPath());
 }
 
 /**
- * Off-critical-path work after a parse. The watched-mtime refresh + snapshot
- * persist run once, generation-guarded so a newer reparse supersedes a stale
- * one. All of this lags the importables list (set synchronously in
- * reparseImportJson) by design.
+ * Mark a file as already in sync with disk, so the next freshness check
+ * doesn't trigger a redundant re-parse. Used after an in-place edit that
+ * updated both the disk file AND the in-memory parse.
  */
-let postParseGeneration = 0;
+export function markPathInSync(path: string): void {
+    touchParseCacheMtime(path);
+}
 
-function scheduleDeferredPostParse(
-    result: import("htsw").ParseResult<import("htsw/types").Importable[]>,
-    path: string,
-    persist: boolean
+// Heavy knowledge-row rebuild, deferred + generation-guarded so a newer
+// parse supersedes a stale rebuild and the tick isn't blocked by it.
+let knowledgeGen = 0;
+function scheduleKnowledgeRebuild(
+    parsed: ParseResult<Importable[]> | null,
+    progressive: boolean
 ): void {
-    const gen = ++postParseGeneration;
-    const housingUuid = getHousingUuid();
-    rebuildKnowledgeRows(housingUuid ?? "", housingUuid === null ? [] : result.value);
+    const gen = ++knowledgeGen;
     setTimeout(() => {
-        if (gen !== postParseGeneration) { ChatLib.chat(`&8[snap-save] skip: superseded (${gen} != ${postParseGeneration})`); return; }
-        refreshWatchedMtimes();
-        if (!persist) { ChatLib.chat("&8[snap-save] skip: persist=false (was a snapshot hit)"); return; }
-        if (result.gcx.isFailed()) { ChatLib.chat("&8[snap-save] skip: parse has errors (isFailed)"); return; }
-        saveSnapshot(path, result, watchedMtimes);
-        ChatLib.chat("&8[snap-save] wrote snapshot ok");
+        if (gen !== knowledgeGen) return;
+        const uuid = getHousingUuid();
+        rebuildKnowledgeRows(
+            uuid ?? "",
+            uuid === null ? [] : (parsed?.value ?? []),
+            progressive
+        );
     }, 0);
 }
 
-/**
- * Tick hook: if a reparse was scheduled and the debounce has elapsed, run
- * it. Also catches manual edits to the file: if the path or mtime changed
- * since last parse, reparse without a debounce. Watches all htsl sources
- * referenced by the current parse, not just the import.json — so editing
- * an htsl in VS Code immediately flips the knowledge dot.
- */
-// Round-robin slice index for the mtime poll. We can't stat all 300+
-// watched files every 500ms — that's a stutter every half-second on
-// large projects. Instead we walk through them N at a time across
-// successive ticks.
-let mtimeCheckSlicePos = 0;
-const MTIME_CHECK_SLICE = 40;
+// `progressive`: true for a load (dots fill in from empty — the nice
+// first-open effect), false for an edit (swap dots in atomically so they
+// never flash red mid-rebuild).
+function propagate(path: string, cached: CachedParse, progressive: boolean): void {
+    lastSeenPath = path;
+    lastParsedRef = cached.parsed;
+    setParsedResult(cached.parsed);
+    if (cached.parsed === null) {
+        setKnowledgeRows([]);
+        return;
+    }
+    addRecent(path);
+    scheduleKnowledgeRebuild(cached.parsed, progressive);
+}
 
-function runReparseDeferred(): void {
-    const path = getImportJsonPath();
-    const willLikelyFreeze = !snapshotExists(path);
-    if (willLikelyFreeze) setParseInProgress(true);
+/**
+ * Explicit reload: drop the cached parse and re-run the authority. Raises
+ * the "parse in progress" flag when a cold parse (no snapshot on disk) is
+ * likely to block the main thread, and defers the parse one turn so the
+ * flag can paint first.
+ */
+function forceReparse(path: string): void {
+    lastSeenPath = path;
+    if (path === "" || !fileExistsSafe(path)) {
+        lastParsedRef = null;
+        setParsedResult(null);
+        setKnowledgeRows([]);
+        return;
+    }
+    invalidateParseCacheEntry(path);
+    forceInFlight = true;
+    const willFreeze = !snapshotExists(path);
+    if (willFreeze) setParseInProgress(true);
+    const t0 = Date.now();
     setTimeout(() => {
         try {
-            reparseImportJson();
+            const cached = parseImportJsonAt(path);
+            lastParseTiming = { path, totalMs: Date.now() - t0, snapshotHit: !willFreeze };
+            propagate(path, cached, /*progressive=*/ true);
         } catch (_e) {
-            // state.parseError handles the error path
+            lastParsedRef = null;
+            setParsedResult(null);
+            setKnowledgeRows([]);
         }
-        if (willLikelyFreeze) setParseInProgress(false);
+        if (willFreeze) setParseInProgress(false);
+        forceInFlight = false;
     }, 0);
 }
 
+/**
+ * Tick hook. Loads a newly-selected import.json, honours the debounce for
+ * scheduled reloads, then in steady state polls the parse authority and
+ * propagates whenever it hands back a new parse (i.e. a referenced file
+ * was edited). No mtime bookkeeping here — the authority owns freshness.
+ */
 export function tickReparse(): void {
-    if (pendingReparse) {
-        // Wait the debounce out — don't disturb the timer. The earlier code
-        // re-called scheduleReparse() here when the path differed from
-        // lastSeenPath, which reset lastReparseAtMs every tick (~50ms) and
-        // prevented the 300ms debounce from ever elapsing.
-        if (Date.now() - lastReparseAtMs >= DEBOUNCE_MS) runReparseDeferred();
-        return;
-    }
+    if (forceInFlight) return;
+
     const path = getImportJsonPath();
     if (path !== lastSeenPath) {
-        scheduleReparse();
+        forceReparse(path);
         return;
     }
-    if (Date.now() - lastMtimeCheckAt < MTIME_CHECK_INTERVAL_MS) return;
-    lastMtimeCheckAt = Date.now();
-
-    // Snapshot the keys so insertion order stays stable across slices
-    // even if `watchedMtimes` gets mutated mid-walk by an ongoing
-    // reparse. Walking the live object would skip files when the map
-    // shrinks.
-    const keys: string[] = [];
-    for (const k in watchedMtimes) keys.push(k);
-    if (keys.length === 0) return;
-
-    if (mtimeCheckSlicePos >= keys.length) mtimeCheckSlicePos = 0;
-    const end = Math.min(keys.length, mtimeCheckSlicePos + MTIME_CHECK_SLICE);
-    for (let i = mtimeCheckSlicePos; i < end; i++) {
-        const watched = keys[i];
-        const m = getMtimeMs(watched);
-        if (m !== 0 && m !== watchedMtimes[watched]) {
-            mtimeCheckSlicePos = 0;
-            runReparseDeferred();
-            return;
+    if (pendingReparse) {
+        if (Date.now() - lastReparseAtMs >= DEBOUNCE_MS) {
+            pendingReparse = false;
+            forceReparse(path);
         }
+        return;
     }
-    mtimeCheckSlicePos = end;
+    if (path === "" || !fileExistsSafe(path)) return;
+    const cached = parseImportJsonAt(path);
+    if (cached.parsed !== lastParsedRef) propagate(path, cached, /*progressive=*/ false);
 }

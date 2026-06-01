@@ -24,13 +24,13 @@
  */
 
 import type { ParseResult } from "htsw";
-import type { Action, Importable } from "htsw/types";
+import type { Action, Condition, Importable } from "htsw/types";
 
 import { normalizeHtswPath } from "../lib/pathDisplay";
 import type { ActionPath } from "../../importer/importEvents";
 import type { DiffState } from "./diff";
 import { readImportableCache } from "../../importCache/cache";
-import { actionHash } from "../../importCache/hash";
+import { actionHash, conditionHash } from "../../importCache/hash";
 import { importableIdentity } from "../../importCache/paths";
 import {
     importableSourcePath,
@@ -167,12 +167,24 @@ function walk(
         const action = items[i];
         const dotted = `${parentDotted}${i}`;
         const cachedHash = slots === undefined ? undefined : slots[i];
-        const state: DiffState =
-            cachedHash === undefined
-                ? "add"
-                : cachedHash === actionHash(action)
-                  ? "match"
-                  : "edit";
+        let state: DiffState;
+        if (cachedHash === undefined) {
+            state = "add";
+        } else if (action.type === "CONDITIONAL") {
+            // A CONDITIONAL's own line is its head — `if (conditions) {`. The full
+            // hash also covers ifActions/elseActions, which are diffed on their own
+            // child lines below, so judge the head by its conditions alone.
+            // Otherwise adding/editing an action inside would light the head and
+            // make it look like the conditions changed.
+            state = conditionsMatchCache(action.conditions, lists[`${cacheKey}[${i}].conditions`])
+                ? "match"
+                : "edit";
+        } else if (action.type === "RANDOM") {
+            // `random {` has no head fields; nested changes show on child lines.
+            state = "match";
+        } else {
+            state = cachedHash === actionHash(action) ? "match" : "edit";
+        }
         out.set(dotted, state);
         if (action.type === "CONDITIONAL") {
             walk(out, prefix, `${parentBracketed}[${i}].ifActions`, action.ifActions, lists);
@@ -181,6 +193,18 @@ function walk(
             walk(out, prefix, `${parentBracketed}[${i}].actions`, action.actions, lists);
         }
     }
+}
+
+function conditionsMatchCache(
+    conditions: readonly Condition[],
+    cachedHashes: string[] | undefined
+): boolean {
+    if (cachedHashes === undefined) return conditions.length === 0;
+    if (cachedHashes.length !== conditions.length) return false;
+    for (let i = 0; i < conditions.length; i++) {
+        if (cachedHashes[i] !== conditionHash(conditions[i])) return false;
+    }
+    return true;
 }
 
 function bracketedToDotted(bracketed: string): string {

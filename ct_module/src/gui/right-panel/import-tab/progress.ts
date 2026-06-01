@@ -25,7 +25,7 @@ import {
     PHASE_HYDRATING,
     PHASE_READING,
 } from "../../lib/theme";
-import { TaskManager } from "../../../tasks/manager";
+import { cancelActiveImport } from "./actions";
 import {
     getCurrentPhaseEtaSeconds,
     getImportElapsedMs,
@@ -34,6 +34,7 @@ import {
     getImportMsPerUnit,
     getImportProgress,
     getImportProgressFraction,
+    isCurrentHouseTrusted,
     setActiveImportPath,
     setImportProgress,
 } from "../../state";
@@ -99,6 +100,13 @@ function opCounterText(): string {
 }
 
 function phaseEtaText(suffix: string): string {
+    // Only show a time estimate once we actually know the work. During
+    // setup/reading/hydrating the totals are still being discovered (the read
+    // pass is literally finding out how much there is), so any countdown
+    // there is made up. Show it only in the apply phase (diff known) or when
+    // trust gives the real counts up front.
+    const p = getImportProgress();
+    if (p !== null && !isImportTotalLocked(p) && !isCurrentHouseTrusted()) return "";
     const secs = getCurrentPhaseEtaSeconds();
     if (secs === null || secs <= 0) return "";
     return `${formatEtaSeconds(secs)} left ${suffix}`;
@@ -270,18 +278,20 @@ function progressTotalEtaLine(): string {
     const p = getImportProgress();
     if (p === null) return "";
     const rate = progressMsPerUnitText();
+    // Until the apply phase, the per-importable apply cost is just a rough
+    // guess — the real op-by-op diff isn't known until each importable has
+    // been read + hydrated. Showing a total before then is fiction, so we
+    // withhold it (the per-phase ETA still ticks). Exception: trust on, where
+    // cache baselines make every importable's diff cost real from the start.
+    const ready = isImportTotalLocked(p) || isCurrentHouseTrusted();
+    if (!ready) {
+        return `total calculating… · ${rate}`;
+    }
     const secs = getImportEtaSeconds();
-    if (secs === null) return `total ETA calculating… · ${rate}`;
-    const phase = p.active?.phase ?? null;
-    if (phase === "setup" || phase === "reading") {
-        return `total ~?m?s · ${rate}`;
-    }
-    if (phase === "applying" || phase === "done" || isImportTotalLocked(p)) {
-        const etc = getImportEtcMs();
-        const etcText = etc === null ? "" : ` · ETC ${formatClockTime(etc)}`;
-        return `total ${formatEtaSeconds(secs)}${etcText} · ${rate}`;
-    }
-    return `total ~${formatEtaSeconds(secs)} · ${rate}`;
+    if (secs === null) return `total calculating… · ${rate}`;
+    const etc = getImportEtcMs();
+    const etcText = etc === null ? "" : ` · ETC ${formatClockTime(etc)}`;
+    return `total ${formatEtaSeconds(secs)}${etcText} · ${rate}`;
 }
 
 export function liveImporterPanel(): Element {
@@ -377,7 +387,7 @@ export function liveImporterPanel(): Element {
                                     },
                                     onClick: () => {
                                         if (getImportProgress() === null) return;
-                                        TaskManager.cancelAll();
+                                        cancelActiveImport();
                                         // Clear the live UI immediately rather than waiting
                                         // for the cancelled task to unwind through its
                                         // finally — otherwise the header lingers on a stale

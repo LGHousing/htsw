@@ -193,18 +193,10 @@ export async function readActionList(
         ctx,
         ACTION_LIST_CONFIG,
         () => readActionsListPage(ctx),
-        ({ totalEntries, pagesRead, entries }) => {
+        ({ totalEntries, pagesRead }) => {
             readCompletedUnits = Math.max(0, pagesRead - 1) * COST.pageTurnWait;
             if (phaseUnits === undefined) return;
             phaseUnits.reading = readCompletedUnits;
-            // Incrementally refine hydrate cost from the entries observed
-            // so far. Each entry already carries its parsed
-            // `nestedSummaries` (lengths of inner if/else/conditions
-            // lists), so the partial hydrate cost is exact for the rows
-            // we've seen. By the time the final page arrives, this
-            // matches what `hydrateNestedActions` will compute, so the
-            // read→hydrate transition no longer bumps totalUnits.
-            phaseUnits.hydrating = sumHydrationCost(entries);
             progress?.({
                 phase: "reading",
                 completedUnits: readCompletedUnits,
@@ -345,16 +337,6 @@ function shouldHydrateScalarAction(action: Observed<Action>): boolean {
         if (typeof team === "string" && looksTruncated(team)) return true;
     }
     return false;
-}
-
-function sumHydrationCost(entries: readonly ObservedActionSlot[]): number {
-    let total = 0;
-    for (const entry of entries) {
-        const propsToRead = entry.nestedPropsToRead;
-        if (propsToRead === undefined || propsToRead.size === 0) continue;
-        total += hydrationEntryUnits(entry, propsToRead);
-    }
-    return total;
 }
 
 function buildFullHydrationPlan(

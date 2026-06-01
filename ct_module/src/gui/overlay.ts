@@ -43,12 +43,13 @@ import {
     setHousingUuid,
     setKnowledgeRows,
 } from "./state";
-import { rebuildKnowledgeRows } from "./state/knowledgeBuild";
+import { rebuildKnowledgeRows, stepKnowledgeBuild } from "./state/knowledgeBuild";
 import { getCurrentHousingUuid } from "../importCache/housingId";
 import { TaskManager } from "../tasks/manager";
 
 import { getChatKeyCode } from "./keybinds";
 import { renderToast } from "./toast";
+import { sampleProgressTraceTick } from "../importer/progress/trace";
 import {
     dispatchWheel,
     isDraggingScrollbar,
@@ -109,7 +110,7 @@ const UUID_FETCH_COOLDOWN_MS = 60_000;
 function refreshKnowledgeFromUuid(uuid: string): void {
     const parsed = getParsedResult();
     if (parsed === null) return;
-    rebuildKnowledgeRows(uuid, parsed.value);
+    rebuildKnowledgeRows(uuid, parsed.value, /*progressive=*/ false);
 }
 
 function maybeAutoFetchHousingUuid(): void {
@@ -260,12 +261,14 @@ export function initHtswGui(): void {
     // `postGuiRender` covers the other state (any GuiScreen open, including
     // GuiChat) where `DrawScreenEvent.Post` is the natural late hook.
     register(RenderGameOverlayEventPost, (_event: any) => {
+        sampleProgressTraceTick();
         const screen = (Client.getMinecraft() as any).field_71462_r;
         if (screen !== null && screen !== undefined) return;
         paintImportShade(0, 0, frame.getRoot(), "renderGameOverlayPost");
         renderToast();
     });
     register("postGuiRender", (mouseX: number, mouseY: number) => {
+        sampleProgressTraceTick();
         paintImportShade(mouseX, mouseY, frame.getRoot(), "postGuiRender");
         renderToast();
     });
@@ -519,6 +522,7 @@ export function initHtswGui(): void {
         tickAllFields();
         applyFocus(getFocusedInput());
         tickReparse();
+        stepKnowledgeBuild();
         // If the import ended while our placeholder is still up (Hypixel
         // didn't reopen a menu — e.g. the import finished naturally on
         // the last menu close), dismiss it so the player isn't trapped

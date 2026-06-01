@@ -146,11 +146,11 @@ export function parseObject(
     }
 
     const seenKeys = new Map<string, json.Node>();
-    const requiredKeys = new Set(
-        Object.entries(tree)
-            .filter(([_, elem]) => elem.required)
-            .map(([key]) => key)
-    );
+    const requiredKeys = new Set<string>();
+    const treeKeys = Object.keys(tree);
+    for (let i = 0; i < treeKeys.length; i++) {
+        if (tree[treeKeys[i]].required) requiredKeys.add(treeKeys[i]);
+    }
 
     for (const child of node.children) {
         if (child.type !== "property" || !child.children || child.children.length < 2) {

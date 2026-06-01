@@ -35,6 +35,7 @@ import {
     phaseUnitsTotal,
     type PhaseUnits,
 } from "../progress/costs";
+import { traceConditionOp } from "../progress/trace";
 
 type LiveConditionListEntry = {
     entryId: number;
@@ -206,6 +207,14 @@ export async function applyConditionListDiff(
 
         const observedName = CONDITION_MAPPINGS[op.baselineCondition.type].displayName;
         emitConditionOp(`edit condition ${observedName}`);
+        traceConditionOp({
+            opKind: op.noteOnly ? "noteOnly" : "edit",
+            conditionType: op.desired.type,
+            units: conditionOperationUnits(op),
+            invertChanged:
+                (op.baselineCondition.inverted === true) !==
+                (op.desired.inverted === true),
+        });
 
         const conditionSlot = await getPaginatedListSlotAtIndex(
             ctx,
@@ -260,6 +269,11 @@ export async function applyConditionListDiff(
                 ? "condition"
                 : CONDITION_MAPPINGS[op.baselineCondition.type].displayName;
         emitConditionOp(`delete condition ${observedName}`);
+        traceConditionOp({
+            opKind: "delete",
+            conditionType: op.baselineCondition?.type ?? "unknown",
+            units: conditionOperationUnits(op),
+        });
 
         await deleteObservedCondition(ctx, index, currentEntries.length);
         currentEntries.splice(index, 1);
@@ -271,6 +285,11 @@ export async function applyConditionListDiff(
         emitConditionOp(
             `add condition ${CONDITION_MAPPINGS[op.desired.type].displayName}`
         );
+        traceConditionOp({
+            opKind: "add",
+            conditionType: op.desired.type,
+            units: conditionOperationUnits(op),
+        });
         await importCondition(ctx, op.desired, itemRegistry);
         currentEntries.push({
             entryId: nextRuntimeEntryId++,

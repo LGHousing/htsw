@@ -19,10 +19,27 @@ import {
     currentMsPerUnit,
     type EtaCalculator,
 } from "../../importer/progress/eta";
+import { setProgressTraceSampler } from "../../importer/progress/trace";
+import { resetSessionTiming } from "../../importer/progress/timing";
 import { importableIdentity } from "../../importCache/paths";
 import type { QueueItem } from "./queue";
 import { canonicalPath } from "./parses";
 import { onImportRunningChanged } from "./selection";
+
+// Feed the progress trace's periodic sampler the *displayed* ETA values, so
+// `/htsw eta trace` captures what the user sees between events (the smoothing
+// behavior in the gaps), not just the per-event candidate.
+setProgressTraceSampler(() => {
+    if (importProgress === null) return null;
+    return {
+        etaSec: getImportEtaSeconds(),
+        phaseEtaSec: getCurrentPhaseEtaSeconds(),
+        msPerUnit: currentMsPerUnit(),
+        remaining: Math.max(0, importProgress.totalUnits - importProgress.completedUnits),
+        completed: importProgress.completedUnits,
+        total: importProgress.totalUnits,
+    };
+});
 
 let importProgress: ImportProgress | null = null;
 /**
@@ -135,6 +152,7 @@ export function setImportProgress(p: ImportProgress | null): void {
     if (p !== null && importProgress === null) {
         importStartedAt = Date.now();
         etaCalc = createEtaCalculator();
+        resetSessionTiming();
         lastFinishedProgress = null;
     } else if (p === null) {
         lastFinishedProgress = importProgress;

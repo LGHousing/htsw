@@ -83,9 +83,12 @@ export async function importSelectedImportables(
     const registry = createItemRegistry(parsed.value, parsed.gcx);
     const ordered = orderImportablesForImportSession(parsed.value, selection.importables);
     await ctx.sleep(1);
+    // Only the selected importables' trust plans are ever consulted, and each
+    // plan costs an importableHash + a full listHashes (per-action). Scoping to
+    // `ordered` avoids hashing the entire project when importing a subset.
     const trustPlan = buildTrustPlan(
         selection.housingUuid,
-        parsed.value,
+        ordered,
         selection.trustMode
     );
 

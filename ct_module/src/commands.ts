@@ -17,15 +17,13 @@ import {
     getTimingStats,
     resetTimingStats,
 } from "./importer/progress/timing";
-import {
-    COST,
-    CALIBRATABLE_COST_KEYS,
-    applyCalibratedCosts,
-    resetCalibratedCosts,
-    type CalibratableCostKey,
-} from "./importer/progress/costs";
+import { COST } from "./importer/progress/costs";
 import { getEventContainerCounts } from "./tasks/specifics/waitFor";
 import { isPacketOrderProbeActive } from "./importer/diagnostics/packetOrderProbe";
+import {
+    getProgressTracePath,
+    setProgressTraceEnabled,
+} from "./importer/progress/trace";
 
 function printCommandError(sm: SourceMap, err: unknown): void {
     if (err instanceof Diagnostic) {
@@ -95,11 +93,6 @@ function commandHtsw(args: string[]) {
         return;
     }
 
-    if (args.length > 0 && args[0] === "lexbench") {
-        lexBench();
-        return;
-    }
-
     ChatLib.chat(`&7${chatSeparator()}`);
     const title = `&e&lHTSW &f&l${VERSION}`;
     ChatLib.chat(`${ChatLib.getCenteredText(title)}`);
@@ -109,67 +102,11 @@ function commandHtsw(args: string[]) {
     ChatLib.chat("&f/import &7- Import actions from HTSL files");
     ChatLib.chat("&f/simulator &7- Simulate actions from HTSL files");
     ChatLib.chat("&f/htsw knowledge &7- Inspect local import/export knowledge");
-    ChatLib.chat("&f/htsw eta [reset|dump|calibrate <ms>|reset-costs] &7- Show / reset / dump / calibrate ETA samples");
+    ChatLib.chat("&f/htsw eta [reset|dump|trace on|off] &7- Show / reset / dump / trace ETA samples");
     ChatLib.chat("&f/htsw gui &7- Open the in-game HTSW dashboard");
     ChatLib.chat("&f/htsw waiters &7- Show live waitFor counts (leak check; idle = ~0)");
     ChatLib.chat("&f/htsw recompile &7- Rebuild + reload the module");
     ChatLib.chat(`&7${chatSeparator()}`);
-}
-
-/**
- * Microbenchmark the lexer's per-character operations in Rhino, isolated, so we
- * get engine-true numbers (Node JITs these to native and hides the cost). Pits
- * the patterns the htsl lexer uses against their fast equivalents.
- */
-function lexBench(): void {
-    const N = 300000;
-    const sample = "player_stat/value-1.0";
-    const len = sample.length;
-    let acc = 0;
-
-    const identRe = /[a-zA-Z_/\-0-9.-]/;
-    let t = Date.now();
-    for (let i = 0; i < N; i++) {
-        if (identRe.test(sample.charAt(i % len))) acc++;
-    }
-    const regexMs = Date.now() - t;
-
-    t = Date.now();
-    for (let i = 0; i < N; i++) {
-        const k = sample.charCodeAt(i % len);
-        if ((k >= 97 && k <= 122) || (k >= 65 && k <= 90) || (k >= 48 && k <= 57) ||
-            k === 95 || k === 47 || k === 45 || k === 46) acc++;
-    }
-    const codeMs = Date.now() - t;
-
-    t = Date.now();
-    for (let i = 0; i < N; i++) { if (sample.charAt(i % len) === "a") acc++; }
-    const charAtMs = Date.now() - t;
-    t = Date.now();
-    for (let i = 0; i < N; i++) { if (sample.charCodeAt(i % len) === 97) acc++; }
-    const charCodeMs = Date.now() - t;
-
-    const reps = 2000;
-    const tokLen = 40;
-    t = Date.now();
-    for (let r = 0; r < reps; r++) {
-        let v = "";
-        for (let i = 0; i < tokLen; i++) v += sample.charAt(i % len);
-        if (v.length < 0) acc++;
-    }
-    const plusEqMs = Date.now() - t;
-    t = Date.now();
-    for (let r = 0; r < reps; r++) {
-        const v = sample.substring(0, Math.min(tokLen, len));
-        if (v.length < 0) acc++;
-    }
-    const sliceMs = Date.now() - t;
-
-    const ratio = (a: number, b: number): string => (a / Math.max(1, b)).toFixed(1);
-    ChatLib.chat(`&8[lexbench] ${N} ops each (acc=${acc}):`);
-    ChatLib.chat(`&8  regex.test ${regexMs}ms vs charCode ${codeMs}ms  (${ratio(regexMs, codeMs)}x slower)`);
-    ChatLib.chat(`&8  charAt ${charAtMs}ms vs charCodeAt ${charCodeMs}ms  (${ratio(charAtMs, charCodeMs)}x)`);
-    ChatLib.chat(`&8  '+=' build ${plusEqMs}ms vs substring ${sliceMs}ms  (${ratio(plusEqMs, sliceMs)}x)  [${reps}x${tokLen}ch]`);
 }
 
 function commandEta(args: string[]): void {
@@ -184,14 +121,14 @@ function commandEta(args: string[]): void {
         return;
     }
 
-    if (args.length > 0 && args[0] === "calibrate") {
-        commandEtaCalibrate(args.slice(1));
-        return;
-    }
-
-    if (args.length > 0 && args[0] === "reset-costs") {
-        resetCalibratedCosts();
-        ChatLib.chat("&7[eta] cost overrides cleared; using source defaults");
+    if (args.length > 0 && args[0] === "trace") {
+        if (args[1] === "off" || args[1] === "stop") {
+            setProgressTraceEnabled(false);
+            ChatLib.chat(`&7[eta] progress trace off · &f${getProgressTracePath()}`);
+        } else {
+            const path = setProgressTraceEnabled(true);
+            ChatLib.chat(`&a[eta] progress trace on · &f${path}`);
+        }
         return;
     }
 
@@ -210,38 +147,6 @@ function commandEta(args: string[]): void {
     }
 
     printOpKindStats();
-}
-
-function commandEtaCalibrate(args: string[]): void {
-    const target = args.length > 0 ? parseInt(args[0], 10) : 250;
-    if (!isFinite(target) || target <= 0) {
-        ChatLib.chat(`&c[eta] invalid target ms/unit: ${args[0]}`);
-        return;
-    }
-    const stats = getTimingStats();
-    const updated: Partial<Record<CalibratableCostKey, number>> = {};
-    const skipped: string[] = [];
-    ChatLib.chat(`&7[eta] calibrating to ${target}ms/unit:`);
-    for (let i = 0; i < CALIBRATABLE_COST_KEYS.length; i++) {
-        const kind = CALIBRATABLE_COST_KEYS[i];
-        const entry = stats[kind];
-        if (entry === undefined || entry.count === 0) {
-            skipped.push(kind);
-            continue;
-        }
-        const totalMs = entry.avgMsPerExpectedUnit * COST[kind];
-        const newUnits = Math.max(0.1, totalMs / target);
-        const oldUnits = COST[kind];
-        updated[kind] = newUnits;
-        ChatLib.chat(
-            `&7  ${kind}: &f${oldUnits.toFixed(2)}u &7-> &f${newUnits.toFixed(2)}u &7(${entry.count} samples, ${totalMs.toFixed(0)}ms/op)`
-        );
-    }
-    applyCalibratedCosts(updated);
-    if (skipped.length > 0) {
-        ChatLib.chat(`&7[eta] skipped (no samples): &f${skipped.join(", ")}`);
-    }
-    ChatLib.chat(`&a[eta] applied; persisted to ./htsw/cost-overrides.json`);
 }
 
 function printOpKindStats(): void {

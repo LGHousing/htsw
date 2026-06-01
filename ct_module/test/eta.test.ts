@@ -53,17 +53,24 @@ describe("import ETA", () => {
         expect(eta.getTotal(p, 0)).toBe(16.5);
     });
 
-    test("ETA decays smoothly within the cache window", () => {
+    test("ETA decays smoothly toward a stalled candidate", () => {
         const p = progress(10, "hydrating");
         // Initial snapshot at t=0 with no data: phase ETA = 15s.
         expect(eta.getPhase(p, 0)).toBe(15);
-        // Within the 2s cache window: decay by clock, no re-snap.
+        // No units complete, so the candidate stays flat at 15s. The smoother
+        // ticks the displayed value down by wall-clock but eases it back toward
+        // that flat candidate, so one second drops a little less than a full
+        // second rather than a naive 1:1 countdown.
         now = 1_000;
-        expect(eta.getPhase(p, 0)).toBe(14);
-        // Without recorded timing data, ms/u stays at the prior (150ms),
-        // so the candidate ETA stays at 15s and decays by elapsed time.
+        const at1 = eta.getPhase(p, 0)!;
+        expect(at1).toBeLessThan(15);
+        expect(at1).toBeGreaterThan(14);
+        // Keeps decaying, but coasts toward candidate − tau rather than
+        // draining to zero during the stall.
         now = 3_000;
-        expect(eta.getPhase(p, 0)).toBe(12);
+        const at3 = eta.getPhase(p, 0)!;
+        expect(at3).toBeLessThan(at1);
+        expect(at3).toBeGreaterThan(12);
     });
 
     test("a bad early sample is corrected once enough units accumulate", () => {

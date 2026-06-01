@@ -1,176 +1,34 @@
 # HTSW Agent Guide
 
-HTSW = "HTSL but we don't take Ls" — a refined version of HTSL (Housing Text Scripting Language), which expresses Hypixel Housing GUI programming as text.
+HTSW = "HTSL but we don't take Ls" — a refined HTSL (Housing Text Scripting Language) that expresses Hypixel Housing GUI programming as text.
 
-## Packages
+## How to read this guide
 
-- `language/` — parser, type system, diagnostics, `import.json` loader, NBT, runtime. Source of truth for syntax and types. Public entrypoint: `language/src/index.ts`. Ask before editing.
-- `cli/` — Node CLI. `htsw check [path]`, `htsw run [path]`.
-- `ct_module/` — ChatTriggers module. Most operationally complex. Loads HTSW into Minecraft, drives Housing menus, diffs, simulates.
+This guide records **responsibilities and invariants only**. Anything you can learn by reading the code is deliberately left out so it can't go stale. When you add to this file, write one of three things and nothing else:
+
+- **What an area is for**
+- **Where the source of truth lives**
+- **Non-recoverable WHY**
+
+## Layout
+
+- `language/` — parser, type system, diagnostics, `import.json` loader, NBT, runtime. Source of truth for syntax and types. Entrypoint `language/src/index.ts`. **Ask before editing.**
+- `ct_module/` — loads HTSW into Minecraft: drives Housing menus, diffs, imports/exports, simulates. Runs on Rhino with `lib: ["ES5", "DOM"]`; anything bundled into ChatTriggers (including emitted `language/` JS) is constrained to that.
+- `cli/` — Node CLI (`htsw check [path]`, `htsw run [path]`).
 - `editors/` — VS Code, Monaco, shared editor features.
 - `docs/`, `examples/`, `test/` — content and language tests.
 
-## Build
+| area | build | test | notes |
+|---|---|---|---|
+| `language/` | `npm run build` | `npm test` | `lib: es2022` |
+| `cli/` | `npm run build` | — | |
+| `ct_module/` | `npm run build` | `npm test` | Java helper via `build:java`; deploy with `python install.py` |
 
-Each package builds independently. No top-level workspace script.
-
-| Package      | Build           | Test       | Notes                                                                        |
-| ------------ | --------------- | ---------- | ---------------------------------------------------------------------------- |
-| `language/`  | `npm run build` | `npm test` | `lib: es2022`                                                                |
-| `cli/`       | `npm run build` | —          |                                                                              |
-| `ct_module/` | `npm run build` | `npm test` | Includes Java helper via `npm run build:java`. Install: `python install.py`. |
-
-`ct_module/install.py` needs a local `.env` with `CT_MODULE_DESTINATION` (target ChatTriggers folder) and `HTSW_REPOSITORY_PATH` (used by `/htsw recompile`).
-
-**After any change under `ct_module/`, run `python install.py` from `ct_module/` so the deployed module is ready for `/ct reload`.** The script runs `npm run build` (typecheck + lint + Vite + Java) and copies `dist/` to the deploy. Pass `--nobuild` only if you have already built and just want to redeploy.
-
-## Rhino / ES5 Constraint — Read Before Writing CT Module Code
-
-`ct_module` runs on a Rhino-like JS engine. `tsconfig.json` sets `lib: ["ES5", "DOM"]` deliberately so the editor surfaces missing methods. **Anything that ends up in the ChatTriggers bundle** is constrained, including emitted `language/` JS.
-
-- **Avoid newer prototype methods.** No `String.padStart`/`replaceAll`/`matchAll`/`at`, no `Array.flat`/`flatMap`/`at`, no `Object.entries`/`values`/`fromEntries`. Use ES5 equivalents (e.g. `while` loops, `split(...).join(...)`, `Object.keys(o).map(k => [k, o[k]])`).
-- **Syntax features are fine** — `??`, `?.`, async/await, classes, spread, etc. are transpiled.
-- **`tsc --noEmit` may not catch this.** Trust the IDE squiggles. Bundling won't catch it either (host has V8).
-- **Polyfill** in `ct_module/src/polyfills/` and import before first use if you really need a modern method.
-
-## Core Flow
-
-1. `FileLoader` resolves `import.json` and references.
-2. Parser builds typed importables + diagnostics.
-3. Checker validates if parsing succeeded.
-4. Consumers either print diagnostics, simulate, or import into Housing.
-
-## ct_module Bootstrap
-
-`ct_module/src/index.ts`:
-
-1. Promise polyfill.
-2. `injectLong.ts` — loads `LongValue.class`, reflects arithmetic methods, calls `htsw.setLongImplementation(...)`. **Required**; without it long-runtime falls back to a slow path.
-3. Task manager / event waiters.
-4. Command registration, `/export` registration, MCP bridge, in-game dashboard init, importer side effects.
-
-## Commands
-
-`/htsw`, `/import`, `/simulator` (alias `/sim`), `/export`. `/htsw recompile` shells out to `python install.py` and `ct reload`. `/htsw knowledge` is the user-facing cache/status command; backend code calls this import cache, not knowledge. `/htsw eta` reports importer timing samples, `/htsw packet-probe` logs relevant packets, and `/htsw gui` opens the dashboard. `/import` parses via `SourceMap(new FileSystemFileLoader())` and runs work through `TaskManager.run(...)`; `/export` is registered from `exporter/index.ts`.
-
-## Task System
-
-Importer is async-task based, not callbacks.
-
-- `tasks/context.ts` — `TaskContext`: cancellation, `runCommand`, `displayMessage`, `sleep`, `withTimeout`, slot/event helpers. Almost all importer logic uses `TaskContext`, not raw CT globals.
-- `tasks/manager.ts` — tracks contexts, can cancel all.
-- `tasks/specifics/waitFor.ts` — event multiplexer over `tick` / `packetReceived` / `packetSent` / `message`. `waitForMenu` keys on `S30PacketWindowItems` + a tracked window ID, then waits one tick because Minecraft applies window data on the main thread after the packet.
-- `tasks/specifics/slots.ts` — `ItemSlot` wraps container slots (left/right/middle/shift click, drop, name/predicate/stripped-title lookup). Importer code uses `ItemSlot`, not `Player.getContainer()` directly.
-
-## Importer Architecture
-
-Lives in `ct_module/src/importer/`:
-
-- `gui/` — Housing menu helpers, packet waits, and paginated list helpers.
-- `fields/` — action/condition mappings, lore parsing, item canonicalization, compare normalization.
-- `actions/` — action-list read, sync, diff, hydration, apply, and logging.
-- `conditions/` — condition-list read, sync, diff, and apply.
-- `items/` — item selection and importable item resolution.
-- `progress/` — ETA cost model, timing samples, nested progress, and progress keys.
-- `importPreviewEvents.ts` — typed import preview/progress events.
-- `runtimeState.ts`, `sideEffects.ts`, `stepGate.ts`, `types.ts` — importer runtime state, side effects, step debugging, shared types.
-
-### Action Diff
-
-Three-pass match: exact → note-only → same-type minimum-cost. Cost is circular move distance + lore-field differences + note difference + recursive nested-list cost. Outputs a flat list of `delete`/`move`/`edit`/`add`. Applied in the order **delete → edit → move → add** (deletes stabilize indices, edits before moves avoid stale slot refs from the original read, moves resolve slots by current index, adds are appended and rotated). Movement is circular because Housing shift-click reorder wraps. See `actions/diff.ts`.
-
-### Condition Diff
-
-Simpler: edit/delete/add, no moves. See `conditions/diff.ts`.
-
-## Import Cache / Trust
-
-User-facing surfaces are named Knowledge. Backend code is named cache/trust.
-
-- `cache.ts` — persisted importable cache entries.
-- `hash.ts` — importable and action-list hashes.
-- `paths.ts` — cache roots, cache paths, importable identity, item SNBT paths.
-- `trust.ts` — trust plans and trusted action-list paths.
-- `status.ts` — cache status rows.
-- `commands.ts` — `/htsw knowledge`.
-
-`importables/actionListHelpers.ts` maps an `ImportableTrustPlan` into action-list sync inputs.
-
-## Importables Layout
-
-`importables/` owns everything per-importable-type — BOTH directions (import + export) — so the two stay symmetric.
-
-    importables/
-    ├── imports.ts          ← pure dispatcher: switch on type → importImportable<X>
-    ├── exports.ts          ← pure dispatcher: switch on type → exportImportable<X>
-    ├── importSession.ts    ← /import session orchestration
-    ├── actionListHelpers.ts← cache/trust helpers for action-list sync inputs
-    ├── itemRegistry.ts     ← shared item lookup
-    ├── references.ts       ← reference preflight shared by import flows
-    └── <type>/
-        ├── import.ts       ← per-type IMPORT body
-        ├── export.ts       ← per-type EXPORT body
-        └── (other files)   ← shared between import/export of this type
-
-**Rules.** `imports.ts`/`exports.ts` are pure dispatchers — never inline per-type bodies. Logic shared between import and export of one type lives inside that type's folder. To know which types are wired, read the dispatch switches.
-
-`exporter/` is reserved for cross-type wiring only:
-
-- `exporter/index.ts` — `/export` command + subcommand routing.
-- `exporter/importJsonWriter.ts` / `paths.ts` / `sanitize.ts` / `captureFromHousing.ts` — cross-type infrastructure.
-
-Per-type export bodies do NOT belong under `exporter/`. Use `importables/functions/export.ts` or `importables/menus/export.ts`, never `exporter/exportFunction.ts`. Exporters reuse importer reads — `readActionList(ctx, { kind: "full" })`, `readConditionList`, `parseActionListItem`, `parseConditionListItem`. Never duplicate read logic.
-
-CT import dispatcher supports FUNCTION, EVENT, REGION, ITEM, and MENU; NPC import throws. CT export dispatcher supports FUNCTION and MENU.
-
-### Per-Type Import Flows
-
-- **FUNCTION** — ensure function exists via `/function edit <name>` or `/function create <name>` → `syncActionList` unless trusted. If `repeatTicks` or icon changed: go back, open function settings, set icon/tick count.
-- **EVENT** — `/eventactions` → click event slot by name → `syncActionList`.
-- **REGION** — TP to `bounds.from` + `//pos1`, TP to `bounds.to` + `//pos2`, `/region edit <name>` (race vs missing). Create if missing, else `"Move Region"`. Re-open after move for fresh menu state. Sync entry/exit lists.
-- **ITEM** — Resolve UUID + hash. If there are no declared click actions, materialize/inject the source item and skip `/edit`; no per-house SNBT cache is needed because references can use the raw item. For action-bearing items, an exact SNBT cache hit at `./htsw/.cache/<uuid>/items/<hash>.snbt` short-circuits and refreshes the importable cache. Otherwise, if the importable cache points to a previous cached SNBT for the same item shell, inject that cached housing-tagged item, `/edit`, open Edit Actions, diff/sync changed click-action lists, then capture slot 0 NBT via `getRawNBT()` and write the new cache. If no usable prior cache exists, start from source NBT and perform a full action sync. Item SNBT caches are **per-housing**; source `interact_data` is not portable, so declare click actions in `leftClickActions`/`rightClickActions`.
-- **MENU** — open/create the menu editor, set menu metadata/items, and sync slot action lists through `syncActionList` when present and not trusted.
-
-## ACTION_SPECS / CONDITION_SPECS
-
-Source of truth for read/write coverage and nested-list reading per type. Access via `getActionSpec(type)` / `getConditionSpec(type)`. The doc does not enumerate per-type coverage because it shifts every PR.
-
-Spec-driven invariants:
-
-- `importAction(...)` treats no-`write` actions as add-and-return — do NOT define an empty-bodied `write` to mean "no-op" (would still trigger click-back).
-- If `write` exists, it assumes the editor opened and clicks back when done. Conditions ALSO toggle invert before clicking back. Actions don't share the invert rule.
-- Field setters short-circuit when current value matches — writers can be idempotent without per-field guards.
-- Nested-list-bearing action types (CONDITIONAL, RANDOM, ...) need an explicit `read` in their spec — lore-only is insufficient. Importer throws when a required nested read is missing.
-- `syncActionList` takes `baselineCurrent` for ETA/diff-cost prediction. That baseline can come from persisted cache or from already-observed nested editor state; do not call it `cachedCurrent` unless the value is strictly from disk cache.
-- `previewHandler` is the live import preview/progress event path. Do not add a parallel diff/progress callback unless there is a real second consumer.
-
-## Simulator
-
-`ct_module/src/simulator/` — separate from GUI import. Stores parsed importables + runtime, registers tick/command/event/region triggers. Behaviors come from `createActionBehaviors()` (`simulator/actions.ts`) and `createConditionBehaviors()` (`simulator/conditions.ts`); read those for current coverage. Useful for parser/runtime work and end-to-end testing — does NOT validate GUI automation.
-
-## NBT Helpers
-
-`ct_module/src/utils/nbt.ts` converts HTSW NBT ↔ Minecraft NBT and materializes ItemStacks. Used by item import/cache.
-
-## Extension Invariants
-
-- New importable types live under `importables/<type>/`. `import.ts` + `export.ts` + shared-as-needed. Dispatchers stay pure. Per-type export files don't go under `exporter/`.
-- Update `fields/actionMappings.ts` / `fields/conditionMappings.ts` first when adding action/condition types. They drive parsing, list-item observation, and diff cost.
-- Use typed accessors (`getActionSpec`, `getActionLoreFields`, `getNestedListFields`) — don't index unions with arbitrary strings.
-- New action with nested lists: make `getNestedListFields` see them, ensure list-item lore parses, add a `read` if lore is insufficient.
-- Action sync uses selective nested hydration (shallow read first, then `createNestedHydrationPlan`). Export flows always use full-mode reads.
-- Preserve `normalizeActionCompare` / `normalizeConditionCompare` semantics — changes cause widespread diff churn.
-- Use `TaskContext` + `waitForMenu` + existing setters. No hardcoded sleeps without an event-based alternative.
-- Prefer inline GUI code for small one-off flows over tiny extracted helpers.
-- Notes live on list items, not inside editors.
-- Conditions: every editor exposes invert. Actions: no such rule.
-- Action sync order is **delete → edit → move → add** by design.
-- Import cache/trust naming matters: cache is stored baseline state; trust is permission to skip importer work. Keep `/htsw knowledge` and the Knowledge tab user-facing, but do not introduce new backend `knowledge` names.
-- Item SNBT cache and importable cache are stateful and map-specific. Debug "why didn't this re-import?" from cache state first.
+**After any `ct_module/` change, run `python install.py` from `ct_module/`** so `/ct reload` picks it up. It runs the full build (typecheck + lint + Vite + Java) and copies `dist/` to the deploy. `.env` provides `CT_MODULE_DESTINATION` and `HTSW_REPOSITORY_PATH` (used by `/htsw recompile`).
 
 ## Comments
 
-**Default to NO comment.** AI-written comments tend to (a) restate what well-named code already says and (b) phrase guessed reasoning as established fact. The second is the worse failure: a confident-sounding "this works because X" misleads the next reader (human or agent) into trusting incorrect rationale and leaving real bugs in place. A wrong comment is worse than no comment.
+**Default to NO comment.** AI-written comments tend to (a) restate what well-named code already says and (b) phrase guessed reasoning as established fact. The second is the worse failure: a confident-sounding "this works because X" misleads the next reader into trusting incorrect rationale and leaving real bugs in place. A wrong comment is worse than no comment.
 
 Before writing a comment: **did you verify this, or are you narrating your mental model?** If you didn't verify it (an assumed MC/Rhino quirk, a guessed "this is needed because…"), leave it out. If the reader can recover the WHY from the code, leave it out.
 
@@ -183,32 +41,64 @@ Write a comment only when ALL hold:
 **Do not write:**
 
 - Restatements of the next line — `// increment i`, `// dark slate, primary panel bg` next to `COLOR_PANEL`.
-- Narration of removed code or past bugs — `// previously this re-called scheduleReparse() here…`, `// removed Y`, `// fix for ticket X`. Git has the diff; PRs have the context. Comments rot, history doesn't.
-- Task / PR breadcrumbs — `// added for the export flow`, `// used by the importer`. Renames and call-site changes silently make these wrong.
-- Section dividers inside functions — `// --- Double-click detection ---`, `// === parsing ===`. The function is too long; extract a helper instead.
-- Inline Java-method aliases over CT calls — `// getCursorPosition`. Rename the surrounding helper.
-- Speculative MC/CT/Rhino internals — `// works because MC reads X during runTick`, unless you have actually traced it. If you can't reproduce the claim on demand, do not assert it in prose.
-- TODOs without a tracked issue and a concrete next step. Stale TODOs accumulate forever.
+- Narration of removed code or past bugs — `// previously this re-called scheduleReparse()…`, `// fix for ticket X`. Git has the diff; PRs have the context. Comments rot, history doesn't.
+- Task / PR breadcrumbs — `// added for the export flow`, `// used by the importer`. Renames silently make these wrong.
+- Section dividers inside functions — `// --- Double-click detection ---`. The function is too long; extract a helper instead.
+- Speculative MC/CT/Rhino internals — `// works because MC reads X during runTick`, unless you've actually traced it. If you can't reproduce the claim on demand, don't assert it in prose.
+- TODOs without a tracked issue and a concrete next step.
 - Docstrings that restate the type signature or list every parameter.
 
 **Comments worth keeping (good patterns already in this repo):**
 
 - Hidden MC / CT 1.8.9 quirks you can demonstrate — placeholder `GuiScreen` swap, `displayGuiScreen(null)` side effects, `Image.fromAsset` being non-functional in this CT build.
-- Concrete race-condition or timing assumptions in async / event code (e.g. capturing a GuiScreen ref before listener registration to avoid a close-event race).
+- Concrete race-condition or timing assumptions in async / event code (e.g. capturing a `GuiScreen` ref before listener registration to avoid a close-event race).
 - Non-obvious design choices a future agent would otherwise undo — fixed overlay scale of 4, action sync order `delete → edit → move → add`, per-housing item SNBT cache.
 - Short docstrings on exported APIs covering the *contract*, not the implementation.
 
-When in doubt: delete the comment, build, see if the next reader (you, one week later) needs it. If a single line truly needs prose to be understandable, rename the symbol or extract a function — prose is the last resort, not the first.
+When in doubt: delete the comment. If a single line truly needs prose to be understandable, rename the symbol or extract a function — prose is the last resort.
 
-## Code Style
+## Code style
 
-- Prefer rename / extract over explanatory comments. See **Comments** above.
+- Prefer rename / extract over explanatory comments (see **Comments**). Delete unnecessary comments you come across.
+- Prefer inline GUI code for small one-off flows over tiny extracted helpers.
+- Use typed accessors over raw union indexing (`getActionSpec`, `getActionLoreFields`, `getNestedListFields`).
+- In `ct_module/` async/event code: no hardcoded sleeps where an event wait exists. Go through `TaskContext` and `waitForMenu`, not raw CT globals.
+- Read the `gui-development` skill before touching anything under `ct_module/src/gui/`.
 
-- Feel free to delete unnecessary comments you come across.
-
-## Working Style
+## Working style
 
 - Short progress updates before edits, builds, installs, and when findings change the plan.
 - Be direct about what changed and why. No vague reassurance.
-- When answering architecture or code questions, do not only describe current behavior. Evaluate whether the architecture makes sense: what it does, whether that responsibility belongs there, and what to change if the design is accidental, overbuilt, or misleading.
-- When a current implementation has duplicate channels, fake abstractions, or names that obscure ownership, call out the better architecture explicitly instead of preserving the existing shape by default. If two mechanisms serve the same real consumer, propose collapsing them into one typed path; do not justify a split only because one path carries more math, state, or implementation weight.
+- When answering an architecture or code question, don't only describe current behavior — judge it. Say whether a responsibility belongs where it is, and what to change if the design is accidental, overbuilt, or misleading.
+- When you see duplicate channels, fake abstractions, or names that obscure ownership, call out the better architecture instead of preserving the existing shape by default. If two mechanisms serve the same real consumer, propose collapsing them into one typed path — don't justify a split just because one path carries more math, state, or weight.
+
+## ct_module importer reference
+
+Lives in `ct_module/src/importer/`. Reads and writes real Housing menus through async tasks, not callbacks. The procedures and coverage shift every PR — read the code for those; the invariants below are what the code can't tell you.
+
+**Where the live truth is:**
+
+- Which importable types are wired — the switches in `importables/imports.ts` / `exports.ts`.
+- Per-type import/export procedure — that type's `importables/<type>/import.ts` / `export.ts`.
+- Read/write + nested-list coverage per action/condition — `ACTION_SPECS` / `CONDITION_SPECS`, via `getActionSpec` / `getConditionSpec`.
+- Simulator coverage (`ct_module/src/simulator/`, separate from import) — `createActionBehaviors()` / `createConditionBehaviors()`.
+
+**Structure invariants:**
+
+- `imports.ts` / `exports.ts` are pure dispatchers — never inline per-type bodies.
+- A type's import + export live together under `importables/<type>/`; logic shared between the two directions stays in that folder. `exporter/` is cross-type wiring only — never `exporter/exportFunction.ts`.
+- Exporters reuse importer reads (`readActionList`, `readConditionList`, `parse*ListItem`) — never duplicate read logic.
+- Adding an action/condition type: update `fields/actionMappings.ts` / `conditionMappings.ts` first — they drive parsing, list-item observation, and diff cost.
+
+**Behavioral invariants** (a future edit would undo these):
+
+- Action sync applies **delete → edit → move → add** — deletes stabilize indices, edits precede moves to avoid stale slot refs, moves resolve by current index, adds append then rotate. Action moves are circular (Housing shift-click reorder wraps). Conditions have no moves.
+- A no-`write` action is add-and-return; do **not** add an empty `write` to mean "no-op" — it still triggers click-back. A present `write` assumes the editor is open and clicks back when done. Conditions also toggle invert before clicking back; actions don't.
+- Field setters short-circuit on matching value, so writers are idempotent without per-field guards.
+- Nested-list action types (CONDITIONAL, RANDOM, …) need an explicit `read` in their spec — lore alone is insufficient and the importer throws if it's missing. Sync hydrates nested lists selectively (shallow, then `createNestedHydrationPlan`); export always reads full.
+- `previewHandler` is the one live preview/progress path — don't add a parallel diff/progress callback without a real second consumer.
+- Don't casually change `normalizeActionCompare` / `normalizeConditionCompare` — it churns every diff.
+- `waitForMenu` keys on `S30PacketWindowItems` + a tracked window ID, then waits one tick: MC applies window data on the main thread *after* the packet.
+- Notes live on list items, not inside editors.
+
+**Cache / trust / knowledge naming:** *cache* = stored baseline state, *trust* = permission to skip importer work, *Knowledge* = the user-facing name for both (the `/htsw knowledge` command and the Knowledge tab). Keep Knowledge user-facing; do **not** introduce new backend `knowledge` names. Item SNBT caches and the importable cache are stateful and per-housing (`interact_data` isn't portable — declare click actions in `leftClickActions` / `rightClickActions`). Debug "why didn't this re-import?" from cache state first.

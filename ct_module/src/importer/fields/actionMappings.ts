@@ -13,7 +13,7 @@ export const ACTION_MAPPINGS = {
     CONDITIONAL: {
         displayName: "Conditional",
         loreFields: {
-            "Match Any Condition": { prop: "matchAny", kind: "boolean" },
+            "Match Any Condition": { prop: "matchAny", kind: "boolean", default: false },
             Conditions: { prop: "conditions", kind: "nestedList" },
             "If Actions": { prop: "ifActions", kind: "nestedList" },
             "Else Actions": { prop: "elseActions", kind: "nestedList" },
@@ -68,9 +68,9 @@ export const ACTION_MAPPINGS = {
     CHANGE_MAX_HEALTH: {
         displayName: "Change Max Health",
         loreFields: {
-            Mode: { prop: "op", kind: "select" },
+            Mode: { prop: "op", kind: "select", default: "Set" },
             "Max Health": { prop: "amount", kind: "value" },
-            "Heal On Change": { prop: "heal", kind: "boolean" },
+            "Heal On Change": { prop: "heal", kind: "boolean", default: true },
         },
     },
 
@@ -148,9 +148,9 @@ export const ACTION_MAPPINGS = {
     CHANGE_VAR: {
         displayName: "Change Variable",
         loreFields: {
-            Holder: { prop: "holder", kind: "cycle", options: ["Player", "Global", "Team"] },
+            Holder: { prop: "holder", kind: "cycle", options: ["Player", "Global", "Team"], default: "Player" },
             Variable: { prop: "key", kind: "value" },
-            Operation: { prop: "op", kind: "select" },
+            Operation: { prop: "op", kind: "select", default: "Increment" },
             Value: { prop: "value", kind: "value" },
             "Automatic Unset": { prop: "unset", kind: "boolean", default: false },
         },
@@ -202,7 +202,7 @@ export const ACTION_MAPPINGS = {
     CHANGE_HEALTH: {
         displayName: "Change Health",
         loreFields: {
-            Mode: { prop: "op", kind: "select" },
+            Mode: { prop: "op", kind: "select", default: "Set" },
             Health: { prop: "amount", kind: "value" },
         },
     },
@@ -210,7 +210,7 @@ export const ACTION_MAPPINGS = {
     CHANGE_HUNGER: {
         displayName: "Change Hunger Level",
         loreFields: {
-            Mode: { prop: "op", kind: "select" },
+            Mode: { prop: "op", kind: "select", default: "Set" },
             Level: { prop: "amount", kind: "value" },
         },
     },
@@ -245,7 +245,7 @@ export const ACTION_MAPPINGS = {
         displayName: "Enchant Held Item",
         loreFields: {
             Enchantment: { prop: "enchant", kind: "select" },
-            Level: { prop: "level", kind: "value" },
+            Level: { prop: "level", kind: "value", default: 1 },
         },
     },
 
