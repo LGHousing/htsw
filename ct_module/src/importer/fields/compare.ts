@@ -26,24 +26,51 @@ export function normalizeActionCompare(
     return normalizeValue(value) as Action | Observed<Action>;
 }
 
+/**
+ * The diff matcher (`actions/diff.ts`) compares the same action / condition
+ * objects pairwise O(n²) times — once per candidate pair across the exact,
+ * note-only, and cost passes. Recomputing the canonical compare string each
+ * time means re-stringifying an entire CONDITIONAL tree on every comparison,
+ * which for a function with hundreds of conditionals blocks the main thread
+ * for minutes (game freeze + server disconnect). Memoize the string per
+ * object so each is built once. `canonicalStringify` is byte-identical to the
+ * old `JSON.stringify(normalizeValue(...))`, so equality results are
+ * unchanged. Objects are read-only for the duration of a diff and rebuilt
+ * fresh per read, so a WeakMap keyed by identity can't go stale across diffs.
+ */
+const compareKeyCache = new WeakMap<object, string>();
+const compareKeyNoNoteCache = new WeakMap<object, string>();
+
+function compareKey(value: unknown): string {
+    if (typeof value !== "object" || value === null) return canonicalStringify(value);
+    const hit = compareKeyCache.get(value);
+    if (hit !== undefined) return hit;
+    const key = canonicalStringify(value);
+    compareKeyCache.set(value, key);
+    return key;
+}
+
+function compareKeyNoNote(value: { note?: unknown }): string {
+    if (typeof value !== "object" || value === null) return canonicalStringify(value);
+    const hit = compareKeyNoNoteCache.get(value);
+    if (hit !== undefined) return hit;
+    const key = canonicalStringify(stripNote(value));
+    compareKeyNoNoteCache.set(value, key);
+    return key;
+}
+
 export function actionsEqual(
     observed: Action | Observed<Action>,
     desired: Action | Observed<Action>
 ): boolean {
-    return (
-        JSON.stringify(normalizeActionCompare(observed)) ===
-        JSON.stringify(normalizeActionCompare(desired))
-    );
+    return compareKey(observed) === compareKey(desired);
 }
 
 export function conditionsEqual(
     observed: Condition | Observed<Condition> | null,
     desired: Condition | Observed<Condition> | null
 ): boolean {
-    return (
-        JSON.stringify(normalizeConditionCompare(observed)) ===
-        JSON.stringify(normalizeConditionCompare(desired))
-    );
+    return compareKey(observed) === compareKey(desired);
 }
 
 function stripNote<T extends { note?: unknown }>(value: T): T {
@@ -57,8 +84,7 @@ export function actionOnlyNoteDiffers(
 ): boolean {
     return (
         desired.type === current.type &&
-        JSON.stringify(normalizeActionCompare(stripNote(desired))) ===
-            JSON.stringify(normalizeActionCompare(stripNote(current))) &&
+        compareKeyNoNote(desired) === compareKeyNoNote(current) &&
         desired.note !== current.note
     );
 }
@@ -69,8 +95,7 @@ export function conditionOnlyNoteDiffers(
 ): boolean {
     if (current === null) return false;
     return (
-        JSON.stringify(normalizeConditionCompare(stripNote(desired))) ===
-            JSON.stringify(normalizeConditionCompare(stripNote(current))) &&
+        compareKeyNoNote(desired) === compareKeyNoNote(current) &&
         desired.note !== current.note
     );
 }
