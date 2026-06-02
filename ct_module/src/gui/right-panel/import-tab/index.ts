@@ -19,6 +19,8 @@ import {
     SIZE_ROW_H,
 } from "../../lib/theme";
 import {
+    clearImportableChecks,
+    getActiveImportLabel,
     getHousingUuid,
     getImportProgress,
     isCurrentHouseTrusted,
@@ -26,7 +28,13 @@ import {
     setHouseTrust,
     setImportSoundsMuted,
 } from "../../state";
-import { queueDisplayGroups, type QueueItem } from "../../state/queue";
+import {
+    clearQueue,
+    getQueueLength,
+    queueDisplayGroups,
+    type QueueItem,
+} from "../../state/queue";
+import { isImportRunning } from "../../../importer/runtimeState";
 import { getAlias } from "../../../importCache/aliases";
 import { openAliasPopover } from "../../popovers/alias";
 import {
@@ -37,13 +45,14 @@ import {
 import { liveImporterPanel } from "./progress";
 import {
     isQueueImportJsonExpanded,
-    queueHeader,
     queueImportJsonChildren,
     queueImportJsonChildRow,
     queueRow,
 } from "./queue";
 import { importActionRow } from "./actions-ui";
 import { livePreviewBody } from "./live-preview-body";
+
+let queueExpanded = false;
 
 const TRUST_ON_BG = 0xff1e3d3d | 0;
 const TRUST_ON_HOVER = 0xff2a4f4f | 0;
@@ -215,6 +224,85 @@ function appendQueueRows(rows: Child[], items: readonly QueueItem[]): void {
     }
 }
 
+function queueSummary(): Element {
+    return Row({
+        style: { gap: 4, height: { kind: "px", value: 16 }, align: "center" },
+        children: [
+            Container({
+                style: {
+                    direction: "col",
+                    align: "center",
+                    justify: "center",
+                    width: { kind: "px", value: 14 },
+                    height: { kind: "grow" },
+                    hoverBackground: COLOR_BUTTON_HOVER,
+                },
+                onClick: (_rect, info) => {
+                    if (info.button !== 0) return;
+                    queueExpanded = !queueExpanded;
+                },
+                children: [
+                    Icon({ name: () => (queueExpanded ? Icons.chevronDown : Icons.chevronRight) }),
+                ],
+            }),
+            Text({
+                text: () => {
+                    const active = getActiveImportLabel();
+                    if (active !== null) return `Now: ${active}`;
+                    const n = getQueueLength();
+                    return n === 0 ? "Queue (empty)" : `Queue (${n})`;
+                },
+                color: COLOR_TEXT,
+                style: { width: { kind: "grow" } },
+            }),
+            Button({
+                text: "Clear",
+                style: {
+                    width: { kind: "px", value: 38 },
+                    height: { kind: "grow" },
+                    background: COLOR_BUTTON,
+                    hoverBackground: COLOR_BUTTON_HOVER,
+                },
+                onClick: () => {
+                    if (isImportRunning()) return;
+                    clearQueue();
+                    clearImportableChecks();
+                },
+            }),
+        ],
+    });
+}
+
+function queueScroll(): Element {
+    return Scroll({
+        id: "right-import-queue-scroll",
+        style: { gap: 2, height: { kind: "px", value: 120 } },
+        children: () => {
+            const groups = queueDisplayGroups();
+            if (groups.active.length === 0 && groups.pending.length === 0) {
+                return [
+                    Container({
+                        style: { padding: 6 },
+                        children: [
+                            Text({
+                                text: "Queue is empty — right-click anything in Explore and Add to queue.",
+                                color: COLOR_TEXT_FAINT,
+                            }),
+                        ],
+                    }),
+                ];
+            }
+            const rows: Child[] = [];
+            appendQueueRows(rows, groups.active);
+            if (groups.showDivider) {
+                rows.push(pendingDividerRow());
+            }
+            appendQueueRows(rows, groups.pending);
+            return rows;
+        },
+    });
+}
+
 function pendingDividerRow(): Element {
     return Container({
         style: {
@@ -234,42 +322,16 @@ function pendingDividerRow(): Element {
 }
 
 export function importTab(): Element {
+    const children: Child[] = [houseHeader(), queueSummary()];
+    if (queueExpanded) children.push(queueScroll());
+    children.push(
+        liveImporterPanel(),
+        livePreviewBody(),
+        pauseControlRow(),
+        importActionRow()
+    );
     return Col({
         style: { gap: 4, width: { kind: "grow" }, height: { kind: "grow" } },
-        children: [
-            houseHeader(),
-            queueHeader(),
-            Scroll({
-                id: "right-import-queue-scroll",
-                style: { gap: 2, height: { kind: "px", value: 120 } },
-                children: () => {
-                    const groups = queueDisplayGroups();
-                    if (groups.active.length === 0 && groups.pending.length === 0) {
-                        return [
-                            Container({
-                                style: { padding: 6 },
-                                children: [
-                                    Text({
-                                        text: "Queue is empty — right-click anything in Explore and Add to queue.",
-                                        color: COLOR_TEXT_FAINT,
-                                    }),
-                                ],
-                            }),
-                        ];
-                    }
-                    const rows: Child[] = [];
-                    appendQueueRows(rows, groups.active);
-                    if (groups.showDivider) {
-                        rows.push(pendingDividerRow());
-                    }
-                    appendQueueRows(rows, groups.pending);
-                    return rows;
-                },
-            }),
-            liveImporterPanel(),
-            livePreviewBody(),
-            pauseControlRow(),
-            importActionRow(),
-        ],
+        children,
     });
 }

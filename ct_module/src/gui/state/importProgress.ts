@@ -71,6 +71,12 @@ export function getImportProgress(): ImportProgress | null {
     return importProgress;
 }
 
+/** Display name of the importable currently being processed, or null when idle. */
+export function getActiveImportLabel(): string | null {
+    if (importProgress === null || importProgress.active === null) return null;
+    return importProgress.active.identity;
+}
+
 export function getImportProgressFraction(): number {
     const p = importProgress;
     if (p === null || p.totalUnits <= 0) return 0;
