@@ -1,8 +1,8 @@
 import type { CacheState } from "../importCache/status";
 import { findCacheRowIndex } from "../importCache/status";
 import { importableIdentity } from "../importCache/paths";
-import { getKnowledgeRows } from "./state";
-import { findFileTarget } from "./state/sourceDiff";
+import { getKnowledgeRows } from "./knowledge/rows";
+import { findFileTarget } from "./code-view/sourceDiff";
 import type { Importable } from "htsw/types";
 
 export const STATUS_COLOR: { [k in CacheState]: number } = {

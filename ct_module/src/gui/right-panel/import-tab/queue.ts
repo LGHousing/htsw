@@ -1,4 +1,4 @@
-/// <reference types="../../../CTAutocomplete" />
+/// <reference types="../../../../CTAutocomplete" />
 
 import type { Importable } from "htsw/types";
 
@@ -6,9 +6,9 @@ import {
     canonicalPath,
     forEachCachedParse,
     getParseAt,
-} from "./parses";
-import { importableSourcePath } from "./importablePaths";
-import { importableIdentity } from "../../importCache/paths";
+} from "../../parsing/parses";
+import { importableSourcePath } from "../../parsing/importablePaths";
+import { importableIdentity } from "../../../importCache/paths";
 
 /**
  * Dynamic import queue. Replaces the old `selectedImportableIds: Set<string>`

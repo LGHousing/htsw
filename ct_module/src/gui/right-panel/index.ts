@@ -18,7 +18,7 @@ import {
     tabIndex,
     tabCount,
     type RightPanelTabId,
-} from "../state/selection";
+} from "./selection";
 import { openMenu, MenuAction } from "../lib/menu";
 import {
     COLOR_BUTTON,
@@ -37,7 +37,7 @@ import { FileSystemFileLoader, StringFileLoader } from "../../utils/fileLoaders"
 import * as htsw from "htsw";
 import { viewBody } from "./view-body";
 import { normalizeHtswPath } from "../lib/pathDisplay";
-import { composeFileMenu } from "../state/fileMenu";
+import { composeFileMenu } from "../menus/fileMenu";
 import { importTab } from "./import-tab";
 
 

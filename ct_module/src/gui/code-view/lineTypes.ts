@@ -8,7 +8,7 @@
  */
 
 import type { SyntaxToken } from "../right-panel/syntax";
-import type { DiffState } from "../state/diffPalette";
+import type { DiffState } from "./diffPalette";
 
 export type TokenSpan = SyntaxToken & {
     fieldProp?: string;

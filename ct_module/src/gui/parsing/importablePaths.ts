@@ -2,7 +2,7 @@
 
 import type { ParseResult } from "htsw";
 import type { Importable } from "htsw/types";
-import { getParsedResult } from "./index";
+import { getParsedResult } from "../state/index";
 
 /**
  * Centralized importable→path lookups.

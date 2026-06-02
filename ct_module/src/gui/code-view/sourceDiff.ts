@@ -39,9 +39,9 @@ import {
     importableSubListPath,
     SUB_LIST_KINDS,
     type SubListKind,
-} from "./importablePaths";
-import { canonicalPath, forEachCachedParse } from "./parses";
-import { getHousingUuid } from ".";
+} from "../parsing/importablePaths";
+import { canonicalPath, forEachCachedParse } from "../parsing/parses";
+import { getHousingUuid } from "../state/housing";
 import { readCachedActionList } from "../../importables/actionListHelpers";
 
 export type SourceDiffEntry = Map<ActionPath, DiffState>;

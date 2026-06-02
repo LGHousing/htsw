@@ -128,6 +128,16 @@ function getFieldKind(type: string, prop: string): UiFieldKind | undefined {
  *     produces a bare string. Wrap bare strings into `{ type }` so both
  *     sides land on the object form.
  */
+// Housing stores numeric action/condition values as limited-precision floats
+// and echoes them back expanded to the underlying float — a source `1.8095238`
+// reads back from the GUI as `1.809523821`. Both sides round to the same value
+// at the precision Housing actually displays (7 decimals), so quantize there to
+// avoid re-importing an unchanged value as a change.
+const HOUSING_VALUE_SCALE = 1e7;
+function quantizeHousingValue(num: number): number {
+    return Math.round(num * HOUSING_VALUE_SCALE) / HOUSING_VALUE_SCALE;
+}
+
 function canonicalizeFieldValue(
     type: string,
     prop: string,
@@ -144,9 +154,13 @@ function canonicalizeFieldValue(
         value = normalizeMessageFormatting(value);
     }
     const kind = getFieldKind(type, prop);
-    if (kind === "value" && typeof value === "string" && value !== "") {
-        const num = Number(value);
-        if (Number.isFinite(num)) return num;
+    if (kind === "value") {
+        if (typeof value === "string" && value !== "") {
+            const num = Number(value);
+            if (Number.isFinite(num)) return quantizeHousingValue(num);
+        } else if (typeof value === "number" && Number.isFinite(value)) {
+            return quantizeHousingValue(value);
+        }
     }
     if (kind === "select" || kind === "cycle" || kind === "location") {
         if (typeof value === "string") return { type: value };

@@ -1,7 +1,7 @@
 /// <reference types="../../../../CTAutocomplete" />
 
 import { Result, ResultImport } from "./rowModel";
-import { parseImportJsonAt } from "../../state/parses";
+import { parseImportJsonAt } from "../../parsing/parses";
 
 export type SourceDir = {
     kind: "dir";

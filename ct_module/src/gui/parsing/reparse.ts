@@ -3,16 +3,16 @@
 import type { ParseResult } from "htsw";
 import type { Importable } from "htsw/types";
 
-import { rebuildKnowledgeRows } from "./knowledgeBuild";
+import { rebuildKnowledgeRows } from "../knowledge/knowledgeBuild";
 import {
     getHousingUuid,
     getImportJsonPath,
     setImportJsonPath,
-    setKnowledgeRows,
     setParseInProgress,
     setParsedResult,
-} from "./index";
-import { addRecent, getRecents } from "./recents";
+} from "../state";
+import { setKnowledgeRows } from "../knowledge/rows";
+import { addRecent, getRecents } from "../persistence/recents";
 import {
     invalidateParseCacheEntry,
     parseImportJsonAt,

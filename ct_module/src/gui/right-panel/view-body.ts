@@ -1,9 +1,9 @@
 /// <reference types="../../../CTAutocomplete" />
 
 import type { Element } from "../lib/layout";
-import { getActivePath } from "../state/selection";
+import { getActivePath } from "./selection";
 import { CodeView } from "../code-view/codeView";
-import { diffDecorator } from "../code-view/decorators";
+import { diffDecorator } from "./decorators";
 
 export function viewBody(): Element {
     return CodeView({

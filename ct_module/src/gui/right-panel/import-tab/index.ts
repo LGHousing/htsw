@@ -20,20 +20,19 @@ import {
 } from "../../lib/theme";
 import {
     clearImportableChecks,
-    getActiveImportLabel,
     getHousingUuid,
-    getImportProgress,
     isCurrentHouseTrusted,
     isImportSoundsMuted,
     setHouseTrust,
     setImportSoundsMuted,
 } from "../../state";
+import { getActiveImportLabel, getImportProgress } from "./importProgress";
 import {
     clearQueue,
     getQueueLength,
     queueDisplayGroups,
     type QueueItem,
-} from "../../state/queue";
+} from "./queue";
 import { isImportRunning } from "../../../importer/runtimeState";
 import { getAlias } from "../../../importCache/aliases";
 import { openAliasPopover } from "../../popovers/alias";

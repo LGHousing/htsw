@@ -25,7 +25,7 @@ const RenderGameOverlayEventPost = javaType(
 const ForgeGuiOpenEvent = javaType("net.minecraftforge.client.event.GuiOpenEvent");
 import { RootTree, getImportCachedBounds } from "./root";
 import { getContainerBounds, getFullscreenPanelRect } from "./lib/bounds";
-import { autoDiscoverImportJson, reparseNow, tickReparse } from "./state/reparse";
+import { autoDiscoverImportJson, reparseNow, tickReparse } from "./parsing/reparse";
 import { CHAT_INPUT_ID } from "./chat-input";
 import {
     initPopoverRendering,
@@ -37,13 +37,13 @@ import {
 } from "./lib/popovers";
 import {
     getHousingUuid,
-    getImportProgress,
     getParsedResult,
     isImportSoundsMuted,
     setHousingUuid,
-    setKnowledgeRows,
 } from "./state";
-import { rebuildKnowledgeRows, stepKnowledgeBuild } from "./state/knowledgeBuild";
+import { getImportProgress } from "./right-panel/import-tab/importProgress";
+import { setKnowledgeRows } from "./knowledge/rows";
+import { rebuildKnowledgeRows, stepKnowledgeBuild } from "./knowledge/knowledgeBuild";
 import { getCurrentHousingUuid } from "../importCache/housingId";
 import { TaskManager } from "../tasks/manager";
 

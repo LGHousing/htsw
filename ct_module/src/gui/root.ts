@@ -12,7 +12,7 @@ import { LeftPanel } from "./left-panel";
 import { RightPanel } from "./right-panel";
 import { BottomToolbar } from "./bottom-toolbar";
 import { ChatInputBar } from "./chat-input";
-import { getImportProgress } from "./state";
+import { getImportProgress } from "./right-panel/import-tab/importProgress";
 import { COLOR_PANEL } from "./lib/theme";
 
 const CHAT_INPUT_H = 16;

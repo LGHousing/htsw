@@ -33,6 +33,7 @@ import {
     setStepAuto,
 } from "../../../importer/stepGate";
 import { cancelActiveImport } from "./importController";
+import { isCurrentHouseTrusted } from "../../state";
 import {
     getCurrentPhaseEtaSeconds,
     getImportElapsedMs,
@@ -42,10 +43,9 @@ import {
     getImportProgress,
     getImportProgressFraction,
     getSessionVerb,
-    isCurrentHouseTrusted,
     setActiveImportPath,
     setImportProgress,
-} from "../../state";
+} from "./importProgress";
 import {
     countImportablesByStatus,
     isImportTotalLocked,

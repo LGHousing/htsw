@@ -10,7 +10,7 @@ import {
     removeFromQueueKey,
     toggleQueue,
     type QueueItem,
-} from "./queue";
+} from "../right-panel/import-tab/queue";
 
 /**
  * Build the queue-control entry for a file path. Resolves the path

@@ -2,7 +2,7 @@ import type { Importable } from "htsw/types";
 import type { CacheStatusRow } from "../../importCache/status";
 
 import { buildCacheStatusRow } from "../../importCache/status";
-import { appendKnowledgeRows, setKnowledgeRows } from "./index";
+import { appendKnowledgeRows, setKnowledgeRows } from "./rows";
 
 // Knowledge rows are built on the Minecraft main thread, so doing all ~200
 // importables in one call freezes the game for the full hash time. Instead we

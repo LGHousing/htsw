@@ -8,9 +8,9 @@ import { Button, Col, Container, Input, Row, Scroll, Text } from "../lib/compone
 import { closeAllPopovers, openPopover } from "../lib/popovers";
 import { COLOR_ROW, COLOR_ROW_HOVER, COLOR_TEXT_DIM } from "../lib/theme";
 import { updateImportableField, type Section } from "../../exporter/importJsonWriter";
-import { markPathInSync } from "../state/reparse";
-import { getParseAt, touchParseCacheMtime } from "../state/parses";
-import { refreshKnowledgeRowFor } from "../state";
+import { markPathInSync } from "../parsing/reparse";
+import { getParseAt, touchParseCacheMtime } from "../parsing/parses";
+import { refreshKnowledgeRowFor } from "../knowledge/rows";
 
 let editingValue = "";
 let editingX = "";

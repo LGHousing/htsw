@@ -34,9 +34,9 @@ import {
     getImportJsonPath,
     setExportImportJsonPath,
 } from "../../state";
-import { getQueueLength } from "../../state/queue";
-import { addRecent, getRecents } from "../../state/recents";
-import { forEachCachedParse } from "../../state/parses";
+import { getQueueLength } from "./queue";
+import { addRecent, getRecents } from "../../persistence/recents";
+import { forEachCachedParse } from "../../parsing/parses";
 import { openFileBrowserWithImportJsonSelection } from "../../popovers/file-browser";
 import { TaskManager } from "../../../tasks/manager";
 import {

@@ -28,21 +28,53 @@ Library — `gui/lib/` (project-agnostic UI primitives + screen/theme):
 - `theme.ts` — color/size/glyph constants. `lib/popovers` reads its panel/scrim colors from here, so `theme` is treated as part of `lib`.
 - `components/` — thin element-builder functions (`Button`, `Container`, `Row`, `Col`, `Input`, `Scroll`, `Text`).
 
-App state — `gui/state/`:
-- `index.ts` — global mutable state (parsed import.json, selected importable id, multi-select checkbox set, open tabs, **per-house trust set** with `isHouseTrusted` / `setHouseTrust` / `isCurrentHouseTrusted`, housing UUID, knowledge rows, import progress, `currentImportingPath` driving the inline live-importer strip in the right panel's Import tab).
-- `selection.ts` — preview/confirm + tab state for the right-panel source preview.
-- `reparse.ts` — a thin DRIVER over the single parse authority (`parses.ts`). Auto-discovers `import.json`, debounces explicit reloads, and on each tick polls `parseImportJsonAt(activePath)`, propagating into global state (`parsedResult`, knowledge rows, recents) whenever it hands back a new parse. It does NOT parse, snapshot, or watch mtimes itself — `parses.ts` owns freshness via one fingerprint check (import.json + every referenced `.htsl`/`.snbt`, see below) shared with the Explore tree, so there is no second mtime-watching system.
-- `parses.ts` — the single parse authority + per-file cache (`parseImportJsonAt`). Decides freshness by a **fingerprint** (mtimes of the import.json and every file it references, via `allReferencedPaths`), re-validated throttled (`FP_RECHECK_MS`) on every call so a referenced-file edit is picked up within ~0.4s without a separate watcher. Owns the disk snapshot (load/save) and is the only thing that calls the htsw parser. `invalidateParseCacheEntry` forces a fresh parse; `touchParseCacheMtime` marks a file in-sync after an in-place edit.
-- `recents.ts` — persisted MRU list of recently opened import.json paths (`gui-recents.json`). Used by `popovers/file-browser.ts` and `state/reparse.ts`.
-- `htslParse.ts` — `parseHtslFile` + `actionsToLines` for the right-panel HTSL preview.
-- `diffPalette.ts` — the `DiffState` union + color tables (`COLOR_BY_STATE` / `ROW_BG_BY_STATE`). Shared vocabulary for the two diff producers below and the `code-view/` renderer; holds no logic.
+App state — `gui/state/` (genuinely-global mutable state ONLY; split by concern, with `index.ts` as a convenience re-export barrel — nothing else lives here):
+- `paths.ts` — active + export `import.json` path.
+- `parsed.ts` — the active `ParseResult` (`getParsedResult` / `setParsedResult`).
+- `housing.ts` — current housing UUID.
+- `trust.ts` — **per-house trust set** with `isHouseTrusted` / `setHouseTrust` / `isCurrentHouseTrusted`, persisted to `trusted-houses.json`.
+- `selectionSet.ts` — Importables-tab multi-select checkbox set.
+- `autoTrack.ts` — auto-track source set.
+- `flags.ts` — `parseInProgress` + import-sound mute.
+- `index.ts` — re-export barrel over the above, plus cross-area re-exports of `knowledge/rows` and `import-tab/importProgress` so existing `from "../state"` call sites resolve. Owns no state itself.
+
+Parse cache service — `gui/parsing/` (a service, not "state"):
+- `parses.ts` — the single parse authority + per-file cache (`parseImportJsonAt`). Decides freshness by a **fingerprint** (mtimes of the import.json and every file it references via `allReferencedPaths`), re-validated throttled (`FP_RECHECK_MS`) so a referenced-file edit is picked up within ~0.4s without a separate watcher. Owns the disk snapshot and is the only thing that calls the htsw parser. `invalidateParseCacheEntry` forces a fresh parse; `touchParseCacheMtime` marks a file in-sync after an in-place edit.
+- `parseSnapshot.ts` — on-disk persisted parse output, keyed by import.json path; skips the ~1s cold full parse on `/ct reload` when nothing referenced has changed.
+- `reparse.ts` — thin DRIVER over `parses.ts`: auto-discovers `import.json`, debounces reloads, polls the authority each tick, propagates a changed parse into global state. Owns no parsing/snapshot/mtime logic itself.
+- `importablePaths.ts` — centralized importable→path lookups: `importableSourcePath` (htsl/.snbt/json), `importableSubListPath(imp, kind)` for sub-lists (`onEnterActions`/`onExitActions` on REGION; `leftClickActions`/`rightClickActions` on ITEM), and `allReferencedPaths`. Resolves spans through `sourceMap.getFileByPos` so a list with `actionsPath: "..."` returns the htsl while inline JSON returns the import.json.
+
+Code-view data — `gui/code-view/` (the ONE renderer + everything it parses/colors):
+- `htslParse.ts` — `parseHtslFile` + `actionsToLines`, consumed by `lineModel.ts` for the source preview.
+- `diffPalette.ts` — the `DiffState` union + color tables (`COLOR_BY_STATE` / `ROW_BG_BY_STATE`) + `COLOR_CURSOR` (the focus-cursor color; the cursor is NOT a diff state). Shared vocabulary; holds no logic.
 - `sourceDiff.ts` — STATIC diff producer: per-action `DiffState` comparing source vs the import cache ("what would change vs last import"), for the View tab. Lazy, cached per file.
+
+Diff decorators — `gui/right-panel/decorators.ts` (kept OUT of `code-view/` so the renderer stays generic; the `LineDecorator` interface lives in `code-view/lineTypes.ts`):
+- `diffDecorator` — View tab; reads `sourceDiff`.
+- `progressDecorator` — live import strip; reads `import-tab/livePreview` (each `PreviewLine`'s own `diffState`/`completed`, plus the live cursor + phase scalars). There is no separate overlay map — `livePreview` is the single live store.
+
+Right-panel state — `gui/right-panel/`:
+- `selection.ts` — preview/confirm + tab state for the right-panel source preview, plus the top-level View/Import tab.
+
+Import-session state — `gui/right-panel/import-tab/`:
 - `livePreview.ts` — LIVE diff producer: per-action `DiffState` driven by import events during an actual import (was `previewLines.ts` + the `importPreviewState.ts` barrel).
 - `focusedLine.ts` — per-file focused-line id for the code view.
-- `importablePaths.ts` — centralized importable→path lookups: `importableSourcePath` (smart: htsl/.snbt/json), `importableDeclaringJson` (declaring import.json — currently the top-level loaded one), and `importableSubListPath(imp, kind)` for action sub-lists (`onEnterActions` / `onExitActions` on REGION; `leftClickActions` / `rightClickActions` on ITEM). Resolves through `parsed.gcx.spans.get(list).start` → `sourceMap.getFileByPos` so a list with `actionsPath: "..."` returns the htsl while inline JSON returns the import.json.
+- `importProgress.ts` — import-session progress, ETA, per-queue-row run state.
+- `queue.ts` — the dynamic import `QueueItem` queue.
+
+Knowledge — `gui/knowledge/`:
+- `rows.ts` — knowledge-row storage (`getKnowledgeRows` / `setKnowledgeRows` / `refresh*`).
+- `knowledgeBuild.ts` — time-sliced/progressive rebuild of the per-importable dots.
+- `diagnosticCounts.ts` — per-importable diagnostic bucketing for the left-rail badges.
+
+Persistence — `gui/persistence/`:
+- `recents.ts` — persisted MRU list of recently opened import.json paths (`gui-recents.json`). Used by `popovers/file-browser.ts` and `parsing/reparse.ts`.
+
+Menus — `gui/menus/`:
+- `fileMenu.ts` — shared file-row context menu (Add/Remove from queue + OS-shell actions), used by both the left-panel rows and the right-panel tab right-click.
 
 Importer hookup — `importer/diffSink.ts`:
-- Defines `ImportDiffSink` (`markMatch`/`beginOp`/`completeOp`/`end`) and a single global active sink. `applyActionListDiff` captures and clears the sink on entry (so nested syncs in CONDITIONAL/RANDOM bodies stay silent), pre-marks untouched desired actions as `match`, and emits per-op events. The session (`importables/importSession.ts`) sets/clears the sink around each importable; the GUI's `startImport` (in `right-panel/import-tab/importController.ts`) wires sink events to `setDiffState`/`setCurrent` keyed by the importable's source-file path.
+- Defines `ImportDiffSink` (`markMatch`/`beginOp`/`completeOp`/`end`) and a single global active sink. `applyActionListDiff` captures and clears the sink on entry (so nested syncs in CONDITIONAL/RANDOM bodies stay silent), pre-marks untouched desired actions as `match`, and emits per-op events. The session (`importables/importSession.ts`) sets/clears the sink around each importable; the GUI's `startImport` (in `right-panel/import-tab/importController.ts`) wires sink events into the single `import-tab/livePreview` store — `markPlanned*` / `markMatch` / `applyComplete` for per-line state and `setCurrent` for the cursor — keyed by the importable's source-file path.
 
 Popovers — `gui/popovers/`:
 - `add-importable.ts` — "Add Importable" form (Explore "+" button).

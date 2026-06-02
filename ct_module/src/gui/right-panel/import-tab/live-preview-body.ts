@@ -9,10 +9,10 @@ import {
     COLOR_BUTTON_HOVER,
     COLOR_TEXT,
 } from "../../lib/theme";
-import { getActiveImportPath } from "../../state";
+import { getActiveImportPath } from "./importProgress";
 import { CodeView, jumpToFocusedLine } from "../../code-view/codeView";
-import { progressDecorator } from "../../code-view/decorators";
-import { previewLinesForFile } from "../../state/livePreview";
+import { progressDecorator } from "../decorators";
+import { previewLinesForFile } from "./livePreview";
 import type { RenderableLine } from "../../code-view/lineTypes";
 
 const PREVIEW_SCROLL_ID = "right-live-preview-scroll";

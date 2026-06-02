@@ -1,15 +1,16 @@
 /// <reference types="../../../CTAutocomplete" />
 
-import { ROW_BG_BY_STATE } from "../state/diffPalette";
-import { ensureSourceDiff } from "../state/sourceDiff";
-import { focusLineIdForFile } from "../state/focusedLine";
-import type { LineDecorations, LineDecorator, RenderableLine } from "./lineTypes";
+import { ROW_BG_BY_STATE } from "../code-view/diffPalette";
+import { ensureSourceDiff } from "../code-view/sourceDiff";
+import { focusLineIdForFile } from "./import-tab/focusedLine";
+import type { LineDecorations, LineDecorator, RenderableLine } from "../code-view/lineTypes";
 import {
     effectiveFocusActionPath,
-    getLiveOverlay,
+    getCurrentPath,
+    getLiveSummary,
     previewLineIdForPath,
     type PreviewLine,
-} from "../state/livePreview";
+} from "./import-tab/livePreview";
 
 const COLOR_PENDING_GRAY = 0xff666666 | 0;
 const COLOR_GHOST_GRAY = 0xff444444 | 0;
@@ -33,14 +34,13 @@ export function diffDecorator(path: string | null): LineDecorator {
 }
 
 export function progressDecorator(path: string | null): LineDecorator {
-    const base = diffDecorator(path);
     // Resolve once per decorator construction: the deepest preview-line
-    // ancestor of `overlay.currentPath`. Both decorateLine (highlight)
-    // and focusedLineId (scroll target) need to agree on this — otherwise
-    // the scroll lands on one line and the highlight on a different one
-    // (or no line at all, when currentPath has no exact preview match).
-    const overlay = path === null ? undefined : getLiveOverlay(path);
-    const rawCurrentPath = overlay?.currentPath ?? null;
+    // ancestor of the live cursor. Both decorateLine (highlight) and
+    // focusedLineId (scroll target) need to agree on this — otherwise the
+    // scroll lands on one line and the highlight on a different one (or no
+    // line at all, when the cursor has no exact preview match).
+    const rawCurrentPath = path === null ? null : getCurrentPath(path);
+    const isApplyPhase = path !== null && getLiveSummary(path) !== null;
     const focusPath =
         path === null || rawCurrentPath === null
             ? null
@@ -48,9 +48,6 @@ export function progressDecorator(path: string | null): LineDecorator {
     return {
         decorateLine(line: RenderableLine): LineDecorations {
             const preview = line as PreviewLine;
-            const entry = overlay;
-
-            const isApplyPhase = entry !== undefined && entry.summary !== null;
 
             const isBody = preview.variant === "body";
             // Consolidated placeholder ids end in `:placeholder` only;
@@ -123,45 +120,22 @@ export function progressDecorator(path: string | null): LineDecorator {
                 };
             }
 
-            if (path === null || line.actionPath === undefined) {
-                return base.decorateLine(line);
-            }
-            if (entry === undefined) {
-                return { foregroundColor: COLOR_PENDING_GRAY };
-            }
-            const info = entry.details.get(line.actionPath);
-            const state = entry.states.get(line.actionPath);
-
-            const isDone = info?.completed === true || state === "match";
-            if (isDone) {
-                return {
-                    isFocused,
-                    background: focusRowBg,
-                    cursorColumnBackground: focusColBg,
-                };
-            }
-
-            if (state === undefined || state === "unknown") {
-                return {
-                    foregroundColor: COLOR_PENDING_GRAY,
-                    isFocused,
-                    background: focusRowBg,
-                    cursorColumnBackground: focusColBg,
-                };
-            }
-
+            // Untagged line: built from the cache/observed snapshot and not yet
+            // diffed. Matched lines are marked `completed` (handled above), so a
+            // still-untagged line is genuinely pending → renders gray.
+            if (line.actionPath === undefined) return { isFocused: false };
             return {
-                state,
                 foregroundColor: COLOR_PENDING_GRAY,
                 isFocused,
+                background: focusRowBg,
                 cursorColumnBackground: focusColBg,
             };
         },
         focusedLineId(): string | null {
             if (path === null) return null;
-            const overlay = getLiveOverlay(path);
-            if (overlay !== undefined && overlay.currentPath !== null) {
-                return previewLineIdForPath(path, overlay.currentPath);
+            const current = getCurrentPath(path);
+            if (current !== null) {
+                return previewLineIdForPath(path, current);
             }
             return focusLineIdForFile(path);
         },

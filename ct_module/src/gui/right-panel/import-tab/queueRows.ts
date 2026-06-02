@@ -30,7 +30,9 @@ import {
 } from "../../lib/theme";
 
 const GLYPH_CARET = "▶";
-import { clearImportableChecks, getKnowledgeRows, getQueueItemRunState, isCurrentHouseTrusted, isCurrentQueueItem, isImportableChecked, toggleImportableChecked } from "../../state";
+import { clearImportableChecks, isCurrentHouseTrusted, isImportableChecked, toggleImportableChecked } from "../../state";
+import { getKnowledgeRows } from "../../knowledge/rows";
+import { getQueueItemRunState, isCurrentQueueItem } from "./importProgress";
 import { importableKey } from "../../../importCache/paths";
 import {
     clearQueue,
@@ -39,8 +41,8 @@ import {
     queueItemKey,
     removeFromQueueKey,
     type QueueItem,
-} from "../../state/queue";
-import { parseImportJsonAt } from "../../state/parses";
+} from "./queue";
+import { parseImportJsonAt } from "../../parsing/parses";
 import { importableIdentity } from "../../../importCache/paths";
 import { orderImportablesForImportSession } from "../../../importables/importSession";
 import { isImportRunning } from "../../../importer/runtimeState";

@@ -1,6 +1,6 @@
-/// <reference types="../../../CTAutocomplete" />
+/// <reference types="../../../../CTAutocomplete" />
 
-import { normalizeHtswPath } from "../lib/pathDisplay";
+import { normalizeHtswPath } from "../../lib/pathDisplay";
 
 type FileState = {
     focusedLineId: string | null;

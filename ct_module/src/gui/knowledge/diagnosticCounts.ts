@@ -1,7 +1,7 @@
 import type { Diagnostic, ParseResult } from "htsw";
 import type { Importable } from "htsw/types";
 
-import { importableFilePaths } from "./importablePaths";
+import { importableFilePaths } from "../parsing/importablePaths";
 
 /**
  * Diagnostics bucketed by the importable whose source file they live in.

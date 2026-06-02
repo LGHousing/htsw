@@ -5,11 +5,11 @@ import { Button, Col, Container, Icon, Row, Scroll, Text } from "../../lib/compo
 import { Icons } from "../../lib/icons.generated";
 import {
     getHousingUuid,
-    getKnowledgeRows,
     isHouseTrusted,
     setHousingUuid,
     setHouseTrust,
 } from "../../state";
+import { getKnowledgeRows, setKnowledgeRows } from "../../knowledge/rows";
 import { STATUS_COLOR, STATUS_LABEL } from "../../knowledge-status";
 import { GLYPH_DOT } from "../../lib/theme";
 import { getCurrentHousingUuid } from "../../../importCache/housingId";
@@ -20,7 +20,6 @@ import { TaskManager } from "../../../tasks/manager";
 import { IMPORT_CACHE_ROOT } from "../../../importCache/paths";
 import { deleteHousingCache } from "../../../importCache/cache";
 import { clearAlias } from "../../../importCache/aliases";
-import { setKnowledgeRows } from "../../state";
 import { javaType } from "../../lib/java";
 import {
     COLOR_BUTTON,

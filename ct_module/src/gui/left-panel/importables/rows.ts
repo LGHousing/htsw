@@ -10,14 +10,14 @@ import { Icons } from "../../lib/icons.generated";
 import { openMenu, MenuAction } from "../../lib/menu";
 import { openRenameImportablePopover } from "../../popovers/rename-importable";
 import {
-    getKnowledgeRows,
     isAutoTrackSource,
     isImportableChecked,
     toggleAutoTrackSource,
     toggleImportableChecked,
 } from "../../state";
+import { getKnowledgeRows } from "../../knowledge/rows";
 import { ACCENT_DANGER, ACCENT_SUCCESS, ACCENT_WARN, COLOR_TEXT_DIM, COLOR_TEXT_FAINT, GLYPH_DOT } from "../../lib/theme";
-import { diagnosticCountsFor, type SeverityCounts } from "../../state/diagnosticCounts";
+import { diagnosticCountsFor, type SeverityCounts } from "../../knowledge/diagnosticCounts";
 import { openEditFunctionFieldPopover } from "../../popovers/edit-function";
 import { STATUS_COLOR, STATUS_LABEL, knowledgeStateForImportable } from "../../knowledge-status";
 import {
@@ -26,15 +26,15 @@ import {
     importableSourcePath,
     importableSubListPath,
     type SubListKind,
-} from "../../state/importablePaths";
+} from "../../parsing/importablePaths";
 import { importableIdentity, importableKey } from "../../../importCache/paths";
-import { addToQueue, makeImportableQueueItem, queueItemKey, removeFromQueueKey } from "../../state/queue";
+import { addToQueue, makeImportableQueueItem, queueItemKey, removeFromQueueKey } from "../../right-panel/import-tab/queue";
 import { isImportRunning } from "../../../importer/runtimeState";
-import { composeFileMenu, composeImportableMenu } from "../../state/fileMenu";
+import { composeFileMenu, composeImportableMenu } from "../../menus/fileMenu";
 import { autoTrackRefresh, queueModifiedFromParse } from "../../right-panel/import-tab/importController";
 import { SourceDir, SourceFile, removeSource } from "./source";
 import { showInExplorer, openInVSCode } from "../../../utils/osShell";
-import { previewSelect, confirmSelect } from "../../state/selection";
+import { previewSelect, confirmSelect } from "../../right-panel/selection";
 import {
     Result,
     ResultImport,

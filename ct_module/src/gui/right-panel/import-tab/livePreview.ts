@@ -1,18 +1,18 @@
-/// <reference types="../../../CTAutocomplete" />
+/// <reference types="../../../../CTAutocomplete" />
 
 import * as htsw from "htsw";
 import type { Action, Importable } from "htsw/types";
-import { normalizeSoundKey } from "../../importer/fields/sounds";
-import type { TokenSpan, FieldSpan } from "../code-view/lineTypes";
-import type { DiffState, DiffLineInfo } from "./diffPalette";
+import { normalizeSoundKey } from "../../../importer/fields/sounds";
+import type { TokenSpan, FieldSpan } from "../../code-view/lineTypes";
+import type { DiffState } from "../../code-view/diffPalette";
 import type {
     ActionPath,
     DiffFinalState,
     DiffOpKind,
     DiffSummary,
-} from "../../importer/importEvents";
-import { tokenizeHtsl } from "../right-panel/syntax";
-import { normalizeHtswPath } from "../lib/pathDisplay";
+} from "../../../importer/importEvents";
+import { tokenizeHtsl } from "../syntax";
+import { normalizeHtswPath } from "../../lib/pathDisplay";
 
 type MaybeAction = Action;
 type MaybeNestedActions = ReadonlyArray<Action | null>;
@@ -33,19 +33,14 @@ export type PreviewLine = {
     completed?: boolean;
 };
 
-export type LiveOverlay = {
-    states: Map<ActionPath, DiffState>;
-    details: Map<ActionPath, DiffLineInfo>;
-    summary: DiffSummary | null;
-    currentPath: ActionPath | null;
-    currentLabel: string;
-};
-
 type FileState = {
     lines: PreviewLine[];
     revision: number;
     hasContent: boolean;
-    overlay: LiveOverlay;
+    /** Action path the importer is touching right now (cursor / scroll target). */
+    currentPath: ActionPath | null;
+    /** Set once the diff plan is known; its presence means we're in the apply phase. */
+    summary: DiffSummary | null;
     lastObservedAt: number;
 };
 
@@ -60,16 +55,6 @@ type FileState = {
  */
 const OBSERVED_REBUILD_THROTTLE_MS = 200;
 
-function emptyOverlay(): LiveOverlay {
-    return {
-        states: new Map(),
-        details: new Map(),
-        summary: null,
-        currentPath: null,
-        currentLabel: "",
-    };
-}
-
 const states: { [key: string]: FileState } = {};
 
 function keyForFile(path: string): string {
@@ -80,7 +65,7 @@ function ensure(path: string): FileState {
     const k = keyForFile(path);
     let s = states[k];
     if (!s) {
-        s = { lines: [], revision: 0, hasContent: false, overlay: emptyOverlay(), lastObservedAt: 0 };
+        s = { lines: [], revision: 0, hasContent: false, currentPath: null, summary: null, lastObservedAt: 0 };
         states[k] = s;
     }
     return s;
@@ -789,66 +774,42 @@ export function finalizeFromSource(
     bump(s);
 }
 
-// ── Live overlay mutations ────────────────────────────────────────────
+// ── Live cursor / phase + match tagging ───────────────────────────────
+//
+// Per-line diff state lives on the `PreviewLine`s themselves (set by the
+// `markPlanned*` / `applyComplete` mutators above). The only live state that
+// isn't per-line is the cursor and the phase flag, kept as two scalars below.
 
-export function getLiveOverlay(path: string): LiveOverlay | undefined {
-    return states[keyForFile(path)]?.overlay;
+export function getCurrentPath(path: string): ActionPath | null {
+    return states[keyForFile(path)]?.currentPath ?? null;
 }
 
-export function setLiveState(
-    path: string,
-    actionPath: ActionPath,
-    state: DiffState
-): void {
-    const o = ensure(path).overlay;
-    o.states.set(actionPath, state);
-    const existing = o.details.get(actionPath);
-    o.details.set(actionPath, { ...(existing ?? { state }), state });
+export function getLiveSummary(path: string): DiffSummary | null {
+    return states[keyForFile(path)]?.summary ?? null;
+}
+
+export function setCurrent(path: string, actionPath: ActionPath | null): void {
+    ensure(path).currentPath = actionPath;
 }
 
 export function setLiveSummary(path: string, summary: DiffSummary): void {
-    ensure(path).overlay.summary = summary;
+    ensure(path).summary = summary;
 }
 
-export function setPlannedOp(
-    path: string,
-    actionPath: ActionPath,
-    kind: DiffOpKind,
-    label: string,
-    detail: string
-): void {
-    const o = ensure(path).overlay;
-    const opState: DiffState =
-        kind === "edit" ? "edit" : kind === "add" ? "add" : kind === "move" ? "edit" : "delete";
-    const existing = o.details.get(actionPath);
-    o.states.set(actionPath, opState);
-    o.details.set(actionPath, {
-        state: opState,
-        kind,
-        label: label.length > 0 ? label : existing?.label,
-        detail: detail.length > 0 ? detail : existing?.detail,
-    });
-}
-
-export function markLiveCompleted(path: string, actionPath: ActionPath): void {
-    const o = ensure(path).overlay;
-    const existing = o.details.get(actionPath);
-    if (existing === undefined) return;
-    o.details.set(actionPath, { ...existing, completed: true });
-}
-
-export function setLiveCurrent(
-    path: string,
-    actionPath: ActionPath | null,
-    label: string = ""
-): void {
-    const o = ensure(path).overlay;
-    o.currentPath = actionPath;
-    o.currentLabel = label;
-}
-
-export function clearLiveOverlay(path: string): void {
-    const k = keyForFile(path);
-    const s = states[k];
-    if (s !== undefined) s.overlay = emptyOverlay();
+/**
+ * Mark an action's line(s) as matched — i.e. already in sync with the desired
+ * state, nothing to do. Renders as a completed (done) line. Used for untouched
+ * actions and no-op edits, which the diff plan reports as matches.
+ */
+export function markMatch(path: string, actionPath: ActionPath): void {
+    const s = ensure(path);
+    let changed = false;
+    for (let i = 0; i < s.lines.length; i++) {
+        if (s.lines[i].actionPath === actionPath) {
+            s.lines[i].completed = true;
+            s.lines[i].diffState = undefined;
+            changed = true;
+        }
+    }
+    if (changed) bump(s);
 }
