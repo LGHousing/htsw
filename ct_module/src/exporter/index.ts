@@ -4,9 +4,11 @@ import { exportAllFunctions } from "../importables/functions/exportAll";
 import { exportAllEvents } from "../importables/events/exportAll";
 import { getCurrentHousingUuid } from "../importCache";
 import {
+    defaultExportRoot,
     htslFilenameForFunctionExport,
     readEventNamesFromImportJson,
     readFunctionNamesFromImportJson,
+    resolveModuleRelativePath,
 } from "./paths";
 import { chatSeparator, stripSurroundingQuotes } from "../utils/helpers";
 import { VERSION } from "htsw";
@@ -82,7 +84,7 @@ function exportDestination(
     explicitPath: string | undefined
 ): { rootDir: string; importJsonPath: string } | null {
     if (explicitPath === undefined) return null;
-    const path = trimTrailingSlashes(explicitPath);
+    const path = resolveModuleRelativePath(trimTrailingSlashes(explicitPath));
     if (endsWithIgnoreCase(path, ".json")) {
         return { rootDir: dirname(path), importJsonPath: normalizeSlashes(path) };
     }
@@ -109,7 +111,7 @@ function printExportHelp(): void {
     ChatLib.chat("&f/export stop");
     ChatLib.chat("&7  Cancels any running export (or import) task.");
     ChatLib.chat('&7  Quote multi-word names: /export function "Button Blessing" my/path/');
-    ChatLib.chat("&7  Default path: ./htsw/exports/<housingUuid>/");
+    ChatLib.chat("&7  Default path: ./config/ChatTriggers/modules/HTSW/imports/<housingUuid>/");
     ChatLib.chat(`&7${chatSeparator()}`);
 }
 
@@ -142,7 +144,7 @@ function commandExport(args: string[]): void {
                 importJsonPath = explicitDestination.importJsonPath;
             } else {
                 const uuid = await getCurrentHousingUuid(ctx);
-                rootDir = `./htsw/exports/${uuid}`;
+                rootDir = defaultExportRoot(uuid);
                 importJsonPath = `${rootDir}/import.json`;
             }
 
@@ -188,7 +190,7 @@ function commandExport(args: string[]): void {
                 importJsonPath = explicitDestination.importJsonPath;
             } else {
                 const uuid = await getCurrentHousingUuid(ctx);
-                rootDir = `./htsw/exports/${uuid}`;
+                rootDir = defaultExportRoot(uuid);
                 importJsonPath = `${rootDir}/import.json`;
             }
 
@@ -234,7 +236,7 @@ function commandExport(args: string[]): void {
                 importJsonPath = explicitDestination.importJsonPath;
             } else {
                 const uuid = await getCurrentHousingUuid(ctx);
-                rootDir = `./htsw/exports/${uuid}`;
+                rootDir = defaultExportRoot(uuid);
                 importJsonPath = `${rootDir}/import.json`;
             }
 
@@ -308,7 +310,7 @@ function commandExport(args: string[]): void {
                 importJsonPath = explicitDestination.importJsonPath;
             } else {
                 const uuid = await getCurrentHousingUuid(ctx);
-                rootDir = `./htsw/exports/${uuid}`;
+                rootDir = defaultExportRoot(uuid);
                 importJsonPath = `${rootDir}/import.json`;
             }
 
@@ -352,7 +354,7 @@ function commandExport(args: string[]): void {
                 importJsonPath = explicitDestination.importJsonPath;
             } else {
                 const uuid = await getCurrentHousingUuid(ctx);
-                rootDir = `./htsw/exports/${uuid}`;
+                rootDir = defaultExportRoot(uuid);
                 importJsonPath = `${rootDir}/import.json`;
             }
 

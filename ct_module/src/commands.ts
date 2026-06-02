@@ -26,7 +26,11 @@ import {
 } from "./importer/progress/trace";
 import { getCurrentHousingUuid } from "./importCache";
 import { snbtFromItem } from "./importer/itemCapture";
-import { snbtFilenameForItemExport } from "./exporter/paths";
+import {
+    defaultExportRoot,
+    resolveModuleRelativePath,
+    snbtFilenameForItemExport,
+} from "./exporter/paths";
 import { upsertImportableEntry } from "./exporter/importJsonWriter";
 import { ensureParentDirs } from "./utils/filesystem";
 import { getItemFromSnbt } from "./utils/nbt";
@@ -135,6 +139,7 @@ function itemSaveDestination(
     while (path.length > 0 && (path.charAt(path.length - 1) === "/" || path.charAt(path.length - 1) === "\\")) {
         path = path.substring(0, path.length - 1);
     }
+    path = resolveModuleRelativePath(path);
     const norm = path.split("\\").join("/");
     if (norm.length > 5 && norm.substring(norm.length - 5).toLowerCase() === ".json") {
         const slash = norm.lastIndexOf("/");
@@ -195,7 +200,7 @@ function saveItem(args: string[]): void {
     } else {
         TaskManager.run(async (ctx) => {
             const uuid = await getCurrentHousingUuid(ctx);
-            const rootDir = `./htsw/exports/${uuid}`;
+            const rootDir = defaultExportRoot(uuid);
             writeSavedItem(name, snbt, rootDir, `${rootDir}/import.json`);
         }).catch((err) => {
             ChatLib.chat(`&c[htsw] saveitem failed: ${err}`);
@@ -216,7 +221,7 @@ function giveItem(args: string[]): void {
         return;
     }
 
-    let path = stripSurroundingQuotes(args.join(" "));
+    let path = resolveModuleRelativePath(stripSurroundingQuotes(args.join(" ")));
     if (!path.endsWith(".snbt")) path += ".snbt";
 
     if (!FileLib.exists(path)) {
@@ -363,7 +368,7 @@ function commandImport(args: string[]) {
     }
 
     const sm = new SourceMap(new FileSystemFileLoader());
-    const importPath = stripSurroundingQuotes(args.join(" "));
+    const importPath = resolveModuleRelativePath(stripSurroundingQuotes(args.join(" ")));
     let result: ReturnType<typeof parseImportablesResult>;
     try {
         result = parseImportablesResult(sm, importPath);

@@ -2,6 +2,32 @@ import * as json from "jsonc-parser";
 import { encodeFilesystemComponent } from "../utils/filesystem";
 
 /**
+ * Default workspace root for `/import` and `/export`. Bare, simple-relative
+ * paths anchor here so users can type `roulette/import.json` and reach the
+ * symlinked vault folder rather than a Minecraft-root-relative path.
+ */
+export const MODULE_IMPORTS_ROOT =
+    "./config/ChatTriggers/modules/HTSW/imports";
+
+/**
+ * Anchor a user-typed `/import` or `/export` path to MODULE_IMPORTS_ROOT
+ * unless it's already explicit: `./x`/`../x`, a POSIX absolute `/x`, or a
+ * Windows drive `C:/x` pass through unchanged.
+ */
+export function resolveModuleRelativePath(path: string): string {
+    if (path.length === 0) return path;
+    const normalized = path.split("\\").join("/");
+    if (normalized.charAt(0) === ".") return path;
+    if (normalized.charAt(0) === "/") return path;
+    if (/^[A-Za-z]:/.test(normalized)) return path;
+    return `${MODULE_IMPORTS_ROOT}/${normalized}`;
+}
+
+export function defaultExportRoot(housingUuid: string): string {
+    return `${MODULE_IMPORTS_ROOT}/${housingUuid}`;
+}
+
+/**
  * Filesystem-safe encoding for an importable's identity, used to derive
  * `.htsl` filenames during export.
  *
