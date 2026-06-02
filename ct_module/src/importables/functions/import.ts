@@ -20,6 +20,7 @@ import {
 import {
     applyFunctionSettings,
     ensureFunctionExists,
+    ensureFunctionNamesExist,
     openFunctionSettings,
 } from "./shared";
 
@@ -63,12 +64,16 @@ export async function prereadImportableFunction(
     }
 
     // Icon-only entry: no `actions` declared in import.json. NEVER diff/sync
-    // the action list — syncing against an empty list would delete every
-    // live action. Just make sure the function exists and let the apply pass
-    // set the icon/ticks.
+    // the action list — syncing against an empty list would delete every live
+    // action. Crucially, also DON'T open the function's action editor here
+    // (via /function edit): for a bulk icon import over hundreds of functions
+    // that opens a heavy paginated GUI per function and hangs on big ones.
+    // The session-cached name list confirms/creates existence with no editor
+    // open, and the apply pass sets the icon straight from /functions →
+    // settings.
     if (importable.actions === undefined) {
-        await ensureFunctionExists(ctx, importable.name);
-        setup(`opened function ${importable.name}`);
+        await ensureFunctionNamesExist(ctx, [importable.name]);
+        setup(`settings-only ${importable.name}`);
         return { kind: "FUNCTION", importable, trustPlan, actionsPlan: null, settingsHandled: false };
     }
 
