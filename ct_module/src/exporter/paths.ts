@@ -14,8 +14,45 @@ export function canonicalSlug(identity: string): string {
     });
 }
 
-function readFunctionActionReferences(
+function readIdentitiesFromImportJson(
     importJsonPath: string,
+    section: string,
+    identityField: string
+): string[] {
+    const names: string[] = [];
+    if (!FileLib.exists(importJsonPath)) return names;
+
+    const text = String(FileLib.read(importJsonPath) ?? "");
+    if (text.trim() === "") return names;
+
+    const tree = json.parseTree(text);
+    if (!tree) return names;
+
+    const sectionNode = json.findNodeAtLocation(tree, [section]);
+    if (!sectionNode || sectionNode.type !== "array") return names;
+
+    const items = sectionNode.children ?? [];
+    for (let i = 0; i < items.length; i++) {
+        const nameNode = json.findNodeAtLocation(items[i], [identityField]);
+        if (nameNode && nameNode.type === "string") {
+            names.push(String(nameNode.value));
+        }
+    }
+    return names;
+}
+
+export function readFunctionNamesFromImportJson(importJsonPath: string): string[] {
+    return readIdentitiesFromImportJson(importJsonPath, "functions", "name");
+}
+
+export function readEventNamesFromImportJson(importJsonPath: string): string[] {
+    return readIdentitiesFromImportJson(importJsonPath, "events", "event");
+}
+
+function readActionReferencesForSection(
+    importJsonPath: string,
+    section: string,
+    identityField: string,
     identity: string
 ): { current: string | null; usedByOthers: Set<string> } {
     const result = { current: null as string | null, usedByOthers: new Set<string>() };
@@ -27,13 +64,13 @@ function readFunctionActionReferences(
     const tree = json.parseTree(text);
     if (!tree) return result;
 
-    const sectionNode = json.findNodeAtLocation(tree, ["functions"]);
+    const sectionNode = json.findNodeAtLocation(tree, [section]);
     if (!sectionNode || sectionNode.type !== "array") return result;
 
     const items = sectionNode.children ?? [];
     for (let i = 0; i < items.length; i++) {
         const item = items[i];
-        const nameNode = json.findNodeAtLocation(item, ["name"]);
+        const nameNode = json.findNodeAtLocation(item, [identityField]);
         const actionsNode = json.findNodeAtLocation(item, ["actions"]);
         if (
             !nameNode ||
@@ -55,11 +92,11 @@ function readFunctionActionReferences(
     return result;
 }
 
-export function htslFilenameForFunctionExport(
-    importJsonPath: string,
-    identity: string
+function pickHtslFilename(
+    refs: { current: string | null; usedByOthers: Set<string> },
+    identity: string,
+    label: string
 ): string {
-    const refs = readFunctionActionReferences(importJsonPath, identity);
     if (refs.current !== null) {
         const sanitized = sanitizeRelativeReference(refs.current);
         if (sanitized !== null) return sanitized;
@@ -85,7 +122,23 @@ export function htslFilenameForFunctionExport(
         if (!usedLower.has(candidate.toLowerCase())) return candidate;
     }
 
-    throw new Error(`Could not find an unused filename for function "${identity}".`);
+    throw new Error(`Could not find an unused filename for ${label} "${identity}".`);
+}
+
+export function htslFilenameForFunctionExport(
+    importJsonPath: string,
+    identity: string
+): string {
+    const refs = readActionReferencesForSection(importJsonPath, "functions", "name", identity);
+    return pickHtslFilename(refs, identity, "function");
+}
+
+export function htslFilenameForEventExport(
+    importJsonPath: string,
+    identity: string
+): string {
+    const refs = readActionReferencesForSection(importJsonPath, "events", "event", identity);
+    return pickHtslFilename(refs, identity, "event");
 }
 
 /**
