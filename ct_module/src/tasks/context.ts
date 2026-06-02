@@ -133,9 +133,14 @@ export default class TaskContext {
             if (abortCheck && abortCheck()) {
                 throw new Error("Sleep aborted by custom check");
             }
-            const remaining = end - Date.now();
-            if (remaining <= 0) return;
-            await new Promise((resolve) => setTimeout(resolve, Math.min(100, remaining)));
+            if (Date.now() >= end) return;
+            // Drive off the tick register, not setTimeout. CT's setTimeout rides a
+            // Java timer that starves under a busy import (e.g. a chat-heavy
+            // PLAY_SOUND function constantly hitting the heat budget), so its
+            // callback can fail to fire and orphan the wait forever while the game
+            // stays responsive. Ticks fire on the main thread like every other
+            // importer wait.
+            await this.waitFor("tick");
         }
     }
 
@@ -150,34 +155,31 @@ export default class TaskContext {
         const pending = typeof promise === "function" ? promise() : promise;
         const cleanup = (pending as Promise<T> & { cleanupWaiter?: () => void })
             .cleanupWaiter;
-        // Poll the cancel flag so a click on the GUI cancel button takes effect
-        // mid-wait instead of after the full timeout. Without this, an import
-        // stuck waiting on a menu packet that never arrives would have to burn
-        // the entire `duration` per importable before cancellation is observed.
+        // A single tick-driven guard for both cancel and timeout. Polling per tick
+        // makes a GUI cancel take effect mid-wait (instead of after the full
+        // duration), and — critically — makes the timeout actually fire: CT's
+        // setTimeout rides a Java timer that starves under a busy import, which
+        // would leave the timeout never firing and the wait hung with no error.
         let settled = false;
-        const cancellationPromise = new Promise<T>((_, reject) => {
-            const poll = () => {
-                if (settled) return;
+        const end = Date.now() + duration;
+        const guard = (async (): Promise<T> => {
+            while (!settled) {
                 if (this.cancelled) {
-                    settled = true;
                     cleanup?.();
-                    reject({ __taskCancelled: true, reason: "Task cancelled" });
-                    return;
+                    throw { __taskCancelled: true, reason: "Task cancelled" };
                 }
-                setTimeout(poll, 50);
-            };
-            setTimeout(poll, 50);
-        });
-        cancellationPromise.catch(() => {});
-        const timeoutPromise = new Promise<T>((_, reject) => {
-            setTimeout(() => {
-                cleanup?.();
-                reject(new Error(`Timeout after ${duration}ms: ${reason}`));
-            }, duration);
-        });
+                if (Date.now() >= end) {
+                    cleanup?.();
+                    throw new Error(`Timeout after ${duration}ms: ${reason}`);
+                }
+                await this.waitFor("tick");
+            }
+            return undefined as never;
+        })();
+        guard.catch(() => {});
 
         try {
-            return await Promise.race([pending, timeoutPromise, cancellationPromise]);
+            return await Promise.race([pending, guard]);
         } finally {
             settled = true;
         }
