@@ -19,7 +19,7 @@ import {
     LINE_H,
     STATE_GUTTER_W,
 } from "./lineRow";
-import type { LineDecorations, LineDecorator, RenderableLine, TokenSpan } from "./types";
+import type { LineDecorations, LineDecorator, RenderableLine, TokenSpan } from "./lineTypes";
 import { wrapTokensIntoVisualRows } from "./wrap";
 
 export type CodeViewProps = {

@@ -12,8 +12,8 @@ import {
 import { getActiveImportPath } from "../../state";
 import { CodeView, jumpToFocusedLine } from "../../code-view/codeView";
 import { progressDecorator } from "../../code-view/decorators";
-import { previewLinesForFile } from "../../state/importPreviewState";
-import type { RenderableLine } from "../../code-view/types";
+import { previewLinesForFile } from "../../state/livePreview";
+import type { RenderableLine } from "../../code-view/lineTypes";
 
 const PREVIEW_SCROLL_ID = "right-live-preview-scroll";
 

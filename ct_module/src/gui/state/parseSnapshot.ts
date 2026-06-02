@@ -32,7 +32,7 @@ import {
 } from "htsw";
 import type { Importable } from "htsw/types";
 
-import { FileSystemFileLoader } from "../../utils/files";
+import { FileSystemFileLoader } from "../../utils/fileLoaders";
 import { ensureParentDirs } from "../../utils/filesystem";
 import { getMtimeMs } from "../lib/java";
 import { memoizedImportableHash, seedImportableHash } from "../../importCache/status";
@@ -50,14 +50,17 @@ type Snapshot = {
     hashes: string[];
 };
 
-function snapshotPath(importJsonPath: string): string {
-    const key = importJsonPath.split("\\").join("/").toLowerCase();
+function hashPathKey(filePath: string): string {
+    const norm = filePath.split("\\").join("/").toLowerCase();
     let hash = 0;
-    for (let i = 0; i < key.length; i++) {
-        hash = ((hash << 5) - hash + key.charCodeAt(i)) | 0;
+    for (let i = 0; i < norm.length; i++) {
+        hash = ((hash << 5) - hash + norm.charCodeAt(i)) | 0;
     }
-    const hex = (hash >>> 0).toString(16);
-    return `${SNAPSHOT_DIR}/${hex}.json`;
+    return (hash >>> 0).toString(16);
+}
+
+function snapshotFileFor(importJsonPath: string): string {
+    return `${SNAPSHOT_DIR}/${hashPathKey(importJsonPath)}.json`;
 }
 
 
@@ -68,11 +71,11 @@ function snapshotPath(importJsonPath: string): string {
  * 300+ filesystem stats.
  */
 export function snapshotExists(importJsonPath: string): boolean {
-    return FileLib.exists(snapshotPath(importJsonPath));
+    return FileLib.exists(snapshotFileFor(importJsonPath));
 }
 
 export function loadSnapshot(importJsonPath: string): Snapshot | null {
-    const p = snapshotPath(importJsonPath);
+    const p = snapshotFileFor(importJsonPath);
     if (!FileLib.exists(p)) return null;
     try {
         const raw = String(FileLib.read(p) ?? "");
@@ -107,7 +110,7 @@ export function snapshotIsCurrent(snapshot: Snapshot): boolean {
 }
 
 export function deleteSnapshot(importJsonPath: string): boolean {
-    const p = snapshotPath(importJsonPath);
+    const p = snapshotFileFor(importJsonPath);
     if (!FileLib.exists(p)) return false;
     try {
         const Files = Java.type("java.nio.file.Files");
@@ -140,7 +143,7 @@ export function saveSnapshot(
         hashes: result.value.map(memoizedImportableHash),
     };
     try {
-        const out = snapshotPath(importJsonPath);
+        const out = snapshotFileFor(importJsonPath);
         ensureParentDirs(out);
         FileLib.write(out, JSON.stringify(snapshot), true);
     } catch (_e) {

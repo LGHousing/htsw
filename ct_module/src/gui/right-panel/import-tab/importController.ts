@@ -61,7 +61,7 @@ import type {
 import { importProgressKey } from "../../../importer/progress/keys";
 import { initialReducerState, reduce } from "../../../importer/progress/reducer";
 import { traceProgressEvent } from "../../../importer/progress/trace";
-import { invalidateKnowledgeOverlayForImportable } from "../../state/knowledgeOverlay";
+import { invalidateSourceDiffForImportable } from "../../state/sourceDiff";
 import { showToast } from "../../toast";
 import { isImportRunning, setImportRunning } from "../../../importer/runtimeState";
 import { gmcOnImportStart, playImportSuccessSound } from "../../../importer/sideEffects";
@@ -87,8 +87,8 @@ import {
     setLiveSummary,
     setObservedTopLevel,
     setPlannedOp,
-} from "../../state/importPreviewState";
-import { setFocusLineId } from "../../state/codeViewState";
+} from "../../state/livePreview";
+import { setFocusLineId } from "../../state/focusedLine";
 import { ACTION_MAPPINGS } from "../../../importer/fields/actionMappings";
 
 export const CAPTURE_TYPES: CaptureType[] = ["FUNCTION", "MENU"];
@@ -266,7 +266,7 @@ function createImportEventHandler(args: {
             if (imp !== undefined) {
                 refreshKnowledgeRowFromDisk(args.housingUuid, imp);
                 if (e.status === "imported") {
-                    invalidateKnowledgeOverlayForImportable(imp, args.parsed);
+                    invalidateSourceDiffForImportable(imp, args.parsed);
                 }
             }
         },

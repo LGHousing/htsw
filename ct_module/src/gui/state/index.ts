@@ -4,7 +4,7 @@ import type { ParseResult } from "htsw";
 import type { Importable } from "htsw/types";
 
 import type { CacheStatusRow } from "../../importCache/status";
-import { buildCacheStatusRows } from "../../importCache/status";
+import { buildCacheStatusRows, findCacheRowIndex } from "../../importCache/status";
 import { importableHash } from "../../importCache/hash";
 import { importableIdentity } from "../../importCache/paths";
 import { normalizeHtswPath } from "../lib/pathDisplay";
@@ -99,12 +99,6 @@ export function toggleImportableChecked(key: string): boolean {
 export function clearImportableChecks(): void {
     checkedImportableKeys.clear();
 }
-export function getCheckedImportableKeys(): Set<string> {
-    return checkedImportableKeys;
-}
-export function getCheckedImportableCount(): number {
-    return checkedImportableKeys.size;
-}
 
 const autoTrackSources: Set<string> = new Set();
 export function isAutoTrackSource(sourcePath: string): boolean {
@@ -170,18 +164,15 @@ export function appendKnowledgeRows(rows: CacheStatusRow[]): void {
  * accurate without rebuilding every row.
  */
 export function refreshKnowledgeRowFor(imp: Importable): void {
-    const id = importableIdentity(imp);
-    for (let i = 0; i < knowledgeRows.length; i++) {
-        const row = knowledgeRows[i];
-        if (row.identity !== id || row.importable.type !== imp.type) continue;
-        const newHash = importableHash(imp);
-        row.importable = imp;
-        row.hash = newHash;
-        row.state = row.entry === null
-            ? "unknown"
-            : row.entry.hash === newHash ? "current" : "modified";
-        return;
-    }
+    const idx = findCacheRowIndex(knowledgeRows, importableIdentity(imp), imp.type);
+    if (idx === -1) return;
+    const row = knowledgeRows[idx];
+    const newHash = importableHash(imp);
+    row.importable = imp;
+    row.hash = newHash;
+    row.state = row.entry === null
+        ? "unknown"
+        : row.entry.hash === newHash ? "current" : "modified";
 }
 
 /**
@@ -194,14 +185,7 @@ export function refreshKnowledgeRowFromDisk(housingUuid: string, imp: Importable
     const built = buildCacheStatusRows(housingUuid, [imp]);
     if (built.length === 0) return;
     const newRow = built[0];
-    for (let i = 0; i < knowledgeRows.length; i++) {
-        if (
-            knowledgeRows[i].identity === newRow.identity &&
-            knowledgeRows[i].importable.type === newRow.importable.type
-        ) {
-            knowledgeRows[i] = newRow;
-            return;
-        }
-    }
-    knowledgeRows.push(newRow);
+    const idx = findCacheRowIndex(knowledgeRows, newRow.identity, newRow.importable.type);
+    if (idx === -1) knowledgeRows.push(newRow);
+    else knowledgeRows[idx] = newRow;
 }

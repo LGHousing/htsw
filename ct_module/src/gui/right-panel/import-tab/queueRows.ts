@@ -44,7 +44,7 @@ import { parseImportJsonAt } from "../../state/parses";
 import { importableIdentity } from "../../../importCache/paths";
 import { orderImportablesForImportSession } from "../../../importables/importSession";
 import { isImportRunning } from "../../../importer/runtimeState";
-import { phaseSegment } from "./progress";
+import { phaseSegment } from "./progressPanel";
 
 function willBeSkipped(item: QueueItem): boolean {
     if (!isCurrentHouseTrusted()) return false;
@@ -62,7 +62,7 @@ const collapsedQueueImportJsonRows: Set<string> = new Set();
 
 /**
  * Remove a queue item and, for a single importable, also clear its
- * Importables-tab checkbox so the two stay in sync (the Explore row's
+ * Importables-tab checkbox so the two stay in sync (the Importables row's
  * checkbox both adds to the queue and marks itself checked, so removal
  * has to undo both). importJson bundles have no single checkbox.
  */

@@ -13,7 +13,7 @@ import {
 } from "./source";
 import { sortResults } from "./sort";
 import { isImportableTypeActive, isFilterDefault } from "./filter";
-import { Result, ResultImport, ROW_BG } from "./types";
+import { Result, ResultImport, ROW_BG } from "./rowModel";
 import {
     searchQuery,
     expansionKey,

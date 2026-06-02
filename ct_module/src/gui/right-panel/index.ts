@@ -33,7 +33,7 @@ import {
     SIZE_TAB_H,
 } from "../lib/theme";
 import { statusForFile, STATUS_COLOR, STATUS_LABEL } from "../knowledge-status";
-import { FileSystemFileLoader, StringFileLoader } from "../../utils/files";
+import { FileSystemFileLoader, StringFileLoader } from "../../utils/fileLoaders";
 import * as htsw from "htsw";
 import { viewBody } from "./view-body";
 import { normalizeHtswPath } from "../lib/pathDisplay";
@@ -169,7 +169,6 @@ function tabButton(tab: Tab): Element {
 
 
 
-/** One-color line for parse errors / labels / comments — bypasses tokenizer. */
 
 
 
@@ -179,9 +178,6 @@ function tabButton(tab: Tab): Element {
 
 
 
-
-/** What's happening *right now* — prefer the importer's live progress label,
- * then the diff entry's current action label. */
 
 function sourceBody(): Element {
     return viewBody();

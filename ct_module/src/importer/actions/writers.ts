@@ -49,7 +49,7 @@ import {
     setCycleValue,
     setNumberValue,
     readStringValue,
-} from "../gui/helpers";
+} from "../gui/menuFlows";
 import { waitForMenu } from "../gui/menuWait";
 import { syncConditionList } from "../conditions/sync";
 import {
@@ -63,7 +63,7 @@ import {
 } from "../fields/actionMappings";
 import { normalizeSoundKey } from "../fields/sounds";
 import type { Observed } from "../types";
-import { setItemValue } from "../items/items";
+import { setItemValue } from "../items/injectItem";
 import { resolveImportableItem } from "../items/resolveItem";
 import { syncActionList } from "./sync";
 import type { WriteActionOptions } from "./specs";

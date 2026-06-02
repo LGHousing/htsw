@@ -2,9 +2,9 @@
 
 import { Container, Text } from "../lib/components";
 import type { Element } from "../lib/layout";
-import { COLOR_BY_STATE, ROW_BG_BY_STATE, type DiffState } from "../state/diff";
+import { COLOR_BY_STATE, ROW_BG_BY_STATE, type DiffState } from "../state/diffPalette";
 import { CodeViewColors } from "./lineModel";
-import type { LineDecorations, RenderableLine, TokenSpan } from "./types";
+import type { LineDecorations, RenderableLine, TokenSpan } from "./lineTypes";
 import { joinTokenText, wrapTokensIntoVisualRows } from "./wrap";
 
 export const LINE_H = 10;

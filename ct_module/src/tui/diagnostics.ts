@@ -8,7 +8,7 @@ import {
     UIElementTruncate,
     UIElementVLine,
     UIElementVStack,
-} from ".";
+} from "./elements";
 import { chatWidth, spaceWidth } from "../utils/helpers";
 
 /**

@@ -2,7 +2,7 @@ import type { Action } from "htsw/types";
 
 import TaskContext from "../../tasks/context";
 import type { ItemRegistry } from "../../importables/itemRegistry";
-import { clickGoBack } from "../gui/helpers";
+import { clickGoBack } from "../gui/menuFlows";
 import { timedWaitForMenu } from "../gui/menuWait";
 import { ItemSlot } from "../../tasks/specifics/slots";
 import { removedFormatting } from "../../utils/helpers";

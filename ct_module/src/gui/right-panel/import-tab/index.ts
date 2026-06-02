@@ -34,15 +34,15 @@ import {
     requestStepAdvance,
     setStepAuto,
 } from "../../../importer/stepGate";
-import { liveImporterPanel } from "./progress";
+import { liveImporterPanel } from "./progressPanel";
 import {
     isQueueImportJsonExpanded,
     queueHeader,
     queueImportJsonChildren,
     queueImportJsonChildRow,
     queueRow,
-} from "./queue";
-import { importActionRow } from "./actions-ui";
+} from "./queueRows";
+import { importActionRow } from "./importButtons";
 import { livePreviewBody } from "./live-preview-body";
 
 const TRUST_ON_BG = 0xff1e3d3d | 0;
@@ -250,7 +250,7 @@ export function importTab(): Element {
                                 style: { padding: 6 },
                                 children: [
                                     Text({
-                                        text: "Queue is empty — right-click anything in Explore and Add to queue.",
+                                        text: "Queue is empty — right-click anything in Importables and Add to queue.",
                                         color: COLOR_TEXT_FAINT,
                                     }),
                                 ],

@@ -4,8 +4,8 @@ import type { DiffOpKind } from "../../importer/importEvents";
 
 /**
  * Shared diff-state type and palette used by both the live-import
- * overlay (`importPreviewState.ts → LiveOverlay`) and the knowledge
- * overlay (`knowledgeOverlay.ts`). This file holds only the type +
+ * overlay (`livePreview.ts → LiveOverlay`) and the knowledge
+ * overlay (`sourceDiff.ts`). This file holds only the type +
  * constants — the actual per-action state maps live in those modules.
  *
  *   "unknown"  — no info (gray)

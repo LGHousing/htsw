@@ -10,7 +10,7 @@ import { recompile } from "./recompile";
 import { applyImportablePlan, prereadImportable } from "./importables/imports";
 import { createItemRegistry } from "./importables/itemRegistry";
 import { TaskManager } from "./tasks/manager";
-import { FileSystemFileLoader } from "./utils/files";
+import { FileSystemFileLoader } from "./utils/fileLoaders";
 import { commandKnowledge } from "./importCache/commands";
 import { toggleHtswGui } from "./gui/overlay";
 import {

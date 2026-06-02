@@ -1,7 +1,7 @@
 /// <reference types="../../../CTAutocomplete" />
 
 import { chatWidth } from "../../utils/helpers";
-import type { TokenSpan } from "./types";
+import type { TokenSpan } from "./lineTypes";
 
 const MIN_WRAP_W = 6;
 

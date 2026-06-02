@@ -1,11 +1,7 @@
 import type { Diagnostic, ParseResult } from "htsw";
 import type { Importable } from "htsw/types";
 
-import {
-    importableSourcePath,
-    importableSubListPath,
-    SUB_LIST_KINDS,
-} from "./importablePaths";
+import { importableFilePaths } from "./importablePaths";
 
 /**
  * Diagnostics bucketed by the importable whose source file they live in.
@@ -27,20 +23,6 @@ export type SeverityCounts = { errors: number; warnings: number };
 // frames (the importables list re-renders every frame).
 const cache = new WeakMap<ParseResult<Importable[]>, DiagnosticAttribution>();
 
-/** Source files (primary + enumerable sub-lists) an importable owns. */
-function collectImportableFiles(
-    imp: Importable,
-    parsed: ParseResult<Importable[]>,
-    out: Set<string>
-): void {
-    const src = importableSourcePath(imp, parsed);
-    if (src !== undefined) out.add(src);
-    for (let i = 0; i < SUB_LIST_KINDS.length; i++) {
-        const sub = importableSubListPath(imp, SUB_LIST_KINDS[i], parsed);
-        if (sub !== undefined) out.add(sub);
-    }
-}
-
 export function attributeDiagnostics(
     parsed: ParseResult<Importable[]>
 ): DiagnosticAttribution {
@@ -49,8 +31,7 @@ export function attributeDiagnostics(
 
     const owners = new Map<string, Importable[]>();
     for (const imp of parsed.value) {
-        const files = new Set<string>();
-        collectImportableFiles(imp, parsed, files);
+        const files = new Set<string>(importableFilePaths(imp, parsed));
         for (const f of files) {
             const list = owners.get(f);
             if (list === undefined) owners.set(f, [imp]);

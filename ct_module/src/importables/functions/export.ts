@@ -2,7 +2,7 @@ import type { Action, ImportableFunction } from "htsw/types";
 import * as htsw from "htsw";
 
 import { readActionList } from "../../importer/actions/readList";
-import { clickGoBack } from "../../importer/gui/helpers";
+import { clickGoBack } from "../../importer/gui/menuFlows";
 import {
     ItemCaptureRegistry,
     restoreInventoryToSnapshot,

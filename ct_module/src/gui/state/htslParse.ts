@@ -8,7 +8,7 @@ import {
 } from "htsw";
 import * as htsw from "htsw";
 import type { Action } from "htsw/types";
-import { FileSystemFileLoader } from "../../utils/files";
+import { FileSystemFileLoader } from "../../utils/fileLoaders";
 import { getMtimeMs } from "../lib/java";
 
 export type HtslLine = {

@@ -16,6 +16,22 @@ export type CacheStatusRow = {
     entry: ImportableCacheEntry | null;
 };
 
+/**
+ * Index of the knowledge row for `(identity, type)`, or -1. Knowledge rows are
+ * uniquely keyed by this pair (identity alone collides across types), so every
+ * row lookup/upsert resolves through here.
+ */
+export function findCacheRowIndex(
+    rows: readonly CacheStatusRow[],
+    identity: string,
+    type: Importable["type"]
+): number {
+    for (let i = 0; i < rows.length; i++) {
+        if (rows[i].identity === identity && rows[i].importable.type === type) return i;
+    }
+    return -1;
+}
+
 export function sameHashList(
     left: readonly string[] | undefined,
     right: readonly string[] | undefined

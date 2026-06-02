@@ -76,7 +76,7 @@ function actionPathFromFieldSpan(
 /**
  * Resolve `imp`'s source file path. Pass `parse` when looking up
  * importables that came from a parse other than the globally-active one
- * (multi-parse Explore + queue use-case); omit it to fall back to
+ * (multi-parse Importables + queue use-case); omit it to fall back to
  * `getParsedResult()` for legacy single-parse callers.
  */
 export function importableSourcePath(
@@ -137,6 +137,26 @@ export function importableSubListPath(
 }
 
 /**
+ * Every source file one importable references — its primary source file
+ * (htsl/snbt) plus each declared sub-list's source file. Undefined-filtered;
+ * order is primary-then-sub-lists and may contain duplicates (an inline
+ * sub-list resolves to the same file as its primary).
+ */
+export function importableFilePaths(
+    imp: Importable,
+    parse: ParseResult<Importable[]>
+): string[] {
+    const out: string[] = [];
+    const primary = importableSourcePath(imp, parse);
+    if (primary !== undefined) out.push(primary);
+    for (let i = 0; i < SUB_LIST_KINDS.length; i++) {
+        const sub = importableSubListPath(imp, SUB_LIST_KINDS[i], parse);
+        if (sub !== undefined) out.push(sub);
+    }
+    return out;
+}
+
+/**
  * Every file path the given parse references — the import.json itself,
  * each importable's primary source file (htsl/snbt), and each sub-list's
  * source file. Deduplicated, returned in stable insertion order.
@@ -147,8 +167,7 @@ export function allReferencedPaths(
 ): string[] {
     const seen = new Set<string>();
     const out: string[] = [];
-    const push = (p: string | undefined): void => {
-        if (p === undefined) return;
+    const push = (p: string): void => {
         if (seen.has(p)) return;
         seen.add(p);
         out.push(p);
@@ -156,10 +175,7 @@ export function allReferencedPaths(
     push(importJsonPath);
     if (parse === null) return out;
     for (const imp of parse.value) {
-        push(importableSourcePath(imp, parse));
-        for (let i = 0; i < SUB_LIST_KINDS.length; i++) {
-            push(importableSubListPath(imp, SUB_LIST_KINDS[i], parse));
-        }
+        for (const p of importableFilePaths(imp, parse)) push(p);
     }
     return out;
 }

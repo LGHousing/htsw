@@ -4,7 +4,7 @@ import type { Importable } from "htsw/types";
 import TaskContext from "../tasks/context";
 import { isTaskCancelled } from "../tasks/manager";
 import { IMPORT_DEBUG } from "../importer/diagnostics/importDebug";
-import { FileSystemFileLoader } from "../utils/files";
+import { FileSystemFileLoader } from "../utils/fileLoaders";
 import {
     buildTrustPlan,
     getCurrentHousingUuid,

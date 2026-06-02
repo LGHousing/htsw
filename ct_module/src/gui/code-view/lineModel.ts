@@ -4,11 +4,11 @@ import type { Action } from "htsw/types";
 import type { SourceFile, SpanTable } from "htsw";
 
 import { getMtimeMs } from "../lib/java";
-import { FileSystemFileLoader } from "../../utils/files";
-import { actionsToLines, parseHtslFile, type HtslLine } from "../state/htslRender";
+import { FileSystemFileLoader } from "../../utils/fileLoaders";
+import { actionsToLines, parseHtslFile, type HtslLine } from "../state/htslParse";
 import { getParsedResult } from "../state";
 import { tokenizeHtsl, type SyntaxToken } from "../right-panel/syntax";
-import type { FieldSpan, RenderableLine, TokenSpan } from "./types";
+import type { FieldSpan, RenderableLine, TokenSpan } from "./lineTypes";
 
 const COLOR_PLAIN = 0xffe5e5e5 | 0;
 const COLOR_ERROR = 0xffe85c5c | 0;

@@ -32,12 +32,6 @@ This guide records **responsibilities and invariants only**. Anything you can le
 
 Before writing a comment: **did you verify this, or are you narrating your mental model?** If you didn't verify it (an assumed MC/Rhino quirk, a guessed "this is needed because…"), leave it out. If the reader can recover the WHY from the code, leave it out.
 
-Write a comment only when ALL hold:
-
-- The WHY cannot be recovered from reading the code.
-- It is non-obvious AND load-bearing — a future edit that ignores it would introduce a real bug.
-- You actually know the reason — verified by tracing, testing, or repo history, not inferred.
-
 **Do not write:**
 
 - Restatements of the next line — `// increment i`, `// dark slate, primary panel bg` next to `COLOR_PANEL`.
@@ -48,21 +42,10 @@ Write a comment only when ALL hold:
 - TODOs without a tracked issue and a concrete next step.
 - Docstrings that restate the type signature or list every parameter.
 
-**Comments worth keeping (good patterns already in this repo):**
-
-- Hidden MC / CT 1.8.9 quirks you can demonstrate — placeholder `GuiScreen` swap, `displayGuiScreen(null)` side effects, `Image.fromAsset` being non-functional in this CT build.
-- Concrete race-condition or timing assumptions in async / event code (e.g. capturing a `GuiScreen` ref before listener registration to avoid a close-event race).
-- Non-obvious design choices a future agent would otherwise undo — fixed overlay scale of 4, action sync order `delete → edit → move → add`, per-housing item SNBT cache.
-- Short docstrings on exported APIs covering the *contract*, not the implementation.
-
-When in doubt: delete the comment. If a single line truly needs prose to be understandable, rename the symbol or extract a function — prose is the last resort.
-
 ## Code style
 
-- Prefer rename / extract over explanatory comments (see **Comments**). Delete unnecessary comments you come across.
-- Prefer inline GUI code for small one-off flows over tiny extracted helpers.
-- Use typed accessors over raw union indexing (`getActionSpec`, `getActionLoreFields`, `getNestedListFields`).
-- In `ct_module/` async/event code: no hardcoded sleeps where an event wait exists. Go through `TaskContext` and `waitForMenu`, not raw CT globals.
+- Prefer refactoring over explanatory comments.
+- Obviously, if something isn't immediately obvious what it does, change it.
 - Read the `gui-development` skill before touching anything under `ct_module/src/gui/`.
 
 ## Working style

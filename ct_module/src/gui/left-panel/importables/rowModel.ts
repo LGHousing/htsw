@@ -2,7 +2,7 @@ import type { ParseResult } from "htsw";
 import type { Importable } from "htsw/types";
 
 // File-level row types: what `enumerateForSource` returns. Each row is a
-// file the Explore tree displays directly. Importables themselves are no
+// file the Importables tree displays directly. Importables themselves are no
 // longer flattened into this list — they live as expansion children of
 // `ResultImport` rows now (see `ResultImport.importables`).
 export const ALL_TYPES = ["import", "script", "item"] as const;

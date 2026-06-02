@@ -40,13 +40,6 @@ export function cyrb53(str: string, seed: number = 0) {
     return 4294967296 * (2097151 & h2) + (h1 >>> 0);
 }
 
-/**
- * Deterministic JSON stringify: sorts object keys, drops `undefined` fields,
- * and drops empty arrays. Used by importable hashing (`importCache/hash.ts`)
- * and item shell comparison (`importables/items/import.ts`) so identical
- * importables always serialize to identical strings regardless of insertion
- * order or incidental empty-array fields.
- */
 export function unique(values: readonly string[]): string[] {
     const seen: Record<string, boolean> = {};
     const result: string[] = [];
@@ -58,6 +51,13 @@ export function unique(values: readonly string[]): string[] {
     return result;
 }
 
+/**
+ * Deterministic JSON stringify: sorts object keys, drops `undefined` fields,
+ * and drops empty arrays. Used by importable hashing (`importCache/hash.ts`)
+ * and item shell comparison (`importables/items/import.ts`) so identical
+ * importables always serialize to identical strings regardless of insertion
+ * order or incidental empty-array fields.
+ */
 export function stableStringify(value: unknown): string {
     if (value === null) return "null";
     if (typeof value !== "object") return JSON.stringify(value);

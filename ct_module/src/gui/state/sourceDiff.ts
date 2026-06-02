@@ -1,14 +1,15 @@
 /// <reference types="../../../CTAutocomplete" />
 
 /**
- * Knowledge overlay: per-action `DiffState` derived from comparing the
- * importable cache (last successful import) against the current parsed
- * source on disk. Powers the View tab's diff colors.
+ * Source diff: per-action `DiffState` derived from comparing the importable
+ * cache (last successful import) against the current parsed source on disk.
+ * The STATIC producer of the View tab's diff colors — "what would change vs
+ * last import," shown when you're not importing.
  *
- * This store is **completely decoupled from the live importer.** Live
- * import events do NOT write here. Computation is lazy — invoked the
- * first time the View tab decorator asks about a file. Cached entries
- * are dropped (and recomputed on next access) when:
+ * Decoupled from the live importer: live import events do NOT write here.
+ * Computation is lazy — invoked the first time the View tab decorator asks
+ * about a file. Cached entries are dropped (and recomputed on next access)
+ * when:
  *
  *   1. The user edits a file (the parse changes, mtime-detected by
  *      `parseImportJsonAt`) → entries for files in that parse cleared.
@@ -19,8 +20,8 @@
  * importer's full structural diff. See `importCache/hash.ts` for the
  * hash spec.
  *
- * For the live-import animation, see `diff.ts` / `importPreviewState.ts`,
- * which are written from import event handlers.
+ * For the LIVE producer (import-in-progress), see `diffPalette.ts` (shared
+ * vocabulary) and `livePreview.ts` (written from import event handlers).
  */
 
 import type { ParseResult } from "htsw";
@@ -28,11 +29,12 @@ import type { Action, Condition, Importable } from "htsw/types";
 
 import { normalizeHtswPath } from "../lib/pathDisplay";
 import type { ActionPath } from "../../importer/importEvents";
-import type { DiffState } from "./diff";
+import type { DiffState } from "./diffPalette";
 import { readImportableCache } from "../../importCache/cache";
 import { actionHash, conditionHash } from "../../importCache/hash";
 import { importableIdentity } from "../../importCache/paths";
 import {
+    importableFilePaths,
     importableSourcePath,
     importableSubListPath,
     SUB_LIST_KINDS,
@@ -42,9 +44,9 @@ import { canonicalPath, forEachCachedParse } from "./parses";
 import { getHousingUuid } from ".";
 import { readCachedActionList } from "../../importables/actionListHelpers";
 
-export type KnowledgeOverlayEntry = Map<ActionPath, DiffState>;
+export type SourceDiffEntry = Map<ActionPath, DiffState>;
 
-const entries: Map<string, KnowledgeOverlayEntry> = new Map();
+const entries: Map<string, SourceDiffEntry> = new Map();
 
 function key(filePath: string): string {
     return normalizeHtswPath(filePath);
@@ -57,7 +59,7 @@ function key(filePath: string): string {
  * the result. Returns `undefined` if no cached parse references this
  * file or no cache entry exists yet (the user hasn't imported this).
  */
-export function ensureKnowledgeOverlay(filePath: string): KnowledgeOverlayEntry | undefined {
+export function ensureSourceDiff(filePath: string): SourceDiffEntry | undefined {
     const k = key(filePath);
     const cached = entries.get(k);
     if (cached !== undefined) return cached;
@@ -72,16 +74,11 @@ export function ensureKnowledgeOverlay(filePath: string): KnowledgeOverlayEntry 
  * parse. Called on parse refresh (file edit) so the next View-tab render
  * recomputes against the new parse + cache state.
  */
-export function invalidateKnowledgeOverlayForParse(
+export function invalidateSourceDiffForParse(
     parsed: ParseResult<Importable[]>
 ): void {
     for (const importable of parsed.value) {
-        const primary = importableSourcePath(importable, parsed);
-        if (primary !== undefined) entries.delete(key(primary));
-        for (let i = 0; i < SUB_LIST_KINDS.length; i++) {
-            const subPath = importableSubListPath(importable, SUB_LIST_KINDS[i], parsed);
-            if (subPath !== undefined) entries.delete(key(subPath));
-        }
+        invalidateSourceDiffForImportable(importable, parsed);
     }
 }
 
@@ -89,21 +86,18 @@ export function invalidateKnowledgeOverlayForParse(
  * Drop overlay entries for one importable. Called after an import
  * succeeds (cache just got written → diff likely now empty).
  */
-export function invalidateKnowledgeOverlayForImportable(
+export function invalidateSourceDiffForImportable(
     importable: Importable,
     parsed: ParseResult<Importable[]>
 ): void {
-    const primary = importableSourcePath(importable, parsed);
-    if (primary !== undefined) entries.delete(key(primary));
-    for (let i = 0; i < SUB_LIST_KINDS.length; i++) {
-        const subPath = importableSubListPath(importable, SUB_LIST_KINDS[i], parsed);
-        if (subPath !== undefined) entries.delete(key(subPath));
+    for (const p of importableFilePaths(importable, parsed)) {
+        entries.delete(key(p));
     }
 }
 
 // ── Compute ───────────────────────────────────────────────────────────
 
-function computeFor(filePath: string): KnowledgeOverlayEntry | null {
+function computeFor(filePath: string): SourceDiffEntry | null {
     const match = findFileTarget(filePath);
     if (match === null) return null;
     const housingUuid = getHousingUuid();
@@ -115,7 +109,7 @@ function computeFor(filePath: string): KnowledgeOverlayEntry | null {
     );
     const sourceActions = readCachedActionList(match.importable, match.prefix);
     if (sourceActions === undefined) return null;
-    const out: KnowledgeOverlayEntry = new Map();
+    const out: SourceDiffEntry = new Map();
     walk(out, match.prefix, "", sourceActions, cache !== null ? cache.lists : {});
     return out;
 }
@@ -153,7 +147,7 @@ export function findFileTarget(filePath: string): FileTarget | null {
 }
 
 function walk(
-    out: KnowledgeOverlayEntry,
+    out: SourceDiffEntry,
     prefix: string,
     parentBracketed: string,
     items: readonly Action[],

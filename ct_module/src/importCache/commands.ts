@@ -2,7 +2,7 @@ import { Diagnostic, SourceMap, parseImportablesResult } from "htsw";
 import type { Importable } from "htsw/types";
 
 import { TaskManager } from "../tasks/manager";
-import { FileSystemFileLoader } from "../utils/files";
+import { FileSystemFileLoader } from "../utils/fileLoaders";
 import { chatSeparator, stripSurroundingQuotes } from "../utils/helpers";
 import {
     getCurrentHousingUuid,

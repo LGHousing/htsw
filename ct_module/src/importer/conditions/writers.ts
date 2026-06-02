@@ -33,7 +33,7 @@ import {
     setCycleValue,
     setSelectValue,
     setStringValue,
-} from "../gui/helpers";
+} from "../gui/menuFlows";
 import { waitForMenu } from "../gui/menuWait";
 import { removedFormatting } from "../../utils/helpers";
 import {
@@ -41,7 +41,7 @@ import {
     getConditionFieldDefault,
     getConditionFieldLabel,
 } from "../fields/conditionMappings";
-import { setItemValue } from "../items/items";
+import { setItemValue } from "../items/injectItem";
 import { resolveImportableItem } from "../items/resolveItem";
 
 function conditionDefault<T>(type: Condition["type"], prop: string): T {

@@ -7,26 +7,33 @@ const MS_PER_UNIT_PRIOR = 150;
 const PRIOR_UNITS = 40;
 
 /**
- * Smoothed ETA display: a wall-clock countdown gently corrected toward the
- * honest candidate (`remaining × msPerUnit`).
+ * Smoothed ETA display: a wall-clock countdown that prefers a steady ~1s/sec
+ * descent over faithfully tracking the chunky honest candidate
+ * (`remaining × msPerUnit`, which is flat between progress events then steps).
  *
- * The candidate only moves on progress events — `remaining` is flat between
- * them — so tracking it directly produces a chunky step (flat for seconds,
- * then a multi-second drop). Real countdowns interpolate the gaps. So each
- * frame we first tick the displayed value down by the elapsed wall-clock
- * (`predicted = displayed − dt`), which keeps it moving at ~1s/sec through
- * the no-event stretches, then ease that toward the candidate with a ~3s
- * time constant. The countdown supplies steady motion; the ease keeps it
- * honest and absorbs the candidate's steps into a smooth slope.
+ * Each frame ticks the displayed value down by elapsed wall-clock
+ * (`predicted = displayed − dt`) for steady motion, then reconciles with the
+ * candidate by case:
  *
- * During apply the candidate is monotonic-decreasing, so the correction only
- * ever pulls the descent faster or decelerates it — it never snaps upward.
- * In a long stall the down-tick runs ahead of the candidate, the correction
- * grows to oppose it, and the value coasts to a near-stop a few seconds below
- * the candidate rather than over-draining to zero and bouncing back.
+ * - **Above the candidate** (the normal apply case — the down-tick has run
+ *   ahead of completed work): descend, but clamp the rate into
+ *   `[MIN_DOWN_RATE, MAX_DOWN_RATE]` s/sec so a chunk completing never shows
+ *   as a multi-second-per-second slide, and the value never freezes either.
+ *   When the candidate is more than `JUMP_GAP_SECONDS` below the line, take
+ *   the difference as one visible jump instead of a long fast glide.
+ * - **At/below the candidate** (a genuine stall, or a re-estimate upward):
+ *   ease gently toward it with a ~3s time constant — coast to a near-stop a
+ *   few seconds under the candidate rather than draining to zero, and never
+ *   sawtooth upward in a stall.
+ *
+ * Net: a clock-like second most of the time, with a rare honest jump on a
+ * drastic re-estimate, rather than a continuously-variable "lying" second.
  */
 const EASE_TAU_MS = 3000;
 const SNAP_BELOW_SECONDS = 0.5;
+const MAX_DOWN_RATE = 1.4;
+const MIN_DOWN_RATE = 0.7;
+const JUMP_GAP_SECONDS = 4;
 
 type EtaSmoother = { displayed: number; at: number };
 
@@ -37,8 +44,8 @@ export type EtaCalculator = {
 
 function ease(prev: EtaSmoother | null, candidate: number, now: number): EtaSmoother {
     if (prev === null) return { displayed: candidate, at: now };
-    // Snap on a drastic jump rather than crawling over seconds. This is the
-    // startup case — the smoother first sees the placeholder `totalUnits: 1`
+    // Snap on a drastic upward jump rather than crawling over seconds. This is
+    // the startup case — the smoother first sees the placeholder `totalUnits: 1`
     // (candidate ≈ 0) before `sessionStarted` installs the real total, and
     // also any large mid-run re-estimate. Easing those would show a slow ramp
     // up to the real ETA ("0 → 2min"). Normal tracking still eases.
@@ -46,9 +53,24 @@ function ease(prev: EtaSmoother | null, candidate: number, now: number): EtaSmoo
         return { displayed: candidate, at: now };
     }
     const dt = Math.max(0, now - prev.at);
-    const predicted = prev.displayed - dt / 1000;
+    const dtSec = dt / 1000;
+    const predicted = prev.displayed - dtSec;
     const alpha = 1 - Math.exp(-dt / EASE_TAU_MS);
-    let next = predicted + (candidate - predicted) * alpha;
+    const eased = predicted + (candidate - predicted) * alpha;
+
+    let next: number;
+    if (prev.displayed > candidate) {
+        if (prev.displayed - candidate > JUMP_GAP_SECONDS) {
+            next = candidate;
+        } else {
+            const fastest = prev.displayed - dtSec * MAX_DOWN_RATE;
+            const slowest = prev.displayed - dtSec * MIN_DOWN_RATE;
+            next = Math.min(slowest, Math.max(fastest, eased));
+            if (next < candidate) next = candidate;
+        }
+    } else {
+        next = eased;
+    }
     if (next < 0) next = 0;
     // Don't let the ease leave a tiny residual hanging near the end.
     if (candidate <= 0 && next < SNAP_BELOW_SECONDS) next = 0;
