@@ -8,7 +8,7 @@ import { Simulator } from "./simulator/simulator";
 import { printDiagnostic, printDiagnostics } from "./tui/diagnostics";
 import { recompile } from "./recompile";
 import { TaskManager } from "./tasks/manager";
-import { FileSystemFileLoader } from "./utils/files";
+import { FileSystemFileLoader } from "./utils/fileLoaders";
 import { commandKnowledge } from "./importCache/commands";
 import { toggleHtswGui } from "./gui/overlay";
 import {
@@ -23,7 +23,7 @@ import {
     setProgressTraceEnabled,
 } from "./importer/progress/trace";
 import { getCurrentHousingUuid } from "./importCache";
-import { startImport } from "./gui/right-panel/import-tab/actions";
+import { startImport } from "./gui/right-panel/import-tab/importController";
 import { canonicalPath } from "./gui/state/parses";
 import { snbtFromItem } from "./importer/itemCapture";
 import {

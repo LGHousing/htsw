@@ -1,12 +1,12 @@
 import type { ImportableMenu } from "htsw/types";
 
 import { syncActionList } from "../../importer/actions/sync";
-import { clickGoBack, setCycleValue } from "../../importer/gui/helpers";
+import { clickGoBack, setCycleValue } from "../../importer/gui/menuFlows";
 import {
     timedWaitForMenu,
     timedWaitForUnformattedMessage,
 } from "../../importer/gui/menuWait";
-import { selectItemFromOpenInventory } from "../../importer/items/items";
+import { selectItemFromOpenInventory } from "../../importer/items/injectItem";
 import type { ImportableTrustPlan } from "../../importCache";
 import type { ImportEventHandler } from "../../importer/importEvents";
 import { createSetupStepEmitter } from "../../importer/progress/setupStepEmitter";

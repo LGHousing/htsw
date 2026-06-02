@@ -17,7 +17,7 @@ import { COLOR_TEXT_DIM } from "../../lib/theme";
 import { scheduleReparse } from "../../state/reparse";
 import { addRecent, getRecents } from "../../state/recents";
 import { normalizeHtswPath } from "../../lib/pathDisplay";
-import { ACTIVE_BG, ACTIVE_HOVER_BG, ROW_BG, ROW_HOVER_BG } from "./types";
+import { ACTIVE_BG, ACTIVE_HOVER_BG, ROW_BG, ROW_HOVER_BG } from "./rowModel";
 import { queueSourcePath } from "./source";
 import { SORT_FIELDS, isSortDefault, sortPopoverContent } from "./sort";
 import { isFilterDefault, filterPopoverContent, FILTER_POPOVER_HEIGHT } from "./filter";
@@ -117,7 +117,7 @@ function loadingRow(): Element {
     });
 }
 
-export function ExploreView(): Element {
+export function ImportablesView(): Element {
     return Col({
         style: { gap: 6, height: { kind: "grow" } },
         children: [

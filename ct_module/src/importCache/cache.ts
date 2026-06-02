@@ -15,6 +15,15 @@ const CACHE_SCHEMA_VERSION = 1;
 
 export type CacheWriter = "exporter" | "importer";
 
+// In-memory mirror of the on-disk cache, keyed by cache-file path. The
+// knowledge-status build reads every importable's cache entry on every
+// rebuild (one per dot); without this each rebuild did a `FileLib.read` +
+// `JSON.parse` per importable — hundreds of blocking disk reads that made
+// the dot fill stutter. These files are only ever written through this
+// module, so the mirror stays authoritative: writes/deletes below keep it
+// in sync.
+const readCache = new Map<string, ImportableCacheEntry | null>();
+
 export type ImportableCacheEntry = {
     schemaVersion: typeof CACHE_SCHEMA_VERSION;
     /** ISO 8601 instant the entry was last written. Informational only. */
@@ -67,9 +76,10 @@ export function writeImportableCache(
     try {
         ensureParentDirs(path);
         FileLib.write(path, JSON.stringify(entry, null, 4), true);
-        ctx.displayMessage(`&7[knowledge] saved &f${path}`);
+        readCache.set(path, entry);
+        ctx.displayMessage(`&7[cache] saved &f${path}`);
     } catch (error) {
-        ctx.displayMessage(`&7[knowledge] &eFailed to write cache at ${path}: ${error}`);
+        ctx.displayMessage(`&7[cache] &eFailed to write cache at ${path}: ${error}`);
     }
 }
 
@@ -102,13 +112,16 @@ export function readImportableCache(
     identity: string
 ): ImportableCacheEntry | null {
     const path = cachePathForId(housingUuid, type, identity);
+    if (readCache.has(path)) return readCache.get(path) ?? null;
     let raw: string | null;
     try {
         raw = FileLib.read(path);
     } catch {
-        return null;
+        raw = null;
     }
-    return parseCacheEntry(raw);
+    const entry = parseCacheEntry(raw);
+    readCache.set(path, entry);
+    return entry;
 }
 
 /** Remove an importable cache entry. No-op if it doesn't exist. */
@@ -118,6 +131,7 @@ export function deleteImportableCache(
     identity: string
 ): void {
     const path = cachePathForId(housingUuid, type, identity);
+    readCache.delete(path);
     if (!FileLib.exists(path)) return;
     try {
         FileLib.delete(path);
@@ -133,6 +147,7 @@ export function deleteImportableCache(
  * any individual delete failure is swallowed.
  */
 export function deleteHousingCache(housingUuid: string): boolean {
+    readCache.clear();
     try {
         const Paths = Java.type("java.nio.file.Paths");
         const Files = Java.type("java.nio.file.Files");

@@ -31,7 +31,7 @@ import { importableIdentity, importableKey } from "../../../importCache/paths";
 import { addToQueue, makeImportableQueueItem, queueItemKey, removeFromQueueKey } from "../../state/queue";
 import { isImportRunning } from "../../../importer/runtimeState";
 import { composeFileMenu, composeImportableMenu } from "../../state/fileMenu";
-import { autoTrackRefresh, queueModifiedFromParse } from "../../right-panel/import-tab/actions";
+import { autoTrackRefresh, queueModifiedFromParse } from "../../right-panel/import-tab/importController";
 import { SourceDir, SourceFile, removeSource } from "./source";
 import { showInExplorer, openInVSCode } from "../../../utils/osShell";
 import { previewSelect, confirmSelect } from "../../state/selection";
@@ -42,7 +42,7 @@ import {
     IMPORTABLE_TYPE_COLORS,
     ROW_BG,
     ROW_HOVER_BG,
-} from "./types";
+} from "./rowModel";
 import type { Importable } from "htsw/types";
 
 export let searchQuery = "";
@@ -394,7 +394,7 @@ function diagnosticBadge(counts: SeverityCounts): Element {
 }
 
 /**
- * Toggle an importable's queue membership from an Explore row. Adding (an
+ * Toggle an importable's queue membership from an Importables row. Adding (an
  * unchecked importable → checked) is always allowed, even mid-import — the
  * queue session tracks late adds as "pending" and they survive the run.
  * Removing (checked → unchecked) is blocked while an import is running: the

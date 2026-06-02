@@ -3,9 +3,9 @@
 import { ParseResult, parseImportablesResult, SourceMap } from "htsw";
 import type { Importable } from "htsw/types";
 
-import { FileSystemFileLoader } from "../../utils/files";
+import { FileSystemFileLoader } from "../../utils/fileLoaders";
 import { getMtimeMs, javaType } from "../lib/java";
-import { invalidateKnowledgeOverlayForParse } from "./knowledgeOverlay";
+import { invalidateSourceDiffForParse } from "./sourceDiff";
 import { allReferencedPaths } from "./importablePaths";
 import {
     buildLiteParseResult,
@@ -18,7 +18,7 @@ import {
  * The mtime fingerprint for a parsed import.json: the import.json plus
  * every file it references. Built on `allReferencedPaths` — the single
  * source of "what files does this parse depend on" — so the parse cache,
- * the snapshot, and the Explore tree all agree on the set.
+ * the snapshot, and the Importables tree all agree on the set.
  */
 function buildParseFingerprint(
     importJsonPath: string,
@@ -36,7 +36,7 @@ function buildParseFingerprint(
 }
 
 /**
- * Per-file `import.json` parse cache. Lets the Explore tree show
+ * Per-file `import.json` parse cache. Lets the Importables tree show
  * importables from any number of import.jsons simultaneously, and lets
  * the dynamic queue resolve `QueueItem`s back to the parsed importable
  * objects regardless of which import.json they originated from.
@@ -57,23 +57,11 @@ export type CachedParse = {
     parsed: ParseResult<Importable[]> | null;
     /** Non-null when the parse threw — e.g. malformed JSON. */
     error: string | null;
-    /**
-     * mtimes of the import.json AND every file it referenced at parse time
-     * (linked .htsl, .snbt, sub-list htsl). The import.json's own mtime is
-     * not enough: editing a referenced .htsl doesn't touch the import.json,
-     * so a mtime-only check would serve a stale parse. Validated (throttled)
-     * on every `parseImportJsonAt`.
-     */
+    /** mtime of the import.json and every file it referenced at parse time. */
     fingerprint: { [path: string]: number };
-    /** `Date.now()` of the last fingerprint re-validation (throttle). */
+    /** `Date.now()` of the last `settledChange` re-check (throttle). */
     fpCheckedAt: number;
-    /**
-     * Mtimes observed when a change was first noticed but not yet acted on.
-     * Re-parsing the instant a mtime moves reads a half-written file (editors
-     * save in bursts / temp+rename) and flaps the dots. We instead wait until
-     * the mtimes stop moving — re-parse only once a recheck sees the SAME new
-     * mtimes as the previous recheck. Null when no change is in flight.
-     */
+    /** Mtimes seen when a change was first noticed; drives `settledChange`'s debounce. Null when idle. */
     pending: { [path: string]: number } | null;
 };
 
@@ -89,19 +77,6 @@ function currentMtimes(fp: { [path: string]: number }): { [path: string]: number
     return out;
 }
 
-// A real change: some file was successfully stat'd (mtime ≠ 0) with a
-// different mtime than recorded. `0` means un-stat-able right now (the brief
-// gap of an atomic temp+rename save) — not treated as a change.
-function mtimesDiffer(
-    fp: { [path: string]: number },
-    cur: { [path: string]: number }
-): boolean {
-    for (const p in fp) {
-        if (cur[p] !== 0 && cur[p] !== fp[p]) return true;
-    }
-    return false;
-}
-
 function sameMtimes(
     a: { [path: string]: number },
     b: { [path: string]: number }
@@ -109,6 +84,28 @@ function sameMtimes(
     for (const p in a) {
         if (a[p] !== b[p]) return false;
     }
+    return true;
+}
+
+// True when a referenced file changed AND its mtimes have settled — the same
+// new values seen on two consecutive rechecks. Until then (a save still
+// writing, or a temp+rename mid-swap) the mtimes keep moving, so this returns
+// false and the caller serves the existing parse rather than reading a
+// half-written file. Throttled; mutates the entry's recheck bookkeeping.
+function settledChange(entry: CachedParse): boolean {
+    const now = Date.now();
+    if (now - entry.fpCheckedAt < FP_RECHECK_MS) return false;
+    entry.fpCheckedAt = now;
+    const cur = currentMtimes(entry.fingerprint);
+    if (sameMtimes(entry.fingerprint, cur)) {
+        entry.pending = null;
+        return false;
+    }
+    if (entry.pending === null || !sameMtimes(entry.pending, cur)) {
+        entry.pending = cur;
+        return false;
+    }
+    entry.pending = null;
     return true;
 }
 
@@ -148,35 +145,18 @@ export function parseImportJsonAt(rawPath: string): CachedParse {
     const canon = canonicalPath(rawPath);
     const mtime = getMtimeMs(canon);
     const existing = cache.get(canon);
-    if (existing !== undefined && existing.mtime === mtime) {
-        // import.json unchanged, but a referenced .htsl/.snbt may have been
-        // edited (its mtime isn't `canon`'s). Re-validate the full
-        // fingerprint, throttled so we don't stat every referenced file each
-        // frame. Stale at most until the next check (≤ FP_RECHECK_MS).
-        const now = Date.now();
-        if (now - existing.fpCheckedAt < FP_RECHECK_MS) return existing;
-        existing.fpCheckedAt = now;
-        const cur = currentMtimes(existing.fingerprint);
-        if (!mtimesDiffer(existing.fingerprint, cur)) {
-            existing.pending = null;
-            return existing; // nothing changed
-        }
-        // A referenced file changed. Debounce until the mtimes settle so we
-        // don't re-parse mid-save and flap: act only when this recheck sees
-        // the same new mtimes as the previous one (i.e. the write finished).
-        if (existing.pending === null || !sameMtimes(existing.pending, cur)) {
-            existing.pending = cur; // first sighting, or still moving → wait
-            return existing;
-        }
-        existing.pending = null; // stable across two rechecks → re-parse below
+    // The import.json's own mtime is `mtime`; a referenced .htsl/.snbt edit
+    // doesn't move it, so `settledChange` re-checks the whole fingerprint.
+    if (existing !== undefined && existing.mtime === mtime && !settledChange(existing)) {
+        return existing;
     }
 
     // Disk snapshot fast path: avoids a full htsw parse when the
     // import.json + every referenced .htsl still has the recorded
-    // mtime. Critical for the Explore tree walker — without it,
+    // mtime. Critical for the Importables tree walker — without it,
     // discovering each large import.json freezes the main thread for
     // its full parse cost on first sighting per session, even though
-    // `reparseImportJson` already used the snapshot.
+    // `reparseNow` already used the snapshot.
     let parsed: ParseResult<Importable[]> | null = null;
     let error: string | null = null;
     // For a lite (snapshot) parse the rebuilt result has empty spans, so
@@ -220,7 +200,7 @@ export function parseImportJsonAt(rawPath: string): CachedParse {
         pending: null,
     };
     cache.set(canon, entry);
-    if (parsed !== null) invalidateKnowledgeOverlayForParse(parsed);
+    if (parsed !== null) invalidateSourceDiffForParse(parsed);
     return entry;
 }
 

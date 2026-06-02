@@ -4,9 +4,9 @@ import {
     clickGoBack,
     getSlotPaginate,
     setNumberValue,
-} from "../../importer/gui/helpers";
+} from "../../importer/gui/menuFlows";
 import { timedWaitForMenu } from "../../importer/gui/menuWait";
-import { setItemValue } from "../../importer/items/items";
+import { setItemValue } from "../../importer/items/injectItem";
 import { parseLoreKeyValueLine } from "../../importer/fields/loreParsing";
 import { isUnspawnableItem } from "../../importer/fields/unspawnableItems";
 import TaskContext from "../../tasks/context";

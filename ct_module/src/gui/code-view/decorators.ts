@@ -1,15 +1,15 @@
 /// <reference types="../../../CTAutocomplete" />
 
-import { ROW_BG_BY_STATE } from "../state/diff";
-import { ensureKnowledgeOverlay } from "../state/knowledgeOverlay";
-import { focusLineIdForFile } from "../state/codeViewState";
-import type { LineDecorations, LineDecorator, RenderableLine } from "./types";
+import { ROW_BG_BY_STATE } from "../state/diffPalette";
+import { ensureSourceDiff } from "../state/sourceDiff";
+import { focusLineIdForFile } from "../state/focusedLine";
+import type { LineDecorations, LineDecorator, RenderableLine } from "./lineTypes";
 import {
     effectiveFocusActionPath,
     getLiveOverlay,
     previewLineIdForPath,
     type PreviewLine,
-} from "../state/importPreviewState";
+} from "../state/livePreview";
 
 const COLOR_PENDING_GRAY = 0xff666666 | 0;
 const COLOR_GHOST_GRAY = 0xff444444 | 0;
@@ -20,7 +20,7 @@ export function diffDecorator(path: string | null): LineDecorator {
     return {
         decorateLine(line: RenderableLine): LineDecorations {
             if (path === null || line.actionPath === undefined) return {};
-            const overlay = ensureKnowledgeOverlay(path);
+            const overlay = ensureSourceDiff(path);
             if (overlay === undefined) return {};
             const state = overlay.get(line.actionPath);
             if (state === undefined) return {};

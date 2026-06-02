@@ -32,7 +32,7 @@ import {
     requestStepAdvance,
     setStepAuto,
 } from "../../../importer/stepGate";
-import { cancelActiveImport } from "./actions";
+import { cancelActiveImport } from "./importController";
 import {
     getCurrentPhaseEtaSeconds,
     getImportElapsedMs,
@@ -108,13 +108,21 @@ function opCounterText(): string {
 }
 
 function phaseEtaText(suffix: string): string {
-    // Only show a time estimate once we actually know the work. During
-    // setup/reading/hydrating the totals are still being discovered (the read
-    // pass is literally finding out how much there is), so any countdown
-    // there is made up. Show it only in the apply phase (diff known) or when
-    // trust gives the real counts up front.
+    // Show a phase countdown only when this phase's size is actually known:
+    //   - hydrating: the hydration plan gives exact units at phase start
+    //   - applying:  the diff is computed, op count fixed
+    //   - trusted:   real counts up front for every phase
+    // Setup and untrusted reading are discovery — their totals aren't known
+    // yet, so a countdown there would be invented. (Reading also self-
+    // suppresses: its remaining stays ~0 until the read finishes.)
     const p = getImportProgress();
-    if (p !== null && !isImportTotalLocked(p) && !isCurrentHouseTrusted()) return "";
+    const phase = p !== null && p.active !== null ? p.active.phase : null;
+    const phaseKnown =
+        isCurrentHouseTrusted() ||
+        phase === "hydrating" ||
+        phase === "applying" ||
+        phase === "done";
+    if (p !== null && !phaseKnown) return "";
     const secs = getCurrentPhaseEtaSeconds();
     if (secs === null || secs <= 0) return "";
     return `${formatEtaSeconds(secs)} left ${suffix}`;

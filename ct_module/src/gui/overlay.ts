@@ -25,7 +25,7 @@ const RenderGameOverlayEventPost = javaType(
 const ForgeGuiOpenEvent = javaType("net.minecraftforge.client.event.GuiOpenEvent");
 import { RootTree, getImportCachedBounds } from "./root";
 import { getContainerBounds, getFullscreenPanelRect } from "./lib/bounds";
-import { autoDiscoverImportJson, reparseImportJson, tickReparse } from "./state/reparse";
+import { autoDiscoverImportJson, reparseNow, tickReparse } from "./state/reparse";
 import { CHAT_INPUT_ID } from "./chat-input";
 import {
     initPopoverRendering,
@@ -568,7 +568,7 @@ export function initHtswGui(): void {
     }
     setTimeout(() => {
         try {
-            reparseImportJson();
+            reparseNow();
         } catch (_e) {
             // ignore — state.parseError will be set
         }

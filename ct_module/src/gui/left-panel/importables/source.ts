@@ -1,6 +1,6 @@
 /// <reference types="../../../../CTAutocomplete" />
 
-import { Result, ResultImport } from "./types";
+import { Result, ResultImport } from "./rowModel";
 import { parseImportJsonAt } from "../../state/parses";
 
 export type SourceDir = {
@@ -169,7 +169,7 @@ function isDirectorySafe(p: any): boolean {
 
 // Walk `dir`. When `depth > 0`, descend into immediate child directories
 // once (so depth=1 gives the folder root + one nest deep, no further).
-// Bounded recursion keeps the Explore list usable while letting the user
+// Bounded recursion keeps the Importables list usable while letting the user
 // drop a parent folder and still find the import.json one level in.
 function walkDir(dir: any, root: any, out: Result[], depth: number = 1): void {
     const Files = Java.type("java.nio.file.Files");

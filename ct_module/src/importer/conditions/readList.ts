@@ -20,7 +20,7 @@ import {
     readPaginatedList,
 } from "../gui/paginatedList";
 import { timedWaitForMenu } from "../gui/menuWait";
-import { clickGoBack } from "../gui/helpers";
+import { clickGoBack } from "../gui/menuFlows";
 import { CONDITION_LIST_CONFIG } from "./listConfig";
 import { getConditionSpec, isConditionListItemInverted } from "./specs";
 import { COST, phaseUnitsTotal, type PhaseUnits } from "../progress/costs";

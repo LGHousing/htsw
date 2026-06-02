@@ -38,13 +38,14 @@ import { isImportRunning } from "../../../importer/runtimeState";
 import { getAlias } from "../../../importCache/aliases";
 import { openAliasPopover } from "../../popovers/alias";
 import { getStepAuto, setStepAuto } from "../../../importer/stepGate";
+import { liveImporterPanel } from "./progressPanel";
 import {
     isQueueImportJsonExpanded,
     queueImportJsonChildren,
     queueImportJsonChildRow,
     queueRow,
-} from "./queue";
-import { importActionRow } from "./actions-ui";
+} from "./queueRows";
+import { importActionRow } from "./importButtons";
 import { livePreviewBody } from "./live-preview-body";
 
 let queueExpanded = false;
@@ -289,10 +290,14 @@ function pendingDividerRow(): Element {
 }
 
 export function importTab(): Element {
+    const importing = getImportProgress() !== null;
     const children: Child[] = [houseHeader(), queueSummary()];
     if (queueExpanded) children.push(queueScroll());
     children.push(livePreviewBody());
-    if (getImportProgress() === null) children.push(autoProceedRow());
+    if (!importing) children.push(autoProceedRow());
+    // The live progress strip sits just above the Capture/Import row while
+    // a run is active.
+    if (importing) children.push(liveImporterPanel());
     children.push(importActionRow());
     return Col({
         style: { gap: 4, width: { kind: "grow" }, height: { kind: "grow" } },

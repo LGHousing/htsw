@@ -33,14 +33,12 @@ import {
     SIZE_TAB_H,
 } from "../lib/theme";
 import { statusForFile, STATUS_COLOR, STATUS_LABEL } from "../knowledge-status";
-import { FileSystemFileLoader, StringFileLoader } from "../../utils/files";
+import { FileSystemFileLoader, StringFileLoader } from "../../utils/fileLoaders";
 import * as htsw from "htsw";
 import { viewBody } from "./view-body";
 import { normalizeHtswPath } from "../lib/pathDisplay";
 import { composeFileMenu } from "../state/fileMenu";
 import { importTab } from "./import-tab";
-import { liveImporterPanel } from "./import-tab/progress";
-import { getImportProgress } from "../state";
 
 
 const TAB_BG = 0xff2c323b | 0;
@@ -171,7 +169,6 @@ function tabButton(tab: Tab): Element {
 
 
 
-/** One-color line for parse errors / labels / comments — bypasses tokenizer. */
 
 
 
@@ -181,9 +178,6 @@ function tabButton(tab: Tab): Element {
 
 
 
-
-/** What's happening *right now* — prefer the importer's live progress label,
- * then the diff entry's current action label. */
 
 function sourceBody(): Element {
     return viewBody();
@@ -379,15 +373,9 @@ function viewTab(): Element {
 export function RightPanel(): Element {
     return Col({
         style: { padding: 6, gap: 4, width: { kind: "grow" }, height: { kind: "grow" } },
-        children: () => {
-            const children: Element[] = [
-                panelTabBar(),
-                getActiveRightTab() === "view" ? viewTab() : importTab(),
-            ];
-            // Pin the live progress strip to the bottom of the sidebar while
-            // an import/export runs, so it's visible regardless of the tab.
-            if (getImportProgress() !== null) children.push(liveImporterPanel());
-            return children;
-        },
+        children: () => [
+            panelTabBar(),
+            getActiveRightTab() === "view" ? viewTab() : importTab(),
+        ],
     });
 }

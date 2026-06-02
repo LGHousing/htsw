@@ -84,7 +84,7 @@ export function composeFileMenu(
 
 /**
  * Variant of `composeFileMenu` for callers that already have a fully-
- * resolved `QueueItem` in hand (an Explore importable row, say). Skips
+ * resolved `QueueItem` in hand (an Importables row, say). Skips
  * the path-based scan and uses the item directly so the toggle is
  * unambiguous even when the file is referenced by several importables.
  */

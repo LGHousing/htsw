@@ -1,6 +1,6 @@
 import { Element } from "../../lib/layout";
 import { Container, Scroll, Text } from "../../lib/components";
-import { Result, ACTIVE_BG, ACTIVE_HOVER_BG, ROW_BG, ROW_HOVER_BG } from "./types";
+import { Result, ACTIVE_BG, ACTIVE_HOVER_BG, ROW_BG, ROW_HOVER_BG } from "./rowModel";
 
 type SortDir = "ASC" | "DESC";
 type SortFieldId = "type" | "alphabetical";

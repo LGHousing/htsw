@@ -1,7 +1,7 @@
 import { Element } from "../lib/layout";
 import { Button, Container, Row } from "../lib/components";
 import { Icons, IconName } from "../lib/icons.generated";
-import { ExploreView } from "./explore";
+import { ImportablesView } from "./importables";
 import { KnowledgeView } from "./knowledge";
 import {
     COLOR_TAB,
@@ -12,16 +12,16 @@ import {
     SIZE_TAB_H,
 } from "../lib/theme";
 
-type TabId = "explore" | "knowledge";
+type TabId = "importables" | "knowledge";
 
 type Tab = { id: TabId; label: string; icon: IconName; content: () => Element };
 
 const TABS: Tab[] = [
-    { id: "explore", label: "Importables", icon: Icons.compass, content: ExploreView },
+    { id: "importables", label: "Importables", icon: Icons.compass, content: ImportablesView },
     { id: "knowledge", label: "Knowledge", icon: Icons.bookOpen, content: KnowledgeView },
 ];
 
-let activeTab: TabId = "explore";
+let activeTab: TabId = "importables";
 
 export function getActiveTab(): Tab {
     for (let i = 0; i < TABS.length; i++) if (TABS[i].id === activeTab) return TABS[i];

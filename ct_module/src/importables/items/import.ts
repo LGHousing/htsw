@@ -3,7 +3,7 @@ import type { Action, ImportableItem } from "htsw/types";
 import { syncActionList } from "../../importer/actions/sync";
 import type { ImportEventHandler } from "../../importer/importEvents";
 import { createSetupStepEmitter } from "../../importer/progress/setupStepEmitter";
-import { clickGoBack } from "../../importer/gui/helpers";
+import { clickGoBack } from "../../importer/gui/menuFlows";
 import { IMPORT_DEBUG } from "../../importer/diagnostics/importDebug";
 import { timedWaitForMenu } from "../../importer/gui/menuWait";
 import {

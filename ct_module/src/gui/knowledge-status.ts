@@ -1,7 +1,8 @@
-import type { CacheState, CacheStatusRow } from "../importCache/status";
+import type { CacheState } from "../importCache/status";
+import { findCacheRowIndex } from "../importCache/status";
 import { importableIdentity } from "../importCache/paths";
 import { getKnowledgeRows } from "./state";
-import { findFileTarget } from "./state/knowledgeOverlay";
+import { findFileTarget } from "./state/sourceDiff";
 import type { Importable } from "htsw/types";
 
 export const STATUS_COLOR: { [k in CacheState]: number } = {
@@ -27,14 +28,8 @@ export const STATUS_LABEL: { [k in CacheState]: string } = {
  */
 export function knowledgeStateForImportable(importable: Importable): CacheState | null {
     const rows = getKnowledgeRows();
-    const id = importableIdentity(importable);
-    for (let i = 0; i < rows.length; i++) {
-        const row: CacheStatusRow = rows[i];
-        if (row.identity === id && row.importable.type === importable.type) {
-            return row.state;
-        }
-    }
-    return null;
+    const idx = findCacheRowIndex(rows, importableIdentity(importable), importable.type);
+    return idx === -1 ? null : rows[idx].state;
 }
 
 export function statusForImportable(importable: Importable): CacheState {

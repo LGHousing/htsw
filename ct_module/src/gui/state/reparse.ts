@@ -1,6 +1,5 @@
 /// <reference types="../../../CTAutocomplete" />
 
-import { htsl } from "htsw";
 import type { ParseResult } from "htsw";
 import type { Importable } from "htsw/types";
 
@@ -20,7 +19,7 @@ import {
     touchParseCacheMtime,
     type CachedParse,
 } from "./parses";
-import { deleteSnapshot, snapshotExists } from "./parseSnapshot";
+import { snapshotExists } from "./parseSnapshot";
 import { javaType } from "../lib/java";
 
 /**
@@ -28,33 +27,13 @@ import { javaType } from "../lib/java";
  * `parseImportJsonAt` (parses.ts). It owns no parsing, snapshotting, or
  * mtime-watching of its own — that all lives in `parses.ts` /
  * `parseSnapshot.ts`, behind one fingerprint-based freshness check shared
- * with the Explore tree. This driver only:
+ * with the Importables tree. This driver only:
  *   - tracks which import.json is active and debounces explicit reloads,
  *   - polls the authority each tick (cheap — it re-parses only when a
  *     referenced file's fingerprint changed, throttled internally),
  *   - propagates a changed parse into global state (parsedResult,
  *     knowledge rows, recents) for the *active* import.json.
  */
-
-let lastParseTiming: ParseTiming | null = null;
-
-export type ParseTiming = {
-    path: string;
-    totalMs: number;
-    snapshotHit: boolean;
-};
-
-export function getLastParseTiming(): ParseTiming | null {
-    return lastParseTiming;
-}
-
-export function invalidateParseSnapshot(): boolean {
-    const path = getImportJsonPath();
-    if (path.length === 0) return false;
-    htsl.clearHtslCache();
-    invalidateParseCacheEntry(path);
-    return deleteSnapshot(path);
-}
 
 // ── import.json auto-discovery ────────────────────────────────────────
 const IMPORTS_ROOT = "./htsw/imports";
@@ -169,12 +148,6 @@ export function reparseNow(): void {
     forceReparse(getImportJsonPath());
 }
 
-/** Kept for the overlay-init caller; identical to `reparseNow`. */
-export function reparseImportJson(): void {
-    pendingReparse = false;
-    forceReparse(getImportJsonPath());
-}
-
 /**
  * Mark a file as already in sync with disk, so the next freshness check
  * doesn't trigger a redundant re-parse. Used after an in-place edit that
@@ -236,11 +209,9 @@ function forceReparse(path: string): void {
     forceInFlight = true;
     const willFreeze = !snapshotExists(path);
     if (willFreeze) setParseInProgress(true);
-    const t0 = Date.now();
     setTimeout(() => {
         try {
             const cached = parseImportJsonAt(path);
-            lastParseTiming = { path, totalMs: Date.now() - t0, snapshotHit: !willFreeze };
             propagate(path, cached, /*progressive=*/ true);
         } catch (_e) {
             lastParsedRef = null;

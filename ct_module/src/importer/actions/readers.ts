@@ -21,7 +21,7 @@ import {
     clickGoBack,
     readBooleanValue,
     readStringValue,
-} from "../gui/helpers";
+} from "../gui/menuFlows";
 import { waitForMenu } from "../gui/menuWait";
 import { readConditionList } from "../conditions/readList";
 import {

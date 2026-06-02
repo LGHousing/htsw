@@ -3,8 +3,8 @@
 import * as htsw from "htsw";
 import type { Action, Importable } from "htsw/types";
 import { normalizeSoundKey } from "../../importer/fields/sounds";
-import type { TokenSpan, FieldSpan } from "../code-view/types";
-import type { DiffState, DiffLineInfo } from "./diff";
+import type { TokenSpan, FieldSpan } from "../code-view/lineTypes";
+import type { DiffState, DiffLineInfo } from "./diffPalette";
 import type {
     ActionPath,
     DiffFinalState,

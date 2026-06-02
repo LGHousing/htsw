@@ -8,7 +8,7 @@ import {
     ACTIVE_HOVER_BG,
     ROW_BG,
     ROW_HOVER_BG,
-} from "./types";
+} from "./rowModel";
 
 type ImportableType = Importable["type"];
 const ALL_IMPORTABLE_TYPES: ImportableType[] = ["FUNCTION", "EVENT", "REGION", "ITEM", "MENU", "NPC"];

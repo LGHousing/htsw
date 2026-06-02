@@ -21,7 +21,7 @@ import {
     isLimitExceeded,
     setListItemNote,
     setNoteOnLastVisibleSlot,
-} from "../gui/helpers";
+} from "../gui/menuFlows";
 import { timedWaitForMenu, waitForMenu } from "../gui/menuWait";
 import { MouseButton } from "../../tasks/specifics/slots";
 import type {

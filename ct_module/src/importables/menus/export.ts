@@ -5,7 +5,7 @@ import {
     clickGoBack,
     readCurrentValue,
     readSelectedOption,
-} from "../../importer/gui/helpers";
+} from "../../importer/gui/menuFlows";
 import { waitForMenu } from "../../importer/gui/menuWait";
 import { getCurrentHousingUuid, writeImportableCache } from "../../importCache";
 import TaskContext from "../../tasks/context";

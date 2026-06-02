@@ -45,7 +45,7 @@ import {
     startExportAllFunctions,
     startImport,
     stopAllTasks,
-} from "./actions";
+} from "./importController";
 
 // ── Path helpers (used only by the destination picker) ────────────────
 

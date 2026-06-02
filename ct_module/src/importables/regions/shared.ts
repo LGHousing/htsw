@@ -1,4 +1,4 @@
-import { clickGoBack } from "../../importer/gui/helpers";
+import { clickGoBack } from "../../importer/gui/menuFlows";
 import {
     timedWaitForMenu,
     timedWaitForUnformattedMessage,
