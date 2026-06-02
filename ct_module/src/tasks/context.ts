@@ -8,6 +8,16 @@ import {
     getOpenContainerTitle,
 } from "./specifics/slots";
 import { waitFor, type WaitForPromise } from "./specifics/waitFor";
+import { C01PacketChatMessage } from "../utils/packets";
+
+/**
+ * Hypixel accepts chat payloads up to 256 chars, but MC 1.8.9's
+ * `C01PacketChatMessage` constructor truncates client-side at 100. We
+ * bypass that cap by reflection (see `sendMessage`) and cap at the
+ * server's real limit so a longer value is trimmed deterministically
+ * rather than rejected.
+ */
+const MAX_CHAT_MESSAGE_LENGTH = 256;
 
 /**
  * Hypixel's chat anti-spam works as a heat budget: every chat sent to
@@ -89,7 +99,20 @@ export default class TaskContext {
             throw new Error(`Invalid message: ${message}`);
         }
         await this.awaitChatBudget();
-        ChatLib.say(message);
+        const capped =
+            message.length > MAX_CHAT_MESSAGE_LENGTH
+                ? message.substring(0, MAX_CHAT_MESSAGE_LENGTH)
+                : message;
+        // ChatLib.say builds a C01PacketChatMessage whose constructor cuts
+        // the string to 100 chars. Build the packet with a dummy value and
+        // overwrite the message field by reflection so the full (≤256) value
+        // reaches the server.
+        const packet = new C01PacketChatMessage("");
+        const messageField = packet.class.getDeclaredField("field_149440_a");
+        // @ts-ignore reflective field access has no CT typedef
+        messageField.setAccessible(true);
+        messageField.set(packet, capped);
+        Client.sendPacket(packet);
     }
 
     public displayMessage(message: string) {

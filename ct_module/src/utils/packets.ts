@@ -1,4 +1,8 @@
 
+export const C01PacketChatMessage = Java.type(
+    "net.minecraft.network.play.client.C01PacketChatMessage"
+);
+
 export const C10PacketCreativeInventoryAction = Java.type(
     "net.minecraft.network.play.client.C10PacketCreativeInventoryAction"
 );
