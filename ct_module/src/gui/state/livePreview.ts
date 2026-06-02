@@ -193,7 +193,7 @@ function insertionIndexForPath(lines: PreviewLine[], actionPath: string): number
 function linesForImportable(importable: Importable, shellOnly: boolean): PreviewLine[] {
     const out: PreviewLine[] = [];
     if (importable.type === "FUNCTION" || importable.type === "EVENT") {
-        appendActions(out, importable.actions, undefined, 0, shellOnly);
+        appendActions(out, importable.actions ?? [], undefined, 0, shellOnly);
     } else if (importable.type === "REGION") {
         appendActions(out, importable.onEnterActions ?? [], undefined, 0, shellOnly);
     }

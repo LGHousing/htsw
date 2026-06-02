@@ -78,7 +78,7 @@ export function listHashes(importable: Importable): Record<string, string[]> {
     switch (importable.type) {
         case "FUNCTION":
         case "EVENT":
-            collectActionListHashes(out, "actions", importable.actions);
+            collectActionListHashes(out, "actions", importable.actions ?? []);
             break;
         case "REGION":
             if (importable.onEnterActions) {

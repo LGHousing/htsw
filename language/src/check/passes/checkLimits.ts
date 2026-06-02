@@ -17,7 +17,7 @@ type ActionListContext = ActionLimitContext & {
 export function checkLimits(gcx: GlobalCtxt) {
     for (const importable of gcx.importables) {
         if (importable.type === "FUNCTION") {
-            checkActionList(gcx, importable.actions, {
+            checkActionList(gcx, importable.actions ?? [], {
                 importable: "functions",
                 label: `Function "${importable.name}"`,
             });

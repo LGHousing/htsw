@@ -77,7 +77,7 @@ const NESTED_CONTAINER_FORBIDDEN_ACTIONS: Action["type"][] = [
 export function checkActionContext(gcx: GlobalCtxt) {
     for (const importable of gcx.importables) {
         if (importable.type === "FUNCTION") {
-            checkAll(gcx, checkActionInFunction, importable.actions, { container: "functions" });
+            checkAll(gcx, checkActionInFunction, importable.actions ?? [], { container: "functions" });
         }
 
         else if (importable.type === "EVENT") {

@@ -5,7 +5,13 @@ import type { Bounds, Event, MenuSlot } from "./types";
 export type ImportableFunction = {
     type: "FUNCTION";
     name: string;
-    actions: Action[];
+    /**
+     * Optional so an import.json entry can carry just an icon/repeatTicks
+     * without an `.htsl` reference. When omitted the importer leaves the
+     * live function's action list untouched (it does NOT sync against an
+     * empty list, which would wipe it) — see functions/import.ts.
+     */
+    actions?: Action[];
     repeatTicks?: number;
     icon?: FunctionIcon;
 };

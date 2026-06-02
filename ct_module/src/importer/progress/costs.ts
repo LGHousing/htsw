@@ -633,7 +633,7 @@ export function estimateImportableCost(
     if (importable.type === "FUNCTION") {
         return (
             COST.commandMenuWait +
-            actionListCost(importable.actions, get("actions")) +
+            actionListCost(importable.actions ?? [], get("actions")) +
             COST.cacheWrite
         );
     }

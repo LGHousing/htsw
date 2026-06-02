@@ -270,7 +270,7 @@ describe("import.json diagnostics readability", () => {
     it("includes allowed keys help for missing required keys", () => {
         const result = parseImportables(caseFilePath("missing_required"));
         const diag = result.diagnostics.find((it) =>
-            it.message.includes("Missing required key 'actions'")
+            it.message.includes("Missing required key 'name'")
         );
 
         expect(diag).toBeDefined();

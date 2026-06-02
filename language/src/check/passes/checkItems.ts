@@ -49,7 +49,7 @@ function checkItemReferences(gcx: GlobalCtxt, items: ImportableItem[]): void {
 
     for (const importable of gcx.importables) {
         if (importable.type === "FUNCTION") {
-            checkActions(gcx, itemNames, importable.actions);
+            checkActions(gcx, itemNames, importable.actions ?? []);
         } else if (importable.type === "EVENT") {
             checkActions(gcx, itemNames, importable.actions);
         } else if (importable.type === "REGION") {

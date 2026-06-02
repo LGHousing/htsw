@@ -62,6 +62,16 @@ export async function prereadImportableFunction(
         return { kind: "FUNCTION", importable, trustPlan, actionsPlan: null, settingsHandled: false };
     }
 
+    // Icon-only entry: no `actions` declared in import.json. NEVER diff/sync
+    // the action list — syncing against an empty list would delete every
+    // live action. Just make sure the function exists and let the apply pass
+    // set the icon/ticks.
+    if (importable.actions === undefined) {
+        await ensureFunctionExists(ctx, importable.name);
+        setup(`opened function ${importable.name}`);
+        return { kind: "FUNCTION", importable, trustPlan, actionsPlan: null, settingsHandled: false };
+    }
+
     await ensureFunctionExists(ctx, importable.name);
     setup(`opened function ${importable.name}`);
     const actionsPlan = await prereadActionList(ctx, importable.actions, {

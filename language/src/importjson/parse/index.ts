@@ -248,7 +248,7 @@ function parseImportableFunction(gcx: GlobalCtxt, node: json.Node, declaringPath
             }
         },
         "actions": {
-            required: true,
+            required: false,
             parser: (child) => {
                 const parsed = parseActionsWithPath(gcx, child);
                 importable.actions = parsed.actions;
