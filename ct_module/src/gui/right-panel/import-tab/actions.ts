@@ -540,17 +540,21 @@ export function startImport(explicit?: readonly QueueItem[]): void {
         rows,
     }));
 
-    // Mark the current queue items as this session's batch. Items added to
-    // the queue during the run become "pending" and survive the success
-    // clear (only session items are removed). The explicit path doesn't
-    // touch the queue, so no session is opened.
-    if (explicit === undefined) beginQueueSession();
+    // A command import (`explicit`) gets reflected into the visible queue so
+    // it shows up + animates like a GUI run; otherwise we'd run an invisible
+    // import with an empty queue. Add the explicit items first, THEN snapshot
+    // the session keys to exactly those — pre-existing queue items get
+    // session-marked by beginQueueSession but must NOT be cleaned up here,
+    // since the explicit batch only ran what `explicit` named.
+    if (explicit !== undefined) {
+        for (const item of explicit) addToQueue(item);
+    }
+    beginQueueSession();
 
     setImportRunning(true);
     // Snapshot this session's queue keys so the post-run cleanup can drop
     // exactly these items even if a newer import supersedes the session.
-    const sessionItemKeys: string[] =
-        explicit === undefined ? getQueue().map(queueItemKey) : [];
+    const sessionItemKeys: string[] = (explicit ?? getQueue()).map(queueItemKey);
     const startedAt = Date.now();
     resetStepGate();
     gmcOnImportStart();
@@ -644,7 +648,7 @@ export function startImport(explicit?: readonly QueueItem[]): void {
             // successful queue run removes the session items (pending adds
             // stay); a cancel/failure keeps them for retry and just drops the
             // session marking so they merge back into the normal queue.
-            const removeSessionItems = explicit === undefined && importSucceeded;
+            const removeSessionItems = importSucceeded;
             setTimeout(() => {
                 // Drop this session's successful items even if a newer import
                 // has since started — otherwise a superseded cleanup leaves
