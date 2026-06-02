@@ -14,8 +14,10 @@ import {
     ACCENT_DANGER,
     ACCENT_SUCCESS,
     ACCENT_TEAL,
+    COLOR_BUTTON,
     COLOR_BUTTON_DANGER,
     COLOR_BUTTON_DANGER_HOVER,
+    COLOR_BUTTON_HOVER,
     COLOR_PANEL,
     COLOR_PANEL_BORDER,
     COLOR_PANEL_RAISED,
@@ -25,6 +27,11 @@ import {
     PHASE_HYDRATING,
     PHASE_READING,
 } from "../../lib/theme";
+import {
+    getStepAuto,
+    requestStepAdvance,
+    setStepAuto,
+} from "../../../importer/stepGate";
 import { cancelActiveImport } from "./actions";
 import {
     getCurrentPhaseEtaSeconds,
@@ -376,6 +383,30 @@ export function liveImporterPanel(): Element {
                                     color: COLOR_TEXT_DIM,
                                     style: { width: { kind: "grow" } },
                                 }),
+                                Button({
+                                    text: () => (getStepAuto() ? "Pause" : "Resume"),
+                                    style: {
+                                        width: { kind: "px", value: 56 },
+                                        height: { kind: "grow" },
+                                        background: COLOR_BUTTON,
+                                        hoverBackground: COLOR_BUTTON_HOVER,
+                                    },
+                                    onClick: () => setStepAuto(!getStepAuto()),
+                                }),
+                                ...(getStepAuto()
+                                    ? []
+                                    : [
+                                          Button({
+                                              text: "Step",
+                                              style: {
+                                                  width: { kind: "px", value: 44 },
+                                                  height: { kind: "grow" },
+                                                  background: COLOR_BUTTON,
+                                                  hoverBackground: COLOR_BUTTON_HOVER,
+                                              },
+                                              onClick: () => requestStepAdvance(),
+                                          }),
+                                      ]),
                                 Button({
                                     icon: Icons.x,
                                     text: "Cancel",

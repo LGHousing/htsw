@@ -37,12 +37,7 @@ import {
 import { isImportRunning } from "../../../importer/runtimeState";
 import { getAlias } from "../../../importCache/aliases";
 import { openAliasPopover } from "../../popovers/alias";
-import {
-    getStepAuto,
-    requestStepAdvance,
-    setStepAuto,
-} from "../../../importer/stepGate";
-import { liveImporterPanel } from "./progress";
+import { getStepAuto, setStepAuto } from "../../../importer/stepGate";
 import {
     isQueueImportJsonExpanded,
     queueImportJsonChildren,
@@ -162,52 +157,24 @@ function houseHeader(): Element {
     });
 }
 
-function pauseControlRow(): Element {
+// Idle-only auto-proceed toggle. During a run, Pause/Step live in the
+// bottom progress strip (next to Cancel), so this row only sets whether
+// the next import starts in step mode.
+function autoProceedRow(): Element {
     return Row({
         style: { gap: 2, height: { kind: "px", value: SIZE_ROW_H } },
-        children: () => {
-            const auto = getStepAuto();
-            const importing = getImportProgress() !== null;
-            if (!importing) {
-                return [
-                    Button({
-                        text: auto ? "Auto-proceed: On" : "Auto-proceed: Off",
-                        style: {
-                            width: { kind: "grow" },
-                            height: { kind: "grow" },
-                            background: COLOR_BUTTON,
-                            hoverBackground: COLOR_BUTTON_HOVER,
-                        },
-                        onClick: () => setStepAuto(!getStepAuto()),
-                    }),
-                ];
-            }
-            const children: Element[] = [
-                Button({
-                    text: auto ? "Pause" : "Resume",
-                    style: {
-                        width: { kind: "px", value: 72 },
-                        height: { kind: "grow" },
-                        background: COLOR_BUTTON,
-                        hoverBackground: COLOR_BUTTON_HOVER,
-                    },
-                    onClick: () => setStepAuto(!getStepAuto()),
-                }),
-            ];
-            if (!auto) {
-                children.push(Button({
-                    text: "Step Once",
-                    style: {
-                        width: { kind: "px", value: 72 },
-                        height: { kind: "grow" },
-                        background: COLOR_BUTTON,
-                        hoverBackground: COLOR_BUTTON_HOVER,
-                    },
-                    onClick: () => requestStepAdvance(),
-                }));
-            }
-            return children;
-        },
+        children: [
+            Button({
+                text: () => (getStepAuto() ? "Auto-proceed: On" : "Auto-proceed: Off"),
+                style: {
+                    width: { kind: "grow" },
+                    height: { kind: "grow" },
+                    background: COLOR_BUTTON,
+                    hoverBackground: COLOR_BUTTON_HOVER,
+                },
+                onClick: () => setStepAuto(!getStepAuto()),
+            }),
+        ],
     });
 }
 
@@ -324,12 +291,9 @@ function pendingDividerRow(): Element {
 export function importTab(): Element {
     const children: Child[] = [houseHeader(), queueSummary()];
     if (queueExpanded) children.push(queueScroll());
-    children.push(
-        liveImporterPanel(),
-        livePreviewBody(),
-        pauseControlRow(),
-        importActionRow()
-    );
+    children.push(livePreviewBody());
+    if (getImportProgress() === null) children.push(autoProceedRow());
+    children.push(importActionRow());
     return Col({
         style: { gap: 4, width: { kind: "grow" }, height: { kind: "grow" } },
         children,
