@@ -46,7 +46,19 @@ type FileState = {
     revision: number;
     hasContent: boolean;
     overlay: LiveOverlay;
+    lastObservedAt: number;
 };
+
+/**
+ * Minimum gap between full observed-snapshot rebuilds for one file. Each
+ * rebuild reconstructs the whole line array (new line objects), which
+ * invalidates the per-line text-wrap cache and forces a full re-measure on
+ * the next frame. During the hydration of a large function the importer
+ * emits snapshots in rapid bursts; coalescing them here keeps the rebuild
+ * + re-measure cost bounded so the game stays responsive. The final state
+ * is never lost — `finalizeFromSource` rebuilds unconditionally at the end.
+ */
+const OBSERVED_REBUILD_THROTTLE_MS = 200;
 
 function emptyOverlay(): LiveOverlay {
     return {
@@ -68,7 +80,7 @@ function ensure(path: string): FileState {
     const k = keyForFile(path);
     let s = states[k];
     if (!s) {
-        s = { lines: [], revision: 0, hasContent: false, overlay: emptyOverlay() };
+        s = { lines: [], revision: 0, hasContent: false, overlay: emptyOverlay(), lastObservedAt: 0 };
         states[k] = s;
     }
     return s;
@@ -478,6 +490,11 @@ export function setObservedTopLevel(
     actions: ReadonlyArray<MaybeAction | null>
 ): void {
     const s = ensure(path);
+    const now = Date.now();
+    if (s.hasContent && now - s.lastObservedAt < OBSERVED_REBUILD_THROTTLE_MS) {
+        return;
+    }
+    s.lastObservedAt = now;
     s.lines = buildLines(actions, undefined, 0);
     s.hasContent = true;
     bump(s);
