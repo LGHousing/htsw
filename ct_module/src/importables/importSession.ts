@@ -14,6 +14,7 @@ import {
 } from "../importCache";
 import { printDiagnostic } from "../tui/diagnostics";
 import { createItemRegistry } from "./itemRegistry";
+import { resetFunctionNameSession } from "./functions/listFunctions";
 import {
     applyImportablePlan,
     prereadImportable,
@@ -75,6 +76,10 @@ export async function importSelectedImportables(
     ctx: TaskContext,
     selection: ImportSelection
 ): Promise<void> {
+    // Fresh per import: the /functions list (names + current icons) is cached
+    // for the run, so a stale cache from a prior import must not leak in.
+    resetFunctionNameSession();
+
     const parsed = selection.parsed ?? parseImportablesResult(
         new SourceMap(new FileSystemFileLoader()),
         selection.sourcePath

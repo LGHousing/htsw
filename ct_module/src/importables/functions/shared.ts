@@ -13,12 +13,16 @@ import TaskContext from "../../tasks/context";
 import { MouseButton } from "../../tasks/specifics/slots";
 import { removedFormatting, unique } from "../../utils/helpers";
 import {
+    createPlainIconItem,
+    desiredIconSnapshot,
+    iconSnapshotsEqual,
+    iconStacksEqual,
+} from "./icon";
+import {
+    getSessionFunctionIcon,
     getSessionFunctionNamesLower,
     noteFunctionCreated,
 } from "./listFunctions";
-
-const McItem = Java.type("net.minecraft.item.Item");
-const ItemStack = Java.type("net.minecraft.item.ItemStack");
 
 export function extractFunctionNameFromSlot(rawDisplayName: string): string | null {
     const trimmed = rawDisplayName.trim();
@@ -156,32 +160,39 @@ export async function setFunctionIconIfNeeded(
         );
         return;
     }
-    await setItemValue(ctx, "Edit Icon", createPlainIconItem(icon));
+    // An icon is only ever {item, count}; match the picker selection on those,
+    // not the exact-NBT compare used for GIVE_ITEM (which would never match a
+    // freshly creative-spawned stack and falsely report "never appeared").
+    await setItemValue(ctx, "Edit Icon", createPlainIconItem(icon), iconStacksEqual);
 }
 
 /**
  * Assuming the function-settings menu is open, apply the icon and
  * automatic-execution tick count from `importable`. Both setters short-circuit
- * when the current value already matches, so this is a no-op for an already
- * in-sync function. Shared by the preread fast-path and the apply pass.
+ * when the current value already matches — the icon against its /functions-list
+ * snapshot, the ticks against the live field — so this is a no-op for an
+ * already in-sync function. Shared by the preread fast-path and the apply pass.
  */
 export async function applyFunctionSettings(
     ctx: TaskContext,
     importable: ImportableFunction
 ): Promise<void> {
-    if (importable.icon) {
+    if (importable.icon !== undefined && !(await functionIconMatches(ctx, importable))) {
         await setFunctionIconIfNeeded(ctx, importable.icon);
     }
     await setAutomaticExecutionTicksIfNeeded(ctx, importable.repeatTicks ?? 0);
 }
 
-function createPlainIconItem(icon: FunctionIcon): Item {
-    // @ts-ignore func_111206_d is Item.getByNameOrId in 1.8.
-    const mcItem = McItem.func_111206_d(icon.item);
-    if (mcItem === null) {
-        throw new Error(`Unknown function icon item '${icon.item}'`);
-    }
-
-    // @ts-ignore ChatTriggers' TS declarations do not expose this NMS constructor.
-    return new Item(new ItemStack(mcItem, icon.count ?? 1));
+/**
+ * Whether the function's icon already matches the desired one, read straight
+ * from the cached /functions list (no settings menu open). True when there's no
+ * desired icon — nothing to apply.
+ */
+export async function functionIconMatches(
+    ctx: TaskContext,
+    importable: ImportableFunction
+): Promise<boolean> {
+    if (importable.icon === undefined) return true;
+    const current = await getSessionFunctionIcon(ctx, importable.name);
+    return iconSnapshotsEqual(current, desiredIconSnapshot(importable.icon));
 }

@@ -21,6 +21,7 @@ import {
     applyFunctionSettings,
     ensureFunctionExists,
     ensureFunctionNamesExist,
+    functionIconMatches,
     openFunctionSettings,
 } from "./shared";
 
@@ -73,8 +74,20 @@ export async function prereadImportableFunction(
     // settings.
     if (importable.actions === undefined) {
         await ensureFunctionNamesExist(ctx, [importable.name]);
-        setup(`settings-only ${importable.name}`);
-        return { kind: "FUNCTION", importable, trustPlan, actionsPlan: null, settingsHandled: false };
+        // The icon is the only settable thing for an icon-only entry, and it's
+        // readable straight from the /functions list we just cached — confirm a
+        // match here so an unchanged icon skips the apply pass entirely (no
+        // settings menu, no item placement). repeatTicks isn't visible in that
+        // list, so an entry that pins it still needs the apply pass.
+        const settingsHandled =
+            settingsTrusted ||
+            (importable.repeatTicks === undefined && (await functionIconMatches(ctx, importable)));
+        setup(
+            settingsHandled
+                ? `skipped ${importable.name}`
+                : `settings-only ${importable.name}`
+        );
+        return { kind: "FUNCTION", importable, trustPlan, actionsPlan: null, settingsHandled };
     }
 
     await ensureFunctionExists(ctx, importable.name);

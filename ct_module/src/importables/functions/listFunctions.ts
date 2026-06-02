@@ -6,6 +6,7 @@ import {
     type PaginatedListConfig,
 } from "../../importer/gui/paginatedList";
 import { removedFormatting } from "../../utils/helpers";
+import { snapshotIconStack, type FunctionIconSnapshot } from "./icon";
 import { extractFunctionNameFromSlot } from "./shared";
 
 const FUNCTION_LIST_CONFIG: PaginatedListConfig = {
@@ -13,20 +14,37 @@ const FUNCTION_LIST_CONFIG: PaginatedListConfig = {
     emptyPlaceholderName: "No Functions!",
 };
 
-// Per-import-session cache of the house's function names (lowercased), so the
-// reference-preflight doesn't re-read the whole /functions GUI once per
-// imported function. Populated on first need, kept in sync as we create shells,
-// and reset at the start of each import session.
-let sessionFunctionNamesLower: Set<string> | null = null;
+// Per-import-session cache of the house's functions (lowercased name → current
+// icon snapshot), so the reference-preflight doesn't re-read the whole
+// /functions GUI once per imported function. The icon rides along for free —
+// each list slot IS the function's icon — letting an icon-only import confirm a
+// match without opening any settings menu. Populated on first need, kept in
+// sync as we create shells, reset at the start of each import session.
+let sessionFunctions: Map<string, FunctionIconSnapshot | null> | null = null;
 
 export function resetFunctionNameSession(): void {
-    sessionFunctionNamesLower = null;
+    sessionFunctions = null;
 }
 
 export function noteFunctionCreated(name: string): void {
-    if (sessionFunctionNamesLower !== null) {
-        sessionFunctionNamesLower.add(name.toLowerCase());
+    if (sessionFunctions !== null) {
+        // A freshly created shell carries the Housing default icon; record it as
+        // unknown so an icon-only import treats it as a mismatch and sets the icon.
+        sessionFunctions.set(name.toLowerCase(), null);
     }
+}
+
+async function ensureSessionFunctions(
+    ctx: TaskContext
+): Promise<Map<string, FunctionIconSnapshot | null>> {
+    if (sessionFunctions !== null) return sessionFunctions;
+    const map = new Map<string, FunctionIconSnapshot | null>();
+    const entries = await listAllFunctionEntries(ctx);
+    for (let i = 0; i < entries.length; i++) {
+        map.set(entries[i].name.toLowerCase(), entries[i].icon);
+    }
+    sessionFunctions = map;
+    return map;
 }
 
 /**
@@ -34,19 +52,28 @@ export function noteFunctionCreated(name: string): void {
  * Reads the /functions GUI once and caches it; subsequent calls are free.
  */
 export async function getSessionFunctionNamesLower(ctx: TaskContext): Promise<Set<string>> {
-    if (sessionFunctionNamesLower !== null) return sessionFunctionNamesLower;
-    const names = await listAllFunctionNames(ctx);
-    const set = new Set<string>();
-    for (let i = 0; i < names.length; i++) set.add(names[i].toLowerCase());
-    sessionFunctionNamesLower = set;
-    return set;
+    return new Set((await ensureSessionFunctions(ctx)).keys());
 }
 
-export async function listAllFunctionNames(ctx: TaskContext): Promise<string[]> {
+/**
+ * Current icon of a function as shown in the /functions list (item + count),
+ * or null when the function doesn't exist or was created this session. Free
+ * after the first call — it reuses the same cached read as name existence.
+ */
+export async function getSessionFunctionIcon(
+    ctx: TaskContext,
+    name: string
+): Promise<FunctionIconSnapshot | null> {
+    return (await ensureSessionFunctions(ctx)).get(name.toLowerCase()) ?? null;
+}
+
+type FunctionListEntry = { name: string; icon: FunctionIconSnapshot | null };
+
+async function listAllFunctionEntries(ctx: TaskContext): Promise<FunctionListEntry[]> {
     await ctx.runCommand("/functions");
     await timedWaitForMenu(ctx, "commandMenuWait");
 
-    type Entry = { index: number; name: string };
+    type Entry = { index: number; name: string; icon: FunctionIconSnapshot | null };
     const entries = await readPaginatedList<Entry>(
         ctx,
         FUNCTION_LIST_CONFIG,
@@ -60,11 +87,19 @@ export async function listAllFunctionNames(ctx: TaskContext): Promise<string[]> 
                     removedFormatting(item.getName()),
                 );
                 if (extracted === null) continue;
-                out.push({ index: i, name: extracted });
+                out.push({
+                    index: i,
+                    name: extracted,
+                    icon: snapshotIconStack(item.getItemStack()),
+                });
             }
             return out;
         },
     );
 
-    return entries.map((e) => e.name);
+    return entries.map((e) => ({ name: e.name, icon: e.icon }));
+}
+
+export async function listAllFunctionNames(ctx: TaskContext): Promise<string[]> {
+    return (await listAllFunctionEntries(ctx)).map((e) => e.name);
 }

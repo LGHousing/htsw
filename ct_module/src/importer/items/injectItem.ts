@@ -7,12 +7,20 @@ import { timed } from "../progress/timing";
 
 const INV_PACKET_SLOT = 26; // inventory row 2, column 9 (for HasItem and similar, rightmost, out of the way — matches BHTSL)
 
-function slotMatchesStack(slotId: number, stack: any): boolean {
+/**
+ * Compares two NMS ItemStacks for the purpose of finding/placing the item a
+ * field should hold. Defaults to exact `stacksEqual` (GIVE_ITEM, menu slots,
+ * conditions need the precise item incl. NBT); the icon path passes a looser
+ * item+count comparator.
+ */
+export type StackMatcher = (a: any, b: any) => boolean;
+
+function slotMatchesStack(slotId: number, stack: any, match: StackMatcher): boolean {
     const slot = Player.getContainer()?.getItems()?.[slotId];
     return (
         slot !== null &&
         slot !== undefined &&
-        stacksEqual(slot.getItemStack(), stack)
+        match(slot.getItemStack(), stack)
     );
 }
 
@@ -28,13 +36,14 @@ function stacksEqual(left: any, right: any): boolean {
 async function waitForContainerSlotMatch(
     ctx: TaskContext,
     slotId: number,
-    stack: any
+    stack: any,
+    match: StackMatcher
 ): Promise<boolean> {
     for (let i = 0; i < SET_SLOT_ACK_MAX_TICKS; i++) {
-        if (slotMatchesStack(slotId, stack)) return true;
+        if (slotMatchesStack(slotId, stack, match)) return true;
         await ctx.waitFor("tick");
     }
-    return slotMatchesStack(slotId, stack);
+    return slotMatchesStack(slotId, stack, match);
 }
 
 /**
@@ -51,12 +60,13 @@ async function waitForContainerSlotMatch(
 export async function setItemValue(
     ctx: TaskContext,
     fieldName: string,
-    item: Item
+    item: Item,
+    match: StackMatcher = stacksEqual
 ): Promise<void> {
     ctx.getItemSlot(fieldName).click();
     await timedWaitForMenu(ctx, "menuClickWait");
 
-    await selectItemFromOpenInventory(ctx, item, fieldName);
+    await selectItemFromOpenInventory(ctx, item, fieldName, match);
 }
 
 /**
@@ -67,7 +77,8 @@ export async function setItemValue(
 export async function selectItemFromOpenInventory(
     ctx: TaskContext,
     item: Item,
-    label: string
+    label: string,
+    match: StackMatcher = stacksEqual
 ): Promise<void> {
     const container = Player.getContainer();
     if (container == null) {
@@ -83,7 +94,7 @@ export async function selectItemFromOpenInventory(
     const existingSlot = ctx.tryGetItemSlot((s) => {
         if (s.getSlotId() < playerInvStart) return false;
         const slotStack = s.getItem().getItemStack();
-        return stacksEqual(slotStack, desiredStack);
+        return match(slotStack, desiredStack);
     });
 
     if (existingSlot !== null) {
@@ -97,7 +108,7 @@ export async function selectItemFromOpenInventory(
     const scratchSlot = ctx.tryGetItemSlot((s) => s.getSlotId() === targetSlotInContainer);
     if (
         scratchSlot !== null &&
-        stacksEqual(scratchSlot.getItem().getItemStack(), desiredStack)
+        match(scratchSlot.getItem().getItemStack(), desiredStack)
     ) {
         scratchSlot.click();
         await timed("itemSelect", COST.itemSelect, () => waitForMenu(ctx));
@@ -112,7 +123,8 @@ export async function selectItemFromOpenInventory(
     const landed = await waitForContainerSlotMatch(
         ctx,
         targetSlotInContainer,
-        desiredStack
+        desiredStack,
+        match
     );
     if (!landed) {
         const itemName = removedFormatting(item.getName());
