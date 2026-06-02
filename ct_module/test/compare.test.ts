@@ -46,6 +46,20 @@ describe("normalizeActionCompare — value-kind numeric coercion", () => {
         expect(actionsCompareEqual(observed, desired)).toBe(false);
     });
 
+    test("float-expanded observed value equals 7-decimal source value", () => {
+        // Housing echoes source `1.8095238` back as the expanded float
+        // `1.809523821`; both quantize to 7 decimals and must compare equal.
+        const observed = playSound({ pitch: "1.809523821" as unknown as number });
+        const desired = playSound({ pitch: 1.8095238 });
+        expect(actionsCompareEqual(observed, desired)).toBe(true);
+    });
+
+    test("difference within 7 decimals is still a real change", () => {
+        const observed = playSound({ pitch: "1.81" as unknown as number });
+        const desired = playSound({ pitch: 1.8095238 });
+        expect(actionsCompareEqual(observed, desired)).toBe(false);
+    });
+
     test("malformed numeric strings stay as strings (no permissive coerce)", () => {
         // Guards against parseFloat-style permissive parsing: "0.7x" must
         // not collapse to 0.7 and falsely match the default.
