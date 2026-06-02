@@ -63,7 +63,7 @@ import {
     getActionFieldLabel,
 } from "../fields/actionMappings";
 import { normalizeSoundKey } from "../fields/sounds";
-import type { Observed } from "../types";
+import type { Observed, ObservedActionSlot, ObservedConditionSlot } from "../types";
 import { setItemValue } from "../items/injectItem";
 import { resolveImportableItem } from "../items/resolveItem";
 import { syncActionList } from "./sync";
@@ -86,6 +86,38 @@ function observedActionsAsBaselineCurrent(
     const out: Action[] = [];
     for (const entry of observed) {
         if (entry !== null) out.push(entry as Action);
+    }
+    return out;
+}
+
+/**
+ * Turn a nested list already hydrated in an earlier pass into an observed-slot
+ * array the nested sync can diff against directly, so it skips re-reading the
+ * live nested editor. Returns undefined (forcing a live read) if any entry is
+ * unhydrated — a null there would otherwise be mistaken for a delete.
+ */
+function reuseObservedActions(
+    observed: ReadonlyArray<Observed<Action> | null> | undefined
+): ObservedActionSlot[] | undefined {
+    if (observed === undefined) return undefined;
+    const out: ObservedActionSlot[] = [];
+    for (let i = 0; i < observed.length; i++) {
+        const action = observed[i];
+        if (action === null) return undefined;
+        out.push({ index: i, action, nestedReadState: "full" });
+    }
+    return out;
+}
+
+function reuseObservedConditions(
+    observed: ReadonlyArray<Condition | null> | undefined
+): ObservedConditionSlot[] | undefined {
+    if (observed === undefined) return undefined;
+    const out: ObservedConditionSlot[] = [];
+    for (let i = 0; i < observed.length; i++) {
+        const condition = observed[i];
+        if (condition === null) return undefined;
+        out.push({ index: i, condition });
     }
     return out;
 }
@@ -161,6 +193,7 @@ export async function writeConditional(
                 : (event) => events.emit({ kind: "progress", scope: condScope, progress: event });
         await syncConditionList(ctx, action.conditions, {
             itemRegistry,
+            observed: reuseObservedConditions(current?.conditions),
             baselineCurrent: current?.conditions,
             progress: condProgress,
         });
@@ -193,6 +226,7 @@ export async function writeConditional(
         const baseline = observedActionsAsBaselineCurrent(current?.ifActions);
         await syncActionList(ctx, action.ifActions, {
             itemRegistry,
+            observed: reuseObservedActions(current?.ifActions),
             pathPrefix: nestedPath,
             baselineCurrent: baseline,
             progressScope: scopeAt?.(nestedPath, offset),
@@ -211,6 +245,7 @@ export async function writeConditional(
         await waitForMenu(ctx);
         await syncActionList(ctx, action.elseActions, {
             itemRegistry,
+            observed: reuseObservedActions(current?.elseActions),
             pathPrefix: nestedPath,
             baselineCurrent: observedActionsAsBaselineCurrent(current?.elseActions),
             progressScope: scopeAt?.(nestedPath, offset),
@@ -582,6 +617,7 @@ export async function writeRandom(
     const nestedPath = pathPrefix === undefined ? "actions" : `${pathPrefix}.actions`;
     await syncActionList(ctx, action.actions, {
         itemRegistry,
+        observed: reuseObservedActions(current?.actions),
         pathPrefix: nestedPath,
         baselineCurrent: observedActionsAsBaselineCurrent(current?.actions),
         progressScope: options?.nestedProgressScope?.(nestedPath),
