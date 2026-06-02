@@ -1,8 +1,13 @@
 import { TaskManager } from "../tasks/manager";
 import { exportImportable } from "../importables/exports";
 import { exportAllFunctions } from "../importables/functions/exportAll";
+import { exportAllEvents } from "../importables/events/exportAll";
 import { getCurrentHousingUuid } from "../importCache";
-import { htslFilenameForFunctionExport } from "./paths";
+import {
+    htslFilenameForFunctionExport,
+    readEventNamesFromImportJson,
+    readFunctionNamesFromImportJson,
+} from "./paths";
 import { chatSeparator, stripSurroundingQuotes } from "../utils/helpers";
 import { VERSION } from "htsw";
 import {
@@ -95,6 +100,10 @@ function printExportHelp(): void {
     ChatLib.chat("&7  [path] may be a directory or a specific import.json.");
     ChatLib.chat("&f/export all function [path]");
     ChatLib.chat("&7  Exports every function in this housing in menu order.");
+    ChatLib.chat("&f/export all event [path]");
+    ChatLib.chat("&7  Exports every event in this housing's /eventactions menu.");
+    ChatLib.chat("&f/export existing [path]");
+    ChatLib.chat("&7  Re-exports every function and event listed in the target import.json.");
     ChatLib.chat("&f/export menu <name> [path]");
     ChatLib.chat("&7  Reads a Hypixel menu and writes per-slot .snbt + import.json.");
     ChatLib.chat("&f/export stop");
@@ -147,6 +156,120 @@ function commandExport(args: string[]): void {
             let failed = 0;
             try {
                 await exportAllFunctions(ctx, { importJsonPath, rootDir });
+                imported = 1;
+            } catch (err) {
+                failed = 1;
+                throw err;
+            } finally {
+                setTraceImportable(null);
+                const written = endTraceRun({ imported, skipped: 0, failed });
+                if (written !== null && tracePath !== null) {
+                    ctx.displayMessage(`&7[trace] &fwrote ${written}`);
+                }
+            }
+        }).catch((err) => {
+            ChatLib.chat(`&cExport failed: ${err}`);
+        });
+        return;
+    }
+
+    if (tokens[0] === "all" && tokens[1] === "event") {
+        const pathParts = tokens.slice(2);
+        const rawPath = pathParts.length > 0 ? pathParts.join(" ") : "";
+        const explicitPath =
+            rawPath.length > 0 ? stripSurroundingQuotes(rawPath) : undefined;
+
+        TaskManager.run(async (ctx) => {
+            let rootDir: string;
+            let importJsonPath: string;
+            const explicitDestination = exportDestination(explicitPath);
+            if (explicitDestination !== null) {
+                rootDir = explicitDestination.rootDir;
+                importJsonPath = explicitDestination.importJsonPath;
+            } else {
+                const uuid = await getCurrentHousingUuid(ctx);
+                rootDir = `./htsw/exports/${uuid}`;
+                importJsonPath = `${rootDir}/import.json`;
+            }
+
+            const tracePath = beginTraceRun({
+                queueSize: 0,
+                sourcePath: importJsonPath,
+                trustMode: false,
+            });
+
+            let imported = 0;
+            let failed = 0;
+            try {
+                await exportAllEvents(ctx, { importJsonPath, rootDir });
+                imported = 1;
+            } catch (err) {
+                failed = 1;
+                throw err;
+            } finally {
+                setTraceImportable(null);
+                const written = endTraceRun({ imported, skipped: 0, failed });
+                if (written !== null && tracePath !== null) {
+                    ctx.displayMessage(`&7[trace] &fwrote ${written}`);
+                }
+            }
+        }).catch((err) => {
+            ChatLib.chat(`&cExport failed: ${err}`);
+        });
+        return;
+    }
+
+    if (tokens[0] === "existing") {
+        const pathParts = tokens.slice(1);
+        const rawPath = pathParts.length > 0 ? pathParts.join(" ") : "";
+        const explicitPath =
+            rawPath.length > 0 ? stripSurroundingQuotes(rawPath) : undefined;
+
+        TaskManager.run(async (ctx) => {
+            let rootDir: string;
+            let importJsonPath: string;
+            const explicitDestination = exportDestination(explicitPath);
+            if (explicitDestination !== null) {
+                rootDir = explicitDestination.rootDir;
+                importJsonPath = explicitDestination.importJsonPath;
+            } else {
+                const uuid = await getCurrentHousingUuid(ctx);
+                rootDir = `./htsw/exports/${uuid}`;
+                importJsonPath = `${rootDir}/import.json`;
+            }
+
+            const functionNames = readFunctionNamesFromImportJson(importJsonPath);
+            const eventNames = readEventNamesFromImportJson(importJsonPath);
+            if (functionNames.length === 0 && eventNames.length === 0) {
+                ctx.displayMessage(
+                    `&cNo functions[] or events[] entries found in ${importJsonPath}`
+                );
+                return;
+            }
+
+            const tracePath = beginTraceRun({
+                queueSize: 0,
+                sourcePath: importJsonPath,
+                trustMode: false,
+            });
+
+            let imported = 0;
+            let failed = 0;
+            try {
+                if (functionNames.length > 0) {
+                    await exportAllFunctions(ctx, {
+                        importJsonPath,
+                        rootDir,
+                        names: functionNames,
+                    });
+                }
+                if (eventNames.length > 0) {
+                    await exportAllEvents(ctx, {
+                        importJsonPath,
+                        rootDir,
+                        names: eventNames,
+                    });
+                }
                 imported = 1;
             } catch (err) {
                 failed = 1;
