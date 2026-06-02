@@ -7,8 +7,6 @@ import {
 import { Simulator } from "./simulator/simulator";
 import { printDiagnostic, printDiagnostics } from "./tui/diagnostics";
 import { recompile } from "./recompile";
-import { applyImportablePlan, prereadImportable } from "./importables/imports";
-import { createItemRegistry } from "./importables/itemRegistry";
 import { TaskManager } from "./tasks/manager";
 import { FileSystemFileLoader } from "./utils/files";
 import { commandKnowledge } from "./importCache/commands";
@@ -25,6 +23,8 @@ import {
     setProgressTraceEnabled,
 } from "./importer/progress/trace";
 import { getCurrentHousingUuid } from "./importCache";
+import { startImport } from "./gui/right-panel/import-tab/actions";
+import { canonicalPath } from "./gui/state/parses";
 import { snbtFromItem } from "./importer/itemCapture";
 import {
     defaultExportRoot,
@@ -35,30 +35,6 @@ import { upsertImportableEntry } from "./exporter/importJsonWriter";
 import { ensureParentDirs } from "./utils/filesystem";
 import { getItemFromSnbt } from "./utils/nbt";
 import { C10PacketCreativeInventoryAction } from "./utils/packets";
-
-function printCommandError(sm: SourceMap, err: unknown): void {
-    if (err instanceof Diagnostic) {
-        if (err.spans.length > 0) {
-            printDiagnostic(sm, err);
-        } else {
-            ChatLib.chat(`&c${err.message}`);
-        }
-        return;
-    }
-
-    if (err instanceof Error) {
-        ChatLib.chat(`&c${err.message}`);
-        if (err.stack) {
-            const firstStackLine = err.stack.split("\n")[1];
-            if (firstStackLine) {
-                ChatLib.chat(`&7${firstStackLine.trim()}`);
-            }
-        }
-        return;
-    }
-
-    ChatLib.chat(`&c${String(err)}`);
-}
 
 export function registerCommands() {
     register("command", (...args) => commandHtsw(args)).setName("htsw");
@@ -367,53 +343,20 @@ function commandImport(args: string[]) {
         return;
     }
 
-    const sm = new SourceMap(new FileSystemFileLoader());
     const importPath = resolveModuleRelativePath(stripSurroundingQuotes(args.join(" ")));
-    let result: ReturnType<typeof parseImportablesResult>;
-    try {
-        result = parseImportablesResult(sm, importPath);
-    } catch (err) {
-        ChatLib.chat("&cImport failed while parsing.");
-        printCommandError(sm, err);
+    if (!FileLib.exists(importPath)) {
+        ChatLib.chat(`&cimport.json file does not exist '${importPath}'`);
         return;
     }
 
-    printDiagnostics(sm, result.diagnostics);
-
-    const errorCount = countBlockingDiagnostics(result.diagnostics);
-    if (errorCount > 0) {
-        ChatLib.chat(
-            `&cImport failed with ${errorCount} error${errorCount === 1 ? "" : "s"}.`
-        );
-        return;
-    }
-
-    TaskManager.run(async (ctx) => {
-        ctx.displayMessage("&aImport started.");
-        const itemRegistry = createItemRegistry(result.value, result.gcx);
-        const ordered = [
-            ...result.value.filter((i) => i.type === "ITEM"),
-            ...result.value.filter((i) => i.type !== "ITEM"),
-        ];
-        for (const importable of ordered) {
-            try {
-                const plan = await prereadImportable(ctx, importable, itemRegistry);
-                await applyImportablePlan(ctx, plan, itemRegistry);
-            } catch (e) {
-                if (e instanceof Diagnostic) {
-                    printDiagnostic(sm, e);
-                } else {
-                    ctx.displayMessage(`&cFailed to import: ${e}`);
-                }
-                ctx.displayMessage("&cImport aborted.");
-                return;
-            }
-        }
-        ctx.displayMessage("&aImport complete.");
-    }).catch((err) => {
-        ChatLib.chat("&cImport failed.");
-        printCommandError(sm, err);
-    });
+    // Route through the same path the GUI's Import button uses so a chat
+    // import gets the live-preview animation, trust mode, sounds, and
+    // progress UI. buildBatches parses the file on demand via the parse
+    // cache and gates on diagnostics, so no separate parse pass is needed.
+    const canon = canonicalPath(importPath);
+    const slash = canon.lastIndexOf("/");
+    const label = slash >= 0 ? canon.substring(slash + 1) : canon;
+    startImport([{ kind: "importJson", sourcePath: canon, label }]);
 }
 
 function commandSimulator(args: string[]) {
