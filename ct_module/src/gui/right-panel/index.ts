@@ -39,6 +39,8 @@ import { viewBody } from "./view-body";
 import { normalizeHtswPath } from "../lib/pathDisplay";
 import { composeFileMenu } from "../state/fileMenu";
 import { importTab } from "./import-tab";
+import { liveImporterPanel } from "./import-tab/progress";
+import { getImportProgress } from "../state";
 
 
 const TAB_BG = 0xff2c323b | 0;
@@ -377,9 +379,15 @@ function viewTab(): Element {
 export function RightPanel(): Element {
     return Col({
         style: { padding: 6, gap: 4, width: { kind: "grow" }, height: { kind: "grow" } },
-        children: () => [
-            panelTabBar(),
-            getActiveRightTab() === "view" ? viewTab() : importTab(),
-        ],
+        children: () => {
+            const children: Element[] = [
+                panelTabBar(),
+                getActiveRightTab() === "view" ? viewTab() : importTab(),
+            ];
+            // Pin the live progress strip to the bottom of the sidebar while
+            // an import/export runs, so it's visible regardless of the tab.
+            if (getImportProgress() !== null) children.push(liveImporterPanel());
+            return children;
+        },
     });
 }

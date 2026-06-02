@@ -12,7 +12,6 @@ import { LeftPanel } from "./left-panel";
 import { RightPanel } from "./right-panel";
 import { BottomToolbar } from "./bottom-toolbar";
 import { ChatInputBar } from "./chat-input";
-import { liveImporterPanel } from "./right-panel/import-tab/progress";
 import { getImportProgress } from "./state";
 import { COLOR_PANEL } from "./lib/theme";
 
@@ -94,19 +93,6 @@ function buildLayout(b: ContainerBounds): Element {
     const chatInputH = chatTopInLeftCol >= CHAT_INPUT_H + 20 ? CHAT_INPUT_H : 0;
     const railH = Math.max(0, chatTopInLeftCol - chatInputH);
 
-    const bottomStrip: Element[] =
-        getImportProgress() !== null
-            ? [
-                  Container({
-                      style: {
-                          width: { kind: "grow" },
-                          padding: { side: "x", value: SCREEN_PAD },
-                      },
-                      children: [liveImporterPanel()],
-                  }),
-              ]
-            : [];
-
     return Col({
         style: { width: { kind: "grow" }, height: { kind: "grow" } },
         children: [
@@ -165,7 +151,6 @@ function buildLayout(b: ContainerBounds): Element {
                     }),
                 ],
             }),
-            ...bottomStrip,
         ],
     });
 }
