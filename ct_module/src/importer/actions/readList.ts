@@ -119,6 +119,13 @@ function readNestedSummaries(
             Object.assign(action, { [prop]: [] });
         } else {
             propsToRead.add(prop as NestedListProp);
+            // Seed one null per item so the preview can show the count
+            // ("...3 conditions..." / "...3 actions...") before hydration
+            // fills the real entries in. Guarded so a field the parser
+            // already populated as an array isn't clobbered.
+            if (!Array.isArray((action as Record<string, unknown>)[prop])) {
+                Object.assign(action, { [prop]: itemTypes.map(() => null) });
+            }
         }
     }
 
