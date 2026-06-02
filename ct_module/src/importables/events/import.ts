@@ -5,7 +5,6 @@ import {
     prereadActionList,
     type ActionListPlan,
 } from "../../importer/actions/sync";
-import { timedWaitForMenu } from "../../importer/gui/menuWait";
 import type { ImportableTrustPlan } from "../../importCache";
 import type { ImportEventHandler } from "../../importer/importEvents";
 import { createSetupStepEmitter } from "../../importer/progress/setupStepEmitter";
@@ -16,6 +15,7 @@ import {
     countReferencedShells,
     ensureReferencedImportablesExist,
 } from "../references";
+import { openEventEditor } from "./shared";
 
 export type EventImportPlan = {
     kind: "EVENT";
@@ -23,16 +23,6 @@ export type EventImportPlan = {
     trustPlan?: ImportableTrustPlan;
     actionsPlan: ActionListPlan | null;
 };
-
-async function openEventActions(
-    ctx: TaskContext,
-    eventName: string
-): Promise<void> {
-    await ctx.runCommand(`/eventactions`);
-    await timedWaitForMenu(ctx, "commandMenuWait");
-    ctx.getItemSlot(eventName).click();
-    await timedWaitForMenu(ctx, "menuClickWait");
-}
 
 export async function prereadImportableEvent(
     ctx: TaskContext,
@@ -52,7 +42,7 @@ export async function prereadImportableEvent(
         return { kind: "EVENT", importable, trustPlan, actionsPlan: null };
     }
 
-    await openEventActions(ctx, importable.event);
+    await openEventEditor(ctx, importable.event);
     setup(`opened event actions`);
     setup(`selected ${importable.event}`);
 
@@ -72,7 +62,7 @@ export async function applyImportableEventPlan(
     events?: ImportEventHandler
 ): Promise<void> {
     if (plan.actionsPlan === null) return;
-    await openEventActions(ctx, plan.importable.event);
+    await openEventEditor(ctx, plan.importable.event);
     await applyActionListPlan(ctx, plan.actionsPlan, {
         itemRegistry,
         events,
