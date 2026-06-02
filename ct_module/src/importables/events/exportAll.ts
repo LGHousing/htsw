@@ -10,12 +10,14 @@ import { withExportSession } from "../exportSession";
 import { exportEventWithSharedState } from "./export";
 import { writeCapturedItems } from "../../exporter/writeCapturedItems";
 import { htslFilenameForEventExport } from "../../exporter/paths";
+import type { ExportProgressSink } from "../../exporter/exportProgress";
 import { listAllEventNames } from "./listEvents";
 
 export type ExportAllEventsOptions = {
     importJsonPath: string;
     rootDir: string;
     names?: readonly string[];
+    progress?: ExportProgressSink;
 };
 
 export async function exportAllEvents(
@@ -53,6 +55,7 @@ async function exportAllEventsInner(
     ctx.displayMessage(
         `&aExporting ${names.length} event${names.length === 1 ? "" : "s"}...`
     );
+    options.progress?.start(names);
 
     let succeeded = 0;
     let failed = 0;
@@ -63,6 +66,7 @@ async function exportAllEventsInner(
             const htslPath = `${rootDir}/${filename}`;
             const htslReference = filename;
 
+            options.progress?.item(i, name);
             ctx.displayMessage(
                 `&7[${i + 1}/${names.length}] &fExporting '${name}'`
             );
@@ -91,6 +95,7 @@ async function exportAllEventsInner(
             }
         }
     } finally {
+        options.progress?.done();
         try {
             writeCapturedItems(ctx, itemCaptures, rootDir, importJsonPath);
         } finally {

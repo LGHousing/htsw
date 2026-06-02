@@ -2,6 +2,7 @@ import { TaskManager } from "../tasks/manager";
 import { exportImportable } from "../importables/exports";
 import { exportAllFunctions } from "../importables/functions/exportAll";
 import { exportAllEvents } from "../importables/events/exportAll";
+import { createExportProgressSink } from "../gui/state/exportProgress";
 import { getCurrentHousingUuid } from "../importCache";
 import {
     defaultExportRoot,
@@ -157,7 +158,11 @@ function commandExport(args: string[]): void {
             let imported = 0;
             let failed = 0;
             try {
-                await exportAllFunctions(ctx, { importJsonPath, rootDir });
+                await exportAllFunctions(ctx, {
+                    importJsonPath,
+                    rootDir,
+                    progress: createExportProgressSink("FUNCTION", importJsonPath),
+                });
                 imported = 1;
             } catch (err) {
                 failed = 1;
@@ -203,7 +208,11 @@ function commandExport(args: string[]): void {
             let imported = 0;
             let failed = 0;
             try {
-                await exportAllEvents(ctx, { importJsonPath, rootDir });
+                await exportAllEvents(ctx, {
+                    importJsonPath,
+                    rootDir,
+                    progress: createExportProgressSink("EVENT", importJsonPath),
+                });
                 imported = 1;
             } catch (err) {
                 failed = 1;
@@ -263,6 +272,7 @@ function commandExport(args: string[]): void {
                         importJsonPath,
                         rootDir,
                         names: functionNames,
+                        progress: createExportProgressSink("FUNCTION", importJsonPath),
                     });
                 }
                 if (eventNames.length > 0) {
@@ -270,6 +280,7 @@ function commandExport(args: string[]): void {
                         importJsonPath,
                         rootDir,
                         names: eventNames,
+                        progress: createExportProgressSink("EVENT", importJsonPath),
                     });
                 }
                 imported = 1;

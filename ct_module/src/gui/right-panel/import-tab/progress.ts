@@ -41,6 +41,7 @@ import {
     getImportMsPerUnit,
     getImportProgress,
     getImportProgressFraction,
+    getSessionVerb,
     isCurrentHouseTrusted,
     setActiveImportPath,
     setImportProgress,
@@ -122,6 +123,7 @@ function phaseEtaText(suffix: string): string {
 function currentPhaseLabel(): string {
     const p = getImportProgress();
     if (p === null || p.active === null) return "";
+    if (getSessionVerb() === "export") return "§lExporting";
     const labels = PHASE_LABELS[p.active.phase];
     if (labels === undefined) return "§lDone";
     const parts: string[] = [];
@@ -338,12 +340,15 @@ export function liveImporterPanel(): Element {
                             style: { width: { kind: "grow" }, align: "center" },
                             children: [
                                 Text({
-                                    text: () =>
-                                        current !== null
-                                            ? `Importable ${currentNumber} of ${totalImportables}  ·  §b§l${current.identity}`
+                                    text: () => {
+                                        const noun = getSessionVerb() === "export" ? "Export" : "Importable";
+                                        const gerund = getSessionVerb() === "export" ? "Exporting" : "Importing";
+                                        return current !== null
+                                            ? `${noun} ${currentNumber} of ${totalImportables}  ·  §b§l${current.identity}`
                                             : allDone
-                                              ? `Importable ${completedImportables} of ${totalImportables}`
-                                              : `Starting ${totalImportables} importable${totalImportables === 1 ? "" : "s"}…`,
+                                              ? `${noun} ${completedImportables} of ${totalImportables}`
+                                              : `${gerund} ${totalImportables} item${totalImportables === 1 ? "" : "s"}…`;
+                                    },
                                     color: COLOR_TEXT,
                                     style: { width: { kind: "grow" } },
                                 }),

@@ -71,6 +71,19 @@ export function getImportProgress(): ImportProgress | null {
     return importProgress;
 }
 
+/**
+ * Whether the active progress session is an import or an export. The
+ * progress strip + queue summary share one UI; this only swaps the
+ * user-facing verb so an export run doesn't read "Importable N of M".
+ */
+let sessionVerb: "import" | "export" = "import";
+export function getSessionVerb(): "import" | "export" {
+    return sessionVerb;
+}
+export function setSessionVerb(v: "import" | "export"): void {
+    sessionVerb = v;
+}
+
 /** Display name of the importable currently being processed, or null when idle. */
 export function getActiveImportLabel(): string | null {
     if (importProgress === null || importProgress.active === null) return null;
@@ -164,6 +177,7 @@ export function setImportProgress(p: ImportProgress | null): void {
         lastFinishedProgress = importProgress;
         importStartedAt = null;
         etaCalc = null;
+        sessionVerb = "import";
     }
     importProgress = p === null ? null : normalizeImportProgress(p);
     onImportRunningChanged(!wasNull, p !== null);

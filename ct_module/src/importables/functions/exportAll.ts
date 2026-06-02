@@ -10,12 +10,14 @@ import { withExportSession } from "../exportSession";
 import { exportFunctionWithSharedState } from "./export";
 import { writeCapturedItems } from "../../exporter/writeCapturedItems";
 import { htslFilenameForFunctionExport } from "../../exporter/paths";
+import type { ExportProgressSink } from "../../exporter/exportProgress";
 import { listAllFunctionNames } from "./listFunctions";
 
 export type ExportAllFunctionsOptions = {
     importJsonPath: string;
     rootDir: string;
     names?: readonly string[];
+    progress?: ExportProgressSink;
 };
 
 export async function exportAllFunctions(
@@ -53,6 +55,7 @@ async function exportAllFunctionsInner(
     ctx.displayMessage(
         `&aExporting ${names.length} function${names.length === 1 ? "" : "s"}...`
     );
+    options.progress?.start(names);
 
     let succeeded = 0;
     let failed = 0;
@@ -63,6 +66,7 @@ async function exportAllFunctionsInner(
             const htslPath = `${rootDir}/${filename}`;
             const htslReference = filename;
 
+            options.progress?.item(i, name);
             ctx.displayMessage(
                 `&7[${i + 1}/${names.length}] &fExporting '${name}'`
             );
@@ -91,6 +95,7 @@ async function exportAllFunctionsInner(
             }
         }
     } finally {
+        options.progress?.done();
         try {
             writeCapturedItems(ctx, itemCaptures, rootDir, importJsonPath);
         } finally {
