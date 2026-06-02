@@ -10,11 +10,13 @@ import {
 import { waitFor } from "./specifics/waitFor";
 import { C01PacketChatMessage } from "../utils/packets";
 
-const COMMAND_INTERVAL_MS = 500;
+const COMMAND_INTERVAL_MS = 700;
+const CHAT_INPUT_INTERVAL_MS = 700;
 
 export default class TaskContext {
     private cancelled: boolean = false;
     private nextCommandAt: number = 0;
+    private nextChatInputAt: number = 0;
 
     public cancel() {
         this.cancelled = true;
@@ -42,10 +44,15 @@ export default class TaskContext {
         ChatLib.say(command);
     }
 
-    public sendMessage(message: string) {
+    public async sendMessage(message: string): Promise<void> {
         if (message.startsWith("/")) {
             throw new Error(`Invalid message: ${message}`);
         }
+        const waitMs = this.nextChatInputAt - Date.now();
+        if (waitMs > 0) {
+            await this.sleep(waitMs);
+        }
+        this.nextChatInputAt = Date.now() + CHAT_INPUT_INTERVAL_MS;
         // MC 1.8.9's C01PacketChatMessage constructor truncates message > 100
         // chars client-side, which breaks Housing chat-input writes for long
         // MESSAGE / scalar values (Hypixel itself is multi-version and accepts

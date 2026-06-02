@@ -34,6 +34,7 @@ import type {
     ActionDisplayMenu,
     Condition,
 } from "htsw/types";
+import { GAMEMODES } from "htsw/types";
 
 import TaskContext from "../tasks/context";
 import { type ItemRegistry } from "../importables/itemRegistry";
@@ -1019,9 +1020,10 @@ async function writeSetGamemode(
     ctx: TaskContext,
     action: ActionSetGamemode
 ): Promise<void> {
-    await setSelectValue(
+    await setCycleValue(
         ctx,
         getActionFieldLabel("SET_GAMEMODE", "gamemode"),
+        GAMEMODES,
         action.gamemode
     );
 }

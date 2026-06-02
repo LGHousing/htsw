@@ -195,7 +195,7 @@ export const ACTION_MAPPINGS = {
     SET_GAMEMODE: {
         displayName: "Set Gamemode",
         loreFields: {
-            Gamemode: { prop: "gamemode", kind: "select" },
+            Gamemode: { prop: "gamemode", kind: "cycle" },
         },
     },
 

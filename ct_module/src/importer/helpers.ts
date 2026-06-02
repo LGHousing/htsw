@@ -399,7 +399,7 @@ export async function enterValue(ctx: TaskContext, value: string): Promise<"CHAT
 
     switch (inputMode) {
         case "CHAT":
-            ctx.sendMessage(value);
+            await ctx.sendMessage(value);
             return "CHAT";
         case "ANVIL":
             await waitForMenu(ctx);
@@ -487,7 +487,7 @@ export async function setStringOrPaginatedOptionValue(
 
     switch (inputMode) {
         case "CHAT":
-            ctx.sendMessage(newValue);
+            await ctx.sendMessage(newValue);
             await waitForMenu(ctx);
             return;
         case "ANVIL":
