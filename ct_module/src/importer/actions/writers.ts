@@ -39,6 +39,7 @@ import TaskContext from "../../tasks/context";
 import {
     clickGoBack,
     findMenuOptionByLore,
+    getSlotPaginate,
     openSubmenu,
     enterValue,
     setStringValue,
@@ -307,11 +308,17 @@ export async function writeGiveItem(
         action.allowMultiple ?? actionDefault<boolean>("GIVE_ITEM", "allowMultiple")
     );
 
-    await setSelectValue(
-        ctx,
-        getActionFieldLabel("GIVE_ITEM", "slot"),
-        String(action.slot ?? actionDefault<string>("GIVE_ITEM", "slot"))
-    );
+    const slotLabel = getActionFieldLabel("GIVE_ITEM", "slot");
+    const slotValue = String(action.slot ?? actionDefault<string>("GIVE_ITEM", "slot"));
+    if (/^\d+$/.test(slotValue) || slotValue.indexOf("%") >= 0) {
+        await openSubmenu(ctx, slotLabel);
+        const manualSlot = await getSlotPaginate(ctx, "Manual Input");
+        manualSlot.click();
+        await enterValue(ctx, slotValue);
+        await waitForMenu(ctx);
+    } else {
+        await setSelectValue(ctx, slotLabel, slotValue);
+    }
 
     await setBooleanValue(
         ctx,
