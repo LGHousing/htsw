@@ -167,7 +167,7 @@ export function prettySnbt(snbt: string): string {
     }
 }
 
-function snbtFromItem(item: Item, opts: { pretty: boolean }): string | null {
+export function snbtFromItem(item: Item, opts: { pretty: boolean }): string | null {
     const tag = itemToHtswTag(item);
     if (tag === null) return null;
     return htsw.nbt.printSnbt(tag, { pretty: opts.pretty });
