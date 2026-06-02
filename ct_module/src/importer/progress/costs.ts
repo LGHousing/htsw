@@ -417,11 +417,14 @@ function topLevelHydrateUnits(desired: readonly Action[]): number {
     for (let i = 0; i < desired.length; i++) {
         const a = desired[i];
         if (a.type === "CONDITIONAL") {
-            total += nestedActionReadUnits(a.ifActions.length);
-            total += nestedActionReadUnits(a.elseActions.length);
-            if (a.conditions.length > 0) total += COST.menuClickWait + COST.goBackWait;
+            // A conditional parsed from .htsl may omit a branch entirely
+            // (no else, no conditions), leaving the field undefined — guard
+            // every length read so the ETA estimate can't crash the import.
+            total += nestedActionReadUnits(a.ifActions?.length ?? 0);
+            total += nestedActionReadUnits(a.elseActions?.length ?? 0);
+            if ((a.conditions?.length ?? 0) > 0) total += COST.menuClickWait + COST.goBackWait;
         } else if (a.type === "RANDOM") {
-            total += nestedActionReadUnits(a.actions.length);
+            total += nestedActionReadUnits(a.actions?.length ?? 0);
         }
     }
     return total;
@@ -559,7 +562,7 @@ function nestedConditionBaseline(
 }
 
 function nestedConditionDesired(action: Action): Condition[] {
-    return action.type === "CONDITIONAL" ? action.conditions : [];
+    return action.type === "CONDITIONAL" ? action.conditions ?? [] : [];
 }
 
 function nestedActionBaseline(
@@ -582,9 +585,9 @@ function nestedActionDesired(
     prop: "ifActions" | "elseActions" | "actions"
 ): readonly Action[] {
     if (action.type === "CONDITIONAL") {
-        return prop === "ifActions" ? action.ifActions : action.elseActions;
+        return (prop === "ifActions" ? action.ifActions : action.elseActions) ?? [];
     }
-    if (action.type === "RANDOM" && prop === "actions") return action.actions;
+    if (action.type === "RANDOM" && prop === "actions") return action.actions ?? [];
     return [];
 }
 
