@@ -181,6 +181,15 @@ export type ReadContext = {
     itemCaptures?: ItemCaptureRegistry;
     events?: ImportEventHandler;
     pathPrefix?: string;
+    /**
+     * Emit a fresh top-level observed snapshot. Set only for a top-level
+     * read; a nested reader (e.g. a CONDITIONAL body) calls it after each
+     * sub-step (conditions → ifActions → elseActions) so the live preview
+     * fills the body in piece by piece instead of all at once. The action
+     * being read must be mutated in place so the snapshot reflects the
+     * partial state.
+     */
+    emitSnapshot?: () => void;
 };
 
 export type ListReadOptions = ReadContext & {

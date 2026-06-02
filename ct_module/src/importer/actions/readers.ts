@@ -14,7 +14,6 @@ import type {
     ActionSendMessage,
     ActionTeleport,
     ActionTitle,
-    Condition,
 } from "htsw/types";
 
 import TaskContext from "../../tasks/context";
@@ -75,57 +74,80 @@ export async function readOpenConditional({
     ctx,
     propsToRead,
     read,
+    current,
 }: ActionReadArgs<ActionConditional>): Promise<Observed<ActionConditional>> {
     const conditionsLabel = getActionFieldLabel("CONDITIONAL", "conditions");
     const matchAnyLabel = getActionFieldLabel("CONDITIONAL", "matchAny");
     const ifActionsLabel = getActionFieldLabel("CONDITIONAL", "ifActions");
     const elseActionsLabel = getActionFieldLabel("CONDITIONAL", "elseActions");
 
-    let conditions: (Condition | null)[] = [];
+    // Mutate the passed-in observed action in place so the top-level
+    // snapshot the body sub-steps emit reflects each piece as it lands.
+    const base: Observed<ActionConditional> = current ?? {
+        type: "CONDITIONAL",
+        matchAny: false,
+        conditions: [],
+        ifActions: [],
+        elseActions: [],
+    };
+    const events = read?.events;
+    const pathPrefix = read?.pathPrefix;
+    const focusSubStep = (suffix: string): void => {
+        if (events !== undefined && pathPrefix !== undefined) {
+            events.emit({
+                kind: "nestedReadStarted",
+                path: `${pathPrefix}.${suffix}`,
+                actionType: "CONDITIONAL",
+            });
+        }
+    };
+
     if (propsToRead.has("conditions")) {
+        focusSubStep("conditions");
         ctx.getMenuItemSlot(conditionsLabel).click();
         await waitForMenu(ctx);
-        conditions = (await readConditionList(ctx, { itemRegistry: read?.itemRegistry })).map(
+        base.conditions = (await readConditionList(ctx, { itemRegistry: read?.itemRegistry })).map(
             (entry) => entry.condition
         );
         await clickGoBack(ctx);
+        read?.emitSnapshot?.();
     }
 
-    const matchAny = readBooleanValue(ctx.getMenuItemSlot(matchAnyLabel)) ?? false;
+    base.matchAny = readBooleanValue(ctx.getMenuItemSlot(matchAnyLabel)) ?? false;
 
-    const ifActions: (Observed<Action> | null)[] = [];
     if (propsToRead.has("ifActions")) {
+        focusSubStep("ifActions");
         ctx.getMenuItemSlot(ifActionsLabel).click();
         await waitForMenu(ctx);
+        const ifActions: (Observed<Action> | null)[] = [];
         for (const entry of await readActionList(ctx, { kind: "full" }, {
             ...read,
             pathPrefix: read?.pathPrefix === undefined ? undefined : `${read.pathPrefix}.ifActions`,
         })) {
             ifActions.push(entry.action);
         }
+        base.ifActions = ifActions;
         await clickGoBack(ctx);
+        read?.emitSnapshot?.();
     }
 
-    const elseActions: (Observed<Action> | null)[] = [];
     if (propsToRead.has("elseActions")) {
+        focusSubStep("elseActions");
         ctx.getMenuItemSlot(elseActionsLabel).click();
         await waitForMenu(ctx);
+        const elseActions: (Observed<Action> | null)[] = [];
         for (const entry of await readActionList(ctx, { kind: "full" }, {
             ...read,
             pathPrefix: read?.pathPrefix === undefined ? undefined : `${read.pathPrefix}.elseActions`,
         })) {
             elseActions.push(entry.action);
         }
+        base.elseActions = elseActions;
         await clickGoBack(ctx);
+        read?.emitSnapshot?.();
     }
 
-    return {
-        type: "CONDITIONAL",
-        matchAny,
-        conditions,
-        ifActions,
-        elseActions,
-    };
+    return base;
 }
 
 export async function readOpenTitle({

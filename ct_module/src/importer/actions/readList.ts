@@ -405,6 +405,10 @@ async function hydrateNestedActions(
             sync: { completedUnits: completed, totalUnits: total, parent: null },
         });
     };
+    const subStepSnapshot =
+        isTopLevelRead && events !== undefined
+            ? () => emitObservedSnapshot(observed, events)
+            : undefined;
     for (const [entry, propsToRead] of plan) {
         const entryPath = actionPathForIndex(pathPrefix, entry.index);
         const entryLabel = `reading nested ${actionLogLabel(entry.action)}`;
@@ -421,7 +425,8 @@ async function hydrateNestedActions(
             propsToRead,
             observed.length,
             read,
-            entryPath
+            entryPath,
+            subStepSnapshot
         );
         completedHydrateUnits += entryUnits;
         completed++;
@@ -438,11 +443,12 @@ async function hydrateNestedAction(
     propsToRead: NestedPropsToRead,
     listLength: number,
     read?: ListReadOptions,
-    entryPath?: string
+    entryPath?: string,
+    emitSnapshot?: () => void
 ): Promise<void> {
     if (IMPORT_DEBUG) {
         try {
-            return await hydrateNestedActionInner(ctx, entry, propsToRead, listLength, read, entryPath);
+            return await hydrateNestedActionInner(ctx, entry, propsToRead, listLength, read, entryPath, emitSnapshot);
         } catch (error) {
             const inner = error instanceof Error ? error.message : String(error);
             const path = entryPath ?? `index ${entry.index}`;
@@ -450,7 +456,7 @@ async function hydrateNestedAction(
             throw new Error(`(at ${path}, ${typeName}) ${inner}`);
         }
     }
-    return hydrateNestedActionInner(ctx, entry, propsToRead, listLength, read, entryPath);
+    return hydrateNestedActionInner(ctx, entry, propsToRead, listLength, read, entryPath, emitSnapshot);
 }
 
 async function hydrateNestedActionInner(
@@ -459,7 +465,8 @@ async function hydrateNestedActionInner(
     propsToRead: NestedPropsToRead,
     listLength: number,
     read?: ListReadOptions,
-    entryPath?: string
+    entryPath?: string,
+    emitSnapshot?: () => void
 ): Promise<void> {
     if (entry.action === null) {
         return;
@@ -477,7 +484,7 @@ async function hydrateNestedActionInner(
 
     if (spec.read) {
         const readCtx: ReadContext | undefined = read !== undefined
-            ? { itemRegistry: read.itemRegistry, itemCaptures: read.itemCaptures, events: read.events, pathPrefix: entryPath }
+            ? { itemRegistry: read.itemRegistry, itemCaptures: read.itemCaptures, events: read.events, pathPrefix: entryPath, emitSnapshot }
             : undefined;
         entry.action = await spec.read({
             ctx,
