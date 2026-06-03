@@ -60,6 +60,13 @@ export type ActionListPlan = {
     observed: ObservedActionSlot[];
     diff: ActionListDiff;
     phaseUnits: PhaseUnits;
+    /**
+     * Reads the live top-level list as it stands right now (mutated in place
+     * as ops apply). Lets a caller capture the true current Housing state if
+     * the apply throws partway, to persist a partial knowledge cache. Set once
+     * the apply pass starts.
+     */
+    getLiveCurrent?: () => Array<Action | null>;
 };
 
 export async function prereadActionList(
@@ -143,7 +150,10 @@ export async function applyActionListPlan(
         options?.pathPrefix,
         plan.phaseUnits,
         options?.events,
-        progressScope
+        progressScope,
+        (readCurrent) => {
+            plan.getLiveCurrent = readCurrent;
+        }
     );
 }
 

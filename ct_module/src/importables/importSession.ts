@@ -1,5 +1,7 @@
 import { Diagnostic, SourceMap, parseImportablesResult, type ParseResult } from "htsw";
-import type { Importable } from "htsw/types";
+import type { Action, Importable } from "htsw/types";
+
+import { getNestedListFields } from "../importer/fields/actionMappings";
 
 import TaskContext from "../tasks/context";
 import { isTaskCancelled } from "../tasks/manager";
@@ -202,6 +204,7 @@ export async function importSelectedImportables(
             });
             events?.emit({ kind: "importableFinished", key: row.key, status: "imported" });
         } catch (error) {
+            await maybeWritePartialImportCache(ctx, plan, selection.housingUuid);
             if (isTaskCancelled(error)) {
                 throw error;
             }
@@ -216,6 +219,64 @@ export async function importSelectedImportables(
     }
 
     events?.emit({ kind: "sessionFinished" });
+}
+
+/**
+ * On a mid-apply failure or cancel, persist what we now know is actually in
+ * Housing: the importable with its action list replaced by the apply loop's
+ * live snapshot. Skipped unless the snapshot is fully known — a shallow nested
+ * list (null entries) must never be cached as truth. Best-effort.
+ */
+async function maybeWritePartialImportCache(
+    ctx: TaskContext,
+    plan: ImportablePlan,
+    housingUuid: string
+): Promise<void> {
+    const partial = reconstructPartialImportable(plan);
+    if (partial === null) return;
+    try {
+        writeImportableCache(ctx, housingUuid, partial, "importer");
+    } catch (error) {
+        if (IMPORT_DEBUG) {
+            ctx.displayMessage(`&7[knowledge] &eSkipped partial cache write: ${error}`);
+        }
+    }
+}
+
+/**
+ * Build an importable from the apply loop's live current-list snapshot, or
+ * null when there's nothing safely persistable. FUNCTION/EVENT only (single
+ * action list); settings (icon/ticks) are dropped so a retry never trusts
+ * them — they apply after the actions, so a mid-apply failure means they're
+ * unset anyway.
+ */
+function reconstructPartialImportable(plan: ImportablePlan): Importable | null {
+    if (plan.kind !== "FUNCTION" && plan.kind !== "EVENT") return null;
+    const live = plan.actionsPlan?.getLiveCurrent?.();
+    if (live === undefined || !actionsFullyKnown(live)) return null;
+    const actions = live as Action[];
+    if (plan.kind === "FUNCTION") {
+        return { type: "FUNCTION", name: plan.importable.name, actions };
+    }
+    return { type: "EVENT", event: plan.importable.event, actions };
+}
+
+function actionsFullyKnown(actions: ReadonlyArray<Action | null>): boolean {
+    for (const action of actions) {
+        if (action === null) return false;
+        for (const field of getNestedListFields(action.type)) {
+            const nested = (action as Record<string, unknown>)[field.prop];
+            if (!Array.isArray(nested)) continue;
+            if (field.prop === "conditions") {
+                for (const condition of nested) {
+                    if (condition === null) return false;
+                }
+            } else if (!actionsFullyKnown(nested as Array<Action | null>)) {
+                return false;
+            }
+        }
+    }
+    return true;
 }
 
 async function maybeWriteImportCacheForTrust(

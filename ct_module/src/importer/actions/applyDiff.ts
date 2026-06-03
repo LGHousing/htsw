@@ -159,7 +159,8 @@ export async function applyActionListDiff(
     pathPrefix?: string,
     phaseUnits?: PhaseUnits,
     events?: ImportEventHandler,
-    progressScope?: ProgressScope
+    progressScope?: ProgressScope,
+    onSnapshot?: (readCurrent: () => Array<Action | null>) => void
 ): Promise<void> {
     await applyActionListDiffInner(
         ctx,
@@ -170,7 +171,8 @@ export async function applyActionListDiff(
         pathPrefix,
         phaseUnits,
         events ?? null,
-        progressScope ?? { kind: "topLevel" }
+        progressScope ?? { kind: "topLevel" },
+        onSnapshot
     );
 }
 
@@ -219,11 +221,11 @@ function operationApplyUnits(op: ActionListOperation, desiredLength: number): nu
 }
 
 function findCurrentIndex(
-    remaining: readonly LiveActionListEntry[],
+    current: readonly LiveActionListEntry[],
     entryId: number
 ): number {
-    for (let i = 0; i < remaining.length; i++) {
-        if (remaining[i].entryId === entryId) return i;
+    for (let i = 0; i < current.length; i++) {
+        if (current[i].entryId === entryId) return i;
     }
     return -1;
 }
@@ -310,7 +312,8 @@ async function applyActionListDiffInner(
     pathPrefix?: string,
     phaseUnits?: PhaseUnits,
     events?: ImportEventHandler | null,
-    progressScope: ProgressScope = { kind: "topLevel" }
+    progressScope: ProgressScope = { kind: "topLevel" },
+    onSnapshot?: (readCurrent: () => Array<Action | null>) => void
 ): Promise<void> {
     const isTopLevel = pathPrefix === undefined;
     const summary = summarizeDiff(diff, desired.length);
@@ -443,13 +446,18 @@ async function applyActionListDiffInner(
     let appliedUnits = 0;
     let completedOps = 0;
     let nextRuntimeEntryId = observed.length;
-    const remaining: LiveActionListEntry[] = [];
+    const current: LiveActionListEntry[] = [];
     for (let i = 0; i < observed.length; i++) {
-        remaining.push({
+        current.push({
             entryId: i,
             action: observed[i].action,
         });
     }
+
+    // `current` is mutated in place as ops apply, so a reader that closes over
+    // it always returns the latest list — letting a caller capture the true
+    // current Housing state if the apply throws partway, with no per-op cost.
+    onSnapshot?.(() => current.map((entry) => entry.action as Action | null));
 
     // Deletes first (reverse order so indices stay valid), then refresh slot refs.
     if (deletes.length > 0) {
@@ -457,16 +465,16 @@ async function applyActionListDiffInner(
 
         for (let i = 0; i < deletes.length; i++) {
             const op = deletes[i];
-            const index = findCurrentIndex(remaining, op.entryId);
+            const index = findCurrentIndex(current, op.entryId);
             if (index === -1) {
                 continue;
             }
 
             if (isTopLevel) await waitIfStepPaused(ctx);
             const obsPath = actionPathForIndex(pathPrefix, op.fromIndex);
-            await deleteObservedAction(ctx, index, remaining.length);
+            await deleteObservedAction(ctx, index, current.length);
             appliedUnits += operationApplyUnits(op, desired.length);
-            remaining.splice(index, 1);
+            current.splice(index, 1);
             completedOps++;
             emitApplying(completedOps, appliedUnits);
             if (events != null) {
@@ -483,7 +491,7 @@ async function applyActionListDiffInner(
 
     // Edits before moves keep current entry positions stable while editors open.
     for (const op of edits) {
-        const currentIndex = findCurrentIndex(remaining, op.entryId);
+        const currentIndex = findCurrentIndex(current, op.entryId);
         if (currentIndex === -1) {
             continue;
         }
@@ -507,14 +515,14 @@ async function applyActionListDiffInner(
         const actionSlot = await getPaginatedListSlotAtIndex(
             ctx,
             currentIndex,
-            remaining.length,
+            current.length,
             ACTION_LIST_CONFIG
         );
 
         if (op.noteOnly) {
             await setListItemNote(ctx, actionSlot, op.desired.note);
             appliedUnits += operationApplyUnits(op, desired.length);
-            remaining[currentIndex].action = op.desired;
+            current[currentIndex].action = op.desired;
             completedOps++;
             emitApplying(completedOps, appliedUnits);
             if (events != null && srcPath !== null) {
@@ -558,7 +566,7 @@ async function applyActionListDiffInner(
             appliedUnits,
             opStartUnits + operationApplyUnits(op, desired.length)
         );
-        remaining[currentIndex].action = op.desired;
+        current[currentIndex].action = op.desired;
         completedOps++;
         emitApplying(completedOps, appliedUnits);
         if (events != null && srcPath !== null) {
@@ -573,7 +581,7 @@ async function applyActionListDiffInner(
 
     moves.sort((a, b) => a.toIndex - b.toIndex);
     for (const op of moves) {
-        const fromIndex = findCurrentIndex(remaining, op.entryId);
+        const fromIndex = findCurrentIndex(current, op.entryId);
         if (fromIndex === -1) {
             continue;
         }
@@ -592,12 +600,12 @@ async function applyActionListDiffInner(
         }
         if (isTopLevel) await waitIfStepPaused(ctx);
 
-        await moveActionToIndex(ctx, fromIndex, op.toIndex, remaining.length);
+        await moveActionToIndex(ctx, fromIndex, op.toIndex, current.length);
         appliedUnits += operationApplyUnits(op, desired.length);
 
-        const entry = remaining[fromIndex];
-        remaining.splice(fromIndex, 1);
-        remaining.splice(op.toIndex, 0, entry);
+        const entry = current[fromIndex];
+        current.splice(fromIndex, 1);
+        current.splice(op.toIndex, 0, entry);
         completedOps++;
         emitApplying(completedOps, appliedUnits);
         if (events != null && srcPath !== null) {
@@ -611,7 +619,7 @@ async function applyActionListDiffInner(
     }
 
     adds.sort((a, b) => a.toIndex - b.toIndex);
-    let currentLength = remaining.length;
+    let currentLength = current.length;
     for (const op of adds) {
         const srcIdx = desiredIndexForOp(op);
         const srcPath = srcIdx >= 0 ? actionPathForIndex(pathPrefix, srcIdx) : null;
@@ -649,7 +657,7 @@ async function applyActionListDiffInner(
         );
         await moveActionToIndex(ctx, currentLength, op.toIndex, currentLength + 1);
 
-        remaining.splice(op.toIndex, 0, {
+        current.splice(op.toIndex, 0, {
             entryId: nextRuntimeEntryId++,
             action: op.desired,
         });
