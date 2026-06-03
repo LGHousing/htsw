@@ -4,7 +4,7 @@
     "version": "1.1.1",
     "type": "module",
     "dependencies": {
-        "monaco-editor": "^0.52.2",
+        "monaco-editor": "^0.55.1",
         "htsw": "file:../../language",
         "htsw-editor-common": "file:../common"
     },
