@@ -9,6 +9,7 @@
 
 export {
     writeImportableCache,
+    tryWriteImportableCache,
     readImportableCache,
     deleteImportableCache,
 } from "./cache";

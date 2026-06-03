@@ -9,10 +9,9 @@ import { IMPORT_DEBUG } from "../importer/diagnostics/importDebug";
 import { FileSystemFileLoader } from "../utils/fileLoaders";
 import {
     buildTrustPlan,
-    getCurrentHousingUuid,
     importableIdentity,
     importableKey,
-    writeImportableCache,
+    tryWriteImportableCache,
 } from "../importCache";
 import { printDiagnostic } from "../tui/diagnostics";
 import { createItemRegistry } from "./itemRegistry";
@@ -150,7 +149,7 @@ export async function importSelectedImportables(
         });
 
         if (row.trustPlan?.wholeImportableTrusted) {
-            await maybeWriteImportCacheForTrust(ctx, row.importable, selection.housingUuid);
+            await tryWriteImportableCache(ctx, row.importable, "importer", selection.housingUuid);
             events?.emit({ kind: "importableFinished", key: row.key, status: "skipped" });
             continue;
         }
@@ -164,7 +163,7 @@ export async function importSelectedImportables(
             // If hydration proved this importable needs no changes, mark it
             // green now and skip the apply pass — there's nothing to do.
             if (planIsNoOp(plan)) {
-                await maybeWriteImportCacheForTrust(ctx, row.importable, selection.housingUuid);
+                await tryWriteImportableCache(ctx, row.importable, "importer", selection.housingUuid);
                 events?.emit({ kind: "importableFinished", key: row.key, status: "imported" });
                 continue;
             }
@@ -202,6 +201,16 @@ export async function importSelectedImportables(
                 housingUuid: selection.housingUuid,
                 events,
             });
+            // ITEM writes its own per-NBT cache during apply; every other type
+            // records its known-good state here, in the orchestrator.
+            if (plan.kind !== "ITEM") {
+                await tryWriteImportableCache(
+                    ctx,
+                    row.importable,
+                    "importer",
+                    selection.housingUuid
+                );
+            }
             events?.emit({ kind: "importableFinished", key: row.key, status: "imported" });
         } catch (error) {
             await maybeWritePartialImportCache(ctx, plan, selection.housingUuid);
@@ -234,13 +243,7 @@ async function maybeWritePartialImportCache(
 ): Promise<void> {
     const partial = reconstructPartialImportable(plan);
     if (partial === null) return;
-    try {
-        writeImportableCache(ctx, housingUuid, partial, "importer");
-    } catch (error) {
-        if (IMPORT_DEBUG) {
-            ctx.displayMessage(`&7[knowledge] &eSkipped partial cache write: ${error}`);
-        }
-    }
+    await tryWriteImportableCache(ctx, partial, "importer", housingUuid);
 }
 
 /**
@@ -277,23 +280,6 @@ function actionsFullyKnown(actions: ReadonlyArray<Action | null>): boolean {
         }
     }
     return true;
-}
-
-async function maybeWriteImportCacheForTrust(
-    ctx: TaskContext,
-    importable: Importable,
-    cachedUuid?: string
-): Promise<void> {
-    try {
-        const housingUuid = cachedUuid ?? (await getCurrentHousingUuid(ctx));
-        writeImportableCache(ctx, housingUuid, importable, "importer");
-    } catch (error) {
-        if (IMPORT_DEBUG) {
-            ctx.displayMessage(
-                `&7[knowledge] &eSkipped cache write for trusted ${importable.type}: ${error}`
-            );
-        }
-    }
 }
 
 /**

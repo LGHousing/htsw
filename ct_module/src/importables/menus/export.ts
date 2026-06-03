@@ -7,7 +7,7 @@ import {
     readSelectedOption,
 } from "../../importer/gui/menuFlows";
 import { waitForMenu } from "../../importer/gui/menuWait";
-import { getCurrentHousingUuid, writeImportableCache } from "../../importCache";
+import { tryWriteImportableCache } from "../../importCache";
 import TaskContext from "../../tasks/context";
 import { getAllItemSlots } from "../../tasks/specifics/slots";
 import { ensureParentDirs } from "../../utils/filesystem";
@@ -187,12 +187,7 @@ export async function exportMenu(
         })),
     });
 
-    try {
-        const housingUuid = await getCurrentHousingUuid(ctx);
-        writeImportableCache(ctx, housingUuid, importable, "exporter");
-    } catch (error) {
-        ctx.displayMessage(`&7[export] &eCache write skipped: ${error}`);
-    }
+    await tryWriteImportableCache(ctx, importable, "exporter");
 
     ctx.displayMessage(
         `&aExported menu '${name}' (${slots.length} slot${slots.length === 1 ? "" : "s"})`

@@ -9,7 +9,7 @@ import {
     snapshotInventory,
     type InventorySnapshot,
 } from "../../importer/itemCapture";
-import { getCurrentHousingUuid, writeImportableCache } from "../../importCache";
+import { tryWriteImportableCache } from "../../importCache";
 import TaskContext from "../../tasks/context";
 import { observedSlotsToActions } from "../../exporter/sanitize";
 import { upsertImportableEntry } from "../../exporter/importJsonWriter";
@@ -144,12 +144,7 @@ export async function exportFunctionWithSharedState(
         ...(repeatTicks !== undefined ? { repeatTicks } : {}),
     });
 
-    try {
-        const housingUuid = await getCurrentHousingUuid(ctx);
-        writeImportableCache(ctx, housingUuid, importable, "exporter");
-    } catch (error) {
-        ctx.displayMessage(`&7[export] &eCache write skipped: ${error}`);
-    }
+    await tryWriteImportableCache(ctx, importable, "exporter");
 
     ctx.displayMessage(
         `&aExported function '${name}' (${actions.length} action${actions.length === 1 ? "" : "s"})`
