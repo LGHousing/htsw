@@ -26,7 +26,6 @@ export function observedSlotsToActions(slots: readonly ObservedActionSlot[]): Ac
  * `Array<Condition | null>`), so the work is mostly stripping nulls.
  */
 function observedActionToAction(observed: Observed<Action>): Action {
-    // Recurse into known nested-list-bearing types.
     if (observed.type === "CONDITIONAL") {
         return {
             type: "CONDITIONAL",

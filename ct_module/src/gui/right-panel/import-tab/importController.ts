@@ -20,8 +20,8 @@ import {
     setActiveImportPath,
     setImportProgress,
 } from "./importProgress";
-import { rebuildKnowledgeRows } from "../../knowledge/knowledgeBuild";
-import { refreshKnowledgeRowFromDisk } from "../../knowledge/rows";
+import { rebuildCacheStatusRows } from "../../cache-status/build";
+import { refreshCacheStatusRowFromDisk } from "../../cache-status/rows";
 import {
     addToQueue,
     beginQueueSession,
@@ -51,10 +51,10 @@ import type TaskContext from "../../../tasks/context";
 import type { Importable } from "htsw/types";
 import type { Diagnostic, ParseResult } from "htsw";
 import { closeAllPopovers } from "../../lib/popovers";
-import { statusForImportable } from "../../knowledge-status";
+import { statusForImportable } from "../../cache-status";
 import { htslFilenameForFunctionExport } from "../../../exporter/paths";
 import { importableSourcePath } from "../../parsing/importablePaths";
-import { attributeDiagnostics } from "../../knowledge/diagnosticCounts";
+import { attributeDiagnostics } from "../../cache-status/diagnosticCounts";
 import type {
     ImportEventHandler,
     ImportEvent,
@@ -115,7 +115,7 @@ function formatElapsedSeconds(secs: number): string {
     return mm === 0 ? `${h}h` : `${h}h${mm}m`;
 }
 
-function refreshKnowledgeRows(): void {
+function refreshCacheStatusRows(): void {
     const uuid = getHousingUuid();
     if (uuid === null) return;
     const all: Importable[] = [];
@@ -131,7 +131,7 @@ function refreshKnowledgeRows(): void {
         }
     }
 
-    rebuildKnowledgeRows(uuid, all, /*progressive=*/ false);
+    rebuildCacheStatusRows(uuid, all, /*progressive=*/ false);
     autoTrackRefresh();
 }
 
@@ -228,7 +228,7 @@ function createImportEventHandler(args: {
         importableFinished: (e) => {
             const imp = importablesByKey.get(e.key);
             if (imp !== undefined) {
-                refreshKnowledgeRowFromDisk(args.housingUuid, imp);
+                refreshCacheStatusRowFromDisk(args.housingUuid, imp);
                 if (e.status === "imported") {
                     invalidateSourceDiffForImportable(imp, args.parsed);
                 }
@@ -571,7 +571,7 @@ export function startImport(explicit?: readonly QueueItem[]): void {
             stopPacketOrderProbe();
             flushMenuWaitTickSummary();
             setActiveImportPath(null);
-            refreshKnowledgeRows();
+            refreshCacheStatusRows();
             setImportRunning(false);
             const elapsed = formatElapsedSeconds((Date.now() - startedAt) / 1000);
             if (cancelled) {

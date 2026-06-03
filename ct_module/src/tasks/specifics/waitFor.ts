@@ -2,14 +2,14 @@ import { S30PacketWindowItems } from "../../utils/packets";
 
 type Packet = MCPacket<MCINetHandler>;
 
-// this is only important one, use like `waitFor(key, [value])`
+// The event types you can wait on, and the predicate signature each one
+// checks against. Call as `waitFor(eventName, optionalPredicate)`.
 type CheckPredicateMap = {
     tick: () => boolean;
     packetReceived: (packet: Packet) => boolean;
     packetSent: (packet: Packet) => boolean;
     message: (message: string) => boolean;
 };
-// ^^^
 
 type EventContainer<C extends (...args: any[]) => boolean> = {
     check: C;

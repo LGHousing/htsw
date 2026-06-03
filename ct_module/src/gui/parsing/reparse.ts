@@ -3,7 +3,7 @@
 import type { ParseResult } from "htsw";
 import type { Importable } from "htsw/types";
 
-import { rebuildKnowledgeRows } from "../knowledge/knowledgeBuild";
+import { rebuildCacheStatusRows } from "../cache-status/build";
 import {
     getHousingUuid,
     getImportJsonPath,
@@ -11,7 +11,7 @@ import {
     setParseInProgress,
     setParsedResult,
 } from "../state";
-import { setKnowledgeRows } from "../knowledge/rows";
+import { setCacheStatusRows } from "../cache-status/rows";
 import { addRecent, getRecents } from "../persistence/recents";
 import {
     invalidateParseCacheEntry,
@@ -31,8 +31,7 @@ import { javaType } from "../lib/java";
  *   - tracks which import.json is active and debounces explicit reloads,
  *   - polls the authority each tick (cheap — it re-parses only when a
  *     referenced file's fingerprint changed, throttled internally),
- *   - propagates a changed parse into global state (parsedResult,
- *     knowledge rows, recents) for the *active* import.json.
+ *   - propagates a changed parse into global state for the active import.json.
  */
 
 // ── import.json auto-discovery ────────────────────────────────────────
@@ -157,18 +156,16 @@ export function markPathInSync(path: string): void {
     touchParseCacheMtime(path);
 }
 
-// Heavy knowledge-row rebuild, deferred + generation-guarded so a newer
-// parse supersedes a stale rebuild and the tick isn't blocked by it.
-let knowledgeGen = 0;
-function scheduleKnowledgeRebuild(
+let cacheStatusGeneration = 0;
+function scheduleCacheStatusRebuild(
     parsed: ParseResult<Importable[]> | null,
     progressive: boolean
 ): void {
-    const gen = ++knowledgeGen;
+    const gen = ++cacheStatusGeneration;
     setTimeout(() => {
-        if (gen !== knowledgeGen) return;
+        if (gen !== cacheStatusGeneration) return;
         const uuid = getHousingUuid();
-        rebuildKnowledgeRows(
+        rebuildCacheStatusRows(
             uuid ?? "",
             uuid === null ? [] : (parsed?.value ?? []),
             progressive
@@ -176,19 +173,16 @@ function scheduleKnowledgeRebuild(
     }, 0);
 }
 
-// `progressive`: true for a load (dots fill in from empty — the nice
-// first-open effect), false for an edit (swap dots in atomically so they
-// never flash red mid-rebuild).
 function propagate(path: string, cached: CachedParse, progressive: boolean): void {
     lastSeenPath = path;
     lastParsedRef = cached.parsed;
     setParsedResult(cached.parsed);
     if (cached.parsed === null) {
-        setKnowledgeRows([]);
+        setCacheStatusRows([]);
         return;
     }
     addRecent(path);
-    scheduleKnowledgeRebuild(cached.parsed, progressive);
+    scheduleCacheStatusRebuild(cached.parsed, progressive);
 }
 
 /**
@@ -202,7 +196,7 @@ function forceReparse(path: string): void {
     if (path === "" || !fileExistsSafe(path)) {
         lastParsedRef = null;
         setParsedResult(null);
-        setKnowledgeRows([]);
+        setCacheStatusRows([]);
         return;
     }
     invalidateParseCacheEntry(path);
@@ -216,7 +210,7 @@ function forceReparse(path: string): void {
         } catch (_e) {
             lastParsedRef = null;
             setParsedResult(null);
-            setKnowledgeRows([]);
+            setCacheStatusRows([]);
         }
         if (willFreeze) setParseInProgress(false);
         forceInFlight = false;

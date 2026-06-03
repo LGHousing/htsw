@@ -42,6 +42,10 @@ Before writing a comment: **did you verify this, or are you narrating your menta
 - TODOs without a tracked issue and a concrete next step.
 - Docstrings that restate the type signature or list every parameter.
 
+**When a comment earns its place, make it stand on its own.** Write it for a reader who doesn't yet know the codebase's vocabulary. Don't lean on an undefined internal term or a bare local variable name — say what the thing costs or does and why it matters, in plain words. Plain sentences, not dense shorthand.
+
+**Fix the name before reaching for a comment.** When a comment exists only to decode an under-named thing, rename the thing instead. Name a variable for what it holds (a noun), not how it was produced (an adjective). A clear name removes the need for the comment, and a comment can't cite a name the reader hasn't met; keep the comment only if a real *why* remains after renaming.
+
 ## Code style
 
 - Prefer refactoring over explanatory comments.

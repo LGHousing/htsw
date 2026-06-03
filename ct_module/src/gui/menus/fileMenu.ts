@@ -49,7 +49,7 @@ function queueActionForPath(filePath: string): MenuAction {
             if (allQueued) {
                 for (const it of items) removeFromQueueKey(queueItemKey(it));
             } else {
-                for (const it of items) toggleQueue(it); // adds if missing
+                for (const it of items) toggleQueue(it);
             }
         },
     };

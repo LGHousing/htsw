@@ -44,14 +44,14 @@ export function sameHashList(
     return true;
 }
 
-// importableHash depends only on the importable's content, not the house. A
-// reparse produces fresh wrapper objects (so a WeakMap keyed on the importable
-// would miss every time), but the htsl per-file cache hands back the SAME
-// Action[] reference for unchanged files. So we key on the stable importable
-// identity and validate the cached hash two ways: the top-level action-list
-// references are still `===` (same file content, nested lists included) AND the
-// non-list metadata stringifies the same. Any edit changes a ref or the meta and
-// forces a recompute of the identical hash.
+// A full importableHash is expensive, so we memoize it. A reparse builds new
+// importable wrapper objects every time, so a WeakMap keyed on the importable
+// itself would never hit; but parsing reuses the SAME Action[] arrays for
+// files that didn't change. So we key the memo on the stable importable
+// identity and treat the cached hash as valid only when both still hold: the
+// action-list arrays are the same references (=== , so unchanged file content,
+// nested lists included) AND the non-action metadata stringifies identically.
+// Any edit changes an array reference or the metadata, forcing a recompute.
 const ACTION_LIST_KEYS: ReadonlyArray<string> = [
     "actions",
     "onEnterActions",

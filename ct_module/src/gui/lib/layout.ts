@@ -442,7 +442,6 @@ function layoutScroll(
     if (n > 1) contentH += gap * (n - 1);
     state.contentHeight = contentH;
 
-    // Clamp offset.
     const maxOffset = Math.max(0, contentH - innerH);
     if (state.offset > maxOffset) state.offset = maxOffset;
     if (state.offset < 0) state.offset = 0;

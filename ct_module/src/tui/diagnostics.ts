@@ -147,13 +147,13 @@ class UIElementSnippetLines extends UIElementCanvas {
             lines.get(line)!.push(ds);
         }
 
-        // Have to do this restarted stuff cuz of CT
         let lineNumbers: number[] = [];
         for (const lineNumber of lines.keys()) {
             lineNumbers.push(lineNumber);
         }
 
-        // fill in small gaps
+        // If two diagnostic lines are separated by a single line, show that
+        // gap line too so the snippet reads continuously.
         for (const lineNumber of lineNumbers) {
             if (lineNumbers.find((it) => it === lineNumber - 2)) {
                 lineNumbers.push(lineNumber - 1);
@@ -228,9 +228,6 @@ class UIElementSnippetLine extends UIElementCanvas {
             const vLineChar = ds.kind === "primary" ? `${color}|` : "&9|";
             const labelColor = ds.kind === "primary" ? color : "&9";
 
-            // console.log(underlineWidth, chatWidth(underlineChar));
-
-            // add underline
             this.addElement(
                 underlineX,
                 1,

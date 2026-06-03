@@ -128,8 +128,8 @@ export async function exportMenu(
         const snbtRel = `${menuRel}/slot-${slotId}.snbt`;
         const snbtAbs = `${menuAbs}/slot-${slotId}.snbt`;
         // FileLib.write doesn't create parent dirs. ensureParentDirs is
-        // idempotent (Files.exists short-circuits) so calling it per slot
-        // is cheap, and avoids dropping a sentinel-path workaround.
+        // idempotent (Files.exists short-circuits) so calling it once per slot
+        // is cheap.
         ensureParentDirs(snbtAbs);
         FileLib.write(snbtAbs, snbt, true);
 

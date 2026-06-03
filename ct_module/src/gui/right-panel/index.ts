@@ -32,7 +32,7 @@ import {
     SIZE_ROW_H,
     SIZE_TAB_H,
 } from "../lib/theme";
-import { statusForFile, STATUS_COLOR, STATUS_LABEL } from "../knowledge-status";
+import { statusForFile, STATUS_COLOR, STATUS_LABEL } from "../cache-status";
 import { FileSystemFileLoader, StringFileLoader } from "../../utils/fileLoaders";
 import * as htsw from "htsw";
 import { viewBody } from "./view-body";
@@ -57,10 +57,10 @@ function endsWith(s: string, suffix: string): boolean {
 }
 
 function stem(p: string): string {
-    // Walk both separators — tab paths come straight from `gcx.sourceFiles`
-    // which on Windows are absolute paths with backslashes. Splitting on `/`
-    // alone leaves the whole `C:\…` path as the "basename" and the tab button
-    // ends up showing the full Windows path instead of just the file stem.
+    // Split on both separators: tab paths can be absolute Windows paths with
+    // backslashes. Splitting on `/` alone would leave the whole `C:\…` path as
+    // the "basename", so the tab button would show the full path instead of
+    // just the file stem.
     const fwd = p.lastIndexOf("/");
     const back = p.lastIndexOf("\\");
     const slash = fwd > back ? fwd : back;

@@ -8,10 +8,10 @@
  * modules.
  *
  *   "unknown"  — no info (gray)
- *   "match"    — current source matches knowledge exactly (white)
+ *   "match"    — current source matches the cache baseline exactly (white)
  *   "edit"     — same action type, different fields (yellow)
- *   "delete"   — knowledge has it, current doesn't (red)
- *   "add"      — current has it, knowledge doesn't (green)
+ *   "delete"   — cache baseline has it, current source doesn't (red)
+ *   "add"      — current source has it, cache baseline doesn't (green)
  *
  * The importer's "currently touching this line" cursor is NOT a diff state —
  * it's driven by focus (see `focusedLine`) and painted with `COLOR_CURSOR`.

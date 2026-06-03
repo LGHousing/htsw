@@ -42,8 +42,8 @@ import {
     setHousingUuid,
 } from "./state";
 import { getImportProgress } from "./right-panel/import-tab/importProgress";
-import { setKnowledgeRows } from "./knowledge/rows";
-import { rebuildKnowledgeRows, stepKnowledgeBuild } from "./knowledge/knowledgeBuild";
+import { setCacheStatusRows } from "./cache-status/rows";
+import { rebuildCacheStatusRows, stepCacheStatusBuild } from "./cache-status/build";
 import { getCurrentHousingUuid } from "../importCache/housingId";
 import { TaskManager } from "../tasks/manager";
 
@@ -107,10 +107,10 @@ let uuidFetchInFlight = false;
 let lastUuidFetchAt = 0;
 const UUID_FETCH_COOLDOWN_MS = 60_000;
 
-function refreshKnowledgeFromUuid(uuid: string): void {
+function refreshCacheStatusFromUuid(uuid: string): void {
     const parsed = getParsedResult();
     if (parsed === null) return;
-    rebuildKnowledgeRows(uuid, parsed.value, /*progressive=*/ false);
+    rebuildCacheStatusRows(uuid, parsed.value, /*progressive=*/ false);
 }
 
 function maybeAutoFetchHousingUuid(): void {
@@ -122,7 +122,7 @@ function maybeAutoFetchHousingUuid(): void {
     void TaskManager.run(async (ctx) => {
         const uuid = await getCurrentHousingUuid(ctx);
         setHousingUuid(uuid);
-        refreshKnowledgeFromUuid(uuid);
+        refreshCacheStatusFromUuid(uuid);
     })
         .catch(() => {
             /* not in a housing / timeout — leave dots as-is */
@@ -221,7 +221,7 @@ export function initHtswGui(): void {
 
     // Hypixel server-transport messages are the cleanest "you may have
     // changed housings" signal. When we see one, drop the cached UUID and
-    // knowledge rows so the next inventory open re-runs `/wtfmap` for the
+    // cache-status rows so the next inventory open re-runs `/wtfmap` for the
     // new server. Both `setCriteria("Sending you to ${server}...")` and a
     // `^Sending you to ` regex were observed to silently never fire here,
     // so we match on `${*}` and prefix-test the unformatted message in JS.
@@ -233,7 +233,7 @@ export function initHtswGui(): void {
         if (typeof msg !== "string") return;
         if (msg.indexOf("Sending you to ") !== 0) return;
         setHousingUuid(null);
-        setKnowledgeRows([]);
+        setCacheStatusRows([]);
         lastUuidFetchAt = 0;
     }).setCriteria("${*}");
 
@@ -522,7 +522,7 @@ export function initHtswGui(): void {
         tickAllFields();
         applyFocus(getFocusedInput());
         tickReparse();
-        stepKnowledgeBuild();
+        stepCacheStatusBuild();
         // If the import ended while our placeholder is still up (Hypixel
         // didn't reopen a menu — e.g. the import finished naturally on
         // the last menu close), dismiss it so the player isn't trapped

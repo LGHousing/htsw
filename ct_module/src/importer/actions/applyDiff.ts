@@ -454,10 +454,10 @@ async function applyActionListDiffInner(
         });
     }
 
-    // `current` is mutated in place as ops apply, so a reader that closes over
-    // it always returns the latest list — letting a caller capture the true
-    // current Housing state if the apply throws partway, with no per-op cost.
-    onSnapshot?.(() => current.map((entry) => entry.action as Action | null));
+    const emitSnapshot = (): void => {
+        onSnapshot?.(() => current.map((entry) => entry.action as Action | null));
+    };
+    emitSnapshot();
 
     // Deletes first (reverse order so indices stay valid), then refresh slot refs.
     if (deletes.length > 0) {
@@ -475,6 +475,7 @@ async function applyActionListDiffInner(
             await deleteObservedAction(ctx, index, current.length);
             appliedUnits += operationApplyUnits(op, desired.length);
             current.splice(index, 1);
+            emitSnapshot();
             completedOps++;
             emitApplying(completedOps, appliedUnits);
             if (events != null) {
@@ -523,6 +524,7 @@ async function applyActionListDiffInner(
             await setListItemNote(ctx, actionSlot, op.desired.note);
             appliedUnits += operationApplyUnits(op, desired.length);
             current[currentIndex].action = op.desired;
+            emitSnapshot();
             completedOps++;
             emitApplying(completedOps, appliedUnits);
             if (events != null && srcPath !== null) {
@@ -567,6 +569,7 @@ async function applyActionListDiffInner(
             opStartUnits + operationApplyUnits(op, desired.length)
         );
         current[currentIndex].action = op.desired;
+        emitSnapshot();
         completedOps++;
         emitApplying(completedOps, appliedUnits);
         if (events != null && srcPath !== null) {
@@ -606,6 +609,7 @@ async function applyActionListDiffInner(
         const entry = current[fromIndex];
         current.splice(fromIndex, 1);
         current.splice(op.toIndex, 0, entry);
+        emitSnapshot();
         completedOps++;
         emitApplying(completedOps, appliedUnits);
         if (events != null && srcPath !== null) {
@@ -655,17 +659,25 @@ async function applyActionListDiffInner(
             srcPath ?? undefined,
             events ?? undefined
         );
+        current.push({
+            entryId: nextRuntimeEntryId++,
+            action: actionToImport,
+        });
+        emitSnapshot();
+
         await moveActionToIndex(ctx, currentLength, op.toIndex, currentLength + 1);
 
-        current.splice(op.toIndex, 0, {
-            entryId: nextRuntimeEntryId++,
-            action: op.desired,
-        });
+        const addedEntry = current[currentLength];
+        current.splice(currentLength, 1);
+        current.splice(op.toIndex, 0, addedEntry);
+        emitSnapshot();
         currentLength += 1;
 
         if (op.desired.note !== undefined) {
             const addedSlot = await getPaginatedListSlotAtIndex(ctx, op.toIndex, currentLength, ACTION_LIST_CONFIG);
             await setListItemNote(ctx, addedSlot, op.desired.note);
+            current[op.toIndex].action = op.desired;
+            emitSnapshot();
         }
         appliedUnits = Math.max(
             appliedUnits,

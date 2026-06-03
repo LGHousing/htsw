@@ -53,7 +53,7 @@ function key(filePath: string): string {
 }
 
 /**
- * Get-or-compute the knowledge overlay for `filePath`. On cache miss,
+ * Get-or-compute the cache-baseline overlay for `filePath`. On cache miss,
  * walks the cached parses to find the importable + list-prefix matching
  * this file, runs a hash-compare against the import cache, and stores
  * the result. Returns `undefined` if no cached parse references this

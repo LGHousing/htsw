@@ -169,13 +169,12 @@ export async function writeConditional(
     const events = options?.events;
     const scopeAt = options?.nestedProgressScope;
 
-    // Each sub-list (conditions, ifActions, elseActions) is applied in turn
-    // and occupies its own slice of the op's apply budget, placed at a
-    // cumulative `offset`. Without this they'd share one baseline and collide
-    // (and conditions emitted nothing at all, leaving a multi-second silent
-    // gap on the bar — the flat stretch before the inner actions stream). The
-    // slice size is each list's own phase-unit total, which equals what its
-    // sync emits as progress, so the credits chain seamlessly.
+    // The three sub-lists (conditions, ifActions, elseActions) apply one after
+    // another. Each gets its own slice of this action's progress budget,
+    // starting at the running `offset`, so their progress reports add up
+    // instead of overlapping at the same starting point. Each slice is sized
+    // to that sub-list's own estimated work, which matches what it reports as
+    // it runs.
     let offset = 0;
 
     if (

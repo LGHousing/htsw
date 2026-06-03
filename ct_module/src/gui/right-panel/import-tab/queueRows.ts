@@ -31,7 +31,7 @@ import {
 
 const GLYPH_CARET = "▶";
 import { clearImportableChecks, isCurrentHouseTrusted, isImportableChecked, toggleImportableChecked } from "../../state";
-import { getKnowledgeRows } from "../../knowledge/rows";
+import { getCacheStatusRows } from "../../cache-status/rows";
 import { getQueueItemRunState, isCurrentQueueItem } from "./importProgress";
 import { importableKey } from "../../../importCache/paths";
 import {
@@ -51,7 +51,7 @@ import { phaseSegment } from "./progressPanel";
 function willBeSkipped(item: QueueItem): boolean {
     if (!isCurrentHouseTrusted()) return false;
     if (item.kind !== "importable") return false;
-    const rows = getKnowledgeRows();
+    const rows = getCacheStatusRows();
     for (let i = 0; i < rows.length; i++) {
         if (rows[i].identity === item.identity && rows[i].importable.type === item.type) {
             return rows[i].state === "current";

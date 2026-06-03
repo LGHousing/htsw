@@ -21,12 +21,10 @@ import type { ImportEventHandler, ProgressScope } from "../importEvents";
 
 export type SyncActionListOptions = {
     /**
-     * Pre-read observed list to use instead of reading from the menu.
-     *
-     * The exporter and (future) trust-mode hand the importer a known-good
-     * observation so a second `readActionList` round trip can be avoided.
-     * If absent, the menu is read in `{ kind: "sync", desired }` mode as
-     * before.
+     * An already-observed list to diff against, instead of reading the menu
+     * again. Callers that already hold a known-good observation (e.g. the
+     * exporter) pass it here to skip a second menu read. If absent, the menu
+     * is read fresh.
      */
     observed?: ObservedActionSlot[];
     itemRegistry?: ItemRegistry;
@@ -112,12 +110,11 @@ export async function prereadActionList(
     }
     const diff = diffActionList(baselineActionListFromSlots(observed), desired);
 
-    // Replace the rough applying estimate with the diff-aware cost now
-    // that we know the actual operations. Emit a progress event so the
-    // reducer parks this importable with a precise apply estimate;
-    // otherwise the queue + big bar segments stay sized against the
-    // upfront rough estimate until pass-2 actually starts and
-    // applyActionListDiff resets phaseUnits.applying itself.
+    // We started with a rough guess for how much work the apply phase would
+    // be. Now that the diff is computed we know the real operation count, so
+    // replace the guess and emit a progress event. Without this, the progress
+    // bar stays sized against the rough guess until the apply phase actually
+    // begins and corrects it.
     const exactApplyUnits = actionListDiffApplyUnits(
         diff,
         editUnitsWithNested,
