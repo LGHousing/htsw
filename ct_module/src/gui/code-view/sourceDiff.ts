@@ -107,10 +107,11 @@ function computeFor(filePath: string): SourceDiffEntry | null {
         match.importable.type,
         importableIdentity(match.importable)
     );
+    if (cache === null) return null;
     const sourceActions = readCachedActionList(match.importable, match.prefix);
     if (sourceActions === undefined) return null;
     const out: SourceDiffEntry = new Map();
-    walk(out, match.prefix, "", sourceActions, cache !== null ? cache.lists : {});
+    walk(out, match.prefix, "", sourceActions, cache.lists);
     return out;
 }
 
