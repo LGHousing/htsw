@@ -181,7 +181,7 @@ function noteEditUnits(): number {
 }
 
 /**
- * Per-add shell cost: what `importAction` does *outside* the field-write
+ * Per-add shell cost: what `addAction` does *outside* the field-write
  * loop — click "Add Action", click the action-type slot. No page-turn term:
  * the add menu opens on page 1 and the common action types are there, so
  * `getSlotPaginate` usually does zero turns; charging a guaranteed turn
@@ -277,9 +277,9 @@ export function conditionListDiffApplyUnits(diff: ConditionListDiff): number {
  * non-RANDOM actions, none of which carry action-list arrays.
  *
  * When the action has any writable fields, also includes the
- * `goBackWait` for the `clickGoBack` that `importAction` issues to exit
+ * `goBackWait` for the `clickGoBack` that `addAction` issues to exit
  * the action editor. Fieldless actions (e.g. Kill Player) take the
- * `Math.max(menuClickWait, total)` floor because `importAction` skips
+ * `Math.max(menuClickWait, total)` floor because `addAction` skips
  * the editor entirely (`if (spec.write)` is false) — they only pay the
  * shell cost.
  */

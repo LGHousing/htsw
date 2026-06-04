@@ -33,7 +33,8 @@ const GLYPH_CARET = "▶";
 import { clearImportableChecks, isCurrentHouseTrusted, isImportableChecked, toggleImportableChecked } from "../../state";
 import { getCacheStatusRows } from "../../cache-status/rows";
 import { getQueueItemRunState, isCurrentQueueItem } from "./importProgress";
-import { importableKey } from "../../../importCache/paths";
+import { importableIdentity, importableKey } from "../../../importCache/paths";
+import { findCacheRowIndex } from "../../../importCache/status";
 import {
     clearQueue,
     getQueueLength,
@@ -43,7 +44,6 @@ import {
     type QueueItem,
 } from "./queue";
 import { parseImportJsonAt } from "../../parsing/parses";
-import { importableIdentity } from "../../../importCache/paths";
 import { orderImportablesForImportSession } from "../../../importables/importSession";
 import { isImportRunning } from "../../../importer/runtimeState";
 import { phaseSegment } from "./progressPanel";
@@ -52,12 +52,8 @@ function willBeSkipped(item: QueueItem): boolean {
     if (!isCurrentHouseTrusted()) return false;
     if (item.kind !== "importable") return false;
     const rows = getCacheStatusRows();
-    for (let i = 0; i < rows.length; i++) {
-        if (rows[i].identity === item.identity && rows[i].importable.type === item.type) {
-            return rows[i].state === "current";
-        }
-    }
-    return false;
+    const index = findCacheRowIndex(rows, item.identity, item.type);
+    return index >= 0 && rows[index].state === "current";
 }
 
 const collapsedQueueImportJsonRows: Set<string> = new Set();

@@ -4,7 +4,7 @@ import {
     clickGoBack,
     getSlotPaginate,
     setNumberValue,
-} from "../../importer/gui/menuFlows";
+} from "../../importer/gui/menuUtils";
 import { timedWaitForMenu } from "../../importer/gui/menuWait";
 import { setItemValue } from "../../importer/items/injectItem";
 import { parseLoreKeyValueLine } from "../../importer/fields/loreParsing";

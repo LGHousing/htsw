@@ -1,7 +1,7 @@
 import type { ImportableMenu } from "htsw/types";
 
 import { syncActionList } from "../../importer/actions/sync";
-import { clickGoBack, setCycleValue } from "../../importer/gui/menuFlows";
+import { clickGoBack, setCycleValue } from "../../importer/gui/menuUtils";
 import {
     timedWaitForMenu,
     timedWaitForUnformattedMessage,

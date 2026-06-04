@@ -28,6 +28,7 @@ import {
     type SubListKind,
 } from "../../parsing/importablePaths";
 import { importableIdentity, importableKey } from "../../../importCache/paths";
+import { findCacheRowIndex } from "../../../importCache/status";
 import { addToQueue, makeImportableQueueItem, queueItemKey, removeFromQueueKey } from "../../right-panel/import-tab/queue";
 import { isImportRunning } from "../../../importer/runtimeState";
 import { composeFileMenu, composeImportableMenu } from "../../menus/fileMenu";
@@ -98,12 +99,10 @@ function formatPos(p: { x: number; y: number; z: number }): string {
 function getCachedImportable(imp: Importable): Importable | null {
     const rows = getCacheStatusRows();
     const id = importableIdentity(imp);
-    for (let i = 0; i < rows.length; i++) {
-        if (rows[i].identity === id && rows[i].importable.type === imp.type && rows[i].entry !== null) {
-            return rows[i].entry!.importable;
-        }
-    }
-    return null;
+    const index = findCacheRowIndex(rows, id, imp.type);
+    if (index < 0) return null;
+    const entry = rows[index].entry;
+    return entry === null ? null : entry.importable;
 }
 
 function valDiff(a: unknown, b: unknown): FieldDiff | undefined {

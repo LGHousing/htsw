@@ -5,7 +5,7 @@ import TaskContext from "../tasks/context";
 import { canonicalSlug } from "../exporter/paths";
 import { getItemFromSnbt, itemToHtswTag } from "../utils/nbt";
 import { cyrb53, removedFormatting } from "../utils/helpers";
-import { clickGoBack } from "./gui/menuFlows";
+import { clickGoBack } from "./gui/menuUtils";
 import { timedWaitForMenu } from "./gui/menuWait";
 import {
     SET_SLOT_ACK_TIMEOUT_MS,

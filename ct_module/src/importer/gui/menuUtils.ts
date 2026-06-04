@@ -170,7 +170,8 @@ function acceptNewAnvilItem(): void {
 export async function setListItemNote(
     ctx: TaskContext,
     slot: ItemSlot,
-    note: string | undefined
+    note: string | undefined,
+    options?: { onApplied?: () => void }
 ): Promise<void> {
     const normalizedNote = note === undefined ? undefined : normalizeNoteText(note);
     const currentNote = readListItemNote(slot);
@@ -193,6 +194,7 @@ export async function setListItemNote(
     } else {
         await enterValue(ctx, normalizedNote);
     }
+    options?.onApplied?.();
     await timedWaitForMenu(ctx, "menuClickWait");
 }
 
@@ -605,12 +607,13 @@ export function isLimitExceeded(slot: ItemSlot, kind: "action" | "condition"): b
  */
 export async function setNoteOnLastVisibleSlot(
     ctx: TaskContext,
-    note: string | undefined
+    note: string | undefined,
+    options?: { onApplied?: () => void }
 ): Promise<void> {
     if (!note) return;
     const slots = getVisiblePaginatedItemSlots(ctx);
     const last = slots[slots.length - 1];
     if (last) {
-        await setListItemNote(ctx, last, note);
+        await setListItemNote(ctx, last, note, options);
     }
 }

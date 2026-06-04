@@ -1,6 +1,6 @@
 /**
  * Mutates a Housing action list to match a desired list, given a precomputed
- * diff. Includes `importAction` (single-action add) because the `adds` loop
+ * diff. Includes `addAction` (single-action add) because the `adds` loop
  * is its only caller.
  *
  * Module graph note: this file imports `writeOpenAction`,
@@ -21,7 +21,7 @@ import {
     isLimitExceeded,
     setListItemNote,
     setNoteOnLastVisibleSlot,
-} from "../gui/menuFlows";
+} from "../gui/menuUtils";
 import { timedWaitForMenu, waitForMenu } from "../gui/menuWait";
 import { MouseButton } from "../../tasks/specifics/slots";
 import type {
@@ -65,13 +65,23 @@ type LiveActionListEntry = {
     action: Observed<Action> | null;
 };
 
-async function importAction(
+type ImportActionCallbacks = {
+    onActionAdded?: () => void;
+    onNoteApplied?: () => void;
+};
+
+function actionWithNote(action: Action, note: string | undefined): Action {
+    return note === action.note ? action : { ...action, note };
+}
+
+async function addAction(
     ctx: TaskContext,
     action: Action,
     itemRegistry?: ItemRegistry,
     nestedProgressScope?: (path: ActionPath, extraOffset?: number) => ProgressScope | undefined,
     pathPrefix?: string,
-    events?: ImportEventHandler
+    events?: ImportEventHandler,
+    callbacks?: ImportActionCallbacks
 ): Promise<void> {
     ctx.getMenuItemSlot("Add Action").click();
     await timedWaitForMenu(ctx, "menuClickWait");
@@ -86,6 +96,9 @@ async function importAction(
     }
 
     slot.click();
+    if (!spec.write) {
+        callbacks?.onActionAdded?.();
+    }
     await timedWaitForMenu(ctx, "menuClickWait");
 
     // No-field actions (e.g. Kill Player, Exit) add directly to the list
@@ -98,9 +111,12 @@ async function importAction(
             events,
         });
         await clickGoBack(ctx);
+        callbacks?.onActionAdded?.();
     }
 
-    await setNoteOnLastVisibleSlot(ctx, action.note);
+    await setNoteOnLastVisibleSlot(ctx, action.note, {
+        onApplied: callbacks?.onNoteApplied,
+    });
 }
 
 async function deleteObservedAction(
@@ -457,6 +473,10 @@ async function applyActionListDiffInner(
     const emitSnapshot = (): void => {
         onSnapshot?.(() => current.map((entry) => entry.action as Action | null));
     };
+    const updateCurrentAction = (index: number, action: Observed<Action>): void => {
+        current[index].action = action;
+        emitSnapshot();
+    };
     emitSnapshot();
 
     // Deletes first (reverse order so indices stay valid), then refresh slot refs.
@@ -521,10 +541,16 @@ async function applyActionListDiffInner(
         );
 
         if (op.noteOnly) {
-            await setListItemNote(ctx, actionSlot, op.desired.note);
+            let snapshotUpdated = false;
+            const updateSnapshot = (): void => {
+                updateCurrentAction(currentIndex, op.desired);
+                snapshotUpdated = true;
+            };
+            await setListItemNote(ctx, actionSlot, op.desired.note, {
+                onApplied: updateSnapshot,
+            });
             appliedUnits += operationApplyUnits(op, desired.length);
-            current[currentIndex].action = op.desired;
-            emitSnapshot();
+            if (!snapshotUpdated) updateSnapshot();
             completedOps++;
             emitApplying(completedOps, appliedUnits);
             if (events != null && srcPath !== null) {
@@ -539,6 +565,12 @@ async function applyActionListDiffInner(
         }
 
         const spec = getActionSpec(op.desired.type);
+        const actionWithCurrentNote = (): Action => actionWithNote(op.desired, op.baselineAction.note);
+        let desiredSnapshotUpdated = false;
+        const updateEditSnapshot = (action: Observed<Action>, isDesired: boolean): void => {
+            updateCurrentAction(currentIndex, action);
+            if (isDesired) desiredSnapshotUpdated = true;
+        };
         if (spec.write) {
             actionSlot.click();
             await timedWaitForMenu(ctx, "menuClickWait");
@@ -560,16 +592,20 @@ async function applyActionListDiffInner(
                           ),
                 events: events ?? undefined,
             });
+            updateEditSnapshot(actionWithCurrentNote(), false);
             await clickGoBack(ctx);
         }
 
-        await setListItemNote(ctx, actionSlot, op.desired.note);
+        await setListItemNote(ctx, actionSlot, op.desired.note, {
+            onApplied: () => updateEditSnapshot(op.desired, true),
+        });
         appliedUnits = Math.max(
             appliedUnits,
             opStartUnits + operationApplyUnits(op, desired.length)
         );
-        current[currentIndex].action = op.desired;
-        emitSnapshot();
+        if (!desiredSnapshotUpdated) {
+            updateEditSnapshot(op.desired, true);
+        }
         completedOps++;
         emitApplying(completedOps, appliedUnits);
         if (events != null && srcPath !== null) {
@@ -639,12 +675,19 @@ async function applyActionListDiffInner(
         if (isTopLevel) await waitIfStepPaused(ctx);
         const opStartUnits = appliedUnits;
 
-        const actionToImport =
-            op.desired.note === undefined
-                ? op.desired
-                : ({ ...op.desired, note: undefined } as Action);
+        const actionToImport = actionWithNote(op.desired, undefined);
 
-        await importAction(
+        let actionAdded = false;
+        const updateAddedSnapshot = (): void => {
+            if (actionAdded) return;
+            current.push({
+                entryId: nextRuntimeEntryId++,
+                action: actionToImport,
+            });
+            emitSnapshot();
+            actionAdded = true;
+        };
+        await addAction(
             ctx,
             actionToImport,
             itemRegistry,
@@ -657,13 +700,10 @@ async function applyActionListDiffInner(
                       diff.operations.length
                   ),
             srcPath ?? undefined,
-            events ?? undefined
+            events ?? undefined,
+            { onActionAdded: updateAddedSnapshot }
         );
-        current.push({
-            entryId: nextRuntimeEntryId++,
-            action: actionToImport,
-        });
-        emitSnapshot();
+        if (!actionAdded) updateAddedSnapshot();
 
         await moveActionToIndex(ctx, currentLength, op.toIndex, currentLength + 1);
 
@@ -675,9 +715,15 @@ async function applyActionListDiffInner(
 
         if (op.desired.note !== undefined) {
             const addedSlot = await getPaginatedListSlotAtIndex(ctx, op.toIndex, currentLength, ACTION_LIST_CONFIG);
-            await setListItemNote(ctx, addedSlot, op.desired.note);
-            current[op.toIndex].action = op.desired;
-            emitSnapshot();
+            let noteSnapshotUpdated = false;
+            const updateNoteSnapshot = (): void => {
+                updateCurrentAction(op.toIndex, op.desired);
+                noteSnapshotUpdated = true;
+            };
+            await setListItemNote(ctx, addedSlot, op.desired.note, {
+                onApplied: updateNoteSnapshot,
+            });
+            if (!noteSnapshotUpdated) updateNoteSnapshot();
         }
         appliedUnits = Math.max(
             appliedUnits,

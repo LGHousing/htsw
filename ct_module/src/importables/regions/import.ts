@@ -5,7 +5,7 @@ import {
     prereadActionList,
     type ActionListPlan,
 } from "../../importer/actions/sync";
-import { clickGoBack } from "../../importer/gui/menuFlows";
+import { clickGoBack } from "../../importer/gui/menuUtils";
 import {
     timedWaitForMenu,
     timedWaitForUnformattedMessage,

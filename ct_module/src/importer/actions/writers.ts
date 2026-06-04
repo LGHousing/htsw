@@ -50,7 +50,7 @@ import {
     setCycleValue,
     setNumberValue,
     readStringValue,
-} from "../gui/menuFlows";
+} from "../gui/menuUtils";
 import { waitForMenu } from "../gui/menuWait";
 import { syncConditionList } from "../conditions/sync";
 import {

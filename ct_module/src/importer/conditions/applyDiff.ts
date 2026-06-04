@@ -15,7 +15,7 @@ import {
     readBooleanValue,
     setListItemNote,
     setNoteOnLastVisibleSlot,
-} from "../gui/menuFlows";
+} from "../gui/menuUtils";
 import { timedWaitForMenu } from "../gui/menuWait";
 import { ItemSlot, MouseButton } from "../../tasks/specifics/slots";
 import { removedFormatting } from "../../utils/helpers";
