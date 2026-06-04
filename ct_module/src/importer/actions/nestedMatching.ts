@@ -19,15 +19,13 @@ export type DesiredActionEntry = {
 
 /**
  * Pair each observed nested-list-bearing action with the desired action it
- * most likely represents. Shared between hydration plan creation and trust
- * application so both consumers see the same pairing — a previous version
- * ran two independent matching passes that could disagree, causing trust
- * to no-op on entries hydration had already matched correctly.
+ * most likely represents. Both the hydration plan and trust application read
+ * this same pairing, so they always agree on which observed action lines up
+ * with which desired one; if they paired independently they could disagree.
  *
- * Restricted to observed entries with `getPropsNeedingHydration > 0`: the
- * downstream consumers both key off the hydration plan, which only contains
- * those entries. Filtering here avoids enumerating candidate pairs that
- * neither consumer would act on.
+ * Only considers observed entries that still have nested lists to read (the
+ * two consumers act on those entries alone), so it doesn't waste work pairing
+ * entries neither of them would touch.
  */
 export function matchObservedToDesired(
     observed: readonly ObservedActionSlot[],

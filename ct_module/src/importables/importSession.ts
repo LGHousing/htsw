@@ -1,5 +1,7 @@
 import { Diagnostic, SourceMap, parseImportablesResult, type ParseResult } from "htsw";
-import type { Importable } from "htsw/types";
+import type { Action, Importable } from "htsw/types";
+
+import { getNestedListFields } from "../importer/fields/actionMappings";
 
 import TaskContext from "../tasks/context";
 import { isTaskCancelled } from "../tasks/manager";
@@ -7,10 +9,9 @@ import { IMPORT_DEBUG } from "../importer/diagnostics/importDebug";
 import { FileSystemFileLoader } from "../utils/fileLoaders";
 import {
     buildTrustPlan,
-    getCurrentHousingUuid,
     importableIdentity,
     importableKey,
-    writeImportableCache,
+    tryWriteImportableCache,
 } from "../importCache";
 import { printDiagnostic } from "../tui/diagnostics";
 import { createItemRegistry } from "./itemRegistry";
@@ -39,12 +40,6 @@ export type ImportSelection = {
     events?: ImportEventHandler;
 };
 
-/**
- * Normalise any thrown import failure into a single Diagnostic — the one error
- * currency. Already-a-Diagnostic passes through (keeps spans, if any); a plain
- * Error/value becomes a span-less `Diagnostic.error`. Both render uniformly via
- * `printDiagnostic` (chat) and expose `.message` (GUI failure banner).
- */
 function toImportDiagnostic(
     error: unknown,
     phase: "read" | "import",
@@ -76,8 +71,6 @@ export async function importSelectedImportables(
     ctx: TaskContext,
     selection: ImportSelection
 ): Promise<void> {
-    // Fresh per import: the /functions list (names + current icons) is cached
-    // for the run, so a stale cache from a prior import must not leak in.
     resetFunctionNameSession();
 
     const parsed = selection.parsed ?? parseImportablesResult(
@@ -86,19 +79,19 @@ export async function importSelectedImportables(
     );
     const sm = new SourceMap(new FileSystemFileLoader());
     const registry = createItemRegistry(parsed.value, parsed.gcx);
-    const ordered = orderImportablesForImportSession(parsed.value, selection.importables);
+    const orderedImportables = orderImportablesForImportSession(parsed.value, selection.importables);
     await ctx.sleep(1);
-    // Only the selected importables' trust plans are ever consulted, and each
-    // plan costs an importableHash + a full listHashes (per-action). Scoping to
-    // `ordered` avoids hashing the entire project when importing a subset.
+    // Building a trust plan hashes every importable and all of its actions,
+    // which is slow. Pass only the ones we're importing this run, not the
+    // whole project, so we don't hash things we aren't going to touch.
     const trustPlan = buildTrustPlan(
         selection.housingUuid,
-        ordered,
+        orderedImportables,
         selection.trustMode
     );
 
     const events = selection.events;
-    const importableUnits: number[] = ordered.map((importable) => {
+    const importableUnits: number[] = orderedImportables.map((importable) => {
         const identity = importableIdentity(importable);
         const tp = trustPlan.importables.get(importableKey(importable.type, identity));
         return estimateImportableUnitsFromTrustPlan(importable, tp?.entry ?? null);
@@ -108,7 +101,7 @@ export async function importSelectedImportables(
         initialTotalUnits += importableUnits[i];
     }
     if (initialTotalUnits === 0) initialTotalUnits = 1;
-    const rows: ImportableEntry[] = ordered.map((importable, i) => ({
+    const rows: ImportableEntry[] = orderedImportables.map((importable, i) => ({
         key: importProgressKey(
             importable.type,
             importableIdentity(importable),
@@ -119,7 +112,7 @@ export async function importSelectedImportables(
     }));
     events?.emit({ kind: "sessionStarted", rows, initialTotalUnits });
 
-    const rowsMeta = ordered.map((importable, i) => {
+    const rowsMeta = orderedImportables.map((importable, i) => {
         const identity = importableIdentity(importable);
         const tp = trustPlan.importables.get(importableKey(importable.type, identity));
         return {
@@ -148,7 +141,7 @@ export async function importSelectedImportables(
         });
 
         if (row.trustPlan?.wholeImportableTrusted) {
-            await maybeWriteImportCacheForTrust(ctx, row.importable, selection.housingUuid);
+            await tryWriteImportableCache(ctx, row.importable, "importer", selection.housingUuid);
             events?.emit({ kind: "importableFinished", key: row.key, status: "skipped" });
             continue;
         }
@@ -159,10 +152,8 @@ export async function importSelectedImportables(
                 housingUuid: selection.housingUuid,
                 events,
             });
-            // If hydration proved this importable needs no changes, mark it
-            // green now and skip the apply pass — there's nothing to do.
             if (planIsNoOp(plan)) {
-                await maybeWriteImportCacheForTrust(ctx, row.importable, selection.housingUuid);
+                await tryWriteImportableCache(ctx, row.importable, "importer", selection.housingUuid);
                 events?.emit({ kind: "importableFinished", key: row.key, status: "imported" });
                 continue;
             }
@@ -200,8 +191,18 @@ export async function importSelectedImportables(
                 housingUuid: selection.housingUuid,
                 events,
             });
+            // ITEM manages its own per-NBT cache during apply.
+            if (plan.kind !== "ITEM") {
+                await tryWriteImportableCache(
+                    ctx,
+                    row.importable,
+                    "importer",
+                    selection.housingUuid
+                );
+            }
             events?.emit({ kind: "importableFinished", key: row.key, status: "imported" });
         } catch (error) {
+            await maybeWritePartialImportCache(ctx, plan, selection.housingUuid);
             if (isTaskCancelled(error)) {
                 throw error;
             }
@@ -218,35 +219,61 @@ export async function importSelectedImportables(
     events?.emit({ kind: "sessionFinished" });
 }
 
-async function maybeWriteImportCacheForTrust(
+/** Cache the partially-applied state after a failed or cancelled apply. */
+async function maybeWritePartialImportCache(
     ctx: TaskContext,
-    importable: Importable,
-    cachedUuid?: string
+    plan: ImportablePlan,
+    housingUuid: string
 ): Promise<void> {
-    try {
-        const housingUuid = cachedUuid ?? (await getCurrentHousingUuid(ctx));
-        writeImportableCache(ctx, housingUuid, importable, "importer");
-    } catch (error) {
-        if (IMPORT_DEBUG) {
-            ctx.displayMessage(
-                `&7[knowledge] &eSkipped cache write for trusted ${importable.type}: ${error}`
-            );
-        }
-    }
+    const partial = reconstructPartialImportable(plan);
+    if (partial === null) return;
+    await tryWriteImportableCache(ctx, partial, "importer", housingUuid);
 }
 
 /**
- * True when a hydrated plan's apply pass would make zero changes, so the
- * importable can be marked imported right after pass 1 and skip pass 2.
+ * Rebuild the importable from the live snapshot, or null when it isn't safely
+ * persistable: a shallow snapshot (un-hydrated nested lists hold nulls) would
+ * cache a half-known list as truth. FUNCTION/EVENT only; icon/ticks are dropped
+ * so a retry re-applies settings instead of trusting maybe-unwritten values.
+ */
+function reconstructPartialImportable(plan: ImportablePlan): Importable | null {
+    if (plan.kind !== "FUNCTION" && plan.kind !== "EVENT") return null;
+    const live = plan.actionsPlan?.getLiveCurrent?.();
+    if (live === undefined || !actionsFullyKnown(live)) return null;
+    const actions = live as Action[];
+    if (plan.kind === "FUNCTION") {
+        return { type: "FUNCTION", name: plan.importable.name, actions };
+    }
+    return { type: "EVENT", event: plan.importable.event, actions };
+}
+
+function actionsFullyKnown(actions: ReadonlyArray<Action | null>): boolean {
+    for (const action of actions) {
+        if (action === null) return false;
+        for (const field of getNestedListFields(action.type)) {
+            const nested = (action as Record<string, unknown>)[field.prop];
+            if (!Array.isArray(nested)) continue;
+            if (field.prop === "conditions") {
+                for (const condition of nested) {
+                    if (condition === null) return false;
+                }
+            } else if (!actionsFullyKnown(nested as Array<Action | null>)) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+/**
+ * True when applying this plan would change nothing, so the importable can be
+ * marked done right after the read pass and skip the apply pass entirely.
  *
- * Only EVENT and FUNCTION are provable from the preread: their plans carry
- * the full action diff and have no separate apply-time work beyond it.
- * FUNCTION's extra work — icon/repeatTicks — is captured by the plan's
- * `settingsHandled` flag: when the action diff was empty the preread already
- * applied the settings inline, so there's nothing left for pass 2. REGION
- * always re-applies its bounds (TP + //pos + Move Region) regardless of the
- * diff, and MENU/ITEM defer all work to the apply pass, so none of those can
- * be proven no-op here.
+ * Only EVENT and FUNCTION can be judged this early, because all their apply
+ * work is the action diff we already computed during the read. FUNCTION also
+ * has an icon and repeat-ticks; `settingsHandled` tells us those are already
+ * done (the read applies them when there were no action changes). REGION, MENU
+ * and ITEM always have real work left in the apply pass, so never no-ops here.
  */
 function planIsNoOp(plan: ImportablePlan): boolean {
     if (plan.kind === "EVENT") {

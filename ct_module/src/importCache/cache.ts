@@ -2,7 +2,9 @@ import type { Importable } from "htsw/types";
 
 import TaskContext from "../tasks/context";
 import { ensureParentDirs } from "../utils/filesystem";
+import { IMPORT_DEBUG } from "../importer/diagnostics/importDebug";
 import { importableHash, listHashes } from "./hash";
+import { getCurrentHousingUuid } from "./housingId";
 import { IMPORT_CACHE_ROOT, cachePathFor, cachePathForId } from "./paths";
 
 /**
@@ -80,6 +82,35 @@ export function writeImportableCache(
         ctx.displayMessage(`&7[cache] saved &f${path}`);
     } catch (error) {
         ctx.displayMessage(`&7[cache] &eFailed to write cache at ${path}: ${error}`);
+    }
+}
+
+/**
+ * Best-effort cache write: resolve the housing UUID (falling back to /wtfmap
+ * when one isn't supplied), persist the entry, and swallow any failure. The
+ * real import/export work is already done by the time this runs — the cache is
+ * a hint, not a contract, so a missing /wtfmap reply or filesystem error must
+ * never abort the caller. Exporter failures warn unconditionally (export is a
+ * deliberate, low-frequency action); importer failures stay quiet unless
+ * IMPORT_DEBUG, since a bulk import would otherwise spam the log.
+ */
+export async function tryWriteImportableCache(
+    ctx: TaskContext,
+    importable: Importable,
+    writer: CacheWriter,
+    cachedUuid?: string
+): Promise<void> {
+    try {
+        const housingUuid = cachedUuid ?? (await getCurrentHousingUuid(ctx));
+        writeImportableCache(ctx, housingUuid, importable, writer);
+    } catch (error) {
+        if (writer === "exporter") {
+            ctx.displayMessage(`&7[export] &eCache write skipped: ${error}`);
+        } else if (IMPORT_DEBUG) {
+            ctx.displayMessage(
+                `&7[knowledge] &eSkipped cache write for ${importable.type}: ${error}`
+            );
+        }
     }
 }
 

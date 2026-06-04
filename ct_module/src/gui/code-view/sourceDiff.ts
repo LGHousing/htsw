@@ -39,9 +39,9 @@ import {
     importableSubListPath,
     SUB_LIST_KINDS,
     type SubListKind,
-} from "./importablePaths";
-import { canonicalPath, forEachCachedParse } from "./parses";
-import { getHousingUuid } from ".";
+} from "../parsing/importablePaths";
+import { canonicalPath, forEachCachedParse } from "../parsing/parses";
+import { getHousingUuid } from "../state/housing";
 import { readCachedActionList } from "../../importables/actionListHelpers";
 
 export type SourceDiffEntry = Map<ActionPath, DiffState>;
@@ -53,7 +53,7 @@ function key(filePath: string): string {
 }
 
 /**
- * Get-or-compute the knowledge overlay for `filePath`. On cache miss,
+ * Get-or-compute the cache-baseline overlay for `filePath`. On cache miss,
  * walks the cached parses to find the importable + list-prefix matching
  * this file, runs a hash-compare against the import cache, and stores
  * the result. Returns `undefined` if no cached parse references this
@@ -107,10 +107,11 @@ function computeFor(filePath: string): SourceDiffEntry | null {
         match.importable.type,
         importableIdentity(match.importable)
     );
+    if (cache === null) return null;
     const sourceActions = readCachedActionList(match.importable, match.prefix);
     if (sourceActions === undefined) return null;
     const out: SourceDiffEntry = new Map();
-    walk(out, match.prefix, "", sourceActions, cache !== null ? cache.lists : {});
+    walk(out, match.prefix, "", sourceActions, cache.lists);
     return out;
 }
 

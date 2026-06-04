@@ -15,7 +15,7 @@ import {
     resetPreview,
     setObservedTopLevel,
     type PreviewLine,
-} from "../src/gui/state/importPreviewState";
+} from "../src/gui/right-panel/import-tab/livePreview";
 
 import { conditional, message, playSound } from "./utils";
 

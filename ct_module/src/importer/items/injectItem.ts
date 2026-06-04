@@ -90,7 +90,6 @@ export async function selectItemFromOpenInventory(
     const playerInvStart = container.getSize() - 36;
     const desiredStack = item.getItemStack();
 
-    // Scan player inventory slots in the container for a matching item
     const existingSlot = ctx.tryGetItemSlot((s) => {
         if (s.getSlotId() < playerInvStart) return false;
         const slotStack = s.getItem().getItemStack();
@@ -103,7 +102,6 @@ export async function selectItemFromOpenInventory(
         return;
     }
 
-    // Item not in inventory — inject via creative packet
     const targetSlotInContainer = container.getSize() - 36 + (INV_PACKET_SLOT - 9);
     const scratchSlot = ctx.tryGetItemSlot((s) => s.getSlotId() === targetSlotInContainer);
     if (

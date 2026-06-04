@@ -5,7 +5,7 @@ import { Button, Col, Input, Row, Text } from "../lib/components";
 import { closeAllPopovers, openPopover } from "../lib/popovers";
 import type { Importable } from "htsw/types";
 import { renameImportableEntry, type Section } from "../../exporter/importJsonWriter";
-import { reparseNow } from "../state/reparse";
+import { reparseNow } from "../parsing/reparse";
 
 let editingValue = "";
 let editingFor: string = "";

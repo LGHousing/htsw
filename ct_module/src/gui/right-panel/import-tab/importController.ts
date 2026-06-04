@@ -1,9 +1,6 @@
 /// <reference types="../../../../CTAutocomplete" />
 
 import {
-    createImportRows,
-    createImportProgress,
-    clearLastFinishedProgress,
     getExportImportJsonPath,
     getHousingUuid,
     getImportJsonPath,
@@ -11,15 +8,20 @@ import {
     getAutoTrackSources,
     isAnyAutoTrackEnabled,
     isCurrentHouseTrusted,
-    getImportProgress,
     isImportableChecked,
-    refreshKnowledgeRowFromDisk,
-    setActiveImportPath,
     setHousingUuid,
-    setImportProgress,
     toggleImportableChecked,
 } from "../../state";
-import { rebuildKnowledgeRows } from "../../state/knowledgeBuild";
+import {
+    createImportRows,
+    createImportProgress,
+    clearLastFinishedProgress,
+    getImportProgress,
+    setActiveImportPath,
+    setImportProgress,
+} from "./importProgress";
+import { rebuildCacheStatusRows } from "../../cache-status/build";
+import { refreshCacheStatusRowFromDisk } from "../../cache-status/rows";
 import {
     addToQueue,
     beginQueueSession,
@@ -29,8 +31,8 @@ import {
     queueItemKey,
     removeFromQueueKey,
     type QueueItem,
-} from "../../state/queue";
-import { forEachCachedParse, getParseAt, parseImportJsonAt } from "../../state/parses";
+} from "./queue";
+import { forEachCachedParse, getParseAt, parseImportJsonAt } from "../../parsing/parses";
 import { printDiagnostics } from "../../../tui/diagnostics";
 import {
     importSelectedImportables,
@@ -46,22 +48,21 @@ import { importableIdentity, importableKey } from "../../../importCache/paths";
 import { getCurrentHousingUuid } from "../../../importCache/housingId";
 import { TaskManager, isTaskCancelled } from "../../../tasks/manager";
 import type TaskContext from "../../../tasks/context";
-import type { Action, Importable } from "htsw/types";
+import type { Importable } from "htsw/types";
 import type { Diagnostic, ParseResult } from "htsw";
 import { closeAllPopovers } from "../../lib/popovers";
-import { statusForImportable } from "../../knowledge-status";
+import { statusForImportable } from "../../cache-status";
 import { htslFilenameForFunctionExport } from "../../../exporter/paths";
-import { importableSourcePath } from "../../state/importablePaths";
-import { attributeDiagnostics } from "../../state/diagnosticCounts";
+import { importableSourcePath } from "../../parsing/importablePaths";
+import { attributeDiagnostics } from "../../cache-status/diagnosticCounts";
 import type {
-    ActionDiffOperationPayload,
     ImportEventHandler,
     ImportEvent,
 } from "../../../importer/importEvents";
 import { importProgressKey } from "../../../importer/progress/keys";
 import { initialReducerState, reduce } from "../../../importer/progress/reducer";
 import { traceProgressEvent } from "../../../importer/progress/trace";
-import { invalidateSourceDiffForImportable } from "../../state/sourceDiff";
+import { invalidateSourceDiffForImportable } from "../../code-view/sourceDiff";
 import { showToast } from "../../toast";
 import { isImportRunning, setImportRunning } from "../../../importer/runtimeState";
 import { gmcOnImportStart, playImportSuccessSound } from "../../../importer/sideEffects";
@@ -71,10 +72,9 @@ import { resetEventContainers } from "../../../tasks/specifics/waitFor";
 import { flushMenuWaitTickSummary } from "../../../importer/gui/menuWait";
 import {
     applyComplete,
-    clearLiveOverlay,
     finalizeFromSource,
     markHeadApplied,
-    markLiveCompleted,
+    markMatch,
     markPlannedAdd,
     markPlannedDelete,
     markPlannedEdit,
@@ -82,14 +82,11 @@ import {
     previewLineIdForPath,
     primeWithCache,
     resetPreview,
-    setLiveCurrent,
-    setLiveState,
+    setCurrent,
     setLiveSummary,
     setObservedTopLevel,
-    setPlannedOp,
-} from "../../state/livePreview";
-import { setFocusLineId } from "../../state/focusedLine";
-import { ACTION_MAPPINGS } from "../../../importer/fields/actionMappings";
+} from "./livePreview";
+import { setFocusLineId } from "./focusedLine";
 
 export const CAPTURE_TYPES: CaptureType[] = ["FUNCTION", "MENU"];
 
@@ -118,7 +115,7 @@ function formatElapsedSeconds(secs: number): string {
     return mm === 0 ? `${h}h` : `${h}h${mm}m`;
 }
 
-function refreshKnowledgeRows(): void {
+function refreshCacheStatusRows(): void {
     const uuid = getHousingUuid();
     if (uuid === null) return;
     const all: Importable[] = [];
@@ -134,7 +131,7 @@ function refreshKnowledgeRows(): void {
         }
     }
 
-    rebuildKnowledgeRows(uuid, all, /*progressive=*/ false);
+    rebuildCacheStatusRows(uuid, all, /*progressive=*/ false);
     autoTrackRefresh();
 }
 
@@ -163,38 +160,6 @@ export function queueModifiedFromParse(
             if (!isImportableChecked(key)) toggleImportableChecked(key);
         }
     }
-}
-
-function displayNameForActionType(type: Action["type"] | null): string {
-    return type === null ? "Unknown Action" : ACTION_MAPPINGS[type].displayName;
-}
-
-function operationVerb(op: ActionDiffOperationPayload["op"]): string {
-    if (op === "add") return "Add";
-    if (op === "edit") return "Edit";
-    if (op === "move") return "Move";
-    return "Delete";
-}
-
-function operationLabel(event: ActionDiffOperationPayload): string {
-    const name = displayNameForActionType(event.actionType);
-    if (event.op === "move") {
-        return `${operationVerb(event.op)} ${name} -> #${event.toIndex + 1}`;
-    }
-    return `${operationVerb(event.op)} ${name}`;
-}
-
-function operationDetail(event: ActionDiffOperationPayload): string {
-    if (event.op === "add") return "add source action";
-    if (event.op === "move") return `#${event.fromIndex + 1} -> #${event.toIndex + 1}`;
-    if (event.op === "edit") {
-        return event.fieldsChanged.length === 0 ? "fields changed" : event.fieldsChanged.join(", ");
-    }
-    return "delete source action";
-}
-
-function readingLabel(actionType: Action["type"] | null): string {
-    return `Reading ${displayNameForActionType(actionType)}`;
 }
 
 const BODY_LIST_PROPS: Record<string, true> = {
@@ -256,7 +221,6 @@ function createImportEventHandler(args: {
             activeViewPath =
                 imp === null ? null : (importableSourcePath(imp, args.parsed) ?? null);
             if (activeViewPath !== null) {
-                clearLiveOverlay(activeViewPath);
                 resetPreview(activeViewPath);
                 primeWithCache(activeViewPath, e.cached, { shellOnly: !args.trustMode });
             }
@@ -264,7 +228,7 @@ function createImportEventHandler(args: {
         importableFinished: (e) => {
             const imp = importablesByKey.get(e.key);
             if (imp !== undefined) {
-                refreshKnowledgeRowFromDisk(args.housingUuid, imp);
+                refreshCacheStatusRowFromDisk(args.housingUuid, imp);
                 if (e.status === "imported") {
                     invalidateSourceDiffForImportable(imp, args.parsed);
                 }
@@ -287,8 +251,7 @@ function createImportEventHandler(args: {
         readStarted: () => {},
         nestedReadStarted: (e) => {
             if (activeViewPath === null) return;
-            const label = readingLabel(e.actionType);
-            setLiveCurrent(activeViewPath, e.path, label);
+            setCurrent(activeViewPath, e.path);
             setFocusLineId(activeViewPath, previewLineIdForPath(activeViewPath, e.path));
         },
         diffPlanned: (e) => {
@@ -302,10 +265,9 @@ function createImportEventHandler(args: {
                     continue;
                 }
                 if (op.op === "edit" && !editAffectsHeadLine(op.fieldsChanged)) {
-                    setLiveState(activeViewPath, op.path, "match");
+                    markMatch(activeViewPath, op.path);
                     continue;
                 }
-                setPlannedOp(activeViewPath, op.path, op.op, operationLabel(op), operationDetail(op));
                 if (op.op === "add") {
                     markPlannedAdd(activeViewPath, op.path, op.desired, op.toIndex);
                 } else if (op.op === "edit") {
@@ -314,28 +276,24 @@ function createImportEventHandler(args: {
                     markPlannedMove(activeViewPath, op.path, op.fromIndex, op.toIndex);
                 }
             }
-            for (const p of e.matches) setLiveState(activeViewPath, p, "match");
+            for (const p of e.matches) markMatch(activeViewPath, p);
         },
         operationStarted: (e) => {
             if (activeViewPath === null) return;
-            setLiveCurrent(activeViewPath, e.path, operationLabel(e));
+            setCurrent(activeViewPath, e.path);
             if (e.op === "edit" && !editAffectsHeadLine(e.fieldsChanged)) {
-                setLiveState(activeViewPath, e.path, "match");
-            } else {
-                setPlannedOp(activeViewPath, e.path, e.op, operationLabel(e), "");
+                markMatch(activeViewPath, e.path);
             }
             setFocusLineId(activeViewPath, previewLineIdForPath(activeViewPath, e.path));
         },
         operationCompleted: (e) => {
             if (activeViewPath === null) return;
-            setLiveState(activeViewPath, e.path, e.finalState);
-            markLiveCompleted(activeViewPath, e.path);
-            setLiveCurrent(activeViewPath, null, "");
+            setCurrent(activeViewPath, null);
             applyComplete(activeViewPath, e.path, e.finalState, e.op);
         },
         listSyncCompleted: () => {
             if (activeViewPath === null) return;
-            setLiveCurrent(activeViewPath, null, "");
+            setCurrent(activeViewPath, null);
             setFocusLineId(activeViewPath, null);
         },
         observedSnapshot: (e) => {
@@ -613,7 +571,7 @@ export function startImport(explicit?: readonly QueueItem[]): void {
             stopPacketOrderProbe();
             flushMenuWaitTickSummary();
             setActiveImportPath(null);
-            refreshKnowledgeRows();
+            refreshCacheStatusRows();
             setImportRunning(false);
             const elapsed = formatElapsedSeconds((Date.now() - startedAt) / 1000);
             if (cancelled) {

@@ -7,11 +7,9 @@ import { removedFormatting } from "../utils/helpers";
  * Hypixel's `/wtfmap` reply looks like
  *   "You are currently playing on <UUID> ...".
  *
- * Extracted from the item importer (see ImportableItem flow) so that both
- * the importer's post-sync cache write and the exporter can address the
- * same per-housing cache directory without a second `/wtfmap` round trip
- * each time. Callers should cache the returned UUID for the lifetime of
- * a task — the value is stable while the player stays in the same housing.
+ * Callers should hold onto the returned UUID for the lifetime of a task
+ * rather than calling this repeatedly: the value is stable while the player
+ * stays in the same housing, and each call costs a `/wtfmap` round trip.
  */
 export async function getCurrentHousingUuid(ctx: TaskContext): Promise<string> {
     await ctx.runCommand("/wtfmap");

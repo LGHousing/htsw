@@ -10,7 +10,7 @@ import {
     removeFromQueueKey,
     toggleQueue,
     type QueueItem,
-} from "./queue";
+} from "../right-panel/import-tab/queue";
 
 /**
  * Build the queue-control entry for a file path. Resolves the path
@@ -49,7 +49,7 @@ function queueActionForPath(filePath: string): MenuAction {
             if (allQueued) {
                 for (const it of items) removeFromQueueKey(queueItemKey(it));
             } else {
-                for (const it of items) toggleQueue(it); // adds if missing
+                for (const it of items) toggleQueue(it);
             }
         },
     };

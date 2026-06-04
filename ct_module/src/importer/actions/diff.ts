@@ -53,16 +53,15 @@ type ConditionEntry = {
 const NOTE_ONLY_COST = 1;
 const UNREAD_NESTED_ACTION_COST = 1000;
 
-// Real input costs per field kind (based on actual helper implementations)
-// These represent the number of server interactions when a field needs changing.
+// How many server interactions it takes to change a field of each kind.
 const FIELD_KIND_COST: Record<string, number> = {
-    boolean: 1,   // setBooleanValue: 1 click (toggle)
-    cycle: 2,     // setCycleValue: avg ~2 clicks (shortest direction)
-    select: 2,    // setSelectValue: 1 click open submenu + 1 click option
+    boolean: 1,   // one click to toggle
+    cycle: 2,     // ~2 clicks, cycling the shortest direction
+    select: 2,    // open the submenu, click the option
     location: 2,
-    value: 2,     // setStringValue/setNumberValue: 1 click field + 1 chat/anvil input
-    item: 2,      // setItemValue: 1 click field + 1 click item
-    nestedList: 50, // recursive sync — extremely expensive
+    value: 2,     // click the field, then type the value
+    item: 2,      // click the field, then click the item
+    nestedList: 50, // syncs a whole sub-list — far more work than any scalar
 };
 
 // Fixed overhead for opening an action editor and going back (only paid if any field differs)

@@ -30,8 +30,11 @@ import {
 } from "../../lib/theme";
 
 const GLYPH_CARET = "▶";
-import { clearImportableChecks, getKnowledgeRows, getQueueItemRunState, isCurrentHouseTrusted, isCurrentQueueItem, isImportableChecked, toggleImportableChecked } from "../../state";
-import { importableKey } from "../../../importCache/paths";
+import { clearImportableChecks, isCurrentHouseTrusted, isImportableChecked, toggleImportableChecked } from "../../state";
+import { getCacheStatusRows } from "../../cache-status/rows";
+import { getQueueItemRunState, isCurrentQueueItem } from "./importProgress";
+import { importableIdentity, importableKey } from "../../../importCache/paths";
+import { findCacheRowIndex } from "../../../importCache/status";
 import {
     clearQueue,
     getQueueLength,
@@ -39,9 +42,8 @@ import {
     queueItemKey,
     removeFromQueueKey,
     type QueueItem,
-} from "../../state/queue";
-import { parseImportJsonAt } from "../../state/parses";
-import { importableIdentity } from "../../../importCache/paths";
+} from "./queue";
+import { parseImportJsonAt } from "../../parsing/parses";
 import { orderImportablesForImportSession } from "../../../importables/importSession";
 import { isImportRunning } from "../../../importer/runtimeState";
 import { phaseSegment } from "./progressPanel";
@@ -49,13 +51,9 @@ import { phaseSegment } from "./progressPanel";
 function willBeSkipped(item: QueueItem): boolean {
     if (!isCurrentHouseTrusted()) return false;
     if (item.kind !== "importable") return false;
-    const rows = getKnowledgeRows();
-    for (let i = 0; i < rows.length; i++) {
-        if (rows[i].identity === item.identity && rows[i].importable.type === item.type) {
-            return rows[i].state === "current";
-        }
-    }
-    return false;
+    const rows = getCacheStatusRows();
+    const index = findCacheRowIndex(rows, item.identity, item.type);
+    return index >= 0 && rows[index].state === "current";
 }
 
 const collapsedQueueImportJsonRows: Set<string> = new Set();

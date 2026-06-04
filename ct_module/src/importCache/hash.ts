@@ -6,16 +6,16 @@ import { canonicalStringify } from "../importer/fields/compare";
 /**
  * Importable-cache hashing.
  *
- * The exporter writes an importable cache entry after a fresh GUI read; the
- * importer writes one after every successful sync. Both must produce
- * **identical** hashes for identical importables, otherwise the
- * future trust-mode will treat them as drift.
+ * The exporter writes a cache entry after a fresh GUI read; the importer
+ * writes one after every successful sync. Both must produce **identical**
+ * hashes for identical importables — otherwise a later run would think the
+ * importable had changed when it hadn't, and redo work it could have skipped.
  *
- * To keep that invariant, we feed every value through the same
- * `normalizeActionCompare` / `normalizeConditionCompare` that the importer
- * already uses for its diff equality checks. As long as those two
- * normalizers stay equivalent (they're literally the same function via
- * `normalizeValue`), the hash and the diff comparator cannot drift apart.
+ * To keep that guarantee, every value flows through the same
+ * `normalizeActionCompare` / `normalizeConditionCompare` the importer uses
+ * for its diff equality checks. As long as those two normalizers stay
+ * equivalent (they're the same function via `normalizeValue`), the hash and
+ * the diff comparator cannot disagree about whether two importables match.
  */
 
 /** Hex-encoded 53-bit cyrb53 digest, prefixed with "0x" for clarity in JSON. */
@@ -32,9 +32,9 @@ export function actionHash(action: Action): string {
 export function conditionHash(cond: Condition): string {
     return hashHex(canonicalStringify(cond));
 }/**
- * Per-slot hashes for an action list. These are written into the cache
- * so a future trust-mode can verify a single sub-tree without a deep
- * structural comparison.
+ * One hash per action in the list. Stored in the cache so a single action
+ * list can later be checked for changes by comparing hashes, without walking
+ * and comparing the whole action tree.
  */
 function perSlotActionHashes(actions: readonly Action[]): string[] {
     return actions.map(actionHash);
@@ -44,7 +44,7 @@ function perSlotActionHashes(actions: readonly Action[]): string[] {
  * Walk an action list and emit `{ <path>: hashes[] }` for every reachable
  * action list (top-level + every nested ifActions/elseActions/RANDOM body).
  *
- * Path syntax matches the cache schema in the design doc:
+ * Each key is a dotted path locating that list within the importable:
  *   "actions"
  *   "actions[3].ifActions"
  *   "actions[3].elseActions"
@@ -133,9 +133,9 @@ export function listHashes(importable: Importable): Record<string, string[]> {
 }
 
 /**
- * Hash the entire importable. Caller-facing canonical fingerprint —
- * this is what the future trust-mode compares first to decide whether
- * a deep equality check is needed at all.
+ * Hash the entire importable into one fingerprint. A later run compares this
+ * first: if it matches the cached value, the importable is unchanged and no
+ * action-by-action comparison is needed.
  */
 export function importableHash(importable: Importable): string {
     const keys = Object.keys(importable).sort();

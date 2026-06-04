@@ -2,10 +2,7 @@ import { Diagnostic } from "htsw";
 import { Importable } from "htsw/types";
 
 import TaskContext from "../tasks/context";
-import { IMPORT_DEBUG } from "../importer/diagnostics/importDebug";
 import {
-    getCurrentHousingUuid,
-    writeImportableCache,
     type ImportableTrustPlan,
 } from "../importCache";
 import {
@@ -40,11 +37,10 @@ export type ImportTrustOptions = {
     plan?: ImportableTrustPlan;
     events?: ImportEventHandler;
     /**
-     * Session-level housing UUID. When provided, `maybeWriteImportCache`
-     * skips the `/wtfmap` round trip — the session already resolved the
-     * UUID once at the top of the import. Avoids N extra `/wtfmap` calls
-     * for an N-importable run AND removes a likely silent-failure path
-     * (chat-busy timeouts on per-importable lookups).
+     * Session-level housing UUID, resolved once at the top of the import.
+     * Handed to ITEM preread (it needs the UUID for its per-NBT cache) so it
+     * skips a per-importable `/wtfmap` round trip — avoiding N extra lookups
+     * for an N-importable run AND a chat-busy silent-failure path.
      */
     housingUuid?: string;
 };
@@ -125,53 +121,29 @@ export async function applyImportablePlan(
     itemRegistry: ItemRegistry,
     options?: ImportTrustOptions
 ): Promise<void> {
+    // The importer cache write for a freshly-applied importable is owned by the
+    // orchestrator (importSession), which is this function's only caller and
+    // the one place that knows an importable reached a known-good state. ITEM
+    // is the exception: it manages its own per-NBT cache inside its apply.
     switch (plan.kind) {
         case "FUNCTION":
             await applyImportableFunctionPlan(ctx, plan, itemRegistry, options?.events);
-            await maybeWriteImportCache(ctx, plan.importable, options?.housingUuid);
             return;
         case "EVENT":
             await applyImportableEventPlan(ctx, plan, itemRegistry, options?.events);
-            await maybeWriteImportCache(ctx, plan.importable, options?.housingUuid);
             return;
         case "REGION":
             await applyImportableRegionPlan(ctx, plan, itemRegistry, options?.events);
-            await maybeWriteImportCache(ctx, plan.importable, options?.housingUuid);
             return;
         case "MENU":
             await applyImportableMenuPlan(ctx, plan, itemRegistry, options?.events);
-            await maybeWriteImportCache(ctx, plan.importable, options?.housingUuid);
             return;
         case "ITEM":
-            // Items manage their own per-NBT cache; skip the generic write.
             await applyImportableItemPlan(ctx, plan, itemRegistry, options?.events);
             return;
         default: {
             const _exhaustiveCheck: never = plan;
             return _exhaustiveCheck;
-        }
-    }
-}
-
-/**
- * Resolve the housing UUID and persist a cache entry for the just-
- * imported importable. Best-effort: any failure (no /wtfmap reply,
- * filesystem error) is logged and swallowed — the cache is a hint, not
- * a contract, so it must not abort a successful import.
- */
-async function maybeWriteImportCache(
-    ctx: TaskContext,
-    importable: Importable,
-    cachedUuid?: string
-): Promise<void> {
-    try {
-        const housingUuid = cachedUuid ?? (await getCurrentHousingUuid(ctx));
-        writeImportableCache(ctx, housingUuid, importable, "importer");
-    } catch (error) {
-        if (IMPORT_DEBUG) {
-            ctx.displayMessage(
-                `&7[knowledge] &eSkipped cache write for ${importable.type}: ${error}`
-            );
         }
     }
 }

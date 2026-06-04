@@ -85,8 +85,13 @@ export type Observed<T> = {
 
 export type ObservedActionSlot = {
     index: number;
-    slotId: number;
-    slot: ItemSlot;
+    /**
+     * Live menu slot for this observation. Absent when the entry is a reused
+     * observation (e.g. a nested list hydrated in an earlier pass): the apply
+     * path re-acquires slots by index, so a reused entry needs no live slot.
+     */
+    slotId?: number;
+    slot?: ItemSlot;
     action: Observed<Action> | null;
     nestedReadState?: NestedReadState;
     nestedSummaries?: NestedSummaries;
@@ -95,8 +100,8 @@ export type ObservedActionSlot = {
 
 export type ObservedConditionSlot = {
     index: number;
-    slotId: number;
-    slot: ItemSlot;
+    slotId?: number;
+    slot?: ItemSlot;
     condition: Condition | null;
 };
 

@@ -33,7 +33,7 @@ import {
     setCycleValue,
     setSelectValue,
     setStringValue,
-} from "../gui/menuFlows";
+} from "../gui/menuUtils";
 import { waitForMenu } from "../gui/menuWait";
 import { removedFormatting } from "../../utils/helpers";
 import {

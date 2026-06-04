@@ -5,12 +5,12 @@ import { Button, Col, Container, Icon, Row, Scroll, Text } from "../../lib/compo
 import { Icons } from "../../lib/icons.generated";
 import {
     getHousingUuid,
-    getKnowledgeRows,
     isHouseTrusted,
     setHousingUuid,
     setHouseTrust,
 } from "../../state";
-import { STATUS_COLOR, STATUS_LABEL } from "../../knowledge-status";
+import { getCacheStatusRows, setCacheStatusRows } from "../../cache-status/rows";
+import { STATUS_COLOR, STATUS_LABEL } from "../../cache-status";
 import { GLYPH_DOT } from "../../lib/theme";
 import { getCurrentHousingUuid } from "../../../importCache/housingId";
 import { getAlias, listAliases } from "../../../importCache/aliases";
@@ -20,7 +20,6 @@ import { TaskManager } from "../../../tasks/manager";
 import { IMPORT_CACHE_ROOT } from "../../../importCache/paths";
 import { deleteHousingCache } from "../../../importCache/cache";
 import { clearAlias } from "../../../importCache/aliases";
-import { setKnowledgeRows } from "../../state";
 import { javaType } from "../../lib/java";
 import {
     COLOR_BUTTON,
@@ -105,7 +104,7 @@ function deleteHouse(uuid: string): void {
     setHouseTrust(uuid, false);
     if (getHousingUuid() === uuid) {
         setHousingUuid(null);
-        setKnowledgeRows([]);
+        setCacheStatusRows([]);
     }
     const label = getAlias(uuid) ?? shortUuid(uuid);
     if (ok) ChatLib.chat(`&a[htsw] Removed tracked house ${label}.`);
@@ -205,7 +204,7 @@ function houseRow(uuid: string): Element {
     });
 }
 
-function knowledgeRow(row: ReturnType<typeof getKnowledgeRows>[number]): Element {
+function knowledgeRow(row: ReturnType<typeof getCacheStatusRows>[number]): Element {
     const label = row.importable.type === "EVENT" ? row.importable.event : row.importable.name;
     return Container({
         style: {
@@ -243,7 +242,7 @@ function knowledgeRowsSection(): Element {
         style: { gap: 4, height: { kind: "grow" } },
         children: () => {
             const uuid = getHousingUuid();
-            const rows = getKnowledgeRows();
+            const rows = getCacheStatusRows();
             const out: Element[] = [
                 Text({
                     text: () => {

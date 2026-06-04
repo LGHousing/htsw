@@ -15,7 +15,7 @@ import {
     readBooleanValue,
     setListItemNote,
     setNoteOnLastVisibleSlot,
-} from "../gui/menuFlows";
+} from "../gui/menuUtils";
 import { timedWaitForMenu } from "../gui/menuWait";
 import { ItemSlot, MouseButton } from "../../tasks/specifics/slots";
 import { removedFormatting } from "../../utils/helpers";
@@ -87,8 +87,9 @@ async function importCondition(
     await writeOpenCondition(ctx, condition, undefined, itemRegistry);
 
     await setOpenConditionInverted(ctx, condition.inverted === true);
-    // we ALWAYS click go back because every single condition has
-    // the invert toggle so opens a submenu, this is not the case for actions
+    // Always click back: every condition editor has an invert toggle, so the
+    // editor is always open here. Actions don't have that toggle, so they
+    // can't assume the same.
     await clickGoBack(ctx);
 
     await setNoteOnLastVisibleSlot(ctx, condition.note);

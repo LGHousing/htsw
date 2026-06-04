@@ -2,7 +2,7 @@
 
 import { Container, Text } from "../lib/components";
 import type { Element } from "../lib/layout";
-import { COLOR_BY_STATE, ROW_BG_BY_STATE, type DiffState } from "../state/diffPalette";
+import { COLOR_BY_STATE, COLOR_CURSOR, ROW_BG_BY_STATE, type DiffState } from "./diffPalette";
 import { CodeViewColors } from "./lineModel";
 import type { LineDecorations, RenderableLine, TokenSpan } from "./lineTypes";
 import { joinTokenText, wrapTokensIntoVisualRows } from "./wrap";
@@ -24,8 +24,10 @@ const STATE_GLYPH: { [k in DiffState]: string } = {
     edit: "~",
     delete: "-",
     add: "+",
-    current: "▶",
 };
+
+/** Glyph drawn in the focus gutter on the line the importer is currently on. */
+const CURSOR_GLYPH = "▶";
 
 function padLeft(s: string, width: number): string {
     let out = s;
@@ -135,8 +137,8 @@ function buildVisualLineRow(
 
     const alpha = dec.alpha !== undefined ? dec.alpha : 1;
 
-    const cursorGlyphText = isFocused ? STATE_GLYPH["current"] : " ";
-    const cursorGlyphColor = COLOR_BY_STATE["current"];
+    const cursorGlyphText = isFocused ? CURSOR_GLYPH : " ";
+    const cursorGlyphColor = COLOR_CURSOR;
     const stateGlyphText = dec.state !== undefined ? STATE_GLYPH[state] : " ";
     const stateGlyphColor =
         dec.state !== undefined

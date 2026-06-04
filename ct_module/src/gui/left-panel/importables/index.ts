@@ -14,8 +14,8 @@ import {
     setImportJsonPath,
 } from "../../state";
 import { COLOR_TEXT_DIM } from "../../lib/theme";
-import { scheduleReparse } from "../../state/reparse";
-import { addRecent, getRecents } from "../../state/recents";
+import { scheduleReparse } from "../../parsing/reparse";
+import { addRecent, getRecents } from "../../persistence/recents";
 import { normalizeHtswPath } from "../../lib/pathDisplay";
 import { ACTIVE_BG, ACTIVE_HOVER_BG, ROW_BG, ROW_HOVER_BG } from "./rowModel";
 import { queueSourcePath } from "./source";

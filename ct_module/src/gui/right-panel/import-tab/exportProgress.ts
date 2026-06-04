@@ -1,4 +1,4 @@
-/// <reference types="../../../CTAutocomplete" />
+/// <reference types="../../../../CTAutocomplete" />
 
 /**
  * GUI-driving implementation of `ExportProgressSink`. Reuses the import
@@ -11,10 +11,10 @@
 
 import type { Importable } from "htsw/types";
 
-import type { ImportableEntry, ImportProgressActive } from "../../importer/progress/types";
-import { importProgressKey } from "../../importer/progress/keys";
-import { setImportRunning } from "../../importer/runtimeState";
-import type { ExportProgressSink } from "../../exporter/exportProgress";
+import type { ImportableEntry, ImportProgressActive } from "../../../importer/progress/types";
+import { importProgressKey } from "../../../importer/progress/keys";
+import { setImportRunning } from "../../../importer/runtimeState";
+import type { ExportProgressSink } from "../../../exporter/exportProgress";
 import { createImportProgress, setImportProgress, setSessionVerb } from "./importProgress";
 import { addToQueue, queueItemKey, removeFromQueueKey, type QueueItem } from "./queue";
 

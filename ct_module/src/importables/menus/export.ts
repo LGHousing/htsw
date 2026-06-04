@@ -5,9 +5,9 @@ import {
     clickGoBack,
     readCurrentValue,
     readSelectedOption,
-} from "../../importer/gui/menuFlows";
+} from "../../importer/gui/menuUtils";
 import { waitForMenu } from "../../importer/gui/menuWait";
-import { getCurrentHousingUuid, writeImportableCache } from "../../importCache";
+import { tryWriteImportableCache } from "../../importCache";
 import TaskContext from "../../tasks/context";
 import { getAllItemSlots } from "../../tasks/specifics/slots";
 import { ensureParentDirs } from "../../utils/filesystem";
@@ -128,8 +128,8 @@ export async function exportMenu(
         const snbtRel = `${menuRel}/slot-${slotId}.snbt`;
         const snbtAbs = `${menuAbs}/slot-${slotId}.snbt`;
         // FileLib.write doesn't create parent dirs. ensureParentDirs is
-        // idempotent (Files.exists short-circuits) so calling it per slot
-        // is cheap, and avoids dropping a sentinel-path workaround.
+        // idempotent (Files.exists short-circuits) so calling it once per slot
+        // is cheap.
         ensureParentDirs(snbtAbs);
         FileLib.write(snbtAbs, snbt, true);
 
@@ -187,12 +187,7 @@ export async function exportMenu(
         })),
     });
 
-    try {
-        const housingUuid = await getCurrentHousingUuid(ctx);
-        writeImportableCache(ctx, housingUuid, importable, "exporter");
-    } catch (error) {
-        ctx.displayMessage(`&7[export] &eCache write skipped: ${error}`);
-    }
+    await tryWriteImportableCache(ctx, importable, "exporter");
 
     ctx.displayMessage(
         `&aExported menu '${name}' (${slots.length} slot${slots.length === 1 ? "" : "s"})`

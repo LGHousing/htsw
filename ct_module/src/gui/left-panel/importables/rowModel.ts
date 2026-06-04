@@ -27,15 +27,7 @@ type ResultScript = { type: "script"; path: string; fullPath: string };
 type ResultItem = { type: "item"; path: string; fullPath: string };
 export type Result = ResultImport | ResultScript | ResultItem;
 
-export const TYPE_COLORS: { [k in ResultType]: number } = {
-    import: 0xff67a7e8 | 0,
-    script: 0xff62d26f | 0,
-    item: 0xffe5bc4b | 0,
-};
-
-// Per-importable type colors. Mirrors the swatch the old Importables tab
-// painted next to each row so file kinds (above) stay visually distinct
-// from importable kinds.
+// The colored bar shown on each importable row, by importable kind.
 export const IMPORTABLE_TYPE_COLORS: { [k in Importable["type"]]: number } = {
     FUNCTION: 0xff67a7e8 | 0,
     EVENT: 0xffce7be0 | 0,

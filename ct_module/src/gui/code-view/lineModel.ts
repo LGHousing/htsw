@@ -5,8 +5,8 @@ import type { SourceFile, SpanTable } from "htsw";
 
 import { getMtimeMs } from "../lib/java";
 import { FileSystemFileLoader } from "../../utils/fileLoaders";
-import { actionsToLines, parseHtslFile, type HtslLine } from "../state/htslParse";
-import { getParsedResult } from "../state";
+import { actionsToLines, parseHtslFile, type HtslLine } from "./htslParse";
+import { getParsedResult } from "../state/parsed";
 import { tokenizeHtsl, type SyntaxToken } from "../right-panel/syntax";
 import type { FieldSpan, RenderableLine, TokenSpan } from "./lineTypes";
 

@@ -2,7 +2,7 @@
 
 import type { ParseResult } from "htsw";
 import type { Importable } from "htsw/types";
-import { getParsedResult } from "./index";
+import { getParsedResult } from "../state/index";
 
 /**
  * Centralized importable→path lookups.
@@ -128,6 +128,9 @@ export function importableSubListPath(
     if (parsed === null || parsed === undefined) return undefined;
     const list = subListOf(imp, kind);
     if (list === undefined) return undefined;
+    const sourceFiles = parsed.gcx.sourceFiles as unknown as Map<object, string>;
+    const fromListSource = sourceFiles.get(list);
+    if (fromListSource !== undefined) return fromListSource;
     if (list.length === 0) return actionPathFromFieldSpan(parsed, imp, kind);
     // The first action's span resolves through the SourceMap to whatever
     // file the actions live in: an htsl when the list was materialized

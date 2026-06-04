@@ -24,7 +24,7 @@ import {
 } from "./importer/progress/trace";
 import { getCurrentHousingUuid } from "./importCache";
 import { startImport } from "./gui/right-panel/import-tab/importController";
-import { canonicalPath } from "./gui/state/parses";
+import { canonicalPath } from "./gui/parsing/parses";
 import { snbtFromItem } from "./importer/itemCapture";
 import {
     defaultExportRoot,

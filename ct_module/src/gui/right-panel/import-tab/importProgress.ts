@@ -1,4 +1,4 @@
-/// <reference types="../../../CTAutocomplete" />
+/// <reference types="../../../../CTAutocomplete" />
 
 /**
  * Import-session progress state. Owns the `ImportProgress` object that the
@@ -12,19 +12,19 @@
 
 import type { Importable } from "htsw/types";
 
-import type { ImportProgress, ImportableEntry } from "../../importer/progress/types";
-import { importProgressKey } from "../../importer/progress/keys";
+import type { ImportProgress, ImportableEntry } from "../../../importer/progress/types";
+import { importProgressKey } from "../../../importer/progress/keys";
 import {
     createEtaCalculator,
     currentMsPerUnit,
     type EtaCalculator,
-} from "../../importer/progress/eta";
-import { setProgressTraceSampler } from "../../importer/progress/trace";
-import { resetSessionTiming } from "../../importer/progress/timing";
-import { importableIdentity } from "../../importCache/paths";
+} from "../../../importer/progress/eta";
+import { setProgressTraceSampler } from "../../../importer/progress/trace";
+import { resetSessionTiming } from "../../../importer/progress/timing";
+import { importableIdentity } from "../../../importCache/paths";
 import type { QueueItem } from "./queue";
-import { canonicalPath } from "./parses";
-import { onImportRunningChanged } from "./selection";
+import { canonicalPath } from "../../parsing/parses";
+import { onImportRunningChanged } from "../selection";
 
 // Feed the progress trace's periodic sampler the *displayed* ETA values, so
 // `/htsw eta trace` captures what the user sees between events (the smoothing

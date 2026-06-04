@@ -2,7 +2,7 @@ import { TaskManager } from "../tasks/manager";
 import { exportImportable } from "../importables/exports";
 import { exportAllFunctions } from "../importables/functions/exportAll";
 import { exportAllEvents } from "../importables/events/exportAll";
-import { createExportProgressSink } from "../gui/state/exportProgress";
+import { createExportProgressSink } from "../gui/right-panel/import-tab/exportProgress";
 import { getCurrentHousingUuid } from "../importCache";
 import {
     defaultExportRoot,

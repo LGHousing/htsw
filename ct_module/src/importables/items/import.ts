@@ -3,14 +3,13 @@ import type { Action, ImportableItem } from "htsw/types";
 import { syncActionList } from "../../importer/actions/sync";
 import type { ImportEventHandler } from "../../importer/importEvents";
 import { createSetupStepEmitter } from "../../importer/progress/setupStepEmitter";
-import { clickGoBack } from "../../importer/gui/menuFlows";
-import { IMPORT_DEBUG } from "../../importer/diagnostics/importDebug";
+import { clickGoBack } from "../../importer/gui/menuUtils";
 import { timedWaitForMenu } from "../../importer/gui/menuWait";
 import {
     getCurrentHousingUuid,
     importableHash,
     itemSnbtCachePath,
-    writeImportableCache,
+    tryWriteImportableCache,
     type ImportableTrustPlan,
 } from "../../importCache";
 import TaskContext from "../../tasks/context";
@@ -165,14 +164,14 @@ async function importImportableItem(
     if (!hasItemClickActions(importable)) {
         await injectHeldItem(ctx, getItemFromNbt(importable.nbt));
         setup(`injected item ${importable.name}`);
-        writeItemCache(ctx, uuid, importable);
+        await tryWriteImportableCache(ctx, importable, "importer", uuid);
         return;
     }
 
     const hash = importableHash(importable);
     const cachePath = itemSnbtCachePath(uuid, hash);
     if (FileLib.exists(cachePath)) {
-        writeItemCache(ctx, uuid, importable);
+        await tryWriteImportableCache(ctx, importable, "importer", uuid);
         return;
     }
 
@@ -204,7 +203,7 @@ async function importImportableItem(
 
     ensureParentDirs(cachePath);
     FileLib.write(cachePath, snbt, true);
-    writeItemCache(ctx, uuid, importable);
+    await tryWriteImportableCache(ctx, importable, "importer", uuid);
 }
 
 function chooseItemStart(
@@ -363,16 +362,3 @@ function actionListToSync(
     return undefined;
 }
 
-function writeItemCache(
-    ctx: TaskContext,
-    housingUuid: string,
-    importable: ImportableItem
-): void {
-    try {
-        writeImportableCache(ctx, housingUuid, importable, "importer");
-    } catch (error) {
-        if (IMPORT_DEBUG) {
-            ctx.displayMessage(`&7[knowledge] &eSkipped cache write for ITEM: ${error}`);
-        }
-    }
-}

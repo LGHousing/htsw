@@ -10,35 +10,35 @@ import { Icons } from "../../lib/icons.generated";
 import { openMenu, MenuAction } from "../../lib/menu";
 import { openRenameImportablePopover } from "../../popovers/rename-importable";
 import {
-    getKnowledgeRows,
     isAutoTrackSource,
     isImportableChecked,
     toggleAutoTrackSource,
     toggleImportableChecked,
 } from "../../state";
+import { getCacheStatusRows } from "../../cache-status/rows";
 import { ACCENT_DANGER, ACCENT_SUCCESS, ACCENT_WARN, COLOR_TEXT_DIM, COLOR_TEXT_FAINT, GLYPH_DOT } from "../../lib/theme";
-import { diagnosticCountsFor, type SeverityCounts } from "../../state/diagnosticCounts";
+import { diagnosticCountsFor, type SeverityCounts } from "../../cache-status/diagnosticCounts";
 import { openEditFunctionFieldPopover } from "../../popovers/edit-function";
-import { STATUS_COLOR, STATUS_LABEL, knowledgeStateForImportable } from "../../knowledge-status";
+import { STATUS_COLOR, STATUS_LABEL, cacheStateForImportable } from "../../cache-status";
 import {
     allReferencedPaths,
     hasSubList,
     importableSourcePath,
     importableSubListPath,
     type SubListKind,
-} from "../../state/importablePaths";
+} from "../../parsing/importablePaths";
 import { importableIdentity, importableKey } from "../../../importCache/paths";
-import { addToQueue, makeImportableQueueItem, queueItemKey, removeFromQueueKey } from "../../state/queue";
+import { findCacheRowIndex } from "../../../importCache/status";
+import { addToQueue, makeImportableQueueItem, queueItemKey, removeFromQueueKey } from "../../right-panel/import-tab/queue";
 import { isImportRunning } from "../../../importer/runtimeState";
-import { composeFileMenu, composeImportableMenu } from "../../state/fileMenu";
+import { composeFileMenu, composeImportableMenu } from "../../menus/fileMenu";
 import { autoTrackRefresh, queueModifiedFromParse } from "../../right-panel/import-tab/importController";
 import { SourceDir, SourceFile, removeSource } from "./source";
 import { showInExplorer, openInVSCode } from "../../../utils/osShell";
-import { previewSelect, confirmSelect } from "../../state/selection";
+import { previewSelect, confirmSelect } from "../../right-panel/selection";
 import {
     Result,
     ResultImport,
-    TYPE_COLORS,
     IMPORTABLE_TYPE_COLORS,
     ROW_BG,
     ROW_HOVER_BG,
@@ -97,14 +97,12 @@ function formatPos(p: { x: number; y: number; z: number }): string {
 }
 
 function getCachedImportable(imp: Importable): Importable | null {
-    const rows = getKnowledgeRows();
+    const rows = getCacheStatusRows();
     const id = importableIdentity(imp);
-    for (let i = 0; i < rows.length; i++) {
-        if (rows[i].identity === id && rows[i].importable.type === imp.type && rows[i].entry !== null) {
-            return rows[i].entry!.importable;
-        }
-    }
-    return null;
+    const index = findCacheRowIndex(rows, id, imp.type);
+    if (index < 0) return null;
+    const entry = rows[index].entry;
+    return entry === null ? null : entry.importable;
 }
 
 function valDiff(a: unknown, b: unknown): FieldDiff | undefined {
@@ -332,14 +330,6 @@ export function resultRow(
         }),
         onDoubleClick: () => confirmSelect(r.fullPath),
         children: [
-            Container({
-                style: {
-                    width: { kind: "px", value: 12 },
-                    height: { kind: "px", value: 12 },
-                    background: TYPE_COLORS[r.type],
-                },
-                children: [],
-            }),
             Text({
                 text: labelOverride ?? r.path,
                 style: { width: { kind: "grow" } },
@@ -415,11 +405,9 @@ function toggleImportableInQueue(
 
 export function importableRow(parent: ResultImport, imp: Importable): Element {
     const previewPath = importablePreviewPath(parent, imp);
-    // null = no knowledge row built yet (mid-rebuild / pre-build) → a neutral
-    // dot, NOT red. Red is reserved for a genuine cache "unknown".
-    const knowState = knowledgeStateForImportable(imp);
-    const dotColor = knowState === null ? COLOR_TEXT_FAINT : STATUS_COLOR[knowState];
-    const dotLabel = knowState === null ? "loading…" : STATUS_LABEL[knowState];
+    const cacheState = cacheStateForImportable(imp);
+    const dotColor = cacheState === null ? COLOR_TEXT_FAINT : STATUS_COLOR[cacheState];
+    const dotLabel = cacheState === null ? "loading…" : STATUS_LABEL[cacheState];
     const expandable = isImportableExpandable(imp);
     const expKey = importableExpansionKey(parent.fullPath, imp);
     const expanded = importableExpansion.has(expKey);

@@ -31,8 +31,8 @@ import {
     SIZE_ROW_H,
 } from "../lib/theme";
 import { setImportJsonPath } from "../state";
-import { scheduleReparse } from "../state/reparse";
-import { addRecent } from "../state/recents";
+import { scheduleReparse } from "../parsing/reparse";
+import { addRecent } from "../persistence/recents";
 import { normalizeHtswPath } from "../lib/pathDisplay";
 import { queueSourcePath } from "../left-panel/importables/source";
 import { javaType } from "../lib/java";

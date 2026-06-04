@@ -5,7 +5,7 @@ import type { Importable } from "htsw/types";
 
 import { FileSystemFileLoader } from "../../utils/fileLoaders";
 import { getMtimeMs, javaType } from "../lib/java";
-import { invalidateSourceDiffForParse } from "./sourceDiff";
+import { invalidateSourceDiffForParse } from "../code-view/sourceDiff";
 import { allReferencedPaths } from "./importablePaths";
 import {
     buildLiteParseResult,
