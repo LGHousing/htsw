@@ -1,7 +1,7 @@
 import type { Action, Condition, Importable } from "htsw/types";
 
 import { cyrb53, stableStringify } from "../utils/helpers";
-import { canonicalStringify } from "../importer/fields/compare";
+import { canonicalStringify } from "../housingSync/fields/compare";
 
 /**
  * Importable-cache hashing.

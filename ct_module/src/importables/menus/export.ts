@@ -1,12 +1,12 @@
 import type { ImportableMenu, MenuSlot } from "htsw/types";
 
-import { readActionList } from "../../importer/actions/readList";
+import { readActionList } from "../../housingSync/actions/readList";
 import {
     clickGoBack,
     readCurrentValue,
     readSelectedOption,
-} from "../../importer/gui/menuUtils";
-import { waitForMenu } from "../../importer/gui/menuWait";
+} from "../../housingSync/gui/menuUtils";
+import { waitForMenu } from "../../housingSync/gui/menuWait";
 import { tryWriteImportableCache } from "../../importCache";
 import TaskContext from "../../tasks/context";
 import { getAllItemSlots } from "../../tasks/specifics/slots";

@@ -12,15 +12,15 @@
 
 import type { Importable } from "htsw/types";
 
-import type { ImportProgress, ImportableEntry } from "../../../importer/progress/types";
-import { importProgressKey } from "../../../importer/progress/keys";
+import type { ImportProgress, ImportableEntry } from "../../../housingSync/progress/types";
+import { importProgressKey } from "../../../housingSync/progress/keys";
 import {
     createEtaCalculator,
     currentMsPerUnit,
     type EtaCalculator,
-} from "../../../importer/progress/eta";
-import { setProgressTraceSampler } from "../../../importer/progress/trace";
-import { resetSessionTiming } from "../../../importer/progress/timing";
+} from "../../../housingSync/progress/eta";
+import { setProgressTraceSampler } from "../../../housingSync/progress/trace";
+import { resetSessionTiming } from "../../../housingSync/progress/timing";
 import { importableIdentity } from "../../../importCache/paths";
 import type { QueueItem } from "./queue";
 import { canonicalPath } from "../../parsing/parses";

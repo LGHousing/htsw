@@ -31,7 +31,7 @@ import {
     type RegionImportPlan,
 } from "./regions/import";
 import type { ItemRegistry } from "./itemRegistry";
-import type { ImportEventHandler } from "../importer/importEvents";
+import type { ImportEventHandler } from "../housingSync/importEvents";
 
 export type ImportTrustOptions = {
     plan?: ImportableTrustPlan;

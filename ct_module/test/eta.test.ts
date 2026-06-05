@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
-import { createEtaCalculator, type EtaCalculator } from "../src/importer/progress/eta";
-import type { ImportProgress } from "../src/importer/progress/types";
+import { createEtaCalculator, type EtaCalculator } from "../src/housingSync/progress/eta";
+import type { ImportProgress } from "../src/housingSync/progress/types";
 
 let now = 0;
 const realDateNow = Date.now;

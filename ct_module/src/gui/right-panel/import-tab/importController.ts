@@ -58,18 +58,18 @@ import { attributeDiagnostics } from "../../cache-status/diagnosticCounts";
 import type {
     ImportEventHandler,
     ImportEvent,
-} from "../../../importer/importEvents";
-import { importProgressKey } from "../../../importer/progress/keys";
-import { initialReducerState, reduce } from "../../../importer/progress/reducer";
-import { traceProgressEvent } from "../../../importer/progress/trace";
+} from "../../../housingSync/importEvents";
+import { importProgressKey } from "../../../housingSync/progress/keys";
+import { initialReducerState, reduce } from "../../../housingSync/progress/reducer";
+import { traceProgressEvent } from "../../../housingSync/progress/trace";
 import { invalidateSourceDiffForImportable } from "../../code-view/sourceDiff";
 import { showToast } from "../../toast";
-import { isImportRunning, setImportRunning } from "../../../importer/runtimeState";
-import { gmcOnImportStart, playImportSuccessSound } from "../../../importer/sideEffects";
-import { resetStepGate } from "../../../importer/stepGate";
-import { startPacketOrderProbe, stopPacketOrderProbe } from "../../../importer/diagnostics/packetOrderProbe";
+import { isImportRunning, setImportRunning } from "../../../housingSync/runtimeState";
+import { gmcOnImportStart, playImportSuccessSound } from "../../../housingSync/sideEffects";
+import { resetStepGate } from "../../../housingSync/stepGate";
+import { startPacketOrderProbe, stopPacketOrderProbe } from "../../../housingSync/diagnostics/packetOrderProbe";
 import { resetEventContainers } from "../../../tasks/specifics/waitFor";
-import { flushMenuWaitTickSummary } from "../../../importer/gui/menuWait";
+import { flushMenuWaitTickSummary } from "../../../housingSync/gui/menuWait";
 import {
     applyComplete,
     finalizeFromSource,

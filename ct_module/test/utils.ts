@@ -7,7 +7,7 @@ import type {
     ActionSendMessage,
 } from "htsw/types";
 
-import type { ObservedActionSlot } from "../src/importer/types";
+import type { ObservedActionSlot } from "../src/housingSync/types";
 
 // `index` is set explicitly because ObservedActionSlot tracks slot identity
 // (slotId, slot ref) — it isn't just the position in an array. Desired uses

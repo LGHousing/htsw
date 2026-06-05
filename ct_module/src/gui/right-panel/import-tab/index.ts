@@ -33,10 +33,10 @@ import {
     queueDisplayGroups,
     type QueueItem,
 } from "./queue";
-import { isImportRunning } from "../../../importer/runtimeState";
+import { isImportRunning } from "../../../housingSync/runtimeState";
 import { getAlias } from "../../../importCache/aliases";
 import { openAliasPopover } from "../../popovers/alias";
-import { getStepAuto, setStepAuto } from "../../../importer/stepGate";
+import { getStepAuto, setStepAuto } from "../../../housingSync/stepGate";
 import { liveImporterPanel } from "./progressPanel";
 import {
     isQueueImportJsonExpanded,

@@ -1,11 +1,11 @@
 import { Diagnostic, SourceMap, parseImportablesResult, type ParseResult } from "htsw";
 import type { Action, Importable } from "htsw/types";
 
-import { getNestedListFields } from "../importer/fields/actionMappings";
+import { getNestedListFields } from "../housingSync/fields/actionMappings";
 
 import TaskContext from "../tasks/context";
 import { isTaskCancelled } from "../tasks/manager";
-import { IMPORT_DEBUG } from "../importer/diagnostics/importDebug";
+import { IMPORT_DEBUG } from "../housingSync/diagnostics/importDebug";
 import { FileSystemFileLoader } from "../utils/fileLoaders";
 import {
     buildTrustPlan,
@@ -21,13 +21,13 @@ import {
     prereadImportable,
     type ImportablePlan,
 } from "./imports";
-import type { ImportEventHandler } from "../importer/importEvents";
-import type { ImportableEntry } from "../importer/progress/types";
-import { importProgressKey } from "../importer/progress/keys";
+import type { ImportEventHandler } from "../housingSync/importEvents";
+import type { ImportableEntry } from "../housingSync/progress/types";
+import { importProgressKey } from "../housingSync/progress/keys";
 import {
     estimateImportableCost,
     setupUnitsForImportable,
-} from "../importer/progress/costs";
+} from "../housingSync/progress/costs";
 import type { ImportableCacheEntry } from "../importCache/cache";
 import { readCachedActionList } from "./actionListHelpers";
 
