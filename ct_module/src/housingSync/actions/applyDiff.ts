@@ -51,7 +51,7 @@ import {
     createActionApplyContext,
     type ApplyNestedActionList,
 } from "../context/actionApplyContext";
-import { syncConditionList } from "../conditions/sync";
+import { applyConditionList } from "../conditions/applyDiff";
 import {
     prereadActionList,
     type ActionListPlan,
@@ -562,7 +562,7 @@ async function applyActionListPlanInner(
                       completedOps,
                       totalOps: diff.operations.length,
                       applyNestedActions,
-                      syncNestedConditions: syncConditionList,
+                      applyNestedConditions: applyConditionList,
                   });
 
             await writeOpenAction(ctx, op.desired, {
@@ -676,7 +676,7 @@ async function applyActionListPlanInner(
                   completedOps,
                   totalOps: diff.operations.length,
                   applyNestedActions,
-                  syncNestedConditions: syncConditionList,
+                  applyNestedConditions: applyConditionList,
               });
         await addAction(
             ctx,

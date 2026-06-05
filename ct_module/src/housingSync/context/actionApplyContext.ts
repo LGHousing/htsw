@@ -50,7 +50,7 @@ export type ApplyNestedActionList = (
     }
 ) => Promise<unknown>;
 
-export type SyncNestedConditions = (
+export type ApplyNestedConditionList = (
     ctx: TaskContext,
     desired: Condition[],
     options: {
@@ -70,7 +70,7 @@ export type CreateActionApplyContextArgs = {
     completedOps: number;
     totalOps: number;
     applyNestedActions: ApplyNestedActionList;
-    syncNestedConditions: SyncNestedConditions;
+    applyNestedConditions: ApplyNestedConditionList;
 };
 
 function observedActionsAsBaselineCurrent(
@@ -145,7 +145,7 @@ export function createActionApplyContext({
     completedOps,
     totalOps,
     applyNestedActions,
-    syncNestedConditions,
+    applyNestedConditions,
 }: CreateActionApplyContextArgs): ActionApplyContext {
     const scopeAt = nestedApplyScope(actionPath, appliedUnits, completedOps, totalOps);
     const nestedPath = (prop: string): ActionPath => `${actionPath}.${prop}`;
@@ -176,7 +176,7 @@ export function createActionApplyContext({
         async applyNestedConditions(prop, args) {
             const path = nestedPath(prop);
             const offset = args.offset ?? nextOffset;
-            await syncNestedConditions(ctx, args.desired, {
+            await applyNestedConditions(ctx, args.desired, {
                 itemRegistry,
                 observed: reuseObservedConditions(args.observed),
                 baselineCurrent: args.observed,
