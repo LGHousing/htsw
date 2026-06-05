@@ -55,7 +55,7 @@ import { ACTION_LIST_CONFIG } from "./listConfig";
 import { getActionSpec } from "./specs";
 import { actionLogLabel } from "./log";
 import { createActionReadContext } from "../context/actionReadContext";
-import { readConditionList } from "../conditions/readList";
+import { readConditionList } from "./conditions/readList";
 
 export type ActionListReadMode =
     | { kind: "full" }

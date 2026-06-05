@@ -51,7 +51,7 @@ import {
     createActionApplyContext,
     type ApplyNestedActionList,
 } from "../context/actionApplyContext";
-import { applyConditionList } from "../conditions/applyDiff";
+import { applyConditionList } from "./conditions/applyDiff";
 import {
     prereadActionList,
     type ActionListPlan,

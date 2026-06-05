@@ -1,26 +1,26 @@
 import { Diagnostic } from "htsw";
 import type { Condition } from "htsw/types";
 
-import TaskContext from "../../tasks/context";
-import { type ItemRegistry } from "../../importables/itemRegistry";
+import TaskContext from "../../../tasks/context";
+import { type ItemRegistry } from "../../../importables/itemRegistry";
 import {
     clickGoBack,
     isLimitExceeded,
     readBooleanValue,
     setListItemNote,
     setNoteOnLastVisibleSlot,
-} from "../gui/menuUtils";
-import { timedWaitForMenu } from "../gui/menuWait";
-import { ItemSlot, MouseButton } from "../../tasks/specifics/slots";
-import { removedFormatting } from "../../utils/helpers";
-import { CONDITION_MAPPINGS } from "../fields/conditionMappings";
+} from "../../gui/menuUtils";
+import { timedWaitForMenu } from "../../gui/menuWait";
+import { ItemSlot, MouseButton } from "../../../tasks/specifics/slots";
+import { removedFormatting } from "../../../utils/helpers";
+import { CONDITION_MAPPINGS } from "../../fields/conditionMappings";
 import type {
     ConditionListDiff,
     ConditionListOperation,
     ObservedConditionSlot,
-} from "../types";
-import type { ProgressHandler } from "../progress/types";
-import { getPaginatedListSlotAtIndex } from "../gui/paginatedList";
+} from "../../types";
+import type { ProgressHandler } from "../../progress/types";
+import { getPaginatedListSlotAtIndex } from "../../gui/paginatedList";
 import { CONDITION_LIST_CONFIG } from "./listConfig";
 import { getConditionSpec, writeOpenCondition } from "./specs";
 import {
@@ -30,8 +30,8 @@ import {
     estimateConditionListPhaseUnits,
     phaseUnitsTotal,
     type PhaseUnits,
-} from "../progress/costs";
-import { traceConditionOp } from "../progress/trace";
+} from "../../progress/costs";
+import { traceConditionOp } from "../../progress/trace";
 import { currentConditionListFromSlots, diffConditionList } from "./diff";
 import { readConditionList } from "./readList";
 

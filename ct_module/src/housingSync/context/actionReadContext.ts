@@ -9,7 +9,7 @@ import type {
     ObservedActionSlot,
     ObservedConditionSlot,
 } from "../types";
-import type { ReadConditionListOptions } from "../conditions/readList";
+import type { ReadConditionListOptions } from "../actions/conditions/readList";
 import {
     nestedActionPath,
     type ActionPath,

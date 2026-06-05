@@ -15,7 +15,7 @@ import { baselineActionListFromActions, diffActionList } from "../actions/diff";
 import {
     baselineConditionListFromConditions,
     diffConditionList,
-} from "../conditions/diff";
+} from "../actions/conditions/diff";
 import { getActionScalarLoreFields } from "../fields/actionMappings";
 import { getConditionScalarLoreFields } from "../fields/conditionMappings";
 import { isTruncatableKind } from "../fields/loreParsing";

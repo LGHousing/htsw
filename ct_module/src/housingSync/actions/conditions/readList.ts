@@ -1,16 +1,16 @@
 import type { Condition } from "htsw/types";
 
-import TaskContext from "../../tasks/context";
-import { type ItemRegistry } from "../../importables/itemRegistry";
-import { canonicalizeItemFields } from "../fields/canonicalizeItems";
+import TaskContext from "../../../tasks/context";
+import { type ItemRegistry } from "../../../importables/itemRegistry";
+import { canonicalizeItemFields } from "../../fields/canonicalizeItems";
 import {
     CONDITION_MAPPINGS,
     getConditionScalarLoreFields,
     parseConditionListItem,
     tryGetConditionTypeFromDisplayName,
-} from "../fields/conditionMappings";
-import { isTruncatableKind, looksTruncated } from "../fields/loreParsing";
-import type { ObservedConditionSlot } from "../types";
+} from "../../fields/conditionMappings";
+import { isTruncatableKind, looksTruncated } from "../../fields/loreParsing";
+import type { ObservedConditionSlot } from "../../types";
 import {
     getPaginatedListPageForIndex,
     getPaginatedListSlotAtIndex,
@@ -18,13 +18,13 @@ import {
     goToPaginatedListPage,
     isEmptyPaginatedPlaceholder,
     readPaginatedList,
-} from "../gui/paginatedList";
-import { timedWaitForMenu } from "../gui/menuWait";
-import { clickGoBack } from "../gui/menuUtils";
+} from "../../gui/paginatedList";
+import { timedWaitForMenu } from "../../gui/menuWait";
+import { clickGoBack } from "../../gui/menuUtils";
 import { CONDITION_LIST_CONFIG } from "./listConfig";
 import { getConditionSpec, isConditionListItemInverted } from "./specs";
-import { COST, phaseUnitsTotal, type PhaseUnits } from "../progress/costs";
-import type { ProgressHandler } from "../progress/types";
+import { COST, phaseUnitsTotal, type PhaseUnits } from "../../progress/costs";
+import type { ProgressHandler } from "../../progress/types";
 
 async function readConditionsListPage(
     ctx: TaskContext
