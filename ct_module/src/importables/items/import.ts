@@ -1,6 +1,7 @@
 import type { Action, ImportableItem } from "htsw/types";
 
-import { syncActionList } from "../../housingSync/actions/sync";
+import { applyActionListPlan } from "../../housingSync/actions/applyDiff";
+import { prereadActionList } from "../../housingSync/actions/plan";
 import type { ImportEventHandler } from "../../housingSync/importEvents";
 import { createSetupStepEmitter } from "../../housingSync/progress/setupStepEmitter";
 import { clickGoBack } from "../../housingSync/gui/menuUtils";
@@ -310,12 +311,13 @@ async function syncItemActionLists(
         ctx.getItemSlot("Left Click Actions").click();
         await timedWaitForMenu(ctx, "menuClickWait");
 
-        await syncActionList(ctx, leftDesired, {
+        const leftPlan = await prereadActionList(ctx, leftDesired, {
             itemRegistry,
             baselineCurrent: getBaselineActionList(trustPlan, "leftClickActions"),
             trust: getActionListTrust(trustPlan, "leftClickActions"),
             events,
         });
+        await applyActionListPlan(ctx, leftPlan, { itemRegistry, events });
 
         if (
             rightDesired !== undefined &&
@@ -332,12 +334,13 @@ async function syncItemActionLists(
         ctx.getItemSlot("Right Click Actions").click();
         await timedWaitForMenu(ctx, "menuClickWait");
 
-        await syncActionList(ctx, rightDesired, {
+        const rightPlan = await prereadActionList(ctx, rightDesired, {
             itemRegistry,
             baselineCurrent: getBaselineActionList(trustPlan, "rightClickActions"),
             trust: getActionListTrust(trustPlan, "rightClickActions"),
             events,
         });
+        await applyActionListPlan(ctx, rightPlan, { itemRegistry, events });
     }
 }
 

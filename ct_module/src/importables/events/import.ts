@@ -1,10 +1,10 @@
 import type { ImportableEvent } from "htsw/types";
 
+import { applyActionListPlan } from "../../housingSync/actions/applyDiff";
 import {
-    applyActionListPlan,
     prereadActionList,
     type ActionListPlan,
-} from "../../housingSync/actions/sync";
+} from "../../housingSync/actions/plan";
 import type { ImportableTrustPlan } from "../../importCache";
 import type { ImportEventHandler } from "../../housingSync/importEvents";
 import { createSetupStepEmitter } from "../../housingSync/progress/setupStepEmitter";

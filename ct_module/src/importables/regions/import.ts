@@ -1,10 +1,10 @@
 import type { ImportableRegion, Pos } from "htsw/types";
 
+import { applyActionListPlan } from "../../housingSync/actions/applyDiff";
 import {
-    applyActionListPlan,
     prereadActionList,
     type ActionListPlan,
-} from "../../housingSync/actions/sync";
+} from "../../housingSync/actions/plan";
 import { clickGoBack } from "../../housingSync/gui/menuUtils";
 import {
     timedWaitForMenu,

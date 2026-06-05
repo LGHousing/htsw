@@ -368,7 +368,7 @@ export function actionOperationApplyUnits(
  * Per-phase work estimate for a single action-list sync call. `readList` and
  * `applyDiff` emit completed/total units on this shared scale.
  *
- * `readPart` / `hydratePart` cover this list only — nested `syncActionList`
+ * `readPart` / `hydratePart` cover this list only — nested action-list apply
  * calls inside CONDITIONAL/RANDOM bodies aren't separately tracked because
  * their reading is folded into the parent's hydrate phase (via
  * `topLevelHydrateUnits`). `applyPart` does include nested-body apply
@@ -381,7 +381,7 @@ export function phaseUnitsTotal(p: PhaseUnits): number {
 }
 
 /**
- * Cost of the per-importable setup work that happens BEFORE `syncActionList`
+ * Cost of the per-importable setup work that happens before action-list work
  * is called: shell-creating any referenced functions/menus/regions, then
  * opening the housing editor for this importable (e.g. `/function edit X`,
  * `/region edit X`, item inject + `/edit`, ...). Tracked as its own phase

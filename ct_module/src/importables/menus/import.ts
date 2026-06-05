@@ -1,6 +1,7 @@
 import type { ImportableMenu } from "htsw/types";
 
-import { syncActionList } from "../../housingSync/actions/sync";
+import { applyActionListPlan } from "../../housingSync/actions/applyDiff";
+import { prereadActionList } from "../../housingSync/actions/plan";
 import { clickGoBack, setCycleValue } from "../../housingSync/gui/menuUtils";
 import {
     timedWaitForMenu,
@@ -107,12 +108,13 @@ async function importImportableMenu(
             ctx.getItemSlot("Edit Actions").click();
             await timedWaitForMenu(ctx, "menuClickWait");
 
-            await syncActionList(ctx, slot.actions!, {
+            const actionsPlan = await prereadActionList(ctx, slot.actions!, {
                 itemRegistry,
                 baselineCurrent: getBaselineActionList(trustPlan, slotActionsPath),
                 trust: getActionListTrust(trustPlan, slotActionsPath),
                 events,
             });
+            await applyActionListPlan(ctx, actionsPlan, { itemRegistry, events });
 
             await clickGoBack(ctx);
         }

@@ -97,5 +97,5 @@ export function countImportablesByStatus(
     return { completed, failed, total: progress.rows.length };
 }
 
-/** Callback shape that `readActionList` / `applyActionListDiff` invoke. */
+/** Callback shape that action-list read/apply phases invoke. */
 export type ProgressHandler = (progress: ProgressPayload) => void;

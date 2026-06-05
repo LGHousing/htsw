@@ -49,9 +49,14 @@ import { getActionScalarLoreFields } from "../fields/actionMappings";
 import { scalarFieldDiffers } from "../fields/compare";
 import {
     createActionApplyContext,
-    type SyncNestedActions,
+    type ApplyNestedActionList,
 } from "../context/actionApplyContext";
 import { syncConditionList } from "../conditions/sync";
+import {
+    prereadActionList,
+    type ActionListPlan,
+    type ActionListPlanOptions,
+} from "./plan";
 
 type LiveActionListEntry = {
     entryId: number;
@@ -153,32 +158,36 @@ async function moveActionToIndex(
     }
 }
 
-export async function applyActionListDiff(
+export async function applyActionListPlan(
     ctx: TaskContext,
-    observed: ObservedActionSlot[],
-    desired: Action[],
-    diff: ActionListDiff,
-    itemRegistry?: ItemRegistry,
-    pathPrefix?: string,
-    phaseUnits?: PhaseUnits,
-    events?: ImportEventHandler,
-    progressScope?: ProgressScope,
-    onSnapshot?: (readCurrent: () => Array<Action | null>) => void,
-    syncNestedActions?: SyncNestedActions
+    plan: ActionListPlan,
+    options?: ActionListPlanOptions
 ): Promise<void> {
-    await applyActionListDiffInner(
+    const progressScope: ProgressScope = options?.progressScope ?? { kind: "topLevel" };
+    await applyActionListPlanInner(
         ctx,
-        observed,
-        desired,
-        diff,
-        itemRegistry,
-        pathPrefix,
-        phaseUnits,
-        events ?? null,
-        progressScope ?? { kind: "topLevel" },
-        onSnapshot,
-        syncNestedActions
+        plan.observed,
+        plan.desired,
+        plan.diff,
+        options?.itemRegistry,
+        options?.pathPrefix,
+        plan.phaseUnits,
+        options?.events ?? null,
+        progressScope,
+        (readCurrent) => {
+            plan.getLiveCurrent = readCurrent;
+        },
+        applyNestedActionList
     );
+}
+
+async function applyNestedActionList(
+    ctx: TaskContext,
+    desired: Action[],
+    options: ActionListPlanOptions
+): Promise<void> {
+    const plan = await prereadActionList(ctx, desired, options);
+    await applyActionListPlan(ctx, plan, options);
 }
 
 function desiredIndexForOp(op: ActionListOperation): number {
@@ -286,7 +295,7 @@ function emitApplyProgress(
     });
 }
 
-async function applyActionListDiffInner(
+async function applyActionListPlanInner(
     ctx: TaskContext,
     observed: ObservedActionSlot[],
     desired: Action[],
@@ -297,7 +306,7 @@ async function applyActionListDiffInner(
     events?: ImportEventHandler | null,
     progressScope: ProgressScope = { kind: "topLevel" },
     onSnapshot?: (readCurrent: () => Array<Action | null>) => void,
-    syncNestedActions?: SyncNestedActions
+    applyNestedActions?: ApplyNestedActionList
 ): Promise<void> {
     const isTopLevel = pathPrefix === undefined;
     const summary = summarizeDiff(diff, desired.length);
@@ -542,7 +551,7 @@ async function applyActionListDiffInner(
             await timedWaitForMenu(ctx, "menuClickWait");
 
             const baselineAction = op.baselineAction;
-            const apply = srcPath === null || syncNestedActions === undefined
+            const apply = srcPath === null || applyNestedActions === undefined
                 ? undefined
                 : createActionApplyContext({
                       ctx,
@@ -552,7 +561,7 @@ async function applyActionListDiffInner(
                       appliedUnits,
                       completedOps,
                       totalOps: diff.operations.length,
-                      syncNestedActions,
+                      applyNestedActions,
                       syncNestedConditions: syncConditionList,
                   });
 
@@ -656,7 +665,7 @@ async function applyActionListDiffInner(
             emitSnapshot();
             actionAdded = true;
         };
-        const apply = srcPath === null || syncNestedActions === undefined
+        const apply = srcPath === null || applyNestedActions === undefined
             ? undefined
             : createActionApplyContext({
                   ctx,
@@ -666,7 +675,7 @@ async function applyActionListDiffInner(
                   appliedUnits,
                   completedOps,
                   totalOps: diff.operations.length,
-                  syncNestedActions,
+                  applyNestedActions,
                   syncNestedConditions: syncConditionList,
               });
         await addAction(
