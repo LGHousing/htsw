@@ -185,15 +185,7 @@ export type ReadContext = {
     itemRegistry?: ItemRegistry;
     itemCaptures?: ItemCaptureRegistry;
     events?: ImportEventHandler;
-    pathPrefix?: ActionPath;
-    /**
-     * Emit a fresh top-level observed snapshot. Set only for a top-level
-     * read; a nested reader (e.g. a CONDITIONAL body) calls it after each
-     * sub-step (conditions → ifActions → elseActions) so the live preview
-     * fills the body in piece by piece instead of all at once. The action
-     * being read must be mutated in place so the snapshot reflects the
-     * partial state.
-     */
+    listPath?: ActionPath;
     emitSnapshot?: () => void;
 };
 

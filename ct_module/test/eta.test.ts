@@ -39,6 +39,7 @@ function progress(
             },
             sync: null,
         },
+        parked: {},
         rows: [],
     };
 }

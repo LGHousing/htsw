@@ -171,7 +171,7 @@ export async function applyActionListPlan(
         plan.desired,
         plan.diff,
         options?.itemRegistry,
-        options?.pathPrefix,
+        options?.listPath,
         plan.phaseUnits,
         options?.events ?? null,
         progressScope,
@@ -302,14 +302,14 @@ async function applyActionListPlanInner(
     desired: Action[],
     diff: ActionListDiff,
     itemRegistry?: ItemRegistry,
-    pathPrefix?: ActionPath,
+    listPath?: ActionPath,
     phaseUnits?: PhaseUnits,
     events?: ImportEventHandler | null,
     progressScope: ProgressScope = { kind: "topLevel" },
     onSnapshot?: (readCurrent: () => Array<Action | null>) => void,
     applyNestedActions?: ApplyNestedActionList
 ): Promise<void> {
-    const isTopLevel = pathPrefix === undefined;
+    const isTopLevel = listPath === undefined;
     const summary = summarizeDiff(diff, desired.length);
     const plannedApplyUnits = actionListDiffApplyUnits(
         diff,
@@ -333,7 +333,7 @@ async function applyActionListPlanInner(
         for (const op of diff.operations) {
             const idx = desiredIndexForOp(op);
             if (idx >= 0) {
-                const srcPath = actionPathForIndex(pathPrefix, idx);
+                const srcPath = actionPathForIndex(listPath, idx);
                 const actionType = actionTypeForOp(op);
                 if (actionType === null) continue;
                 if (op.kind === "add") {
@@ -365,7 +365,7 @@ async function applyActionListPlanInner(
                     });
                 }
             } else if (op.kind === "delete") {
-                const obsPath = actionPathForIndex(pathPrefix, op.fromIndex);
+                const obsPath = actionPathForIndex(listPath, op.fromIndex);
                 operations.push({
                     op: "delete",
                     path: obsPath,
@@ -383,7 +383,7 @@ async function applyActionListPlanInner(
         }
         const matches: ActionPath[] = [];
         for (let i = 0; i < desired.length; i++) {
-            if (!touched.has(i)) matches.push(actionPathForIndex(pathPrefix, i));
+            if (!touched.has(i)) matches.push(actionPathForIndex(listPath, i));
         }
         events.emit({ kind: "diffPlanned", summary, operations, matches });
     }
@@ -468,7 +468,7 @@ async function applyActionListPlanInner(
             }
 
             if (isTopLevel) await waitIfStepPaused(ctx);
-            const obsPath = actionPathForIndex(pathPrefix, op.fromIndex);
+            const obsPath = actionPathForIndex(listPath, op.fromIndex);
             await deleteObservedAction(ctx, index, current.length);
             appliedUnits += operationApplyUnits(op, desired.length);
             current.splice(index, 1);
@@ -494,7 +494,7 @@ async function applyActionListPlanInner(
         }
 
         const srcIdx = desiredIndexForOp(op);
-        const srcPath = srcIdx >= 0 ? actionPathForIndex(pathPrefix, srcIdx) : null;
+        const srcPath = srcIdx >= 0 ? actionPathForIndex(listPath, srcIdx) : null;
         if (events != null && srcPath !== null) {
             events.emit({
                 kind: "operationStarted",
@@ -605,7 +605,7 @@ async function applyActionListPlanInner(
         }
 
         const srcIdx = desiredIndexForOp(op);
-        const srcPath = srcIdx >= 0 ? actionPathForIndex(pathPrefix, srcIdx) : null;
+        const srcPath = srcIdx >= 0 ? actionPathForIndex(listPath, srcIdx) : null;
         if (events != null && srcPath !== null) {
             events.emit({
                 kind: "operationStarted",
@@ -641,7 +641,7 @@ async function applyActionListPlanInner(
     let currentLength = current.length;
     for (const op of adds) {
         const srcIdx = desiredIndexForOp(op);
-        const srcPath = srcIdx >= 0 ? actionPathForIndex(pathPrefix, srcIdx) : null;
+        const srcPath = srcIdx >= 0 ? actionPathForIndex(listPath, srcIdx) : null;
         if (events != null && srcPath !== null) {
             events.emit({
                 kind: "operationStarted",

@@ -44,7 +44,7 @@ export type ApplyNestedActionList = (
     options: {
         observed?: ObservedActionSlot[];
         itemRegistry?: ItemRegistry;
-        pathPrefix?: ActionPath;
+        listPath?: ActionPath;
         baselineCurrent?: readonly Action[];
         progressScope?: ProgressScope;
         events?: ImportEventHandler;
@@ -164,7 +164,7 @@ export function createActionApplyContext({
             await applyNestedActions(ctx, args.desired, {
                 itemRegistry,
                 observed: reuseObservedActions(args.observed),
-                pathPrefix: path,
+                listPath: path,
                 baselineCurrent,
                 progressScope: scopeAt(path, offset),
                 events,

@@ -21,7 +21,7 @@ import type { ActionPath } from "../importEvents";
 
 export type ActionListApplyOptions = {
     itemRegistry?: ItemRegistry;
-    pathPrefix?: ActionPath;
+    listPath?: ActionPath;
     progressScope?: ProgressScope;
     events?: ImportEventHandler;
 };
@@ -67,7 +67,7 @@ export async function prereadActionList(
                 itemRegistry: options?.itemRegistry,
                 progress,
                 phaseUnits,
-                pathPrefix: options?.pathPrefix,
+                listPath: options?.listPath,
                 events: options?.events,
             }
         ));

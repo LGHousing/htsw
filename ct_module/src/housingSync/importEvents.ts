@@ -10,11 +10,11 @@ export type ActionPath = {
     readonly parts: readonly ActionPathPart[];
 };
 
-export function actionPathForIndex(pathPrefix: ActionPath | undefined, index: number): ActionPath {
+export function actionPathForIndex(listPath: ActionPath | undefined, index: number): ActionPath {
     return {
-        parts: pathPrefix === undefined
+        parts: listPath === undefined
             ? [index]
-            : pathPrefix.parts.concat(index),
+            : listPath.parts.concat(index),
     };
 }
 

@@ -196,7 +196,7 @@ export async function readActionList(
     }
     events?.emit({
         kind: "readStarted",
-        listPath: read?.pathPrefix === undefined ? "actions" : actionPathKey(read.pathPrefix),
+        listPath: read?.listPath === undefined ? "actions" : actionPathKey(read.listPath),
     });
     observed = await readPaginatedList(
         ctx,
@@ -220,7 +220,7 @@ export async function readActionList(
         }
     );
     if (phaseUnits !== undefined) phaseUnits.reading = readCompletedUnits;
-    const isTopLevelRead = read?.pathPrefix === undefined;
+    const isTopLevelRead = read?.listPath === undefined;
     if (isTopLevelRead) {
         emitObservedSnapshot(observed, events);
     }
@@ -395,7 +395,7 @@ async function hydrateNestedActions(
     const progress = read?.progress;
     const phaseUnits = read?.phaseUnits;
     const events = read?.events;
-    const pathPrefix = read?.pathPrefix;
+    const listPath = read?.listPath;
     let completed = 0;
     const total = plan.size;
     let completedHydrateUnits = 0;
@@ -419,7 +419,7 @@ async function hydrateNestedActions(
             ? () => emitObservedSnapshot(observed, events)
             : undefined;
     for (const [entry, propsToRead] of plan) {
-        const entryPath = actionPathForIndex(pathPrefix, entry.index);
+        const entryPath = actionPathForIndex(listPath, entry.index);
         const entryLabel = `reading nested ${actionLogLabel(entry.action)}`;
         emit(entryLabel);
         events?.emit({

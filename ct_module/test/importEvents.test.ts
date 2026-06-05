@@ -14,7 +14,6 @@ function recordingHandler(): ImportEventHandler & { events: ImportEvent[] } {
     return {
         events,
         emit: (event) => { events.push(event); },
-        phaseUnits: () => {},
     };
 }
 
@@ -51,7 +50,7 @@ describe("applyActionListPlan — top-level-only terminal events", () => {
         await applyActionListPlan(
             null as never,
             emptyPlan(),
-            { pathPrefix: actionPathFromKey("5.ifActions"), events: handler }
+            { listPath: actionPathFromKey("5.ifActions"), events: handler }
         );
         const kinds = handler.events.map((e) => e.kind);
         expect(kinds).not.toContain("listSyncCompleted");

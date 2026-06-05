@@ -79,7 +79,7 @@ export function createActionReadContext({
                 itemRegistry,
                 itemCaptures,
                 events,
-                pathPrefix: path,
+                listPath: path,
                 emitSnapshot,
             });
             for (const entry of entries) {

@@ -1,7 +1,10 @@
 import { describe, expect, test } from "vitest";
 import type { Action, ActionPlaySound } from "htsw/types";
 
-import { diffActionList } from "../src/housingSync/actions/diff";
+import {
+    baselineActionListFromSlots,
+    diffActionList,
+} from "../src/housingSync/actions/diff";
 import type {
     ActionListOperation,
     ObservedActionSlot,
@@ -10,7 +13,7 @@ import type {
 import { conditional, message, observedSlot as obs, playSound, random } from "./utils";
 
 function ops(observed: ObservedActionSlot[], desired: Action[]): ActionListOperation[] {
-    return diffActionList(observed, desired).operations;
+    return diffActionList(baselineActionListFromSlots(observed), desired).operations;
 }
 
 function kindCounts(opsList: ActionListOperation[]): Record<string, number> {
