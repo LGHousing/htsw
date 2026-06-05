@@ -4,15 +4,15 @@ HTSW = "HTSL but we don't take Ls" — a refined HTSL (Housing Text Scripting La
 
 ## How to read this guide
 
-This guide records **responsibilities and invariants only**. Anything you can learn by reading the code is deliberately left out so it can't go stale. When you add to this file, write one of three things and nothing else:
+This guide records **what each part is responsible for and the rules it must keep** — and nothing you could find by reading the code, so it can't go stale. When you add to this file, write only one of three things:
 
 - **What an area is for**
-- **Where the source of truth lives**
-- **Non-recoverable WHY**
+- **Where something is defined**
+- **A reason the code can't tell you on its own**
 
 ## Layout
 
-- `language/` — parser, type system, diagnostics, `import.json` loader, NBT, runtime. Source of truth for syntax and types. Entrypoint `language/src/index.ts`. **Ask before editing.**
+- `language/` — parser, type system, diagnostics, `import.json` loader, NBT, runtime. Where syntax and types are defined. Entrypoint `language/src/index.ts`. **Ask before editing.**
 - `ct_module/` — loads HTSW into Minecraft: drives Housing menus, diffs, imports/exports, simulates. Runs on Rhino with `lib: ["ES5", "DOM"]`; anything bundled into ChatTriggers (including emitted `language/` JS) is constrained to that.
 - `cli/` — Node CLI (`htsw check [path]`, `htsw run [path]`).
 - `editors/` — VS Code, Monaco, shared editor features.
@@ -57,34 +57,34 @@ Before writing a comment: **did you verify this, or are you narrating your menta
 - Short progress updates before edits, builds, installs, and when findings change the plan.
 - Be direct about what changed and why. No vague reassurance.
 - When answering an architecture or code question, don't only describe current behavior — judge it. Say whether a responsibility belongs where it is, and what to change if the design is accidental, overbuilt, or misleading.
-- When you see duplicate channels, fake abstractions, or names that obscure ownership, call out the better architecture instead of preserving the existing shape by default. If two mechanisms serve the same real consumer, propose collapsing them into one typed path — don't justify a split just because one path carries more math, state, or weight.
+- When you see two code paths doing the same job, an abstraction that doesn't earn its place, or a name that hides who owns what, say so and suggest the better design instead of keeping the current shape by default. If two mechanisms feed the same caller, suggest merging them into one — don't keep them split just because one side carries more math, state, or weight.
 
 ## ct_module importer reference
 
-Lives in `ct_module/src/importer/`. Reads and writes real Housing menus through async tasks, not callbacks. The procedures and coverage shift every PR — read the code for those; the invariants below are what the code can't tell you.
+Lives in `ct_module/src/importer/`. Reads and writes real Housing menus through async tasks, not callbacks. The procedures and coverage shift every PR — read the code for those; the rules below are what the code can't tell you.
 
-**Where the live truth is:**
+**Where the current behavior is defined:**
 
 - Which importable types are wired — the switches in `importables/imports.ts` / `exports.ts`.
 - Per-type import/export procedure — that type's `importables/<type>/import.ts` / `export.ts`.
 - Read/write + nested-list coverage per action/condition — `ACTION_SPECS` / `CONDITION_SPECS`, via `getActionSpec` / `getConditionSpec`.
 - Simulator coverage (`ct_module/src/simulator/`, separate from import) — `createActionBehaviors()` / `createConditionBehaviors()`.
 
-**Structure invariants:**
+**Structure rules:**
 
-- `imports.ts` / `exports.ts` are pure dispatchers — never inline per-type bodies.
+- `imports.ts` / `exports.ts` only dispatch — never inline per-type bodies.
 - A type's import + export live together under `importables/<type>/`; logic shared between the two directions stays in that folder. `exporter/` is cross-type wiring only — never `exporter/exportFunction.ts`.
 - Exporters reuse importer reads (`readActionList`, `readConditionList`, `parse*ListItem`) — never duplicate read logic.
 - Adding an action/condition type: update `fields/actionMappings.ts` / `conditionMappings.ts` first — they drive parsing, list-item observation, and diff cost.
 
-**Behavioral invariants** (a future edit would undo these):
+**Behavior to keep** (a future edit could easily undo these):
 
 - Action sync applies **delete → edit → move → add** — deletes stabilize indices, edits precede moves to avoid stale slot refs, moves resolve by current index, adds append then rotate. Action moves are circular (Housing shift-click reorder wraps). Conditions have no moves.
 - A no-`write` action is add-and-return; do **not** add an empty `write` to mean "no-op" — it still triggers click-back. A present `write` assumes the editor is open and clicks back when done. Conditions also toggle invert before clicking back; actions don't.
-- Field setters short-circuit on matching value, so writers are idempotent without per-field guards.
+- Field setters short-circuit on a matching value, so a writer is safe to re-run without per-field guards.
 - Nested-list action types (CONDITIONAL, RANDOM, …) need an explicit `read` in their spec — lore alone is insufficient and the importer throws if it's missing. Sync hydrates nested lists selectively (shallow, then `createNestedHydrationPlan`); export always reads full.
-- `previewHandler` is the one live preview/progress path — don't add a parallel diff/progress callback without a real second consumer.
-- Don't casually change `normalizeActionCompare` / `normalizeConditionCompare` — it churns every diff.
+- `previewHandler` is the one preview/progress path — don't add a second diff/progress callback unless something actually needs it.
+- Don't casually change `normalizeActionCompare` / `normalizeConditionCompare` — it shifts the result of every diff.
 - `waitForMenu` keys on `S30PacketWindowItems` + a tracked window ID, then waits one tick: MC applies window data on the main thread *after* the packet.
 - Notes live on list items, not inside editors.
 

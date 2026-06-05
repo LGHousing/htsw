@@ -10,6 +10,7 @@ import type {
 import type { PhaseUnits, ProgressHandler } from "../progress/types";
 import { baselineActionListFromSlots, diffActionList } from "./diff";
 import { canonicalizeActionItemName, readActionList } from "./readList";
+import { getNestedListFields } from "../fields/actionMappings";
 import {
     actionListDiffApplyUnits,
     editUnitsWithNested,
@@ -97,4 +98,28 @@ export async function prereadActionList(
     });
 
     return { desired, observed, diff, phaseUnits };
+}
+
+/**
+ * Whether a live snapshot from `getLiveCurrent` is fully read: no null slots and
+ * every nested list (conditions / nested action bodies) hydrated. A shallow
+ * snapshot holds nulls for un-read nested lists; persisting one would cache a
+ * half-known list as truth.
+ */
+export function actionsFullyHydrated(actions: ReadonlyArray<Action | null>): boolean {
+    for (const action of actions) {
+        if (action === null) return false;
+        for (const field of getNestedListFields(action.type)) {
+            const nested = (action as Record<string, unknown>)[field.prop];
+            if (!Array.isArray(nested)) continue;
+            if (field.prop === "conditions") {
+                for (const condition of nested) {
+                    if (condition === null) return false;
+                }
+            } else if (!actionsFullyHydrated(nested as Array<Action | null>)) {
+                return false;
+            }
+        }
+    }
+    return true;
 }

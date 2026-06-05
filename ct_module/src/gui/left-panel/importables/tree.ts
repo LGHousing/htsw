@@ -227,7 +227,10 @@ function filterAndSort(all: Result[]): Result[] {
         const r = all[i];
         if (hasTypeFilter && r.type !== "import") continue;
         if (r.type === "import") {
-            if (filterImportables(r).length === 0) continue;
+            if (filterImportables(r).length === 0) {
+                const narrowing = hasTypeFilter || q.length > 0;
+                if (narrowing || r.importables.length > 0) continue;
+            }
         } else {
             if (q.length > 0 && r.path.toLowerCase().indexOf(q) < 0) continue;
         }

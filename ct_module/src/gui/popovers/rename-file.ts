@@ -145,6 +145,7 @@ export function openRenameFilePopover(
         width: 240,
         height: 64,
         key: `rename-file:${fullPath}`,
+        placement: "modal",
         onClose: () => {
             activeHandle = null;
         },

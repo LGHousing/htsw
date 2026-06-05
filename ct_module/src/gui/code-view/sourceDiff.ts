@@ -43,7 +43,9 @@ import { canonicalPath, forEachCachedParse } from "../parsing/parses";
 import { getHousingUuid } from "../state/housing";
 import { readCachedActionList } from "../../importables/actionListHelpers";
 
-export type SourceDiffEntry = Map<string, DiffState>;
+type SourceActionPathKey = string;
+
+export type SourceDiffEntry = Map<SourceActionPathKey, DiffState>;
 
 const entries: Map<string, SourceDiffEntry> = new Map();
 

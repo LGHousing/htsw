@@ -1,7 +1,8 @@
-import type { ImportableFunction } from "htsw/types";
+import type { Action, Importable, ImportableFunction } from "htsw/types";
 
 import { applyActionListPlan } from "../../housingSync/actions/applyDiff";
 import {
+    actionsFullyHydrated,
     prereadActionList,
     type ActionListPlan,
 } from "../../housingSync/actions/plan";
@@ -143,6 +144,22 @@ export async function applyImportableFunctionPlan(
         await openFunctionSettings(ctx, plan.importable.name);
         await applyFunctionSettings(ctx, plan.importable);
     }
+}
+
+/**
+ * True when applying this plan changes nothing — its action diff is empty and
+ * icon/ticks are already handled — so the apply pass can be skipped.
+ */
+export function functionPlanIsNoOp(plan: FunctionImportPlan): boolean {
+    const actionsNoOp =
+        plan.actionsPlan === null || plan.actionsPlan.diff.operations.length === 0;
+    return actionsNoOp && plan.settingsHandled;
+}
+
+export function reconstructPartialFunction(plan: FunctionImportPlan): Importable | null {
+    const live = plan.actionsPlan?.getLiveCurrent?.();
+    if (live === undefined || !actionsFullyHydrated(live)) return null;
+    return { type: "FUNCTION", name: plan.importable.name, actions: live as Action[] };
 }
 
 function functionSettingsTrusted(

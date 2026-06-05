@@ -1,7 +1,8 @@
-import type { ImportableEvent } from "htsw/types";
+import type { Action, Importable, ImportableEvent } from "htsw/types";
 
 import { applyActionListPlan } from "../../housingSync/actions/applyDiff";
 import {
+    actionsFullyHydrated,
     prereadActionList,
     type ActionListPlan,
 } from "../../housingSync/actions/plan";
@@ -67,4 +68,14 @@ export async function applyImportableEventPlan(
         itemRegistry,
         events,
     });
+}
+
+export function eventPlanIsNoOp(plan: EventImportPlan): boolean {
+    return plan.actionsPlan === null || plan.actionsPlan.diff.operations.length === 0;
+}
+
+export function reconstructPartialEvent(plan: EventImportPlan): Importable | null {
+    const live = plan.actionsPlan?.getLiveCurrent?.();
+    if (live === undefined || !actionsFullyHydrated(live)) return null;
+    return { type: "EVENT", event: plan.importable.event, actions: live as Action[] };
 }
