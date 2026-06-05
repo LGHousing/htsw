@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { Action } from "htsw/types";
-import { canonicalStringify, normalizeActionCompare } from "../src/importer/fields/compare";
+import { canonicalStringify, normalizeActionCompare } from "../src/housingSync/fields/compare";
 import { stableStringify } from "../src/utils/helpers";
 
 function reference(action: Action): string {
@@ -9,9 +9,9 @@ function reference(action: Action): string {
 
 const SAMPLES: Action[] = [
     { type: "MESSAGE", message: "&aHello &r&lworld" } as Action,
-    { type: "PLAY_SOUND", sound: { type: "Note Pling" }, volume: 1, pitch: 1 } as Action,
+    { type: "PLAY_SOUND", sound: "note.pling", volume: 1, pitch: 1 } as Action,
     { type: "CHANGE_VAR", holder: { type: "Player" }, key: "coins", op: "Increment", value: "1,000" } as Action,
-    { type: "TELEPORT", location: { type: "custom_coordinates", x: "5", y: "64", z: "-3" }, preventTeleportInsideBlocks: false } as Action,
+    { type: "TELEPORT", location: { type: "Custom Coordinates", value: "5 64 -3" }, preventTeleportInsideBlocks: false } as Action,
     {
         type: "CONDITIONAL",
         matchAny: false,

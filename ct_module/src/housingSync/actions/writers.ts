@@ -52,7 +52,6 @@ import {
     readStringValue,
 } from "../gui/menuUtils";
 import { waitForMenu } from "../gui/menuWait";
-import { syncConditionList } from "../conditions/sync";
 import {
     normalizeActionCompare,
     normalizeConditionCompare,
@@ -63,63 +62,13 @@ import {
     getActionFieldLabel,
 } from "../fields/actionMappings";
 import { normalizeSoundKey } from "../fields/sounds";
-import type { Observed, ObservedActionSlot, ObservedConditionSlot } from "../types";
+import type { Observed } from "../types";
 import { setItemValue } from "../items/injectItem";
 import { resolveImportableItem } from "../items/resolveItem";
-import { syncActionList } from "./sync";
 import type { WriteActionOptions } from "./specs";
-import {
-    estimateActionListPhaseUnits,
-    estimateConditionListPhaseUnits,
-    phaseUnitsTotal,
-} from "../progress/costs";
-import type { ProgressHandler } from "../progress/types";
 
 function actionDefault<T>(type: Action["type"], prop: string): T {
     return getActionFieldDefault(type, prop) as T;
-}
-
-function observedActionsAsBaselineCurrent(
-    observed: ReadonlyArray<Observed<Action> | null> | undefined
-): readonly Action[] | undefined {
-    if (observed === undefined) return undefined;
-    const out: Action[] = [];
-    for (const entry of observed) {
-        if (entry !== null) out.push(entry as Action);
-    }
-    return out;
-}
-
-/**
- * Turn a nested list already hydrated in an earlier pass into an observed-slot
- * array the nested sync can diff against directly, so it skips re-reading the
- * live nested editor. Returns undefined (forcing a live read) if any entry is
- * unhydrated — a null there would otherwise be mistaken for a delete.
- */
-function reuseObservedActions(
-    observed: ReadonlyArray<Observed<Action> | null> | undefined
-): ObservedActionSlot[] | undefined {
-    if (observed === undefined) return undefined;
-    const out: ObservedActionSlot[] = [];
-    for (let i = 0; i < observed.length; i++) {
-        const action = observed[i];
-        if (action === null) return undefined;
-        out.push({ index: i, action, nestedReadState: "full" });
-    }
-    return out;
-}
-
-function reuseObservedConditions(
-    observed: ReadonlyArray<Condition | null> | undefined
-): ObservedConditionSlot[] | undefined {
-    if (observed === undefined) return undefined;
-    const out: ObservedConditionSlot[] = [];
-    for (let i = 0; i < observed.length; i++) {
-        const condition = observed[i];
-        if (condition === null) return undefined;
-        out.push({ index: i, condition });
-    }
-    return out;
 }
 
 function observedActionListsEqual(
@@ -164,18 +113,6 @@ export async function writeConditional(
     options?: WriteActionOptions<ActionConditional>
 ): Promise<void> {
     const current = options?.current;
-    const itemRegistry = options?.itemRegistry;
-    const pathPrefix = options?.pathPrefix;
-    const events = options?.events;
-    const scopeAt = options?.nestedProgressScope;
-
-    // The three sub-lists (conditions, ifActions, elseActions) apply one after
-    // another. Each gets its own slice of this action's progress budget,
-    // starting at the running `offset`, so their progress reports add up
-    // instead of overlapping at the same starting point. Each slice is sized
-    // to that sub-list's own estimated work, which matches what it reports as
-    // it runs.
-    let offset = 0;
 
     if (
         !conditionListsEqual(current?.conditions, action.conditions) &&
@@ -184,22 +121,11 @@ export async function writeConditional(
         ctx.getMenuItemSlot(getActionFieldLabel("CONDITIONAL", "conditions")).click();
         await waitForMenu(ctx);
 
-        const condPath = pathPrefix === undefined ? "conditions" : `${pathPrefix}.conditions`;
-        const condScope = scopeAt?.(condPath, offset);
-        const condProgress: ProgressHandler | undefined =
-            condScope === undefined || events === undefined
-                ? undefined
-                : (event) => events.emit({ kind: "progress", scope: condScope, progress: event });
-        await syncConditionList(ctx, action.conditions, {
-            itemRegistry,
-            observed: reuseObservedConditions(current?.conditions),
-            baselineCurrent: current?.conditions,
-            progress: condProgress,
+        await options?.apply?.applyNestedConditions("conditions", {
+            desired: action.conditions,
+            observed: current?.conditions,
         });
         await clickGoBack(ctx);
-        offset += phaseUnitsTotal(
-            estimateConditionListPhaseUnits(action.conditions, current?.conditions)
-        );
     }
 
     await setBooleanValue(
@@ -208,47 +134,30 @@ export async function writeConditional(
         action.matchAny
     );
 
-    if (pathPrefix !== undefined) {
-        events?.emit({
-            kind: "blockActionHeaderApplied",
-            path: pathPrefix,
-        });
-    }
+    options?.apply?.markHeaderApplied();
 
     if (
         !observedActionListsEqual(current?.ifActions, action.ifActions) &&
         (action.ifActions.length > 0 || (current?.ifActions?.length ?? 0) > 0)
     ) {
-        const nestedPath = pathPrefix === undefined ? "ifActions" : `${pathPrefix}.ifActions`;
         ctx.getMenuItemSlot(getActionFieldLabel("CONDITIONAL", "ifActions")).click();
         await waitForMenu(ctx);
-        const baseline = observedActionsAsBaselineCurrent(current?.ifActions);
-        await syncActionList(ctx, action.ifActions, {
-            itemRegistry,
-            observed: reuseObservedActions(current?.ifActions),
-            pathPrefix: nestedPath,
-            baselineCurrent: baseline,
-            progressScope: scopeAt?.(nestedPath, offset),
-            events,
+        await options?.apply?.applyNestedActions("ifActions", {
+            desired: action.ifActions,
+            observed: current?.ifActions,
         });
         await clickGoBack(ctx);
-        offset += phaseUnitsTotal(estimateActionListPhaseUnits(action.ifActions, baseline));
     }
 
     if (
         !observedActionListsEqual(current?.elseActions, action.elseActions) &&
         (action.elseActions.length > 0 || (current?.elseActions?.length ?? 0) > 0)
     ) {
-        const nestedPath = pathPrefix === undefined ? "elseActions" : `${pathPrefix}.elseActions`;
         ctx.getMenuItemSlot(getActionFieldLabel("CONDITIONAL", "elseActions")).click();
         await waitForMenu(ctx);
-        await syncActionList(ctx, action.elseActions, {
-            itemRegistry,
-            observed: reuseObservedActions(current?.elseActions),
-            pathPrefix: nestedPath,
-            baselineCurrent: observedActionsAsBaselineCurrent(current?.elseActions),
-            progressScope: scopeAt?.(nestedPath, offset),
-            events,
+        await options?.apply?.applyNestedActions("elseActions", {
+            desired: action.elseActions,
+            observed: current?.elseActions,
         });
         await clickGoBack(ctx);
     }
@@ -599,28 +508,16 @@ export async function writeRandom(
     options?: WriteActionOptions<ActionRandom>
 ): Promise<void> {
     const current = options?.current;
-    const itemRegistry = options?.itemRegistry;
-    const pathPrefix = options?.pathPrefix;
     if (observedActionListsEqual(current?.actions, action.actions)) return;
     if (action.actions.length === 0 && (current?.actions?.length ?? 0) === 0) return;
 
-    if (pathPrefix !== undefined) {
-        options?.events?.emit({
-            kind: "blockActionHeaderApplied",
-            path: pathPrefix,
-        });
-    }
+    options?.apply?.markHeaderApplied();
 
     ctx.getMenuItemSlot(getActionFieldLabel("RANDOM", "actions")).click();
     await waitForMenu(ctx);
-    const nestedPath = pathPrefix === undefined ? "actions" : `${pathPrefix}.actions`;
-    await syncActionList(ctx, action.actions, {
-        itemRegistry,
-        observed: reuseObservedActions(current?.actions),
-        pathPrefix: nestedPath,
-        baselineCurrent: observedActionsAsBaselineCurrent(current?.actions),
-        progressScope: options?.nestedProgressScope?.(nestedPath),
-        events: options?.events,
+    await options?.apply?.applyNestedActions("actions", {
+        desired: action.actions,
+        observed: current?.actions,
     });
     await clickGoBack(ctx);
 }

@@ -12,7 +12,7 @@ import {
     sendCreativeInventoryAction,
     waitForAnySetSlot,
 } from "./gui/packets";
-import { CONDITION_LIST_CONFIG } from "./conditions/listConfig";
+import { CONDITION_LIST_CONFIG } from "./actions/conditions/listConfig";
 import { IMPORT_DEBUG } from "./diagnostics/importDebug";
 import {
     getPaginatedListPageForIndex,

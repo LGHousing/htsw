@@ -3,8 +3,8 @@ import { describe, expect, test } from "vitest";
 import {
     initialReducerState,
     reduce,
-} from "../src/importer/progress/reducer";
-import type { ImportEvent } from "../src/importer/importEvents";
+} from "../src/housingSync/progress/reducer";
+import type { ImportEvent } from "../src/housingSync/importEvents";
 
 const baseRow = { totalUnits: 10 };
 
@@ -43,10 +43,10 @@ describe("progress reducer", () => {
                 key: "a",
                 type: "FUNCTION",
                 identity: "foo",
-                sourcePath: "/foo.htsl",
                 setupUnits: 3,
                 initialUnits: 10,
                 rowIndex: 0,
+                cached: null,
             },
         ]);
         expect(s.progress.active).not.toBeNull();
@@ -72,10 +72,10 @@ describe("progress reducer", () => {
                 key: "a",
                 type: "FUNCTION",
                 identity: "foo",
-                sourcePath: null,
                 setupUnits: 4,
                 initialUnits: 10,
                 rowIndex: 0,
+                cached: null,
             },
             { kind: "setupStep", label: "x", completed: 1, total: 4 },
         ]);
@@ -95,10 +95,10 @@ describe("progress reducer", () => {
                 key: "a",
                 type: "FUNCTION",
                 identity: "foo",
-                sourcePath: null,
                 setupUnits: 2,
                 initialUnits: 10,
                 rowIndex: 0,
+                cached: null,
             },
             {
                 kind: "progress",
@@ -143,10 +143,10 @@ describe("progress reducer", () => {
                 key: "a",
                 type: "FUNCTION",
                 identity: "foo",
-                sourcePath: null,
                 setupUnits: 0,
                 initialUnits: 10,
                 rowIndex: 0,
+                cached: null,
             },
             { kind: "importableFinished", key: "a", status: "imported" },
         ]);

@@ -1,7 +1,7 @@
 /// <reference types="../../CTAutocomplete" />
 
 import TaskContext from "../tasks/context";
-import { waitForMenu } from "../importer/gui/menuWait";
+import { waitForMenu } from "../housingSync/gui/menuWait";
 import { extractFunctionNameFromSlot } from "../importables/functions/shared";
 import { removedFormatting } from "../utils/helpers";
 

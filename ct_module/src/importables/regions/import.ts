@@ -1,18 +1,18 @@
 import type { ImportableRegion, Pos } from "htsw/types";
 
+import { applyActionListPlan } from "../../housingSync/actions/applyDiff";
 import {
-    applyActionListPlan,
     prereadActionList,
     type ActionListPlan,
-} from "../../importer/actions/sync";
-import { clickGoBack } from "../../importer/gui/menuUtils";
+} from "../../housingSync/actions/plan";
+import { clickGoBack } from "../../housingSync/gui/menuUtils";
 import {
     timedWaitForMenu,
     timedWaitForUnformattedMessage,
-} from "../../importer/gui/menuWait";
+} from "../../housingSync/gui/menuWait";
 import type { ImportableTrustPlan } from "../../importCache";
-import type { ImportEventHandler } from "../../importer/importEvents";
-import { createSetupStepEmitter } from "../../importer/progress/setupStepEmitter";
+import type { ImportEventHandler } from "../../housingSync/importEvents";
+import { createSetupStepEmitter } from "../../housingSync/progress/setupStepEmitter";
 import TaskContext from "../../tasks/context";
 import { getActionListTrust, getBaselineActionList } from "../actionListHelpers";
 import type { ItemRegistry } from "../itemRegistry";

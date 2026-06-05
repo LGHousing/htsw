@@ -7,12 +7,16 @@ import {
 } from "../importCache";
 import {
     applyImportableEventPlan,
+    eventPlanIsNoOp,
     prereadImportableEvent,
+    reconstructPartialEvent,
     type EventImportPlan,
 } from "./events/import";
 import {
     applyImportableFunctionPlan,
+    functionPlanIsNoOp,
     prereadImportableFunction,
+    reconstructPartialFunction,
     type FunctionImportPlan,
 } from "./functions/import";
 import {
@@ -31,7 +35,7 @@ import {
     type RegionImportPlan,
 } from "./regions/import";
 import type { ItemRegistry } from "./itemRegistry";
-import type { ImportEventHandler } from "../importer/importEvents";
+import type { ImportEventHandler } from "../housingSync/importEvents";
 
 export type ImportTrustOptions = {
     plan?: ImportableTrustPlan;
@@ -141,6 +145,53 @@ export async function applyImportablePlan(
         case "ITEM":
             await applyImportableItemPlan(ctx, plan, itemRegistry, options?.events);
             return;
+        default: {
+            const _exhaustiveCheck: never = plan;
+            return _exhaustiveCheck;
+        }
+    }
+}
+
+/**
+ * True when applying this plan would change nothing, so the importable can be
+ * marked done right after the read pass and skip the apply pass entirely. Only
+ * EVENT and FUNCTION can be judged this early — their apply work is the action
+ * diff already computed during preread. REGION, MENU and ITEM always have real
+ * work left in the apply pass.
+ */
+export function planIsNoOp(plan: ImportablePlan): boolean {
+    switch (plan.kind) {
+        case "FUNCTION":
+            return functionPlanIsNoOp(plan);
+        case "EVENT":
+            return eventPlanIsNoOp(plan);
+        case "REGION":
+        case "MENU":
+        case "ITEM":
+            return false;
+        default: {
+            const _exhaustiveCheck: never = plan;
+            return _exhaustiveCheck;
+        }
+    }
+}
+
+/**
+ * Rebuild the importable from its live snapshot for a partial-failure cache
+ * write, or null when it can't be safely persisted. FUNCTION/EVENT only;
+ * icon/ticks are dropped so a retry re-applies settings instead of trusting
+ * maybe-unwritten values.
+ */
+export function reconstructPartialImportable(plan: ImportablePlan): Importable | null {
+    switch (plan.kind) {
+        case "FUNCTION":
+            return reconstructPartialFunction(plan);
+        case "EVENT":
+            return reconstructPartialEvent(plan);
+        case "REGION":
+        case "MENU":
+        case "ITEM":
+            return null;
         default: {
             const _exhaustiveCheck: never = plan;
             return _exhaustiveCheck;

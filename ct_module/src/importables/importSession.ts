@@ -1,11 +1,9 @@
 import { Diagnostic, SourceMap, parseImportablesResult, type ParseResult } from "htsw";
-import type { Action, Importable } from "htsw/types";
-
-import { getNestedListFields } from "../importer/fields/actionMappings";
+import type { Importable } from "htsw/types";
 
 import TaskContext from "../tasks/context";
 import { isTaskCancelled } from "../tasks/manager";
-import { IMPORT_DEBUG } from "../importer/diagnostics/importDebug";
+import { IMPORT_DEBUG } from "../housingSync/diagnostics/importDebug";
 import { FileSystemFileLoader } from "../utils/fileLoaders";
 import {
     buildTrustPlan,
@@ -18,16 +16,18 @@ import { createItemRegistry } from "./itemRegistry";
 import { resetFunctionNameSession } from "./functions/listFunctions";
 import {
     applyImportablePlan,
+    planIsNoOp,
     prereadImportable,
+    reconstructPartialImportable,
     type ImportablePlan,
 } from "./imports";
-import type { ImportEventHandler } from "../importer/importEvents";
-import type { ImportableEntry } from "../importer/progress/types";
-import { importProgressKey } from "../importer/progress/keys";
+import type { ImportEventHandler } from "../housingSync/importEvents";
+import type { ImportableEntry } from "../housingSync/progress/types";
+import { importProgressKey } from "../housingSync/progress/keys";
 import {
     estimateImportableCost,
     setupUnitsForImportable,
-} from "../importer/progress/costs";
+} from "../housingSync/progress/costs";
 import type { ImportableCacheEntry } from "../importCache/cache";
 import { readCachedActionList } from "./actionListHelpers";
 
@@ -228,63 +228,6 @@ async function maybeWritePartialImportCache(
     const partial = reconstructPartialImportable(plan);
     if (partial === null) return;
     await tryWriteImportableCache(ctx, partial, "importer", housingUuid);
-}
-
-/**
- * Rebuild the importable from the live snapshot, or null when it isn't safely
- * persistable: a shallow snapshot (un-hydrated nested lists hold nulls) would
- * cache a half-known list as truth. FUNCTION/EVENT only; icon/ticks are dropped
- * so a retry re-applies settings instead of trusting maybe-unwritten values.
- */
-function reconstructPartialImportable(plan: ImportablePlan): Importable | null {
-    if (plan.kind !== "FUNCTION" && plan.kind !== "EVENT") return null;
-    const live = plan.actionsPlan?.getLiveCurrent?.();
-    if (live === undefined || !actionsFullyKnown(live)) return null;
-    const actions = live as Action[];
-    if (plan.kind === "FUNCTION") {
-        return { type: "FUNCTION", name: plan.importable.name, actions };
-    }
-    return { type: "EVENT", event: plan.importable.event, actions };
-}
-
-function actionsFullyKnown(actions: ReadonlyArray<Action | null>): boolean {
-    for (const action of actions) {
-        if (action === null) return false;
-        for (const field of getNestedListFields(action.type)) {
-            const nested = (action as Record<string, unknown>)[field.prop];
-            if (!Array.isArray(nested)) continue;
-            if (field.prop === "conditions") {
-                for (const condition of nested) {
-                    if (condition === null) return false;
-                }
-            } else if (!actionsFullyKnown(nested as Array<Action | null>)) {
-                return false;
-            }
-        }
-    }
-    return true;
-}
-
-/**
- * True when applying this plan would change nothing, so the importable can be
- * marked done right after the read pass and skip the apply pass entirely.
- *
- * Only EVENT and FUNCTION can be judged this early, because all their apply
- * work is the action diff we already computed during the read. FUNCTION also
- * has an icon and repeat-ticks; `settingsHandled` tells us those are already
- * done (the read applies them when there were no action changes). REGION, MENU
- * and ITEM always have real work left in the apply pass, so never no-ops here.
- */
-function planIsNoOp(plan: ImportablePlan): boolean {
-    if (plan.kind === "EVENT") {
-        return plan.actionsPlan === null || plan.actionsPlan.diff.operations.length === 0;
-    }
-    if (plan.kind === "FUNCTION") {
-        const actionsNoOp =
-            plan.actionsPlan === null || plan.actionsPlan.diff.operations.length === 0;
-        return actionsNoOp && plan.settingsHandled;
-    }
-    return false;
 }
 
 function estimateImportableUnitsFromTrustPlan(

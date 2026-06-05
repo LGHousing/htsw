@@ -3,7 +3,7 @@ import type { ItemSlot } from "../tasks/specifics/slots";
 import type { ItemRegistry } from "../importables/itemRegistry";
 import type { ItemCaptureRegistry } from "./itemCapture";
 import type { ProgressHandler, PhaseUnits } from "./progress/types";
-import type { ImportEventHandler } from "./importEvents";
+import type { ActionPath, ImportEventHandler } from "./importEvents";
 
 export type UiFieldKind =
     | "boolean"
@@ -185,15 +185,7 @@ export type ReadContext = {
     itemRegistry?: ItemRegistry;
     itemCaptures?: ItemCaptureRegistry;
     events?: ImportEventHandler;
-    pathPrefix?: string;
-    /**
-     * Emit a fresh top-level observed snapshot. Set only for a top-level
-     * read; a nested reader (e.g. a CONDITIONAL body) calls it after each
-     * sub-step (conditions → ifActions → elseActions) so the live preview
-     * fills the body in piece by piece instead of all at once. The action
-     * being read must be mutated in place so the snapshot reflects the
-     * partial state.
-     */
+    listPath?: ActionPath;
     emitSnapshot?: () => void;
 };
 

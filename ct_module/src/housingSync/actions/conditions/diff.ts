@@ -1,14 +1,14 @@
 import type { Condition } from "htsw/types";
 
-import { conditionOnlyNoteDiffers, conditionsEqual } from "../fields/compare";
+import { conditionOnlyNoteDiffers, conditionsEqual } from "../../fields/compare";
 import type {
     ConditionListDiff,
     ConditionListOperation,
     CurrentConditionListEntry,
     ObservedConditionSlot,
-} from "../types";
+} from "../../types";
 
-export { conditionOnlyNoteDiffers as onlyNoteDiffers } from "../fields/compare";
+export { conditionOnlyNoteDiffers as onlyNoteDiffers } from "../../fields/compare";
 
 export function currentConditionListFromSlots(
     slots: readonly ObservedConditionSlot[]

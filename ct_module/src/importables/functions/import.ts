@@ -1,15 +1,16 @@
-import type { ImportableFunction } from "htsw/types";
+import type { Action, Importable, ImportableFunction } from "htsw/types";
 
+import { applyActionListPlan } from "../../housingSync/actions/applyDiff";
 import {
-    applyActionListPlan,
+    actionsFullyHydrated,
     prereadActionList,
     type ActionListPlan,
-} from "../../importer/actions/sync";
-import { clickGoBack } from "../../importer/gui/menuUtils";
-import { timedWaitForMenu } from "../../importer/gui/menuWait";
+} from "../../housingSync/actions/plan";
+import { clickGoBack } from "../../housingSync/gui/menuUtils";
+import { timedWaitForMenu } from "../../housingSync/gui/menuWait";
 import type { ImportableTrustPlan } from "../../importCache";
-import type { ImportEventHandler } from "../../importer/importEvents";
-import { createSetupStepEmitter } from "../../importer/progress/setupStepEmitter";
+import type { ImportEventHandler } from "../../housingSync/importEvents";
+import { createSetupStepEmitter } from "../../housingSync/progress/setupStepEmitter";
 import TaskContext from "../../tasks/context";
 import { getActionListTrust, getBaselineActionList } from "../actionListHelpers";
 import type { ItemRegistry } from "../itemRegistry";
@@ -143,6 +144,22 @@ export async function applyImportableFunctionPlan(
         await openFunctionSettings(ctx, plan.importable.name);
         await applyFunctionSettings(ctx, plan.importable);
     }
+}
+
+/**
+ * True when applying this plan changes nothing — its action diff is empty and
+ * icon/ticks are already handled — so the apply pass can be skipped.
+ */
+export function functionPlanIsNoOp(plan: FunctionImportPlan): boolean {
+    const actionsNoOp =
+        plan.actionsPlan === null || plan.actionsPlan.diff.operations.length === 0;
+    return actionsNoOp && plan.settingsHandled;
+}
+
+export function reconstructPartialFunction(plan: FunctionImportPlan): Importable | null {
+    const live = plan.actionsPlan?.getLiveCurrent?.();
+    if (live === undefined || !actionsFullyHydrated(live)) return null;
+    return { type: "FUNCTION", name: plan.importable.name, actions: live as Action[] };
 }
 
 function functionSettingsTrusted(

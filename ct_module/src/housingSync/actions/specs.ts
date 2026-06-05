@@ -6,9 +6,9 @@ import { ACTION_MAPPINGS } from "../fields/actionMappings";
 import type {
     NestedPropsToRead,
     Observed,
-    ReadContext,
 } from "../types";
-import type { ActionPath, ImportEventHandler, ProgressScope } from "../importEvents";
+import type { ActionApplyContext } from "../context/actionApplyContext";
+import type { ActionReadContext } from "../context/actionReadContext";
 import {
     readOpenConditional,
     readOpenTitle,
@@ -63,15 +63,13 @@ import {
 export type WriteActionOptions<T extends Action = Action> = {
     current?: Observed<T>;
     itemRegistry?: ItemRegistry;
-    pathPrefix?: ActionPath;
-    nestedProgressScope?: (path: ActionPath, extraOffset?: number) => ProgressScope | undefined;
-    events?: ImportEventHandler;
+    apply?: ActionApplyContext;
 };
 
 export type ActionReadArgs<T extends Action> = {
     ctx: TaskContext;
     propsToRead: NestedPropsToRead;
-    read?: ReadContext;
+    read?: ActionReadContext;
     current?: Observed<T>;
 };
 
@@ -84,12 +82,6 @@ type ActionSpec<T extends Action = Action> = {
         options?: WriteActionOptions<T>
     ) => Promise<void>;
 };
-
-export function actionPathForIndex(pathPrefix: string | undefined, index: number): ActionPath {
-    return pathPrefix && pathPrefix.length > 0
-        ? `${pathPrefix}.${index}`
-        : String(index);
-}
 
 type ActionSpecMap = {
     [K in Action["type"]]: ActionSpec<Extract<Action, { type: K }>>;
@@ -285,11 +277,7 @@ export async function writeOpenAction(
         resolvedCurrent = await spec.read({
             ctx,
             propsToRead: new Set(),
-            read: {
-                itemRegistry: opts?.itemRegistry,
-                pathPrefix: opts?.pathPrefix,
-                events: opts?.events,
-            },
+            read: undefined,
             current: opts?.current,
         });
     }

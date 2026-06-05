@@ -57,10 +57,14 @@ function dirOfPath(p: string): string {
 }
 
 function shortPath(p: string): string {
-    const norm = normalizeHtswPath(p).split("\\").join("/");
+    let norm = normalizeHtswPath(p).split("\\").join("/");
+    const tail = "/import.json";
+    if (norm.substring(norm.length - tail.length) === tail) {
+        norm = norm.substring(0, norm.length - tail.length);
+    }
     const parts = norm.split("/");
-    if (parts.length <= 4) return norm;
-    return `.../${parts.slice(parts.length - 4).join("/")}`;
+    if (parts.length <= 2) return norm;
+    return `.../${parts.slice(parts.length - 2).join("/")}`;
 }
 
 function basename(p: string): string {

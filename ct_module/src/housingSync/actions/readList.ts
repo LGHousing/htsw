@@ -31,7 +31,6 @@ import type {
     NestedSummaries,
     Observed,
     ObservedActionSlot,
-    ReadContext,
     ListReadOptions,
 } from "../types";
 import { createNestedHydrationPlan } from "./hydrationPlan";
@@ -45,15 +44,18 @@ import {
     isEmptyPaginatedPlaceholder,
     readPaginatedList,
 } from "../gui/paginatedList";
-import type { ImportEventHandler } from "../importEvents";
+import type { ActionPath, ImportEventHandler } from "../importEvents";
+import { actionPathForIndex, actionPathKey } from "../importEvents";
 import {
     COST,
     hydrationEntryUnits,
     phaseUnitsTotal,
 } from "../progress/costs";
 import { ACTION_LIST_CONFIG } from "./listConfig";
-import { actionPathForIndex, getActionSpec } from "./specs";
+import { getActionSpec } from "./specs";
 import { actionLogLabel } from "./log";
+import { createActionReadContext } from "../context/actionReadContext";
+import { readConditionList } from "./conditions/readList";
 
 export type ActionListReadMode =
     | { kind: "full" }
@@ -194,7 +196,7 @@ export async function readActionList(
     }
     events?.emit({
         kind: "readStarted",
-        listPath: read?.pathPrefix ?? "actions",
+        listPath: read?.listPath === undefined ? "actions" : actionPathKey(read.listPath),
     });
     observed = await readPaginatedList(
         ctx,
@@ -218,7 +220,7 @@ export async function readActionList(
         }
     );
     if (phaseUnits !== undefined) phaseUnits.reading = readCompletedUnits;
-    const isTopLevelRead = read?.pathPrefix === undefined;
+    const isTopLevelRead = read?.listPath === undefined;
     if (isTopLevelRead) {
         emitObservedSnapshot(observed, events);
     }
@@ -393,7 +395,7 @@ async function hydrateNestedActions(
     const progress = read?.progress;
     const phaseUnits = read?.phaseUnits;
     const events = read?.events;
-    const pathPrefix = read?.pathPrefix;
+    const listPath = read?.listPath;
     let completed = 0;
     const total = plan.size;
     let completedHydrateUnits = 0;
@@ -417,7 +419,7 @@ async function hydrateNestedActions(
             ? () => emitObservedSnapshot(observed, events)
             : undefined;
     for (const [entry, propsToRead] of plan) {
-        const entryPath = actionPathForIndex(pathPrefix, entry.index);
+        const entryPath = actionPathForIndex(listPath, entry.index);
         const entryLabel = `reading nested ${actionLogLabel(entry.action)}`;
         emit(entryLabel);
         events?.emit({
@@ -449,8 +451,8 @@ async function hydrateNestedAction(
     entry: ObservedActionSlot,
     propsToRead: NestedPropsToRead,
     listLength: number,
-    read?: ListReadOptions,
-    entryPath?: string,
+    read: ListReadOptions | undefined,
+    entryPath: ActionPath,
     emitSnapshot?: () => void
 ): Promise<void> {
     if (IMPORT_DEBUG) {
@@ -458,7 +460,7 @@ async function hydrateNestedAction(
             return await hydrateNestedActionInner(ctx, entry, propsToRead, listLength, read, entryPath, emitSnapshot);
         } catch (error) {
             const inner = error instanceof Error ? error.message : String(error);
-            const path = entryPath ?? `index ${entry.index}`;
+            const path = entryPath === undefined ? `index ${entry.index}` : actionPathKey(entryPath);
             const typeName = entry.action?.type ?? "<null>";
             throw new Error(`(at ${path}, ${typeName}) ${inner}`);
         }
@@ -471,8 +473,8 @@ async function hydrateNestedActionInner(
     entry: ObservedActionSlot,
     propsToRead: NestedPropsToRead,
     listLength: number,
-    read?: ListReadOptions,
-    entryPath?: string,
+    read: ListReadOptions | undefined,
+    entryPath: ActionPath,
     emitSnapshot?: () => void
 ): Promise<void> {
     if (entry.action === null) {
@@ -490,9 +492,17 @@ async function hydrateNestedActionInner(
     const spec = getActionSpec(entry.action.type);
 
     if (spec.read) {
-        const readCtx: ReadContext | undefined = read !== undefined
-            ? { itemRegistry: read.itemRegistry, itemCaptures: read.itemCaptures, events: read.events, pathPrefix: entryPath, emitSnapshot }
-            : undefined;
+        const readCtx = createActionReadContext({
+            ctx,
+            actionPath: entryPath,
+            actionType: entry.action.type,
+            itemRegistry: read?.itemRegistry,
+            itemCaptures: read?.itemCaptures,
+            events: read?.events,
+            emitSnapshot,
+            readNestedActions: readActionList,
+            readNestedConditions: readConditionList,
+        });
         entry.action = await spec.read({
             ctx,
             propsToRead,

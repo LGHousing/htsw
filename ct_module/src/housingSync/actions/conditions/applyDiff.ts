@@ -1,41 +1,50 @@
-/**
- * Mutates a Housing condition list to match desired. Handles the invert
- * toggle (every condition editor exposes one — actions don't share that rule)
- * and includes `importCondition` since it shares the apply path's invert and
- * note logic.
- */
 import { Diagnostic } from "htsw";
 import type { Condition } from "htsw/types";
 
-import TaskContext from "../../tasks/context";
-import { type ItemRegistry } from "../../importables/itemRegistry";
+import TaskContext from "../../../tasks/context";
+import { type ItemRegistry } from "../../../importables/itemRegistry";
 import {
     clickGoBack,
     isLimitExceeded,
     readBooleanValue,
     setListItemNote,
     setNoteOnLastVisibleSlot,
-} from "../gui/menuUtils";
-import { timedWaitForMenu } from "../gui/menuWait";
-import { ItemSlot, MouseButton } from "../../tasks/specifics/slots";
-import { removedFormatting } from "../../utils/helpers";
-import { CONDITION_MAPPINGS } from "../fields/conditionMappings";
+} from "../../gui/menuUtils";
+import { timedWaitForMenu } from "../../gui/menuWait";
+import { ItemSlot, MouseButton } from "../../../tasks/specifics/slots";
+import { removedFormatting } from "../../../utils/helpers";
+import { CONDITION_MAPPINGS } from "../../fields/conditionMappings";
 import type {
     ConditionListDiff,
     ConditionListOperation,
     ObservedConditionSlot,
-} from "../types";
-import type { ProgressHandler } from "../progress/types";
-import { getPaginatedListSlotAtIndex } from "../gui/paginatedList";
+} from "../../types";
+import type { ProgressHandler } from "../../progress/types";
+import { getPaginatedListSlotAtIndex } from "../../gui/paginatedList";
 import { CONDITION_LIST_CONFIG } from "./listConfig";
 import { getConditionSpec, writeOpenCondition } from "./specs";
 import {
+    conditionListReadUnits,
     conditionListDiffApplyUnits,
     conditionOperationUnits,
+    estimateConditionListPhaseUnits,
     phaseUnitsTotal,
     type PhaseUnits,
-} from "../progress/costs";
-import { traceConditionOp } from "../progress/trace";
+} from "../../progress/costs";
+import { traceConditionOp } from "../../progress/trace";
+import { currentConditionListFromSlots, diffConditionList } from "./diff";
+import { readConditionList } from "./readList";
+
+export type ApplyConditionListOptions = {
+    observed?: ObservedConditionSlot[];
+    itemRegistry?: ItemRegistry;
+    baselineCurrent?: ReadonlyArray<Condition | null>;
+    progress?: ProgressHandler;
+};
+
+export type ApplyConditionListResult = {
+    usedObserved: ObservedConditionSlot[];
+};
 
 type LiveConditionListEntry = {
     entryId: number;
@@ -87,9 +96,6 @@ async function importCondition(
     await writeOpenCondition(ctx, condition, undefined, itemRegistry);
 
     await setOpenConditionInverted(ctx, condition.inverted === true);
-    // Always click back: every condition editor has an invert toggle, so the
-    // editor is always open here. Actions don't have that toggle, so they
-    // can't assume the same.
     await clickGoBack(ctx);
 
     await setNoteOnLastVisibleSlot(ctx, condition.note);
@@ -151,12 +157,6 @@ export async function applyConditionListDiff(
     const baseline = phaseUnits === undefined
         ? 0
         : phaseUnits.reading + phaseUnits.hydrating;
-    // Emits happen at the START of each op (so the label reflects what's
-    // about to run), then `completedUnits` is bumped after the op
-    // finishes. Track the last emitted label so the post-loop flush can
-    // reuse it instead of overwriting the screen with a "diff applied"
-    // placeholder that lingers through the next non-emitting work
-    // (clickGoBack, setBoolean, etc.) inside the parent's writer.
     let lastLabel = "";
     const emitConditionOp = (label: string): void => {
         if (progress === undefined) return;
@@ -300,8 +300,51 @@ export async function applyConditionListDiff(
         completedOps++;
     }
 
-    // Flush final completedUnits/Ops to the GUI but keep the last
-    // meaningful label visible.
     if (lastLabel.length > 0) emitConditionOp(lastLabel);
+}
+
+export async function applyConditionList(
+    ctx: TaskContext,
+    desired: Condition[],
+    options?: ApplyConditionListOptions
+): Promise<ApplyConditionListResult> {
+    const phaseUnits = estimateConditionListPhaseUnits(
+        desired,
+        options?.baselineCurrent
+    );
+    const progress = options?.progress;
+    progress?.({
+        phase: "reading",
+        completedUnits: 0,
+        totalUnits: phaseUnitsTotal(phaseUnits),
+        phaseUnits: phaseUnits,
+        sync: { completedUnits: 0, totalUnits: 1, parent: null },
+    });
+    const observed =
+        options?.observed ??
+        (await readConditionList(ctx, {
+            itemRegistry: options?.itemRegistry,
+            phaseUnits,
+            progress,
+        }));
+    phaseUnits.reading = conditionListReadUnits(observed.length);
+    progress?.({
+        phase: "reading",
+        completedUnits: phaseUnits.reading,
+        totalUnits: phaseUnitsTotal(phaseUnits),
+        phaseUnits: phaseUnits,
+        sync: { completedUnits: 1, totalUnits: 1, parent: null },
+    });
+    const diff = diffConditionList(currentConditionListFromSlots(observed), desired);
+
+    await applyConditionListDiff(
+        ctx,
+        observed,
+        diff,
+        options?.itemRegistry,
+        progress,
+        phaseUnits
+    );
+    return { usedObserved: observed };
 }
 

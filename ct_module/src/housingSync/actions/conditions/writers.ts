@@ -20,8 +20,8 @@ import {
     type ConditionRequireTeam,
 } from "htsw/types";
 
-import TaskContext from "../../tasks/context";
-import { type ItemRegistry } from "../../importables/itemRegistry";
+import TaskContext from "../../../tasks/context";
+import { type ItemRegistry } from "../../../importables/itemRegistry";
 import {
     clickGoBack,
     findMenuOptionByLore,
@@ -33,16 +33,16 @@ import {
     setCycleValue,
     setSelectValue,
     setStringValue,
-} from "../gui/menuUtils";
-import { waitForMenu } from "../gui/menuWait";
-import { removedFormatting } from "../../utils/helpers";
+} from "../../gui/menuUtils";
+import { waitForMenu } from "../../gui/menuWait";
+import { removedFormatting } from "../../../utils/helpers";
 import {
     getConditionFieldCycleOptions,
     getConditionFieldDefault,
     getConditionFieldLabel,
-} from "../fields/conditionMappings";
-import { setItemValue } from "../items/injectItem";
-import { resolveImportableItem } from "../items/resolveItem";
+} from "../../fields/conditionMappings";
+import { setItemValue } from "../../items/injectItem";
+import { resolveImportableItem } from "../../items/resolveItem";
 
 function conditionDefault<T>(type: Condition["type"], prop: string): T {
     return getConditionFieldDefault(type, prop) as T;

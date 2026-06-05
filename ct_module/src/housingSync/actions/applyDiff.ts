@@ -1,15 +1,3 @@
-/**
- * Mutates a Housing action list to match a desired list, given a precomputed
- * diff. Includes `addAction` (single-action add) because the `adds` loop
- * is its only caller.
- *
- * Module graph note: this file imports `writeOpenAction`,
- * `actionPathForIndex`, `getActionSpec` from `./specs`. The writers in
- * `./writers` reach back into `./sync` (which itself imports from this file)
- * for nested `syncActionList` calls. This is a function-reference cycle that
- * resolves fine at runtime — don't try to "fix" it by relocating
- * `writeOpenAction`.
- */
 import { Diagnostic } from "htsw";
 import type { Action } from "htsw/types";
 
@@ -41,6 +29,7 @@ import type {
     PlannedOp,
     ProgressScope,
 } from "../importEvents";
+import { actionPathForIndex } from "../importEvents";
 import {
     COST,
     actionOperationApplyUnits,
@@ -52,13 +41,23 @@ import {
 import { timed } from "../progress/timing";
 import { ACTION_LIST_CONFIG } from "./listConfig";
 import {
-    actionPathForIndex,
     getActionSpec,
     writeOpenAction,
 } from "./specs";
 import { waitIfStepPaused } from "../stepGate";
 import { getActionScalarLoreFields } from "../fields/actionMappings";
 import { scalarFieldDiffers } from "../fields/compare";
+import {
+    createActionApplyContext,
+    type ApplyNestedActionList,
+} from "../context/actionApplyContext";
+import { applyConditionList } from "./conditions/applyDiff";
+import {
+    prereadActionList,
+    type ActionListPlan,
+    type ActionListApplyOptions,
+    type ActionListPrereadOptions,
+} from "./plan";
 
 type LiveActionListEntry = {
     entryId: number;
@@ -78,9 +77,7 @@ async function addAction(
     ctx: TaskContext,
     action: Action,
     itemRegistry?: ItemRegistry,
-    nestedProgressScope?: (path: ActionPath, extraOffset?: number) => ProgressScope | undefined,
-    pathPrefix?: string,
-    events?: ImportEventHandler,
+    apply?: ReturnType<typeof createActionApplyContext>,
     callbacks?: ImportActionCallbacks
 ): Promise<void> {
     ctx.getMenuItemSlot("Add Action").click();
@@ -101,14 +98,10 @@ async function addAction(
     }
     await timedWaitForMenu(ctx, "menuClickWait");
 
-    // No-field actions (e.g. Kill Player, Exit) add directly to the list
-    // without opening an editor.
     if (spec.write) {
         await writeOpenAction(ctx, action, {
             itemRegistry,
-            pathPrefix,
-            nestedProgressScope,
-            events,
+            apply,
         });
         await clickGoBack(ctx);
         callbacks?.onActionAdded?.();
@@ -166,30 +159,36 @@ async function moveActionToIndex(
     }
 }
 
-export async function applyActionListDiff(
+export async function applyActionListPlan(
     ctx: TaskContext,
-    observed: ObservedActionSlot[],
-    desired: Action[],
-    diff: ActionListDiff,
-    itemRegistry?: ItemRegistry,
-    pathPrefix?: string,
-    phaseUnits?: PhaseUnits,
-    events?: ImportEventHandler,
-    progressScope?: ProgressScope,
-    onSnapshot?: (readCurrent: () => Array<Action | null>) => void
+    plan: ActionListPlan,
+    options?: ActionListApplyOptions
 ): Promise<void> {
-    await applyActionListDiffInner(
+    const progressScope: ProgressScope = options?.progressScope ?? { kind: "topLevel" };
+    await applyActionListPlanInner(
         ctx,
-        observed,
-        desired,
-        diff,
-        itemRegistry,
-        pathPrefix,
-        phaseUnits,
-        events ?? null,
-        progressScope ?? { kind: "topLevel" },
-        onSnapshot
+        plan.observed,
+        plan.desired,
+        plan.diff,
+        options?.itemRegistry,
+        options?.listPath,
+        plan.phaseUnits,
+        options?.events ?? null,
+        progressScope,
+        (readCurrent) => {
+            plan.getLiveCurrent = readCurrent;
+        },
+        applyNestedActionList
     );
+}
+
+async function applyNestedActionList(
+    ctx: TaskContext,
+    desired: Action[],
+    options: ActionListPrereadOptions
+): Promise<void> {
+    const plan = await prereadActionList(ctx, desired, options);
+    await applyActionListPlan(ctx, plan, options);
 }
 
 function desiredIndexForOp(op: ActionListOperation): number {
@@ -297,41 +296,20 @@ function emitApplyProgress(
     });
 }
 
-function nestedApplyScope(
-    parentActionPath: ActionPath,
-    baselineApplyUnits: number,
-    completedOps: number,
-    totalOps: number
-): (path: ActionPath, extraOffset?: number) => ProgressScope {
-    // `extraOffset` lets a CONDITIONAL/RANDOM writer place each of its
-    // sub-lists (conditions, ifActions, elseActions) at its own slice of the
-    // op's apply budget — conditions at [base, base+condCost], ifActions
-    // after, etc. — so their progress doesn't collide on the same baseline.
-    return (path, extraOffset) => ({
-        kind: "nestedActionList",
-        path,
-        parentActionPath,
-        baselineApplyUnits: baselineApplyUnits + (extraOffset ?? 0),
-        parentSync: {
-            completedUnits: completedOps,
-            totalUnits: totalOps,
-        },
-    });
-}
-
-async function applyActionListDiffInner(
+async function applyActionListPlanInner(
     ctx: TaskContext,
     observed: ObservedActionSlot[],
     desired: Action[],
     diff: ActionListDiff,
     itemRegistry?: ItemRegistry,
-    pathPrefix?: string,
+    listPath?: ActionPath,
     phaseUnits?: PhaseUnits,
     events?: ImportEventHandler | null,
     progressScope: ProgressScope = { kind: "topLevel" },
-    onSnapshot?: (readCurrent: () => Array<Action | null>) => void
+    onSnapshot?: (readCurrent: () => Array<Action | null>) => void,
+    applyNestedActions?: ApplyNestedActionList
 ): Promise<void> {
-    const isTopLevel = pathPrefix === undefined;
+    const isTopLevel = listPath === undefined;
     const summary = summarizeDiff(diff, desired.length);
     const plannedApplyUnits = actionListDiffApplyUnits(
         diff,
@@ -355,7 +333,7 @@ async function applyActionListDiffInner(
         for (const op of diff.operations) {
             const idx = desiredIndexForOp(op);
             if (idx >= 0) {
-                const srcPath = actionPathForIndex(pathPrefix, idx);
+                const srcPath = actionPathForIndex(listPath, idx);
                 const actionType = actionTypeForOp(op);
                 if (actionType === null) continue;
                 if (op.kind === "add") {
@@ -387,7 +365,7 @@ async function applyActionListDiffInner(
                     });
                 }
             } else if (op.kind === "delete") {
-                const obsPath = actionPathForIndex(pathPrefix, op.fromIndex);
+                const obsPath = actionPathForIndex(listPath, op.fromIndex);
                 operations.push({
                     op: "delete",
                     path: obsPath,
@@ -405,7 +383,7 @@ async function applyActionListDiffInner(
         }
         const matches: ActionPath[] = [];
         for (let i = 0; i < desired.length; i++) {
-            if (!touched.has(i)) matches.push(actionPathForIndex(pathPrefix, i));
+            if (!touched.has(i)) matches.push(actionPathForIndex(listPath, i));
         }
         events.emit({ kind: "diffPlanned", summary, operations, matches });
     }
@@ -479,7 +457,6 @@ async function applyActionListDiffInner(
     };
     emitSnapshot();
 
-    // Deletes first (reverse order so indices stay valid), then refresh slot refs.
     if (deletes.length > 0) {
         deletes.sort((a, b) => b.fromIndex - a.fromIndex);
 
@@ -491,7 +468,7 @@ async function applyActionListDiffInner(
             }
 
             if (isTopLevel) await waitIfStepPaused(ctx);
-            const obsPath = actionPathForIndex(pathPrefix, op.fromIndex);
+            const obsPath = actionPathForIndex(listPath, op.fromIndex);
             await deleteObservedAction(ctx, index, current.length);
             appliedUnits += operationApplyUnits(op, desired.length);
             current.splice(index, 1);
@@ -510,7 +487,6 @@ async function applyActionListDiffInner(
         }
     }
 
-    // Edits before moves keep current entry positions stable while editors open.
     for (const op of edits) {
         const currentIndex = findCurrentIndex(current, op.entryId);
         if (currentIndex === -1) {
@@ -518,7 +494,7 @@ async function applyActionListDiffInner(
         }
 
         const srcIdx = desiredIndexForOp(op);
-        const srcPath = srcIdx >= 0 ? actionPathForIndex(pathPrefix, srcIdx) : null;
+        const srcPath = srcIdx >= 0 ? actionPathForIndex(listPath, srcIdx) : null;
         if (events != null && srcPath !== null) {
             events.emit({
                 kind: "operationStarted",
@@ -576,21 +552,24 @@ async function applyActionListDiffInner(
             await timedWaitForMenu(ctx, "menuClickWait");
 
             const baselineAction = op.baselineAction;
+            const apply = srcPath === null || applyNestedActions === undefined
+                ? undefined
+                : createActionApplyContext({
+                      ctx,
+                      actionPath: srcPath,
+                      itemRegistry,
+                      events: events ?? undefined,
+                      appliedUnits,
+                      completedOps,
+                      totalOps: diff.operations.length,
+                      applyNestedActions,
+                      applyNestedConditions: applyConditionList,
+                  });
 
             await writeOpenAction(ctx, op.desired, {
                 current: baselineAction,
                 itemRegistry,
-                pathPrefix: srcPath ?? undefined,
-                nestedProgressScope:
-                    srcPath === null
-                        ? undefined
-                        : nestedApplyScope(
-                              srcPath,
-                              appliedUnits,
-                              completedOps,
-                              diff.operations.length
-                          ),
-                events: events ?? undefined,
+                apply,
             });
             updateEditSnapshot(actionWithCurrentNote(), false);
             await clickGoBack(ctx);
@@ -626,7 +605,7 @@ async function applyActionListDiffInner(
         }
 
         const srcIdx = desiredIndexForOp(op);
-        const srcPath = srcIdx >= 0 ? actionPathForIndex(pathPrefix, srcIdx) : null;
+        const srcPath = srcIdx >= 0 ? actionPathForIndex(listPath, srcIdx) : null;
         if (events != null && srcPath !== null) {
             events.emit({
                 kind: "operationStarted",
@@ -662,7 +641,7 @@ async function applyActionListDiffInner(
     let currentLength = current.length;
     for (const op of adds) {
         const srcIdx = desiredIndexForOp(op);
-        const srcPath = srcIdx >= 0 ? actionPathForIndex(pathPrefix, srcIdx) : null;
+        const srcPath = srcIdx >= 0 ? actionPathForIndex(listPath, srcIdx) : null;
         if (events != null && srcPath !== null) {
             events.emit({
                 kind: "operationStarted",
@@ -687,20 +666,24 @@ async function applyActionListDiffInner(
             emitSnapshot();
             actionAdded = true;
         };
+        const apply = srcPath === null || applyNestedActions === undefined
+            ? undefined
+            : createActionApplyContext({
+                  ctx,
+                  actionPath: srcPath,
+                  itemRegistry,
+                  events: events ?? undefined,
+                  appliedUnits,
+                  completedOps,
+                  totalOps: diff.operations.length,
+                  applyNestedActions,
+                  applyNestedConditions: applyConditionList,
+              });
         await addAction(
             ctx,
             actionToImport,
             itemRegistry,
-            srcPath === null
-                ? undefined
-                : nestedApplyScope(
-                      srcPath,
-                      appliedUnits,
-                      completedOps,
-                      diff.operations.length
-                  ),
-            srcPath ?? undefined,
-            events ?? undefined,
+            apply,
             { onActionAdded: updateAddedSnapshot }
         );
         if (!actionAdded) updateAddedSnapshot();

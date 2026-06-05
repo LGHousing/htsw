@@ -30,7 +30,7 @@ import {
 import { importableIdentity, importableKey } from "../../../importCache/paths";
 import { findCacheRowIndex } from "../../../importCache/status";
 import { addToQueue, makeImportableQueueItem, queueItemKey, removeFromQueueKey } from "../../right-panel/import-tab/queue";
-import { isImportRunning } from "../../../importer/runtimeState";
+import { isImportRunning } from "../../../housingSync/runtimeState";
 import { composeFileMenu, composeImportableMenu } from "../../menus/fileMenu";
 import { autoTrackRefresh, queueModifiedFromParse } from "../../right-panel/import-tab/importController";
 import { SourceDir, SourceFile, removeSource } from "./source";

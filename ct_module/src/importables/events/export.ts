@@ -1,13 +1,13 @@
 import type { Action, Event, ImportableEvent } from "htsw/types";
 import * as htsw from "htsw";
 
-import { readActionList } from "../../importer/actions/readList";
+import { readActionList } from "../../housingSync/actions/readList";
 import {
     ItemCaptureRegistry,
     restoreInventoryToSnapshot,
     snapshotInventory,
     type InventorySnapshot,
-} from "../../importer/itemCapture";
+} from "../../housingSync/itemCapture";
 import { tryWriteImportableCache } from "../../importCache";
 import TaskContext from "../../tasks/context";
 import { observedSlotsToActions } from "../../exporter/sanitize";

@@ -1,15 +1,16 @@
 import type { ImportableMenu } from "htsw/types";
 
-import { syncActionList } from "../../importer/actions/sync";
-import { clickGoBack, setCycleValue } from "../../importer/gui/menuUtils";
+import { applyActionListPlan } from "../../housingSync/actions/applyDiff";
+import { prereadActionList } from "../../housingSync/actions/plan";
+import { clickGoBack, setCycleValue } from "../../housingSync/gui/menuUtils";
 import {
     timedWaitForMenu,
     timedWaitForUnformattedMessage,
-} from "../../importer/gui/menuWait";
-import { selectItemFromOpenInventory } from "../../importer/items/injectItem";
+} from "../../housingSync/gui/menuWait";
+import { selectItemFromOpenInventory } from "../../housingSync/items/injectItem";
 import type { ImportableTrustPlan } from "../../importCache";
-import type { ImportEventHandler } from "../../importer/importEvents";
-import { createSetupStepEmitter } from "../../importer/progress/setupStepEmitter";
+import type { ImportEventHandler } from "../../housingSync/importEvents";
+import { createSetupStepEmitter } from "../../housingSync/progress/setupStepEmitter";
 import TaskContext from "../../tasks/context";
 import { getItemFromNbt } from "../../utils/nbt";
 import { getActionListTrust, getBaselineActionList } from "../actionListHelpers";
@@ -28,12 +29,6 @@ export type MenuImportPlan = {
     trustPlan?: ImportableTrustPlan;
 };
 
-/**
- * MENU stays single-pass: per-slot item-selection mutates the menu state,
- * so we can't pre-read action lists for slots whose items aren't yet set.
- * Preread records a minimal plan; all real work happens in
- * `applyImportableMenuPlan`.
- */
 export async function prereadImportableMenu(
     _ctx: TaskContext,
     importable: ImportableMenu,
@@ -113,12 +108,13 @@ async function importImportableMenu(
             ctx.getItemSlot("Edit Actions").click();
             await timedWaitForMenu(ctx, "menuClickWait");
 
-            await syncActionList(ctx, slot.actions!, {
+            const actionsPlan = await prereadActionList(ctx, slot.actions!, {
                 itemRegistry,
                 baselineCurrent: getBaselineActionList(trustPlan, slotActionsPath),
                 trust: getActionListTrust(trustPlan, slotActionsPath),
                 events,
             });
+            await applyActionListPlan(ctx, actionsPlan, { itemRegistry, events });
 
             await clickGoBack(ctx);
         }

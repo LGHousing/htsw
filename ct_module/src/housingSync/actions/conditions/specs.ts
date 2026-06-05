@@ -1,10 +1,10 @@
 import type { Condition } from "htsw/types";
 
-import TaskContext from "../../tasks/context";
-import { type ItemRegistry } from "../../importables/itemRegistry";
-import { ItemSlot } from "../../tasks/specifics/slots";
-import { removedFormatting } from "../../utils/helpers";
-import { CONDITION_MAPPINGS } from "../fields/conditionMappings";
+import TaskContext from "../../../tasks/context";
+import { type ItemRegistry } from "../../../importables/itemRegistry";
+import { ItemSlot } from "../../../tasks/specifics/slots";
+import { removedFormatting } from "../../../utils/helpers";
+import { CONDITION_MAPPINGS } from "../../fields/conditionMappings";
 import { onlyNoteDiffers } from "./diff";
 import {
     readRequireGroup,

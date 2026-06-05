@@ -14,18 +14,18 @@ import { toggleHtswGui } from "./gui/overlay";
 import {
     getTimingStats,
     resetTimingStats,
-} from "./importer/progress/timing";
-import { COST } from "./importer/progress/costs";
+} from "./housingSync/progress/timing";
+import { COST } from "./housingSync/progress/costs";
 import { getEventContainerCounts } from "./tasks/specifics/waitFor";
-import { isPacketOrderProbeActive } from "./importer/diagnostics/packetOrderProbe";
+import { isPacketOrderProbeActive } from "./housingSync/diagnostics/packetOrderProbe";
 import {
     getProgressTracePath,
     setProgressTraceEnabled,
-} from "./importer/progress/trace";
+} from "./housingSync/progress/trace";
 import { getCurrentHousingUuid } from "./importCache";
 import { startImport } from "./gui/right-panel/import-tab/importController";
 import { canonicalPath } from "./gui/parsing/parses";
-import { snbtFromItem } from "./importer/itemCapture";
+import { snbtFromItem } from "./housingSync/itemCapture";
 import {
     defaultExportRoot,
     resolveModuleRelativePath,

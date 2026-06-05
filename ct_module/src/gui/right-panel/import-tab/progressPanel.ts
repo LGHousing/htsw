@@ -31,7 +31,7 @@ import {
     getStepAuto,
     requestStepAdvance,
     setStepAuto,
-} from "../../../importer/stepGate";
+} from "../../../housingSync/stepGate";
 import { cancelActiveImport } from "./importController";
 import { isCurrentHouseTrusted } from "../../state";
 import {
@@ -49,7 +49,7 @@ import {
 import {
     countImportablesByStatus,
     isImportTotalLocked,
-} from "../../../importer/progress/types";
+} from "../../../housingSync/progress/types";
 
 const COLOR_BAR_BG = COLOR_PANEL_BORDER;
 const PROGRESS_BAR_H = 6;

@@ -14,7 +14,7 @@ import { CONDITION_MAPPINGS } from "../fields/conditionMappings";
 import {
     baselineConditionListFromConditions,
     diffConditionList,
-} from "../conditions/diff";
+} from "./conditions/diff";
 import type {
     ActionListDiff,
     ActionListOperation,

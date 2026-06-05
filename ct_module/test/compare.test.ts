@@ -5,9 +5,9 @@ import {
     normalizeActionCompare,
     normalizeConditionCompare,
     scalarFieldDiffers,
-} from "../src/importer/fields/compare";
-import { getActionScalarLoreFields } from "../src/importer/fields/actionMappings";
-import type { Observed } from "../src/importer/types";
+} from "../src/housingSync/fields/compare";
+import { getActionScalarLoreFields } from "../src/housingSync/fields/actionMappings";
+import type { Observed } from "../src/housingSync/types";
 
 import { changeVar, message, playSound } from "./utils";
 

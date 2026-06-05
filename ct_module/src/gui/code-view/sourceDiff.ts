@@ -28,7 +28,6 @@ import type { ParseResult } from "htsw";
 import type { Action, Condition, Importable } from "htsw/types";
 
 import { normalizeHtswPath } from "../lib/pathDisplay";
-import type { ActionPath } from "../../importer/importEvents";
 import type { DiffState } from "./diffPalette";
 import { readImportableCache } from "../../importCache/cache";
 import { actionHash, conditionHash } from "../../importCache/hash";
@@ -44,7 +43,9 @@ import { canonicalPath, forEachCachedParse } from "../parsing/parses";
 import { getHousingUuid } from "../state/housing";
 import { readCachedActionList } from "../../importables/actionListHelpers";
 
-export type SourceDiffEntry = Map<ActionPath, DiffState>;
+type SourceActionPathKey = string;
+
+export type SourceDiffEntry = Map<SourceActionPathKey, DiffState>;
 
 const entries: Map<string, SourceDiffEntry> = new Map();
 

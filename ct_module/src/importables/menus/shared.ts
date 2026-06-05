@@ -1,8 +1,8 @@
-import { clickGoBack } from "../../importer/gui/menuUtils";
+import { clickGoBack } from "../../housingSync/gui/menuUtils";
 import {
     timedWaitForMenu,
     timedWaitForUnformattedMessage,
-} from "../../importer/gui/menuWait";
+} from "../../housingSync/gui/menuWait";
 import TaskContext from "../../tasks/context";
 import { removedFormatting, unique } from "../../utils/helpers";
 

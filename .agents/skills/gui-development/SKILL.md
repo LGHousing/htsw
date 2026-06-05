@@ -1,0 +1,315 @@
+---
+name: gui-development
+description: How the in-game GUI overlay (panels, layout, components, focus, popovers, scroll) is structured and the CT 1.8.9 quirks you must know when changing it. Read this BEFORE touching anything under ct_module/src/gui/.
+---
+
+# GUI development
+
+The HTSW in-game overlay is a small declarative UI framework that runs inside ChatTriggers (Rhino + Forge 1.8.9). It is not React, but the mental model is similar: a tree of immutable element descriptions is laid out and rendered every frame, with reactive values pulled through `Extractable<T>` callbacks.
+
+**KEEP THIS DOCUMENT IN SYNC.** Whenever you change anything in `ct_module/src/gui/` — adding an element kind, changing layout semantics, swapping a CT trigger, fixing a Rhino quirk — update this file in the same change. Future agents (and you) rely on it to avoid relearning the same traps.
+
+## Files
+
+The library code (project-agnostic UI primitives) lives in `gui/lib/`. Project-specific implementation (panel wiring, inventory anchoring, panel content) lives directly under `gui/`. Implementations import from `../lib/...`; library files never import from outside `lib/`.
+
+Library — `gui/lib/` (project-agnostic UI primitives + screen/theme):
+- `layout.ts` — element types, padding, sizing, container/scroll layout algorithm.
+- `extractable.ts` — `Extractable<T> = T | (() => T)` and `extract`.
+- `render.ts` — single tree renderer + click dispatcher (used by panels and popovers).
+- `panel.ts` — `Panel` class: bounds, visibility, click trigger, render trigger.
+- `popovers.ts` — global popover stack, anchored/modal render, click dispatch helper, hover-suppression query.
+- `menu.ts` — `openMenu(x, y, actions[])` builds a context-menu popover from `{label, onClick}` actions, plus `{kind: "separator"}` dividers. Auto-closes on click. Menu width auto-sizes to the widest label via `Renderer.getStringWidth` (floored at `MIN_MENU_WIDTH`); callers don't need to truncate.
+- `focus.ts` — single global focused-input id.
+- `inputState.ts` — per-input `GuiTextField` instances (cursor, selection, clipboard, arrow keys).
+- `scissor.ts` — GL scissor stack. Multiplies overlay coords by `getEffectiveOverlayScale()` to get real pixels (see Coordinate space).
+- `overlayScale.ts` — scale boundary helpers. `OVERLAY_SCALE_TARGET = 4` (the cap), `getEffectiveOverlayScale()` (per-frame actual), `mcToOverlay`, `getOverlayScreen{W,H}`. See **Coordinate space** below.
+- `bounds.ts` — reads the open Minecraft `GuiContainer`'s bounds via Java reflection and converts them to overlay space; provides fullscreen panel rect + chat rect helpers.
+- `theme.ts` — color/size/glyph constants. `lib/popovers` reads its panel/scrim colors from here, so `theme` is treated as part of `lib`.
+- `components/` — thin element-builder functions (`Button`, `Container`, `Row`, `Col`, `Input`, `Scroll`, `Text`).
+
+App state — `gui/state/` (genuinely-global mutable state ONLY; split by concern, with `index.ts` as a convenience re-export barrel — nothing else lives here):
+- `paths.ts` — active + export `import.json` path.
+- `parsed.ts` — the active `ParseResult` (`getParsedResult` / `setParsedResult`).
+- `housing.ts` — current housing UUID.
+- `trust.ts` — **per-house trust set** with `isHouseTrusted` / `setHouseTrust` / `isCurrentHouseTrusted`, persisted to `trusted-houses.json`.
+- `selectionSet.ts` — Importables-tab multi-select checkbox set.
+- `autoTrack.ts` — auto-track source set.
+- `flags.ts` — `parseInProgress` + import-sound mute.
+- `index.ts` — re-export barrel over the above, plus cross-area re-exports of `knowledge/rows` and `import-tab/importProgress` so existing `from "../state"` call sites resolve. Owns no state itself.
+
+Parse cache service — `gui/parsing/` (a service, not "state"):
+- `parses.ts` — the single parse authority + per-file cache (`parseImportJsonAt`). Decides freshness by a **fingerprint** (mtimes of the import.json and every file it references via `allReferencedPaths`), re-validated throttled (`FP_RECHECK_MS`) so a referenced-file edit is picked up within ~0.4s without a separate watcher. Owns the disk snapshot and is the only thing that calls the htsw parser. `invalidateParseCacheEntry` forces a fresh parse; `touchParseCacheMtime` marks a file in-sync after an in-place edit.
+- `parseSnapshot.ts` — on-disk persisted parse output, keyed by import.json path; skips the ~1s cold full parse on `/ct reload` when nothing referenced has changed.
+- `reparse.ts` — thin DRIVER over `parses.ts`: auto-discovers `import.json`, debounces reloads, polls the authority each tick, propagates a changed parse into global state. Owns no parsing/snapshot/mtime logic itself.
+- `importablePaths.ts` — centralized importable→path lookups: `importableSourcePath` (htsl/.snbt/json), `importableSubListPath(imp, kind)` for sub-lists (`onEnterActions`/`onExitActions` on REGION; `leftClickActions`/`rightClickActions` on ITEM), and `allReferencedPaths`. Resolves spans through `sourceMap.getFileByPos` so a list with `actionsPath: "..."` returns the htsl while inline JSON returns the import.json.
+
+Code-view data — `gui/code-view/` (the ONE renderer + everything it parses/colors):
+- `htslParse.ts` — `parseHtslFile` + `actionsToLines`, consumed by `lineModel.ts` for the source preview.
+- `diffPalette.ts` — the `DiffState` union + color tables (`COLOR_BY_STATE` / `ROW_BG_BY_STATE`) + `COLOR_CURSOR` (the focus-cursor color; the cursor is NOT a diff state). Shared vocabulary; holds no logic.
+- `sourceDiff.ts` — STATIC diff producer: per-action `DiffState` comparing source vs the import cache ("what would change vs last import"), for the View tab. Lazy, cached per file.
+
+Diff decorators — `gui/right-panel/decorators.ts` (kept OUT of `code-view/` so the renderer stays generic; the `LineDecorator` interface lives in `code-view/lineTypes.ts`):
+- `diffDecorator` — View tab; reads `sourceDiff`.
+- `progressDecorator` — live import strip; reads `import-tab/livePreview` (each `PreviewLine`'s own `diffState`/`completed`, plus the live cursor + phase scalars). There is no separate overlay map — `livePreview` is the single live store.
+
+Right-panel state — `gui/right-panel/`:
+- `selection.ts` — preview/confirm + tab state for the right-panel source preview, plus the top-level View/Import tab.
+
+Import-session state — `gui/right-panel/import-tab/`:
+- `livePreview.ts` — LIVE diff producer: per-action `DiffState` driven by import events during an actual import (was `previewLines.ts` + the `importPreviewState.ts` barrel).
+- `focusedLine.ts` — per-file focused-line id for the code view.
+- `importProgress.ts` — import-session progress, ETA, per-queue-row run state.
+- `queue.ts` — the dynamic import `QueueItem` queue.
+
+Knowledge — `gui/knowledge/`:
+- `rows.ts` — knowledge-row storage (`getKnowledgeRows` / `setKnowledgeRows` / `refresh*`).
+- `knowledgeBuild.ts` — time-sliced/progressive rebuild of the per-importable dots.
+- `diagnosticCounts.ts` — per-importable diagnostic bucketing for the left-rail badges.
+
+Persistence — `gui/persistence/`:
+- `recents.ts` — persisted MRU list of recently opened import.json paths (`gui-recents.json`). Used by `popovers/file-browser.ts` and `parsing/reparse.ts`.
+
+Menus — `gui/menus/`:
+- `fileMenu.ts` — shared file-row context menu (Add/Remove from queue + OS-shell actions), used by both the left-panel rows and the right-panel tab right-click.
+
+Importer hookup — `importer/diffSink.ts`:
+- Defines `ImportDiffSink` (`markMatch`/`beginOp`/`completeOp`/`end`) and a single global active sink. `applyActionListDiff` captures and clears the sink on entry (so nested syncs in CONDITIONAL/RANDOM bodies stay silent), pre-marks untouched desired actions as `match`, and emits per-op events. The session (`importables/importSession.ts`) sets/clears the sink around each importable; the GUI's `startImport` (in `right-panel/import-tab/importController.ts`) wires sink events into the single `import-tab/livePreview` store — `markPlanned*` / `markMatch` / `applyComplete` for per-line state and `setCurrent` for the cursor — keyed by the importable's source-file path.
+
+Popovers — `gui/popovers/`:
+- `add-importable.ts` — "Add Importable" form (Explore "+" button).
+- `alias.ts` — per-house alias editor. `openAliasPopover(rect, uuid)` takes the target UUID explicitly so the Knowledge tab can edit any known house, not just the currently-detected one.
+- `file-browser.ts` — modal file browser for picking an `import.json`.
+- `open-menu.ts` — Hypixel `/functions /eventactions /regions …` shortcut menu.
+
+App shell — `gui/`:
+- `overlay.ts` — wires everything: registers triggers, owns the single fullscreen panel, runs the tick handler (reparse, focus, popover cleanup).
+- `root.ts` — root tree builder: arranges LeftPanel / center cutouts (transparent above + below the inventory) / RightPanel / chat input around the inventory bounds. **No top bar.** Right column gets `padding-left: SCREEN_PAD` so it mirrors the screen-edge gap on the inventory-facing side.
+- `chat-input.ts` — `ChatInputBar` element + global `T` shortcut to focus it.
+- `knowledge-status.ts` — derives `STATUS_COLOR` / `STATUS_LABEL` / `statusForImportable` / `knowledgeStatusByImportable` from `state` for the left-rail badges.
+- `bottom-toolbar/` — slim, no-background strip under the inventory: only Housing Menu + the `/functions …` shortcut split-button. Capture / Import / Trust moved into the right panel's Import tab.
+- `left-panel/` — two tabs: **Explore** (importables list + Open file/folder/Browse buttons) and **Knowledge** (per-house list with Trust toggle + Alias button per house).
+- `right-panel/` — top-level **View / Import** tabs. View hosts the existing source-preview tabs; Import hosts the queue (checkboxes from the Explore list), the inline live-importer strip (progress bar + cancel + current path), and the Capture / Import action row.
+- `right-panel/import-tab/importController.ts` — `startImport()` (reads per-house trust via `isCurrentHouseTrusted()`), `startCaptureExport(type)`, `importablesForImport()`, and `CAPTURE_TYPES`. The diff-sink wiring lives here now (was previously in `bottom-toolbar/index.ts`).
+
+The Explore row builder (`gui/left-panel/explore/index.ts`) follows a **type-aware dispatch** pattern worth knowing about: a single `resultRow(imp)` builds every row but branches on `imp.type` for behavior. Right-click always builds a menu via `buildPrimaryAndJsonMenu(primaryPath, primaryLabel, declaringPath)` which shows `fsActions(primary, label)` + a `{kind:"separator"}` + `fsActions(import.json)`, with the separator and primary suppressed when `primaryPath === declaringPath` (REGION/MENU/NPC). Double-click is dispatched through `dispatchDoubleClick(imp)` which previews htsl for FUNCTION/EVENT, .snbt for ITEM, toggles inline expansion for REGION (showing "Enter actions" / "Exit actions" sub-rows under the parent), and falls back to the import.json with a chat note for MENU/NPC. ITEM rows with click-actions also expand to show "Left/Right click actions" sub-rows. The chevron is its own clickable Container (not the whole row) so the body still toggles the multi-select checkbox as before. Sub-rows reuse the same `buildPrimaryAndJsonMenu` with the sub-list's resolved path from `importableSubListPath`. Each row also displays the source-file tail (`tailSegments(path, 3)` from `lib/pathDisplay`) — last 3 dirs joined by `/`, no `~/` or `./` prefix.
+
+## Element model
+
+`Element` is a discriminated union (`layout.ts`). Five kinds today:
+
+| kind | extra fields | clickable? | notes |
+|------|---|---|---|
+| `container` | `style: ContainerStyle`, `children: Extractable<Child[]>`, optional `onClick(rect, info)` where `info: {button, isDoubleClickSecond}`, optional `onDoubleClick(rect)` | yes if `onClick` or `onDoubleClick` set | flex layout (row/col), gap, align, justify, padding, optional bg/hoverBg. **Buttons are styled containers, not their own kind** — the `Button({ text?, icon?, children?, onClick, ... })` builder returns a Container with sensible defaults (theme bg/hoverBg, row+center+justify-center, gap 4, x-padding 4). Pass `text` and/or `icon` for the common case; pass `children` to override the layout entirely. |
+| `text` | `style`, `text: Extractable<string>`, optional `color`, optional `tooltip: Extractable<string>` + `tooltipColor: Extractable<number>` | no | plain label, intrinsic size = `Renderer.getStringWidth(text)` × `LINE_H`. When `tooltip` is set and the rect is hovered, a small chip is drawn just below (or above near the screen edge) the rect — drawn after items + scrollbars in `renderElement`, so popovers (LOWEST priority) still cover it |
+| `input` | `style`, `id: string`, `value: Extractable<string>`, `onChange(v)`, optional `placeholder` | focusable | id is used for global focus + key dispatch |
+| `scroll` | `style: ContainerStyle`, `id: string`, `children: Extractable<Element[]>` | passes through | vertical scroll viewport with internal offset state, scrollbar overlay, mouse-wheel + drag |
+| `image` | `style`, `name: Extractable<IconName>`, optional `color: Extractable<number>` (ARGB tint), optional `tooltip` + `tooltipColor` (same as `text`) | no | 16×16 default; draws via `Image.fromAsset("icons/<name>.png")` cached per name. The icon PNGs are monochrome white, so `color` recolors them — implemented with `Renderer.colorize(...)` before `drawImage`, **not** `GlStateManager.color` (CT's `drawImage` resets GL color to white when its internal `colorized` is null, so only `colorize()` survives the draw). `Icon({ color, tooltip })` exposes both. See **Icons** below. |
+
+Children of `container` and `scroll` are `Extractable<Element[]>` so the list can be dynamic each frame (e.g. filter results). Layout is recomputed every frame; **there is no layout cache** — anything in the tree may change between frames.
+
+## Layout (flex)
+
+`Style` keys: `width`, `height` (`{kind:"px",value} | {kind:"auto"} | {kind:"grow",factor?}`), `padding`, `background`, `hoverBackground`. `ContainerStyle` adds `direction` (`"row"` | `"col"`, default `"col"`), `gap`, `align` (`"start" | "center" | "end" | "stretch"`, default `"stretch"`).
+
+Padding accepts `number | {side, value} | {side, value}[]`. Sides: `all|x|y|top|right|bottom|left`. Resolved last-write-wins.
+
+Layout algorithm (per container):
+1. Resolve each child's main-axis size (`px`/`auto` → number, `grow` → null).
+2. `leftover = mainLen - fixedSum - gapSum`. Distribute proportionally across grow children. Last grow child eats the floor remainder so totals match exactly.
+3. For each child resolve cross-axis size + alignment offset and emit `{element, rect, clipRect?}`.
+4. Recurse into containers/scrolls.
+
+**`align: "stretch"` (default) only stretches children that have no explicit cross-axis size.** A child with `width: {kind:"px",...}` keeps that width even with stretch. This matches CSS flex.
+
+`scroll` lays out children in a column with no main-axis bound, applies the scroll offset (clamped to `[0, contentH - viewportH]`), and tags every descendant `LaidOut` with `clipRect = viewport`. The renderer pushes a GL scissor for items with `clipRect`.
+
+## Reactivity (`Extractable`)
+
+`Extractable<T>` is `T | (() => T)`. `extract(v)` calls the function or returns the value.
+
+Extractable today: `button.text`, `input.value`, `text.text`, `text.color`, `text.tooltip`, `text.tooltipColor`, `container.children`, `scroll.children`, `style.background`, `style.hoverBackground`, `Panel.bounds`, `Panel.shouldBeVisible`. Anything else is static.
+
+Pattern: keep a module-level mutable, expose it via `() => state` and mutate it via the `onChange`/onClick callback.
+
+```ts
+let searchQuery = "";
+Input({
+  id: "left-search",
+  value: () => searchQuery,
+  onChange: v => { searchQuery = v; },
+});
+Scroll({
+  id: "results",
+  children: () => filteredResults().map(resultRow),
+});
+```
+
+## Render + dispatch
+
+`renderElement(root, x, y, w, h, mouseX, mouseY, interactive)` (in `render.ts`):
+- Computes layout via `layoutElement`.
+- Renders items in pre-order (parent first, children on top).
+- For items with `clipRect`, pushes a scissor before rendering and pops after.
+- `interactive=false` disables hover effects entirely — used so panels don't show hover when a popover is intercepting clicks.
+- After items, draws scrollbar overlays for any `scroll` whose content overflows.
+
+`dispatchClick(laid, mouseX, mouseY)`:
+- Topmost-first walk in reverse.
+- Skips items where the click is outside the `clipRect`.
+- Stops at first hit on `button`, clickable `container`, or `input`.
+- Sets/clears global focused-input.
+- Detects double-clicks: if a click lands within the previously-clicked rect within `DOUBLE_CLICK_MS` (350ms), the second click fires `onClick(rect, true)` and then `onDoubleClick(rect)` if defined. The first click always fires `onClick(rect, false)` immediately — there is no delay-and-coalesce. Handlers that should *not* repeat work on the second click should early-return when `isDoubleClickSecond` is true. The double-click latch resets after firing so triple-clicks don't chain into a second double.
+
+## Panels
+
+`Panel` (in `panel.ts`) registers two triggers per panel: `guiRender` and `guiMouseClick`. It calls `renderElement` for rendering and `dispatchClick` for clicking. It checks `event.isCanceled()` first; this lets higher-priority handlers (popover render at LOWEST + popover-click-from-panel guard) short-circuit.
+
+CT's `guiRender` maps to Forge's `GuiScreenEvent$BackgroundDrawnEvent` — it fires after MC's dim gradient but **before** slot/foreground/tooltip rendering. Painting here means MC's hover tooltip (rendered later in `drawScreen`) overlays our right panel instead of being covered by it. The inventory bg + slot items also paint after us, but our panels sit *around* the inventory bounds (not over them), so they don't actually overlap pixel-wise. If you ever change the panel layout to cover the inventory rect, this will paint underneath — switch to a custom Forge event (e.g. `GuiContainerEvent$DrawForeground` after translation back) instead.
+
+**Multiple panels share dispatch state.** Both left and right panel handlers fire for every click. The popover dispatch is invoked from inside the panel handler, gated by `claimPopoverClick(x,y)` so it runs exactly once even with two panel triggers active.
+
+## Popovers
+
+`openPopover({anchor, content, width, height, key?, onClose?})` pushes a popover onto a stack. They render on `postGuiRender` at LOWEST priority — i.e. *after* MC's drawScreen completes — so they paint on top of everything including MC's hover tooltips, keeping them modal. (Panels by contrast paint at `guiRender`/BackgroundDrawnEvent, before MC's tooltip; see the Panels section.) Position auto-flips: anchored *below* the trigger when the trigger is in the top half of the screen, *above* otherwise.
+
+`togglePopover({key, ...})` is the toggle-style helper for re-clickable triggers (e.g. a Filter button that reopens-or-dismisses): if a popover with the same `key` is open it closes it; otherwise it opens a new one.
+
+Click flow when a popover is open:
+- Panel handler runs, sees `popoverIsOpen()`, and calls `tryDispatchPopoverClick(x,y)` (guarded so it runs once per click via `claimPopoverClick`).
+- Click inside popover rect → dispatch into popover content, panel cancels the event, returns.
+- Click outside every popover → auto-close popovers and **fall through** to the panel's normal `dispatchClick`. This is intentional: the same click that closes a popover should also focus an input or hit a button under the cursor. **Exception:** modals (`placement: "modal"`) absorb the dismissing click — closing a modal does NOT propagate to the panel underneath, since modals are interaction-blocking by design.
+- The exception: if the click lands on the popover's own anchor AND `excludeAnchor` is true (default), the popover stays open. This avoids a race with `togglePopover` where auto-close fires first, then the trigger's `onClick` reopens a fresh popover, requiring a second click to dismiss. Cursor-anchored menus (`openMenu`) opt out by passing `excludeAnchor: false` since they have no re-clickable trigger — any subsequent click should close them.
+
+Hover follows click propagation: panels pass `interactive = !mouseIsOverPopover(x, y)` to `renderElement`, so panel elements light up on hover anywhere a click would still reach them — only positions actually under a popover suppress panel hover.
+
+When the inventory closes (`getContainerBounds() === null`), the tick handler in `overlay.ts` calls `closeAllPopovers()` and clears focus so popovers don't linger across opens.
+
+Scrollbar hover suppression: items whose rect is under a visible scrollbar track *and* live inside that scroll's viewport do not show hover (the click would land on the scrollbar, not the item). Tracks are precomputed once per `renderElement` call — see `collectScrollbarTracks` in `render.ts`.
+
+## Focus + keyboard
+
+Single global focused-input id (`focus.ts`). `dispatchClick` sets it when an `input` is clicked, clears it on any other click — including clicks on inert panel space (the dispatch's no-hit fallthrough also calls `setFocusedInput(null)`). A separate `guiMouseClick` handler in `overlay.ts` clears focus when the click misses every visible panel entirely.
+
+Inputs delegate to vanilla MC's `GuiTextField`. We keep one instance per input id in `inputState.ts`; it handles cursor placement, drag-select, arrow keys, home/end, shift-select, Ctrl+A/C/V/X, backspace/delete, and the blinking cursor. We disable its built-in background drawing (`setEnableBackgroundDrawing(false)`) and `setCanLoseFocus(false)` so external focus state is the source of truth. Width/height are final on the field, so we recreate the field if the laid-out size changes (text + cursor are copied across); xPosition/yPosition are mutable and updated each frame.
+
+Keyboard input is routed via Forge's `GuiScreenEvent$KeyboardInputEvent$Pre` (registered via `register(ForgeClass, cb)`). Inside the handler we read the real char with `Keyboard.getEventCharacter()` and the keycode with `Keyboard.getEventKey()` — **CT's `guiKey` `char` argument is `undefined`**, which is why we don't use that trigger. Esc/Enter are handled by us (clear focus); everything else is forwarded to `GuiTextField.textboxKeyTyped(char, key)`. After forwarding, we read `getText()` and call `onChange` if the text changed. We always `cancel(event)` when an input is focused — this is what stops `e` from closing the inventory.
+
+`tickAllFields()` calls `updateCursorCounter` on every field each tick (cursor blink); `applyFocus(focusedId)` syncs our focus state into each field's `setFocused`.
+
+## Mouse wheel
+
+We hook Forge's `GuiScreenEvent$MouseInputEvent$Pre` (registered via `register(ForgeClass, cb)`). It fires per `Mouse.next()` event *before* `GuiScreen.handleMouseInput` runs. In the handler we read `Mouse.getEventDWheel()` (per-event wheel), compute scaled mouse coords from `Mouse.getEventX/Y` + `ScaledResolution`, and if the cursor is over one of our scroll viewports we dispatch the scroll AND `cancel(event)` to suppress MC's reaction.
+
+Open popovers see the wheel first via `tryDispatchPopoverWheel(mx, my, dir)` — popovers paint on top, so they should also intercept scroll. Modals absorb wheel anywhere on screen even outside their rect (their scrim already blocks click fall-through). Only when no popover is under the cursor do we fall through to the panel scroll walk.
+
+**Important:** an earlier approach polled `Mouse.getDWheel()` from `guiRender`. That is too late — MC processes mouse events in `runTick` before rendering. It also doesn't suppress: `getDWheel()` is the accumulator, while `GuiContainer`/`GuiContainerCreative` read per-event via `Mouse.getEventDWheel()`, and the two are independent. Cancelling the Pre event is the only thing that actually stops creative-inventory scroll/tab change.
+
+CT's `register("scrolled", ...)` exists but doesn't pass the underlying event, so it can't cancel. CT's `register(ForgeClass, ...)` *does* fire for `GuiScreenEvent$MouseInputEvent$Pre` despite earlier docs claiming Forge events were unreliable in this build.
+
+`MouseClass = Java.type("org.lwjgl.input.Mouse")`. `KeyboardClass = Java.type("org.lwjgl.input.Keyboard")`. `ForgeMouseInputEventPre = Java.type("net.minecraftforge.client.event.GuiScreenEvent$MouseInputEvent$Pre")`. All defined at the top of `overlay.ts`.
+
+## Bounds reading (Hypixel inventory anchoring)
+
+`bounds.ts` reads the open `GuiContainer` from `Client.getMinecraft().field_71462_r` and reflects on protected fields:
+- `field_146294_l` / `field_146295_m` — screen W/H (public, direct access works)
+- `field_147003_i` / `field_147009_r` — guiLeft / guiTop (**protected**, requires reflection)
+- `field_146999_f` / `field_147000_g` — xSize / ySize (**protected**, requires reflection)
+
+Rhino's property access only sees public fields, so the protected ones use `getDeclaredField + setAccessible(true)` with a class-hierarchy walk (creative inventory class doesn't declare them itself; `GuiContainer` does).
+
+Returns `null` for non-`GuiContainer` screens (main menu, settings, etc.). The panel's `shouldBeVisible` callback uses this — when bounds are null, panels hide.
+
+## Coordinate space
+
+The overlay caps at `OVERLAY_SCALE_TARGET = 4` real pixels per overlay unit, but otherwise tracks MC's current GUI scale. All internal coordinates (layout rects, mouse coords used by hit-testing, screen dims, scissor inputs) live in this overlay space.
+
+The effective scale per frame is `getEffectiveOverlayScale() = min(OVERLAY_SCALE_TARGET, mcScale)`. When MC is at-or-below the cap (vanilla, which maxes at 4), we match it exactly — so on Normal (scale 2) the overlay also renders at 2 and looks the same size as the inventory it sits next to. When a mod pushes MC above the cap (scale 5+), the overlay stays at 4 so it doesn't become unusably large. MC's own auto-clamp on small windows is handled implicitly, since `mcScale` is the post-clamp value.
+
+How it works:
+- `getMcScale()` computes the actual scale via `realW / scaledW` rather than `ScaledResolution.func_78325_e()`, because vanilla 1.8.9 caps `scaleFactor` at 4 and mods that allow scale 5+ typically override `getScaledWidth/Height` but leave `scaleFactor` untouched.
+- `beginHtswOverlayDraw()` (in `panel.ts`) applies `glScale(effectiveOverlayScale / mcScale)` **on the projection matrix** (not modelview — projection survives intermediate matrix manipulation by font/icon rendering paths). It also pushes a Z-translate on modelview so the overlay paints above other GUI. `postGuiRender` popovers go through the same begin/end so they pick up the transform.
+- Triggers receive coords in MC's current scaled space. We convert at the boundary via `mcToOverlay(coord)` (in `lib/overlayScale.ts`):
+  - `Panel`'s render + click handlers (`panel.ts`)
+  - `overlay.ts` mouse-wheel handler (uses raw real-pixel `Mouse.getEventX/Y` and divides by `getEffectiveOverlayScale()` — equivalent)
+  - `overlay.ts` scrollbar-drag `guiRender` and focus-clear `guiMouseClick`
+  - popovers' `postGuiRender` (`popovers.ts`)
+- `bounds.ts` returns raw MC-scaled coords (untouched). `getContainerBoundsOverlay()` in `lib/overlayScale.ts` is the wrapper that converts; consumers (`overlay.ts:frameBounds`, `root.ts:getStableBounds`) route through it.
+- `scissor.ts` multiplies rect by `getEffectiveOverlayScale()` to reach real pixels.
+- Code that wants the screen in overlay coords calls `getOverlayScreenW/H` (NOT `Renderer.screen.getWidth/Height`, which return MC's current scaled dims).
+
+If you add a new entry point that receives MC scaled coords, **convert with `mcToOverlay` before passing into layout / dispatch / popovers**. If you add code that draws via `Renderer.*`, make sure it runs inside a `beginHtswOverlayDraw()`/`endHtswOverlayDraw()` pair.
+
+## Scissor
+
+GL scissor uses pixel coordinates (origin bottom-left), but our layout uses overlay coords (origin top-left, scale per-frame from `getEffectiveOverlayScale()`). `scissor.ts` multiplies by `getEffectiveOverlayScale()` and y-flips against `getOverlayScreenH()`. It maintains a stack so nested scrolls work. **If a render path early-returns between push and pop, the stack is unbalanced.** Render code is structured so `pushScissor`/`popScissor` always happen in pairs.
+
+## Trigger registration order matters
+
+Within a single trigger type, CT fires handlers in registration order unless you call `setPriority(Trigger.Priority.X)`. `HIGHEST` runs first; `LOWEST` runs last.
+
+- Popover `postGuiRender` is registered with `setPriority(LOWEST)` so it paints last (on top of MC's tooltip too — they're modal). Panel render uses `guiRender` (BackgroundDrawnEvent), which is the *earlier* event; the two don't compete.
+- Panels `guiMouseClick` runs at default priority. The popover click logic is invoked **from within the panel click handler**, not as its own trigger — that earlier (separate-trigger) approach caused the popover dispatch to fire twice per click (toggleType ran twice and undid itself).
+
+If you add a new trigger that needs to fire before/after others, prefer `setPriority` over reordering registration calls. Be aware: setting `HIGHEST` on `guiMouseClick` was observed to double-fire in this CT build for unknown reasons; if a similar symptom appears, drop the explicit priority and use registration order or guards instead.
+
+## CT/Rhino quirks (gotchas)
+
+These bit us; they will bite you again. Read these before touching CT trigger code.
+
+- `register("scrolled", ...)` doesn't expose the event so you can't cancel it — useless for suppressing vanilla wheel handling. Use Forge `GuiScreenEvent$MouseInputEvent$Pre` instead (see Mouse wheel section).
+- `register(ForgeEventClass, ...)` *does* work for at least `GuiScreenEvent$MouseInputEvent$Pre`. Earlier notes claiming it didn't fire were wrong (or specific to a different event class).
+- `register("guiOpened", ...)` **silently drops null gui events.** CT's `ClientListener.onGuiOpened` opens with `if (event.gui == null) return;` (verified by disassembling `ctjs-2.2.1-1.8.9.jar`), so the JS handler never sees `displayGuiScreen(null)`. If you need to intercept screen *closures* — e.g. the placeholder-screen swap in `overlay.ts` that hides the mid-import flash and keeps the cursor put — subscribe to `javaType("net.minecraftforge.client.event.GuiOpenEvent")` directly.
+- `guiKey` fires (good), but its `char` argument is `undefined`. Use `keyCode` and translate manually.
+- `cancel(event)` cancels the underlying Forge event but does **not** stop other CT handlers from firing — those handlers must check `event.isCanceled()` themselves.
+- CT's chat trigger does **not** fire for messages we display via `ChatLib.chat()`. The MCP bridge can't see our own debug chat, so the diagnostic loop writes to a file (`gui-debug.log`) instead. See `armHtswGuiDebug` and `debug()` in `overlay.ts`.
+- Vite-bundled `net.minecraftforge.client.event.MouseEvent` style references work at runtime (Rhino bridge), but `Java.type("…")` is safer. Use it for new Java class references.
+- `Renderer.getStringWidth` returns the actual proportional-font width — use it for centering text. Do not use `text.length * CHAR_W`.
+- IDE diagnostics shown after edits are often stale. Always confirm with `npx tsc --noEmit` from `ct_module/`.
+
+## Icons
+
+PNGs live in `ct_module/assets/icons/*.png` (16×16, kebab-case filenames). Two pieces of build automation make this useable + small:
+
+1. **Enum generator** (`scripts/generateIconsList.ts`, runs before `tsc` via `npm run build`'s prefix step): scans `assets/icons/` and writes `src/gui/lib/icons.generated.ts` exporting `Icons` (a `{ camelKey: "kebab-name" } as const` object) and `IconName` (the union type). Re-run manually with `npm run generate:icons` after adding/removing PNGs.
+2. **Tree-shake plugin** (`iconShakePlugin` in `vite.config.ts`, fires in `closeBundle`): reads every emitted `.js` in `dist/`, scans for each known icon-name as a quoted string literal, and copies *only* the matched PNGs into `dist/assets/icons/`. `install.py` then mirrors `dist/assets/` to the deploy.
+
+Usage:
+
+```ts
+import { Icon } from "./gui/lib/components";
+import { Icons } from "./gui/lib/icons.generated";
+
+Row({ children: [
+  Icon({ name: Icons.aArrowDown }),
+  Text({ text: "Sort ascending" }),
+]});
+```
+
+`IconProps.name` is typed as `IconName`, not plain `string`, so dynamic lookups (`Icons[someVar]`) fail typecheck — that's deliberate. The shake is string-based: it greps the bundle for `"<icon-name>"`, and a dynamic key would silently drop the PNG. If you need dynamic icons, list every possible name in a literal-typed array first so they all land in the bundle:
+
+```ts
+const ARROWS: IconName[] = [Icons.arrowUp, Icons.arrowDown];
+```
+
+`Image.fromAsset` is called lazily on first render and cached per name in `render.ts`. A failed load is cached as `null` (so no per-frame retry/log spam) — if a missing-icon symptom appears, the cause is almost always that the shake didn't pick it up.
+
+## Adding a new element kind
+
+1. Extend the `Element` union in `layout.ts` with the new variant.
+2. Add intrinsic-size computation if needed (`buttonContent`, `textContent`, `inputContent` are the existing examples).
+3. Handle the variant in `measure`/`resolveAxis` if it can drive layout sizing.
+4. Add a render branch in `renderItem` (`render.ts`).
+5. Add click semantics in `dispatchClick` if it should be interactive.
+6. Add a builder in `components/<kind>.ts` and re-export from `components/index.ts`.
+7. **Update this SKILL.md.**
+
+## Adding a new component (no new kind)
+
+If the new component is just a styled wrapper around existing element kinds, add a new file in `components/` that returns a tree built from `Container`/`Button`/etc. No layout/render changes required.
+
+## Debugging in-game
+
+`/htsw gui debug <seconds>` arms the diagnostic logger for that window. Output goes to `gui-debug.log` in the deployed module dir (`%appdata%/.minecraft/config/ChatTriggers/modules/HTSW/`). Per-frame state (focus, popoverOpen, bounds) is logged ~twice a second. Ad-hoc `debug(...)` calls inside trigger handlers also land there. Read with `Read` on the absolute path.
+
+The MCP bridge (`/htsw recompile`, `/htsw gui debug N`, etc.) is the way to drive testing from outside the game. Note that bridge chat readback does **not** capture our `ChatLib.chat()` output — only inbound server messages — so always log to file when probing.
