@@ -31,7 +31,6 @@ import type {
     NestedSummaries,
     Observed,
     ObservedActionSlot,
-    ReadContext,
     ListReadOptions,
 } from "../types";
 import { createNestedHydrationPlan } from "./hydrationPlan";
@@ -54,6 +53,8 @@ import {
 import { ACTION_LIST_CONFIG } from "./listConfig";
 import { actionPathForIndex, getActionSpec } from "./specs";
 import { actionLogLabel } from "./log";
+import { createActionReadContext } from "../context/actionReadContext";
+import { readConditionList } from "../conditions/readList";
 
 export type ActionListReadMode =
     | { kind: "full" }
@@ -449,8 +450,8 @@ async function hydrateNestedAction(
     entry: ObservedActionSlot,
     propsToRead: NestedPropsToRead,
     listLength: number,
-    read?: ListReadOptions,
-    entryPath?: string,
+    read: ListReadOptions | undefined,
+    entryPath: string,
     emitSnapshot?: () => void
 ): Promise<void> {
     if (IMPORT_DEBUG) {
@@ -471,8 +472,8 @@ async function hydrateNestedActionInner(
     entry: ObservedActionSlot,
     propsToRead: NestedPropsToRead,
     listLength: number,
-    read?: ListReadOptions,
-    entryPath?: string,
+    read: ListReadOptions | undefined,
+    entryPath: string,
     emitSnapshot?: () => void
 ): Promise<void> {
     if (entry.action === null) {
@@ -490,9 +491,17 @@ async function hydrateNestedActionInner(
     const spec = getActionSpec(entry.action.type);
 
     if (spec.read) {
-        const readCtx: ReadContext | undefined = read !== undefined
-            ? { itemRegistry: read.itemRegistry, itemCaptures: read.itemCaptures, events: read.events, pathPrefix: entryPath, emitSnapshot }
-            : undefined;
+        const readCtx = createActionReadContext({
+            ctx,
+            actionPath: entryPath,
+            actionType: entry.action.type,
+            itemRegistry: read?.itemRegistry,
+            itemCaptures: read?.itemCaptures,
+            events: read?.events,
+            emitSnapshot,
+            readNestedActions: readActionList,
+            readNestedConditions: readConditionList,
+        });
         entry.action = await spec.read({
             ctx,
             propsToRead,

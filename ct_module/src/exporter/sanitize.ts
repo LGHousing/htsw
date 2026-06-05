@@ -1,5 +1,5 @@
 import type { Action } from "htsw/types";
-import type { Observed, ObservedActionSlot } from "../importer/types";
+import type { Observed, ObservedActionSlot } from "../housingSync/types";
 
 /**
  * Convert an `ObservedActionSlot[]` (the importer's read shape, which carries

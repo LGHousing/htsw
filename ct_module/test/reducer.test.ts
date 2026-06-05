@@ -3,8 +3,8 @@ import { describe, expect, test } from "vitest";
 import {
     initialReducerState,
     reduce,
-} from "../src/importer/progress/reducer";
-import type { ImportEvent } from "../src/importer/importEvents";
+} from "../src/housingSync/progress/reducer";
+import type { ImportEvent } from "../src/housingSync/importEvents";
 
 const baseRow = { totalUnits: 10 };
 

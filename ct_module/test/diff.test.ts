@@ -1,11 +1,11 @@
 import { describe, expect, test } from "vitest";
 import type { Action, ActionPlaySound } from "htsw/types";
 
-import { diffActionList } from "../src/importer/actions/diff";
+import { diffActionList } from "../src/housingSync/actions/diff";
 import type {
     ActionListOperation,
     ObservedActionSlot,
-} from "../src/importer/types";
+} from "../src/housingSync/types";
 
 import { conditional, message, observedSlot as obs, playSound, random } from "./utils";
 

@@ -1,10 +1,10 @@
 import TaskContext from "../../tasks/context";
-import { timedWaitForMenu } from "../../importer/gui/menuWait";
+import { timedWaitForMenu } from "../../housingSync/gui/menuWait";
 import {
     getVisiblePaginatedItemSlots,
     readPaginatedList,
     type PaginatedListConfig,
-} from "../../importer/gui/paginatedList";
+} from "../../housingSync/gui/paginatedList";
 import { removedFormatting } from "../../utils/helpers";
 import { snapshotIconStack, type FunctionIconSnapshot } from "./icon";
 import { extractFunctionNameFromSlot } from "./shared";

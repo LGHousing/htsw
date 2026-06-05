@@ -1,5 +1,5 @@
 import { removedFormatting } from "../../utils/helpers";
-import { IMPORT_DEBUG } from "../../importer/diagnostics/importDebug";
+import { IMPORT_DEBUG } from "../../housingSync/diagnostics/importDebug";
 import { lastWindowID___FromS30PacketWindowItemsPacketReceived__ThisIsNecessary_sadly_itIncrementsFrom1To100ThenItGoesBackAround_ButSometimesItSkipsOneOrMoreWeAreNotSureMaybeMore_AndItWillNeverBeZero as lastObservedWindowID } from "./waitFor";
 
 export enum MouseButton {

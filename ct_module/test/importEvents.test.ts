@@ -1,11 +1,11 @@
 import { describe, expect, test } from "vitest";
 
-import { applyActionListDiff } from "../src/importer/actions/applyDiff";
+import { applyActionListDiff } from "../src/housingSync/actions/applyDiff";
 import type {
     ImportEvent,
     ImportEventHandler,
-} from "../src/importer/importEvents";
-import type { ActionListDiff } from "../src/importer/types";
+} from "../src/housingSync/importEvents";
+import type { ActionListDiff } from "../src/housingSync/types";
 
 function recordingHandler(): ImportEventHandler & { events: ImportEvent[] } {
     const events: ImportEvent[] = [];

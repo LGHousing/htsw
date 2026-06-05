@@ -1,7 +1,7 @@
 import {
     type ItemCaptureRegistry,
     prettySnbt,
-} from "../importer/itemCapture";
+} from "../housingSync/itemCapture";
 import TaskContext from "../tasks/context";
 import { ensureParentDirs } from "../utils/filesystem";
 import { upsertImportableEntry } from "./importJsonWriter";

@@ -2,7 +2,7 @@ import type { Importable } from "htsw/types";
 
 import TaskContext from "../tasks/context";
 import { ensureParentDirs } from "../utils/filesystem";
-import { IMPORT_DEBUG } from "../importer/diagnostics/importDebug";
+import { IMPORT_DEBUG } from "../housingSync/diagnostics/importDebug";
 import { importableHash, listHashes } from "./hash";
 import { getCurrentHousingUuid } from "./housingId";
 import { IMPORT_CACHE_ROOT, cachePathFor, cachePathForId } from "./paths";
@@ -64,7 +64,7 @@ function buildImportableCacheEntry(
 /**
  * Persist an importable cache entry to disk. Best-effort: filesystem failures
  * are surfaced to chat as warnings but never abort the parent task —
- * the importer/exporter has already done its real work and the cache
+ * the housingSync/exporter has already done its real work and the cache
  * is just a hint.
  */
 export function writeImportableCache(

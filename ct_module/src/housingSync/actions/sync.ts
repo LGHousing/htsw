@@ -150,7 +150,8 @@ export async function applyActionListPlan(
         progressScope,
         (readCurrent) => {
             plan.getLiveCurrent = readCurrent;
-        }
+        },
+        syncActionList
     );
 }
 

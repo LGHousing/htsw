@@ -1,10 +1,10 @@
 import type { Action, ImportableItem } from "htsw/types";
 
-import { syncActionList } from "../../importer/actions/sync";
-import type { ImportEventHandler } from "../../importer/importEvents";
-import { createSetupStepEmitter } from "../../importer/progress/setupStepEmitter";
-import { clickGoBack } from "../../importer/gui/menuUtils";
-import { timedWaitForMenu } from "../../importer/gui/menuWait";
+import { syncActionList } from "../../housingSync/actions/sync";
+import type { ImportEventHandler } from "../../housingSync/importEvents";
+import { createSetupStepEmitter } from "../../housingSync/progress/setupStepEmitter";
+import { clickGoBack } from "../../housingSync/gui/menuUtils";
+import { timedWaitForMenu } from "../../housingSync/gui/menuWait";
 import {
     getCurrentHousingUuid,
     importableHash,
@@ -22,15 +22,15 @@ import {
     selectHotbarSlot,
     selectedHotbarSlot,
     sendCreativeInventoryAction,
-} from "../../importer/gui/packets";
+} from "../../housingSync/gui/packets";
 import { getActionListTrust, getBaselineActionList } from "../actionListHelpers";
 import type { ItemRegistry } from "../itemRegistry";
 import {
     countReferencedShells,
     ensureReferencedImportablesExist,
 } from "../references";
-import { COST } from "../../importer/progress/costs";
-import { timed } from "../../importer/progress/timing";
+import { COST } from "../../housingSync/progress/costs";
+import { timed } from "../../housingSync/progress/timing";
 
 function hasItemClickActions(importable: ImportableItem): boolean {
     return (
@@ -113,11 +113,6 @@ export type ItemImportPlan = {
     housingUuid?: string;
 };
 
-/**
- * ITEM stays single-pass: item injection, /edit, and SNBT capture form a
- * tightly coupled sequence that doesn't split cleanly. Preread records a
- * minimal plan; all real work happens in `applyImportableItemPlan`.
- */
 export async function prereadImportableItem(
     _ctx: TaskContext,
     importable: ImportableItem,

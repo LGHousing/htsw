@@ -1,4 +1,4 @@
-import { timedWaitForMenu } from "../../importer/gui/menuWait";
+import { timedWaitForMenu } from "../../housingSync/gui/menuWait";
 import TaskContext from "../../tasks/context";
 
 export function extractEventNameFromSlot(rawDisplayName: string): string | null {

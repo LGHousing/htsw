@@ -1,6 +1,6 @@
 import type { Action, Importable } from "htsw/types";
 
-import type { ActionListTrust } from "../importer/types";
+import type { ActionListTrust } from "../housingSync/types";
 import type { ImportableTrustPlan } from "../importCache";
 
 export function getBaselineActionList(

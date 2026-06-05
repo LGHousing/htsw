@@ -28,7 +28,7 @@ import type { ParseResult } from "htsw";
 import type { Action, Condition, Importable } from "htsw/types";
 
 import { normalizeHtswPath } from "../lib/pathDisplay";
-import type { ActionPath } from "../../importer/importEvents";
+import type { ActionPath } from "../../housingSync/importEvents";
 import type { DiffState } from "./diffPalette";
 import { readImportableCache } from "../../importCache/cache";
 import { actionHash, conditionHash } from "../../importCache/hash";

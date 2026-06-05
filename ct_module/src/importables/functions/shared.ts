@@ -4,11 +4,11 @@ import {
     clickGoBack,
     getSlotPaginate,
     setNumberValue,
-} from "../../importer/gui/menuUtils";
-import { timedWaitForMenu } from "../../importer/gui/menuWait";
-import { setItemValue } from "../../importer/items/injectItem";
-import { parseLoreKeyValueLine } from "../../importer/fields/loreParsing";
-import { isUnspawnableItem } from "../../importer/fields/unspawnableItems";
+} from "../../housingSync/gui/menuUtils";
+import { timedWaitForMenu } from "../../housingSync/gui/menuWait";
+import { setItemValue } from "../../housingSync/items/injectItem";
+import { parseLoreKeyValueLine } from "../../housingSync/fields/loreParsing";
+import { isUnspawnableItem } from "../../housingSync/fields/unspawnableItems";
 import TaskContext from "../../tasks/context";
 import { MouseButton } from "../../tasks/specifics/slots";
 import { removedFormatting, unique } from "../../utils/helpers";

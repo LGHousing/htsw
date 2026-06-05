@@ -4,10 +4,10 @@ import {
     applyActionListPlan,
     prereadActionList,
     type ActionListPlan,
-} from "../../importer/actions/sync";
+} from "../../housingSync/actions/sync";
 import type { ImportableTrustPlan } from "../../importCache";
-import type { ImportEventHandler } from "../../importer/importEvents";
-import { createSetupStepEmitter } from "../../importer/progress/setupStepEmitter";
+import type { ImportEventHandler } from "../../housingSync/importEvents";
+import { createSetupStepEmitter } from "../../housingSync/progress/setupStepEmitter";
 import TaskContext from "../../tasks/context";
 import { getActionListTrust, getBaselineActionList } from "../actionListHelpers";
 import type { ItemRegistry } from "../itemRegistry";

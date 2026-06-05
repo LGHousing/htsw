@@ -1,15 +1,3 @@
-/**
- * Mutates a Housing action list to match a desired list, given a precomputed
- * diff. Includes `addAction` (single-action add) because the `adds` loop
- * is its only caller.
- *
- * Module graph note: this file imports `writeOpenAction`,
- * `actionPathForIndex`, `getActionSpec` from `./specs`. The writers in
- * `./writers` reach back into `./sync` (which itself imports from this file)
- * for nested `syncActionList` calls. This is a function-reference cycle that
- * resolves fine at runtime — don't try to "fix" it by relocating
- * `writeOpenAction`.
- */
 import { Diagnostic } from "htsw";
 import type { Action } from "htsw/types";
 
@@ -59,6 +47,11 @@ import {
 import { waitIfStepPaused } from "../stepGate";
 import { getActionScalarLoreFields } from "../fields/actionMappings";
 import { scalarFieldDiffers } from "../fields/compare";
+import {
+    createActionApplyContext,
+    type SyncNestedActions,
+} from "../context/actionApplyContext";
+import { syncConditionList } from "../conditions/sync";
 
 type LiveActionListEntry = {
     entryId: number;
@@ -78,9 +71,7 @@ async function addAction(
     ctx: TaskContext,
     action: Action,
     itemRegistry?: ItemRegistry,
-    nestedProgressScope?: (path: ActionPath, extraOffset?: number) => ProgressScope | undefined,
-    pathPrefix?: string,
-    events?: ImportEventHandler,
+    apply?: ReturnType<typeof createActionApplyContext>,
     callbacks?: ImportActionCallbacks
 ): Promise<void> {
     ctx.getMenuItemSlot("Add Action").click();
@@ -101,14 +92,10 @@ async function addAction(
     }
     await timedWaitForMenu(ctx, "menuClickWait");
 
-    // No-field actions (e.g. Kill Player, Exit) add directly to the list
-    // without opening an editor.
     if (spec.write) {
         await writeOpenAction(ctx, action, {
             itemRegistry,
-            pathPrefix,
-            nestedProgressScope,
-            events,
+            apply,
         });
         await clickGoBack(ctx);
         callbacks?.onActionAdded?.();
@@ -176,7 +163,8 @@ export async function applyActionListDiff(
     phaseUnits?: PhaseUnits,
     events?: ImportEventHandler,
     progressScope?: ProgressScope,
-    onSnapshot?: (readCurrent: () => Array<Action | null>) => void
+    onSnapshot?: (readCurrent: () => Array<Action | null>) => void,
+    syncNestedActions?: SyncNestedActions
 ): Promise<void> {
     await applyActionListDiffInner(
         ctx,
@@ -188,7 +176,8 @@ export async function applyActionListDiff(
         phaseUnits,
         events ?? null,
         progressScope ?? { kind: "topLevel" },
-        onSnapshot
+        onSnapshot,
+        syncNestedActions
     );
 }
 
@@ -297,28 +286,6 @@ function emitApplyProgress(
     });
 }
 
-function nestedApplyScope(
-    parentActionPath: ActionPath,
-    baselineApplyUnits: number,
-    completedOps: number,
-    totalOps: number
-): (path: ActionPath, extraOffset?: number) => ProgressScope {
-    // `extraOffset` lets a CONDITIONAL/RANDOM writer place each of its
-    // sub-lists (conditions, ifActions, elseActions) at its own slice of the
-    // op's apply budget — conditions at [base, base+condCost], ifActions
-    // after, etc. — so their progress doesn't collide on the same baseline.
-    return (path, extraOffset) => ({
-        kind: "nestedActionList",
-        path,
-        parentActionPath,
-        baselineApplyUnits: baselineApplyUnits + (extraOffset ?? 0),
-        parentSync: {
-            completedUnits: completedOps,
-            totalUnits: totalOps,
-        },
-    });
-}
-
 async function applyActionListDiffInner(
     ctx: TaskContext,
     observed: ObservedActionSlot[],
@@ -329,7 +296,8 @@ async function applyActionListDiffInner(
     phaseUnits?: PhaseUnits,
     events?: ImportEventHandler | null,
     progressScope: ProgressScope = { kind: "topLevel" },
-    onSnapshot?: (readCurrent: () => Array<Action | null>) => void
+    onSnapshot?: (readCurrent: () => Array<Action | null>) => void,
+    syncNestedActions?: SyncNestedActions
 ): Promise<void> {
     const isTopLevel = pathPrefix === undefined;
     const summary = summarizeDiff(diff, desired.length);
@@ -479,7 +447,6 @@ async function applyActionListDiffInner(
     };
     emitSnapshot();
 
-    // Deletes first (reverse order so indices stay valid), then refresh slot refs.
     if (deletes.length > 0) {
         deletes.sort((a, b) => b.fromIndex - a.fromIndex);
 
@@ -510,7 +477,6 @@ async function applyActionListDiffInner(
         }
     }
 
-    // Edits before moves keep current entry positions stable while editors open.
     for (const op of edits) {
         const currentIndex = findCurrentIndex(current, op.entryId);
         if (currentIndex === -1) {
@@ -576,21 +542,24 @@ async function applyActionListDiffInner(
             await timedWaitForMenu(ctx, "menuClickWait");
 
             const baselineAction = op.baselineAction;
+            const apply = srcPath === null || syncNestedActions === undefined
+                ? undefined
+                : createActionApplyContext({
+                      ctx,
+                      actionPath: srcPath,
+                      itemRegistry,
+                      events: events ?? undefined,
+                      appliedUnits,
+                      completedOps,
+                      totalOps: diff.operations.length,
+                      syncNestedActions,
+                      syncNestedConditions: syncConditionList,
+                  });
 
             await writeOpenAction(ctx, op.desired, {
                 current: baselineAction,
                 itemRegistry,
-                pathPrefix: srcPath ?? undefined,
-                nestedProgressScope:
-                    srcPath === null
-                        ? undefined
-                        : nestedApplyScope(
-                              srcPath,
-                              appliedUnits,
-                              completedOps,
-                              diff.operations.length
-                          ),
-                events: events ?? undefined,
+                apply,
             });
             updateEditSnapshot(actionWithCurrentNote(), false);
             await clickGoBack(ctx);
@@ -687,20 +656,24 @@ async function applyActionListDiffInner(
             emitSnapshot();
             actionAdded = true;
         };
+        const apply = srcPath === null || syncNestedActions === undefined
+            ? undefined
+            : createActionApplyContext({
+                  ctx,
+                  actionPath: srcPath,
+                  itemRegistry,
+                  events: events ?? undefined,
+                  appliedUnits,
+                  completedOps,
+                  totalOps: diff.operations.length,
+                  syncNestedActions,
+                  syncNestedConditions: syncConditionList,
+              });
         await addAction(
             ctx,
             actionToImport,
             itemRegistry,
-            srcPath === null
-                ? undefined
-                : nestedApplyScope(
-                      srcPath,
-                      appliedUnits,
-                      completedOps,
-                      diff.operations.length
-                  ),
-            srcPath ?? undefined,
-            events ?? undefined,
+            apply,
             { onActionAdded: updateAddedSnapshot }
         );
         if (!actionAdded) updateAddedSnapshot();

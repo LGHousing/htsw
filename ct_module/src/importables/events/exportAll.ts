@@ -3,7 +3,7 @@ import {
     restoreInventoryToSnapshot,
     snapshotInventory,
     type InventorySnapshot,
-} from "../../importer/itemCapture";
+} from "../../housingSync/itemCapture";
 import TaskContext from "../../tasks/context";
 import { isTaskCancelled } from "../../tasks/manager";
 import { withExportSession } from "../exportSession";

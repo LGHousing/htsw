@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { Action } from "htsw/types";
-import { canonicalStringify, normalizeActionCompare } from "../src/importer/fields/compare";
+import { canonicalStringify, normalizeActionCompare } from "../src/housingSync/fields/compare";
 import { stableStringify } from "../src/utils/helpers";
 
 function reference(action: Action): string {

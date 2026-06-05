@@ -66,7 +66,6 @@ export const COST = {
 
     readVisiblePage: 0,
     scalarRead: 0,
-    diffCompute: 0,
     cacheWrite: 0.25,
     nbtCapture: 0.25,
     itemInject: 1,

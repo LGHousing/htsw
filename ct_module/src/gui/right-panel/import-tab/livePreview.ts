@@ -2,7 +2,7 @@
 
 import * as htsw from "htsw";
 import type { Action, Importable } from "htsw/types";
-import { normalizeSoundKey } from "../../../importer/fields/sounds";
+import { normalizeSoundKey } from "../../../housingSync/fields/sounds";
 import type { TokenSpan, FieldSpan } from "../../code-view/lineTypes";
 import type { DiffState } from "../../code-view/diffPalette";
 import type {
@@ -10,7 +10,7 @@ import type {
     DiffFinalState,
     DiffOpKind,
     DiffSummary,
-} from "../../../importer/importEvents";
+} from "../../../housingSync/importEvents";
 import { tokenizeHtsl } from "../syntax";
 import { normalizeHtswPath } from "../../lib/pathDisplay";
 

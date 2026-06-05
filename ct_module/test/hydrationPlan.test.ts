@@ -1,13 +1,13 @@
 import { describe, expect, test } from "vitest";
 import type { Action, Condition } from "htsw/types";
 
-import { createNestedHydrationPlan } from "../src/importer/actions/hydrationPlan";
-import { matchObservedToDesired } from "../src/importer/actions/nestedMatching";
+import { createNestedHydrationPlan } from "../src/housingSync/actions/hydrationPlan";
+import { matchObservedToDesired } from "../src/housingSync/actions/nestedMatching";
 import type {
     NestedListProp,
     NestedPropsToRead,
     ObservedActionSlot,
-} from "../src/importer/types";
+} from "../src/housingSync/types";
 
 function observed(
     index: number,

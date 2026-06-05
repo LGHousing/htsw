@@ -23,7 +23,6 @@ import {
     readStringValue,
 } from "../gui/menuUtils";
 import { waitForMenu } from "../gui/menuWait";
-import { readConditionList } from "../conditions/readList";
 import {
     getActionFieldLabel,
     getActionScalarLoreFields,
@@ -34,7 +33,6 @@ import {
     parseLocationField,
 } from "../fields/loreParsing";
 import type { Observed, UiFieldKind } from "../types";
-import { readActionList } from "./readList";
 import type { ActionReadArgs } from "./specs";
 
 export function refreshTruncatedScalarFields(
@@ -81,8 +79,6 @@ export async function readOpenConditional({
     const ifActionsLabel = getActionFieldLabel("CONDITIONAL", "ifActions");
     const elseActionsLabel = getActionFieldLabel("CONDITIONAL", "elseActions");
 
-    // Mutate the passed-in observed action in place so the top-level
-    // snapshot the body sub-steps emit reflects each piece as it lands.
     const base: Observed<ActionConditional> = current ?? {
         type: "CONDITIONAL",
         matchAny: false,
@@ -90,61 +86,36 @@ export async function readOpenConditional({
         ifActions: [],
         elseActions: [],
     };
-    const events = read?.events;
-    const pathPrefix = read?.pathPrefix;
-    const focusSubStep = (suffix: string): void => {
-        if (events !== undefined && pathPrefix !== undefined) {
-            events.emit({
-                kind: "nestedReadStarted",
-                path: `${pathPrefix}.${suffix}`,
-                actionType: "CONDITIONAL",
-            });
-        }
-    };
-
     if (propsToRead.has("conditions")) {
-        focusSubStep("conditions");
         ctx.getMenuItemSlot(conditionsLabel).click();
         await waitForMenu(ctx);
-        base.conditions = (await readConditionList(ctx, { itemRegistry: read?.itemRegistry })).map(
-            (entry) => entry.condition
-        );
+        base.conditions = read === undefined
+            ? []
+            : await read.readNestedConditions("conditions");
         await clickGoBack(ctx);
-        read?.emitSnapshot?.();
+        read?.emitSnapshot();
     }
 
     base.matchAny = readBooleanValue(ctx.getMenuItemSlot(matchAnyLabel)) ?? false;
 
     if (propsToRead.has("ifActions")) {
-        focusSubStep("ifActions");
         ctx.getMenuItemSlot(ifActionsLabel).click();
         await waitForMenu(ctx);
-        const ifActions: (Observed<Action> | null)[] = [];
-        for (const entry of await readActionList(ctx, { kind: "full" }, {
-            ...read,
-            pathPrefix: read?.pathPrefix === undefined ? undefined : `${read.pathPrefix}.ifActions`,
-        })) {
-            ifActions.push(entry.action);
-        }
-        base.ifActions = ifActions;
+        base.ifActions = read === undefined
+            ? []
+            : await read.readNestedActions("ifActions");
         await clickGoBack(ctx);
-        read?.emitSnapshot?.();
+        read?.emitSnapshot();
     }
 
     if (propsToRead.has("elseActions")) {
-        focusSubStep("elseActions");
         ctx.getMenuItemSlot(elseActionsLabel).click();
         await waitForMenu(ctx);
-        const elseActions: (Observed<Action> | null)[] = [];
-        for (const entry of await readActionList(ctx, { kind: "full" }, {
-            ...read,
-            pathPrefix: read?.pathPrefix === undefined ? undefined : `${read.pathPrefix}.elseActions`,
-        })) {
-            elseActions.push(entry.action);
-        }
-        base.elseActions = elseActions;
+        base.elseActions = read === undefined
+            ? []
+            : await read.readNestedActions("elseActions");
         await clickGoBack(ctx);
-        read?.emitSnapshot?.();
+        read?.emitSnapshot();
     }
 
     return base;
@@ -253,15 +224,9 @@ export async function readOpenRandom({
     ctx,
     read,
 }: ActionReadArgs<ActionRandom>): Promise<Observed<ActionRandom>> {
-    const actions: (Observed<Action> | null)[] = [];
     ctx.getMenuItemSlot(getActionFieldLabel("RANDOM", "actions")).click();
     await waitForMenu(ctx);
-    for (const entry of await readActionList(ctx, { kind: "full" }, {
-        ...read,
-        pathPrefix: read?.pathPrefix === undefined ? undefined : `${read.pathPrefix}.actions`,
-    })) {
-        actions.push(entry.action);
-    }
+    const actions = read === undefined ? [] : await read.readNestedActions("actions");
     await clickGoBack(ctx);
     return {
         type: "RANDOM",
