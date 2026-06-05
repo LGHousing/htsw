@@ -3,7 +3,38 @@ import type { ImportableEntry, ProgressPayload } from "./progress/types";
 
 export type DiffOpKind = "edit" | "add" | "move" | "delete";
 export type DiffFinalState = "match" | "edit" | "add" | "delete";
-export type ActionPath = string;
+
+export type ActionPathPart = string | number;
+
+export type ActionPath = {
+    readonly parts: readonly ActionPathPart[];
+};
+
+export function actionPathForIndex(pathPrefix: ActionPath | undefined, index: number): ActionPath {
+    return {
+        parts: pathPrefix === undefined
+            ? [index]
+            : pathPrefix.parts.concat(index),
+    };
+}
+
+export function nestedActionPath(parent: ActionPath, prop: string): ActionPath {
+    return { parts: parent.parts.concat(prop) };
+}
+
+export function actionPathKey(path: ActionPath): string {
+    return path.parts.map(String).join(".");
+}
+
+export function actionPathFromKey(key: string): ActionPath {
+    const raw = key.split(".");
+    const parts: ActionPathPart[] = [];
+    for (let i = 0; i < raw.length; i++) {
+        const value = Number(raw[i]);
+        parts.push(String(value) === raw[i] ? value : raw[i]);
+    }
+    return { parts };
+}
 
 export type DiffSummary = {
     matches: number;

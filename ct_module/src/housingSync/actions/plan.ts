@@ -17,10 +17,11 @@ import {
     phaseUnitsTotal,
 } from "../progress/costs";
 import type { ImportEventHandler, ProgressScope } from "../importEvents";
+import type { ActionPath } from "../importEvents";
 
 export type ActionListApplyOptions = {
     itemRegistry?: ItemRegistry;
-    pathPrefix?: string;
+    pathPrefix?: ActionPath;
     progressScope?: ProgressScope;
     events?: ImportEventHandler;
 };

@@ -16,10 +16,15 @@ import {
     setObservedTopLevel,
     type PreviewLine,
 } from "../src/gui/right-panel/import-tab/livePreview";
+import { actionPathFromKey } from "../src/housingSync/importEvents";
 
 import { conditional, message, playSound } from "./utils";
 
 const PATH = "./test.htsl";
+
+function p(key: string) {
+    return actionPathFromKey(key);
+}
 
 function ids(): string[] {
     return previewLinesForFile(PATH).map((l) => l.id);
@@ -113,7 +118,7 @@ describe("setObservedTopLevel", () => {
 describe("markPlannedAdd", () => {
     test("inserts a pending-add line with the pending: prefix", () => {
         primeWithCache(PATH, func([]));
-        markPlannedAdd(PATH, "0", message("new"), 0);
+        markPlannedAdd(PATH, p("0"), message("new"), 0);
         expect(ids()).toEqual(["pending:0:body"]);
         const added = previewLinesForFile(PATH)[0];
         expect(added.diffState).toBe("add");
@@ -124,9 +129,9 @@ describe("markPlannedAdd", () => {
         // find the prefixed sibling at index 0 and insert AFTER it (not
         // fall through to the parent-body fallback and reverse the order).
         primeWithCache(PATH, func([]));
-        markPlannedAdd(PATH, "0", message("a"), 0);
-        markPlannedAdd(PATH, "1", message("b"), 1);
-        markPlannedAdd(PATH, "2", message("c"), 2);
+        markPlannedAdd(PATH, p("0"), message("a"), 0);
+        markPlannedAdd(PATH, p("1"), message("b"), 1);
+        markPlannedAdd(PATH, p("2"), message("c"), 2);
         expect(ids()).toEqual([
             "pending:0:body",
             "pending:1:body",
@@ -136,8 +141,8 @@ describe("markPlannedAdd", () => {
 
     test("re-firing planAdd for the same path is a no-op", () => {
         primeWithCache(PATH, func([]));
-        markPlannedAdd(PATH, "0", message("new"), 0);
-        markPlannedAdd(PATH, "0", message("new"), 0);
+        markPlannedAdd(PATH, p("0"), message("new"), 0);
+        markPlannedAdd(PATH, p("0"), message("new"), 0);
         expect(ids()).toEqual(["pending:0:body"]);
     });
 
@@ -145,7 +150,7 @@ describe("markPlannedAdd", () => {
         primeWithCache(PATH, func([]));
         markPlannedAdd(
             PATH,
-            "0",
+            p("0"),
             conditional({ ifActions: [message("inner")] }),
             0
         );
@@ -160,7 +165,7 @@ describe("markPlannedAdd", () => {
 describe("markPlannedEdit", () => {
     test("inserts a gold ghost line below the body", () => {
         primeWithCache(PATH, func([message("old")]));
-        markPlannedEdit(PATH, "0", message("old"), message("new"));
+        markPlannedEdit(PATH, p("0"), message("old"), message("new"));
         expect(ids()).toEqual(["0:body", "0:ghost"]);
         const ghost = previewLinesForFile(PATH)[1];
         expect(ghost.variant).toBe("ghost");
@@ -172,7 +177,7 @@ describe("markPlannedEdit", () => {
 
     test("body line is marked as edit", () => {
         primeWithCache(PATH, func([message("old")]));
-        markPlannedEdit(PATH, "0", message("old"), message("new"));
+        markPlannedEdit(PATH, p("0"), message("old"), message("new"));
         expect(bodyAt("0")?.diffState).toBe("edit");
     });
 });
@@ -180,7 +185,7 @@ describe("markPlannedEdit", () => {
 describe("markPlannedDelete", () => {
     test("marks the body line as delete", () => {
         primeWithCache(PATH, func([message("x")]));
-        markPlannedDelete(PATH, "0");
+        markPlannedDelete(PATH, p("0"));
         expect(bodyAt("0")?.diffState).toBe("delete");
     });
 
@@ -188,7 +193,7 @@ describe("markPlannedDelete", () => {
         primeWithCache(PATH, func([
             conditional({ ifActions: [message("inner")] }),
         ]));
-        markPlannedDelete(PATH, "0");
+        markPlannedDelete(PATH, p("0"));
         for (const line of previewLinesForFile(PATH)) {
             expect(line.diffState).toBe("delete");
         }
@@ -198,7 +203,7 @@ describe("markPlannedDelete", () => {
 describe("markPlannedMove", () => {
     test("marks the moved body as edit (gold)", () => {
         primeWithCache(PATH, func([message("a"), message("b")]));
-        markPlannedMove(PATH, "1", 1, 0);
+        markPlannedMove(PATH, p("1"), 1, 0);
         expect(bodyAt("1")?.diffState).toBe("edit");
         // The non-moved sibling stays untouched.
         expect(bodyAt("0")?.diffState).toBeUndefined();
@@ -208,8 +213,8 @@ describe("markPlannedMove", () => {
 describe("applyComplete(add)", () => {
     test("strips the pending: prefix and marks completed", () => {
         primeWithCache(PATH, func([]));
-        markPlannedAdd(PATH, "0", message("x"), 0);
-        applyComplete(PATH, "0", "add", "add");
+        markPlannedAdd(PATH, p("0"), message("x"), 0);
+        applyComplete(PATH, p("0"), "add", "add");
         expect(ids()).toEqual(["0:body"]);
         expect(bodyAt("0")?.completed).toBe(true);
         expect(bodyAt("0")?.diffState).toBeUndefined();
@@ -223,12 +228,12 @@ describe("applyComplete(add)", () => {
         primeWithCache(PATH, func([]));
         markPlannedAdd(
             PATH,
-            "0",
+            p("0"),
             conditional({ ifActions: [message("inner")] }),
             0
         );
-        applyComplete(PATH, "0.ifActions.0", "add", "add");
-        applyComplete(PATH, "0", "add", "add");
+        applyComplete(PATH, p("0.ifActions.0"), "add", "add");
+        applyComplete(PATH, p("0"), "add", "add");
         expect(ids()).toEqual(["0:body", "0.ifActions.0:body", "0:close"]);
         for (const line of previewLinesForFile(PATH)) {
             expect(line.completed).toBe(true);
@@ -242,13 +247,13 @@ describe("applyComplete(delete)", () => {
         primeWithCache(PATH, func([
             conditional({ ifActions: [message("inner")] }),
         ]));
-        applyComplete(PATH, "0", "delete", "delete");
+        applyComplete(PATH, p("0"), "delete", "delete");
         expect(previewLinesForFile(PATH)).toEqual([]);
     });
 
     test("leaves siblings alone", () => {
         primeWithCache(PATH, func([message("a"), message("b"), message("c")]));
-        applyComplete(PATH, "1", "delete", "delete");
+        applyComplete(PATH, p("1"), "delete", "delete");
         expect(ids()).toEqual(["0:body", "2:body"]);
     });
 });
@@ -256,8 +261,8 @@ describe("applyComplete(delete)", () => {
 describe("applyComplete(edit)", () => {
     test("promotes the ghost to the body and removes the original", () => {
         primeWithCache(PATH, func([message("old")]));
-        markPlannedEdit(PATH, "0", message("old"), message("new"));
-        applyComplete(PATH, "0", "edit", "edit");
+        markPlannedEdit(PATH, p("0"), message("old"), message("new"));
+        applyComplete(PATH, p("0"), "edit", "edit");
         // After: only one line, at the same id, marked completed.
         expect(ids()).toEqual(["0:body"]);
         const body = bodyAt("0")!;
@@ -268,7 +273,7 @@ describe("applyComplete(edit)", () => {
 
     test("no ghost present: just marks body completed", () => {
         primeWithCache(PATH, func([message("x")]));
-        applyComplete(PATH, "0", "edit", "edit");
+        applyComplete(PATH, p("0"), "edit", "edit");
         expect(bodyAt("0")?.completed).toBe(true);
     });
 });
@@ -276,8 +281,8 @@ describe("applyComplete(edit)", () => {
 describe("applyComplete(move)", () => {
     test("clears the diff state and marks body completed", () => {
         primeWithCache(PATH, func([message("a"), message("b")]));
-        markPlannedMove(PATH, "1", 1, 0);
-        applyComplete(PATH, "1", "match", "move");
+        markPlannedMove(PATH, p("1"), 1, 0);
+        applyComplete(PATH, p("1"), "match", "move");
         expect(bodyAt("1")?.completed).toBe(true);
         expect(bodyAt("1")?.diffState).toBeUndefined();
     });
@@ -288,7 +293,7 @@ describe("markHeadApplied", () => {
         primeWithCache(PATH, func([
             conditional({ ifActions: [message("inner")] }),
         ]));
-        markHeadApplied(PATH, "0");
+        markHeadApplied(PATH, p("0"));
         expect(bodyAt("0")?.completed).toBe(true);
         const close = previewLinesForFile(PATH).find((l) => l.id === "0:close");
         expect(close?.completed).toBe(true);
@@ -300,11 +305,11 @@ describe("markHeadApplied", () => {
         primeWithCache(PATH, func([]));
         markPlannedAdd(
             PATH,
-            "0",
+            p("0"),
             conditional({ ifActions: [message("inner")] }),
             0
         );
-        markHeadApplied(PATH, "0");
+        markHeadApplied(PATH, p("0"));
         const after = ids();
         expect(after).toContain("0:body");
         expect(after).toContain("0:close");
@@ -316,11 +321,11 @@ describe("markHeadApplied", () => {
         primeWithCache(PATH, func([conditional({})]));
         markPlannedEdit(
             PATH,
-            "0",
+            p("0"),
             conditional({}),
             conditional({ matchAny: true })
         );
-        markHeadApplied(PATH, "0");
+        markHeadApplied(PATH, p("0"));
         // Ghost is gone; body carries forward.
         expect(ids().filter((id) => id.indexOf("ghost") >= 0)).toEqual([]);
         expect(bodyAt("0")?.completed).toBe(true);
@@ -332,7 +337,7 @@ describe("finalizeFromSource", () => {
         // Start in a messy intermediate state — some pending-add lines,
         // some diff states still set.
         setObservedTopLevel(PATH, [message("a")]);
-        markPlannedAdd(PATH, "1", message("b"), 1);
+        markPlannedAdd(PATH, p("1"), message("b"), 1);
 
         finalizeFromSource(PATH, [message("a"), message("b")]);
 
@@ -347,18 +352,18 @@ describe("finalizeFromSource", () => {
 describe("previewLineIdForPath", () => {
     test("returns the prefixed id when a pending-add exists at that path", () => {
         primeWithCache(PATH, func([]));
-        markPlannedAdd(PATH, "0", message("x"), 0);
-        expect(previewLineIdForPath(PATH, "0")).toBe("pending:0:body");
+        markPlannedAdd(PATH, p("0"), message("x"), 0);
+        expect(previewLineIdForPath(PATH, p("0"))).toBe("pending:0:body");
     });
 
     test("returns the unprefixed id when the path is observed", () => {
         primeWithCache(PATH, func([message("x")]));
-        expect(previewLineIdForPath(PATH, "0")).toBe("0:body");
+        expect(previewLineIdForPath(PATH, p("0"))).toBe("0:body");
     });
 
     test("returns the unprefixed id when the path is unknown", () => {
         // Falls back to the canonical id so callers don't get null
         // when the model hasn't been built yet.
-        expect(previewLineIdForPath(PATH, "0")).toBe("0:body");
+        expect(previewLineIdForPath(PATH, p("0"))).toBe("0:body");
     });
 });

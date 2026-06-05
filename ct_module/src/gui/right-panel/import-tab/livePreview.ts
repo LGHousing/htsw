@@ -11,6 +11,7 @@ import type {
     DiffOpKind,
     DiffSummary,
 } from "../../../housingSync/importEvents";
+import { actionPathKey } from "../../../housingSync/importEvents";
 import { tokenizeHtsl } from "../syntax";
 import { normalizeHtswPath } from "../../lib/pathDisplay";
 
@@ -487,21 +488,22 @@ export function setObservedTopLevel(
 
 export function markPlannedAdd(
     path: string,
-    actionPath: string,
+    actionPath: ActionPath,
     desired: Action,
     _toIndex: number
 ): void {
     const s = ensure(path);
+    const actionPathKeyValue = actionPathKey(actionPath);
     for (let i = 0; i < s.lines.length; i++) {
         const line = s.lines[i];
-        if (line.pending === true && line.actionPath === actionPath && line.variant === "body") {
+        if (line.pending === true && line.actionPath === actionPathKeyValue && line.variant === "body") {
             return;
         }
     }
-    const insertAt = insertionIndexForPath(s.lines, actionPath);
-    const depth = depthForActionPath(actionPath);
+    const insertAt = insertionIndexForPath(s.lines, actionPathKeyValue);
+    const depth = depthForActionPath(actionPathKeyValue);
     const newLines: PreviewLine[] = [];
-    appendActionLines(newLines, desired, actionPath, depth, false);
+    appendActionLines(newLines, desired, actionPathKeyValue, depth, false);
     for (let i = 0; i < newLines.length; i++) {
         newLines[i].diffState = "add";
     }
@@ -513,19 +515,20 @@ export function markPlannedAdd(
 
 export function markPlannedEdit(
     path: string,
-    actionPath: string,
+    actionPath: ActionPath,
     _observed: Action,
     desired: Action
 ): void {
     const s = ensure(path);
-    const startIdx = findActionStartIndex(s.lines, actionPath);
+    const actionPathKeyValue = actionPathKey(actionPath);
+    const startIdx = findActionStartIndex(s.lines, actionPathKeyValue);
     if (startIdx < 0) return;
     s.lines[startIdx].diffState = "edit";
     const depth = s.lines[startIdx].depth;
     const ghostText = `${indent(depth)}${printActionOneLine(desired)}`;
     const ghost = makeLine({
         variant: "ghost",
-        actionPath,
+        actionPath: actionPathKeyValue,
         text: ghostText,
         depth,
         italic: true,
@@ -536,11 +539,12 @@ export function markPlannedEdit(
     bump(s);
 }
 
-export function markPlannedDelete(path: string, actionPath: string): void {
+export function markPlannedDelete(path: string, actionPath: ActionPath): void {
     const s = ensure(path);
-    const startIdx = findActionStartIndex(s.lines, actionPath);
+    const actionPathKeyValue = actionPathKey(actionPath);
+    const startIdx = findActionStartIndex(s.lines, actionPathKeyValue);
     if (startIdx < 0) return;
-    const endIdx = findActionEndIndex(s.lines, actionPath, startIdx);
+    const endIdx = findActionEndIndex(s.lines, actionPathKeyValue, startIdx);
     for (let i = startIdx; i <= endIdx; i++) {
         s.lines[i].diffState = "delete";
     }
@@ -549,12 +553,12 @@ export function markPlannedDelete(path: string, actionPath: string): void {
 
 export function markPlannedMove(
     path: string,
-    actionPath: string,
+    actionPath: ActionPath,
     _fromIndex: number,
     _toIndex: number
 ): void {
     const s = ensure(path);
-    const startIdx = findActionStartIndex(s.lines, actionPath);
+    const startIdx = findActionStartIndex(s.lines, actionPathKey(actionPath));
     if (startIdx < 0) return;
     s.lines[startIdx].diffState = "edit";
     bump(s);
@@ -562,25 +566,26 @@ export function markPlannedMove(
 
 export function applyComplete(
     path: string,
-    actionPath: string,
+    actionPath: ActionPath,
     _finalState: DiffFinalState,
     kind: DiffOpKind
 ): void {
     const s = ensure(path);
+    const actionPathKeyValue = actionPathKey(actionPath);
     if (kind === "delete") {
-        const startIdx = findActionStartIndex(s.lines, actionPath);
+        const startIdx = findActionStartIndex(s.lines, actionPathKeyValue);
         if (startIdx < 0) return;
-        const endIdx = findActionEndIndex(s.lines, actionPath, startIdx);
+        const endIdx = findActionEndIndex(s.lines, actionPathKeyValue, startIdx);
         s.lines.splice(startIdx, endIdx - startIdx + 1);
         renumberLines(s.lines);
         bump(s);
         return;
     }
     if (kind === "edit") {
-        const startIdx = findActionStartIndex(s.lines, actionPath);
+        const startIdx = findActionStartIndex(s.lines, actionPathKeyValue);
         if (startIdx < 0) return;
         let ghostIdx = -1;
-        const ghostId = `${actionPath}:ghost`;
+        const ghostId = `${actionPathKeyValue}:ghost`;
         for (let i = startIdx + 1; i < s.lines.length; i++) {
             if (s.lines[i].id === ghostId) {
                 ghostIdx = i;
@@ -605,14 +610,14 @@ export function applyComplete(
         return;
     }
     if (kind === "add") {
-        const childPrefix = `${actionPath}.`;
+        const childPrefix = `${actionPathKeyValue}.`;
         let firstAdded = -1;
         let lastAdded = -1;
         for (let i = 0; i < s.lines.length; i++) {
             const line = s.lines[i];
             if (line.actionPath === undefined) continue;
             const isOwnOrChild =
-                line.actionPath === actionPath ||
+                line.actionPath === actionPathKeyValue ||
                 line.actionPath.indexOf(childPrefix) === 0;
             if (!isOwnOrChild) continue;
             if (line.pending !== true) continue;
@@ -620,9 +625,9 @@ export function applyComplete(
             lastAdded = i;
         }
         if (firstAdded < 0) {
-            const startIdx = findActionStartIndex(s.lines, actionPath);
+            const startIdx = findActionStartIndex(s.lines, actionPathKeyValue);
             if (startIdx < 0) return;
-            const endIdx = findActionEndIndex(s.lines, actionPath, startIdx);
+            const endIdx = findActionEndIndex(s.lines, actionPathKeyValue, startIdx);
             for (let i = startIdx; i <= endIdx; i++) {
                 s.lines[i].diffState = undefined;
                 s.lines[i].completed = true;
@@ -641,7 +646,7 @@ export function applyComplete(
         return;
     }
     if (kind === "move") {
-        const startIdx = findActionStartIndex(s.lines, actionPath);
+        const startIdx = findActionStartIndex(s.lines, actionPathKeyValue);
         if (startIdx < 0) return;
         s.lines[startIdx].diffState = undefined;
         s.lines[startIdx].completed = true;
@@ -650,12 +655,13 @@ export function applyComplete(
     }
 }
 
-export function markHeadApplied(path: string, actionPath: string): void {
+export function markHeadApplied(path: string, actionPath: ActionPath): void {
     const s = ensure(path);
+    const actionPathKeyValue = actionPathKey(actionPath);
     let bodyIdx = -1;
     for (let i = 0; i < s.lines.length; i++) {
         const line = s.lines[i];
-        if (line.actionPath === actionPath && line.variant === "body") {
+        if (line.actionPath === actionPathKeyValue && line.variant === "body") {
             bodyIdx = i;
             break;
         }
@@ -665,7 +671,7 @@ export function markHeadApplied(path: string, actionPath: string): void {
     let ghostIdx = -1;
     for (let i = bodyIdx + 1; i < s.lines.length; i++) {
         const line = s.lines[i];
-        if (line.actionPath === actionPath && line.variant === "ghost") {
+        if (line.actionPath === actionPathKeyValue && line.variant === "ghost") {
             ghostIdx = i;
             break;
         }
@@ -688,7 +694,7 @@ export function markHeadApplied(path: string, actionPath: string): void {
 
     for (let i = 0; i < s.lines.length; i++) {
         const line = s.lines[i];
-        if (line.actionPath !== actionPath) continue;
+        if (line.actionPath !== actionPathKeyValue) continue;
         if (line.variant !== "else" && line.variant !== "close") continue;
         if (line.pending === true) setPending(line, false);
         line.diffState = undefined;
@@ -701,21 +707,22 @@ export function markHeadApplied(path: string, actionPath: string): void {
 
 export function effectiveFocusActionPath(
     path: string,
-    actionPath: string
+    actionPath: ActionPath
 ): string | null {
     const s = states[keyForFile(path)];
     if (s === undefined) return null;
+    const actionPathKeyValue = actionPathKey(actionPath);
     for (let i = 0; i < s.lines.length; i++) {
         const line = s.lines[i];
         if (
-            line.actionPath === actionPath &&
+            line.actionPath === actionPathKeyValue &&
             line.variant === "body" &&
             line.pending === true
         ) {
-            return actionPath;
+            return actionPathKeyValue;
         }
     }
-    let probe = actionPath;
+    let probe = actionPathKeyValue;
     while (probe.length > 0) {
         for (let i = 0; i < s.lines.length; i++) {
             const line = s.lines[i];
@@ -730,10 +737,10 @@ export function effectiveFocusActionPath(
     return null;
 }
 
-export function previewLineIdForPath(path: string, actionPath: string): string {
+export function previewLineIdForPath(path: string, actionPath: ActionPath): string {
     const effective = effectiveFocusActionPath(path, actionPath);
     if (effective === null) {
-        return computeLineId({ actionPath, variant: "body" });
+        return computeLineId({ actionPath: actionPathKey(actionPath), variant: "body" });
     }
     const s = states[keyForFile(path)];
     if (s !== undefined) {
@@ -803,9 +810,10 @@ export function setLiveSummary(path: string, summary: DiffSummary): void {
  */
 export function markMatch(path: string, actionPath: ActionPath): void {
     const s = ensure(path);
+    const actionPathKeyValue = actionPathKey(actionPath);
     let changed = false;
     for (let i = 0; i < s.lines.length; i++) {
-        if (s.lines[i].actionPath === actionPath) {
+        if (s.lines[i].actionPath === actionPathKeyValue) {
             s.lines[i].completed = true;
             s.lines[i].diffState = undefined;
             changed = true;

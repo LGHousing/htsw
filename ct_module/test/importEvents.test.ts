@@ -1,9 +1,10 @@
 import { describe, expect, test } from "vitest";
 
 import { applyActionListPlan } from "../src/housingSync/actions/applyDiff";
-import type {
-    ImportEvent,
-    ImportEventHandler,
+import {
+    actionPathFromKey,
+    type ImportEvent,
+    type ImportEventHandler,
 } from "../src/housingSync/importEvents";
 import type { ActionListDiff } from "../src/housingSync/types";
 import type { ActionListPlan } from "../src/housingSync/actions/plan";
@@ -50,7 +51,7 @@ describe("applyActionListPlan — top-level-only terminal events", () => {
         await applyActionListPlan(
             null as never,
             emptyPlan(),
-            { pathPrefix: "5.ifActions", events: handler }
+            { pathPrefix: actionPathFromKey("5.ifActions"), events: handler }
         );
         const kinds = handler.events.map((e) => e.kind);
         expect(kinds).not.toContain("listSyncCompleted");

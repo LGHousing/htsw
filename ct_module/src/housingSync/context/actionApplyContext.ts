@@ -12,6 +12,7 @@ import type {
     ImportEventHandler,
     ProgressScope,
 } from "../importEvents";
+import { nestedActionPath } from "../importEvents";
 import type { ProgressHandler } from "../progress/types";
 import {
     estimateActionListPhaseUnits,
@@ -43,7 +44,7 @@ export type ApplyNestedActionList = (
     options: {
         observed?: ObservedActionSlot[];
         itemRegistry?: ItemRegistry;
-        pathPrefix?: string;
+        pathPrefix?: ActionPath;
         baselineCurrent?: readonly Action[];
         progressScope?: ProgressScope;
         events?: ImportEventHandler;
@@ -148,7 +149,7 @@ export function createActionApplyContext({
     applyNestedConditions,
 }: CreateActionApplyContextArgs): ActionApplyContext {
     const scopeAt = nestedApplyScope(actionPath, appliedUnits, completedOps, totalOps);
-    const nestedPath = (prop: string): ActionPath => `${actionPath}.${prop}`;
+    const nestedPath = (prop: string): ActionPath => nestedActionPath(actionPath, prop);
     let nextOffset = 0;
 
     return {

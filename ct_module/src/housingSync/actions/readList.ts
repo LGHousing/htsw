@@ -44,14 +44,15 @@ import {
     isEmptyPaginatedPlaceholder,
     readPaginatedList,
 } from "../gui/paginatedList";
-import type { ImportEventHandler } from "../importEvents";
+import type { ActionPath, ImportEventHandler } from "../importEvents";
+import { actionPathForIndex, actionPathKey } from "../importEvents";
 import {
     COST,
     hydrationEntryUnits,
     phaseUnitsTotal,
 } from "../progress/costs";
 import { ACTION_LIST_CONFIG } from "./listConfig";
-import { actionPathForIndex, getActionSpec } from "./specs";
+import { getActionSpec } from "./specs";
 import { actionLogLabel } from "./log";
 import { createActionReadContext } from "../context/actionReadContext";
 import { readConditionList } from "../conditions/readList";
@@ -195,7 +196,7 @@ export async function readActionList(
     }
     events?.emit({
         kind: "readStarted",
-        listPath: read?.pathPrefix ?? "actions",
+        listPath: read?.pathPrefix === undefined ? "actions" : actionPathKey(read.pathPrefix),
     });
     observed = await readPaginatedList(
         ctx,
@@ -451,7 +452,7 @@ async function hydrateNestedAction(
     propsToRead: NestedPropsToRead,
     listLength: number,
     read: ListReadOptions | undefined,
-    entryPath: string,
+    entryPath: ActionPath,
     emitSnapshot?: () => void
 ): Promise<void> {
     if (IMPORT_DEBUG) {
@@ -459,7 +460,7 @@ async function hydrateNestedAction(
             return await hydrateNestedActionInner(ctx, entry, propsToRead, listLength, read, entryPath, emitSnapshot);
         } catch (error) {
             const inner = error instanceof Error ? error.message : String(error);
-            const path = entryPath ?? `index ${entry.index}`;
+            const path = entryPath === undefined ? `index ${entry.index}` : actionPathKey(entryPath);
             const typeName = entry.action?.type ?? "<null>";
             throw new Error(`(at ${path}, ${typeName}) ${inner}`);
         }
@@ -473,7 +474,7 @@ async function hydrateNestedActionInner(
     propsToRead: NestedPropsToRead,
     listLength: number,
     read: ListReadOptions | undefined,
-    entryPath: string,
+    entryPath: ActionPath,
     emitSnapshot?: () => void
 ): Promise<void> {
     if (entry.action === null) {

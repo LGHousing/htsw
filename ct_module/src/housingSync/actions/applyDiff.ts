@@ -29,6 +29,7 @@ import type {
     PlannedOp,
     ProgressScope,
 } from "../importEvents";
+import { actionPathForIndex } from "../importEvents";
 import {
     COST,
     actionOperationApplyUnits,
@@ -40,7 +41,6 @@ import {
 import { timed } from "../progress/timing";
 import { ACTION_LIST_CONFIG } from "./listConfig";
 import {
-    actionPathForIndex,
     getActionSpec,
     writeOpenAction,
 } from "./specs";
@@ -302,7 +302,7 @@ async function applyActionListPlanInner(
     desired: Action[],
     diff: ActionListDiff,
     itemRegistry?: ItemRegistry,
-    pathPrefix?: string,
+    pathPrefix?: ActionPath,
     phaseUnits?: PhaseUnits,
     events?: ImportEventHandler | null,
     progressScope: ProgressScope = { kind: "topLevel" },

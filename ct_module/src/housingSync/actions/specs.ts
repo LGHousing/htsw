@@ -7,7 +7,6 @@ import type {
     NestedPropsToRead,
     Observed,
 } from "../types";
-import type { ActionPath } from "../importEvents";
 import type { ActionApplyContext } from "../context/actionApplyContext";
 import type { ActionReadContext } from "../context/actionReadContext";
 import {
@@ -83,12 +82,6 @@ type ActionSpec<T extends Action = Action> = {
         options?: WriteActionOptions<T>
     ) => Promise<void>;
 };
-
-export function actionPathForIndex(pathPrefix: string | undefined, index: number): ActionPath {
-    return pathPrefix && pathPrefix.length > 0
-        ? `${pathPrefix}.${index}`
-        : String(index);
-}
 
 type ActionSpecMap = {
     [K in Action["type"]]: ActionSpec<Extract<Action, { type: K }>>;

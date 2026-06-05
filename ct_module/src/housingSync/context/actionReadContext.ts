@@ -10,7 +10,11 @@ import type {
     ObservedConditionSlot,
 } from "../types";
 import type { ReadConditionListOptions } from "../conditions/readList";
-import type { ActionPath, ImportEventHandler } from "../importEvents";
+import {
+    nestedActionPath,
+    type ActionPath,
+    type ImportEventHandler,
+} from "../importEvents";
 import type { ItemCaptureRegistry } from "../itemCapture";
 
 export type ActionReadContext = {
@@ -56,7 +60,7 @@ export function createActionReadContext({
     readNestedActions,
     readNestedConditions,
 }: CreateActionReadContextArgs): ActionReadContext {
-    const nestedPath = (prop: string): ActionPath => `${actionPath}.${prop}`;
+    const nestedPath = (prop: string): ActionPath => nestedActionPath(actionPath, prop);
     const focusNested = (prop: string): ActionPath => {
         const path = nestedPath(prop);
         events?.emit({
