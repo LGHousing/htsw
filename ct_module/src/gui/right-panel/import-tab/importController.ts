@@ -61,7 +61,7 @@ import type {
 } from "../../../housingSync/importEvents";
 import { importProgressKey } from "../../../housingSync/progress/keys";
 import { initialReducerState, reduce } from "../../../housingSync/progress/reducer";
-import { traceProgressEvent } from "../../../housingSync/progress/trace";
+import { traceImportEvent, traceProgressEvent } from "../../../housingSync/progress/trace";
 import { invalidateSourceDiffForImportable } from "../../code-view/sourceDiff";
 import { showToast } from "../../toast";
 import { isImportRunning, setImportRunning } from "../../../housingSync/runtimeState";
@@ -312,6 +312,7 @@ function createImportEventHandler(args: {
             const before = state.progress;
             state = reduce(state, event);
             traceProgressEvent(event, before, state.progress);
+            traceImportEvent(event);
             (handlers[event.kind] as (e: typeof event) => void)(event);
             sync();
         },
