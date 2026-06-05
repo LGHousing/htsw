@@ -2,6 +2,7 @@ import { TaskManager } from "../tasks/manager";
 import { exportImportable } from "../importables/exports";
 import { exportAllFunctions } from "../importables/functions/exportAll";
 import { exportAllEvents } from "../importables/events/exportAll";
+import { exportAllMenus } from "../importables/menus/exportAll";
 import { createExportProgressSink } from "../gui/right-panel/import-tab/exportProgress";
 import { getCurrentHousingUuid } from "../importCache";
 import {
@@ -105,10 +106,12 @@ function printExportHelp(): void {
     ChatLib.chat("&7  Exports every function in this housing in menu order.");
     ChatLib.chat("&f/export all event [path]");
     ChatLib.chat("&7  Exports every event in this housing's /eventactions menu.");
+    ChatLib.chat("&f/export all menu [path]");
+    ChatLib.chat("&7  Exports every menu in this housing's /menus list.");
     ChatLib.chat("&f/export existing [path]");
     ChatLib.chat("&7  Re-exports every function and event listed in the target import.json.");
     ChatLib.chat("&f/export menu <name> [path]");
-    ChatLib.chat("&7  Reads a Hypixel menu and writes per-slot .snbt + import.json.");
+    ChatLib.chat("&7  Reads a Hypixel menu and writes deduped item .snbt + per-slot .htsl + import.json.");
     ChatLib.chat("&f/export stop");
     ChatLib.chat("&7  Cancels any running export (or import) task.");
     ChatLib.chat('&7  Quote multi-word names: /export function "Button Blessing" my/path/');
@@ -212,6 +215,56 @@ function commandExport(args: string[]): void {
                     importJsonPath,
                     rootDir,
                     progress: createExportProgressSink("EVENT", importJsonPath),
+                });
+                imported = 1;
+            } catch (err) {
+                failed = 1;
+                throw err;
+            } finally {
+                setTraceImportable(null);
+                const written = endTraceRun({ imported, skipped: 0, failed });
+                if (written !== null && tracePath !== null) {
+                    ctx.displayMessage(`&7[trace] &fwrote ${written}`);
+                }
+            }
+        }).catch((err) => {
+            ChatLib.chat(`&cExport failed: ${err}`);
+        });
+        return;
+    }
+
+    if (tokens[0] === "all" && tokens[1] === "menu") {
+        const pathParts = tokens.slice(2);
+        const rawPath = pathParts.length > 0 ? pathParts.join(" ") : "";
+        const explicitPath =
+            rawPath.length > 0 ? stripSurroundingQuotes(rawPath) : undefined;
+
+        TaskManager.run(async (ctx) => {
+            let rootDir: string;
+            let importJsonPath: string;
+            const explicitDestination = exportDestination(explicitPath);
+            if (explicitDestination !== null) {
+                rootDir = explicitDestination.rootDir;
+                importJsonPath = explicitDestination.importJsonPath;
+            } else {
+                const uuid = await getCurrentHousingUuid(ctx);
+                rootDir = defaultExportRoot(uuid);
+                importJsonPath = `${rootDir}/import.json`;
+            }
+
+            const tracePath = beginTraceRun({
+                queueSize: 0,
+                sourcePath: importJsonPath,
+                trustMode: false,
+            });
+
+            let imported = 0;
+            let failed = 0;
+            try {
+                await exportAllMenus(ctx, {
+                    importJsonPath,
+                    rootDir,
+                    progress: createExportProgressSink("MENU", importJsonPath),
                 });
                 imported = 1;
             } catch (err) {
