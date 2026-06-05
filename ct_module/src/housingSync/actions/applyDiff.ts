@@ -55,7 +55,8 @@ import { applyConditionList } from "../conditions/applyDiff";
 import {
     prereadActionList,
     type ActionListPlan,
-    type ActionListPlanOptions,
+    type ActionListApplyOptions,
+    type ActionListPrereadOptions,
 } from "./plan";
 
 type LiveActionListEntry = {
@@ -161,7 +162,7 @@ async function moveActionToIndex(
 export async function applyActionListPlan(
     ctx: TaskContext,
     plan: ActionListPlan,
-    options?: ActionListPlanOptions
+    options?: ActionListApplyOptions
 ): Promise<void> {
     const progressScope: ProgressScope = options?.progressScope ?? { kind: "topLevel" };
     await applyActionListPlanInner(
@@ -184,7 +185,7 @@ export async function applyActionListPlan(
 async function applyNestedActionList(
     ctx: TaskContext,
     desired: Action[],
-    options: ActionListPlanOptions
+    options: ActionListPrereadOptions
 ): Promise<void> {
     const plan = await prereadActionList(ctx, desired, options);
     await applyActionListPlan(ctx, plan, options);

@@ -18,14 +18,17 @@ import {
 } from "../progress/costs";
 import type { ImportEventHandler, ProgressScope } from "../importEvents";
 
-export type ActionListPlanOptions = {
-    observed?: ObservedActionSlot[];
+export type ActionListApplyOptions = {
     itemRegistry?: ItemRegistry;
-    trust?: ActionListTrust;
     pathPrefix?: string;
-    baselineCurrent?: readonly Action[];
     progressScope?: ProgressScope;
     events?: ImportEventHandler;
+};
+
+export type ActionListPrereadOptions = ActionListApplyOptions & {
+    observed?: ObservedActionSlot[];
+    trust?: ActionListTrust;
+    baselineCurrent?: readonly Action[];
 };
 
 export type ActionListPlan = {
@@ -39,7 +42,7 @@ export type ActionListPlan = {
 export async function prereadActionList(
     ctx: TaskContext,
     desired: Action[],
-    options?: ActionListPlanOptions
+    options?: ActionListPrereadOptions
 ): Promise<ActionListPlan> {
     const phaseUnits = estimateActionListPhaseUnits(desired, options?.baselineCurrent);
     const progressScope: ProgressScope = options?.progressScope ?? { kind: "topLevel" };
