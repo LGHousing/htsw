@@ -25,6 +25,8 @@ import {
     normalizeConditionCompare,
 } from "../fields/compare";
 import { countReferencedShells } from "../../importables/references";
+import { readCachedActionList } from "../../importables/actionListHelpers";
+import type { ImportableCacheEntry } from "../../importCache/cache";
 
 /**
  * Per-op-kind costs in abstract units. Calibrated against
@@ -681,4 +683,22 @@ export function estimateImportableCost(
         );
     }
     return COST.commandMenuWait + COST.cacheWrite;
+}
+
+/**
+ * Work estimate in units for one importable, given its last-known saved
+ * state (or null when there's none). When a saved state exists, its action
+ * lists feed the cache-aware estimate so unchanged work is priced cheaply.
+ */
+export function estimateImportableUnits(
+    importable: Importable,
+    cacheEntry: ImportableCacheEntry | null
+): number {
+    if (cacheEntry === null) {
+        // Floor at 1: a 0-unit item would otherwise read as already-done.
+        return Math.max(1, estimateImportableCost(importable));
+    }
+    const getCached = (basePath: string) =>
+        readCachedActionList(cacheEntry.importable, basePath);
+    return Math.max(1, estimateImportableCost(importable, getCached));
 }
