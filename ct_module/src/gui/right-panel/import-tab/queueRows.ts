@@ -21,7 +21,6 @@ import {
     COLOR_ROW,
     COLOR_ROW_HOVER,
     COLOR_TEXT_DIM,
-    COLOR_TEXT_FAINT,
     GLYPH_DOT,
     PHASE_APPLYING,
     PHASE_HYDRATING,
@@ -30,11 +29,10 @@ import {
 } from "../../lib/theme";
 
 const GLYPH_CARET = "▶";
-import { clearImportableChecks, isCurrentHouseTrusted, isImportableChecked, toggleImportableChecked } from "../../state";
-import { getCacheStatusRows } from "../../cache-status/rows";
+import { clearImportableChecks, getHousingUuid, isCurrentHouseTrusted, isImportableChecked, toggleImportableChecked } from "../../state";
 import { getQueueItemRunState, isCurrentQueueItem } from "./importProgress";
 import { importableIdentity, importableKey } from "../../../importCache/paths";
-import { findCacheRowIndex } from "../../../importCache/status";
+import { buildCacheStatusRow } from "../../../importCache/status";
 import {
     clearQueue,
     getQueueLength,
@@ -51,9 +49,24 @@ import { phaseSegment } from "./progressPanel";
 function willBeSkipped(item: QueueItem): boolean {
     if (!isCurrentHouseTrusted()) return false;
     if (item.kind !== "importable") return false;
-    const rows = getCacheStatusRows();
-    const index = findCacheRowIndex(rows, item.identity, item.type);
-    return index >= 0 && rows[index].state === "current";
+    const uuid = getHousingUuid();
+    if (uuid === null) return false;
+    const parsed = parseImportJsonAt(item.sourcePath).parsed;
+    if (parsed === null) return false;
+    const imp = findImportableInList(parsed.value, item.identity, item.type);
+    if (imp === null) return false;
+    return buildCacheStatusRow(uuid, imp).state === "current";
+}
+
+function findImportableInList(
+    list: readonly Importable[],
+    identity: string,
+    type: Importable["type"]
+): Importable | null {
+    for (let i = 0; i < list.length; i++) {
+        if (list[i].type === type && importableIdentity(list[i]) === identity) return list[i];
+    }
+    return null;
 }
 
 const collapsedQueueImportJsonRows: Set<string> = new Set();
@@ -69,12 +82,6 @@ function removeQueueItemAndUncheck(item: QueueItem): void {
     if (item.kind !== "importable") return;
     const checkKey = importableKey(item.type, item.identity);
     if (isImportableChecked(checkKey)) toggleImportableChecked(checkKey);
-}
-
-function shortSource(p: string): string {
-    const norm = p.split("\\").join("/");
-    const slash = norm.lastIndexOf("/");
-    return slash < 0 ? norm : norm.substring(slash + 1);
 }
 
 function queueRowMiniBar(item: QueueItem): Element {
@@ -230,10 +237,6 @@ export function queueRow(item: QueueItem): Element {
                         text: item.label,
                         style: { width: { kind: "grow" } },
                     }),
-                    Text({
-                        text: shortSource(item.sourcePath),
-                        color: COLOR_TEXT_FAINT,
-                    }),
                     // No removal while an import is running — the queue is
                     // locked for the duration of the run.
                     isImportRunning() || isQueueSessionItem(queueItemKey(item))
@@ -263,7 +266,7 @@ export function queueRow(item: QueueItem): Element {
     });
 }
 
-export function queueImportJsonChildRow(parent: QueueItem, item: QueueItem): Element {
+export function queueImportJsonChildRow(item: QueueItem): Element {
     const isCurrent = isCurrentQueueItem(item);
     return Container({
         style: {
@@ -315,10 +318,6 @@ export function queueImportJsonChildRow(parent: QueueItem, item: QueueItem): Ele
                     Text({
                         text: item.label,
                         style: { width: { kind: "grow" } },
-                    }),
-                    Text({
-                        text: shortSource(parent.sourcePath),
-                        color: COLOR_TEXT_FAINT,
                     }),
                     Container({
                         style: { width: { kind: "px", value: 14 }, height: { kind: "grow" } },

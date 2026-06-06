@@ -7,7 +7,8 @@ import {
     decodeJsonStringContent,
     encodeJsonString,
 } from "./snbtFormat";
-import { commands, Disposable, languages, Position, Range, window, workspace } from "vscode";
+import { commands, Disposable, ExtensionContext, languages, Position, Range, window, workspace } from "vscode";
+import { checkForUpdates } from "./autoUpdate";
 
 const disposables: Disposable[] = [];
 const providers: Disposable[] = [];
@@ -20,8 +21,7 @@ const HTSL_COMPLETION_TRIGGER_CHARACTERS = [
     "/",
 ];
 
-export function activate() {
-    // context: ExtensionContext
+export function activate(context: ExtensionContext) {
     function registerProviders() {
         disposeAll(disposables);
 
@@ -120,6 +120,8 @@ export function activate() {
     registerProviders();
 
     disposables.push(asDisposable(providers));
+
+    void checkForUpdates(context);
 }
 
 export function deactivate() {

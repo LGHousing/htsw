@@ -4,6 +4,10 @@ import { Element, Rect, layoutElement, pointInRect } from "./layout";
 import { Extractable, extract } from "./extractable";
 import { renderElement, dispatchClick } from "./render";
 import { tryDispatchPopoverClick, popoverIsOpen, mouseIsOverPopover } from "./popovers";
+import {
+    mouseIsOverHoverCard,
+    tryDispatchHoverCardClick,
+} from "./hoverCards";
 import { getEffectiveOverlayScale, getMcScale, mcToOverlay } from "./overlayScale";
 import { GL11, javaType } from "./java";
 
@@ -168,7 +172,7 @@ export class Panel {
             }
             // Hover follows click propagation: panels stay interactive unless the cursor is
             // actually over a popover (in which case the popover absorbs the click).
-            const interactive = !mouseIsOverPopover(x, y);
+            const interactive = !mouseIsOverPopover(x, y) && !mouseIsOverHoverCard(x, y);
             renderElement(this.root, b.x, b.y, b.w, b.h, x, y, interactive);
             endHtswOverlayDraw();
         };
@@ -176,8 +180,8 @@ export class Panel {
         // but before slot/foreground/tooltip rendering, so MC's hover tooltip on container
         // slots paints on top of our right panel instead of being covered. Inventory bg + items
         // paint after us too, but our panels sit around the inventory (not over it) so they
-        // don't actually overlap pixel-wise. Popovers stay on postGuiRender (LOWEST) so they
-        // remain modal above the tooltip.
+        // don't actually overlap pixel-wise. Popovers and our own hover tooltips stay on
+        // postGuiRender (LOWEST) so they paint above MC's inventory/foreground.
         this.renderTrigger = register(
             "guiRender",
             (x: number, y: number, _gui: MCTGuiScreen) => paint(x, y)
@@ -203,6 +207,10 @@ export class Panel {
                         cancel(event);
                         return;
                     }
+                }
+                if (tryDispatchHoverCardClick(x, y)) {
+                    cancel(event);
+                    return;
                 }
                 if (!extract(this.shouldBeVisible)) return;
                 const b = extract(this.bounds);

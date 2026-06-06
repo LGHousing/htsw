@@ -12,13 +12,13 @@ import {
     SIZE_TAB_H,
 } from "../lib/theme";
 
-type TabId = "importables" | "knowledge";
+type TabId = "importables" | "houses";
 
 type Tab = { id: TabId; label: string; icon: IconName; content: () => Element };
 
 const TABS: Tab[] = [
     { id: "importables", label: "Importables", icon: Icons.compass, content: ImportablesView },
-    { id: "knowledge", label: "Knowledge", icon: Icons.bookOpen, content: KnowledgeView },
+    { id: "houses", label: "Houses", icon: Icons.house, content: KnowledgeView },
 ];
 
 let activeTab: TabId = "importables";

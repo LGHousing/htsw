@@ -88,10 +88,15 @@ export async function selectItemFromOpenInventory(
     }
 
     const playerInvStart = container.getSize() - 36;
+    // The 9th hotbar slot (the container's last slot) can't be clicked into an
+    // item field — the click doesn't register — so don't match against it; fall
+    // through to a scratch-slot injection instead. See issue #58.
+    const ninthHotbarSlot = container.getSize() - 1;
     const desiredStack = item.getItemStack();
 
     const existingSlot = ctx.tryGetItemSlot((s) => {
         if (s.getSlotId() < playerInvStart) return false;
+        if (s.getSlotId() === ninthHotbarSlot) return false;
         const slotStack = s.getItem().getItemStack();
         return match(slotStack, desiredStack);
     });

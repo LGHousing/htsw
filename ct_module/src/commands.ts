@@ -23,6 +23,7 @@ import {
     setProgressTraceEnabled,
 } from "./housingSync/progress/trace";
 import { getCurrentHousingUuid } from "./importCache";
+import { isInCreativeMode } from "./housingSync/sideEffects";
 import { startImport } from "./gui/right-panel/import-tab/importController";
 import { canonicalPath } from "./gui/parsing/parses";
 import { snbtFromItem } from "./housingSync/itemCapture";
@@ -191,8 +192,7 @@ function giveItem(args: string[]): void {
         return;
     }
 
-    // @ts-ignore field_71075_bZ = PlayerCapabilities, field_75098_d = isCreativeMode
-    if (Player.asPlayerMP().player.field_71075_bZ.field_75098_d === false) {
+    if (!isInCreativeMode()) {
         ChatLib.chat("&c[htsw] Must be in creative mode to give an item.");
         return;
     }

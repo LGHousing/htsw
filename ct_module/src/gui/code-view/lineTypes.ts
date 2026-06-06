@@ -9,11 +9,11 @@
 
 import type { SyntaxToken } from "../right-panel/syntax";
 import type { DiffState } from "./diffPalette";
+import type { Diagnostic } from "htsw";
 
 export type TokenSpan = SyntaxToken & {
     fieldProp?: string;
-    spanId?: string;
-    underline?: boolean;
+    underlineColor?: number;
 };
 
 export type FieldSpan = {
@@ -31,6 +31,7 @@ export type RenderableLine = {
     staticBackground?: number;
     staticForeground?: number;
     isHeader?: boolean;
+    diagnostics?: readonly Diagnostic[];
 };
 
 export type LineDecorations = {

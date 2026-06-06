@@ -25,3 +25,15 @@ export function getMtimeMs(path: string): number {
         return 0;
     }
 }
+
+// FileLib.exists resolves relative to the CT modules dir, so it can't check the
+// absolute import.json paths stored in recents — go through java.nio instead.
+export function pathExists(path: string): boolean {
+    try {
+        if (_Paths === null) _Paths = javaType("java.nio.file.Paths");
+        if (_Files === null) _Files = javaType("java.nio.file.Files");
+        return _Files.exists(_Paths.get(String(path)));
+    } catch (_e) {
+        return false;
+    }
+}

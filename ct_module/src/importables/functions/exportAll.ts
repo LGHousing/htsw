@@ -10,7 +10,7 @@ import { withExportSession } from "../exportSession";
 import { exportFunctionWithSharedState } from "./export";
 import { writeCapturedItems } from "../../exporter/writeCapturedItems";
 import { htslFilenameForFunctionExport } from "../../exporter/paths";
-import type { ExportProgressSink } from "../../exporter/exportProgress";
+import type { ExportProgressSink } from "../../housingSync/progress/types";
 import { listAllFunctionNames } from "./listFunctions";
 
 export type ExportAllFunctionsOptions = {

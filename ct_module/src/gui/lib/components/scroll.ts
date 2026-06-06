@@ -5,6 +5,8 @@ export type ScrollProps = {
     id: string;
     children: Extractable<Child[]>;
     style?: ContainerStyle;
+    /** Scroll axis. Defaults to "y" (vertical). */
+    axis?: "x" | "y";
     /**
      * When true, mouse-wheel and scrollbar-drag input is consumed
      * instead of moving the viewport. Used by the live-preview during
@@ -20,6 +22,7 @@ export function Scroll(props: ScrollProps): Element {
         id: props.id,
         style: props.style ?? {},
         children: props.children,
+        axis: props.axis,
         locked: props.locked,
     };
 }

@@ -10,7 +10,7 @@ import { withExportSession } from "../exportSession";
 import { exportEventWithSharedState } from "./export";
 import { writeCapturedItems } from "../../exporter/writeCapturedItems";
 import { htslFilenameForEventExport } from "../../exporter/paths";
-import type { ExportProgressSink } from "../../exporter/exportProgress";
+import type { ExportProgressSink } from "../../housingSync/progress/types";
 import { listAllEventNames } from "./listEvents";
 
 export type ExportAllEventsOptions = {

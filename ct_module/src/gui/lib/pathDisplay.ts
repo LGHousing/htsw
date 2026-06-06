@@ -52,6 +52,22 @@ export function normalizeHtswPath(p: string): string {
 }
 
 /**
+ * Shorten an `import.json` path to its last two directory segments for a
+ * compact label (e.g. `.../my-house/release`). Drops a trailing
+ * `/import.json` so the folder reads as the destination, not the file.
+ */
+export function shortPath(p: string): string {
+    let norm = normalizeHtswPath(p).split("\\").join("/");
+    const tail = "/import.json";
+    if (norm.substring(norm.length - tail.length) === tail) {
+        norm = norm.substring(0, norm.length - tail.length);
+    }
+    const parts = norm.split("/");
+    if (parts.length <= 2) return norm;
+    return `.../${parts.slice(parts.length - 2).join("/")}`;
+}
+
+/**
  * Shorten an arbitrary text (typically a diagnostic message or file path)
  * for display by collapsing the MC-root prefix to `./` and truncating to
  * `maxLen` characters with an ellipsis. Used by source viewers and error

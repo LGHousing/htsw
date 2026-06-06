@@ -1,9 +1,16 @@
 /// <reference types="../../CTAutocomplete" />
 
 import { Element, Rect, pointInRect, layoutElement } from "./layout";
-import { renderElement, dispatchClick, dispatchWheel } from "./render";
+import {
+    renderElement,
+    dispatchClick,
+    dispatchWheel,
+    hasDeferredTooltip,
+    drawDeferredTooltip,
+} from "./render";
 import { beginHtswOverlayDraw, endHtswOverlayDraw } from "./panel";
 import { getOverlayScreenW, getOverlayScreenH, mcToOverlay } from "./overlayScale";
+import { placeAnchoredRect } from "./anchoredRect";
 
 export type PopoverHandle = {
     id: number;
@@ -125,14 +132,7 @@ function computePopoverRect(p: PopoverHandle): Rect {
             h,
         };
     }
-    const anchor = p.anchor;
-    const anchorCenterY = anchor.y + anchor.h / 2;
-    const goesBelow = anchorCenterY < screenH / 2;
-    const y = goesBelow ? anchor.y + anchor.h + 2 : anchor.y - p.height - 2;
-    let x = anchor.x + anchor.w - p.width;
-    if (x + p.width > screenW - 2) x = screenW - 2 - p.width;
-    if (x < 2) x = 2;
-    return { x, y, w: p.width, h: p.height };
+    return placeAnchoredRect(p.anchor, p.width, p.height, screenW, screenH);
 }
 
 // Called by panel click handlers BEFORE their own dispatch. Returns true if the click was
@@ -215,6 +215,12 @@ function drawPopovers(mouseX: number, mouseY: number): void {
             true
         );
     }
+    // A tooltip queued by popover content has to paint on top of the popover
+    // itself. The standalone postGuiRender tooltip pass isn't guaranteed to
+    // run after this one (equal LOWEST priority, CT's tie order isn't stable),
+    // so draw it here while we still own the GL state. The standalone pass then
+    // finds nothing queued and covers only the no-popover (panel) case.
+    if (hasDeferredTooltip()) drawDeferredTooltip();
     endHtswOverlayDraw();
 }
 

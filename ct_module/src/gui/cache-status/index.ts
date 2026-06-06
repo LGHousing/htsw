@@ -1,7 +1,6 @@
 import type { CacheState } from "../../importCache/status";
-import { findCacheRowIndex } from "../../importCache/status";
-import { importableIdentity } from "../../importCache/paths";
-import { getCacheStatusRows } from "./rows";
+import { buildCacheStatusRow } from "../../importCache/status";
+import { getHousingUuid } from "../state/housing";
 import { findFileTarget } from "../code-view/sourceDiff";
 import type { Importable } from "htsw/types";
 
@@ -17,10 +16,14 @@ export const STATUS_LABEL: { [k in CacheState]: string } = {
     unknown: "unknown",
 };
 
+// State is a pure function of (importable, knowledge cache), computed from the
+// importable the caller already holds. The hash is memoized and the cache read
+// hits an in-memory mirror, so this is cheap enough to run per row per frame —
+// no precomputed list to drift out of sync with the importables the tree shows.
 export function cacheStateForImportable(importable: Importable): CacheState | null {
-    const rows = getCacheStatusRows();
-    const idx = findCacheRowIndex(rows, importableIdentity(importable), importable.type);
-    return idx === -1 ? null : rows[idx].state;
+    const uuid = getHousingUuid();
+    if (uuid === null) return null;
+    return buildCacheStatusRow(uuid, importable).state;
 }
 
 export function statusForImportable(importable: Importable): CacheState {

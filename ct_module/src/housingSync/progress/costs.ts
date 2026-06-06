@@ -405,9 +405,10 @@ function ownSetupUnits(importable: Importable): number {
         const hasActions =
             (importable.leftClickActions?.length ?? 0) > 0 ||
             (importable.rightClickActions?.length ?? 0) > 0;
+        // A codeless item is skipped, not spawned, so it has no setup work.
         return hasActions
             ? COST.itemInject + COST.commandMenuWait + COST.menuClickWait
-            : COST.itemInject;
+            : 0;
     }
     if (importable.type === "MENU") return COST.commandMenuWait;
     return COST.commandMenuWait;
@@ -662,7 +663,9 @@ export function estimateImportableCost(
         const left = importable.leftClickActions ?? [];
         const right = importable.rightClickActions ?? [];
         if (left.length === 0 && right.length === 0) {
-            return COST.itemInject + COST.cacheWrite;
+            // Codeless items are skipped (issue #56), not spawned — only the
+            // cache write remains. estimateImportableUnits floors this at 1.
+            return COST.cacheWrite;
         }
         return (
             COST.itemInject +

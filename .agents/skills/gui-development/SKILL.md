@@ -19,6 +19,8 @@ Library — `gui/lib/` (project-agnostic UI primitives + screen/theme):
 - `render.ts` — single tree renderer + click dispatcher (used by panels and popovers).
 - `panel.ts` — `Panel` class: bounds, visibility, click trigger, render trigger.
 - `popovers.ts` — global popover stack, anchored/modal render, click dispatch helper, hover-suppression query.
+- `hoverCards.ts` — delayed, scrollable informational hover cards that absorb wheel/click input without becoming modal.
+- `anchoredRect.ts` — shared below/above placement and screen clamping used by popovers and hover cards.
 - `menu.ts` — `openMenu(x, y, actions[])` builds a context-menu popover from `{label, onClick}` actions, plus `{kind: "separator"}` dividers. Auto-closes on click. Menu width auto-sizes to the widest label via `Renderer.getStringWidth` (floored at `MIN_MENU_WIDTH`); callers don't need to truncate.
 - `focus.ts` — single global focused-input id.
 - `inputState.ts` — per-input `GuiTextField` instances (cursor, selection, clipboard, arrow keys).
@@ -48,6 +50,7 @@ Code-view data — `gui/code-view/` (the ONE renderer + everything it parses/col
 - `htslParse.ts` — `parseHtslFile` + `actionsToLines`, consumed by `lineModel.ts` for the source preview.
 - `diffPalette.ts` — the `DiffState` union + color tables (`COLOR_BY_STATE` / `ROW_BG_BY_STATE`) + `COLOR_CURSOR` (the focus-cursor color; the cursor is NOT a diff state). Shared vocabulary; holds no logic.
 - `sourceDiff.ts` — STATIC diff producer: per-action `DiffState` comparing source vs the import cache ("what would change vs last import"), for the View tab. Lazy, cached per file.
+- Diagnostic spans and formatted diagnostic blocks live in `src/diagnostics/`; chat and View-pane hover cards consume the same presentation.
 
 Diff decorators — `gui/right-panel/decorators.ts` (kept OUT of `code-view/` so the renderer stays generic; the `LineDecorator` interface lives in `code-view/lineTypes.ts`):
 - `diffDecorator` — View tab; reads `sourceDiff`.
@@ -87,10 +90,10 @@ App shell — `gui/`:
 - `root.ts` — root tree builder: arranges LeftPanel / center cutouts (transparent above + below the inventory) / RightPanel / chat input around the inventory bounds. **No top bar.** Right column gets `padding-left: SCREEN_PAD` so it mirrors the screen-edge gap on the inventory-facing side.
 - `chat-input.ts` — `ChatInputBar` element + global `T` shortcut to focus it.
 - `knowledge-status.ts` — derives `STATUS_COLOR` / `STATUS_LABEL` / `statusForImportable` / `knowledgeStatusByImportable` from `state` for the left-rail badges.
-- `bottom-toolbar/` — slim, no-background strip under the inventory: only Housing Menu + the `/functions …` shortcut split-button. Capture / Import / Trust moved into the right panel's Import tab.
+- `bottom-toolbar/` — slim, no-background strip under the inventory: only Housing Menu + the `/functions …` shortcut split-button. Import / Trust moved into the right panel's Import tab.
 - `left-panel/` — two tabs: **Explore** (importables list + Open file/folder/Browse buttons) and **Knowledge** (per-house list with Trust toggle + Alias button per house).
-- `right-panel/` — top-level **View / Import** tabs. View hosts the existing source-preview tabs; Import hosts the queue (checkboxes from the Explore list), the inline live-importer strip (progress bar + cancel + current path), and the Capture / Import action row.
-- `right-panel/import-tab/importController.ts` — `startImport()` (reads per-house trust via `isCurrentHouseTrusted()`), `startCaptureExport(type)`, `importablesForImport()`, and `CAPTURE_TYPES`. The diff-sink wiring lives here now (was previously in `bottom-toolbar/index.ts`).
+- `right-panel/` — top-level **View / Import** tabs. View hosts the existing source-preview tabs; Import hosts the queue (checkboxes from the Explore list), the inline live-importer strip (progress bar + cancel + current path), and the Auto-proceed / Import action row.
+- `right-panel/import-tab/importController.ts` — `startImport()` (reads per-house trust via `isCurrentHouseTrusted()`) and `importablesForImport()`. The diff-sink wiring lives here now (was previously in `bottom-toolbar/index.ts`).
 
 The Explore row builder (`gui/left-panel/explore/index.ts`) follows a **type-aware dispatch** pattern worth knowing about: a single `resultRow(imp)` builds every row but branches on `imp.type` for behavior. Right-click always builds a menu via `buildPrimaryAndJsonMenu(primaryPath, primaryLabel, declaringPath)` which shows `fsActions(primary, label)` + a `{kind:"separator"}` + `fsActions(import.json)`, with the separator and primary suppressed when `primaryPath === declaringPath` (REGION/MENU/NPC). Double-click is dispatched through `dispatchDoubleClick(imp)` which previews htsl for FUNCTION/EVENT, .snbt for ITEM, toggles inline expansion for REGION (showing "Enter actions" / "Exit actions" sub-rows under the parent), and falls back to the import.json with a chat note for MENU/NPC. ITEM rows with click-actions also expand to show "Left/Right click actions" sub-rows. The chevron is its own clickable Container (not the whole row) so the body still toggles the multi-select checkbox as before. Sub-rows reuse the same `buildPrimaryAndJsonMenu` with the sub-list's resolved path from `importableSubListPath`. Each row also displays the source-file tail (`tailSegments(path, 3)` from `lib/pathDisplay`) — last 3 dirs joined by `/`, no `~/` or `./` prefix.
 
@@ -100,10 +103,10 @@ The Explore row builder (`gui/left-panel/explore/index.ts`) follows a **type-awa
 
 | kind | extra fields | clickable? | notes |
 |------|---|---|---|
-| `container` | `style: ContainerStyle`, `children: Extractable<Child[]>`, optional `onClick(rect, info)` where `info: {button, isDoubleClickSecond}`, optional `onDoubleClick(rect)` | yes if `onClick` or `onDoubleClick` set | flex layout (row/col), gap, align, justify, padding, optional bg/hoverBg. **Buttons are styled containers, not their own kind** — the `Button({ text?, icon?, children?, onClick, ... })` builder returns a Container with sensible defaults (theme bg/hoverBg, row+center+justify-center, gap 4, x-padding 4). Pass `text` and/or `icon` for the common case; pass `children` to override the layout entirely. |
-| `text` | `style`, `text: Extractable<string>`, optional `color`, optional `tooltip: Extractable<string>` + `tooltipColor: Extractable<number>` | no | plain label, intrinsic size = `Renderer.getStringWidth(text)` × `LINE_H`. When `tooltip` is set and the rect is hovered, a small chip is drawn just below (or above near the screen edge) the rect — drawn after items + scrollbars in `renderElement`, so popovers (LOWEST priority) still cover it |
+| `container` | `style: ContainerStyle`, `children: Extractable<Child[]>`, optional `onClick(rect, info)`, `onDoubleClick(rect)`, `onHover(rect)` | yes if `onClick` or `onDoubleClick` set | `onHover` is observational and does not make a container clickable. Otherwise this is the flex-layout primitive used by buttons and rows. |
+| `text` | `style`, `text: Extractable<string>`, optional `color`, `underlineColor`, `tooltip`, `tooltipColor`, `truncate` | no | `underlineColor` draws a one-pixel underline across the laid-out fragment and is used for exact diagnostic spans. `truncate: true` clips the string with a trailing `...` to the laid-out rect width — opt-in, because bare text is allowed to overflow (some rows rely on a later sibling painting over the spill). |
 | `input` | `style`, `id: string`, `value: Extractable<string>`, `onChange(v)`, optional `placeholder` | focusable | id is used for global focus + key dispatch |
-| `scroll` | `style: ContainerStyle`, `id: string`, `children: Extractable<Element[]>` | passes through | vertical scroll viewport with internal offset state, scrollbar overlay, mouse-wheel + drag |
+| `scroll` | `style: ContainerStyle`, `id: string`, `children: Extractable<Element[]>`, optional `axis: "x" \| "y"` | passes through | scroll viewport with internal offset state, scrollbar overlay, mouse-wheel + drag. `axis` defaults to `"y"` (vertical); `axis: "x"` is a horizontal strip (e.g. the View-tab file-tab bar) — wheel-scrolls only, no scrollbar is drawn. |
 | `image` | `style`, `name: Extractable<IconName>`, optional `color: Extractable<number>` (ARGB tint), optional `tooltip` + `tooltipColor` (same as `text`) | no | 16×16 default; draws via `Image.fromAsset("icons/<name>.png")` cached per name. The icon PNGs are monochrome white, so `color` recolors them — implemented with `Renderer.colorize(...)` before `drawImage`, **not** `GlStateManager.color` (CT's `drawImage` resets GL color to white when its internal `colorized` is null, so only `colorize()` survives the draw). `Icon({ color, tooltip })` exposes both. See **Icons** below. |
 
 Children of `container` and `scroll` are `Extractable<Element[]>` so the list can be dynamic each frame (e.g. filter results). Layout is recomputed every frame; **there is no layout cache** — anything in the tree may change between frames.
@@ -122,7 +125,7 @@ Layout algorithm (per container):
 
 **`align: "stretch"` (default) only stretches children that have no explicit cross-axis size.** A child with `width: {kind:"px",...}` keeps that width even with stretch. This matches CSS flex.
 
-`scroll` lays out children in a column with no main-axis bound, applies the scroll offset (clamped to `[0, contentH - viewportH]`), and tags every descendant `LaidOut` with `clipRect = viewport`. The renderer pushes a GL scissor for items with `clipRect`.
+`scroll` lays out children along its axis with no main-axis bound, applies the scroll offset (clamped to `[0, contentLength - viewportMain]` where main is height for `"y"`, width for `"x"`), and tags every descendant `LaidOut` with `clipRect = viewport`. The renderer pushes a GL scissor for items with `clipRect`. The `ScrollState` (in `layout.ts`) carries `axis` + `contentLength` (size along the scroll axis); vertical scrolls reserve the scrollbar track width on the cross axis, horizontal strips draw no scrollbar (wheel-scroll only) and steal no height.
 
 ## Reactivity (`Extractable`)
 
@@ -153,6 +156,7 @@ Scroll({
 - For items with `clipRect`, pushes a scissor before rendering and pops after.
 - `interactive=false` disables hover effects entirely — used so panels don't show hover when a popover is intercepting clicks.
 - After items, draws scrollbar overlays for any `scroll` whose content overflows.
+- Calls a container's `onHover(rect)` only when the normal clipping, interactivity, and scrollbar-interception hover checks pass.
 
 `dispatchClick(laid, mouseX, mouseY)`:
 - Topmost-first walk in reverse.
@@ -182,6 +186,8 @@ Click flow when a popover is open:
 - The exception: if the click lands on the popover's own anchor AND `excludeAnchor` is true (default), the popover stays open. This avoids a race with `togglePopover` where auto-close fires first, then the trigger's `onClick` reopens a fresh popover, requiring a second click to dismiss. Cursor-anchored menus (`openMenu`) opt out by passing `excludeAnchor: false` since they have no re-clickable trigger — any subsequent click should close them.
 
 Hover follows click propagation: panels pass `interactive = !mouseIsOverPopover(x, y)` to `renderElement`, so panel elements light up on hover anywhere a click would still reach them — only positions actually under a popover suppress panel hover.
+
+Scrollable hover cards are separate from popovers. They open after a stable hover delay, remain alive while crossing from anchor to card, and absorb wheel/click input inside the card. Explicit popovers always suppress and close hover cards.
 
 When the inventory closes (`getContainerBounds() === null`), the tick handler in `overlay.ts` calls `closeAllPopovers()` and clears focus so popovers don't linger across opens.
 

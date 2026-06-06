@@ -49,16 +49,23 @@ export type Element =
           children: Extractable<Child[]>;
           onClick?: (rect: Rect, info: ClickInfo) => void;
           onDoubleClick?: (rect: Rect) => void;
+          onHover?: (rect: Rect) => void;
       }
     | {
           kind: "text";
           style: Style;
           text: Extractable<string>;
           color?: Extractable<number | undefined>;
+          underlineColor?: Extractable<number | undefined>;
           // When set, hovering this text element shows a small tooltip chip
           // anchored just below (or above near the screen edge) the rect.
           tooltip?: Extractable<string>;
           tooltipColor?: Extractable<number>;
+          // When true, the string is shortened with a trailing ellipsis to fit
+          // the laid-out rect width instead of overflowing into neighbours.
+          // Opt-in: bare text is allowed to overflow (some rows rely on a later
+          // sibling painting over the spill).
+          truncate?: boolean;
       }
     | {
           kind: "input";
@@ -79,6 +86,8 @@ export type Element =
           style: ContainerStyle;
           id: string;
           children: Extractable<Child[]>;
+          /** Scroll axis. Defaults to "y" (vertical). */
+          axis?: "x" | "y";
           /** When true, scroll input is consumed without moving the viewport. */
           locked?: Extractable<boolean>;
       }
@@ -239,7 +248,9 @@ function growFactorOf(e: Element, axis: "w" | "h"): number {
 // Per-id scroll state. Reset across reloads but persists across frames.
 type ScrollState = {
     offset: number;
-    contentHeight: number;
+    /** Content size along the scroll axis (height for "y", width for "x"). */
+    contentLength: number;
+    axis: "x" | "y";
     viewportRect: Rect;
     /**
      * True when the user has manually scrolled (wheel or drag). While
@@ -256,7 +267,8 @@ export function getScrollState(id: string): ScrollState {
     if (!s) {
         s = {
             offset: 0,
-            contentHeight: 0,
+            contentLength: 0,
+            axis: "y",
             viewportRect: { x: 0, y: 0, w: 0, h: 0 },
             userOverridden: false,
         };
@@ -267,10 +279,8 @@ export function getScrollState(id: string): ScrollState {
 
 export function setScrollOffset(id: string, offset: number): void {
     const s = getScrollState(id);
-    s.offset = Math.max(
-        0,
-        Math.min(Math.max(0, s.contentHeight - s.viewportRect.h), offset)
-    );
+    const view = s.axis === "x" ? s.viewportRect.w : s.viewportRect.h;
+    s.offset = Math.max(0, Math.min(Math.max(0, s.contentLength - view), offset));
 }
 
 export function markUserScroll(id: string): void {
@@ -408,6 +418,7 @@ function layoutScroll(
         style: ContainerStyle;
         id: string;
         children: Extractable<Child[]>;
+        axis?: "x" | "y";
     },
     x: number,
     y: number,
@@ -418,74 +429,88 @@ function layoutScroll(
 ): void {
     const pad = resolvePadding(s.style.padding);
     const innerX = x + pad.l;
+    const innerY = y + pad.t;
     const innerW = Math.max(0, w - pad.l - pad.r);
     const innerH = Math.max(0, h - pad.t - pad.b);
     const gap = s.style.gap ?? 0;
     const align = s.style.align ?? "stretch";
+    const horizontal = s.axis === "x";
 
     const state = getScrollState(s.id);
-    state.viewportRect = { x: x + pad.l, y: y + pad.t, w: innerW, h: innerH };
+    state.axis = horizontal ? "x" : "y";
+    state.viewportRect = { x: innerX, y: innerY, w: innerW, h: innerH };
     const viewportRect = state.viewportRect;
+
+    const mainAxis: "w" | "h" = horizontal ? "w" : "h";
+    const crossAxis: "w" | "h" = horizontal ? "h" : "w";
+    const mainLen = horizontal ? innerW : innerH;
 
     const children = extractChildren(s.children);
     const n = children.length;
 
-    // Compute total content height first by resolving each child's main-axis size.
-    let contentH = 0;
+    // Total content size along the scroll axis, resolved before placement so
+    // the scrollbar math is independent of the viewport cull below.
+    let contentMain = 0;
     const sizes: number[] = [];
     for (let i = 0; i < n; i++) {
-        const m = resolveAxis(children[i], "h");
+        const m = resolveAxis(children[i], mainAxis);
         const v = m === null ? 0 : m;
         sizes.push(v);
-        contentH += v;
+        contentMain += v;
     }
-    if (n > 1) contentH += gap * (n - 1);
-    state.contentHeight = contentH;
+    if (n > 1) contentMain += gap * (n - 1);
+    state.contentLength = contentMain;
 
-    const maxOffset = Math.max(0, contentH - innerH);
+    const maxOffset = Math.max(0, contentMain - mainLen);
     if (state.offset > maxOffset) state.offset = maxOffset;
     if (state.offset < 0) state.offset = 0;
 
-    // Place children with offset applied. The scrollbar is drawn inside the
-    // viewport, so reserve its track width instead of letting right-aligned
-    // row labels sit underneath it. Viewport-cull off-screen children so a
-    // 1000-line source file doesn't pay layout + render cost for the 950
-    // lines you can't see this frame. The cull is purely a fast-skip; we
-    // still update `cursor` so subsequent children land at the same y as
-    // they would without culling, and `contentHeight` was already computed
-    // above the loop so the scrollbar math is unaffected.
+    // The vertical scrollbar is drawn inside the viewport, so reserve its track
+    // width instead of letting right-aligned labels sit underneath it. The
+    // horizontal indicator is a thin overlay along the bottom edge and steals
+    // no cross-axis space, so a tab strip keeps its full height.
     //
-    // The buffer lets a few rows just off-screen still lay out, so a tiny
-    // scroll delta doesn't reveal an un-laid-out gap before the next frame.
-    const contentW = Math.max(0, innerW - SCROLLBAR_W);
+    // Viewport-cull off-screen children so a long list pays no layout/render
+    // cost for what isn't visible. The cull is a fast-skip; `cursor` still
+    // advances so later children land where they would without culling. The
+    // buffer lets a few just-off-screen children lay out so a tiny scroll
+    // delta doesn't reveal an un-laid-out gap before the next frame.
+    const crossLen = horizontal ? innerH : Math.max(0, innerW - SCROLLBAR_W);
     const CULL_BUFFER = 32;
-    const cullTop = viewportRect.y - CULL_BUFFER;
-    const cullBottom = viewportRect.y + viewportRect.h + CULL_BUFFER;
-    let cursor = y + pad.t - state.offset;
+    const viewLow = horizontal ? viewportRect.x : viewportRect.y;
+    const viewHigh = horizontal
+        ? viewportRect.x + viewportRect.w
+        : viewportRect.y + viewportRect.h;
+    const cullLow = viewLow - CULL_BUFFER;
+    const cullHigh = viewHigh + CULL_BUFFER;
+    const crossOrigin = horizontal ? innerY : innerX;
+    let cursor = (horizontal ? innerX : innerY) - state.offset;
     for (let i = 0; i < n; i++) {
         const ch = children[i];
         const mSize = sizes[i];
 
-        const top = cursor;
-        const bottom = cursor + mSize;
-        if (bottom < cullTop || top > cullBottom) {
+        const low = cursor;
+        const high = cursor + mSize;
+        if (high < cullLow || low > cullHigh) {
             cursor += mSize + gap;
             continue;
         }
 
-        const explicitCross = ch.style.width;
-        const crossResolved = resolveAxis(ch, "w");
+        const explicitCross = crossAxis === "w" ? ch.style.width : ch.style.height;
+        const crossResolved = resolveAxis(ch, crossAxis);
         let cSize: number;
-        if (crossResolved === null) cSize = contentW;
+        if (crossResolved === null) cSize = crossLen;
         else if (align === "stretch" && (!explicitCross || explicitCross.kind === "auto"))
-            cSize = contentW;
-        else cSize = Math.min(crossResolved, contentW);
+            cSize = crossLen;
+        else cSize = Math.min(crossResolved, crossLen);
 
-        let crossOff = innerX;
-        if (align === "center") crossOff = innerX + Math.floor((contentW - cSize) / 2);
-        else if (align === "end") crossOff = innerX + (contentW - cSize);
+        let crossOff = crossOrigin;
+        if (align === "center") crossOff = crossOrigin + Math.floor((crossLen - cSize) / 2);
+        else if (align === "end") crossOff = crossOrigin + (crossLen - cSize);
 
-        const rect: Rect = { x: crossOff, y: cursor, w: cSize, h: mSize };
+        const rect: Rect = horizontal
+            ? { x: cursor, y: crossOff, w: mSize, h: cSize }
+            : { x: crossOff, y: cursor, w: cSize, h: mSize };
         out.push({ element: ch, rect, clipRect: viewportRect });
         if (ch.kind === "container")
             layoutContainer(ch, rect.x, rect.y, rect.w, rect.h, out, viewportRect);

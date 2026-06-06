@@ -10,25 +10,24 @@ import { Icons } from "../../lib/icons.generated";
 import { openMenu, MenuAction } from "../../lib/menu";
 import { openRenameImportablePopover } from "../../popovers/rename-importable";
 import {
+    getHousingUuid,
     isAutoTrackSource,
     isImportableChecked,
     toggleAutoTrackSource,
     toggleImportableChecked,
 } from "../../state";
-import { getCacheStatusRows } from "../../cache-status/rows";
 import { ACCENT_DANGER, ACCENT_SUCCESS, ACCENT_WARN, COLOR_TEXT_DIM, COLOR_TEXT_FAINT, GLYPH_DOT } from "../../lib/theme";
 import { diagnosticCountsFor, type SeverityCounts } from "../../cache-status/diagnosticCounts";
 import { openEditFunctionFieldPopover } from "../../popovers/edit-function";
 import { STATUS_COLOR, STATUS_LABEL, cacheStateForImportable } from "../../cache-status";
 import {
-    allReferencedPaths,
     hasSubList,
     importableSourcePath,
     importableSubListPath,
     type SubListKind,
 } from "../../parsing/importablePaths";
 import { importableIdentity, importableKey } from "../../../importCache/paths";
-import { findCacheRowIndex } from "../../../importCache/status";
+import { readImportableCache } from "../../../importCache/cache";
 import { addToQueue, makeImportableQueueItem, queueItemKey, removeFromQueueKey } from "../../right-panel/import-tab/queue";
 import { isImportRunning } from "../../../housingSync/runtimeState";
 import { composeFileMenu, composeImportableMenu } from "../../menus/fileMenu";
@@ -97,11 +96,9 @@ function formatPos(p: { x: number; y: number; z: number }): string {
 }
 
 function getCachedImportable(imp: Importable): Importable | null {
-    const rows = getCacheStatusRows();
-    const id = importableIdentity(imp);
-    const index = findCacheRowIndex(rows, id, imp.type);
-    if (index < 0) return null;
-    const entry = rows[index].entry;
+    const uuid = getHousingUuid();
+    if (uuid === null) return null;
+    const entry = readImportableCache(uuid, imp.type, importableIdentity(imp));
     return entry === null ? null : entry.importable;
 }
 
@@ -273,6 +270,14 @@ export function rootRow(label: string, key: string, actions: MenuAction[]): Elem
     });
 }
 
+// The project folder is the directory holding the import.json — opening it
+// in VSCode roots the workspace there, so every referenced .htsl is in the tree.
+function projectDirOf(importJsonPath: string): string {
+    const norm = importJsonPath.split("\\").join("/");
+    const slash = norm.lastIndexOf("/");
+    return slash <= 0 ? "." : norm.substring(0, slash);
+}
+
 export function resultRow(
     r: Result,
     sourceKey: string,
@@ -299,10 +304,9 @@ export function resultRow(
                   },
               },
               {
-                  label: "Open in VSCode (with references)",
+                  label: "Open project in VSCode",
                   onClick: () => {
-                      const paths = allReferencedPaths(r.fullPath, r.parse);
-                      openInVSCode(paths);
+                      openInVSCode(projectDirOf(r.fullPath), { newWindow: true });
                   },
               },
               ...extraActions,
@@ -457,6 +461,7 @@ export function importableRow(parent: ResultImport, imp: Importable): Element {
                 McItem({ item: imp.icon.item, count: imp.icon.count ?? 1 }),
             Text({
                 text: importableLabel(imp),
+                truncate: true,
                 style: { width: { kind: "grow" } },
             }),
             (diagCounts.errors > 0 || diagCounts.warnings > 0) &&

@@ -36,7 +36,6 @@ import {
 import { isImportRunning } from "../../../housingSync/runtimeState";
 import { getAlias } from "../../../importCache/aliases";
 import { openAliasPopover } from "../../popovers/alias";
-import { getStepAuto, setStepAuto } from "../../../housingSync/stepGate";
 import { liveImporterPanel } from "./progressPanel";
 import {
     isQueueImportJsonExpanded,
@@ -48,6 +47,13 @@ import { importActionRow } from "./importButtons";
 import { livePreviewBody } from "./live-preview-body";
 
 let queueExpanded = false;
+
+// An empty queue can't be expanded — there's nothing to show, so the
+// 120px scroll area would just be dead space. The chevron then reads as
+// collapsed until something is queued.
+function isQueueExpanded(): boolean {
+    return queueExpanded && getQueueLength() > 0;
+}
 
 const TRUST_ON_BG = 0xff1e3d3d | 0;
 const TRUST_ON_HOVER = 0xff2a4f4f | 0;
@@ -71,18 +77,16 @@ function houseHeader(): Element {
         },
         children: [
             Text({ text: "House:", color: COLOR_TEXT_DIM }),
-            // Alias-or-UUID + faint UUID tail. Width is `grow` so a long alias
-            // can't push the right-aligned toggles off the row — the toggles
-            // keep their fixed widths and this text gets the rest. The Trust
-            // button paints AFTER this text, so visual overflow gets masked.
+            // Alias when set, else the shortened UUID. Width is `grow` so a long
+            // alias can't push the right-aligned toggles off the row — the
+            // toggles keep their fixed widths and this text gets the rest. The
+            // Trust button paints AFTER this text, so visual overflow gets masked.
             Text({
                 style: { width: { kind: "grow" } },
                 text: () => {
                     const uuid = getHousingUuid();
-                    if (uuid === null) return "(unknown — open Knowledge tab to detect)";
-                    const alias = getAlias(uuid);
-                    if (alias === null) return shortUuid(uuid);
-                    return `${alias} §8${shortUuid(uuid)}`;
+                    if (uuid === null) return "(unknown — open Houses tab to detect)";
+                    return getAlias(uuid) ?? shortUuid(uuid);
                 },
                 color: COLOR_TEXT,
             }),
@@ -157,27 +161,6 @@ function houseHeader(): Element {
     });
 }
 
-// Idle-only auto-proceed toggle. During a run, Pause/Step live in the
-// bottom progress strip (next to Cancel), so this row only sets whether
-// the next import starts in step mode.
-function autoProceedRow(): Element {
-    return Row({
-        style: { gap: 2, height: { kind: "px", value: SIZE_ROW_H } },
-        children: [
-            Button({
-                text: () => (getStepAuto() ? "Auto-proceed: On" : "Auto-proceed: Off"),
-                style: {
-                    width: { kind: "grow" },
-                    height: { kind: "grow" },
-                    background: COLOR_BUTTON,
-                    hoverBackground: COLOR_BUTTON_HOVER,
-                },
-                onClick: () => setStepAuto(!getStepAuto()),
-            }),
-        ],
-    });
-}
-
 function appendQueueRows(rows: Child[], items: readonly QueueItem[]): void {
     for (let i = 0; i < items.length; i++) {
         const item = items[i];
@@ -185,7 +168,7 @@ function appendQueueRows(rows: Child[], items: readonly QueueItem[]): void {
         if (item.kind === "importJson" && isQueueImportJsonExpanded(item)) {
             const children = queueImportJsonChildren(item);
             for (let j = 0; j < children.length; j++) {
-                rows.push(queueImportJsonChildRow(item, children[j]));
+                rows.push(queueImportJsonChildRow(children[j]));
             }
         }
     }
@@ -206,10 +189,11 @@ function queueSummary(): Element {
                 },
                 onClick: (_rect, info) => {
                     if (info.button !== 0) return;
+                    if (getQueueLength() === 0) return;
                     queueExpanded = !queueExpanded;
                 },
                 children: [
-                    Icon({ name: () => (queueExpanded ? Icons.chevronDown : Icons.chevronRight) }),
+                    Icon({ name: () => (isQueueExpanded() ? Icons.chevronDown : Icons.chevronRight) }),
                 ],
             }),
             Text({
@@ -246,19 +230,6 @@ function queueScroll(): Element {
         style: { gap: 2, height: { kind: "px", value: 120 } },
         children: () => {
             const groups = queueDisplayGroups();
-            if (groups.active.length === 0 && groups.pending.length === 0) {
-                return [
-                    Container({
-                        style: { padding: 6 },
-                        children: [
-                            Text({
-                                text: "Queue is empty — right-click anything in Explore and Add to queue.",
-                                color: COLOR_TEXT_FAINT,
-                            }),
-                        ],
-                    }),
-                ];
-            }
             const rows: Child[] = [];
             appendQueueRows(rows, groups.active);
             if (groups.showDivider) {
@@ -291,11 +262,9 @@ function pendingDividerRow(): Element {
 export function importTab(): Element {
     const importing = getImportProgress() !== null;
     const children: Child[] = [houseHeader(), queueSummary()];
-    if (queueExpanded) children.push(queueScroll());
+    if (isQueueExpanded()) children.push(queueScroll());
     children.push(livePreviewBody());
-    if (!importing) children.push(autoProceedRow());
-    // The live progress strip sits just above the Capture/Import row while
-    // a run is active.
+    // The live progress strip sits just above the action row while a run is active.
     if (importing) children.push(liveImporterPanel());
     children.push(importActionRow());
     return Col({

@@ -33,6 +33,12 @@ import {
 import { COST } from "../../housingSync/progress/costs";
 import { timed } from "../../housingSync/progress/timing";
 
+// The 9th hotbar slot (index 8) is excluded from import: it can't be the item
+// that enters Housing menus, and an item sitting there (typically the player's
+// game-menu item) must not be reused as a spawn — we spawn fresh into slot 0
+// instead. See issue #58.
+const IMPORTABLE_HOTBAR_SLOTS = 8;
+
 function hasItemClickActions(importable: ImportableItem): boolean {
     return (
         (importable.leftClickActions?.length ?? 0) > 0 ||
@@ -83,7 +89,7 @@ function hotbarZeroMatches(stack: any): boolean {
 }
 
 function findMatchingHotbarSlot(stack: any): number | null {
-    for (let slot = 0; slot < 9; slot++) {
+    for (let slot = 0; slot < IMPORTABLE_HOTBAR_SLOTS; slot++) {
         if (hotbarSlotMatches(slot, stack)) {
             return slot;
         }
@@ -158,8 +164,9 @@ async function importImportableItem(
 
     const uuid = cachedUuid ?? (await getCurrentHousingUuid(ctx));
     if (!hasItemClickActions(importable)) {
-        await injectHeldItem(ctx, getItemFromNbt(importable.nbt));
-        setup(`injected item ${importable.name}`);
+        // No click actions means nothing to import into the housing — spawning
+        // the item would just clutter the hotbar, so skip it. See issue #56.
+        setup(`skipped ${importable.name} (no click actions)`);
         await tryWriteImportableCache(ctx, importable, "importer", uuid);
         return;
     }
@@ -236,30 +243,25 @@ function chooseItemStart(
     };
 }
 
+async function switchToHotbarSlot(ctx: TaskContext, slot: number): Promise<void> {
+    if (selectedHotbarSlot() === slot) return;
+    selectHotbarSlot(ctx, slot);
+    // The held-slot change only reaches the server on the next client tick, when
+    // vanilla flushes C09PacketHeldItemChange. Yield a tick so a following /edit
+    // (or creative spawn) acts on the newly held item, not the previous one —
+    // otherwise the import can run against the wrong slot. See issue #57.
+    await ctx.waitFor("tick");
+}
+
 async function injectHeldItem(ctx: TaskContext, item: Item): Promise<void> {
     const stack = item.getItemStack();
     if (stack === null || stack === undefined) {
         throw new Error("Cannot inject an empty item stack.");
     }
 
-    if (hotbarZeroMatches(stack)) {
-        if (selectedHotbarSlot() !== 0) {
-            selectHotbarSlot(
-                ctx,
-                0,
-            );
-        }
-        return;
-    }
-
     const existingHotbarSlot = findMatchingHotbarSlot(stack);
     if (existingHotbarSlot !== null) {
-        if (selectedHotbarSlot() !== existingHotbarSlot) {
-            selectHotbarSlot(
-                ctx,
-                existingHotbarSlot,
-            );
-        }
+        await switchToHotbarSlot(ctx, existingHotbarSlot);
         return;
     }
 
@@ -276,12 +278,7 @@ async function injectHeldItem(ctx: TaskContext, item: Item): Promise<void> {
     }
     await ctx.waitFor("tick");
 
-    if (selectedHotbarSlot() !== 0) {
-        selectHotbarSlot(
-            ctx,
-            0,
-        );
-    }
+    await switchToHotbarSlot(ctx, 0);
     await timed("sleep1000", COST.guaranteedSleep1000, () => ctx.sleep(1000));
 }
 

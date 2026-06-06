@@ -70,6 +70,11 @@ function menuWidthFor(actions: MenuAction[]): number {
     return desired < MIN_MENU_WIDTH ? MIN_MENU_WIDTH : desired;
 }
 
+// The single context menu allowed open at a time. On the `keepUnderlying` path we don't
+// call closeAllPopovers (it would whisk away the parent popover), so without this a second
+// right-click would stack a second menu on top of the first.
+let activeMenu: PopoverHandle | null = null;
+
 // Open a context menu anchored at the given screen position (typically the cursor).
 // By default any currently-open popovers are closed first so successive right-clicks don't
 // stack menus. Pass `keepUnderlying: true` to keep parent popovers (e.g. when right-clicking
@@ -81,6 +86,10 @@ export function openMenu(
     options?: { keepUnderlying?: boolean }
 ): void {
     if (actions.length === 0) return;
+    if (activeMenu !== null) {
+        closePopover(activeMenu);
+        activeMenu = null;
+    }
     if (!options?.keepUnderlying) closeAllPopovers();
     let height = PAD * 2;
     for (let i = 0; i < actions.length; i++) {
@@ -103,7 +112,7 @@ export function openMenu(
     // 0×0 anchor at the cursor for positioning. Context menus have no re-clickable trigger so
     // the anchor-exclusion close guard isn't useful — the off-screen `excludeAnchor` flag opts
     // out so a left-click anywhere (including the original cursor pixel) cleanly closes the menu.
-    handle = openPopover({
+    const opened = openPopover({
         anchor: { x, y, w: 0, h: 0 },
         excludeAnchor: false,
         content,
@@ -111,6 +120,9 @@ export function openMenu(
         height,
         onClose: () => {
             handle = null;
+            if (activeMenu === opened) activeMenu = null;
         },
     });
+    handle = opened;
+    activeMenu = opened;
 }

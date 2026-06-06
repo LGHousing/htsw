@@ -14,7 +14,7 @@ import type { Importable } from "htsw/types";
 import type { ImportableEntry, ImportProgressActive } from "../../../housingSync/progress/types";
 import { importProgressKey } from "../../../housingSync/progress/keys";
 import { setImportRunning } from "../../../housingSync/runtimeState";
-import type { ExportProgressSink } from "../../../exporter/exportProgress";
+import type { ExportProgressSink } from "../../../housingSync/progress/types";
 import { createImportProgress, setImportProgress, setSessionVerb } from "./importProgress";
 import { addToQueue, queueItemKey, removeFromQueueKey, type QueueItem } from "./queue";
 
