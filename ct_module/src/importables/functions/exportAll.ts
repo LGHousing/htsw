@@ -20,7 +20,7 @@ export type ExportAllFunctionsOptions = {
     progress?: ExportProgressSink;
 };
 
-export type ExportAllFunctionsResult = { succeeded: number; failed: number };
+export type ExportAllFunctionsResult = { total: number; succeeded: number; failed: number };
 
 export async function exportAllFunctions(
     ctx: TaskContext,
@@ -51,7 +51,7 @@ async function exportAllFunctionsInner(
                 `&7[export] &eInventory restore failed: ${error}`
             );
         }
-        return { succeeded: 0, failed: 0 };
+        return { total: 0, succeeded: 0, failed: 0 };
     }
 
     ctx.displayMessage(
@@ -118,5 +118,5 @@ async function exportAllFunctionsInner(
     );
     ctx.displayMessage(`&7  -> ${importJsonPath}`);
 
-    return { succeeded, failed };
+    return { total: names.length, succeeded, failed };
 }

@@ -652,6 +652,12 @@ export function startExportFunctions(
             );
             return;
         }
+        if (result.total === 0) {
+            // Export-all on a house with no functions wrote nothing; don't claim
+            // a successful export or clear any selection.
+            showToast("No functions to export", 0xffe5bc4b);
+            return;
+        }
         showToast(
             count === null
                 ? `Exported all functions → ${shortPath(importJsonPath)}`
