@@ -140,6 +140,11 @@ function deleteHouse(uuid: string): void {
     if (getHousingUuid() === uuid) {
         setHousingUuid(null);
     }
+    // Don't leave the browser pinned to a house that no longer exists; fall
+    // back to tracking the in-game house.
+    if (viewedHouse === uuid) {
+        viewedHouse = null;
+    }
     const label = getAlias(uuid) ?? shortUuid(uuid);
     if (ok) ChatLib.chat(`&a[htsw] Removed tracked house ${label}.`);
     else ChatLib.chat(`&e[htsw] No cache directory for ${label} (alias/trust cleared anyway).`);

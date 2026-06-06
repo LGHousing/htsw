@@ -276,15 +276,15 @@ function htslRenderableLines(path: string): RenderableLine[] {
             id = `htsl:line${i}`;
         }
         const lineNum = i + 1;
-        const rendered: RenderableLine = {
+        const renderableLine: RenderableLine = {
             id,
             lineNum,
             depth: ln.depth,
             tokens,
             actionPath: ln.actionPath,
         };
-        decorateLineDiagnostics(rendered, diagnostics.get(lineNum));
-        out.push(rendered);
+        decorateLineDiagnostics(renderableLine, diagnostics.get(lineNum));
+        out.push(renderableLine);
     }
     htslCache.set(path, { mtime, parsedRef, lines: out });
     return out;
@@ -312,14 +312,14 @@ function plainTextRenderableLines(path: string): RenderableLine[] {
     const out: RenderableLine[] = [];
     for (let i = 0; i < lines.length; i++) {
         const lineNum = i + 1;
-        const rendered: RenderableLine = {
+        const renderableLine: RenderableLine = {
             id: `plain:${lineNum}`,
             lineNum,
             depth: 0,
             tokens: plainTokens(lines[i], COLOR_PLAIN),
         };
-        decorateLineDiagnostics(rendered, diagnostics.get(lineNum));
-        out.push(rendered);
+        decorateLineDiagnostics(renderableLine, diagnostics.get(lineNum));
+        out.push(renderableLine);
     }
     return out;
 }
@@ -469,15 +469,15 @@ function htslRawRenderableLines(path: string): RenderableLine[] {
             id = `htsl:line${i + 1}`;
         }
         const lineNum = i + 1;
-        const rendered: RenderableLine = {
+        const renderableLine: RenderableLine = {
             id,
             lineNum,
             depth: lineDepths[i],
             tokens,
             actionPath,
         };
-        decorateLineDiagnostics(rendered, diagnostics.get(lineNum));
-        out.push(rendered);
+        decorateLineDiagnostics(renderableLine, diagnostics.get(lineNum));
+        out.push(renderableLine);
     }
     htslRawCache.set(path, { mtime, parsedRef, lines: out });
     return out;

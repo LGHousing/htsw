@@ -112,7 +112,7 @@ export function openMenu(
     // 0×0 anchor at the cursor for positioning. Context menus have no re-clickable trigger so
     // the anchor-exclusion close guard isn't useful — the off-screen `excludeAnchor` flag opts
     // out so a left-click anywhere (including the original cursor pixel) cleanly closes the menu.
-    const opened = openPopover({
+    const menuPopover = openPopover({
         anchor: { x, y, w: 0, h: 0 },
         excludeAnchor: false,
         content,
@@ -120,9 +120,9 @@ export function openMenu(
         height,
         onClose: () => {
             handle = null;
-            if (activeMenu === opened) activeMenu = null;
+            if (activeMenu === menuPopover) activeMenu = null;
         },
     });
-    handle = opened;
-    activeMenu = opened;
+    handle = menuPopover;
+    activeMenu = menuPopover;
 }

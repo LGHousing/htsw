@@ -61,6 +61,7 @@ import {
     renderElement,
     hasDeferredTooltip,
     drawDeferredTooltip,
+    clearDeferredTooltip,
 } from "./lib/render";
 import { getFocusedInput, setFocusedInput } from "./lib/focus";
 import { applyFocus, getRecord, readAndSync, tickAllFields } from "./lib/inputState";
@@ -569,7 +570,13 @@ export function initHtswGui(): void {
     // so a chip near the inventory edge isn't covered by the slots. renderElement
     // only stashes the tooltip during the panel/popover passes; this draws it.
     register("postGuiRender", () => {
-        if (!hasDeferredTooltip() || isHoverCardVisible()) return;
+        if (!hasDeferredTooltip()) return;
+        // A hover card owns the same space; drop the queued tooltip so it can't
+        // resurface (sticky) once the card goes away.
+        if (isHoverCardVisible()) {
+            clearDeferredTooltip();
+            return;
+        }
         beginHtswOverlayDraw();
         drawDeferredTooltip();
         endHtswOverlayDraw();

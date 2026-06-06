@@ -20,17 +20,19 @@ export type ExportAllFunctionsOptions = {
     progress?: ExportProgressSink;
 };
 
+export type ExportAllFunctionsResult = { succeeded: number; failed: number };
+
 export async function exportAllFunctions(
     ctx: TaskContext,
     options: ExportAllFunctionsOptions
-): Promise<void> {
+): Promise<ExportAllFunctionsResult> {
     return withExportSession(() => exportAllFunctionsInner(ctx, options));
 }
 
 async function exportAllFunctionsInner(
     ctx: TaskContext,
     options: ExportAllFunctionsOptions
-): Promise<void> {
+): Promise<ExportAllFunctionsResult> {
     const { importJsonPath, rootDir } = options;
 
     const inventorySnapshot: InventorySnapshot = snapshotInventory();
@@ -49,7 +51,7 @@ async function exportAllFunctionsInner(
                 `&7[export] &eInventory restore failed: ${error}`
             );
         }
-        return;
+        return { succeeded: 0, failed: 0 };
     }
 
     ctx.displayMessage(
@@ -115,4 +117,6 @@ async function exportAllFunctionsInner(
         `&aExported ${succeeded} of ${names.length} function${names.length === 1 ? "" : "s"} (${itemCount} item${itemCount === 1 ? "" : "s"} captured)${failed > 0 ? ` &c[${failed} failed]` : ""}`
     );
     ctx.displayMessage(`&7  -> ${importJsonPath}`);
+
+    return { succeeded, failed };
 }

@@ -70,10 +70,17 @@ function aliasPrefill(): string {
 // Create `<imports>/<name>/import.json` and select it as the export
 // destination, so the new folder is immediately usable from this picker.
 function createExportFolder(name: string): void {
+    // Keep the new folder inside IMPORTS_ROOT: a name carrying a path
+    // separator or ".." would escape it and write import.json elsewhere.
+    const trimmed = name.trim();
+    if (trimmed === "" || trimmed.indexOf("/") >= 0 || trimmed.indexOf("\\") >= 0 || trimmed.indexOf("..") >= 0) {
+        ChatLib.chat("&c[htsw] Invalid folder name — no slashes or '..'.");
+        return;
+    }
     try {
         const Files = javaType("java.nio.file.Files");
         const Paths = javaType("java.nio.file.Paths");
-        const dir = `${IMPORTS_ROOT}/${name}`;
+        const dir = `${IMPORTS_ROOT}/${trimmed}`;
         Files.createDirectories(Paths.get(String(dir)));
         const importJson = `${dir}/import.json`;
         if (!FileLib.exists(importJson)) {

@@ -120,6 +120,13 @@ export function drawDeferredTooltip(): void {
     drawTooltip(t);
 }
 
+// deferredTooltip is sticky (only overwritten when a new tooltip is queued), so
+// a frame that queues one but never draws it must drop it explicitly — otherwise
+// it lingers and paints on a later frame for an element no longer hovered.
+export function clearDeferredTooltip(): void {
+    deferredTooltip = null;
+}
+
 // Icon (Image) cache. Loading reads from disk synchronously, so cache by name to pay
 // the cost once. A failed load is cached as null so we don't retry every frame
 // (and don't spam logs).

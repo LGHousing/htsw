@@ -529,6 +529,10 @@ export function startImport(explicit?: readonly QueueItem[]): void {
                 totalImported += c.imported;
                 totalSkipped += c.skipped;
                 totalFailed += c.failed;
+                // A failed importable can leave the Housing menu mid-edit, so
+                // the menu state for the next batch is unknown. Abort the run
+                // rather than drive unrelated files from an uncertain menu.
+                if (c.failed > 0) break;
             }
             importSucceeded = totalFailed === 0;
         } catch (err) {
@@ -633,11 +637,21 @@ export function startExportFunctions(
     const dir = importJsonDir(importJsonPath);
     const count = names === undefined ? null : names.length;
     TaskManager.run(async (ctx) => {
-        await exportAllFunctions(ctx, { importJsonPath, rootDir: dir, names });
+        const result = await exportAllFunctions(ctx, { importJsonPath, rootDir: dir, names });
         // Export rewrote the htsl + cache on disk. Force a reparse so the
         // cache-status dots rebuild against the fresh cache now, instead of
         // waiting out the parse-authority's settle throttle (~1s of red).
         scheduleReparse();
+        if (result.failed > 0) {
+            // Per-function failures are swallowed so the run finishes; surface
+            // them here instead of reporting a partial run as a clean success.
+            showToast(
+                `Export finished with ${result.failed} failed, ${result.succeeded} ok → ${shortPath(importJsonPath)}`,
+                0xffe85c5c,
+                8000
+            );
+            return;
+        }
         showToast(
             count === null
                 ? `Exported all functions → ${shortPath(importJsonPath)}`

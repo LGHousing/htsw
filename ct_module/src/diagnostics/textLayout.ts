@@ -215,6 +215,14 @@ export class TextLayoutTruncate implements TextLayoutElement {
             let width = 0;
             for (let i = 0; i < line.length; i++) {
                 const ch = line.charAt(i);
+                // A "&x" format code is zero-width and must never be split;
+                // copy it whole without charging it against the width budget,
+                // matching how chatWidth() measures the line above.
+                if (ch === "&" && i + 1 < line.length) {
+                    truncated += ch + line.charAt(i + 1);
+                    i++;
+                    continue;
+                }
                 const chWidth = chatWidth(ch);
                 if (width + chWidth + ellipsisWidth > this.maxWidth) break;
                 truncated += ch;

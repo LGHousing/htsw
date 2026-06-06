@@ -7,6 +7,7 @@ import { join } from "node:path";
 
 const BASE_URL = "https://legendarygames.dev/htsw/vscode";
 const MANIFEST_URL = `${BASE_URL}/latest.json`;
+const REQUEST_TIMEOUT_MS = 30000;
 
 interface Manifest {
     version: string;
@@ -41,12 +42,15 @@ export async function checkForUpdates(context: ExtensionContext): Promise<void> 
             { location: ProgressLocation.Notification, title: `Updating HTSW++ to ${manifest.version}…` },
             async () => {
                 const vsixPath = join(tmpdir(), manifest.vsix);
-                const hash = await download(`${BASE_URL}/${manifest.vsix}`, vsixPath);
-                if (hash.toLowerCase() !== manifest.sha256.toLowerCase()) {
-                    throw new Error("checksum mismatch");
+                try {
+                    const hash = await download(`${BASE_URL}/${manifest.vsix}`, vsixPath);
+                    if (hash.toLowerCase() !== manifest.sha256.toLowerCase()) {
+                        throw new Error("checksum mismatch");
+                    }
+                    await commands.executeCommand("workbench.extensions.installExtension", Uri.file(vsixPath));
+                } finally {
+                    await fs.rm(vsixPath, { force: true });
                 }
-                await commands.executeCommand("workbench.extensions.installExtension", Uri.file(vsixPath));
-                await fs.rm(vsixPath, { force: true });
             }
         );
     } catch (err) {
@@ -73,7 +77,7 @@ function parseManifest(text: string): Manifest {
 
 function fetchText(url: string): Promise<string> {
     return new Promise((resolve, reject) => {
-        get(url, (res) => {
+        const req = get(url, (res) => {
             if (res.statusCode !== 200) {
                 res.resume();
                 reject(new Error(`HTTP ${res.statusCode}`));
@@ -83,13 +87,17 @@ function fetchText(url: string): Promise<string> {
             res.setEncoding("utf8");
             res.on("data", (chunk) => (body += chunk));
             res.on("end", () => resolve(body));
-        }).on("error", reject);
+        });
+        req.on("error", reject);
+        req.setTimeout(REQUEST_TIMEOUT_MS, () =>
+            req.destroy(new Error(`request timed out after ${REQUEST_TIMEOUT_MS}ms`))
+        );
     });
 }
 
 function download(url: string, destPath: string): Promise<string> {
     return new Promise((resolve, reject) => {
-        get(url, (res) => {
+        const req = get(url, (res) => {
             if (res.statusCode !== 200) {
                 res.resume();
                 reject(new Error(`HTTP ${res.statusCode}`));
@@ -101,7 +109,11 @@ function download(url: string, destPath: string): Promise<string> {
             res.pipe(file);
             file.on("finish", () => file.close(() => resolve(hash.digest("hex"))));
             file.on("error", reject);
-        }).on("error", reject);
+        });
+        req.on("error", reject);
+        req.setTimeout(REQUEST_TIMEOUT_MS, () =>
+            req.destroy(new Error(`download timed out after ${REQUEST_TIMEOUT_MS}ms`))
+        );
     });
 }
 
