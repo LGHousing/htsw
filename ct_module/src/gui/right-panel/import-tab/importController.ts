@@ -29,14 +29,14 @@ import {
     removeFromQueueKey,
     type QueueItem,
 } from "./queue";
-import { forEachCachedParse, parseImportJsonAt } from "../../parsing/parses";
+import { forEachCachedParse, parseImportJsonBlocking } from "../../parsing/parses";
 import { scheduleReparse } from "../../parsing/reparse";
 import { printDiagnostics } from "../../../tui/diagnostics";
 import {
     importSelectedImportables,
     orderImportablesForImportSession,
 } from "../../../importables/importSession";
-import { exportAllFunctions } from "../../../importables/functions/exportAll";
+import type { ExportResult } from "../../../importables/exportSession";
 import { importableIdentity, importableKey } from "../../../importCache/paths";
 import { getCurrentHousingUuid } from "../../../importCache/housingId";
 import { TaskManager, isTaskCancelled } from "../../../tasks/manager";
@@ -54,7 +54,7 @@ import type {
 } from "../../../housingSync/importEvents";
 import { importProgressKey } from "../../../housingSync/progress/keys";
 import { initialReducerState, reduce } from "../../../housingSync/progress/reducer";
-import { traceProgressEvent } from "../../../housingSync/progress/trace";
+import { traceImportEvent, traceProgressEvent } from "../../../housingSync/progress/trace";
 import { invalidateSourceDiffForImportable } from "../../code-view/sourceDiff";
 import { showToast } from "../../toast";
 import { isImportRunning, setImportRunning } from "../../../housingSync/runtimeState";
@@ -280,6 +280,7 @@ function createImportEventHandler(args: {
             const before = state.progress;
             state = reduce(state, event);
             traceProgressEvent(event, before, state.progress);
+            traceImportEvent(event);
             (handlers[event.kind] as (e: typeof event) => void)(event);
             sync();
         },
@@ -327,7 +328,7 @@ function buildBatches(explicit?: readonly QueueItem[]): ImportBatch[] | null {
     };
     const groups = new Map<string, Group>();
     for (const item of queue) {
-        const cached = parseImportJsonAt(item.sourcePath);
+        const cached = parseImportJsonBlocking(item.sourcePath);
         if (cached.parsed === null) {
             ChatLib.chat(`&c[htsw] Skipping ${item.sourcePath}: ${cached.error ?? "parse failed"}`);
             continue;
@@ -609,14 +610,25 @@ export function startImport(explicit?: readonly QueueItem[]): void {
 
 // ── Batch export flow ─────────────────────────────────────────────────
 
+export type ExportSpec = {
+    /** Singular lowercase noun used in user-facing messages, e.g. "function". */
+    label: string;
+    exportAll: (
+        ctx: TaskContext,
+        opts: { importJsonPath: string; rootDir: string; names?: readonly string[] }
+    ) => Promise<ExportResult>;
+};
+
 /**
- * Export functions to the loaded import.json. With no `names`, exports every
- * function in the house; with `names`, only those (the Houses tab's
- * selection). Both go through `exportAllFunctions` so item-capture and the
- * inventory snapshot/restore are shared across the run. `onSuccess` fires only
- * when the run completes without throwing — used to clear an exported selection.
+ * Drive a batch export from the Houses tab. With no `names`, exports every item
+ * of the type; with `names`, only those (the tab's selection). The type-specific
+ * work is the `spec.exportAll` the registry supplies (item capture, cache write,
+ * etc.); this owns the shared destination/running-task guards, the post-export
+ * reparse, and the result toasts. `onSuccess` fires only on a clean run — used
+ * to clear the exported selection.
  */
-export function startExportFunctions(
+export function startExport(
+    spec: ExportSpec,
     names?: readonly string[],
     onSuccess?: () => void
 ): void {
@@ -637,14 +649,14 @@ export function startExportFunctions(
     const dir = importJsonDir(importJsonPath);
     const count = names === undefined ? null : names.length;
     TaskManager.run(async (ctx) => {
-        const result = await exportAllFunctions(ctx, { importJsonPath, rootDir: dir, names });
-        // Export rewrote the htsl + cache on disk. Force a reparse so the
+        const result = await spec.exportAll(ctx, { importJsonPath, rootDir: dir, names });
+        // Export rewrote source + cache on disk. Force a reparse so the
         // cache-status dots rebuild against the fresh cache now, instead of
         // waiting out the parse-authority's settle throttle (~1s of red).
         scheduleReparse();
         if (result.failed > 0) {
-            // Per-function failures are swallowed so the run finishes; surface
-            // them here instead of reporting a partial run as a clean success.
+            // Per-item failures are swallowed so the run finishes; surface them
+            // here instead of reporting a partial run as a clean success.
             showToast(
                 `Export finished with ${result.failed} failed, ${result.succeeded} ok → ${shortPath(importJsonPath)}`,
                 0xffe85c5c,
@@ -653,25 +665,19 @@ export function startExportFunctions(
             return;
         }
         if (result.total === 0) {
-            // Export-all on a house with no functions wrote nothing; don't claim
-            // a successful export or clear any selection.
-            showToast("No functions to export", 0xffe5bc4b);
+            showToast(`No ${spec.label}s to export`, 0xffe5bc4b);
             return;
         }
         showToast(
             count === null
-                ? `Exported all functions → ${shortPath(importJsonPath)}`
-                : `Exported ${count} function${count === 1 ? "" : "s"} → ${shortPath(importJsonPath)}`,
+                ? `Exported all ${spec.label}s → ${shortPath(importJsonPath)}`
+                : `Exported ${count} ${spec.label}${count === 1 ? "" : "s"} → ${shortPath(importJsonPath)}`,
             0xff5cb85c
         );
         if (onSuccess !== undefined) onSuccess();
     }).catch((err: unknown) => {
         showToast(`Export failed: ${err}`, 0xffe85c5c, 8000);
     });
-}
-
-export function startExportAllFunctions(): void {
-    startExportFunctions();
 }
 
 export function stopAllTasks(): void {

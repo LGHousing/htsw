@@ -24,7 +24,7 @@ function slotMatchesStack(slotId: number, stack: any, match: StackMatcher): bool
     );
 }
 
-function stacksEqual(left: any, right: any): boolean {
+export function stacksEqual(left: any, right: any): boolean {
     // func_179549_c = ItemStack.areItemStacksEqual, including item, damage, size, and NBT.
     return left.func_179549_c(right);
 }

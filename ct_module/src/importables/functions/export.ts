@@ -21,6 +21,8 @@ import {
     openFunctionSettings,
     readAutomaticExecutionTicks,
 } from "./shared";
+import { functionIconFromSnapshot } from "./icon";
+import { getSessionFunctionIcon, resetFunctionNameSession } from "./listFunctions";
 
 export type ExportFunctionOptions = {
     name: string;
@@ -73,6 +75,9 @@ async function exportFunctionInner(
     ctx: TaskContext,
     options: ExportFunctionOptions
 ): Promise<void> {
+    // Drop any function-list cache from a prior import so the icon read reflects
+    // the live house, not a stale snapshot.
+    resetFunctionNameSession();
     const inventorySnapshot: InventorySnapshot = snapshotInventory();
     const itemCaptures = new ItemCaptureRegistry();
 
@@ -121,6 +126,10 @@ export async function exportFunctionWithSharedState(
 ): Promise<void> {
     const { name, importJsonPath, htslPath, htslReference } = options;
 
+    // Read the icon from the /functions list before opening the editor — the
+    // editor doesn't show it, and the icon lives on the list slot.
+    const icon = functionIconFromSnapshot(await getSessionFunctionIcon(ctx, name));
+
     const { actions, repeatTicks } = await readFunction(ctx, name, shared.itemCaptures);
 
     const importable: ImportableFunction = {
@@ -128,6 +137,7 @@ export async function exportFunctionWithSharedState(
         name,
         actions,
         ...(repeatTicks !== undefined ? { repeatTicks } : {}),
+        ...(icon !== undefined ? { icon } : {}),
     };
 
     const { source, diagnostics } = htsw.htsl.printActionsWithDiagnostics(actions);
@@ -142,6 +152,7 @@ export async function exportFunctionWithSharedState(
         name,
         actions: htslReference,
         ...(repeatTicks !== undefined ? { repeatTicks } : {}),
+        ...(icon !== undefined ? { icon } : {}),
     });
 
     await tryWriteImportableCache(ctx, importable, "exporter");

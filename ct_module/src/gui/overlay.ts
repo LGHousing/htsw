@@ -26,6 +26,7 @@ const ForgeGuiOpenEvent = javaType("net.minecraftforge.client.event.GuiOpenEvent
 import { RootTree, getImportCachedBounds } from "./root";
 import { getContainerBounds, getFullscreenPanelRect } from "./lib/bounds";
 import { autoDiscoverImportJson, reparseNow, tickReparse } from "./parsing/reparse";
+import { processPendingParses } from "./parsing/parses";
 import { CHAT_INPUT_ID } from "./chat-input";
 import {
     initPopoverRendering,
@@ -527,6 +528,9 @@ export function initHtswGui(): void {
         tickAllFields();
         applyFocus(getFocusedInput());
         tickReparse();
+        // Drain one off-frame parse queued by requestParse() (export pane,
+        // Importables tree, queue rows) so a cold parse never blocks render.
+        processPendingParses();
         // If the import ended while our placeholder is still up (Hypixel
         // didn't reopen a menu — e.g. the import finished naturally on
         // the last menu close), dismiss it so the player isn't trapped

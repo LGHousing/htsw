@@ -2,7 +2,7 @@ import { Element } from "../lib/layout";
 import { Button, Container, Row } from "../lib/components";
 import { Icons, IconName } from "../lib/icons.generated";
 import { ImportablesView } from "./importables";
-import { KnowledgeView } from "./knowledge";
+import { HousesView } from "./houses";
 import {
     COLOR_TAB,
     COLOR_TAB_ACCENT,
@@ -18,7 +18,7 @@ type Tab = { id: TabId; label: string; icon: IconName; content: () => Element };
 
 const TABS: Tab[] = [
     { id: "importables", label: "Importables", icon: Icons.compass, content: ImportablesView },
-    { id: "houses", label: "Houses", icon: Icons.house, content: KnowledgeView },
+    { id: "houses", label: "Houses", icon: Icons.house, content: HousesView },
 ];
 
 let activeTab: TabId = "importables";

@@ -19,7 +19,9 @@ import { COST } from "./housingSync/progress/costs";
 import { getEventContainerCounts } from "./tasks/specifics/waitFor";
 import { isPacketOrderProbeActive } from "./housingSync/diagnostics/packetOrderProbe";
 import {
+    getImportTracePath,
     getProgressTracePath,
+    setImportTraceEnabled,
     setProgressTraceEnabled,
 } from "./housingSync/progress/trace";
 import { getCurrentHousingUuid } from "./importCache";
@@ -58,6 +60,17 @@ function commandHtsw(args: string[]) {
 
     if (args.length > 0 && args[0] === "eta") {
         commandEta(args.slice(1));
+        return;
+    }
+
+    if (args.length > 0 && args[0] === "trace") {
+        if (args[1] === "off" || args[1] === "stop") {
+            setImportTraceEnabled(false);
+            ChatLib.chat(`&7[htsw] import trace off · &f${getImportTracePath()}`);
+        } else {
+            const path = setImportTraceEnabled(true);
+            ChatLib.chat(`&a[htsw] import trace on · &f${path}`);
+        }
         return;
     }
 
@@ -103,6 +116,7 @@ function commandHtsw(args: string[]) {
     ChatLib.chat("&f/htsw saveitem <name> [path] &7- Save held item as .snbt + import.json");
     ChatLib.chat("&f/htsw giveitem <path> &7- Spawn an item from a .snbt file");
     ChatLib.chat("&f/htsw eta [reset|dump|trace on|off] &7- Show / reset / dump / trace ETA samples");
+    ChatLib.chat("&f/htsw trace [on|off] &7- Per-op import trace JSONL for post-mortem");
     ChatLib.chat("&f/htsw gui &7- Open the in-game HTSW dashboard");
     ChatLib.chat("&f/htsw waiters &7- Show live waitFor counts (leak check; idle = ~0)");
     ChatLib.chat("&f/htsw recompile &7- Rebuild + reload the module");

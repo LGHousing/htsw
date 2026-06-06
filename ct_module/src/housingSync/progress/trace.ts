@@ -163,3 +163,104 @@ export function traceProgressEvent(
 function round(n: number): number {
     return Math.round(n * 100) / 100;
 }
+
+// ── Import trace ──────────────────────────────────────────────────────────
+//
+// A full per-op record of an import, separate from the ETA-focused progress
+// trace above: one JSONL line per meaningful step (phase boundaries, the
+// planned diff and each op's input→output, and failures). Toggled via
+// `/htsw trace [on|off]`. Purpose: hand the file to an AI for a post-mortem
+// of why an import did/didn't change something or where it died.
+
+const IMPORT_TRACE_PATH = "./htsw/import-trace.jsonl";
+
+let importTraceEnabled = false;
+let importTraceBuffer = "";
+let importTraceStartedAt = 0;
+
+export function setImportTraceEnabled(next: boolean): string {
+    importTraceEnabled = next;
+    if (importTraceEnabled) {
+        importTraceBuffer = "";
+        importTraceStartedAt = Date.now();
+        FileLib.write(IMPORT_TRACE_PATH, "", true);
+    }
+    return IMPORT_TRACE_PATH;
+}
+
+export function isImportTraceEnabled(): boolean {
+    return importTraceEnabled;
+}
+
+export function getImportTracePath(): string {
+    return IMPORT_TRACE_PATH;
+}
+
+function writeImportTraceLine(record: Record<string, unknown>): void {
+    const now = Date.now();
+    importTraceBuffer +=
+        JSON.stringify({ at: now, tMs: now - importTraceStartedAt, ...record }) + "\n";
+    FileLib.write(IMPORT_TRACE_PATH, importTraceBuffer, true);
+}
+
+export function traceImportEvent(event: ImportEvent): void {
+    if (!importTraceEnabled) return;
+    switch (event.kind) {
+        case "importableStarted":
+            writeImportTraceLine({
+                kind: "phase",
+                phase: "read",
+                importable: `${event.type} ${event.identity}`,
+                cached: event.cached !== null,
+            });
+            return;
+        case "importableReactivated":
+            writeImportTraceLine({ kind: "phase", phase: "apply", rowIndex: event.rowIndex });
+            return;
+        case "readStarted":
+            writeImportTraceLine({ kind: "read", listPath: event.listPath });
+            return;
+        case "diffPlanned":
+            writeImportTraceLine({ kind: "diffSummary", summary: event.summary });
+            for (const op of event.operations) {
+                writeImportTraceLine({
+                    kind: "op",
+                    op: op.op,
+                    path: op.path,
+                    actionType: op.actionType,
+                    fieldsChanged: op.op === "edit" ? op.fieldsChanged : undefined,
+                    input:
+                        op.op === "edit" || op.op === "delete" ? op.observed : undefined,
+                    output: op.op === "edit" || op.op === "add" ? op.desired : undefined,
+                });
+            }
+            return;
+        case "operationStarted":
+            writeImportTraceLine({
+                kind: "opStart",
+                op: event.op,
+                path: event.path,
+                actionType: event.actionType,
+            });
+            return;
+        case "importableFinished":
+            writeImportTraceLine({
+                kind: event.status === "failed" ? "failure" : "phase",
+                phase: "finish",
+                status: event.status,
+                error: event.error,
+            });
+            return;
+        case "sessionStarted":
+        case "sessionFinished":
+        case "progress":
+        case "setupStep":
+        case "nestedReadStarted":
+        case "observedSnapshot":
+        case "operationCompleted":
+        case "listSyncCompleted":
+        case "blockActionHeaderApplied":
+        case "finalizeSource":
+            return;
+    }
+}

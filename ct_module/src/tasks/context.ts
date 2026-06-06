@@ -30,20 +30,29 @@ const MAX_CHAT_MESSAGE_LENGTH = 256;
  * `HEAT_SAFETY_MARGIN` reserves a buffer below the kick threshold for
  * clock skew and the round-trip between our send and the server
  * registering it; without it a burst that lands at exactly the limit
- * gets booted. A 25-unit margin permits an 8-chat instant burst from
+ * gets booted. A 50-unit margin permits a ~7-chat instant burst from
  * cold and falls back to ~1 chat/sec sustained, matching the
  * dissipation rate.
+ *
+ * Two further hedges against client/server clock disagreement on a long
+ * chat-heavy import (the real kick cause, since every send already goes
+ * through `awaitChatBudget`): dissipation is under-credited ~5% so we
+ * believe heat falls slightly slower than the server does, and a fixed
+ * inter-chat floor (`CHAT_MIN_INTERVAL_MS`) keeps even a cold burst from
+ * out-running the server's per-message accounting.
  */
 const HEAT_PER_CHAT = 20;
-const HEAT_DISSIPATION_PER_MS = 20 / 1000;
+const HEAT_DISSIPATION_PER_MS = (20 / 1000) * 0.95;
 const HEAT_KICK_THRESHOLD = 200;
-const HEAT_SAFETY_MARGIN = 25;
+const HEAT_SAFETY_MARGIN = 50;
 const HEAT_MAX_POST_SEND = HEAT_KICK_THRESHOLD - HEAT_SAFETY_MARGIN;
+const CHAT_MIN_INTERVAL_MS = 50;
 
 export default class TaskContext {
     private cancelled: boolean = false;
     private heatLevel: number = 0;
     private heatLastUpdate: number = 0;
+    private heatLastChatAt: number = 0;
 
     public cancel() {
         this.cancelled = true;
@@ -62,7 +71,9 @@ export default class TaskContext {
     private decayHeatToNow(): number {
         const now = Date.now();
         if (this.heatLastUpdate !== 0) {
-            const elapsed = now - this.heatLastUpdate;
+            // Clamp so a backwards clock step (NTP adjustment, resume from
+            // sleep) can't yield negative elapsed → phantom heat gain.
+            const elapsed = Math.max(0, now - this.heatLastUpdate);
             const dissipated = elapsed * HEAT_DISSIPATION_PER_MS;
             this.heatLevel = Math.max(0, this.heatLevel - dissipated);
         }
@@ -83,7 +94,13 @@ export default class TaskContext {
             await this.sleep(Math.ceil(overshoot / HEAT_DISSIPATION_PER_MS));
             this.decayHeatToNow();
         }
+        const sinceLastChat = Date.now() - this.heatLastChatAt;
+        if (this.heatLastChatAt !== 0 && sinceLastChat < CHAT_MIN_INTERVAL_MS) {
+            await this.sleep(CHAT_MIN_INTERVAL_MS - sinceLastChat);
+            this.decayHeatToNow();
+        }
         this.heatLevel += HEAT_PER_CHAT;
+        this.heatLastChatAt = Date.now();
     }
 
     public async runCommand(command: string): Promise<void> {

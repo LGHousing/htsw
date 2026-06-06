@@ -13,7 +13,7 @@ import { addRecent, getRecents } from "../persistence/recents";
 import {
     getParseAt,
     invalidateParseCacheEntry,
-    parseImportJsonAt,
+    parseImportJsonBlocking,
     touchParseCacheMtime,
     type CachedParse,
 } from "./parses";
@@ -22,7 +22,7 @@ import { javaType } from "../lib/java";
 
 /**
  * `reparse` is a thin DRIVER over the single parse authority,
- * `parseImportJsonAt` (parses.ts). It owns no parsing, snapshotting, or
+ * `parseImportJsonBlocking` (parses.ts). It owns no parsing, snapshotting, or
  * mtime-watching of its own — that all lives in `parses.ts` /
  * `parseSnapshot.ts`, behind one fingerprint-based freshness check shared
  * with the Importables tree. This driver only:
@@ -186,7 +186,7 @@ function forceReparse(path: string, forceFresh: boolean): void {
     if (willFreeze) setParseInProgress(true);
     setTimeout(() => {
         try {
-            const cached = parseImportJsonAt(path);
+            const cached = parseImportJsonBlocking(path);
             propagate(path, cached);
         } catch (_e) {
             lastParsedRef = null;
@@ -220,6 +220,6 @@ export function tickReparse(): void {
         return;
     }
     if (path === "" || !fileExistsSafe(path)) return;
-    const cached = parseImportJsonAt(path);
+    const cached = parseImportJsonBlocking(path);
     if (cached.parsed !== lastParsedRef) propagate(path, cached);
 }

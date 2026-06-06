@@ -41,7 +41,7 @@ import {
     removeFromQueueKey,
     type QueueItem,
 } from "./queue";
-import { parseImportJsonAt } from "../../parsing/parses";
+import { requestParse } from "../../parsing/parses";
 import { orderImportablesForImportSession } from "../../../importables/importSession";
 import { isImportRunning } from "../../../housingSync/runtimeState";
 import { phaseSegment } from "./progressPanel";
@@ -51,7 +51,8 @@ function willBeSkipped(item: QueueItem): boolean {
     if (item.kind !== "importable") return false;
     const uuid = getHousingUuid();
     if (uuid === null) return false;
-    const parsed = parseImportJsonAt(item.sourcePath).parsed;
+    const cached = requestParse(item.sourcePath);
+    const parsed = cached?.parsed ?? null;
     if (parsed === null) return false;
     const imp = findImportableInList(parsed.value, item.identity, item.type);
     if (imp === null) return false;
@@ -152,8 +153,8 @@ function queueImportableLabel(imp: Importable): string {
 
 export function queueImportJsonChildren(item: QueueItem): QueueItem[] {
     if (item.kind !== "importJson") return [];
-    const cached = parseImportJsonAt(item.sourcePath);
-    if (cached.parsed === null) return [];
+    const cached = requestParse(item.sourcePath);
+    if (cached === null || cached.parsed === null) return [];
     const ordered = orderImportablesForImportSession(
         cached.parsed.value,
         cached.parsed.value

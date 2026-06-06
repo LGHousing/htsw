@@ -12,17 +12,13 @@ import {
 } from "../../state";
 import { GLYPH_DOT } from "../../lib/theme";
 import { shortPath } from "../../lib/pathDisplay";
-import { parseImportJsonAt } from "../../parsing/parses";
+import { requestParse } from "../../parsing/parses";
 import { getCurrentHousingUuid } from "../../../importCache/housingId";
 import { getAlias, listAliases } from "../../../importCache/aliases";
 import { openAliasPopover } from "../../popovers/alias";
 import { openMenu, type MenuAction } from "../../lib/menu";
 import { togglePopover, closePopover, type PopoverHandle } from "../../lib/popovers";
 import { exportDestinationPicker } from "../../right-panel/import-tab/importButtons";
-import {
-    startExportAllFunctions,
-    startExportFunctions,
-} from "../../right-panel/import-tab/importController";
 import {
     clearExportQueue,
     getExportQueue,
@@ -36,7 +32,7 @@ import { clearAlias } from "../../../importCache/aliases";
 import { javaType } from "../../lib/java";
 import {
     ACCENT_DANGER,
-    ACCENT_SUCCESS,
+    ACCENT_INFO,
     COLOR_BUTTON,
     COLOR_BUTTON_DANGER_HOVER,
     COLOR_BUTTON_HOVER,
@@ -55,8 +51,8 @@ import {
     COLOR_TEXT_FAINT,
     SIZE_ROW_H,
 } from "../../lib/theme";
-import { KNOWLEDGE_TYPES, type KnowledgeType } from "./types";
-import { type HouseItem, isScanInFlight } from "./houseItems";
+import { HOUSE_CONTENT_TYPES, type HouseContentType } from "./types";
+import { type HouseItem } from "../../../houseContents/store";
 
 // Read-only trust glyph tint: green when trusted, faint otherwise. Toggling
 // trust lives only on the Import-tab Trust button; here it's a status icon.
@@ -65,11 +61,11 @@ const TRUST_ICON_ON = 0xff5cb85c | 0;
 // Rhino lacks String.prototype.repeat, so cycle through a fixed table.
 const SCAN_DOTS = ["", ".", "..", "..."];
 
-function scanLabel(scanned: boolean): string {
-    if (isScanInFlight()) {
+function scanLabel(t: HouseContentType, uuid: string | null): string {
+    if (t.scanInFlight()) {
         return `Scanning${SCAN_DOTS[Math.floor(Date.now() / 350) % SCAN_DOTS.length]}`;
     }
-    return scanned ? "Rescan" : "Scan";
+    return t.scanned(uuid) ? "Rescan" : "Scan";
 }
 
 function detectHousing(): void {
@@ -355,18 +351,18 @@ function housePickerRow(): Element {
     });
 }
 
-let activeKnowledgeType: KnowledgeType["type"] = KNOWLEDGE_TYPES[0].type;
+let activeContentType: HouseContentType["type"] = HOUSE_CONTENT_TYPES[0].type;
 let itemSearch = "";
 
-function activeType(): KnowledgeType {
-    for (let i = 0; i < KNOWLEDGE_TYPES.length; i++) {
-        if (KNOWLEDGE_TYPES[i].type === activeKnowledgeType) return KNOWLEDGE_TYPES[i];
+function activeType(): HouseContentType {
+    for (let i = 0; i < HOUSE_CONTENT_TYPES.length; i++) {
+        if (HOUSE_CONTENT_TYPES[i].type === activeContentType) return HOUSE_CONTENT_TYPES[i];
     }
-    return KNOWLEDGE_TYPES[0];
+    return HOUSE_CONTENT_TYPES[0];
 }
 
-function typeTabButton(t: KnowledgeType): Element {
-    const isActive = activeKnowledgeType === t.type;
+function typeTabButton(t: HouseContentType): Element {
+    const isActive = activeContentType === t.type;
     return Button({
         icon: t.icon,
         text: t.label,
@@ -377,19 +373,22 @@ function typeTabButton(t: KnowledgeType): Element {
             hoverBackground: isActive ? COLOR_TAB_ACTIVE_HOVER : COLOR_TAB_HOVER,
         },
         onClick: () => {
-            activeKnowledgeType = t.type;
+            activeContentType = t.type;
         },
     });
 }
 
-function itemRowMenu(t: KnowledgeType, uuid: string, name: string, canExport: boolean): MenuAction[] {
+function itemRowMenu(t: HouseContentType, uuid: string, name: string, canExport: boolean): MenuAction[] {
     const actions: MenuAction[] = [];
-    if (t.run !== undefined) actions.push({ label: "Run", onClick: () => t.run?.(name) });
-    if (t.edit !== undefined) actions.push({ label: "Edit", onClick: () => t.edit?.(name) });
+    if (t.run !== undefined)
+        actions.push({ label: "Run", icon: Icons.play, onClick: () => t.run?.(name) });
+    if (t.edit !== undefined)
+        actions.push({ label: "Edit", icon: Icons.pencil, onClick: () => t.edit?.(name) });
     if (canExport) {
         const selected = isInExportQueue(uuid, t.type, name);
         actions.push({
             label: selected ? "Deselect" : "Select for export",
+            icon: selected ? Icons.squareCheck : Icons.square,
             onClick: () => {
                 toggleExportQueue({ uuid, type: t.type, name });
             },
@@ -397,20 +396,22 @@ function itemRowMenu(t: KnowledgeType, uuid: string, name: string, canExport: bo
     }
     if (t.remove !== undefined) {
         actions.push({ kind: "separator" });
-        actions.push({ label: "Delete", onClick: () => t.remove?.(name) });
+        actions.push({ label: "Delete", icon: Icons.trash2, onClick: () => t.remove?.(name) });
     }
     return actions;
 }
 
 // Identities of this type already present in the selected export destination,
-// so a row can show whether it's already been written there. Empty when no
-// destination is set or it doesn't parse.
-function exportedIdentities(type: KnowledgeType["type"]): Set<string> {
+// so a row can show whether it's already been written there. Empty until the
+// destination has been parsed off-frame (requestParse never blocks render), so
+// the dots light up a beat after a big destination is selected rather than
+// freezing the client on selection.
+function exportedIdentities(type: HouseContentType["type"]): Set<string> {
     const out = new Set<string>();
     const dest = getExportImportJsonPath();
     if (dest.trim() === "") return out;
-    const parse = parseImportJsonAt(dest);
-    if (parse.parsed === null) return out;
+    const parse = requestParse(dest);
+    if (parse === null || parse.parsed === null) return out;
     for (const imp of parse.parsed.value) {
         if (imp.type === type) out.add(importableIdentity(imp));
     }
@@ -418,14 +419,15 @@ function exportedIdentities(type: KnowledgeType["type"]): Set<string> {
 }
 
 function itemRow(
-    t: KnowledgeType,
+    t: HouseContentType,
     uuid: string,
     item: HouseItem,
     interactive: boolean,
     canExport: boolean,
     exported: boolean
 ): Element {
-    const selected = canExport && isInExportQueue(uuid, t.type, item.name);
+    const inQueue = isInExportQueue(uuid, t.type, item.name);
+    const selected = canExport && inQueue;
     return Container({
         style: {
             direction: "row",
@@ -448,44 +450,71 @@ function itemRow(
               }
             : undefined,
         children: [
-            canExport
-                ? Icon({
-                      name: selected ? Icons.squareCheck : Icons.square,
-                      style: {
-                          width: { kind: "px", value: 12 },
-                          height: { kind: "px", value: 12 },
-                      },
-                  })
-                : Text({
+            t.export === undefined
+                ? // Browse-only type (no exporter): a plain bullet, no checkbox.
+                  Text({
                       text: GLYPH_DOT,
                       color: COLOR_TEXT_DIM,
-                      style: { width: { kind: "px", value: 8 } },
-                  }),
+                      style: { width: { kind: "px", value: 12 } },
+                  })
+                : canExport
+                  ? Icon({
+                        name: selected ? Icons.squareCheck : Icons.square,
+                        style: {
+                            width: { kind: "px", value: 12 },
+                            height: { kind: "px", value: 12 },
+                        },
+                    })
+                  : Icon({
+                        // Grayed checkbox: export needs the live menu, so it's
+                        // disabled until you're standing in this house.
+                        name: inQueue ? Icons.squareCheck : Icons.square,
+                        color: COLOR_TEXT_FAINT,
+                        style: {
+                            width: { kind: "px", value: 12 },
+                            height: { kind: "px", value: 12 },
+                        },
+                        tooltip: "Stand in this house to select for export",
+                        tooltipColor: COLOR_TEXT_DIM,
+                    }),
             Text({
                 text: item.name,
                 color: COLOR_TEXT,
                 style: { width: { kind: "grow" } },
             }),
-            Text({
-                text: GLYPH_DOT,
-                color: exported ? ACCENT_SUCCESS : COLOR_TEXT_FAINT,
-                style: { width: { kind: "px", value: 10 } },
+            Icon({
+                // Tracking, not correctness: a link icon = this name exists in
+                // your import.json, broken link = it's in the house but not your
+                // import.json. It does NOT mean the import.json copy matches the
+                // live house — that content diff is the Importables tab's job.
+                name: exported ? Icons.link : Icons.unlink,
+                color: exported ? ACCENT_INFO : COLOR_TEXT_FAINT,
+                style: { width: { kind: "px", value: 12 }, height: { kind: "px", value: 12 } },
                 tooltip: exported
-                    ? "In the selected import.json"
-                    : "Not in the selected import.json",
-                tooltipColor: exported ? ACCENT_SUCCESS : COLOR_TEXT_DIM,
+                    ? "Tracked in your import.json (not necessarily in sync)"
+                    : "In this house, not in your import.json",
+                tooltipColor: exported ? ACCENT_INFO : COLOR_TEXT_DIM,
             }),
         ],
     });
 }
 
-function exportActionBar(t: KnowledgeType, uuid: string, totalCount: number): Element {
+function exportActionBar(t: HouseContentType, uuid: string, totalCount: number): Element {
     const selected = getExportQueue().filter(
         (it) => it.uuid === uuid && it.type === t.type
     );
     const selectedCount = selected.length;
+    // "Unexported" = house items whose identity isn't already in the loaded
+    // import.json (the faint right-dot in each row). Same comparison itemRow uses.
+    const exportedSet = exportedIdentities(t.type);
+    const unexportedNames = t
+        .items(uuid)
+        .filter((i) => !exportedSet.has(i.name))
+        .map((i) => i.name);
     return Col({
-        style: { gap: 4 },
+        // Right inset so the caret split-button isn't flush against the panel
+        // edge (it sat right at the boundary and read as clipped).
+        style: { gap: 4, padding: { side: "right", value: 8 } },
         children: [
             Row({
                 style: { gap: 4, height: { kind: "px", value: SIZE_ROW_H } },
@@ -536,17 +565,67 @@ function exportActionBar(t: KnowledgeType, uuid: string, totalCount: number): El
                             hoverBackground: COLOR_BUTTON_PRIMARY_HOVER,
                         },
                         onClick: () => {
+                            if (t.export === undefined) return;
                             if (selectedCount > 0) {
                                 const names = selected.map((it) => it.name);
-                                startExportFunctions(names, () => clearExportQueue());
+                                t.export.selected(names, () => clearExportQueue());
                             } else {
-                                startExportAllFunctions();
+                                t.export.all();
                             }
+                        },
+                    }),
+                    Button({
+                        // Explicit 12px icon via children: the `icon:` shorthand
+                        // defaults to 16px, which overflows a ~22px button (inner
+                        // ~14px after padding) and reads as cut off / off-center.
+                        children: [
+                            Icon({
+                                name: Icons.chevronUp,
+                                style: {
+                                    width: { kind: "px", value: 12 },
+                                    height: { kind: "px", value: 12 },
+                                },
+                            }),
+                        ],
+                        style: {
+                            width: { kind: "px", value: 22 },
+                            height: { kind: "grow" },
+                            background: COLOR_BUTTON_PRIMARY,
+                            hoverBackground: COLOR_BUTTON_PRIMARY_HOVER,
+                        },
+                        // Anchor to the caret's rect (not the cursor) so the menu
+                        // right-aligns under the button and drops up consistently.
+                        onClick: (rect: Rect) => {
+                            if (t.export === undefined) return;
+                            openMenu(rect.x + rect.w, rect.y, [
+                                {
+                                    label: `Export unexported (${unexportedNames.length})`,
+                                    onClick: () => {
+                                        if (unexportedNames.length > 0 && t.export) {
+                                            t.export.selected(unexportedNames, () =>
+                                                clearExportQueue()
+                                            );
+                                        }
+                                    },
+                                },
+                                {
+                                    label: `Export all (${totalCount})`,
+                                    onClick: () => t.export?.all(),
+                                },
+                            ]);
                         },
                     }),
                     selectedCount > 0 &&
                         Button({
-                            icon: Icons.x,
+                            children: [
+                                Icon({
+                                    name: Icons.x,
+                                    style: {
+                                        width: { kind: "px", value: 12 },
+                                        height: { kind: "px", value: 12 },
+                                    },
+                                }),
+                            ],
                             style: {
                                 width: { kind: "px", value: 22 },
                                 height: { kind: "grow" },
@@ -571,22 +650,33 @@ function typeBrowserSection(): Element {
             // Scan (and export, which reads the live menu) is only offered when
             // the viewed house is the current one.
             const canScan = uuid !== null && uuid === getHousingUuid();
-            const canExport = t.exportable === true && canScan;
-            const tabStrip = KNOWLEDGE_TYPES.map(typeTabButton);
+            const canExport = t.export !== undefined && canScan;
+            const tabStrip = HOUSE_CONTENT_TYPES.map(typeTabButton);
             if (canScan) {
+                // Icon-only reload button, not a text tab — at tab width + with a
+                // label it read as a fourth type tab you'd click by mistake.
                 tabStrip.push(
                     Button({
-                        icon: Icons.scan,
-                        text: scanLabel(t.scanned(uuid)),
                         style: {
-                            width: { kind: "px", value: 72 },
+                            width: { kind: "px", value: 22 },
                             height: { kind: "grow" },
                             background: COLOR_BUTTON,
                             hoverBackground: COLOR_BUTTON_HOVER,
                         },
                         onClick: () => {
-                            if (!isScanInFlight()) t.scan();
+                            if (!t.scanInFlight()) t.scan();
                         },
+                        children: [
+                            Icon({
+                                name: Icons.refreshCw,
+                                tooltip: () => scanLabel(t, uuid),
+                                tooltipColor: COLOR_TEXT_DIM,
+                                style: {
+                                    width: { kind: "px", value: 12 },
+                                    height: { kind: "px", value: 12 },
+                                },
+                            }),
+                        ],
                     })
                 );
             }
@@ -612,7 +702,7 @@ function typeBrowserSection(): Element {
                             if (!canScan) {
                                 return `Stand in this house and Scan to list its ${t.label.toLowerCase()}.`;
                             }
-                            return isScanInFlight()
+                            return t.scanInFlight()
                                 ? "Scanning…"
                                 : `Click Scan to list this house's ${t.label.toLowerCase()}.`;
                         },
@@ -667,7 +757,35 @@ function typeBrowserSection(): Element {
                     })
                 );
             }
-            if (canExport) out.push(exportActionBar(t, uuid, items.length));
+            if (canExport) {
+                out.push(exportActionBar(t, uuid, items.length));
+            } else if (t.export !== undefined) {
+                out.push(
+                    Row({
+                        style: {
+                            gap: 6,
+                            align: "center",
+                            padding: { side: "x", value: 4 },
+                            height: { kind: "px", value: SIZE_ROW_H },
+                        },
+                        children: [
+                            Icon({
+                                name: Icons.house,
+                                color: COLOR_TEXT_FAINT,
+                                style: {
+                                    width: { kind: "px", value: 12 },
+                                    height: { kind: "px", value: 12 },
+                                },
+                            }),
+                            Text({
+                                text: `Stand in this house to export its ${t.label.toLowerCase()}.`,
+                                color: COLOR_TEXT_FAINT,
+                                style: { width: { kind: "grow" } },
+                            }),
+                        ],
+                    })
+                );
+            }
             return out;
         },
     });
@@ -698,7 +816,7 @@ function emptyState(): Element {
     });
 }
 
-export function KnowledgeView(): Element {
+export function HousesView(): Element {
     return Col({
         style: { gap: 6, height: { kind: "grow" }, padding: 4 },
         children: () => {

@@ -65,7 +65,7 @@ export type CachedParse = {
     pending: { [path: string]: number } | null;
 };
 
-// How often `parseImportJsonAt` re-stats the referenced-file fingerprint on
+// How often `parseImportJsonBlocking` re-stats the referenced-file fingerprint on
 // an import.json-mtime hit. Bounds the stat cost (≈ one stat per referenced
 // file per interval); a change is acted on after it stays stable for one
 // extra interval, so edit-to-refresh latency is ~1–2× this.
@@ -136,12 +136,18 @@ export function canonicalPath(p: string): string {
 const cache = new Map<string, CachedParse>();
 
 /**
- * Parse `rawPath` if not cached or if the file changed on disk. Returns
- * the cached parse either way (with `parsed: null + error: ...` on
- * failure). Safe to call from every render — the underlying work only
- * runs when the mtime has actually changed.
+ * Parse `rawPath` if not cached or if the file changed on disk, and return
+ * the cached parse (with `parsed: null + error: ...` on failure).
+ *
+ * BLOCKS the calling thread for the full parse cost on a cold path (no
+ * in-memory entry) — for a big project that is the hundreds-of-ms-to-second
+ * freeze. NEVER call this from render/element-build code or from a per-frame
+ * getter; use `requestParse()` instead, which serves the warm cache and
+ * schedules the cold parse off-frame. The only legitimate callers are the
+ * deferred parse scheduler (`processPendingParses`), the reparse driver, and
+ * user-initiated import/export tasks where a brief freeze is expected.
  */
-export function parseImportJsonAt(rawPath: string): CachedParse {
+export function parseImportJsonBlocking(rawPath: string): CachedParse {
     const canon = canonicalPath(rawPath);
     const mtime = getMtimeMs(canon);
     const existing = cache.get(canon);
@@ -210,10 +216,73 @@ export function getParseAt(path: string): CachedParse | null {
     return cache.get(canon) ?? null;
 }
 
+// ── Deferred parse scheduler ──────────────────────────────────────────────
+// The render-safe way to obtain a parse. A cold full parse can freeze the
+// client for a big project, so render/build code must never trigger one
+// inline. `requestParse` serves the warm cache immediately and, when the parse
+// is cold or due for a refresh, queues it to run off-frame via
+// `processPendingParses` (pumped from the GUI tick). Callers render an
+// empty/"pending" state until the cache warms a frame or two later.
+const pendingParsePaths = new Map<string, string>();
+let parseInFlightPath: string | null = null;
+
+/** True while `path` is queued for or undergoing a deferred parse. */
+export function isParsePending(path: string): boolean {
+    const canon = canonicalPath(path);
+    return parseInFlightPath === canon || pendingParsePaths.has(canon);
+}
+
+/**
+ * Render-safe parse request. Returns the cached parse if one exists (and
+ * queues a throttled off-frame revalidation so a referenced-file edit still
+ * refreshes), or `null` if the file hasn't been parsed yet — in which case the
+ * cold parse is queued to run off-frame. Never blocks on a parse.
+ */
+export function requestParse(rawPath: string): CachedParse | null {
+    if (rawPath.trim() === "") return null;
+    const canon = canonicalPath(rawPath);
+    const existing = cache.get(canon);
+    if (existing !== undefined) {
+        if (Date.now() - existing.fpCheckedAt >= FP_RECHECK_MS) {
+            pendingParsePaths.set(canon, rawPath);
+        }
+        return existing;
+    }
+    pendingParsePaths.set(canon, rawPath);
+    return null;
+}
+
+/**
+ * Pump at most one queued parse, off the render path. Yields a frame
+ * (`setTimeout`) before the blocking parse so any "parsing" indicator can
+ * paint first — mirroring the reparse driver. Call once per GUI tick.
+ */
+export function processPendingParses(): void {
+    if (parseInFlightPath !== null) return;
+    let nextCanon: string | null = null;
+    let nextRaw = "";
+    for (const [canon, rawPath] of pendingParsePaths) {
+        nextCanon = canon;
+        nextRaw = rawPath;
+        break;
+    }
+    if (nextCanon === null) return;
+    pendingParsePaths.delete(nextCanon);
+    parseInFlightPath = nextCanon;
+    setTimeout(() => {
+        try {
+            parseImportJsonBlocking(nextRaw);
+        } catch (_e) {
+            // A failed parse is cached as an error entry by the authority.
+        }
+        parseInFlightPath = null;
+    }, 0);
+}
+
 /**
  * Mark the cache entry's mtime as the file's current mtime, without
  * re-parsing. Use after an in-place mutation of the cached parse that
- * mirrors an on-disk edit, so the mtime check in `parseImportJsonAt`
+ * mirrors an on-disk edit, so the mtime check in `parseImportJsonBlocking`
  * doesn't force a full re-parse the next time it's called.
  */
 export function touchParseCacheMtime(rawPath: string): void {
@@ -227,7 +296,7 @@ export function touchParseCacheMtime(rawPath: string): void {
 }
 
 /**
- * Drop the cached parse for `rawPath` so the next `parseImportJsonAt`
+ * Drop the cached parse for `rawPath` so the next `parseImportJsonBlocking`
  * re-parses from scratch. Used by the reparse driver for explicit
  * reloads (file load, rename, manual reparse) where we want a fresh
  * parse regardless of the fingerprint.

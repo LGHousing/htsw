@@ -21,7 +21,7 @@ Library — `gui/lib/` (project-agnostic UI primitives + screen/theme):
 - `popovers.ts` — global popover stack, anchored/modal render, click dispatch helper, hover-suppression query.
 - `hoverCards.ts` — delayed, scrollable informational hover cards that absorb wheel/click input without becoming modal.
 - `anchoredRect.ts` — shared below/above placement and screen clamping used by popovers and hover cards.
-- `menu.ts` — `openMenu(x, y, actions[])` builds a context-menu popover from `{label, onClick}` actions, plus `{kind: "separator"}` dividers. Auto-closes on click. Menu width auto-sizes to the widest label via `Renderer.getStringWidth` (floored at `MIN_MENU_WIDTH`); callers don't need to truncate.
+- `menu.ts` — `openMenu(x, y, actions[])` builds a context-menu popover from `{label, onClick, icon?}` actions, plus `{kind: "separator"}` dividers. Auto-closes on click. Menu width auto-sizes to the widest label via `Renderer.getStringWidth` (floored at `MIN_MENU_WIDTH`, plus an icon allowance when any action has an `icon`); callers don't need to truncate. The `(x, y)` is a 0×0 anchor and the popover **right-aligns** to it (menu's right edge sits at `x`), so for a split-button drop-up pass the trigger's right edge (`rect.x + rect.w`).
 - `focus.ts` — single global focused-input id.
 - `inputState.ts` — per-input `GuiTextField` instances (cursor, selection, clipboard, arrow keys).
 - `scissor.ts` — GL scissor stack. Multiplies overlay coords by `getEffectiveOverlayScale()` to get real pixels (see Coordinate space).

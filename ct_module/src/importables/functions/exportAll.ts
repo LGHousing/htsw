@@ -6,12 +6,12 @@ import {
 } from "../../housingSync/itemCapture";
 import TaskContext from "../../tasks/context";
 import { isTaskCancelled } from "../../tasks/manager";
-import { withExportSession } from "../exportSession";
+import { ExportResult, withExportSession } from "../exportSession";
 import { exportFunctionWithSharedState } from "./export";
 import { writeCapturedItems } from "../../exporter/writeCapturedItems";
 import { htslFilenameForFunctionExport } from "../../exporter/paths";
 import type { ExportProgressSink } from "../../housingSync/progress/types";
-import { listAllFunctionNames } from "./listFunctions";
+import { listAllFunctionNames, resetFunctionNameSession } from "./listFunctions";
 
 export type ExportAllFunctionsOptions = {
     importJsonPath: string;
@@ -20,20 +20,22 @@ export type ExportAllFunctionsOptions = {
     progress?: ExportProgressSink;
 };
 
-export type ExportAllFunctionsResult = { total: number; succeeded: number; failed: number };
-
 export async function exportAllFunctions(
     ctx: TaskContext,
     options: ExportAllFunctionsOptions
-): Promise<ExportAllFunctionsResult> {
+): Promise<ExportResult> {
     return withExportSession(() => exportAllFunctionsInner(ctx, options));
 }
 
 async function exportAllFunctionsInner(
     ctx: TaskContext,
     options: ExportAllFunctionsOptions
-): Promise<ExportAllFunctionsResult> {
+): Promise<ExportResult> {
     const { importJsonPath, rootDir } = options;
+
+    // Drop any function-list cache from a prior import so per-function icon
+    // reads reflect the live house, not a stale snapshot.
+    resetFunctionNameSession();
 
     const inventorySnapshot: InventorySnapshot = snapshotInventory();
     const itemCaptures = new ItemCaptureRegistry();
