@@ -17,6 +17,7 @@ import {
 } from "../../../../housingSync/itemCapture";
 import {
     deleteImportableCache,
+    houseTypeScanned,
     listCachedImportables,
     recordHouseScan,
     writeImportableCache,
@@ -40,7 +41,7 @@ export function getHouseFunctions(uuid: string | null): HouseImportable[] {
 }
 
 export function houseFunctionsScanned(uuid: string | null): boolean {
-    return listCachedImportables(uuid, "FUNCTION").length > 0;
+    return houseTypeScanned(uuid, "FUNCTION");
 }
 
 export function scanHouseFunctions(): void {
@@ -81,13 +82,19 @@ export function deepReadHouseFunctions(): void {
         // house, matching the exporter.
         resetFunctionNameSession();
         const snapshot: InventorySnapshot = snapshotInventory();
-        const itemCaptures = new ItemCaptureRegistry();
         let read = 0;
         try {
             const names = await listAllFunctionNames(ctx);
+            recordHouseScan(uuid, "FUNCTION", names);
             for (let i = 0; i < names.length; i++) {
+                const itemCaptures = new ItemCaptureRegistry();
                 const imp = await readFunctionImportable(ctx, names[i], itemCaptures);
-                writeImportableCache(ctx, uuid, imp, "reader", true);
+                if (itemCaptures.size() > 0) {
+                    deleteImportableCache(uuid, "FUNCTION", names[i]);
+                    writePresence(uuid, "FUNCTION", names[i]);
+                } else {
+                    writeImportableCache(ctx, uuid, imp, "reader", true);
+                }
                 read++;
             }
         } finally {

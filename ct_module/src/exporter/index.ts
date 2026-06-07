@@ -261,14 +261,15 @@ function commandExport(args: string[]): void {
             let imported = 0;
             let failed = 0;
             try {
-                await exportAllMenus(ctx, {
+                const result = await exportAllMenus(ctx, {
                     importJsonPath,
                     rootDir,
                     progress: createExportProgressSink("MENU", importJsonPath),
                 });
-                imported = 1;
+                imported = result.succeeded;
+                failed = result.failed;
             } catch (err) {
-                failed = 1;
+                if (failed === 0) failed = 1;
                 throw err;
             } finally {
                 setTraceImportable(null);

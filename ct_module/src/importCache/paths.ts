@@ -70,6 +70,13 @@ export function cacheTypeDir(housingUuid: string, type: Importable["type"]): str
     return `${IMPORT_CACHE_ROOT}/${housingUuid}/${dirFor(type)}`;
 }
 
+export function cacheScanMarkerPath(
+    housingUuid: string,
+    type: Importable["type"]
+): string {
+    return `${cacheTypeDir(housingUuid, type)}/.scan-complete`;
+}
+
 /** Path used by callers that only know the type + identity (e.g. delete). */
 export function cachePathForId(
     housingUuid: string,

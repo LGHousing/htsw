@@ -4,7 +4,7 @@ import { TaskManager } from "../../../../tasks/manager";
 import { getHousingUuid } from "../../../state";
 import { showToast } from "../../../toast";
 import { listAllEventNames } from "../../../../importables/events/listEvents";
-import { listCachedImportables, recordHouseScan, type HouseImportable } from "../../../../importCache/cache";
+import { houseTypeScanned, listCachedImportables, recordHouseScan, type HouseImportable } from "../../../../importCache/cache";
 
 // Housing events are a fixed enumerated set (player join, etc.) — they aren't
 // created/deleted, so there's no liveness channel here; the list refreshes on
@@ -20,7 +20,7 @@ export function getHouseEvents(uuid: string | null): HouseImportable[] {
 }
 
 export function houseEventsScanned(uuid: string | null): boolean {
-    return listCachedImportables(uuid, "EVENT").length > 0;
+    return houseTypeScanned(uuid, "EVENT");
 }
 
 export function scanHouseEvents(): void {

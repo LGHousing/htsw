@@ -41,23 +41,41 @@ function locationLine(path: string, line: number, column: number, maxWidth: numb
     return prefix + ellipsis + tail + suffix;
 }
 
+type LineSpanGroup = { line: number; spans: DiagnosticLineSpan[] };
+type FileSpanGroup = { file: SourceFile; lines: LineSpanGroup[] };
+
 function spansByFileAndLine(
     sm: SourceMap,
     diagnostic: Diagnostic
-): Map<SourceFile, Map<number, DiagnosticLineSpan[]>> {
-    const byFile = new Map<SourceFile, Map<number, DiagnosticLineSpan[]>>();
+): FileSpanGroup[] {
+    const byFile: FileSpanGroup[] = [];
     const spans = normalizeDiagnosticSpans(sm, [diagnostic]);
     for (let i = 0; i < spans.length; i++) {
         const span = spans[i];
         if (span.diagnostic !== diagnostic) continue;
-        let byLine = byFile.get(span.file);
-        if (byLine === undefined) {
-            byLine = new Map();
-            byFile.set(span.file, byLine);
+        let fileGroup: FileSpanGroup | undefined;
+        for (let j = 0; j < byFile.length; j++) {
+            if (byFile[j].file === span.file) {
+                fileGroup = byFile[j];
+                break;
+            }
         }
-        const line = byLine.get(span.line);
-        if (line === undefined) byLine.set(span.line, [span]);
-        else line.push(span);
+        if (fileGroup === undefined) {
+            fileGroup = { file: span.file, lines: [] };
+            byFile.push(fileGroup);
+        }
+        let lineGroup: LineSpanGroup | undefined;
+        for (let j = 0; j < fileGroup.lines.length; j++) {
+            if (fileGroup.lines[j].line === span.line) {
+                lineGroup = fileGroup.lines[j];
+                break;
+            }
+        }
+        if (lineGroup === undefined) {
+            lineGroup = { line: span.line, spans: [] };
+            fileGroup.lines.push(lineGroup);
+        }
+        lineGroup.spans.push(span);
     }
     return byFile;
 }
@@ -160,11 +178,12 @@ function snippetLineChunks(
 
 function snippetLines(
     file: SourceFile,
-    byLine: Map<number, DiagnosticLineSpan[]>,
+    byLine: LineSpanGroup[],
     maxWidth: number
 ): TextLayoutCanvas {
     const canvas = new TextLayoutCanvas();
-    const lineNumbers = Array.from(byLine.keys());
+    const lineNumbers: number[] = [];
+    for (let i = 0; i < byLine.length; i++) lineNumbers.push(byLine[i].line);
     const originals = lineNumbers.slice();
     for (let i = 0; i < originals.length; i++) {
         if (originals.indexOf(originals[i] - 2) >= 0) lineNumbers.push(originals[i] - 1);
@@ -177,6 +196,13 @@ function snippetLines(
     const contentWidth = Math.max(1, maxWidth - contentX);
     for (let i = 0; i < lineNumbers.length; i++) {
         const lineNumber = lineNumbers[i];
+        let spans: DiagnosticLineSpan[] = [];
+        for (let j = 0; j < byLine.length; j++) {
+            if (byLine[j].line === lineNumber) {
+                spans = byLine[j].spans;
+                break;
+            }
+        }
         const y = canvas.getHeight();
         canvas.addElement(0, y, new TextLayoutText("&9" + String(lineNumber)));
         canvas.addElement(
@@ -185,7 +211,7 @@ function snippetLines(
             snippetLineChunks(
                 file,
                 lineNumber,
-                byLine.get(lineNumber) ?? [],
+                spans,
                 contentWidth
             )
         );
@@ -208,12 +234,22 @@ function diagnosticElement(
     ));
     const snippet = new TextLayoutVStack();
     const byFile = spansByFileAndLine(sm, diagnostic);
-    for (const [file, byLine] of byFile.entries()) {
+    for (let fileIndex = 0; fileIndex < byFile.length; fileIndex++) {
+        const file = byFile[fileIndex].file;
+        const byLine = byFile[fileIndex].lines;
         const spans: DiagnosticLineSpan[] = [];
-        for (const lineSpans of byLine.values()) {
-            for (let i = 0; i < lineSpans.length; i++) spans.push(lineSpans[i]);
+        for (let i = 0; i < byLine.length; i++) {
+            for (let j = 0; j < byLine[i].spans.length; j++) {
+                spans.push(byLine[i].spans[j]);
+            }
         }
-        const primary = spans.find((span) => span.kind === "primary") ?? spans[0];
+        let primary = spans[0];
+        for (let i = 0; i < spans.length; i++) {
+            if (spans[i].kind === "primary") {
+                primary = spans[i];
+                break;
+            }
+        }
         if (primary !== undefined) {
             snippet.add(new TextLayoutText("&7" + locationLine(
                 displayPath(file.path),

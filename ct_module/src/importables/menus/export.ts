@@ -97,7 +97,7 @@ export async function exportMenu(
         });
         cacheSlots.push({
             slot: liveSlot.slot,
-            nbt: nbtRel as unknown as MenuSlot["nbt"],
+            nbt: liveSlot.snbt as unknown as MenuSlot["nbt"],
             ...(liveSlot.actions.length > 0 ? { actions: liveSlot.actions } : {}),
         });
     }

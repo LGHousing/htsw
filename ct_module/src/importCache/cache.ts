@@ -9,6 +9,7 @@ import {
     IMPORT_CACHE_ROOT,
     cachePathFor,
     cachePathForId,
+    cacheScanMarkerPath,
     cacheTypeDir,
     importableIdentity,
 } from "./paths";
@@ -258,6 +259,7 @@ export function deleteImportableCache(
 export function deleteHousingCache(housingUuid: string): boolean {
     readCache.clear();
     enumIndex.clear();
+    scanMarkerCache.clear();
     try {
         const Paths = Java.type("java.nio.file.Paths");
         const Files = Java.type("java.nio.file.Files");
@@ -309,6 +311,7 @@ export type HouseImportable = {
 };
 
 const enumIndex = new Map<string, HouseImportable[]>();
+const scanMarkerCache = new Map<string, boolean>();
 
 function enumKey(uuid: string, type: Importable["type"]): string {
     return `${uuid}|${type}`;
@@ -353,7 +356,13 @@ function scanTypeDir(uuid: string, type: Importable["type"]): HouseImportable[] 
             const it = stream.iterator();
             while (it.hasNext()) {
                 const fname = String(it.next().getFileName().toString());
-                if (fname.lastIndexOf(".knowledge.json") !== fname.length - 15) continue;
+                const suffix = ".knowledge.json";
+                if (
+                    fname.length < suffix.length ||
+                    fname.lastIndexOf(suffix) !== fname.length - suffix.length
+                ) {
+                    continue;
+                }
                 let raw: string | null;
                 try {
                     raw = FileLib.read(`${dirRel}/${fname}`);
@@ -420,6 +429,19 @@ export function listCachedImportables(
     return ensureEnumLoaded(uuid, type).slice();
 }
 
+export function houseTypeScanned(
+    uuid: string | null,
+    type: Importable["type"]
+): boolean {
+    if (uuid === null) return false;
+    const key = enumKey(uuid, type);
+    const cached = scanMarkerCache.get(key);
+    if (cached !== undefined) return cached;
+    const scanned = FileLib.exists(cacheScanMarkerPath(uuid, type));
+    scanMarkerCache.set(key, scanned);
+    return scanned;
+}
+
 /**
  * Reconcile a house type's contents from a complete, successful names scan:
  * every current name gets a presence record (no-op if already known), and any
@@ -432,6 +454,14 @@ export function recordHouseScan(
     type: Importable["type"],
     names: readonly string[]
 ): void {
+    const markerPath = cacheScanMarkerPath(uuid, type);
+    try {
+        ensureParentDirs(markerPath);
+        FileLib.write(markerPath, new Date().toISOString(), true);
+        scanMarkerCache.set(enumKey(uuid, type), true);
+    } catch (_e) {
+        scanMarkerCache.set(enumKey(uuid, type), false);
+    }
     const present = new Set<string>();
     for (let i = 0; i < names.length; i++) present.add(names[i]);
     const known = ensureEnumLoaded(uuid, type).slice();

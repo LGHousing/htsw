@@ -53,7 +53,8 @@ function runUpdateCheck(): void {
         return;
     }
 
-    if (!unzipInto(zipPath, MODULE_DIR)) {
+    const stagedDir = updateDir + "/next";
+    if (!unzipInto(zipPath, stagedDir) || !replaceModuleContents(stagedDir)) {
         ChatLib.chat("&cHTSW update failed during extraction.");
         deletePath(updateDir);
         return;
@@ -175,6 +176,59 @@ function unzipInto(zipPath: string, destDir: string): boolean {
             // ignore
         }
     }
+}
+
+function replaceModuleContents(stagedDir: string): boolean {
+    try {
+        const Files = Java.type("java.nio.file.Files");
+        const Paths = Java.type("java.nio.file.Paths");
+        const StandardCopyOption = Java.type("java.nio.file.StandardCopyOption");
+        const moduleRoot = Paths.get(MODULE_DIR).toAbsolutePath().normalize();
+        const stagedRoot = Paths.get(stagedDir).toAbsolutePath().normalize();
+
+        const existing = Files.newDirectoryStream(moduleRoot);
+        try {
+            const it = existing.iterator();
+            while (it.hasNext()) {
+                const child = it.next();
+                if (String(child.getFileName().toString()) === ".update") continue;
+                deleteNioPath(Files, child);
+            }
+        } finally {
+            existing.close();
+        }
+
+        const staged = Files.newDirectoryStream(stagedRoot);
+        try {
+            const it = staged.iterator();
+            while (it.hasNext()) {
+                const child = it.next();
+                Files.move(
+                    child,
+                    moduleRoot.resolve(child.getFileName()),
+                    StandardCopyOption.REPLACE_EXISTING
+                );
+            }
+        } finally {
+            staged.close();
+        }
+        return true;
+    } catch (_e) {
+        return false;
+    }
+}
+
+function deleteNioPath(Files: any, path: any): void {
+    if (Files.isDirectory(path)) {
+        const stream = Files.newDirectoryStream(path);
+        try {
+            const it = stream.iterator();
+            while (it.hasNext()) deleteNioPath(Files, it.next());
+        } finally {
+            stream.close();
+        }
+    }
+    Files.deleteIfExists(path);
 }
 
 function deletePath(path: string): void {

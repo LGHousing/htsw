@@ -6,6 +6,7 @@ import { showToast } from "../../../toast";
 import { listAllRegionNames } from "../../../../importables/regions/listRegions";
 import {
     deleteImportableCache,
+    houseTypeScanned,
     listCachedImportables,
     recordHouseScan,
     writePresence,
@@ -23,7 +24,7 @@ export function getHouseRegions(uuid: string | null): HouseImportable[] {
 }
 
 export function houseRegionsScanned(uuid: string | null): boolean {
-    return listCachedImportables(uuid, "REGION").length > 0;
+    return houseTypeScanned(uuid, "REGION");
 }
 
 export function scanHouseRegions(): void {

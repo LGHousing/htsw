@@ -92,6 +92,7 @@ export function snapshotMenuSlots(
         if (slotId >= menuSlotCount) continue;
 
         const item = itemSlot.getItem();
+        if (item === null || item === undefined) continue;
         if (isEmptySlotFiller(item)) continue;
 
         // Build SNBT from the item's Tag (not getRawNBT) so it's valid htsw
@@ -127,11 +128,14 @@ export async function readMenuSlotActions(
     }
     container.click(slotId, false, "LEFT");
     await waitForMenu(ctx);
+    ctx.getItemSlot("Edit Actions").click();
+    await waitForMenu(ctx);
 
     const observed = await readActionList(ctx, { kind: "full" });
     const actions = observedSlotsToActions(observed);
 
-    await clickGoBack(ctx); // back to the elements grid
+    await clickGoBack(ctx);
+    await clickGoBack(ctx);
     return actions;
 }
 

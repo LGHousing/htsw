@@ -117,15 +117,15 @@ export class TextLayoutCanvas implements TextLayoutElement {
     }
 
     render(): string[] {
-        const lineMap = new Map<number, { x: number; text: string; order: number }[]>();
+        const lineMap: { x: number; text: string; order: number }[][] = [];
         for (let order = 0; order < this.elements.length; order++) {
             const entry = this.elements[order];
             const rendered = entry.element.render();
             for (let i = 0; i < rendered.length; i++) {
                 const y = entry.y + i;
-                const line = lineMap.get(y);
+                const line = lineMap[y];
                 const fragment = { x: entry.x, text: rendered[i], order };
-                if (line === undefined) lineMap.set(y, [fragment]);
+                if (line === undefined) lineMap[y] = [fragment];
                 else line.push(fragment);
             }
         }
@@ -133,7 +133,7 @@ export class TextLayoutCanvas implements TextLayoutElement {
         const result: string[] = [];
         const maxY = Math.max(0, this.getHeight() - 1);
         for (let y = 0; y <= maxY; y++) {
-            const spans = lineMap.get(y) ?? [];
+            const spans = lineMap[y] ?? [];
             spans.sort((a, b) => a.order - b.order);
             const fragments: { start: number; end: number; text: string; width: number }[] = [];
             for (let i = 0; i < spans.length; i++) {
@@ -177,7 +177,10 @@ export class TextLayoutCanvas implements TextLayoutElement {
 
 export class TextLayoutHLine extends TextLayoutText {
     constructor(width: number, char: string = "-", color?: string) {
-        super((color ?? "") + char.repeat(Math.max(1, Math.round(width / chatWidth(char)))));
+        let line = "";
+        const count = Math.max(1, Math.round(width / chatWidth(char)));
+        for (let i = 0; i < count; i++) line += char;
+        super((color ?? "") + line);
     }
 }
 

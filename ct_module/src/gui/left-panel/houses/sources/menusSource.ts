@@ -5,6 +5,7 @@ import { getHousingUuid } from "../../../state";
 import { showToast } from "../../../toast";
 import { listAllMenuNames } from "../../../../importables/menus/listMenus";
 import {
+    houseTypeScanned,
     listCachedImportables,
     recordHouseScan,
     writePresence,
@@ -22,7 +23,7 @@ export function getHouseMenus(uuid: string | null): HouseImportable[] {
 }
 
 export function houseMenusScanned(uuid: string | null): boolean {
-    return listCachedImportables(uuid, "MENU").length > 0;
+    return houseTypeScanned(uuid, "MENU");
 }
 
 export function scanHouseMenus(): void {

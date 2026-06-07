@@ -275,7 +275,10 @@ export function rootRow(label: string, key: string, actions: MenuAction[]): Elem
 function projectDirOf(importJsonPath: string): string {
     const norm = importJsonPath.split("\\").join("/");
     const slash = norm.lastIndexOf("/");
-    return slash <= 0 ? "." : norm.substring(0, slash);
+    if (slash < 0) return ".";
+    if (slash === 0) return "/";
+    if (slash === 2 && norm.charAt(1) === ":") return norm.substring(0, 3);
+    return norm.substring(0, slash);
 }
 
 export function resultRow(
