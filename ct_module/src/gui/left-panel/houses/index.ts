@@ -32,7 +32,8 @@ import { clearAlias } from "../../../importCache/aliases";
 import { javaType } from "../../lib/java";
 import {
     ACCENT_DANGER,
-    ACCENT_INFO,
+    ACCENT_SUCCESS,
+    ACCENT_WARN,
     COLOR_BUTTON,
     COLOR_BUTTON_DANGER_HOVER,
     COLOR_BUTTON_HOVER,
@@ -52,7 +53,12 @@ import {
     SIZE_ROW_H,
 } from "../../lib/theme";
 import { HOUSE_CONTENT_TYPES, type HouseContentType } from "./types";
-import { type HouseItem } from "../../../houseContents/store";
+import { type HouseImportable } from "../../../importCache/cache";
+import { buildCacheStatusRow } from "../../../importCache/status";
+import { confirmSelect, setActiveRightTab } from "../../right-panel/selection";
+import { importableSourcePath } from "../../parsing/importablePaths";
+import type { Importable } from "htsw/types";
+import type { IconName } from "../../lib/icons.generated";
 
 // Read-only trust glyph tint: green when trusted, faint otherwise. Toggling
 // trust lives only on the Import-tab Trust button; here it's a status icon.
@@ -378,8 +384,37 @@ function typeTabButton(t: HouseContentType): Element {
     });
 }
 
+// The source file (htsl/.snbt/json) for an importable in the selected
+// import.json, or null if it isn't in your file. Called on right-click, not per
+// frame, so re-resolving through the (cached) parse is fine.
+function sourcePathForImportable(type: HouseContentType["type"], name: string): string | null {
+    const dest = getExportImportJsonPath();
+    if (dest.trim() === "") return null;
+    const parse = requestParse(dest);
+    if (parse === null || parse.parsed === null) return null;
+    for (const imp of parse.parsed.value) {
+        if (imp.type === type && importableIdentity(imp) === name) {
+            return importableSourcePath(imp, parse.parsed) ?? null;
+        }
+    }
+    return null;
+}
+
 function itemRowMenu(t: HouseContentType, uuid: string, name: string, canExport: boolean): MenuAction[] {
     const actions: MenuAction[] = [];
+    // Reuse the existing View-tab diff (source vs cached house content) rather
+    // than building a diff here — only when the importable is in your file.
+    const sourcePath = sourcePathForImportable(t.type, name);
+    if (sourcePath !== null) {
+        actions.push({
+            label: "View diff",
+            icon: Icons.eye,
+            onClick: () => {
+                confirmSelect(sourcePath);
+                setActiveRightTab("view");
+            },
+        });
+    }
     if (t.run !== undefined)
         actions.push({ label: "Run", icon: Icons.play, onClick: () => t.run?.(name) });
     if (t.edit !== undefined)
@@ -418,13 +453,73 @@ function exportedIdentities(type: HouseContentType["type"]): Set<string> {
     return out;
 }
 
+// How a house importable relates to your import.json:
+//  house-only — in the house, not in your file
+//  unread     — in your file, but its house content hasn't been Read yet
+//  in-sync    — in your file and matches the live house
+//  drifted    — in your file but differs from the live house
+type DriftState = "house-only" | "unread" | "in-sync" | "drifted";
+
+const DRIFT_VISUAL: { [k in DriftState]: { icon: IconName; color: number; tooltip: string } } = {
+    "house-only": {
+        icon: Icons.unlink,
+        color: COLOR_TEXT_FAINT,
+        tooltip: "In this house, not in your import.json",
+    },
+    unread: {
+        icon: Icons.link,
+        color: COLOR_TEXT_DIM,
+        tooltip: "In your import.json — Read this house to check if it matches",
+    },
+    "in-sync": {
+        icon: Icons.link,
+        color: ACCENT_SUCCESS,
+        tooltip: "In your import.json and matches the house",
+    },
+    drifted: {
+        icon: Icons.link,
+        color: ACCENT_WARN,
+        tooltip: "In your import.json but differs from the house — re-export or re-import",
+    },
+};
+
+// Source importables (from the selected import.json) keyed by identity, so each
+// row can be diffed against your file. Non-blocking parse — empty until warm.
+function sourceImportablesByType(type: HouseContentType["type"]): Map<string, Importable> {
+    const out = new Map<string, Importable>();
+    const dest = getExportImportJsonPath();
+    if (dest.trim() === "") return out;
+    const parse = requestParse(dest);
+    if (parse === null || parse.parsed === null) return out;
+    for (const imp of parse.parsed.value) {
+        if (imp.type === type) out.set(importableIdentity(imp), imp);
+    }
+    return out;
+}
+
+function driftFor(
+    uuid: string | null,
+    item: HouseImportable,
+    sourceByKey: Map<string, Importable>
+): DriftState {
+    const source = sourceByKey.get(item.name);
+    if (source === undefined) return "house-only";
+    if (uuid === null || !item.verified) return "unread";
+    // buildCacheStatusRow diffs the source importable against the cached house
+    // content: current = matches, modified = differs, unknown = no content read.
+    const state = buildCacheStatusRow(uuid, source).state;
+    if (state === "current") return "in-sync";
+    if (state === "modified") return "drifted";
+    return "unread";
+}
+
 function itemRow(
     t: HouseContentType,
     uuid: string,
-    item: HouseItem,
+    item: HouseImportable,
     interactive: boolean,
     canExport: boolean,
-    exported: boolean
+    drift: DriftState
 ): Element {
     const inQueue = isInExportQueue(uuid, t.type, item.name);
     const selected = canExport && inQueue;
@@ -483,17 +578,13 @@ function itemRow(
                 style: { width: { kind: "grow" } },
             }),
             Icon({
-                // Tracking, not correctness: a link icon = this name exists in
-                // your import.json, broken link = it's in the house but not your
-                // import.json. It does NOT mean the import.json copy matches the
-                // live house — that content diff is the Importables tab's job.
-                name: exported ? Icons.link : Icons.unlink,
-                color: exported ? ACCENT_INFO : COLOR_TEXT_FAINT,
+                // Real drift vs your import.json: see DriftState. Needs a deep
+                // Read to tell in-sync from drifted (else "unread").
+                name: DRIFT_VISUAL[drift].icon,
+                color: DRIFT_VISUAL[drift].color,
                 style: { width: { kind: "px", value: 12 }, height: { kind: "px", value: 12 } },
-                tooltip: exported
-                    ? "Tracked in your import.json (not necessarily in sync)"
-                    : "In this house, not in your import.json",
-                tooltipColor: exported ? ACCENT_INFO : COLOR_TEXT_DIM,
+                tooltip: DRIFT_VISUAL[drift].tooltip,
+                tooltipColor: DRIFT_VISUAL[drift].color,
             }),
         ],
     });
@@ -679,6 +770,38 @@ function typeBrowserSection(): Element {
                         ],
                     })
                 );
+                if (t.deepRead !== undefined) {
+                    const deepRead = t.deepRead;
+                    const readInFlight = t.deepReadInFlight;
+                    const reading = (): boolean => readInFlight !== undefined && readInFlight();
+                    tabStrip.push(
+                        Button({
+                            style: {
+                                width: { kind: "px", value: 22 },
+                                height: { kind: "grow" },
+                                background: COLOR_BUTTON,
+                                hoverBackground: COLOR_BUTTON_HOVER,
+                            },
+                            onClick: () => {
+                                if (!reading()) deepRead();
+                            },
+                            children: [
+                                Icon({
+                                    name: Icons.scanEye,
+                                    tooltip: () =>
+                                        reading()
+                                            ? "Reading contents…"
+                                            : "Read contents into knowledge (slow)",
+                                    tooltipColor: COLOR_TEXT_DIM,
+                                    style: {
+                                        width: { kind: "px", value: 12 },
+                                        height: { kind: "px", value: 12 },
+                                    },
+                                }),
+                            ],
+                        })
+                    );
+                }
             }
             const out: Element[] = [
                 Row({
@@ -746,13 +869,13 @@ function typeBrowserSection(): Element {
                     })
                 );
             } else {
-                const exported = exportedIdentities(t.type);
+                const sourceMap = sourceImportablesByType(t.type);
                 out.push(
                     Scroll({
                         id: "knowledge-type-scroll",
                         style: { height: { kind: "grow" }, gap: 1 },
                         children: shown.map((i) =>
-                            itemRow(t, uuid, i, canScan, canExport, exported.has(i.name))
+                            itemRow(t, uuid, i, canScan, canExport, driftFor(uuid, i, sourceMap))
                         ),
                     })
                 );

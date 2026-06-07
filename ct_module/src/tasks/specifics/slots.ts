@@ -222,15 +222,18 @@ export function describeGuiScreenMenu(): string {
         const container = (screen as { field_147002_h?: unknown }).field_147002_h;
         if (container == null) return `${short}:noContainer`;
         const c = container as {
-            func_75138_a(): { size(): number; get(i: number): unknown };
+            func_75138_a(): { length?: number; size?: () => number; get?: (i: number) => unknown };
             field_75152_c?: number;
         };
         const inv = c.func_75138_a();
-        const size = inv.size();
+        const size = typeof inv.size === "function" ? inv.size() : inv.length ?? 0;
+        const get = typeof inv.get === "function"
+            ? (i: number): unknown => inv.get?.(i)
+            : (i: number): unknown => (inv as unknown as unknown[])[i];
         const end = size < 36 ? size : size - 36;
         let n = 0;
         for (let i = 0; i < end; i++) {
-            if (inv.get(i) != null) n++;
+            if (get(i) != null) n++;
         }
         return `${short}:${n}items/win${c.field_75152_c}`;
     } catch (e) {

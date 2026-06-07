@@ -1,17 +1,15 @@
-/// <reference types="../../CTAutocomplete" />
+/// <reference types="../../../../../CTAutocomplete" />
 
-import { TaskManager } from "../tasks/manager";
-import { getHousingUuid } from "../gui/state";
-import { showToast } from "../gui/toast";
-import { listAllMenuNames } from "../importables/menus/listMenus";
+import { TaskManager } from "../../../../tasks/manager";
+import { getHousingUuid } from "../../../state";
+import { showToast } from "../../../toast";
+import { listAllMenuNames } from "../../../../importables/menus/listMenus";
 import {
-    getItems,
-    isScanned,
-    liveAdd,
-    markUnscanned,
-    recordScan,
-    type HouseItem,
-} from "./store";
+    listCachedImportables,
+    recordHouseScan,
+    writePresence,
+    type HouseImportable,
+} from "../../../../importCache/cache";
 
 let scanInFlight = false;
 
@@ -19,12 +17,12 @@ export function isMenuScanInFlight(): boolean {
     return scanInFlight;
 }
 
-export function getHouseMenus(uuid: string | null): HouseItem[] {
-    return getItems(uuid, "MENU");
+export function getHouseMenus(uuid: string | null): HouseImportable[] {
+    return listCachedImportables(uuid, "MENU");
 }
 
 export function houseMenusScanned(uuid: string | null): boolean {
-    return isScanned(uuid, "MENU");
+    return listCachedImportables(uuid, "MENU").length > 0;
 }
 
 export function scanHouseMenus(): void {
@@ -35,7 +33,7 @@ export function scanHouseMenus(): void {
     TaskManager.run(async (ctx) => {
         try {
             const names = await listAllMenuNames(ctx);
-            recordScan(uuid, "MENU", names.map((n) => ({ name: n })));
+            recordHouseScan(uuid, "MENU", names);
             showToast(
                 `Scanned ${names.length} menu${names.length === 1 ? "" : "s"}`,
                 0xff5cb85c
@@ -49,11 +47,10 @@ export function scanHouseMenus(): void {
     });
 }
 
-// Partial liveness: menus are keyed by title. Creation announces the title so we
-// can add it live; the delete confirmation ("Deleted the custom menu") carries
-// no title, so we can't patch a single entry — invalidate the scan instead of
-// keeping a phantom. Renames (Change Title) have no captured confirmation, so a
-// retitle also needs a rescan.
+// Partial liveness: menus are keyed by title. Creation announces the title;
+// deletion ("Deleted the custom menu") carries no title, so we can't patch a
+// single entry — the next rescan reconciles it. Renames (Change Title) have no
+// captured confirmation, so a retitle also needs a rescan.
 register("chat", (event: any) => {
     const msg = ChatLib.getChatMessage(event, false);
     if (typeof msg !== "string") return;
@@ -62,10 +59,6 @@ register("chat", (event: any) => {
 
     const created = msg.match(/^Created custom menu with the title (.+)!$/);
     if (created !== null) {
-        liveAdd(uuid, "MENU", created[1]);
-        return;
-    }
-    if (msg === "Deleted the custom menu") {
-        markUnscanned(uuid, "MENU");
+        writePresence(uuid, "MENU", created[1]);
     }
 });

@@ -64,6 +64,28 @@ async function readFunction(
     return validRepeatTicks !== undefined ? { actions, repeatTicks: validRepeatTicks } : { actions };
 }
 
+/**
+ * Read a function from the live house into a full `ImportableFunction` AST
+ * (actions + repeat + icon), writing nothing. Shared by the exporter and the
+ * Houses-tab deep read (which caches the result instead of writing import.json).
+ */
+export async function readFunctionImportable(
+    ctx: TaskContext,
+    name: string,
+    itemCaptures?: ItemCaptureRegistry
+): Promise<ImportableFunction> {
+    // The icon lives on the /functions list slot, not the editor — read it first.
+    const icon = functionIconFromSnapshot(await getSessionFunctionIcon(ctx, name));
+    const { actions, repeatTicks } = await readFunction(ctx, name, itemCaptures);
+    return {
+        type: "FUNCTION",
+        name,
+        actions,
+        ...(repeatTicks !== undefined ? { repeatTicks } : {}),
+        ...(icon !== undefined ? { icon } : {}),
+    };
+}
+
 export async function exportFunction(
     ctx: TaskContext,
     options: ExportFunctionOptions
@@ -126,19 +148,10 @@ export async function exportFunctionWithSharedState(
 ): Promise<void> {
     const { name, importJsonPath, htslPath, htslReference } = options;
 
-    // Read the icon from the /functions list before opening the editor — the
-    // editor doesn't show it, and the icon lives on the list slot.
-    const icon = functionIconFromSnapshot(await getSessionFunctionIcon(ctx, name));
-
-    const { actions, repeatTicks } = await readFunction(ctx, name, shared.itemCaptures);
-
-    const importable: ImportableFunction = {
-        type: "FUNCTION",
-        name,
-        actions,
-        ...(repeatTicks !== undefined ? { repeatTicks } : {}),
-        ...(icon !== undefined ? { icon } : {}),
-    };
+    const importable = await readFunctionImportable(ctx, name, shared.itemCaptures);
+    const actions = importable.actions ?? [];
+    const repeatTicks = importable.repeatTicks;
+    const icon = importable.icon;
 
     const { source, diagnostics } = htsw.htsl.printActionsWithDiagnostics(actions);
     for (const diag of diagnostics) {

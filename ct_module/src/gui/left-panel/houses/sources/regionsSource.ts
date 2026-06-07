@@ -1,19 +1,16 @@
-/// <reference types="../../CTAutocomplete" />
+/// <reference types="../../../../../CTAutocomplete" />
 
-import { TaskManager } from "../tasks/manager";
-import { getHousingUuid } from "../gui/state";
-import { showToast } from "../gui/toast";
-import { listAllRegionNames } from "../importables/regions/listRegions";
+import { TaskManager } from "../../../../tasks/manager";
+import { getHousingUuid } from "../../../state";
+import { showToast } from "../../../toast";
+import { listAllRegionNames } from "../../../../importables/regions/listRegions";
 import {
-    getItems,
-    isScanned,
-    liveAdd,
-    liveRemove,
-    liveRename,
-    markUnscanned,
-    recordScan,
-    type HouseItem,
-} from "./store";
+    deleteImportableCache,
+    listCachedImportables,
+    recordHouseScan,
+    writePresence,
+    type HouseImportable,
+} from "../../../../importCache/cache";
 
 let scanInFlight = false;
 
@@ -21,12 +18,12 @@ export function isRegionScanInFlight(): boolean {
     return scanInFlight;
 }
 
-export function getHouseRegions(uuid: string | null): HouseItem[] {
-    return getItems(uuid, "REGION");
+export function getHouseRegions(uuid: string | null): HouseImportable[] {
+    return listCachedImportables(uuid, "REGION");
 }
 
 export function houseRegionsScanned(uuid: string | null): boolean {
-    return isScanned(uuid, "REGION");
+    return listCachedImportables(uuid, "REGION").length > 0;
 }
 
 export function scanHouseRegions(): void {
@@ -37,7 +34,7 @@ export function scanHouseRegions(): void {
     TaskManager.run(async (ctx) => {
         try {
             const names = await listAllRegionNames(ctx);
-            recordScan(uuid, "REGION", names.map((n) => ({ name: n })));
+            recordHouseScan(uuid, "REGION", names);
             showToast(
                 `Scanned ${names.length} region${names.length === 1 ? "" : "s"}`,
                 0xff5cb85c
@@ -60,21 +57,18 @@ register("chat", (event: any) => {
 
     let m = msg.match(/^Created region (.+)!$/);
     if (m !== null) {
-        liveAdd(uuid, "REGION", m[1]);
+        writePresence(uuid, "REGION", m[1]);
         return;
     }
     m = msg.match(/^Deleted the region (.+)$/);
     if (m !== null) {
-        liveRemove(uuid, "REGION", m[1]);
+        deleteImportableCache(uuid, "REGION", m[1]);
         return;
     }
     m = msg.match(/^Renamed region (.+) to (.+)$/);
     if (m !== null) {
-        // A name containing " to " makes the split ambiguous; force a rescan.
-        if (m[1].indexOf(" to ") !== -1 || m[2].indexOf(" to ") !== -1) {
-            markUnscanned(uuid, "REGION");
-        } else {
-            liveRename(uuid, "REGION", m[1], m[2]);
-        }
+        if (m[1].indexOf(" to ") !== -1 || m[2].indexOf(" to ") !== -1) return;
+        deleteImportableCache(uuid, "REGION", m[1]);
+        writePresence(uuid, "REGION", m[2]);
     }
 });

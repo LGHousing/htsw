@@ -16,6 +16,7 @@ import {
 } from "../fields/loreParsing";
 import {
     timedWaitForMenu,
+    waitForKnownMenu,
     waitForMenu,
 } from "./menuWait";
 import { getVisiblePaginatedItemSlots } from "./paginatedList";
@@ -165,6 +166,14 @@ function acceptNewAnvilItem(): void {
         throw new Error("No open container found");
     }
     inventory.click(2, false);
+}
+
+function openWindowId(packet: unknown): number {
+    try {
+        return (packet as { func_148901_c(): number }).func_148901_c();
+    } catch (_e) {
+        return 0;
+    }
 }
 
 export async function setListItemNote(
@@ -421,40 +430,34 @@ export async function enterValue(ctx: TaskContext, value: string): Promise<"CHAT
                 () === "minecraft:anvil"
         );
     });
+    const anvilMode = anvilWait.then((args) => ({
+        mode: "ANVIL" as const,
+        windowId: openWindowId(args[0]),
+    }));
     const inputMode = await ctx.withTimeout(
-        ctx.race<"CHAT" | "ANVIL">([
+        ctx.race<"CHAT" | { mode: "ANVIL"; windowId: number }>([
             [chatWait.then(() => "CHAT" as const), chatWait],
-            [anvilWait.then(() => "ANVIL" as const), anvilWait],
+            [anvilMode, anvilWait],
         ]),
         "Waiting for input mode to be determined",
         8000
     );
 
-    switch (inputMode) {
-        case "CHAT":
-            await ctx.sendMessage(value);
-            return "CHAT";
-        case "ANVIL":
-            // The anvil name field caps at ANVIL_NAME_MAX chars, which would
-            // silently truncate (e.g. long variable coordinate expressions).
-            // Fail with actionable guidance rather than writing a bad value.
-            if (value.length > ANVIL_NAME_MAX) {
-                throw new Error(
-                    `Value is ${value.length} characters — too long for Housing's anvil ` +
-                    `input (max ${ANVIL_NAME_MAX}). Set "Preferred Input" to "Chat" in your ` +
-                    `Housing settings, then re-import.`
-                );
-            }
-            // Anvil result slot is computed client-side, so its live item count
-            // never reaches the WindowItems snapshot — skip that wait.
-            await waitForMenu(ctx, true);
-            setAnvilItemName(value);
-            acceptNewAnvilItem();
-            return "ANVIL";
-        default:
-            const _exhaustiveCheck: never = inputMode;
-            throw new Error(`Unknown input mode ${_exhaustiveCheck}`);
+    if (inputMode === "CHAT") {
+        await ctx.sendMessage(value);
+        return "CHAT";
     }
+    if (value.length > ANVIL_NAME_MAX) {
+        throw new Error(
+            `Value is ${value.length} characters — too long for Housing's anvil ` +
+            `input (max ${ANVIL_NAME_MAX}). Set "Preferred Input" to "Chat" in your ` +
+            `Housing settings, then re-import.`
+        );
+    }
+    await waitForKnownMenu(ctx, inputMode.windowId, true);
+    setAnvilItemName(value);
+    acceptNewAnvilItem();
+    return "ANVIL";
 }
 
 function waitForChatInputPrompt(ctx: TaskContext): WaitForPromise<unknown> {
@@ -525,25 +528,31 @@ export async function setStringOrPaginatedOptionValue(
         );
     });
     const menuWait = waitForMenu(ctx);
+    const anvilMode = anvilWait.then((args) => ({
+        mode: "ANVIL" as const,
+        windowId: openWindowId(args[0]),
+    }));
     const inputMode = await ctx.withTimeout(
-        ctx.race<"CHAT" | "ANVIL" | "MENU">([
+        ctx.race<"CHAT" | "MENU" | { mode: "ANVIL"; windowId: number }>([
             [chatWait.then(() => "CHAT" as const), chatWait],
-            [anvilWait.then(() => "ANVIL" as const), anvilWait],
+            [anvilMode, anvilWait],
             [menuWait.then(() => "MENU" as const), menuWait],
         ]),
         `Waiting to edit "${slotName}"`,
         8000
     );
 
+    if (inputMode !== "CHAT" && inputMode !== "MENU") {
+        await waitForKnownMenu(ctx, inputMode.windowId, true);
+        setAnvilItemName(newValue);
+        acceptNewAnvilItem();
+        await waitForMenu(ctx);
+        return;
+    }
+
     switch (inputMode) {
         case "CHAT":
             await ctx.sendMessage(newValue);
-            await waitForMenu(ctx);
-            return;
-        case "ANVIL":
-            await waitForMenu(ctx);
-            setAnvilItemName(newValue);
-            acceptNewAnvilItem();
             await waitForMenu(ctx);
             return;
         case "MENU": {

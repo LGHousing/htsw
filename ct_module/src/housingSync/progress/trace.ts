@@ -203,6 +203,14 @@ function writeImportTraceLine(record: Record<string, unknown>): void {
     FileLib.write(IMPORT_TRACE_PATH, importTraceBuffer, true);
 }
 
+export function traceMenuWait(
+    stage: "start" | "openWindow" | "windowItems" | "ready" | "failure",
+    details: Record<string, unknown>
+): void {
+    if (!importTraceEnabled) return;
+    writeImportTraceLine({ kind: "menuWait", stage, ...details });
+}
+
 export function traceImportEvent(event: ImportEvent): void {
     if (!importTraceEnabled) return;
     switch (event.kind) {

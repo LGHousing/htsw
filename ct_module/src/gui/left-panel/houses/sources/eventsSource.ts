@@ -1,10 +1,10 @@
-/// <reference types="../../CTAutocomplete" />
+/// <reference types="../../../../../CTAutocomplete" />
 
-import { TaskManager } from "../tasks/manager";
-import { getHousingUuid } from "../gui/state";
-import { showToast } from "../gui/toast";
-import { listAllEventNames } from "../importables/events/listEvents";
-import { getItems, isScanned, recordScan, type HouseItem } from "./store";
+import { TaskManager } from "../../../../tasks/manager";
+import { getHousingUuid } from "../../../state";
+import { showToast } from "../../../toast";
+import { listAllEventNames } from "../../../../importables/events/listEvents";
+import { listCachedImportables, recordHouseScan, type HouseImportable } from "../../../../importCache/cache";
 
 // Housing events are a fixed enumerated set (player join, etc.) — they aren't
 // created/deleted, so there's no liveness channel here; the list refreshes on
@@ -15,12 +15,12 @@ export function isEventScanInFlight(): boolean {
     return scanInFlight;
 }
 
-export function getHouseEvents(uuid: string | null): HouseItem[] {
-    return getItems(uuid, "EVENT");
+export function getHouseEvents(uuid: string | null): HouseImportable[] {
+    return listCachedImportables(uuid, "EVENT");
 }
 
 export function houseEventsScanned(uuid: string | null): boolean {
-    return isScanned(uuid, "EVENT");
+    return listCachedImportables(uuid, "EVENT").length > 0;
 }
 
 export function scanHouseEvents(): void {
@@ -31,7 +31,7 @@ export function scanHouseEvents(): void {
     TaskManager.run(async (ctx) => {
         try {
             const names = await listAllEventNames(ctx);
-            recordScan(uuid, "EVENT", names.map((n) => ({ name: n })));
+            recordHouseScan(uuid, "EVENT", names);
             showToast(
                 `Scanned ${names.length} event${names.length === 1 ? "" : "s"}`,
                 0xff5cb85c
