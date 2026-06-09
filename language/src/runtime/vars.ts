@@ -340,8 +340,11 @@ export function formatNumber(number: string): string {
 }
 
 export function isLong(value: string): boolean {
-    if (!value) return false;
-    return value == Long.fromString(value).toString();
+    try {
+        return value == Long.fromString(value).toString();
+    } catch {
+        return false;
+    }
 }
 
 export function parseLong(value: string): Long {
