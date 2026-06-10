@@ -20,7 +20,8 @@ const defaultBehaviorComparePlaceholder: ConditionBehavior<"COMPARE_PLACEHOLDER"
 ) => {
     if (!condition.placeholder || !condition.op || !condition.amount) return false;
 
-    const lhs = rt.runPlaceholder(condition.placeholder);
+    const placeholder = condition.placeholder.substring(1, condition.placeholder.length - 1);
+    const lhs = rt.runPlaceholder(placeholder);
     if (!lhs) return false;
     const rhs: Var<any> = parseValue(rt, condition.amount);
 
