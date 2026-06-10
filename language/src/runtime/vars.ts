@@ -64,6 +64,7 @@ export class VarLong implements Var<Long> {
     }
 
     cmpOp(other: Var<any>, op: Comparison): boolean {
+        if (other instanceof VarString) return false;
         switch (op) {
             case "Equal":
                 return this.value.eq(other.value);
