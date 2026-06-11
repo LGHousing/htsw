@@ -344,7 +344,11 @@ export function parseNumericValue(p: Parser): Value {
 
 export function parseValue(p: Parser): Value {
     if (p.check("str")) {
-        return `"${p.parseString()}"`;
+        const value = p.parseString();
+        if (value.length > 32) {
+            p.gcx.addDiagnostic(Diagnostic.error("Exceeds 32-character limit"));
+        }
+        return `"${value}"`;
     }
 
     if (p.eat("placeholder")) {
