@@ -1,5 +1,5 @@
 import { defineConfig, loadEnv } from "vite";
-import { babel } from "@rollup/plugin-babel";
+import { getBabelOutputPlugin } from "@rollup/plugin-babel";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import {
@@ -157,6 +157,13 @@ export default defineConfig({
         alias: [...mcpAliases, ...htswAliases],
     } as const,
     build: {
+        // Rhino can only parse ES5. Vite 8's oxc minifier rewrites the bundle back to
+        // modern syntax (optional catch binding, arrows) after Babel runs, so it must
+        // stay off. Babel runs as an OUTPUT plugin (renderChunk) rather than a
+        // transform plugin for the same reason: rolldown generates its own chunk
+        // wrapper code (`const require_x = ...`) after the transform phase, and only
+        // an output-stage pass downlevels that too.
+        minify: false,
         lib: {
             entry: "./src/index.ts",
             formats: ["cjs"],
@@ -168,7 +175,19 @@ export default defineConfig({
                 format: "cjs",
                 dir: "dist",
                 preserveModules: true,
-                generatedCode: { constBindings: false },
+                plugins: [
+                    getBabelOutputPlugin({
+                        presets: [
+                            [
+                                "@babel/preset-env",
+                                {
+                                    targets: { ie: "11" },
+                                    loose: true,
+                                },
+                            ],
+                        ],
+                    }),
+                ],
             },
         },
         outDir: "dist",
@@ -176,23 +195,5 @@ export default defineConfig({
     plugins: [
         ...(mcpResolverPlugin ? [mcpResolverPlugin] : []),
         iconShakePlugin,
-        babel({
-            babelHelpers: "inline",
-            extensions: [".ts", ".tsx", ".js"],
-            presets: [
-                [
-                    "@babel/preset-env",
-                    {
-                        targets: { ie: "11" },
-                        loose: true,
-                    },
-                ],
-                "@babel/preset-typescript",
-            ],
-            plugins: [
-                ["@babel/plugin-proposal-class-properties", { loose: true }],
-                ["@babel/plugin-transform-classes", { loose: true }],
-            ],
-        }),
     ],
 });
