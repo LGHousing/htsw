@@ -5,6 +5,14 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    ignore:
+      # Vite 8 bundles with rolldown/oxc, whose minifier and chunk wrappers emit
+      # ES2019+ syntax (optional catch binding, const) that CT's Rhino can't parse.
+      # The babel ES5 pipeline only works on the rollup-based vite 7.
+      - dependency-name: vite
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@rollup/plugin-babel"
+        update-types: ["version-update:semver-major"]
     groups:
       dev-dependencies:
         dependency-type: development

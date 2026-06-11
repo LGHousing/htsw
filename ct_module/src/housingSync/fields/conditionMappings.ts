@@ -292,6 +292,17 @@ export function parseConditionListItem(
         ...parseLoreFields(slot, mapping.loreFields),
     } as Condition;
 
+    // The GUI shows an unset fallback as the literal "Not Set"; the AST
+    // convention (and the htsl grammar, where fallback is optional) is to
+    // omit the field. Storing the literal would print as a bare `Not Set`
+    // ident — unparseable htsl — and falsely diff against parsed sources.
+    if (
+        condition.type === "COMPARE_VAR" &&
+        (condition as { fallback?: unknown }).fallback === "Not Set"
+    ) {
+        delete (condition as { fallback?: unknown }).fallback;
+    }
+
     if (condition.type === "COMPARE_VAR") {
         const holder = parseHolderField(
             slot,

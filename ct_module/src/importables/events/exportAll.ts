@@ -71,6 +71,7 @@ async function exportAllEventsInner(
                 `&7[${i + 1}/${names.length}] &fExporting '${name}'`
             );
 
+            const sink = options.progress;
             try {
                 await exportEventWithSharedState(
                     ctx,
@@ -80,6 +81,10 @@ async function exportAllEventsInner(
                         htslPath,
                         htslReference,
                         rootDir,
+                        onReadProgress:
+                            sink?.itemProgress === undefined
+                                ? undefined
+                                : (payload) => sink.itemProgress!(i, payload),
                     },
                     { itemCaptures, inventorySnapshot }
                 );
@@ -89,6 +94,7 @@ async function exportAllEventsInner(
                     throw error;
                 }
                 failed++;
+                sink?.itemFailed?.(i, String(error));
                 ctx.displayMessage(
                     `&c[export-all] failed on '${name}': ${error}`
                 );

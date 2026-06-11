@@ -6,7 +6,7 @@ import { COLOR_BY_STATE, COLOR_CURSOR, ROW_BG_BY_STATE, type DiffState } from ".
 import { CodeViewColors } from "./lineModel";
 import type { LineDecorations, RenderableLine, TokenSpan } from "./lineTypes";
 import { joinTokenText, wrapTokensIntoVisualRows } from "./wrap";
-import { offerDiagnosticHover } from "../diagnostics/hover";
+import { offerLineHover } from "../diagnostics/hover";
 
 export const LINE_H = 10;
 export const FOCUS_GUTTER_W = 8;
@@ -222,9 +222,16 @@ function buildVisualLineRow(
             height: { kind: "px", value: LINE_H },
             background: bg,
         },
-        onHover: line.diagnostics !== undefined && line.diagnostics.length > 0
-            ? (rect) => offerDiagnosticHover(rect, line.diagnostics!)
-            : undefined,
+        onHover:
+            (line.diagnostics !== undefined && line.diagnostics.length > 0) ||
+            dec.hoverLines !== undefined
+                ? (rect) =>
+                      offerLineHover(
+                          rect,
+                          line.diagnostics,
+                          dec.hoverLines?.() ?? undefined
+                      )
+                : undefined,
         children,
     });
 }

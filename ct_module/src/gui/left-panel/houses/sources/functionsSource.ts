@@ -1,8 +1,11 @@
 /// <reference types="../../../../../CTAutocomplete" />
 
 import { TaskManager } from "../../../../tasks/manager";
-import { getHousingUuid } from "../../../state";
+import { setImportRunning } from "../../../../housingSync/runtimeState";
+import { getExportImportJsonPath, getHousingUuid } from "../../../state";
 import { showToast } from "../../../toast";
+import { createExportProgressSink } from "../../../right-panel/import-tab/exportProgress";
+import type { ExportProgressSink } from "../../../../housingSync/progress/types";
 import {
     listAllFunctionEntries,
     listAllFunctionNames,
@@ -83,21 +86,45 @@ export function deepReadHouseFunctions(): void {
         resetFunctionNameSession();
         const snapshot: InventorySnapshot = snapshotInventory();
         let read = 0;
+        let progress: ExportProgressSink | null = null;
+        setImportRunning(true);
         try {
             const names = await listAllFunctionNames(ctx);
             recordHouseScan(uuid, "FUNCTION", names);
+            // Same strip the importer/exporter use, verb "read" — a deep read
+            // opens every function editor, far too slow to run dark.
+            progress = createExportProgressSink("FUNCTION", getExportImportJsonPath(), "read");
+            progress.start(names);
             for (let i = 0; i < names.length; i++) {
-                const itemCaptures = new ItemCaptureRegistry();
-                const imp = await readFunctionImportable(ctx, names[i], itemCaptures);
-                if (itemCaptures.size() > 0) {
-                    deleteImportableCache(uuid, "FUNCTION", names[i]);
-                    writePresence(uuid, "FUNCTION", names[i]);
-                } else {
-                    writeImportableCache(ctx, uuid, imp, "reader", true);
+                progress.item(i, names[i]);
+                const sink = progress;
+                try {
+                    const itemCaptures = new ItemCaptureRegistry();
+                    const imp = await readFunctionImportable(
+                        ctx,
+                        names[i],
+                        itemCaptures,
+                        sink.itemProgress === undefined
+                            ? undefined
+                            : (payload) => sink.itemProgress!(i, payload)
+                    );
+                    if (itemCaptures.size() > 0) {
+                        deleteImportableCache(uuid, "FUNCTION", names[i]);
+                        writePresence(uuid, "FUNCTION", names[i]);
+                    } else {
+                        writeImportableCache(ctx, uuid, imp, "reader", true);
+                    }
+                    read++;
+                } catch (err) {
+                    // The run aborts on the first failure; without this the
+                    // `done()` in the finally would close the row as imported.
+                    sink.itemFailed?.(i, String(err));
+                    throw err;
                 }
-                read++;
             }
         } finally {
+            setImportRunning(false);
+            if (progress !== null) progress.done();
             try {
                 await restoreInventoryToSnapshot(ctx, snapshot);
             } catch (_e) {

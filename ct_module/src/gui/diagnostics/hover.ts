@@ -2,6 +2,7 @@ import type { Diagnostic, ParseResult } from "htsw";
 import type { Importable } from "htsw/types";
 
 import { formatDiagnostics, type FormattedTextBlock } from "../../diagnostics/format";
+import { chatWidth } from "../../utils/helpers";
 import type { Rect } from "../lib/layout";
 import { hoverCardContentWidth, offerHoverCard } from "../lib/hoverCards";
 import { getParsedResult } from "../state/parsed";
@@ -28,9 +29,9 @@ export function hoverPath(path: string): string {
     return normalized;
 }
 
-export function offerDiagnosticHover(rect: Rect, diagnostics: readonly Diagnostic[]): void {
+function diagnosticsBlock(diagnostics: readonly Diagnostic[]): FormattedTextBlock | null {
     const parsed = getParsedResult();
-    if (parsed === null || diagnostics.length === 0) return;
+    if (parsed === null || diagnostics.length === 0) return null;
     const ids: string[] = [];
     for (let i = 0; i < diagnostics.length; i++) ids.push(String(diagnosticId(diagnostics[i])));
     const width = hoverCardContentWidth();
@@ -50,5 +51,38 @@ export function offerDiagnosticHover(rect: Rect, diagnostics: readonly Diagnosti
         );
         parsedCache.set(key, content);
     }
+    return content;
+}
+
+/**
+ * One hover card per code-view row: the row's diagnostics (if any) followed
+ * by any extra lines the active decorator supplies (e.g. the house's version
+ * of an edited action). No-op when both are empty.
+ */
+export function offerLineHover(
+    rect: Rect,
+    diagnostics: readonly Diagnostic[] | undefined,
+    extraLines: readonly string[] | undefined
+): void {
+    const diagBlock = diagnostics !== undefined ? diagnosticsBlock(diagnostics) : null;
+    const extras = extraLines !== undefined && extraLines.length > 0 ? extraLines : null;
+    if (diagBlock === null && extras === null) return;
+
+    let lines: string[];
+    let width: number;
+    if (diagBlock !== null) {
+        lines = extras === null ? diagBlock.lines : [...diagBlock.lines, "", ...extras];
+        width = diagBlock.width;
+    } else {
+        lines = extras!.slice();
+        width = 0;
+    }
+    if (extras !== null) {
+        for (const line of extras) width = Math.max(width, chatWidth(line));
+    }
+    const content: FormattedTextBlock = { lines, width, height: lines.length };
+    const key =
+        (diagBlock !== null ? diagBlock.lines.length + ":" : "") +
+        lines.join("\n") + "@" + width;
     offerHoverCard({ key, anchor: rect, content });
 }

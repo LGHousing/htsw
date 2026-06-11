@@ -49,11 +49,13 @@ Parse cache service — `gui/parsing/` (a service, not "state"):
 Code-view data — `gui/code-view/` (the ONE renderer + everything it parses/colors):
 - `htslParse.ts` — `parseHtslFile` + `actionsToLines`, consumed by `lineModel.ts` for the source preview.
 - `diffPalette.ts` — the `DiffState` union + color tables (`COLOR_BY_STATE` / `ROW_BG_BY_STATE`) + `COLOR_CURSOR` (the focus-cursor color; the cursor is NOT a diff state). Shared vocabulary; holds no logic.
-- `sourceDiff.ts` — STATIC diff producer: per-action `DiffState` comparing source vs the import cache ("what would change vs last import"), for the View tab. Lazy, cached per file.
+- `sourceDiff.ts` — STATIC diff producer: per-action `DiffState` comparing source vs the import cache ("what would change vs last import"), for the View tab. Lazy, cached per file. Also `houseActionAt(filePath, actionPath)` — the cache's (house's) version of one action, backing the hover card on edited lines.
 - Diagnostic spans and formatted diagnostic blocks live in `src/diagnostics/`; chat and View-pane hover cards consume the same presentation.
 
+Code-view row hover: each row gets at most ONE hover card, built by `gui/diagnostics/hover.ts:offerLineHover` — the row's diagnostics (if any) followed by the decorator's `LineDecorations.hoverLines` (lazy callback, invoked only while hovered). Don't add a second hover path per row; merge into this one.
+
 Diff decorators — `gui/right-panel/decorators.ts` (kept OUT of `code-view/` so the renderer stays generic; the `LineDecorator` interface lives in `code-view/lineTypes.ts`):
-- `diffDecorator` — View tab; reads `sourceDiff`.
+- `diffDecorator` — View tab; reads `sourceDiff`. Supplies `hoverLines` on edit ("In the house: <printed action>") and add lines.
 - `progressDecorator` — live import strip; reads `import-tab/livePreview` (each `PreviewLine`'s own `diffState`/`completed`, plus the live cursor + phase scalars). There is no separate overlay map — `livePreview` is the single live store.
 
 Right-panel state — `gui/right-panel/`:
@@ -200,6 +202,8 @@ Single global focused-input id (`focus.ts`). `dispatchClick` sets it when an `in
 Inputs delegate to vanilla MC's `GuiTextField`. We keep one instance per input id in `inputState.ts`; it handles cursor placement, drag-select, arrow keys, home/end, shift-select, Ctrl+A/C/V/X, backspace/delete, and the blinking cursor. We disable its built-in background drawing (`setEnableBackgroundDrawing(false)`) and `setCanLoseFocus(false)` so external focus state is the source of truth. Width/height are final on the field, so we recreate the field if the laid-out size changes (text + cursor are copied across); xPosition/yPosition are mutable and updated each frame.
 
 Keyboard input is routed via Forge's `GuiScreenEvent$KeyboardInputEvent$Pre` (registered via `register(ForgeClass, cb)`). Inside the handler we read the real char with `Keyboard.getEventCharacter()` and the keycode with `Keyboard.getEventKey()` — **CT's `guiKey` `char` argument is `undefined`**, which is why we don't use that trigger. Esc/Enter are handled by us (clear focus); everything else is forwarded to `GuiTextField.textboxKeyTyped(char, key)`. After forwarding, we read `getText()` and call `onChange` if the text changed. We always `cancel(event)` when an input is focused — this is what stops `e` from closing the inventory.
+
+The global chat-focus shortcut must not run while `GuiRepair` is open. Housing uses its native anvil rename field for typed values, so intercepting the chat key there steals that character before Minecraft can enter it.
 
 `tickAllFields()` calls `updateCursorCounter` on every field each tick (cursor blink); `applyFocus(focusedId)` syncs our focus state into each field's `setFocused`.
 

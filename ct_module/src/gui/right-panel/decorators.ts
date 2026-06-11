@@ -1,8 +1,11 @@
 /// <reference types="../../../CTAutocomplete" />
 
+import * as htsw from "htsw";
+
 import { ROW_BG_BY_STATE } from "../code-view/diffPalette";
-import { ensureSourceDiff } from "../code-view/sourceDiff";
+import { ensureSourceDiff, houseActionAt } from "../code-view/sourceDiff";
 import { focusLineIdForFile } from "./import-tab/focusedLine";
+import { htslLineToChatString } from "./syntax";
 import type { LineDecorations, LineDecorator, RenderableLine } from "../code-view/lineTypes";
 import {
     effectiveFocusActionPath,
@@ -17,6 +20,19 @@ const COLOR_GHOST_GRAY = 0xff444444 | 0;
 const COLOR_READ_FOCUS_ROW_BG = 0x5018365d | 0;
 const COLOR_APPLY_FOCUS_COLUMN_BG = 0xa067a7e8 | 0;
 
+function houseVersionHoverLines(path: string, actionPath: string): string[] | null {
+    const house = houseActionAt(path, actionPath);
+    if (house === null) return null;
+    let printed: string;
+    try {
+        printed = htsw.htsl.printAction(house);
+    } catch (_e) {
+        return null;
+    }
+    const firstLine = printed.split("\n")[0];
+    return ["&7In the house:", htslLineToChatString(firstLine)];
+}
+
 export function diffDecorator(path: string | null): LineDecorator {
     return {
         decorateLine(line: RenderableLine): LineDecorations {
@@ -25,6 +41,19 @@ export function diffDecorator(path: string | null): LineDecorator {
             if (overlay === undefined) return {};
             const state = overlay.get(line.actionPath);
             if (state === undefined) return {};
+            if (state === "edit") {
+                const actionPath = line.actionPath;
+                return {
+                    state,
+                    hoverLines: () => houseVersionHoverLines(path, actionPath),
+                };
+            }
+            if (state === "add") {
+                return {
+                    state,
+                    hoverLines: () => ["&7Not in the house — an import adds this."],
+                };
+            }
             return { state };
         },
         focusedLineId(): string | null {

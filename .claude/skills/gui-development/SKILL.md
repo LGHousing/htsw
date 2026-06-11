@@ -50,11 +50,13 @@ Parse cache service — `gui/parsing/` (a service, not "state"):
 Code-view data — `gui/code-view/` (the ONE renderer + everything it parses/colors):
 - `htslParse.ts` — `parseHtslFile` + `actionsToLines`, consumed by `lineModel.ts` for the source preview.
 - `diffPalette.ts` — the `DiffState` union + color tables (`COLOR_BY_STATE` / `ROW_BG_BY_STATE`) + `COLOR_CURSOR` (the focus-cursor color; the cursor is NOT a diff state). Shared vocabulary; holds no logic.
-- `sourceDiff.ts` — STATIC diff producer: per-action `DiffState` comparing source vs the import cache ("what would change vs last import"), for the View tab. Lazy, cached per file.
+- `sourceDiff.ts` — STATIC diff producer: per-action `DiffState` comparing source vs the import cache ("what would change vs last import"), for the View tab. Lazy, cached per file. Also `houseActionAt(filePath, actionPath)` — the cache's (house's) version of one action, backing the hover card on edited lines.
 - Diagnostic spans and formatted diagnostic blocks live in `src/diagnostics/`; chat and View-pane hover cards consume the same presentation.
 
+Code-view row hover: each row gets at most ONE hover card, built by `gui/diagnostics/hover.ts:offerLineHover` — the row's diagnostics (if any) followed by the decorator's `LineDecorations.hoverLines` (lazy callback, invoked only while hovered). Don't add a second hover path per row; merge into this one.
+
 Diff decorators — `gui/right-panel/decorators.ts` (kept OUT of `code-view/` so the renderer stays generic; the `LineDecorator` interface lives in `code-view/lineTypes.ts`):
-- `diffDecorator` — View tab; reads `sourceDiff`.
+- `diffDecorator` — View tab; reads `sourceDiff`. Supplies `hoverLines` on edit ("In the house: <printed action>") and add lines.
 - `progressDecorator` — live import strip; reads `import-tab/livePreview` (each `PreviewLine`'s own `diffState`/`completed`, plus the live cursor + phase scalars). There is no separate overlay map — `livePreview` is the single live store.
 
 Right-panel state — `gui/right-panel/`:

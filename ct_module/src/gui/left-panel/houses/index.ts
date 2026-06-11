@@ -577,6 +577,62 @@ function itemRow(
                 color: COLOR_TEXT,
                 style: { width: { kind: "grow" } },
             }),
+            interactive &&
+                t.run !== undefined &&
+                Container({
+                    style: {
+                        direction: "col",
+                        align: "center",
+                        justify: "center",
+                        width: { kind: "px", value: 16 },
+                        height: { kind: "grow" },
+                        hoverBackground: COLOR_BUTTON_HOVER,
+                    },
+                    onClick: (_rect, info) => {
+                        if (info.button !== 0 || info.isDoubleClickSecond) return;
+                        t.run?.(item.name);
+                    },
+                    children: [
+                        Icon({
+                            name: Icons.play,
+                            color: COLOR_TEXT_DIM,
+                            tooltip: "Run",
+                            tooltipColor: COLOR_TEXT_DIM,
+                            style: {
+                                width: { kind: "px", value: 12 },
+                                height: { kind: "px", value: 12 },
+                            },
+                        }),
+                    ],
+                }),
+            interactive &&
+                t.edit !== undefined &&
+                Container({
+                    style: {
+                        direction: "col",
+                        align: "center",
+                        justify: "center",
+                        width: { kind: "px", value: 16 },
+                        height: { kind: "grow" },
+                        hoverBackground: COLOR_BUTTON_HOVER,
+                    },
+                    onClick: (_rect, info) => {
+                        if (info.button !== 0 || info.isDoubleClickSecond) return;
+                        t.edit?.(item.name);
+                    },
+                    children: [
+                        Icon({
+                            name: Icons.pencil,
+                            color: COLOR_TEXT_DIM,
+                            tooltip: "Edit",
+                            tooltipColor: COLOR_TEXT_DIM,
+                            style: {
+                                width: { kind: "px", value: 12 },
+                                height: { kind: "px", value: 12 },
+                            },
+                        }),
+                    ],
+                }),
             Icon({
                 // Real drift vs your import.json: see DriftState. Needs a deep
                 // Read to tell in-sync from drifted (else "unread").

@@ -39,6 +39,11 @@ export type LineDecorations = {
     foregroundColor?: number;
     background?: number;
     detail?: string;
+    /**
+     * Extra hover-card lines (&-formatted) for this row, merged after any
+     * diagnostics. Lazy — only invoked while the row is actually hovered.
+     */
+    hoverLines?: () => readonly string[] | null;
     alpha?: number;
     isFocused?: boolean;
     extraLinesBefore?: { line: RenderableLine; decorations: LineDecorations }[];

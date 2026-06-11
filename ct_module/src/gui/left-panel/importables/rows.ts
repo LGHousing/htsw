@@ -28,6 +28,7 @@ import {
 } from "../../parsing/importablePaths";
 import { importableIdentity, importableKey } from "../../../importCache/paths";
 import { readImportableCache } from "../../../importCache/cache";
+import { canonicalIconItem } from "../../../importCache/hash";
 import { addToQueue, makeImportableQueueItem, queueItemKey, removeFromQueueKey } from "../../right-panel/import-tab/queue";
 import { isImportRunning } from "../../../housingSync/runtimeState";
 import { composeFileMenu, composeImportableMenu } from "../../menus/fileMenu";
@@ -126,7 +127,16 @@ export function metadataFieldsOf(imp: Importable): MetadataField[] {
                 key: "icon",
                 label: "Icon",
                 value: imp.icon !== undefined ? imp.icon.item : "default",
-                diff: cf !== null ? valDiff(imp.icon?.item, cf.icon?.item) : undefined,
+                // Compare in canonical form — house reads store bare item
+                // names while the loader emits `minecraft:<name>`; comparing
+                // raw strings would flag identical icons as changed.
+                diff:
+                    cf !== null
+                        ? valDiff(
+                              imp.icon !== undefined ? canonicalIconItem(imp.icon.item) : undefined,
+                              cf.icon !== undefined ? canonicalIconItem(cf.icon.item) : undefined
+                          )
+                        : undefined,
             },
         ];
         if (imp.icon !== undefined) {
@@ -134,7 +144,11 @@ export function metadataFieldsOf(imp: Importable): MetadataField[] {
                 key: "iconCount",
                 label: "Count",
                 value: imp.icon.count !== undefined ? String(imp.icon.count) : "1",
-                diff: cf !== null ? valDiff(imp.icon.count, cf?.icon?.count) : undefined,
+                // count 1 and absent count are the same icon.
+                diff:
+                    cf !== null
+                        ? valDiff(imp.icon.count ?? 1, cf.icon?.count ?? 1)
+                        : undefined,
             });
         }
         return fields;

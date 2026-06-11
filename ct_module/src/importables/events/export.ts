@@ -2,6 +2,7 @@ import type { Action, Event, ImportableEvent } from "htsw/types";
 import * as htsw from "htsw";
 
 import { readActionList } from "../../housingSync/actions/readList";
+import type { ProgressHandler } from "../../housingSync/progress/types";
 import {
     ItemCaptureRegistry,
     restoreInventoryToSnapshot,
@@ -23,6 +24,7 @@ export type ExportEventOptions = {
     htslPath: string;
     htslReference: string;
     rootDir: string;
+    onReadProgress?: ProgressHandler;
 };
 
 export type SharedExportState = {
@@ -33,14 +35,19 @@ export type SharedExportState = {
 async function readEvent(
     ctx: TaskContext,
     eventName: string,
-    itemCaptures?: ItemCaptureRegistry
+    itemCaptures?: ItemCaptureRegistry,
+    onReadProgress?: ProgressHandler
 ): Promise<Action[]> {
     await openEventEditor(ctx, eventName);
-    const observed = await readActionList(
-        ctx,
-        { kind: "full" },
-        itemCaptures !== undefined ? { itemCaptures } : undefined
-    );
+    const observed = await readActionList(ctx, { kind: "full" }, {
+        ...(itemCaptures !== undefined ? { itemCaptures } : {}),
+        ...(onReadProgress !== undefined
+            ? {
+                  progress: onReadProgress,
+                  phaseUnits: { setup: 0, reading: 0, hydrating: 0, applying: 0 },
+              }
+            : {}),
+    });
     return observedSlotsToActions(observed);
 }
 
@@ -101,7 +108,7 @@ export async function exportEventWithSharedState(
 ): Promise<void> {
     const { name, importJsonPath, htslPath, htslReference } = options;
 
-    const actions = await readEvent(ctx, name, shared.itemCaptures);
+    const actions = await readEvent(ctx, name, shared.itemCaptures, options.onReadProgress);
 
     const importable: ImportableEvent = {
         type: "EVENT",

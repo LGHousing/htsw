@@ -15,6 +15,7 @@ const ForgeKeyboardInputEventPre = javaType(
     "net.minecraftforge.client.event.GuiScreenEvent$KeyboardInputEvent$Pre"
 );
 const GuiScreenClass = javaType("net.minecraft.client.gui.GuiScreen");
+const GuiRepairClass = javaType("net.minecraft.client.gui.inventory.GuiRepair");
 const RenderGameOverlayEventPost = javaType(
     "net.minecraftforge.client.event.RenderGameOverlayEvent$Post"
 );
@@ -148,6 +149,13 @@ function laidOutTrees(): { root: Element; rect: Rect }[] {
         out.push({ root: activePanels[i].getRoot(), rect: activePanels[i].getBounds() });
     }
     return out;
+}
+
+function nativeScreenUsesTypedCharacters(): boolean {
+    const screen = (Client.getMinecraft() as any).field_71462_r;
+    return screen !== null &&
+        screen !== undefined &&
+        GuiRepairClass.class.isInstance(screen);
 }
 
 /**
@@ -473,7 +481,7 @@ export function initHtswGui(): void {
         // affordance; key is Minecraft's existing Open Chat binding.
         const chatKey = getChatKeyCode();
         if (focusedId === null && enabled && chatKey > 0 && keyCode === chatKey) {
-            if (getContainerBounds() !== null) {
+            if (getContainerBounds() !== null && !nativeScreenUsesTypedCharacters()) {
                 setFocusedInput(CHAT_INPUT_ID);
                 cancel(event);
             }

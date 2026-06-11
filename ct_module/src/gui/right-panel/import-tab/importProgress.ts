@@ -76,12 +76,26 @@ export function getImportProgress(): ImportProgress | null {
  * progress strip + queue summary share one UI; this only swaps the
  * user-facing verb so an export run doesn't read "Importable N of M".
  */
-let sessionVerb: "import" | "export" = "import";
-export function getSessionVerb(): "import" | "export" {
+export type SessionVerb = "import" | "export" | "read";
+let sessionVerb: SessionVerb = "import";
+export function getSessionVerb(): SessionVerb {
     return sessionVerb;
 }
-export function setSessionVerb(v: "import" | "export"): void {
+export function setSessionVerb(v: SessionVerb): void {
     sessionVerb = v;
+}
+
+/**
+ * True when the session's per-item unit sizes are pure fallbacks (no cached
+ * or source content to size from), so the displayed ETA is a rough guess.
+ * Set by the export sink at session start; reset when a new session begins.
+ */
+let etaRough = false;
+export function isEtaRough(): boolean {
+    return etaRough;
+}
+export function setEtaRough(v: boolean): void {
+    etaRough = v;
 }
 
 /** Display name of the importable currently being processed, or null when idle. */
@@ -173,11 +187,15 @@ export function setImportProgress(p: ImportProgress | null): void {
         etaCalc = createEtaCalculator();
         resetSessionTiming();
         lastFinishedProgress = null;
+        // Session defaults — reset at START, not at clear: the queue keeps
+        // rendering `lastFinishedProgress` for a confirmation window after a
+        // run, and resetting the verb on clear would mislabel those rows.
+        sessionVerb = "import";
+        etaRough = false;
     } else if (p === null) {
         lastFinishedProgress = importProgress;
         importStartedAt = null;
         etaCalc = null;
-        sessionVerb = "import";
     }
     importProgress = p === null ? null : normalizeImportProgress(p);
     onImportRunningChanged(!wasNull, p !== null);

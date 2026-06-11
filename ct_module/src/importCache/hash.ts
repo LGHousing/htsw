@@ -168,6 +168,8 @@ export function importableHash(importable: Importable): string {
                 slotParts.push(menuSlotCanonical(value[si] as Record<string, unknown>));
             }
             serialized = "[" + slotParts.join(",") + "]";
+        } else if (key === "icon" && value !== null && typeof value === "object") {
+            serialized = iconCanonical(value as { item: string; count?: number });
         } else {
             serialized = stableStringify(value);
         }
@@ -176,6 +178,20 @@ export function importableHash(importable: Importable): string {
     }
     const str = "{" + parts.join(",") + "}";
     return hashHex(str);
+}
+
+// The loader emits icons as `minecraft:<lowercase>` while a GUI read stores
+// the bare item name (and `functionIconFromSnapshot` drops count === 1), so
+// hash the icon in the loader's canonical form to keep both dialects equal.
+export function canonicalIconItem(item: string): string {
+    const lower = item.toLowerCase();
+    return lower.startsWith("minecraft:") ? lower : `minecraft:${lower}`;
+}
+
+function iconCanonical(icon: { item: string; count?: number }): string {
+    const norm: Record<string, unknown> = { item: canonicalIconItem(icon.item) };
+    if (icon.count !== undefined && icon.count !== 1) norm.count = icon.count;
+    return stableStringify(norm);
 }
 
 function actionListCanonical(actions: readonly Action[]): string {

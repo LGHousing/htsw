@@ -84,6 +84,7 @@ Lives in `ct_module/src/importer/`. Reads and writes real Housing menus through 
 - Field setters short-circuit on a matching value, so a writer is safe to re-run without per-field guards.
 - Nested-list action types (CONDITIONAL, RANDOM, …) need an explicit `read` in their spec — lore alone is insufficient and the importer throws if it's missing. Sync hydrates nested lists selectively (shallow, then `createNestedHydrationPlan`); export always reads full.
 - `previewHandler` is the one preview/progress path — don't add a second diff/progress callback unless something actually needs it.
+- The progress reducer (`housingSync/progress/reducer.ts`) is the only builder of `ImportProgress` snapshots. Export/read progress adapts into `ImportEvent`s via `createExportProgressSink` and runs through that same reducer — never hand-build `ImportProgress` literals for a new flow. Exporters that swallow per-item errors must call the sink's `itemFailed`, or the failed row renders as success.
 - Don't casually change `normalizeActionCompare` / `normalizeConditionCompare` — it shifts the result of every diff.
 - `waitForMenu` keys on `S30PacketWindowItems` + a tracked window ID, then waits one tick: MC applies window data on the main thread *after* the packet.
 - Notes live on list items, not inside editors.

@@ -30,6 +30,34 @@ const COLOR_COMMENT = 0xff707070 | 0;
 
 export type SyntaxToken = { text: string; color: number };
 
+// Nearest chat color code per token color, for surfaces that render plain
+// &-coded strings (hover cards) instead of Text elements.
+const CHAT_CODE_BY_COLOR = new Map<number, string>([
+    [COLOR_DEFAULT, "&f"],
+    [COLOR_KEYWORD, "&b"],
+    [COLOR_TYPE, "&d"],
+    [COLOR_NUMBER, "&6"],
+    [COLOR_STRING, "&a"],
+    [COLOR_VAR_REF, "&3"],
+    [COLOR_OPERATOR, "&7"],
+    [COLOR_COMMENT, "&8"],
+]);
+
+export function htslLineToChatString(line: string): string {
+    const tokens = tokenizeHtsl(line);
+    let out = "";
+    let lastCode = "";
+    for (const token of tokens) {
+        const code = CHAT_CODE_BY_COLOR.get(token.color) ?? "&f";
+        if (code !== lastCode) {
+            out += code;
+            lastCode = code;
+        }
+        out += token.text;
+    }
+    return out;
+}
+
 // Storage-class style — these introduce variable bindings.
 const TYPE_WORDS: { [k: string]: true } = {
     globalvar: true,

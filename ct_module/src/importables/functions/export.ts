@@ -2,6 +2,7 @@ import type { Action, ImportableFunction } from "htsw/types";
 import * as htsw from "htsw";
 
 import { readActionList } from "../../housingSync/actions/readList";
+import type { ProgressHandler } from "../../housingSync/progress/types";
 import { clickGoBack } from "../../housingSync/gui/menuUtils";
 import {
     ItemCaptureRegistry,
@@ -30,6 +31,7 @@ export type ExportFunctionOptions = {
     htslPath: string;
     htslReference: string;
     rootDir: string;
+    onReadProgress?: ProgressHandler;
 };
 
 export type SharedExportState = {
@@ -40,17 +42,24 @@ export type SharedExportState = {
 async function readFunction(
     ctx: TaskContext,
     name: string,
-    itemCaptures?: ItemCaptureRegistry
+    itemCaptures?: ItemCaptureRegistry,
+    onReadProgress?: ProgressHandler
 ): Promise<{ actions: Action[]; repeatTicks?: number }> {
     if ((await openFunctionEditor(ctx, name)) === "missing") {
         throw new Error(`No function named "${name}" exists in this housing.`);
     }
 
-    const observed = await readActionList(
-        ctx,
-        { kind: "full" },
-        itemCaptures !== undefined ? { itemCaptures } : undefined
-    );
+    const observed = await readActionList(ctx, { kind: "full" }, {
+        ...(itemCaptures !== undefined ? { itemCaptures } : {}),
+        ...(onReadProgress !== undefined
+            ? {
+                  progress: onReadProgress,
+                  // Mutable scratch readActionList fills in as pages/nested
+                  // lists are discovered; fresh per call.
+                  phaseUnits: { setup: 0, reading: 0, hydrating: 0, applying: 0 },
+              }
+            : {}),
+    });
     const actions = observedSlotsToActions(observed);
 
     await clickGoBack(ctx);
@@ -72,11 +81,12 @@ async function readFunction(
 export async function readFunctionImportable(
     ctx: TaskContext,
     name: string,
-    itemCaptures?: ItemCaptureRegistry
+    itemCaptures?: ItemCaptureRegistry,
+    onReadProgress?: ProgressHandler
 ): Promise<ImportableFunction> {
     // The icon lives on the /functions list slot, not the editor — read it first.
     const icon = functionIconFromSnapshot(await getSessionFunctionIcon(ctx, name));
-    const { actions, repeatTicks } = await readFunction(ctx, name, itemCaptures);
+    const { actions, repeatTicks } = await readFunction(ctx, name, itemCaptures, onReadProgress);
     return {
         type: "FUNCTION",
         name,
@@ -148,7 +158,12 @@ export async function exportFunctionWithSharedState(
 ): Promise<void> {
     const { name, importJsonPath, htslPath, htslReference } = options;
 
-    const importable = await readFunctionImportable(ctx, name, shared.itemCaptures);
+    const importable = await readFunctionImportable(
+        ctx,
+        name,
+        shared.itemCaptures,
+        options.onReadProgress
+    );
     const actions = importable.actions ?? [];
     const repeatTicks = importable.repeatTicks;
     const icon = importable.icon;

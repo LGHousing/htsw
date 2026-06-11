@@ -51,10 +51,19 @@ async function exportAllMenusInner(
             options.progress?.item(i, name);
             ctx.displayMessage(`&7[${i + 1}/${names.length}] &fExporting '${name}'`);
 
+            const sink = options.progress;
             try {
                 await exportMenu(
                     ctx,
-                    { name, importJsonPath, rootDir },
+                    {
+                        name,
+                        importJsonPath,
+                        rootDir,
+                        onReadProgress:
+                            sink?.itemProgress === undefined
+                                ? undefined
+                                : (payload) => sink.itemProgress!(i, payload),
+                    },
                     { itemCaptures, writtenItems }
                 );
                 succeeded++;
@@ -63,6 +72,7 @@ async function exportAllMenusInner(
                     throw error;
                 }
                 failed++;
+                sink?.itemFailed?.(i, String(error));
                 ctx.displayMessage(`&c[export-all] failed on '${name}': ${error}`);
             }
         }

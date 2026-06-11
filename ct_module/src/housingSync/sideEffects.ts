@@ -7,9 +7,10 @@ import type TaskContext from "../tasks/context";
  *   - Auto-run /gmc at import start (housing edits need creative).
  *   - Play random.levelup once on success as an "import done" cue.
  *
- * Sound muting lives in overlay.ts's `soundPlay` handler, which gates on the
- * `isImportSoundsMuted()` toggle. Don't add a second handler here — it would
- * cancel unconditionally and make the toggle a no-op.
+ * Muting: overlay.ts's `soundPlay` handler suppresses GAME sounds while import
+ * progress is live; it cannot cover this success cue (fired at completion, when
+ * progress may already be cleared), so the caller gates the call on
+ * `isImportSoundsMuted()` directly.
  */
 
 export function gmcOnImportStart(): void {

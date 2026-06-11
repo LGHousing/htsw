@@ -117,6 +117,22 @@ export function seedImportableHash(importable: Importable, hash: string): void {
     });
 }
 
+// Recompute the entry's hash instead of trusting the stored `entry.hash`:
+// a stored hash freezes the hash function's behavior at write time, so any
+// later normalization change would mark every old entry "modified" forever.
+// Memoized per entry object — `readImportableCache` returns the same object
+// until the file is rewritten, at which point the WeakMap entry just drops.
+const entryHashCache = new WeakMap<ImportableCacheEntry, string>();
+
+export function cacheEntryHash(entry: ImportableCacheEntry): string {
+    let hash = entryHashCache.get(entry);
+    if (hash === undefined) {
+        hash = importableHash(entry.importable);
+        entryHashCache.set(entry, hash);
+    }
+    return hash;
+}
+
 export function buildCacheStatusRow(
     housingUuid: string,
     importable: Importable
@@ -125,7 +141,11 @@ export function buildCacheStatusRow(
     const hash = memoizedImportableHash(importable);
     const entry = readImportableCache(housingUuid, importable.type, identity);
     const state =
-        entry === null ? "unknown" : entry.hash === hash ? "current" : "modified";
+        entry === null
+            ? "unknown"
+            : cacheEntryHash(entry) === hash
+              ? "current"
+              : "modified";
     return { importable, identity, hash, state, entry };
 }
 

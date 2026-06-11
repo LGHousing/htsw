@@ -86,7 +86,7 @@ export const HOUSE_CONTENT_TYPES: HouseContentType[] = [
         edit: (name) => ChatLib.command(`function edit ${name}`),
         remove: (name) => ChatLib.command(`function delete ${name}`),
         run: (name) => ChatLib.command(`function run ${name}`),
-        export: exportHook({ label: "function", exportAll: exportAllFunctions }),
+        export: exportHook({ type: "FUNCTION", label: "function", exportAll: exportAllFunctions }),
     },
     {
         // Events are a fixed enumerated set — no per-name edit command and no
@@ -98,7 +98,7 @@ export const HOUSE_CONTENT_TYPES: HouseContentType[] = [
         scanned: houseEventsScanned,
         scan: scanHouseEvents,
         scanInFlight: isEventScanInFlight,
-        export: exportHook({ label: "event", exportAll: exportAllEvents }),
+        export: exportHook({ type: "EVENT", label: "event", exportAll: exportAllEvents }),
     },
     {
         type: "MENU",
@@ -109,7 +109,7 @@ export const HOUSE_CONTENT_TYPES: HouseContentType[] = [
         scan: scanHouseMenus,
         scanInFlight: isMenuScanInFlight,
         edit: (name) => ChatLib.command(`menu edit ${name}`),
-        export: exportHook({ label: "menu", exportAll: exportAllMenus }),
+        export: exportHook({ type: "MENU", label: "menu", exportAll: exportAllMenus }),
     },
     {
         // Browse + edit only: there's no region exporter (reading bounds is the

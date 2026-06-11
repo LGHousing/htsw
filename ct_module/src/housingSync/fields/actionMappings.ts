@@ -485,6 +485,19 @@ export function tryGetActionTypeFromDisplayName(
     return undefined;
 }
 
+// The GUI lore shows hotbar/inventory slots as labels ("Hotbar Slot 5"), but
+// the AST convention (set by the htsl parser) stores them as raw indices
+// (hotbar N → N-1, inventory N → N+8). Convert at the read boundary so house
+// reads and parsed source agree — the htsl printer rejects the label strings.
+function canonicalInventorySlot(value: string): string | number {
+    const hotbar = value.match(/^Hotbar Slot ([1-9])$/i);
+    if (hotbar !== null) return Number(hotbar[1]) - 1;
+    const inventory = value.match(/^Inventory Slot ([1-9]|1[0-9]|2[0-7])$/i);
+    if (inventory !== null) return Number(inventory[1]) + 8;
+    if (/^-?\d+$/.test(value)) return Number(value);
+    return value;
+}
+
 export function parseActionListItem(slot: ItemSlot, type: Action["type"]): Action {
     const note = readListItemNote(slot);
     const commonFields = note === undefined ? {} : { note };
@@ -495,6 +508,10 @@ export function parseActionListItem(slot: ItemSlot, type: Action["type"]): Actio
         ...commonFields,
         ...parseLoreFields(slot, mapping.loreFields),
     } as Action;
+
+    if (action.type === "GIVE_ITEM" && typeof action.slot === "string") {
+        (action as Record<string, unknown>).slot = canonicalInventorySlot(action.slot);
+    }
 
     if (action.type === "CHANGE_VAR") {
         const holder = parseHolderField(slot, (action as Record<string, unknown>).holder);
