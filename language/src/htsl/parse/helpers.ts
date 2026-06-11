@@ -167,11 +167,12 @@ export const OPERATION_SYMBOLS: {
     Decrement: "-=",
     Multiply: "*=",
     Divide: "/=",
-    "Shift Left": "<<=",
-    "Shift Right": ">>=",
-    "And Assign": "&=",
-    "Or Assign": "|=",
-    "Xor Assign": "^=",
+    "Left Shift": "<<=",
+    "Arithmetic Right Shift": ">>=",
+    "Logical Right Shift": ">>>=",
+    "Bitwise AND": "&=",
+    "Bitwise OR": "|=",
+    "Bitwise XOR": "^=",
     Unset: "unset"
 };
 

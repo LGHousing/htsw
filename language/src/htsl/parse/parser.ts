@@ -1,5 +1,5 @@
 import { partialEq } from "../../helpers";
-import { type Lexer } from "./lexer";
+import type { Lexer } from "./lexer";
 import {
     type CloseDelimKind,
     type Delimiter,
@@ -21,21 +21,6 @@ import type { GlobalCtxt } from "../../context";
 
 function normalizeNumberLiteral(value: string): string {
     return value.replaceAll("_", "");
-}
-
-function normalizeOption(value: string): string {
-    return value.replaceAll(" ", "").replaceAll("_", "").toLowerCase();
-}
-
-const normalizedOptionsCache = new WeakMap<readonly string[], string[]>();
-
-function getNormalizedOptions(options: readonly string[]): string[] {
-    let cached = normalizedOptionsCache.get(options);
-    if (cached === undefined) {
-        cached = options.map(normalizeOption);
-        normalizedOptionsCache.set(options, cached);
-    }
-    return cached;
 }
 
 export class Parser {
@@ -150,47 +135,50 @@ export class Parser {
         options: readonly T[],
         errorTerms?: { singular: string, plural: string },
     ): T {
-        const normalizedOptions = getNormalizedOptions(options);
+        const normalize = (value: string) =>
+            value.replaceAll(" ", "").replaceAll("_", "").toLowerCase();
+
+        for (const option of options) {
+            if (
+                this.check("ident") &&
+                normalize((this.token as IdentKind).value) === normalize(option)
+            ) {
+                this.next();
+                return option;
+            }
+        }
+
+        const err = Diagnostic.error(`Expected ${errorTerms?.singular ?? "option"}`)
+            .addPrimarySpan(this.token.span);
+
+        function addHelp(message: string) {
+            err.addSubDiagnostic(Diagnostic.help(message));
+        }
 
         if (this.check("ident")) {
-            const tokenNorm = normalizeOption((this.token as IdentKind).value);
-            for (let i = 0; i < options.length; i++) {
-                if (normalizedOptions[i] === tokenNorm) {
-                    this.next();
-                    return options[i];
-                }
-            }
 
-            const err = Diagnostic.error(`Expected ${errorTerms?.singular ?? "option"}`)
-                .addPrimarySpan(this.token.span);
-            err.addSubDiagnostic(
-                Diagnostic.help(`Valid ${errorTerms?.plural ?? "options"} are:`)
-            );
+            addHelp(`Valid ${errorTerms?.plural ?? "options"} are:`)
 
             const optionsToDisplay = Math.min(5, options.length);
             for (let i = 0; i < optionsToDisplay; i++) {
-                err.addSubDiagnostic(Diagnostic.help(`  ${options[i].replaceAll(" ", "_")}`));
+                addHelp(`  ${options[i].replaceAll(" ", "_")}`);
             }
 
             if (options.length > 5) {
-                err.addSubDiagnostic(Diagnostic.help(`And ${options.length - 5} others`));
+                addHelp(`And ${options.length - 5} others`);
             }
-
-            throw err;
         }
 
-        if (this.check("str")) {
-            const tokenNorm = normalizeOption((this.token as StrKind).value);
-            for (let i = 0; i < options.length; i++) {
-                if (normalizedOptions[i] === tokenNorm) {
+        else if (this.check("str")) {
+            for (const option of options) {
+                if (normalize((this.token as StrKind).value) === normalize(option)) {
                     this.next();
-                    return options[i];
+                    return option;
                 }
             }
         }
 
-        throw Diagnostic.error(`Expected ${errorTerms?.singular ?? "option"}`)
-            .addPrimarySpan(this.token.span);
+        throw err;
     }
     
     parseDocComment(): string {

@@ -65,41 +65,11 @@ function setConditionMeta<T extends { inverted?: boolean; note?: string }>(
     }
 }
 
-type ConditionParser = (p: Parser, inverted: Inverted, note: Note) => Condition;
-
-const CONDITION_PARSER_ENTRIES: [ConditionKw, ConditionParser][] = [
-    ["hasGroup", parseConditionRequireGroup],
-    ["var", parseConditionCompareVar],
-    ["stat", parseConditionCompareVar],
-    ["globalvar", parseConditionCompareGlobalVar],
-    ["globalstat", parseConditionCompareGlobalVar],
-    ["hasPermission", parseConditionRequirePermission],
-    ["inRegion", parseConditionIsInRegion],
-    ["hasItem", parseConditionRequireItem],
-    ["doingParkour", (p, inv, note) => parseSimpleCondition(p, "IS_DOING_PARKOUR", inv, note)],
-    ["hasPotion", parseConditionRequirePotionEffect],
-    ["isItem", parseConditionIsItem],
-    ["isSneaking", (p, inv, note) => parseSimpleCondition(p, "IS_SNEAKING", inv, note)],
-    ["isFlying", (p, inv, note) => parseSimpleCondition(p, "IS_FLYING", inv, note)],
-    ["health", parseConditionCompareHealth],
-    ["maxHealth", parseConditionCompareMaxHealth],
-    ["hunger", parseConditionCompareHunger],
-    ["portal", parseConditionPortalType],
-    ["canPvp", (p, inv, note) => parseSimpleCondition(p, "PVP_ENABLED", inv, note)],
-    ["gamemode", parseConditionRequireGamemode],
-    ["placeholder", parseConditionComparePlaceholder],
-    ["hasTeam", parseConditionRequireTeam],
-    ["teamvar", parseConditionCompareTeamVar],
-    ["teamstat", parseConditionCompareTeamVar],
-    ["blockType", parseConditionBlockType],
-    ["damageAmount", parseConditionCompareDamage],
-    ["damageCause", parseConditionDamageCause],
-    ["fishingEnv", parseConditionFishingEnvironment],
-];
-
-const CONDITION_PARSERS = new Map<string, ConditionParser>(CONDITION_PARSER_ENTRIES);
-
 export function parseCondition(p: Parser): Condition {
+    function eatKw(kw: ConditionKw): boolean {
+        return p.eatIdent(kw);
+    }
+
     let note: Note;
     if (p.check("doc_comment")) {
         note = p.spanned(p.parseDocComment);
@@ -108,17 +78,61 @@ export function parseCondition(p: Parser): Condition {
 
     const inverted: Inverted = p.spanned(() => p.eat("exclamation"));
 
-    const tok = p.token;
-    if (tok.kind === "ident") {
-        const handler = CONDITION_PARSERS.get(tok.value);
-        if (handler !== undefined) {
-            p.next();
-            return handler(p, inverted, note);
-        }
-        throw Diagnostic.error("Unknown condition").addPrimarySpan(tok.span);
+    if (eatKw("hasGroup")) {
+        return parseConditionRequireGroup(p, inverted, note);
+    } else if (eatKw("var") || eatKw("stat")) {
+        return parseConditionCompareVar(p, inverted, note);
+    } else if (eatKw("globalvar") || eatKw("globalstat")) {
+        return parseConditionCompareGlobalVar(p, inverted, note);
+    } else if (eatKw("hasPermission")) {
+        return parseConditionRequirePermission(p, inverted, note);
+    } else if (eatKw("inRegion")) {
+        return parseConditionIsInRegion(p, inverted, note);
+    } else if (eatKw("hasItem")) {
+        return parseConditionRequireItem(p, inverted, note);
+    } else if (eatKw("doingParkour")) {
+        return parseSimpleCondition(p, "IS_DOING_PARKOUR", inverted, note);
+    } else if (eatKw("hasPotion")) {
+        return parseConditionRequirePotionEffect(p, inverted, note);
+    } else if (eatKw("isItem")) {
+        return parseConditionIsItem(p, inverted, note);
+    } else if (eatKw("isSneaking")) {
+        return parseSimpleCondition(p, "IS_SNEAKING", inverted, note);
+    } else if (eatKw("isFlying")) {
+        return parseSimpleCondition(p, "IS_FLYING", inverted, note);
+    } else if (eatKw("health")) {
+        return parseConditionCompareHealth(p, inverted, note);
+    } else if (eatKw("maxHealth")) {
+        return parseConditionCompareMaxHealth(p, inverted, note);
+    } else if (eatKw("hunger")) {
+        return parseConditionCompareHunger(p, inverted, note);
+    } else if (eatKw("portal")) {
+        return parseConditionPortalType(p, inverted, note);
+    } else if (eatKw("canPvp")) {
+        return parseSimpleCondition(p, "PVP_ENABLED", inverted, note);
+    } else if (eatKw("gamemode")) {
+        return parseConditionRequireGamemode(p, inverted, note);
+    } else if (eatKw("placeholder")) {
+        return parseConditionComparePlaceholder(p, inverted, note);
+    } else if (eatKw("hasTeam")) {
+        return parseConditionRequireTeam(p, inverted, note);
+    } else if (eatKw("teamvar") || eatKw("teamstat")) {
+        return parseConditionCompareTeamVar(p, inverted, note);
+    } else if (eatKw("blockType")) {
+        return parseConditionBlockType(p, inverted, note);
+    } else if (eatKw("damageAmount")) {
+        return parseConditionCompareDamage(p, inverted, note);
+    } else if (eatKw("damageCause")) {
+        return parseConditionDamageCause(p, inverted, note);
+    } else if (eatKw("fishingEnv")) {
+        return parseConditionFishingEnvironment(p, inverted, note);
     }
 
-    throw Diagnostic.error("Expected condition").addPrimarySpan(p.token.span);
+    if (p.check("ident")) {
+        throw Diagnostic.error("Unknown condition").addPrimarySpan(p.token.span);
+    } else {
+        throw Diagnostic.error("Expected condition").addPrimarySpan(p.token.span);
+    }
 }
 
 function parseSimpleCondition<T extends Condition["type"]>(

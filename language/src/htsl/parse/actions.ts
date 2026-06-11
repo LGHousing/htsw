@@ -53,75 +53,107 @@ function setNote<T extends { note?: string }>(p: Parser, node: T, note: Note) {
     setFieldWithSpan(p, node, "note", note.value.trim(), note.span);
 }
 
-type ActionParser = (p: Parser, note: Note) => Action;
-
-const ACTION_PARSER_ENTRIES: [ActionKw, ActionParser][] = [
-    ["actionBar", parseActionActionBar],
-    ["applyLayout", parseActionApplyInventoryLayout],
-    ["applyPotion", parseActionApplyPotionEffect],
-    ["cancelEvent", (p, note) => parseSimpleAction(p, "CANCEL_EVENT", note)],
-    ["changeHealth", parseActionChangeHealth],
-    ["changePlayerGroup", parseActionSetGroup],
-    ["changeVelocity", parseActionSetVelocity],
-    ["chat", parseActionMessage],
-    ["clearEffects", (p, note) => parseSimpleAction(p, "CLEAR_POTION_EFFECTS", note)],
-    ["closeMenu", (p, note) => parseSimpleAction(p, "CLOSE_MENU", note)],
-    ["compassTarget", parseActionSetCompassTarget],
-    ["displayMenu", parseActionDisplayMenu],
-    ["dropItem", parseActionDropItem],
-    ["enchant", parseActionEnchantHeldItem],
-    ["exit", (p, note) => parseSimpleAction(p, "EXIT", note)],
-    ["failParkour", parseActionFailParkour],
-    ["fullHeal", (p, note) => parseSimpleAction(p, "HEAL", note)],
-    ["parkCheck", (p, note) => parseSimpleAction(p, "PARKOUR_CHECKPOINT", note)],
-    ["function", parseActionFunction],
-    ["gamemode", parseActionSetGamemode],
-    ["giveItem", parseActionGiveItem],
-    ["globalvar", parseActionChangeGlobalVar],
-    ["globalstat", parseActionChangeGlobalVar],
-    ["hungerLevel", parseActionChangeHunger],
-    ["if", parseActionConditional],
-    ["kill", (p, note) => parseSimpleAction(p, "KILL", note)],
-    ["launchTarget", parseActionLaunch],
-    ["lobby", parseActionSendToLobby],
-    ["maxHealth", parseActionChangeMaxHealth],
-    ["pause", parseActionPause],
-    ["random", parseActionRandom],
-    ["removeItem", parseActionRemoveItem],
-    ["resetInventory", (p, note) => parseSimpleAction(p, "RESET_INVENTORY", note)],
-    ["setTeam", parseActionSetTeam],
-    ["sound", parseActionPlaySound],
-    ["teamvar", parseActionChangeTeamVar],
-    ["teamstat", parseActionChangeTeamVar],
-    ["title", parseActionTitle],
-    ["tp", parseActionTeleport],
-    ["consumeItem", (p, note) => parseSimpleAction(p, "USE_HELD_ITEM", note)],
-    ["var", parseActionChangeVar],
-    ["stat", parseActionChangeVar],
-    ["playerWeather", parseActionSetPlayerWeather],
-    ["playerTime", parseActionSetPlayerTime],
-    ["displayNametag", parseActionToggleNametagDisplay],
-    ["xpLevel", parseActionGiveExperienceLevels],
-];
-
-const ACTION_PARSERS = new Map<string, ActionParser>(ACTION_PARSER_ENTRIES);
-
 export function parseAction(p: Parser): Action {
+    function eatKw(kw: ActionKw): boolean {
+        return p.eatIdent(kw);
+    }
+
     let note: Note;
     if (p.check("doc_comment")) {
         note = p.spanned(p.parseDocComment);
         p.eat("eol");
     }
 
-    const tok = p.token;
-    if (tok.kind === "ident") {
-        const handler = ACTION_PARSERS.get(tok.value);
-        if (handler !== undefined) {
-            p.next();
-            return handler(p, note);
-        }
+    if (eatKw("actionBar")) {
+        return parseActionActionBar(p, note);
+    } else if (eatKw("applyLayout")) {
+        return parseActionApplyInventoryLayout(p, note);
+    } else if (eatKw("applyPotion")) {
+        return parseActionApplyPotionEffect(p, note);
+    } else if (eatKw("cancelEvent")) {
+        return parseSimpleAction(p, "CANCEL_EVENT", note);
+    } else if (eatKw("changeHealth")) {
+        return parseActionChangeHealth(p, note);
+    } else if (eatKw("changePlayerGroup")) {
+        return parseActionSetGroup(p, note);
+    } else if (eatKw("changeVelocity")) {
+        return parseActionSetVelocity(p, note);
+    } else if (eatKw("chat")) {
+        return parseActionMessage(p, note);
+    } else if (eatKw("clearEffects")) {
+        return parseSimpleAction(p, "CLEAR_POTION_EFFECTS", note);
+    } else if (eatKw("closeMenu")) {
+        return parseSimpleAction(p, "CLOSE_MENU", note);
+    } else if (eatKw("compassTarget")) {
+        return parseActionSetCompassTarget(p, note);
+    } else if (eatKw("displayMenu")) {
+        return parseActionDisplayMenu(p, note);
+    } else if (eatKw("dropItem")) {
+        return parseActionDropItem(p, note);
+    } else if (eatKw("enchant")) {
+        return parseActionEnchantHeldItem(p, note);
+    } else if (eatKw("exit")) {
+        return parseSimpleAction(p, "EXIT", note);
+    } else if (eatKw("failParkour")) {
+        return parseActionFailParkour(p, note);
+    } else if (eatKw("fullHeal")) {
+        return parseSimpleAction(p, "HEAL", note);
+    } else if (eatKw("parkCheck")) {
+        return parseSimpleAction(p, "PARKOUR_CHECKPOINT", note);
+    } else if (eatKw("function")) {
+        return parseActionFunction(p, note);
+    } else if (eatKw("gamemode")) {
+        return parseActionSetGamemode(p, note);
+    } else if (eatKw("giveItem")) {
+        return parseActionGiveItem(p, note);
+    } else if (eatKw("globalvar") || eatKw("globalstat")) {
+        return parseActionChangeGlobalVar(p, note);
+    } else if (eatKw("hungerLevel")) {
+        return parseActionChangeHunger(p, note);
+    } else if (eatKw("if")) {
+        return parseActionConditional(p, note);
+    } else if (eatKw("kill")) {
+        return parseSimpleAction(p, "KILL", note);
+    } else if (eatKw("launchTarget")) {
+        return parseActionLaunch(p, note);
+    } else if (eatKw("lobby")) {
+        return parseActionSendToLobby(p, note);
+    } else if (eatKw("maxHealth")) {
+        return parseActionChangeMaxHealth(p, note);
+    } else if (eatKw("pause")) {
+        return parseActionPause(p, note);
+    } else if (eatKw("random")) {
+        return parseActionRandom(p, note);
+    } else if (eatKw("removeItem")) {
+        return parseActionRemoveItem(p, note);
+    } else if (eatKw("resetInventory")) {
+        return parseSimpleAction(p, "RESET_INVENTORY", note);
+    } else if (eatKw("setTeam")) {
+        return parseActionSetTeam(p, note);
+    } else if (eatKw("sound")) {
+        return parseActionPlaySound(p, note);
+    } else if (eatKw("teamvar") || eatKw("teamstat")) {
+        return parseActionChangeTeamVar(p, note);
+    } else if (eatKw("title")) {
+        return parseActionTitle(p, note);
+    } else if (eatKw("tp")) {
+        return parseActionTeleport(p, note);
+    } else if (eatKw("consumeItem")) {
+        return parseSimpleAction(p, "USE_HELD_ITEM", note);
+    } else if (eatKw("var") || eatKw("stat")) {
+        return parseActionChangeVar(p, note);
+    } else if (eatKw("playerWeather")) {
+        return parseActionSetPlayerWeather(p, note);
+    } else if (eatKw("playerTime")) {
+        return parseActionSetPlayerTime(p, note);
+    } else if (eatKw("displayNametag")) {
+        return parseActionToggleNametagDisplay(p, note);
+    } else if (eatKw("xpLevel")) {
+        return parseActionGiveExperienceLevels(p, note);
+    }
 
-        const err = Diagnostic.error("Unknown action").addPrimarySpan(tok.span);
+    if (p.check("ident")) {
+        const err = Diagnostic.error("Unknown action").addPrimarySpan(p.token.span);
 
         if (p.eatIdent("goto")) {
             err.addSubDiagnostic(
@@ -316,12 +348,8 @@ function parseActionDropItem(p: Parser, note: Note): Action {
     return parseActionRecovering(p, "DROP_ITEM", note, (action) => {
         setField(p, action, "itemName", p.parseName);
         if (p.checkEol()) return;
-        if (p.eatIdent("null") || p.eatString("null")) {
-            if (p.checkEol()) return;
-        } else {
-            setField(p, action, "location", parseLocation);
-            if (p.checkEol()) return;
-        }
+        setField(p, action, "location", parseLocation);
+        if (p.checkEol()) return;
         setField(p, action, "dropNaturally", p.parseBoolean);
         if (p.checkEol()) return;
         setField(p, action, "disableMerging", p.parseBoolean);

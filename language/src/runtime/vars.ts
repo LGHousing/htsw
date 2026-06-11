@@ -48,15 +48,17 @@ export class VarLong implements Var<Long> {
                 return new VarLong(this.value.mul(other.value));
             case "Divide":
                 return new VarLong(this.value.div(other.value));
-            case "Shift Left":
+            case "Left Shift":
                 return new VarLong(this.value.shl(other.value));
-            case "Shift Right":
+            case "Arithmetic Right Shift":
                 return new VarLong(this.value.shr(other.value));
-            case "And Assign":
+            case "Logical Right Shift":
+                return new VarLong(this.value.shru(other.value));
+            case "Bitwise AND":
                 return new VarLong(this.value.and(other.value));
-            case "Or Assign":
+            case "Bitwise OR":
                 return new VarLong(this.value.or(other.value));
-            case "Xor Assign":
+            case "Bitwise XOR":
                 return new VarLong(this.value.xor(other.value));
             case "Unset":
                 throw new Error("Unset operation should not run as binOp");
@@ -64,6 +66,7 @@ export class VarLong implements Var<Long> {
     }
 
     cmpOp(other: Var<any>, op: Comparison): boolean {
+        if (other instanceof VarString) return false;
         switch (op) {
             case "Equal":
                 return this.value.eq(other.value);
@@ -340,8 +343,11 @@ export function formatNumber(number: string): string {
 }
 
 export function isLong(value: string): boolean {
-    if (!value) return false;
-    return value == Long.fromString(value).toString();
+    try {
+        return value == Long.fromString(value).toString();
+    } catch {
+        return false;
+    }
 }
 
 export function parseLong(value: string): Long {

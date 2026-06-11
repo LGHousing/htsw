@@ -49,7 +49,7 @@ export type UnknownKind = { kind: "unknown"; value: string };
 
 export type Delimiter = "parenthesis" | "brace" | "bracket";
 
-export type BinOp = "plus" | "minus" | "star" | "slash" | "lt_lt" | "gt_gt" | "ampersand" | "vertical_bar" | "caret";
+export type BinOp = "plus" | "minus" | "star" | "slash" | "lt_lt" | "gt_gt" | "gt_gt_gt" | "ampersand" | "vertical_bar" | "caret";
 export type CmpOp = "greater_than" | "less_than" | "equals";
 
 export function token<K extends Token["kind"]>(
@@ -99,6 +99,7 @@ const BIN_OP_SYMBOLS: {
     slash: "/",
     lt_lt: "<<",
     gt_gt: ">>",
+    gt_gt_gt: ">>>",
     ampersand: "&",
     vertical_bar: "|",
     caret: "^"
