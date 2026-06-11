@@ -15,6 +15,7 @@ const ForgeKeyboardInputEventPre = javaType(
     "net.minecraftforge.client.event.GuiScreenEvent$KeyboardInputEvent$Pre"
 );
 const GuiScreenClass = javaType("net.minecraft.client.gui.GuiScreen");
+const GuiRepairClass = javaType("net.minecraft.client.gui.inventory.GuiRepair");
 const RenderGameOverlayEventPost = javaType(
     "net.minecraftforge.client.event.RenderGameOverlayEvent$Post"
 );
@@ -26,6 +27,7 @@ const ForgeGuiOpenEvent = javaType("net.minecraftforge.client.event.GuiOpenEvent
 import { RootTree, getImportCachedBounds } from "./root";
 import { getContainerBounds, getFullscreenPanelRect } from "./lib/bounds";
 import { autoDiscoverImportJson, reparseNow, tickReparse } from "./parsing/reparse";
+import { processPendingParses } from "./parsing/parses";
 import { CHAT_INPUT_ID } from "./chat-input";
 import {
     initPopoverRendering,
@@ -36,14 +38,17 @@ import {
     mouseIsOverPopover,
 } from "./lib/popovers";
 import {
+    closeHoverCard,
+    drawHoverCard,
+    isHoverCardVisible,
+    tryDispatchHoverCardWheel,
+} from "./lib/hoverCards";
+import {
     getHousingUuid,
-    getParsedResult,
     isImportSoundsMuted,
     setHousingUuid,
 } from "./state";
 import { getImportProgress } from "./right-panel/import-tab/importProgress";
-import { setCacheStatusRows } from "./cache-status/rows";
-import { rebuildCacheStatusRows, stepCacheStatusBuild } from "./cache-status/build";
 import { getCurrentHousingUuid } from "../importCache/housingId";
 import { TaskManager } from "../tasks/manager";
 
@@ -56,6 +61,9 @@ import {
     updateScrollbarDrag,
     endScrollbarDrag,
     renderElement,
+    hasDeferredTooltip,
+    drawDeferredTooltip,
+    clearDeferredTooltip,
 } from "./lib/render";
 import { getFocusedInput, setFocusedInput } from "./lib/focus";
 import { applyFocus, getRecord, readAndSync, tickAllFields } from "./lib/inputState";
@@ -107,12 +115,6 @@ let uuidFetchInFlight = false;
 let lastUuidFetchAt = 0;
 const UUID_FETCH_COOLDOWN_MS = 60_000;
 
-function refreshCacheStatusFromUuid(uuid: string): void {
-    const parsed = getParsedResult();
-    if (parsed === null) return;
-    rebuildCacheStatusRows(uuid, parsed.value, /*progressive=*/ false);
-}
-
 function maybeAutoFetchHousingUuid(): void {
     if (uuidFetchInFlight) return;
     if (getHousingUuid() !== null) return;
@@ -122,7 +124,6 @@ function maybeAutoFetchHousingUuid(): void {
     void TaskManager.run(async (ctx) => {
         const uuid = await getCurrentHousingUuid(ctx);
         setHousingUuid(uuid);
-        refreshCacheStatusFromUuid(uuid);
     })
         .catch(() => {
             /* not in a housing / timeout — leave dots as-is */
@@ -148,6 +149,13 @@ function laidOutTrees(): { root: Element; rect: Rect }[] {
         out.push({ root: activePanels[i].getRoot(), rect: activePanels[i].getBounds() });
     }
     return out;
+}
+
+function nativeScreenUsesTypedCharacters(): boolean {
+    const screen = (Client.getMinecraft() as any).field_71462_r;
+    return screen !== null &&
+        screen !== undefined &&
+        GuiRepairClass.class.isInstance(screen);
 }
 
 /**
@@ -233,7 +241,6 @@ export function initHtswGui(): void {
         if (typeof msg !== "string") return;
         if (msg.indexOf("Sending you to ") !== 0) return;
         setHousingUuid(null);
-        setCacheStatusRows([]);
         lastUuidFetchAt = 0;
     }).setCriteria("${*}");
 
@@ -417,6 +424,13 @@ export function initHtswGui(): void {
                 return;
             }
         }
+        {
+            const dir = dwheel > 0 ? 1 : -1;
+            if (tryDispatchHoverCardWheel(mx, my, dir)) {
+                cancel(event);
+                return;
+            }
+        }
         const trees = laidOutTrees();
         for (let i = 0; i < trees.length; i++) {
             const t = trees[i];
@@ -467,7 +481,7 @@ export function initHtswGui(): void {
         // affordance; key is Minecraft's existing Open Chat binding.
         const chatKey = getChatKeyCode();
         if (focusedId === null && enabled && chatKey > 0 && keyCode === chatKey) {
-            if (getContainerBounds() !== null) {
+            if (getContainerBounds() !== null && !nativeScreenUsesTypedCharacters()) {
                 setFocusedInput(CHAT_INPUT_ID);
                 cancel(event);
             }
@@ -522,7 +536,9 @@ export function initHtswGui(): void {
         tickAllFields();
         applyFocus(getFocusedInput());
         tickReparse();
-        stepCacheStatusBuild();
+        // Drain one off-frame parse queued by requestParse() (export pane,
+        // Importables tree, queue rows) so a cold parse never blocks render.
+        processPendingParses();
         // If the import ended while our placeholder is still up (Hypixel
         // didn't reopen a menu — e.g. the import finished naturally on
         // the last menu close), dismiss it so the player isn't trapped
@@ -542,6 +558,7 @@ export function initHtswGui(): void {
         // popover/focus state on every one of those flickers.
         if (!frameVisible()) {
             if (popoverIsOpen()) closeAllPopovers();
+            closeHoverCard();
             if (getFocusedInput() !== null) setFocusedInput(null);
         } else if (getContainerBounds() !== null) {
             maybeAutoFetchHousingUuid();
@@ -550,6 +567,32 @@ export function initHtswGui(): void {
 
     // Register popover rendering LAST so it paints on top of all panels.
     initPopoverRendering();
+
+    register("postGuiRender", (mouseX: number, mouseY: number) => {
+        if (popoverIsOpen()) {
+            closeHoverCard();
+            return;
+        }
+        beginHtswOverlayDraw();
+        drawHoverCard(mcToOverlay(mouseX), mcToOverlay(mouseY));
+        endHtswOverlayDraw();
+    }).setPriority(OnTrigger.Priority.LOWEST);
+
+    // Hover tooltips paint after popovers (and after MC's inventory/foreground),
+    // so a chip near the inventory edge isn't covered by the slots. renderElement
+    // only stashes the tooltip during the panel/popover passes; this draws it.
+    register("postGuiRender", () => {
+        if (!hasDeferredTooltip()) return;
+        // A hover card owns the same space; drop the queued tooltip so it can't
+        // resurface (sticky) once the card goes away.
+        if (isHoverCardVisible()) {
+            clearDeferredTooltip();
+            return;
+        }
+        beginHtswOverlayDraw();
+        drawDeferredTooltip();
+        endHtswOverlayDraw();
+    }).setPriority(OnTrigger.Priority.LOWEST);
 
     // Best-effort initial parse so the panel populates before the user
     // touches the path input. autoDiscover handles the case where the

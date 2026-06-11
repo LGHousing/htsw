@@ -8,9 +8,11 @@ import { registerExportCommands } from "./exporter";
 import { initMcpBridge } from "./mcp/bridge";
 import { initHtswGui } from "./gui/overlay";
 import { backgroundPreloadIcons } from "./gui/lib/render";
+import { initAutoUpdate } from "./autoUpdate";
 
 registerCommands();
 registerExportCommands();
 initMcpBridge();
 initHtswGui();
 backgroundPreloadIcons();
+initAutoUpdate();

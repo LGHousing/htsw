@@ -2,6 +2,7 @@ import type { ImportableMenu, MenuSlot } from "htsw/types";
 import * as htsw from "htsw";
 
 import { getCurrentHousingUuid, writeImportableCache } from "../../importCache";
+import type { ProgressHandler } from "../../housingSync/progress/types";
 import { ItemCaptureRegistry, prettySnbt } from "../../housingSync/itemCapture";
 import TaskContext from "../../tasks/context";
 import { ensureParentDirs } from "../../utils/filesystem";
@@ -21,6 +22,7 @@ export type ExportMenuOptions = {
      * `<rootDir>/items/<name>.snbt`.
      */
     rootDir: string;
+    onReadProgress?: ProgressHandler;
 };
 
 /**
@@ -53,7 +55,7 @@ export async function exportMenu(
         throw new Error(`No menu named "${name}" exists in this housing.`);
     }
 
-    const live = await readLiveMenu(ctx);
+    const live = await readLiveMenu(ctx, options.onReadProgress);
 
     const slug = canonicalSlug(name);
     const menuRel = `menus/${slug}`;
@@ -97,7 +99,7 @@ export async function exportMenu(
         });
         cacheSlots.push({
             slot: liveSlot.slot,
-            nbt: nbtRel as unknown as MenuSlot["nbt"],
+            nbt: liveSlot.snbt as unknown as MenuSlot["nbt"],
             ...(liveSlot.actions.length > 0 ? { actions: liveSlot.actions } : {}),
         });
     }

@@ -1,7 +1,7 @@
 /// <reference types="../../../CTAutocomplete" />
 
 import type { Action } from "htsw/types";
-import type { SourceFile, SpanTable } from "htsw";
+import type { Diagnostic, DiagnosticLevel, ParseResult, SourceFile, SpanTable } from "htsw";
 
 import { getMtimeMs } from "../lib/java";
 import { FileSystemFileLoader } from "../../utils/fileLoaders";
@@ -9,12 +9,29 @@ import { actionsToLines, parseHtslFile, type HtslLine } from "./htslParse";
 import { getParsedResult } from "../state/parsed";
 import { tokenizeHtsl, type SyntaxToken } from "../right-panel/syntax";
 import type { FieldSpan, RenderableLine, TokenSpan } from "./lineTypes";
+import { normalizeDiagnosticSpans, type DiagnosticLineSpan } from "../../diagnostics/spans";
+import type { Importable } from "htsw/types";
 
 const COLOR_PLAIN = 0xffe5e5e5 | 0;
 const COLOR_ERROR = 0xffe85c5c | 0;
 const COLOR_GUTTER = 0xff666666 | 0;
 const DIAG_ERROR_BG = 0x40e85c5c | 0;
 const DIAG_WARN_BG = 0x40e5bc4b | 0;
+const DIAG_SECONDARY = 0xff67a7e8 | 0;
+const DIAG_UNDERLINE: { [key in DiagnosticLevel]: number } = {
+    bug: 0xffb94747 | 0,
+    error: COLOR_ERROR,
+    warning: 0xffe5bc4b | 0,
+    note: DIAG_SECONDARY,
+    help: 0xff5cb85c | 0,
+};
+const DIAG_SEVERITY: { [key in DiagnosticLevel]: number } = {
+    bug: 0,
+    error: 1,
+    warning: 2,
+    note: 3,
+    help: 4,
+};
 
 function attachFieldSpans(
     tokens: SyntaxToken[],
@@ -48,36 +65,115 @@ function indentedText(line: HtslLine): string {
     return prefix + line.text;
 }
 
-function diagBackgroundsForFile(path: string): Map<number, number> {
-    const out = new Map<number, number>();
+type LineDiagnosticInfo = {
+    background?: number;
+    spans: DiagnosticLineSpan[];
+    diagnostics: Diagnostic[];
+};
+
+const diagnosticIndexCache = new WeakMap<
+    ParseResult<Importable[]>,
+    Map<string, Map<number, LineDiagnosticInfo>>
+>();
+
+function normalizedPath(path: string): string {
+    return path.split("\\").join("/").toLowerCase();
+}
+
+function diagnosticIndexForFile(path: string): Map<number, LineDiagnosticInfo> {
+    const empty = new Map<number, LineDiagnosticInfo>();
     const parsed = getParsedResult();
-    if (parsed === null) return out;
-    const sm = parsed.gcx.sourceMap;
-    const norm = path.split("\\").join("/");
-    for (let i = 0; i < parsed.diagnostics.length; i++) {
-        const d = parsed.diagnostics[i];
-        const isError = d.level === "error" || d.level === "bug";
-        const isWarn = d.level === "warning";
-        if (!isError && !isWarn) continue;
-        const bg = isError ? DIAG_ERROR_BG : DIAG_WARN_BG;
-        for (let j = 0; j < d.spans.length; j++) {
-            const span = d.spans[j].span;
-            let file;
-            try {
-                file = sm.getFileByPos(span.start);
-            } catch (_e) {
-                continue;
+    if (parsed === null) return empty;
+    let byFile = diagnosticIndexCache.get(parsed);
+    if (byFile === undefined) {
+        byFile = new Map();
+        const spans = normalizeDiagnosticSpans(parsed.gcx.sourceMap, parsed.diagnostics);
+        for (let i = 0; i < spans.length; i++) {
+            const span = spans[i];
+            const filePath = normalizedPath(span.file.path);
+            let byLine = byFile.get(filePath);
+            if (byLine === undefined) {
+                byLine = new Map();
+                byFile.set(filePath, byLine);
             }
-            if (file.path.split("\\").join("/") !== norm) continue;
-            const startLine = file.getPosition(span.start).line;
-            const endLine = file.getPosition(span.end).line;
-            for (let ln = startLine; ln <= endLine; ln++) {
-                const prev = out.get(ln);
-                if (!prev || (isError && prev === DIAG_WARN_BG)) out.set(ln, bg);
+            let info = byLine.get(span.line);
+            if (info === undefined) {
+                info = { spans: [], diagnostics: [] };
+                byLine.set(span.line, info);
+            }
+            info.spans.push(span);
+            if (info.diagnostics.indexOf(span.rootDiagnostic) < 0) {
+                info.diagnostics.push(span.rootDiagnostic);
+            }
+            const rootLevel = span.rootDiagnostic.level;
+            if (rootLevel === "bug" || rootLevel === "error") info.background = DIAG_ERROR_BG;
+            else if (rootLevel === "warning" && info.background !== DIAG_ERROR_BG) {
+                info.background = DIAG_WARN_BG;
             }
         }
+        diagnosticIndexCache.set(parsed, byFile);
+    }
+    return byFile.get(normalizedPath(path)) ?? empty;
+}
+
+function spanWins(a: DiagnosticLineSpan, b: DiagnosticLineSpan): boolean {
+    if (a.kind !== b.kind) return a.kind === "primary";
+    const severityDiff = DIAG_SEVERITY[a.level] - DIAG_SEVERITY[b.level];
+    if (severityDiff !== 0) return severityDiff < 0;
+    return a.order < b.order;
+}
+
+export function tokensWithDiagnosticSpans(
+    tokens: readonly TokenSpan[],
+    spans: readonly DiagnosticLineSpan[]
+): TokenSpan[] {
+    if (spans.length === 0) return tokens.slice();
+    const out: TokenSpan[] = [];
+    let tokenStart = 0;
+    for (let i = 0; i < tokens.length; i++) {
+        const token = tokens[i];
+        const tokenEnd = tokenStart + token.text.length;
+        const cuts = [tokenStart, tokenEnd];
+        for (let j = 0; j < spans.length; j++) {
+            const span = spans[j];
+            if (span.startColumn > tokenStart && span.startColumn < tokenEnd) cuts.push(span.startColumn);
+            if (span.endColumn > tokenStart && span.endColumn < tokenEnd) cuts.push(span.endColumn);
+        }
+        cuts.sort((a, b) => a - b);
+        const uniqueCuts: number[] = [];
+        for (let j = 0; j < cuts.length; j++) {
+            if (j === 0 || cuts[j] !== cuts[j - 1]) uniqueCuts.push(cuts[j]);
+        }
+        for (let j = 0; j < uniqueCuts.length - 1; j++) {
+            const start = uniqueCuts[j];
+            const end = uniqueCuts[j + 1];
+            let winner: DiagnosticLineSpan | undefined;
+            for (let k = 0; k < spans.length; k++) {
+                const span = spans[k];
+                if (span.startColumn >= end || span.endColumn <= start) continue;
+                if (winner === undefined || spanWins(span, winner)) winner = span;
+            }
+            out.push({
+                text: token.text.substring(start - tokenStart, end - tokenStart),
+                color: token.color,
+                fieldProp: token.fieldProp,
+                underlineColor: winner === undefined
+                    ? undefined
+                    : winner.kind === "secondary"
+                      ? DIAG_SECONDARY
+                      : DIAG_UNDERLINE[winner.level],
+            });
+        }
+        tokenStart = tokenEnd;
     }
     return out;
+}
+
+function decorateLineDiagnostics(line: RenderableLine, info: LineDiagnosticInfo | undefined): void {
+    if (info === undefined) return;
+    line.tokens = tokensWithDiagnosticSpans(line.tokens, info.spans);
+    line.staticBackground = info.background;
+    line.diagnostics = info.diagnostics;
 }
 
 function endsWith(s: string, suffix: string): boolean {
@@ -155,7 +251,7 @@ function htslRenderableLines(path: string): RenderableLine[] {
         return out;
     }
 
-    const diags = diagBackgroundsForFile(path);
+    const diagnostics = diagnosticIndexForFile(path);
     const out: RenderableLine[] = [];
     const seenPaths: { [p: string]: number } = {};
     for (let i = 0; i < lines.length; i++) {
@@ -180,14 +276,15 @@ function htslRenderableLines(path: string): RenderableLine[] {
             id = `htsl:line${i}`;
         }
         const lineNum = i + 1;
-        out.push({
+        const renderableLine: RenderableLine = {
             id,
             lineNum,
             depth: ln.depth,
             tokens,
             actionPath: ln.actionPath,
-            staticBackground: diags.get(lineNum),
-        });
+        };
+        decorateLineDiagnostics(renderableLine, diagnostics.get(lineNum));
+        out.push(renderableLine);
     }
     htslCache.set(path, { mtime, parsedRef, lines: out });
     return out;
@@ -211,17 +308,18 @@ function readPlainLines(path: string): string[] {
 
 function plainTextRenderableLines(path: string): RenderableLine[] {
     const lines = readPlainLines(path);
-    const diags = diagBackgroundsForFile(path);
+    const diagnostics = diagnosticIndexForFile(path);
     const out: RenderableLine[] = [];
     for (let i = 0; i < lines.length; i++) {
         const lineNum = i + 1;
-        out.push({
+        const renderableLine: RenderableLine = {
             id: `plain:${lineNum}`,
             lineNum,
             depth: 0,
             tokens: plainTokens(lines[i], COLOR_PLAIN),
-            staticBackground: diags.get(lineNum),
-        });
+        };
+        decorateLineDiagnostics(renderableLine, diagnostics.get(lineNum));
+        out.push(renderableLine);
     }
     return out;
 }
@@ -350,7 +448,7 @@ function htslRawRenderableLines(path: string): RenderableLine[] {
     const rawLines = parsed.file.src.split("\n");
     const linePaths = pathPerLine(rawLines.length, ranges);
     const lineDepths = depthPerLine(rawLines.length, ranges);
-    const diags = diagBackgroundsForFile(path);
+    const diagnostics = diagnosticIndexForFile(path);
 
     const seenPaths: { [p: string]: number } = {};
     const out: RenderableLine[] = [];
@@ -371,14 +469,15 @@ function htslRawRenderableLines(path: string): RenderableLine[] {
             id = `htsl:line${i + 1}`;
         }
         const lineNum = i + 1;
-        out.push({
+        const renderableLine: RenderableLine = {
             id,
             lineNum,
             depth: lineDepths[i],
             tokens,
             actionPath,
-            staticBackground: diags.get(lineNum),
-        });
+        };
+        decorateLineDiagnostics(renderableLine, diagnostics.get(lineNum));
+        out.push(renderableLine);
     }
     htslRawCache.set(path, { mtime, parsedRef, lines: out });
     return out;

@@ -67,9 +67,9 @@ export async function getSessionFunctionIcon(
     return (await ensureSessionFunctions(ctx)).get(name.toLowerCase()) ?? null;
 }
 
-type FunctionListEntry = { name: string; icon: FunctionIconSnapshot | null };
+export type FunctionListEntry = { name: string; icon: FunctionIconSnapshot | null };
 
-async function listAllFunctionEntries(ctx: TaskContext): Promise<FunctionListEntry[]> {
+export async function listAllFunctionEntries(ctx: TaskContext): Promise<FunctionListEntry[]> {
     await ctx.runCommand("/functions");
     await timedWaitForMenu(ctx, "commandMenuWait");
 

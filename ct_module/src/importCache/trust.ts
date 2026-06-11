@@ -4,7 +4,7 @@ import type { ImportableCacheEntry } from "./cache";
 import { importableHash, listHashes } from "./hash";
 import { importableIdentity, importableKey } from "./paths";
 import { readImportableCache } from "./cache";
-import { sameHashList } from "./status";
+import { cacheEntryHash, sameHashList } from "./status";
 
 type TrustedListPath = string;
 
@@ -50,7 +50,10 @@ export function buildTrustPlan(
 
         if (trustMode && entry !== null) {
             sourceHash = importableHash(importable);
-            wholeImportableTrusted = entry.hash === sourceHash;
+            // Recompute rather than trust the stored entry.hash — see
+            // cacheEntryHash: a hash-function change must not strand old
+            // entries as permanently untrusted.
+            wholeImportableTrusted = cacheEntryHash(entry) === sourceHash;
 
             if (!wholeImportableTrusted) {
                 const desiredLists = listHashes(importable);

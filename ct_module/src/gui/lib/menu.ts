@@ -4,9 +4,10 @@ import { Element } from "./layout";
 import { Button, Col, Container } from "./components";
 import { closeAllPopovers, closePopover, openPopover, type PopoverHandle } from "./popovers";
 import { COLOR_PANEL_BORDER } from "./theme";
+import type { IconName } from "./icons.generated";
 
 export type MenuAction =
-    | { kind?: "action"; label: string; onClick: () => void }
+    | { kind?: "action"; label: string; onClick: () => void; icon?: IconName }
     | { kind: "separator" };
 
 const ITEM_H = 18;
@@ -50,6 +51,7 @@ function actionElement(
     }
     return Button({
         text: a.label,
+        icon: a.icon,
         style: { width: { kind: "grow" }, height: { kind: "px", value: ITEM_H } },
         onClick: () => {
             closeMenu();
@@ -58,17 +60,27 @@ function actionElement(
     });
 }
 
+// A button icon is 16px + a 4px gap before the label.
+const ICON_ALLOWANCE = 20;
+
 function menuWidthFor(actions: MenuAction[]): number {
     let maxLabelW = 0;
+    let hasIcon = false;
     for (let i = 0; i < actions.length; i++) {
         const a = actions[i];
         if (!isAction(a)) continue;
         const w = Renderer.getStringWidth(a.label);
         if (w > maxLabelW) maxLabelW = w;
+        if (a.icon !== undefined) hasIcon = true;
     }
-    const desired = maxLabelW + TEXT_FRAME_W;
+    const desired = maxLabelW + TEXT_FRAME_W + (hasIcon ? ICON_ALLOWANCE : 0);
     return desired < MIN_MENU_WIDTH ? MIN_MENU_WIDTH : desired;
 }
+
+// The single context menu allowed open at a time. On the `keepUnderlying` path we don't
+// call closeAllPopovers (it would whisk away the parent popover), so without this a second
+// right-click would stack a second menu on top of the first.
+let activeMenu: PopoverHandle | null = null;
 
 // Open a context menu anchored at the given screen position (typically the cursor).
 // By default any currently-open popovers are closed first so successive right-clicks don't
@@ -81,6 +93,10 @@ export function openMenu(
     options?: { keepUnderlying?: boolean }
 ): void {
     if (actions.length === 0) return;
+    if (activeMenu !== null) {
+        closePopover(activeMenu);
+        activeMenu = null;
+    }
     if (!options?.keepUnderlying) closeAllPopovers();
     let height = PAD * 2;
     for (let i = 0; i < actions.length; i++) {
@@ -103,7 +119,7 @@ export function openMenu(
     // 0×0 anchor at the cursor for positioning. Context menus have no re-clickable trigger so
     // the anchor-exclusion close guard isn't useful — the off-screen `excludeAnchor` flag opts
     // out so a left-click anywhere (including the original cursor pixel) cleanly closes the menu.
-    handle = openPopover({
+    const menuPopover = openPopover({
         anchor: { x, y, w: 0, h: 0 },
         excludeAnchor: false,
         content,
@@ -111,6 +127,9 @@ export function openMenu(
         height,
         onClose: () => {
             handle = null;
+            if (activeMenu === menuPopover) activeMenu = null;
         },
     });
+    handle = menuPopover;
+    activeMenu = menuPopover;
 }

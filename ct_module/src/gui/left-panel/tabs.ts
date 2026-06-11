@@ -2,7 +2,7 @@ import { Element } from "../lib/layout";
 import { Button, Container, Row } from "../lib/components";
 import { Icons, IconName } from "../lib/icons.generated";
 import { ImportablesView } from "./importables";
-import { KnowledgeView } from "./knowledge";
+import { HousesView } from "./houses";
 import {
     COLOR_TAB,
     COLOR_TAB_ACCENT,
@@ -12,13 +12,13 @@ import {
     SIZE_TAB_H,
 } from "../lib/theme";
 
-type TabId = "importables" | "knowledge";
+type TabId = "importables" | "houses";
 
 type Tab = { id: TabId; label: string; icon: IconName; content: () => Element };
 
 const TABS: Tab[] = [
     { id: "importables", label: "Importables", icon: Icons.compass, content: ImportablesView },
-    { id: "knowledge", label: "Knowledge", icon: Icons.bookOpen, content: KnowledgeView },
+    { id: "houses", label: "Houses", icon: Icons.house, content: HousesView },
 ];
 
 let activeTab: TabId = "importables";

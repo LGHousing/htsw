@@ -25,11 +25,9 @@ import type { ImportEventHandler } from "../housingSync/importEvents";
 import type { ImportableEntry } from "../housingSync/progress/types";
 import { importProgressKey } from "../housingSync/progress/keys";
 import {
-    estimateImportableCost,
+    estimateImportableUnits,
     setupUnitsForImportable,
 } from "../housingSync/progress/costs";
-import type { ImportableCacheEntry } from "../importCache/cache";
-import { readCachedActionList } from "./actionListHelpers";
 
 export type ImportSelection = {
     importables: Importable[];
@@ -91,38 +89,29 @@ export async function importSelectedImportables(
     );
 
     const events = selection.events;
-    const importableUnits: number[] = orderedImportables.map((importable) => {
-        const identity = importableIdentity(importable);
-        const tp = trustPlan.importables.get(importableKey(importable.type, identity));
-        return estimateImportableUnitsFromTrustPlan(importable, tp?.entry ?? null);
-    });
-    let initialTotalUnits = 0;
-    for (let i = 0; i < importableUnits.length; i++) {
-        initialTotalUnits += importableUnits[i];
-    }
-    if (initialTotalUnits === 0) initialTotalUnits = 1;
-    const rows: ImportableEntry[] = orderedImportables.map((importable, i) => ({
-        key: importProgressKey(
-            importable.type,
-            importableIdentity(importable),
-            selection.sourcePath
-        ),
-        status: "queued",
-        totalUnits: importableUnits[i],
-    }));
-    events?.emit({ kind: "sessionStarted", rows, initialTotalUnits });
-
-    const rowsMeta = orderedImportables.map((importable, i) => {
+    const rowsMeta = orderedImportables.map((importable, rowIndex) => {
         const identity = importableIdentity(importable);
         const tp = trustPlan.importables.get(importableKey(importable.type, identity));
         return {
             importable,
             identity,
             key: importProgressKey(importable.type, identity, selection.sourcePath),
-            rowIndex: i,
+            rowIndex,
             trustPlan: tp,
+            units: estimateImportableUnits(importable, tp?.entry ?? null),
         };
     });
+
+    const rows: ImportableEntry[] = rowsMeta.map((row) => ({
+        key: row.key,
+        status: "queued",
+        totalUnits: row.units,
+    }));
+    let initialTotalUnits = 0;
+    for (const row of rowsMeta) initialTotalUnits += row.units;
+    if (initialTotalUnits === 0) initialTotalUnits = 1;
+    events?.emit({ kind: "sessionStarted", rows, initialTotalUnits });
+
     const plans: Array<{ row: (typeof rowsMeta)[number]; plan: ImportablePlan }> = [];
 
     // ── Pass 1: pre-read + diff every non-trusted importable. ──────────
@@ -135,8 +124,8 @@ export async function importSelectedImportables(
             type: row.importable.type,
             identity: row.identity,
             setupUnits: setupUnitsForImportable(row.importable),
-            initialUnits: importableUnits[i],
-            rowIndex: i,
+            initialUnits: row.units,
+            rowIndex: row.rowIndex,
             cached: cacheEntry === null ? null : cacheEntry.importable,
         });
 
@@ -228,16 +217,4 @@ async function maybeWritePartialImportCache(
     const partial = reconstructPartialImportable(plan);
     if (partial === null) return;
     await tryWriteImportableCache(ctx, partial, "importer", housingUuid);
-}
-
-function estimateImportableUnitsFromTrustPlan(
-    importable: Importable,
-    entry: ImportableCacheEntry | null
-): number {
-    if (entry === null) {
-        return Math.max(1, estimateImportableCost(importable));
-    }
-    const getCached = (basePath: string) =>
-        readCachedActionList(entry.importable, basePath);
-    return Math.max(1, estimateImportableCost(importable, getCached));
 }

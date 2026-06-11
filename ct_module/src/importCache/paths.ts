@@ -64,6 +64,19 @@ export function cachePathFor(housingUuid: string, importable: Importable): strin
     return `${IMPORT_CACHE_ROOT}/${housingUuid}/${dirFor(importable.type)}/${slug(importableIdentity(importable))}.knowledge.json`;
 }
 
+/** The per-(housing, type) directory holding that type's `.knowledge.json`
+ *  files. Used to enumerate every importable of a type in a house. */
+export function cacheTypeDir(housingUuid: string, type: Importable["type"]): string {
+    return `${IMPORT_CACHE_ROOT}/${housingUuid}/${dirFor(type)}`;
+}
+
+export function cacheScanMarkerPath(
+    housingUuid: string,
+    type: Importable["type"]
+): string {
+    return `${cacheTypeDir(housingUuid, type)}/.scan-complete`;
+}
+
 /** Path used by callers that only know the type + identity (e.g. delete). */
 export function cachePathForId(
     housingUuid: string,

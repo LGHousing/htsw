@@ -2,24 +2,21 @@ import TaskContext from "../../tasks/context";
 import { timedWaitForMenu } from "../../housingSync/gui/menuWait";
 import {
     getVisiblePaginatedItemSlots,
+    isEmptyPaginatedPlaceholder,
     readPaginatedList,
     type PaginatedListConfig,
 } from "../../housingSync/gui/paginatedList";
 import { removedFormatting } from "../../utils/helpers";
 
-// VERIFY in-game: the empty-list placeholder name and whether menu list slots
-// carry a suffix. Mirrors functions/listFunctions.ts.
 const MENU_LIST_CONFIG: PaginatedListConfig = {
     label: "menu",
-    emptyPlaceholderName: "No Menus!",
+    emptyPlaceholderName: "No custom menus!",
 };
 
 /**
  * Extract a raw menu name from a `/menus` list slot's display name. Filters the
  * list controls and strips a trailing numeric parenthetical (e.g. "(12 slots)")
  * if present, preserving names that contain other parentheses.
- *
- * VERIFY in-game: the exact suffix format (if any) the `/menus` list shows.
  */
 export function extractMenuNameFromSlot(rawDisplayName: string): string | null {
     const trimmed = rawDisplayName.trim();
@@ -50,6 +47,7 @@ export async function listAllMenuNames(ctx: TaskContext): Promise<string[]> {
             const out: Entry[] = [];
             const slots = getVisiblePaginatedItemSlots(ctx);
             for (let i = 0; i < slots.length; i++) {
+                if (isEmptyPaginatedPlaceholder(slots[i], MENU_LIST_CONFIG)) continue;
                 const item = slots[i].getItem();
                 if (item === null || item === undefined) continue;
                 const extracted = extractMenuNameFromSlot(

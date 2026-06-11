@@ -99,3 +99,30 @@ export function countImportablesByStatus(
 
 /** Callback shape that action-list read/apply phases invoke. */
 export type ProgressHandler = (progress: ProgressPayload) => void;
+
+/**
+ * Callback an export batch invokes to drive the shared progress UI. The batch
+ * loops depend only on this interface; the GUI-driving implementation
+ * (`createExportProgressSink`) lives under `gui/right-panel/import-tab/` and is
+ * injected by the caller, so `importables/` stays GUI-agnostic.
+ */
+export type ExportProgressSink = {
+    /** Called once the full list of names to export is known. */
+    start(names: readonly string[]): void;
+    /** Called as item `index` (0-based) begins exporting. */
+    item(index: number, name: string): void;
+    /**
+     * Within-item read progress for item `index`, forwarded from the
+     * action-list read's `ProgressHandler`. Optional — exporters that don't
+     * thread it just get item-boundary granularity.
+     */
+    itemProgress?(index: number, payload: ProgressPayload): void;
+    /**
+     * Marks item `index` failed. Without this the sink's only "item ended"
+     * signal is the next `item()` call, which reads as success — so callers
+     * that swallow per-item errors and continue MUST report failures here.
+     */
+    itemFailed?(index: number, error: string): void;
+    /** Called once when the batch finishes (success, failure, or cancel). */
+    done(): void;
+};

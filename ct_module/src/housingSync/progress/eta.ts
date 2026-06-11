@@ -77,6 +77,12 @@ function ease(prev: EtaSmoother | null, candidate: number, now: number): EtaSmoo
     return { displayed: next, at: now };
 }
 
+// NOTE: the getters below advance smoother state as a side effect of being
+// called (each call eases toward the candidate). This is safe under any call
+// frequency — including multiple callers per frame (render + trace sampler) —
+// ONLY because the easing math is wall-clock-dt based: two calls split the
+// elapsed time rather than double-stepping. Don't replace the dt-based ease
+// with a fixed per-call step.
 export function createEtaCalculator(): EtaCalculator {
     let totalEta: EtaSmoother | null = null;
     let phaseEta: EtaSmoother | null = null;

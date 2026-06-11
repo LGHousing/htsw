@@ -10,7 +10,8 @@ import { COLOR_ROW, COLOR_ROW_HOVER, COLOR_TEXT_DIM } from "../lib/theme";
 import { updateImportableField, type Section } from "../../exporter/importJsonWriter";
 import { markPathInSync } from "../parsing/reparse";
 import { getParseAt, touchParseCacheMtime } from "../parsing/parses";
-import { refreshCacheStatusRowFor } from "../cache-status/rows";
+import { importableHash } from "../../importCache/hash";
+import { seedImportableHash } from "../../importCache/status";
 
 let editingValue = "";
 let editingX = "";
@@ -162,7 +163,10 @@ function saveField(jsonPath: string, imp: Importable, fieldKey: string): void {
         const imp = findImportableInList(entry.parsed.value, section, identity);
         if (imp !== null) {
             setByPath(imp, field, value);
-            refreshCacheStatusRowFor(imp);
+            // The hash memo assumes a parse swaps action-list arrays on every
+            // edit; this mutates one in place (same array ref), so reseed the
+            // memo with the true new hash or the dot would read the old one.
+            seedImportableHash(imp, importableHash(imp));
         }
     }
     touchParseCacheMtime(jsonPath);

@@ -1,8 +1,8 @@
 import TaskContext from "../../tasks/context";
 import { isTaskCancelled } from "../../tasks/manager";
 import { ItemCaptureRegistry } from "../../housingSync/itemCapture";
-import type { ExportProgressSink } from "../../exporter/exportProgress";
-import { withExportSession } from "../exportSession";
+import type { ExportProgressSink } from "../../housingSync/progress/types";
+import { ExportResult, withExportSession } from "../exportSession";
 import { exportMenu } from "./export";
 import { listAllMenuNames } from "./listMenus";
 
@@ -16,14 +16,14 @@ export type ExportAllMenusOptions = {
 export async function exportAllMenus(
     ctx: TaskContext,
     options: ExportAllMenusOptions
-): Promise<void> {
+): Promise<ExportResult> {
     return withExportSession(() => exportAllMenusInner(ctx, options));
 }
 
 async function exportAllMenusInner(
     ctx: TaskContext,
     options: ExportAllMenusOptions
-): Promise<void> {
+): Promise<ExportResult> {
     const { importJsonPath, rootDir } = options;
 
     // One registry + written-set across every menu so identical slot items
@@ -35,7 +35,7 @@ async function exportAllMenusInner(
         options.names !== undefined ? options.names : await listAllMenuNames(ctx);
     if (names.length === 0) {
         ctx.displayMessage("&7No menus to export.");
-        return;
+        return { total: 0, succeeded: 0, failed: 0 };
     }
 
     ctx.displayMessage(
@@ -51,10 +51,19 @@ async function exportAllMenusInner(
             options.progress?.item(i, name);
             ctx.displayMessage(`&7[${i + 1}/${names.length}] &fExporting '${name}'`);
 
+            const sink = options.progress;
             try {
                 await exportMenu(
                     ctx,
-                    { name, importJsonPath, rootDir },
+                    {
+                        name,
+                        importJsonPath,
+                        rootDir,
+                        onReadProgress:
+                            sink?.itemProgress === undefined
+                                ? undefined
+                                : (payload) => sink.itemProgress!(i, payload),
+                    },
                     { itemCaptures, writtenItems }
                 );
                 succeeded++;
@@ -63,6 +72,7 @@ async function exportAllMenusInner(
                     throw error;
                 }
                 failed++;
+                sink?.itemFailed?.(i, String(error));
                 ctx.displayMessage(`&c[export-all] failed on '${name}': ${error}`);
             }
         }
@@ -74,4 +84,6 @@ async function exportAllMenusInner(
         `&aExported ${succeeded} of ${names.length} menu${names.length === 1 ? "" : "s"} (${itemCaptures.size()} unique item${itemCaptures.size() === 1 ? "" : "s"})${failed > 0 ? ` &c[${failed} failed]` : ""}`
     );
     ctx.displayMessage(`&7  -> ${importJsonPath}`);
+
+    return { total: names.length, succeeded, failed };
 }

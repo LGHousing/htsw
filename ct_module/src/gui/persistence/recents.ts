@@ -1,10 +1,14 @@
 /// <reference types="../../../CTAutocomplete" />
 
+import { pathExists } from "../lib/java";
+
 const RECENTS_PATH = "./config/ChatTriggers/modules/HTSW/gui-recents.json";
 const MAX_RECENTS = 8;
+const PRUNE_THROTTLE_MS = 1000;
 
 let recents: string[] = [];
 let loaded = false;
+let lastPruneAt = 0;
 
 function load(): void {
     if (loaded) return;
@@ -34,8 +38,21 @@ function persist(): void {
     }
 }
 
+// A recent whose file is gone does nothing when clicked, so drop it from the
+// list. Throttled: getRecents runs every frame a picker is open.
+function pruneMissing(): void {
+    const now = Date.now();
+    if (now - lastPruneAt < PRUNE_THROTTLE_MS) return;
+    lastPruneAt = now;
+    const kept = recents.filter((p) => pathExists(p));
+    if (kept.length === recents.length) return;
+    recents = kept;
+    persist();
+}
+
 export function getRecents(): string[] {
     load();
+    pruneMissing();
     return recents;
 }
 

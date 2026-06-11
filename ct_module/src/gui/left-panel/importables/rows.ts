@@ -10,25 +10,25 @@ import { Icons } from "../../lib/icons.generated";
 import { openMenu, MenuAction } from "../../lib/menu";
 import { openRenameImportablePopover } from "../../popovers/rename-importable";
 import {
+    getHousingUuid,
     isAutoTrackSource,
     isImportableChecked,
     toggleAutoTrackSource,
     toggleImportableChecked,
 } from "../../state";
-import { getCacheStatusRows } from "../../cache-status/rows";
 import { ACCENT_DANGER, ACCENT_SUCCESS, ACCENT_WARN, COLOR_TEXT_DIM, COLOR_TEXT_FAINT, GLYPH_DOT } from "../../lib/theme";
 import { diagnosticCountsFor, type SeverityCounts } from "../../cache-status/diagnosticCounts";
 import { openEditFunctionFieldPopover } from "../../popovers/edit-function";
 import { STATUS_COLOR, STATUS_LABEL, cacheStateForImportable } from "../../cache-status";
 import {
-    allReferencedPaths,
     hasSubList,
     importableSourcePath,
     importableSubListPath,
     type SubListKind,
 } from "../../parsing/importablePaths";
 import { importableIdentity, importableKey } from "../../../importCache/paths";
-import { findCacheRowIndex } from "../../../importCache/status";
+import { readImportableCache } from "../../../importCache/cache";
+import { canonicalIconItem } from "../../../importCache/hash";
 import { addToQueue, makeImportableQueueItem, queueItemKey, removeFromQueueKey } from "../../right-panel/import-tab/queue";
 import { isImportRunning } from "../../../housingSync/runtimeState";
 import { composeFileMenu, composeImportableMenu } from "../../menus/fileMenu";
@@ -97,11 +97,9 @@ function formatPos(p: { x: number; y: number; z: number }): string {
 }
 
 function getCachedImportable(imp: Importable): Importable | null {
-    const rows = getCacheStatusRows();
-    const id = importableIdentity(imp);
-    const index = findCacheRowIndex(rows, id, imp.type);
-    if (index < 0) return null;
-    const entry = rows[index].entry;
+    const uuid = getHousingUuid();
+    if (uuid === null) return null;
+    const entry = readImportableCache(uuid, imp.type, importableIdentity(imp));
     return entry === null ? null : entry.importable;
 }
 
@@ -129,7 +127,16 @@ export function metadataFieldsOf(imp: Importable): MetadataField[] {
                 key: "icon",
                 label: "Icon",
                 value: imp.icon !== undefined ? imp.icon.item : "default",
-                diff: cf !== null ? valDiff(imp.icon?.item, cf.icon?.item) : undefined,
+                // Compare in canonical form — house reads store bare item
+                // names while the loader emits `minecraft:<name>`; comparing
+                // raw strings would flag identical icons as changed.
+                diff:
+                    cf !== null
+                        ? valDiff(
+                              imp.icon !== undefined ? canonicalIconItem(imp.icon.item) : undefined,
+                              cf.icon !== undefined ? canonicalIconItem(cf.icon.item) : undefined
+                          )
+                        : undefined,
             },
         ];
         if (imp.icon !== undefined) {
@@ -137,7 +144,11 @@ export function metadataFieldsOf(imp: Importable): MetadataField[] {
                 key: "iconCount",
                 label: "Count",
                 value: imp.icon.count !== undefined ? String(imp.icon.count) : "1",
-                diff: cf !== null ? valDiff(imp.icon.count, cf?.icon?.count) : undefined,
+                // count 1 and absent count are the same icon.
+                diff:
+                    cf !== null
+                        ? valDiff(imp.icon.count ?? 1, cf.icon?.count ?? 1)
+                        : undefined,
             });
         }
         return fields;
@@ -273,6 +284,17 @@ export function rootRow(label: string, key: string, actions: MenuAction[]): Elem
     });
 }
 
+// The project folder is the directory holding the import.json — opening it
+// in VSCode roots the workspace there, so every referenced .htsl is in the tree.
+function projectDirOf(importJsonPath: string): string {
+    const norm = importJsonPath.split("\\").join("/");
+    const slash = norm.lastIndexOf("/");
+    if (slash < 0) return ".";
+    if (slash === 0) return "/";
+    if (slash === 2 && norm.charAt(1) === ":") return norm.substring(0, 3);
+    return norm.substring(0, slash);
+}
+
 export function resultRow(
     r: Result,
     sourceKey: string,
@@ -299,10 +321,9 @@ export function resultRow(
                   },
               },
               {
-                  label: "Open in VSCode (with references)",
+                  label: "Open project in VSCode",
                   onClick: () => {
-                      const paths = allReferencedPaths(r.fullPath, r.parse);
-                      openInVSCode(paths);
+                      openInVSCode(projectDirOf(r.fullPath), { newWindow: true });
                   },
               },
               ...extraActions,
@@ -457,6 +478,7 @@ export function importableRow(parent: ResultImport, imp: Importable): Element {
                 McItem({ item: imp.icon.item, count: imp.icon.count ?? 1 }),
             Text({
                 text: importableLabel(imp),
+                truncate: true,
                 style: { width: { kind: "grow" } },
             }),
             (diagCounts.errors > 0 || diagCounts.warnings > 0) &&

@@ -13,11 +13,21 @@ const stubGlobal = (name: string, value: unknown) => {
 stubGlobal("Java", {
     type: () => new Proxy({}, { get: () => () => undefined }),
 });
-stubGlobal("Client", { sendPacket: () => undefined });
+stubGlobal("Client", {
+    sendPacket: () => undefined,
+    getMinecraft: () => ({
+        field_71466_p: {
+            func_78256_a: (text: string) => text.replace(/(?:§|&)[0-9a-fklmnor]/gi, "").length,
+        },
+    }),
+});
 stubGlobal("ChatLib", {
     chat: () => undefined,
     command: () => undefined,
     say: () => undefined,
+    getChatWidth: () => 320,
+    replaceFormatting: (text: string) => text.replace(/&([0-9a-fklmnor])/gi, "§$1"),
+    removeFormatting: (text: string) => text.replace(/§[0-9a-fklmnor]/gi, ""),
 });
 stubGlobal("Player", { getName: () => "tester" });
 stubGlobal("World", { playSound: () => undefined });

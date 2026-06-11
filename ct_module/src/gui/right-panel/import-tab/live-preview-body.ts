@@ -9,7 +9,7 @@ import {
     COLOR_BUTTON_HOVER,
     COLOR_TEXT,
 } from "../../lib/theme";
-import { getActiveImportPath } from "./importProgress";
+import { getActiveImportPath, getImportProgress, getSessionVerb } from "./importProgress";
 import { CodeView, jumpToFocusedLine } from "../../code-view/codeView";
 import { progressDecorator } from "../decorators";
 import { previewLinesForFile } from "./livePreview";
@@ -28,8 +28,15 @@ export function livePreviewBody(): Element {
                 lineDecorator: () => progressDecorator(getActiveImportPath()),
                 autoFollow: true,
                 scrollLocked: () => getActiveImportPath() !== null,
-                emptyMessage:
-                    "No import in progress. Queue something and click Import to see live changes here.",
+                emptyMessage: () => {
+                    if (getImportProgress() !== null) {
+                        const verb = getSessionVerb();
+                        if (verb === "export") return "Exporting — progress below.";
+                        if (verb === "read") return "Reading house contents — progress below.";
+                        return "Importing — progress below.";
+                    }
+                    return "No import in progress. Queue something and click Import to see live changes here.";
+                },
             }),
         ],
     });

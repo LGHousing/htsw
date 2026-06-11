@@ -6,6 +6,7 @@ export type ContainerProps = {
     style?: ContainerStyle;
     onClick?: (rect: Rect, info: ClickInfo) => void;
     onDoubleClick?: (rect: Rect) => void;
+    onHover?: (rect: Rect) => void;
 };
 
 export function Container(props: ContainerProps): Element {
@@ -15,6 +16,7 @@ export function Container(props: ContainerProps): Element {
         children: props.children,
         onClick: props.onClick,
         onDoubleClick: props.onDoubleClick,
+        onHover: props.onHover,
     };
 }
 
@@ -24,6 +26,7 @@ export function Row(props: ContainerProps): Element {
         style: { ...(props.style ?? {}), direction: "row" },
         onClick: props.onClick,
         onDoubleClick: props.onDoubleClick,
+        onHover: props.onHover,
     });
 }
 
@@ -33,5 +36,6 @@ export function Col(props: ContainerProps): Element {
         style: { ...(props.style ?? {}), direction: "col" },
         onClick: props.onClick,
         onDoubleClick: props.onDoubleClick,
+        onHover: props.onHover,
     });
 }

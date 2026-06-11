@@ -43,6 +43,7 @@ import {
     getImportProgress,
     getImportProgressFraction,
     getSessionVerb,
+    isEtaRough,
     setActiveImportPath,
     setImportProgress,
 } from "./importProgress";
@@ -132,6 +133,7 @@ function currentPhaseLabel(): string {
     const p = getImportProgress();
     if (p === null || p.active === null) return "";
     if (getSessionVerb() === "export") return "§lExporting";
+    if (getSessionVerb() === "read") return "§lReading";
     const labels = PHASE_LABELS[p.active.phase];
     if (labels === undefined) return "§lDone";
     const parts: string[] = [];
@@ -308,7 +310,10 @@ function progressTotalEtaLine(): string {
     if (secs === null) return `total calculating… · ${rate}`;
     const etc = getImportEtcMs();
     const etcText = etc === null ? "" : ` · ETC ${formatClockTime(etc)}`;
-    return `total ${formatEtaSeconds(secs)}${etcText} · ${rate}`;
+    // "~" marks a session whose item sizes are pure fallbacks (nothing cached
+    // or parsed to size from), so the total is a guess, not an estimate.
+    const rough = isEtaRough() ? "~" : "";
+    return `total ${rough}${formatEtaSeconds(secs)}${etcText} · ${rate}`;
 }
 
 export function liveImporterPanel(): Element {
@@ -349,8 +354,11 @@ export function liveImporterPanel(): Element {
                             children: [
                                 Text({
                                     text: () => {
-                                        const noun = getSessionVerb() === "export" ? "Export" : "Importable";
-                                        const gerund = getSessionVerb() === "export" ? "Exporting" : "Importing";
+                                        const verb = getSessionVerb();
+                                        const noun =
+                                            verb === "export" ? "Export" : verb === "read" ? "Read" : "Importable";
+                                        const gerund =
+                                            verb === "export" ? "Exporting" : verb === "read" ? "Reading" : "Importing";
                                         return current !== null
                                             ? `${noun} ${currentNumber} of ${totalImportables}  ·  §b§l${current.identity}`
                                             : allDone

@@ -1,7 +1,7 @@
 /// <reference types="../../../../CTAutocomplete" />
 
 import { Result, ResultImport } from "./rowModel";
-import { parseImportJsonAt } from "../../parsing/parses";
+import { requestParse } from "../../parsing/parses";
 
 export type SourceDir = {
     kind: "dir";
@@ -141,14 +141,14 @@ function visitFile(p: any, root: any, out: Result[]): void {
         fname === "import.json" ||
         (fname.length >= 5 && fname.lastIndexOf(".json") === fname.length - 5);
     if (isImportJson) {
-        const cached = parseImportJsonAt(fullPath);
+        const cached = requestParse(fullPath);
         const r: ResultImport = {
             type: "import",
             path,
             fullPath,
-            importables: cached.parsed?.value ?? [],
-            parse: cached.parsed,
-            parseError: cached.error ?? undefined,
+            importables: cached?.parsed?.value ?? [],
+            parse: cached?.parsed ?? null,
+            parseError: cached?.error ?? undefined,
         };
         out.push(r);
     } else if (fname.length >= 5 && fname.lastIndexOf(".htsl") === fname.length - 5) {
@@ -259,8 +259,10 @@ export function enumerateForSource(s: Source): Result[] {
     for (let i = 0; i < results.length; i++) {
         const r = results[i];
         if (r.type !== "import") continue;
-        const fresh = parseImportJsonAt(r.fullPath);
-        if (fresh.parsed !== r.parse) {
+        // Cold entries return null here and warm up off-frame; only adopt a
+        // real parse so we never blank out rows we've already shown.
+        const fresh = requestParse(r.fullPath);
+        if (fresh !== null && fresh.parsed !== r.parse) {
             r.importables = fresh.parsed?.value ?? [];
             r.parse = fresh.parsed;
             if (fresh.error !== null) r.parseError = fresh.error;

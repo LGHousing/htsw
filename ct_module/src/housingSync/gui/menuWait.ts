@@ -15,6 +15,7 @@ import { type WaitForPromise } from "../../tasks/specifics/waitFor";
 import { COST } from "../progress/costs";
 import { timed } from "../progress/timing";
 import { IMPORT_DEBUG } from "../diagnostics/importDebug";
+import { traceMenuWait } from "../progress/trace";
 
 const MENU_WAIT_TIMEOUT_MS = 6000;
 
@@ -120,14 +121,118 @@ function s30SlotCount(packet: unknown): number {
     }
 }
 
-/**
- * Number of waitForMenu sequences with a registered packet/tick waiter right
- * now. The importer drives menus strictly sequentially, so this should never
- * exceed 1. If it does, a prior waitForMenu leaked its waiters (e.g. a timeout
- * that failed to clean up) — exactly the failure mode that produces
- * scan-against-stale-container bugs far downstream. Tripwire-logged below.
- */
-let liveMenuWaiters = 0;
+type MenuWaitState = {
+    openedWindowId: number | null;
+    expectedItems: number;
+    snapshotSlots: number;
+    ticksWaited: number;
+    lastCurId: number | null;
+    lastCount: number;
+    maxCount: number;
+    everMatchedWindow: boolean;
+};
+
+function createMenuWaitState(openedWindowId: number | null = null): MenuWaitState {
+    return {
+        openedWindowId,
+        expectedItems: 0,
+        snapshotSlots: 0,
+        ticksWaited: 0,
+        lastCurId: null,
+        lastCount: 0,
+        maxCount: 0,
+        everMatchedWindow: false,
+    };
+}
+
+function describeMenuWaitState(state: MenuWaitState): string {
+    if (state.openedWindowId === null) {
+        return `no S2DPacketOpenWindow/S30PacketWindowItems pair received; current${menuStateDescription()}; gui=${describeGuiScreenMenu()}`;
+    }
+    if (!state.everMatchedWindow) {
+        return `window ${state.openedWindowId} opened with ${state.expectedItems} items, but active container stayed on windowId ${state.lastCurId}; current${menuStateDescription()}; gui=${describeGuiScreenMenu()}`;
+    }
+    return `window ${state.openedWindowId} opened, active container reached it, observed ${state.lastCount}/${state.expectedItems} items (peak ${state.maxCount}); snapshot slots=${state.snapshotSlots}; current${menuStateDescription()}; gui=${describeGuiScreenMenu()}`;
+}
+
+async function waitForOpenedWindowToBeReady(
+    ctx: TaskContext,
+    state: MenuWaitState,
+    skipPopulateWait: boolean,
+    setTickWaiter: (waiter: WaitForPromise<unknown> | null) => void
+): Promise<void> {
+    let tickWaiter: WaitForPromise<unknown> | null = null;
+    try {
+        let ready = false;
+        const loopStartMs = Date.now();
+        for (let i = 0; i < CONTAINER_SWITCH_MAX_TICKS; i++) {
+            tickWaiter = ctx.waitFor("tick");
+            setTickWaiter(tickWaiter);
+            await tickWaiter;
+            state.ticksWaited++;
+            if (state.openedWindowId === null) { ready = true; break; }
+            const curId = getOpenContainerWindowId();
+            state.lastCurId = curId;
+            if (curId === null) {
+                throw new Error("Container closed while waiting for menu to populate");
+            }
+            if (curId !== state.openedWindowId) continue;
+            state.everMatchedWindow = true;
+            const count = openContainerItemCount();
+            state.lastCount = count;
+            if (count > state.maxCount) state.maxCount = count;
+            if (skipPopulateWait || count >= Math.max(1, state.expectedItems)) {
+                ready = true;
+                break;
+            }
+        }
+        if (state.openedWindowId !== null) {
+            recordMenuWaitTicks(state.ticksWaited, ready);
+            if (!ready) {
+                const elapsed = Date.now() - loopStartMs;
+                throw new Error(
+                    `Menu not ready within ${CONTAINER_SWITCH_MAX_TICKS} ticks (${state.ticksWaited} ticks/${elapsed}ms): ${describeMenuWaitState(state)}`
+                );
+            }
+        }
+        traceMenuWait("ready", {
+            windowId: state.openedWindowId,
+            ticksWaited: state.ticksWaited,
+            observedItems: state.lastCount,
+            expectedItems: state.expectedItems,
+        });
+    } finally {
+        tickWaiter?.cleanupWaiter?.();
+        setTickWaiter(null);
+    }
+}
+
+function wrapMenuWaitTimeout(
+    promise: Promise<void>,
+    cleanup: () => void,
+    state: MenuWaitState
+): WaitForPromise<void> {
+    const wrapped = promise.catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        const details = describeMenuWaitState(state);
+        traceMenuWait("failure", {
+            error: message,
+            details,
+            ticksWaited: state.ticksWaited,
+            openedWindowId: state.openedWindowId,
+            expectedItems: state.expectedItems,
+            observedItems: state.lastCount,
+            peakItems: state.maxCount,
+        });
+        if (message.indexOf("Timeout after") !== -1) {
+            throw new Error(`${message}; ${details}`);
+        }
+        throw error;
+    }) as WaitForPromise<void>;
+    wrapped.cleanupWaiter = cleanup;
+    wrapped.catch(() => {});
+    return wrapped;
+}
 
 // `skipPopulateWait`: resolve as soon as the opened window is the active
 // container, skipping the "reached its WindowItems count" wait. For containers
@@ -147,127 +252,100 @@ export function waitForMenu(
     // silently no-ops on timeout and the waiters leak).
     let packetWaiter: WaitForPromise<unknown> | null = null;
     let tickWaiter: WaitForPromise<unknown> | null = null;
+    const state = createMenuWaitState();
+    traceMenuWait("start", {
+        skipPopulateWait,
+        currentMenu: menuStateDescription(),
+        gui: describeGuiScreenMenu(),
+    });
 
-    let accounted = false;
-    const release = (): void => {
-        if (!accounted) return;
-        accounted = false;
-        liveMenuWaiters--;
-    };
     const cleanup = (): void => {
         packetWaiter?.cleanupWaiter?.();
         tickWaiter?.cleanupWaiter?.();
-        release();
     };
 
-    if (IMPORT_DEBUG && liveMenuWaiters > 0) {
-        ChatLib.chat(
-            `&c[menu-wait] LEAK: ${liveMenuWaiters} waitForMenu waiter(s) already live when starting another — a prior wait did not clean up.`
-        );
-    }
-    liveMenuWaiters++;
-    accounted = true;
-
     const inner = (async (): Promise<void> => {
-        try {
-            // Anchor on the actual window-open event. Hypixel assigns a fresh
-            // windowID and sends S2DPacketOpenWindow on every transition (open,
-            // sub-open, go-back, page-turn), followed by that window's
-            // S30PacketWindowItems. We capture the opened windowID from the S2D
-            // and resolve only on the S30 that matches it. A single stateful
-            // waiter (not S2D-then-S30 in sequence) avoids the microtask gap
-            // where the S30 lands between resolving an S2D waiter and
-            // registering an S30 waiter. Stray S30s for unrelated windows (e.g.
-            // a transient/empty Housing menu) carry a different ID and are
-            // ignored; the old `windowID !== lastWindowID` heuristic matched
-            // them, landing us in the wrong menu.
-            let openedWindowId: number | null = null;
-            // The full item count the menu will have, read off its WindowItems
-            // snapshot. The container reaching this == the menu fully applied.
-            let expectedItems = 0;
-            let snapshotSlots = 0;
-            packetWaiter = ctx.waitFor("packetReceived", (packet) => {
-                if (packet instanceof S2DPacketOpenWindow) {
-                    const id = s2dWindowId(packet);
-                    if (id !== null && id !== 0) openedWindowId = id;
-                    return false;
-                }
-                if (openedWindowId !== null && packet instanceof S30PacketWindowItems) {
-                    if (s30WindowId(packet) !== openedWindowId) return false;
-                    expectedItems = s30MenuItemCount(packet);
-                    snapshotSlots = s30SlotCount(packet);
-                    return true;
+        // Anchor on the actual window-open event. Hypixel assigns a fresh
+        // windowID and sends S2DPacketOpenWindow on every transition (open,
+        // sub-open, go-back, page-turn), followed by that window's
+        // S30PacketWindowItems. We capture the opened windowID from the S2D
+        // and resolve only on the S30 that matches it. A single stateful
+        // waiter (not S2D-then-S30 in sequence) avoids the microtask gap
+        // where the S30 lands between resolving an S2D waiter and
+        // registering an S30 waiter. Stray S30s for unrelated windows (e.g.
+        // a transient/empty Housing menu) carry a different ID and are
+        // ignored; the old `windowID !== lastWindowID` heuristic matched
+        // them, landing us in the wrong menu.
+        packetWaiter = ctx.waitFor("packetReceived", (packet) => {
+            if (packet instanceof S2DPacketOpenWindow) {
+                const id = s2dWindowId(packet);
+                if (id !== null && id !== 0) {
+                    state.openedWindowId = id;
+                    traceMenuWait("openWindow", { windowId: id });
                 }
                 return false;
-            });
-            await packetWaiter;
+            }
+            if (state.openedWindowId !== null && packet instanceof S30PacketWindowItems) {
+                if (s30WindowId(packet) !== state.openedWindowId) return false;
+                state.expectedItems = s30MenuItemCount(packet);
+                state.snapshotSlots = s30SlotCount(packet);
+                traceMenuWait("windowItems", {
+                    windowId: state.openedWindowId,
+                    expectedItems: state.expectedItems,
+                    snapshotSlots: state.snapshotSlots,
+                });
+                return true;
+            }
+            return false;
+        });
+        await packetWaiter;
 
-            // The sync-drain Promise polyfill runs our post-`await` continuation
-            // synchronously at tick-start, before MC's packet-processing step
-            // applies the menu. So poll each tick until the active container is
-            // the window we saw open AND the menu is fully applied — for normal
-            // menus that's the container reaching the WindowItems count. A fixed
-            // target reached once, no "stable count" guessing that hangs on
-            // menus whose count never holds still. Callers that opened a
-            // container whose count never matches its snapshot (anvil) pass
-            // skipPopulateWait to resolve on the window becoming active alone.
-            let ticksWaited = 0;
-            let ready = false;
-            let lastCurId: number | null = null;
-            let lastCount = 0;
-            let maxCount = 0;
-            let everMatchedWindow = false;
-            const loopStartMs = Date.now();
-            for (let i = 0; i < CONTAINER_SWITCH_MAX_TICKS; i++) {
-                tickWaiter = ctx.waitFor("tick");
-                await tickWaiter;
-                ticksWaited++;
-                if (openedWindowId === null) { ready = true; break; }
-                const curId = getOpenContainerWindowId();
-                lastCurId = curId;
-                if (curId === null) { ready = true; break; }
-                if (curId !== openedWindowId) continue;
-                everMatchedWindow = true;
-                const count = openContainerItemCount();
-                lastCount = count;
-                if (count > maxCount) maxCount = count;
-                if (skipPopulateWait || count >= Math.max(1, expectedItems)) {
-                    ready = true;
-                    break;
-                }
-            }
-            if (openedWindowId !== null) {
-                recordMenuWaitTicks(ticksWaited, ready);
-                if (!ready) {
-                    const elapsed = Date.now() - loopStartMs;
-                    const why = !everMatchedWindow
-                        ? `active container stuck on windowId ${lastCurId} (never became ${openedWindowId})`
-                        : `observed ${lastCount}/${expectedItems} items (peak ${maxCount}); ` +
-                          `snapshot slots=${snapshotSlots} vs live${menuStateDescription()}; gui=${describeGuiScreenMenu()}`;
-                    throw new Error(
-                        `Menu window ${openedWindowId} opened but not ready within ${CONTAINER_SWITCH_MAX_TICKS} ticks (${ticksWaited} ticks/${elapsed}ms): ${why}`
-                    );
-                }
-            }
-        } finally {
-            release();
-        }
+        await waitForOpenedWindowToBeReady(ctx, state, skipPopulateWait, (waiter) => {
+            tickWaiter = waiter;
+        });
     })() as WaitForPromise<void>;
     inner.cleanupWaiter = cleanup;
 
-    const promise = ctx.withTimeout(
+    const timedPromise = ctx.withTimeout(
         inner,
         "Waiting for menu to load",
         MENU_WAIT_TIMEOUT_MS
-    ) as WaitForPromise<void>;
-    promise.cleanupWaiter = cleanup;
+    );
+    return wrapMenuWaitTimeout(timedPromise, cleanup, state);
+}
 
-    // Pre-attach a no-op catch so when a racing caller calls cleanupWaiter and
-    // we eventually time out with no listener, the rejection isn't reported as
-    // unhandled.
-    promise.catch(() => {});
+export function waitForKnownMenu(
+    ctx: TaskContext,
+    openedWindowId: number,
+    skipPopulateWait: boolean = false
+): WaitForPromise<void> {
+    let tickWaiter: WaitForPromise<unknown> | null = null;
+    const cleanup = (): void => {
+        tickWaiter?.cleanupWaiter?.();
+    };
 
-    return promise;
+    const state = createMenuWaitState(openedWindowId);
+    traceMenuWait("start", {
+        skipPopulateWait,
+        knownWindowId: openedWindowId,
+        currentMenu: menuStateDescription(),
+        gui: describeGuiScreenMenu(),
+    });
+    traceMenuWait("openWindow", { windowId: openedWindowId, known: true });
+
+    const inner = (async (): Promise<void> => {
+        await waitForOpenedWindowToBeReady(ctx, state, skipPopulateWait, (waiter) => {
+            tickWaiter = waiter;
+        });
+    })() as WaitForPromise<void>;
+    inner.cleanupWaiter = cleanup;
+
+    const timedPromise = ctx.withTimeout(
+        inner,
+        "Waiting for menu to load",
+        MENU_WAIT_TIMEOUT_MS
+    );
+    return wrapMenuWaitTimeout(timedPromise, cleanup, state);
 }
 
 export function timedWaitForMenu(

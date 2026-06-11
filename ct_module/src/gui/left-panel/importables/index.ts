@@ -8,11 +8,7 @@ import { Button, Col, Container, Icon, Input, Row, Scroll, Text } from "../../li
 import { Icons } from "../../lib/icons.generated";
 import { closeAllPopovers, togglePopover } from "../../lib/popovers";
 import { openFileBrowser } from "../../popovers/file-browser";
-import {
-    getImportJsonPath,
-    isParseInProgress,
-    setImportJsonPath,
-} from "../../state";
+import { isParseInProgress, setImportJsonPath } from "../../state";
 import { COLOR_TEXT_DIM } from "../../lib/theme";
 import { scheduleReparse } from "../../parsing/reparse";
 import { addRecent, getRecents } from "../../persistence/recents";
@@ -24,16 +20,9 @@ import { isFilterDefault, filterPopoverContent, FILTER_POPOVER_HEIGHT } from "./
 import { searchQuery, setSearchQuery } from "./rows";
 import { RESULTS_SCROLL_ID, renderRows } from "./tree";
 
-function dirOfPath(p: string): string {
-    const norm = p.replace(/\\/g, "/");
-    const slash = norm.lastIndexOf("/");
-    if (slash <= 0) return ".";
-    return norm.substring(0, slash);
-}
-
 function openBrowseModal(): void {
     closeAllPopovers();
-    openFileBrowser(dirOfPath(getImportJsonPath()) || ".");
+    openFileBrowser();
 }
 
 function loadRecent(path: string): void {

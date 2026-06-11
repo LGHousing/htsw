@@ -37,7 +37,7 @@ export type CodeViewProps = {
     autoFollow?: boolean;
 
     scrollLocked?: Extractable<boolean>;
-    emptyMessage?: string;
+    emptyMessage?: Extractable<string>;
 };
 
 const FOLLOW_THROTTLE_MS = 80;
@@ -94,7 +94,9 @@ export function CodeView(props: CodeViewProps): Element {
             }
             if (lines === null || lines.length === 0) {
                 return buildEmptyMessageRows(
-                    props.emptyMessage ?? "(no file)",
+                    props.emptyMessage === undefined
+                        ? "(no file)"
+                        : extract(props.emptyMessage),
                     bodyWidthForScroll(props.scrollId, 0, false, false)
                 );
             }

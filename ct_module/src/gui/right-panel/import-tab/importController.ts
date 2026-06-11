@@ -3,12 +3,12 @@
 import {
     getExportImportJsonPath,
     getHousingUuid,
-    getImportJsonPath,
     clearImportableChecks,
     getAutoTrackSources,
     isAnyAutoTrackEnabled,
     isCurrentHouseTrusted,
     isImportableChecked,
+    isImportSoundsMuted,
     setHousingUuid,
     toggleImportableChecked,
 } from "../../state";
@@ -20,8 +20,6 @@ import {
     setActiveImportPath,
     setImportProgress,
 } from "./importProgress";
-import { rebuildCacheStatusRows } from "../../cache-status/build";
-import { refreshCacheStatusRowFromDisk } from "../../cache-status/rows";
 import {
     addToQueue,
     beginQueueSession,
@@ -32,18 +30,18 @@ import {
     removeFromQueueKey,
     type QueueItem,
 } from "./queue";
-import { forEachCachedParse, getParseAt, parseImportJsonAt } from "../../parsing/parses";
+import {
+    forEachCachedParse,
+    invalidateParseCacheEntry,
+    parseImportJsonBlocking,
+} from "../../parsing/parses";
+import { scheduleReparse } from "../../parsing/reparse";
 import { printDiagnostics } from "../../../tui/diagnostics";
 import {
     importSelectedImportables,
     orderImportablesForImportSession,
 } from "../../../importables/importSession";
-import { exportImportable } from "../../../importables/exports";
-import { exportAllFunctions } from "../../../importables/functions/exportAll";
-import {
-    captureFromHousing,
-    type CaptureType,
-} from "../../../exporter/captureFromHousing";
+import type { ExportResult } from "../../../importables/exportSession";
 import { importableIdentity, importableKey } from "../../../importCache/paths";
 import { getCurrentHousingUuid } from "../../../importCache/housingId";
 import { TaskManager, isTaskCancelled } from "../../../tasks/manager";
@@ -51,8 +49,8 @@ import type TaskContext from "../../../tasks/context";
 import type { Importable } from "htsw/types";
 import type { Diagnostic, ParseResult } from "htsw";
 import { closeAllPopovers } from "../../lib/popovers";
+import { shortPath } from "../../lib/pathDisplay";
 import { statusForImportable } from "../../cache-status";
-import { htslFilenameForFunctionExport } from "../../../exporter/paths";
 import { importableSourcePath } from "../../parsing/importablePaths";
 import { attributeDiagnostics } from "../../cache-status/diagnosticCounts";
 import type {
@@ -60,12 +58,14 @@ import type {
     ImportEvent,
 } from "../../../housingSync/importEvents";
 import { importProgressKey } from "../../../housingSync/progress/keys";
+import type { ExportProgressSink } from "../../../housingSync/progress/types";
+import { createExportProgressSink } from "./exportProgress";
 import { initialReducerState, reduce } from "../../../housingSync/progress/reducer";
 import { traceImportEvent, traceProgressEvent } from "../../../housingSync/progress/trace";
 import { invalidateSourceDiffForImportable } from "../../code-view/sourceDiff";
 import { showToast } from "../../toast";
 import { isImportRunning, setImportRunning } from "../../../housingSync/runtimeState";
-import { gmcOnImportStart, playImportSuccessSound } from "../../../housingSync/sideEffects";
+import { gmcOnImportStart, playImportSuccessSound, waitForCreativeMode } from "../../../housingSync/sideEffects";
 import { resetStepGate } from "../../../housingSync/stepGate";
 import { startPacketOrderProbe, stopPacketOrderProbe } from "../../../housingSync/diagnostics/packetOrderProbe";
 import { resetEventContainers } from "../../../tasks/specifics/waitFor";
@@ -87,8 +87,6 @@ import {
     setObservedTopLevel,
 } from "./livePreview";
 import { setFocusLineId } from "./focusedLine";
-
-export const CAPTURE_TYPES: CaptureType[] = ["FUNCTION", "MENU"];
 
 
 /**
@@ -113,26 +111,6 @@ function formatElapsedSeconds(secs: number): string {
     const h = Math.floor(m / 60);
     const mm = m % 60;
     return mm === 0 ? `${h}h` : `${h}h${mm}m`;
-}
-
-function refreshCacheStatusRows(): void {
-    const uuid = getHousingUuid();
-    if (uuid === null) return;
-    const all: Importable[] = [];
-    const seen = new Set<string>();
-    const importJsonPath = getImportJsonPath();
-    const main = getParseAt(importJsonPath);
-    if (main !== null && main.parsed !== null) {
-        for (const imp of main.parsed.value) {
-            const id = `${imp.type}:${importableIdentity(imp)}`;
-            if (seen.has(id)) continue;
-            seen.add(id);
-            all.push(imp);
-        }
-    }
-
-    rebuildCacheStatusRows(uuid, all, /*progressive=*/ false);
-    autoTrackRefresh();
 }
 
 export function autoTrackRefresh(): void {
@@ -227,11 +205,8 @@ function createImportEventHandler(args: {
         },
         importableFinished: (e) => {
             const imp = importablesByKey.get(e.key);
-            if (imp !== undefined) {
-                refreshCacheStatusRowFromDisk(args.housingUuid, imp);
-                if (e.status === "imported") {
-                    invalidateSourceDiffForImportable(imp, args.parsed);
-                }
+            if (imp !== undefined && e.status === "imported") {
+                invalidateSourceDiffForImportable(imp, args.parsed);
             }
         },
         importableReactivated: (e) => {
@@ -360,7 +335,7 @@ function buildBatches(explicit?: readonly QueueItem[]): ImportBatch[] | null {
     };
     const groups = new Map<string, Group>();
     for (const item of queue) {
-        const cached = parseImportJsonAt(item.sourcePath);
+        const cached = parseImportJsonBlocking(item.sourcePath);
         if (cached.parsed === null) {
             ChatLib.chat(`&c[htsw] Skipping ${item.sourcePath}: ${cached.error ?? "parse failed"}`);
             continue;
@@ -540,6 +515,9 @@ export function startImport(explicit?: readonly QueueItem[]): void {
                 housingUuid = await getCurrentHousingUuid(ctx);
                 setHousingUuid(housingUuid);
             }
+            if (!(await waitForCreativeMode(ctx))) {
+                ChatLib.chat("&e[htsw] Still not in creative after /gmc — item spawns may fail. Check your gamemode permissions on this plot.");
+            }
             for (const batch of batches) {
                 const events = createImportEventHandler({
                     parsed: batch.parsed,
@@ -559,6 +537,10 @@ export function startImport(explicit?: readonly QueueItem[]): void {
                 totalImported += c.imported;
                 totalSkipped += c.skipped;
                 totalFailed += c.failed;
+                // A failed importable can leave the Housing menu mid-edit, so
+                // the menu state for the next batch is unknown. Abort the run
+                // rather than drive unrelated files from an uncertain menu.
+                if (c.failed > 0) break;
             }
             importSucceeded = totalFailed === 0;
         } catch (err) {
@@ -572,7 +554,7 @@ export function startImport(explicit?: readonly QueueItem[]): void {
             stopPacketOrderProbe();
             flushMenuWaitTickSummary();
             setActiveImportPath(null);
-            refreshCacheStatusRows();
+            autoTrackRefresh();
             setImportRunning(false);
             const elapsed = formatElapsedSeconds((Date.now() - startedAt) / 1000);
             if (cancelled) {
@@ -581,7 +563,10 @@ export function startImport(explicit?: readonly QueueItem[]): void {
                     0xffe5bc4b
                 );
             } else if (importSucceeded) {
-                playImportSuccessSound();
+                // Gate our own cue here: the overlay soundPlay interceptor only
+                // suppresses sounds while import progress is live, and this
+                // fires at completion — so the toggle must be checked directly.
+                if (!isImportSoundsMuted()) playImportSuccessSound();
                 showToast(
                     `Import complete in ${elapsed} · ${totalImported} imported, ${totalSkipped} skipped`,
                     0xff5cb85c
@@ -635,18 +620,96 @@ export function startImport(explicit?: readonly QueueItem[]): void {
 
 // ── Batch export flow ─────────────────────────────────────────────────
 
-export function startExportAllFunctions(): void {
+export type ExportSpec = {
+    type: Importable["type"];
+    /** Singular lowercase noun used in user-facing messages, e.g. "function". */
+    label: string;
+    exportAll: (
+        ctx: TaskContext,
+        opts: {
+            importJsonPath: string;
+            rootDir: string;
+            names?: readonly string[];
+            progress?: ExportProgressSink;
+        }
+    ) => Promise<ExportResult>;
+};
+
+/**
+ * Drive a batch export from the Houses tab. With no `names`, exports every item
+ * of the type; with `names`, only those (the tab's selection). The type-specific
+ * work is the `spec.exportAll` the registry supplies (item capture, cache write,
+ * etc.); this owns the shared destination/running-task guards, the post-export
+ * reparse, and the result toasts. `onSuccess` fires only on a clean run — used
+ * to clear the exported selection.
+ */
+export function startExport(
+    spec: ExportSpec,
+    names?: readonly string[],
+    onSuccess?: () => void
+): void {
     closeAllPopovers();
     const importJsonPath = getExportImportJsonPath();
     if (importJsonPath.trim() === "") {
-        ChatLib.chat("&c[htsw] No import.json loaded — load one first");
+        showToast("No import.json loaded — pick a destination first", 0xffe85c5c);
+        return;
+    }
+    if (names !== undefined && names.length === 0) {
+        showToast("Nothing selected to export", 0xffe5bc4b);
+        return;
+    }
+    if (isImportRunning() || TaskManager.hasRunningTasks()) {
+        showToast("A task is already running — wait for it to finish", 0xffe5bc4b);
         return;
     }
     const dir = importJsonDir(importJsonPath);
+    const count = names === undefined ? null : names.length;
     TaskManager.run(async (ctx) => {
-        await exportAllFunctions(ctx, { importJsonPath, rootDir: dir });
+        setImportRunning(true);
+        let result: ExportResult;
+        try {
+            result = await spec.exportAll(ctx, {
+                importJsonPath,
+                rootDir: dir,
+                names,
+                // Feeds the same bottom progress strip the importer uses (verb
+                // flips to "export"), sized in import cost-model units.
+                progress: createExportProgressSink(spec.type, importJsonPath),
+            });
+        } finally {
+            setImportRunning(false);
+        }
+        // The export rewrote the destination import.json; drop its cached parse
+        // so the Houses drift icons re-read it now instead of showing the
+        // pre-export state until a fingerprint recheck happens to land.
+        invalidateParseCacheEntry(importJsonPath);
+        // Export rewrote source + cache on disk. Force a reparse so the
+        // cache-status dots rebuild against the fresh cache now, instead of
+        // waiting out the parse-authority's settle throttle (~1s of red).
+        scheduleReparse();
+        if (result.failed > 0) {
+            // Per-item failures are swallowed so the run finishes; surface them
+            // here instead of reporting a partial run as a clean success.
+            showToast(
+                `Export finished with ${result.failed} failed, ${result.succeeded} ok → ${shortPath(importJsonPath)}`,
+                0xffe85c5c,
+                8000
+            );
+            return;
+        }
+        if (result.total === 0) {
+            showToast(`No ${spec.label}s to export`, 0xffe5bc4b);
+            return;
+        }
+        showToast(
+            count === null
+                ? `Exported all ${spec.label}s → ${shortPath(importJsonPath)}`
+                : `Exported ${count} ${spec.label}${count === 1 ? "" : "s"} → ${shortPath(importJsonPath)}`,
+            0xff5cb85c
+        );
+        if (onSuccess !== undefined) onSuccess();
     }).catch((err: unknown) => {
-        ChatLib.chat(`&c[htsw] Export all functions failed: ${err}`);
+        showToast(`Export failed: ${err}`, 0xffe85c5c, 8000);
     });
 }
 
@@ -655,48 +718,9 @@ export function stopAllTasks(): void {
     ChatLib.chat("&c[htsw] cancelling running task...");
 }
 
-// ── Capture flow ──────────────────────────────────────────────────────
-
 function importJsonDir(path: string): string {
     const norm = path.split("\\").join("/");
     const slash = norm.lastIndexOf("/");
     if (slash <= 0) return ".";
     return norm.substring(0, slash);
-}
-
-export function startCaptureExport(type: CaptureType): void {
-    closeAllPopovers();
-    TaskManager.run(async (ctx) => {
-        const result = await captureFromHousing(ctx, type);
-        if (result.kind === "cancelled") {
-            ctx.displayMessage("&7[htsw] Export cancelled");
-            return;
-        }
-        const importJsonPath = getExportImportJsonPath();
-        if (importJsonPath.trim() === "") {
-            ctx.displayMessage("&c[htsw] No import.json loaded — load one first");
-            return;
-        }
-        const dir = importJsonDir(importJsonPath);
-        if (result.type === "FUNCTION") {
-            const filename = htslFilenameForFunctionExport(importJsonPath, result.name);
-            await exportImportable(ctx, {
-                type: "FUNCTION",
-                name: result.name,
-                importJsonPath,
-                htslPath: `${dir}/${filename}`,
-                htslReference: filename,
-                rootDir: dir,
-            });
-        } else {
-            await exportImportable(ctx, {
-                type: "MENU",
-                name: result.name,
-                importJsonPath,
-                rootDir: dir,
-            });
-        }
-    }).catch((err: unknown) => {
-        ChatLib.chat(`&c[htsw] Export failed: ${err}`);
-    });
 }

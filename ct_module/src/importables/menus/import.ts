@@ -180,10 +180,12 @@ function actionsDiffer(
     desiredActions: Action[],
     itemRegistry: ItemRegistry
 ): boolean {
-    for (const a of liveActions) canonicalizeActionItemName(a, itemRegistry);
-    for (const a of desiredActions) canonicalizeActionItemName(a, itemRegistry);
+    const liveCopy = JSON.parse(JSON.stringify(liveActions)) as Action[];
+    const desiredCopy = JSON.parse(JSON.stringify(desiredActions)) as Action[];
+    for (const a of liveCopy) canonicalizeActionItemName(a, itemRegistry);
+    for (const a of desiredCopy) canonicalizeActionItemName(a, itemRegistry);
     return (
-        diffActionList(baselineActionListFromActions(liveActions), desiredActions)
+        diffActionList(baselineActionListFromActions(liveCopy), desiredCopy)
             .operations.length > 0
     );
 }
@@ -199,21 +201,23 @@ export async function applyImportableMenuPlan(
 
     await openMenuEditor(ctx, importable.name);
 
-    // Size is set on the settings screen; do it before descending into the grid.
-    if (diff.setSize !== null) {
-        await setMenuSize(ctx, diff.setSize);
+    let remainingOps = diff.ops;
+    const clearOps = diff.ops.filter((op) => op.clear === true);
+    if (diff.setSize !== null && clearOps.length > 0) {
+        await openMenuElements(ctx);
+        for (const op of clearOps) await clearMenuSlot(ctx, op.slot);
+        await clickGoBack(ctx);
+        remainingOps = diff.ops.filter((op) => op.clear !== true);
     }
-
-    if (diff.ops.length === 0) return;
-
-    // Slot ops happen in the element grid, not the settings screen.
+    if (diff.setSize !== null) await setMenuSize(ctx, diff.setSize);
+    if (remainingOps.length === 0) return;
     await openMenuElements(ctx);
 
     // Items first, then actions. RIGHT-click opens the "Select an Item" picker
     // for empty and populated slots alike (its "Clear Item" button lives there
     // too); setting the item leaves the slot populated, so the second pass can
     // LEFT-click straight into each slot's action list.
-    for (const op of diff.ops) {
+    for (const op of remainingOps) {
         if (op.clear) {
             await clearMenuSlot(ctx, op.slot);
         } else if (op.setItem !== undefined) {
@@ -223,9 +227,11 @@ export async function applyImportableMenuPlan(
         }
     }
 
-    for (const op of diff.ops) {
+    for (const op of remainingOps) {
         if (op.syncActions === undefined) continue;
         menuGridClick(op.slot, "LEFT");
+        await timedWaitForMenu(ctx, "menuClickWait");
+        ctx.getItemSlot("Edit Actions").click();
         await timedWaitForMenu(ctx, "menuClickWait");
         const actionsPlan = await prereadActionList(ctx, op.syncActions, {
             itemRegistry,
@@ -234,6 +240,7 @@ export async function applyImportableMenuPlan(
             events,
         });
         await applyActionListPlan(ctx, actionsPlan, { itemRegistry, events });
+        await clickGoBack(ctx);
         await clickGoBack(ctx);
     }
 }

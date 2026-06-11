@@ -14,8 +14,7 @@ function cloneToken(token: TokenSpan, text: string): TokenSpan {
         text,
         color: token.color,
         fieldProp: token.fieldProp,
-        spanId: token.spanId,
-        underline: token.underline,
+        underlineColor: token.underlineColor,
     };
 }
 

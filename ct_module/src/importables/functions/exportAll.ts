@@ -6,12 +6,12 @@ import {
 } from "../../housingSync/itemCapture";
 import TaskContext from "../../tasks/context";
 import { isTaskCancelled } from "../../tasks/manager";
-import { withExportSession } from "../exportSession";
+import { ExportResult, withExportSession } from "../exportSession";
 import { exportFunctionWithSharedState } from "./export";
 import { writeCapturedItems } from "../../exporter/writeCapturedItems";
 import { htslFilenameForFunctionExport } from "../../exporter/paths";
-import type { ExportProgressSink } from "../../exporter/exportProgress";
-import { listAllFunctionNames } from "./listFunctions";
+import type { ExportProgressSink } from "../../housingSync/progress/types";
+import { listAllFunctionNames, resetFunctionNameSession } from "./listFunctions";
 
 export type ExportAllFunctionsOptions = {
     importJsonPath: string;
@@ -23,15 +23,19 @@ export type ExportAllFunctionsOptions = {
 export async function exportAllFunctions(
     ctx: TaskContext,
     options: ExportAllFunctionsOptions
-): Promise<void> {
+): Promise<ExportResult> {
     return withExportSession(() => exportAllFunctionsInner(ctx, options));
 }
 
 async function exportAllFunctionsInner(
     ctx: TaskContext,
     options: ExportAllFunctionsOptions
-): Promise<void> {
+): Promise<ExportResult> {
     const { importJsonPath, rootDir } = options;
+
+    // Drop any function-list cache from a prior import so per-function icon
+    // reads reflect the live house, not a stale snapshot.
+    resetFunctionNameSession();
 
     const inventorySnapshot: InventorySnapshot = snapshotInventory();
     const itemCaptures = new ItemCaptureRegistry();
@@ -49,7 +53,7 @@ async function exportAllFunctionsInner(
                 `&7[export] &eInventory restore failed: ${error}`
             );
         }
-        return;
+        return { total: 0, succeeded: 0, failed: 0 };
     }
 
     ctx.displayMessage(
@@ -71,6 +75,7 @@ async function exportAllFunctionsInner(
                 `&7[${i + 1}/${names.length}] &fExporting '${name}'`
             );
 
+            const sink = options.progress;
             try {
                 await exportFunctionWithSharedState(
                     ctx,
@@ -80,6 +85,10 @@ async function exportAllFunctionsInner(
                         htslPath,
                         htslReference,
                         rootDir,
+                        onReadProgress:
+                            sink?.itemProgress === undefined
+                                ? undefined
+                                : (payload) => sink.itemProgress!(i, payload),
                     },
                     { itemCaptures, inventorySnapshot }
                 );
@@ -89,6 +98,7 @@ async function exportAllFunctionsInner(
                     throw error;
                 }
                 failed++;
+                sink?.itemFailed?.(i, String(error));
                 ctx.displayMessage(
                     `&c[export-all] failed on '${name}': ${error}`
                 );
@@ -115,4 +125,6 @@ async function exportAllFunctionsInner(
         `&aExported ${succeeded} of ${names.length} function${names.length === 1 ? "" : "s"} (${itemCount} item${itemCount === 1 ? "" : "s"} captured)${failed > 0 ? ` &c[${failed} failed]` : ""}`
     );
     ctx.displayMessage(`&7  -> ${importJsonPath}`);
+
+    return { total: names.length, succeeded, failed };
 }

@@ -2,6 +2,7 @@ import type { Action } from "htsw/types";
 import * as htsw from "htsw";
 
 import { readActionList } from "../../housingSync/actions/readList";
+import type { ProgressHandler } from "../../housingSync/progress/types";
 import { clickGoBack } from "../../housingSync/gui/menuUtils";
 import { waitForMenu } from "../../housingSync/gui/menuWait";
 import TaskContext from "../../tasks/context";
@@ -92,6 +93,7 @@ export function snapshotMenuSlots(
         if (slotId >= menuSlotCount) continue;
 
         const item = itemSlot.getItem();
+        if (item === null || item === undefined) continue;
         if (isEmptySlotFiller(item)) continue;
 
         // Build SNBT from the item's Tag (not getRawNBT) so it's valid htsw
@@ -127,11 +129,14 @@ export async function readMenuSlotActions(
     }
     container.click(slotId, false, "LEFT");
     await waitForMenu(ctx);
+    ctx.getItemSlot("Edit Actions").click();
+    await waitForMenu(ctx);
 
     const observed = await readActionList(ctx, { kind: "full" });
     const actions = observedSlotsToActions(observed);
 
-    await clickGoBack(ctx); // back to the elements grid
+    await clickGoBack(ctx);
+    await clickGoBack(ctx);
     return actions;
 }
 
@@ -140,7 +145,10 @@ export async function readMenuSlotActions(
  * populated slot's item NBT + action list. The single live-menu read shared by
  * export and the import preread. Caller must have the menu editor open.
  */
-export async function readLiveMenu(ctx: TaskContext): Promise<LiveMenu> {
+export async function readLiveMenu(
+    ctx: TaskContext,
+    onReadProgress?: ProgressHandler
+): Promise<LiveMenu> {
     // Enter the actual slot grid (behind "Edit Menu Elements"). The grid
     // container's own slot count IS the menu size — `rows * 9` plus the 36
     // trailing player-inventory slots — so size needs no settings-screen read.
@@ -155,10 +163,26 @@ export async function readLiveMenu(ctx: TaskContext): Promise<LiveMenu> {
 
     const snapshot = snapshotMenuSlots(gridSize);
 
+    // Slot-level progress: a menu read is one editor round-trip per populated
+    // slot, so slots-done/slots-total is the honest granularity (per-slot
+    // action lists are usually tiny).
+    const emitSlotProgress = (done: number): void => {
+        if (onReadProgress === undefined || snapshot.length === 0) return;
+        onReadProgress({
+            phase: "reading",
+            completedUnits: done,
+            totalUnits: snapshot.length,
+            phaseUnits: { setup: 0, reading: snapshot.length, hydrating: 0, applying: 0 },
+            sync: { completedUnits: done, totalUnits: snapshot.length, parent: null },
+        });
+    };
+
     const slots: LiveMenuSlot[] = [];
+    emitSlotProgress(0);
     for (const { slotId, snbt, nameHint } of snapshot) {
         const actions = await readMenuSlotActions(ctx, slotId);
         slots.push({ slot: slotId, snbt, actions, nameHint });
+        emitSlotProgress(slots.length);
     }
 
     return { size, gridSize, slots };

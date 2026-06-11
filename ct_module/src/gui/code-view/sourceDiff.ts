@@ -148,6 +148,44 @@ export function findFileTarget(filePath: string): FileTarget | null {
     return found;
 }
 
+/**
+ * The house's (cached) version of the action at a source line's dotted
+ * action path, e.g. "3" or "0.ifActions.2". Backs the hover card on
+ * "edit" lines so the user can see WHAT the house has, not just that it
+ * differs. Returns null when the cache has no action at that path.
+ */
+export function houseActionAt(filePath: string, actionPath: string): Action | null {
+    const match = findFileTarget(filePath);
+    if (match === null) return null;
+    const housingUuid = getHousingUuid();
+    if (housingUuid === null) return null;
+    const cache = readImportableCache(
+        housingUuid,
+        match.importable.type,
+        importableIdentity(match.importable)
+    );
+    if (cache === null) return null;
+    let list = readCachedActionList(cache.importable, match.prefix);
+    let action: Action | null = null;
+    const segments = actionPath.split(".");
+    for (let i = 0; i < segments.length; i++) {
+        const seg = segments[i];
+        if (/^\d+$/.test(seg)) {
+            if (list === undefined) return null;
+            action = list[Number(seg)] ?? null;
+            if (action === null) return null;
+            list = undefined;
+        } else {
+            if (action === null) return null;
+            const nested = (action as unknown as Record<string, unknown>)[seg];
+            if (!Array.isArray(nested)) return null;
+            list = nested as Action[];
+            action = null;
+        }
+    }
+    return action;
+}
+
 function walk(
     out: SourceDiffEntry,
     prefix: string,

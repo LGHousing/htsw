@@ -9,11 +9,11 @@
 
 import type { SyntaxToken } from "../right-panel/syntax";
 import type { DiffState } from "./diffPalette";
+import type { Diagnostic } from "htsw";
 
 export type TokenSpan = SyntaxToken & {
     fieldProp?: string;
-    spanId?: string;
-    underline?: boolean;
+    underlineColor?: number;
 };
 
 export type FieldSpan = {
@@ -31,6 +31,7 @@ export type RenderableLine = {
     staticBackground?: number;
     staticForeground?: number;
     isHeader?: boolean;
+    diagnostics?: readonly Diagnostic[];
 };
 
 export type LineDecorations = {
@@ -38,6 +39,11 @@ export type LineDecorations = {
     foregroundColor?: number;
     background?: number;
     detail?: string;
+    /**
+     * Extra hover-card lines (&-formatted) for this row, merged after any
+     * diagnostics. Lazy — only invoked while the row is actually hovered.
+     */
+    hoverLines?: () => readonly string[] | null;
     alpha?: number;
     isFocused?: boolean;
     extraLinesBefore?: { line: RenderableLine; decorations: LineDecorations }[];

@@ -3,19 +3,17 @@
 import type { ParseResult } from "htsw";
 import type { Importable } from "htsw/types";
 
-import { rebuildCacheStatusRows } from "../cache-status/build";
 import {
-    getHousingUuid,
     getImportJsonPath,
     setImportJsonPath,
     setParseInProgress,
     setParsedResult,
 } from "../state";
-import { setCacheStatusRows } from "../cache-status/rows";
 import { addRecent, getRecents } from "../persistence/recents";
 import {
+    getParseAt,
     invalidateParseCacheEntry,
-    parseImportJsonAt,
+    parseImportJsonBlocking,
     touchParseCacheMtime,
     type CachedParse,
 } from "./parses";
@@ -24,7 +22,7 @@ import { javaType } from "../lib/java";
 
 /**
  * `reparse` is a thin DRIVER over the single parse authority,
- * `parseImportJsonAt` (parses.ts). It owns no parsing, snapshotting, or
+ * `parseImportJsonBlocking` (parses.ts). It owns no parsing, snapshotting, or
  * mtime-watching of its own — that all lives in `parses.ts` /
  * `parseSnapshot.ts`, behind one fingerprint-based freshness check shared
  * with the Importables tree. This driver only:
@@ -144,7 +142,7 @@ export function scheduleReparse(): void {
 
 export function reparseNow(): void {
     pendingReparse = false;
-    forceReparse(getImportJsonPath());
+    forceReparse(getImportJsonPath(), /*forceFresh=*/ true);
 }
 
 /**
@@ -156,61 +154,43 @@ export function markPathInSync(path: string): void {
     touchParseCacheMtime(path);
 }
 
-let cacheStatusGeneration = 0;
-function scheduleCacheStatusRebuild(
-    parsed: ParseResult<Importable[]> | null,
-    progressive: boolean
-): void {
-    const gen = ++cacheStatusGeneration;
-    setTimeout(() => {
-        if (gen !== cacheStatusGeneration) return;
-        const uuid = getHousingUuid();
-        rebuildCacheStatusRows(
-            uuid ?? "",
-            uuid === null ? [] : (parsed?.value ?? []),
-            progressive
-        );
-    }, 0);
-}
-
-function propagate(path: string, cached: CachedParse, progressive: boolean): void {
+function propagate(path: string, cached: CachedParse): void {
     lastSeenPath = path;
     lastParsedRef = cached.parsed;
     setParsedResult(cached.parsed);
-    if (cached.parsed === null) {
-        setCacheStatusRows([]);
-        return;
-    }
+    if (cached.parsed === null) return;
     addRecent(path);
-    scheduleCacheStatusRebuild(cached.parsed, progressive);
 }
 
 /**
- * Explicit reload: drop the cached parse and re-run the authority. Raises
- * the "parse in progress" flag when a cold parse (no snapshot on disk) is
- * likely to block the main thread, and defers the parse one turn so the
- * flag can paint first.
+ * Explicit reload: re-run the authority for `path`. With `forceFresh`, first
+ * drops the cached parse so the authority re-reads disk now instead of waiting
+ * out its settle throttle (used after an export or an explicit reload). Raises
+ * the "parse in progress" flag only when there's no content to show yet AND a
+ * cold parse (no snapshot on disk) is likely to block the main thread —
+ * switching to an already-parsed file keeps its rows on screen instead of
+ * flashing the loading row for one frame.
  */
-function forceReparse(path: string): void {
+function forceReparse(path: string, forceFresh: boolean): void {
     lastSeenPath = path;
     if (path === "" || !fileExistsSafe(path)) {
         lastParsedRef = null;
         setParsedResult(null);
-        setCacheStatusRows([]);
         return;
     }
-    invalidateParseCacheEntry(path);
+    const existing = getParseAt(path);
+    const haveContent = existing !== null && existing.parsed !== null;
+    if (forceFresh) invalidateParseCacheEntry(path);
     forceInFlight = true;
-    const willFreeze = !snapshotExists(path);
+    const willFreeze = !haveContent && !snapshotExists(path);
     if (willFreeze) setParseInProgress(true);
     setTimeout(() => {
         try {
-            const cached = parseImportJsonAt(path);
-            propagate(path, cached, /*progressive=*/ true);
+            const cached = parseImportJsonBlocking(path);
+            propagate(path, cached);
         } catch (_e) {
             lastParsedRef = null;
             setParsedResult(null);
-            setCacheStatusRows([]);
         }
         if (willFreeze) setParseInProgress(false);
         forceInFlight = false;
@@ -228,17 +208,18 @@ export function tickReparse(): void {
 
     const path = getImportJsonPath();
     if (path !== lastSeenPath) {
-        forceReparse(path);
+        pendingReparse = false;
+        forceReparse(path, /*forceFresh=*/ false);
         return;
     }
     if (pendingReparse) {
         if (Date.now() - lastReparseAtMs >= DEBOUNCE_MS) {
             pendingReparse = false;
-            forceReparse(path);
+            forceReparse(path, /*forceFresh=*/ true);
         }
         return;
     }
     if (path === "" || !fileExistsSafe(path)) return;
-    const cached = parseImportJsonAt(path);
-    if (cached.parsed !== lastParsedRef) propagate(path, cached, /*progressive=*/ false);
+    const cached = parseImportJsonBlocking(path);
+    if (cached.parsed !== lastParsedRef) propagate(path, cached);
 }

@@ -1,7 +1,7 @@
 /// <reference types="../../../CTAutocomplete" />
 
 import { ClickInfo, Element, Rect } from "../lib/layout";
-import { Button, Col, Container, Icon, Row, Text } from "../lib/components";
+import { Button, Col, Container, Icon, Row, Scroll, Text } from "../lib/components";
 import { Icons, IconName } from "../lib/icons.generated";
 import {
     closeTab,
@@ -132,7 +132,13 @@ function tabButton(tab: Tab): Element {
                     width: { kind: "grow" },
                     height: { kind: "grow" },
                     align: "center",
-                    padding: { side: "x", value: TAB_LABEL_PAD_X },
+                    // MC font glyphs sit ~1px high in their line box, so a
+                    // geometric centre reads slightly high; a 1px top pad drops
+                    // the label to optical centre (same trick as the diag badge).
+                    padding: [
+                        { side: "x", value: TAB_LABEL_PAD_X },
+                        { side: "top", value: 1 },
+                    ],
                 },
                 children: [
                     hasDot && Text({
@@ -158,7 +164,15 @@ function tabButton(tab: Tab): Element {
                     if (info.button !== 0) return;
                     closeTab(tab.path);
                 },
-                children: [Icon({ name: Icons.x })],
+                children: [
+                    Icon({
+                        name: Icons.x,
+                        style: {
+                            width: { kind: "px", value: 9 },
+                            height: { kind: "px", value: 9 },
+                        },
+                    }),
+                ],
             }),
         ],
     });
@@ -330,7 +344,9 @@ function viewTab(): Element {
     return Col({
         style: { gap: 4, width: { kind: "grow" }, height: { kind: "grow" } },
         children: [
-            Row({
+            Scroll({
+                id: "right-view-tab-strip",
+                axis: "x",
                 style: { gap: 2, height: { kind: "px", value: TAB_H } },
                 children: () => getTabs().map(tabButton),
             }),

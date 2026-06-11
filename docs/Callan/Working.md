@@ -261,9 +261,8 @@ GH issue 56: Don't spawn items at the start unless they have code to import
 GH issue 55: Import doesn't wait for /gmc to take effect before spawning first item
 GH Issue 54: Imports can fail when actions reference teams that don't exist
 GH Issue 53: Show diagnostics in the view pane when a file has an error
-GH issue 52: figure out other non-spawnable blocks
 GH Issue 51: Field leak: diff sees a property scalarFieldDiffers doesn't- genuinely have no clue what this is
 GH issue 49: Revamp Knowledge Page- make it like tqol
-GH issue 48: Rename ct_module/src/importer/ — directory name lies about ownership
+
 
 Future: Share knowledge cache with the legendarygames.dev website for coop developemtn

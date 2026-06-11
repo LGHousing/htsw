@@ -6,11 +6,11 @@ import {
 } from "../../housingSync/itemCapture";
 import TaskContext from "../../tasks/context";
 import { isTaskCancelled } from "../../tasks/manager";
-import { withExportSession } from "../exportSession";
+import { ExportResult, withExportSession } from "../exportSession";
 import { exportEventWithSharedState } from "./export";
 import { writeCapturedItems } from "../../exporter/writeCapturedItems";
 import { htslFilenameForEventExport } from "../../exporter/paths";
-import type { ExportProgressSink } from "../../exporter/exportProgress";
+import type { ExportProgressSink } from "../../housingSync/progress/types";
 import { listAllEventNames } from "./listEvents";
 
 export type ExportAllEventsOptions = {
@@ -23,14 +23,14 @@ export type ExportAllEventsOptions = {
 export async function exportAllEvents(
     ctx: TaskContext,
     options: ExportAllEventsOptions
-): Promise<void> {
+): Promise<ExportResult> {
     return withExportSession(() => exportAllEventsInner(ctx, options));
 }
 
 async function exportAllEventsInner(
     ctx: TaskContext,
     options: ExportAllEventsOptions
-): Promise<void> {
+): Promise<ExportResult> {
     const { importJsonPath, rootDir } = options;
 
     const inventorySnapshot: InventorySnapshot = snapshotInventory();
@@ -49,7 +49,7 @@ async function exportAllEventsInner(
                 `&7[export] &eInventory restore failed: ${error}`
             );
         }
-        return;
+        return { total: 0, succeeded: 0, failed: 0 };
     }
 
     ctx.displayMessage(
@@ -71,6 +71,7 @@ async function exportAllEventsInner(
                 `&7[${i + 1}/${names.length}] &fExporting '${name}'`
             );
 
+            const sink = options.progress;
             try {
                 await exportEventWithSharedState(
                     ctx,
@@ -80,6 +81,10 @@ async function exportAllEventsInner(
                         htslPath,
                         htslReference,
                         rootDir,
+                        onReadProgress:
+                            sink?.itemProgress === undefined
+                                ? undefined
+                                : (payload) => sink.itemProgress!(i, payload),
                     },
                     { itemCaptures, inventorySnapshot }
                 );
@@ -89,6 +94,7 @@ async function exportAllEventsInner(
                     throw error;
                 }
                 failed++;
+                sink?.itemFailed?.(i, String(error));
                 ctx.displayMessage(
                     `&c[export-all] failed on '${name}': ${error}`
                 );
@@ -115,4 +121,6 @@ async function exportAllEventsInner(
         `&aExported ${succeeded} of ${names.length} event${names.length === 1 ? "" : "s"} (${itemCount} item${itemCount === 1 ? "" : "s"} captured)${failed > 0 ? ` &c[${failed} failed]` : ""}`
     );
     ctx.displayMessage(`&7  -> ${importJsonPath}`);
+
+    return { total: names.length, succeeded, failed };
 }

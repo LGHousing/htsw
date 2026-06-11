@@ -266,16 +266,15 @@ function newFolder(): void {
         const Files = javaType("java.nio.file.Files");
         const Paths = javaType("java.nio.file.Paths");
         let i = 1;
-        while (true) {
+        while (i <= 100) {
             const candidate = `${cwd}/new-folder${i === 1 ? "" : `-${i}`}`;
             const p = Paths.get(String(candidate));
             if (!Files.exists(p)) {
                 Files.createDirectories(p);
-                ChatLib.chat(`&a[htsw] Created ${candidate}`);
+                openRenameFilePopover(ZERO, candidate);
                 return;
             }
             i++;
-            if (i > 100) return;
         }
     } catch (err) {
         ChatLib.chat(`&c[htsw] New folder failed: ${err}`);
@@ -298,6 +297,36 @@ function newImportJson(): void {
         loadAsImport(target);
     } catch (err) {
         ChatLib.chat(`&c[htsw] Init import.json failed: ${err}`);
+    }
+}
+
+function deletePathRecursive(Files: any, path: any): void {
+    if (Files.isDirectory(path)) {
+        const stream = Files.newDirectoryStream(path);
+        try {
+            const it = stream.iterator();
+            while (it.hasNext()) {
+                deletePathRecursive(Files, it.next());
+            }
+        } finally {
+            try { stream.close(); } catch (_e) { /* ignore */ }
+        }
+    }
+    Files.delete(path);
+}
+
+function deleteEntry(entry: Entry): void {
+    try {
+        const Files = javaType("java.nio.file.Files");
+        const Paths = javaType("java.nio.file.Paths");
+        deletePathRecursive(Files, Paths.get(String(entry.fullPath)));
+        if (selectedImportPath === entry.fullPath) {
+            selectedImportPath = null;
+            selectedImportName = null;
+        }
+        ChatLib.chat(`&a[htsw] Deleted ${entry.name}`);
+    } catch (err) {
+        ChatLib.chat(`&c[htsw] Delete failed: ${err}`);
     }
 }
 
@@ -354,6 +383,25 @@ function fileRow(entry: Entry): Element {
                         {
                             label: "Show in explorer",
                             onClick: () => showInExplorer(entry.fullPath),
+                        },
+                        { kind: "separator" },
+                        {
+                            // Delete is irreversible (no trash) and recurses into
+                            // folders, so route through a one-item confirm menu.
+                            label: entry.isDir ? "Delete folder" : "Delete",
+                            onClick: () => {
+                                openMenu(
+                                    info.x,
+                                    info.y,
+                                    [
+                                        {
+                                            label: `Confirm delete ${entry.name}`,
+                                            onClick: () => deleteEntry(entry),
+                                        },
+                                    ],
+                                    { keepUnderlying: true }
+                                );
+                            },
                         },
                     ],
                     { keepUnderlying: true }
@@ -591,7 +639,7 @@ export function openFileBrowserWithImportJsonSelection(
     if (initialDir !== undefined && initialDir.length > 0) {
         setCwd(resolveExistingDir(initialDir));
     } else {
-        setCwd(resolveExistingDir(cwd));
+        setCwd(resolveExistingDir("./htsw/imports"));
     }
     openPopover({
         anchor: ZERO,

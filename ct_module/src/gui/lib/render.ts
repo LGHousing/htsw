@@ -11,6 +11,7 @@ import {
     SCROLLBAR_WIDTH,
 } from "./layout";
 import { extract } from "./extractable";
+import { registerClickFlash, clickFlashAlpha } from "./clickFlash";
 import { isInputFocused, setFocusedInput } from "./focus";
 import { pushScissor, popScissor } from "./scissor";
 import { getInputField } from "./inputState";
@@ -28,6 +29,7 @@ const COLOR_SCROLLBAR_THUMB = 0xff888888 | 0;
 const RenderHelper: any = javaType("net.minecraft.client.renderer.RenderHelper");
 const GlStateManager: any = javaType("net.minecraft.client.renderer.GlStateManager");
 const ItemClass: any = javaType("net.minecraft.item.Item");
+
 const ItemStackClass: any = javaType("net.minecraft.item.ItemStack");
 const mcItemCache: { [key: string]: any } = {};
 
@@ -72,10 +74,58 @@ const COLOR_SCROLLBAR_THUMB_HOVER = 0xffaaaaaa | 0;
 
 const LINE_H = 8;
 
+const ELLIPSIS = "...";
+
+// Shortens `text` with a trailing ellipsis so it fits within `maxW` overlay
+// units. Returns the original string when it already fits. Used by `truncate`
+// text elements so a grow-shrunk label clips cleanly instead of overflowing
+// into the sibling that follows it.
+function truncateToWidth(text: string, maxW: number): string {
+    if (maxW <= 0) return "";
+    if (Renderer.getStringWidth(text) <= maxW) return text;
+    const ellW = Renderer.getStringWidth(ELLIPSIS);
+    if (maxW <= ellW) return "";
+    let lo = 0;
+    let hi = text.length;
+    while (lo < hi) {
+        const mid = (lo + hi + 1) >> 1;
+        const w = Renderer.getStringWidth(text.substring(0, mid)) + ellW;
+        if (w <= maxW) lo = mid;
+        else hi = mid - 1;
+    }
+    if (lo <= 0) return "";
+    return text.substring(0, lo) + ELLIPSIS;
+}
+
 // Per-renderElement-call hover-tooltip queue. Set inside renderItem when a text
-// with a `tooltip` is hovered; drawn after items + scrollbars so it's on top.
+// with a `tooltip` is hovered, then handed to `deferredTooltip` so the actual
+// draw happens at postGuiRender — after MC paints the inventory slots, which
+// would otherwise cover a chip drawn during the panel's guiRender pass.
 type QueuedTooltip = { text: string; color: number; anchor: Rect };
 let queuedTooltip: QueuedTooltip | null = null;
+
+// The tooltip to paint this frame, drawn by the postGuiRender pass in overlay.ts
+// (on top of everything, including popovers). Draw-then-clear there resets it
+// every frame, so a non-null value never survives into the next frame.
+let deferredTooltip: QueuedTooltip | null = null;
+
+export function hasDeferredTooltip(): boolean {
+    return deferredTooltip !== null;
+}
+
+export function drawDeferredTooltip(): void {
+    if (deferredTooltip === null) return;
+    const t = deferredTooltip;
+    deferredTooltip = null;
+    drawTooltip(t);
+}
+
+// deferredTooltip is sticky (only overwritten when a new tooltip is queued), so
+// a frame that queues one but never draws it must drop it explicitly — otherwise
+// it lingers and paints on a later frame for an element no longer hovered.
+export function clearDeferredTooltip(): void {
+    deferredTooltip = null;
+}
 
 // Icon (Image) cache. Loading reads from disk synchronously, so cache by name to pay
 // the cost once. A failed load is cached as null so we don't retry every frame
@@ -184,7 +234,7 @@ export function renderElement(
     }
 
     if (queuedTooltip !== null) {
-        drawTooltip(queuedTooltip);
+        deferredTooltip = queuedTooltip;
         queuedTooltip = null;
     }
 
@@ -228,11 +278,12 @@ function getClickInterceptor(
         const item = laid[i];
         if (item.element.kind !== "scroll") continue;
         const s = getScrollState(item.element.id);
-        if (s.contentHeight <= s.viewportRect.h) continue;
+        if (s.axis === "x") continue; // horizontal strip has no draggable thumb
+        if (s.contentLength <= s.viewportRect.h) continue;
         const v = s.viewportRect;
         const trackX = v.x + v.w - SCROLLBAR_WIDTH;
-        const thumbH = Math.max(8, Math.floor((v.h * v.h) / s.contentHeight));
-        const maxOffset = s.contentHeight - v.h;
+        const thumbH = Math.max(8, Math.floor((v.h * v.h) / s.contentLength));
+        const maxOffset = s.contentLength - v.h;
         const thumbY = v.y + Math.floor((v.h - thumbH) * (s.offset / maxOffset));
         const thumbRect = { x: trackX, y: thumbY, w: SCROLLBAR_WIDTH, h: thumbH };
         if (pointInRect(thumbRect, mx, my)) return thumbRect;
@@ -264,8 +315,17 @@ function renderItem(
             e.style.background !== undefined ? extract(e.style.background) : undefined;
         const bg = hovered && e.onClick && hoverBg !== undefined ? hoverBg : baseBg;
         if (bg !== undefined) Renderer.drawRect(bg, r.x, r.y, r.w, r.h);
+        if (e.onClick) {
+            const fa = clickFlashAlpha(r);
+            if (fa > 0) {
+                const a = Math.round(fa * 255) & 0xff;
+                Renderer.drawRect(((a << 24) | 0xffffff) | 0, r.x, r.y, r.w, r.h);
+            }
+        }
+        if (hovered && e.onHover) e.onHover(r);
     } else if (e.kind === "text") {
-        const text = extract(e.text);
+        const raw = extract(e.text);
+        const text = e.truncate ? truncateToWidth(raw, r.w) : raw;
         const ty = r.y + Math.max(0, Math.floor((r.h - LINE_H) / 2));
         const color = e.color !== undefined ? extract(e.color) : undefined;
         if (color !== undefined) {
@@ -278,6 +338,12 @@ function renderItem(
             );
         } else {
             Renderer.drawString(text, r.x, ty);
+        }
+        if (e.underlineColor !== undefined) {
+            const underlineColor = extract(e.underlineColor);
+            if (underlineColor !== undefined) {
+                Renderer.drawRect(underlineColor, r.x, ty + LINE_H - 1, r.w, 1);
+            }
         }
         if (hovered && e.tooltip !== undefined) {
             const tt = extract(e.tooltip);
@@ -329,12 +395,15 @@ function renderItem(
                 const gg = ((tint >>> 8) & 0xff) / 255;
                 const bb = (tint & 0xff) / 255;
                 // CT's drawImage only forces white when `colorized` is null;
-                // colorize() sets it so the tint survives the draw. GlStateManager
-                // alone doesn't work — drawImage resets it.
+                // colorize() sets it so the tint survives the draw. Do NOT reset
+                // with colorize(1,1,1,1) afterward: that leaves `colorized`
+                // non-null, and CT's drawRect/drawImage skip applying their own
+                // color while `colorized` is set — the next button/row background
+                // would paint white. drawImage ends with finishDraw(), which
+                // nulls `colorized` for us, so untinted draws stay clean.
                 Renderer.colorize(rr, gg, bb, a);
             }
             Renderer.drawImage(img as unknown as Parameters<typeof Renderer.drawImage>[0], r.x, r.y, r.w, r.h);
-            if (tint !== undefined) Renderer.colorize(1.0, 1.0, 1.0, 1.0);
         }
         if (hovered && e.tooltip !== undefined) {
             const tt = extract(e.tooltip);
@@ -352,12 +421,15 @@ function renderItem(
 
 function renderScrollbar(id: string, mouseX: number, mouseY: number): void {
     const s = getScrollState(id);
-    if (s.contentHeight <= s.viewportRect.h) return; // not overflowing
     const v = s.viewportRect;
+    // Horizontal strips (e.g. the file-tab bar) scroll by wheel only — no
+    // track or thumb is drawn.
+    if (s.axis === "x") return;
+    if (s.contentLength <= v.h) return; // not overflowing
     const trackX = v.x + v.w - SCROLLBAR_WIDTH;
     Renderer.drawRect(COLOR_SCROLLBAR_TRACK, trackX, v.y, SCROLLBAR_WIDTH, v.h);
-    const thumbH = Math.max(8, Math.floor((v.h * v.h) / s.contentHeight));
-    const maxOffset = s.contentHeight - v.h;
+    const thumbH = Math.max(8, Math.floor((v.h * v.h) / s.contentLength));
+    const maxOffset = s.contentLength - v.h;
     const thumbY = v.y + Math.floor((v.h - thumbH) * (s.offset / maxOffset));
     const thumbRect = { x: trackX, y: thumbY, w: SCROLLBAR_WIDTH, h: thumbH };
     const hovered = pointInRect(thumbRect, mouseX, mouseY);
@@ -385,11 +457,12 @@ export function dispatchClick(
             const item = laid[i];
             if (item.element.kind !== "scroll") continue;
             const s = getScrollState(item.element.id);
-            if (s.contentHeight <= s.viewportRect.h) continue;
+            if (s.axis === "x") continue; // no draggable thumb on horizontal strips
+            if (s.contentLength <= s.viewportRect.h) continue;
             const v = s.viewportRect;
             const trackX = v.x + v.w - SCROLLBAR_WIDTH;
-            const thumbH = Math.max(8, Math.floor((v.h * v.h) / s.contentHeight));
-            const maxOffset = s.contentHeight - v.h;
+            const thumbH = Math.max(8, Math.floor((v.h * v.h) / s.contentLength));
+            const maxOffset = s.contentLength - v.h;
             const thumbY = v.y + Math.floor((v.h - thumbH) * (s.offset / maxOffset));
             if (
                 pointInRect(
@@ -412,6 +485,7 @@ export function dispatchClick(
         const e = item.element;
         if (e.kind === "container" && (e.onClick || e.onDoubleClick)) {
             setFocusedInput(null);
+            if (e.onClick) registerClickFlash(item.rect);
             const isDouble =
                 button === 0 && consumeDoubleClick(item.rect, mouseX, mouseY);
             if (e.onClick) e.onClick(item.rect, { button, x: mouseX, y: mouseY, isDoubleClickSecond: isDouble });
@@ -487,16 +561,16 @@ export function isDraggingScrollbar(): boolean {
 export function updateScrollbarDrag(mouseY: number): void {
     if (dragScrollId === null) return;
     const s = getScrollState(dragScrollId);
-    if (s.contentHeight <= s.viewportRect.h) {
+    if (s.contentLength <= s.viewportRect.h) {
         dragScrollId = null;
         return;
     }
     const v = s.viewportRect;
-    const thumbH = Math.max(8, Math.floor((v.h * v.h) / s.contentHeight));
+    const thumbH = Math.max(8, Math.floor((v.h * v.h) / s.contentLength));
     const trackPx = v.h - thumbH;
     if (trackPx <= 0) return;
     const dy = mouseY - dragStartMouseY;
-    const maxOffset = s.contentHeight - v.h;
+    const maxOffset = s.contentLength - v.h;
     s.offset = Math.max(
         0,
         Math.min(maxOffset, dragStartOffset + Math.floor(dy * (maxOffset / trackPx)))
@@ -523,10 +597,11 @@ export function dispatchWheel(
         if (item.element.kind !== "scroll") continue;
         const s = getScrollState(item.element.id);
         if (!pointInRect(s.viewportRect, mouseX, mouseY)) continue;
-        if (s.contentHeight <= s.viewportRect.h) return true;
+        const mainView = s.axis === "x" ? s.viewportRect.w : s.viewportRect.h;
+        if (s.contentLength <= mainView) return true;
         s.offset = Math.max(
             0,
-            Math.min(s.contentHeight - s.viewportRect.h, s.offset - delta * WHEEL_SCROLL_STEP)
+            Math.min(s.contentLength - mainView, s.offset - delta * WHEEL_SCROLL_STEP)
         );
         markUserScroll(item.element.id);
         return true;

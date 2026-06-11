@@ -2,6 +2,7 @@ import type { Action, ImportableFunction } from "htsw/types";
 import * as htsw from "htsw";
 
 import { readActionList } from "../../housingSync/actions/readList";
+import type { ProgressHandler } from "../../housingSync/progress/types";
 import { clickGoBack } from "../../housingSync/gui/menuUtils";
 import {
     ItemCaptureRegistry,
@@ -21,6 +22,8 @@ import {
     openFunctionSettings,
     readAutomaticExecutionTicks,
 } from "./shared";
+import { functionIconFromSnapshot } from "./icon";
+import { getSessionFunctionIcon, resetFunctionNameSession } from "./listFunctions";
 
 export type ExportFunctionOptions = {
     name: string;
@@ -28,6 +31,7 @@ export type ExportFunctionOptions = {
     htslPath: string;
     htslReference: string;
     rootDir: string;
+    onReadProgress?: ProgressHandler;
 };
 
 export type SharedExportState = {
@@ -38,17 +42,24 @@ export type SharedExportState = {
 async function readFunction(
     ctx: TaskContext,
     name: string,
-    itemCaptures?: ItemCaptureRegistry
+    itemCaptures?: ItemCaptureRegistry,
+    onReadProgress?: ProgressHandler
 ): Promise<{ actions: Action[]; repeatTicks?: number }> {
     if ((await openFunctionEditor(ctx, name)) === "missing") {
         throw new Error(`No function named "${name}" exists in this housing.`);
     }
 
-    const observed = await readActionList(
-        ctx,
-        { kind: "full" },
-        itemCaptures !== undefined ? { itemCaptures } : undefined
-    );
+    const observed = await readActionList(ctx, { kind: "full" }, {
+        ...(itemCaptures !== undefined ? { itemCaptures } : {}),
+        ...(onReadProgress !== undefined
+            ? {
+                  progress: onReadProgress,
+                  // Mutable scratch readActionList fills in as pages/nested
+                  // lists are discovered; fresh per call.
+                  phaseUnits: { setup: 0, reading: 0, hydrating: 0, applying: 0 },
+              }
+            : {}),
+    });
     const actions = observedSlotsToActions(observed);
 
     await clickGoBack(ctx);
@@ -62,6 +73,29 @@ async function readFunction(
     return validRepeatTicks !== undefined ? { actions, repeatTicks: validRepeatTicks } : { actions };
 }
 
+/**
+ * Read a function from the live house into a full `ImportableFunction` AST
+ * (actions + repeat + icon), writing nothing. Shared by the exporter and the
+ * Houses-tab deep read (which caches the result instead of writing import.json).
+ */
+export async function readFunctionImportable(
+    ctx: TaskContext,
+    name: string,
+    itemCaptures?: ItemCaptureRegistry,
+    onReadProgress?: ProgressHandler
+): Promise<ImportableFunction> {
+    // The icon lives on the /functions list slot, not the editor — read it first.
+    const icon = functionIconFromSnapshot(await getSessionFunctionIcon(ctx, name));
+    const { actions, repeatTicks } = await readFunction(ctx, name, itemCaptures, onReadProgress);
+    return {
+        type: "FUNCTION",
+        name,
+        actions,
+        ...(repeatTicks !== undefined ? { repeatTicks } : {}),
+        ...(icon !== undefined ? { icon } : {}),
+    };
+}
+
 export async function exportFunction(
     ctx: TaskContext,
     options: ExportFunctionOptions
@@ -73,6 +107,9 @@ async function exportFunctionInner(
     ctx: TaskContext,
     options: ExportFunctionOptions
 ): Promise<void> {
+    // Drop any function-list cache from a prior import so the icon read reflects
+    // the live house, not a stale snapshot.
+    resetFunctionNameSession();
     const inventorySnapshot: InventorySnapshot = snapshotInventory();
     const itemCaptures = new ItemCaptureRegistry();
 
@@ -121,14 +158,15 @@ export async function exportFunctionWithSharedState(
 ): Promise<void> {
     const { name, importJsonPath, htslPath, htslReference } = options;
 
-    const { actions, repeatTicks } = await readFunction(ctx, name, shared.itemCaptures);
-
-    const importable: ImportableFunction = {
-        type: "FUNCTION",
+    const importable = await readFunctionImportable(
+        ctx,
         name,
-        actions,
-        ...(repeatTicks !== undefined ? { repeatTicks } : {}),
-    };
+        shared.itemCaptures,
+        options.onReadProgress
+    );
+    const actions = importable.actions ?? [];
+    const repeatTicks = importable.repeatTicks;
+    const icon = importable.icon;
 
     const { source, diagnostics } = htsw.htsl.printActionsWithDiagnostics(actions);
     for (const diag of diagnostics) {
@@ -142,6 +180,7 @@ export async function exportFunctionWithSharedState(
         name,
         actions: htslReference,
         ...(repeatTicks !== undefined ? { repeatTicks } : {}),
+        ...(icon !== undefined ? { icon } : {}),
     });
 
     await tryWriteImportableCache(ctx, importable, "exporter");
