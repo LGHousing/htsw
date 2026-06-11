@@ -222,22 +222,28 @@ export function parseVarOperation(p: Parser): VarOperation {
         p.eatIdent("Shl", true) ||
         p.eat({ kind: "bin_op_eq", op: "lt_lt" })
     ) {
-        return "Shift Left";
+        return "Left Shift";
     }
     if (
         p.eatIdent("Shr", true) ||
         p.eat({ kind: "bin_op_eq", op: "gt_gt" })
     ) {
-        return "Shift Right";
+        return "Arithmetic Right Shift";
+    }
+    if (
+        p.eatIdent("Shru", true) ||
+        p.eat({ kind: "bin_op_eq", op: "gt_gt_gt" })
+    ) {
+        return "Logical Right Shift";
     }
     if (p.eat({ kind: "bin_op_eq", op: "ampersand" })) {
-        return "And Assign";
+        return "Bitwise AND";
     }
     if (p.eat({ kind: "bin_op_eq", op: "vertical_bar" })) {
-        return "Or Assign";
+        return "Bitwise OR";
     }
     if (p.eat({ kind: "bin_op_eq", op: "caret" })) {
-        return "Xor Assign";
+        return "Bitwise XOR";
     }
 
     if (p.check("ident") || p.check("str")) {

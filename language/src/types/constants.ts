@@ -89,12 +89,13 @@ export const OPERATIONS = [
 ] as const;
 
 export const VAR_OPERATIONS = [
-    "Shift Left",
-    "Shift Right",
-    "And Assign",
-    "Or Assign",
-    "Xor Assign",
     "Unset",
+    "Bitwise AND",
+    "Bitwise OR",
+    "Bitwise XOR",
+    "Left Shift",
+    "Arithmetic Right Shift",
+    "Logical Right Shift",
 ] as const;
 
 export const COMPARISONS = [

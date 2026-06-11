@@ -58,16 +58,17 @@ const OPERATION_NAMES: {
     Decrement: "decremented",
     Multiply: "multiplied",
     Divide: "divided",
-    "Shift Left": "shifted left",
-    "Shift Right": "shifted right",
-    "And Assign": "used with logical and",
-    "Or Assign": "used with logical or",
-    "Xor Assign": "used with logical xor",
+    "Left Shift": "shifted left",
+    "Arithmetic Right Shift": "shifted right",
+    "Logical Right Shift": "shifted right",
+    "Bitwise AND": "used with logical AND",
+    "Bitwise OR": "used with logical OR",
+    "Bitwise XOR": "used with logical XOR",
     Unset: "unset",
 }
 
 const DISALLOWED_DOUBLE_OPERATIONS: VarOperation[] = [
-    "Shift Left", "Shift Right", "And Assign", "Or Assign", "Xor Assign"
+    "Left Shift", "Arithmetic Right Shift", "Logical Right Shift", "Bitwise AND", "Bitwise OR", "Bitwise XOR"
 ];
 
 function update(tcx: TyCtxt, action: ActionChangeVar) {

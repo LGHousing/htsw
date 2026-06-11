@@ -119,6 +119,14 @@ export class Lexer {
                 this.next();
                 return token("bin_op_eq", new Span(lo, lo + 3), { op: "gt_gt" });
             }
+            if (this.peek(0) === ">") {
+                this.next();
+                if (this.peek(0) === "=") {
+                    this.next();
+                    return token("bin_op_eq", new Span(lo, lo + 4), { op: "gt_gt_gt" });
+                }
+                return token("bin_op", new Span(lo, lo + 3), { op: "gt_gt_gt" });
+            }
             return token("bin_op", Span.single(lo), { op: "gt_gt" });
         }
         if (c === "&") {

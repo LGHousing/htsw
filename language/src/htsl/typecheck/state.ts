@@ -145,11 +145,12 @@ export function applyNumericOperation(
             case "Decrement": return subLongStates(lhs, rhs);
             case "Multiply": return mulLongStates(lhs, rhs);
             case "Divide": return divLongStates(lhs, rhs);
-            case "Shift Left": return shlLongStates(lhs, rhs);
-            case "Shift Right": return shrLongStates(lhs, rhs);
-            case "And Assign": return andLongStates(lhs, rhs);
-            case "Or Assign": return orLongStates(lhs, rhs);
-            case "Xor Assign": return xorLongStates(lhs, rhs);
+            case "Left Shift": return shlLongStates(lhs, rhs);
+            case "Arithmetic Right Shift": return shrLongStates(lhs, rhs);
+            case "Logical Right Shift": return shrULongStates(lhs, rhs);
+            case "Bitwise AND": return andLongStates(lhs, rhs);
+            case "Bitwise OR": return orLongStates(lhs, rhs);
+            case "Bitwise XOR": return xorLongStates(lhs, rhs);
             default:
                 throw new Error("Invalid operation for type");
         }
