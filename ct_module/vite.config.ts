@@ -152,17 +152,10 @@ const mcpResolverPlugin = mcpEnabled
       };
 
 export default defineConfig({
-    esbuild: false,
     resolve: {
         alias: [...mcpAliases, ...htswAliases],
     } as const,
     build: {
-        // Rhino can only parse ES5. Vite 8's oxc minifier rewrites the bundle back to
-        // modern syntax (optional catch binding, arrows) after Babel runs, so it must
-        // stay off. Babel runs as an OUTPUT plugin (renderChunk) rather than a
-        // transform plugin for the same reason: rolldown generates its own chunk
-        // wrapper code (`const require_x = ...`) after the transform phase, and only
-        // an output-stage pass downlevels that too.
         minify: false,
         lib: {
             entry: "./src/index.ts",
