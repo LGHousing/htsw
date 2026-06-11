@@ -1,6 +1,6 @@
 /// <reference types="../../CTAutocomplete" />
 
-const MODULE_DIR = "./config/ChatTriggers/modules/HTSW";
+export const MODULE_DIR = "./config/ChatTriggers/modules/HTSW";
 const BASE_URL = "https://legendarygames.dev/htsw/ct";
 const MANIFEST_URL = BASE_URL + "/latest.json";
 const USER_AGENT = "HTSW-CT-Updater";
