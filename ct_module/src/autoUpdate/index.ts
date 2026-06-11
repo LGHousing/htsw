@@ -179,42 +179,60 @@ function unzipInto(zipPath: string, destDir: string): boolean {
 }
 
 function replaceModuleContents(stagedDir: string): boolean {
+    const Files = Java.type("java.nio.file.Files");
+    const Paths = Java.type("java.nio.file.Paths");
+    const StandardCopyOption = Java.type("java.nio.file.StandardCopyOption");
+    let moduleRoot: any;
+    let backupRoot: any;
     try {
-        const Files = Java.type("java.nio.file.Files");
-        const Paths = Java.type("java.nio.file.Paths");
-        const StandardCopyOption = Java.type("java.nio.file.StandardCopyOption");
-        const moduleRoot = Paths.get(MODULE_DIR).toAbsolutePath().normalize();
+        moduleRoot = Paths.get(MODULE_DIR).toAbsolutePath().normalize();
         const stagedRoot = Paths.get(stagedDir).toAbsolutePath().normalize();
 
-        const existing = Files.newDirectoryStream(moduleRoot);
-        try {
-            const it = existing.iterator();
-            while (it.hasNext()) {
-                const child = it.next();
-                if (String(child.getFileName().toString()) === ".update") continue;
-                deleteNioPath(Files, child);
-            }
-        } finally {
-            existing.close();
-        }
+        // Park the old module in .update/backup instead of deleting it, so a
+        // failure mid-swap can roll back to a working module. The caller
+        // deletes the whole .update dir afterward in every outcome.
+        backupRoot = stagedRoot.getParent().resolve("backup");
+        Files.createDirectories(backupRoot);
 
-        const staged = Files.newDirectoryStream(stagedRoot);
-        try {
-            const it = staged.iterator();
-            while (it.hasNext()) {
-                const child = it.next();
-                Files.move(
-                    child,
-                    moduleRoot.resolve(child.getFileName()),
-                    StandardCopyOption.REPLACE_EXISTING
-                );
-            }
-        } finally {
-            staged.close();
-        }
+        moveChildren(Files, StandardCopyOption, moduleRoot, backupRoot, ".update", false);
+        moveChildren(Files, StandardCopyOption, stagedRoot, moduleRoot, null, false);
         return true;
     } catch (_e) {
+        try {
+            if (moduleRoot !== undefined && backupRoot !== undefined) {
+                moveChildren(Files, StandardCopyOption, backupRoot, moduleRoot, null, true);
+            }
+        } catch (_e2) {
+            // Rollback itself failed; leave the disk state for manual repair.
+        }
         return false;
+    }
+}
+
+function moveChildren(
+    Files: any,
+    StandardCopyOption: any,
+    from: any,
+    to: any,
+    skipName: string | null,
+    clobber: boolean
+): void {
+    const stream = Files.newDirectoryStream(from);
+    try {
+        const it = stream.iterator();
+        while (it.hasNext()) {
+            const child = it.next();
+            if (skipName !== null && String(child.getFileName().toString()) === skipName) {
+                continue;
+            }
+            const target = to.resolve(child.getFileName());
+            // Files.move REPLACE_EXISTING can't replace a non-empty directory,
+            // so the rollback pass deletes partially-moved targets first.
+            if (clobber) deleteNioPath(Files, target);
+            Files.move(child, target, StandardCopyOption.REPLACE_EXISTING);
+        }
+    } finally {
+        stream.close();
     }
 }
 

@@ -33,6 +33,7 @@ export function livePreviewBody(): Element {
                         const verb = getSessionVerb();
                         if (verb === "export") return "Exporting — progress below.";
                         if (verb === "read") return "Reading house contents — progress below.";
+                        return "Importing — progress below.";
                     }
                     return "No import in progress. Queue something and click Import to see live changes here.";
                 },
