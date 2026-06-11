@@ -346,7 +346,8 @@ export function parseValue(p: Parser): Value {
     if (p.check("str")) {
         const value = p.parseString();
         if (value.length > 32) {
-            p.gcx.addDiagnostic(Diagnostic.error("Exceeds 32-character limit"));
+            p.gcx.addDiagnostic(Diagnostic.error("Exceeds 32-character limit")
+                .addPrimarySpan(p.prev.span));
         }
         return `"${value}"`;
     }
