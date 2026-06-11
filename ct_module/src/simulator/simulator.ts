@@ -14,6 +14,7 @@ export class Simulator {
     static sm: SourceMap;
     static importables: types.Importable[];
     static runtime: runtime.Runtime;
+    static vars: runtime.simple.SimpleVars;
 
     static triggers: Trigger[];
 
@@ -41,6 +42,7 @@ export class Simulator {
 
     private static createRuntime(spans: SpanTable): runtime.Runtime {
         const vars = new runtime.simple.SimpleVars();
+        this.vars = vars;
         const rt = new runtime.Runtime({
             spans,
             actionBehaviors: createActionBehaviors(vars),

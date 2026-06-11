@@ -5,6 +5,8 @@ import type { VarOperation } from "htsw/types";
 import { Simulator } from "./simulator";
 import { StringFileLoader } from "../utils/fileLoaders";
 import { printDiagnostic } from "../tui/diagnostics";
+import { printUI, UIElementText } from "../tui/elements";
+import { UIElementTable } from "../tui/tables";
 
 export function registerCommandTriggers(): CommandTrigger[] {
     return [
@@ -13,6 +15,9 @@ export function registerCommandTriggers(): CommandTrigger[] {
         register("command", (...args) => commandEval(args))
             .setName("/")
             .setAliases("eval"),
+        register("command", (...args) => commandVars(args)).setName("vars"),
+        register("command", (...args) => commandGlobalVars(args)).setName("globalvars"),
+        register("command", (...args) => commandTeamVars(args)).setName("teamvars"),
     ];
 }
 
@@ -92,6 +97,67 @@ function commandVariable(args: string[]) {
     };
 
     Simulator.runActions([action]);
+}
+
+function commandVars(args: string[]) {
+    if (!Simulator.isActive) {
+        ChatLib.chat("&cNo simulator active.");
+        return;
+    }
+    printVarTable(Simulator.vars.player, "Player", args[0]);
+}
+
+function commandGlobalVars(args: string[]) {
+    if (!Simulator.isActive) {
+        ChatLib.chat("&cNo simulator active.");
+        return;
+    }
+    printVarTable(Simulator.vars.global, "Global", args[0]);
+}
+
+function commandTeamVars(args: string[]) {
+    if (!Simulator.isActive) {
+        ChatLib.chat("&cNo simulator active.");
+        return;
+    }
+    if (args.length === 0) {
+        ChatLib.chat("&cUsage: /teamvars <team> [filter]");
+        return;
+    }
+    printVarTable(Simulator.vars.team(args[0]), `Team '${args[0]}'`, args[1]);
+}
+
+function printVarTable(
+    holder: { keys(): Set<string>; get(key: string): { type: string; toDisplayString(): string; value: any } },
+    label: string,
+    filter?: string,
+) {
+    const keys = holder.keys();
+    if (keys.size === 0) {
+        ChatLib.chat(`&7No ${label.toLowerCase()} variables set.`);
+        return;
+    }
+    const entries: { key: string; type: string; display: string }[] = [];
+    for (const key of keys) {
+        if (filter && !key.startsWith(filter)) continue;
+        const v = holder.get(key);
+        entries.push({ key, type: v.type, display: v.toDisplayString() });
+    }
+    entries.sort((a, b) => a.key.localeCompare(b.key));
+    if (entries.length === 0) {
+        ChatLib.chat(`&7No ${label.toLowerCase()} variables match filter "&f${filter}&7".`);
+        return;
+    }
+    const table = new UIElementTable(["Name", "Type", "Value"]);
+    for (const e of entries) {
+        const typeColor = e.type === "long" ? "&e" : e.type === "double" ? "&d" : "&b";
+        table.addRow([
+            new UIElementText(`&f${e.key}`),
+            new UIElementText(`${typeColor}${e.type}`),
+            new UIElementText(`&f${e.display}`),
+        ]);
+    }
+    printUI(table);
 }
 
 function parseVarOp(op: string): VarOperation | undefined {
