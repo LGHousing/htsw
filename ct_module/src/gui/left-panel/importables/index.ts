@@ -8,9 +8,12 @@ import { Button, Col, Container, Icon, Input, Row, Scroll, Text } from "../../li
 import { Icons } from "../../lib/icons.generated";
 import { closeAllPopovers, togglePopover } from "../../lib/popovers";
 import { openFileBrowser } from "../../popovers/file-browser";
-import { isParseInProgress, setImportJsonPath } from "../../state";
-import { COLOR_TEXT_DIM } from "../../lib/theme";
+import { getHousingUuid, isParseInProgress, setImportJsonPath } from "../../state";
+import { ACCENT_SUCCESS, COLOR_TEXT_DIM } from "../../lib/theme";
 import { scheduleReparse } from "../../parsing/reparse";
+import { canonicalPath } from "../../parsing/parses";
+import { boundImportJsonPath } from "../../../importCache/houseBindings";
+import { houseDisplayName } from "../../../importCache/aliases";
 import { addRecent, getRecents } from "../../persistence/recents";
 import { normalizeHtswPath } from "../../lib/pathDisplay";
 import { ACTIVE_BG, ACTIVE_HOVER_BG, ROW_BG, ROW_HOVER_BG } from "./rowModel";
@@ -54,11 +57,16 @@ function recentsPopoverContent(): Element {
                     }),
                 ];
             }
+            // Mark the recent that belongs to the house you're standing in,
+            // so "open this house's project" is one obvious click.
+            const uuid = getHousingUuid();
+            const bound = uuid === null ? null : boundImportJsonPath(uuid);
             return rs.map((p) =>
                 Container({
                     style: {
                         direction: "row",
                         align: "center",
+                        gap: 4,
                         padding: { side: "x", value: 6 },
                         height: { kind: "px", value: 18 },
                         background: ROW_BG,
@@ -70,6 +78,19 @@ function recentsPopoverContent(): Element {
                             text: normalizeHtswPath(p),
                             style: { width: { kind: "grow" } },
                         }),
+                        bound !== null &&
+                            uuid !== null &&
+                            canonicalPath(p) === bound &&
+                            Icon({
+                                name: Icons.house,
+                                color: ACCENT_SUCCESS,
+                                tooltip: `Bound to ${houseDisplayName(uuid)} (you're here)`,
+                                tooltipColor: ACCENT_SUCCESS,
+                                style: {
+                                    width: { kind: "px", value: 10 },
+                                    height: { kind: "px", value: 10 },
+                                },
+                            }),
                     ],
                 })
             );
@@ -247,9 +268,14 @@ export function ImportablesView(): Element {
                     padding: { side: "right", value: SCROLLBAR_WIDTH + 4 },
                 },
                 children: () => {
-                    if (isParseInProgress()) return [loadingRow()];
+                    // Keep the tree mounted while a load parses: blanking it
+                    // here made loading a file collapse and re-expand the
+                    // whole panel. The indicator only earns its place when
+                    // there is nothing else to show.
                     const rows = renderRows();
-                    if (rows.length === 0) return [emptyStateRow()];
+                    if (rows.length === 0) {
+                        return [isParseInProgress() ? loadingRow() : emptyStateRow()];
+                    }
                     return rows;
                 },
             }),
