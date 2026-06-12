@@ -46,7 +46,7 @@ import { composeFileMenu, composeImportableMenu } from "../../menus/fileMenu";
 import { autoTrackRefresh, queueModifiedFromParse } from "../../right-panel/import-tab/importController";
 import { SourceDir, SourceFile, removeSource } from "./source";
 import { showInExplorer, openInVSCode } from "../../../utils/osShell";
-import { previewSelect, confirmSelect } from "../../right-panel/selection";
+import { previewSelect, setActiveRightTab } from "../../right-panel/selection";
 import {
     Result,
     ResultImport,
@@ -366,16 +366,59 @@ function houseBindingActions(fullPath: string): MenuAction[] {
     return actions;
 }
 
-function boundHouseChip(fullPath: string): Element | false {
+// The house-binding control on an import.json header row. Unbound + a house
+// detected: a faint house button that binds on click. Bound: the chip shows
+// the house (green when you're standing in it) and clicking it opens
+// rebind/unbind. A button rather than a context-menu entry — binding is the
+// primary way files and houses connect, not a power-user action.
+function houseBindControl(fullPath: string): Element | false {
     const bound = boundHouseUuidOf(fullPath);
-    if (bound === null) return false;
-    const isHere = bound === getHousingUuid();
+    const current = getHousingUuid();
+    if (bound === null && current === null) return false;
+    if (bound === null && current !== null) {
+        return Container({
+            style: {
+                direction: "row",
+                align: "center",
+                justify: "center",
+                width: { kind: "px", value: 16 },
+                height: { kind: "grow" },
+                hoverBackground: ROW_HOVER_BG,
+            },
+            onClick: (_rect, info) => {
+                if (info.button !== 0 || info.isDoubleClickSecond) return;
+                rebindFile(fullPath, current);
+            },
+            children: [
+                Icon({
+                    name: Icons.house,
+                    color: COLOR_TEXT_FAINT,
+                    tooltip: `Bind to ${houseDisplayName(current)}`,
+                    tooltipColor: COLOR_TEXT_DIM,
+                    style: { width: { kind: "px", value: 10 }, height: { kind: "px", value: 10 } },
+                }),
+            ],
+        });
+    }
+    const boundUuid = bound as string;
+    const isHere = boundUuid === current;
     const color = isHere ? ACCENT_SUCCESS : COLOR_TEXT_FAINT;
     const tip = isHere
-        ? "Bound to this house (you're in it)"
-        : "Bound house — right-click to change";
+        ? "Bound to this house (you're in it) — click to change"
+        : "Bound house — click to change";
     return Container({
-        style: { direction: "row", gap: 2, align: "center" },
+        style: {
+            direction: "row",
+            gap: 2,
+            align: "center",
+            padding: { side: "x", value: 2 },
+            height: { kind: "grow" },
+            hoverBackground: ROW_HOVER_BG,
+        },
+        onClick: (_rect, info) => {
+            if (info.button !== 0 || info.isDoubleClickSecond) return;
+            openMenu(info.x, info.y, houseBindingActions(fullPath));
+        },
         children: [
             Icon({
                 name: Icons.house,
@@ -385,7 +428,7 @@ function boundHouseChip(fullPath: string): Element | false {
                 style: { width: { kind: "px", value: 9 }, height: { kind: "px", value: 9 } },
             }),
             Text({
-                text: houseDisplayName(bound),
+                text: houseDisplayName(boundUuid),
                 color,
                 tooltip: tip,
                 tooltipColor: color,
@@ -425,7 +468,6 @@ export function resultRow(
                       openInVSCode(projectDirOf(r.fullPath), { newWindow: true });
                   },
               },
-              ...houseBindingActions(r.fullPath),
               ...extraActions,
           ]
         : extraActions;
@@ -448,15 +490,24 @@ export function resultRow(
                 importExpansion.set(expKey, !expanded);
                 bumpTreeRevision();
             }
-            previewSelect(r.fullPath);
         }),
-        onDoubleClick: () => confirmSelect(r.fullPath),
+        onDoubleClick: () => {
+            if (isImport) {
+                // The first click of the double toggled expansion; a double-click
+                // means "open", not "expand" — toggle it back (same undo pattern
+                // as the checkbox rows).
+                importExpansion.set(expKey, !isImportExpanded(expKey, defaultExpanded));
+                bumpTreeRevision();
+            }
+            previewSelect(r.fullPath);
+            setActiveRightTab("view");
+        },
         children: [
             Text({
                 text: labelOverride ?? r.path,
                 style: { width: { kind: "grow" } },
             }),
-            isImport && boundHouseChip(r.fullPath),
+            isImport && houseBindControl(r.fullPath),
             isImport &&
                 Icon({
                     name: expanded ? Icons.chevronDown : Icons.chevronRight,
@@ -553,7 +604,8 @@ export function importableRow(parent: ResultImport, imp: Importable): Element {
         }),
         onDoubleClick: () => {
             toggleImportableInQueue(parent, imp, checkKey, checked);
-            confirmSelect(previewPath);
+            previewSelect(previewPath);
+            setActiveRightTab("view");
         },
         children: [
             Text({
@@ -626,8 +678,13 @@ export function subRow(parent: ResultImport, imp: Importable, kind: SubListKind)
             background: ROW_BG,
             hoverBackground: ROW_HOVER_BG,
         },
-        onClick: rowHandler(actions, () => previewSelect(target)),
-        onDoubleClick: () => confirmSelect(target),
+        onClick: rowHandler(actions, () => {
+            /* preview is on double-click, matching every other row */
+        }),
+        onDoubleClick: () => {
+            previewSelect(target);
+            setActiveRightTab("view");
+        },
         children: [
             Text({
                 text: label,
