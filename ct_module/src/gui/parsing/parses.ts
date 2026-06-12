@@ -60,23 +60,32 @@ export type CachedParse = {
     error: string | null;
     /** mtime of the import.json and every file it referenced at parse time. */
     fingerprint: { [path: string]: number };
-    /** `Date.now()` of the last `settledChange` re-check (throttle). */
+    /** `Date.now()` the last fingerprint sweep COMPLETED (throttle). */
     fpCheckedAt: number;
     /** Mtimes seen when a change was first noticed; drives `settledChange`'s debounce. Null when idle. */
     pending: { [path: string]: number } | null;
+    /** In-progress fingerprint sweep, statted a budget per call. Null when idle. */
+    sweep: FingerprintSweep | null;
 };
 
-// How often `parseImportJsonBlocking` re-stats the referenced-file fingerprint on
-// an import.json-mtime hit. Bounds the stat cost (≈ one stat per referenced
-// file per interval); a change is acted on after it stays stable for one
-// extra interval, so edit-to-refresh latency is ~1–2× this.
-const FP_RECHECK_MS = 400;
+type FingerprintSweep = {
+    /** Fingerprint keys captured at sweep start. */
+    paths: string[];
+    /** Next index in `paths` to stat. */
+    index: number;
+    /** Mtimes gathered so far. */
+    acc: { [path: string]: number };
+};
 
-function currentMtimes(fp: { [path: string]: number }): { [path: string]: number } {
-    const out: { [path: string]: number } = {};
-    for (const p in fp) out[p] = getMtimeMs(p);
-    return out;
-}
+// How often `parseImportJsonBlocking` re-sweeps the referenced-file fingerprint
+// on an import.json-mtime hit (≈ one stat per referenced file per interval);
+// a change is acted on after it stays stable for one extra interval, so
+// edit-to-refresh latency is ~1–2× this.
+const FP_RECHECK_MS = 400;
+// Stats per settledChange call. The caller runs once per tick, so a sweep of N
+// referenced files spreads over ceil(N/BUDGET) ticks instead of landing as one
+// N-stat spike — that spike was a visible hitch mid-import on big projects.
+const FP_SWEEP_BUDGET = 32;
 
 function sameMtimes(
     a: { [path: string]: number },
@@ -89,15 +98,26 @@ function sameMtimes(
 }
 
 // True when a referenced file changed AND its mtimes have settled — the same
-// new values seen on two consecutive rechecks. Until then (a save still
-// writing, or a temp+rename mid-swap) the mtimes keep moving, so this returns
-// false and the caller serves the existing parse rather than reading a
-// half-written file. Throttled; mutates the entry's recheck bookkeeping.
+// new values seen on two consecutive completed sweeps. Until then (a save
+// still writing, or a temp+rename mid-swap) the mtimes keep moving, so this
+// returns false and the caller serves the existing parse rather than reading
+// a half-written file. Each call stats at most FP_SWEEP_BUDGET files; a sweep
+// completes across calls. Mutates the entry's recheck bookkeeping.
 function settledChange(entry: CachedParse): boolean {
-    const now = Date.now();
-    if (now - entry.fpCheckedAt < FP_RECHECK_MS) return false;
-    entry.fpCheckedAt = now;
-    const cur = currentMtimes(entry.fingerprint);
+    if (entry.sweep === null) {
+        if (Date.now() - entry.fpCheckedAt < FP_RECHECK_MS) return false;
+        entry.sweep = { paths: Object.keys(entry.fingerprint), index: 0, acc: {} };
+    }
+    const sweep = entry.sweep;
+    const end = Math.min(sweep.index + FP_SWEEP_BUDGET, sweep.paths.length);
+    for (; sweep.index < end; sweep.index++) {
+        const p = sweep.paths[sweep.index];
+        sweep.acc[p] = getMtimeMs(p);
+    }
+    if (sweep.index < sweep.paths.length) return false;
+    entry.sweep = null;
+    entry.fpCheckedAt = Date.now();
+    const cur = sweep.acc;
     if (sameMtimes(entry.fingerprint, cur)) {
         entry.pending = null;
         return false;
@@ -205,6 +225,7 @@ export function parseImportJsonBlocking(rawPath: string): CachedParse {
         fingerprint: snapshotFingerprint ?? fingerprintOf(canon, mtime, parsed),
         fpCheckedAt: Date.now(),
         pending: null,
+        sweep: null,
     };
     cache.set(canon, entry);
     if (parsed !== null) {
@@ -297,6 +318,7 @@ export function touchParseCacheMtime(rawPath: string): void {
     existing.fingerprint = fingerprintOf(canon, existing.mtime, existing.parsed);
     existing.fpCheckedAt = Date.now();
     existing.pending = null;
+    existing.sweep = null;
 }
 
 /**
@@ -313,6 +335,7 @@ export function touchParseCacheFile(rawPath: string): void {
     existing.fingerprint[canon] = existing.mtime;
     existing.fpCheckedAt = Date.now();
     existing.pending = null;
+    existing.sweep = null;
 }
 
 /**
@@ -323,6 +346,24 @@ export function touchParseCacheFile(rawPath: string): void {
  */
 export function invalidateParseCacheEntry(rawPath: string): void {
     cache.delete(canonicalPath(rawPath));
+}
+
+/**
+ * Force the next parse WITHOUT dropping the current one. Readers keep the
+ * last-good parse through the re-parse window; deleting instead leaves a
+ * "no data" hole during which the tree collapses and bound-house chips
+ * vanish for ~100ms + parse time after every scheduled reload. Use
+ * `invalidateParseCacheEntry` only when the file itself is gone.
+ */
+export function markParseStale(rawPath: string): void {
+    const entry = cache.get(canonicalPath(rawPath));
+    if (entry === undefined) return;
+    // Impossible mtime: the next parseImportJsonBlocking can't early-return
+    // on an mtime match, so it re-parses (snapshot fast path still applies
+    // when nothing on disk actually changed).
+    entry.mtime = -1;
+    entry.fpCheckedAt = 0;
+    entry.sweep = null;
 }
 /**
  * Iterate every parsed import.json. Used by the queue layer to find a
