@@ -40,6 +40,7 @@ import {
     canonicalPath,
     getParseAt,
     invalidateParseCacheEntry,
+    markParseStale,
     requestParse,
     touchParseCacheFile,
 } from "../../parsing/parses";
@@ -52,6 +53,7 @@ import { isImportRunning } from "../../../housingSync/runtimeState";
 import { composeFileMenu, composeImportableMenu } from "../../menus/fileMenu";
 import { autoTrackRefresh, queueModifiedFromParse } from "../../right-panel/import-tab/importController";
 import { SourceDir, SourceFile, removeSource } from "./source";
+import { type IncludeNode, subtreeImportableCount } from "./includeTree";
 import { showInExplorer, openInVSCode } from "../../../utils/osShell";
 import {
     closeTab,
@@ -106,6 +108,17 @@ export function isImportExpanded(expKey: string, defaultExpanded: boolean): bool
     return defaultExpanded;
 }
 export const collapsedRoots: Set<string> = new Set();
+
+// Include-group rows (included import.jsons rendered as nested groups under
+// the entry file). Explicit toggles win over the default the tree passes in
+// (collapsed normally, expanded while a search/type filter narrows).
+export const includeGroupExpansion: Map<string, boolean> = new Map();
+export function includeGroupKey(entryFullPath: string, nodeFullPath: string): string {
+    return `${entryFullPath}::${nodeFullPath}`;
+}
+export function isIncludeGroupExpanded(expKey: string, defaultExpanded: boolean): boolean {
+    return includeGroupExpansion.get(expKey) ?? defaultExpanded;
+}
 
 export const importableExpansion: Set<string> = new Set();
 export function importableExpansionKey(parentFullPath: string, imp: Importable): string {
@@ -322,7 +335,7 @@ function confirmDeleteImportable(parent: ResultImport, imp: Importable): void {
                 closeTab(files[i]);
             }
             removeFromQueueKey(queueItemKey(makeImportableQueueItem(imp, parent.fullPath)));
-            invalidateParseCacheEntry(parent.fullPath);
+            markParseStale(parent.fullPath);
             requestParse(parent.fullPath);
             bumpTreeRevision();
             ChatLib.chat(`&a[htsw] Deleted '${identity}' from ${shortPath(parent.fullPath)}.`);
@@ -560,7 +573,11 @@ function confirmRebind(fullPath: string, uuid: string | null): void {
 }
 
 function houseBindingActions(fullPath: string): MenuAction[] {
-    const bound = boundHouseUuidOf(fullPath);
+    // Same pending guard as houseBindControl: don't offer "Bind to…" on a
+    // file whose binding isn't known yet.
+    const parse = requestParse(fullPath);
+    if (parse === null || parse.parsed === null) return [];
+    const bound = parse.parsed.gcx.houseUuid;
     const current = getHousingUuid();
     const actions: MenuAction[] = [];
     if (current !== null && current !== bound) {
@@ -585,7 +602,12 @@ function houseBindingActions(fullPath: string): MenuAction[] {
 // rebind/unbind. A button rather than a context-menu entry — binding is the
 // primary way files and houses connect, not a power-user action.
 function houseBindControl(fullPath: string): Element | false {
-    const bound = boundHouseUuidOf(fullPath);
+    // A pending parse means "binding unknown", not "unbound" — rendering the
+    // gray bind button during the warm-up window made bound files flash an
+    // icon-only gray house for a couple of seconds after every load.
+    const parse = requestParse(fullPath);
+    if (parse === null || parse.parsed === null) return false;
+    const bound = parse.parsed.gcx.houseUuid;
     const current = getHousingUuid();
     if (bound === null && current === null) return false;
     if (bound === null && current !== null) {
@@ -732,6 +754,61 @@ export function resultRow(
                 Icon({
                     name: expanded ? Icons.chevronDown : Icons.chevronRight,
                 }),
+        ],
+    });
+}
+
+function includeGroupLabel(parent: ResultImport, fullPath: string): string {
+    const dir = projectDirOf(parent.fullPath);
+    if (fullPath.indexOf(dir + "/") === 0) return fullPath.substring(dir.length + 1);
+    return shortPath(fullPath);
+}
+
+export function includeGroupRow(
+    parent: ResultImport,
+    node: IncludeNode,
+    expKey: string,
+    defaultExpanded: boolean
+): Element {
+    const fullPath = canonicalPath(node.path);
+    const expanded = isIncludeGroupExpanded(expKey, defaultExpanded);
+    const actions = composeFileMenu([openInViewAction(fullPath)], fullPath);
+    return Container({
+        style: {
+            direction: "row",
+            padding: [
+                { side: "left", value: 3 },
+                { side: "right", value: 6 },
+            ],
+            gap: 6,
+            align: "center",
+            height: { kind: "px", value: 18 },
+            background: ROW_BG,
+            hoverBackground: ROW_HOVER_BG,
+        },
+        onClick: rowHandler(actions, () => {
+            includeGroupExpansion.set(expKey, !expanded);
+            bumpTreeRevision();
+        }),
+        onDoubleClick: () => {
+            // First click of the double toggled — undo it; double means
+            // "open", same pattern as the import.json header rows.
+            includeGroupExpansion.set(expKey, !isIncludeGroupExpanded(expKey, defaultExpanded));
+            bumpTreeRevision();
+            previewSelect(fullPath);
+            setActiveRightTab("view");
+        },
+        children: [
+            Icon({ name: expanded ? Icons.chevronDown : Icons.chevronRight }),
+            Text({
+                text: includeGroupLabel(parent, fullPath),
+                truncate: true,
+                style: { width: { kind: "grow" } },
+            }),
+            Text({
+                text: String(subtreeImportableCount(node)),
+                color: COLOR_TEXT_FAINT,
+            }),
         ],
     });
 }

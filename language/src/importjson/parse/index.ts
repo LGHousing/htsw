@@ -48,6 +48,12 @@ export function parseImportJson(gcx: GlobalCtxt, path: string, origin?: IncludeO
 
     if (!prepareImportJsonParsing(gcx, resolvedPath, origin)) return;
 
+    if (origin !== undefined) {
+        const siblings = gcx.includeEdges.get(origin.fromPath);
+        if (siblings !== undefined) siblings.push(resolvedPath);
+        else gcx.includeEdges.set(origin.fromPath, [resolvedPath]);
+    }
+
     gcx.activeImportJsonPaths.push(resolvedPath);
 
     try {
@@ -199,9 +205,11 @@ function parseAndAppendImportables(
     declaringPath: string,
     parser: (gcx: GlobalCtxt, node: json.Node, declaringPath: string) => Importable
 ) {
-    gcx.importables.push(
-        ...parseArray(gcx, node, (elementNode) => parser(gcx, elementNode, declaringPath))
-    );
+    const parsed = parseArray(gcx, node, (elementNode) => parser(gcx, elementNode, declaringPath));
+    for (const importable of parsed) {
+        gcx.declaringFiles.set(importable, declaringPath);
+    }
+    gcx.importables.push(...parsed);
 }
 
 function prepareImportJsonParsing(

@@ -55,7 +55,7 @@ const MODULE_BUNDLE = MODULE_DIR + "/index.js";
 const RUNNING_BUNDLE_MTIME = getMtimeMs(MODULE_BUNDLE);
 
 type Snapshot = {
-    version: 6;
+    version: 7;
     importJsonPath: string;
     // Deployed-bundle mtime of the build that wrote this snapshot. Kept
     // separate from `fingerprint` on purpose: parses.ts reuses the
@@ -74,6 +74,11 @@ type Snapshot = {
     // binding. Must round-trip, or a snapshot-served session sees every
     // bound file as unbound.
     houseUuid: string | null;
+    // gcx.declaringFiles per importable (index-aligned) + gcx.includeEdges.
+    // Must round-trip, or a snapshot-served session renders the Importables
+    // include tree as one flat list.
+    declaringPaths: (string | null)[];
+    includeEdges: Array<[string, string[]]>;
 };
 
 const SUB_LIST_KINDS = [
@@ -115,7 +120,7 @@ export function loadSnapshot(importJsonPath: string): Snapshot | null {
         const raw = String(FileLib.read(p) ?? "");
         if (raw.length === 0) return null;
         const parsed = JSON.parse(raw) as Snapshot;
-        if (parsed.version !== 6) return null;
+        if (parsed.version !== 7) return null;
         if (parsed.importJsonPath !== importJsonPath) return null;
         // A snapshot stores parser OUTPUT, so it's only valid for the build
         // that wrote it. 0 on either side = bundle not at the standard path;
@@ -137,6 +142,9 @@ export function loadSnapshot(importJsonPath: string): Snapshot | null {
         if (parsed.hashes.length !== parsed.importables.length) return null;
         if (parsed.houseUuid !== null && typeof parsed.houseUuid !== "string") return null;
         if (parsed.fingerprint === null || typeof parsed.fingerprint !== "object" || Array.isArray(parsed.fingerprint)) return null;
+        if (!Array.isArray(parsed.declaringPaths)) return null;
+        if (parsed.declaringPaths.length !== parsed.importables.length) return null;
+        if (!Array.isArray(parsed.includeEdges)) return null;
         return parsed;
     } catch (_e) {
         return null;
@@ -250,10 +258,18 @@ export function saveSnapshot(
         }
         subListPaths.push(subLists);
     }
+    const declaringPaths: (string | null)[] = [];
+    for (let i = 0; i < result.value.length; i++) {
+        declaringPaths.push(result.gcx.declaringFiles.get(result.value[i]) ?? null);
+    }
+    const includeEdges: Array<[string, string[]]> = [];
+    result.gcx.includeEdges.forEach((children, parent) => {
+        includeEdges.push([parent, children]);
+    });
     const fingerprint: { [path: string]: number } = {};
     for (const k in watchedMtimes) fingerprint[k] = watchedMtimes[k];
     const snapshot: Snapshot = {
-        version: 6,
+        version: 7,
         importJsonPath,
         bundleMtime: RUNNING_BUNDLE_MTIME,
         fingerprint,
@@ -262,6 +278,8 @@ export function saveSnapshot(
         subListPaths,
         hashes: result.value.map(memoizedImportableHash),
         houseUuid: result.gcx.houseUuid,
+        declaringPaths,
+        includeEdges,
     };
     try {
         const out = snapshotFileFor(importJsonPath);
@@ -300,6 +318,14 @@ export function buildLiteParseResult(snapshot: Snapshot): ParseResult<Importable
             }
         }
         seedImportableHash(snapshot.importables[i], snapshot.hashes[i]);
+        const declaring = snapshot.declaringPaths[i];
+        if (declaring !== null && declaring !== undefined) {
+            gcx.declaringFiles.set(snapshot.importables[i], declaring);
+        }
+    }
+    for (let i = 0; i < snapshot.includeEdges.length; i++) {
+        const edge = snapshot.includeEdges[i];
+        gcx.includeEdges.set(edge[0], edge[1]);
     }
     return {
         value: snapshot.importables,

@@ -79,6 +79,18 @@ function actionPathFromFieldSpan(
  * (multi-parse Importables + queue use-case); omit it to fall back to
  * `getParsedResult()` for legacy single-parse callers.
  */
+/**
+ * The import.json file that DECLARED `imp` — distinct from
+ * `importableSourcePath`, which prefers the htsl/snbt the content lives in.
+ * Falls back to the parse's entry file when the parse didn't record one.
+ */
+export function importableDeclaringPath(
+    imp: Importable,
+    parse: ParseResult<Importable[]>
+): string {
+    return parse.gcx.declaringFiles.get(imp) ?? parse.gcx.path;
+}
+
 export function importableSourcePath(
     imp: Importable,
     parse?: ParseResult<Importable[]> | null
@@ -177,6 +189,12 @@ export function allReferencedPaths(
     };
     push(importJsonPath);
     if (parse === null) return out;
+    // Included import.jsons too — an importable-less include would otherwise
+    // be missing from the fingerprint, so edits to it never bust the cache.
+    parse.gcx.includeEdges.forEach((children, parent) => {
+        push(parent);
+        for (let i = 0; i < children.length; i++) push(children[i]);
+    });
     for (const imp of parse.value) {
         for (const p of importableFilePaths(imp, parse)) push(p);
     }

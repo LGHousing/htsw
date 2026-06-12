@@ -85,6 +85,34 @@ describe("import.json include", () => {
         expect(hasHardErrors(result.diagnostics)).toBe(false);
     });
 
+    it("records include edges as a tree of resolved paths", () => {
+        const entry = caseDirPath("nested");
+        const result = parseImportables(entry);
+
+        const dir = dirname(entry);
+        const aPath = resolve(dir, "a.import.json");
+        const bPath = resolve(dir, "b.import.json");
+        expect(result.gcx.includeEdges.get(entry)).toEqual([aPath]);
+        expect(result.gcx.includeEdges.get(aPath)).toEqual([bPath]);
+        expect(result.gcx.includeEdges.has(bPath)).toBe(false);
+
+        const regionA = result.value.find(
+            (imp) => imp.type === "REGION" && imp.name === "RegionA"
+        );
+        expect(regionA).toBeDefined();
+        expect(result.gcx.declaringFiles.get(regionA!)).toBe(aPath);
+    });
+
+    it("records no include edge for cyclic includes", () => {
+        const entry = caseDirPath("cycle");
+        const result = parseImportables(entry);
+
+        const otherPath = resolve(dirname(entry), "other.import.json");
+        expect(result.gcx.includeEdges.get(entry)).toEqual([otherPath]);
+        // other includes the entry again — the cycle is rejected, no edge.
+        expect(result.gcx.includeEdges.get(otherPath)).toBeUndefined();
+    });
+
     it("reports missing include files", () => {
         const result = parseImportables(caseFilePath("missing"));
 

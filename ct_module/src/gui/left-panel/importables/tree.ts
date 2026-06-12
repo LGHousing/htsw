@@ -6,6 +6,7 @@ import {
 } from "../../lib/layout";
 import { Col, Container } from "../../lib/components";
 import {
+    Source,
     SourceDir,
     SourceFile,
     enumerateForSource,
@@ -14,6 +15,8 @@ import {
 import { sortResults } from "./sort";
 import { isImportableTypeActive, isFilterDefault } from "./filter";
 import { Result, ResultImport, ROW_BG, getTreeRevision } from "./rowModel";
+import { IncludeNode, includeTreeOf } from "./includeTree";
+import { canonicalPath } from "../../parsing/parses";
 import {
     searchQuery,
     expansionKey,
@@ -21,6 +24,9 @@ import {
     collapsedRoots,
     importableExpansion,
     importableExpansionKey,
+    includeGroupKey,
+    includeGroupRow,
+    isIncludeGroupExpanded,
     subListsOf,
     metadataFieldsOf,
     dirRootKey,
@@ -32,6 +38,7 @@ import {
     metadataRow,
     standaloneCloseAction,
 } from "./rows";
+import type { Importable } from "htsw/types";
 
 const LEFT_PAD = 7;
 const ARM_LEN = 8;
@@ -204,12 +211,12 @@ function importableName(imp: { type: string; name?: string; event?: string }): s
     return imp.type === "EVENT" ? (imp as any).event : (imp as any).name;
 }
 
-function filterImportables(r: ResultImport): ResultImport["importables"] {
+function filterImportableList(r: ResultImport, list: Importable[]): Importable[] {
     const q = searchQuery.toLowerCase();
     const pathMatch = q.length === 0 || r.path.toLowerCase().indexOf(q) >= 0;
-    const out: ResultImport["importables"] = [];
-    for (let j = 0; j < r.importables.length; j++) {
-        const imp = r.importables[j];
+    const out: Importable[] = [];
+    for (let j = 0; j < list.length; j++) {
+        const imp = list[j];
         if (!isImportableTypeActive(imp.type)) continue;
         if (q.length > 0 && !pathMatch) {
             if (importableName(imp).toLowerCase().indexOf(q) < 0) continue;
@@ -217,6 +224,22 @@ function filterImportables(r: ResultImport): ResultImport["importables"] {
         out.push(imp);
     }
     return out;
+}
+
+function filterImportables(r: ResultImport): ResultImport["importables"] {
+    return filterImportableList(r, r.importables);
+}
+
+function isNarrowing(): boolean {
+    return !isFilterDefault() || searchQuery.length > 0;
+}
+
+function groupHasVisibleContent(r: ResultImport, node: IncludeNode): boolean {
+    if (filterImportableList(r, node.importables).length > 0) return true;
+    for (let i = 0; i < node.children.length; i++) {
+        if (groupHasVisibleContent(r, node.children[i])) return true;
+    }
+    return false;
 }
 
 function filterAndSort(all: Result[]): Result[] {
@@ -237,6 +260,140 @@ function filterAndSort(all: Result[]): Result[] {
         out.push(r);
     }
     return sortResults(out);
+}
+
+// An import.json that another file in the same source includes renders as a
+// nested group inside that file's tree — its own top-level row would repeat
+// the same content. Mutual includes (a cycle, already an error) keep both
+// rows rather than hiding both.
+function resultsForSource(s: Source): Result[] {
+    const all = enumerateForSource(s);
+    const includesByRow: (Set<string> | null)[] = [];
+    let anyIncludes = false;
+    for (let i = 0; i < all.length; i++) {
+        const r = all[i];
+        if (r.type !== "import" || r.parse === null || r.parse.gcx.includeEdges.size === 0) {
+            includesByRow.push(null);
+            continue;
+        }
+        const set = new Set<string>();
+        r.parse.gcx.includeEdges.forEach((children) => {
+            for (let j = 0; j < children.length; j++) {
+                set.add(canonicalPath(children[j]));
+            }
+        });
+        includesByRow.push(set);
+        anyIncludes = true;
+    }
+    if (!anyIncludes) return all;
+    const out: Result[] = [];
+    for (let i = 0; i < all.length; i++) {
+        const r = all[i];
+        if (r.type === "import" && isIncludedElsewhere(all, includesByRow, i)) continue;
+        out.push(r);
+    }
+    return out;
+}
+
+function isIncludedElsewhere(
+    all: Result[],
+    includesByRow: (Set<string> | null)[],
+    i: number
+): boolean {
+    const myPath = canonicalPath(all[i].fullPath);
+    const mine = includesByRow[i];
+    for (let j = 0; j < all.length; j++) {
+        if (j === i) continue;
+        const theirs = includesByRow[j];
+        if (theirs === null || !theirs.has(myPath)) continue;
+        if (mine !== null && mine.has(canonicalPath(all[j].fullPath))) continue;
+        return true;
+    }
+    return false;
+}
+
+// Emit an expanded import.json's contents: each included file as a
+// (collapsible) group whose contents recurse, then the file's own
+// importables — groups first, like folders before files, so includes don't
+// hide below a long flat run. While a search/type filter narrows, groups
+// auto-expand and empty ones disappear.
+function emitImportContents(out: TreeRow[], r: ResultImport, baseLevels: LevelGuide[]): void {
+    emitIncludeNode(out, r, includeTreeOf(r), baseLevels, isNarrowing());
+}
+
+function emitIncludeNode(
+    out: TreeRow[],
+    r: ResultImport,
+    node: IncludeNode,
+    levels: LevelGuide[],
+    narrowing: boolean
+): void {
+    const imps = filterImportableList(r, node.importables);
+    const kids = narrowing
+        ? node.children.filter((c) => groupHasVisibleContent(r, c))
+        : node.children;
+    const total = imps.length + kids.length;
+    let idx = 0;
+    for (let j = 0; j < kids.length; j++) {
+        idx++;
+        const kid = kids[j];
+        const isLast = idx === total;
+        const expKey = includeGroupKey(r.fullPath, canonicalPath(kid.path));
+        out.push({
+            levels,
+            branch: isLast ? "ell" : "tee",
+            content: () => includeGroupRow(r, kid, expKey, narrowing),
+            height: 18,
+        });
+        if (isIncludeGroupExpanded(expKey, narrowing)) {
+            emitIncludeNode(
+                out,
+                r,
+                kid,
+                levels.concat([isLast ? "empty" : "vertical"]),
+                narrowing
+            );
+        }
+    }
+    for (let j = 0; j < imps.length; j++) {
+        idx++;
+        const imp = imps[j];
+        const isLast = idx === total;
+        out.push({
+            levels,
+            branch: isLast ? "ell" : "tee",
+            content: () => importableRow(r, imp),
+            height: ENTRY_ROW_H,
+        });
+        const subKey = importableExpansionKey(r.fullPath, imp);
+        if (importableExpansion.has(subKey)) {
+            const subs = subListsOf(imp);
+            const meta = metadataFieldsOf(imp);
+            const totalChildren = subs.length + meta.length;
+            let childIdx = 0;
+            const childLevels: LevelGuide[] = levels.concat([
+                isLast ? "empty" : "vertical",
+            ]);
+            for (let k = 0; k < subs.length; k++) {
+                childIdx++;
+                out.push({
+                    levels: childLevels,
+                    branch: childIdx === totalChildren ? "ell" : "tee",
+                    content: () => subRow(r, imp, subs[k]),
+                    height: ENTRY_ROW_H,
+                });
+            }
+            for (let k = 0; k < meta.length; k++) {
+                childIdx++;
+                out.push({
+                    levels: childLevels,
+                    branch: childIdx === totalChildren ? "ell" : "tee",
+                    content: () => metadataRow(r, imp, meta[k]),
+                    height: ENTRY_ROW_H,
+                });
+            }
+        }
+    }
 }
 
 const MAX_TAIL_SEGMENTS = 3;
@@ -302,7 +459,7 @@ function buildTreeRows(): TreeRow[] {
     for (let ri = 0; ri < roots.length; ri++) {
         const root = roots[ri];
         if (root.kind === "dir") {
-            const allResults = enumerateForSource(root.source);
+            const allResults = resultsForSource(root.source);
             for (let i = 0; i < allResults.length; i++) {
                 if (allResults[i].type === "import") {
                     totalImports++;
@@ -312,7 +469,7 @@ function buildTreeRows(): TreeRow[] {
         } else {
             for (let fi = 0; fi < root.files.length; fi++) {
                 const file = root.files[fi];
-                const allResults = enumerateForSource(file);
+                const allResults = resultsForSource(file);
                 for (let i = 0; i < allResults.length; i++) {
                     if (allResults[i].type === "import") {
                         totalImports++;
@@ -345,7 +502,7 @@ function buildTreeRows(): TreeRow[] {
             if (collapsedRoots.has(root.key)) continue;
 
             const dirSourceKey = root.key;
-            const results = filterAndSort(enumerateForSource(root.source));
+            const results = filterAndSort(resultsForSource(root.source));
             for (let i = 0; i < results.length; i++) {
                 const r = results[i];
                 const isLastResult = i === results.length - 1;
@@ -359,55 +516,14 @@ function buildTreeRows(): TreeRow[] {
                 });
 
                 if (r.type === "import" && isImportExpanded(expKey, defaultExpanded)) {
-                    const importables = filterImportables(r);
-                    for (let j = 0; j < importables.length; j++) {
-                        const imp = importables[j];
-                        const isLastImp = j === importables.length - 1;
-                        const impLevels: LevelGuide[] = [
-                            isLastResult ? "empty" : "vertical",
-                        ];
-                        out.push({
-                            levels: impLevels,
-                            branch: isLastImp ? "ell" : "tee",
-                            content: () => importableRow(r, imp),
-                            height: ENTRY_ROW_H,
-                        });
-                        const subKey = importableExpansionKey(r.fullPath, imp);
-                        if (importableExpansion.has(subKey)) {
-                            const subs = subListsOf(imp);
-                            const meta = metadataFieldsOf(imp);
-                            const totalChildren = subs.length + meta.length;
-                            let childIdx = 0;
-                            const childLevels: LevelGuide[] = impLevels.concat([
-                                isLastImp ? "empty" : "vertical",
-                            ]);
-                            for (let k = 0; k < subs.length; k++) {
-                                childIdx++;
-                                out.push({
-                                    levels: childLevels,
-                                    branch: childIdx === totalChildren ? "ell" : "tee",
-                                    content: () => subRow(r, imp, subs[k]),
-                                    height: ENTRY_ROW_H,
-                                });
-                            }
-                            for (let k = 0; k < meta.length; k++) {
-                                childIdx++;
-                                out.push({
-                                    levels: childLevels,
-                                    branch: childIdx === totalChildren ? "ell" : "tee",
-                                    content: () => metadataRow(r, imp, meta[k]),
-                                    height: ENTRY_ROW_H,
-                                });
-                            }
-                        }
-                    }
+                    emitImportContents(out, r, [isLastResult ? "empty" : "vertical"]);
                 }
             }
         } else {
             for (let i = 0; i < root.files.length; i++) {
                 const file = root.files[i];
                 const fileSourceKey = `file:${file.fullPath}`;
-                const fileResults = filterAndSort(enumerateForSource(file));
+                const fileResults = filterAndSort(resultsForSource(file));
                 for (let j = 0; j < fileResults.length; j++) {
                     const r = fileResults[j];
                     const expKey = expansionKey(fileSourceKey, r.fullPath);
@@ -426,45 +542,7 @@ function buildTreeRows(): TreeRow[] {
                     });
 
                     if (r.type === "import" && isImportExpanded(expKey, defaultExpanded)) {
-                        const importables = filterImportables(r);
-                        for (let k = 0; k < importables.length; k++) {
-                            const imp = importables[k];
-                            const isLastImp = k === importables.length - 1;
-                            out.push({
-                                levels: [],
-                                branch: isLastImp ? "ell" : "tee",
-                                content: () => importableRow(r, imp),
-                                height: ENTRY_ROW_H,
-                            });
-                            const subKey = importableExpansionKey(r.fullPath, imp);
-                            if (importableExpansion.has(subKey)) {
-                                const subs = subListsOf(imp);
-                                const meta = metadataFieldsOf(imp);
-                                const totalChildren = subs.length + meta.length;
-                                let childIdx = 0;
-                                const childLevels: LevelGuide[] = [
-                                    isLastImp ? "empty" : "vertical",
-                                ];
-                                for (let s = 0; s < subs.length; s++) {
-                                    childIdx++;
-                                    out.push({
-                                        levels: childLevels,
-                                        branch: childIdx === totalChildren ? "ell" : "tee",
-                                        content: () => subRow(r, imp, subs[s]),
-                                        height: ENTRY_ROW_H,
-                                    });
-                                }
-                                for (let s = 0; s < meta.length; s++) {
-                                    childIdx++;
-                                    out.push({
-                                        levels: childLevels,
-                                        branch: childIdx === totalChildren ? "ell" : "tee",
-                                        content: () => metadataRow(r, imp, meta[s]),
-                                        height: ENTRY_ROW_H,
-                                    });
-                                }
-                            }
-                        }
+                        emitImportContents(out, r, []);
                     }
                 }
             }

@@ -22,6 +22,21 @@ export class GlobalCtxt {
      */
     sourceFiles: WeakMap<Importable, string>;
     /**
+     * The import.json that DECLARED each importable — unlike `sourceFiles`,
+     * never the .htsl/.snbt the content lives in. Stored as data (not
+     * derived from spans) so snapshot-restored parses, which carry no
+     * spans, can still group importables by declaring file.
+     */
+    declaringFiles: WeakMap<Importable, string>;
+    /**
+     * Which import.json included which: resolved includer path → resolved
+     * included paths, in declaration order. An edge is recorded only when
+     * the include actually triggers a load — cycles, duplicates, and missing
+     * files record nothing — so the edges always form a tree rooted at the
+     * entry file.
+     */
+    includeEdges: Map<string, string[]>;
+    /**
      * Housing UUID the entry import.json declares via its top-level
      * "houseUuid" key, or null when unbound. Only the entry file's
      * declaration counts — one parse describes one house, and an included
@@ -42,6 +57,8 @@ export class GlobalCtxt {
         this.activeImportJsonPaths = [];
         this.loadedImportJsonPaths = new Set<string>();
         this.sourceFiles = new WeakMap<Importable, string>();
+        this.declaringFiles = new WeakMap<Importable, string>();
+        this.includeEdges = new Map<string, string[]>();
         this.houseUuid = null;
     }
 
@@ -77,6 +94,8 @@ export class GlobalCtxt {
         gcx.activeImportJsonPaths = this.activeImportJsonPaths;
         gcx.loadedImportJsonPaths = this.loadedImportJsonPaths;
         gcx.sourceFiles = this.sourceFiles;
+        gcx.declaringFiles = this.declaringFiles;
+        gcx.includeEdges = this.includeEdges;
         return gcx;
     }
 }
