@@ -59,6 +59,17 @@ export function setActiveTab(path: string): void {
     if (preview !== null && path !== preview) preview = null;
     active = path;
 }
+/** Close every tab living under a directory — for project deletes, where a
+ * surviving tab would just render a missing-file error. */
+export function closeTabsUnder(dirPath: string): void {
+    const prefix = dirPath.charAt(dirPath.length - 1) === "/" ? dirPath : dirPath + "/";
+    const all = getTabs();
+    for (let i = 0; i < all.length; i++) {
+        const p = all[i].path;
+        if (p === dirPath || p.indexOf(prefix) === 0) closeTab(p);
+    }
+}
+
 export function closeTab(path: string): void {
     if (preview === path) preview = null;
     const idx = confirmed.indexOf(path);

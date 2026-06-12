@@ -3,7 +3,8 @@
 import type { Action } from "htsw/types";
 import type { Diagnostic, DiagnosticLevel, ParseResult, SourceFile, SpanTable } from "htsw";
 
-import { getMtimeMs } from "../lib/java";
+import { getMtimeMs, pathExists } from "../lib/java";
+import { shortPath } from "../lib/pathDisplay";
 import { FileSystemFileLoader } from "../../utils/fileLoaders";
 import { actionsToLines, parseHtslFile, type HtslLine } from "./htslParse";
 import { getParsedResult } from "../state/parsed";
@@ -300,7 +301,14 @@ function readPlainLines(path: string): string[] {
         const src = fileLoader.readFile(path);
         lines = src.split("\n");
     } catch (e) {
-        lines = [`// failed to read ${path}: ${e}`];
+        // Friendly two-liner instead of the raw exception: the exception text
+        // repeats the absolute path twice and wraps into an unreadable wall.
+        lines = pathExists(path)
+            ? [`// Couldn't read ${shortPath(path)}`, `// ${e}`]
+            : [
+                  `// ${shortPath(path)} no longer exists.`,
+                  "// Close this tab, or recreate the file.",
+              ];
     }
     plainCache.set(path, { mtime, lines });
     return lines;

@@ -53,7 +53,13 @@ import { composeFileMenu, composeImportableMenu } from "../../menus/fileMenu";
 import { autoTrackRefresh, queueModifiedFromParse } from "../../right-panel/import-tab/importController";
 import { SourceDir, SourceFile, removeSource } from "./source";
 import { showInExplorer, openInVSCode } from "../../../utils/osShell";
-import { confirmSelect, previewSelect, setActiveRightTab } from "../../right-panel/selection";
+import {
+    closeTab,
+    closeTabsUnder,
+    confirmSelect,
+    previewSelect,
+    setActiveRightTab,
+} from "../../right-panel/selection";
 import {
     Result,
     ResultImport,
@@ -62,7 +68,7 @@ import {
     ROW_HOVER_BG,
     bumpTreeRevision,
 } from "./rowModel";
-import type { Importable } from "htsw/types";
+import type { Bounds, Importable } from "htsw/types";
 
 export let searchQuery = "";
 export function setSearchQuery(v: string): void {
@@ -195,14 +201,28 @@ export function metadataFieldsOf(imp: Importable): MetadataField[] {
     }
     if (imp.type === "REGION") {
         const cr = cached !== null && cached.type === "REGION" ? cached : null;
+        // The parser allows a region without bounds (the key is optional), so
+        // the declared non-optional type is a lie here — guard or this throws
+        // on every render of the expanded row.
+        const bounds = imp.bounds as Bounds | undefined;
+        if (bounds === undefined) {
+            return [
+                {
+                    key: "bounds",
+                    label: "Bounds",
+                    value: "(not set)",
+                    diff: cr !== null ? valDiff(undefined, cr.bounds) : undefined,
+                },
+            ];
+        }
         return [
             {
-                key: "boundsFrom", label: "From", value: formatPos(imp.bounds.from),
-                diff: cr !== null ? valDiff(imp.bounds.from, cr.bounds.from) : undefined,
+                key: "boundsFrom", label: "From", value: formatPos(bounds.from),
+                diff: cr !== null ? valDiff(bounds.from, cr.bounds.from) : undefined,
             },
             {
-                key: "boundsTo", label: "To", value: formatPos(imp.bounds.to),
-                diff: cr !== null ? valDiff(imp.bounds.to, cr.bounds.to) : undefined,
+                key: "boundsTo", label: "To", value: formatPos(bounds.to),
+                diff: cr !== null ? valDiff(bounds.to, cr.bounds.to) : undefined,
             },
         ];
     }
@@ -299,6 +319,7 @@ function confirmDeleteImportable(parent: ResultImport, imp: Importable): void {
                 } catch (_e) {
                     ChatLib.chat(`&e[htsw] Couldn't delete ${shortPath(files[i])}`);
                 }
+                closeTab(files[i]);
             }
             removeFromQueueKey(queueItemKey(makeImportableQueueItem(imp, parent.fullPath)));
             invalidateParseCacheEntry(parent.fullPath);
@@ -324,6 +345,7 @@ function confirmDeleteProject(importJsonPath: string): void {
         onConfirm: () => {
             const ok = deleteDirRecursive(dir);
             removeSource(importJsonPath);
+            closeTabsUnder(dir);
             invalidateParseCacheEntry(importJsonPath);
             bumpTreeRevision();
             if (ok) ChatLib.chat(`&a[htsw] Deleted ${dir}.`);
