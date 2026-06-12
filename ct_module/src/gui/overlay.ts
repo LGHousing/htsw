@@ -19,6 +19,9 @@ const GuiRepairClass = javaType("net.minecraft.client.gui.inventory.GuiRepair");
 const RenderGameOverlayEventPost = javaType(
     "net.minecraftforge.client.event.RenderGameOverlayEvent$Post"
 );
+const RenderGameOverlayElementType = javaType(
+    "net.minecraftforge.client.event.RenderGameOverlayEvent$ElementType"
+);
 // Subscribed via raw Forge instead of CT's `guiOpened` trigger because
 // CT's `ClientListener.onGuiOpened` has `if (event.gui == null) return;`
 // — verified by disassembly. The null transitions are exactly the ones
@@ -267,11 +270,16 @@ export function initHtswGui(): void {
     // raw Forge `RenderGameOverlayEvent.Post` (CT's `renderOverlay`
     // trigger is the Pre event — running our paint before MC draws the
     // HUD, which lets chat/hotbar text bleed through ON TOP of our
-    // scrim). Post fires once per frame after the entire vanilla HUD has
-    // been drawn, so a fully opaque scrim there hides every HUD element.
+    // scrim). GuiIngameForge fires Post once per HUD ELEMENT (17 call
+    // sites — verified by disassembling forge-1.8.9-11.15.1.2318), so
+    // without a filter this handler ran ~10× per frame. We act only on
+    // ALL, which fires exactly once, at the very end of
+    // renderGameOverlay after the entire vanilla HUD has been drawn —
+    // so a fully opaque scrim there hides every HUD element.
     // `postGuiRender` covers the other state (any GuiScreen open, including
     // GuiChat) where `DrawScreenEvent.Post` is the natural late hook.
-    register(RenderGameOverlayEventPost, (_event: any) => {
+    register(RenderGameOverlayEventPost, (event: any) => {
+        if (!RenderGameOverlayElementType.ALL.equals(event.type)) return;
         sampleProgressTraceTick();
         const screen = (Client.getMinecraft() as any).field_71462_r;
         if (screen !== null && screen !== undefined) return;
@@ -539,10 +547,17 @@ export function initHtswGui(): void {
     register("tick", () => {
         tickAllFields();
         applyFocus(getFocusedInput());
-        tickReparse();
-        // Drain one off-frame parse queued by requestParse() (export pane,
-        // Importables tree, queue rows) so a cold parse never blocks render.
-        processPendingParses();
+        // Reparse polling stats the import.json every tick and (throttled)
+        // every referenced file — hundreds of game-thread disk stats per
+        // second on a big project. Only pay that while the overlay can
+        // actually show the result; with no GUI open we do zero disk I/O,
+        // and the next open picks up any external edits.
+        if (frameVisible()) {
+            tickReparse();
+            // Drain one off-frame parse queued by requestParse() (export pane,
+            // Importables tree, queue rows) so a cold parse never blocks render.
+            processPendingParses();
+        }
         // First-load walkthrough; once per session, never mid-import, and only
         // while the GUI can actually render a popover.
         if (frameVisible() && getImportProgress() === null) {
