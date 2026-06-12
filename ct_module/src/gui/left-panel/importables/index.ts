@@ -18,6 +18,7 @@ import { queueSourcePath } from "./source";
 import { SORT_FIELDS, isSortDefault, sortPopoverContent } from "./sort";
 import { isFilterDefault, filterPopoverContent, FILTER_POPOVER_HEIGHT } from "./filter";
 import { searchQuery, setSearchQuery } from "./rows";
+import { createStarterProject } from "../../starterProject";
 import { RESULTS_SCROLL_ID, renderRows } from "./tree";
 
 function openBrowseModal(): void {
@@ -77,11 +78,22 @@ function recentsPopoverContent(): Element {
 
 function emptyStateRow(): Element {
     return Container({
-        style: { padding: 8 },
+        style: { padding: 8, gap: 6 },
         children: [
             Text({
                 text: "Click Browse to open an import.json.",
                 style: { width: { kind: "grow" } },
+            }),
+            Text({
+                text: "New to HTSW? Start from a commented example:",
+                color: COLOR_TEXT_DIM,
+                style: { width: { kind: "grow" } },
+            }),
+            Button({
+                icon: Icons.sparkles,
+                text: "Create sample project",
+                style: { width: { kind: "grow" }, height: { kind: "px", value: 18 } },
+                onClick: () => createStarterProject(),
             }),
         ],
     });

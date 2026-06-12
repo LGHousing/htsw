@@ -16,6 +16,7 @@ import { requestParse } from "../../parsing/parses";
 import { getCurrentHousingUuid } from "../../../importCache/housingId";
 import { houseDisplayName, listAliases } from "../../../importCache/aliases";
 import { openAliasPopover } from "../../popovers/alias";
+import { openConfirmPopover } from "../../popovers/confirm";
 import { openMenu, type MenuAction } from "../../lib/menu";
 import { togglePopover, closePopover, type PopoverHandle } from "../../lib/popovers";
 import { exportDestinationPicker } from "../../right-panel/import-tab/importButtons";
@@ -130,6 +131,19 @@ function knownHouses(): string[] {
     return out;
 }
 
+function confirmDeleteHouse(uuid: string, onDeleted?: () => void): void {
+    openConfirmPopover({
+        title: `Remove tracked house ${houseLabel(uuid)}?`,
+        lines: ["Deletes its cached knowledge, alias, and trust."],
+        confirmLabel: "Remove",
+        danger: true,
+        onConfirm: () => {
+            deleteHouse(uuid);
+            onDeleted?.();
+        },
+    });
+}
+
 function deleteHouse(uuid: string): void {
     const ok = deleteHousingCache(uuid);
     clearAlias(uuid);
@@ -210,20 +224,7 @@ function houseDropdownRow(uuid: string): Element {
                 },
                 onClick: (_r, info) => {
                     if (info.button !== 0) return;
-                    openMenu(
-                        info.x,
-                        info.y,
-                        [
-                            {
-                                label: `Confirm delete ${houseLabel(uuid)}`,
-                                onClick: () => {
-                                    deleteHouse(uuid);
-                                    closeHouseDropdown();
-                                },
-                            },
-                        ],
-                        { keepUnderlying: true }
-                    );
+                    confirmDeleteHouse(uuid, () => closeHouseDropdown());
                 },
                 children: [
                     Icon({
@@ -299,7 +300,7 @@ function housePickerRow(): Element {
                     openMenu(info.x, info.y, [
                         { label: "Set alias", onClick: () => openAliasPopover(rect, viewed) },
                         { kind: "separator" },
-                        { label: "Delete tracked house", onClick: () => deleteHouse(viewed) },
+                        { label: "Delete tracked house", onClick: () => confirmDeleteHouse(viewed) },
                     ]);
                 }
                 return;
@@ -663,11 +664,9 @@ function driftedNamesAmong(
 
 // Export overwrites local files with the house version. When the export set
 // contains drifted rows (local content differs from the house's last-read
-// content), interpose one confirm click naming what gets overwritten. Drift
+// content), interpose a modal confirm naming what gets overwritten. Drift
 // is judged against cached knowledge — a Read first makes it exact.
 function confirmDestructiveExport(
-    anchorX: number,
-    anchorY: number,
     t: HouseContentType,
     uuid: string,
     names: readonly string[],
@@ -678,15 +677,19 @@ function confirmDestructiveExport(
         run();
         return;
     }
-    const shown = drifted.slice(0, 3).join(", ");
-    const more = drifted.length > 3 ? ` +${drifted.length - 3} more` : "";
-    openMenu(anchorX, anchorY, [
-        {
-            label: `Overwrite local changes to ${shown}${more}`,
-            icon: Icons.triangleAlert,
-            onClick: run,
-        },
-    ]);
+    const shown = drifted.slice(0, 5);
+    const lines = shown.map((n) => `• ${n}`);
+    if (drifted.length > shown.length) {
+        lines.push(`…and ${drifted.length - shown.length} more`);
+    }
+    lines.push("Export pulls the house version over your local files.");
+    openConfirmPopover({
+        title: `Overwrite local changes to ${drifted.length} ${t.label.toLowerCase()}?`,
+        lines,
+        confirmLabel: "Export anyway",
+        danger: true,
+        onConfirm: run,
+    });
 }
 
 function exportActionBar(t: HouseContentType, uuid: string, totalCount: number): Element {
@@ -754,21 +757,17 @@ function exportActionBar(t: HouseContentType, uuid: string, totalCount: number):
                             background: COLOR_BUTTON_PRIMARY,
                             hoverBackground: COLOR_BUTTON_PRIMARY_HOVER,
                         },
-                        onClick: (rect: Rect) => {
+                        onClick: () => {
                             if (t.export === undefined) return;
                             const exp = t.export;
                             if (selectedCount > 0) {
                                 const names = selected.map((it) => it.name);
-                                confirmDestructiveExport(
-                                    rect.x + rect.w, rect.y, t, uuid, names,
-                                    () => exp.selected(names, () => clearExportQueue())
+                                confirmDestructiveExport(t, uuid, names, () =>
+                                    exp.selected(names, () => clearExportQueue())
                                 );
                             } else {
                                 const names = t.items(uuid).map((i) => i.name);
-                                confirmDestructiveExport(
-                                    rect.x + rect.w, rect.y, t, uuid, names,
-                                    () => exp.all()
-                                );
+                                confirmDestructiveExport(t, uuid, names, () => exp.all());
                             }
                         },
                     }),
@@ -812,9 +811,8 @@ function exportActionBar(t: HouseContentType, uuid: string, totalCount: number):
                                     label: `Export all (${totalCount})`,
                                     onClick: () => {
                                         const names = t.items(uuid).map((i) => i.name);
-                                        confirmDestructiveExport(
-                                            rect.x + rect.w, rect.y, t, uuid, names,
-                                            () => t.export?.all()
+                                        confirmDestructiveExport(t, uuid, names, () =>
+                                            t.export?.all()
                                         );
                                     },
                                 },
