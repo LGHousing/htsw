@@ -29,7 +29,14 @@ import {
 import { importableIdentity, importableKey } from "../../../importCache/paths";
 import { houseDisplayName } from "../../../importCache/aliases";
 import { setHouseUuidKey } from "../../../exporter/importJsonWriter";
-import { invalidateParseCacheEntry, requestParse } from "../../parsing/parses";
+import {
+    canonicalPath,
+    getParseAt,
+    invalidateParseCacheEntry,
+    requestParse,
+    touchParseCacheMtime,
+} from "../../parsing/parses";
+import { recordHouseBinding } from "../../../importCache/houseBindings";
 import { shortPath } from "../../lib/pathDisplay";
 import { readImportableCache } from "../../../importCache/cache";
 import { canonicalIconItem } from "../../../importCache/hash";
@@ -312,15 +319,26 @@ function boundHouseUuidOf(fullPath: string): string | null {
     return parse.parsed.gcx.houseUuid;
 }
 
-function rebindFile(fullPath: string, uuid: string | null): void {
+function rebindFile(fullPath: string, rawUuid: string | null): void {
+    const uuid = rawUuid === null ? null : rawUuid.toLowerCase();
     if (!setHouseUuidKey(fullPath, uuid)) {
         ChatLib.chat(`&c[htsw] Couldn't update ${shortPath(fullPath)}`);
         return;
     }
-    // Re-parse so gcx.houseUuid (and the housing-bindings index, recorded on
-    // parse) reflect the edit; off-frame via the pending-parse queue.
-    invalidateParseCacheEntry(fullPath);
-    requestParse(fullPath);
+    // A binding edit only changes one metadata key, so don't invalidate the
+    // parse — a cold re-parse of a big project freezes the client for its
+    // full parse cost. Mirror the on-disk edit into the cached parse instead
+    // (the same in-place pathway touchParseCacheMtime exists for) and update
+    // the reverse index directly, since no re-parse will record it.
+    const entry = getParseAt(fullPath);
+    if (entry !== null && entry.parsed !== null) {
+        entry.parsed.gcx.houseUuid = uuid;
+        touchParseCacheMtime(fullPath);
+        recordHouseBinding(uuid, canonicalPath(fullPath));
+    } else {
+        invalidateParseCacheEntry(fullPath);
+        requestParse(fullPath);
+    }
     if (uuid !== null) {
         ChatLib.chat(`&a[htsw] Bound ${shortPath(fullPath)} to ${houseDisplayName(uuid)}.`);
     } else {
