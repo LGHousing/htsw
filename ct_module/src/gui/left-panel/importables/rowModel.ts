@@ -37,6 +37,20 @@ export const IMPORTABLE_TYPE_COLORS: { [k in Importable["type"]]: number } = {
     NPC: 0xff7be0c0 | 0,
 };
 
+// Structure revision for the Importables tree. The tree's row DESCRIPTORS
+// (which rows exist, not their per-frame content) are cached across frames;
+// any interaction that changes the row set — expansion toggles, search,
+// filter, sort, source add/remove — must bump this so the next frame
+// rebuilds immediately. A short TTL on the cache covers async changes
+// (reparses, enumeration refreshes) and any missed bump site.
+let treeRevision = 0;
+export function bumpTreeRevision(): void {
+    treeRevision++;
+}
+export function getTreeRevision(): number {
+    return treeRevision;
+}
+
 export const ACTIVE_BG = 0xff2d4d2d | 0;
 export const ACTIVE_HOVER_BG = 0xff3a5d3a | 0;
 export const ROW_BG = 0xff2d333d | 0;

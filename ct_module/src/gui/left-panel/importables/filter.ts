@@ -3,6 +3,7 @@ import type { Importable } from "htsw/types";
 import { Element } from "../../lib/layout";
 import { Container, Scroll, Text } from "../../lib/components";
 import {
+    bumpTreeRevision,
     IMPORTABLE_TYPE_COLORS,
     ACTIVE_BG,
     ACTIVE_HOVER_BG,
@@ -26,6 +27,7 @@ export function isFilterDefault(): boolean {
 function toggleType(t: ImportableType): void {
     if (selectedTypes.has(t)) selectedTypes.delete(t);
     else selectedTypes.add(t);
+    bumpTreeRevision();
 }
 
 export const FILTER_POPOVER_HEIGHT = Math.min(160, ALL_IMPORTABLE_TYPES.length * 20 + 6);

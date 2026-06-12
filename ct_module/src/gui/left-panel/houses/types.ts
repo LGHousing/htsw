@@ -7,7 +7,6 @@ import {
     deepReadHouseFunctions,
     getHouseFunctions,
     houseFunctionsScanned,
-    isFunctionReadInFlight,
     isFunctionScanInFlight,
     scanHouseFunctions,
 } from "./sources/functionsSource";
@@ -46,11 +45,11 @@ export type HouseContentType = {
     scanned: (uuid: string | null) => boolean;
     scan: () => void;
     scanInFlight: () => boolean;
-    // Deep read: pull every importable's full content from the house into the
-    // cache as verified knowledge (slow; explicit). Present only for types with
-    // a read implementation (FUNCTION today).
-    deepRead?: () => void;
-    deepReadInFlight?: () => boolean;
+    // Deep read: pull importables' full content from the house into the cache
+    // as verified knowledge (slow; explicit) — the export driver in read-only
+    // mode. `onlyNames` limits the pass to a selection; omitted = whole house.
+    // Present only for types with a read implementation (FUNCTION today).
+    deepRead?: (onlyNames?: string[]) => void;
     edit?: (name: string) => void;
     remove?: (name: string) => void;
     run?: (name: string) => void;
@@ -82,7 +81,6 @@ export const HOUSE_CONTENT_TYPES: HouseContentType[] = [
         scan: scanHouseFunctions,
         scanInFlight: isFunctionScanInFlight,
         deepRead: deepReadHouseFunctions,
-        deepReadInFlight: isFunctionReadInFlight,
         edit: (name) => ChatLib.command(`function edit ${name}`),
         remove: (name) => ChatLib.command(`function delete ${name}`),
         run: (name) => ChatLib.command(`function run ${name}`),

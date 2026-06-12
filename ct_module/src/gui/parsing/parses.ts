@@ -4,6 +4,7 @@ import { ParseResult, parseImportablesResult, SourceMap } from "htsw";
 import type { Importable } from "htsw/types";
 
 import { FileSystemFileLoader } from "../../utils/fileLoaders";
+import { recordHouseBinding } from "../../importCache/houseBindings";
 import { getMtimeMs, javaType } from "../lib/java";
 import { invalidateSourceDiffForParse } from "../code-view/sourceDiff";
 import { allReferencedPaths } from "./importablePaths";
@@ -206,7 +207,10 @@ export function parseImportJsonBlocking(rawPath: string): CachedParse {
         pending: null,
     };
     cache.set(canon, entry);
-    if (parsed !== null) invalidateSourceDiffForParse(parsed);
+    if (parsed !== null) {
+        invalidateSourceDiffForParse(parsed);
+        recordHouseBinding(parsed.gcx.houseUuid, canon);
+    }
     return entry;
 }
 

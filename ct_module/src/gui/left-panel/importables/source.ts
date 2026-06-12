@@ -1,6 +1,6 @@
 /// <reference types="../../../../CTAutocomplete" />
 
-import { Result, ResultImport } from "./rowModel";
+import { Result, ResultImport, bumpTreeRevision } from "./rowModel";
 import { requestParse } from "../../parsing/parses";
 
 export type SourceDir = {
@@ -68,8 +68,10 @@ function addSourceFromAbsolute(absolute: string): void {
     }
     if (isDir) {
         sources.push({ kind: "dir", label: fileNameOf(p), fullPath });
+        bumpTreeRevision();
     } else if (isFile) {
         sources.push({ kind: "file", label: fileNameOf(p), fullPath });
+        bumpTreeRevision();
     }
 }
 
@@ -96,6 +98,7 @@ export function removeSource(fullPath: string): void {
         if (sources[i].fullPath === fullPath) {
             sources.splice(i, 1);
             enumerationCache.delete(fullPath);
+            bumpTreeRevision();
             return;
         }
     }

@@ -27,6 +27,10 @@ import {
     type SubListKind,
 } from "../../parsing/importablePaths";
 import { importableIdentity, importableKey } from "../../../importCache/paths";
+import { houseDisplayName } from "../../../importCache/aliases";
+import { setHouseUuidKey } from "../../../exporter/importJsonWriter";
+import { invalidateParseCacheEntry, requestParse } from "../../parsing/parses";
+import { shortPath } from "../../lib/pathDisplay";
 import { readImportableCache } from "../../../importCache/cache";
 import { canonicalIconItem } from "../../../importCache/hash";
 import { addToQueue, makeImportableQueueItem, queueItemKey, removeFromQueueKey } from "../../right-panel/import-tab/queue";
@@ -42,12 +46,14 @@ import {
     IMPORTABLE_TYPE_COLORS,
     ROW_BG,
     ROW_HOVER_BG,
+    bumpTreeRevision,
 } from "./rowModel";
 import type { Importable } from "htsw/types";
 
 export let searchQuery = "";
 export function setSearchQuery(v: string): void {
     searchQuery = v;
+    bumpTreeRevision();
 }
 
 export const importExpansion: Map<string, boolean> = new Map();
@@ -212,6 +218,7 @@ export function dirRootActions(s: SourceDir): MenuAction[] {
             onClick: () => {
                 removeSource(s.fullPath);
                 collapsedRoots.delete(dirRootKey(s));
+                bumpTreeRevision();
             },
         },
     ];
@@ -276,6 +283,7 @@ export function rootRow(label: string, key: string, actions: MenuAction[]): Elem
         onClick: rowHandler(actions, () => {
             if (collapsed) collapsedRoots.delete(key);
             else collapsedRoots.add(key);
+            bumpTreeRevision();
         }),
         children: [
             Icon({ name: collapsed ? Icons.chevronRight : Icons.chevronDown }),
@@ -293,6 +301,79 @@ function projectDirOf(importJsonPath: string): string {
     if (slash === 0) return "/";
     if (slash === 2 && norm.charAt(1) === ":") return norm.substring(0, 3);
     return norm.substring(0, slash);
+}
+
+// The houseUuid the file declares, via the warm parse cache. Null while the
+// parse is cold/pending or the file is unbound — the chip simply doesn't
+// render for a frame or two until the cache warms.
+function boundHouseUuidOf(fullPath: string): string | null {
+    const parse = requestParse(fullPath);
+    if (parse === null || parse.parsed === null) return null;
+    return parse.parsed.gcx.houseUuid;
+}
+
+function rebindFile(fullPath: string, uuid: string | null): void {
+    if (!setHouseUuidKey(fullPath, uuid)) {
+        ChatLib.chat(`&c[htsw] Couldn't update ${shortPath(fullPath)}`);
+        return;
+    }
+    // Re-parse so gcx.houseUuid (and the housing-bindings index, recorded on
+    // parse) reflect the edit; off-frame via the pending-parse queue.
+    invalidateParseCacheEntry(fullPath);
+    requestParse(fullPath);
+    if (uuid !== null) {
+        ChatLib.chat(`&a[htsw] Bound ${shortPath(fullPath)} to ${houseDisplayName(uuid)}.`);
+    } else {
+        ChatLib.chat(`&a[htsw] Removed house binding from ${shortPath(fullPath)}.`);
+    }
+}
+
+function houseBindingActions(fullPath: string): MenuAction[] {
+    const bound = boundHouseUuidOf(fullPath);
+    const current = getHousingUuid();
+    const actions: MenuAction[] = [];
+    if (current !== null && current !== bound) {
+        actions.push({
+            label: `Bind to ${houseDisplayName(current)}`,
+            icon: Icons.house,
+            onClick: () => rebindFile(fullPath, current),
+        });
+    }
+    if (bound !== null) {
+        actions.push({
+            label: `Unbind from ${houseDisplayName(bound)}`,
+            onClick: () => rebindFile(fullPath, null),
+        });
+    }
+    return actions;
+}
+
+function boundHouseChip(fullPath: string): Element | false {
+    const bound = boundHouseUuidOf(fullPath);
+    if (bound === null) return false;
+    const isHere = bound === getHousingUuid();
+    const color = isHere ? ACCENT_SUCCESS : COLOR_TEXT_FAINT;
+    const tip = isHere
+        ? "Bound to this house (you're in it)"
+        : "Bound house — right-click to change";
+    return Container({
+        style: { direction: "row", gap: 2, align: "center" },
+        children: [
+            Icon({
+                name: Icons.house,
+                color,
+                tooltip: tip,
+                tooltipColor: color,
+                style: { width: { kind: "px", value: 9 }, height: { kind: "px", value: 9 } },
+            }),
+            Text({
+                text: houseDisplayName(bound),
+                color,
+                tooltip: tip,
+                tooltipColor: color,
+            }),
+        ],
+    });
 }
 
 export function resultRow(
@@ -326,6 +407,7 @@ export function resultRow(
                       openInVSCode(projectDirOf(r.fullPath), { newWindow: true });
                   },
               },
+              ...houseBindingActions(r.fullPath),
               ...extraActions,
           ]
         : extraActions;
@@ -346,6 +428,7 @@ export function resultRow(
         onClick: rowHandler(actions, () => {
             if (isImport) {
                 importExpansion.set(expKey, !expanded);
+                bumpTreeRevision();
             }
             previewSelect(r.fullPath);
         }),
@@ -355,6 +438,7 @@ export function resultRow(
                 text: labelOverride ?? r.path,
                 style: { width: { kind: "grow" } },
             }),
+            isImport && boundHouseChip(r.fullPath),
             isImport &&
                 Icon({
                     name: expanded ? Icons.chevronDown : Icons.chevronRight,
@@ -496,6 +580,7 @@ export function importableRow(parent: ResultImport, imp: Importable): Element {
                         if (info.button !== 0) return;
                         if (expanded) importableExpansion.delete(expKey);
                         else importableExpansion.add(expKey);
+                        bumpTreeRevision();
                     },
                     children: [
                         Icon({

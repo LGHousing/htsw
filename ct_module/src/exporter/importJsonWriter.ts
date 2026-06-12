@@ -113,6 +113,36 @@ export function upsertImportableEntry(
 }
 
 /**
+ * Set or remove the file's top-level "houseUuid" binding. `null` removes
+ * the key. Inserted as the first key so the binding reads like a header.
+ * Returns false when the file doesn't exist (nothing to bind).
+ */
+export function setHouseUuidKey(
+    importJsonPath: string,
+    houseUuid: string | null
+): boolean {
+    if (!FileLib.exists(importJsonPath)) return false;
+    const text = String(FileLib.read(importJsonPath) ?? "");
+    if (text.trim() === "") {
+        if (houseUuid === null) return true;
+        FileLib.write(
+            importJsonPath,
+            `${JSON.stringify({ houseUuid }, null, 4)}\n`,
+            true
+        );
+        return true;
+    }
+    const edits = json.modify(text, ["houseUuid"], houseUuid ?? undefined, {
+        formattingOptions: FORMATTING,
+        getInsertionIndex: () => 0,
+    });
+    let next = json.applyEdits(text, edits);
+    if (!next.endsWith("\n")) next += "\n";
+    FileLib.write(importJsonPath, next, true);
+    return true;
+}
+
+/**
  * Surgical single-field update: change one field on an importable entry.
  * Pass `undefined` as value to remove the field. Returns true on success.
  */

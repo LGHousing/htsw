@@ -18,6 +18,12 @@ export type ExportAllFunctionsOptions = {
     rootDir: string;
     names?: readonly string[];
     progress?: ExportProgressSink;
+    // Knowledge-only pass: same editor walk, but nothing is written to
+    // .htsl/import.json/item files (see ExportFunctionOptions.readOnly).
+    readOnly?: { housingUuid: string };
+    // Fires when the driver listed the house's functions itself (no `names`
+    // supplied), so the caller can record the scan.
+    onNamesListed?: (names: readonly string[]) => void;
 };
 
 export async function exportAllFunctions(
@@ -32,6 +38,8 @@ async function exportAllFunctionsInner(
     options: ExportAllFunctionsOptions
 ): Promise<ExportResult> {
     const { importJsonPath, rootDir } = options;
+    const readOnly = options.readOnly !== undefined;
+    const verb = readOnly ? "Reading" : "Exporting";
 
     // Drop any function-list cache from a prior import so per-function icon
     // reads reflect the live house, not a stale snapshot.
@@ -40,12 +48,15 @@ async function exportAllFunctionsInner(
     const inventorySnapshot: InventorySnapshot = snapshotInventory();
     const itemCaptures = new ItemCaptureRegistry();
 
-    const names =
-        options.names !== undefined
-            ? options.names
-            : await listAllFunctionNames(ctx);
+    let names: readonly string[];
+    if (options.names !== undefined) {
+        names = options.names;
+    } else {
+        names = await listAllFunctionNames(ctx);
+        options.onNamesListed?.(names);
+    }
     if (names.length === 0) {
-        ctx.displayMessage("&7No functions to export.");
+        ctx.displayMessage(`&7No functions to ${readOnly ? "read" : "export"}.`);
         try {
             await restoreInventoryToSnapshot(ctx, inventorySnapshot);
         } catch (error) {
@@ -57,7 +68,7 @@ async function exportAllFunctionsInner(
     }
 
     ctx.displayMessage(
-        `&aExporting ${names.length} function${names.length === 1 ? "" : "s"}...`
+        `&a${verb} ${names.length} function${names.length === 1 ? "" : "s"}...`
     );
     options.progress?.start(names);
 
@@ -72,7 +83,7 @@ async function exportAllFunctionsInner(
 
             options.progress?.item(i, name);
             ctx.displayMessage(
-                `&7[${i + 1}/${names.length}] &fExporting '${name}'`
+                `&7[${i + 1}/${names.length}] &f${verb} '${name}'`
             );
 
             const sink = options.progress;
@@ -85,6 +96,7 @@ async function exportAllFunctionsInner(
                         htslPath,
                         htslReference,
                         rootDir,
+                        readOnly: options.readOnly,
                         onReadProgress:
                             sink?.itemProgress === undefined
                                 ? undefined
@@ -107,7 +119,9 @@ async function exportAllFunctionsInner(
     } finally {
         options.progress?.done();
         try {
-            writeCapturedItems(ctx, itemCaptures, rootDir, importJsonPath);
+            if (!readOnly) {
+                writeCapturedItems(ctx, itemCaptures, rootDir, importJsonPath);
+            }
         } finally {
             try {
                 await restoreInventoryToSnapshot(ctx, inventorySnapshot);
@@ -121,10 +135,16 @@ async function exportAllFunctionsInner(
 
     const itemCount = itemCaptures.size();
 
-    ctx.displayMessage(
-        `&aExported ${succeeded} of ${names.length} function${names.length === 1 ? "" : "s"} (${itemCount} item${itemCount === 1 ? "" : "s"} captured)${failed > 0 ? ` &c[${failed} failed]` : ""}`
-    );
-    ctx.displayMessage(`&7  -> ${importJsonPath}`);
+    if (readOnly) {
+        ctx.displayMessage(
+            `&aRead ${succeeded} of ${names.length} function${names.length === 1 ? "" : "s"}${failed > 0 ? ` &c[${failed} failed]` : ""}`
+        );
+    } else {
+        ctx.displayMessage(
+            `&aExported ${succeeded} of ${names.length} function${names.length === 1 ? "" : "s"} (${itemCount} item${itemCount === 1 ? "" : "s"} captured)${failed > 0 ? ` &c[${failed} failed]` : ""}`
+        );
+        ctx.displayMessage(`&7  -> ${importJsonPath}`);
+    }
 
     return { total: names.length, succeeded, failed };
 }

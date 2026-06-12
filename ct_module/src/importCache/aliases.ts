@@ -8,17 +8,34 @@ import { IMPORT_CACHE_ROOT } from "./paths";
  * string that's painful to read in the GUI; the alias is what the user
  * actually sees.
  *
- * Storage: a single JSON file under the import cache root. Reads are
- * on-demand (no in-memory cache — the file is small and only consulted
- * when the GUI needs to render a header). Writes are full-rewrites that
- * preserve every other UUID's alias.
+ * Storage: a single JSON file under the import cache root. Writes are
+ * full-rewrites that preserve every other UUID's alias.
+ *
+ * Reads serve an in-memory copy: alias lookups happen per row per FRAME
+ * (Importables bound-house chips, Houses headers), and a FileLib.read per
+ * lookup was hundreds of disk reads a second — visible as input jitter
+ * while the overlay was open. Writes refresh the copy; a short TTL
+ * re-read picks up out-of-band edits to the file.
  */
 
 const ALIAS_FILE = `${IMPORT_CACHE_ROOT}/housing-aliases.json`;
 
 type AliasMap = { [uuid: string]: string };
 
+let cachedMap: AliasMap | null = null;
+let cachedAt = 0;
+const CACHE_TTL_MS = 2000;
+
 function readMap(): AliasMap {
+    const now = Date.now();
+    if (cachedMap !== null && now - cachedAt < CACHE_TTL_MS) return cachedMap;
+    const map = readMapFromDisk();
+    cachedMap = map;
+    cachedAt = now;
+    return map;
+}
+
+function readMapFromDisk(): AliasMap {
     try {
         if (!FileLib.exists(ALIAS_FILE)) return {};
         const raw = String(FileLib.read(ALIAS_FILE) ?? "");
@@ -42,6 +59,8 @@ function readMap(): AliasMap {
 }
 
 function writeMap(map: AliasMap): void {
+    cachedMap = map;
+    cachedAt = Date.now();
     try {
         FileLib.write(ALIAS_FILE, JSON.stringify(map, null, 2), true);
     } catch (_e) {
@@ -75,4 +94,12 @@ export function clearAlias(uuid: string): void {
 
 export function listAliases(): AliasMap {
     return readMap();
+}
+
+/** What the GUI shows for a house: its alias, else a shortened uuid. */
+export function houseDisplayName(uuid: string): string {
+    const alias = getAlias(uuid);
+    if (alias !== null) return alias;
+    if (uuid.length <= 18) return uuid;
+    return `${uuid.substring(0, 8)}…${uuid.substring(uuid.length - 6)}`;
 }

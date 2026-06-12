@@ -13,7 +13,7 @@ import {
 } from "./source";
 import { sortResults } from "./sort";
 import { isImportableTypeActive, isFilterDefault } from "./filter";
-import { Result, ResultImport, ROW_BG } from "./rowModel";
+import { Result, ResultImport, ROW_BG, getTreeRevision } from "./rowModel";
 import {
     searchQuery,
     expansionKey,
@@ -252,6 +252,49 @@ function formatFullDir(fullPath: string): string {
     return `.../${tail}`;
 }
 
+// Descriptor cache: building TreeRows walks every file and importable and
+// allocates a descriptor + content closure per row — for a big tree that
+// per-frame walk is real main-thread cost under Rhino, even though offscreen
+// content() never runs. Descriptors only encode STRUCTURE (per-frame state
+// like dots/checkboxes lives inside content(), which still runs per visible
+// row per frame), so reuse is safe. Interactions bump the revision for an
+// instant rebuild; the TTL picks up async changes (reparse, enumeration).
+let cachedTreeRows: TreeRow[] | null = null;
+let cachedTreeRevision = -1;
+let cachedTreeAt = 0;
+const TREE_ROWS_TTL_MS = 300;
+
+let lastBuildMs = 0;
+let maxBuildMs = 0;
+let buildCount = 0;
+
+export function getTreePerfStats(): { lastBuildMs: number; maxBuildMs: number; builds: number; rows: number } {
+    return {
+        lastBuildMs,
+        maxBuildMs,
+        builds: buildCount,
+        rows: cachedTreeRows === null ? 0 : cachedTreeRows.length,
+    };
+}
+
+function treeRows(): TreeRow[] {
+    const now = Date.now();
+    if (
+        cachedTreeRows !== null &&
+        cachedTreeRevision === getTreeRevision() &&
+        now - cachedTreeAt < TREE_ROWS_TTL_MS
+    ) {
+        return cachedTreeRows;
+    }
+    cachedTreeRows = buildTreeRows();
+    cachedTreeRevision = getTreeRevision();
+    cachedTreeAt = now;
+    lastBuildMs = Date.now() - now;
+    if (lastBuildMs > maxBuildMs) maxBuildMs = lastBuildMs;
+    buildCount++;
+    return cachedTreeRows;
+}
+
 function buildTreeRows(): TreeRow[] {
     const roots = buildRoots();
     let totalImports = 0;
@@ -434,7 +477,7 @@ export const RESULTS_SCROLL_ID = "left-results-scroll";
 const VIRTUAL_OVERSCAN_PX = 96;
 
 export function renderRows(): Element[] {
-    const rows = buildTreeRows();
+    const rows = treeRows();
     if (rows.length === 0) return [];
 
     let totalH = 0;

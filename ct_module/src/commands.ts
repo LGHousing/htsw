@@ -17,6 +17,7 @@ import {
 } from "./housingSync/progress/timing";
 import { COST } from "./housingSync/progress/costs";
 import { getEventContainerCounts } from "./tasks/specifics/waitFor";
+import { getTreePerfStats } from "./gui/left-panel/importables/tree";
 import { isPacketOrderProbeActive } from "./housingSync/diagnostics/packetOrderProbe";
 import {
     getImportTracePath,
@@ -90,6 +91,16 @@ function commandHtsw(args: string[]) {
         ChatLib.chat(
             `&7[waiters] Idle baseline should be ~0 across the board; ` +
             `non-zero between imports = a leaked waiter.`
+        );
+        return;
+    }
+
+    if (args.length > 0 && args[0] === "treeperf") {
+        const s = getTreePerfStats();
+        ChatLib.chat(
+            `&7[treeperf] importables tree: ${s.rows} rows, ` +
+            `${s.builds} rebuild(s), last ${s.lastBuildMs}ms, max ${s.maxBuildMs}ms. ` +
+            `Rebuilds should tick ~3/s while the tab is open (300ms TTL), not 60/s.`
         );
         return;
     }

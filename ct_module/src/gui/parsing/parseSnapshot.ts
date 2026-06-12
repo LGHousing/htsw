@@ -55,7 +55,7 @@ const MODULE_BUNDLE = MODULE_DIR + "/index.js";
 const RUNNING_BUNDLE_MTIME = getMtimeMs(MODULE_BUNDLE);
 
 type Snapshot = {
-    version: 5;
+    version: 6;
     importJsonPath: string;
     // Deployed-bundle mtime of the build that wrote this snapshot. Kept
     // separate from `fingerprint` on purpose: parses.ts reuses the
@@ -70,6 +70,10 @@ type Snapshot = {
     // importableHash per importable, index-aligned with `importables`. Persisted
     // so a reload reuses them instead of re-hashing every action tree.
     hashes: string[];
+    // gcx.houseUuid of the snapshotted parse — the entry file's "houseUuid"
+    // binding. Must round-trip, or a snapshot-served session sees every
+    // bound file as unbound.
+    houseUuid: string | null;
 };
 
 const SUB_LIST_KINDS = [
@@ -111,7 +115,7 @@ export function loadSnapshot(importJsonPath: string): Snapshot | null {
         const raw = String(FileLib.read(p) ?? "");
         if (raw.length === 0) return null;
         const parsed = JSON.parse(raw) as Snapshot;
-        if (parsed.version !== 5) return null;
+        if (parsed.version !== 6) return null;
         if (parsed.importJsonPath !== importJsonPath) return null;
         // A snapshot stores parser OUTPUT, so it's only valid for the build
         // that wrote it. 0 on either side = bundle not at the standard path;
@@ -131,6 +135,7 @@ export function loadSnapshot(importJsonPath: string): Snapshot | null {
         if (parsed.importables.length !== parsed.sourcePaths.length) return null;
         if (parsed.subListPaths.length !== parsed.importables.length) return null;
         if (parsed.hashes.length !== parsed.importables.length) return null;
+        if (parsed.houseUuid !== null && typeof parsed.houseUuid !== "string") return null;
         if (parsed.fingerprint === null || typeof parsed.fingerprint !== "object" || Array.isArray(parsed.fingerprint)) return null;
         return parsed;
     } catch (_e) {
@@ -248,7 +253,7 @@ export function saveSnapshot(
     const fingerprint: { [path: string]: number } = {};
     for (const k in watchedMtimes) fingerprint[k] = watchedMtimes[k];
     const snapshot: Snapshot = {
-        version: 5,
+        version: 6,
         importJsonPath,
         bundleMtime: RUNNING_BUNDLE_MTIME,
         fingerprint,
@@ -256,6 +261,7 @@ export function saveSnapshot(
         sourcePaths,
         subListPaths,
         hashes: result.value.map(memoizedImportableHash),
+        houseUuid: result.gcx.houseUuid,
     };
     try {
         const out = snapshotFileFor(importJsonPath);
@@ -277,6 +283,7 @@ export function saveSnapshot(
 export function buildLiteParseResult(snapshot: Snapshot): ParseResult<Importable[]> {
     const sm = new SourceMap(new FileSystemFileLoader());
     const gcx = new GlobalCtxt(sm, snapshot.importJsonPath);
+    gcx.houseUuid = snapshot.houseUuid;
     const sourceFiles = gcx.sourceFiles as unknown as Map<object, string>;
     for (let i = 0; i < snapshot.importables.length; i++) {
         const path = snapshot.sourcePaths[i];

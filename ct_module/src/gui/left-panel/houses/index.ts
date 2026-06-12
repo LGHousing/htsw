@@ -14,7 +14,7 @@ import { GLYPH_DOT } from "../../lib/theme";
 import { shortPath } from "../../lib/pathDisplay";
 import { requestParse } from "../../parsing/parses";
 import { getCurrentHousingUuid } from "../../../importCache/housingId";
-import { getAlias, listAliases } from "../../../importCache/aliases";
+import { houseDisplayName, listAliases } from "../../../importCache/aliases";
 import { openAliasPopover } from "../../popovers/alias";
 import { openMenu, type MenuAction } from "../../lib/menu";
 import { togglePopover, closePopover, type PopoverHandle } from "../../lib/popovers";
@@ -88,11 +88,6 @@ function detectHousing(): void {
     });
 }
 
-function shortUuid(uuid: string): string {
-    if (uuid.length <= 18) return uuid;
-    return `${uuid.substring(0, 8)}…${uuid.substring(uuid.length - 6)}`;
-}
-
 /** Enumerate every UUID dir under the import cache root. Best-effort:
  *  failures (missing dir, permissions) yield an empty list. */
 function listCachedHousingUuids(): string[] {
@@ -147,7 +142,7 @@ function deleteHouse(uuid: string): void {
     if (viewedHouse === uuid) {
         viewedHouse = null;
     }
-    const label = getAlias(uuid) ?? shortUuid(uuid);
+    const label = houseDisplayName(uuid);
     if (ok) ChatLib.chat(`&a[htsw] Removed tracked house ${label}.`);
     else ChatLib.chat(`&e[htsw] No cache directory for ${label} (alias/trust cleared anyway).`);
 }
@@ -163,7 +158,7 @@ function viewedUuid(): string | null {
 
 function houseLabel(uuid: string | null): string {
     if (uuid === null) return "(no house)";
-    return getAlias(uuid) ?? shortUuid(uuid);
+    return houseDisplayName(uuid);
 }
 
 let houseDropdownHandle: PopoverHandle | null = null;
@@ -469,7 +464,7 @@ const DRIFT_VISUAL: { [k in DriftState]: { icon: IconName; color: number; toolti
     unread: {
         icon: Icons.link,
         color: COLOR_TEXT_DIM,
-        tooltip: "In your import.json — Read this house to check if it matches",
+        tooltip: "In your import.json — Read into knowledge (export menu) to check if it matches",
     },
     "in-sync": {
         icon: Icons.link,
@@ -479,7 +474,7 @@ const DRIFT_VISUAL: { [k in DriftState]: { icon: IconName; color: number; toolti
     drifted: {
         icon: Icons.link,
         color: ACCENT_WARN,
-        tooltip: "In your import.json but differs from the house — re-export or re-import",
+        tooltip: "Differs from the house's last-read content — Read to refresh knowledge, then re-export or re-import",
     },
 };
 
@@ -646,6 +641,54 @@ function itemRow(
     });
 }
 
+// Names among `names` whose drift state is "drifted" — exporting those pulls
+// the house version over local content that differs.
+function driftedNamesAmong(
+    t: HouseContentType,
+    uuid: string,
+    names: readonly string[]
+): string[] {
+    const sourceMap = sourceImportablesByType(t.type);
+    const byName = new Map<string, HouseImportable>();
+    for (const item of t.items(uuid)) byName.set(item.name, item);
+    const out: string[] = [];
+    for (const n of names) {
+        const item = byName.get(n);
+        if (item !== undefined && driftFor(uuid, item, sourceMap) === "drifted") {
+            out.push(n);
+        }
+    }
+    return out;
+}
+
+// Export overwrites local files with the house version. When the export set
+// contains drifted rows (local content differs from the house's last-read
+// content), interpose one confirm click naming what gets overwritten. Drift
+// is judged against cached knowledge — a Read first makes it exact.
+function confirmDestructiveExport(
+    anchorX: number,
+    anchorY: number,
+    t: HouseContentType,
+    uuid: string,
+    names: readonly string[],
+    run: () => void
+): void {
+    const drifted = driftedNamesAmong(t, uuid, names);
+    if (drifted.length === 0) {
+        run();
+        return;
+    }
+    const shown = drifted.slice(0, 3).join(", ");
+    const more = drifted.length > 3 ? ` +${drifted.length - 3} more` : "";
+    openMenu(anchorX, anchorY, [
+        {
+            label: `Overwrite local changes to ${shown}${more}`,
+            icon: Icons.triangleAlert,
+            onClick: run,
+        },
+    ]);
+}
+
 function exportActionBar(t: HouseContentType, uuid: string, totalCount: number): Element {
     const selected = getExportQueue().filter(
         (it) => it.uuid === uuid && it.type === t.type
@@ -711,13 +754,21 @@ function exportActionBar(t: HouseContentType, uuid: string, totalCount: number):
                             background: COLOR_BUTTON_PRIMARY,
                             hoverBackground: COLOR_BUTTON_PRIMARY_HOVER,
                         },
-                        onClick: () => {
+                        onClick: (rect: Rect) => {
                             if (t.export === undefined) return;
+                            const exp = t.export;
                             if (selectedCount > 0) {
                                 const names = selected.map((it) => it.name);
-                                t.export.selected(names, () => clearExportQueue());
+                                confirmDestructiveExport(
+                                    rect.x + rect.w, rect.y, t, uuid, names,
+                                    () => exp.selected(names, () => clearExportQueue())
+                                );
                             } else {
-                                t.export.all();
+                                const names = t.items(uuid).map((i) => i.name);
+                                confirmDestructiveExport(
+                                    rect.x + rect.w, rect.y, t, uuid, names,
+                                    () => exp.all()
+                                );
                             }
                         },
                     }),
@@ -744,8 +795,10 @@ function exportActionBar(t: HouseContentType, uuid: string, totalCount: number):
                         // right-aligns under the button and drops up consistently.
                         onClick: (rect: Rect) => {
                             if (t.export === undefined) return;
-                            openMenu(rect.x + rect.w, rect.y, [
+                            const actions: MenuAction[] = [
                                 {
+                                    // Unexported names aren't in your file, so
+                                    // they can never be drifted — no confirm.
                                     label: `Export unexported (${unexportedNames.length})`,
                                     onClick: () => {
                                         if (unexportedNames.length > 0 && t.export) {
@@ -757,9 +810,33 @@ function exportActionBar(t: HouseContentType, uuid: string, totalCount: number):
                                 },
                                 {
                                     label: `Export all (${totalCount})`,
-                                    onClick: () => t.export?.all(),
+                                    onClick: () => {
+                                        const names = t.items(uuid).map((i) => i.name);
+                                        confirmDestructiveExport(
+                                            rect.x + rect.w, rect.y, t, uuid, names,
+                                            () => t.export?.all()
+                                        );
+                                    },
                                 },
-                            ]);
+                            ];
+                            if (t.deepRead !== undefined) {
+                                const deepRead = t.deepRead;
+                                actions.push({ kind: "separator" });
+                                if (selectedCount > 0) {
+                                    actions.push({
+                                        label: `Read selected into knowledge (${selectedCount})`,
+                                        icon: Icons.scanEye,
+                                        onClick: () =>
+                                            deepRead(selected.map((it) => it.name)),
+                                    });
+                                }
+                                actions.push({
+                                    label: `Read all into knowledge (${totalCount}, slow)`,
+                                    icon: Icons.scanEye,
+                                    onClick: () => deepRead(),
+                                });
+                            }
+                            openMenu(rect.x + rect.w, rect.y, actions);
                         },
                     }),
                     selectedCount > 0 &&
@@ -816,7 +893,15 @@ function typeBrowserSection(): Element {
                         children: [
                             Icon({
                                 name: Icons.refreshCw,
-                                tooltip: () => scanLabel(t, uuid),
+                                // "names" + "(fast)" to set it apart from the
+                                // slow deep Read, which lives in the export
+                                // dropdown ("Read … into knowledge").
+                                tooltip: () => {
+                                    const l = scanLabel(t, uuid);
+                                    return l.indexOf("Scanning") === 0
+                                        ? l
+                                        : `${l} names (fast)`;
+                                },
                                 tooltipColor: COLOR_TEXT_DIM,
                                 style: {
                                     width: { kind: "px", value: 12 },
@@ -826,38 +911,6 @@ function typeBrowserSection(): Element {
                         ],
                     })
                 );
-                if (t.deepRead !== undefined) {
-                    const deepRead = t.deepRead;
-                    const readInFlight = t.deepReadInFlight;
-                    const reading = (): boolean => readInFlight !== undefined && readInFlight();
-                    tabStrip.push(
-                        Button({
-                            style: {
-                                width: { kind: "px", value: 22 },
-                                height: { kind: "grow" },
-                                background: COLOR_BUTTON,
-                                hoverBackground: COLOR_BUTTON_HOVER,
-                            },
-                            onClick: () => {
-                                if (!reading()) deepRead();
-                            },
-                            children: [
-                                Icon({
-                                    name: Icons.scanEye,
-                                    tooltip: () =>
-                                        reading()
-                                            ? "Reading contents…"
-                                            : "Read contents into knowledge (slow)",
-                                    tooltipColor: COLOR_TEXT_DIM,
-                                    style: {
-                                        width: { kind: "px", value: 12 },
-                                        height: { kind: "px", value: 12 },
-                                    },
-                                }),
-                            ],
-                        })
-                    );
-                }
             }
             const out: Element[] = [
                 Row({

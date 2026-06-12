@@ -52,6 +52,18 @@ type HashCacheEntry = {
 
 const hashCacheByKey = new Map<string, HashCacheEntry>();
 
+// Per-frame front cache over the identity memo below. The memo's validity
+// check stringifies the importable's non-action metadata on EVERY call —
+// per visible row per frame that stringify (whole NBT trees for items) is
+// real main-thread cost under Rhino. Keyed on the wrapper object with a
+// short TTL rather than cached forever: edit popovers mutate parsed
+// importables IN PLACE (see touchParseCacheMtime), which object identity
+// alone would never notice; the TTL bounds that staleness to ~a quarter
+// second, after which the meta compare below catches the change.
+type FrontHashEntry = { hash: string; at: number };
+const frontHashCache = new WeakMap<object, FrontHashEntry>();
+const FRONT_HASH_TTL_MS = 250;
+
 function listRefsOf(importable: Importable): ReadonlyArray<readonly Action[]> {
     const record = importable as unknown as Record<string, unknown>;
     const refs: Array<readonly Action[]> = [];
@@ -92,17 +104,25 @@ function refsEqual(
 }
 
 export function memoizedImportableHash(importable: Importable): string {
+    const now = Date.now();
+    const front = frontHashCache.get(importable);
+    if (front !== undefined && now - front.at < FRONT_HASH_TTL_MS) {
+        return front.hash;
+    }
+
     const key = importableKey(importable.type, importableIdentity(importable));
     const refs = listRefsOf(importable);
     const meta = metaStringOf(importable);
 
     const cached = hashCacheByKey.get(key);
     if (cached !== undefined && cached.meta === meta && refsEqual(cached.refs, refs)) {
+        frontHashCache.set(importable, { hash: cached.hash, at: now });
         return cached.hash;
     }
 
     const hash = importableHash(importable);
     hashCacheByKey.set(key, { refs, meta, hash });
+    frontHashCache.set(importable, { hash, at: now });
     return hash;
 }
 

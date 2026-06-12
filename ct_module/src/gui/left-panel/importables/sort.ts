@@ -1,6 +1,6 @@
 import { Element } from "../../lib/layout";
 import { Container, Scroll, Text } from "../../lib/components";
-import { Result, ACTIVE_BG, ACTIVE_HOVER_BG, ROW_BG, ROW_HOVER_BG } from "./rowModel";
+import { Result, ACTIVE_BG, ACTIVE_HOVER_BG, ROW_BG, ROW_HOVER_BG, bumpTreeRevision } from "./rowModel";
 
 type SortDir = "ASC" | "DESC";
 type SortFieldId = "type" | "alphabetical";
@@ -76,6 +76,7 @@ function selectSort(id: SortFieldId): void {
     } else {
         activeSort = { id, direction: getSortField(id).fallbackDir };
     }
+    bumpTreeRevision();
 }
 
 export function sortPopoverContent(): Element {

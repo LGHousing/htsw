@@ -5,25 +5,14 @@ import { setImportRunning } from "../../../../housingSync/runtimeState";
 import { getExportImportJsonPath, getHousingUuid } from "../../../state";
 import { showToast } from "../../../toast";
 import { createExportProgressSink } from "../../../right-panel/import-tab/exportProgress";
-import type { ExportProgressSink } from "../../../../housingSync/progress/types";
-import {
-    listAllFunctionEntries,
-    listAllFunctionNames,
-    resetFunctionNameSession,
-} from "../../../../importables/functions/listFunctions";
-import { readFunctionImportable } from "../../../../importables/functions/export";
-import {
-    ItemCaptureRegistry,
-    restoreInventoryToSnapshot,
-    snapshotInventory,
-    type InventorySnapshot,
-} from "../../../../housingSync/itemCapture";
+import { listAllFunctionEntries } from "../../../../importables/functions/listFunctions";
+import { exportAllFunctions } from "../../../../importables/functions/exportAll";
+import { resetEventContainers } from "../../../../tasks/specifics/waitFor";
 import {
     deleteImportableCache,
     houseTypeScanned,
     listCachedImportables,
     recordHouseScan,
-    writeImportableCache,
     writePresence,
     type HouseImportable,
 } from "../../../../importCache/cache";
@@ -33,10 +22,6 @@ let readInFlight = false;
 
 export function isFunctionScanInFlight(): boolean {
     return scanInFlight;
-}
-
-export function isFunctionReadInFlight(): boolean {
-    return readInFlight;
 }
 
 export function getHouseFunctions(uuid: string | null): HouseImportable[] {
@@ -70,69 +55,58 @@ export function scanHouseFunctions(): void {
 }
 
 /**
- * Deep read: open every function in the house, read its full AST, and cache it
- * as verified content — no import.json/.htsl written. This is the read-only
- * "update knowledge" pass; it's slow (one editor open per function), so it's an
- * explicit action, not part of the cheap names scan.
+ * Deep read: the export driver in read-only mode — same editor walk, but the
+ * results go only into this house's knowledge cache, no files written. Slow
+ * (one editor open per function), so it's an explicit action, not part of the
+ * cheap names scan. With `onlyNames` it reads just those functions
+ * (selection-driven); without, it scans and reads the whole house.
  */
-export function deepReadHouseFunctions(): void {
+export function deepReadHouseFunctions(onlyNames?: string[]): void {
     if (readInFlight || scanInFlight || TaskManager.hasRunningTasks()) return;
     const uuid = getHousingUuid();
     if (uuid === null) return;
     readInFlight = true;
     TaskManager.run(async (ctx) => {
-        // Drop any stale function-list snapshot so icon reads reflect the live
-        // house, matching the exporter.
-        resetFunctionNameSession();
-        const snapshot: InventorySnapshot = snapshotInventory();
-        let read = 0;
-        let progress: ExportProgressSink | null = null;
         setImportRunning(true);
+        // Boundary purge, mirroring import/export: leaked waiters from a prior
+        // failed run re-run per packet and jitter input until purged.
+        const purged = resetEventContainers();
+        if (purged > 0) {
+            ChatLib.chat(`&8[htsw] purged ${purged} leaked event waiter(s) from a prior run.`);
+        }
+        let result;
         try {
-            const names = await listAllFunctionNames(ctx);
-            recordHouseScan(uuid, "FUNCTION", names);
-            // Same strip the importer/exporter use, verb "read" — a deep read
-            // opens every function editor, far too slow to run dark.
-            progress = createExportProgressSink("FUNCTION", getExportImportJsonPath(), "read");
-            progress.start(names);
-            for (let i = 0; i < names.length; i++) {
-                progress.item(i, names[i]);
-                const sink = progress;
-                try {
-                    const itemCaptures = new ItemCaptureRegistry();
-                    const imp = await readFunctionImportable(
-                        ctx,
-                        names[i],
-                        itemCaptures,
-                        sink.itemProgress === undefined
-                            ? undefined
-                            : (payload) => sink.itemProgress!(i, payload)
-                    );
-                    if (itemCaptures.size() > 0) {
-                        deleteImportableCache(uuid, "FUNCTION", names[i]);
-                        writePresence(uuid, "FUNCTION", names[i]);
-                    } else {
-                        writeImportableCache(ctx, uuid, imp, "reader", true);
-                    }
-                    read++;
-                } catch (err) {
-                    // The run aborts on the first failure; without this the
-                    // `done()` in the finally would close the row as imported.
-                    sink.itemFailed?.(i, String(err));
-                    throw err;
-                }
-            }
+            result = await exportAllFunctions(ctx, {
+                importJsonPath: getExportImportJsonPath(),
+                rootDir: "",
+                names: onlyNames,
+                readOnly: { housingUuid: uuid },
+                onNamesListed: (names) =>
+                    recordHouseScan(uuid, "FUNCTION", names.slice()),
+                // Same strip the importer/exporter use, verb "read" — a deep
+                // read opens every function editor, far too slow to run dark.
+                progress: createExportProgressSink(
+                    "FUNCTION",
+                    getExportImportJsonPath(),
+                    "read"
+                ),
+            });
         } finally {
             setImportRunning(false);
-            if (progress !== null) progress.done();
-            try {
-                await restoreInventoryToSnapshot(ctx, snapshot);
-            } catch (_e) {
-                /* ignore */
-            }
             readInFlight = false;
         }
-        showToast(`Read ${read} function${read === 1 ? "" : "s"}`, 0xff5cb85c);
+        if (result.failed > 0) {
+            showToast(
+                `Read ${result.succeeded} of ${result.total} function${result.total === 1 ? "" : "s"} (${result.failed} failed)`,
+                0xffe85c5c,
+                8000
+            );
+        } else {
+            showToast(
+                `Read ${result.succeeded} function${result.succeeded === 1 ? "" : "s"}`,
+                0xff5cb85c
+            );
+        }
     }).catch((err: unknown) => {
         showToast(`Function read failed: ${err}`, 0xffe85c5c, 8000);
         ChatLib.chat(`&c[htsw] Function read failed: ${err}`);

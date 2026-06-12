@@ -666,6 +666,14 @@ export function startExport(
     const count = names === undefined ? null : names.length;
     TaskManager.run(async (ctx) => {
         setImportRunning(true);
+        // Same boundary purge the importer does: nothing legit is waiting when
+        // an export starts, so survivors are leaks — and a leaked packet waiter
+        // re-runs its predicate on every packet, lagging input even with no
+        // GUI open, until something purges it.
+        const purged = resetEventContainers();
+        if (purged > 0) {
+            ChatLib.chat(`&8[htsw] purged ${purged} leaked event waiter(s) from a prior run.`);
+        }
         let result: ExportResult;
         try {
             result = await spec.exportAll(ctx, {

@@ -11,6 +11,11 @@ import {
     type InventorySnapshot,
 } from "../../housingSync/itemCapture";
 import { tryWriteImportableCache } from "../../importCache";
+import {
+    deleteImportableCache,
+    writeImportableCache,
+    writePresence,
+} from "../../importCache/cache";
 import TaskContext from "../../tasks/context";
 import { observedSlotsToActions } from "../../exporter/sanitize";
 import { upsertImportableEntry } from "../../exporter/importJsonWriter";
@@ -32,6 +37,10 @@ export type ExportFunctionOptions = {
     htslReference: string;
     rootDir: string;
     onReadProgress?: ProgressHandler;
+    // Read-only mode: same editor walk, but the result goes only into the
+    // knowledge cache for this house — no .htsl/import.json writes. A deep
+    // read IS an export minus the file writes; one driver serves both.
+    readOnly?: { housingUuid: string };
 };
 
 export type SharedExportState = {
@@ -158,12 +167,27 @@ export async function exportFunctionWithSharedState(
 ): Promise<void> {
     const { name, importJsonPath, htslPath, htslReference } = options;
 
+    const capturesBefore = shared.itemCaptures.size();
     const importable = await readFunctionImportable(
         ctx,
         name,
         shared.itemCaptures,
         options.onReadProgress
     );
+
+    if (options.readOnly !== undefined) {
+        const uuid = options.readOnly.housingUuid;
+        if (shared.itemCaptures.size() > capturesBefore) {
+            // Read-only mode writes no item files, so a cache entry would
+            // reference captures that were never persisted. Keep presence only.
+            deleteImportableCache(uuid, "FUNCTION", name);
+            writePresence(uuid, "FUNCTION", name);
+        } else {
+            writeImportableCache(ctx, uuid, importable, "reader", true);
+        }
+        return;
+    }
+
     const actions = importable.actions ?? [];
     const repeatTicks = importable.repeatTicks;
     const icon = importable.icon;
