@@ -17,7 +17,9 @@ export const COLOR_PANEL = 0xff1b1f25 | 0;            // dark slate, primary pan
 export const COLOR_PANEL_BORDER = 0xff2c323b | 0;     // 1px panel edge
 export const COLOR_PANEL_RAISED = 0xff242931 | 0;     // slightly lighter sub-panel bg
 export const COLOR_DIVIDER = 0xff2c323b | 0;          // hairline rule
-export const COLOR_OVERLAY_DIM = 0xc0000000 | 0;      // modal scrim
+// Modal scrim. It stacks on MC's own ~75% inventory dim plus the dark panel
+// backgrounds, so it must stay light — 0xc0 here compounded to a near-blackout.
+export const COLOR_OVERLAY_DIM = 0x66000000 | 0;
 
 // ── Rows / list items ───────────────────────────────────────────────────
 export const COLOR_ROW = 0xff242931 | 0;
