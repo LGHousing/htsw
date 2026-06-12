@@ -17,8 +17,8 @@ import {
     touchParseCacheMtime,
     type CachedParse,
 } from "./parses";
-import { snapshotExists } from "./parseSnapshot";
 import { javaType } from "../lib/java";
+import { PROJECTS_ROOT } from "../../exporter/paths";
 
 /**
  * `reparse` is a thin DRIVER over the single parse authority,
@@ -33,10 +33,9 @@ import { javaType } from "../lib/java";
  */
 
 // ── import.json auto-discovery ────────────────────────────────────────
-const IMPORTS_ROOT = "./htsw/imports";
 
 /**
- * Walk `./htsw/imports/**` for the first `import.json` we can find. Used
+ * Walk `PROJECTS_ROOT/**` for the first `import.json` we can find. Used
  * on init when the configured path doesn't exist yet — saves the user
  * having to type a path before anything appears.
  */
@@ -44,7 +43,7 @@ function findFirstImportJson(): string | null {
     try {
         const Files = javaType("java.nio.file.Files");
         const Paths = javaType("java.nio.file.Paths");
-        const root = Paths.get(String(IMPORTS_ROOT));
+        const root = Paths.get(String(PROJECTS_ROOT));
         if (!Files.exists(root)) return null;
         return walkForImportJson(root);
     } catch (_e) {
@@ -110,7 +109,7 @@ function fileExistsSafe(path: string): boolean {
 /**
  * Run on overlay init. Restore the user's last-loaded import.json from
  * the recents file (persisted across module reloads); only fall back to
- * walking `./htsw/imports/` if nothing in recents still exists.
+ * walking the projects root if nothing in recents still exists.
  */
 export function autoDiscoverImportJson(): void {
     const recents = getRecents();
@@ -182,7 +181,11 @@ function forceReparse(path: string, forceFresh: boolean): void {
     const haveContent = existing !== null && existing.parsed !== null;
     if (forceFresh) invalidateParseCacheEntry(path);
     forceInFlight = true;
-    const willFreeze = !haveContent && !snapshotExists(path);
+    // Any cold load stalls the client — a snapshot load is lighter than a
+    // full parse but still blocks Rhino for a beat on big projects, so it
+    // gets the loading flag + paint delay too. (Gating on snapshotExists
+    // here meant snapshot loads froze with no loading frame at all.)
+    const willFreeze = !haveContent;
     if (willFreeze) setParseInProgress(true);
     // When the parse will freeze the client, give the renderer a beat to
     // paint first — otherwise setTimeout(0) races the next frame and usually
