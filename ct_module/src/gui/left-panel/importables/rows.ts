@@ -41,7 +41,7 @@ import {
     getParseAt,
     invalidateParseCacheEntry,
     requestParse,
-    touchParseCacheMtime,
+    touchParseCacheFile,
 } from "../../parsing/parses";
 import { recordHouseBinding } from "../../../importCache/houseBindings";
 import { shortPath } from "../../lib/pathDisplay";
@@ -74,9 +74,17 @@ export const importExpansion: Map<string, boolean> = new Map();
 export function expansionKey(sourceKey: string, fullPath: string): string {
     return `${sourceKey}::${fullPath}`;
 }
+// Paths that should start expanded regardless of the sole-import default —
+// e.g. the freshly created starter project. An explicit user toggle wins.
+const autoExpandPaths = new Set<string>();
+export function requestImportAutoExpand(fullPath: string): void {
+    autoExpandPaths.add(fullPath);
+}
 export function isImportExpanded(expKey: string, defaultExpanded: boolean): boolean {
     const explicit = importExpansion.get(expKey);
     if (explicit !== undefined) return explicit;
+    const sep = expKey.indexOf("::");
+    if (sep !== -1 && autoExpandPaths.has(expKey.substring(sep + 2))) return true;
     return defaultExpanded;
 }
 export const collapsedRoots: Set<string> = new Set();
@@ -295,7 +303,7 @@ function confirmDeleteProject(importJsonPath: string): void {
     openConfirmPopover({
         title: "Delete the WHOLE project folder?",
         lines: [
-            dir,
+            shortPath(dir),
             `Permanently deletes ${count} file${count === 1 ? "" : "s"} — everything in this`,
             "folder, not just the import.json.",
         ],
@@ -442,24 +450,35 @@ function boundHouseUuidOf(fullPath: string): string | null {
 }
 
 function rebindFile(fullPath: string, rawUuid: string | null): void {
+    const startedAt = Date.now();
     const uuid = rawUuid === null ? null : rawUuid.toLowerCase();
     if (!setHouseUuidKey(fullPath, uuid)) {
         ChatLib.chat(`&c[htsw] Couldn't update ${shortPath(fullPath)}`);
         return;
     }
+    const wroteAt = Date.now();
     // A binding edit only changes one metadata key, so don't invalidate the
     // parse — a cold re-parse of a big project freezes the client for its
     // full parse cost. Mirror the on-disk edit into the cached parse instead
-    // (the same in-place pathway touchParseCacheMtime exists for) and update
-    // the reverse index directly, since no re-parse will record it.
+    // (the in-place pathway the parse authority supports) and update the
+    // reverse index directly, since no re-parse will record it. Only the
+    // import.json itself changed, so only its fingerprint entry is touched.
     const entry = getParseAt(fullPath);
     if (entry !== null && entry.parsed !== null) {
         entry.parsed.gcx.houseUuid = uuid;
-        touchParseCacheMtime(fullPath);
+        touchParseCacheFile(fullPath);
         recordHouseBinding(uuid, canonicalPath(fullPath));
     } else {
         invalidateParseCacheEntry(fullPath);
         requestParse(fullPath);
+    }
+    const total = Date.now() - startedAt;
+    if (total > 250) {
+        // Binding should be instant; a slow one means a phase regressed —
+        // say which.
+        ChatLib.chat(
+            `&8[htsw] bind took ${total}ms (file write ${wroteAt - startedAt}ms, cache ${Date.now() - wroteAt}ms)`
+        );
     }
     if (uuid !== null) {
         // Binding to the house you're standing in is the same signal as

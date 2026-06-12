@@ -300,6 +300,22 @@ export function touchParseCacheMtime(rawPath: string): void {
 }
 
 /**
+ * Like `touchParseCacheMtime`, but for an edit that changed ONLY the
+ * import.json itself (e.g. the houseUuid key): refreshes that one
+ * fingerprint entry instead of re-stat-ing every referenced file, which on
+ * a big project is a visible main-thread stall.
+ */
+export function touchParseCacheFile(rawPath: string): void {
+    const canon = canonicalPath(rawPath);
+    const existing = cache.get(canon);
+    if (existing === undefined) return;
+    existing.mtime = getMtimeMs(canon);
+    existing.fingerprint[canon] = existing.mtime;
+    existing.fpCheckedAt = Date.now();
+    existing.pending = null;
+}
+
+/**
  * Drop the cached parse for `rawPath` so the next `parseImportJsonBlocking`
  * re-parses from scratch. Used by the reparse driver for explicit
  * reloads (file load, rename, manual reparse) where we want a fresh

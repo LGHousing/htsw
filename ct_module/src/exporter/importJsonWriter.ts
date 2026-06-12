@@ -114,9 +114,24 @@ export function upsertImportableEntry(
 
 /**
  * Set or remove the file's top-level "houseUuid" binding. `null` removes
- * the key. Inserted as the first key so the binding reads like a header.
- * Returns false when the file doesn't exist (nothing to bind).
+ * the key. Returns false when the file doesn't exist (nothing to bind).
+ *
+ * Edits at the STRING level instead of through jsonc-parser: `json.modify`
+ * re-parses the whole document, which on Rhino freezes the client for big
+ * import.jsons, and this edit is one top-level key whose name can't legally
+ * appear anywhere else (the schema rejects unknown keys, so a clean file has
+ * no nested "houseUuid"). jsonc remains the fallback for shapes the string
+ * paths don't confidently match.
  */
+const HOUSE_UUID_KEY_RE = /("houseUuid"\s*:\s*)"[^"]*"/;
+// Removal variants: key-with-trailing-comma (anywhere but last), then
+// comma-then-key (last entry), then a lone key (only entry).
+const HOUSE_UUID_REMOVE_RES = [
+    /\r?\n?[ \t]*"houseUuid"\s*:\s*"[^"]*"\s*,/,
+    /,\s*"houseUuid"\s*:\s*"[^"]*"/,
+    /[ \t]*"houseUuid"\s*:\s*"[^"]*"/,
+];
+
 export function setHouseUuidKey(
     importJsonPath: string,
     houseUuid: string | null
@@ -132,11 +147,41 @@ export function setHouseUuidKey(
         );
         return true;
     }
-    const edits = json.modify(text, ["houseUuid"], houseUuid ?? undefined, {
-        formattingOptions: FORMATTING,
-        getInsertionIndex: () => 0,
-    });
-    let next = json.applyEdits(text, edits);
+
+    let next: string | null = null;
+    if (houseUuid !== null) {
+        if (HOUSE_UUID_KEY_RE.test(text)) {
+            next = text.replace(HOUSE_UUID_KEY_RE, `$1"${houseUuid}"`);
+        } else {
+            const brace = text.indexOf("{");
+            // Only insert with a trailing comma when another key follows.
+            const hasOtherKeys = brace !== -1 && text.indexOf('"', brace) !== -1;
+            if (brace !== -1) {
+                const comma = hasOtherKeys ? "," : "";
+                next =
+                    text.substring(0, brace + 1) +
+                    `\n    "houseUuid": "${houseUuid}"${comma}` +
+                    text.substring(brace + 1);
+            }
+        }
+    } else {
+        for (let i = 0; i < HOUSE_UUID_REMOVE_RES.length; i++) {
+            if (HOUSE_UUID_REMOVE_RES[i].test(text)) {
+                next = text.replace(HOUSE_UUID_REMOVE_RES[i], "");
+                break;
+            }
+        }
+        if (next === null) return true; // no key present — nothing to remove
+    }
+
+    if (next === null) {
+        // Fallback: the slow-but-correct jsonc edit.
+        const edits = json.modify(text, ["houseUuid"], houseUuid ?? undefined, {
+            formattingOptions: FORMATTING,
+            getInsertionIndex: () => 0,
+        });
+        next = json.applyEdits(text, edits);
+    }
     if (!next.endsWith("\n")) next += "\n";
     FileLib.write(importJsonPath, next, true);
     return true;

@@ -12,7 +12,8 @@ import {
 } from "../../state";
 import { GLYPH_DOT } from "../../lib/theme";
 import { shortPath } from "../../lib/pathDisplay";
-import { requestParse } from "../../parsing/parses";
+import { canonicalPath, requestParse } from "../../parsing/parses";
+import { boundImportJsonPath } from "../../../importCache/houseBindings";
 import { getCurrentHousingUuid } from "../../../importCache/housingId";
 import { houseDisplayName, listAliases } from "../../../importCache/aliases";
 import { openAliasPopover } from "../../popovers/alias";
@@ -212,6 +213,17 @@ function houseDropdownRow(uuid: string): Element {
                 color: COLOR_TEXT,
                 style: { width: { kind: "grow" } },
             }),
+            (() => {
+                const bound = boundImportJsonPath(uuid);
+                if (bound === null) return false;
+                return Icon({
+                    name: Icons.house,
+                    color: ACCENT_SUCCESS,
+                    tooltip: `Bound: ${shortPath(bound)}`,
+                    tooltipColor: ACCENT_SUCCESS,
+                    style: { width: { kind: "px", value: 10 }, height: { kind: "px", value: 10 } },
+                });
+            })(),
             Text({ text: isCurrent ? "current" : "", color: COLOR_TEXT_FAINT }),
             Container({
                 style: {
@@ -712,6 +724,27 @@ function exportActionBar(t: HouseContentType, uuid: string, totalCount: number):
             Row({
                 style: { gap: 4, height: { kind: "px", value: SIZE_ROW_H } },
                 children: [
+                    (() => {
+                        // Bound-file indicator: green house = the destination IS
+                        // this house's bound import.json; yellow = the house has
+                        // a bound file but the destination is something else.
+                        const bound = boundImportJsonPath(uuid);
+                        if (bound === null) return false;
+                        const d = getExportImportJsonPath();
+                        const matches = d.trim() !== "" && canonicalPath(d) === bound;
+                        return Icon({
+                            name: Icons.house,
+                            color: matches ? ACCENT_SUCCESS : ACCENT_WARN,
+                            tooltip: matches
+                                ? "Destination is this house's bound file"
+                                : `This house's bound file is ${shortPath(bound)}`,
+                            tooltipColor: matches ? ACCENT_SUCCESS : ACCENT_WARN,
+                            style: {
+                                width: { kind: "px", value: 10 },
+                                height: { kind: "px", value: 10 },
+                            },
+                        });
+                    })(),
                     Text({
                         text: () => {
                             const d = getExportImportJsonPath();

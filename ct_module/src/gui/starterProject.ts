@@ -2,6 +2,8 @@
 
 import { ensureParentDirs } from "../utils/filesystem";
 import { queueSourcePath } from "./left-panel/importables/source";
+import { requestImportAutoExpand } from "./left-panel/importables/rows";
+import { canonicalPath } from "./parsing/parses";
 import { setImportJsonPath } from "./state";
 import { addRecent } from "./persistence/recents";
 import { scheduleReparse } from "./parsing/reparse";
@@ -95,6 +97,7 @@ export function createStarterProject(): void {
         showToast(`Created starter project in ${STARTER_DIR}`, 0xff5cb85c);
     }
     queueSourcePath(importJsonPath);
+    requestImportAutoExpand(canonicalPath(importJsonPath));
     setImportJsonPath(importJsonPath);
     addRecent(importJsonPath);
     scheduleReparse();

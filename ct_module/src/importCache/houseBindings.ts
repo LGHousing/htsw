@@ -18,7 +18,22 @@ const BINDINGS_FILE = `${IMPORT_CACHE_ROOT}/housing-bindings.json`;
 
 type BindingMap = { [uuid: string]: string };
 
+// In-memory copy: the Houses page reads bindings per frame for its bound
+// indicators; a disk read per lookup is the alias-file jitter bug again.
+let cachedMap: BindingMap | null = null;
+let cachedAt = 0;
+const CACHE_TTL_MS = 2000;
+
 function readMap(): BindingMap {
+    const now = Date.now();
+    if (cachedMap !== null && now - cachedAt < CACHE_TTL_MS) return cachedMap;
+    const map = readMapFromDisk();
+    cachedMap = map;
+    cachedAt = now;
+    return map;
+}
+
+function readMapFromDisk(): BindingMap {
     try {
         if (!FileLib.exists(BINDINGS_FILE)) return {};
         const raw = String(FileLib.read(BINDINGS_FILE) ?? "");
@@ -42,6 +57,8 @@ function readMap(): BindingMap {
 }
 
 function writeMap(map: BindingMap): void {
+    cachedMap = map;
+    cachedAt = Date.now();
     try {
         FileLib.write(BINDINGS_FILE, JSON.stringify(map, null, 2), true);
     } catch (_e) {

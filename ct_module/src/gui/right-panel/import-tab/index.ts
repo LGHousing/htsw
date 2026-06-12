@@ -12,6 +12,7 @@ import { Icons } from "../../lib/icons.generated";
 import {
     COLOR_BUTTON,
     COLOR_BUTTON_HOVER,
+    COLOR_DIVIDER,
     COLOR_ROW,
     COLOR_TEXT,
     COLOR_TEXT_DIM,
@@ -46,7 +47,9 @@ import {
 import { importActionRow } from "./importButtons";
 import { livePreviewBody } from "./live-preview-body";
 
-let queueExpanded = false;
+// Starts open — a fresh session showing a populated-but-collapsed queue
+// read as a bug. Collapsing is remembered for the session.
+let queueExpanded = true;
 
 // An empty queue can't be expanded — there's nothing to show, so the
 // 120px scroll area would just be dead space. The chevron then reads as
@@ -259,10 +262,20 @@ function pendingDividerRow(): Element {
     });
 }
 
+function divider(): Element {
+    return Container({
+        style: { height: { kind: "px", value: 1 }, background: COLOR_DIVIDER },
+        children: [],
+    });
+}
+
 export function importTab(): Element {
     const importing = getImportProgress() !== null;
     const children: Child[] = [houseHeader(), queueSummary()];
     if (isQueueExpanded()) children.push(queueScroll());
+    // Hairline between the queue section and the live-preview body — without
+    // it the two read as one mushy block.
+    children.push(divider());
     children.push(livePreviewBody());
     // The live progress strip sits just above the action row while a run is active.
     if (importing) children.push(liveImporterPanel());

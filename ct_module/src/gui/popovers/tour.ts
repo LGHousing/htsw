@@ -1,5 +1,5 @@
 import { Element, Rect } from "../lib/layout";
-import { Button, Col, Row, Text } from "../lib/components";
+import { Button, Col, Container, Row, Text } from "../lib/components";
 import { closePopover, openPopover, type PopoverHandle } from "../lib/popovers";
 import { getAnchorRect } from "../lib/anchors";
 import { beginHtswOverlayDraw, endHtswOverlayDraw } from "../lib/panel";
@@ -257,13 +257,18 @@ function content(): Element {
                     ],
                 }),
                 ...s.lines.map((l) => Text({ text: l, color: COLOR_TEXT_DIM })),
+                Col({ style: { height: { kind: "grow" } }, children: [] }),
                 s.action !== undefined &&
                     s.action.when() &&
-                    navButton(s.action.label, true, () => {
-                        s.action!.run();
-                        reopen();
+                    Container({
+                        style: { height: { kind: "px", value: 18 } },
+                        children: [
+                            navButton(s.action.label, true, () => {
+                                s.action!.run();
+                                reopen();
+                            }),
+                        ],
                     }),
-                Col({ style: { height: { kind: "grow" } }, children: [] }),
                 Row({
                     style: { gap: 4, height: { kind: "px", value: 18 } },
                     children: [
