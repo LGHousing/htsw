@@ -142,16 +142,38 @@ function currentAnchorRect(): Rect | null {
     return getAnchorRect(key);
 }
 
-// Card anchor: a point at the spotlit region's horizontal center, just under
-// its top edge — the popover's below/above auto-placement then puts the card
-// inside/near the region without covering all of it. No anchor (or a region
-// that didn't render this frame) falls back to upper-screen-center.
-function cardAnchor(): Rect {
+// Put the card OUTSIDE the spotlit region — covering the thing a step is
+// describing defeats the point. Thin strips get the card below (or above,
+// near the bottom edge); tall panel bodies get it beside, toward screen
+// center, where the layout's cutout/inventory gap is. No anchor (or a
+// region that didn't render this frame) falls back to upper-screen-center.
+function desiredCardPos(w: number, h: number): { x: number; y: number } {
     const r = currentAnchorRect();
-    if (r !== null) {
-        return { x: r.x + r.w / 2, y: r.y + Math.min(40, r.h / 4), w: 0, h: 0 };
+    const sw = getOverlayScreenW();
+    const sh = getOverlayScreenH();
+    if (r === null) {
+        return { x: (sw - w) / 2, y: sh / 4 };
     }
-    return { x: getOverlayScreenW() / 2, y: getOverlayScreenH() / 4, w: 0, h: 0 };
+    const PAD = 6;
+    if (r.h < 60) {
+        const x = r.x + (r.w - w) / 2;
+        const below = r.y + r.h + PAD;
+        const y = below + h <= sh - 2 ? below : r.y - h - PAD;
+        return { x, y };
+    }
+    const regionCenter = r.x + r.w / 2;
+    const x = regionCenter < sw / 2 ? r.x + r.w + PAD : r.x - w - PAD;
+    return { x, y: r.y + 24 };
+}
+
+// placeAnchoredRect aligns the popover's right edge to the anchor's right and
+// its top to anchor bottom + 2; a zero-size anchor at (x + w, y - 2) therefore
+// lands the card's top-left exactly at (x, y), with the helper's screen
+// clamping still protecting the edges.
+function cardAnchor(): Rect {
+    const w = tourWidth();
+    const p = desiredCardPos(w, HEIGHT);
+    return { x: p.x + w, y: p.y - 2, w: 0, h: 0 };
 }
 
 function finish(): void {
