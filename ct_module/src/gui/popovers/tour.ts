@@ -54,19 +54,25 @@ const STEPS: TourStep[] = [
             setActiveLeftTab("importables");
             setActiveRightTab("view");
         },
-        // With the sample project open, the rest of the tour has real rows,
-        // dots, and source to point at instead of empty panels. Once it
-        // exists, the same button just opens it (createStarterProject never
-        // overwrites).
+    },
+    {
+        // Its own step so the button isn't dead weight once the project is
+        // open — clicking the action advances, giving the click an ending.
+        title: "Grab the sample project",
+        lines: [
+            "A tiny commented project — a function, an",
+            "event, a region, and an item — showing how",
+            "import.json and .htsl files fit together.",
+            "Already have your own files? Just hit Next.",
+        ],
+        anchor: "tour:left-body",
+        setup: () => setActiveLeftTab("importables"),
         action: {
             label: () =>
                 FileLib.exists(`${STARTER_DIR}/import.json`)
                     ? "Open the sample project"
-                    : "Create sample project to follow along",
-            run: () => {
-                createStarterProject();
-                setActiveLeftTab("importables");
-            },
+                    : "Create the sample project",
+            run: () => createStarterProject(),
         },
     },
     {
@@ -274,6 +280,7 @@ function content(): Element {
                         children: [
                             navButton(s.action.label, true, () => {
                                 s.action!.run();
+                                if (step < STEPS.length - 1) goTo(step + 1);
                             }),
                         ],
                     }),
