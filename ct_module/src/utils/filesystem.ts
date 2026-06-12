@@ -22,6 +22,63 @@ export function ensureParentDirs(path: string): void {
     }
 }
 
+/** Recursively delete a directory (or file). Returns false when the path
+ * doesn't exist or any delete failed. */
+export function deleteDirRecursive(path: string): boolean {
+    try {
+        // @ts-ignore
+        const Paths = Java.type("java.nio.file.Paths");
+        // @ts-ignore
+        const Files = Java.type("java.nio.file.Files");
+        const root = Paths.get(String(path));
+        if (!Files.exists(root)) return false;
+        deleteRecursive(Files, root);
+        return !Files.exists(root);
+    } catch (_e) {
+        return false;
+    }
+}
+
+function deleteRecursive(Files: any, p: any): void {
+    if (Files.isDirectory(p)) {
+        const stream = Files.newDirectoryStream(p);
+        try {
+            const it = stream.iterator();
+            while (it.hasNext()) deleteRecursive(Files, it.next());
+        } finally {
+            try { stream.close(); } catch (_e) { /* ignore */ }
+        }
+    }
+    Files.deleteIfExists(p);
+}
+
+/** Count regular files under a path (the path itself if it's a file). */
+export function countFilesRecursive(path: string): number {
+    try {
+        // @ts-ignore
+        const Paths = Java.type("java.nio.file.Paths");
+        // @ts-ignore
+        const Files = Java.type("java.nio.file.Files");
+        return countRecursive(Files, Paths.get(String(path)));
+    } catch (_e) {
+        return 0;
+    }
+}
+
+function countRecursive(Files: any, p: any): number {
+    if (!Files.exists(p)) return 0;
+    if (!Files.isDirectory(p)) return 1;
+    let n = 0;
+    const stream = Files.newDirectoryStream(p);
+    try {
+        const it = stream.iterator();
+        while (it.hasNext()) n += countRecursive(Files, it.next());
+    } finally {
+        try { stream.close(); } catch (_e) { /* ignore */ }
+    }
+    return n;
+}
+
 export function encodeFilesystemComponent(
     value: string,
     options: { escapeDots?: boolean } = {}

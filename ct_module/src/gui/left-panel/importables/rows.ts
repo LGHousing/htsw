@@ -30,7 +30,12 @@ import {
 } from "../../parsing/importablePaths";
 import { importableIdentity, importableKey } from "../../../importCache/paths";
 import { houseDisplayName } from "../../../importCache/aliases";
-import { setHouseUuidKey } from "../../../exporter/importJsonWriter";
+import {
+    removeImportableEntry,
+    setHouseUuidKey,
+    type Section,
+} from "../../../exporter/importJsonWriter";
+import { countFilesRecursive, deleteDirRecursive } from "../../../utils/filesystem";
 import {
     canonicalPath,
     getParseAt,
@@ -209,6 +214,104 @@ function importablePreviewPath(parent: ResultImport, imp: Importable): string {
     return parent.fullPath;
 }
 
+const SECTION_BY_TYPE: { [k in Importable["type"]]: Section } = {
+    FUNCTION: "functions",
+    EVENT: "events",
+    REGION: "regions",
+    ITEM: "items",
+    MENU: "menus",
+    NPC: "npcs",
+};
+
+// Files this importable owns: its primary source (htsl/snbt) plus sub-list
+// htsl files — minus the import.json itself and anything another importable
+// in the same project also references (shared files survive the delete).
+function ownedFilesOf(parent: ResultImport, imp: Importable): string[] {
+    const mine = new Set<string>();
+    const primary = importablePreviewPath(parent, imp);
+    if (primary !== parent.fullPath) mine.add(primary);
+    const kinds = subListsOf(imp);
+    for (let i = 0; i < kinds.length; i++) {
+        const p = importableSubListPath(imp, kinds[i], parent.parse);
+        if (p !== undefined && p !== parent.fullPath) mine.add(p);
+    }
+    if (mine.size === 0) return [];
+    const shared = new Set<string>();
+    for (let i = 0; i < parent.importables.length; i++) {
+        const other = parent.importables[i];
+        if (other === imp) continue;
+        const op = importablePreviewPath(parent, other);
+        if (mine.has(op)) shared.add(op);
+        const oKinds = subListsOf(other);
+        for (let j = 0; j < oKinds.length; j++) {
+            const sp = importableSubListPath(other, oKinds[j], parent.parse);
+            if (sp !== undefined && mine.has(sp)) shared.add(sp);
+        }
+    }
+    const out: string[] = [];
+    for (const p of mine) {
+        if (!shared.has(p)) out.push(p);
+    }
+    return out;
+}
+
+function confirmDeleteImportable(parent: ResultImport, imp: Importable): void {
+    const identity = importableIdentity(imp);
+    const files = ownedFilesOf(parent, imp);
+    const lines = [`Removes the ${imp.type} entry from import.json.`];
+    for (let i = 0; i < Math.min(files.length, 4); i++) {
+        lines.push(`Deletes ${shortPath(files[i])}`);
+    }
+    if (files.length > 4) lines.push(`…and ${files.length - 4} more files`);
+    openConfirmPopover({
+        title: `Delete "${identity}" from the project?`,
+        lines,
+        confirmLabel: "Delete",
+        danger: true,
+        onConfirm: () => {
+            if (!removeImportableEntry(parent.fullPath, SECTION_BY_TYPE[imp.type], identity)) {
+                ChatLib.chat(`&c[htsw] Couldn't remove '${identity}' from ${shortPath(parent.fullPath)}`);
+                return;
+            }
+            for (let i = 0; i < files.length; i++) {
+                try {
+                    FileLib.delete(files[i]);
+                } catch (_e) {
+                    ChatLib.chat(`&e[htsw] Couldn't delete ${shortPath(files[i])}`);
+                }
+            }
+            removeFromQueueKey(queueItemKey(makeImportableQueueItem(imp, parent.fullPath)));
+            invalidateParseCacheEntry(parent.fullPath);
+            requestParse(parent.fullPath);
+            bumpTreeRevision();
+            ChatLib.chat(`&a[htsw] Deleted '${identity}' from ${shortPath(parent.fullPath)}.`);
+        },
+    });
+}
+
+function confirmDeleteProject(importJsonPath: string): void {
+    const dir = projectDirOf(importJsonPath);
+    const count = countFilesRecursive(dir);
+    openConfirmPopover({
+        title: "Delete the WHOLE project folder?",
+        lines: [
+            dir,
+            `Permanently deletes ${count} file${count === 1 ? "" : "s"} — everything in this`,
+            "folder, not just the import.json.",
+        ],
+        confirmLabel: `Delete ${count} file${count === 1 ? "" : "s"}`,
+        danger: true,
+        onConfirm: () => {
+            const ok = deleteDirRecursive(dir);
+            removeSource(importJsonPath);
+            invalidateParseCacheEntry(importJsonPath);
+            bumpTreeRevision();
+            if (ok) ChatLib.chat(`&a[htsw] Deleted ${dir}.`);
+            else ChatLib.chat(`&c[htsw] Couldn't fully delete ${dir} — check it manually.`);
+        },
+    });
+}
+
 function fsActions(fullPath: string): MenuAction[] {
     return [
         { label: "Show in explorer", onClick: () => showInExplorer(fullPath) },
@@ -258,6 +361,12 @@ function importableActions(parent: ResultImport, imp: Importable): MenuAction[] 
                     imp
                 );
             },
+        },
+        { kind: "separator" },
+        {
+            label: "Delete from project…",
+            icon: Icons.trash2,
+            onClick: () => confirmDeleteImportable(parent, imp),
         },
     ];
     return composeImportableMenu(extras, target, item);
@@ -519,6 +628,12 @@ export function resultRow(
                   onClick: () => {
                       openInVSCode(projectDirOf(r.fullPath), { newWindow: true });
                   },
+              },
+              { kind: "separator" },
+              {
+                  label: "Delete project folder…",
+                  icon: Icons.trash2,
+                  onClick: () => confirmDeleteProject(r.fullPath),
               },
               ...extraActions,
           ]

@@ -15,6 +15,11 @@ import {
 } from "../lib/theme";
 import { isTourDone, setTourDone } from "../persistence/onboarding";
 import { setActiveLeftTab } from "../left-panel/tabs";
+import { createStarterProject, STARTER_DIR } from "../starterProject";
+import { getActivePath, previewSelect } from "../right-panel/selection";
+import { getImportJsonPath } from "../state";
+import { requestParse } from "../parsing/parses";
+import { importableSourcePath } from "../parsing/importablePaths";
 import { setActiveRightTab } from "../right-panel/selection";
 
 /**
@@ -33,6 +38,9 @@ type TourStep = {
     anchor?: string;
     /** Puts the GUI in the state the step talks about (tab switches). */
     setup?: () => void;
+    /** Optional extra button on the card (e.g. "Create sample project"),
+     * hidden when `when` says it no longer applies. */
+    action?: { label: string; when: () => boolean; run: () => void };
 };
 
 const STEPS: TourStep[] = [
@@ -46,6 +54,13 @@ const STEPS: TourStep[] = [
         setup: () => {
             setActiveLeftTab("importables");
             setActiveRightTab("view");
+        },
+        // With the sample project open, the rest of the tour has real rows,
+        // dots, and source to point at instead of empty panels.
+        action: {
+            label: "Create sample project to follow along",
+            when: () => !FileLib.exists(`${STARTER_DIR}/import.json`),
+            run: () => createStarterProject(),
         },
     },
     {
@@ -78,7 +93,10 @@ const STEPS: TourStep[] = [
             "Colors show the diff against the house.",
         ],
         anchor: "tour:right-body",
-        setup: () => setActiveRightTab("view"),
+        setup: () => {
+            setActiveRightTab("view");
+            previewFirstAvailableSource();
+        },
     },
     {
         title: "Import — files into the house",
@@ -131,6 +149,21 @@ function tourWidth(): number {
         }
     }
     return Math.max(260, Math.min(380, w + 20));
+}
+
+// Show the View pane with something real in it: preview the first source
+// file of the active project, but never replace something already showing.
+function previewFirstAvailableSource(): void {
+    if (getActivePath() !== null) return;
+    const parse = requestParse(getImportJsonPath());
+    if (parse === null || parse.parsed === null) return;
+    for (let i = 0; i < parse.parsed.value.length; i++) {
+        const p = importableSourcePath(parse.parsed.value[i], parse.parsed);
+        if (p !== undefined) {
+            previewSelect(p);
+            return;
+        }
+    }
 }
 
 let activeHandle: PopoverHandle | null = null;
@@ -208,7 +241,7 @@ function content(): Element {
         style: { padding: 8, gap: 4, height: { kind: "grow" } },
         children: () => {
             const s = STEPS[step];
-            const out: Element[] = [
+            const out: (Element | false)[] = [
                 Row({
                     style: { gap: 4 },
                     children: [
@@ -224,6 +257,12 @@ function content(): Element {
                     ],
                 }),
                 ...s.lines.map((l) => Text({ text: l, color: COLOR_TEXT_DIM })),
+                s.action !== undefined &&
+                    s.action.when() &&
+                    navButton(s.action.label, true, () => {
+                        s.action!.run();
+                        reopen();
+                    }),
                 Col({ style: { height: { kind: "grow" } }, children: [] }),
                 Row({
                     style: { gap: 4, height: { kind: "px", value: 18 } },
@@ -248,11 +287,13 @@ function reopen(): void {
         closePopover(activeHandle);
         activeHandle = null;
     }
+    const a = STEPS[step].action;
+    const actionH = a !== undefined && a.when() ? 22 : 0;
     activeHandle = openPopover({
         anchor: cardAnchor(),
         content: content(),
         width: tourWidth(),
-        height: HEIGHT,
+        height: HEIGHT + actionH,
         key: "tour",
         placement: "anchored",
         sticky: true,

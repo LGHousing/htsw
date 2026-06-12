@@ -14,7 +14,7 @@ import { showToast } from "./toast";
  * never overwritten — re-clicking just opens the project.
  */
 
-const STARTER_DIR = "./htsw/imports/starter";
+export const STARTER_DIR = "./htsw/imports/starter";
 
 const STARTER_FILES: { [name: string]: string } = {
     "import.json": `{
