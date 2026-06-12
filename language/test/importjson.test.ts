@@ -238,6 +238,49 @@ describe("import.json basic passing behavior", () => {
     });
 });
 
+describe("import.json houseUuid", () => {
+    it("binds the parse to the declared house uuid, lowercased", () => {
+        const result = parseImportables(caseFilePath("house_uuid"));
+
+        expect(result.gcx.houseUuid).toBe("5e9c8f33-1234-4abc-9def-0123456789ab");
+        expect(result.diagnostics.length).toBe(0);
+    });
+
+    it("leaves the parse unbound when no houseUuid is declared", () => {
+        const result = parseImportables(caseFilePath("empty"));
+
+        expect(result.gcx.houseUuid).toBe(null);
+    });
+
+    it("reports malformed house uuids", () => {
+        const result = parseImportables(caseFilePath("house_uuid_invalid"));
+
+        expect(result.gcx.houseUuid).toBe(null);
+        expect(hasHardErrors(result.diagnostics)).toBe(true);
+        expect(
+            result.diagnostics.some((diagnostic) =>
+                diagnostic.message.includes("Expected a housing UUID")
+            )
+        ).toBe(true);
+    });
+
+    it("ignores houseUuid declared in an included file, with a warning", () => {
+        const result = parseImportables(caseDirPath("house_uuid_include"));
+
+        expect(result.gcx.houseUuid).toBe(null);
+        expect(
+            result.diagnostics.some(
+                (diagnostic) =>
+                    diagnostic.level === "warning" &&
+                    diagnostic.message.includes(
+                        "'houseUuid' in an included import.json is ignored"
+                    )
+            )
+        ).toBe(true);
+        expect(hasHardErrors(result.diagnostics)).toBe(false);
+    });
+});
+
 describe("import.json diagnostics readability", () => {
     it("includes help for missing include files", () => {
         const result = parseImportables(caseFilePath("missing"));

@@ -21,6 +21,13 @@ export class GlobalCtxt {
      * walks via Object.keys — see ct_module/src/knowledge/hash.ts).
      */
     sourceFiles: WeakMap<Importable, string>;
+    /**
+     * Housing UUID the entry import.json declares via its top-level
+     * "houseUuid" key, or null when unbound. Only the entry file's
+     * declaration counts — one parse describes one house, and an included
+     * file's binding still applies when that file is parsed as the entry.
+     */
+    houseUuid: string | null;
 
     constructor(
         sourceMap: SourceMap,
@@ -35,6 +42,7 @@ export class GlobalCtxt {
         this.activeImportJsonPaths = [];
         this.loadedImportJsonPaths = new Set<string>();
         this.sourceFiles = new WeakMap<Importable, string>();
+        this.houseUuid = null;
     }
 
     addDiagnostic(diag: Diagnostic) {

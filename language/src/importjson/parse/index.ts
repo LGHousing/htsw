@@ -85,6 +85,10 @@ function parseImportJsonObject(gcx: GlobalCtxt, node: json.Node, currentPath: st
     const seenIncludes = new Set<string>();
 
     parseObject(gcx, node, {
+        "houseUuid": {
+            required: false,
+            parser: (uuidNode) => parseHouseUuid(gcx, uuidNode, currentPath),
+        },
         "include": {
             required: false,
             parser: (includeNode) => parseIncludes(gcx, includeNode, currentPath, seenIncludes),
@@ -114,6 +118,38 @@ function parseImportJsonObject(gcx: GlobalCtxt, node: json.Node, currentPath: st
             parser: (menusNode) => parseAndAppendImportables(gcx, menusNode, currentPath, parseImportableMenu),
         }
     });
+}
+
+const HOUSE_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function parseHouseUuid(gcx: GlobalCtxt, node: json.Node, currentPath: string) {
+    const value = parseString(gcx, node);
+
+    if (!HOUSE_UUID_RE.test(value)) {
+        gcx.addDiagnostic(
+            Diagnostic.error("Expected a housing UUID")
+                .addPrimarySpan(nodeSpan(node), value)
+                .addSubDiagnostic(
+                    Diagnostic.help("Housing UUIDs look like '01234567-89ab-cdef-0123-456789abcdef'")
+                )
+        );
+        return;
+    }
+
+    // Entry file only: gcx.activeImportJsonPaths still holds the entry file
+    // while its includes parse, so depth > 1 means this file was included.
+    if (gcx.activeImportJsonPaths.length > 1) {
+        gcx.addDiagnostic(
+            Diagnostic.warning("'houseUuid' in an included import.json is ignored")
+                .addPrimarySpan(nodeSpan(node))
+                .addSubDiagnostic(
+                    Diagnostic.note(`only the entry import.json binds the parse to a house; this key applies when '${currentPath}' is parsed directly`)
+                )
+        );
+        return;
+    }
+
+    gcx.houseUuid = value.toLowerCase();
 }
 
 function parseIncludes(
