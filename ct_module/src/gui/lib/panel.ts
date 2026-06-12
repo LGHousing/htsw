@@ -2,7 +2,7 @@
 
 import { Element, Rect, layoutElement, pointInRect } from "./layout";
 import { Extractable, extract } from "./extractable";
-import { renderElement, dispatchClick } from "./render";
+import { renderElement, dispatchClick, warmIconTextures } from "./render";
 import { tryDispatchPopoverClick, popoverIsOpen, mouseIsOverPopover } from "./popovers";
 import {
     mouseIsOverHoverCard,
@@ -167,6 +167,7 @@ export class Panel {
             const x = mcToOverlay(rawX);
             const y = mcToOverlay(rawY);
             beginHtswOverlayDraw();
+            warmIconTextures();
             if (this.paintBackground) {
                 Renderer.drawRect(COLOR_PANEL, b.x, b.y, b.w, b.h);
             }

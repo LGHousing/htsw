@@ -184,6 +184,10 @@ function forceReparse(path: string, forceFresh: boolean): void {
     forceInFlight = true;
     const willFreeze = !haveContent && !snapshotExists(path);
     if (willFreeze) setParseInProgress(true);
+    // When the parse will freeze the client, give the renderer a beat to
+    // paint first — otherwise setTimeout(0) races the next frame and usually
+    // wins, freezing the screen on the PREVIOUS frame (popovers the click
+    // just closed still open, no "Parsing project…" row).
     setTimeout(() => {
         try {
             const cached = parseImportJsonBlocking(path);
@@ -194,7 +198,7 @@ function forceReparse(path: string, forceFresh: boolean): void {
         }
         if (willFreeze) setParseInProgress(false);
         forceInFlight = false;
-    }, 0);
+    }, willFreeze ? 100 : 0);
 }
 
 /**

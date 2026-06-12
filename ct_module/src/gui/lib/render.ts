@@ -167,6 +167,29 @@ function getIconImage(name: string): unknown {
     return img;
 }
 
+// The preload below DECODES the PNGs, but CT uploads an Image's GL texture
+// on its first actual draw — so an icon's first on-screen frame can render
+// as an untextured gray box. Drawing each cached icon once, far offscreen,
+// pays that upload up front. Called from the panel paint path (needs a GL
+// context) every frame, but only acts on icons it hasn't warmed yet — the
+// preload fills the cache asynchronously, so a one-shot warm would miss
+// icons that finish loading after the first paint.
+const warmedIcons = new Set<string>();
+export function warmIconTextures(): void {
+    for (const name in iconCache) {
+        if (warmedIcons.has(name)) continue;
+        warmedIcons.add(name);
+        const img = iconCache[name];
+        if (img !== null && img !== undefined) {
+            try {
+                Renderer.drawImage(img as never, -1000, -1000, 1, 1);
+            } catch (_e) {
+                /* a failed warm just means that icon pays on first draw */
+            }
+        }
+    }
+}
+
 export function backgroundPreloadIcons(): void {
     try {
         const FilesType = Java.type("java.nio.file.Files");
@@ -248,7 +271,9 @@ export function renderElement(
 function drawTooltip(t: QueuedTooltip): void {
     const padX = 3;
     const padY = 2;
-    const tw = Renderer.getStringWidth(t.text);
+    // Measure with a trailing space — the text is left-anchored, so without
+    // it the last glyph sits flush against the tooltip's right edge.
+    const tw = Renderer.getStringWidth(`${t.text} `);
     const w = tw + padX * 2;
     const h = LINE_H + padY * 2;
     const screenW = getOverlayScreenW();
