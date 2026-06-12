@@ -21,8 +21,8 @@ import {
 let activeHandle: PopoverHandle | null = null;
 
 const PAD = 8;
-const LINE_H = 11;
-const TITLE_H = 12;
+const GAP = 4;
+const TEXT_H = 8;
 const BUTTON_ROW_H = 18;
 const MIN_WIDTH = 240;
 const MAX_WIDTH = 380;
@@ -59,7 +59,7 @@ function closeSelf(): void {
 function content(opts: ConfirmOptions): Element {
     const lines = opts.lines ?? [];
     return Col({
-        style: { padding: PAD, gap: 4 },
+        style: { padding: PAD, gap: GAP },
         children: [
             Text({ text: opts.title, color: COLOR_TEXT, truncate: true }),
             ...lines.map((l) => Text({ text: l, color: COLOR_TEXT_DIM, truncate: true })),
@@ -101,7 +101,9 @@ function content(opts: ConfirmOptions): Element {
 export function openConfirmPopover(opts: ConfirmOptions): void {
     closeSelf();
     const lines = opts.lines ?? [];
-    const height = PAD * 2 + TITLE_H + lines.length * LINE_H + 4 + BUTTON_ROW_H + 4;
+    // Mirrors content(): title text, then each line and the button row each
+    // preceded by one gap, inside the Col's padding.
+    const height = PAD * 2 + TEXT_H + lines.length * (GAP + TEXT_H) + GAP + BUTTON_ROW_H;
     activeHandle = openPopover({
         anchor: { x: 0, y: 0, w: 0, h: 0 },
         content: content(opts),

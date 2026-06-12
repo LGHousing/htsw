@@ -9,10 +9,12 @@ import { Container, Icon, McItem, Text } from "../../lib/components";
 import { Icons } from "../../lib/icons.generated";
 import { openMenu, MenuAction } from "../../lib/menu";
 import { openRenameImportablePopover } from "../../popovers/rename-importable";
+import { openConfirmPopover } from "../../popovers/confirm";
 import {
     getHousingUuid,
     isAutoTrackSource,
     isImportableChecked,
+    setExportImportJsonPath,
     toggleAutoTrackSource,
     toggleImportableChecked,
 } from "../../state";
@@ -351,10 +353,48 @@ function rebindFile(fullPath: string, rawUuid: string | null): void {
         requestParse(fullPath);
     }
     if (uuid !== null) {
+        // Binding to the house you're standing in is the same signal as
+        // walking into a bound house (state/housing.ts) — point the export
+        // destination at the file now rather than on the next uuid change.
+        if (uuid === getHousingUuid()) {
+            setExportImportJsonPath(fullPath);
+        }
         ChatLib.chat(`&a[htsw] Bound ${shortPath(fullPath)} to ${houseDisplayName(uuid)}.`);
     } else {
         ChatLib.chat(`&a[htsw] Removed house binding from ${shortPath(fullPath)}.`);
     }
+}
+
+// Binding rewrites the file and changes which house auto-selects it — ask
+// before doing either direction.
+function confirmRebind(fullPath: string, uuid: string | null): void {
+    const bound = boundHouseUuidOf(fullPath);
+    if (uuid === null) {
+        openConfirmPopover({
+            title: `Unbind ${shortPath(fullPath)}?`,
+            lines:
+                bound !== null
+                    ? [`Removes the houseUuid key linking it to ${houseDisplayName(bound)}.`]
+                    : [],
+            confirmLabel: "Unbind",
+            onConfirm: () => rebindFile(fullPath, null),
+        });
+        return;
+    }
+    const rebinding = bound !== null && bound !== uuid.toLowerCase();
+    const lines = [
+        "Writes a houseUuid key into the file; entering",
+        `${houseDisplayName(uuid)} then auto-selects it as destination.`,
+    ];
+    if (rebinding && bound !== null) {
+        lines.unshift(`Currently bound to ${houseDisplayName(bound)}.`);
+    }
+    openConfirmPopover({
+        title: `${rebinding ? "Rebind" : "Bind"} ${shortPath(fullPath)} to ${houseDisplayName(uuid)}?`,
+        lines,
+        confirmLabel: rebinding ? "Rebind" : "Bind",
+        onConfirm: () => rebindFile(fullPath, uuid),
+    });
 }
 
 function houseBindingActions(fullPath: string): MenuAction[] {
@@ -365,13 +405,13 @@ function houseBindingActions(fullPath: string): MenuAction[] {
         actions.push({
             label: `Bind to ${houseDisplayName(current)}`,
             icon: Icons.house,
-            onClick: () => rebindFile(fullPath, current),
+            onClick: () => confirmRebind(fullPath, current),
         });
     }
     if (bound !== null) {
         actions.push({
             label: `Unbind from ${houseDisplayName(bound)}`,
-            onClick: () => rebindFile(fullPath, null),
+            onClick: () => confirmRebind(fullPath, null),
         });
     }
     return actions;
@@ -398,7 +438,7 @@ function houseBindControl(fullPath: string): Element | false {
             },
             onClick: (_rect, info) => {
                 if (info.button !== 0 || info.isDoubleClickSecond) return;
-                rebindFile(fullPath, current);
+                confirmRebind(fullPath, current);
             },
             children: [
                 Icon({
