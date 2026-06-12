@@ -2,8 +2,9 @@
 
 import { ensureParentDirs } from "../utils/filesystem";
 import { queueSourcePath } from "./left-panel/importables/source";
-import { requestImportAutoExpand } from "./left-panel/importables/rows";
+import { forceImportExpand } from "./left-panel/importables/rows";
 import { canonicalPath } from "./parsing/parses";
+import { previewSelect, setActiveRightTab } from "./right-panel/selection";
 import { setImportJsonPath } from "./state";
 import { addRecent } from "./persistence/recents";
 import { scheduleReparse } from "./parsing/reparse";
@@ -81,9 +82,9 @@ chat "You used the starter wand!"
 
 export function createStarterProject(): void {
     const importJsonPath = `${STARTER_DIR}/import.json`;
-    if (FileLib.exists(importJsonPath)) {
-        showToast("Starter project already exists — opening it", 0xffe5bc4b);
-    } else {
+    // No toast for the already-exists case: opening visibly reveals and
+    // previews the project, which says it better than a popup.
+    if (!FileLib.exists(importJsonPath)) {
         try {
             for (const name in STARTER_FILES) {
                 const p = `${STARTER_DIR}/${name}`;
@@ -97,7 +98,13 @@ export function createStarterProject(): void {
         showToast(`Created starter project in ${STARTER_DIR}`, 0xff5cb85c);
     }
     queueSourcePath(importJsonPath);
-    requestImportAutoExpand(canonicalPath(importJsonPath));
+    const canon = canonicalPath(importJsonPath);
+    // "Open" must visibly do something even when everything below is already
+    // true: reveal the project (past an explicit collapse) and show its
+    // import.json in the View pane.
+    forceImportExpand(canon);
+    previewSelect(canon);
+    setActiveRightTab("view");
     setImportJsonPath(importJsonPath);
     addRecent(importJsonPath);
     scheduleReparse();

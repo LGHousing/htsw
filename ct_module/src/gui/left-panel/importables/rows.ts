@@ -80,6 +80,18 @@ const autoExpandPaths = new Set<string>();
 export function requestImportAutoExpand(fullPath: string): void {
     autoExpandPaths.add(fullPath);
 }
+/** Expand a file even past an explicit user collapse — for an explicit
+ * "open this project" action, where staying collapsed reads as a no-op. */
+export function forceImportExpand(fullPath: string): void {
+    autoExpandPaths.add(fullPath);
+    const suffix = "::" + fullPath;
+    const stale: string[] = [];
+    importExpansion.forEach((_v, k) => {
+        if (k.indexOf(suffix) === k.length - suffix.length) stale.push(k);
+    });
+    for (let i = 0; i < stale.length; i++) importExpansion.delete(stale[i]);
+    bumpTreeRevision();
+}
 export function isImportExpanded(expKey: string, defaultExpanded: boolean): boolean {
     const explicit = importExpansion.get(expKey);
     if (explicit !== undefined) return explicit;

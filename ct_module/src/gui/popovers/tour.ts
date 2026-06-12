@@ -63,7 +63,10 @@ const STEPS: TourStep[] = [
                 FileLib.exists(`${STARTER_DIR}/import.json`)
                     ? "Open the sample project"
                     : "Create sample project to follow along",
-            run: () => createStarterProject(),
+            run: () => {
+                createStarterProject();
+                setActiveLeftTab("importables");
+            },
         },
     },
     {
