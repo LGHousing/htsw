@@ -12,9 +12,29 @@
  */
 
 const LOG_PATH = "./config/ChatTriggers/modules/HTSW/gui-debug.log";
+// The armed window survives /ct reload (a reload is part of several repro
+// sequences, and re-arming mid-repro is impractical): the deadline persists
+// to a sidecar file and is restored lazily on first use after a reload.
+const ARMED_PATH = "./config/ChatTriggers/modules/HTSW/gui-debug-armed.json";
 
 let armedUntil = 0;
+let armedLoaded = false;
 let buffer: string[] = [];
+
+function loadArmed(): void {
+    if (armedLoaded) return;
+    armedLoaded = true;
+    try {
+        if (!FileLib.exists(ARMED_PATH)) return;
+        const parsed = JSON.parse(String(FileLib.read(ARMED_PATH) ?? "")) as { until?: unknown };
+        if (typeof parsed.until === "number" && parsed.until > Date.now()) {
+            armedUntil = parsed.until;
+            debugLog("=== re-armed after reload ===");
+        }
+    } catch (_e) {
+        // unarmed on a bad file
+    }
+}
 
 function stamp(): string {
     const d = new Date();
@@ -25,12 +45,19 @@ function stamp(): string {
 }
 
 export function armGuiDebug(seconds: number): void {
+    armedLoaded = true;
     armedUntil = Date.now() + seconds * 1000;
+    try {
+        FileLib.write(ARMED_PATH, JSON.stringify({ until: armedUntil }), true);
+    } catch (_e) {
+        // window just won't survive a reload
+    }
     debugLog(`=== armed for ${seconds}s ===`);
     flushGuiDebug();
 }
 
 export function isGuiDebugArmed(): boolean {
+    loadArmed();
     return Date.now() < armedUntil;
 }
 

@@ -2,15 +2,14 @@ import * as json from "jsonc-parser";
 import { encodeFilesystemComponent } from "../utils/filesystem";
 
 /**
- * Default workspace root for `/import` and `/export`. Bare, simple-relative
- * paths anchor here so users can type `roulette/import.json` and reach the
- * symlinked vault folder rather than a Minecraft-root-relative path.
+ * The single workspace root: where projects live, where the GUI browses,
+ * and where `/import` and `/export` anchor bare paths like
+ * `roulette/import.json`. Relative to the Minecraft run directory.
  */
-export const MODULE_IMPORTS_ROOT =
-    "./config/ChatTriggers/modules/HTSW/imports";
+export const PROJECTS_ROOT = "./htsw/projects";
 
 /**
- * Anchor a user-typed `/import` or `/export` path to MODULE_IMPORTS_ROOT
+ * Anchor a user-typed `/import` or `/export` path to PROJECTS_ROOT
  * unless it's already explicit: `./x`/`../x`, a POSIX absolute `/x`, or a
  * Windows drive `C:/x` pass through unchanged.
  */
@@ -20,11 +19,11 @@ export function resolveModuleRelativePath(path: string): string {
     if (normalized.charAt(0) === ".") return path;
     if (normalized.charAt(0) === "/") return path;
     if (/^[A-Za-z]:/.test(normalized)) return path;
-    return `${MODULE_IMPORTS_ROOT}/${normalized}`;
+    return `${PROJECTS_ROOT}/${normalized}`;
 }
 
 export function defaultExportRoot(housingUuid: string): string {
-    return `${MODULE_IMPORTS_ROOT}/${housingUuid}`;
+    return `${PROJECTS_ROOT}/${housingUuid}`;
 }
 
 /**

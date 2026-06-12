@@ -115,7 +115,7 @@ function printExportHelp(): void {
     ChatLib.chat("&f/export stop");
     ChatLib.chat("&7  Cancels any running export (or import) task.");
     ChatLib.chat('&7  Quote multi-word names: /export function "Button Blessing" my/path/');
-    ChatLib.chat("&7  Default path: ./config/ChatTriggers/modules/HTSW/imports/<housingUuid>/");
+    ChatLib.chat("&7  Default path: ./htsw/projects/<housingUuid>/");
     ChatLib.chat(`&7${chatSeparator()}`);
 }
 

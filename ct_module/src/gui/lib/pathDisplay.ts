@@ -4,7 +4,7 @@ import { javaType } from "./java";
 
 // Shared path-shortening helpers used by both the topbar Input and the
 // right-pane source-preview header. Both places want paths that read as
-// `./htsw/imports/...` rather than the raw absolute Windows form.
+// `./htsw/projects/...` rather than the raw absolute Windows form.
 
 let cachedMcRoot: string | null = null;
 

@@ -1,6 +1,7 @@
+import { PROJECTS_ROOT } from "../../exporter/paths";
 import { normalizeHtswPath } from "../lib/pathDisplay";
 
-let importJsonPath = "./htsw/imports/import.json";
+let importJsonPath = `${PROJECTS_ROOT}/import.json`;
 let exportImportJsonPath: string | null = null;
 
 export function getImportJsonPath(): string {

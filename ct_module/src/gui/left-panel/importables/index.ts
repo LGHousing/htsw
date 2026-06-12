@@ -10,7 +10,6 @@ import { closeAllPopovers, togglePopover } from "../../lib/popovers";
 import { openFileBrowser } from "../../popovers/file-browser";
 import { getHousingUuid, isParseInProgress, setImportJsonPath } from "../../state";
 import { ACCENT_SUCCESS, COLOR_TEXT_DIM } from "../../lib/theme";
-import { scheduleReparse } from "../../parsing/reparse";
 import { canonicalPath } from "../../parsing/parses";
 import { boundImportJsonPath } from "../../../importCache/houseBindings";
 import { houseDisplayName } from "../../../importCache/aliases";
@@ -34,7 +33,6 @@ function loadRecent(path: string): void {
     queueSourcePath(path);
     setImportJsonPath(path);
     addRecent(path);
-    scheduleReparse();
     closeAllPopovers();
 }
 

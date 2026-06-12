@@ -173,7 +173,10 @@ async function importImportableItem(
 
     const hash = importableHash(importable);
     const cachePath = itemSnbtCachePath(uuid, hash);
-    if (FileLib.exists(cachePath)) {
+    const cachedSnbt = readCachedItemSnbt(uuid, hash);
+    if (cachedSnbt !== undefined) {
+        await injectHeldItem(ctx, getItemFromSnbt(cachedSnbt));
+        setup(`gave cached ${importable.name}`);
         await tryWriteImportableCache(ctx, importable, "importer", uuid);
         return;
     }

@@ -12,7 +12,7 @@ import {
 } from "./layout";
 import { extract } from "./extractable";
 import { reportAnchorRect } from "./anchors";
-import { debugLogError } from "./debugLog";
+import { debugLog, debugLogError, isGuiDebugArmed } from "./debugLog";
 import { registerClickFlash, clickFlashAlpha } from "./clickFlash";
 import { isInputFocused, setFocusedInput } from "./focus";
 import { pushScissor, popScissor } from "./scissor";
@@ -184,6 +184,20 @@ function scrollbarThumbRect(id: string): Rect | null {
     return { x: v.x + v.w - SCROLLBAR_WIDTH, y: thumbY, w: SCROLLBAR_WIDTH, h: thumbH };
 }
 
+// Armed-only draw tracing for the gray-house hunt: one line per distinct
+// (tint, position) house-icon draw per second. The tint identifies the
+// widget (none = tab icon, faint gray = unbound bind button, green = bound
+// markers) and the rect pins it on screen.
+const houseDrawLoggedAt = new Map<string, number>();
+function logHouseIconDraw(tint: number | undefined, r: Rect): void {
+    const key = `${tint === undefined ? "none" : (tint >>> 0).toString(16)}@${Math.round(r.x)},${Math.round(r.y)}`;
+    const now = Date.now();
+    const last = houseDrawLoggedAt.get(key);
+    if (last !== undefined && now - last < 1000) return;
+    houseDrawLoggedAt.set(key, now);
+    debugLog(`draw icon=house tint=${tint === undefined ? "none" : (tint >>> 0).toString(16)} at=${Math.round(r.x)},${Math.round(r.y)} size=${Math.round(r.w)}x${Math.round(r.h)}`);
+}
+
 function renderItem(
     item: LaidOut,
     mouseX: number,
@@ -295,6 +309,9 @@ function renderItem(
                 // would paint white. drawImage ends with finishDraw(), which
                 // nulls `colorized` for us, so untinted draws stay clean.
                 Renderer.colorize(rr, gg, bb, a);
+            }
+            if (name === "house" && isGuiDebugArmed()) {
+                logHouseIconDraw(tint, r);
             }
             try {
                 Renderer.drawImage(img as unknown as Parameters<typeof Renderer.drawImage>[0], r.x, r.y, r.w, r.h);

@@ -5,6 +5,7 @@ import { Button, Col, Container, Input, Row, Scroll, Text } from "../lib/compone
 import { closeAllPopovers, openPopover } from "../lib/popovers";
 import { openMenu } from "../lib/menu";
 import { openRenameFilePopover } from "./rename-file";
+import { openConfirmPopover } from "./confirm";
 import { showInExplorer } from "../../utils/osShell";
 import {
     ACCENT_INFO,
@@ -31,11 +32,11 @@ import {
     SIZE_ROW_H,
 } from "../lib/theme";
 import { setImportJsonPath } from "../state";
-import { scheduleReparse } from "../parsing/reparse";
 import { addRecent } from "../persistence/recents";
 import { normalizeHtswPath } from "../lib/pathDisplay";
 import { queueSourcePath } from "../left-panel/importables/source";
 import { javaType } from "../lib/java";
+import { PROJECTS_ROOT } from "../../exporter/paths";
 
 type Entry = {
     name: string;
@@ -45,7 +46,7 @@ type Entry = {
     ext: string;
 };
 
-let cwd: string = "./htsw/imports";
+let cwd: string = PROJECTS_ROOT;
 // Mirror of the path-bar input. Decoupled from `cwd` so typing/pasting a
 // path doesn't navigate or normalize until the user commits (Enter / Go).
 // All non-typed cwd writes route through `setCwd`, which keeps the draft
@@ -182,7 +183,6 @@ function loadAsImport(path: string): void {
     queueSourcePath(path);
     setImportJsonPath(path);
     addRecent(path);
-    scheduleReparse();
     closeAllPopovers();
     ChatLib.chat(`&a[htsw] Loaded ${path}`);
 }
@@ -387,20 +387,18 @@ function fileRow(entry: Entry): Element {
                         { kind: "separator" },
                         {
                             // Delete is irreversible (no trash) and recurses into
-                            // folders, so route through a one-item confirm menu.
+                            // folders, so route through the modal confirm.
                             label: entry.isDir ? "Delete folder" : "Delete",
                             onClick: () => {
-                                openMenu(
-                                    info.x,
-                                    info.y,
-                                    [
-                                        {
-                                            label: `Confirm delete ${entry.name}`,
-                                            onClick: () => deleteEntry(entry),
-                                        },
-                                    ],
-                                    { keepUnderlying: true }
-                                );
+                                openConfirmPopover({
+                                    title: `Delete ${entry.name}?`,
+                                    lines: entry.isDir
+                                        ? ["Deletes the folder and everything inside it.", "This can't be undone."]
+                                        : ["This can't be undone."],
+                                    confirmLabel: "Delete",
+                                    danger: true,
+                                    onConfirm: () => deleteEntry(entry),
+                                });
                             },
                         },
                     ],
@@ -639,7 +637,7 @@ export function openFileBrowserWithImportJsonSelection(
     if (initialDir !== undefined && initialDir.length > 0) {
         setCwd(resolveExistingDir(initialDir));
     } else {
-        setCwd(resolveExistingDir("./htsw/imports"));
+        setCwd(resolveExistingDir(PROJECTS_ROOT));
     }
     openPopover({
         anchor: ZERO,

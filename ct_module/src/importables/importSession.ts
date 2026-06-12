@@ -129,7 +129,9 @@ export async function importSelectedImportables(
             cached: cacheEntry === null ? null : cacheEntry.importable,
         });
 
-        if (row.trustPlan?.wholeImportableTrusted) {
+        // A trusted ITEM still has work to do: the item itself must land in
+        // the player's inventory (its apply spawns from the SNBT cache).
+        if (row.trustPlan?.wholeImportableTrusted && row.importable.type !== "ITEM") {
             await tryWriteImportableCache(ctx, row.importable, "importer", selection.housingUuid);
             events?.emit({ kind: "importableFinished", key: row.key, status: "skipped" });
             continue;

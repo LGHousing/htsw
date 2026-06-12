@@ -3,7 +3,7 @@
 import { Element } from "./layout";
 import { Button, Col, Container } from "./components";
 import { closeAllPopovers, closePopover, openPopover, type PopoverHandle } from "./popovers";
-import { COLOR_PANEL_BORDER } from "./theme";
+import { COLOR_PANEL, COLOR_PANEL_BORDER } from "./theme";
 import type { IconName } from "./icons.generated";
 
 export type MenuAction =
@@ -18,7 +18,10 @@ const MIN_MENU_WIDTH = 120;
 // Button text is centered with a 2px min margin on each side, and the button
 // itself is inset from the menu by PAD on each side. Width must be at least
 // text_w + 2*2 (button margin) + 2*PAD (menu padding) to avoid overflow.
-const TEXT_FRAME_W = 4 + PAD * 2;
+// SPACE_W adds one space character of breathing room so the widest label
+// doesn't end flush against the menu's right edge.
+const SPACE_W = 4;
+const TEXT_FRAME_W = 4 + PAD * 2 + SPACE_W;
 
 function isAction(
     a: MenuAction
@@ -52,7 +55,14 @@ function actionElement(
     return Button({
         text: a.label,
         icon: a.icon,
-        style: { width: { kind: "grow" }, height: { kind: "px", value: ITEM_H } },
+        // Idle items match the menu panel (only hover lights up): with the
+        // default button gray, the item rectangle reads as the menu's box and
+        // the panel's own padding looks like a lopsided border instead.
+        style: {
+            width: { kind: "grow" },
+            height: { kind: "px", value: ITEM_H },
+            background: COLOR_PANEL,
+        },
         onClick: () => {
             closeMenu();
             a.onClick();

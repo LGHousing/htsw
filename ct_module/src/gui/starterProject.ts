@@ -1,5 +1,6 @@
 /// <reference types="../../CTAutocomplete" />
 
+import { PROJECTS_ROOT } from "../exporter/paths";
 import { ensureParentDirs } from "../utils/filesystem";
 import { queueSourcePath } from "./left-panel/importables/source";
 import { forceImportExpand } from "./left-panel/importables/rows";
@@ -7,7 +8,6 @@ import { canonicalPath } from "./parsing/parses";
 import { previewSelect, setActiveRightTab } from "./right-panel/selection";
 import { setImportJsonPath } from "./state";
 import { addRecent } from "./persistence/recents";
-import { scheduleReparse } from "./parsing/reparse";
 import { showToast } from "./toast";
 
 /**
@@ -17,7 +17,7 @@ import { showToast } from "./toast";
  * never overwritten — re-clicking just opens the project.
  */
 
-export const STARTER_DIR = "./htsw/imports/starter";
+export const STARTER_DIR = `${PROJECTS_ROOT}/starter`;
 
 const STARTER_FILES: { [name: string]: string } = {
     "import.json": `{
@@ -107,5 +107,4 @@ export function createStarterProject(): void {
     setActiveRightTab("view");
     setImportJsonPath(importJsonPath);
     addRecent(importJsonPath);
-    scheduleReparse();
 }

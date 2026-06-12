@@ -5,7 +5,7 @@ export class FileSystemFileLoader implements FileLoader {
         // Root at the JVM working directory — for CT modules running inside
         // Minecraft this is the `.minecraft` install root. Matches what
         // FileLib + the explore tab's NIO walk already do, so a path like
-        // `./htsw/imports/foo/import.json` resolves the same way everywhere.
+        // `./htsw/projects/foo/import.json` resolves the same way everywhere.
         return Java.type("java.nio.file.Paths")
             .get(String("."))
             .toAbsolutePath()

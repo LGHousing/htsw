@@ -22,10 +22,10 @@ function diagnosticId(diagnostic: Diagnostic): number {
 
 export function hoverPath(path: string): string {
     const normalized = String(path).split("\\").join("/");
-    const htswImports = normalized.lastIndexOf("/htsw/imports/");
-    if (htswImports >= 0) return normalized.substring(htswImports + 1);
-    const imports = normalized.lastIndexOf("/imports/");
-    if (imports >= 0) return normalized.substring(imports + 1);
+    const htswProjects = normalized.lastIndexOf("/htsw/projects/");
+    if (htswProjects >= 0) return normalized.substring(htswProjects + 1);
+    const projects = normalized.lastIndexOf("/projects/");
+    if (projects >= 0) return normalized.substring(projects + 1);
     return normalized;
 }
 

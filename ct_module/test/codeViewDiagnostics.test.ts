@@ -27,11 +27,11 @@ function lineSpan(
 }
 
 describe("code-view diagnostic tokens", () => {
-    test("shows hover paths from the imports root", () => {
-        expect(hoverPath("C:\\instances\\1.8.9 good\\.minecraft\\htsw\\imports\\SMPmap\\Raycast.htsl"))
-            .toBe("htsw/imports/SMPmap/Raycast.htsl");
-        expect(hoverPath("/home/user/imports/SMPmap/Raycast.htsl"))
-            .toBe("imports/SMPmap/Raycast.htsl");
+    test("shows hover paths from the projects root", () => {
+        expect(hoverPath("C:\\instances\\1.8.9 good\\.minecraft\\htsw\\projects\\SMPmap\\Raycast.htsl"))
+            .toBe("htsw/projects/SMPmap/Raycast.htsl");
+        expect(hoverPath("/home/user/projects/SMPmap/Raycast.htsl"))
+            .toBe("projects/SMPmap/Raycast.htsl");
     });
 
     test("splits tokens at span boundaries and primary spans win overlaps", () => {

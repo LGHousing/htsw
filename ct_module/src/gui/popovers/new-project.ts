@@ -18,7 +18,7 @@ function closeSelf(): void {
 function submit(): void {
     const trimmed = draft.trim();
     if (trimmed.length === 0) {
-        ChatLib.chat("&c[htsw] Folder name can't be empty.");
+        ChatLib.chat("&c[htsw] Project name can't be empty.");
         return;
     }
     const cb = onCreateCallback;
@@ -37,15 +37,15 @@ function popoverContent(): Element {
     return Col({
         style: { padding: 6, gap: 4 },
         children: [
-            Text({ text: "New folder", style: { width: { kind: "grow" } } }),
+            Text({ text: "New project", style: { width: { kind: "grow" } } }),
             Input({
-                id: "new-folder-input",
+                id: "new-project-input",
                 value: () => draft,
                 onChange: (v) => {
                     draft = v;
                 },
                 onSubmit: () => submit(),
-                placeholder: "folder name…",
+                placeholder: "project name…",
                 style: { width: { kind: "grow" }, height: { kind: "px", value: 18 } },
             }),
             Row({
@@ -74,7 +74,7 @@ function popoverContent(): Element {
     });
 }
 
-export function openNewFolderPopover(
+export function openNewProjectPopover(
     prefill: string,
     onCreate: (name: string) => void
 ): void {
@@ -85,7 +85,7 @@ export function openNewFolderPopover(
         content: popoverContent(),
         width: 240,
         height: 64,
-        key: "new-folder",
+        key: "new-project",
         placement: "modal",
         onClose: () => {
             activeHandle = null;

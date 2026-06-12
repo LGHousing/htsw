@@ -47,6 +47,13 @@ async function ensureRegionOpen(
     ctx: TaskContext,
     importable: ImportableRegion
 ): Promise<void> {
+    // The parser treats `bounds` as optional, so a bounds-less region reaches
+    // the importer. Fail with an actionable message instead of a TypeError.
+    if ((importable.bounds as unknown) === undefined) {
+        throw new Error(
+            `Region "${importable.name}" has no bounds in import.json — add bounds before importing`
+        );
+    }
     await setRegionCorner(ctx, importable.bounds.from, "A");
     await setRegionCorner(ctx, importable.bounds.to, "B");
 

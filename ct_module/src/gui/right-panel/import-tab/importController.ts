@@ -32,10 +32,9 @@ import {
 } from "./queue";
 import {
     forEachCachedParse,
-    invalidateParseCacheEntry,
+    markParseStale,
     parseImportJsonBlocking,
 } from "../../parsing/parses";
-import { scheduleReparse } from "../../parsing/reparse";
 import { printDiagnostics } from "../../../tui/diagnostics";
 import {
     importSelectedImportables,
@@ -690,11 +689,10 @@ export function startExport(
         // The export rewrote the destination import.json; drop its cached parse
         // so the Houses drift icons re-read it now instead of showing the
         // pre-export state until a fingerprint recheck happens to land.
-        invalidateParseCacheEntry(importJsonPath);
+        markParseStale(importJsonPath);
         // Export rewrote source + cache on disk. Force a reparse so the
         // cache-status dots rebuild against the fresh cache now, instead of
         // waiting out the parse-authority's settle throttle (~1s of red).
-        scheduleReparse();
         if (result.failed > 0) {
             // Per-item failures are swallowed so the run finishes; surface them
             // here instead of reporting a partial run as a clean success.

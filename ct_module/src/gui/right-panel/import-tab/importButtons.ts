@@ -10,6 +10,7 @@ import type { Element } from "../../lib/layout";
 import { Button, Col, Container, Icon, Row, Text } from "../../lib/components";
 import { Icons } from "../../lib/icons.generated";
 import {
+    ACCENT_SUCCESS,
     COLOR_BUTTON,
     COLOR_BUTTON_HOVER,
     COLOR_BUTTON_PRIMARY,
@@ -37,14 +38,15 @@ import { getQueueLength } from "./queue";
 import { addRecent, getRecents } from "../../persistence/recents";
 import { forEachCachedParse } from "../../parsing/parses";
 import { openFileBrowserWithImportJsonSelection } from "../../popovers/file-browser";
-import { openNewFolderPopover } from "../../popovers/new-folder";
+import { openNewProjectPopover } from "../../popovers/new-project";
 import { getAlias } from "../../../importCache/aliases";
+import { boundImportJsonPath } from "../../../importCache/houseBindings";
 import { javaType } from "../../lib/java";
 import { getImportProgress } from "./importProgress";
 import { getStepAuto, setStepAuto } from "../../../housingSync/stepGate";
 import { startImport } from "./importController";
 
-const IMPORTS_ROOT = "./htsw/imports";
+import { PROJECTS_ROOT } from "../../../exporter/paths";
 
 // ── Path helpers (used only by the destination picker) ────────────────
 
@@ -67,20 +69,20 @@ function aliasPrefill(): string {
     return alias !== null ? alias.split(" ").join("") : "";
 }
 
-// Create `<imports>/<name>/import.json` and select it as the export
-// destination, so the new folder is immediately usable from this picker.
-function createExportFolder(name: string): void {
-    // Keep the new folder inside IMPORTS_ROOT: a name carrying a path
-    // separator or ".." would escape it and write import.json elsewhere.
+// Create `<projects>/<name>/import.json` and select it as the export
+// destination, so the new project is immediately usable from this picker.
+function createExportProject(name: string): void {
+    // Keep the new project folder inside PROJECTS_ROOT: a name carrying a
+    // path separator or ".." would escape it and write import.json elsewhere.
     const trimmed = name.trim();
     if (trimmed === "" || trimmed.indexOf("/") >= 0 || trimmed.indexOf("\\") >= 0 || trimmed.indexOf("..") >= 0) {
-        ChatLib.chat("&c[htsw] Invalid folder name — no slashes or '..'.");
+        ChatLib.chat("&c[htsw] Invalid project name — no slashes or '..'.");
         return;
     }
     try {
         const Files = javaType("java.nio.file.Files");
         const Paths = javaType("java.nio.file.Paths");
-        const dir = `${IMPORTS_ROOT}/${trimmed}`;
+        const dir = `${PROJECTS_ROOT}/${trimmed}`;
         Files.createDirectories(Paths.get(String(dir)));
         const importJson = `${dir}/import.json`;
         if (!FileLib.exists(importJson)) {
@@ -90,7 +92,7 @@ function createExportFolder(name: string): void {
         closeAllPopovers();
         ChatLib.chat(`&a[htsw] Created ${importJson}`);
     } catch (err) {
-        ChatLib.chat(`&c[htsw] New folder failed: ${err}`);
+        ChatLib.chat(`&c[htsw] New project failed: ${err}`);
     }
 }
 
@@ -121,8 +123,9 @@ function destinationSection(label: string): Element {
     });
 }
 
-function destinationRow(path: string): Element {
+function destinationRow(path: string, boundPath: string | null): Element {
     const selected = normalizeHtswPath(path) === normalizeHtswPath(getExportImportJsonPath());
+    const bound = boundPath !== null && normalizeHtswPath(path) === boundPath;
     return Container({
         style: {
             direction: "row",
@@ -141,7 +144,7 @@ function destinationRow(path: string): Element {
             Icon({ name: selected ? Icons.check : Icons.fileJson }),
             Text({
                 text: basename(path),
-                color: COLOR_TEXT,
+                color: bound ? ACCENT_SUCCESS : COLOR_TEXT,
                 style: { width: { kind: "px", value: 96 } },
             }),
             Text({
@@ -149,6 +152,17 @@ function destinationRow(path: string): Element {
                 color: COLOR_TEXT_DIM,
                 style: { width: { kind: "grow" } },
             }),
+            ...(bound
+                ? [
+                      Icon({
+                          name: Icons.house,
+                          color: ACCENT_SUCCESS,
+                          tooltip: "Bound to this house",
+                          tooltipColor: COLOR_TEXT_DIM,
+                          style: { width: { kind: "px", value: 10 }, height: { kind: "px", value: 10 } },
+                      }),
+                  ]
+                : []),
         ],
     });
 }
@@ -156,11 +170,15 @@ function destinationRow(path: string): Element {
 export function exportDestinationPicker(): Element {
     const open = currentExportDestinations();
     const recents = getRecents();
+    const uuid = getHousingUuid();
+    const rawBound = uuid !== null ? boundImportJsonPath(uuid) : null;
+    const boundPath = rawBound !== null ? normalizeHtswPath(rawBound) : null;
+    const row = (path: string) => destinationRow(path, boundPath);
     return Col({
         style: { gap: 3, padding: 4, height: { kind: "grow" } },
         children: [
             destinationSection("Open import.jsons"),
-            ...open.map(destinationRow),
+            ...open.map(row),
             destinationSection("Recent"),
             ...(recents.length === 0
                 ? [
@@ -170,21 +188,21 @@ export function exportDestinationPicker(): Element {
                           style: { padding: { side: "x", value: 8 } },
                       }),
                   ]
-                : recents.map(destinationRow)),
+                : recents.map(row)),
             Container({ style: { height: { kind: "grow" } }, children: [] }),
             Row({
                 style: { gap: 4, height: { kind: "px", value: 20 } },
                 children: [
                     Button({
                         icon: Icons.folderPlus,
-                        text: "New folder",
+                        text: "New project",
                         style: {
                             width: { kind: "grow" },
                             height: { kind: "grow" },
                             background: COLOR_BUTTON,
                             hoverBackground: COLOR_BUTTON_HOVER,
                         },
-                        onClick: () => openNewFolderPopover(aliasPrefill(), createExportFolder),
+                        onClick: () => openNewProjectPopover(aliasPrefill(), createExportProject),
                     }),
                     Button({
                         icon: Icons.search,

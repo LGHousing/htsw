@@ -12,7 +12,7 @@ import {
 import { addRecent, getRecents } from "../persistence/recents";
 import {
     getParseAt,
-    invalidateParseCacheEntry,
+    markParseStale,
     parseImportJsonBlocking,
     touchParseCacheMtime,
     type CachedParse,
@@ -127,20 +127,11 @@ export function autoDiscoverImportJson(): void {
 }
 
 // ── driver state ──────────────────────────────────────────────────────
-let lastReparseAtMs = 0;
-let pendingReparse = false;
 let lastSeenPath = "";
 let lastParsedRef: ParseResult<Importable[]> | null = null;
 let forceInFlight = false;
-const DEBOUNCE_MS = 300;
-
-export function scheduleReparse(): void {
-    pendingReparse = true;
-    lastReparseAtMs = Date.now();
-}
 
 export function reparseNow(): void {
-    pendingReparse = false;
     forceReparse(getImportJsonPath(), /*forceFresh=*/ true);
 }
 
@@ -179,7 +170,7 @@ function forceReparse(path: string, forceFresh: boolean): void {
     }
     const existing = getParseAt(path);
     const haveContent = existing !== null && existing.parsed !== null;
-    if (forceFresh) invalidateParseCacheEntry(path);
+    if (forceFresh) markParseStale(path);
     forceInFlight = true;
     // Any cold load stalls the client — a snapshot load is lighter than a
     // full parse but still blocks Rhino for a beat on big projects, so it
@@ -215,15 +206,7 @@ export function tickReparse(): void {
 
     const path = getImportJsonPath();
     if (path !== lastSeenPath) {
-        pendingReparse = false;
         forceReparse(path, /*forceFresh=*/ false);
-        return;
-    }
-    if (pendingReparse) {
-        if (Date.now() - lastReparseAtMs >= DEBOUNCE_MS) {
-            pendingReparse = false;
-            forceReparse(path, /*forceFresh=*/ true);
-        }
         return;
     }
     if (path === "" || !fileExistsSafe(path)) return;

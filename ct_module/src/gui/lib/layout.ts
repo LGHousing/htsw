@@ -248,6 +248,30 @@ function growFactorOf(e: Element, axis: "w" | "h"): number {
     return 0;
 }
 
+// Cross-axis size + position for one child, shared by container and scroll
+// layout: stretch fills the cross length unless the child fixed its own cross
+// size; center/end offset the child within the leftover.
+function placeCross(
+    ch: Element,
+    crossAxis: "w" | "h",
+    crossLen: number,
+    crossOrigin: number,
+    align: "start" | "center" | "end" | "stretch"
+): { size: number; offset: number } {
+    const explicit = crossAxis === "w" ? ch.style.width : ch.style.height;
+    const resolved = resolveAxis(ch, crossAxis);
+    let size: number;
+    if (resolved === null) size = crossLen;
+    else if (align === "stretch" && (!explicit || explicit.kind === "auto"))
+        size = crossLen;
+    else size = Math.min(resolved, crossLen);
+
+    let offset = crossOrigin;
+    if (align === "center") offset = crossOrigin + Math.floor((crossLen - size) / 2);
+    else if (align === "end") offset = crossOrigin + (crossLen - size);
+    return { size, offset };
+}
+
 // Per-id scroll state. Reset across reloads but persists across frames.
 type ScrollState = {
     offset: number;
@@ -387,23 +411,12 @@ function layoutContainer(
         const ch = children[i];
         const mSize = mainSizes[i] as number;
 
-        const explicitCross = crossAxis === "w" ? ch.style.width : ch.style.height;
-        const crossResolved = resolveAxis(ch, crossAxis);
-        let cSize: number;
-        if (crossResolved === null) cSize = crossLen;
-        else if (align === "stretch" && (!explicitCross || explicitCross.kind === "auto"))
-            cSize = crossLen;
-        else cSize = Math.min(crossResolved, crossLen);
-
         const crossOriginIn = isRow ? innerY : innerX;
-        let crossOff = crossOriginIn;
-        if (align === "center")
-            crossOff = crossOriginIn + Math.floor((crossLen - cSize) / 2);
-        else if (align === "end") crossOff = crossOriginIn + (crossLen - cSize);
+        const cross = placeCross(ch, crossAxis, crossLen, crossOriginIn, align);
 
         const rect: Rect = isRow
-            ? { x: cursor, y: crossOff, w: mSize, h: cSize }
-            : { x: crossOff, y: cursor, w: cSize, h: mSize };
+            ? { x: cursor, y: cross.offset, w: mSize, h: cross.size }
+            : { x: cross.offset, y: cursor, w: cross.size, h: mSize };
 
         out.push({ element: ch, rect, clipRect });
         if (ch.kind === "container")
@@ -499,21 +512,11 @@ function layoutScroll(
             continue;
         }
 
-        const explicitCross = crossAxis === "w" ? ch.style.width : ch.style.height;
-        const crossResolved = resolveAxis(ch, crossAxis);
-        let cSize: number;
-        if (crossResolved === null) cSize = crossLen;
-        else if (align === "stretch" && (!explicitCross || explicitCross.kind === "auto"))
-            cSize = crossLen;
-        else cSize = Math.min(crossResolved, crossLen);
-
-        let crossOff = crossOrigin;
-        if (align === "center") crossOff = crossOrigin + Math.floor((crossLen - cSize) / 2);
-        else if (align === "end") crossOff = crossOrigin + (crossLen - cSize);
+        const cross = placeCross(ch, crossAxis, crossLen, crossOrigin, align);
 
         const rect: Rect = horizontal
-            ? { x: cursor, y: crossOff, w: mSize, h: cSize }
-            : { x: crossOff, y: cursor, w: cSize, h: mSize };
+            ? { x: cursor, y: cross.offset, w: mSize, h: cross.size }
+            : { x: cross.offset, y: cursor, w: cross.size, h: mSize };
         out.push({ element: ch, rect, clipRect: viewportRect });
         if (ch.kind === "container")
             layoutContainer(ch, rect.x, rect.y, rect.w, rect.h, out, viewportRect);
