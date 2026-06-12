@@ -38,9 +38,8 @@ type TourStep = {
     anchor?: string;
     /** Puts the GUI in the state the step talks about (tab switches). */
     setup?: () => void;
-    /** Optional extra button on the card (e.g. "Create sample project"),
-     * hidden when `when` says it no longer applies. */
-    action?: { label: string; when: () => boolean; run: () => void };
+    /** Optional extra button on the card (e.g. "Create sample project"). */
+    action?: { label: () => string; run: () => void };
 };
 
 const STEPS: TourStep[] = [
@@ -56,10 +55,14 @@ const STEPS: TourStep[] = [
             setActiveRightTab("view");
         },
         // With the sample project open, the rest of the tour has real rows,
-        // dots, and source to point at instead of empty panels.
+        // dots, and source to point at instead of empty panels. Once it
+        // exists, the same button just opens it (createStarterProject never
+        // overwrites).
         action: {
-            label: "Create sample project to follow along",
-            when: () => !FileLib.exists(`${STARTER_DIR}/import.json`),
+            label: () =>
+                FileLib.exists(`${STARTER_DIR}/import.json`)
+                    ? "Open the sample project"
+                    : "Create sample project to follow along",
             run: () => createStarterProject(),
         },
     },
@@ -223,7 +226,11 @@ function goTo(next: number): void {
     reopen();
 }
 
-function navButton(label: string, primary: boolean, onClick: () => void): Element {
+function navButton(
+    label: string | (() => string),
+    primary: boolean,
+    onClick: () => void
+): Element {
     return Button({
         text: label,
         style: {
@@ -259,13 +266,11 @@ function content(): Element {
                 ...s.lines.map((l) => Text({ text: l, color: COLOR_TEXT_DIM })),
                 Col({ style: { height: { kind: "grow" } }, children: [] }),
                 s.action !== undefined &&
-                    s.action.when() &&
                     Container({
                         style: { height: { kind: "px", value: 18 } },
                         children: [
                             navButton(s.action.label, true, () => {
                                 s.action!.run();
-                                reopen();
                             }),
                         ],
                     }),
@@ -292,8 +297,7 @@ function reopen(): void {
         closePopover(activeHandle);
         activeHandle = null;
     }
-    const a = STEPS[step].action;
-    const actionH = a !== undefined && a.when() ? 22 : 0;
+    const actionH = STEPS[step].action !== undefined ? 22 : 0;
     activeHandle = openPopover({
         anchor: cardAnchor(),
         content: content(),
