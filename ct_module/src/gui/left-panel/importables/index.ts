@@ -19,6 +19,7 @@ import { SORT_FIELDS, isSortDefault, sortPopoverContent } from "./sort";
 import { isFilterDefault, filterPopoverContent, FILTER_POPOVER_HEIGHT } from "./filter";
 import { searchQuery, setSearchQuery } from "./rows";
 import { createStarterProject } from "../../starterProject";
+import { isSampleDismissed, setSampleDismissed } from "../../persistence/onboarding";
 import { RESULTS_SCROLL_ID, renderRows } from "./tree";
 
 function openBrowseModal(): void {
@@ -79,23 +80,50 @@ function recentsPopoverContent(): Element {
 function emptyStateRow(): Element {
     return Container({
         style: { padding: 8, gap: 6 },
-        children: [
-            Text({
-                text: "Click Browse to open an import.json.",
-                style: { width: { kind: "grow" } },
-            }),
-            Text({
-                text: "New to HTSW? Start from a commented example:",
-                color: COLOR_TEXT_DIM,
-                style: { width: { kind: "grow" } },
-            }),
-            Button({
-                icon: Icons.sparkles,
-                text: "Create sample project",
-                style: { width: { kind: "grow" }, height: { kind: "px", value: 18 } },
-                onClick: () => createStarterProject(),
-            }),
-        ],
+        children: () => {
+            const out: (Element | false)[] = [
+                Text({
+                    text: "Click Browse to open an import.json.",
+                    style: { width: { kind: "grow" } },
+                }),
+            ];
+            if (!isSampleDismissed()) {
+                out.push(
+                    Text({
+                        text: "New to HTSW? Start from a commented example:",
+                        color: COLOR_TEXT_DIM,
+                        style: { width: { kind: "grow" } },
+                    }),
+                    Row({
+                        style: { gap: 4, height: { kind: "px", value: 18 } },
+                        children: [
+                            Button({
+                                icon: Icons.sparkles,
+                                text: "Create sample project",
+                                style: { width: { kind: "grow" }, height: { kind: "grow" } },
+                                onClick: () => createStarterProject(),
+                            }),
+                            Button({
+                                children: [
+                                    Icon({
+                                        name: Icons.x,
+                                        tooltip: "Hide this (restore with /htsw tour)",
+                                        tooltipColor: COLOR_TEXT_DIM,
+                                        style: {
+                                            width: { kind: "px", value: 12 },
+                                            height: { kind: "px", value: 12 },
+                                        },
+                                    }),
+                                ],
+                                style: { width: { kind: "px", value: 22 }, height: { kind: "grow" } },
+                                onClick: () => setSampleDismissed(),
+                            }),
+                        ],
+                    })
+                );
+            }
+            return out;
+        },
     });
 }
 

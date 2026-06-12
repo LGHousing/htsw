@@ -37,6 +37,7 @@ import {
     tryDispatchPopoverWheel,
     mouseIsOverPopover,
 } from "./lib/popovers";
+import { maybeAutoStartTour } from "./popovers/tour";
 import {
     closeHoverCard,
     drawHoverCard,
@@ -539,6 +540,11 @@ export function initHtswGui(): void {
         // Drain one off-frame parse queued by requestParse() (export pane,
         // Importables tree, queue rows) so a cold parse never blocks render.
         processPendingParses();
+        // First-load walkthrough; once per session, never mid-import, and only
+        // while the GUI can actually render a popover.
+        if (frameVisible() && getImportProgress() === null) {
+            maybeAutoStartTour();
+        }
         // If the import ended while our placeholder is still up (Hypixel
         // didn't reopen a menu — e.g. the import finished naturally on
         // the last menu close), dismiss it so the player isn't trapped

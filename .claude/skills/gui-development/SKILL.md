@@ -83,6 +83,8 @@ Importer hookup — `importer/diffSink.ts`:
 - Defines `ImportDiffSink` (`markMatch`/`beginOp`/`completeOp`/`end`) and a single global active sink. `applyActionListDiff` captures and clears the sink on entry (so nested syncs in CONDITIONAL/RANDOM bodies stay silent), pre-marks untouched desired actions as `match`, and emits per-op events. The session (`importables/importSession.ts`) sets/clears the sink around each importable; the GUI's `startImport` (in `right-panel/import-tab/importController.ts`) wires sink events into the single `import-tab/livePreview` store — `markPlanned*` / `markMatch` / `applyComplete` for per-line state and `setCurrent` for the cursor — keyed by the importable's source-file path.
 
 Popovers — `gui/popovers/`:
+- `confirm.ts` — `openConfirmPopover({title, lines, confirmLabel, danger, onConfirm})`: modal yes/no, width auto-fits the widest line (`Renderer.getStringWidth`, truncate as backstop). Use this for destructive/surprising actions, never a "confirm" context-menu entry.
+- `tour.ts` — first-load walkthrough: one modal paging through text steps (deliberately NOT element-anchored — spotlight anchoring breaks silently on layout changes). Auto-starts once per session from the overlay tick when the GUI is visible, no import running, and `gui-onboarding.json` says it hasn't been done. `/htsw tour` resets onboarding (also restores the dismissed sample-project block) and re-arms the auto-start.
 - `add-importable.ts` — "Add Importable" form (Explore "+" button).
 - `alias.ts` — per-house alias editor. `openAliasPopover(rect, uuid)` takes the target UUID explicitly so the Knowledge tab can edit any known house, not just the currently-detected one.
 - `file-browser.ts` — modal file browser for picking an `import.json`.

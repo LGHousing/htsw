@@ -18,6 +18,8 @@ import {
 import { COST } from "./housingSync/progress/costs";
 import { getEventContainerCounts } from "./tasks/specifics/waitFor";
 import { getTreePerfStats } from "./gui/left-panel/importables/tree";
+import { resetOnboarding } from "./gui/persistence/onboarding";
+import { rearmTourAutoStart } from "./gui/popovers/tour";
 import { isPacketOrderProbeActive } from "./housingSync/diagnostics/packetOrderProbe";
 import {
     getImportTracePath,
@@ -91,6 +93,16 @@ function commandHtsw(args: string[]) {
         ChatLib.chat(
             `&7[waiters] Idle baseline should be ~0 across the board; ` +
             `non-zero between imports = a leaked waiter.`
+        );
+        return;
+    }
+
+    if (args.length > 0 && (args[0] === "tour" || args[0] === "onboarding")) {
+        resetOnboarding();
+        rearmTourAutoStart();
+        ChatLib.chat(
+            "&a[htsw] Onboarding reset — open a Housing menu to start the tour. " +
+            "The sample-project button is back too."
         );
         return;
     }

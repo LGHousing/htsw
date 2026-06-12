@@ -24,7 +24,19 @@ const PAD = 8;
 const LINE_H = 11;
 const TITLE_H = 12;
 const BUTTON_ROW_H = 18;
-const WIDTH = 280;
+const MIN_WIDTH = 240;
+const MAX_WIDTH = 380;
+
+// Fit the widest line (MC's font is proportional, so a fixed width either
+// wastes space or lets a long line spill past the box). Truncation on the
+// Text rows is the backstop for lines longer than MAX_WIDTH.
+function fitWidth(title: string, lines: string[]): number {
+    let w = Renderer.getStringWidth(title);
+    for (let i = 0; i < lines.length; i++) {
+        w = Math.max(w, Renderer.getStringWidth(lines[i]));
+    }
+    return Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, w + PAD * 2 + 4));
+}
 
 export type ConfirmOptions = {
     title: string;
@@ -49,8 +61,8 @@ function content(opts: ConfirmOptions): Element {
     return Col({
         style: { padding: PAD, gap: 4 },
         children: [
-            Text({ text: opts.title, color: COLOR_TEXT }),
-            ...lines.map((l) => Text({ text: l, color: COLOR_TEXT_DIM })),
+            Text({ text: opts.title, color: COLOR_TEXT, truncate: true }),
+            ...lines.map((l) => Text({ text: l, color: COLOR_TEXT_DIM, truncate: true })),
             Row({
                 style: { gap: 4, height: { kind: "px", value: BUTTON_ROW_H } },
                 children: [
@@ -88,12 +100,12 @@ function content(opts: ConfirmOptions): Element {
 
 export function openConfirmPopover(opts: ConfirmOptions): void {
     closeSelf();
-    const lineCount = opts.lines === undefined ? 0 : opts.lines.length;
-    const height = PAD * 2 + TITLE_H + lineCount * LINE_H + 4 + BUTTON_ROW_H + 4;
+    const lines = opts.lines ?? [];
+    const height = PAD * 2 + TITLE_H + lines.length * LINE_H + 4 + BUTTON_ROW_H + 4;
     activeHandle = openPopover({
         anchor: { x: 0, y: 0, w: 0, h: 0 },
         content: content(opts),
-        width: WIDTH,
+        width: fitWidth(opts.title, lines),
         height,
         key: "confirm",
         placement: "modal",
