@@ -46,7 +46,7 @@ import { composeFileMenu, composeImportableMenu } from "../../menus/fileMenu";
 import { autoTrackRefresh, queueModifiedFromParse } from "../../right-panel/import-tab/importController";
 import { SourceDir, SourceFile, removeSource } from "./source";
 import { showInExplorer, openInVSCode } from "../../../utils/osShell";
-import { previewSelect, setActiveRightTab } from "../../right-panel/selection";
+import { confirmSelect, previewSelect, setActiveRightTab } from "../../right-panel/selection";
 import {
     Result,
     ResultImport,
@@ -232,10 +232,21 @@ export function dirRootActions(s: SourceDir): MenuAction[] {
     return withFsActions(extras, s.fullPath);
 }
 
+// Right-click "open for real": pins a non-italic tab (confirmSelect), the
+// menu counterpart to the transient double-click preview.
+function openInViewAction(path: string): MenuAction {
+    return {
+        label: "Open in View",
+        icon: Icons.eye,
+        onClick: () => confirmSelect(path),
+    };
+}
+
 function importableActions(parent: ResultImport, imp: Importable): MenuAction[] {
     const target = importablePreviewPath(parent, imp);
     const item = makeImportableQueueItem(imp, parent.fullPath);
     const extras: MenuAction[] = [
+        openInViewAction(target),
         {
             label: "Rename",
             onClick: () => {
@@ -449,6 +460,7 @@ export function resultRow(
     const expanded = isImport && isImportExpanded(expKey, defaultExpanded);
     const fileExtras: MenuAction[] = isImport && r.type === "import"
         ? [
+              openInViewAction(r.fullPath),
               {
                   label: "Queue all modified",
                   onClick: () => {
@@ -470,7 +482,7 @@ export function resultRow(
               },
               ...extraActions,
           ]
-        : extraActions;
+        : [openInViewAction(r.fullPath), ...extraActions];
     const actions = composeFileMenu(fileExtras, r.fullPath);
     return Container({
         style: {
@@ -666,7 +678,7 @@ export function subRow(parent: ResultImport, imp: Importable, kind: SubListKind)
     const label = SUB_LIST_LABELS[kind];
     const path = importableSubListPath(imp, kind, parent.parse);
     const target = path ?? parent.fullPath;
-    const actions = composeFileMenu([], target);
+    const actions = composeFileMenu([openInViewAction(target)], target);
     return Container({
         style: {
             direction: "row",
