@@ -20,7 +20,15 @@ import { openEventEditor } from "./shared";
 
 export type ExportEventOptions = {
     name: string;
+    /** The project's ENTRY import.json — captured items resolve against it. */
     importJsonPath: string;
+    /**
+     * The import.json the event's entry is upserted into — its declaring
+     * file when the identity already exists in the include tree (see
+     * `htslTargetForEventExport`). Defaults to `importJsonPath`;
+     * `htslPath`/`htslReference` must be computed against the same file.
+     */
+    declaringJsonPath?: string;
     htslPath: string;
     htslReference: string;
     rootDir: string;
@@ -124,7 +132,7 @@ export async function exportEventWithSharedState(
     ensureParentDirs(htslPath);
     FileLib.write(htslPath, source, true);
 
-    upsertImportableEntry(importJsonPath, "events", {
+    upsertImportableEntry(options.declaringJsonPath ?? importJsonPath, "events", {
         event: name,
         actions: htslReference,
     });

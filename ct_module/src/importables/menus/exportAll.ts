@@ -1,4 +1,5 @@
 import TaskContext from "../../tasks/context";
+import type { ImportableItem } from "htsw/types";
 import { isTaskCancelled } from "../../tasks/manager";
 import { ItemCaptureRegistry } from "../../housingSync/itemCapture";
 import type { ExportProgressSink } from "../../housingSync/progress/types";
@@ -11,6 +12,9 @@ export type ExportAllMenusOptions = {
     rootDir: string;
     names?: readonly string[];
     progress?: ExportProgressSink;
+    // Items the destination project already declares; seeds the capture
+    // registry so identical captures reuse project names (see functions).
+    projectItems?: readonly ImportableItem[];
 };
 
 export async function exportAllMenus(
@@ -29,6 +33,10 @@ async function exportAllMenusInner(
     // One registry + written-set across every menu so identical slot items
     // collapse to a single shared items/<name>.snbt, written exactly once.
     const itemCaptures = new ItemCaptureRegistry();
+    const projectItems = options.projectItems ?? [];
+    for (let i = 0; i < projectItems.length; i++) {
+        itemCaptures.seed(projectItems[i].name, projectItems[i].nbt);
+    }
     const writtenItems = new Set<string>();
 
     const names =

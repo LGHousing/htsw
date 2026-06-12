@@ -36,7 +36,7 @@ import { snbtFromItem } from "./housingSync/itemCapture";
 import {
     defaultExportRoot,
     resolveModuleRelativePath,
-    snbtFilenameForItemExport,
+    snbtTargetForItemExport,
 } from "./exporter/paths";
 import { upsertImportableEntry } from "./exporter/importJsonWriter";
 import { ensureParentDirs } from "./utils/filesystem";
@@ -175,19 +175,16 @@ function writeSavedItem(
     rootDir: string,
     importJsonPath: string
 ): void {
-    const itemsRoot = `${rootDir}/items`;
-    const filename = snbtFilenameForItemExport(itemsRoot, name);
-    const snbtPath = `${itemsRoot}/${filename}`;
-    const snbtRef = `items/${filename}`;
+    const target = snbtTargetForItemExport(importJsonPath, rootDir, name);
 
-    ensureParentDirs(snbtPath);
-    FileLib.write(snbtPath, snbt, true);
+    ensureParentDirs(target.snbtPath);
+    FileLib.write(target.snbtPath, snbt, true);
 
-    upsertImportableEntry(importJsonPath, "items", { name, nbt: snbtRef });
+    upsertImportableEntry(target.importJsonPath, "items", { name, nbt: target.snbtReference });
 
     ChatLib.chat(`&a[htsw] Saved item '${name}'`);
-    ChatLib.chat(`&7  -> ${snbtPath}`);
-    ChatLib.chat(`&7  -> ${importJsonPath}`);
+    ChatLib.chat(`&7  -> ${target.snbtPath}`);
+    ChatLib.chat(`&7  -> ${target.importJsonPath}`);
 }
 
 function saveItem(args: string[]): void {

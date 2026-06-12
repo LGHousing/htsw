@@ -1,5 +1,6 @@
 import * as json from "jsonc-parser";
 import { encodeFilesystemComponent } from "../utils/filesystem";
+import { findDeclaringImportJson, walkImportJsonTree } from "./includeWalk";
 
 /**
  * The single workspace root: where projects live, where the GUI browses,
@@ -39,30 +40,31 @@ export function canonicalSlug(identity: string): string {
     });
 }
 
+// Aggregates across the whole include tree, so "export everything in the
+// project" sees entries declared in included files too.
 function readIdentitiesFromImportJson(
     importJsonPath: string,
     section: string,
     identityField: string
 ): string[] {
     const names: string[] = [];
-    if (!FileLib.exists(importJsonPath)) return names;
-
-    const text = String(FileLib.read(importJsonPath) ?? "");
-    if (text.trim() === "") return names;
-
-    const tree = json.parseTree(text);
-    if (!tree) return names;
-
-    const sectionNode = json.findNodeAtLocation(tree, [section]);
-    if (!sectionNode || sectionNode.type !== "array") return names;
-
-    const items = sectionNode.children ?? [];
-    for (let i = 0; i < items.length; i++) {
-        const nameNode = json.findNodeAtLocation(items[i], [identityField]);
-        if (nameNode && nameNode.type === "string") {
-            names.push(String(nameNode.value));
+    const seen = new Set<string>();
+    walkImportJsonTree(importJsonPath, (_filePath, tree) => {
+        const sectionNode = json.findNodeAtLocation(tree, [section]);
+        if (!sectionNode || sectionNode.type !== "array") return undefined;
+        const items = sectionNode.children ?? [];
+        for (let i = 0; i < items.length; i++) {
+            const nameNode = json.findNodeAtLocation(items[i], [identityField]);
+            if (nameNode && nameNode.type === "string") {
+                const name = String(nameNode.value);
+                if (!seen.has(name)) {
+                    seen.add(name);
+                    names.push(name);
+                }
+            }
         }
-    }
+        return undefined;
+    });
     return names;
 }
 
@@ -150,20 +152,58 @@ function pickHtslFilename(
     throw new Error(`Could not find an unused filename for ${label} "${identity}".`);
 }
 
-export function htslFilenameForFunctionExport(
-    importJsonPath: string,
-    identity: string
-): string {
-    const refs = readActionReferencesForSection(importJsonPath, "functions", "name", identity);
-    return pickHtslFilename(refs, identity, "function");
+export function parentDirOf(path: string): string {
+    const norm = path.split("\\").join("/");
+    const slash = norm.lastIndexOf("/");
+    if (slash < 0) return ".";
+    if (slash === 0) return "/";
+    return norm.substring(0, slash);
 }
 
-export function htslFilenameForEventExport(
-    importJsonPath: string,
+/**
+ * Where an exported function/event lands: the import.json that DECLARES the
+ * identity (entry file for new ones) plus the htsl to write. Resolved as a
+ * unit because the reference is relative to the declaring file — an
+ * existing declaration keeps its file and htsl path; a new one gets a
+ * fresh filename next to the entry import.json.
+ */
+export type HtslExportTarget = {
+    importJsonPath: string;
+    htslPath: string;
+    htslReference: string;
+};
+
+function htslTargetForSection(
+    entryImportJsonPath: string,
+    section: string,
+    identityField: string,
+    identity: string,
+    label: string
+): HtslExportTarget {
+    const importJsonPath =
+        findDeclaringImportJson(entryImportJsonPath, section, identityField, identity) ??
+        entryImportJsonPath;
+    const refs = readActionReferencesForSection(importJsonPath, section, identityField, identity);
+    const htslReference = pickHtslFilename(refs, identity, label);
+    return {
+        importJsonPath,
+        htslPath: `${parentDirOf(importJsonPath)}/${htslReference}`,
+        htslReference,
+    };
+}
+
+export function htslTargetForFunctionExport(
+    entryImportJsonPath: string,
     identity: string
-): string {
-    const refs = readActionReferencesForSection(importJsonPath, "events", "event", identity);
-    return pickHtslFilename(refs, identity, "event");
+): HtslExportTarget {
+    return htslTargetForSection(entryImportJsonPath, "functions", "name", identity, "function");
+}
+
+export function htslTargetForEventExport(
+    entryImportJsonPath: string,
+    identity: string
+): HtslExportTarget {
+    return htslTargetForSection(entryImportJsonPath, "events", "event", identity, "event");
 }
 
 /**
@@ -203,4 +243,63 @@ export function snbtFilenameForItemExport(
     }
 
     throw new Error(`Could not find an unused SNBT filename for item "${itemName}".`);
+}
+
+function readItemNbtReference(importJsonPath: string, itemName: string): string | null {
+    if (!FileLib.exists(importJsonPath)) return null;
+    const text = String(FileLib.read(importJsonPath) ?? "");
+    if (text.trim() === "") return null;
+    const tree = json.parseTree(text);
+    if (!tree) return null;
+    const sectionNode = json.findNodeAtLocation(tree, ["items"]);
+    if (!sectionNode || sectionNode.type !== "array") return null;
+    const items = sectionNode.children ?? [];
+    for (let i = 0; i < items.length; i++) {
+        const nameNode = json.findNodeAtLocation(items[i], ["name"]);
+        if (!nameNode || nameNode.type !== "string" || nameNode.value !== itemName) continue;
+        const nbtNode = json.findNodeAtLocation(items[i], ["nbt"]);
+        if (nbtNode && nbtNode.type === "string") return String(nbtNode.value);
+        return null;
+    }
+    return null;
+}
+
+/** Where an exported item lands — same contract as `HtslExportTarget`. */
+export type SnbtExportTarget = {
+    importJsonPath: string;
+    snbtPath: string;
+    snbtReference: string;
+};
+
+export function snbtTargetForItemExport(
+    entryImportJsonPath: string,
+    rootDir: string,
+    itemName: string
+): SnbtExportTarget {
+    const declaring = findDeclaringImportJson(entryImportJsonPath, "items", "name", itemName);
+    if (declaring !== null) {
+        const existingRef = readItemNbtReference(declaring, itemName);
+        const sanitized = existingRef !== null ? sanitizeRelativeReference(existingRef) : null;
+        if (sanitized !== null) {
+            return {
+                importJsonPath: declaring,
+                snbtPath: `${parentDirOf(declaring)}/${sanitized}`,
+                snbtReference: sanitized,
+            };
+        }
+        const itemsRoot = `${parentDirOf(declaring)}/items`;
+        const filename = snbtFilenameForItemExport(itemsRoot, itemName);
+        return {
+            importJsonPath: declaring,
+            snbtPath: `${itemsRoot}/${filename}`,
+            snbtReference: `items/${filename}`,
+        };
+    }
+    const itemsRoot = `${rootDir}/items`;
+    const filename = snbtFilenameForItemExport(itemsRoot, itemName);
+    return {
+        importJsonPath: entryImportJsonPath,
+        snbtPath: `${itemsRoot}/${filename}`,
+        snbtReference: `items/${filename}`,
+    };
 }

@@ -5,11 +5,12 @@ import {
     type InventorySnapshot,
 } from "../../housingSync/itemCapture";
 import TaskContext from "../../tasks/context";
+import type { ImportableItem } from "htsw/types";
 import { isTaskCancelled } from "../../tasks/manager";
 import { ExportResult, withExportSession } from "../exportSession";
 import { exportEventWithSharedState } from "./export";
 import { writeCapturedItems } from "../../exporter/writeCapturedItems";
-import { htslFilenameForEventExport } from "../../exporter/paths";
+import { htslTargetForEventExport } from "../../exporter/paths";
 import type { ExportProgressSink } from "../../housingSync/progress/types";
 import { listAllEventNames } from "./listEvents";
 
@@ -18,6 +19,9 @@ export type ExportAllEventsOptions = {
     rootDir: string;
     names?: readonly string[];
     progress?: ExportProgressSink;
+    // Items the destination project already declares; seeds the capture
+    // registry so identical captures reuse project names (see functions).
+    projectItems?: readonly ImportableItem[];
 };
 
 export async function exportAllEvents(
@@ -35,6 +39,10 @@ async function exportAllEventsInner(
 
     const inventorySnapshot: InventorySnapshot = snapshotInventory();
     const itemCaptures = new ItemCaptureRegistry();
+    const projectItems = options.projectItems ?? [];
+    for (let i = 0; i < projectItems.length; i++) {
+        itemCaptures.seed(projectItems[i].name, projectItems[i].nbt);
+    }
 
     const names =
         options.names !== undefined
@@ -62,9 +70,7 @@ async function exportAllEventsInner(
     try {
         for (let i = 0; i < names.length; i++) {
             const name = names[i];
-            const filename = htslFilenameForEventExport(importJsonPath, name);
-            const htslPath = `${rootDir}/${filename}`;
-            const htslReference = filename;
+            const target = htslTargetForEventExport(importJsonPath, name);
 
             options.progress?.item(i, name);
             ctx.displayMessage(
@@ -78,8 +84,9 @@ async function exportAllEventsInner(
                     {
                         name,
                         importJsonPath,
-                        htslPath,
-                        htslReference,
+                        declaringJsonPath: target.importJsonPath,
+                        htslPath: target.htslPath,
+                        htslReference: target.htslReference,
                         rootDir,
                         onReadProgress:
                             sink?.itemProgress === undefined

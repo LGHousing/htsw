@@ -1,4 +1,5 @@
 import * as json from "jsonc-parser";
+import { findDeclaringImportJson } from "./includeWalk";
 
 /**
  * Surgical edits to an `import.json` file: preserves comments, trailing
@@ -16,6 +17,16 @@ import * as json from "jsonc-parser";
  * already there, that entry is replaced wholesale (so all fields on the
  * new value win — including dropping fields that disappeared, which is
  * the expected behavior of a re-export).
+ *
+ * Include awareness: a project's entries can live in INCLUDED files, not
+ * just the file the GUI knows as the project. `updateImportableField`,
+ * `removeImportableEntry`, and `renameImportableEntry` resolve the
+ * declaring file themselves (their edits carry no file-relative paths, so
+ * retargeting is always safe). `upsertImportableEntry` does NOT — its
+ * entry values can carry refs like `actions`/`nbt` that are relative to
+ * the file they're written into, so the CALLER must compute the target
+ * (and any refs) together: see `htslTargetFor*Export` /
+ * `snbtTargetForItemExport` in paths.ts, or `resolveImportableFile`.
  */
 
 const FORMATTING: json.FormattingOptions = {
@@ -33,6 +44,21 @@ export type Section = "functions" | "events" | "regions" | "items" | "menus" | "
  */
 function identityField(section: Section): "name" | "event" {
     return section === "events" ? "event" : "name";
+}
+
+/**
+ * The file in `entryPath`'s include tree that declares `identity` — the
+ * entry file itself when nothing does (new entries are created there).
+ */
+export function resolveImportableFile(
+    entryPath: string,
+    section: Section,
+    identity: string
+): string {
+    return (
+        findDeclaringImportJson(entryPath, section, identityField(section), identity) ??
+        entryPath
+    );
 }
 
 /**
@@ -192,12 +218,13 @@ export function setHouseUuidKey(
  * Pass `undefined` as value to remove the field. Returns true on success.
  */
 export function updateImportableField(
-    importJsonPath: string,
+    entryJsonPath: string,
     section: Section,
     identity: string,
     field: string | string[],
     value: unknown
 ): boolean {
+    const importJsonPath = resolveImportableFile(entryJsonPath, section, identity);
     const idField = identityField(section);
     if (!FileLib.exists(importJsonPath)) return false;
     const text = String(FileLib.read(importJsonPath) ?? "");
@@ -233,10 +260,11 @@ export function updateImportableField(
  * or entry isn't there.
  */
 export function removeImportableEntry(
-    importJsonPath: string,
+    entryJsonPath: string,
     section: Section,
     identity: string
 ): boolean {
+    const importJsonPath = resolveImportableFile(entryJsonPath, section, identity);
     const idField = identityField(section);
     if (!FileLib.exists(importJsonPath)) return false;
     const text = String(FileLib.read(importJsonPath) ?? "");
@@ -271,11 +299,12 @@ export function removeImportableEntry(
  * with `oldIdentity` was found.
  */
 export function renameImportableEntry(
-    importJsonPath: string,
+    entryJsonPath: string,
     section: Section,
     oldIdentity: string,
     newIdentity: string
 ): boolean {
+    const importJsonPath = resolveImportableFile(entryJsonPath, section, oldIdentity);
     const idField = identityField(section);
     if (!FileLib.exists(importJsonPath)) return false;
     const text = String(FileLib.read(importJsonPath) ?? "");

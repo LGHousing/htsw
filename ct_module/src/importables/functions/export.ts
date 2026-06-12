@@ -1,4 +1,4 @@
-import type { Action, ImportableFunction } from "htsw/types";
+import type { Action, ImportableFunction, ImportableItem } from "htsw/types";
 import * as htsw from "htsw";
 
 import { readActionList } from "../../housingSync/actions/readList";
@@ -11,11 +11,7 @@ import {
     type InventorySnapshot,
 } from "../../housingSync/itemCapture";
 import { tryWriteImportableCache } from "../../importCache";
-import {
-    deleteImportableCache,
-    writeImportableCache,
-    writePresence,
-} from "../../importCache/cache";
+import { writeImportableCache } from "../../importCache/cache";
 import TaskContext from "../../tasks/context";
 import { observedSlotsToActions } from "../../exporter/sanitize";
 import { upsertImportableEntry } from "../../exporter/importJsonWriter";
@@ -32,7 +28,16 @@ import { getSessionFunctionIcon, resetFunctionNameSession } from "./listFunction
 
 export type ExportFunctionOptions = {
     name: string;
+    /** The project's ENTRY import.json — captured items resolve against it. */
     importJsonPath: string;
+    /**
+     * The import.json the function's entry is upserted into: its declaring
+     * file when the identity already exists somewhere in the include tree
+     * (see `htslTargetForFunctionExport`). Defaults to `importJsonPath`.
+     * `htslPath`/`htslReference` must be computed against the same file —
+     * the reference is relative to it.
+     */
+    declaringJsonPath?: string;
     htslPath: string;
     htslReference: string;
     rootDir: string;
@@ -41,6 +46,10 @@ export type ExportFunctionOptions = {
     // knowledge cache for this house — no .htsl/import.json writes. A deep
     // read IS an export minus the file writes; one driver serves both.
     readOnly?: { housingUuid: string };
+    // Destination project's declared items, for capture matching (see
+    // ItemCaptureRegistry.seed). Only read by the entry points that own a
+    // registry; exportFunctionWithSharedState receives a pre-seeded one.
+    projectItems?: readonly ImportableItem[];
 };
 
 export type SharedExportState = {
@@ -121,6 +130,10 @@ async function exportFunctionInner(
     resetFunctionNameSession();
     const inventorySnapshot: InventorySnapshot = snapshotInventory();
     const itemCaptures = new ItemCaptureRegistry();
+    const projectItems = options.projectItems ?? [];
+    for (let i = 0; i < projectItems.length; i++) {
+        itemCaptures.seed(projectItems[i].name, projectItems[i].nbt);
+    }
 
     let exportError: unknown = null;
     try {
@@ -133,15 +146,16 @@ async function exportFunctionInner(
     }
 
     try {
-        const itemCount = writeCapturedItems(
+        writeCapturedItems(
             ctx,
             itemCaptures,
             options.rootDir,
             options.importJsonPath
         );
         if (exportError === null) {
+            const c = itemCaptures.counts();
             ctx.displayMessage(
-                `&7[export] &fItems captured: ${itemCount}`
+                `&7[export] &fItems: ${c.matched} matched, ${c.fresh} new`
             );
             ctx.displayMessage(`&7  -> ${options.importJsonPath}`);
         }
@@ -167,7 +181,6 @@ export async function exportFunctionWithSharedState(
 ): Promise<void> {
     const { name, importJsonPath, htslPath, htslReference } = options;
 
-    const capturesBefore = shared.itemCaptures.size();
     const importable = await readFunctionImportable(
         ctx,
         name,
@@ -176,15 +189,11 @@ export async function exportFunctionWithSharedState(
     );
 
     if (options.readOnly !== undefined) {
-        const uuid = options.readOnly.housingUuid;
-        if (shared.itemCaptures.size() > capturesBefore) {
-            // Read-only mode writes no item files, so a cache entry would
-            // reference captures that were never persisted. Keep presence only.
-            deleteImportableCache(uuid, "FUNCTION", name);
-            writePresence(uuid, "FUNCTION", name);
-        } else {
-            writeImportableCache(ctx, uuid, importable, "reader", true);
-        }
+        // Knowledge records what's REALLY in the function — items included.
+        // Captures matched against the seeded project reuse real item names;
+        // unmatched ones carry minted names whose only job is to make the
+        // drift diff truthfully report "differs from your project".
+        writeImportableCache(ctx, options.readOnly.housingUuid, importable, "reader", true);
         return;
     }
 
@@ -200,7 +209,7 @@ export async function exportFunctionWithSharedState(
     ensureParentDirs(htslPath);
     FileLib.write(htslPath, source, true);
 
-    upsertImportableEntry(importJsonPath, "functions", {
+    upsertImportableEntry(options.declaringJsonPath ?? importJsonPath, "functions", {
         name,
         actions: htslReference,
         ...(repeatTicks !== undefined ? { repeatTicks } : {}),

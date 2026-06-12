@@ -7,6 +7,8 @@ import { showToast } from "../../../toast";
 import { createExportProgressSink } from "../../../right-panel/import-tab/exportProgress";
 import { listAllFunctionEntries } from "../../../../importables/functions/listFunctions";
 import { exportAllFunctions } from "../../../../importables/functions/exportAll";
+import { getParseAt } from "../../../parsing/parses";
+import type { ImportableItem } from "htsw/types";
 import { resetEventContainers } from "../../../../tasks/specifics/waitFor";
 import {
     deleteImportableCache,
@@ -76,11 +78,18 @@ export function deepReadHouseFunctions(onlyNames?: string[]): void {
         }
         let result;
         try {
+            const destParse = getParseAt(getExportImportJsonPath());
             result = await exportAllFunctions(ctx, {
                 importJsonPath: getExportImportJsonPath(),
                 rootDir: "",
                 names: onlyNames,
                 readOnly: { housingUuid: uuid },
+                // Seeded matching lets read knowledge reference REAL project
+                // item names when contents are identical.
+                projectItems:
+                    destParse?.parsed?.value.filter(
+                        (imp): imp is ImportableItem => imp.type === "ITEM"
+                    ) ?? [],
                 onNamesListed: (names) =>
                     recordHouseScan(uuid, "FUNCTION", names.slice()),
                 // Same strip the importer/exporter use, verb "read" — a deep

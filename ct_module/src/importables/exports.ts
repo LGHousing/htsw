@@ -7,6 +7,7 @@ export type ExportRequest =
           type: "FUNCTION";
           name: string;
           importJsonPath: string;
+          declaringJsonPath?: string;
           htslPath: string;
           htslReference: string;
           rootDir: string;
@@ -26,6 +27,7 @@ export async function exportImportable(
         await exportFunction(ctx, {
             name: request.name,
             importJsonPath: request.importJsonPath,
+            declaringJsonPath: request.declaringJsonPath,
             htslPath: request.htslPath,
             htslReference: request.htslReference,
             rootDir: request.rootDir,

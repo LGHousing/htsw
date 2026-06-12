@@ -6,8 +6,8 @@ import type { ProgressHandler } from "../../housingSync/progress/types";
 import { ItemCaptureRegistry, prettySnbt } from "../../housingSync/itemCapture";
 import TaskContext from "../../tasks/context";
 import { ensureParentDirs } from "../../utils/filesystem";
-import { upsertImportableEntry } from "../../exporter/importJsonWriter";
-import { canonicalSlug } from "../../exporter/paths";
+import { resolveImportableFile, upsertImportableEntry } from "../../exporter/importJsonWriter";
+import { canonicalSlug, parentDirOf } from "../../exporter/paths";
 import { readLiveMenu } from "./read";
 import { openMenuEditor } from "./shared";
 
@@ -47,9 +47,17 @@ export async function exportMenu(
     options: ExportMenuOptions,
     shared?: ExportMenuSharedState
 ): Promise<void> {
-    const { name, importJsonPath, rootDir } = options;
+    const { name } = options;
     const itemCaptures = shared?.itemCaptures ?? new ItemCaptureRegistry();
     const writtenItems = shared?.writtenItems ?? new Set<string>();
+
+    // A menu already declared in an INCLUDED file updates in place: the
+    // entry is upserted into its declaring import.json, and since every
+    // slot ref is relative to the file declaring it, the slot htsl/snbt
+    // files move under that file's folder too.
+    const importJsonPath = resolveImportableFile(options.importJsonPath, "menus", name);
+    const rootDir =
+        importJsonPath === options.importJsonPath ? options.rootDir : parentDirOf(importJsonPath);
 
     if ((await openMenuEditor(ctx, name)) === "missing") {
         throw new Error(`No menu named "${name}" exists in this housing.`);
@@ -69,11 +77,14 @@ export async function exportMenu(
         // before the json references it so the reference is never dangling.
         const itemName = itemCaptures.register(liveSlot.snbt, liveSlot.nameHint);
         const nbtRel = `items/${itemName}.snbt`;
-        if (!writtenItems.has(itemName)) {
-            const itemAbs = `${rootDir}/${nbtRel}`;
+        // Keyed by absolute path, not item name: menus in one batch can be
+        // declared in different files, and each base dir needs its own copy
+        // for the relative ref to resolve.
+        const itemAbs = `${rootDir}/${nbtRel}`;
+        if (!writtenItems.has(itemAbs)) {
             ensureParentDirs(itemAbs);
             FileLib.write(itemAbs, prettySnbt(liveSlot.snbt), true);
-            writtenItems.add(itemName);
+            writtenItems.add(itemAbs);
         }
 
         // Actions: per-slot .htsl under the menu folder.

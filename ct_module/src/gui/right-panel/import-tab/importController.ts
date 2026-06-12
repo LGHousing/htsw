@@ -32,6 +32,7 @@ import {
 } from "./queue";
 import {
     forEachCachedParse,
+    getParseAt,
     markParseStale,
     parseImportJsonBlocking,
 } from "../../parsing/parses";
@@ -45,7 +46,7 @@ import { importableIdentity, importableKey } from "../../../importCache/paths";
 import { getCurrentHousingUuid } from "../../../importCache/housingId";
 import { TaskManager, isTaskCancelled } from "../../../tasks/manager";
 import type TaskContext from "../../../tasks/context";
-import type { Importable } from "htsw/types";
+import type { Importable, ImportableItem } from "htsw/types";
 import type { Diagnostic, ParseResult } from "htsw";
 import { closeAllPopovers } from "../../lib/popovers";
 import { shortPath } from "../../lib/pathDisplay";
@@ -628,6 +629,7 @@ export type ExportSpec = {
         opts: {
             importJsonPath: string;
             rootDir: string;
+            projectItems?: readonly ImportableItem[];
             names?: readonly string[];
             progress?: ExportProgressSink;
         }
@@ -675,10 +677,18 @@ export function startExport(
         }
         let result: ExportResult;
         try {
+            const destParse = getParseAt(importJsonPath);
             result = await spec.exportAll(ctx, {
                 importJsonPath,
                 rootDir: dir,
                 names,
+                // Seed capture matching with the destination's declared items
+                // so re-exports reuse existing names instead of minting
+                // duplicates. Warm-cache read; null just means no seeding.
+                projectItems:
+                    destParse?.parsed?.value.filter(
+                        (imp): imp is ImportableItem => imp.type === "ITEM"
+                    ) ?? [],
                 // Feeds the same bottom progress strip the importer uses (verb
                 // flips to "export"), sized in import cost-model units.
                 progress: createExportProgressSink(spec.type, importJsonPath),

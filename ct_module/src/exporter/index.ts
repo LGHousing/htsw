@@ -7,7 +7,7 @@ import { createExportProgressSink } from "../gui/right-panel/import-tab/exportPr
 import { getCurrentHousingUuid } from "../importCache";
 import {
     defaultExportRoot,
-    htslFilenameForFunctionExport,
+    htslTargetForFunctionExport,
     readEventNamesFromImportJson,
     readFunctionNamesFromImportJson,
     resolveModuleRelativePath,
@@ -379,17 +379,16 @@ function commandExport(args: string[]): void {
                 importJsonPath = `${rootDir}/import.json`;
             }
 
-            const filename = htslFilenameForFunctionExport(importJsonPath, name);
-            const htslPath = `${rootDir}/${filename}`;
-            const htslReference = filename;
+            const target = htslTargetForFunctionExport(importJsonPath, name);
 
             ctx.displayMessage(`&aExporting function '${name}'...`);
             await exportImportable(ctx, {
                 type: "FUNCTION",
                 name,
                 importJsonPath,
-                htslPath,
-                htslReference,
+                declaringJsonPath: target.importJsonPath,
+                htslPath: target.htslPath,
+                htslReference: target.htslReference,
                 rootDir,
             });
         }).catch((err) => {

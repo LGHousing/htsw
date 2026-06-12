@@ -67,3 +67,7 @@ Loading the entry import.json loads everything: the parser follows includes recu
 The Importables pane mirrors the include structure: expanding the entry import.json shows its own importables at the top level, and each included file as a collapsible group, nested the same way the files nest on disk. Searching looks inside collapsed groups and expands the ones that match.
 
 Queueing, importing, and exporting always go through the entry file — groups are a view of where things are declared, not separate projects.
+
+## Exporting into a split project
+
+Exports (and GUI edits — rename, delete, icon/repeat changes) are include-aware: a function, event, item, or menu that already exists anywhere in the include tree is updated **in its declaring file**, reusing its existing `.htsl`/`.snbt` path. Something the project has never seen is appended to the **entry** import.json — move the declaration into a sub-file afterwards if you want it grouped, and the next export will follow it there. "Export everything in the project" also collects names across all included files, not just the entry.

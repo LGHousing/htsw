@@ -5,11 +5,12 @@ import {
     type InventorySnapshot,
 } from "../../housingSync/itemCapture";
 import TaskContext from "../../tasks/context";
+import type { ImportableItem } from "htsw/types";
 import { isTaskCancelled } from "../../tasks/manager";
 import { ExportResult, withExportSession } from "../exportSession";
 import { exportFunctionWithSharedState } from "./export";
 import { writeCapturedItems } from "../../exporter/writeCapturedItems";
-import { htslFilenameForFunctionExport } from "../../exporter/paths";
+import { htslTargetForFunctionExport } from "../../exporter/paths";
 import type { ExportProgressSink } from "../../housingSync/progress/types";
 import { listAllFunctionNames, resetFunctionNameSession } from "./listFunctions";
 
@@ -21,6 +22,10 @@ export type ExportAllFunctionsOptions = {
     // Knowledge-only pass: same editor walk, but nothing is written to
     // .htsl/import.json/item files (see ExportFunctionOptions.readOnly).
     readOnly?: { housingUuid: string };
+    // Items the destination project already declares; seeds the capture
+    // registry so identical captures reuse project names instead of minting
+    // duplicates. Callers with a warm parse should always pass this.
+    projectItems?: readonly ImportableItem[];
     // Fires when the driver listed the house's functions itself (no `names`
     // supplied), so the caller can record the scan.
     onNamesListed?: (names: readonly string[]) => void;
@@ -47,6 +52,10 @@ async function exportAllFunctionsInner(
 
     const inventorySnapshot: InventorySnapshot = snapshotInventory();
     const itemCaptures = new ItemCaptureRegistry();
+    const projectItems = options.projectItems ?? [];
+    for (let i = 0; i < projectItems.length; i++) {
+        itemCaptures.seed(projectItems[i].name, projectItems[i].nbt);
+    }
 
     let names: readonly string[];
     if (options.names !== undefined) {
@@ -77,9 +86,7 @@ async function exportAllFunctionsInner(
     try {
         for (let i = 0; i < names.length; i++) {
             const name = names[i];
-            const filename = htslFilenameForFunctionExport(importJsonPath, name);
-            const htslPath = `${rootDir}/${filename}`;
-            const htslReference = filename;
+            const target = htslTargetForFunctionExport(importJsonPath, name);
 
             options.progress?.item(i, name);
             ctx.displayMessage(
@@ -93,8 +100,9 @@ async function exportAllFunctionsInner(
                     {
                         name,
                         importJsonPath,
-                        htslPath,
-                        htslReference,
+                        declaringJsonPath: target.importJsonPath,
+                        htslPath: target.htslPath,
+                        htslReference: target.htslReference,
                         rootDir,
                         readOnly: options.readOnly,
                         onReadProgress:
@@ -133,7 +141,11 @@ async function exportAllFunctionsInner(
         }
     }
 
-    const itemCount = itemCaptures.size();
+    const hints = itemCaptures.takeHints();
+    for (let i = 0; i < hints.length; i++) {
+        ctx.displayMessage(`&e[export] ${hints[i]}`);
+    }
+    const itemCounts = itemCaptures.counts();
 
     if (readOnly) {
         ctx.displayMessage(
@@ -141,7 +153,7 @@ async function exportAllFunctionsInner(
         );
     } else {
         ctx.displayMessage(
-            `&aExported ${succeeded} of ${names.length} function${names.length === 1 ? "" : "s"} (${itemCount} item${itemCount === 1 ? "" : "s"} captured)${failed > 0 ? ` &c[${failed} failed]` : ""}`
+            `&aExported ${succeeded} of ${names.length} function${names.length === 1 ? "" : "s"} (items: ${itemCounts.matched} matched, ${itemCounts.fresh} new)${failed > 0 ? ` &c[${failed} failed]` : ""}`
         );
         ctx.displayMessage(`&7  -> ${importJsonPath}`);
     }
