@@ -391,7 +391,13 @@ export function RightPanel(): Element {
         style: { padding: 6, gap: 4, width: { kind: "grow" }, height: { kind: "grow" } },
         children: () => [
             panelTabBar(),
-            getActiveRightTab() === "view" ? viewTab() : importTab(),
+            Container({
+                anchorKey: "tour:right-body",
+                style: { width: { kind: "grow" }, height: { kind: "grow" } },
+                children: () => [
+                    getActiveRightTab() === "view" ? viewTab() : importTab(),
+                ],
+            }),
         ],
     });
 }

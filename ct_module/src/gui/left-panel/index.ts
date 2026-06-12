@@ -19,6 +19,14 @@ export function LeftPanel(): Element {
             width: { kind: "grow" },
             height: { kind: "grow" },
         },
-        children: () => [TabBar(), Divider(), getActiveTab().content()],
+        children: () => [
+            TabBar(),
+            Divider(),
+            Container({
+                anchorKey: "tour:left-body",
+                style: { width: { kind: "grow" }, height: { kind: "grow" } },
+                children: () => [getActiveTab().content()],
+            }),
+        ],
     });
 }

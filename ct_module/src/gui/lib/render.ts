@@ -11,6 +11,7 @@ import {
     SCROLLBAR_WIDTH,
 } from "./layout";
 import { extract } from "./extractable";
+import { reportAnchorRect } from "./anchors";
 import { registerClickFlash, clickFlashAlpha } from "./clickFlash";
 import { isInputFocused, setFocusedInput } from "./focus";
 import { pushScissor, popScissor } from "./scissor";
@@ -222,6 +223,9 @@ export function renderElement(
 
     for (let i = 0; i < laid.length; i++) {
         const item = laid[i];
+        if (item.element.kind === "container" && item.element.anchorKey !== undefined) {
+            reportAnchorRect(item.element.anchorKey, item.rect);
+        }
         if (item.element === root) continue; // root drawn by caller (panel bg) or skipped
         renderItem(item, mouseX, mouseY, interactive, intercepted);
     }

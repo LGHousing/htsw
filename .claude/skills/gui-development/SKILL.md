@@ -16,6 +16,7 @@ The library code (project-agnostic UI primitives) lives in `gui/lib/`. Project-s
 Library — `gui/lib/` (project-agnostic UI primitives + screen/theme):
 - `layout.ts` — element types, padding, sizing, container/scroll layout algorithm.
 - `extractable.ts` — `Extractable<T> = T | (() => T)` and `extract`.
+- `anchors.ts` — per-frame registry of named region rects. A container with `anchorKey: "…"` reports its laid-out rect every rendered frame (written from `renderElement`'s item loop); `getAnchorRect(key)` returns it, or null once it's ~300ms stale (region stopped rendering, e.g. tab switched away). Used by the tour's spotlight; usable by anything that must point at live UI from outside the tree.
 - `render.ts` — single tree renderer + click dispatcher (used by panels and popovers).
 - `panel.ts` — `Panel` class: bounds, visibility, click trigger, render trigger.
 - `popovers.ts` — global popover stack, anchored/modal render, click dispatch helper, hover-suppression query.
@@ -84,7 +85,7 @@ Importer hookup — `importer/diffSink.ts`:
 
 Popovers — `gui/popovers/`:
 - `confirm.ts` — `openConfirmPopover({title, lines, confirmLabel, danger, onConfirm})`: modal yes/no, width auto-fits the widest line (`Renderer.getStringWidth`, truncate as backstop). Use this for destructive/surprising actions, never a "confirm" context-menu entry.
-- `tour.ts` — first-load walkthrough: one modal paging through text steps (deliberately NOT element-anchored — spotlight anchoring breaks silently on layout changes). Auto-starts once per session from the overlay tick when the GUI is visible, no import running, and `gui-onboarding.json` says it hasn't been done. `/htsw tour` resets onboarding (also restores the dismissed sample-project block) and re-arms the auto-start.
+- `tour.ts` — first-load walkthrough. Each step can spotlight a region (via `lib/anchors` keys: `tour:left-tabs`, `tour:left-body`, `tour:right-body`) — a border is drawn around the rect from a default-priority `postGuiRender` (paints before the LOWEST popover pass, so the card sits on top) — and can run a `setup` that switches the real tabs (`setActiveLeftTab` / `setActiveRightTab`) so the user looks at the actual UI being described. The card is a `sticky` anchored popover (outside clicks fall through; using the GUI mid-tour is allowed), reopened per step because the anchor changes. Auto-starts once per session from the overlay tick when the GUI is visible, no import running, and `gui-onboarding.json` says it hasn't been done. `/htsw tour` resets onboarding (also restores the dismissed sample-project block) and re-arms the auto-start. If you move/rename an anchored region, keep its `anchorKey` or the step falls back to screen-center with no spotlight.
 - `add-importable.ts` — "Add Importable" form (Explore "+" button).
 - `alias.ts` — per-house alias editor. `openAliasPopover(rect, uuid)` takes the target UUID explicitly so the Knowledge tab can edit any known house, not just the currently-detected one.
 - `file-browser.ts` — modal file browser for picking an `import.json`.
@@ -187,6 +188,8 @@ CT's `guiRender` maps to Forge's `GuiScreenEvent$BackgroundDrawnEvent` — it fi
 ## Popovers
 
 `openPopover({anchor, content, width, height, key?, onClose?})` pushes a popover onto a stack. They render on `postGuiRender` at LOWEST priority — i.e. *after* MC's drawScreen completes — so they paint on top of everything including MC's hover tooltips, keeping them modal. (Panels by contrast paint at `guiRender`/BackgroundDrawnEvent, before MC's tooltip; see the Panels section.) Position auto-flips: anchored *below* the trigger when the trigger is in the top half of the screen, *above* otherwise.
+
+`sticky: true` popovers are never dismissed by outside clicks, and those clicks fall through to the panels — the GUI stays fully usable underneath (the tour card). Close them programmatically.
 
 `togglePopover({key, ...})` is the toggle-style helper for re-clickable triggers (e.g. a Filter button that reopens-or-dismisses): if a popover with the same `key` is open it closes it; otherwise it opens a new one.
 

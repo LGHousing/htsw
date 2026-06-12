@@ -7,6 +7,7 @@ export type ContainerProps = {
     onClick?: (rect: Rect, info: ClickInfo) => void;
     onDoubleClick?: (rect: Rect) => void;
     onHover?: (rect: Rect) => void;
+    anchorKey?: string;
 };
 
 export function Container(props: ContainerProps): Element {
@@ -17,6 +18,7 @@ export function Container(props: ContainerProps): Element {
         onClick: props.onClick,
         onDoubleClick: props.onDoubleClick,
         onHover: props.onHover,
+        anchorKey: props.anchorKey,
     };
 }
 
@@ -27,6 +29,7 @@ export function Row(props: ContainerProps): Element {
         onClick: props.onClick,
         onDoubleClick: props.onDoubleClick,
         onHover: props.onHover,
+        anchorKey: props.anchorKey,
     });
 }
 
@@ -37,5 +40,6 @@ export function Col(props: ContainerProps): Element {
         onClick: props.onClick,
         onDoubleClick: props.onDoubleClick,
         onHover: props.onHover,
+        anchorKey: props.anchorKey,
     });
 }

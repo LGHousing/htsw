@@ -50,6 +50,9 @@ export type Element =
           onClick?: (rect: Rect, info: ClickInfo) => void;
           onDoubleClick?: (rect: Rect) => void;
           onHover?: (rect: Rect) => void;
+          /** Reports this container's laid-out rect into lib/anchors each
+           * rendered frame, under this key. */
+          anchorKey?: string;
       }
     | {
           kind: "text";

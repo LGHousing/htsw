@@ -1,6 +1,9 @@
-import { Element } from "../lib/layout";
+import { Element, Rect } from "../lib/layout";
 import { Button, Col, Row, Text } from "../lib/components";
 import { closePopover, openPopover, type PopoverHandle } from "../lib/popovers";
+import { getAnchorRect } from "../lib/anchors";
+import { beginHtswOverlayDraw, endHtswOverlayDraw } from "../lib/panel";
+import { getOverlayScreenH, getOverlayScreenW } from "../lib/overlayScale";
 import {
     COLOR_BUTTON,
     COLOR_BUTTON_HOVER,
@@ -11,15 +14,26 @@ import {
     COLOR_TEXT_FAINT,
 } from "../lib/theme";
 import { isTourDone, setTourDone } from "../persistence/onboarding";
+import { setActiveLeftTab } from "../left-panel/tabs";
+import { setActiveRightTab } from "../right-panel/selection";
 
 /**
- * First-load walkthrough: one modal that pages through short steps with
- * Back/Next/Skip. Steps describe where to look rather than anchoring to
- * specific widgets — element-anchored spotlighting would break silently on
- * every layout change, so v1 keeps the tour layout-independent.
+ * First-load walkthrough. Each step can spotlight a named region (anchor
+ * rects reported per frame via `anchorKey` containers — see lib/anchors)
+ * and run a setup that switches the real tabs, so the user is looking at
+ * the actual UI a step describes. The card is a STICKY popover: clicks
+ * outside it fall through to the panels, so poking at the GUI mid-tour is
+ * allowed and doesn't dismiss the tour.
  */
 
-type TourStep = { title: string; lines: string[] };
+type TourStep = {
+    title: string;
+    lines: string[];
+    /** lib/anchors key to spotlight; card is placed near it. */
+    anchor?: string;
+    /** Puts the GUI in the state the step talks about (tab switches). */
+    setup?: () => void;
+};
 
 const STEPS: TourStep[] = [
     {
@@ -27,59 +41,86 @@ const STEPS: TourStep[] = [
         lines: [
             "HTSW turns your Housing into files you can",
             "edit, version, and share — and back again.",
-            "This overlay appears around any Housing menu.",
+            "This tour points at each part of the overlay.",
         ],
+        setup: () => {
+            setActiveLeftTab("importables");
+            setActiveRightTab("view");
+        },
     },
     {
-        title: "Importables (left panel)",
+        title: "Two sides of your project",
         lines: [
-            "Your files. Open an import.json with Browse,",
-            "or start from the sample project.",
-            "Checkboxes queue things to import; the colored",
-            "dot is how each item compares to the house.",
+            "Importables is your FILES; Houses is what's",
+            "actually built in the house you're in.",
+            "Everything HTSW does moves content between",
+            "these two.",
         ],
+        anchor: "tour:left-tabs",
     },
     {
-        title: "View & Import (right panel)",
+        title: "Importables — your files",
         lines: [
-            "View shows source with a diff against the",
-            "house — double-click any row to peek (italic",
-            "tab), right-click → Open in View to pin it.",
-            "Import runs the queue with live progress.",
+            "Each import.json lists functions, items,",
+            "regions… Checkboxes queue things to import.",
+            "The colored dot: green = matches the house,",
+            "yellow = differs, red = never read.",
         ],
+        anchor: "tour:left-body",
+        setup: () => setActiveLeftTab("importables"),
     },
     {
-        title: "Houses (left panel, second tab)",
+        title: "View — read before you write",
         lines: [
-            "What's actually in the house. Scan lists names",
-            "(fast); Read into knowledge (in the export",
-            "menu) pulls full contents (slow). Export",
-            "writes house content back into your files.",
+            "Double-click anything on the left to peek at",
+            "its source here (italic tab = temporary).",
+            "Right-click → Open in View pins it for real.",
+            "Colors show the diff against the house.",
         ],
+        anchor: "tour:right-body",
+        setup: () => setActiveRightTab("view"),
     },
     {
-        title: "Binding files to houses",
+        title: "Import — files into the house",
         lines: [
-            "The house button on an import.json row binds",
-            "the file to the house you're standing in.",
-            "Entering a bound house auto-selects its file",
-            "as the export destination.",
+            "Queued items land here. Import walks the real",
+            "Housing menus for you, with live progress.",
+            "Trusting a house skips re-verifying content",
+            "HTSW already knows.",
         ],
+        anchor: "tour:right-body",
+        setup: () => setActiveRightTab("import"),
+    },
+    {
+        title: "Houses — the house into files",
+        lines: [
+            "Scan lists names (fast). Read into knowledge",
+            "(in the export dropdown) pulls full contents.",
+            "Export writes house content into your files —",
+            "it confirms before overwriting local changes.",
+        ],
+        anchor: "tour:left-body",
+        setup: () => setActiveLeftTab("houses"),
     },
     {
         title: "That's the loop",
         lines: [
             "Edit files → Import. Build in-game → Export.",
-            "Knowledge tracks what the house looked like",
-            "last time HTSW read it.",
+            "Bind a file to its house (the house button on",
+            "its row) and HTSW lines the two up for you.",
             "Replay this anytime with /htsw tour.",
         ],
+        setup: () => {
+            setActiveLeftTab("importables");
+            setActiveRightTab("view");
+        },
     },
 ];
 
 // Sized for the largest step so the modal doesn't resize while paging.
 const MAX_LINES = 4;
 const HEIGHT = 8 * 2 + 12 + MAX_LINES * 11 + 4 + 18 + 8;
+const HIGHLIGHT_COLOR = COLOR_BUTTON_PRIMARY_HOVER;
 
 function tourWidth(): number {
     let w = 0;
@@ -95,12 +136,36 @@ function tourWidth(): number {
 let activeHandle: PopoverHandle | null = null;
 let step = 0;
 
+function currentAnchorRect(): Rect | null {
+    const key = STEPS[step].anchor;
+    if (key === undefined) return null;
+    return getAnchorRect(key);
+}
+
+// Card anchor: a point at the spotlit region's horizontal center, just under
+// its top edge — the popover's below/above auto-placement then puts the card
+// inside/near the region without covering all of it. No anchor (or a region
+// that didn't render this frame) falls back to upper-screen-center.
+function cardAnchor(): Rect {
+    const r = currentAnchorRect();
+    if (r !== null) {
+        return { x: r.x + r.w / 2, y: r.y + Math.min(40, r.h / 4), w: 0, h: 0 };
+    }
+    return { x: getOverlayScreenW() / 2, y: getOverlayScreenH() / 4, w: 0, h: 0 };
+}
+
 function finish(): void {
     setTourDone();
     if (activeHandle !== null) {
         closePopover(activeHandle);
         activeHandle = null;
     }
+}
+
+function goTo(next: number): void {
+    step = next;
+    STEPS[step].setup?.();
+    reopen();
 }
 
 function navButton(label: string, primary: boolean, onClick: () => void): Element {
@@ -141,15 +206,10 @@ function content(): Element {
                 Row({
                     style: { gap: 4, height: { kind: "px", value: 18 } },
                     children: [
-                        step > 0 &&
-                            navButton("Back", false, () => {
-                                step--;
-                            }),
+                        step > 0 && navButton("Back", false, () => goTo(step - 1)),
                         navButton("Skip", false, () => finish()),
                         step < STEPS.length - 1
-                            ? navButton("Next", true, () => {
-                                  step++;
-                              })
+                            ? navButton("Next", true, () => goTo(step + 1))
                             : navButton("Done", true, () => finish()),
                     ],
                 }),
@@ -159,28 +219,53 @@ function content(): Element {
     });
 }
 
-export function startTour(): void {
-    step = 0;
+// Reopened per step (rather than one reactive popover) because the anchor —
+// and therefore placement — changes with the step.
+function reopen(): void {
     if (activeHandle !== null) {
         closePopover(activeHandle);
         activeHandle = null;
     }
     activeHandle = openPopover({
-        anchor: { x: 0, y: 0, w: 0, h: 0 },
+        anchor: cardAnchor(),
         content: content(),
         width: tourWidth(),
         height: HEIGHT,
         key: "tour",
-        placement: "modal",
+        placement: "anchored",
+        sticky: true,
+        excludeAnchor: false,
         onClose: () => {
             activeHandle = null;
         },
     });
 }
 
+export function startTour(): void {
+    step = 0;
+    STEPS[0].setup?.();
+    reopen();
+}
+
 export function isTourOpen(): boolean {
     return activeHandle !== null;
 }
+
+// Spotlight border around the current step's region. Default-priority
+// postGuiRender paints after MC's screen but before the LOWEST-priority
+// popover pass, so the card stays on top of the border.
+register("postGuiRender", () => {
+    if (activeHandle === null) return;
+    const r = currentAnchorRect();
+    if (r === null) return;
+    const t = 2;
+    beginHtswOverlayDraw();
+    Renderer.drawRect(HIGHLIGHT_COLOR, r.x - t, r.y - t, r.w + t * 2, t);
+    Renderer.drawRect(HIGHLIGHT_COLOR, r.x - t, r.y + r.h, r.w + t * 2, t);
+    Renderer.drawRect(HIGHLIGHT_COLOR, r.x - t, r.y, t, r.h);
+    Renderer.drawRect(HIGHLIGHT_COLOR, r.x + r.w, r.y, t, r.h);
+    endHtswOverlayDraw();
+});
 
 // Once-per-session auto-start, checked from the overlay tick when the GUI is
 // actually visible (popovers can't render without an open screen). /htsw tour

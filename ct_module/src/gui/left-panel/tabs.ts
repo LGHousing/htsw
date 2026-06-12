@@ -28,6 +28,10 @@ export function getActiveTab(): Tab {
     return TABS[0];
 }
 
+export function setActiveLeftTab(id: TabId): void {
+    activeTab = id;
+}
+
 function tabButton(t: Tab): Element {
     const isActive = activeTab === t.id;
     return Container({
@@ -64,6 +68,7 @@ function tabButton(t: Tab): Element {
 
 export function TabBar(): Element {
     return Row({
+        anchorKey: "tour:left-tabs",
         style: {
             gap: 2,
             height: { kind: "px", value: SIZE_TAB_H + 2 },

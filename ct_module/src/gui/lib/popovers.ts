@@ -32,6 +32,11 @@ export type PopoverHandle = {
      *              window so the user can dismiss by clicking off.
      */
     placement: "anchored" | "modal";
+    /** Survives outside-clicks: the click neither dismisses this popover nor
+     * is absorbed — it falls through to the panels, so the user can keep
+     * using the GUI with the popover up (the tour card). Close it
+     * programmatically or via its own buttons. */
+    sticky: boolean;
     onClose?: () => void;
 };
 
@@ -49,6 +54,7 @@ export function openPopover(opts: {
     key?: string;
     placement?: "anchored" | "modal";
     excludeAnchor?: boolean;
+    sticky?: boolean;
     onClose?: () => void;
 }): PopoverHandle {
     const handle: PopoverHandle = {
@@ -61,6 +67,7 @@ export function openPopover(opts: {
         height: opts.height,
         openedAt: Date.now(),
         placement: opts.placement ?? "anchored",
+        sticky: opts.sticky === true,
         onClose: opts.onClose,
     };
     openPopovers.push(handle);
@@ -162,7 +169,7 @@ export function tryDispatchPopoverClick(
     for (let i = 0; i < openPopovers.length; i++) {
         const p = openPopovers[i];
         const onAnchor = p.excludeAnchor && pointInRect(p.anchor, mouseX, mouseY);
-        if (onAnchor) fresh.push(p);
+        if (onAnchor || p.sticky) fresh.push(p);
         else stale.push(p);
     }
     let closedModal = false;
