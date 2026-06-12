@@ -11,6 +11,7 @@ import {
 import { beginHtswOverlayDraw, endHtswOverlayDraw } from "./panel";
 import { getOverlayScreenW, getOverlayScreenH, mcToOverlay } from "./overlayScale";
 import { placeAnchoredRect } from "./anchoredRect";
+import { debugLogError } from "./debugLog";
 
 export type PopoverHandle = {
     id: number;
@@ -211,16 +212,23 @@ function drawPopovers(mouseX: number, mouseY: number): void {
             rect.h + 2
         );
         Renderer.drawRect(COLOR_PANEL, rect.x, rect.y, rect.w, rect.h);
-        renderElement(
-            p.content,
-            rect.x,
-            rect.y,
-            rect.w,
-            rect.h,
-            mouseX,
-            mouseY,
-            true
-        );
+        // Contained per popover: one popover's render exception must not
+        // abort the others, and the cause needs to land in gui-debug.log —
+        // a half-painted frame can't be diagnosed from a screenshot.
+        try {
+            renderElement(
+                p.content,
+                rect.x,
+                rect.y,
+                rect.w,
+                rect.h,
+                mouseX,
+                mouseY,
+                true
+            );
+        } catch (err) {
+            debugLogError(`popover '${p.key ?? p.id}' render`, err);
+        }
     }
     // A tooltip queued by popover content has to paint on top of the popover
     // itself. The standalone postGuiRender tooltip pass isn't guaranteed to

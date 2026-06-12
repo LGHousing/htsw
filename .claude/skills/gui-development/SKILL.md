@@ -18,18 +18,19 @@ Library — `gui/lib/` (project-agnostic UI primitives + screen/theme):
 - `extractable.ts` — `Extractable<T> = T | (() => T)` and `extract`.
 - `anchors.ts` — per-frame registry of named region rects. A container with `anchorKey: "…"` reports its laid-out rect every rendered frame (written from `renderElement`'s item loop); `getAnchorRect(key)` returns it, or null once it's ~300ms stale (region stopped rendering, e.g. tab switched away). Used by the tour's spotlight; usable by anything that must point at live UI from outside the tree.
 - `render.ts` — single tree renderer + click dispatcher (used by panels and popovers).
+- `images.ts` — icon `Image` cache + texture warm/preload, and MC item-stack rendering for the `mcItem` element. See **Icons** below for the load-path quirks.
 - `panel.ts` — `Panel` class: bounds, visibility, click trigger, render trigger.
 - `popovers.ts` — global popover stack, anchored/modal render, click dispatch helper, hover-suppression query.
 - `hoverCards.ts` — delayed, scrollable informational hover cards that absorb wheel/click input without becoming modal.
 - `anchoredRect.ts` — shared below/above placement and screen clamping used by popovers and hover cards.
-- `menu.ts` — `openMenu(x, y, actions[])` builds a context-menu popover from `{label, onClick, icon?}` actions, plus `{kind: "separator"}` dividers. Auto-closes on click. Menu width auto-sizes to the widest label via `Renderer.getStringWidth` (floored at `MIN_MENU_WIDTH`, plus an icon allowance when any action has an `icon`); callers don't need to truncate. The `(x, y)` is a 0×0 anchor and the popover **right-aligns** to it (menu's right edge sits at `x`), so for a split-button drop-up pass the trigger's right edge (`rect.x + rect.w`).
+- `menu.ts` — `openMenu(x, y, actions[])` builds a context-menu popover from `{label, onClick, icon?}` actions, plus `{kind: "separator"}` dividers. Auto-closes on click. Menu width auto-sizes to the widest label via `Renderer.getStringWidth` (floored at `MIN_MENU_WIDTH`, plus an icon allowance when any action has an `icon`); callers don't need to truncate. The `(x, y)` is a 0×0 anchor and the popover **right-aligns** to it (menu's right edge sits at `x`), so for a split-button drop-up pass the trigger's right edge (`rect.x + rect.w`). Idle menu items use the panel background (only hover lights up) — with the default button gray, the item rectangle reads as the menu's box and the menu's symmetric padding looks like a lopsided border.
 - `focus.ts` — single global focused-input id.
 - `inputState.ts` — per-input `GuiTextField` instances (cursor, selection, clipboard, arrow keys).
 - `scissor.ts` — GL scissor stack. Multiplies overlay coords by `getEffectiveOverlayScale()` to get real pixels (see Coordinate space).
 - `overlayScale.ts` — scale boundary helpers. `OVERLAY_SCALE_TARGET = 4` (the cap), `getEffectiveOverlayScale()` (per-frame actual), `mcToOverlay`, `getOverlayScreen{W,H}`. See **Coordinate space** below.
 - `bounds.ts` — reads the open Minecraft `GuiContainer`'s bounds via Java reflection and converts them to overlay space; provides fullscreen panel rect + chat rect helpers.
 - `theme.ts` — color/size/glyph constants. `lib/popovers` reads its panel/scrim colors from here, so `theme` is treated as part of `lib`.
-- `components/` — thin element-builder functions (`Button`, `Container`, `Row`, `Col`, `Input`, `Scroll`, `Text`).
+- `components/` — thin element-builder functions (`Button`, `Container`, `Row`, `Col`, `Input`, `Scroll`, `Text`, `Icon`, `McItem`).
 
 App state — `gui/state/` (genuinely-global mutable state ONLY; split by concern, with `index.ts` as a convenience re-export barrel — nothing else lives here):
 - `paths.ts` — active + export `import.json` path.
@@ -111,15 +112,16 @@ House binding on Importables file rows: an import.json header row (`resultRow` i
 
 ## Element model
 
-`Element` is a discriminated union (`layout.ts`). Five kinds today:
+`Element` is a discriminated union (`layout.ts`). Six kinds today:
 
 | kind | extra fields | clickable? | notes |
 |------|---|---|---|
 | `container` | `style: ContainerStyle`, `children: Extractable<Child[]>`, optional `onClick(rect, info)`, `onDoubleClick(rect)`, `onHover(rect)` | yes if `onClick` or `onDoubleClick` set | `onHover` is observational and does not make a container clickable. Otherwise this is the flex-layout primitive used by buttons and rows. |
 | `text` | `style`, `text: Extractable<string>`, optional `color`, `underlineColor`, `tooltip`, `tooltipColor`, `truncate` | no | `underlineColor` draws a one-pixel underline across the laid-out fragment and is used for exact diagnostic spans. Simple tooltips still use the deferred `postGuiRender` path. `truncate: true` clips the string with a trailing `...` to the laid-out rect width — opt-in, because bare text is allowed to overflow (some rows rely on a later sibling painting over the spill). |
 | `input` | `style`, `id: string`, `value: Extractable<string>`, `onChange(v)`, optional `placeholder` | focusable | id is used for global focus + key dispatch |
-| `scroll` | `style: ContainerStyle`, `id: string`, `children: Extractable<Element[]>`, optional `axis: "x" \| "y"` | passes through | scroll viewport with internal offset state, scrollbar overlay, mouse-wheel + drag. `axis` defaults to `"y"` (vertical); `axis: "x"` is a horizontal strip (e.g. the View-tab file-tab bar) — wheel-scrolls only, no scrollbar is drawn. |
-| `image` | `style`, `name: Extractable<IconName>`, optional `color: Extractable<number>` (ARGB tint), optional `tooltip` + `tooltipColor` (same as `text`) | no | 16×16 default; draws via `Image.fromAsset("icons/<name>.png")` cached per name. The icon PNGs are monochrome white, so `color` recolors them — implemented with `Renderer.colorize(...)` before `drawImage`, **not** `GlStateManager.color` (CT's `drawImage` resets GL color to white when its internal `colorized` is null, so only `colorize()` survives the draw). `Icon({ color, tooltip })` exposes both. See **Icons** below. |
+| `scroll` | `style: ContainerStyle`, `id: string`, `children: Extractable<Element[]>`, optional `axis: "x" \| "y"`, optional `locked: Extractable<boolean>` | passes through | scroll viewport with internal offset state, scrollbar overlay, mouse-wheel + drag. `axis` defaults to `"y"` (vertical); `axis: "x"` is a horizontal strip (e.g. the View-tab file-tab bar) — wheel-scrolls only, no scrollbar is drawn. `locked: true` consumes wheel + thumb-drag input without moving the viewport (the live-import code view, where autoFollow drives the offset). |
+| `image` | `style`, `name: Extractable<IconName>`, optional `color: Extractable<number>` (ARGB tint), optional `tooltip` + `tooltipColor` (same as `text`) | no | 16×16 default; loaded via the `ImageIO` pattern in `lib/images.ts` and cached per name (NOT `Image.fromAsset` — see **Icons** below). The icon PNGs are monochrome white, so `color` recolors them — implemented with `Renderer.colorize(...)` before `drawImage`, **not** `GlStateManager.color` (CT's `drawImage` resets GL color to white when its internal `colorized` is null, so only `colorize()` survives the draw). `Icon({ color, tooltip })` exposes both. |
+| `mcItem` | `style`, `item: string` (e.g. `"diamond_sword"`, `minecraft:` prefix optional), `count: number` | no | renders an actual MC item stack via the vanilla `RenderItem` (in `lib/images.ts`), with a count overlay when `count > 1`. 16×16 default. Builder is `McItem`. |
 
 Children of `container` and `scroll` are `Extractable<Element[]>` so the list can be dynamic each frame (e.g. filter results). Layout is recomputed every frame; **there is no layout cache** — anything in the tree may change between frames.
 
@@ -175,7 +177,7 @@ Scroll({
 - Skips items where the click is outside the `clipRect`.
 - Stops at first hit on `button`, clickable `container`, or `input`.
 - Sets/clears global focused-input.
-- Detects double-clicks: if a click lands within the previously-clicked rect within `DOUBLE_CLICK_MS` (350ms), the second click fires `onClick(rect, true)` and then `onDoubleClick(rect)` if defined. The first click always fires `onClick(rect, false)` immediately — there is no delay-and-coalesce. Handlers that should *not* repeat work on the second click should early-return when `isDoubleClickSecond` is true. The double-click latch resets after firing so triple-clicks don't chain into a second double.
+- Detects double-clicks: if a click lands within the previously-clicked rect within `DOUBLE_CLICK_MS` (200ms), the second click fires `onClick(rect, true)` and then `onDoubleClick(rect)` if defined. The first click always fires `onClick(rect, false)` immediately — there is no delay-and-coalesce. Handlers that should *not* repeat work on the second click should early-return when `isDoubleClickSecond` is true. The double-click latch resets after firing so triple-clicks don't chain into a second double.
 
 ## Panels
 
@@ -205,7 +207,7 @@ Scrollable hover cards are separate from popovers. They open after a stable hove
 
 When the inventory closes (`getContainerBounds() === null`), the tick handler in `overlay.ts` calls `closeAllPopovers()` and clears focus so popovers don't linger across opens.
 
-Scrollbar hover suppression: items whose rect is under a visible scrollbar track *and* live inside that scroll's viewport do not show hover (the click would land on the scrollbar, not the item). Tracks are precomputed once per `renderElement` call — see `collectScrollbarTracks` in `render.ts`.
+Scrollbar hover suppression: items under a scrollbar **thumb** do not show hover (the click would start a thumb drag, not reach the item). Hover suppression, drag start, and the scrollbar render all share one geometry source — `scrollbarThumbRect` / `getClickInterceptor` in `render.ts` — so visual feedback always matches click propagation. Clicks on the empty part of the track fall through to the element underneath.
 
 ## Focus + keyboard
 
@@ -293,7 +295,7 @@ These bit us; they will bite you again. Read these before touching CT trigger co
 PNGs live in `ct_module/assets/icons/*.png` (16×16, kebab-case filenames). Two pieces of build automation make this useable + small:
 
 1. **Enum generator** (`scripts/generateIconsList.ts`, runs before `tsc` via `npm run build`'s prefix step): scans `assets/icons/` and writes `src/gui/lib/icons.generated.ts` exporting `Icons` (a `{ camelKey: "kebab-name" } as const` object) and `IconName` (the union type). Re-run manually with `npm run generate:icons` after adding/removing PNGs.
-2. **Tree-shake plugin** (`iconShakePlugin` in `vite.config.ts`, fires in `closeBundle`): reads every emitted `.js` in `dist/`, scans for each known icon-name as a quoted string literal, and copies *only* the matched PNGs into `dist/assets/icons/`. `install.py` then mirrors `dist/assets/` to the deploy.
+2. **Tree-shake plugin** (`iconShakePlugin` in `vite.config.ts`, fires in `closeBundle`): reads every emitted `.js` in `dist/`, scans for each known icon-name as a quoted string literal, and copies *only* the matched PNGs **flat into `dist/assets/`** (no `icons/` subfolder — CT 1.8.9 was observed to hang at `/ct reload` when the deployed module dir contained a nested assets subfolder; HTSL and HousingEditor also keep PNGs flat). `install.py` then mirrors `dist/assets/` to the deploy.
 
 Usage:
 
@@ -313,12 +315,12 @@ Row({ children: [
 const ARROWS: IconName[] = [Icons.arrowUp, Icons.arrowDown];
 ```
 
-`Image.fromAsset` is called lazily on first render and cached per name in `render.ts`. A failed load is cached as `null` (so no per-frame retry/log spam) — if a missing-icon symptom appears, the cause is almost always that the shake didn't pick it up.
+Icons load lazily on first render and are cached per name in `lib/images.ts`, via `new Image(javax.imageio.ImageIO.read(java.io.File(...)))` — **not** `Image.fromAsset`/`Image.fromFile`, which other CT 1.8.9 modules also avoid (the convenience helpers don't load reliably in this CT build; `Java.type(...)` at module top level was also observed to hang CT, hence the bare `java`/`javax` globals). A failed load is cached as `null` (so no per-frame retry/log spam) — if a missing-icon symptom appears, the cause is almost always that the shake didn't pick it up. `backgroundPreloadIcons()` decodes all PNGs off the first paint, and `warmIconTextures()` (called from the panel paint path) draws each newly cached icon once offscreen so its GL texture upload doesn't flash a gray box on first real draw.
 
 ## Adding a new element kind
 
 1. Extend the `Element` union in `layout.ts` with the new variant.
-2. Add intrinsic-size computation if needed (`buttonContent`, `textContent`, `inputContent` are the existing examples).
+2. Add intrinsic-size computation if needed (`textContent`, `inputContent`, `imageContent` are the existing examples).
 3. Handle the variant in `measure`/`resolveAxis` if it can drive layout sizing.
 4. Add a render branch in `renderItem` (`render.ts`).
 5. Add click semantics in `dispatchClick` if it should be interactive.
@@ -331,6 +333,6 @@ If the new component is just a styled wrapper around existing element kinds, add
 
 ## Debugging in-game
 
-`/htsw gui debug <seconds>` arms the diagnostic logger for that window. Output goes to `gui-debug.log` in the deployed module dir (`%appdata%/.minecraft/config/ChatTriggers/modules/HTSW/`). Per-frame state (focus, popoverOpen, bounds) is logged ~twice a second. Ad-hoc `debug(...)` calls inside trigger handlers also land there. Read with `Read` on the absolute path.
+`/htsw gui debug <seconds>` arms the diagnostic logger (`lib/debugLog.ts`) for that window. Output goes to `gui-debug.log` in the deployed module dir. While armed, the overlay tick samples state (frameVisible, popover count, parseInProgress, housing uuid) ~4×/s via `debugLog(...)`. **Render exceptions are logged ALWAYS, not just while armed**: panel renders, per-popover renders, and tinted `drawImage` calls are individually try/caught and land in the log with a truncated stack via `debugLogError(where, e)`. The drawImage catch also calls `Renderer.finishDraw()` — CT's drawImage can throw from `image.getTexture()` BEFORE its own finishDraw (verified in CT 2.2.1 source), which leaves `Renderer.colorized` set; while set, CT's `drawString`/`drawRect` override every requested color, turning the rest of the frame gray with invisible text. Never call `Renderer.colorize` without an immediately-following draw that completes.
 
 The MCP bridge (`/htsw recompile`, `/htsw gui debug N`, etc.) is the way to drive testing from outside the game. Note that bridge chat readback does **not** capture our `ChatLib.chat()` output — only inbound server messages — so always log to file when probing.

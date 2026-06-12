@@ -2,7 +2,9 @@
 
 import { Element, Rect, layoutElement, pointInRect } from "./layout";
 import { Extractable, extract } from "./extractable";
-import { renderElement, dispatchClick, warmIconTextures } from "./render";
+import { renderElement, dispatchClick } from "./render";
+import { warmIconTextures } from "./images";
+import { debugLogError } from "./debugLog";
 import { tryDispatchPopoverClick, popoverIsOpen, mouseIsOverPopover } from "./popovers";
 import {
     mouseIsOverHoverCard,
@@ -174,7 +176,11 @@ export class Panel {
             // Hover follows click propagation: panels stay interactive unless the cursor is
             // actually over a popover (in which case the popover absorbs the click).
             const interactive = !mouseIsOverPopover(x, y) && !mouseIsOverHoverCard(x, y);
-            renderElement(this.root, b.x, b.y, b.w, b.h, x, y, interactive);
+            try {
+                renderElement(this.root, b.x, b.y, b.w, b.h, x, y, interactive);
+            } catch (err) {
+                debugLogError("panel render", err);
+            }
             endHtswOverlayDraw();
         };
         // CT's "guiRender" maps to Forge's BackgroundDrawnEvent — fires after MC's dim gradient

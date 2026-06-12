@@ -7,7 +7,7 @@ import { registerCommands } from "./commands";
 import { registerExportCommands } from "./exporter";
 import { initMcpBridge } from "./mcp/bridge";
 import { initHtswGui } from "./gui/overlay";
-import { backgroundPreloadIcons } from "./gui/lib/render";
+import { backgroundPreloadIcons } from "./gui/lib/images";
 import { initAutoUpdate } from "./autoUpdate";
 
 registerCommands();

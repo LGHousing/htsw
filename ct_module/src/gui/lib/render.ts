@@ -12,13 +12,14 @@ import {
 } from "./layout";
 import { extract } from "./extractable";
 import { reportAnchorRect } from "./anchors";
+import { debugLogError } from "./debugLog";
 import { registerClickFlash, clickFlashAlpha } from "./clickFlash";
 import { isInputFocused, setFocusedInput } from "./focus";
 import { pushScissor, popScissor } from "./scissor";
 import { getInputField } from "./inputState";
 import { COLOR_PANEL, COLOR_PANEL_BORDER } from "./theme";
 import { getOverlayScreenW, getOverlayScreenH } from "./overlayScale";
-import { GL11, javaType } from "./java";
+import { getIconImage, renderMcItem } from "./images";
 
 const COLOR_INPUT_BG = 0xff000000 | 0;
 const COLOR_INPUT_BORDER = 0xff444444 | 0;
@@ -26,51 +27,6 @@ const COLOR_INPUT_BORDER_HOVER = 0xffa2a2a2 | 0;
 const COLOR_INPUT_BORDER_FOCUS = 0xff67a7e8 | 0;
 const COLOR_SCROLLBAR_TRACK = 0x40000000 | 0;
 const COLOR_SCROLLBAR_THUMB = 0xff888888 | 0;
-
-const RenderHelper: any = javaType("net.minecraft.client.renderer.RenderHelper");
-const GlStateManager: any = javaType("net.minecraft.client.renderer.GlStateManager");
-const ItemClass: any = javaType("net.minecraft.item.Item");
-
-const ItemStackClass: any = javaType("net.minecraft.item.ItemStack");
-const mcItemCache: { [key: string]: any } = {};
-
-function getCachedItemStack(itemId: string, count: number): any {
-    const key = itemId + ":" + count;
-    if (key in mcItemCache) return mcItemCache[key];
-    try {
-        const id = itemId.indexOf(":") >= 0 ? itemId : "minecraft:" + itemId;
-        const item = ItemClass.func_111206_d(id);
-        if (item === null || item === undefined) { mcItemCache[key] = null; return null; }
-        const stack = new ItemStackClass(item, count);
-        mcItemCache[key] = stack;
-        return stack;
-    } catch (_e) {
-        mcItemCache[key] = null;
-        return null;
-    }
-}
-
-function renderMcItem(itemId: string, count: number, x: number, y: number): void {
-    const stack = getCachedItemStack(itemId, count);
-    if (stack === null) return;
-    try {
-        const mc = Client.getMinecraft();
-        const ri = mc.func_175599_af();
-        GlStateManager.func_179126_j();
-        GL11.glDepthMask(true);
-        RenderHelper.func_74520_c();
-        ri.func_180450_b(stack, x, y);
-        RenderHelper.func_74518_a();
-        GlStateManager.func_179097_i();
-        GL11.glDepthMask(false);
-        GlStateManager.func_179131_c(1.0, 1.0, 1.0, 1.0);
-    } catch (_e) {}
-    if (count > 1) {
-        const s = String(count);
-        const fw = Renderer.getStringWidth(s);
-        Renderer.drawStringWithShadow(s, x + 17 - fw, y + 9);
-    }
-}
 const COLOR_SCROLLBAR_THUMB_HOVER = 0xffaaaaaa | 0;
 
 const LINE_H = 8;
@@ -126,104 +82,6 @@ export function drawDeferredTooltip(): void {
 // it lingers and paints on a later frame for an element no longer hovered.
 export function clearDeferredTooltip(): void {
     deferredTooltip = null;
-}
-
-// Icon (Image) cache. Loading reads from disk synchronously, so cache by name to pay
-// the cost once. A failed load is cached as null so we don't retry every frame
-// (and don't spam logs).
-//
-// We deliberately avoid `Image.fromAsset` / `Image.fromFile` — both are advertised by
-// the CT autocomplete but other CT 1.8.9 modules (HTSL, HousingEditor) use the
-// `new Image(javax.imageio.ImageIO.read(java.io.File(absPath)))` pattern instead,
-// suggesting the convenience helpers don't work reliably in this CT build. Render
-// path also uses Renderer.drawImage(img, x, y, w, h) instead of img.draw(...) for
-// the same reason. We reach the Java APIs through Rhino's bare `java`/`javax`
-// globals (matching HTSL); `Java.type(...)` was observed to hang CT 1.8.9 at module
-// load time when invoked at top level.
-// Flat under assets/ — CT 1.8.9 was observed to hang at /ct reload when this module's
-// dir contained a nested subfolder (e.g. assets/icons/). Other working modules (HTSL,
-// HousingEditor) keep all PNGs at the top level of assets/, so we match that layout.
-const ICON_BASE_PATH = "./config/ChatTriggers/modules/HTSW/assets/";
-
-declare const javax: { imageio: { ImageIO: { read: (f: unknown) => unknown } } };
-declare const java: { io: { File: new (path: string) => unknown } };
-
-const iconCache: { [name: string]: unknown } = {};
-function getIconImage(name: string): unknown {
-    if (Object.prototype.hasOwnProperty.call(iconCache, name)) {
-        return iconCache[name];
-    }
-    let img: unknown = null;
-    try {
-        const buffered = javax.imageio.ImageIO.read(
-            new java.io.File(ICON_BASE_PATH + name + ".png")
-        );
-        const ImageCtor = Image as unknown as new (b: unknown) => unknown;
-        img = new ImageCtor(buffered);
-    } catch (_e) {
-        img = null;
-    }
-    iconCache[name] = img;
-    return img;
-}
-
-// The preload below DECODES the PNGs, but CT uploads an Image's GL texture
-// on its first actual draw — so an icon's first on-screen frame can render
-// as an untextured gray box. Drawing each cached icon once, far offscreen,
-// pays that upload up front. Called from the panel paint path (needs a GL
-// context) every frame, but only acts on icons it hasn't warmed yet — the
-// preload fills the cache asynchronously, so a one-shot warm would miss
-// icons that finish loading after the first paint.
-const warmedIcons = new Set<string>();
-export function warmIconTextures(): void {
-    for (const name in iconCache) {
-        if (warmedIcons.has(name)) continue;
-        warmedIcons.add(name);
-        const img = iconCache[name];
-        if (img !== null && img !== undefined) {
-            try {
-                Renderer.drawImage(img as never, -1000, -1000, 1, 1);
-            } catch (_e) {
-                /* a failed warm just means that icon pays on first draw */
-            }
-        }
-    }
-}
-
-export function backgroundPreloadIcons(): void {
-    try {
-        const FilesType = Java.type("java.nio.file.Files");
-        const PathsType = Java.type("java.nio.file.Paths");
-        // @ts-ignore
-        const dir = PathsType.get(ICON_BASE_PATH);
-        // @ts-ignore
-        if (!FilesType.exists(dir)) return;
-        // @ts-ignore
-        const stream = FilesType.newDirectoryStream(dir);
-        const names: string[] = [];
-        try {
-            const it = stream.iterator();
-            while (it.hasNext()) {
-                const p = it.next();
-                const filename = String(p.getFileName().toString());
-                if (filename.length > 4 && filename.substring(filename.length - 4) === ".png") {
-                    names.push(filename.substring(0, filename.length - 4));
-                }
-            }
-        } finally {
-            stream.close();
-        }
-        let i = 0;
-        const loadNext = (): void => {
-            if (i >= names.length) return;
-            getIconImage(names[i]);
-            i++;
-            setTimeout(loadNext, 0);
-        };
-        setTimeout(loadNext, 0);
-    } catch (_e) {
-        // ignore
-    }
 }
 
 export function renderElement(
@@ -306,18 +164,24 @@ function getClickInterceptor(
     for (let i = 0; i < laid.length; i++) {
         const item = laid[i];
         if (item.element.kind !== "scroll") continue;
-        const s = getScrollState(item.element.id);
-        if (s.axis === "x") continue; // horizontal strip has no draggable thumb
-        if (s.contentLength <= s.viewportRect.h) continue;
-        const v = s.viewportRect;
-        const trackX = v.x + v.w - SCROLLBAR_WIDTH;
-        const thumbH = Math.max(8, Math.floor((v.h * v.h) / s.contentLength));
-        const maxOffset = s.contentLength - v.h;
-        const thumbY = v.y + Math.floor((v.h - thumbH) * (s.offset / maxOffset));
-        const thumbRect = { x: trackX, y: thumbY, w: SCROLLBAR_WIDTH, h: thumbH };
-        if (pointInRect(thumbRect, mx, my)) return thumbRect;
+        const thumb = scrollbarThumbRect(item.element.id);
+        if (thumb !== null && pointInRect(thumb, mx, my)) return thumb;
     }
     return null;
+}
+
+// Geometry of a vertical scroll's draggable thumb, or null when there is none
+// (horizontal strip, or content fits). Single source for hover suppression,
+// drag start, and the scrollbar render so the three can't drift apart.
+function scrollbarThumbRect(id: string): Rect | null {
+    const s = getScrollState(id);
+    if (s.axis === "x") return null; // horizontal strip has no draggable thumb
+    const v = s.viewportRect;
+    if (s.contentLength <= v.h) return null; // not overflowing
+    const thumbH = Math.max(8, Math.floor((v.h * v.h) / s.contentLength));
+    const maxOffset = s.contentLength - v.h;
+    const thumbY = v.y + Math.floor((v.h - thumbH) * (s.offset / maxOffset));
+    return { x: v.x + v.w - SCROLLBAR_WIDTH, y: thumbY, w: SCROLLBAR_WIDTH, h: thumbH };
 }
 
 function renderItem(
@@ -432,7 +296,23 @@ function renderItem(
                 // nulls `colorized` for us, so untinted draws stay clean.
                 Renderer.colorize(rr, gg, bb, a);
             }
-            Renderer.drawImage(img as unknown as Parameters<typeof Renderer.drawImage>[0], r.x, r.y, r.w, r.h);
+            try {
+                Renderer.drawImage(img as unknown as Parameters<typeof Renderer.drawImage>[0], r.x, r.y, r.w, r.h);
+            } catch (err) {
+                // CT's drawImage can throw from image.getTexture() BEFORE its
+                // finishDraw() runs — verified in CT 2.2.1 source. Left alone,
+                // the exception aborts the whole render tree (everything after
+                // this element doesn't paint) and leaves Renderer.colorized
+                // set, which overrides EVERY later drawString/drawRect color
+                // with garbage — the "everything gray, text gone" frame.
+                // Contain it: clear the poison and skip just this icon.
+                try {
+                    Renderer.finishDraw();
+                } catch (_e2) {
+                    /* nothing else to do */
+                }
+                debugLogError(`drawImage icon '${name}'`, err);
+            }
         }
         if (hovered && e.tooltip !== undefined) {
             const tt = extract(e.tooltip);
@@ -449,25 +329,19 @@ function renderItem(
 }
 
 function renderScrollbar(id: string, mouseX: number, mouseY: number): void {
-    const s = getScrollState(id);
-    const v = s.viewportRect;
     // Horizontal strips (e.g. the file-tab bar) scroll by wheel only — no
     // track or thumb is drawn.
-    if (s.axis === "x") return;
-    if (s.contentLength <= v.h) return; // not overflowing
-    const trackX = v.x + v.w - SCROLLBAR_WIDTH;
-    Renderer.drawRect(COLOR_SCROLLBAR_TRACK, trackX, v.y, SCROLLBAR_WIDTH, v.h);
-    const thumbH = Math.max(8, Math.floor((v.h * v.h) / s.contentLength));
-    const maxOffset = s.contentLength - v.h;
-    const thumbY = v.y + Math.floor((v.h - thumbH) * (s.offset / maxOffset));
-    const thumbRect = { x: trackX, y: thumbY, w: SCROLLBAR_WIDTH, h: thumbH };
-    const hovered = pointInRect(thumbRect, mouseX, mouseY);
+    const thumb = scrollbarThumbRect(id);
+    if (thumb === null) return;
+    const v = getScrollState(id).viewportRect;
+    Renderer.drawRect(COLOR_SCROLLBAR_TRACK, thumb.x, v.y, SCROLLBAR_WIDTH, v.h);
+    const hovered = pointInRect(thumb, mouseX, mouseY);
     Renderer.drawRect(
         hovered ? COLOR_SCROLLBAR_THUMB_HOVER : COLOR_SCROLLBAR_THUMB,
-        thumbRect.x,
-        thumbRect.y,
-        thumbRect.w,
-        thumbRect.h
+        thumb.x,
+        thumb.y,
+        thumb.w,
+        thumb.h
     );
 }
 // Returns "consumed" if a clickable was hit, "miss" otherwise.
@@ -481,28 +355,17 @@ export function dispatchClick(
 ): boolean {
     // Scrollbar thumb drag start uses the same interceptor predicate as hover suppression so the
     // two stay consistent. We still need the scroll id to start the drag, so look it up here.
-    if (button === 0 && getClickInterceptor(laid, mouseX, mouseY) !== null) {
+    if (button === 0) {
         for (let i = 0; i < laid.length; i++) {
             const item = laid[i];
             if (item.element.kind !== "scroll") continue;
-            const s = getScrollState(item.element.id);
-            if (s.axis === "x") continue; // no draggable thumb on horizontal strips
-            if (s.contentLength <= s.viewportRect.h) continue;
-            const v = s.viewportRect;
-            const trackX = v.x + v.w - SCROLLBAR_WIDTH;
-            const thumbH = Math.max(8, Math.floor((v.h * v.h) / s.contentLength));
-            const maxOffset = s.contentLength - v.h;
-            const thumbY = v.y + Math.floor((v.h - thumbH) * (s.offset / maxOffset));
-            if (
-                pointInRect(
-                    { x: trackX, y: thumbY, w: SCROLLBAR_WIDTH, h: thumbH },
-                    mouseX,
-                    mouseY
-                )
-            ) {
+            const thumb = scrollbarThumbRect(item.element.id);
+            if (thumb === null || !pointInRect(thumb, mouseX, mouseY)) continue;
+            // A locked scroll consumes the click without moving, same as wheel.
+            if (item.element.locked === undefined || !extract(item.element.locked)) {
                 startScrollbarDrag(item.element.id, mouseY);
-                return true;
             }
+            return true;
         }
     }
 
@@ -626,6 +489,9 @@ export function dispatchWheel(
         if (item.element.kind !== "scroll") continue;
         const s = getScrollState(item.element.id);
         if (!pointInRect(s.viewportRect, mouseX, mouseY)) continue;
+        // A locked scroll consumes the wheel without moving the viewport
+        // (e.g. the live-import code view while autoFollow drives it).
+        if (item.element.locked !== undefined && extract(item.element.locked)) return true;
         const mainView = s.axis === "x" ? s.viewportRect.w : s.viewportRect.h;
         if (s.contentLength <= mainView) return true;
         s.offset = Math.max(

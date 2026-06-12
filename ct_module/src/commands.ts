@@ -11,6 +11,7 @@ import { TaskManager } from "./tasks/manager";
 import { FileSystemFileLoader } from "./utils/fileLoaders";
 import { commandKnowledge } from "./importCache/commands";
 import { toggleHtswGui } from "./gui/overlay";
+import { armGuiDebug } from "./gui/lib/debugLog";
 import {
     getTimingStats,
     resetTimingStats,
@@ -78,6 +79,12 @@ function commandHtsw(args: string[]) {
     }
 
     if (args.length > 0 && args[0] === "gui") {
+        if (args[1] === "debug") {
+            const secs = Math.max(1, parseInt(args[2] ?? "10", 10) || 10);
+            armGuiDebug(secs);
+            ChatLib.chat(`&a[htsw] gui debug armed for ${secs}s -> gui-debug.log`);
+            return;
+        }
         const nowEnabled = toggleHtswGui();
         ChatLib.chat(`&e[htsw] gui ${nowEnabled ? "&aenabled" : "&cdisabled"}`);
         return;

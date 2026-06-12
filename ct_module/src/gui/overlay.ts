@@ -38,6 +38,8 @@ import {
     mouseIsOverPopover,
 } from "./lib/popovers";
 import { maybeAutoStartTour } from "./popovers/tour";
+import { debugLog, flushGuiDebug, isGuiDebugArmed } from "./lib/debugLog";
+import { isParseInProgress } from "./state";
 import {
     closeHoverCard,
     drawHoverCard,
@@ -112,6 +114,7 @@ function frameVisible(): boolean {
 // The transport handler also zeroes `lastUuidFetchAt` so the cooldown
 // from any prior failed fetch (e.g. one attempted from limbo where
 // `/wtfmap` returns "Unknown command") doesn't gate the new attempt.
+let lastDebugSampleAt = 0;
 let uuidFetchInFlight = false;
 let lastUuidFetchAt = 0;
 const UUID_FETCH_COOLDOWN_MS = 60_000;
@@ -545,6 +548,17 @@ export function initHtswGui(): void {
         if (frameVisible() && getImportProgress() === null) {
             maybeAutoStartTour();
         }
+        if (isGuiDebugArmed()) {
+            const now = Date.now();
+            if (now - lastDebugSampleAt >= 250) {
+                lastDebugSampleAt = now;
+                debugLog(
+                    `tick frameVisible=${frameVisible()} popovers=${getOpenPopoverContents().length} ` +
+                    `parseInProgress=${isParseInProgress()} uuid=${getHousingUuid()}`
+                );
+            }
+        }
+        flushGuiDebug();
         // If the import ended while our placeholder is still up (Hypixel
         // didn't reopen a menu — e.g. the import finished naturally on
         // the last menu close), dismiss it so the player isn't trapped
@@ -602,7 +616,7 @@ export function initHtswGui(): void {
 
     // Best-effort initial parse so the panel populates before the user
     // touches the path input. autoDiscover handles the case where the
-    // default path doesn't exist by walking ./htsw/imports for any
+    // default path doesn't exist by walking ./htsw/projects for any
     // import.json. Failures are stored in state.parseError and surfaced
     // inline by the LeftRail empty-state.
     //
