@@ -416,6 +416,11 @@ export function initHtswGui(): void {
     register(ForgeMouseInputEventPre, (event: any) => {
         const dwheel = MouseClass.getEventDWheel();
         if (dwheel === 0) return;
+        // Notches, keeping the event's real magnitude: a standard wheel click
+        // is ±120, fast flicks coalesce into one larger event, and high-res
+        // wheels/touchpads report fractions of 120. Collapsing this to ±1
+        // made fast scrolling crawl.
+        const delta = dwheel / 120;
         const mc = Client.getMinecraft();
         const screen = (mc as any).field_71462_r;
         if (screen === null || screen === undefined) return;
@@ -430,18 +435,14 @@ export function initHtswGui(): void {
         // this, scrolling inside the file-browser/recents popovers fell through to whatever
         // panel scroll happened to be under the cursor.
         if (popoverIsOpen()) {
-            const dir = dwheel > 0 ? 1 : -1;
-            if (tryDispatchPopoverWheel(mx, my, dir)) {
+            if (tryDispatchPopoverWheel(mx, my, delta)) {
                 cancel(event);
                 return;
             }
         }
-        {
-            const dir = dwheel > 0 ? 1 : -1;
-            if (tryDispatchHoverCardWheel(mx, my, dir)) {
-                cancel(event);
-                return;
-            }
+        if (tryDispatchHoverCardWheel(mx, my, delta)) {
+            cancel(event);
+            return;
         }
         const trees = laidOutTrees();
         for (let i = 0; i < trees.length; i++) {
@@ -452,8 +453,7 @@ export function initHtswGui(): void {
                 if (el.kind !== "scroll") continue;
                 const s = getScrollState(el.id);
                 if (!pointInRect(s.viewportRect, mx, my)) continue;
-                const dir = dwheel > 0 ? 1 : -1;
-                dispatchWheel(laid, mx, my, dir);
+                dispatchWheel(laid, mx, my, delta);
                 cancel(event);
                 return;
             }

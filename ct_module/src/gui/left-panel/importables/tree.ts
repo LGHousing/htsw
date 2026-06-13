@@ -236,8 +236,8 @@ function isNarrowing(): boolean {
 
 function groupHasVisibleContent(r: ResultImport, node: IncludeNode): boolean {
     if (filterImportableList(r, node.importables).length > 0) return true;
-    for (let i = 0; i < node.children.length; i++) {
-        if (groupHasVisibleContent(r, node.children[i])) return true;
+    for (let i = 0; i < node.includes.length; i++) {
+        if (groupHasVisibleContent(r, node.includes[i])) return true;
     }
     return false;
 }
@@ -272,16 +272,19 @@ function resultsForSource(s: Source): Result[] {
     let anyIncludes = false;
     for (let i = 0; i < all.length; i++) {
         const r = all[i];
-        if (r.type !== "import" || r.parse === null || r.parse.gcx.includeEdges.size === 0) {
+        const tree = r.type !== "import" || r.parse === null ? null : r.parse.gcx.fileTree;
+        if (tree === null || tree.includes.length === 0) {
             includesByRow.push(null);
             continue;
         }
         const set = new Set<string>();
-        r.parse.gcx.includeEdges.forEach((children) => {
-            for (let j = 0; j < children.length; j++) {
-                set.add(canonicalPath(children[j]));
+        const collectDescendants = (node: IncludeNode): void => {
+            for (let j = 0; j < node.includes.length; j++) {
+                set.add(canonicalPath(node.includes[j].path));
+                collectDescendants(node.includes[j]);
             }
-        });
+        };
+        collectDescendants(tree);
         includesByRow.push(set);
         anyIncludes = true;
     }
@@ -330,8 +333,8 @@ function emitIncludeNode(
 ): void {
     const imps = filterImportableList(r, node.importables);
     const kids = narrowing
-        ? node.children.filter((c) => groupHasVisibleContent(r, c))
-        : node.children;
+        ? node.includes.filter((c) => groupHasVisibleContent(r, c))
+        : node.includes;
     const total = imps.length + kids.length;
     let idx = 0;
     for (let j = 0; j < kids.length; j++) {

@@ -37,7 +37,7 @@ import { readConditionList } from "./readList";
 
 export type ApplyConditionListOptions = {
     observed?: ObservedConditionSlot[];
-    itemRegistry?: ItemRegistry;
+    itemRegistry: ItemRegistry;
     baselineCurrent?: ReadonlyArray<Condition | null>;
     progress?: ProgressHandler;
 };
@@ -77,7 +77,7 @@ async function setOpenConditionInverted(
 async function importCondition(
     ctx: TaskContext,
     condition: Condition,
-    itemRegistry?: ItemRegistry
+    itemRegistry: ItemRegistry
 ): Promise<void> {
     ctx.getMenuItemSlot("Add Condition").click();
     await timedWaitForMenu(ctx, "menuClickWait");
@@ -126,7 +126,7 @@ export async function applyConditionListDiff(
     ctx: TaskContext,
     observed: ObservedConditionSlot[],
     diff: ConditionListDiff,
-    itemRegistry?: ItemRegistry,
+    itemRegistry: ItemRegistry,
     progress?: ProgressHandler,
     phaseUnits?: PhaseUnits
 ): Promise<void> {
@@ -306,13 +306,13 @@ export async function applyConditionListDiff(
 export async function applyConditionList(
     ctx: TaskContext,
     desired: Condition[],
-    options?: ApplyConditionListOptions
+    options: ApplyConditionListOptions
 ): Promise<ApplyConditionListResult> {
     const phaseUnits = estimateConditionListPhaseUnits(
         desired,
-        options?.baselineCurrent
+        options.baselineCurrent
     );
-    const progress = options?.progress;
+    const progress = options.progress;
     progress?.({
         phase: "reading",
         completedUnits: 0,
@@ -321,9 +321,9 @@ export async function applyConditionList(
         sync: { completedUnits: 0, totalUnits: 1, parent: null },
     });
     const observed =
-        options?.observed ??
+        options.observed ??
         (await readConditionList(ctx, {
-            itemRegistry: options?.itemRegistry,
+            itemRegistry: options.itemRegistry,
             phaseUnits,
             progress,
         }));
@@ -341,7 +341,7 @@ export async function applyConditionList(
         ctx,
         observed,
         diff,
-        options?.itemRegistry,
+        options.itemRegistry,
         progress,
         phaseUnits
     );

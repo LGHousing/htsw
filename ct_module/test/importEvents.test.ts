@@ -8,6 +8,8 @@ import {
 } from "../src/housingSync/importEvents";
 import type { ActionListDiff } from "../src/housingSync/types";
 import type { ActionListPlan } from "../src/housingSync/actions/plan";
+import { createItemRegistry } from "../src/importables/itemRegistry";
+import type { ImportSession } from "../src/importables/imports";
 
 function recordingHandler(): ImportEventHandler & { events: ImportEvent[] } {
     const events: ImportEvent[] = [];
@@ -33,13 +35,23 @@ function emptyPlan(): ActionListPlan {
     };
 }
 
+function sessionWith(handler: ImportEventHandler): ImportSession {
+    return {
+        parsed: { value: [] } as never,
+        items: createItemRegistry([]),
+        housingUuid: "test-house",
+        trust: { housingUuid: "test-house", importables: new Map() },
+        events: handler,
+    };
+}
+
 describe("applyActionListPlan — top-level-only terminal events", () => {
     test("top-level empty-diff apply emits listSyncCompleted", async () => {
         const handler = recordingHandler();
         await applyActionListPlan(
             null as never,
             emptyPlan(),
-            { events: handler }
+            { session: sessionWith(handler) }
         );
         const kinds = handler.events.map((e) => e.kind);
         expect(kinds).toContain("listSyncCompleted");
@@ -50,7 +62,10 @@ describe("applyActionListPlan — top-level-only terminal events", () => {
         await applyActionListPlan(
             null as never,
             emptyPlan(),
-            { listPath: actionPathFromKey("5.ifActions"), events: handler }
+            {
+                session: sessionWith(handler),
+                listPath: actionPathFromKey("5.ifActions"),
+            }
         );
         const kinds = handler.events.map((e) => e.kind);
         expect(kinds).not.toContain("listSyncCompleted");

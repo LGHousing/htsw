@@ -24,10 +24,12 @@ import { openEditFunctionFieldPopover } from "../../popovers/edit-function";
 import { STATUS_COLOR, STATUS_LABEL, cacheStateForImportable } from "../../cache-status";
 import {
     hasSubList,
+    importableDeclaringPath,
     importableSourcePath,
     importableSubListPath,
     type SubListKind,
 } from "../../parsing/importablePaths";
+import { moveImportableEntry } from "../../../exporter/moveImportable";
 import { importableIdentity, importableKey } from "../../../importCache/paths";
 import { houseDisplayName } from "../../../importCache/aliases";
 import {
@@ -53,7 +55,7 @@ import { isImportRunning } from "../../../housingSync/runtimeState";
 import { composeFileMenu, composeImportableMenu } from "../../menus/fileMenu";
 import { autoTrackRefresh, queueModifiedFromParse } from "../../right-panel/import-tab/importController";
 import { SourceDir, SourceFile, removeSource } from "./source";
-import { type IncludeNode, subtreeImportableCount } from "./includeTree";
+import { type IncludeNode, includeTreeOf, subtreeImportableCount } from "./includeTree";
 import { showInExplorer, openInVSCode } from "../../../utils/osShell";
 import {
     closeTab,
@@ -402,6 +404,51 @@ function openInViewAction(path: string): MenuAction {
     };
 }
 
+// Whether the project has anywhere to move an importable TO. Deliberately
+// cheap (one WeakMap hit) because the row menu is rebuilt per visible row
+// per frame — the real destination list resolves paths only on click.
+function projectHasIncludes(parent: ResultImport): boolean {
+    return parent.parse !== null && includeTreeOf(parent).includes.length > 0;
+}
+
+function openMoveToMenu(parent: ResultImport, imp: Importable): void {
+    if (parent.parse === null) return;
+    const current = canonicalPath(importableDeclaringPath(imp, parent.parse));
+    const candidates: Array<{ label: string; path: string }> = [];
+    const visit = (node: IncludeNode): void => {
+        const full = canonicalPath(node.path);
+        if (full !== current) {
+            candidates.push({ label: includeGroupLabel(parent, full), path: full });
+        }
+        for (let i = 0; i < node.includes.length; i++) visit(node.includes[i]);
+    };
+    visit(includeTreeOf(parent));
+    if (candidates.length === 0) return;
+    const identity = importableIdentity(imp);
+    const section = SECTION_BY_TYPE[imp.type];
+    openMenu(
+        lastMenuX,
+        lastMenuY,
+        candidates.map((c) => ({
+            label: c.label,
+            onClick: () => {
+                const res = moveImportableEntry(parent.fullPath, section, identity, c.path);
+                if (!res.ok) {
+                    ChatLib.chat(`&c[htsw] Move failed: ${res.message}`);
+                    return;
+                }
+                for (let i = 0; i < res.movedFiles.length; i++) {
+                    closeTab(res.movedFiles[i].from);
+                }
+                invalidateParseCacheEntry(parent.fullPath);
+                requestParse(parent.fullPath);
+                bumpTreeRevision();
+                ChatLib.chat(`&a[htsw] Moved '${identity}' to ${shortPath(c.path)}.`);
+            },
+        }))
+    );
+}
+
 function importableActions(parent: ResultImport, imp: Importable): MenuAction[] {
     const target = importablePreviewPath(parent, imp);
     const item = makeImportableQueueItem(imp, parent.fullPath);
@@ -417,6 +464,15 @@ function importableActions(parent: ResultImport, imp: Importable): MenuAction[] 
                 );
             },
         },
+        ...(projectHasIncludes(parent)
+            ? [
+                  {
+                      label: "Move to…",
+                      icon: Icons.folder,
+                      onClick: () => openMoveToMenu(parent, imp),
+                  } as MenuAction,
+              ]
+            : []),
         { kind: "separator" },
         {
             label: "Delete from project…",
@@ -427,6 +483,11 @@ function importableActions(parent: ResultImport, imp: Importable): MenuAction[] 
     return composeImportableMenu(extras, target, item);
 }
 
+// Where the last row menu opened. Submenus ("Move to…") anchor here because
+// a MenuAction's onClick receives no coordinates of its own.
+let lastMenuX = 0;
+let lastMenuY = 0;
+
 function rowHandler(
     actions: MenuAction[],
     defaultLeftAction?: () => void
@@ -434,12 +495,18 @@ function rowHandler(
     return (_rect, info) => {
         if (info.isDoubleClickSecond) return;
         if (info.button === 1) {
+            lastMenuX = info.x;
+            lastMenuY = info.y;
             openMenu(info.x, info.y, actions);
             return;
         }
         if (info.button !== 0) return;
         if (defaultLeftAction) defaultLeftAction();
-        else openMenu(info.x, info.y, actions);
+        else {
+            lastMenuX = info.x;
+            lastMenuY = info.y;
+            openMenu(info.x, info.y, actions);
+        }
     };
 }
 

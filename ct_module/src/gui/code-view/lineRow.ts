@@ -225,9 +225,10 @@ function buildVisualLineRow(
         onHover:
             (line.diagnostics !== undefined && line.diagnostics.length > 0) ||
             dec.hoverLines !== undefined
-                ? (rect) =>
+                ? (rect, mouseX) =>
                       offerLineHover(
                           rect,
+                          mouseX,
                           line.diagnostics,
                           dec.hoverLines?.() ?? undefined
                       )

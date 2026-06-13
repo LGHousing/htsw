@@ -1,6 +1,6 @@
 import * as json from "jsonc-parser";
 
-import type { GlobalCtxt } from "../../context";
+import type { GlobalCtxt, ImportJsonFileNode } from "../../context";
 import { Diagnostic } from "../../diagnostic";
 import { parseActions, parseActionsWithPath } from "./actions";
 import {
@@ -9,7 +9,7 @@ import {
     parseBoolean,
     parseBoundedNumber,
     parseBounds,
-    parseObject,
+    parseObjectWithSchema,
     parseOption,
     parsePos,
     parseString,
@@ -34,25 +34,29 @@ import {
     type NpcSkin,
 } from "../../types";
 import { parseNbt } from "./nbt";
+import { definition, IMPORT_JSON_SCHEMA, NPC_SKINS } from "../schemaSpec";
 
 type IncludeOrigin = {
     includeNode: json.Node;
     includePath: string;
-    fromPath: string;
+    fromNode: ImportJsonFileNode;
 };
-
-const NPC_SKINS = ["Steve", "Alex", "Players Skin"] as const;
 
 export function parseImportJson(gcx: GlobalCtxt, path: string, origin?: IncludeOrigin) {
     const resolvedPath = resolveImportJsonPath(gcx, path);
 
     if (!prepareImportJsonParsing(gcx, resolvedPath, origin)) return;
 
-    if (origin !== undefined) {
-        const siblings = gcx.includeEdges.get(origin.fromPath);
-        if (siblings !== undefined) siblings.push(resolvedPath);
-        else gcx.includeEdges.set(origin.fromPath, [resolvedPath]);
-    }
+    // Attach before parsing, so a file that fails to parse still counts as
+    // visited — a second include of it must not produce a second node (or a
+    // second error).
+    const fileNode: ImportJsonFileNode = {
+        path: resolvedPath,
+        importables: [],
+        includes: [],
+    };
+    if (origin !== undefined) origin.fromNode.includes.push(fileNode);
+    else gcx.fileTree = fileNode;
 
     gcx.activeImportJsonPaths.push(resolvedPath);
 
@@ -67,8 +71,7 @@ export function parseImportJson(gcx: GlobalCtxt, path: string, origin?: IncludeO
             return;
         }
 
-        parseImportJsonObject(gcx, tree, resolvedPath);
-        gcx.loadedImportJsonPaths.add(resolvedPath);
+        parseImportJsonObject(gcx, tree, fileNode);
     } catch (e) {
         if (e instanceof Diagnostic) {
             gcx.addDiagnostic(e);
@@ -87,42 +90,18 @@ export function parseImportJson(gcx: GlobalCtxt, path: string, origin?: IncludeO
     }
 }
 
-function parseImportJsonObject(gcx: GlobalCtxt, node: json.Node, currentPath: string) {
+function parseImportJsonObject(gcx: GlobalCtxt, node: json.Node, fileNode: ImportJsonFileNode) {
     const seenIncludes = new Set<string>();
 
-    parseObject(gcx, node, {
-        "houseUuid": {
-            required: false,
-            parser: (uuidNode) => parseHouseUuid(gcx, uuidNode, currentPath),
-        },
-        "include": {
-            required: false,
-            parser: (includeNode) => parseIncludes(gcx, includeNode, currentPath, seenIncludes),
-        },
-        "functions": {
-            required: false,
-            parser: (functionsNode) => parseAndAppendImportables(gcx, functionsNode, currentPath, parseImportableFunction),
-        },
-        "events": {
-            required: false,
-            parser: (eventsNode) => parseAndAppendImportables(gcx, eventsNode, currentPath, parseImportableEvent),
-        },
-        "regions": {
-            required: false,
-            parser: (regionsNode) => parseAndAppendImportables(gcx, regionsNode, currentPath, parseImportableRegion),
-        },
-        "items": {
-            required: false,
-            parser: (itemsNode) => parseAndAppendImportables(gcx, itemsNode, currentPath, parseImportableItem),
-        },
-        "npcs": {
-            required: false,
-            parser: (npcsNode) => parseAndAppendImportables(gcx, npcsNode, currentPath, parseImportableNpc),
-        },
-        "menus": {
-            required: false,
-            parser: (menusNode) => parseAndAppendImportables(gcx, menusNode, currentPath, parseImportableMenu),
-        }
+    parseObjectWithSchema(gcx, node, IMPORT_JSON_SCHEMA, {
+        "houseUuid": (uuidNode) => parseHouseUuid(gcx, uuidNode, fileNode.path),
+        "include": (includeNode) => parseIncludes(gcx, includeNode, fileNode, seenIncludes),
+        "functions": (functionsNode) => parseAndAppendImportables(gcx, functionsNode, fileNode, parseImportableFunction),
+        "events": (eventsNode) => parseAndAppendImportables(gcx, eventsNode, fileNode, parseImportableEvent),
+        "regions": (regionsNode) => parseAndAppendImportables(gcx, regionsNode, fileNode, parseImportableRegion),
+        "items": (itemsNode) => parseAndAppendImportables(gcx, itemsNode, fileNode, parseImportableItem),
+        "npcs": (npcsNode) => parseAndAppendImportables(gcx, npcsNode, fileNode, parseImportableNpc),
+        "menus": (menusNode) => parseAndAppendImportables(gcx, menusNode, fileNode, parseImportableMenu),
     });
 }
 
@@ -161,9 +140,10 @@ function parseHouseUuid(gcx: GlobalCtxt, node: json.Node, currentPath: string) {
 function parseIncludes(
     gcx: GlobalCtxt,
     node: json.Node,
-    currentPath: string,
+    fileNode: ImportJsonFileNode,
     seenIncludes: Set<string>
 ) {
+    const currentPath = fileNode.path;
     parseArray(gcx, node, (child) => {
         const includePath = parseString(gcx, child);
 
@@ -193,7 +173,7 @@ function parseIncludes(
             {
                 includeNode: child,
                 includePath,
-                fromPath: currentPath,
+                fromNode: fileNode,
             }
         );
     });
@@ -202,13 +182,11 @@ function parseIncludes(
 function parseAndAppendImportables(
     gcx: GlobalCtxt,
     node: json.Node,
-    declaringPath: string,
+    fileNode: ImportJsonFileNode,
     parser: (gcx: GlobalCtxt, node: json.Node, declaringPath: string) => Importable
 ) {
-    const parsed = parseArray(gcx, node, (elementNode) => parser(gcx, elementNode, declaringPath));
-    for (const importable of parsed) {
-        gcx.declaringFiles.set(importable, declaringPath);
-    }
+    const parsed = parseArray(gcx, node, (elementNode) => parser(gcx, elementNode, fileNode.path));
+    fileNode.importables.push(...parsed);
     gcx.importables.push(...parsed);
 }
 
@@ -226,13 +204,16 @@ function prepareImportJsonParsing(
                 nodeSpan(origin.includeNode),
                 `include '${origin.includePath}' resolves to '${resolvedPath}'`
             );
-            diag.addSubDiagnostic(Diagnostic.note(`included from '${origin.fromPath}'`));
+            diag.addSubDiagnostic(Diagnostic.note(`included from '${origin.fromNode.path}'`));
         }
         gcx.addDiagnostic(diag);
         return false;
     }
 
-    if (gcx.loadedImportJsonPaths.has(resolvedPath)) return false;
+    // Already visited via another include chain — parse it only once. Must
+    // run AFTER the cycle check: files still being parsed are in the tree
+    // too, and a cycle should error, not be skipped silently.
+    if (treeContainsPath(gcx.fileTree, resolvedPath)) return false;
 
     if (!gcx.sourceMap.fileLoader.fileExists(resolvedPath)) {
         const diag = origin
@@ -241,7 +222,7 @@ function prepareImportJsonParsing(
                     nodeSpan(origin.includeNode),
                     `resolved to '${resolvedPath}'`
                 )
-                .addSubDiagnostic(Diagnostic.note(`included from '${origin.fromPath}'`))
+                .addSubDiagnostic(Diagnostic.note(`included from '${origin.fromNode.path}'`))
             : Diagnostic.error(`import.json file does not exist '${resolvedPath}'`);
         diag.addSubDiagnostic(
             Diagnostic.help("Check the include path and verify the target file exists")
@@ -251,6 +232,15 @@ function prepareImportJsonParsing(
     }
 
     return true;
+}
+
+function treeContainsPath(node: ImportJsonFileNode | null, path: string): boolean {
+    if (node === null) return false;
+    if (node.path === path) return true;
+    for (const child of node.includes) {
+        if (treeContainsPath(child, path)) return true;
+    }
+    return false;
 }
 
 function isImportJsonPath(path: string): boolean {
@@ -283,36 +273,24 @@ function parseImportableFunction(gcx: GlobalCtxt, node: json.Node, declaringPath
     // successful parseActionsWithPath below.
     gcx.sourceFiles.set(importable, declaringPath);
 
-    parseObject(gcx, node, {
-        "name": {
-            required: true,
-            parser: (child) => {
-                importable.name = parseString(gcx, child);
-                setFieldSpan(gcx, importable, "name", child);
-            }
+    parseObjectWithSchema(gcx, node, definition("functionImportable"), {
+        "name": (child) => {
+            importable.name = parseString(gcx, child);
+            setFieldSpan(gcx, importable, "name", child);
         },
-        "actions": {
-            required: false,
-            parser: (child) => {
-                const parsed = parseActionsWithPath(gcx, child);
-                importable.actions = parsed.actions;
-                gcx.sourceFiles.set(importable, parsed.resolvedPath);
-                setFieldSpan(gcx, importable, "actions", child);
-            }
+        "actions": (child) => {
+            const parsed = parseActionsWithPath(gcx, child);
+            importable.actions = parsed.actions;
+            gcx.sourceFiles.set(importable, parsed.resolvedPath);
+            setFieldSpan(gcx, importable, "actions", child);
         },
-        "repeatTicks": {
-            required: false,
-            parser: (child) => {
-                importable.repeatTicks = parseBoundedNumber(4, 18000)(gcx, child);
-                setFieldSpan(gcx, importable, "repeatTicks", child);
-            }
+        "repeatTicks": (child) => {
+            importable.repeatTicks = parseBoundedNumber(4, 18000)(gcx, child);
+            setFieldSpan(gcx, importable, "repeatTicks", child);
         },
-        "icon": {
-            required: false,
-            parser: (child) => {
-                importable.icon = parseFunctionIcon(gcx, child);
-                setFieldSpan(gcx, importable, "icon", child);
-            }
+        "icon": (child) => {
+            importable.icon = parseFunctionIcon(gcx, child);
+            setFieldSpan(gcx, importable, "icon", child);
         },
     });
 
@@ -323,27 +301,21 @@ function parseFunctionIcon(gcx: GlobalCtxt, node: json.Node): FunctionIcon {
     const icon = {} as FunctionIcon;
     setSpan(gcx, icon, node);
 
-    parseObject(gcx, node, {
-        "item": {
-            required: true,
-            parser: (child) => {
-                icon.item = parseMinecraftItemId(gcx, child);
-                setFieldSpan(gcx, icon, "item", child);
-            }
+    parseObjectWithSchema(gcx, node, definition("functionIcon"), {
+        "item": (child) => {
+            icon.item = parseMinecraftItemId(gcx, child);
+            setFieldSpan(gcx, icon, "item", child);
         },
-        "count": {
-            required: false,
-            parser: (child) => {
-                const count = parseBoundedNumber(1, 64)(gcx, child);
-                if (!Number.isInteger(count)) {
-                    gcx.addDiagnostic(
-                        Diagnostic.error("Item count must be an integer")
-                            .addPrimarySpan(nodeSpan(child))
-                    );
-                }
-                icon.count = count;
-                setFieldSpan(gcx, icon, "count", child);
+        "count": (child) => {
+            const count = parseBoundedNumber(1, 64)(gcx, child);
+            if (!Number.isInteger(count)) {
+                gcx.addDiagnostic(
+                    Diagnostic.error("Item count must be an integer")
+                        .addPrimarySpan(nodeSpan(child))
+                );
             }
+            icon.count = count;
+            setFieldSpan(gcx, icon, "count", child);
         },
     });
 
@@ -375,24 +347,18 @@ function parseImportableEvent(gcx: GlobalCtxt, node: json.Node, declaringPath: s
     setFieldSpan(gcx, importable, "type", node);
     gcx.sourceFiles.set(importable, declaringPath);
 
-    parseObject(gcx, node, {
-        "event": {
-            required: true,
-            parser: (child) => {
-                importable.event = parseOption(
-                    gcx, child, EVENTS, { singular: "event", plural: "events" }
-                ) as Event;
-                setFieldSpan(gcx, importable, "event", child);
-            }
+    parseObjectWithSchema(gcx, node, definition("eventImportable"), {
+        "event": (child) => {
+            importable.event = parseOption(
+                gcx, child, EVENTS, { singular: "event", plural: "events" }
+            ) as Event;
+            setFieldSpan(gcx, importable, "event", child);
         },
-        "actions": {
-            required: true,
-            parser: (child) => {
-                const parsed = parseActionsWithPath(gcx, child);
-                importable.actions = parsed.actions;
-                gcx.sourceFiles.set(importable, parsed.resolvedPath);
-                setFieldSpan(gcx, importable, "actions", child);
-            }
+        "actions": (child) => {
+            const parsed = parseActionsWithPath(gcx, child);
+            importable.actions = parsed.actions;
+            gcx.sourceFiles.set(importable, parsed.resolvedPath);
+            setFieldSpan(gcx, importable, "actions", child);
         },
     });
 
@@ -405,34 +371,22 @@ function parseImportableRegion(gcx: GlobalCtxt, node: json.Node, declaringPath: 
     setFieldSpan(gcx, importable, "type", node);
     gcx.sourceFiles.set(importable, declaringPath);
 
-    parseObject(gcx, node, {
-        "name": {
-            required: true,
-            parser: (child) => {
-                importable.name = parseString(gcx, child);
-                setFieldSpan(gcx, importable, "name", child);
-            }
+    parseObjectWithSchema(gcx, node, definition("regionImportable"), {
+        "name": (child) => {
+            importable.name = parseString(gcx, child);
+            setFieldSpan(gcx, importable, "name", child);
         },
-        "bounds": {
-            required: false,
-            parser: (child) => {
-                importable.bounds = parseBounds(gcx, child);
-                setFieldSpan(gcx, importable, "bounds", child);
-            }
+        "bounds": (child) => {
+            importable.bounds = parseBounds(gcx, child);
+            setFieldSpan(gcx, importable, "bounds", child);
         },
-        "onEnterActions": {
-            required: false,
-            parser: (child) => {
-                importable.onEnterActions = parseActions(gcx, child);
-                setFieldSpan(gcx, importable, "onEnterActions", child);
-            }
+        "onEnterActions": (child) => {
+            importable.onEnterActions = parseActions(gcx, child);
+            setFieldSpan(gcx, importable, "onEnterActions", child);
         },
-        "onExitActions": {
-            required: false,
-            parser: (child) => {
-                importable.onExitActions = parseActions(gcx, child);
-                setFieldSpan(gcx, importable, "onExitActions", child);
-            }
+        "onExitActions": (child) => {
+            importable.onExitActions = parseActions(gcx, child);
+            setFieldSpan(gcx, importable, "onExitActions", child);
         }
     });
 
@@ -445,64 +399,40 @@ function parseImportableNpc(gcx: GlobalCtxt, node: json.Node, declaringPath: str
     setFieldSpan(gcx, importable, "type", node);
     gcx.sourceFiles.set(importable, declaringPath);
 
-    parseObject(gcx, node, {
-        "name": {
-            required: true,
-            parser: (child) => {
-                importable.name = parseString(gcx, child);
-                setFieldSpan(gcx, importable, "name", child);
-            }
+    parseObjectWithSchema(gcx, node, definition("npcImportable"), {
+        "name": (child) => {
+            importable.name = parseString(gcx, child);
+            setFieldSpan(gcx, importable, "name", child);
         },
-        "pos": {
-            required: true,
-            parser: (child) => {
-                importable.pos = parsePos(gcx, child);
-                setFieldSpan(gcx, importable, "pos", child);
-            }
+        "pos": (child) => {
+            importable.pos = parsePos(gcx, child);
+            setFieldSpan(gcx, importable, "pos", child);
         },
-        "leftClickActions": {
-            required: false,
-            parser: (child) => {
-                importable.leftClickActions = parseActions(gcx, child);
-                setFieldSpan(gcx, importable, "leftClickActions", child);
-            }
+        "leftClickActions": (child) => {
+            importable.leftClickActions = parseActions(gcx, child);
+            setFieldSpan(gcx, importable, "leftClickActions", child);
         },
-        "rightClickActions": {
-            required: false,
-            parser: (child) => {
-                importable.rightClickActions = parseActions(gcx, child);
-                setFieldSpan(gcx, importable, "rightClickActions", child);
-            }
+        "rightClickActions": (child) => {
+            importable.rightClickActions = parseActions(gcx, child);
+            setFieldSpan(gcx, importable, "rightClickActions", child);
         },
-        "lookAtPlayers": {
-            required: false,
-            parser: (child) => {
-                importable.lookAtPlayers = parseBoolean(gcx, child);
-                setFieldSpan(gcx, importable, "lookAtPlayers", child);
-            }
+        "lookAtPlayers": (child) => {
+            importable.lookAtPlayers = parseBoolean(gcx, child);
+            setFieldSpan(gcx, importable, "lookAtPlayers", child);
         },
-        "hideNameTag": {
-            required: false,
-            parser: (child) => {
-                importable.hideNameTag = parseBoolean(gcx, child);
-                setFieldSpan(gcx, importable, "hideNameTag", child);
-            }
+        "hideNameTag": (child) => {
+            importable.hideNameTag = parseBoolean(gcx, child);
+            setFieldSpan(gcx, importable, "hideNameTag", child);
         },
-        "skin": {
-            required: false,
-            parser: (child) => {
-                importable.skin = parseOption(
-                    gcx, child, NPC_SKINS, { singular: "skin", plural: "skins" }
-                ) as NpcSkin;
-                setFieldSpan(gcx, importable, "skin", child);
-            }
+        "skin": (child) => {
+            importable.skin = parseOption(
+                gcx, child, NPC_SKINS, { singular: "skin", plural: "skins" }
+            ) as NpcSkin;
+            setFieldSpan(gcx, importable, "skin", child);
         },
-        "equipment": {
-            required: false,
-            parser: (child) => {
-                importable.equipment = parseNpcEquipment(gcx, child);
-                setFieldSpan(gcx, importable, "equipment", child);
-            }
+        "equipment": (child) => {
+            importable.equipment = parseNpcEquipment(gcx, child);
+            setFieldSpan(gcx, importable, "equipment", child);
         },
     });
 
@@ -513,41 +443,26 @@ function parseNpcEquipment(gcx: GlobalCtxt, node: json.Node): NpcEquipment {
     const equipment: NpcEquipment = {};
     setSpan(gcx, equipment as object, node);
 
-    parseObject(gcx, node, {
-        "helmet": {
-            required: false,
-            parser: (child) => {
-                equipment.helmet = parseString(gcx, child);
-                setFieldSpan(gcx, equipment, "helmet", child);
-            }
+    parseObjectWithSchema(gcx, node, definition("npcEquipment"), {
+        "helmet": (child) => {
+            equipment.helmet = parseString(gcx, child);
+            setFieldSpan(gcx, equipment, "helmet", child);
         },
-        "chestplate": {
-            required: false,
-            parser: (child) => {
-                equipment.chestplate = parseString(gcx, child);
-                setFieldSpan(gcx, equipment, "chestplate", child);
-            }
+        "chestplate": (child) => {
+            equipment.chestplate = parseString(gcx, child);
+            setFieldSpan(gcx, equipment, "chestplate", child);
         },
-        "leggings": {
-            required: false,
-            parser: (child) => {
-                equipment.leggings = parseString(gcx, child);
-                setFieldSpan(gcx, equipment, "leggings", child);
-            }
+        "leggings": (child) => {
+            equipment.leggings = parseString(gcx, child);
+            setFieldSpan(gcx, equipment, "leggings", child);
         },
-        "boots": {
-            required: false,
-            parser: (child) => {
-                equipment.boots = parseString(gcx, child);
-                setFieldSpan(gcx, equipment, "boots", child);
-            }
+        "boots": (child) => {
+            equipment.boots = parseString(gcx, child);
+            setFieldSpan(gcx, equipment, "boots", child);
         },
-        "hand": {
-            required: false,
-            parser: (child) => {
-                equipment.hand = parseString(gcx, child);
-                setFieldSpan(gcx, equipment, "hand", child);
-            }
+        "hand": (child) => {
+            equipment.hand = parseString(gcx, child);
+            setFieldSpan(gcx, equipment, "hand", child);
         },
     });
 
@@ -560,34 +475,22 @@ function parseImportableItem(gcx: GlobalCtxt, node: json.Node, declaringPath: st
     setFieldSpan(gcx, importable, "type", node);
     gcx.sourceFiles.set(importable, declaringPath);
 
-    parseObject(gcx, node, {
-        "name": {
-            required: true,
-            parser: (child) => {
-                importable.name = parseString(gcx, child);
-                setFieldSpan(gcx, importable, "name", child);
-            }
+    parseObjectWithSchema(gcx, node, definition("itemImportable"), {
+        "name": (child) => {
+            importable.name = parseString(gcx, child);
+            setFieldSpan(gcx, importable, "name", child);
         },
-        "nbt": {
-            required: true,
-            parser: (child) => {
-                importable.nbt = parseNbt(gcx, child);
-                setFieldSpan(gcx, importable, "nbt", child);
-            }
+        "nbt": (child) => {
+            importable.nbt = parseNbt(gcx, child);
+            setFieldSpan(gcx, importable, "nbt", child);
         },
-        "leftClickActions": {
-            required: false,
-            parser: (child) => {
-                importable.leftClickActions = parseActions(gcx, child);
-                setFieldSpan(gcx, importable, "leftClickActions", child);
-            }
+        "leftClickActions": (child) => {
+            importable.leftClickActions = parseActions(gcx, child);
+            setFieldSpan(gcx, importable, "leftClickActions", child);
         },
-        "rightClickActions": {
-            required: false,
-            parser: (child) => {
-                importable.rightClickActions = parseActions(gcx, child);
-                setFieldSpan(gcx, importable, "rightClickActions", child);
-            }
+        "rightClickActions": (child) => {
+            importable.rightClickActions = parseActions(gcx, child);
+            setFieldSpan(gcx, importable, "rightClickActions", child);
         },
     });
 
@@ -600,36 +503,27 @@ function parseImportableMenu(gcx: GlobalCtxt, node: json.Node, declaringPath: st
     setFieldSpan(gcx, importable, "type", node);
     gcx.sourceFiles.set(importable, declaringPath);
 
-    parseObject(gcx, node, {
-        "name": {
-            required: true,
-            parser: (child) => {
-                importable.name = parseString(gcx, child);
-                setFieldSpan(gcx, importable, "name", child);
-            }
+    parseObjectWithSchema(gcx, node, definition("menuImportable"), {
+        "name": (child) => {
+            importable.name = parseString(gcx, child);
+            setFieldSpan(gcx, importable, "name", child);
         },
-        "size": {
-            required: false,
-            parser: (child) => {
-                const size = parseBoundedNumber(1, 6)(gcx, child);
-                if (!Number.isInteger(size)) {
-                    gcx.addDiagnostic(
-                        Diagnostic.error("Menu size (in lines) must be an integer")
-                            .addPrimarySpan(nodeSpan(child))
-                    );
-                }
-                importable.size = size;
-                setFieldSpan(gcx, importable, "size", child);
-            }
-        },
-        "slots": {
-            required: true,
-            parser: (child) => {
-                importable.slots = parseArray(gcx, child, (slotNode) =>
-                    parseMenuSlot(gcx, slotNode)
+        "size": (child) => {
+            const size = parseBoundedNumber(1, 6)(gcx, child);
+            if (!Number.isInteger(size)) {
+                gcx.addDiagnostic(
+                    Diagnostic.error("Menu size (in lines) must be an integer")
+                        .addPrimarySpan(nodeSpan(child))
                 );
-                setFieldSpan(gcx, importable, "slots", child);
             }
+            importable.size = size;
+            setFieldSpan(gcx, importable, "size", child);
+        },
+        "slots": (child) => {
+            importable.slots = parseArray(gcx, child, (slotNode) =>
+                parseMenuSlot(gcx, slotNode)
+            );
+            setFieldSpan(gcx, importable, "slots", child);
         },
     });
 
@@ -640,34 +534,25 @@ function parseMenuSlot(gcx: GlobalCtxt, node: json.Node): MenuSlot {
     const slot = {} as MenuSlot;
     setSpan(gcx, slot as object, node);
 
-    parseObject(gcx, node, {
-        "slot": {
-            required: true,
-            parser: (child) => {
-                const slotIndex = parseBoundedNumber(0, 53)(gcx, child);
-                if (!Number.isInteger(slotIndex)) {
-                    gcx.addDiagnostic(
-                        Diagnostic.error("Menu slot index must be an integer")
-                            .addPrimarySpan(nodeSpan(child))
-                    );
-                }
-                slot.slot = slotIndex;
-                setFieldSpan(gcx, slot, "slot", child);
+    parseObjectWithSchema(gcx, node, definition("menuSlot"), {
+        "slot": (child) => {
+            const slotIndex = parseBoundedNumber(0, 53)(gcx, child);
+            if (!Number.isInteger(slotIndex)) {
+                gcx.addDiagnostic(
+                    Diagnostic.error("Menu slot index must be an integer")
+                        .addPrimarySpan(nodeSpan(child))
+                );
             }
+            slot.slot = slotIndex;
+            setFieldSpan(gcx, slot, "slot", child);
         },
-        "nbt": {
-            required: true,
-            parser: (child) => {
-                slot.nbt = parseNbt(gcx, child);
-                setFieldSpan(gcx, slot, "nbt", child);
-            }
+        "nbt": (child) => {
+            slot.nbt = parseNbt(gcx, child);
+            setFieldSpan(gcx, slot, "nbt", child);
         },
-        "actions": {
-            required: false,
-            parser: (child) => {
-                slot.actions = parseActions(gcx, child);
-                setFieldSpan(gcx, slot, "actions", child);
-            }
+        "actions": (child) => {
+            slot.actions = parseActions(gcx, child);
+            setFieldSpan(gcx, slot, "actions", child);
         },
     });
 

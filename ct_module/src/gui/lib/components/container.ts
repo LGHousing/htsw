@@ -6,7 +6,7 @@ export type ContainerProps = {
     style?: ContainerStyle;
     onClick?: (rect: Rect, info: ClickInfo) => void;
     onDoubleClick?: (rect: Rect) => void;
-    onHover?: (rect: Rect) => void;
+    onHover?: (rect: Rect, mouseX: number, mouseY: number) => void;
     anchorKey?: string;
 };
 

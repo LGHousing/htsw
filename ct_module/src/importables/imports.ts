@@ -1,9 +1,12 @@
-import { Diagnostic } from "htsw";
+import { Diagnostic, type ParseResult } from "htsw";
 import { Importable } from "htsw/types";
 
 import TaskContext from "../tasks/context";
 import {
+    importableIdentity,
+    importableKey,
     type ImportableTrustPlan,
+    type TrustPlan,
 } from "../importCache";
 import {
     applyImportableEventPlan,
@@ -37,17 +40,22 @@ import {
 import type { ItemRegistry } from "./itemRegistry";
 import type { ImportEventHandler } from "../housingSync/importEvents";
 
-export type ImportTrustOptions = {
-    plan?: ImportableTrustPlan;
-    events?: ImportEventHandler;
-    /**
-     * Session-level housing UUID, resolved once at the top of the import.
-     * Handed to ITEM preread (it needs the UUID for its per-NBT cache) so it
-     * skips a per-importable `/wtfmap` round trip — avoiding N extra lookups
-     * for an N-importable run AND a chat-busy silent-failure path.
-     */
-    housingUuid?: string;
+export type ImportSession = {
+    parsed: ParseResult<Importable[]>;
+    items: ItemRegistry;
+    housingUuid: string;
+    trust: TrustPlan;
+    events: ImportEventHandler | undefined;
 };
+
+function trustFor(
+    session: ImportSession,
+    importable: Importable
+): ImportableTrustPlan | undefined {
+    return session.trust.importables.get(
+        importableKey(importable.type, importableIdentity(importable))
+    );
+}
 
 /**
  * Discriminated union of per-importable plans produced by `prereadImportable`
@@ -65,50 +73,44 @@ export type ImportablePlan =
 export async function prereadImportable(
     ctx: TaskContext,
     importable: Importable,
-    itemRegistry: ItemRegistry,
-    options?: ImportTrustOptions
+    session: ImportSession
 ): Promise<ImportablePlan> {
+    const trust = trustFor(session, importable);
     switch (importable.type) {
         case "FUNCTION":
             return prereadImportableFunction(
                 ctx,
                 importable,
-                itemRegistry,
-                options?.plan,
-                options?.events
+                session,
+                trust,
             );
         case "EVENT":
             return prereadImportableEvent(
                 ctx,
                 importable,
-                itemRegistry,
-                options?.plan,
-                options?.events
+                session,
+                trust,
             );
         case "REGION":
             return prereadImportableRegion(
                 ctx,
                 importable,
-                itemRegistry,
-                options?.plan,
-                options?.events
+                session,
+                trust,
             );
         case "MENU":
             return prereadImportableMenu(
                 ctx,
                 importable,
-                itemRegistry,
-                options?.plan,
-                options?.events
+                session,
+                trust,
             );
         case "ITEM":
             return prereadImportableItem(
                 ctx,
                 importable,
-                itemRegistry,
-                options?.plan,
-                options?.housingUuid,
-                options?.events
+                session,
+                trust
             );
         case "NPC":
             throw Diagnostic.error("NPC imports are not implemented in the ChatTriggers module.");
@@ -122,8 +124,7 @@ export async function prereadImportable(
 export async function applyImportablePlan(
     ctx: TaskContext,
     plan: ImportablePlan,
-    itemRegistry: ItemRegistry,
-    options?: ImportTrustOptions
+    session: ImportSession
 ): Promise<void> {
     // The importer cache write for a freshly-applied importable is owned by the
     // orchestrator (importSession), which is this function's only caller and
@@ -131,19 +132,19 @@ export async function applyImportablePlan(
     // is the exception: it manages its own per-NBT cache inside its apply.
     switch (plan.kind) {
         case "FUNCTION":
-            await applyImportableFunctionPlan(ctx, plan, itemRegistry, options?.events);
+            await applyImportableFunctionPlan(ctx, plan, session);
             return;
         case "EVENT":
-            await applyImportableEventPlan(ctx, plan, itemRegistry, options?.events);
+            await applyImportableEventPlan(ctx, plan, session);
             return;
         case "REGION":
-            await applyImportableRegionPlan(ctx, plan, itemRegistry, options?.events);
+            await applyImportableRegionPlan(ctx, plan, session);
             return;
         case "MENU":
-            await applyImportableMenuPlan(ctx, plan, itemRegistry, options?.events);
+            await applyImportableMenuPlan(ctx, plan, session);
             return;
         case "ITEM":
-            await applyImportableItemPlan(ctx, plan, itemRegistry, options?.events);
+            await applyImportableItemPlan(ctx, plan, session);
             return;
         default: {
             const _exhaustiveCheck: never = plan;

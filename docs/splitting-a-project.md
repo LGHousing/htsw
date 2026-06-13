@@ -70,4 +70,6 @@ Queueing, importing, and exporting always go through the entry file — groups a
 
 ## Exporting into a split project
 
-Exports (and GUI edits — rename, delete, icon/repeat changes) are include-aware: a function, event, item, or menu that already exists anywhere in the include tree is updated **in its declaring file**, reusing its existing `.htsl`/`.snbt` path. Something the project has never seen is appended to the **entry** import.json — move the declaration into a sub-file afterwards if you want it grouped, and the next export will follow it there. "Export everything in the project" also collects names across all included files, not just the entry.
+Exports (and GUI edits — rename, delete, icon/repeat changes) are include-aware: a function, event, item, or menu that already exists anywhere in the include tree is updated **in its declaring file**, reusing its existing `.htsl`/`.snbt` path. Something the project has never seen is appended to the **entry** import.json. "Export everything in the project" also collects names across all included files, not just the entry.
+
+To re-home a declaration, right-click its row in the Importables tree and pick **Move to…** — the entry moves into the chosen file, its references are re-relativized, and the referenced `.htsl`/`.snbt` files move with it (files other declarations still reference are copied instead, so nothing breaks). Future exports follow it to its new file.

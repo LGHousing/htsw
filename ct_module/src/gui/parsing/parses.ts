@@ -9,11 +9,20 @@ import { getMtimeMs, javaType } from "../lib/java";
 import { invalidateSourceDiffForParse } from "../code-view/sourceDiff";
 import { allReferencedPaths } from "./importablePaths";
 import {
-    buildLiteParseResult,
+    diffSnapshotFingerprint,
     loadSnapshot,
+    restoreParseFromSnapshot,
     saveSnapshot,
-    snapshotIsCurrent,
+    trySpliceSnapshot,
+    writeSnapshotFile,
 } from "./parseSnapshot";
+import {
+    FP_RECHECK_MS,
+    createFreshness,
+    resetFreshness,
+    settledChange,
+    type FingerprintFreshness,
+} from "./freshness";
 
 /**
  * The mtime fingerprint for a parsed import.json: the import.json plus
@@ -56,79 +65,19 @@ export type CachedParse = {
     /** `Files.getLastModifiedTime(...).toMillis()` at last parse. */
     mtime: number;
     parsed: ParseResult<Importable[]> | null;
+    /**
+     * True when `parsed` was restored from a snapshot (or spliced).
+     * Diagnostics come back with real spans, but the AST `SpanTable` is
+     * empty — action/field span lookups against it return nothing.
+     */
+    fromSnapshot: boolean;
     /** Non-null when the parse threw — e.g. malformed JSON. */
     error: string | null;
     /** mtime of the import.json and every file it referenced at parse time. */
     fingerprint: { [path: string]: number };
-    /** `Date.now()` the last fingerprint sweep COMPLETED (throttle). */
-    fpCheckedAt: number;
-    /** Mtimes seen when a change was first noticed; drives `settledChange`'s debounce. Null when idle. */
-    pending: { [path: string]: number } | null;
-    /** In-progress fingerprint sweep, statted a budget per call. Null when idle. */
-    sweep: FingerprintSweep | null;
+    /** Settle-debounce bookkeeping for the steady-state fingerprint poll. */
+    freshness: FingerprintFreshness;
 };
-
-type FingerprintSweep = {
-    /** Fingerprint keys captured at sweep start. */
-    paths: string[];
-    /** Next index in `paths` to stat. */
-    index: number;
-    /** Mtimes gathered so far. */
-    acc: { [path: string]: number };
-};
-
-// How often `parseImportJsonBlocking` re-sweeps the referenced-file fingerprint
-// on an import.json-mtime hit (≈ one stat per referenced file per interval);
-// a change is acted on after it stays stable for one extra interval, so
-// edit-to-refresh latency is ~1–2× this.
-const FP_RECHECK_MS = 400;
-// Stats per settledChange call. The caller runs once per tick, so a sweep of N
-// referenced files spreads over ceil(N/BUDGET) ticks instead of landing as one
-// N-stat spike — that spike was a visible hitch mid-import on big projects.
-const FP_SWEEP_BUDGET = 32;
-
-function sameMtimes(
-    a: { [path: string]: number },
-    b: { [path: string]: number }
-): boolean {
-    for (const p in a) {
-        if (a[p] !== b[p]) return false;
-    }
-    return true;
-}
-
-// True when a referenced file changed AND its mtimes have settled — the same
-// new values seen on two consecutive completed sweeps. Until then (a save
-// still writing, or a temp+rename mid-swap) the mtimes keep moving, so this
-// returns false and the caller serves the existing parse rather than reading
-// a half-written file. Each call stats at most FP_SWEEP_BUDGET files; a sweep
-// completes across calls. Mutates the entry's recheck bookkeeping.
-function settledChange(entry: CachedParse): boolean {
-    if (entry.sweep === null) {
-        if (Date.now() - entry.fpCheckedAt < FP_RECHECK_MS) return false;
-        entry.sweep = { paths: Object.keys(entry.fingerprint), index: 0, acc: {} };
-    }
-    const sweep = entry.sweep;
-    const end = Math.min(sweep.index + FP_SWEEP_BUDGET, sweep.paths.length);
-    for (; sweep.index < end; sweep.index++) {
-        const p = sweep.paths[sweep.index];
-        sweep.acc[p] = getMtimeMs(p);
-    }
-    if (sweep.index < sweep.paths.length) return false;
-    entry.sweep = null;
-    entry.fpCheckedAt = Date.now();
-    const cur = sweep.acc;
-    if (sameMtimes(entry.fingerprint, cur)) {
-        entry.pending = null;
-        return false;
-    }
-    if (entry.pending === null || !sameMtimes(entry.pending, cur)) {
-        entry.pending = cur;
-        return false;
-    }
-    entry.pending = null;
-    return true;
-}
 
 function fingerprintOf(
     canon: string,
@@ -174,7 +123,11 @@ export function parseImportJsonBlocking(rawPath: string): CachedParse {
     const existing = cache.get(canon);
     // The import.json's own mtime is `mtime`; a referenced .htsl/.snbt edit
     // doesn't move it, so `settledChange` re-checks the whole fingerprint.
-    if (existing !== undefined && existing.mtime === mtime && !settledChange(existing)) {
+    if (
+        existing !== undefined &&
+        existing.mtime === mtime &&
+        !settledChange(existing.fingerprint, existing.freshness)
+    ) {
         return existing;
     }
 
@@ -186,16 +139,33 @@ export function parseImportJsonBlocking(rawPath: string): CachedParse {
     // `reparseNow` already used the snapshot.
     let parsed: ParseResult<Importable[]> | null = null;
     let error: string | null = null;
-    // For a lite (snapshot) parse the rebuilt result has empty spans, so
+    // For a snapshot-restored parse the rebuilt result has empty spans, so
     // `fingerprintOf` would miss sub-list htsl paths. The snapshot already
     // carries a full fingerprint (built from a full parse at save time) —
     // use it so a sub-list edit is still detected.
     let snapshotFingerprint: { [path: string]: number } | null = null;
     const snapshot = loadSnapshot(canon);
-    if (snapshot !== null && snapshotIsCurrent(snapshot)) {
-        parsed = buildLiteParseResult(snapshot);
-        snapshotFingerprint = snapshot.fingerprint;
-    } else {
+    if (snapshot !== null) {
+        const changed = diffSnapshotFingerprint(snapshot);
+        if (changed.length === 0) {
+            parsed = restoreParseFromSnapshot(snapshot);
+            snapshotFingerprint = snapshot.fingerprint;
+        } else {
+            // Stale but maybe spliceable: when the only changes are .htsl
+            // files, re-parse just those files and splice them into the
+            // snapshot — skipping the full project parse (the ~1s freeze the
+            // all-or-nothing fingerprint used to force on any single edit).
+            // Null for anything else (import.json/.snbt change, unknown
+            // item refs) → full parse below.
+            const spliced = trySpliceSnapshot(snapshot, changed);
+            if (spliced !== null) {
+                writeSnapshotFile(spliced);
+                parsed = restoreParseFromSnapshot(spliced);
+                snapshotFingerprint = spliced.fingerprint;
+            }
+        }
+    }
+    if (parsed === null) {
         const sm = new SourceMap(new FileSystemFileLoader());
         try {
             parsed = parseImportablesResult(sm, rawPath);
@@ -208,10 +178,10 @@ export function parseImportJsonBlocking(rawPath: string): CachedParse {
         // Save a snapshot so the next session can skip this parse. The
         // fingerprint covers every referenced file (via allReferencedPaths)
         // so edits to sub-list .htsl files (REGION enter/exit, ITEM click
-        // actions) invalidate it too. Errored parses are not snapshotted —
-        // they must re-parse fully so the import gate sees real,
-        // span-bearing diagnostics.
-        if (parsed !== null && !parsed.gcx.isFailed()) {
+        // actions) invalidate it too. Errored parses are snapshotted like
+        // clean ones — their diagnostics ride along pre-rendered, so a
+        // restored parse still gates imports via isFailed().
+        if (parsed !== null) {
             const fingerprint = buildParseFingerprint(canon, mtime, parsed);
             saveSnapshot(canon, parsed, fingerprint);
         }
@@ -221,11 +191,10 @@ export function parseImportJsonBlocking(rawPath: string): CachedParse {
         rawPath,
         mtime,
         parsed,
+        fromSnapshot: snapshotFingerprint !== null,
         error,
         fingerprint: snapshotFingerprint ?? fingerprintOf(canon, mtime, parsed),
-        fpCheckedAt: Date.now(),
-        pending: null,
-        sweep: null,
+        freshness: createFreshness(),
     };
     cache.set(canon, entry);
     if (parsed !== null) {
@@ -268,7 +237,7 @@ export function requestParse(rawPath: string): CachedParse | null {
     const canon = canonicalPath(rawPath);
     const existing = cache.get(canon);
     if (existing !== undefined) {
-        if (Date.now() - existing.fpCheckedAt >= FP_RECHECK_MS) {
+        if (Date.now() - existing.freshness.checkedAt >= FP_RECHECK_MS) {
             pendingParsePaths.set(canon, rawPath);
         }
         return existing;
@@ -305,6 +274,18 @@ export function processPendingParses(): void {
 }
 
 /**
+ * Re-save the disk snapshot from the (just-updated) in-memory parse. The
+ * touch functions below mirror on-disk edits into the in-memory cache
+ * WITHOUT re-parsing — but the snapshot on disk still holds the old
+ * content and old fingerprint, so without this the next session pays a
+ * full parse for an edit this session already absorbed.
+ */
+function resaveSnapshot(entry: CachedParse): void {
+    if (entry.parsed === null) return;
+    saveSnapshot(entry.canonicalPath, entry.parsed, entry.fingerprint);
+}
+
+/**
  * Mark the cache entry's mtime as the file's current mtime, without
  * re-parsing. Use after an in-place mutation of the cached parse that
  * mirrors an on-disk edit, so the mtime check in `parseImportJsonBlocking`
@@ -316,9 +297,8 @@ export function touchParseCacheMtime(rawPath: string): void {
     if (existing === undefined) return;
     existing.mtime = getMtimeMs(canon);
     existing.fingerprint = fingerprintOf(canon, existing.mtime, existing.parsed);
-    existing.fpCheckedAt = Date.now();
-    existing.pending = null;
-    existing.sweep = null;
+    resetFreshness(existing.freshness);
+    resaveSnapshot(existing);
 }
 
 /**
@@ -333,9 +313,8 @@ export function touchParseCacheFile(rawPath: string): void {
     if (existing === undefined) return;
     existing.mtime = getMtimeMs(canon);
     existing.fingerprint[canon] = existing.mtime;
-    existing.fpCheckedAt = Date.now();
-    existing.pending = null;
-    existing.sweep = null;
+    resetFreshness(existing.freshness);
+    resaveSnapshot(existing);
 }
 
 /**
@@ -362,8 +341,8 @@ export function markParseStale(rawPath: string): void {
     // on an mtime match, so it re-parses (snapshot fast path still applies
     // when nothing on disk actually changed).
     entry.mtime = -1;
-    entry.fpCheckedAt = 0;
-    entry.sweep = null;
+    entry.freshness.checkedAt = 0;
+    entry.freshness.sweep = null;
 }
 /**
  * Iterate every parsed import.json. Used by the queue layer to find a

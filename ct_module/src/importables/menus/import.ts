@@ -17,7 +17,6 @@ import {
     stacksEqual,
 } from "../../housingSync/items/injectItem";
 import type { ImportableTrustPlan } from "../../importCache";
-import type { ImportEventHandler } from "../../housingSync/importEvents";
 import { createSetupStepEmitter } from "../../housingSync/progress/setupStepEmitter";
 import TaskContext from "../../tasks/context";
 import { removedFormatting } from "../../utils/helpers";
@@ -27,6 +26,7 @@ import {
     getBaselineActionList,
 } from "../actionListHelpers";
 import type { ItemRegistry } from "../itemRegistry";
+import type { ImportSession } from "../imports";
 import {
     countReferencedShells,
     ensureReferencedImportablesExist,
@@ -64,11 +64,10 @@ export type MenuImportPlan = {
 export async function prereadImportableMenu(
     ctx: TaskContext,
     importable: ImportableMenu,
-    itemRegistry: ItemRegistry,
-    trustPlan?: ImportableTrustPlan,
-    events?: ImportEventHandler
+    session: ImportSession,
+    trustPlan?: ImportableTrustPlan
 ): Promise<MenuImportPlan> {
-    const setup = createSetupStepEmitter(events, countReferencedShells(importable) + 1);
+    const setup = createSetupStepEmitter(session.events, countReferencedShells(importable) + 1);
 
     await ensureReferencedImportablesExist(ctx, importable, (kind, name) => {
         setup(`created ${kind} ${name}`);
@@ -99,7 +98,7 @@ export async function prereadImportableMenu(
     setup(`opened menu ${importable.name}`);
 
     const live = await readLiveMenu(ctx);
-    const diff = buildMenuDiff(importable, baselineSlotsFromLive(live), live.size, itemRegistry);
+    const diff = buildMenuDiff(importable, baselineSlotsFromLive(live), live.size, session.items);
     return { kind: "MENU", importable, trustPlan, diff };
 }
 
@@ -193,8 +192,7 @@ function actionsDiffer(
 export async function applyImportableMenuPlan(
     ctx: TaskContext,
     plan: MenuImportPlan,
-    itemRegistry: ItemRegistry,
-    events?: ImportEventHandler
+    session: ImportSession
 ): Promise<void> {
     const { importable, trustPlan, diff } = plan;
     if (diff.setSize === null && diff.ops.length === 0) return;
@@ -234,12 +232,11 @@ export async function applyImportableMenuPlan(
         ctx.getItemSlot("Edit Actions").click();
         await timedWaitForMenu(ctx, "menuClickWait");
         const actionsPlan = await prereadActionList(ctx, op.syncActions, {
-            itemRegistry,
+            session,
             baselineCurrent: getBaselineActionList(trustPlan, op.actionsPath ?? ""),
             trust: getActionListTrust(trustPlan, op.actionsPath ?? ""),
-            events,
         });
-        await applyActionListPlan(ctx, actionsPlan, { itemRegistry, events });
+        await applyActionListPlan(ctx, actionsPlan, { session });
         await clickGoBack(ctx);
         await clickGoBack(ctx);
     }

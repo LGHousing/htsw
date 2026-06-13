@@ -5,11 +5,12 @@ export function placeAnchoredRect(
     width: number,
     height: number,
     screenWidth: number,
-    screenHeight: number
+    screenHeight: number,
+    align: "right" | "left" = "right"
 ): Rect {
     const w = Math.min(width, Math.max(0, screenWidth - 4));
     const h = Math.min(height, Math.max(0, screenHeight - 4));
-    let x = anchor.x + anchor.w - w;
+    let x = align === "right" ? anchor.x + anchor.w - w : anchor.x;
     let y = anchor.y + anchor.h + 2;
     if (y + h > screenHeight - 2) y = anchor.y - h - 2;
     if (x + w > screenWidth - 2) x = screenWidth - 2 - w;

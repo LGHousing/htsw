@@ -62,7 +62,7 @@ import {
 
 export type WriteActionOptions<T extends Action = Action> = {
     current?: Observed<T>;
-    itemRegistry?: ItemRegistry;
+    itemRegistry: ItemRegistry;
     apply?: ActionApplyContext;
 };
 
@@ -79,7 +79,7 @@ type ActionSpec<T extends Action = Action> = {
     write?: (
         ctx: TaskContext,
         desired: T,
-        options?: WriteActionOptions<T>
+        options: WriteActionOptions<T>
     ) => Promise<void>;
 };
 
@@ -268,17 +268,17 @@ const ACTION_SPECS = {
 export async function writeOpenAction(
     ctx: TaskContext,
     desired: Action,
-    opts?: WriteActionOptions<Action>
+    opts: WriteActionOptions<Action>
 ): Promise<void> {
     const spec = getActionSpec(desired.type);
-    let resolvedCurrent = opts?.current;
+    let resolvedCurrent = opts.current;
 
     if (resolvedCurrent === undefined && spec.read) {
         resolvedCurrent = await spec.read({
             ctx,
             propsToRead: new Set(),
             read: undefined,
-            current: opts?.current,
+            current: opts.current,
         });
     }
 

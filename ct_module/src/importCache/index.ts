@@ -29,4 +29,4 @@ export { getCurrentHousingUuid } from "./housingId";
 export { buildCacheStatusRows } from "./status";
 
 export { buildTrustPlan } from "./trust";
-export type { ImportableTrustPlan } from "./trust";
+export type { ImportableTrustPlan, TrustPlan } from "./trust";

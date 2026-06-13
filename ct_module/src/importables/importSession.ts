@@ -20,7 +20,9 @@ import {
     prereadImportable,
     reconstructPartialImportable,
     type ImportablePlan,
+    type ImportSession,
 } from "./imports";
+import { expandClickActionItemDependencies } from "./itemDependencies";
 import type { ImportEventHandler } from "../housingSync/importEvents";
 import type { ImportableEntry } from "../housingSync/progress/types";
 import { importProgressKey } from "../housingSync/progress/keys";
@@ -76,8 +78,20 @@ export async function importSelectedImportables(
         selection.sourcePath
     );
     const sm = new SourceMap(new FileSystemFileLoader());
-    const registry = createItemRegistry(parsed.value, parsed.gcx);
-    const orderedImportables = orderImportablesForImportSession(parsed.value, selection.importables);
+    const items = createItemRegistry(parsed.value, parsed.gcx);
+
+    const expansion = expandClickActionItemDependencies(
+        items,
+        selection.importables,
+        selection.housingUuid
+    );
+    for (const item of expansion.addedItems) {
+        ctx.displayMessage(
+            `&7[htsw] Also importing item '&f${item.name}&7' — it has click actions and isn't in this house yet.`
+        );
+    }
+
+    const orderedImportables = orderImportablesForImportSession(parsed.value, expansion.importables);
     await ctx.sleep(1);
     // Building a trust plan hashes every importable and all of its actions,
     // which is slow. Pass only the ones we're importing this run, not the
@@ -89,6 +103,13 @@ export async function importSelectedImportables(
     );
 
     const events = selection.events;
+    const session: ImportSession = {
+        parsed,
+        items,
+        housingUuid: selection.housingUuid,
+        trust: trustPlan,
+        events,
+    };
     const rowsMeta = orderedImportables.map((importable, rowIndex) => {
         const identity = importableIdentity(importable);
         const tp = trustPlan.importables.get(importableKey(importable.type, identity));
@@ -138,11 +159,7 @@ export async function importSelectedImportables(
         }
 
         try {
-            const plan = await prereadImportable(ctx, row.importable, registry, {
-                plan: row.trustPlan,
-                housingUuid: selection.housingUuid,
-                events,
-            });
+            const plan = await prereadImportable(ctx, row.importable, session);
             if (planIsNoOp(plan)) {
                 await tryWriteImportableCache(ctx, row.importable, "importer", selection.housingUuid);
                 events?.emit({ kind: "importableFinished", key: row.key, status: "imported" });
@@ -177,11 +194,7 @@ export async function importSelectedImportables(
             rowIndex: row.rowIndex,
         });
         try {
-            await applyImportablePlan(ctx, plan, registry, {
-                plan: row.trustPlan,
-                housingUuid: selection.housingUuid,
-                events,
-            });
+            await applyImportablePlan(ctx, plan, session);
             // ITEM manages its own per-NBT cache during apply.
             if (plan.kind !== "ITEM") {
                 await tryWriteImportableCache(

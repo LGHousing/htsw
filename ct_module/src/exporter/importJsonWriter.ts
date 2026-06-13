@@ -42,7 +42,7 @@ export type Section = "functions" | "events" | "regions" | "items" | "menus" | "
  * Functions/regions/items use `name`; events use `event` (the event
  * constant) since they're singletons per type.
  */
-function identityField(section: Section): "name" | "event" {
+export function identityField(section: Section): "name" | "event" {
     return section === "events" ? "event" : "name";
 }
 

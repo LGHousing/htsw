@@ -61,6 +61,7 @@ function diagnosticsBlock(diagnostics: readonly Diagnostic[]): FormattedTextBloc
  */
 export function offerLineHover(
     rect: Rect,
+    mouseX: number,
     diagnostics: readonly Diagnostic[] | undefined,
     extraLines: readonly string[] | undefined
 ): void {
@@ -84,5 +85,7 @@ export function offerLineHover(
     const key =
         (diagBlock !== null ? diagBlock.lines.length + ":" : "") +
         lines.join("\n") + "@" + width;
-    offerHoverCard({ key, anchor: rect, content });
+    // Anchor at the cursor's x but the row's vertical extent, so the card
+    // opens beside the pointer without covering the hovered line.
+    offerHoverCard({ key, anchor: { x: mouseX, y: rect.y, w: 0, h: rect.h }, content });
 }

@@ -11,11 +11,10 @@ import {
     timedWaitForUnformattedMessage,
 } from "../../housingSync/gui/menuWait";
 import type { ImportableTrustPlan } from "../../importCache";
-import type { ImportEventHandler } from "../../housingSync/importEvents";
 import { createSetupStepEmitter } from "../../housingSync/progress/setupStepEmitter";
 import TaskContext from "../../tasks/context";
 import { getActionListTrust, getBaselineActionList } from "../actionListHelpers";
-import type { ItemRegistry } from "../itemRegistry";
+import type { ImportSession } from "../imports";
 import {
     countReferencedShells,
     ensureReferencedImportablesExist,
@@ -77,9 +76,8 @@ async function ensureRegionOpen(
 export async function prereadImportableRegion(
     ctx: TaskContext,
     importable: ImportableRegion,
-    itemRegistry: ItemRegistry,
-    trustPlan?: ImportableTrustPlan,
-    events?: ImportEventHandler
+    session: ImportSession,
+    trustPlan?: ImportableTrustPlan
 ): Promise<RegionImportPlan> {
     const enterEligible =
         importable.onEnterActions !== undefined &&
@@ -89,7 +87,7 @@ export async function prereadImportableRegion(
         !trustPlan?.trustedListPaths.has("onExitActions");
 
     const regionOpenSteps = (enterEligible || exitEligible) ? 3 : 0;
-    const setup = createSetupStepEmitter(events, countReferencedShells(importable) + regionOpenSteps);
+    const setup = createSetupStepEmitter(session.events, countReferencedShells(importable) + regionOpenSteps);
 
     await ensureReferencedImportablesExist(ctx, importable, (kind, name) => {
         setup(`created ${kind} ${name}`);
@@ -109,10 +107,9 @@ export async function prereadImportableRegion(
         ctx.getItemSlot("Entry Actions").click();
         await timedWaitForMenu(ctx, "menuClickWait");
         enterPlan = await prereadActionList(ctx, importable.onEnterActions!, {
-            itemRegistry,
+            session,
             baselineCurrent: getBaselineActionList(trustPlan, "onEnterActions"),
             trust: getActionListTrust(trustPlan, "onEnterActions"),
-            events,
         });
         if (exitEligible) {
             await clickGoBack(ctx);
@@ -124,10 +121,9 @@ export async function prereadImportableRegion(
         ctx.getItemSlot("Exit Actions").click();
         await timedWaitForMenu(ctx, "menuClickWait");
         exitPlan = await prereadActionList(ctx, importable.onExitActions!, {
-            itemRegistry,
+            session,
             baselineCurrent: getBaselineActionList(trustPlan, "onExitActions"),
             trust: getActionListTrust(trustPlan, "onExitActions"),
-            events,
         });
     }
 
@@ -137,8 +133,7 @@ export async function prereadImportableRegion(
 export async function applyImportableRegionPlan(
     ctx: TaskContext,
     plan: RegionImportPlan,
-    itemRegistry: ItemRegistry,
-    events?: ImportEventHandler
+    session: ImportSession
 ): Promise<void> {
     // ensureRegionOpen re-runs the full teleport + pos-set + open cycle
     // even though preread already did it. Between passes, other importables
@@ -154,7 +149,7 @@ export async function applyImportableRegionPlan(
     if (plan.enterPlan !== null) {
         ctx.getItemSlot("Entry Actions").click();
         await timedWaitForMenu(ctx, "menuClickWait");
-        await applyActionListPlan(ctx, plan.enterPlan, { itemRegistry, events });
+        await applyActionListPlan(ctx, plan.enterPlan, { session });
         if (plan.exitPlan !== null) {
             await clickGoBack(ctx);
         }
@@ -163,6 +158,6 @@ export async function applyImportableRegionPlan(
     if (plan.exitPlan !== null) {
         ctx.getItemSlot("Exit Actions").click();
         await timedWaitForMenu(ctx, "menuClickWait");
-        await applyActionListPlan(ctx, plan.exitPlan, { itemRegistry, events });
+        await applyActionListPlan(ctx, plan.exitPlan, { session });
     }
 }

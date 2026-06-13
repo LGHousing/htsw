@@ -359,26 +359,7 @@ export const POTION_EFFECTS = [
     "Absorption",
 ] as const;
 
-export const EVENTS = [
-    "Player Join",
-    "Player Quit",
-    "Player Death",
-    "Player Kill",
-    "Player Respawn",
-    "Group Change",
-    "PvP State Change",
-    "Fish Caught",
-    "Player Enter Portal",
-    "Player Damage",
-    "Player Block Break",
-    "Start Parkour",
-    "Complete Parkour",
-    "Player Drop Item",
-    "Player Pick Up Item",
-    "Player Change Held Item",
-    "Player Toggle Sneak",
-    "Player Toggle Flight",
-] as const;
+export { EVENTS } from "../importjson/schemaSpec";
 
 export const LOBBIES = [
     "Main Lobby",
