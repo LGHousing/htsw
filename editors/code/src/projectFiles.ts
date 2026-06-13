@@ -203,23 +203,38 @@ function removalPath(nodePath: (string | number)[]): (string | number)[] | undef
         return nodePath.slice(0, 2);
     }
 
-    if (
-        typeof nodePath[0] === "string" &&
-        IMPORTABLE_SECTIONS.has(nodePath[0]) &&
-        typeof nodePath[1] === "number"
-    ) {
+    const section = nodePath[0];
+    const index = nodePath[1];
+    if (typeof section !== "string" || !IMPORTABLE_SECTIONS.has(section) || typeof index !== "number") {
+        return undefined;
+    }
+
+    const key = nodePath[nodePath.length - 1];
+    if (typeof key !== "string") return undefined;
+
+    if (section === "events" && key === "actions") {
         return nodePath.slice(0, 2);
     }
 
-    return undefined;
+    if (section === "items" && key === "nbt") {
+        return nodePath.slice(0, 2);
+    }
+
+    if (
+        section === "menus" &&
+        nodePath[2] === "slots" &&
+        typeof nodePath[3] === "number" &&
+        key === "nbt"
+    ) {
+        return nodePath.slice(0, 4);
+    }
+
+    return nodePath;
 }
 
 function applyRemovals(source: string, removals: (string | number)[][]): string {
     const unique = new Map(removals.map((nodePath) => [JSON.stringify(nodePath), nodePath]));
-    const ordered = [...unique.values()].sort((left, right) => {
-        if (left[0] !== right[0]) return String(left[0]).localeCompare(String(right[0]));
-        return Number(right[1]) - Number(left[1]);
-    });
+    const ordered = [...unique.values()].sort(compareRemovalPaths);
 
     let next = source;
     for (const nodePath of ordered) {
@@ -230,6 +245,18 @@ function applyRemovals(source: string, removals: (string | number)[][]): string 
         }));
     }
     return next;
+}
+
+function compareRemovalPaths(left: (string | number)[], right: (string | number)[]): number {
+    const common = Math.min(left.length, right.length);
+    for (let i = 0; i < common; i++) {
+        if (left[i] === right[i]) continue;
+        if (typeof left[i] === "number" && typeof right[i] === "number") {
+            return Number(right[i]) - Number(left[i]);
+        }
+        return String(left[i]).localeCompare(String(right[i]));
+    }
+    return right.length - left.length;
 }
 
 function movePath(filePath: string, moves: readonly Move[]): string | undefined {

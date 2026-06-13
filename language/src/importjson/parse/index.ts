@@ -216,6 +216,7 @@ function prepareImportJsonParsing(
     if (treeContainsPath(gcx.fileTree, resolvedPath)) return false;
 
     if (!gcx.sourceMap.fileLoader.fileExists(resolvedPath)) {
+        gcx.missingImportJsonPaths.push(resolvedPath);
         const diag = origin
             ? Diagnostic.error(`Included import.json not found: '${origin.includePath}'`)
                 .addPrimarySpan(

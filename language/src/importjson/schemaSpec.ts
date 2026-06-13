@@ -109,7 +109,7 @@ export const IMPORT_JSON_SCHEMA = object({
 
 export const IMPORT_JSON_SCHEMA_DEFINITIONS = {
     importJsonPath: string({
-        pattern: "[iI][mM][pP][oO][rR][tT]\\.json$",
+        pattern: "\\.?[iI][mM][pP][oO][rR][tT]\\.json$",
         description: "Relative import JSON file path ending in import.json or .import.json",
     }),
     htslPath: string({

@@ -19,7 +19,8 @@
  * Validity is checked by mtime fingerprint: every file the previous
  * parse referenced (import.json + every linked .htsl) must match its
  * recorded mtime, or we fall through to a splice (htsl-only changes) or
- * a full parse.
+ * a full parse. Missing included import.json files are stored in the
+ * fingerprint with mtime 0, so creating them invalidates the snapshot.
  *
  * Snapshots are also stamped with the writing build's bundle mtime and
  * rejected by any other build: a snapshot stores parser OUTPUT, so a
@@ -98,7 +99,7 @@ type SnapshotDiagnostic = {
 };
 
 type Snapshot = {
-    version: 9;
+    version: 10;
     importJsonPath: string;
     // Deployed-bundle mtime of the build that wrote this snapshot. Kept
     // separate from `fingerprint` on purpose: parses.ts reuses the
@@ -120,9 +121,7 @@ type Snapshot = {
     // gcx.fileTree. Must round-trip, or a snapshot-served session renders
     // the Importables include tree as one flat list.
     fileTree: SerializedFileNode | null;
-    // The parse's diagnostics, pre-rendered. Errored parses are snapshotted
-    // like clean ones — without this an errored project paid a full parse
-    // on every reload, since nothing could restore its failed state.
+    // The parse's diagnostics, pre-rendered.
     diagnostics: SnapshotDiagnostic[];
 };
 
@@ -157,7 +156,7 @@ export function loadSnapshot(importJsonPath: string): Snapshot | null {
         const raw = String(FileLib.read(p) ?? "");
         if (raw.length === 0) return null;
         const parsed = JSON.parse(raw) as Snapshot;
-        if (parsed.version !== 9) return null;
+        if (parsed.version !== 10) return null;
         if (parsed.importJsonPath !== importJsonPath) return null;
         // A snapshot stores parser OUTPUT, so it's only valid for the build
         // that wrote it. 0 on either side = bundle not at the standard path;
@@ -309,7 +308,7 @@ export function saveSnapshot(
     const fingerprint: { [path: string]: number } = {};
     for (const k in watchedMtimes) fingerprint[k] = watchedMtimes[k];
     const snapshot: Snapshot = {
-        version: 9,
+        version: 10,
         importJsonPath,
         bundleMtime: RUNNING_BUNDLE_MTIME,
         fingerprint,

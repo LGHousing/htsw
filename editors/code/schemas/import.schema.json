@@ -57,7 +57,7 @@
     "importJsonPath": {
       "type": "string",
       "description": "Relative import JSON file path ending in import.json or .import.json",
-      "pattern": "[iI][mM][pP][oO][rR][tT]\\.json$"
+      "pattern": "\\.?[iI][mM][pP][oO][rR][tT]\\.json$"
     },
     "htslPath": {
       "type": "string",

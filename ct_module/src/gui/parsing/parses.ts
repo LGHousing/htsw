@@ -13,8 +13,6 @@ import {
     loadSnapshot,
     restoreParseFromSnapshot,
     saveSnapshot,
-    trySpliceSnapshot,
-    writeSnapshotFile,
 } from "./parseSnapshot";
 import {
     FP_RECHECK_MS,
@@ -41,6 +39,11 @@ function buildParseFingerprint(
     for (let i = 0; i < paths.length; i++) {
         const p = paths[i];
         if (out[p] === undefined) out[p] = getMtimeMs(p);
+    }
+    const missingImportJsonPaths = parsed.gcx.missingImportJsonPaths;
+    for (let i = 0; i < missingImportJsonPaths.length; i++) {
+        const p = missingImportJsonPaths[i];
+        if (out[p] === undefined) out[p] = 0;
     }
     return out;
 }
@@ -150,19 +153,6 @@ export function parseImportJsonBlocking(rawPath: string): CachedParse {
         if (changed.length === 0) {
             parsed = restoreParseFromSnapshot(snapshot);
             snapshotFingerprint = snapshot.fingerprint;
-        } else {
-            // Stale but maybe spliceable: when the only changes are .htsl
-            // files, re-parse just those files and splice them into the
-            // snapshot — skipping the full project parse (the ~1s freeze the
-            // all-or-nothing fingerprint used to force on any single edit).
-            // Null for anything else (import.json/.snbt change, unknown
-            // item refs) → full parse below.
-            const spliced = trySpliceSnapshot(snapshot, changed);
-            if (spliced !== null) {
-                writeSnapshotFile(spliced);
-                parsed = restoreParseFromSnapshot(spliced);
-                snapshotFingerprint = spliced.fingerprint;
-            }
         }
     }
     if (parsed === null) {
@@ -175,12 +165,6 @@ export function parseImportJsonBlocking(rawPath: string): CachedParse {
                 : String(e);
             error = msg;
         }
-        // Save a snapshot so the next session can skip this parse. The
-        // fingerprint covers every referenced file (via allReferencedPaths)
-        // so edits to sub-list .htsl files (REGION enter/exit, ITEM click
-        // actions) invalidate it too. Errored parses are snapshotted like
-        // clean ones — their diagnostics ride along pre-rendered, so a
-        // restored parse still gates imports via isFailed().
         if (parsed !== null) {
             const fingerprint = buildParseFingerprint(canon, mtime, parsed);
             saveSnapshot(canon, parsed, fingerprint);

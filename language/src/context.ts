@@ -25,6 +25,7 @@ export class GlobalCtxt {
     importables: Importable[];
     diagnostics: Diagnostic[];
     activeImportJsonPaths: string[];
+    missingImportJsonPaths: string[];
     /**
      * Maps each parsed importable to the resolved path of the file that owns
      * its primary content — for FUNCTION/EVENT this is the referenced .htsl
@@ -59,6 +60,7 @@ export class GlobalCtxt {
         this.importables = [];
         this.diagnostics = [];
         this.activeImportJsonPaths = [];
+        this.missingImportJsonPaths = [];
         this.sourceFiles = new WeakMap<Importable, string>();
         this.fileTree = null;
         this.declaringPathCache = null;
@@ -115,6 +117,7 @@ export class GlobalCtxt {
         gcx.importables = this.importables;
         gcx.diagnostics = this.diagnostics;
         gcx.activeImportJsonPaths = this.activeImportJsonPaths;
+        gcx.missingImportJsonPaths = this.missingImportJsonPaths;
         gcx.sourceFiles = this.sourceFiles;
         gcx.fileTree = this.fileTree;
         return gcx;

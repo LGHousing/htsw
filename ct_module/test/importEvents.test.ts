@@ -10,6 +10,8 @@ import type { ActionListDiff } from "../src/housingSync/types";
 import type { ActionListPlan } from "../src/housingSync/actions/plan";
 import { createItemRegistry } from "../src/importables/itemRegistry";
 import type { ImportSession } from "../src/importables/imports";
+import { orderImportablesForImportSession } from "../src/importables/importSession";
+import type { ImportableItem } from "htsw/types";
 
 function recordingHandler(): ImportEventHandler & { events: ImportEvent[] } {
     const events: ImportEvent[] = [];
@@ -70,5 +72,34 @@ describe("applyActionListPlan — top-level-only terminal events", () => {
         const kinds = handler.events.map((e) => e.kind);
         expect(kinds).not.toContain("listSyncCompleted");
         expect(kinds).not.toContain("finalizeSource");
+    });
+});
+
+describe("orderImportablesForImportSession", () => {
+    test("orders item dependencies before dependent items", () => {
+        const dependency: ImportableItem = {
+            type: "ITEM",
+            name: "Dependency",
+            nbt: { type: "compound", value: {} },
+        };
+        const dependent: ImportableItem = {
+            type: "ITEM",
+            name: "Dependent",
+            nbt: { type: "compound", value: {} },
+            leftClickActions: [
+                {
+                    type: "GIVE_ITEM",
+                    itemName: "Dependency",
+                    allowMultiple: false,
+                    slot: 0,
+                    replaceExisting: false,
+                },
+            ],
+        };
+
+        expect(orderImportablesForImportSession([], [dependent, dependency])).toEqual([
+            dependency,
+            dependent,
+        ]);
     });
 });

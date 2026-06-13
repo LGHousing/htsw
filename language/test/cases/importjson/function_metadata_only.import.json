@@ -1,0 +1,12 @@
+{
+  "functions": [
+    {
+      "name": "MetadataOnlyFn",
+      "repeatTicks": 20,
+      "icon": {
+        "item": "minecraft:map",
+        "count": 3
+      }
+    }
+  ]
+}

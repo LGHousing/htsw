@@ -209,6 +209,22 @@ describe("import.json basic passing behavior", () => {
         expect(hasHardErrors(result.diagnostics)).toBe(false);
     });
 
+    it("parses a function importable with only metadata", () => {
+        const result = parseImportables(caseFilePath("function_metadata_only"));
+
+        expect(result.value.length).toBe(1);
+        const fn = result.value[0];
+        assertImportable(fn, "FUNCTION");
+        expect(fn.name).toBe("MetadataOnlyFn");
+        expect(fn.actions).toBeUndefined();
+        expect(fn.repeatTicks).toBe(20);
+        expect(fn.icon).toEqual({
+            item: "minecraft:map",
+            count: 3,
+        });
+        expect(hasHardErrors(result.diagnostics)).toBe(false);
+    });
+
     it("parses a single event importable", () => {
         const result = parseImportables(caseFilePath("event"));
 

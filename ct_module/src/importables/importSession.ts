@@ -1,5 +1,5 @@
 import { Diagnostic, SourceMap, parseImportablesResult, type ParseResult } from "htsw";
-import type { Importable } from "htsw/types";
+import type { Importable, ImportableItem } from "htsw/types";
 
 import TaskContext from "../tasks/context";
 import { isTaskCancelled } from "../tasks/manager";
@@ -22,7 +22,10 @@ import {
     type ImportablePlan,
     type ImportSession,
 } from "./imports";
-import { expandClickActionItemDependencies } from "./itemDependencies";
+import {
+    expandClickActionItemDependencies,
+    referencedItemNames,
+} from "./itemDependencies";
 import type { ImportEventHandler } from "../housingSync/importEvents";
 import type { ImportableEntry } from "../housingSync/progress/types";
 import { importProgressKey } from "../housingSync/progress/keys";
@@ -54,17 +57,35 @@ export function orderImportablesForImportSession(
     _allImportables: readonly Importable[],
     selectedImportables: readonly Importable[]
 ): Importable[] {
-    // ITEMs are hoisted to the front because action lists reference them
-    // by name (GIVE_ITEM, etc.) and need them to exist first. Within each
-    // group, original input order is preserved so the queue's display
-    // order matches the execution order.
-    const items: Importable[] = [];
+    const selectedItems: ImportableItem[] = [];
     const rest: Importable[] = [];
     for (const imp of selectedImportables) {
-        if (imp.type === "ITEM") items.push(imp);
+        if (imp.type === "ITEM") selectedItems.push(imp);
         else rest.push(imp);
     }
-    return items.concat(rest);
+
+    const itemsByName = new Map<string, ImportableItem>();
+    for (const item of selectedItems) itemsByName.set(item.name, item);
+
+    const orderedItems: Importable[] = [];
+    const state = new Map<string, "visiting" | "done">();
+
+    function visit(item: ImportableItem): void {
+        const current = state.get(item.name);
+        if (current === "done") return;
+        if (current === "visiting") return;
+
+        state.set(item.name, "visiting");
+        for (const name of referencedItemNames(item)) {
+            const dependency = itemsByName.get(name);
+            if (dependency !== undefined) visit(dependency);
+        }
+        state.set(item.name, "done");
+        orderedItems.push(item);
+    }
+
+    for (const item of selectedItems) visit(item);
+    return orderedItems.concat(rest);
 }
 
 export async function importSelectedImportables(
