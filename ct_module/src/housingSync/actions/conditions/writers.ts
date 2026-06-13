@@ -188,8 +188,8 @@ export async function writeIsInRegion(
 export async function writeRequireItem(
     ctx: TaskContext,
     condition: ConditionRequireItem,
-    _current?: ConditionRequireItem,
-    itemRegistry?: ItemRegistry
+    _current: ConditionRequireItem | undefined,
+    itemRegistry: ItemRegistry
 ): Promise<void> {
     if (condition.itemName) {
         await setItemValue(
@@ -395,8 +395,8 @@ export async function writePortalType(
 export async function writeBlockType(
     ctx: TaskContext,
     condition: ConditionBlockType,
-    _current?: ConditionBlockType,
-    itemRegistry?: ItemRegistry
+    _current: ConditionBlockType | undefined,
+    itemRegistry: ItemRegistry
 ): Promise<void> {
     if (condition.itemName) {
         await setItemValue(
@@ -410,8 +410,8 @@ export async function writeBlockType(
 export async function writeIsItem(
     ctx: TaskContext,
     condition: ConditionIsItem,
-    _current?: ConditionIsItem,
-    itemRegistry?: ItemRegistry
+    _current: ConditionIsItem | undefined,
+    itemRegistry: ItemRegistry
 ): Promise<void> {
     if (condition.itemName) {
         await setItemValue(

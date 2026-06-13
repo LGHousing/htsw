@@ -85,32 +85,37 @@ describe("import.json include", () => {
         expect(hasHardErrors(result.diagnostics)).toBe(false);
     });
 
-    it("records include edges as a tree of resolved paths", () => {
+    it("records the include structure as a file tree", () => {
         const entry = caseDirPath("nested");
         const result = parseImportables(entry);
 
         const dir = dirname(entry);
         const aPath = resolve(dir, "a.import.json");
         const bPath = resolve(dir, "b.import.json");
-        expect(result.gcx.includeEdges.get(entry)).toEqual([aPath]);
-        expect(result.gcx.includeEdges.get(aPath)).toEqual([bPath]);
-        expect(result.gcx.includeEdges.has(bPath)).toBe(false);
+        const root = result.gcx.fileTree;
+        expect(root?.path).toBe(entry);
+        expect(root?.includes.map((n) => n.path)).toEqual([aPath]);
+        const aNode = root!.includes[0];
+        expect(aNode.includes.map((n) => n.path)).toEqual([bPath]);
+        expect(aNode.includes[0].includes).toEqual([]);
 
         const regionA = result.value.find(
             (imp) => imp.type === "REGION" && imp.name === "RegionA"
         );
         expect(regionA).toBeDefined();
-        expect(result.gcx.declaringFiles.get(regionA!)).toBe(aPath);
+        expect(aNode.importables).toContain(regionA!);
+        expect(result.gcx.declaringPathOf(regionA!)).toBe(aPath);
     });
 
-    it("records no include edge for cyclic includes", () => {
+    it("attaches no node for cyclic includes", () => {
         const entry = caseDirPath("cycle");
         const result = parseImportables(entry);
 
         const otherPath = resolve(dirname(entry), "other.import.json");
-        expect(result.gcx.includeEdges.get(entry)).toEqual([otherPath]);
-        // other includes the entry again — the cycle is rejected, no edge.
-        expect(result.gcx.includeEdges.get(otherPath)).toBeUndefined();
+        const root = result.gcx.fileTree;
+        expect(root?.includes.map((n) => n.path)).toEqual([otherPath]);
+        // other includes the entry again — the cycle is rejected, no node.
+        expect(root?.includes[0].includes).toEqual([]);
     });
 
     it("reports missing include files", () => {
@@ -197,6 +202,22 @@ describe("import.json basic passing behavior", () => {
         expect(result.value.length).toBe(1);
         const fn = result.value[0];
         assertImportable(fn, "FUNCTION");
+        expect(fn.icon).toEqual({
+            item: "minecraft:map",
+            count: 3,
+        });
+        expect(hasHardErrors(result.diagnostics)).toBe(false);
+    });
+
+    it("parses a function importable with only metadata", () => {
+        const result = parseImportables(caseFilePath("function_metadata_only"));
+
+        expect(result.value.length).toBe(1);
+        const fn = result.value[0];
+        assertImportable(fn, "FUNCTION");
+        expect(fn.name).toBe("MetadataOnlyFn");
+        expect(fn.actions).toBeUndefined();
+        expect(fn.repeatTicks).toBe(20);
         expect(fn.icon).toEqual({
             item: "minecraft:map",
             count: 3,

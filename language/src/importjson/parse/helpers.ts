@@ -4,6 +4,7 @@ import type { GlobalCtxt } from "../../context";
 import { Diagnostic } from "../../diagnostic";
 import { Span } from "../../span";
 import type { Bounds, Pos } from "../../types";
+import { definition, type ObjectSchemaSpec } from "../schemaSpec";
 
 export function nodeSpan(node: json.Node): Span {
     return new Span(node.offset, node.offset + node.length);
@@ -217,6 +218,27 @@ export function parseObject(
     }
 }
 
+export function parseObjectWithSchema(
+    gcx: GlobalCtxt,
+    node: json.Node,
+    schema: ObjectSchemaSpec,
+    parsers: Record<string, (node: json.Node) => void>,
+): void {
+    const tree: NodeParseTree = {};
+    for (const key of Object.keys(schema.properties)) {
+        const parser = parsers[key];
+        if (parser === undefined) {
+            throw new Error(`Missing import.json parser for schema key '${key}'`);
+        }
+        tree[key] = {
+            required: schema.properties[key].required,
+            parser,
+        };
+    }
+
+    parseObject(gcx, node, tree);
+}
+
 export function parseBoolean(gcx: GlobalCtxt, node: json.Node): boolean {
     if (node.type !== "boolean") {
         throw Diagnostic.error("Expected boolean")
@@ -230,20 +252,14 @@ export function parseBounds(gcx: GlobalCtxt, node: json.Node): Bounds {
     const bounds = {} as Bounds;
     setSpan(gcx, bounds as object, node);
 
-    parseObject(gcx, node, {
-        "from": {
-            required: true,
-            parser: (child) => {
-                bounds.from = parsePos(gcx, child);
-                setFieldSpan(gcx, bounds, "from", child);
-            }
+    parseObjectWithSchema(gcx, node, definition("bounds"), {
+        "from": (child) => {
+            bounds.from = parsePos(gcx, child);
+            setFieldSpan(gcx, bounds, "from", child);
         },
-        "to": {
-            required: true,
-            parser: (child) => {
-                bounds.to = parsePos(gcx, child);
-                setFieldSpan(gcx, bounds, "to", child);
-            }
+        "to": (child) => {
+            bounds.to = parsePos(gcx, child);
+            setFieldSpan(gcx, bounds, "to", child);
         }
     });
 
@@ -254,27 +270,18 @@ export function parsePos(gcx: GlobalCtxt, node: json.Node): Pos {
     const pos = {} as Pos;
     setSpan(gcx, pos as object, node);
 
-    parseObject(gcx, node, {
-        "x": {
-            required: true,
-            parser: (child) => {
-                pos.x = parseNumber(gcx, child);
-                setFieldSpan(gcx, pos, "x", child);
-            }
+    parseObjectWithSchema(gcx, node, definition("pos"), {
+        "x": (child) => {
+            pos.x = parseNumber(gcx, child);
+            setFieldSpan(gcx, pos, "x", child);
         },
-        "y": {
-            required: true,
-            parser: (child) => {
-                pos.y = parseNumber(gcx, child);
-                setFieldSpan(gcx, pos, "y", child);
-            }
+        "y": (child) => {
+            pos.y = parseNumber(gcx, child);
+            setFieldSpan(gcx, pos, "y", child);
         },
-        "z": {
-            required: true,
-            parser: (child) => {
-                pos.z = parseNumber(gcx, child);
-                setFieldSpan(gcx, pos, "z", child);
-            }
+        "z": (child) => {
+            pos.z = parseNumber(gcx, child);
+            setFieldSpan(gcx, pos, "z", child);
         }
     });
 

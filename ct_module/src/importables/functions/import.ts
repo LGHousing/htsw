@@ -9,11 +9,10 @@ import {
 import { clickGoBack } from "../../housingSync/gui/menuUtils";
 import { timedWaitForMenu } from "../../housingSync/gui/menuWait";
 import type { ImportableTrustPlan } from "../../importCache";
-import type { ImportEventHandler } from "../../housingSync/importEvents";
 import { createSetupStepEmitter } from "../../housingSync/progress/setupStepEmitter";
 import TaskContext from "../../tasks/context";
 import { getActionListTrust, getBaselineActionList } from "../actionListHelpers";
-import type { ItemRegistry } from "../itemRegistry";
+import type { ImportSession } from "../imports";
 import {
     countReferencedShells,
     ensureReferencedImportablesExist,
@@ -42,11 +41,10 @@ export type FunctionImportPlan = {
 export async function prereadImportableFunction(
     ctx: TaskContext,
     importable: ImportableFunction,
-    itemRegistry: ItemRegistry,
-    trustPlan?: ImportableTrustPlan,
-    events?: ImportEventHandler
+    session: ImportSession,
+    trustPlan?: ImportableTrustPlan
 ): Promise<FunctionImportPlan> {
-    const setup = createSetupStepEmitter(events, countReferencedShells(importable) + 1);
+    const setup = createSetupStepEmitter(session.events, countReferencedShells(importable) + 1);
 
     await ensureReferencedImportablesExist(ctx, importable, (kind, name) => {
         setup(`created ${kind} ${name}`);
@@ -94,10 +92,9 @@ export async function prereadImportableFunction(
     await ensureFunctionExists(ctx, importable.name);
     setup(`opened function ${importable.name}`);
     const actionsPlan = await prereadActionList(ctx, importable.actions, {
-        itemRegistry,
+        session,
         baselineCurrent: getBaselineActionList(trustPlan, "actions"),
         trust: getActionListTrust(trustPlan, "actions"),
-        events,
     });
 
     // When the actions already match, the only work left is icon/ticks. We're
@@ -120,16 +117,14 @@ export async function prereadImportableFunction(
 export async function applyImportableFunctionPlan(
     ctx: TaskContext,
     plan: FunctionImportPlan,
-    itemRegistry: ItemRegistry,
-    events?: ImportEventHandler
+    session: ImportSession
 ): Promise<void> {
     const needsSettings = !plan.settingsHandled;
 
     if (plan.actionsPlan !== null) {
         await ensureFunctionExists(ctx, plan.importable.name);
         await applyActionListPlan(ctx, plan.actionsPlan, {
-            itemRegistry,
-            events,
+            session,
         });
         if (needsSettings) {
             await clickGoBack(ctx);

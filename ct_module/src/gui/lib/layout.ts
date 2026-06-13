@@ -49,7 +49,7 @@ export type Element =
           children: Extractable<Child[]>;
           onClick?: (rect: Rect, info: ClickInfo) => void;
           onDoubleClick?: (rect: Rect) => void;
-          onHover?: (rect: Rect) => void;
+          onHover?: (rect: Rect, mouseX: number, mouseY: number) => void;
           /** Reports this container's laid-out rect into lib/anchors each
            * rendered frame, under this key. */
           anchorKey?: string;
@@ -500,7 +500,7 @@ function layoutScroll(
     const cullLow = viewLow - CULL_BUFFER;
     const cullHigh = viewHigh + CULL_BUFFER;
     const crossOrigin = horizontal ? innerY : innerX;
-    let cursor = (horizontal ? innerX : innerY) - state.offset;
+    let cursor = (horizontal ? innerX : innerY) - Math.round(state.offset);
     for (let i = 0; i < n; i++) {
         const ch = children[i];
         const mSize = sizes[i];

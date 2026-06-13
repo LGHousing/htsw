@@ -1,7 +1,7 @@
 import type { Action } from "htsw/types";
 
 import TaskContext from "../../tasks/context";
-import { type ItemRegistry } from "../../importables/itemRegistry";
+import type { ImportSession } from "../../importables/imports";
 import type {
     ActionListDiff,
     ActionListTrust,
@@ -17,14 +17,13 @@ import {
     estimateActionListPhaseUnits,
     phaseUnitsTotal,
 } from "../progress/costs";
-import type { ImportEventHandler, ProgressScope } from "../importEvents";
+import type { ProgressScope } from "../importEvents";
 import type { ActionPath } from "../importEvents";
 
 export type ActionListApplyOptions = {
-    itemRegistry?: ItemRegistry;
+    session: ImportSession;
     listPath?: ActionPath;
     progressScope?: ProgressScope;
-    events?: ImportEventHandler;
 };
 
 export type ActionListPrereadOptions = ActionListApplyOptions & {
@@ -44,43 +43,41 @@ export type ActionListPlan = {
 export async function prereadActionList(
     ctx: TaskContext,
     desired: Action[],
-    options?: ActionListPrereadOptions
+    options: ActionListPrereadOptions
 ): Promise<ActionListPlan> {
-    const phaseUnits = estimateActionListPhaseUnits(desired, options?.baselineCurrent);
-    const progressScope: ProgressScope = options?.progressScope ?? { kind: "topLevel" };
+    const phaseUnits = estimateActionListPhaseUnits(desired, options.baselineCurrent);
+    const progressScope: ProgressScope = options.progressScope ?? { kind: "topLevel" };
     const progress: ProgressHandler | undefined =
-        options?.events === undefined
+        options.session.events === undefined
             ? undefined
-            : (event) => options.events?.emit({
+            : (event) => options.session.events?.emit({
                   kind: "progress",
                   scope: progressScope,
                   progress: event,
               });
     const observed =
-        options?.observed ??
+        options.observed ??
         (await readActionList(ctx,
             {
                 kind: "sync",
                 desired,
-                trust: options?.trust,
+                trust: options.trust,
             },
             {
-                itemRegistry: options?.itemRegistry,
+                itemRegistry: options.session.items,
                 progress,
                 phaseUnits,
-                listPath: options?.listPath,
-                events: options?.events,
+                listPath: options.listPath,
+                events: options.session.events,
             }
         ));
-    if (options?.itemRegistry !== undefined) {
-        for (const entry of observed) {
-            if (entry.action !== null) {
-                canonicalizeActionItemName(entry.action, options.itemRegistry);
-            }
+    for (const entry of observed) {
+        if (entry.action !== null) {
+            canonicalizeActionItemName(entry.action, options.session.items);
         }
-        for (const action of desired) {
-            canonicalizeActionItemName(action, options.itemRegistry);
-        }
+    }
+    for (const action of desired) {
+        canonicalizeActionItemName(action, options.session.items);
     }
     const diff = diffActionList(baselineActionListFromSlots(observed), desired);
     const exactApplyUnits = actionListDiffApplyUnits(

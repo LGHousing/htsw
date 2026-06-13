@@ -1,7 +1,8 @@
 import type { Action, Condition } from "htsw/types";
 
 import TaskContext from "../../tasks/context";
-import { type ItemRegistry } from "../../importables/itemRegistry";
+import type { ImportSession } from "../../importables/imports";
+import type { ItemRegistry } from "../../importables/itemRegistry";
 import type {
     Observed,
     ObservedActionSlot,
@@ -43,11 +44,10 @@ export type ApplyNestedActionList = (
     desired: Action[],
     options: {
         observed?: ObservedActionSlot[];
-        itemRegistry?: ItemRegistry;
+        session: ImportSession;
         listPath?: ActionPath;
         baselineCurrent?: readonly Action[];
         progressScope?: ProgressScope;
-        events?: ImportEventHandler;
     }
 ) => Promise<unknown>;
 
@@ -56,7 +56,7 @@ export type ApplyNestedConditionList = (
     desired: Condition[],
     options: {
         observed?: ObservedConditionSlot[];
-        itemRegistry?: ItemRegistry;
+        itemRegistry: ItemRegistry;
         baselineCurrent?: ReadonlyArray<Condition | null>;
         progress?: ProgressHandler;
     }
@@ -65,8 +65,7 @@ export type ApplyNestedConditionList = (
 export type CreateActionApplyContextArgs = {
     ctx: TaskContext;
     actionPath: ActionPath;
-    itemRegistry?: ItemRegistry;
-    events?: ImportEventHandler;
+    session: ImportSession;
     appliedUnits: number;
     completedOps: number;
     totalOps: number;
@@ -140,14 +139,14 @@ function progressFromScope(
 export function createActionApplyContext({
     ctx,
     actionPath,
-    itemRegistry,
-    events,
+    session,
     appliedUnits,
     completedOps,
     totalOps,
     applyNestedActions,
     applyNestedConditions,
 }: CreateActionApplyContextArgs): ActionApplyContext {
+    const events = session.events;
     const scopeAt = nestedApplyScope(actionPath, appliedUnits, completedOps, totalOps);
     const nestedPath = (prop: string): ActionPath => nestedActionPath(actionPath, prop);
     let nextOffset = 0;
@@ -162,12 +161,11 @@ export function createActionApplyContext({
             const baselineCurrent = observedActionsAsBaselineCurrent(args.observed);
             const offset = args.offset ?? nextOffset;
             await applyNestedActions(ctx, args.desired, {
-                itemRegistry,
+                session,
                 observed: reuseObservedActions(args.observed),
                 listPath: path,
                 baselineCurrent,
                 progressScope: scopeAt(path, offset),
-                events,
             });
             nextOffset = offset + phaseUnitsTotal(
                 estimateActionListPhaseUnits(args.desired, baselineCurrent)
@@ -178,7 +176,7 @@ export function createActionApplyContext({
             const path = nestedPath(prop);
             const offset = args.offset ?? nextOffset;
             await applyNestedConditions(ctx, args.desired, {
-                itemRegistry,
+                itemRegistry: session.items,
                 observed: reuseObservedConditions(args.observed),
                 baselineCurrent: args.observed,
                 progress: progressFromScope(events, scopeAt(path, offset)),

@@ -85,7 +85,7 @@ function cardRect(content: FormattedTextBlock): Rect {
         maxHeight,
         Math.max(LINE_H + PAD * 2 + TEXT_TOP_INSET, content.height * LINE_H + PAD * 2 + TEXT_TOP_INSET)
     );
-    return placeAnchoredRect(card!.anchor, width, height, screenW, screenH);
+    return placeAnchoredRect(card!.anchor, width, height, screenW, screenH, "left");
 }
 
 function maxScroll(rect: Rect, content: FormattedTextBlock): number {
@@ -139,11 +139,11 @@ export function drawHoverCard(mouseX: number, mouseY: number): void {
 export function tryDispatchHoverCardWheel(
     mouseX: number,
     mouseY: number,
-    direction: number
+    delta: number
 ): boolean {
     if (card === null || !mouseIsOverHoverCard(mouseX, mouseY) || lastRect === null) return false;
     const limit = maxScroll(lastRect, card.content);
-    card.scrollOffset = Math.max(0, Math.min(limit, card.scrollOffset - direction * 45));
+    card.scrollOffset = Math.max(0, Math.min(limit, card.scrollOffset - delta * LINE_H * 3));
     return true;
 }
 

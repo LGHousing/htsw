@@ -7,11 +7,10 @@ import {
     type ActionListPlan,
 } from "../../housingSync/actions/plan";
 import type { ImportableTrustPlan } from "../../importCache";
-import type { ImportEventHandler } from "../../housingSync/importEvents";
 import { createSetupStepEmitter } from "../../housingSync/progress/setupStepEmitter";
 import TaskContext from "../../tasks/context";
 import { getActionListTrust, getBaselineActionList } from "../actionListHelpers";
-import type { ItemRegistry } from "../itemRegistry";
+import type { ImportSession } from "../imports";
 import {
     countReferencedShells,
     ensureReferencedImportablesExist,
@@ -28,11 +27,10 @@ export type EventImportPlan = {
 export async function prereadImportableEvent(
     ctx: TaskContext,
     importable: ImportableEvent,
-    itemRegistry: ItemRegistry,
-    trustPlan?: ImportableTrustPlan,
-    events?: ImportEventHandler
+    session: ImportSession,
+    trustPlan?: ImportableTrustPlan
 ): Promise<EventImportPlan> {
-    const setup = createSetupStepEmitter(events, countReferencedShells(importable) + 2);
+    const setup = createSetupStepEmitter(session.events, countReferencedShells(importable) + 2);
 
     await ensureReferencedImportablesExist(ctx, importable, (kind, name) => {
         setup(`created ${kind} ${name}`);
@@ -48,10 +46,9 @@ export async function prereadImportableEvent(
     setup(`selected ${importable.event}`);
 
     const actionsPlan = await prereadActionList(ctx, importable.actions, {
-        itemRegistry,
+        session,
         baselineCurrent: getBaselineActionList(trustPlan, "actions"),
         trust: getActionListTrust(trustPlan, "actions"),
-        events,
     });
     return { kind: "EVENT", importable, trustPlan, actionsPlan };
 }
@@ -59,14 +56,12 @@ export async function prereadImportableEvent(
 export async function applyImportableEventPlan(
     ctx: TaskContext,
     plan: EventImportPlan,
-    itemRegistry: ItemRegistry,
-    events?: ImportEventHandler
+    session: ImportSession
 ): Promise<void> {
     if (plan.actionsPlan === null) return;
     await openEventEditor(ctx, plan.importable.event);
     await applyActionListPlan(ctx, plan.actionsPlan, {
-        itemRegistry,
-        events,
+        session,
     });
 }
 

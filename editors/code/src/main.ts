@@ -9,6 +9,7 @@ import {
 } from "./snbtFormat";
 import { commands, Disposable, ExtensionContext, languages, Position, Range, window, workspace } from "vscode";
 import { checkForUpdates } from "./autoUpdate";
+import { registerProjectFileHelpers } from "./projectFiles";
 
 const disposables: Disposable[] = [];
 const providers: Disposable[] = [];
@@ -120,6 +121,7 @@ export function activate(context: ExtensionContext) {
     registerProviders();
 
     disposables.push(asDisposable(providers));
+    disposables.push(...registerProjectFileHelpers());
 
     void checkForUpdates(context);
 }

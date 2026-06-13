@@ -4,53 +4,74 @@
   "type": "object",
   "additionalProperties": false,
   "properties": {
+    "houseUuid": {
+      "type": "string",
+      "description": "Housing UUID binding. Only the entry import.json's binding is used.",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+    },
     "include": {
       "type": "array",
-      "items": { "$ref": "#/definitions/importJsonPath" }
+      "items": {
+        "$ref": "#/definitions/importJsonPath"
+      }
     },
     "functions": {
       "type": "array",
-      "items": { "$ref": "#/definitions/functionImportable" }
+      "items": {
+        "$ref": "#/definitions/functionImportable"
+      }
     },
     "events": {
       "type": "array",
-      "items": { "$ref": "#/definitions/eventImportable" }
+      "items": {
+        "$ref": "#/definitions/eventImportable"
+      }
     },
     "regions": {
       "type": "array",
-      "items": { "$ref": "#/definitions/regionImportable" }
+      "items": {
+        "$ref": "#/definitions/regionImportable"
+      }
     },
     "items": {
       "type": "array",
-      "description": "Reusable item definitions. HTSL item fields may reference these by name, or may reference .snbt files directly.",
-      "items": { "$ref": "#/definitions/itemImportable" }
+      "items": {
+        "$ref": "#/definitions/itemImportable"
+      },
+      "description": "Reusable item definitions. HTSL item fields may reference these by name, or may reference .snbt files directly."
+    },
+    "menus": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/menuImportable"
+      }
     },
     "npcs": {
       "type": "array",
-      "items": { "$ref": "#/definitions/npcImportable" }
+      "items": {
+        "$ref": "#/definitions/npcImportable"
+      }
     }
   },
   "definitions": {
     "importJsonPath": {
       "type": "string",
-      "pattern": "(\\.import\\.json|import\\.json)$",
-      "description": "Relative import JSON file path ending in import.json or .import.json"
+      "description": "Relative import JSON file path ending in import.json or .import.json",
+      "pattern": "\\.?[iI][mM][pP][oO][rR][tT]\\.json$"
     },
     "htslPath": {
       "type": "string",
-      "pattern": "\\.htsl$",
-      "description": "Relative HTSL file path ending in .htsl"
+      "description": "Relative HTSL file path ending in .htsl",
+      "pattern": "\\.htsl$"
     },
     "snbtPath": {
       "type": "string",
-      "pattern": "\\.snbt$",
-      "description": "Relative SNBT file path ending in .snbt"
+      "description": "Relative SNBT file path ending in .snbt",
+      "pattern": "\\.snbt$"
     },
     "itemImportable": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "nbt"],
-      "description": "A reusable item. The name is the stable reference used by HTSL item fields; nbt points to the SNBT file that defines the Minecraft item stack.",
       "properties": {
         "name": {
           "type": "string",
@@ -67,12 +88,16 @@
           "$ref": "#/definitions/htslPath",
           "description": "Optional actions synced into this item's right-click action list."
         }
-      }
+      },
+      "required": [
+        "name",
+        "nbt"
+      ],
+      "description": "A reusable item. The name is the stable reference used by HTSL item fields; nbt points to the SNBT file that defines the Minecraft item stack."
     },
     "functionImportable": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "actions"],
       "properties": {
         "name": {
           "type": "string"
@@ -88,29 +113,32 @@
         "icon": {
           "$ref": "#/definitions/functionIcon"
         }
-      }
+      },
+      "required": [
+        "name"
+      ]
     },
     "functionIcon": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["item"],
       "properties": {
         "item": {
           "type": "string",
           "description": "Minecraft item id for the function icon, for example: minecraft:map"
         },
         "count": {
-          "type": "number",
+          "type": "integer",
           "minimum": 1,
-          "maximum": 64,
-          "multipleOf": 1
+          "maximum": 64
         }
-      }
+      },
+      "required": [
+        "item"
+      ]
     },
     "eventImportable": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["event", "actions"],
       "properties": {
         "event": {
           "type": "string",
@@ -138,31 +166,51 @@
         "actions": {
           "$ref": "#/definitions/htslPath"
         }
-      }
+      },
+      "required": [
+        "event",
+        "actions"
+      ]
     },
     "pos": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["x", "y", "z"],
       "properties": {
-        "x": { "type": "number" },
-        "y": { "type": "number" },
-        "z": { "type": "number" }
-      }
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        },
+        "z": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "z"
+      ]
     },
     "bounds": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["from", "to"],
       "properties": {
-        "from": { "$ref": "#/definitions/pos" },
-        "to": { "$ref": "#/definitions/pos" }
-      }
+        "from": {
+          "$ref": "#/definitions/pos"
+        },
+        "to": {
+          "$ref": "#/definitions/pos"
+        }
+      },
+      "required": [
+        "from",
+        "to"
+      ]
     },
     "regionImportable": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name"],
       "properties": {
         "name": {
           "type": "string"
@@ -176,7 +224,10 @@
         "onExitActions": {
           "$ref": "#/definitions/htslPath"
         }
-      }
+      },
+      "required": [
+        "name"
+      ]
     },
     "npcSkin": {
       "type": "string",
@@ -210,7 +261,6 @@
     "npcImportable": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "pos"],
       "properties": {
         "name": {
           "type": "string"
@@ -236,7 +286,56 @@
         "equipment": {
           "$ref": "#/definitions/npcEquipment"
         }
-      }
+      },
+      "required": [
+        "name",
+        "pos"
+      ]
+    },
+    "menuImportable": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 6
+        },
+        "slots": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/menuSlot"
+          }
+        }
+      },
+      "required": [
+        "name",
+        "slots"
+      ]
+    },
+    "menuSlot": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "slot": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 53
+        },
+        "nbt": {
+          "$ref": "#/definitions/snbtPath"
+        },
+        "actions": {
+          "$ref": "#/definitions/htslPath"
+        }
+      },
+      "required": [
+        "slot",
+        "nbt"
+      ]
     }
   }
 }

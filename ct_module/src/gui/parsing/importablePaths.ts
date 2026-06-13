@@ -1,6 +1,6 @@
 /// <reference types="../../../CTAutocomplete" />
 
-import type { ParseResult } from "htsw";
+import type { ImportJsonFileNode, ParseResult } from "htsw";
 import type { Importable } from "htsw/types";
 import { getParsedResult } from "../state/index";
 
@@ -88,7 +88,7 @@ export function importableDeclaringPath(
     imp: Importable,
     parse: ParseResult<Importable[]>
 ): string {
-    return parse.gcx.declaringFiles.get(imp) ?? parse.gcx.path;
+    return parse.gcx.declaringPathOf(imp) ?? parse.gcx.path;
 }
 
 export function importableSourcePath(
@@ -105,7 +105,7 @@ export function importableSourcePath(
     }
     return parsed.gcx.sourceFiles.get(imp);
 }
-function subListOf(imp: Importable, kind: SubListKind): readonly object[] | undefined {
+export function subListOf(imp: Importable, kind: SubListKind): readonly object[] | undefined {
     if (kind === "onEnterActions" && imp.type === "REGION") {
         return imp.onEnterActions;
     }
@@ -191,10 +191,11 @@ export function allReferencedPaths(
     if (parse === null) return out;
     // Included import.jsons too — an importable-less include would otherwise
     // be missing from the fingerprint, so edits to it never bust the cache.
-    parse.gcx.includeEdges.forEach((children, parent) => {
-        push(parent);
-        for (let i = 0; i < children.length; i++) push(children[i]);
-    });
+    const pushTree = (node: ImportJsonFileNode): void => {
+        push(node.path);
+        for (let i = 0; i < node.includes.length; i++) pushTree(node.includes[i]);
+    };
+    if (parse.gcx.fileTree !== null) pushTree(parse.gcx.fileTree);
     for (const imp of parse.value) {
         for (const p of importableFilePaths(imp, parse)) push(p);
     }

@@ -18,17 +18,11 @@ type Owner = Action | Condition;
  */
 export async function resolveImportableItem(
     ctx: TaskContext,
-    itemRegistry: ItemRegistry | undefined,
+    itemRegistry: ItemRegistry,
     owner: Owner,
     itemName: string,
     kind: "action" | "condition"
 ): Promise<Item> {
-    if (itemRegistry === undefined) {
-        throw Diagnostic.error(
-            `Cannot set item "${itemName}" for ${owner.type}: no item registry is available.`
-        );
-    }
-
     const entry = itemRegistry.resolve(itemName, owner);
     if (entry === undefined) {
         throw Diagnostic.error(

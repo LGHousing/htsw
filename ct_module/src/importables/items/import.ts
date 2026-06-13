@@ -2,12 +2,10 @@ import type { Action, ImportableItem } from "htsw/types";
 
 import { applyActionListPlan } from "../../housingSync/actions/applyDiff";
 import { prereadActionList } from "../../housingSync/actions/plan";
-import type { ImportEventHandler } from "../../housingSync/importEvents";
 import { createSetupStepEmitter } from "../../housingSync/progress/setupStepEmitter";
 import { clickGoBack } from "../../housingSync/gui/menuUtils";
 import { timedWaitForMenu } from "../../housingSync/gui/menuWait";
 import {
-    getCurrentHousingUuid,
     importableHash,
     itemSnbtCachePath,
     tryWriteImportableCache,
@@ -25,7 +23,7 @@ import {
     sendCreativeInventoryAction,
 } from "../../housingSync/gui/packets";
 import { getActionListTrust, getBaselineActionList } from "../actionListHelpers";
-import type { ItemRegistry } from "../itemRegistry";
+import type { ImportSession } from "../imports";
 import {
     countReferencedShells,
     ensureReferencedImportablesExist,
@@ -123,38 +121,34 @@ export type ItemImportPlan = {
 export async function prereadImportableItem(
     _ctx: TaskContext,
     importable: ImportableItem,
-    _itemRegistry: ItemRegistry,
-    trustPlan?: ImportableTrustPlan,
-    cachedUuid?: string,
-    _events?: ImportEventHandler
+    session: ImportSession,
+    trustPlan?: ImportableTrustPlan
 ): Promise<ItemImportPlan> {
-    return { kind: "ITEM", importable, trustPlan, housingUuid: cachedUuid };
+    return { kind: "ITEM", importable, trustPlan, housingUuid: session.housingUuid };
 }
 
 export async function applyImportableItemPlan(
     ctx: TaskContext,
     plan: ItemImportPlan,
-    itemRegistry: ItemRegistry,
-    events?: ImportEventHandler
+    session: ImportSession
 ): Promise<void> {
     await importImportableItem(
         ctx,
         plan.importable,
-        itemRegistry,
+        session,
         plan.trustPlan,
-        plan.housingUuid,
-        events
+        plan.housingUuid
     );
 }
 
 async function importImportableItem(
     ctx: TaskContext,
     importable: ImportableItem,
-    itemRegistry: ItemRegistry,
+    session: ImportSession,
     trustPlan?: ImportableTrustPlan,
-    cachedUuid?: string,
-    events?: ImportEventHandler
+    cachedUuid?: string
 ): Promise<void> {
+    const events = session.events;
     const ownSteps = hasItemClickActions(importable) ? 3 : 1;
     const setup = createSetupStepEmitter(events, countReferencedShells(importable) + ownSteps);
 
@@ -162,7 +156,7 @@ async function importImportableItem(
         setup(`created ${kind} ${name}`);
     });
 
-    const uuid = cachedUuid ?? (await getCurrentHousingUuid(ctx));
+    const uuid = cachedUuid ?? session.housingUuid;
     if (!hasItemClickActions(importable)) {
         // No click actions means nothing to import into the housing — spawning
         // the item would just clutter the hotbar, so skip it. See issue #56.
@@ -196,10 +190,9 @@ async function importImportableItem(
     await syncItemActionLists(
         ctx,
         importable,
-        itemRegistry,
+        session,
         trustPlan,
-        start,
-        events
+        start
     );
 
     await timed("sleep1000", COST.guaranteedSleep1000, () => ctx.sleep(1000));
@@ -288,10 +281,9 @@ async function injectHeldItem(ctx: TaskContext, item: Item): Promise<void> {
 async function syncItemActionLists(
     ctx: TaskContext,
     importable: ImportableItem,
-    itemRegistry: ItemRegistry,
+    session: ImportSession,
     trustPlan: ImportableTrustPlan | undefined,
-    start: ItemStart,
-    events?: ImportEventHandler
+    start: ItemStart
 ): Promise<void> {
     const leftDesired = actionListToSync(
         importable.leftClickActions,
@@ -312,12 +304,11 @@ async function syncItemActionLists(
         await timedWaitForMenu(ctx, "menuClickWait");
 
         const leftPlan = await prereadActionList(ctx, leftDesired, {
-            itemRegistry,
+            session,
             baselineCurrent: getBaselineActionList(trustPlan, "leftClickActions"),
             trust: getActionListTrust(trustPlan, "leftClickActions"),
-            events,
         });
-        await applyActionListPlan(ctx, leftPlan, { itemRegistry, events });
+        await applyActionListPlan(ctx, leftPlan, { session });
 
         if (
             rightDesired !== undefined &&
@@ -335,12 +326,11 @@ async function syncItemActionLists(
         await timedWaitForMenu(ctx, "menuClickWait");
 
         const rightPlan = await prereadActionList(ctx, rightDesired, {
-            itemRegistry,
+            session,
             baselineCurrent: getBaselineActionList(trustPlan, "rightClickActions"),
             trust: getActionListTrust(trustPlan, "rightClickActions"),
-            events,
         });
-        await applyActionListPlan(ctx, rightPlan, { itemRegistry, events });
+        await applyActionListPlan(ctx, rightPlan, { session });
     }
 }
 

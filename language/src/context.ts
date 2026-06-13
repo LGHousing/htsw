@@ -3,6 +3,20 @@ import type { SourceMap } from "./sourceMap";
 import type { Importable } from "./types";
 import { SpanTable } from "./spanTable";
 
+/**
+ * One import.json in a parse: the importables it declares directly and the
+ * files it includes, in declaration order. A node is attached when the file
+ * is first visited — cycles, repeat includes, and missing files attach
+ * nothing — so each file appears exactly once and the nodes form a tree
+ * rooted at the entry file. Importables are the same objects as in the flat
+ * `gcx.importables` list, which merges the whole tree.
+ */
+export type ImportJsonFileNode = {
+    path: string;
+    importables: Importable[];
+    includes: ImportJsonFileNode[];
+};
+
 export class GlobalCtxt {
     path: string;
 
@@ -11,7 +25,7 @@ export class GlobalCtxt {
     importables: Importable[];
     diagnostics: Diagnostic[];
     activeImportJsonPaths: string[];
-    loadedImportJsonPaths: Set<string>;
+    missingImportJsonPaths: string[];
     /**
      * Maps each parsed importable to the resolved path of the file that owns
      * its primary content — for FUNCTION/EVENT this is the referenced .htsl
@@ -22,20 +36,11 @@ export class GlobalCtxt {
      */
     sourceFiles: WeakMap<Importable, string>;
     /**
-     * The import.json that DECLARED each importable — unlike `sourceFiles`,
-     * never the .htsl/.snbt the content lives in. Stored as data (not
-     * derived from spans) so snapshot-restored parses, which carry no
-     * spans, can still group importables by declaring file.
+     * The include structure of the parse. Null until `parseImportJson` visits
+     * the entry file (and always null for plain .htsl action parses).
      */
-    declaringFiles: WeakMap<Importable, string>;
-    /**
-     * Which import.json included which: resolved includer path → resolved
-     * included paths, in declaration order. An edge is recorded only when
-     * the include actually triggers a load — cycles, duplicates, and missing
-     * files record nothing — so the edges always form a tree rooted at the
-     * entry file.
-     */
-    includeEdges: Map<string, string[]>;
+    fileTree: ImportJsonFileNode | null;
+    private declaringPathCache: WeakMap<Importable, string> | null;
     /**
      * Housing UUID the entry import.json declares via its top-level
      * "houseUuid" key, or null when unbound. Only the entry file's
@@ -55,11 +60,31 @@ export class GlobalCtxt {
         this.importables = [];
         this.diagnostics = [];
         this.activeImportJsonPaths = [];
-        this.loadedImportJsonPaths = new Set<string>();
+        this.missingImportJsonPaths = [];
         this.sourceFiles = new WeakMap<Importable, string>();
-        this.declaringFiles = new WeakMap<Importable, string>();
-        this.includeEdges = new Map<string, string[]>();
+        this.fileTree = null;
+        this.declaringPathCache = null;
         this.houseUuid = null;
+    }
+
+    /**
+     * The import.json that DECLARED `importable` — unlike `sourceFiles`,
+     * never the .htsl/.snbt the content lives in. Derived from `fileTree`
+     * (the declaring file is the node holding the importable), so it works
+     * for snapshot-restored parses too, which carry no spans.
+     */
+    declaringPathOf(importable: Importable): string | undefined {
+        if (this.fileTree === null) return undefined;
+        if (this.declaringPathCache === null) {
+            const cache = new WeakMap<Importable, string>();
+            const visit = (node: ImportJsonFileNode): void => {
+                for (const imp of node.importables) cache.set(imp, node.path);
+                for (const child of node.includes) visit(child);
+            };
+            visit(this.fileTree);
+            this.declaringPathCache = cache;
+        }
+        return this.declaringPathCache.get(importable);
     }
 
     addDiagnostic(diag: Diagnostic) {
@@ -92,10 +117,9 @@ export class GlobalCtxt {
         gcx.importables = this.importables;
         gcx.diagnostics = this.diagnostics;
         gcx.activeImportJsonPaths = this.activeImportJsonPaths;
-        gcx.loadedImportJsonPaths = this.loadedImportJsonPaths;
+        gcx.missingImportJsonPaths = this.missingImportJsonPaths;
         gcx.sourceFiles = this.sourceFiles;
-        gcx.declaringFiles = this.declaringFiles;
-        gcx.includeEdges = this.includeEdges;
+        gcx.fileTree = this.fileTree;
         return gcx;
     }
 }

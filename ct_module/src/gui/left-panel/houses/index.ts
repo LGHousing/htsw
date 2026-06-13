@@ -722,7 +722,11 @@ function exportActionBar(t: HouseContentType, uuid: string, totalCount: number):
         style: { gap: 4, padding: { side: "right", value: 8 } },
         children: [
             Row({
-                style: { gap: 4, height: { kind: "px", value: SIZE_ROW_H } },
+                style: {
+                    gap: 4,
+                    height: { kind: "px", value: SIZE_ROW_H },
+                    align: "center",
+                },
                 children: [
                     (() => {
                         // Bound-file indicator: green house = the destination IS

@@ -236,9 +236,9 @@ export async function writeChangeMaxHealth(
 export async function writeGiveItem(
     ctx: TaskContext,
     action: ActionGiveItem,
-    options?: WriteActionOptions<ActionGiveItem>
+    options: WriteActionOptions<ActionGiveItem>
 ): Promise<void> {
-    const itemRegistry = options?.itemRegistry;
+    const itemRegistry = options.itemRegistry;
     await setItemValue(
         ctx,
         getActionFieldLabel("GIVE_ITEM", "itemName"),
@@ -273,9 +273,9 @@ export async function writeGiveItem(
 export async function writeRemoveItem(
     ctx: TaskContext,
     action: ActionRemoveItem,
-    options?: WriteActionOptions<ActionRemoveItem>
+    options: WriteActionOptions<ActionRemoveItem>
 ): Promise<void> {
-    const itemRegistry = options?.itemRegistry;
+    const itemRegistry = options.itemRegistry;
     if (action.itemName !== undefined) {
         await setItemValue(
             ctx,
@@ -585,9 +585,9 @@ export async function writeDisplayMenu(
 export async function writeDropItem(
     ctx: TaskContext,
     action: ActionDropItem,
-    options?: WriteActionOptions<ActionDropItem>
+    options: WriteActionOptions<ActionDropItem>
 ): Promise<void> {
-    const itemRegistry = options?.itemRegistry;
+    const itemRegistry = options.itemRegistry;
     await setItemValue(
         ctx,
         getActionFieldLabel("DROP_ITEM", "itemName"),

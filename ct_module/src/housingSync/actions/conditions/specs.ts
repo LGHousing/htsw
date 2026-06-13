@@ -34,8 +34,8 @@ export type ConditionSpec<T extends Condition> = {
     write?: (
         ctx: TaskContext,
         desired: T,
-        current?: T,
-        itemRegistry?: ItemRegistry
+        current: T | undefined,
+        itemRegistry: ItemRegistry
     ) => Promise<void>;
 };
 
@@ -147,8 +147,8 @@ const CONDITION_SPECS = {
 export async function writeOpenCondition(
     ctx: TaskContext,
     condition: Condition,
-    current?: Condition,
-    itemRegistry?: ItemRegistry
+    current: Condition | undefined,
+    itemRegistry: ItemRegistry
 ): Promise<void> {
     if (current && onlyNoteDiffers(condition, current)) {
         return;

@@ -229,7 +229,7 @@ function renderItem(
                 Renderer.drawRect(((a << 24) | 0xffffff) | 0, r.x, r.y, r.w, r.h);
             }
         }
-        if (hovered && e.onHover) e.onHover(r);
+        if (hovered && e.onHover) e.onHover(r, mouseX, mouseY);
     } else if (e.kind === "text") {
         const raw = extract(e.text);
         const text = e.truncate ? truncateToWidth(raw, r.w) : raw;
@@ -492,8 +492,11 @@ export function endScrollbarDrag(): void {
 }
 
 // --- Wheel scroll dispatch: find topmost scroll under cursor, scroll it ---
-// Overlay units moved per wheel notch. Rows are SIZE_ROW_H (18), so ~5 rows.
-const WHEEL_SCROLL_STEP = 90;
+// Overlay units per wheel notch. Rows are SIZE_ROW_H (18), so 3 rows per
+// notch — VS Code's default of 3 lines. `delta` is in notches and carries the
+// real event magnitude (fractional for high-res wheels, >1 for fast flicks
+// that coalesce into one event), so travel stays proportional to input.
+const WHEEL_SCROLL_STEP = 54;
 
 export function dispatchWheel(
     laid: LaidOut[],

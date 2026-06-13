@@ -76,7 +76,7 @@ function actionWithNote(action: Action, note: string | undefined): Action {
 async function addAction(
     ctx: TaskContext,
     action: Action,
-    itemRegistry?: ItemRegistry,
+    itemRegistry: ItemRegistry,
     apply?: ReturnType<typeof createActionApplyContext>,
     callbacks?: ImportActionCallbacks
 ): Promise<void> {
@@ -162,18 +162,20 @@ async function moveActionToIndex(
 export async function applyActionListPlan(
     ctx: TaskContext,
     plan: ActionListPlan,
-    options?: ActionListApplyOptions
+    options: ActionListApplyOptions
 ): Promise<void> {
-    const progressScope: ProgressScope = options?.progressScope ?? { kind: "topLevel" };
+    const progressScope: ProgressScope = options.progressScope ?? { kind: "topLevel" };
+    const events = options.session.events;
     await applyActionListPlanInner(
         ctx,
         plan.observed,
         plan.desired,
         plan.diff,
-        options?.itemRegistry,
-        options?.listPath,
+        options.session.items,
+        options.session,
+        options.listPath,
         plan.phaseUnits,
-        options?.events ?? null,
+        events ?? null,
         progressScope,
         (readCurrent) => {
             plan.getLiveCurrent = readCurrent;
@@ -301,7 +303,8 @@ async function applyActionListPlanInner(
     observed: ObservedActionSlot[],
     desired: Action[],
     diff: ActionListDiff,
-    itemRegistry?: ItemRegistry,
+    itemRegistry: ItemRegistry,
+    session: ActionListApplyOptions["session"],
     listPath?: ActionPath,
     phaseUnits?: PhaseUnits,
     events?: ImportEventHandler | null,
@@ -557,8 +560,7 @@ async function applyActionListPlanInner(
                 : createActionApplyContext({
                       ctx,
                       actionPath: srcPath,
-                      itemRegistry,
-                      events: events ?? undefined,
+                      session,
                       appliedUnits,
                       completedOps,
                       totalOps: diff.operations.length,
@@ -671,8 +673,7 @@ async function applyActionListPlanInner(
             : createActionApplyContext({
                   ctx,
                   actionPath: srcPath,
-                  itemRegistry,
-                  events: events ?? undefined,
+                  session,
                   appliedUnits,
                   completedOps,
                   totalOps: diff.operations.length,
