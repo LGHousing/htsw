@@ -7,7 +7,7 @@
         "htsw": "dist/htsw-cli.js"
     },
     "scripts": {
-        "build": "vite build --mode production && chmod +x dist/htsw-cli.js"
+        "build": "vite build --mode production"
     },
     "engines": {
         "node": ">=20"
