@@ -85,8 +85,8 @@ export function parseLocation(p: Parser): Location {
     );
 
     if (type === "Custom Coordinates") {
-        const value = parseCoordinates(p);
-        return { type, value };
+        const { value, coordinates } = parseCoordinates(p);
+        return { type, value, coordinates };
     } else {
         return { type };
     }
@@ -528,7 +528,7 @@ export function parseItemAmount(p: Parser): ItemAmount {
     );
 }
 
-export function parseCoordinates(p: Parser): string {
+export function parseCoordinates(p: Parser): { value: string, coordinates: Coordinates } {
     if (p.token.kind !== "str") {
         throw Diagnostic.error("Expected coordinates")
             .addPrimarySpan(p.token.span);
@@ -544,9 +544,8 @@ export function parseCoordinates(p: Parser): string {
     const lexer = new Lexer(file);
     const sp = new Parser(p.gcx, lexer);
 
-    parseCoordinates0(sp);
-
-    return value;
+    const coordinates = parseCoordinates0(sp);
+    return { value, coordinates };
 }
 
 export function parseCoordinates0(sp: Parser): Coordinates {

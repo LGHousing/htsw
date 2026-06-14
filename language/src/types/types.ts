@@ -54,7 +54,7 @@ export type Location =
     | { type: "House Spawn Location" }
     | { type: "Invokers Location" }
     | { type: "Current Location" }
-    | { type: "Custom Coordinates", value: string };
+    | { type: "Custom Coordinates", value: string, coordinates?: Coordinates | undefined };
 
 export type Bounds = {
     from: Pos;

@@ -1,6 +1,6 @@
-import { Diagnostic, htsl, runtime } from "htsw";
+import { Diagnostic, runtime } from "htsw";
 import { Runtime, Var, VarDouble, VarLong } from "htsw/runtime";
-import { Location } from "htsw/types";
+import { Coordinates, Location } from "htsw/types";
 
 export type ResolvedLocation = {
     x: number;
@@ -14,7 +14,7 @@ export function resolveLocation(
     rt: Runtime, location: Location
 ): ResolvedLocation {
     if (location.type === "Custom Coordinates") {
-        return resolveLocationCoordinates(rt, location.value);
+        return resolveLocationCoordinates(rt, location.coordinates!);
     }
 
     if (location.type === "House Spawn Location") {
@@ -34,9 +34,8 @@ export function resolveLocation(
 
 // Lord forgive me
 function resolveLocationCoordinates(
-    rt: Runtime, string: string
+    rt: Runtime, coordinates: Coordinates
 ): ResolvedLocation {
-    const coordinates = htsl.coordinates.parseCoordinates(string);
     const coords = [coordinates.x, coordinates.y, coordinates.z];
     const coordValues = coords.map(it => it.value);
     const coordVars = coordValues.map(it => runtime.parseValue(rt, it));
@@ -124,6 +123,22 @@ function resolveLocationCoordinates(
             numericPitch = 0;
         }
     }
+
+    if (coords[0].kind === "local") {
+        const { x, y, z } = localToWorld(numericCoords[0], numericCoords[1], numericCoords[2])
+        return {
+            x, y, z,
+            yaw: numericYaw,
+            pitch: numericPitch,
+        };
+    }
+
+    const realCoords = [Player.getX(), Player.getY(), Player.getZ()];
+    for (let i = 0; i < 3; i++) {
+        if (coords[i].kind === "relative") {
+            numericCoords[i] += realCoords[i];
+        }
+    }
     
     return {
         x: numericCoords[0],
@@ -131,5 +146,48 @@ function resolveLocationCoordinates(
         z: numericCoords[2],
         yaw: numericYaw,
         pitch: numericPitch,
+    };
+}
+
+function localToWorld(localX: number, localY: number, localZ: number) {
+    const yaw = Player.getYaw() * Math.PI / 180;
+    const pitch = Player.getPitch() * Math.PI / 180;
+
+    const left = {
+        x: Math.cos(yaw),
+        y: 0,
+        z: Math.sin(yaw),
+    };
+
+    const forward = {
+        x: -Math.sin(yaw) * Math.cos(pitch),
+        y: -Math.sin(pitch),
+        z: Math.cos(yaw) * Math.cos(pitch),
+    };
+
+    const up = {
+        x: -Math.sin(yaw) * Math.sin(pitch),
+        y: Math.cos(pitch),
+        z: Math.cos(yaw) * Math.sin(pitch),
+    };
+
+    return {
+        x:
+            Player.getX() +
+            localX * left.x +
+            localY * up.x +
+            localZ * forward.x,
+
+        y:
+            Player.getY() +
+            localX * left.y +
+            localY * up.y +
+            localZ * forward.y,
+
+        z:
+            Player.getZ() +
+            localX * left.z +
+            localY * up.z +
+            localZ * forward.z,
     };
 }
