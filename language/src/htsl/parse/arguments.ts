@@ -17,8 +17,10 @@ import type {
     ItemAmount,
     PortalType,
     VarOperation,
+    Coordinate,
+    Coordinates,
 } from "../../types";
-import type { Parser } from "./parser";
+import { Parser } from "./parser";
 import { Diagnostic } from "../../diagnostic";
 import type { F64Kind, I64Kind, PlaceholderKind, StrKind, Token } from "./token";
 import { parseNumericalPlaceholder, validateNumericalPlaceholder } from "./placeholders";
@@ -44,6 +46,8 @@ import {
 import { Span } from "../../span";
 import { SHORTHANDS } from "./helpers";
 import { Long } from "../../long";
+import { Lexer } from "./lexer";
+import { SourceFile } from "../../sourceMap";
 
 function normalizeNumberLiteral(value: string): string {
     return value.replaceAll("_", "");
@@ -81,8 +85,8 @@ export function parseLocation(p: Parser): Location {
     );
 
     if (type === "Custom Coordinates") {
-        const value = parseCoordinates(p);
-        return { type, value };
+        const { value, coordinates } = parseCoordinates(p);
+        return { type, value, coordinates };
     } else {
         return { type };
     }
@@ -268,7 +272,7 @@ export function parseVarOperation(p: Parser): VarOperation {
 export function parseNumericValue(p: Parser): Value {
     const negative = p.eat({ kind: "bin_op", op: "minus" });
 
-    const maybeErr = Diagnostic.error("Invalid amount");
+    const maybeErr = Diagnostic.error("Invalid value");
 
     if (p.eat("i64")) {
         const value = normalizeNumberLiteral((p.prev as I64Kind).value);
@@ -338,7 +342,7 @@ export function parseNumericValue(p: Parser): Value {
         return parseNumericalPlaceholder(p);
     }
 
-    throw Diagnostic.error("Expected amount")
+    throw Diagnostic.error("Expected value")
         .addPrimarySpan(p.token.span);
 }
 
@@ -524,83 +528,133 @@ export function parseItemAmount(p: Parser): ItemAmount {
     );
 }
 
-export function parseCoordinates(p: Parser) {
+export function parseCoordinates(p: Parser): { value: string, coordinates: Coordinates } {
     if (p.token.kind !== "str") {
         throw Diagnostic.error("Expected coordinates")
             .addPrimarySpan(p.token.span);
     }
 
-    let value = p.token.value;
-    const sp = p.token.span;
+    const value = p.token.value;
+    const span = p.token.span;
     p.next();
 
-    const tokens = value.split(" ");
+    const file = new SourceFile("DUMMYSTRING_YOU.KNOW.WHERE.TO.FIND.ME_REPLACE+LATER+WITH+A+PROPER+DUMMY+SOURCE+FILE+IMPLEMENTATION+MAYBE?", value);
+    file.startPos = span.start + 1;
 
-    function addDiagnostic(message: string, span: Span) {
-        p.gcx.addDiagnostic(Diagnostic.error(message)
-            .addPrimarySpan(span));
+    const lexer = new Lexer(file);
+    const sp = new Parser(p.gcx, lexer);
+
+    const coordinates = parseCoordinates0(sp);
+    return { value, coordinates };
+}
+
+export function parseCoordinates0(sp: Parser): Coordinates {
+    const start = sp.token.span.start;
+    
+    const { value: x, span: xSpan } = sp.spanned(parseCoordinate);
+    const { value: y, span: ySpan } = sp.spanned(parseCoordinate);
+    const { value: z, span: zSpan } = sp.spanned(parseCoordinate);
+
+    const coords = [x, y, z];
+
+    const localCoord = coords.find(it => it.kind === "local");
+    const nonLocalCoord = coords.find(it => it.kind !== "local");
+
+    if (localCoord && nonLocalCoord) {
+        const err = Diagnostic.error("Cannot mix local and non-local coordinates")
+            .addSecondarySpan(sp.gcx.spans.get(localCoord), "Local coordinate used here")
+            .addPrimarySpan(sp.gcx.spans.get(nonLocalCoord), "Non-local coordinate");
+    
+        sp.gcx.addDiagnostic(err);
     }
 
-    const isNumeric = (s: string) => !isNaN(Number(normalizeNumberLiteral(s)));
-    const isPlaceholder = (s: string, span: Span) => {
-        const match = s.match(/^%(.+)%[LD]?$/i);
-        if (!match) return false;
-        validateNumericalPlaceholder(p, match[1], span);
-        return true;
+    const coordinates: Coordinates = {
+        x, y, z, pitch: undefined, yaw: undefined
     };
-    const isNumericOrPlaceholder = (s: string, span: Span) =>
-        isNumeric(s) || isPlaceholder(s, span);
-    const isRelative = (s: string, span: Span) =>
-        (s.startsWith("~") || s.startsWith("^")) &&
-        (s.length == 1 || isNumericOrPlaceholder(s.substring(1), span));
 
-    let offset = 0;
-    const components = tokens.map((token, index) => {
-        const start = offset + 1;
-        offset += token.length + 1;
-        const end = start + token.length;
-
-        const tokenSpan = new Span(sp.start + start, sp.start + end);
-        const isValid = isRelative(token, tokenSpan) || isNumericOrPlaceholder(token, tokenSpan);
-        if (!isValid) {
-            addDiagnostic("Invalid component", tokenSpan);
-        }
-        return { token, isRelative: isRelative(token, tokenSpan), index, span: tokenSpan };
-    });
-
-    if (components.length < 3) {
-        addDiagnostic("Expected 3 components", new Span(sp.start, sp.end));
-        return "";
+    sp.gcx.spans.setField(coordinates, "x", xSpan);
+    sp.gcx.spans.setField(coordinates, "y", ySpan);
+    sp.gcx.spans.setField(coordinates, "z", zSpan);
+    
+    if (sp.check("eof")) {
+        // 3 coordinate location
+        const end = sp.prev.span.end;
+        sp.gcx.spans.set(coordinates, new Span(start, end));
+        return coordinates;
+    }
+    
+    const { value: yaw, span: yawSpan } = sp.spanned(parseNumericCoordinateValue);
+    coordinates.yaw = yaw;
+    sp.gcx.spans.setField(coordinates, "yaw", yawSpan);
+    
+    if (sp.check("eof")) {
+        // 4 coordinate location
+        const end = sp.prev.span.end;
+        sp.gcx.spans.set(coordinates, new Span(start, end));
+        return coordinates;
     }
 
-    const coordinateComponents = components.slice(0, 3);
-    const allDirectional = coordinateComponents.every(c => c.token.startsWith("^"));
-    const anyDirectional = coordinateComponents.some(c => c.token.startsWith("^"));
-    if (anyDirectional && !allDirectional) {
-        addDiagnostic("All components must be directional", sp);
+    // 5 coordinate location
+    const { value: pitch, span: pitchSpan } = sp.spanned(parseNumericCoordinateValue);
+    coordinates.pitch = pitch;
+    sp.gcx.spans.setField(coordinates, "pitch", pitchSpan);
+    
+    if (!sp.check("eof")) {
+        // !!!
+        sp.gcx.addDiagnostic(Diagnostic.error("Unexpected token")
+            .addPrimarySpan(sp.token.span));
     }
 
-    if (components.length > 5) {
-        const extra = components.slice(5);
-        const span = new Span(
-            extra[0].span.start,
-            extra[extra.length - 1].span.end,
-        );
-        addDiagnostic("Expected at most 5 components", span);
-    }
+    const end = sp.prev.span.end;
+    sp.gcx.spans.set(coordinates, new Span(start, end));
+    return coordinates;
+}
 
-    if (components.length >= 4) {
-        const yaw = components[3];
-        if (!isNumericOrPlaceholder(yaw.token, yaw.span)) {
-            addDiagnostic("Invalid yaw", yaw.span);
-        }
-    }
+function parseCoordinate(sp: Parser): Coordinate {
+    const start = sp.token.span.start;
 
-    if (components.length >= 5) {
-        const pitch = components[4];
-        if (!isNumericOrPlaceholder(pitch.token, pitch.span)) {
-            addDiagnostic("Invalid pitch", pitch.span);
-        }
+    const { value: kind, span: kindSpan } = sp.spanned(parseCoordinateKind);
+
+    // This is terrible and I hate this forever and ever
+    let value: Value;
+    let valueSpan: Span;
+
+    // This is hacky magic scary bullshit
+    if (kind !== "absolute" && (kindSpan.end !== sp.token.span.start || sp.token.kind === "eof")) {
+        value = "0";
+        valueSpan = Span.at(kindSpan.end);
+    } else {
+        const spanned = sp.spanned(parseNumericCoordinateValue);
+        value = spanned.value;
+        valueSpan = spanned.span;
+    }
+    
+    const end = sp.prev.span.end;
+
+    const coordinate: Coordinate = { kind, value };
+    sp.gcx.spans.set(coordinate, new Span(start, end));
+    sp.gcx.spans.setField(coordinate, "kind", kindSpan);
+    sp.gcx.spans.setField(coordinate, "value", valueSpan);
+    return coordinate;
+}
+
+function parseCoordinateKind(sp: Parser): Coordinate["kind"] {
+    if (sp.eat("tilde")) return "relative";
+    if (sp.eat({ kind: "bin_op", op: "caret" })) return "local";
+    return "absolute";
+}
+
+function parseNumericCoordinateValue(sp: Parser): Value {
+    const { value, span } = sp.spanned(parseNumericValue);
+
+    if (value.includes(" ")) {
+        const err = Diagnostic.error("Invalid value")
+            .addPrimarySpan(span)
+            .addSubDiagnostic(Diagnostic.note(
+                "Placeholders with spaces do not work as coordinate components"
+            ));
+        
+        sp.gcx.addDiagnostic(err);
     }
 
     return value;

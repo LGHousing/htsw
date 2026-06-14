@@ -75,6 +75,8 @@ export class Lexer {
         if (c === ",") return token("comma", Span.single(lo));
         if (c === "!") return token("exclamation", Span.single(lo));
 
+        if (c === "~") return token("tilde", Span.single(lo));
+
         // binary operators
         if (c === "+") {
             if (this.peek() === "=") {

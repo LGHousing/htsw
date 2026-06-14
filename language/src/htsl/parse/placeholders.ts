@@ -129,8 +129,8 @@ function validatePlaceholder(
         if (args.length > 0) addIssueInvalidArgument("No arguments expected");
         if (opts.requireNumeric && spec.valueType !== "number") {
             p.gcx.addDiagnostic(Diagnostic.error(
-                `Expected a numeric placeholder; \`%${name}%\` returns a string`,
-            ).addPrimarySpan(span));
+                `Expected a numeric placeholder`,
+            ).addPrimarySpan(span, "returns a string"));
         }
         return `%${value}%`;
     }
