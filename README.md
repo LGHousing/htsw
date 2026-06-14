@@ -2,7 +2,7 @@
 
 Write Hypixel Housing GUIs as text instead of clicking through in-game menus. The included ChatTriggers module imports your file straight into Housing and diffs against what's already there, so re-runs only push what changed.
 
-HTSW is a refined evolution of [HTSL](https://github.com/BusterBrown1218/HTSL) — stricter type system, better diagnostics, and a working smart importer & exporter with the game.
+HTSW is a refined evolution of [HTSL](https://github.com/BusterBrown1218/HTSL) with a revamped type system, better diagnostics, and a working smart importer & exporter with the game.
 
 ## What it looks like
 
@@ -45,24 +45,10 @@ Run `/import import.json` in a Housing world (or probably preferably in the GUI)
 - **VSCode extension.** Autocomplete, hover, diagnostics. A Monaco build exists for the web.
 - **CLI.** `htsw check path/` and `htsw run path/` for terminal checks and quick runs.
 
-## Quick start
+## INSTALLATION GUIDE
 
-### Use it in Minecraft
+Coming soon! 
 
-SUBJECT TO CHANGE!
-
-1. Install [ChatTriggers](https://www.chattriggers.com/).
-2. Clone this repo.
-3. In `ct_module/`, create a `.env` file:
-   ```
-   CT_MODULE_DESTINATION=<path to your ChatTriggers modules folder>
-   HTSW_REPOSITORY_PATH=<absolute path to this repo>
-   ```
-4. From `ct_module/`, run `python install.py`.
-5. In Minecraft, in a Housing world: `/import path/to/import.json`.
-### Edit with autocomplete
-
-Install the VSCode extension from the releases page.
 
 ### Check from the terminal
 
