@@ -125,7 +125,7 @@ function resolveLocationCoordinates(
     }
 
     if (coords[0].kind === "local") {
-        const { x, y, z } = localToWorld(numericCoords[0], numericCoords[1], numericCoords[2])
+        const { x, y, z } = localToWorld(numericCoords[0], numericCoords[1], numericCoords[2]);
         return {
             x, y, z,
             yaw: numericYaw,
