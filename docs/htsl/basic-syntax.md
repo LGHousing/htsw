@@ -1,4 +1,4 @@
-Docs / HTSW / HTSL / [Basic Syntax](basic-syntax.md)
+Docs / HTSL / [Basic Syntax](basic-syntax.md)
 
 ---
 

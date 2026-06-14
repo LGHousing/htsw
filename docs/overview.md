@@ -1,4 +1,4 @@
-Docs / HTSW / [Overview](overview.md)
+Docs / [Overview](overview.md)
 
 ---
 

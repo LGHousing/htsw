@@ -1,4 +1,4 @@
-Docs / HTSW / [Tooling](tooling.md)
+Docs / [Tooling](tooling.md)
 
 ---
 

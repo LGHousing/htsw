@@ -1,4 +1,4 @@
-Docs / HTSW / HTSL / [Actions](actions.md)
+Docs / HTSL / [Actions](actions.md)
 
 ---
 
