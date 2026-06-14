@@ -61,9 +61,11 @@ function behaviorPlaySound(rt: runtime.Runtime, action: ActionPlaySound) {
     } else {
         const location = resolveLocation(rt, action.location ?? { "type": "Invokers Location" });
 
-        World.getWorld().func_72908_a /*playSoundEffect*/(
-            location.x, location.y, location.z,
-            action.sound, action.volume ?? 0.7, action.pitch ?? 1.0
+        const pos = new BlockPos(location.x, location.y, location.z);
+        World.getWorld().func_175731_a /*playSoundAtPos*/(
+            pos.toMCBlock(),
+            action.sound, action.volume ?? 0.7, action.pitch ?? 1.0,
+            false // distanceDelay
         );
     }
 }
