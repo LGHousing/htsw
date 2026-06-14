@@ -66,7 +66,7 @@ function resolveLocationCoordinates(
             return v.value;
         }
         throw Error("???");
-    }
+    };
     
     const numericCoords = coordVars.map(it => varToNumber(it));
 
