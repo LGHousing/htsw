@@ -8,6 +8,9 @@ coverage/
 # extension
 *.vsix
 
+# mdBook output
+book/
+
 # local import dumps
 examples/imports/
 .claude/settings.local.json

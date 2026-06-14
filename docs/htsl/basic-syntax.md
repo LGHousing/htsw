@@ -1,11 +1,7 @@
-Docs / HTSL / [Basic Syntax](basic-syntax.md)
-
----
-
 # Basic Syntax
 
 This is a collection of basic syntax elements with examples. You can find
- more examples [here](../examples/).
+ more examples in the [examples directory on GitHub](https://github.com/LGHousing/htsw/tree/main/examples).
 
 ## Comments
 

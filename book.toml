@@ -1,0 +1,13 @@
+[book]
+title = "HTSW Documentation"
+authors = ["sndyx", "callanftw", "j_sse"]
+language = "en"
+src = "docs"
+
+[build]
+build-dir = "book"
+
+[output.html]
+git-repository-url = "https://github.com/LGHousing/htsw"
+edit-url-template = "https://github.com/LGHousing/htsw/edit/main/{path}"
+site-url = "/htsw/"

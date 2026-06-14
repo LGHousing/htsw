@@ -34,12 +34,10 @@ After ChatTriggers is installed, unzip the mod to
 
 ## Documentation / Guide
 
-An overview of HTSW is available [here](./docs/overview.md).
+Documentation is available at
+ [lghousing.github.io/htsw](https://lghousing.github.io/htsw/).
 
-HTSW uses a familiar subset of HTSL for actions. This syntax is documented
- [here](./docs/htsl/basic-syntax.md).
-
-A collection of examples is [here](./docs/examples).
+A collection of examples is [here](./examples).
 
 ## Credits
 

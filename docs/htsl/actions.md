@@ -1,7 +1,3 @@
-Docs / HTSL / [Actions](actions.md)
-
----
-
 # Actions
 
 Actions in HTSL are declared with a keyword and positional arguments.
