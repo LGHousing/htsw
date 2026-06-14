@@ -12,6 +12,7 @@ import type {
 import { Simulator } from "./simulator";
 import { replacePlaceholders } from "./placeholders";
 import { coerceWithin } from "./helpers";
+import { resolveLocation } from "./locations";
 
 export function createActionBehaviors(vars: runtime.simple.Vars): runtime.ActionBehaviors {
     return new runtime.simple.SimpleActionBehaviors(vars)
@@ -52,19 +53,31 @@ function behaviorSendChatMessage(_rt: runtime.Runtime, action: ActionSendMessage
     ChatLib.chat(`&7*&r ${message}`);
 }
 
-function behaviorPlaySound(_rt: runtime.Runtime, _action: ActionPlaySound) {}
+function behaviorPlaySound(rt: runtime.Runtime, action: ActionPlaySound) {
+    if (action.location?.type === "Invokers Location") {
+        Player.getPlayer().func_85030_a /*playSound*/(
+            action.sound, action.volume ?? 0.7, action.pitch ?? 1.0
+        );
+    } else {
+        const location = resolveLocation(rt, action.location ?? { "type": "Invokers Location" });
+
+        World.getWorld().func_72908_a /*playSoundEffect*/(
+            location.x, location.y, location.z,
+            action.sound, action.volume ?? 0.7, action.pitch ?? 1.0
+        );
+    }
+}
 
 function behaviorTeleport(rt: runtime.Runtime, action: ActionTeleport) {
-    if (action.location.type === "Invokers Location") {
-        ChatLib.say("/tp ~ ~ ~");
-    } else if (action.location.type === "Custom Coordinates") {
-        ChatLib.say(`/tp ${replacePlaceholders(action.location.value ?? "")}`);
-    } else {
-        const warn = Diagnostic.warning(
-            "House spawn cannot be used in Simulator mode"
-        ).addPrimarySpan(rt.spans.getField(action, "location"));
+    const location = resolveLocation(rt, action.location);
 
-        rt.emitDiagnostic(warn);
+    ChatLib.say(`/tp ${location.x} ${location.y} ${location.z}`);
+
+    if (location.yaw !== undefined) {
+        Player.getPlayer().field_70177_z /*rotationYaw*/ = location.yaw;
+    }
+    if (location.pitch !== undefined) {
+        Player.getPlayer().field_70125_A /*rotationPitch*/ = location.pitch;
     }
 }
 

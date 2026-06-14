@@ -15,6 +15,21 @@ export interface FileLoader {
 
 }
 
+export class DummyFileLoader implements FileLoader {
+    fileExists(path: string): boolean {
+        return false;
+    }
+    readFile(path: string): string {
+        throw new Error("Not implemented!");
+    }
+    getParentPath(base: string): string {
+        throw new Error("Not implemented!");
+    }
+    resolvePath(base: string, other: string): string {
+        throw new Error("Not implemented!");
+    }
+}
+
 export class SourceFile {
     path: string;
     src: string;

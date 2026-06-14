@@ -72,3 +72,16 @@ export type MenuSlot = {
     nbt: Tag;
     actions?: Action[];
 };
+
+export type Coordinates = {
+    x: Coordinate;
+    y: Coordinate;
+    z: Coordinate;
+    pitch: Value | undefined;
+    yaw: Value | undefined;
+}
+
+export type Coordinate = {
+    kind: "absolute" | "relative" | "local",
+    value: Value,
+};

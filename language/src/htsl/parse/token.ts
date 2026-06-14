@@ -5,6 +5,7 @@ export type Token = TokenType & { span: Span };
 export type TokenType =
     | CommaKind
     | ExclamationKind
+    | TildeKind
     | BinOpKind
     | BinOpEqKind
     | CmpOpKind
@@ -23,6 +24,8 @@ export type TokenType =
 
 export type CommaKind = { kind: "comma" };
 export type ExclamationKind = { kind: "exclamation" };
+
+export type TildeKind = { kind: "tilde" };
 
 export type BinOpKind = { kind: "bin_op"; op: BinOp };
 export type BinOpEqKind = { kind: "bin_op_eq"; op: BinOp };
@@ -65,6 +68,7 @@ const TOKEN_KIND_NAMES: {
 } = {
     comma: ",",
     exclamation: "!",
+    tilde: "~",
     bin_op: "binary operator",
     bin_op_eq: "binary operator",
     cmp_op: "comparison",
@@ -119,8 +123,6 @@ export function tokenToString(tok: Token["kind"] | Partial<Token>) {
     }
 
     switch (tok.kind) {
-        case "comma":
-            return ",";
         case "bin_op":
             return tok.op ? BIN_OP_SYMBOLS[tok.op] : TOKEN_KIND_NAMES[tok.kind];
         case "bin_op_eq":
