@@ -1,78 +1,63 @@
 # HTSW
 
-Write Hypixel Housing GUIs as text instead of clicking through in-game menus. The included ChatTriggers module imports your file straight into Housing and diffs against what's already there, so re-runs only push what changed.
+HTSW is a refined HTSL parser, importer/exporter, runtime, LSP framework, and
+ more. It is designed to automate a wider range of Housing features and perform
+ incremental imports by detecting exactly what has changed.
 
-HTSW is a refined evolution of [HTSL](https://github.com/BusterBrown1218/HTSL) with a revamped type system, better diagnostics, and a working smart importer & exporter with the game.
+## Table of Contents
 
-## What it looks like
+<!--- TOC -->
 
-A function written in HTSW:
+- [Installation](#installation)
+    - [Mod Installation](#mod-installation)
+- [Documentation / Guide](#documentation--guide)
+- [Credits](#credits)
+    - [HTSW](#htsw)
+    - [HTSL](#htsl)
+- [License](#license)
 
-```htsl
-/// Greet the player when they hold the cool item.
-if and (hasItem "coolItem") {
-    chat "You have the cool item!"
-} else {
-    chat "You're not very cool. Sorry!"
-}
-```
+<!--- END -->
 
-Wired up in `import.json`:
+## Installation
 
-```json
-{
-    "functions": [
-        {
-            "name": "Greet",
-            "actions": "greet.htsl",
-            "icon": { "item": "minecraft:clock" }
-        }
-    ],
-    "items": [
-        { "name": "coolItem", "nbt": "./cool.snbt" }
-    ]
-}
-```
+> At the moment, the in-game mod is only available on 1.8.9.
 
-Run `/import import.json` in a Housing world (or probably preferably in the GUI) and the function lands in your Housing menus, with the referenced item materialized and ready to use.
+Download the latest release of the mod, VSCode extension, and CLI
+ [here](https://github.com/LGHousing/htsw/releases).
 
-## What's in the box
+### Mod Installation
 
-- **Parser, type checker, and diagnostics.** Wrong action names, bad field types, and missing references get caught before you ever open a menu.
-- **ChatTriggers module.** `Drives the actual Housing GUI — opens menus, edits actions, diffs against what's there, syncs only the differences. Item NBT is cached per-housing.
-- **Simulator.** Run your code outside Housing for fast iteration on logic.
-- **In-game dashboard.** `/htsw gui` opens an overlay for browsing files, inspecting knowledge, and kicking off imports without touching chat.
-- **VSCode extension.** Autocomplete, hover, diagnostics. A Monaco build exists for the web.
-- **CLI.** `htsw check path/` and `htsw run path/` for terminal checks and quick runs.
+To use the mod, download [ChatTriggers for 1.8.9](https://chattriggers.com/).
 
-## INSTALLATION GUIDE
+After ChatTriggers is installed, unzip the mod to
+ `./minecraft/config/ChatTriggers/modules/HTSW/`.
 
-Coming soon! 
+## Documentation / Guide
 
+An overview of HTSW is available [here](./docs/overview.md).
 
-### Check from the terminal
+HTSW uses a familiar subset of HTSL for actions. This syntax is documented
+ [here](./docs/htsl/basic-syntax.md).
 
-```bash
-cd cli
-npm install
-npm run build
-node dist/htsw-cli.js check path/to/import.json
-```
-
-## Examples
-
-Working examples live under [`examples/`](examples/). Start with [`examples/simple/`](examples/simple/) — it covers a function, an event, and an item with NBT.
+A collection of examples is [here](./docs/examples).
 
 ## Credits
 
-A continuation of [BusterBrown1218](https://github.com/BusterBrown1218)'s HTSL. Housing wouldn't be in the state it's in today without his work.
+Thank you to countless members of the Housing community for sharing knowledge,
+ ideas & inspiration, and for contributions to the project.
 
-HTSW itself is built by @sndyx, @j_sse, and @callanftw.
+### HTSW
 
-Thank you Sandy for the parser, lexer, linter, simulator, cli, VSCode extension, and initiating the project.
-Thank you Callan for the importer, exporter, diffing algorithm, knowledge, GUI, and VSCode extension.
-Thank you Jesse for the GUI, MCP, and miscellaneous things.
+HTSW is developed primarily by:
+ - [@sndyx](https://github.com/sndyx)
+ - [@callanftw](https://github.com/Callanplays)
+ - [@j_sse](https://github.com/69Jesse)
+
+### HTSL
+
+HTSW is inspired by HTSL, originally developed by:
+- [BusterBrown1218](https://github.com/BusterBrown1218)
 
 ## License
 
-MIT — see [LICENSE.txt](LICENSE.txt).
+Distributed under the terms of the MIT license. See [LICENSE.txt](LICENSE.txt).

@@ -1,0 +1,29 @@
+// A fairly simple and accurate approximation of sin based on Bhāskara I's
+// formula.
+
+// inputs: sinIn
+// outputs: sinOut
+
+// Note that often it is more practical to inline this function.
+
+var tmp0 = var sinIn
+
+if (var sinIn < 0) {
+    var tmp0 *= -1.0
+}
+
+var sinIn unset
+
+if (var tmp0 > 90.0) {
+    var tmp0 -= 180.0
+    var tmp0 *= -1.0
+}
+
+var tmp1 = 180.0
+var tmp1 -= var tmp0
+var tmp1 *= var tmp0
+var sinOut = 4.0
+var sinOut *= var tmp1
+var tmp0 = 40500.0
+var tmp0 -= var tmp1
+var sinOut /= var tmp0

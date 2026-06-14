@@ -1,0 +1,511 @@
+Docs / HTSW / HTSL / [Actions](actions.md)
+
+---
+
+# Actions
+
+Actions in HTSL are declared with a keyword and positional arguments.
+
+
+## List of Actions
+
+<!--- TOC -->
+
+- [Conditional](#conditional)
+- [Change Player's Group](#change-players-group)
+- [Kill Player](#kill-player)
+- [Full Heal](#full-heal)
+- [Display Title](#display-title)
+- [Display Action Bar](#display-action-bar)
+- [Reset Inventory](#reset-inventory)
+- [Change Max Health](#change-max-health)
+- [Parkour Checkpoint](#parkour-checkpoint)
+- [Give Item](#give-item)
+- [Remove Item](#remove-item)
+- [Send a Chat Message](#send-a-chat-message)
+- [Apply Potion Effect](#apply-potion-effect)
+- [Clear All Potion Effects](#clear-all-potion-effects)
+- [Give Experience Levels](#give-experience-levels)
+- [Send to Lobby](#send-to-lobby)
+- [Change Variable](#change-variable)
+- [Teleport Player](#teleport-player)
+- [Fail Parkour](#fail-parkour)
+- [Play Sound](#play-sound)
+- [Set Compass Target](#set-compass-target)
+- [Set Gamemode](#set-gamemode)
+- [Change Health](#change-health)
+- [Change Hunger Level](#change-hunger-level)
+- [Random Action](#random-action)
+- [Trigger Function](#trigger-function)
+- [Apply Inventory Layout](#apply-inventory-layout)
+- [Enchant Held Item](#enchant-held-item)
+- [Pause Execution](#pause-execution)
+- [Set Player Team](#set-player-team)
+- [Display Menu](#display-menu)
+- [Drop Item](#drop-item)
+- [Change Velocity](#change-velocity)
+- [Launch to Target](#launch-to-target)
+- [Set Player Weather](#set-player-weather)
+- [Set Player Time](#set-player-time)
+- [Toggle Nametag Display](#toggle-nametag-display)
+
+<!--- END -->
+
+### Conditional
+
+```htsl
+if (var x > 5) {
+    chat "x and y are greater than 5"
+}
+```
+
+Match Any Condition is implicitly false. to set it explicitly, use `or` (true) 
+ or `and` (false) before the Condition list:
+
+```htsl
+if or (var x > 5, var y > 5) {
+    chat "x is greater than 5 or y is greater than 5"
+}
+```
+
+To declare Else Actions, use the optional `else` keyword:
+
+```htsl
+if (
+    var x == 0,
+    var y == 0,
+    var z == 0,
+) {
+    chat "Position is at the origin"
+} else {
+    chat "Position is not at the origin"
+}
+```
+
+---
+
+### Change Player's group
+
+```htsl
+changePlayerGroup "Winner"
+```
+
+---
+
+To enable Demotion Protection:
+
+```htsl
+changePlayerGroup "Winner" true
+```
+
+---
+
+### Kill Player
+
+```htsl
+kill
+```
+
+---
+
+### Full Heal
+
+```htsl
+fullHeal
+```
+
+---
+
+### Display Title
+
+```htsl
+title "Hello"
+```
+
+To set Subtitle:
+
+```htsl
+title "Hello" "World"
+```
+
+To set Fadein, Stay, and Fadeout:
+
+```htsl
+title "Hello" "World" 1 2 1
+```
+
+---
+
+### Display Action Bar
+
+```htsl
+actionBar "Hello, World!"
+```
+
+---
+
+### Reset Inventory
+
+```htsl
+resetInventory
+```
+
+---
+
+### Change Max Health
+
+```htsl
+maxHealth = 5
+```
+
+Change Max Health operations can be
+ [typed with either a symbol or identifier](#operations).
+
+---
+
+### Parkour Checkpoint
+
+```htsl
+parkCheck
+```
+
+---
+
+### Give Item
+
+```htsl
+// giveItem [Item] [Allow Multiple] [Inventory Slot] [Replace Existing Item]
+giveItem "Item Name" true first_available_slot false
+```
+
+> Item is set by referencing the name of an existing item declared in
+`import.json`.
+
+Inventory Slot can be typed with an identifier or an index:
+
+| Inventory Slot       | Identifier           | Index |
+| -------------------- | -------------------- | ----- |
+| First Available Slot | first_available_slot | -1    |
+| Hand Slot            | hand_slot            | -2    |
+| Hotbar Slot          |                      | 0..8  |
+| Inventory Slot       |                      | 9..35 |
+| Boots                | boots                | 36    |
+| Leggings             | leggings             | 37    |
+| Chestplate           | chestplate           | 38    |
+| Helmet               | helmet               | 39    |
+
+---
+
+### Remove Item
+
+```htsl
+removeItem "Item Name"
+```
+
+---
+
+> Item is set by referencing the name of an existing item declared in
+`import.json`.
+
+### Send a Chat Message
+
+```htsl
+chat "Hello, World!"
+```
+
+---
+
+### Apply Potion Effect
+
+
+---
+
+### Clear All Potion Effects
+
+```htsl
+clearEffects
+```
+
+---
+
+### Give Experience Levels
+
+```htsl
+xpLevel 10
+```
+
+---
+
+### Send to Lobby
+
+
+---
+
+### Change Variable
+
+Declare a Change Variable action starting with a keyword, `var`,
+ `globalvar`, or `teamvar`, followed by the name of the variable.
+
+Use the `var` keyword to declare a Change Variable action with the player
+ holder.
+
+```htsl
+var x = 5
+```
+
+Change Variable Actions with the global and team holders can be declared
+ similarly:
+
+```htsl
+// global variable x
+globalvar x = 5
+
+// team variable x for team Red
+teamvar x Red = 5
+```
+
+Operation can be typed with either a symbol or identifier:
+
+| Operation              | Symbol | Identifier  |
+| ---------------------- | ------ | ----------- |
+| Set                    | =      | set         |
+| Unset                  |        | unset       | 
+| Increment              | +=     | increment   |
+| Decrement              | -=     | decrement   |
+| Multiply               | *=     | multiply    |
+| Divide                 | /=     | divide      |
+| Bitwise AND            | &=     | and_assign  |
+| Bitwise OR             | \|=    | or_assign   |
+| Bitwise XOR            | ^=     | xor_assign  |
+| Left Shift             | <<=    | shift_left  |
+| Arithmetic Right Shift | >>=    | shift_right |
+| Logical Right Shift    |        |             |
+
+---
+
+### Teleport Player
+
+```htsl
+tp custom_coordinates "0 0 0"
+```
+
+To enable Prevent Teleport Inside Blocks:
+
+```htsl
+tp custom_coordinates "0 0 0" true
+```
+
+Location is [typed with an identifier](#locations).
+
+---
+
+### Fail Parkour
+
+```htsl
+failParkour "Reason"
+```
+
+---
+
+### Play Sound
+
+
+
+---
+
+### Set Compass Target
+
+---
+
+```htsl
+compassTarget house_spawn_location
+```
+
+Location is [typed with an identifier](#locations).
+
+---
+
+### Set Gamemode
+
+```htsl
+gamemode creative
+```
+
+Gamemode is typed with an identifier:
+
+| Gamemode  | Identifier |
+| --------- | ---------- |
+| Adventure | adventure  |
+| Survival  | survival   |
+| Creative  | creative   |
+
+---
+
+### Change Health
+
+```htsl
+changeHealth = 5
+```
+
+---
+
+Change Health operations can be
+ [typed with either a symbol or identifier](#operations).
+
+---
+
+### Change Hunger Level
+
+```htsl
+hungerLevel = 5
+```
+
+Change Hunger Level operations can be
+ [typed with either a symbol or identifier](#operations).
+
+---
+
+### Random Action
+
+```htsl
+random {
+    var reward = 5
+    var reward = 10
+    var reward = 20
+    chat "You got nothing..."
+}
+```
+
+---
+
+### Trigger Function
+
+```htsl
+function "My Function"
+```
+
+To set Trigger For All Players:
+
+```htsl
+// Runs for all players in the Housing
+function "My Function" true
+```
+
+---
+
+### Apply Inventory Layout
+
+```htsl
+applyLayout "PvP Layout"
+```
+
+---
+
+### Enchant Held Item
+
+
+---
+
+### Pause Execution
+
+```htsl
+pause 5
+```
+
+---
+
+### Set Player Team
+
+```htsl
+setTeam "Red Team"
+```
+
+---
+
+### Display Menu
+
+```htsl
+displayMenu "My Menu"
+```
+
+---
+
+### Drop Item
+
+```htsl
+dropItem "Item Name" invokers_location true true true true
+```
+
+---
+
+Location is [typed with an identifier](#locations).
+
+### Change Velocity
+
+```htsl
+changeVelocity 0 10 0
+```
+
+---
+
+### Launch to Target
+
+```
+launchTarget custom_coordinates "~ ~10 ~" 3
+```
+
+---
+
+Location is [typed with an identifier](#locations).
+
+### Set Player Weather
+
+
+---
+
+### Set Player Time
+
+```htsl
+playerTime 1000
+```
+
+---
+
+### Toggle Nametag Display
+
+```htsl
+displayNametag false
+```
+
+---
+
+## References
+
+### Operations
+
+Operations can be typed with either a symbol or identifier:
+
+| Operation | Symbol | Identifier |
+| ----------| ------ | ---------- |
+| Set       | =      | set        |
+| Increment | +=     | increment  |
+| Decrement | -=     | decrement  |
+| Multiply  | *=     | multiply   |
+| Divide    | /=     | divide     |
+
+---
+
+### Locations
+
+Locations are typed with an identifier:
+
+| Location             | Identifier           |
+| -------------------- | -------------------- |
+| House Spawn Location | house_spawn_location |
+| Invokers Location    | invokers_location    |
+| Current Location     | current_location     |
+| Custom Coordinates   | custom_coordinates   |
+
+Custom Coordinates must be followed by a coordinate string.
+
+---

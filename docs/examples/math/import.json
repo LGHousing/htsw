@@ -1,0 +1,6 @@
+{
+    "functions": [{
+        "name": "Math/Sin",
+        "actions": "src/sin.htsl"
+    }]
+}
