@@ -70,3 +70,8 @@ hljs.registerLanguage("htsl", function (hljs) {
     ],
   };
 });
+
+// Re-scan so HTSL blocks get picked up (book.js already ran earlier)
+document.addEventListener("DOMContentLoaded", function () {
+  hljs.initHighlighting();
+});
