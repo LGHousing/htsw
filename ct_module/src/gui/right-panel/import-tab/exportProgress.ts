@@ -29,7 +29,7 @@ import { estimateImportableCost } from "../../../housingSync/progress/costs";
 import { readImportableCache } from "../../../importCache/cache";
 import { importableIdentity } from "../../../importCache/paths";
 import { getHousingUuid } from "../../state";
-import { requestParse } from "../../parsing/parses";
+import { canonicalPath, requestParse } from "../../parsing/parses";
 import { setEtaRough, setImportProgress, setSessionVerb } from "./importProgress";
 import {
     addToQueue,
@@ -52,7 +52,9 @@ export function createExportProgressSink(
     /** True once the current item reached a terminal status (failed early). */
     let currentClosed = false;
 
-    const keyFor = (name: string): string => importProgressKey(type, name, importJsonPath);
+    const canonicalImportJsonPath = canonicalPath(importJsonPath);
+    const keyFor = (name: string): string =>
+        importProgressKey(type, name, canonicalImportJsonPath);
 
     const emit = (event: ImportEvent): void => {
         state = reduce(state, event);
