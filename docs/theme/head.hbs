@@ -1,0 +1,19 @@
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/10.6.0/highlight.min.js"></script>
+<script>
+hljs.registerLanguage("htsl", function (hljs) {
+  return {
+    name: "HTSL",
+    keywords: {
+      keyword: "if else or and var globalvar teamvar random function",
+      built_in: "chat kill fullHeal title actionBar resetInventory maxHealth parkCheck giveItem removeItem clearEffects xpLevel tp failParkour compassTarget gamemode changeHealth hungerLevel applyLayout pause setTeam displayMenu dropItem changeVelocity launchTarget playerTime displayNametag changePlayerGroup",
+      literal: "true false"
+    },
+    contains: [
+      { scope: "comment", variants: [hljs.C_LINE_COMMENT_MODE, hljs.C_BLOCK_COMMENT_MODE] },
+      hljs.QUOTE_STRING_MODE,
+      hljs.C_NUMBER_MODE,
+      { scope: "operator", begin: />>=|<<=|>>|<<|[+\-*/%&|^]=?|[><!=]=?|=/ }
+    ]
+  };
+});
+</script>
