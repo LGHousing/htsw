@@ -5,10 +5,12 @@
     "type": "module",
     "main": "./src/index.ts",
     "exports": {
-        ".": "./src/index.ts"
+        ".": "./src/index.ts",
+        "./project": "./src/project/index.ts"
     },
     "dependencies": {
-        "htsw": "file:../../language"
+        "htsw": "file:../../language",
+        "jsonc-parser": "^3.3.1"
     },
     "devDependencies": {
         "typescript": "~5.7.2"

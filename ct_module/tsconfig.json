@@ -12,7 +12,7 @@
             "htsw/runtime": ["../language/dist/runtime/index.d.ts"],
             "htsw/htsw": ["../language/dist/htsw/index.d.ts"],
             "htsw/nbt": ["../language/dist/nbt/index.d.ts"],
-            "htsw-project": ["../project/src/index.ts"]
+            "htsw-editor-common/project": ["../editors/common/src/project/index.ts"]
         },
         "esModuleInterop": true,
         "skipLibCheck": true,

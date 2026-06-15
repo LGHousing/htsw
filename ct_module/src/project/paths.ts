@@ -7,7 +7,7 @@ import {
     snbtTargetForItemExport as snbtTargetForItemExportWithFs,
     type HtslExportTarget,
     type SnbtExportTarget,
-} from "htsw-project";
+} from "htsw-editor-common/project";
 import { ctProjectFs } from "./projectFs";
 
 export { canonicalSlug, type HtslExportTarget, type SnbtExportTarget };

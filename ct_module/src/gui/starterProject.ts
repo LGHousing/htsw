@@ -8,7 +8,7 @@ import { previewSelect, setActiveRightTab } from "./right-panel/selection";
 import { setImportJsonPath } from "./state";
 import { addRecent } from "./persistence/recents";
 import { showToast } from "./toast";
-import { STARTER_PROJECT_NAME, createStarterProjectFiles, joinPath } from "htsw-project";
+import { STARTER_PROJECT_NAME, createStarterProjectFiles, joinPath } from "htsw-editor-common/project";
 import { ctProjectFs } from "../project/projectFs";
 
 export const STARTER_DIR = joinPath(PROJECTS_ROOT, STARTER_PROJECT_NAME);

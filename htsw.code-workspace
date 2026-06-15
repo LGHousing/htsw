@@ -16,9 +16,6 @@
 			"path": "editors"
 		},
 		{
-			"path": "project"
-		},
-		{
 			"path": "cli"
 		}
 	],

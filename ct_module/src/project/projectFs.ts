@@ -1,4 +1,4 @@
-import type { ProjectFs } from "htsw-project";
+import type { ProjectFs } from "htsw-editor-common/project";
 
 function rootPath(): any {
     return Java.type("java.nio.file.Paths")

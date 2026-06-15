@@ -10,7 +10,7 @@
         /* Bundler mode */
         "moduleResolution": "bundler",
         "paths": {
-            "htsw-project": ["../../project/src/index.ts"]
+            "htsw-editor-common/project": ["../common/src/project/index.ts"]
         },
         "types": ["node", "vscode"],
         "allowImportingTsExtensions": true,

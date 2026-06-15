@@ -44,7 +44,7 @@ import { boundImportJsonPath } from "../../../importCache/houseBindings";
 import { getImportProgress } from "./importProgress";
 import { getStepAuto, setStepAuto } from "../../../housingSync/stepGate";
 import { startImport } from "./importController";
-import { createEmptyProjectFiles } from "htsw-project";
+import { createEmptyProjectFiles } from "htsw-editor-common/project";
 import { ctProjectFs } from "../../../project/projectFs";
 
 import { PROJECTS_ROOT } from "../../../project/paths";

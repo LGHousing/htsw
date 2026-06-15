@@ -7,7 +7,6 @@
         "ct_module",
         "editors/common",
         "editors/code",
-        "editors/monaco",
-        "project"
+        "editors/monaco"
     ]
 }

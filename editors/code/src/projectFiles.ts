@@ -1,7 +1,7 @@
 import * as path from "node:path";
 import * as fs from "node:fs";
 import * as vscode from "vscode";
-import { createIncludedImportJsonFiles, type ProjectFs } from "htsw-project";
+import { createIncludedImportJsonFiles, type ProjectFs } from "htsw-editor-common/project";
 import {
     applyEdits,
     findNodeAtLocation,

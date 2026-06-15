@@ -21,7 +21,7 @@
     "license": "MIT",
     "dependencies": {
         "htsw": "file:../language",
-        "htsw-project": "file:../project",
+        "htsw-editor-common": "file:../editors/common",
         "promise-polyfill": "^8.3.0"
     },
     "devDependencies": {

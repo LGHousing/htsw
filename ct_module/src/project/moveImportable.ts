@@ -2,7 +2,7 @@ import {
     moveImportableEntry as moveImportableEntryWithFs,
     type MoveImportableResult,
     type Section,
-} from "htsw-project";
+} from "htsw-editor-common/project";
 import { ctProjectFs } from "./projectFs";
 
 export type { MoveImportableResult };

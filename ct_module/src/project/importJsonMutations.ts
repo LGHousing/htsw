@@ -6,7 +6,7 @@ import {
     updateImportableField as updateImportableFieldWithFs,
     upsertImportableEntry as upsertImportableEntryWithFs,
     type Section,
-} from "htsw-project";
+} from "htsw-editor-common/project";
 import { ctProjectFs } from "./projectFs";
 
 export type { Section };

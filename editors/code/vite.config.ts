@@ -2,12 +2,15 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 
-const projectSrcPath = fileURLToPath(new URL("../../project/src/", import.meta.url));
+const commonProjectSrcPath = fileURLToPath(new URL("../common/src/project/", import.meta.url));
 
 export default defineConfig({
     resolve: {
         alias: [
-            { find: /^htsw-project$/, replacement: path.resolve(projectSrcPath, "index.ts") },
+            {
+                find: /^htsw-editor-common\/project$/,
+                replacement: path.resolve(commonProjectSrcPath, "index.ts"),
+            },
         ],
     },
     build: {

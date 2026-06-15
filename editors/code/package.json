@@ -21,7 +21,6 @@
     "dependencies": {
         "htsw": "file:../../language",
         "htsw-editor-common": "file:../common",
-        "htsw-project": "file:../../project",
         "jsonc-parser": "^3.3.1"
     },
     "devDependencies": {
