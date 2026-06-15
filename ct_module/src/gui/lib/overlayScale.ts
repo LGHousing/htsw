@@ -1,4 +1,4 @@
-/// <reference types="../../CTAutocomplete" />
+/// <reference types="../../../CTAutocomplete" />
 
 import { ContainerBounds, getContainerBounds } from "./bounds";
 import { javaType } from "./java";

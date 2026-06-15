@@ -1,4 +1,4 @@
-/// <reference types="../../CTAutocomplete" />
+/// <reference types="../../../CTAutocomplete" />
 
 /**
  * File-backed GUI diagnostics. Chat is useless for render-path debugging

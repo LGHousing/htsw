@@ -1,4 +1,4 @@
-/// <reference types="../../CTAutocomplete" />
+/// <reference types="../../../CTAutocomplete" />
 
 import type { FormattedTextBlock } from "../../diagnostics/format";
 import { pointInRect, type Rect } from "./layout";

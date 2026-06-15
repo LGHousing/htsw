@@ -1,13 +1,49 @@
 /// <reference types="../../CTAutocomplete" />
 
 export const MODULE_DIR = "./config/ChatTriggers/modules/HTSW";
-const BASE_URL = "https://legendarygames.dev/htsw/ct";
-const MANIFEST_URL = BASE_URL + "/latest.json";
+const BASE_URL = "https://github.com/LGHousing/htsw/releases/latest/download";
+const MANIFEST_URL = BASE_URL + "/htsw-ct-latest.json";
 const USER_AGENT = "HTSW-CT-Updater";
 
 type Manifest = { version: string; zip: string; sha256: string };
+type UpdateOptions = {
+    checkOnly: boolean;
+    notifyWhenCurrent: boolean;
+    notifyOnFailure: boolean;
+};
+
+let updateInProgress = false;
 
 export function initAutoUpdate(): void {
+    startAutoUpdate({
+        checkOnly: false,
+        notifyWhenCurrent: false,
+        notifyOnFailure: false,
+    });
+}
+
+export function commandUpdate(args: string[]): void {
+    if (args.length > 0 && args[0] !== "check" && args[0] !== "status") {
+        ChatLib.chat("&cUsage: /htsw update [check]");
+        return;
+    }
+
+    startAutoUpdate({
+        checkOnly: args.length > 0,
+        notifyWhenCurrent: true,
+        notifyOnFailure: true,
+    });
+}
+
+function startAutoUpdate(options: UpdateOptions): void {
+    if (updateInProgress) {
+        if (options.notifyWhenCurrent || options.notifyOnFailure) {
+            ChatLib.chat("&eHTSW update check is already running.");
+        }
+        return;
+    }
+
+    updateInProgress = true;
     try {
         const Thread = Java.type("java.lang.Thread");
         const Runnable = Java.type("java.lang.Runnable");
@@ -15,47 +51,69 @@ export function initAutoUpdate(): void {
             new Runnable({
                 run: function () {
                     try {
-                        runUpdateCheck();
+                        runUpdateCheck(options);
                     } catch (_e) {
-                        // Never let a failed update break module load.
+                        reportUpdateFailure(options, "unexpected updater error");
+                    } finally {
+                        updateInProgress = false;
                     }
                 },
             })
         );
         t.setDaemon(true);
         t.start();
-    } catch (_e) {
-        // ignore
+    } catch (e) {
+        updateInProgress = false;
+        reportUpdateFailure(options, String(e));
     }
 }
 
-function runUpdateCheck(): void {
+function runUpdateCheck(options: UpdateOptions): void {
     const local = readLocalVersion();
-    if (local === null) return;
+    if (local === null) {
+        reportUpdateFailure(options, "could not read local metadata.json");
+        return;
+    }
 
     const manifest = fetchManifest();
-    if (manifest === null) return;
-    if (!isNewer(manifest.version, local)) return;
+    if (manifest === null) {
+        reportUpdateFailure(options, "could not fetch update manifest");
+        return;
+    }
+    if (!isNewer(manifest.version, local)) {
+        if (options.notifyWhenCurrent) {
+            ChatLib.chat(`&aHTSW is up to date &7(&f${local}&7).`);
+        }
+        return;
+    }
+
+    if (options.checkOnly) {
+        ChatLib.chat(
+            `&eHTSW &f${manifest.version}&e is available &7(you have &f${local}&7). ` +
+            "&7Run &f/htsw update&7 to install."
+        );
+        return;
+    }
 
     ChatLib.chat(`&e&lHTSW &7updating &f${local} &7→ &a${manifest.version}&7...`);
 
     const updateDir = MODULE_DIR + "/.update";
     const zipPath = updateDir + "/" + manifest.zip;
     if (!download(BASE_URL + "/" + manifest.zip, zipPath)) {
-        ChatLib.chat("&cHTSW update failed: could not download archive.");
+        reportUpdateFailure(options, "could not download archive");
         return;
     }
 
     const actual = sha256Hex(zipPath);
     if (actual.toLowerCase() !== manifest.sha256.toLowerCase()) {
-        ChatLib.chat("&cHTSW update aborted: checksum mismatch.");
+        reportUpdateFailure(options, "checksum mismatch");
         deletePath(updateDir);
         return;
     }
 
     const stagedDir = updateDir + "/next";
     if (!unzipInto(zipPath, stagedDir) || !replaceModuleContents(stagedDir)) {
-        ChatLib.chat("&cHTSW update failed during extraction.");
+        reportUpdateFailure(options, "extraction failed");
         deletePath(updateDir);
         return;
     }
@@ -64,6 +122,12 @@ function runUpdateCheck(): void {
     ChatLib.chat(
         `&aHTSW updated to &f${manifest.version}&a. Run &e/ct reload&a to apply.`
     );
+}
+
+function reportUpdateFailure(options: UpdateOptions, reason: string): void {
+    if (options.notifyOnFailure) {
+        ChatLib.chat(`&cHTSW update failed: ${reason}.`);
+    }
 }
 
 function readLocalVersion(): string | null {

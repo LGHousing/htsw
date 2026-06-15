@@ -1,4 +1,4 @@
-/// <reference types="../../CTAutocomplete" />
+/// <reference types="../../../CTAutocomplete" />
 
 import { Element, Rect, layoutElement, pointInRect } from "./layout";
 import { Extractable, extract } from "./extractable";
