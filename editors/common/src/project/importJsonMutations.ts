@@ -109,17 +109,9 @@ export function setHouseUuidKey(
     if (houseUuid !== null) {
         if (HOUSE_UUID_KEY_RE.test(text)) {
             next = text.replace(HOUSE_UUID_KEY_RE, `$1"${houseUuid}"`);
-        } else {
-            const brace = text.indexOf("{");
-            const hasOtherKeys = brace !== -1 && text.indexOf('"', brace) !== -1;
-            if (brace !== -1) {
-                const comma = hasOtherKeys ? "," : "";
-                next =
-                    text.substring(0, brace + 1) +
-                    `\n    "houseUuid": "${houseUuid}"${comma}` +
-                    text.substring(brace + 1);
-            }
         }
+        // No existing key -> the jsonc-parser insert below adds it, finding the
+        // root object without tripping on a "{" inside a leading comment.
     } else {
         for (let i = 0; i < HOUSE_UUID_REMOVE_RES.length; i++) {
             if (HOUSE_UUID_REMOVE_RES[i].test(text)) {
