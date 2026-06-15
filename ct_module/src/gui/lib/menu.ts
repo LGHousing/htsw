@@ -1,4 +1,4 @@
-/// <reference types="../../CTAutocomplete" />
+/// <reference types="../../../CTAutocomplete" />
 
 import { Element } from "./layout";
 import { Button, Col, Container } from "./components";
