@@ -178,7 +178,7 @@ parkCheck
 
 ```htsl
 // giveItem [Item] [Allow Multiple] [Inventory Slot] [Replace Existing Item]
-giveItem "Item Name" true first_available_slot false
+giveItem "Item Name" true First_Available_Slot false
 ```
 
 > Item is set by referencing the name of an existing item declared in
