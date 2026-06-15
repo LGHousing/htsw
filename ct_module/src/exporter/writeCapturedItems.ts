@@ -4,8 +4,8 @@ import {
 } from "../housingSync/itemCapture";
 import TaskContext from "../tasks/context";
 import { ensureParentDirs } from "../utils/filesystem";
-import { upsertImportableEntry } from "./importJsonWriter";
-import { snbtTargetForItemExport } from "./paths";
+import { upsertImportableEntry } from "../project/importJsonMutations";
+import { snbtTargetForItemExport } from "../project/paths";
 
 export function writeCapturedItems(
     ctx: TaskContext,

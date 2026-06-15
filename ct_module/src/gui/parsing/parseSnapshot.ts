@@ -18,8 +18,7 @@
  *
  * Validity is checked by mtime fingerprint: every file the previous
  * parse referenced (import.json + every linked .htsl) must match its
- * recorded mtime, or we fall through to a splice (htsl-only changes) or
- * a full parse. Missing included import.json files are stored in the
+ * recorded mtime, or we fall through to a full parse. Missing included import.json files are stored in the
  * fingerprint with mtime 0, so creating them invalidates the snapshot.
  *
  * Snapshots are also stamped with the writing build's bundle mtime and
@@ -36,25 +35,20 @@ import {
     SourceMap,
     Span,
     SpanTable,
-    parseActionsResult,
-    items as itemReferences,
     type ImportJsonFileNode,
     type ParseResult,
 } from "htsw";
-import type { Action, Importable } from "htsw/types";
+import type { Importable } from "htsw/types";
 
 import { MODULE_DIR } from "../../autoUpdate";
 import { FileSystemFileLoader } from "../../utils/fileLoaders";
 import { ensureParentDirs } from "../../utils/filesystem";
 import { getMtimeMs } from "../lib/java";
 import { memoizedImportableHash, seedImportableHash } from "../../importCache/status";
-import { importableHash } from "../../importCache";
-import { referencedItemNamesInActions } from "../../importables/itemDependencies";
 import {
     SUB_LIST_KINDS,
     importableSubListPath,
     subListOf,
-    type SubListKind,
 } from "./importablePaths";
 
 const SNAPSHOT_DIR = "./htsw/.parse-snapshots";
@@ -138,17 +132,6 @@ function snapshotFileFor(importJsonPath: string): string {
     return `${SNAPSHOT_DIR}/${hashPathKey(importJsonPath)}.json`;
 }
 
-
-/**
- * Cheap existence check — does NOT validate fingerprint. Used to decide
- * whether the next reparse is likely to hit the fast path (skip the
- * "Loading…" indicator) without paying a full fingerprint sweep's
- * 300+ filesystem stats.
- */
-export function snapshotExists(importJsonPath: string): boolean {
-    return FileLib.exists(snapshotFileFor(importJsonPath));
-}
-
 export function loadSnapshot(importJsonPath: string): Snapshot | null {
     const p = snapshotFileFor(importJsonPath);
     if (!FileLib.exists(p)) return null;
@@ -207,19 +190,6 @@ export function diffSnapshotFingerprint(snapshot: Snapshot): FingerprintChange[]
         }
     }
     return changed;
-}
-
-export function deleteSnapshot(importJsonPath: string): boolean {
-    const p = snapshotFileFor(importJsonPath);
-    if (!FileLib.exists(p)) return false;
-    try {
-        const Files = Java.type("java.nio.file.Files");
-        const Paths = Java.type("java.nio.file.Paths");
-        Files.deleteIfExists(Paths.get(String(p)));
-        return true;
-    } catch (_e) {
-        return false;
-    }
 }
 
 /**
@@ -367,7 +337,7 @@ function deserializeFileTree(
     return visit(tree);
 }
 
-export function writeSnapshotFile(snapshot: Snapshot): void {
+function writeSnapshotFile(snapshot: Snapshot): void {
     try {
         const out = snapshotFileFor(snapshot.importJsonPath);
         ensureParentDirs(out);
@@ -375,124 +345,6 @@ export function writeSnapshotFile(snapshot: Snapshot): void {
     } catch (_e) {
         // Cache is best-effort; failures don't disturb the parse path.
     }
-}
-
-// ── Single-file splice ────────────────────────────────────────────────────
-
-function isHtslPath(p: string): boolean {
-    return /\.htsl$/i.test(p);
-}
-
-type SpliceTarget = { index: number; prop: "actions" | SubListKind };
-
-/** Every importable slot whose action list is materialized from `path`. */
-function spliceTargetsFor(snapshot: Snapshot, path: string): SpliceTarget[] {
-    const targets: SpliceTarget[] = [];
-    for (let i = 0; i < snapshot.importables.length; i++) {
-        const type = snapshot.importables[i].type;
-        if (
-            snapshot.sourcePaths[i] === path &&
-            (type === "FUNCTION" || type === "EVENT")
-        ) {
-            targets.push({ index: i, prop: "actions" });
-        }
-        const subLists = snapshot.subListPaths[i];
-        for (let j = 0; j < SUB_LIST_KINDS.length; j++) {
-            if (subLists[SUB_LIST_KINDS[j]] === path) {
-                targets.push({ index: i, prop: SUB_LIST_KINDS[j] });
-            }
-        }
-    }
-    return targets;
-}
-
-/**
- * The whole-snapshot fingerprint made one `.htsl` edit cost a full project
- * re-parse (~1s main-thread freeze on big projects). When the ONLY stale
- * fingerprint entries are `.htsl` files, re-parse just those files and
- * splice the new action lists into the snapshot — actions are leaves
- * (they reference items; nothing references them), so nothing else in the
- * parse can change.
- *
- * A changed file that parses WITH diagnostics is spliced too, mirroring
- * the full parse: its recovered (possibly partial) actions land in the
- * importable, its diagnostics replace the file's stored ones, and the
- * restored parse reports `isFailed()` accordingly — one broken file
- * doesn't demote the whole project to full parses. What the splice skips
- * is the whole-project check passes, same fidelity as the single-buffer
- * editors.
- *
- * Returns the updated snapshot, or null when a full parse is required:
- * any non-htsl change (import.json / .snbt edits can move the item
- * namespace or declarations), a missing file, an htsl that maps to no
- * known importable, or a referenced item name the project doesn't declare
- * (the whole-project item check owns that diagnostic; direct .snbt refs
- * also bail since resolving them needs the project gcx).
- */
-export function trySpliceSnapshot(
-    snapshot: Snapshot,
-    changed: readonly FingerprintChange[]
-): Snapshot | null {
-    if (changed.length === 0) return null;
-    for (const change of changed) {
-        if (change.mtime === 0 || !isHtslPath(change.path)) return null;
-    }
-
-    const itemNames = new Set<string>();
-    for (const imp of snapshot.importables) {
-        if (imp.type === "ITEM") itemNames.add(imp.name);
-    }
-
-    for (const change of changed) {
-        const targets = spliceTargetsFor(snapshot, change.path);
-        if (targets.length === 0) return null;
-
-        let parsed: ParseResult<Action[]>;
-        try {
-            parsed = parseActionsResult(
-                new SourceMap(new FileSystemFileLoader()),
-                change.path
-            );
-        } catch (_e) {
-            return null;
-        }
-
-        for (const name of referencedItemNamesInActions(parsed.value)) {
-            if (itemReferences.isDirectSnbtItemReference(name)) return null;
-            if (!itemNames.has(name)) return null;
-        }
-
-        // Drop stored diagnostics touching the changed file: their offsets
-        // were computed against its old content. The fresh single-file
-        // parse below re-derives that file's diagnostics.
-        snapshot.diagnostics = snapshot.diagnostics.filter(
-            (d) => !d.spans.some((s) => s.path === change.path)
-        );
-        for (const diag of parsed.diagnostics) {
-            snapshot.diagnostics.push(
-                serializeDiagnostic(parsed.gcx.sourceMap, diag)
-            );
-        }
-
-        for (let t = 0; t < targets.length; t++) {
-            const target = targets[t];
-            const imp = snapshot.importables[target.index] as unknown as Record<
-                string,
-                unknown
-            >;
-            // Two slots sharing one htsl get distinct arrays, matching a
-            // full parse (each reference parses the file separately).
-            imp[target.prop] =
-                t === 0
-                    ? parsed.value
-                    : (JSON.parse(JSON.stringify(parsed.value)) as Action[]);
-            snapshot.hashes[target.index] = importableHash(
-                snapshot.importables[target.index]
-            );
-        }
-        snapshot.fingerprint[change.path] = change.mtime;
-    }
-    return snapshot;
 }
 
 /**

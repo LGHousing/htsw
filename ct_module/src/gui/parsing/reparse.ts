@@ -18,7 +18,7 @@ import {
     type CachedParse,
 } from "./parses";
 import { javaType } from "../lib/java";
-import { PROJECTS_ROOT } from "../../exporter/paths";
+import { PROJECTS_ROOT } from "../../project/paths";
 
 /**
  * `reparse` is a thin DRIVER over the single parse authority,

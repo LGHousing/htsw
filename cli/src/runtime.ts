@@ -25,7 +25,7 @@ export function run(sm: htsw.SourceMap, result: htsw.ParseResult<Importable[]>) 
                     return;
                 }
 
-                rt.runActions(fn.actions);
+                rt.runActions(fn.actions ?? []);
             }
         );
 
@@ -50,7 +50,7 @@ export function run(sm: htsw.SourceMap, result: htsw.ParseResult<Importable[]>) 
         return;
     }
 
-    rt.runActions(main.actions);
+    rt.runActions(main.actions ?? []);
 }
 
 function replacePlaceholders(rt: htsw.runtime.Runtime, value: string): string {

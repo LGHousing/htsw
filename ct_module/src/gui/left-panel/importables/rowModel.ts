@@ -5,9 +5,6 @@ import type { Importable } from "htsw/types";
 // file the Importables tree displays directly. Importables themselves are no
 // longer flattened into this list — they live as expansion children of
 // `ResultImport` rows now (see `ResultImport.importables`).
-export const ALL_TYPES = ["import", "script", "item"] as const;
-export type ResultType = (typeof ALL_TYPES)[number];
-
 export type ResultImport = {
     type: "import";
     /** Path relative to the source root. */

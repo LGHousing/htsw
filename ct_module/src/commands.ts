@@ -24,10 +24,12 @@ import { rearmTourAutoStart } from "./gui/popovers/tour";
 import { isPacketOrderProbeActive } from "./housingSync/diagnostics/packetOrderProbe";
 import {
     getImportTracePath,
-    getProgressTracePath,
     setImportTraceEnabled,
+} from "./housingSync/trace/importTrace";
+import {
+    getProgressTracePath,
     setProgressTraceEnabled,
-} from "./housingSync/progress/trace";
+} from "./housingSync/trace/progressTrace";
 import { getCurrentHousingUuid } from "./importCache";
 import { isInCreativeMode } from "./housingSync/sideEffects";
 import { startImport } from "./gui/right-panel/import-tab/importController";
@@ -37,8 +39,8 @@ import {
     defaultExportRoot,
     resolveModuleRelativePath,
     snbtTargetForItemExport,
-} from "./exporter/paths";
-import { upsertImportableEntry } from "./exporter/importJsonWriter";
+} from "./project/paths";
+import { upsertImportableEntry } from "./project/importJsonMutations";
 import { ensureParentDirs } from "./utils/filesystem";
 import { getItemFromSnbt } from "./utils/nbt";
 import { C10PacketCreativeInventoryAction } from "./utils/packets";
@@ -397,7 +399,7 @@ function commandImport(args: string[]) {
     const canon = canonicalPath(importPath);
     const slash = canon.lastIndexOf("/");
     const label = slash >= 0 ? canon.substring(slash + 1) : canon;
-    startImport([{ kind: "importJson", sourcePath: canon, label }]);
+    startImport([{ operation: "import", kind: "importJson", sourcePath: canon, label }]);
 }
 
 function commandSimulator(args: string[]) {

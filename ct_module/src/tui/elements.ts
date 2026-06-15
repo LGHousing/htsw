@@ -99,7 +99,7 @@ export class UIElementCanvas implements UIElement {
                 tokens.push({ token: text.slice(i, i + 2), width: 0 });
                 i += 2;
             } else {
-                let start = i;
+                const start = i;
                 while (i < text.length && text[i] !== "&") i++;
                 const substr = text.slice(start, i);
                 tokens.push({ token: substr, width: chatWidth(substr) });
@@ -189,7 +189,6 @@ export class UIElementHLine extends UIElementText {
         super(
             (color ?? "") + char.repeat(Math.max(1, Math.round(width / chatWidth(char))))
         );
-
     }
 }
 
@@ -228,7 +227,6 @@ export class UIElementTruncate implements UIElement {
             const width = chatWidth(line);
             if (width <= this.maxWidth) return line;
 
-            // truncate from the right, keeping enough room for "..."
             let truncated = "";
             let currentWidth = 0;
             for (const ch of line) {

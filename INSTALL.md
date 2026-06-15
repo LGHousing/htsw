@@ -28,6 +28,10 @@ Create `ct_module/.env` pointing at your ChatTriggers modules folder:
 ```
 CT_MODULE_DESTINATION=C:\path\to\.minecraft\config\ChatTriggers\modules\HTSW
 HTSW_REPOSITORY_PATH=C:\path\to\htsw
+
+# Optional — the MCP bridge that lets Claude Code drive /htsw. Off by default.
+HTSW_MCP_ENABLED=false
+HTSW_MCP_PORT=37123
 ```
 
 Then:

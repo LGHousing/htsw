@@ -7,7 +7,7 @@ import { Element, Rect } from "../lib/layout";
 import { Button, Col, Container, Input, Row, Scroll, Text } from "../lib/components";
 import { closeAllPopovers, openPopover } from "../lib/popovers";
 import { COLOR_ROW, COLOR_ROW_HOVER, COLOR_TEXT_DIM } from "../lib/theme";
-import { updateImportableField, type Section } from "../../exporter/importJsonWriter";
+import { updateImportableField, type Section } from "../../project/importJsonMutations";
 import { markPathInSync } from "../parsing/reparse";
 import { getParseAt, touchParseCacheMtime } from "../parsing/parses";
 import { importableHash } from "../../importCache/hash";

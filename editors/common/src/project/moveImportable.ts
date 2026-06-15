@@ -1,7 +1,4 @@
 import * as json from "jsonc-parser";
-
-import { FileSystemFileLoader } from "../utils/fileLoaders";
-import { ensureParentDirs } from "../utils/filesystem";
 import { walkImportJsonTree } from "./includeWalk";
 import {
     identityField,
@@ -9,16 +6,8 @@ import {
     resolveImportableFile,
     upsertImportableEntry,
     type Section,
-} from "./importJsonWriter";
-import { parentDirOf } from "./paths";
-
-/**
- * Move one importable's declaration to another import.json in the same
- * include tree. Every file reference on the entry (`actions`, `nbt`, menu
- * slot paths, …) is relative to its declaring file, so the referenced
- * .htsl/.snbt files move along with it — except files other entries still
- * reference, which are copied so the remaining references keep resolving.
- */
+} from "./importJsonMutations";
+import type { ProjectFs } from "./fs";
 
 const ALL_SECTIONS: Section[] = ["functions", "events", "regions", "items", "menus", "npcs"];
 
@@ -28,47 +17,48 @@ export type MoveImportableResult =
 
 type RefSlot = { holder: Record<string, unknown> | unknown[]; key: string | number; ref: string };
 
-function isFileRef(v: unknown): v is string {
-    return typeof v === "string" && /\.(htsl|snbt)$/i.test(v);
+function isFileRef(value: unknown): value is string {
+    return typeof value === "string" && /\.(htsl|snbt)$/i.test(value);
 }
 
 function collectFileRefs(value: unknown, out: RefSlot[]): void {
     if (Array.isArray(value)) {
         for (let i = 0; i < value.length; i++) {
-            if (isFileRef(value[i])) out.push({ holder: value, key: i, ref: value[i] as string });
-            else collectFileRefs(value[i], out);
+            if (isFileRef(value[i])) {
+                out.push({ holder: value, key: i, ref: value[i] as string });
+            } else {
+                collectFileRefs(value[i], out);
+            }
         }
         return;
     }
     if (value !== null && typeof value === "object") {
         const obj = value as Record<string, unknown>;
-        for (const k in obj) {
-            const v = obj[k];
-            if (isFileRef(v)) out.push({ holder: obj, key: k, ref: v });
-            else collectFileRefs(v, out);
+        for (const key in obj) {
+            const nested = obj[key];
+            if (isFileRef(nested)) {
+                out.push({ holder: obj, key, ref: nested });
+            } else {
+                collectFileRefs(nested, out);
+            }
         }
     }
 }
 
-function canonKey(p: string): string {
-    return p.split("\\").join("/").toLowerCase();
+function canonKey(path: string): string {
+    return path.split("\\").join("/").toLowerCase();
 }
 
-/**
- * Resolved paths of every file referenced by entries OTHER than the one
- * being moved, across the whole include tree. A moved entry's file is only
- * physically moved when nothing in here still points at it.
- */
 function refsOfOtherEntries(
-    loader: FileSystemFileLoader,
+    fs: ProjectFs,
     entryJsonPath: string,
     excludeSection: Section,
     excludeIdField: string,
     excludeIdentity: string
 ): Set<string> {
     const out = new Set<string>();
-    walkImportJsonTree(entryJsonPath, (filePath, tree) => {
-        const dir = parentDirOf(filePath);
+    walkImportJsonTree(fs, entryJsonPath, (filePath, tree) => {
+        const dir = fs.parentDir(filePath);
         for (const section of ALL_SECTIONS) {
             const sectionNode = json.findNodeAtLocation(tree, [section]);
             if (!sectionNode || sectionNode.type !== "array") continue;
@@ -83,7 +73,7 @@ function refsOfOtherEntries(
                 const refs: RefSlot[] = [];
                 collectFileRefs(json.getNodeValue(items[i]), refs);
                 for (let j = 0; j < refs.length; j++) {
-                    out.add(canonKey(loader.resolvePath(dir, refs[j].ref)));
+                    out.add(canonKey(fs.resolvePath(dir, refs[j].ref)));
                 }
             }
         }
@@ -93,13 +83,14 @@ function refsOfOtherEntries(
 }
 
 function readEntryValue(
+    fs: ProjectFs,
     importJsonPath: string,
     section: Section,
     idField: string,
     identity: string
 ): Record<string, unknown> | null {
-    if (!FileLib.exists(importJsonPath)) return null;
-    const text = String(FileLib.read(importJsonPath) ?? "");
+    if (!fs.exists(importJsonPath)) return null;
+    const text = fs.readFile(importJsonPath);
     if (text.trim() === "") return null;
     const tree = json.parseTree(text);
     if (!tree) return null;
@@ -121,29 +112,29 @@ function suffixedRef(ref: string, n: number): string {
 }
 
 export function moveImportableEntry(
+    fs: ProjectFs,
     entryJsonPath: string,
     section: Section,
     identity: string,
     destJsonPath: string
 ): MoveImportableResult {
-    const loader = new FileSystemFileLoader();
     const idField = identityField(section);
-    const sourceJsonPath = resolveImportableFile(entryJsonPath, section, identity);
+    const sourceJsonPath = resolveImportableFile(fs, entryJsonPath, section, identity);
     if (canonKey(sourceJsonPath) === canonKey(destJsonPath)) {
         return { ok: false, message: `'${identity}' is already declared in that file.` };
     }
-    if (!FileLib.exists(destJsonPath)) {
+    if (!fs.exists(destJsonPath)) {
         return { ok: false, message: `Destination doesn't exist: ${destJsonPath}` };
     }
 
-    const entry = readEntryValue(sourceJsonPath, section, idField, identity);
+    const entry = readEntryValue(fs, sourceJsonPath, section, idField, identity);
     if (entry === null) {
         return { ok: false, message: `Couldn't find '${identity}' in ${sourceJsonPath}` };
     }
 
-    const srcDir = parentDirOf(sourceJsonPath);
-    const destDir = parentDirOf(destJsonPath);
-    const otherRefs = refsOfOtherEntries(loader, entryJsonPath, section, idField, identity);
+    const srcDir = fs.parentDir(sourceJsonPath);
+    const destDir = fs.parentDir(destJsonPath);
+    const otherRefs = refsOfOtherEntries(fs, entryJsonPath, section, idField, identity);
 
     const refSlots: RefSlot[] = [];
     collectFileRefs(entry, refSlots);
@@ -151,14 +142,14 @@ export function moveImportableEntry(
     const fileOps: Array<{ from: string; to: string; deleteSource: boolean }> = [];
     for (let i = 0; i < refSlots.length; i++) {
         const slot = refSlots[i];
-        const srcAbs = loader.resolvePath(srcDir, slot.ref);
-        if (!FileLib.exists(srcAbs)) continue; // broken before, equally broken after
+        const srcAbs = fs.resolvePath(srcDir, slot.ref);
+        if (!fs.exists(srcAbs)) continue;
         let ref = slot.ref;
-        let destAbs = loader.resolvePath(destDir, ref);
-        if (canonKey(srcAbs) === canonKey(destAbs)) continue; // both dirs see the same file
-        for (let n = 2; FileLib.exists(destAbs); n++) {
+        let destAbs = fs.resolvePath(destDir, ref);
+        if (canonKey(srcAbs) === canonKey(destAbs)) continue;
+        for (let n = 2; fs.exists(destAbs); n++) {
             ref = suffixedRef(slot.ref, n);
-            destAbs = loader.resolvePath(destDir, ref);
+            destAbs = fs.resolvePath(destDir, ref);
         }
         if (ref !== slot.ref) {
             (slot.holder as Record<string | number, unknown>)[slot.key] = ref;
@@ -170,26 +161,24 @@ export function moveImportableEntry(
         });
     }
 
-    upsertImportableEntry(destJsonPath, section, entry);
-    if (!removeImportableEntry(sourceJsonPath, section, identity)) {
-        // Roll the insert back rather than leaving a duplicate declaration,
-        // which would fail the whole parse.
-        removeImportableEntry(destJsonPath, section, identity);
+    upsertImportableEntry(fs, destJsonPath, section, entry);
+    if (!removeImportableEntry(fs, sourceJsonPath, section, identity)) {
+        removeImportableEntry(fs, destJsonPath, section, identity);
         return { ok: false, message: `Couldn't remove '${identity}' from ${sourceJsonPath}` };
     }
 
     const movedFiles: Array<{ from: string; to: string }> = [];
     for (let i = 0; i < fileOps.length; i++) {
         const op = fileOps[i];
-        const content = FileLib.read(op.from);
-        if (content === null) continue;
-        ensureParentDirs(op.to);
-        FileLib.write(op.to, String(content), true);
-        if (op.deleteSource) {
+        if (!fs.exists(op.from)) continue;
+        const content = fs.readFile(op.from);
+        fs.ensureDir(fs.parentDir(op.to));
+        fs.writeFile(op.to, content);
+        if (op.deleteSource && fs.deleteFile !== undefined) {
             try {
-                FileLib.delete(op.from);
+                fs.deleteFile(op.from);
                 movedFiles.push({ from: op.from, to: op.to });
-            } catch (_e) {
+            } catch (_err) {
                 // Copy succeeded; a stale original is harmless.
             }
         }

@@ -12,10 +12,15 @@ import {
 } from "node:fs";
 
 const languageDistPath = fileURLToPath(new URL("../language/dist/", import.meta.url));
+const commonProjectSrcPath = fileURLToPath(new URL("../editors/common/src/project/", import.meta.url));
 const srcDir = fileURLToPath(new URL("./src/", import.meta.url));
 
 const htswAliases = [
     { find: /^htsw$/, replacement: path.resolve(languageDistPath, "index.js") },
+    {
+        find: /^htsw-editor-common\/project$/,
+        replacement: path.resolve(commonProjectSrcPath, "index.ts"),
+    },
     {
         find: /^htsw\/types$/,
         replacement: path.resolve(languageDistPath, "types/index.js"),

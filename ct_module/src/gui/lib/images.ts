@@ -115,11 +115,8 @@ export function backgroundPreloadIcons(): void {
     try {
         const FilesType = Java.type("java.nio.file.Files");
         const PathsType = Java.type("java.nio.file.Paths");
-        // @ts-ignore
         const dir = PathsType.get(ICON_BASE_PATH);
-        // @ts-ignore
         if (!FilesType.exists(dir)) return;
-        // @ts-ignore
         const stream = FilesType.newDirectoryStream(dir);
         const names: string[] = [];
         try {

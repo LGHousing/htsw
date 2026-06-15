@@ -10,13 +10,13 @@
  * unreachable, exponential backoff keeps us from hammering retries.
  */
 
-// @ts-ignore
+// @ts-expect-error CTAutocomplete does not type lowercase Java package globals.
 const URLClass = java.net.URL;
-// @ts-ignore
+// @ts-expect-error CTAutocomplete does not type lowercase Java package globals.
 const BufferedReaderClass = java.io.BufferedReader;
-// @ts-ignore
+// @ts-expect-error CTAutocomplete does not type lowercase Java package globals.
 const InputStreamReaderClass = java.io.InputStreamReader;
-// @ts-ignore
+// @ts-expect-error CTAutocomplete does not type lowercase Java package globals.
 const OutputStreamWriterClass = java.io.OutputStreamWriter;
 const Thread = Java.type("java.lang.Thread");
 const Runnable = Java.type("java.lang.Runnable");

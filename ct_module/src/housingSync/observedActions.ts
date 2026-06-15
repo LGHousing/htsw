@@ -1,15 +1,6 @@
 import type { Action } from "htsw/types";
-import type { Observed, ObservedActionSlot } from "../housingSync/types";
+import type { Observed, ObservedActionSlot } from "./types";
 
-/**
- * Convert an `ObservedActionSlot[]` (the importer's read shape, which carries
- * GUI metadata and may have null entries for unrecognized actions) into a
- * clean `Action[]` suitable for emission.
- *
- * Drops:
- *   - top-level slots whose action couldn't be parsed (`entry.action === null`),
- *   - nested action-list entries that are null (same reason).
- */
 export function observedSlotsToActions(slots: readonly ObservedActionSlot[]): Action[] {
     const result: Action[] = [];
     for (const slot of slots) {
@@ -19,12 +10,6 @@ export function observedSlotsToActions(slots: readonly ObservedActionSlot[]): Ac
     return result;
 }
 
-/**
- * Walk an `Observed<Action>` and produce a canonical `Action`. The two
- * shapes differ only in nested array element types (`Action[]` vs.
- * `Array<Observed<Action> | null>` and `Condition[]` vs.
- * `Array<Condition | null>`), so the work is mostly stripping nulls.
- */
 function observedActionToAction(observed: Observed<Action>): Action {
     if (observed.type === "CONDITIONAL") {
         return {
@@ -51,8 +36,5 @@ function observedActionToAction(observed: Observed<Action>): Action {
             ...(observed.note !== undefined ? { note: observed.note } : {}),
         };
     }
-    // No nested lists — `Observed<T>` is structurally identical to T for
-    // these. The cast is safe because we've handled every type with
-    // nested lists above.
     return observed;
 }

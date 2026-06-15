@@ -18,7 +18,7 @@ const REGION_LIST_CONFIG: PaginatedListConfig = {
  * the list controls and strips a trailing numeric parenthetical if present,
  * preserving names that contain other parentheses.
  */
-export function extractRegionNameFromSlot(rawDisplayName: string): string | null {
+function extractRegionNameFromSlot(rawDisplayName: string): string | null {
     const trimmed = rawDisplayName.trim();
     if (trimmed.length === 0) return null;
     const lower = trimmed.toLowerCase();

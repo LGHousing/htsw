@@ -396,12 +396,13 @@ async function hydrateNestedActions(
     const phaseUnits = read?.phaseUnits;
     const events = read?.events;
     const listPath = read?.listPath;
+    const itemCaptureActive = read?.itemCaptures !== undefined;
     let completed = 0;
     const total = plan.size;
     let completedHydrateUnits = 0;
     let totalHydrateUnits = 0;
     plan.forEach((propsToRead, entry) => {
-        totalHydrateUnits += hydrationEntryUnits(entry, propsToRead);
+        totalHydrateUnits += hydrationEntryUnits(entry, propsToRead, itemCaptureActive);
     });
     if (phaseUnits !== undefined) phaseUnits.hydrating = totalHydrateUnits;
     const emit = (_label: string) => {
@@ -427,7 +428,7 @@ async function hydrateNestedActions(
             path: entryPath,
             actionType: entry.action?.type ?? null,
         });
-        const entryUnits = hydrationEntryUnits(entry, propsToRead);
+        const entryUnits = hydrationEntryUnits(entry, propsToRead, itemCaptureActive);
         await hydrateNestedAction(
             ctx,
             entry,

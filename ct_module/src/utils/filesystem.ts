@@ -8,9 +8,7 @@
  */
 export function ensureParentDirs(path: string): void {
     try {
-        // @ts-ignore
         const Paths = Java.type("java.nio.file.Paths");
-        // @ts-ignore
         const Files = Java.type("java.nio.file.Files");
         const p = Paths.get(String(path));
         const parent = p.getParent();
@@ -26,9 +24,7 @@ export function ensureParentDirs(path: string): void {
  * doesn't exist or any delete failed. */
 export function deleteDirRecursive(path: string): boolean {
     try {
-        // @ts-ignore
         const Paths = Java.type("java.nio.file.Paths");
-        // @ts-ignore
         const Files = Java.type("java.nio.file.Files");
         const root = Paths.get(String(path));
         if (!Files.exists(root)) return false;
@@ -55,9 +51,7 @@ function deleteRecursive(Files: any, p: any): void {
 /** Count regular files under a path (the path itself if it's a file). */
 export function countFilesRecursive(path: string): number {
     try {
-        // @ts-ignore
         const Paths = Java.type("java.nio.file.Paths");
-        // @ts-ignore
         const Files = Java.type("java.nio.file.Files");
         return countRecursive(Files, Paths.get(String(path)));
     } catch (_e) {

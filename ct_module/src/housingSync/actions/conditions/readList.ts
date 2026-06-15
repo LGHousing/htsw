@@ -4,6 +4,10 @@ import TaskContext from "../../../tasks/context";
 import { type ItemRegistry } from "../../../importables/itemRegistry";
 import { canonicalizeItemFields } from "../../fields/canonicalizeItems";
 import {
+    captureItemFromOpenEditorField,
+    type ItemCaptureRegistry,
+} from "../../itemCapture";
+import {
     CONDITION_MAPPINGS,
     getConditionScalarLoreFields,
     parseConditionListItem,
@@ -23,7 +27,12 @@ import { timedWaitForMenu } from "../../gui/menuWait";
 import { clickGoBack } from "../../gui/menuUtils";
 import { CONDITION_LIST_CONFIG } from "./listConfig";
 import { getConditionSpec, isConditionListItemInverted } from "./specs";
-import { COST, phaseUnitsTotal, type PhaseUnits } from "../../progress/costs";
+import {
+    COST,
+    ITEM_CAPTURE_FIELD_UNITS,
+    phaseUnitsTotal,
+    type PhaseUnits,
+} from "../../progress/costs";
 import type { ProgressHandler } from "../../progress/types";
 
 async function readConditionsListPage(
@@ -56,6 +65,7 @@ async function readConditionsListPage(
 
 export type ReadConditionListOptions = {
     itemRegistry?: ItemRegistry;
+    itemCaptures?: ItemCaptureRegistry;
     phaseUnits?: PhaseUnits;
     progress?: ProgressHandler;
 };
@@ -70,6 +80,7 @@ export async function readConditionList(
         () => readConditionsListPage(ctx)
     );
     await hydrateScalarConditions(ctx, observed, options);
+    await captureConditionItems(ctx, observed, options);
     await goToPaginatedListPage(ctx, 1, CONDITION_LIST_CONFIG);
     canonicalizeObservedConditionSlots(observed, options?.itemRegistry);
     return observed;
@@ -88,6 +99,7 @@ function canonicalizeObservedConditionSlots(
 }
 
 const SCALAR_CONDITION_HYDRATION_UNITS = COST.menuClickWait + COST.goBackWait;
+const CONDITION_ITEM_CAPTURE_UNITS = COST.menuClickWait + COST.goBackWait;
 
 function shouldHydrateScalarCondition(condition: Condition): boolean {
     if (!getConditionSpec(condition.type).read) return false;
@@ -177,4 +189,122 @@ async function hydrateScalarCondition(
     if (inverted) refreshed.inverted = true;
     entry.condition = refreshed;
     await clickGoBack(ctx);
+}
+
+function getConditionItemFieldsForCapture(
+    type: Condition["type"]
+): Array<{ label: string; prop: string }> {
+    const loreFields = CONDITION_MAPPINGS[type].loreFields as Record<
+        string,
+        { prop: string; kind: string }
+    >;
+    const result: Array<{ label: string; prop: string }> = [];
+    for (const label in loreFields) {
+        if (loreFields[label].kind === "item") {
+            result.push({ label, prop: loreFields[label].prop });
+        }
+    }
+    return result;
+}
+
+function conditionItemCaptureUnits(entry: ObservedConditionSlot): number {
+    if (entry.condition === null) return 0;
+    const fieldCount = getConditionItemFieldsForCapture(entry.condition.type).length;
+    return CONDITION_ITEM_CAPTURE_UNITS + fieldCount * ITEM_CAPTURE_FIELD_UNITS;
+}
+
+async function captureConditionItems(
+    ctx: TaskContext,
+    observed: readonly ObservedConditionSlot[],
+    options: ReadConditionListOptions | undefined
+): Promise<void> {
+    const registry = options?.itemCaptures;
+    if (registry === undefined) return;
+
+    const entries: ObservedConditionSlot[] = [];
+    for (let i = 0; i < observed.length; i++) {
+        const entry = observed[i];
+        if (entry.condition === null) continue;
+        if (getConditionItemFieldsForCapture(entry.condition.type).length > 0) {
+            entries.push(entry);
+        }
+    }
+    if (entries.length === 0) return;
+
+    const phaseUnits = options?.phaseUnits;
+    const progress = options?.progress;
+    const baseCompletedUnits =
+        phaseUnits === undefined ? 0 : phaseUnits.reading + phaseUnits.hydrating;
+    let totalCaptureUnits = 0;
+    for (let i = 0; i < entries.length; i++) {
+        totalCaptureUnits += conditionItemCaptureUnits(entries[i]);
+    }
+    if (phaseUnits !== undefined) {
+        phaseUnits.hydrating += totalCaptureUnits;
+    }
+
+    let completed = 0;
+    let completedCaptureUnits = 0;
+    const emit = (): void => {
+        if (phaseUnits === undefined || progress === undefined) return;
+        progress({
+            phase: "hydrating",
+            completedUnits: baseCompletedUnits + completedCaptureUnits,
+            totalUnits: phaseUnitsTotal(phaseUnits),
+            phaseUnits: phaseUnits,
+            sync: { completedUnits: completed, totalUnits: entries.length, parent: null },
+        });
+    };
+
+    for (let i = 0; i < entries.length; i++) {
+        emit();
+        await captureConditionItemFields(ctx, entries[i], observed.length, registry);
+        completed++;
+        completedCaptureUnits += conditionItemCaptureUnits(entries[i]);
+        emit();
+    }
+}
+
+async function captureConditionItemFields(
+    ctx: TaskContext,
+    entry: ObservedConditionSlot,
+    listLength: number,
+    registry: ItemCaptureRegistry
+): Promise<void> {
+    if (entry.condition === null) return;
+    await goToPaginatedListPage(
+        ctx,
+        getPaginatedListPageForIndex(entry.index),
+        CONDITION_LIST_CONFIG
+    );
+    const slot = await getPaginatedListSlotAtIndex(
+        ctx,
+        entry.index,
+        listLength,
+        CONDITION_LIST_CONFIG
+    );
+    entry.slot = slot;
+    entry.slotId = slot.getSlotId();
+    slot.click();
+    await timedWaitForMenu(ctx, "menuClickWait");
+
+    try {
+        const fields = getConditionItemFieldsForCapture(entry.condition.type);
+        for (let i = 0; i < fields.length; i++) {
+            const field = fields[i];
+            const displayName = (entry.condition as Record<string, unknown>)[field.prop];
+            if (typeof displayName !== "string" || displayName.length === 0) continue;
+            const captured = await captureItemFromOpenEditorField(
+                ctx,
+                field.label,
+                registry,
+                displayName
+            );
+            if (captured !== null) {
+                (entry.condition as Record<string, unknown>)[field.prop] = captured;
+            }
+        }
+    } finally {
+        await clickGoBack(ctx);
+    }
 }

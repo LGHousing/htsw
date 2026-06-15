@@ -41,12 +41,13 @@ import { openFileBrowserWithImportJsonSelection } from "../../popovers/file-brow
 import { openNewProjectPopover } from "../../popovers/new-project";
 import { getAlias } from "../../../importCache/aliases";
 import { boundImportJsonPath } from "../../../importCache/houseBindings";
-import { javaType } from "../../lib/java";
 import { getImportProgress } from "./importProgress";
 import { getStepAuto, setStepAuto } from "../../../housingSync/stepGate";
 import { startImport } from "./importController";
+import { createEmptyProjectFiles } from "htsw-editor-common/project";
+import { ctProjectFs } from "../../../project/projectFs";
 
-import { PROJECTS_ROOT } from "../../../exporter/paths";
+import { PROJECTS_ROOT } from "../../../project/paths";
 
 // ── Path helpers (used only by the destination picker) ────────────────
 
@@ -72,25 +73,11 @@ function aliasPrefill(): string {
 // Create `<projects>/<name>/import.json` and select it as the export
 // destination, so the new project is immediately usable from this picker.
 function createExportProject(name: string): void {
-    // Keep the new project folder inside PROJECTS_ROOT: a name carrying a
-    // path separator or ".." would escape it and write import.json elsewhere.
-    const trimmed = name.trim();
-    if (trimmed === "" || trimmed.indexOf("/") >= 0 || trimmed.indexOf("\\") >= 0 || trimmed.indexOf("..") >= 0) {
-        ChatLib.chat("&c[htsw] Invalid project name — no slashes or '..'.");
-        return;
-    }
     try {
-        const Files = javaType("java.nio.file.Files");
-        const Paths = javaType("java.nio.file.Paths");
-        const dir = `${PROJECTS_ROOT}/${trimmed}`;
-        Files.createDirectories(Paths.get(String(dir)));
-        const importJson = `${dir}/import.json`;
-        if (!FileLib.exists(importJson)) {
-            FileLib.write(importJson, "{\n}\n", true);
-        }
-        selectExportImportJson(importJson);
+        const result = createEmptyProjectFiles(ctProjectFs, PROJECTS_ROOT, name);
+        selectExportImportJson(result.importJsonPath);
         closeAllPopovers();
-        ChatLib.chat(`&a[htsw] Created ${importJson}`);
+        ChatLib.chat(`&a[htsw] ${result.created ? "Created" : "Selected"} ${result.importJsonPath}`);
     } catch (err) {
         ChatLib.chat(`&c[htsw] New project failed: ${err}`);
     }

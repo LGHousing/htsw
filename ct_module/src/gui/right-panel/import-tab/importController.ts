@@ -25,10 +25,11 @@ import {
     beginQueueSession,
     endQueueSession,
     getQueue,
+    isImportQueueItem,
     makeImportableQueueItem,
     queueItemKey,
     removeFromQueueKey,
-    type QueueItem,
+    type ImportQueueItem,
 } from "./queue";
 import {
     forEachCachedParse,
@@ -61,7 +62,8 @@ import { importProgressKey } from "../../../housingSync/progress/keys";
 import type { ExportProgressSink } from "../../../housingSync/progress/types";
 import { createExportProgressSink } from "./exportProgress";
 import { initialReducerState, reduce } from "../../../housingSync/progress/reducer";
-import { traceImportEvent, traceProgressEvent } from "../../../housingSync/progress/trace";
+import { traceImportEvent } from "../../../housingSync/trace/importTrace";
+import { traceProgressEvent } from "../../../housingSync/trace/progressTrace";
 import { invalidateSourceDiffForImportable } from "../../code-view/sourceDiff";
 import { showToast } from "../../toast";
 import { isImportRunning, setImportRunning } from "../../../housingSync/runtimeState";
@@ -323,8 +325,8 @@ type ImportBatch = {
  * Returns null when nothing in the queue could be resolved — the caller
  * uses that to short-circuit with a friendly chat message.
  */
-function buildBatches(explicit?: readonly QueueItem[]): ImportBatch[] | null {
-    const queue = explicit ?? getQueue();
+function buildBatches(explicit?: readonly ImportQueueItem[]): ImportBatch[] | null {
+    const queue = explicit ?? getQueue().filter(isImportQueueItem);
     if (queue.length === 0) return null;
     type Group = {
         parsed: ParseResult<Importable[]>;
@@ -378,31 +380,6 @@ function buildBatches(explicit?: readonly QueueItem[]): ImportBatch[] | null {
 }
 
 /**
- * Build queue items for every importable whose `importableKey` is in
- * `checked`. Walks every cached parse so importables across multiple
- * loaded import.jsons all get picked up.
- */
-export function queueItemsForCheckedKeys(checked: Set<string>): QueueItem[] {
-    if (checked.size === 0) return [];
-    const out: QueueItem[] = [];
-    forEachCachedParse((entry) => {
-        if (entry.parsed === null) return;
-        for (const imp of entry.parsed.value) {
-            const key = importableKey(imp.type, importableIdentity(imp));
-            if (!checked.has(key)) continue;
-            out.push({
-                kind: "importable",
-                sourcePath: entry.canonicalPath,
-                identity: importableIdentity(imp),
-                type: imp.type,
-                label: imp.type === "EVENT" ? imp.event : imp.name,
-            });
-        }
-    });
-    return out;
-}
-
-/**
  * The parse errors worth blocking the import on: every error owned by an
  * imported importable, plus every unattributed error (span-less, or a file
  * we can't tie to any importable). Errors owned only by a DIFFERENT
@@ -427,7 +404,7 @@ function relevantParseErrors(batch: ImportBatch): Diagnostic[] {
     );
 }
 
-export function startImport(explicit?: readonly QueueItem[]): void {
+export function startImport(explicit?: readonly ImportQueueItem[]): void {
     // Re-entry guard. TaskManager.run does not serialise tasks, so without this
     // a second click (or a click during the brief end-of-run window where the
     // panel already reads "done" but the task hasn't fully unwound) would launch
@@ -488,7 +465,7 @@ export function startImport(explicit?: readonly QueueItem[]): void {
     setImportRunning(true);
     // Snapshot this session's queue keys so the post-run cleanup can drop
     // exactly these items even if a newer import supersedes the session.
-    const sessionItemKeys: string[] = (explicit ?? getQueue()).map(queueItemKey);
+    const sessionItemKeys: string[] = (explicit ?? getQueue().filter(isImportQueueItem)).map(queueItemKey);
     const startedAt = Date.now();
     resetStepGate();
     gmcOnImportStart();
@@ -727,11 +704,6 @@ export function startExport(
     }).catch((err: unknown) => {
         showToast(`Export failed: ${err}`, 0xffe85c5c, 8000);
     });
-}
-
-export function stopAllTasks(): void {
-    TaskManager.cancelAll();
-    ChatLib.chat("&c[htsw] cancelling running task...");
 }
 
 function importJsonDir(path: string): string {

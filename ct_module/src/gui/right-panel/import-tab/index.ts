@@ -168,7 +168,7 @@ function appendQueueRows(rows: Child[], items: readonly QueueItem[]): void {
     for (let i = 0; i < items.length; i++) {
         const item = items[i];
         rows.push(queueRow(item));
-        if (item.kind === "importJson" && isQueueImportJsonExpanded(item)) {
+        if (item.operation === "import" && item.kind === "importJson" && isQueueImportJsonExpanded(item)) {
             const children = queueImportJsonChildren(item);
             for (let j = 0; j < children.length; j++) {
                 rows.push(queueImportJsonChildRow(children[j]));

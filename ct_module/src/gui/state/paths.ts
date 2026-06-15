@@ -1,4 +1,4 @@
-import { PROJECTS_ROOT } from "../../exporter/paths";
+import { PROJECTS_ROOT } from "../../project/paths";
 import { normalizeHtswPath } from "../lib/pathDisplay";
 
 let importJsonPath = `${PROJECTS_ROOT}/import.json`;

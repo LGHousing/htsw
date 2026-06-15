@@ -137,7 +137,7 @@ export function readAutomaticExecutionTicks(ctx: TaskContext): number | undefine
     return undefined;
 }
 
-export async function setAutomaticExecutionTicksIfNeeded(
+async function setAutomaticExecutionTicksIfNeeded(
     ctx: TaskContext,
     repeatTicks: number
 ): Promise<void> {
@@ -150,7 +150,7 @@ export async function setAutomaticExecutionTicksIfNeeded(
     await setNumberValue(ctx, autoExecSlot, repeatTicks);
 }
 
-export async function setFunctionIconIfNeeded(
+async function setFunctionIconIfNeeded(
     ctx: TaskContext,
     icon: FunctionIcon
 ): Promise<void> {

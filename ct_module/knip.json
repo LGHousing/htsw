@@ -13,8 +13,9 @@
         "@babel/preset-typescript"
     ],
     "ignoreIssues": {
-        "src/gui/lib/theme.ts": ["duplicates"]
+        "src/gui/lib/theme.ts": ["duplicates"],
+        "src/tui/elements.ts": ["exports"]
     },
-    "ignoreBinaries": ["tsx"],
+    "ignoreBinaries": ["tsx", "javac"],
     "ignoreUnresolved": ["../../CTAutocomplete"]
 }

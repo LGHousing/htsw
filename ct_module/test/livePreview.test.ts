@@ -18,7 +18,7 @@ import {
 } from "../src/gui/right-panel/import-tab/livePreview";
 import { actionPathFromKey } from "../src/housingSync/importEvents";
 
-import { conditional, message, playSound } from "./utils";
+import { conditional, message } from "./utils";
 
 const PATH = "./test.htsl";
 
@@ -36,12 +36,6 @@ function bodyAt(actionPath: string): PreviewLine | undefined {
 
 function func(actions: Action[]): Importable {
     return { type: "FUNCTION", name: "test", actions };
-}
-
-function pendingAddedIds(): string[] {
-    return previewLinesForFile(PATH)
-        .map((l) => l.id)
-        .filter((id) => id.indexOf("pending:") === 0);
 }
 
 beforeEach(() => {

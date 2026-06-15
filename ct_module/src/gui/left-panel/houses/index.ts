@@ -22,11 +22,11 @@ import { openMenu, type MenuAction } from "../../lib/menu";
 import { togglePopover, closePopover, type PopoverHandle } from "../../lib/popovers";
 import { exportDestinationPicker } from "../../right-panel/import-tab/importButtons";
 import {
-    clearExportQueue,
-    getExportQueue,
-    isInExportQueue,
-    toggleExportQueue,
-} from "./exportQueue";
+    clearExportSelection,
+    getExportSelection,
+    isInExportSelection,
+    toggleExportSelection,
+} from "./exportSelection";
 import { TaskManager } from "../../../tasks/manager";
 import { IMPORT_CACHE_ROOT, importableIdentity } from "../../../importCache/paths";
 import { deleteHousingCache } from "../../../importCache/cache";
@@ -270,14 +270,14 @@ function openHouseDropdown(rect: Rect): void {
                   style: { padding: DROPDOWN_PAD },
                   children: [
                       Scroll({
-                          id: "knowledge-house-dropdown-scroll",
+                          id: "houses-house-dropdown-scroll",
                           style: { gap: DROPDOWN_GAP, height: { kind: "px", value: listH } },
                           children: houses.map(houseDropdownRow),
                       }),
                   ],
               });
     houseDropdownHandle = togglePopover({
-        key: "knowledge-house-dropdown",
+        key: "houses-house-dropdown",
         anchor: rect,
         content,
         width: rect.w,
@@ -428,12 +428,12 @@ function itemRowMenu(t: HouseContentType, uuid: string, name: string, canExport:
     if (t.edit !== undefined)
         actions.push({ label: "Edit", icon: Icons.pencil, onClick: () => t.edit?.(name) });
     if (canExport) {
-        const selected = isInExportQueue(uuid, t.type, name);
+        const selected = isInExportSelection(uuid, t.type, name);
         actions.push({
             label: selected ? "Deselect" : "Select for export",
             icon: selected ? Icons.squareCheck : Icons.square,
             onClick: () => {
-                toggleExportQueue({ uuid, type: t.type, name });
+                toggleExportSelection({ uuid, type: t.type, name });
             },
         });
     }
@@ -529,8 +529,8 @@ function itemRow(
     canExport: boolean,
     drift: DriftState
 ): Element {
-    const inQueue = isInExportQueue(uuid, t.type, item.name);
-    const selected = canExport && inQueue;
+    const inSelection = isInExportSelection(uuid, t.type, item.name);
+    const selected = canExport && inSelection;
     return Container({
         style: {
             direction: "row",
@@ -549,7 +549,7 @@ function itemRow(
                       return;
                   }
                   if (info.button !== 0) return;
-                  if (canExport) toggleExportQueue({ uuid, type: t.type, name: item.name });
+                  if (canExport) toggleExportSelection({ uuid, type: t.type, name: item.name });
               }
             : undefined,
         children: [
@@ -571,7 +571,7 @@ function itemRow(
                   : Icon({
                         // Grayed checkbox: export needs the live menu, so it's
                         // disabled until you're standing in this house.
-                        name: inQueue ? Icons.squareCheck : Icons.square,
+                        name: inSelection ? Icons.squareCheck : Icons.square,
                         color: COLOR_TEXT_FAINT,
                         style: {
                             width: { kind: "px", value: 12 },
@@ -705,7 +705,7 @@ function confirmDestructiveExport(
 }
 
 function exportActionBar(t: HouseContentType, uuid: string, totalCount: number): Element {
-    const selected = getExportQueue().filter(
+    const selected = getExportSelection().filter(
         (it) => it.uuid === uuid && it.type === t.type
     );
     const selectedCount = selected.length;
@@ -770,7 +770,7 @@ function exportActionBar(t: HouseContentType, uuid: string, totalCount: number):
                         },
                         onClick: (rect: Rect) =>
                             togglePopover({
-                                key: "knowledge-export-destination",
+                                key: "houses-export-destination",
                                 anchor: rect,
                                 content: exportDestinationPicker(),
                                 width: 360,
@@ -800,7 +800,7 @@ function exportActionBar(t: HouseContentType, uuid: string, totalCount: number):
                             if (selectedCount > 0) {
                                 const names = selected.map((it) => it.name);
                                 confirmDestructiveExport(t, uuid, names, () =>
-                                    exp.selected(names, () => clearExportQueue())
+                                    exp.selected(names, () => clearExportSelection())
                                 );
                             } else {
                                 const names = t.items(uuid).map((i) => i.name);
@@ -839,7 +839,7 @@ function exportActionBar(t: HouseContentType, uuid: string, totalCount: number):
                                     onClick: () => {
                                         if (unexportedNames.length > 0 && t.export) {
                                             t.export.selected(unexportedNames, () =>
-                                                clearExportQueue()
+                                                clearExportSelection()
                                             );
                                         }
                                     },
@@ -891,7 +891,7 @@ function exportActionBar(t: HouseContentType, uuid: string, totalCount: number):
                                 background: COLOR_BUTTON,
                                 hoverBackground: COLOR_BUTTON_HOVER,
                             },
-                            onClick: () => clearExportQueue(),
+                            onClick: () => clearExportSelection(),
                         }),
                 ],
             }),
@@ -990,7 +990,7 @@ function typeBrowserSection(): Element {
             }
             out.push(
                 Input({
-                    id: "knowledge-item-search",
+                    id: "houses-item-search",
                     value: () => itemSearch,
                     onChange: (v) => {
                         itemSearch = v;
@@ -1016,7 +1016,7 @@ function typeBrowserSection(): Element {
                 const sourceMap = sourceImportablesByType(t.type);
                 out.push(
                     Scroll({
-                        id: "knowledge-type-scroll",
+                        id: "houses-type-scroll",
                         style: { height: { kind: "grow" }, gap: 1 },
                         children: shown.map((i) =>
                             itemRow(t, uuid, i, canScan, canExport, driftFor(uuid, i, sourceMap))

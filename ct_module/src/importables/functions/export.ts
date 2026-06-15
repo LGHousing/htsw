@@ -13,8 +13,8 @@ import {
 import { tryWriteImportableCache } from "../../importCache";
 import { writeImportableCache } from "../../importCache/cache";
 import TaskContext from "../../tasks/context";
-import { observedSlotsToActions } from "../../exporter/sanitize";
-import { upsertImportableEntry } from "../../exporter/importJsonWriter";
+import { observedSlotsToActions } from "../../housingSync/observedActions";
+import { upsertImportableEntry } from "../../project/importJsonMutations";
 import { writeCapturedItems } from "../../exporter/writeCapturedItems";
 import { ensureParentDirs } from "../../utils/filesystem";
 import { withExportSession } from "../exportSession";
@@ -96,7 +96,7 @@ async function readFunction(
  * (actions + repeat + icon), writing nothing. Shared by the exporter and the
  * Houses-tab deep read (which caches the result instead of writing import.json).
  */
-export async function readFunctionImportable(
+async function readFunctionImportable(
     ctx: TaskContext,
     name: string,
     itemCaptures?: ItemCaptureRegistry,

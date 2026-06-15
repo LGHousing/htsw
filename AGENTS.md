@@ -16,7 +16,7 @@ This guide records **what each part is responsible for and the rules it must kee
 - `ct_module/` — loads HTSW into Minecraft: drives Housing menus, diffs, imports/exports, simulates. Runs on Rhino with `lib: ["ES5", "DOM"]`; anything bundled into ChatTriggers (including emitted `language/` JS) is constrained to that.
 - `cli/` — Node CLI (`htsw check [path]`, `htsw run [path]`).
 - `editors/` — VS Code, Monaco, shared editor features.
-- `docs/`, `examples/`, `test/` — content and language tests.
+- `docs/`, `examples/` — guide content and example projects. Tests live per package (`language/test`, `ct_module/test`).
 
 | area | build | test | notes |
 |---|---|---|---|
@@ -61,7 +61,7 @@ Before writing a comment: **did you verify this, or are you narrating your menta
 
 ## ct_module importer reference
 
-Lives in `ct_module/src/importer/`. Reads and writes real Housing menus through async tasks, not callbacks. The procedures and coverage shift every PR — read the code for those; the rules below are what the code can't tell you.
+Split across `ct_module/src/housingSync/` (read/diff/write live menus), `importables/` (per-type import/export), `exporter/` (cross-type export wiring), and `importCache/` (per-house cache). Reads and writes real Housing menus through async tasks, not callbacks. The procedures and coverage shift every PR — read the code for those; the rules below are what the code can't tell you.
 
 **Where the current behavior is defined:**
 
@@ -75,14 +75,14 @@ Lives in `ct_module/src/importer/`. Reads and writes real Housing menus through 
 - `imports.ts` / `exports.ts` only dispatch — never inline per-type bodies.
 - A type's import + export live together under `importables/<type>/`; logic shared between the two directions stays in that folder. `exporter/` is cross-type wiring only — never `exporter/exportFunction.ts`.
 - Exporters reuse importer reads (`readActionList`, `readConditionList`, `parse*ListItem`) — never duplicate read logic.
-- Adding an action/condition type: update `fields/actionMappings.ts` / `conditionMappings.ts` first — they drive parsing, list-item observation, and diff cost.
+- Adding an action/condition type: update `housingSync/fields/actionMappings.ts` / `conditionMappings.ts` first — they drive parsing, list-item observation, and diff cost.
 
 **Behavior to keep** (a future edit could easily undo these):
 
 - Action sync applies **delete → edit → move → add** — deletes stabilize indices, edits precede moves to avoid stale slot refs, moves resolve by current index, adds append then rotate. Action moves are circular (Housing shift-click reorder wraps). Conditions have no moves.
 - A no-`write` action is add-and-return; do **not** add an empty `write` to mean "no-op" — it still triggers click-back. A present `write` assumes the editor is open and clicks back when done. Conditions also toggle invert before clicking back; actions don't.
 - Field setters short-circuit on a matching value, so a writer is safe to re-run without per-field guards.
-- import.json writers must be include-aware: an existing identity can be declared in an INCLUDED file, and writing it into the entry instead duplicates the declaration and breaks the whole parse. `updateImportableField` / `removeImportableEntry` / `renameImportableEntry` resolve the declaring file themselves; `upsertImportableEntry` deliberately does NOT, because entry values carry file-relative refs (`actions`/`nbt`) — compute the target file and refs together via `htslTargetFor*Export` / `snbtTargetForItemExport` / `resolveImportableFile` (all rooted in `exporter/includeWalk.ts`).
+- import.json writers must be include-aware: an existing identity can be declared in an INCLUDED file, and writing it into the entry instead duplicates the declaration and breaks the whole parse. `updateImportableField` / `removeImportableEntry` / `renameImportableEntry` resolve the declaring file themselves; `upsertImportableEntry` deliberately does NOT, because entry values carry file-relative refs (`actions`/`nbt`) — compute the target file and refs together via `htslTargetForFunctionExport`/`htslTargetForEventExport` / `snbtTargetForItemExport` / `resolveImportableFile` — defined in `ct_module/src/project/` (`paths.ts`, `importJsonMutations.ts`), thin adapters binding `ctProjectFs` to the shared `editors/common/src/project/` (where `includeWalk.ts` roots include resolution).
 - Nested-list action types (CONDITIONAL, RANDOM, …) need an explicit `read` in their spec — lore alone is insufficient and the importer throws if it's missing. Sync hydrates nested lists selectively (shallow, then `createNestedHydrationPlan`); export always reads full.
 - `previewHandler` is the one preview/progress path — don't add a second diff/progress callback unless something actually needs it.
 - The progress reducer (`housingSync/progress/reducer.ts`) is the only builder of `ImportProgress` snapshots. Export/read progress adapts into `ImportEvent`s via `createExportProgressSink` and runs through that same reducer — never hand-build `ImportProgress` literals for a new flow. Exporters that swallow per-item errors must call the sink's `itemFailed`, or the failed row renders as success.

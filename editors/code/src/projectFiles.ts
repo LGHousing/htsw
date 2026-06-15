@@ -1,12 +1,13 @@
 import * as path from "node:path";
+import * as fs from "node:fs";
 import * as vscode from "vscode";
+import { createIncludedImportJsonFiles, type ProjectFs } from "htsw-editor-common/project";
 import {
     applyEdits,
     findNodeAtLocation,
     getNodePath,
     modify,
     Node as JsonNode,
-    parse,
     parseTree,
 } from "jsonc-parser";
 
@@ -302,7 +303,6 @@ async function createIncludedImportJson(uri?: vscode.Uri) {
     });
     if (!folderName) return;
 
-    const manifestUri = vscode.Uri.file(path.join(baseUri.fsPath, folderName, "import.json"));
     const parentManifest = isImportJsonUri(uri)
         ? uri
         : await findNearestManifest(baseUri.fsPath);
@@ -311,15 +311,45 @@ async function createIncludedImportJson(uri?: vscode.Uri) {
         return;
     }
 
-    if (await fileExists(manifestUri)) {
-        void vscode.window.showWarningMessage(`${folderName}/import.json already exists.`);
+    const document = await vscode.workspace.openTextDocument(parentManifest);
+    let parentReplacement: string | undefined;
+    let result: ReturnType<typeof createIncludedImportJsonFiles>;
+    try {
+        result = createIncludedImportJsonFiles(
+            {
+                ...nodeProjectFs,
+                readFile: (filePath) =>
+                    filePath === parentManifest.fsPath
+                        ? document.getText()
+                        : nodeProjectFs.readFile(filePath),
+                writeFile: (filePath, text) => {
+                    if (filePath === parentManifest.fsPath) {
+                        parentReplacement = text;
+                        return;
+                    }
+                    nodeProjectFs.writeFile(filePath, text);
+                },
+            },
+            baseUri.fsPath,
+            folderName,
+            parentManifest.fsPath,
+        );
+    } catch (err) {
+        void vscode.window.showWarningMessage(String(err instanceof Error ? err.message : err));
         return;
     }
 
-    await vscode.workspace.fs.createDirectory(vscode.Uri.file(path.dirname(manifestUri.fsPath)));
-    await vscode.workspace.fs.writeFile(manifestUri, Buffer.from("{}\n"));
-    await addInclude(parentManifest, manifestUri.fsPath);
-    await vscode.window.showTextDocument(manifestUri);
+    if (parentReplacement !== undefined) {
+        const edit = new vscode.WorkspaceEdit();
+        edit.replace(
+            parentManifest,
+            new vscode.Range(document.positionAt(0), document.positionAt(document.getText().length)),
+            parentReplacement,
+        );
+        await vscode.workspace.applyEdit(edit);
+        await document.save();
+    }
+    await vscode.window.showTextDocument(vscode.Uri.file(result.importJsonPath));
 }
 
 async function selectedDirectory(uri?: vscode.Uri): Promise<vscode.Uri | undefined> {
@@ -372,32 +402,32 @@ function isImportJsonName(name: string): boolean {
     return lower === "import.json" || lower.endsWith(".import.json");
 }
 
-async function fileExists(uri: vscode.Uri): Promise<boolean> {
-    try {
-        await vscode.workspace.fs.stat(uri);
-        return true;
-    } catch {
-        return false;
-    }
-}
+const nodeProjectFs: ProjectFs = {
+    exists(filePath: string): boolean {
+        return fs.existsSync(filePath);
+    },
 
-async function addInclude(parentManifest: vscode.Uri, includedManifestPath: string) {
-    const document = await vscode.workspace.openTextDocument(parentManifest);
-    const source = document.getText();
-    const value = parse(source) as { include?: unknown };
-    const includePath = relativePath(path.dirname(parentManifest.fsPath), includedManifestPath);
-    const nodePath = Array.isArray(value?.include)
-        ? ["include", value.include.length]
-        : ["include"];
-    const next = applyEdits(source, modify(source, nodePath, Array.isArray(value?.include) ? includePath : [includePath], {
-        formattingOptions: { insertSpaces: true, tabSize: 4 },
-    }));
-    const edit = new vscode.WorkspaceEdit();
-    edit.replace(
-        parentManifest,
-        new vscode.Range(document.positionAt(0), document.positionAt(source.length)),
-        next,
-    );
-    await vscode.workspace.applyEdit(edit);
-    await document.save();
-}
+    readFile(filePath: string): string {
+        return fs.readFileSync(filePath, "utf8");
+    },
+
+    writeFile(filePath: string, text: string): void {
+        fs.writeFileSync(filePath, text, "utf8");
+    },
+
+    ensureDir(dirPath: string): void {
+        fs.mkdirSync(dirPath, { recursive: true });
+    },
+
+    parentDir(filePath: string): string {
+        return path.dirname(filePath);
+    },
+
+    resolvePath(baseDir: string, ref: string): string {
+        return path.resolve(baseDir, ref);
+    },
+
+    deleteFile(filePath: string): void {
+        fs.unlinkSync(filePath);
+    },
+};

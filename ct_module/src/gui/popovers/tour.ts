@@ -323,14 +323,10 @@ function reopen(): void {
     });
 }
 
-export function startTour(): void {
+function startTour(): void {
     step = 0;
     STEPS[0].setup?.();
     reopen();
-}
-
-export function isTourOpen(): boolean {
-    return activeHandle !== null;
 }
 
 // Spotlight border around the current step's region. Default-priority
