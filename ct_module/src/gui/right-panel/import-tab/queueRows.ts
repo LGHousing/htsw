@@ -9,14 +9,13 @@
 import type { Importable } from "htsw/types";
 
 import type { Element } from "../../lib/layout";
-import { Button, Container, Icon, Row, Text } from "../../lib/components";
+import { Container, Icon, Text } from "../../lib/components";
 import { Icons } from "../../lib/icons.generated";
 import {
     ACCENT_DANGER,
     ACCENT_INFO,
     ACCENT_SUCCESS,
     ACCENT_TEAL,
-    COLOR_BUTTON,
     COLOR_BUTTON_HOVER,
     COLOR_ROW,
     COLOR_ROW_HOVER,
@@ -29,13 +28,11 @@ import {
 } from "../../lib/theme";
 
 const GLYPH_CARET = "▶";
-import { clearImportableChecks, getHousingUuid, isCurrentHouseTrusted, isImportableChecked, toggleImportableChecked } from "../../state";
+import { getHousingUuid, isCurrentHouseTrusted, isImportableChecked, toggleImportableChecked } from "../../state";
 import { getQueueItemRunState, isCurrentQueueItem } from "./importProgress";
 import { importableIdentity, importableKey } from "../../../importCache/paths";
 import { buildCacheStatusRow } from "../../../importCache/status";
 import {
-    clearQueue,
-    getQueueLength,
     isQueueSessionItem,
     queueItemKey,
     removeFromQueueKey,
@@ -48,7 +45,7 @@ import { phaseSegment } from "./progressPanel";
 
 function willBeSkipped(item: QueueItem): boolean {
     if (!isCurrentHouseTrusted()) return false;
-    if (item.kind !== "importable") return false;
+    if (item.operation !== "import" || item.kind !== "importable") return false;
     const uuid = getHousingUuid();
     if (uuid === null) return false;
     const cached = requestParse(item.sourcePath);
@@ -80,7 +77,7 @@ const collapsedQueueImportJsonRows: Set<string> = new Set();
  */
 function removeQueueItemAndUncheck(item: QueueItem): void {
     removeFromQueueKey(queueItemKey(item));
-    if (item.kind !== "importable") return;
+    if (item.operation !== "import" || item.kind !== "importable") return;
     const checkKey = importableKey(item.type, item.identity);
     if (isImportableChecked(checkKey)) toggleImportableChecked(checkKey);
 }
@@ -152,7 +149,7 @@ function queueImportableLabel(imp: Importable): string {
 }
 
 export function queueImportJsonChildren(item: QueueItem): QueueItem[] {
-    if (item.kind !== "importJson") return [];
+    if (item.operation !== "import" || item.kind !== "importJson") return [];
     const cached = requestParse(item.sourcePath);
     if (cached === null || cached.parsed === null) return [];
     const ordered = orderImportablesForImportSession(
@@ -160,6 +157,7 @@ export function queueImportJsonChildren(item: QueueItem): QueueItem[] {
         cached.parsed.value
     );
     return ordered.map((imp) => ({
+        operation: "import",
         kind: "importable",
         sourcePath: item.sourcePath,
         identity: importableIdentity(imp),
@@ -169,13 +167,13 @@ export function queueImportJsonChildren(item: QueueItem): QueueItem[] {
 }
 
 export function isQueueImportJsonExpanded(item: QueueItem): boolean {
-    return item.kind === "importJson" && !collapsedQueueImportJsonRows.has(queueItemKey(item));
+    return item.operation === "import" && item.kind === "importJson" && !collapsedQueueImportJsonRows.has(queueItemKey(item));
 }
 
 export function queueRow(item: QueueItem): Element {
     const typeText = item.kind === "importJson" ? "ALL" : item.type;
     const isCurrent = isCurrentQueueItem(item);
-    const canExpand = item.kind === "importJson";
+    const canExpand = item.operation === "import" && item.kind === "importJson";
     const expanded = canExpand && isQueueImportJsonExpanded(item);
     return Container({
         style: {
@@ -327,36 +325,6 @@ export function queueImportJsonChildRow(item: QueueItem): Element {
                 ],
             }),
             queueRowMiniBar(item),
-        ],
-    });
-}
-
-export function queueHeader(): Element {
-    return Row({
-        style: { gap: 4, height: { kind: "px", value: 16 }, align: "center" },
-        children: [
-            Text({
-                text: () => {
-                    const n = getQueueLength();
-                    return n === 0 ? "Queue (empty)" : `Queue (${n})`;
-                },
-                color: COLOR_TEXT_DIM,
-                style: { width: { kind: "grow" } },
-            }),
-            Button({
-                text: "Clear",
-                style: {
-                    width: { kind: "px", value: 38 },
-                    height: { kind: "grow" },
-                    background: COLOR_BUTTON,
-                    hoverBackground: COLOR_BUTTON_HOVER,
-                },
-                onClick: () => {
-                    if (isImportRunning()) return;
-                    clearQueue();
-                    clearImportableChecks();
-                },
-            }),
         ],
     });
 }

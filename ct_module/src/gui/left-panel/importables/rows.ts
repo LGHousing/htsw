@@ -29,14 +29,14 @@ import {
     importableSubListPath,
     type SubListKind,
 } from "../../parsing/importablePaths";
-import { moveImportableEntry } from "../../../exporter/moveImportable";
+import { moveImportableEntry } from "../../../project/moveImportable";
 import { importableIdentity, importableKey } from "../../../importCache/paths";
 import { houseDisplayName } from "../../../importCache/aliases";
 import {
     removeImportableEntry,
     setHouseUuidKey,
     type Section,
-} from "../../../exporter/importJsonWriter";
+} from "../../../project/importJsonMutations";
 import { countFilesRecursive, deleteDirRecursive } from "../../../utils/filesystem";
 import {
     canonicalPath,
@@ -80,16 +80,13 @@ export function setSearchQuery(v: string): void {
     bumpTreeRevision();
 }
 
-export const importExpansion: Map<string, boolean> = new Map();
+const importExpansion: Map<string, boolean> = new Map();
 export function expansionKey(sourceKey: string, fullPath: string): string {
     return `${sourceKey}::${fullPath}`;
 }
 // Paths that should start expanded regardless of the sole-import default —
 // e.g. the freshly created starter project. An explicit user toggle wins.
 const autoExpandPaths = new Set<string>();
-export function requestImportAutoExpand(fullPath: string): void {
-    autoExpandPaths.add(fullPath);
-}
 /** Expand a file even past an explicit user collapse — for an explicit
  * "open this project" action, where staying collapsed reads as a no-op. */
 export function forceImportExpand(fullPath: string): void {
@@ -114,7 +111,7 @@ export const collapsedRoots: Set<string> = new Set();
 // Include-group rows (included import.jsons rendered as nested groups under
 // the entry file). Explicit toggles win over the default the tree passes in
 // (collapsed normally, expanded while a search/type filter narrows).
-export const includeGroupExpansion: Map<string, boolean> = new Map();
+const includeGroupExpansion: Map<string, boolean> = new Map();
 export function includeGroupKey(entryFullPath: string, nodeFullPath: string): string {
     return `${entryFullPath}::${nodeFullPath}`;
 }
@@ -150,7 +147,7 @@ export function subListsOf(imp: Importable): SubListKind[] {
     return [];
 }
 
-export type FieldDiff = "changed" | "added" | "removed";
+type FieldDiff = "changed" | "added" | "removed";
 export type MetadataField = { key: string; label: string; value: string; diff?: FieldDiff };
 
 function formatPos(p: { x: number; y: number; z: number }): string {
@@ -510,7 +507,7 @@ function rowHandler(
     };
 }
 
-export const ROOT_DIR_PREFIX = "dir:";
+const ROOT_DIR_PREFIX = "dir:";
 
 export function dirRootKey(s: SourceDir): string {
     return ROOT_DIR_PREFIX + s.fullPath;

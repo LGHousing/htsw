@@ -99,7 +99,7 @@ export class UIElementCanvas implements UIElement {
                 tokens.push({ token: text.slice(i, i + 2), width: 0 });
                 i += 2;
             } else {
-                let start = i;
+                const start = i;
                 while (i < text.length && text[i] !== "&") i++;
                 const substr = text.slice(start, i);
                 tokens.push({ token: substr, width: chatWidth(substr) });
@@ -181,63 +181,5 @@ export class UIElementCanvas implements UIElement {
         }
 
         return result;
-    }
-}
-
-export class UIElementHLine extends UIElementText {
-    constructor(width: number, char: string = "-", color?: string) {
-        super(
-            (color ?? "") + char.repeat(Math.max(1, Math.round(width / chatWidth(char))))
-        );
-
-    }
-}
-
-export class UIElementVLine extends UIElementVStack {
-    constructor(height: number, char: string = "|") {
-        super();
-        for (let i = 0; i < height; i++) {
-            this.add(new UIElementText(char));
-        }
-    }
-}
-
-export class UIElementTruncate implements UIElement {
-    inner: UIElement;
-    maxWidth: number;
-
-    constructor(inner: UIElement, maxWidth: number) {
-        this.inner = inner;
-        this.maxWidth = maxWidth;
-    }
-
-    getWidth(): number {
-        return Math.min(this.inner.getWidth(), this.maxWidth);
-    }
-
-    getHeight(): number {
-        return this.inner.getHeight();
-    }
-
-    render(): string[] {
-        const lines = this.inner.render();
-        const ellipsis = "...";
-        const ellipsisWidth = chatWidth(ellipsis);
-
-        return lines.map((line) => {
-            const width = chatWidth(line);
-            if (width <= this.maxWidth) return line;
-
-            // truncate from the right, keeping enough room for "..."
-            let truncated = "";
-            let currentWidth = 0;
-            for (const ch of line) {
-                const chWidth = chatWidth(ch);
-                if (currentWidth + chWidth + ellipsisWidth > this.maxWidth) break;
-                truncated += ch;
-                currentWidth += chWidth;
-            }
-            return truncated + ellipsis;
-        });
     }
 }

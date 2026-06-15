@@ -21,13 +21,13 @@ import {
     phaseUnitsTotal,
 } from "../progress/costs";
 
-export type NestedActionApplyArgs = {
+type NestedActionApplyArgs = {
     desired: Action[];
     observed?: ReadonlyArray<Observed<Action> | null>;
     offset?: number;
 };
 
-export type NestedConditionApplyArgs = {
+type NestedConditionApplyArgs = {
     desired: Condition[];
     observed?: ReadonlyArray<Condition | null>;
     offset?: number;
@@ -51,7 +51,7 @@ export type ApplyNestedActionList = (
     }
 ) => Promise<unknown>;
 
-export type ApplyNestedConditionList = (
+type ApplyNestedConditionList = (
     ctx: TaskContext,
     desired: Condition[],
     options: {

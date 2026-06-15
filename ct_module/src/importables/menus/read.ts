@@ -8,13 +8,13 @@ import { waitForMenu } from "../../housingSync/gui/menuWait";
 import TaskContext from "../../tasks/context";
 import { getAllItemSlots } from "../../tasks/specifics/slots";
 import { removedFormatting } from "../../utils/helpers";
-import { observedSlotsToActions } from "../../exporter/sanitize";
+import { observedSlotsToActions } from "../../housingSync/observedActions";
 import { snbtFromItem } from "../../housingSync/itemCapture";
 import { openMenuElements } from "./shared";
 
 const PLAYER_INVENTORY_SLOTS = 36;
 
-export type LiveMenuSlot = {
+type LiveMenuSlot = {
     slot: number;
     snbt: string;
     actions: Action[];
@@ -79,7 +79,7 @@ function isEmptySlotFiller(item: Item): boolean {
  * Must be called on the "Edit Elements" grid (after `openMenuElements`), not
  * the settings screen.
  */
-export function snapshotMenuSlots(
+function snapshotMenuSlots(
     menuSlotCount: number
 ): Array<{ slotId: number; snbt: string; nameHint: string }> {
     const all = getAllItemSlots();
@@ -119,7 +119,7 @@ export function snapshotMenuSlots(
  * directly (right-click changes the item instead). Reads the list and returns
  * to the grid. Returns an empty list when the slot has no actions.
  */
-export async function readMenuSlotActions(
+async function readMenuSlotActions(
     ctx: TaskContext,
     slotId: number
 ): Promise<Action[]> {

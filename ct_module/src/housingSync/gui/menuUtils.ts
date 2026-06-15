@@ -148,13 +148,13 @@ function setAnvilItemName(newName: string) {
         throw new Error("No open container found");
     }
     const outputSlotField = inventory.container.class.getDeclaredField("field_82852_f");
-    // @ts-ignore
+    // @ts-expect-error Rhino reflection return types do not expose Java members.
     outputSlotField.setAccessible(true);
     const outputSlot = outputSlotField.get(inventory.container);
 
     const outputSlotItemField = outputSlot.class.getDeclaredField("field_70467_a");
     outputSlotItemField.setAccessible(true);
-    let outputSlotItem = outputSlotItemField.get(outputSlot);
+    const outputSlotItem = outputSlotItemField.get(outputSlot);
 
     outputSlotItem[0] = new Item(339).setName(newName).itemStack;
     outputSlotItemField.set(outputSlot, outputSlotItem);
@@ -207,7 +207,7 @@ export async function setListItemNote(
     await timedWaitForMenu(ctx, "menuClickWait");
 }
 
-export function readCurrentValue(slot: ItemSlot): string | null {
+function readCurrentValue(slot: ItemSlot): string | null {
     const lines = readCurrentValueLines(slot);
     if (lines === null) {
         return null;
@@ -262,7 +262,7 @@ function normalizeSelectedOption(line: string): string {
         .trim();
 }
 
-export function readSelectedOption(
+function readSelectedOption(
     slot: ItemSlot,
     options: readonly string[]
 ): string | null {

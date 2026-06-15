@@ -31,7 +31,7 @@ import {
     phaseUnitsTotal,
     type PhaseUnits,
 } from "../../progress/costs";
-import { traceConditionOp } from "../../progress/trace";
+import { traceConditionOp } from "../../trace/progressTrace";
 import { currentConditionListFromSlots, diffConditionList } from "./diff";
 import { readConditionList } from "./readList";
 
@@ -122,7 +122,7 @@ function findCurrentConditionIndex(
 }
 
 
-export async function applyConditionListDiff(
+async function applyConditionListDiff(
     ctx: TaskContext,
     observed: ObservedConditionSlot[],
     diff: ConditionListDiff,

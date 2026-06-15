@@ -169,7 +169,7 @@ export function itemToHtswTag(item: Item): Tag | null {
 export function getItemFromNbt(nbt: Tag): Item {
     const mcTag = toMinecraftTag(normalizeItemNbtColorCodes(nbt));
 
-    // @ts-ignore STUPID TYPEDEF!
+    // @ts-expect-error CTAutocomplete omits ItemStack.loadItemStackFromNBT.
     const itemStack = ItemStack.func_77949_a(/*loadItemStackFromNBT*/ mcTag);
 
     return new Item(itemStack);
@@ -182,9 +182,8 @@ export function getItemFromNbt(nbt: Tag): Item {
  * that need the housing-tagged version of an item, not its raw source NBT.
  */
 export function getItemFromSnbt(snbt: string): Item {
-    // @ts-ignore STUPID TYPEDEF!
     const compound = JsonToNBT.func_180713_a(/*parseStringIntoCompound*/ snbt);
-    // @ts-ignore STUPID TYPEDEF!
+    // @ts-expect-error CTAutocomplete omits ItemStack.loadItemStackFromNBT.
     const itemStack = ItemStack.func_77949_a(/*loadItemStackFromNBT*/ compound);
     return new Item(itemStack);
 }

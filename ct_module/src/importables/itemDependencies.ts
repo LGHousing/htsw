@@ -48,13 +48,6 @@ function collectFromActions(
     }
 }
 
-/** Every item name referenced by a `kind: "item"` field anywhere in the action tree. */
-export function referencedItemNamesInActions(actions: readonly Action[]): string[] {
-    const names: string[] = [];
-    collectFromActions(actions, names);
-    return names;
-}
-
 /** Every item name referenced by a `kind: "item"` field anywhere in the importable's action trees. */
 export function referencedItemNames(importable: Importable): string[] {
     const names: string[] = [];

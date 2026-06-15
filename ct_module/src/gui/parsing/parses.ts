@@ -69,7 +69,7 @@ export type CachedParse = {
     mtime: number;
     parsed: ParseResult<Importable[]> | null;
     /**
-     * True when `parsed` was restored from a snapshot (or spliced).
+     * True when `parsed` was restored from a snapshot.
      * Diagnostics come back with real spans, but the AST `SpanTable` is
      * empty — action/field span lookups against it return nothing.
      */
@@ -203,12 +203,6 @@ export function getParseAt(path: string): CachedParse | null {
 // empty/"pending" state until the cache warms a frame or two later.
 const pendingParsePaths = new Map<string, string>();
 let parseInFlightPath: string | null = null;
-
-/** True while `path` is queued for or undergoing a deferred parse. */
-export function isParsePending(path: string): boolean {
-    const canon = canonicalPath(path);
-    return parseInFlightPath === canon || pendingParsePaths.has(canon);
-}
 
 /**
  * Render-safe parse request. Returns the cached parse if one exists (and

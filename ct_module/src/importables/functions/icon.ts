@@ -33,24 +33,23 @@ export function snapshotIconStack(stack: any): FunctionIconSnapshot | null {
     if (stack === null || stack === undefined) return null;
     const mcItem = stack.func_77973_b();
     if (mcItem === null || mcItem === undefined) return null;
-    // @ts-ignore func_150891_b is Item.getIdFromItem in 1.8.
+    // @ts-expect-error func_150891_b is Item.getIdFromItem in 1.8.
     const name = itemNameForId(McItem.func_150891_b(mcItem));
     if (name === null) return null;
     return { item: name, count: stackCount(stack) };
 }
 
-export function createPlainIconStack(icon: FunctionIcon): any {
-    // @ts-ignore func_111206_d is Item.getByNameOrId in 1.8.
+function createPlainIconStack(icon: FunctionIcon): any {
+    // @ts-expect-error func_111206_d is Item.getByNameOrId in 1.8.
     const mcItem = McItem.func_111206_d(icon.item);
     if (mcItem === null) {
         throw new Error(`Unknown function icon item '${icon.item}'`);
     }
-    // @ts-ignore ChatTriggers' TS declarations do not expose this NMS constructor.
+    // @ts-expect-error ChatTriggers' TS declarations do not expose this NMS constructor.
     return new ItemStack(mcItem, icon.count ?? 1);
 }
 
 export function createPlainIconItem(icon: FunctionIcon): Item {
-    // @ts-ignore ChatTriggers' TS declarations do not expose this NMS constructor.
     return new Item(createPlainIconStack(icon));
 }
 

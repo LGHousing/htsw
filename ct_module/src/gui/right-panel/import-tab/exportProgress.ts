@@ -31,7 +31,13 @@ import { importableIdentity } from "../../../importCache/paths";
 import { getHousingUuid } from "../../state";
 import { requestParse } from "../../parsing/parses";
 import { setEtaRough, setImportProgress, setSessionVerb } from "./importProgress";
-import { addToQueue, queueItemKey, removeFromQueueKey, type QueueItem } from "./queue";
+import {
+    addToQueue,
+    makeExportQueueItem,
+    queueItemKey,
+    removeFromQueueKey,
+    type QueueItem,
+} from "./queue";
 
 export function createExportProgressSink(
     type: Importable["type"],
@@ -128,13 +134,13 @@ export function createExportProgressSink(
             setSessionVerb(verb);
             setEtaRough(resolved.knownCount === 0);
             for (const n of ns) {
-                const item: QueueItem = {
-                    kind: "importable",
-                    sourcePath: importJsonPath,
-                    identity: n,
+                const item = makeExportQueueItem(
+                    verb,
                     type,
-                    label: n,
-                };
+                    n,
+                    importJsonPath,
+                    getHousingUuid()
+                );
                 queueItems.push(item);
                 addToQueue(item);
             }

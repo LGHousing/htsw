@@ -10,7 +10,7 @@ import { isTaskCancelled } from "../../tasks/manager";
 import { ExportResult, withExportSession } from "../exportSession";
 import { exportFunctionWithSharedState } from "./export";
 import { writeCapturedItems } from "../../exporter/writeCapturedItems";
-import { htslTargetForFunctionExport } from "../../exporter/paths";
+import { htslTargetForFunctionExport } from "../../project/paths";
 import type { ExportProgressSink } from "../../housingSync/progress/types";
 import { listAllFunctionNames, resetFunctionNameSession } from "./listFunctions";
 

@@ -4,7 +4,7 @@ import type { ImportableEntry, ProgressPayload } from "./progress/types";
 export type DiffOpKind = "edit" | "add" | "move" | "delete";
 export type DiffFinalState = "match" | "edit" | "add" | "delete";
 
-export type ActionPathPart = string | number;
+type ActionPathPart = string | number;
 
 export type ActionPath = {
     readonly parts: readonly ActionPathPart[];
@@ -44,7 +44,7 @@ export type DiffSummary = {
     deletes: number;
 };
 
-export type ActionDiffOperationPayload =
+type ActionDiffOperationPayload =
     | {
           op: "add";
           path: ActionPath;

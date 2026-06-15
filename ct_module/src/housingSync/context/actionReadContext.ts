@@ -91,7 +91,7 @@ export function createActionReadContext({
         async readNestedConditions(prop) {
             focusNested(prop);
             const conditions: Array<Condition | null> = [];
-            const entries = await readNestedConditions(ctx, { itemRegistry });
+            const entries = await readNestedConditions(ctx, { itemRegistry, itemCaptures });
             for (const entry of entries) {
                 conditions.push(entry.condition);
             }

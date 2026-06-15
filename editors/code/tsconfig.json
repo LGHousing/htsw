@@ -9,6 +9,9 @@
 
         /* Bundler mode */
         "moduleResolution": "bundler",
+        "paths": {
+            "htsw-project": ["../../project/src/index.ts"]
+        },
         "types": ["node", "vscode"],
         "allowImportingTsExtensions": true,
         "isolatedModules": true,

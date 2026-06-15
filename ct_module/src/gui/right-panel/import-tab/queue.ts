@@ -11,23 +11,15 @@ import { importableSourcePath } from "../../parsing/importablePaths";
 import { importableIdentity } from "../../../importCache/paths";
 
 /**
- * Dynamic import queue. Replaces the old `selectedImportableIds: Set<string>`
- * which only worked against a single "active" import.json.
- *
- * A queue item is either:
- *   - `importable` — one specific importable from a parsed import.json,
- *     or
- *   - `importJson` — every importable in that import.json (expanded at
- *     import time).
- *
- * Both carry the canonical absolute path of their source import.json so
- * `startImport()` can group items back into per-import.json batches and
- * resolve each `identity` to the live `Importable` object via the parse
- * cache.
+ * Right-panel run queue. Import entries are real work selected by the user;
+ * export/read entries are progress rows for work selected from the Houses tab.
+ * The item shape keeps those meanings separate so callers can't reuse an
+ * import `sourcePath` as an export destination by accident.
  */
 
-export type QueueItem =
+export type ImportQueueItem =
     | {
+          operation: "import";
           kind: "importable";
           /** Canonical absolute path of the declaring import.json. */
           sourcePath: string;
@@ -37,6 +29,7 @@ export type QueueItem =
           label: string;
       }
     | {
+          operation: "import";
           kind: "importJson";
           /** Canonical absolute path of the import.json itself. */
           sourcePath: string;
@@ -44,12 +37,38 @@ export type QueueItem =
           label: string;
       };
 
+export type ExportQueueItem = {
+    operation: "export" | "read";
+    kind: "importable";
+    /** Destination import.json for export, or the active project path for reads. */
+    destinationPath: string;
+    /** House being read/exported from. Null when not known by the caller. */
+    housingUuid: string | null;
+    identity: string;
+    type: Importable["type"];
+    label: string;
+};
+
+export type QueueItem = ImportQueueItem | ExportQueueItem;
+
 /** Stable identity string for a queue item. Used for set membership / removal. */
 export function queueItemKey(item: QueueItem): string {
-    if (item.kind === "importable") {
+    if (item.operation === "import" && item.kind === "importable") {
         return `imp:${item.sourcePath}|${item.type}:${item.identity}`;
     }
-    return `json:${item.sourcePath}`;
+    if (item.operation === "import" && item.kind === "importJson") {
+        return `json:${item.sourcePath}`;
+    }
+    return `${item.operation}:${item.destinationPath}|${item.type}:${item.identity}`;
+}
+
+export function queueItemProgressPath(item: QueueItem): string | null {
+    if (item.operation === "import") return item.sourcePath;
+    return item.destinationPath;
+}
+
+export function isImportQueueItem(item: QueueItem): item is ImportQueueItem {
+    return item.operation === "import";
 }
 
 let items: QueueItem[] = [];
@@ -87,10 +106,6 @@ export function endQueueSession(removeSessionItems: boolean): void {
         items = items.filter((i) => !keys.has(queueItemKey(i)));
     }
     sessionKeys = null;
-}
-
-export function hasQueueSession(): boolean {
-    return sessionKeys !== null;
 }
 
 export function isQueueSessionItem(key: string): boolean {
@@ -168,11 +183,11 @@ export function queueDisplayGroups(): {
  * are kept in insertion order alongside the non-ITEM importables. Use
  * this for display so the user sees the same order things will run in.
  */
-export function sortedQueueForDisplay(queue: readonly QueueItem[]): QueueItem[] {
+function sortedQueueForDisplay(queue: readonly QueueItem[]): QueueItem[] {
     const itemImportables: QueueItem[] = [];
     const rest: QueueItem[] = [];
     for (const item of queue) {
-        if (item.kind === "importable" && item.type === "ITEM") {
+        if (item.operation === "import" && item.kind === "importable" && item.type === "ITEM") {
             itemImportables.push(item);
         } else {
             rest.push(item);
@@ -200,7 +215,7 @@ export function queueItemsForPath(filePath: string): QueueItem[] {
     const directParse = getParseAt(target);
     if (directParse !== null && directParse.parsed !== null) {
         const out: QueueItem[] = [
-            { kind: "importJson", sourcePath: target, label: basename(target) },
+            { operation: "import", kind: "importJson", sourcePath: target, label: basename(target) },
         ];
         return out;
     }
@@ -227,6 +242,7 @@ function findImportableQueueItems(target: string): QueueItem[] {
             if (src === undefined) continue;
             if (canonicalPath(src) !== target) continue;
             out.push({
+                operation: "import",
                 kind: "importable",
                 sourcePath: entry.canonicalPath,
                 identity: importableIdentity(imp),
@@ -250,12 +266,31 @@ function importableLabel(imp: Importable): string {
 export function makeImportableQueueItem(
     imp: Importable,
     declaringImportJson: string
-): QueueItem {
+): ImportQueueItem {
     return {
+        operation: "import",
         kind: "importable",
         sourcePath: canonicalPath(declaringImportJson),
         identity: importableIdentity(imp),
         type: imp.type,
         label: importableLabel(imp),
+    };
+}
+
+export function makeExportQueueItem(
+    operation: "export" | "read",
+    type: Importable["type"],
+    identity: string,
+    destinationPath: string,
+    housingUuid: string | null
+): ExportQueueItem {
+    return {
+        operation,
+        kind: "importable",
+        destinationPath: canonicalPath(destinationPath),
+        housingUuid,
+        identity,
+        type,
+        label: identity,
     };
 }

@@ -181,7 +181,7 @@ export type ConditionListDiff = {
     operations: ConditionListOperation[];
 };
 
-export type ReadContext = {
+type ReadContext = {
     itemRegistry?: ItemRegistry;
     itemCaptures?: ItemCaptureRegistry;
     events?: ImportEventHandler;

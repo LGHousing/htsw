@@ -36,7 +36,7 @@ import { addRecent } from "../persistence/recents";
 import { normalizeHtswPath } from "../lib/pathDisplay";
 import { queueSourcePath } from "../left-panel/importables/source";
 import { javaType } from "../lib/java";
-import { PROJECTS_ROOT } from "../../exporter/paths";
+import { PROJECTS_ROOT } from "../../project/paths";
 
 type Entry = {
     name: string;

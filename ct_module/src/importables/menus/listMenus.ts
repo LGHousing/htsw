@@ -18,7 +18,7 @@ const MENU_LIST_CONFIG: PaginatedListConfig = {
  * list controls and strips a trailing numeric parenthetical (e.g. "(12 slots)")
  * if present, preserving names that contain other parentheses.
  */
-export function extractMenuNameFromSlot(rawDisplayName: string): string | null {
+function extractMenuNameFromSlot(rawDisplayName: string): string | null {
     const trimmed = rawDisplayName.trim();
     if (trimmed.length === 0) return null;
     const lower = trimmed.toLowerCase();

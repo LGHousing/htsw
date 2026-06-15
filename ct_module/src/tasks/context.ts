@@ -126,7 +126,6 @@ export default class TaskContext {
         // reaches the server.
         const packet = new C01PacketChatMessage("");
         const messageField = packet.class.getDeclaredField("field_149440_a");
-        // @ts-ignore reflective field access has no CT typedef
         messageField.setAccessible(true);
         messageField.set(packet, capped);
         Client.sendPacket(packet);

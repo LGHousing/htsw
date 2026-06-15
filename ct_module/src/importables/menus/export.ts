@@ -6,8 +6,8 @@ import type { ProgressHandler } from "../../housingSync/progress/types";
 import { ItemCaptureRegistry, prettySnbt } from "../../housingSync/itemCapture";
 import TaskContext from "../../tasks/context";
 import { ensureParentDirs } from "../../utils/filesystem";
-import { resolveImportableFile, upsertImportableEntry } from "../../exporter/importJsonWriter";
-import { canonicalSlug, parentDirOf } from "../../exporter/paths";
+import { resolveImportableFile, upsertImportableEntry } from "../../project/importJsonMutations";
+import { canonicalSlug, parentDirOf } from "../../project/paths";
 import { readLiveMenu } from "./read";
 import { openMenuEditor } from "./shared";
 

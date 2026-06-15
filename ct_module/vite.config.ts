@@ -12,10 +12,12 @@ import {
 } from "node:fs";
 
 const languageDistPath = fileURLToPath(new URL("../language/dist/", import.meta.url));
+const projectSrcPath = fileURLToPath(new URL("../project/src/", import.meta.url));
 const srcDir = fileURLToPath(new URL("./src/", import.meta.url));
 
 const htswAliases = [
     { find: /^htsw$/, replacement: path.resolve(languageDistPath, "index.js") },
+    { find: /^htsw-project$/, replacement: path.resolve(projectSrcPath, "index.ts") },
     {
         find: /^htsw\/types$/,
         replacement: path.resolve(languageDistPath, "types/index.js"),

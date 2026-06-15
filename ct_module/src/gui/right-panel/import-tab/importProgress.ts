@@ -19,10 +19,10 @@ import {
     currentMsPerUnit,
     type EtaCalculator,
 } from "../../../housingSync/progress/eta";
-import { setProgressTraceSampler } from "../../../housingSync/progress/trace";
+import { setProgressTraceSampler } from "../../../housingSync/trace/progressTrace";
 import { resetSessionTiming } from "../../../housingSync/progress/timing";
 import { importableIdentity } from "../../../importCache/paths";
-import type { QueueItem } from "./queue";
+import { queueItemProgressPath, type QueueItem } from "./queue";
 import { canonicalPath } from "../../parsing/parses";
 import { onImportRunningChanged } from "../selection";
 
@@ -126,10 +126,6 @@ export function getImportEtcMs(): number | null {
 
 export function getImportMsPerUnit(): number {
     return currentMsPerUnit();
-}
-
-export function getImportStartedAt(): number | null {
-    return importStartedAt;
 }
 
 export function getImportElapsedMs(): number | null {
@@ -238,7 +234,9 @@ export function getQueueItemRunState(item: QueueItem): QueueItemRunState {
         // importJson rows aren't tracked individually; treat as queued.
         return { kind: "queued" };
     }
-    const key = importProgressKey(item.type, item.identity, item.sourcePath);
+    const progressPath = queueItemProgressPath(item);
+    if (progressPath === null) return { kind: "queued" };
+    const key = importProgressKey(item.type, item.identity, progressPath);
     let row: ImportableEntry | undefined;
     for (let i = 0; i < progress.rows.length; i++) {
         if (progress.rows[i].key === key) {
@@ -318,12 +316,15 @@ export function isCurrentQueueItem(item: QueueItem): boolean {
     const current = importProgress.active;
     if (current === null) return false;
     if (item.kind === "importable") {
+        const progressPath = queueItemProgressPath(item);
+        if (progressPath === null) return false;
         return current.key === importProgressKey(
             item.type,
             item.identity,
-            item.sourcePath
+            progressPath
         );
     }
+    if (item.operation !== "import") return false;
     if (activeImportPath === null) return false;
     return canonicalPath(item.sourcePath) === canonicalPath(activeImportPath);
 }

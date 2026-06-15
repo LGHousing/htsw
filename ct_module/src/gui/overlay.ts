@@ -60,7 +60,7 @@ import { TaskManager } from "../tasks/manager";
 
 import { getChatKeyCode } from "./keybinds";
 import { renderToast } from "./toast";
-import { sampleProgressTraceTick } from "../housingSync/progress/trace";
+import { sampleProgressTraceTick } from "../housingSync/trace/progressTrace";
 import {
     dispatchWheel,
     isDraggingScrollbar,

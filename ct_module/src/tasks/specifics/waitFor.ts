@@ -42,7 +42,7 @@ function maybeResolve<E extends EventName>(event: E, ...args: ParametersFor<E>) 
         const container = snapshot[i];
         // Skip if a prior re-entrant resolve/cleanup already removed it.
         if (containers.indexOf(container) === -1) continue;
-        // @ts-ignore
+        // @ts-expect-error The event-specific argument tuple is narrowed at runtime.
         if (!container.check(...args)) continue;
         container.remaining--;
         if (container.remaining <= 0) {
@@ -77,7 +77,7 @@ register("packetSent", (packet) => {
 });
 
 register("chat", (event) => {
-    // @ts-ignore
+    // @ts-expect-error CTAutocomplete's chat trigger event type is too narrow here.
     const message = ChatLib.getChatMessage(event, true);
     maybeResolve("message", message);
 });

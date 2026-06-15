@@ -15,6 +15,6 @@
     "ignoreIssues": {
         "src/gui/lib/theme.ts": ["duplicates"]
     },
-    "ignoreBinaries": ["tsx"],
+    "ignoreBinaries": ["tsx", "javac"],
     "ignoreUnresolved": ["../../CTAutocomplete"]
 }

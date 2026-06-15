@@ -1,0 +1,13 @@
+{
+    "name": "htsw-workspace",
+    "private": true,
+    "workspaces": [
+        "language",
+        "cli",
+        "ct_module",
+        "editors/common",
+        "editors/code",
+        "editors/monaco",
+        "project"
+    ]
+}

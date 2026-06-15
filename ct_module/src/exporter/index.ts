@@ -11,14 +11,9 @@ import {
     readEventNamesFromImportJson,
     readFunctionNamesFromImportJson,
     resolveModuleRelativePath,
-} from "./paths";
+} from "../project/paths";
 import { chatSeparator, stripSurroundingQuotes } from "../utils/helpers";
 import { VERSION } from "htsw";
-import {
-    beginTraceRun,
-    endTraceRun,
-    setTraceImportable,
-} from "./traceLog";
 
 
 function trimTrailingSlashes(path: string): string {
@@ -152,31 +147,11 @@ function commandExport(args: string[]): void {
                 importJsonPath = `${rootDir}/import.json`;
             }
 
-            const tracePath = beginTraceRun({
-                queueSize: 0,
-                sourcePath: importJsonPath,
-                trustMode: false,
+            await exportAllFunctions(ctx, {
+                importJsonPath,
+                rootDir,
+                progress: createExportProgressSink("FUNCTION", importJsonPath),
             });
-
-            let imported = 0;
-            let failed = 0;
-            try {
-                await exportAllFunctions(ctx, {
-                    importJsonPath,
-                    rootDir,
-                    progress: createExportProgressSink("FUNCTION", importJsonPath),
-                });
-                imported = 1;
-            } catch (err) {
-                failed = 1;
-                throw err;
-            } finally {
-                setTraceImportable(null);
-                const written = endTraceRun({ imported, skipped: 0, failed });
-                if (written !== null && tracePath !== null) {
-                    ctx.displayMessage(`&7[trace] &fwrote ${written}`);
-                }
-            }
         }).catch((err) => {
             ChatLib.chat(`&cExport failed: ${err}`);
         });
@@ -202,31 +177,11 @@ function commandExport(args: string[]): void {
                 importJsonPath = `${rootDir}/import.json`;
             }
 
-            const tracePath = beginTraceRun({
-                queueSize: 0,
-                sourcePath: importJsonPath,
-                trustMode: false,
+            await exportAllEvents(ctx, {
+                importJsonPath,
+                rootDir,
+                progress: createExportProgressSink("EVENT", importJsonPath),
             });
-
-            let imported = 0;
-            let failed = 0;
-            try {
-                await exportAllEvents(ctx, {
-                    importJsonPath,
-                    rootDir,
-                    progress: createExportProgressSink("EVENT", importJsonPath),
-                });
-                imported = 1;
-            } catch (err) {
-                failed = 1;
-                throw err;
-            } finally {
-                setTraceImportable(null);
-                const written = endTraceRun({ imported, skipped: 0, failed });
-                if (written !== null && tracePath !== null) {
-                    ctx.displayMessage(`&7[trace] &fwrote ${written}`);
-                }
-            }
         }).catch((err) => {
             ChatLib.chat(`&cExport failed: ${err}`);
         });
@@ -252,32 +207,11 @@ function commandExport(args: string[]): void {
                 importJsonPath = `${rootDir}/import.json`;
             }
 
-            const tracePath = beginTraceRun({
-                queueSize: 0,
-                sourcePath: importJsonPath,
-                trustMode: false,
+            await exportAllMenus(ctx, {
+                importJsonPath,
+                rootDir,
+                progress: createExportProgressSink("MENU", importJsonPath),
             });
-
-            let imported = 0;
-            let failed = 0;
-            try {
-                const result = await exportAllMenus(ctx, {
-                    importJsonPath,
-                    rootDir,
-                    progress: createExportProgressSink("MENU", importJsonPath),
-                });
-                imported = result.succeeded;
-                failed = result.failed;
-            } catch (err) {
-                if (failed === 0) failed = 1;
-                throw err;
-            } finally {
-                setTraceImportable(null);
-                const written = endTraceRun({ imported, skipped: 0, failed });
-                if (written !== null && tracePath !== null) {
-                    ctx.displayMessage(`&7[trace] &fwrote ${written}`);
-                }
-            }
         }).catch((err) => {
             ChatLib.chat(`&cExport failed: ${err}`);
         });
@@ -312,41 +246,21 @@ function commandExport(args: string[]): void {
                 return;
             }
 
-            const tracePath = beginTraceRun({
-                queueSize: 0,
-                sourcePath: importJsonPath,
-                trustMode: false,
-            });
-
-            let imported = 0;
-            let failed = 0;
-            try {
-                if (functionNames.length > 0) {
-                    await exportAllFunctions(ctx, {
-                        importJsonPath,
-                        rootDir,
-                        names: functionNames,
-                        progress: createExportProgressSink("FUNCTION", importJsonPath),
-                    });
-                }
-                if (eventNames.length > 0) {
-                    await exportAllEvents(ctx, {
-                        importJsonPath,
-                        rootDir,
-                        names: eventNames,
-                        progress: createExportProgressSink("EVENT", importJsonPath),
-                    });
-                }
-                imported = 1;
-            } catch (err) {
-                failed = 1;
-                throw err;
-            } finally {
-                setTraceImportable(null);
-                const written = endTraceRun({ imported, skipped: 0, failed });
-                if (written !== null && tracePath !== null) {
-                    ctx.displayMessage(`&7[trace] &fwrote ${written}`);
-                }
+            if (functionNames.length > 0) {
+                await exportAllFunctions(ctx, {
+                    importJsonPath,
+                    rootDir,
+                    names: functionNames,
+                    progress: createExportProgressSink("FUNCTION", importJsonPath),
+                });
+            }
+            if (eventNames.length > 0) {
+                await exportAllEvents(ctx, {
+                    importJsonPath,
+                    rootDir,
+                    names: eventNames,
+                    progress: createExportProgressSink("EVENT", importJsonPath),
+                });
             }
         }).catch((err) => {
             ChatLib.chat(`&cExport failed: ${err}`);

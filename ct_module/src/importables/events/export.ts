@@ -5,17 +5,13 @@ import { readActionList } from "../../housingSync/actions/readList";
 import type { ProgressHandler } from "../../housingSync/progress/types";
 import {
     ItemCaptureRegistry,
-    restoreInventoryToSnapshot,
-    snapshotInventory,
     type InventorySnapshot,
 } from "../../housingSync/itemCapture";
 import { tryWriteImportableCache } from "../../importCache";
 import TaskContext from "../../tasks/context";
-import { observedSlotsToActions } from "../../exporter/sanitize";
-import { upsertImportableEntry } from "../../exporter/importJsonWriter";
-import { writeCapturedItems } from "../../exporter/writeCapturedItems";
+import { observedSlotsToActions } from "../../housingSync/observedActions";
+import { upsertImportableEntry } from "../../project/importJsonMutations";
 import { ensureParentDirs } from "../../utils/filesystem";
-import { withExportSession } from "../exportSession";
 import { openEventEditor } from "./shared";
 
 export type ExportEventOptions = {
@@ -57,56 +53,6 @@ async function readEvent(
             : {}),
     });
     return observedSlotsToActions(observed);
-}
-
-export async function exportEvent(
-    ctx: TaskContext,
-    options: ExportEventOptions
-): Promise<void> {
-    return withExportSession(() => exportEventInner(ctx, options));
-}
-
-async function exportEventInner(
-    ctx: TaskContext,
-    options: ExportEventOptions
-): Promise<void> {
-    const inventorySnapshot: InventorySnapshot = snapshotInventory();
-    const itemCaptures = new ItemCaptureRegistry();
-
-    let exportError: unknown = null;
-    try {
-        await exportEventWithSharedState(ctx, options, {
-            itemCaptures,
-            inventorySnapshot,
-        });
-    } catch (error) {
-        exportError = error;
-    }
-
-    try {
-        const itemCount = writeCapturedItems(
-            ctx,
-            itemCaptures,
-            options.rootDir,
-            options.importJsonPath
-        );
-        if (exportError === null) {
-            ctx.displayMessage(`&7[export] &fItems captured: ${itemCount}`);
-            ctx.displayMessage(`&7  -> ${options.importJsonPath}`);
-        }
-    } finally {
-        try {
-            await restoreInventoryToSnapshot(ctx, inventorySnapshot);
-        } catch (error) {
-            ctx.displayMessage(
-                `&7[export] &eInventory restore failed (export results still written): ${error}`
-            );
-        }
-    }
-
-    if (exportError !== null) {
-        throw exportError;
-    }
 }
 
 export async function exportEventWithSharedState(

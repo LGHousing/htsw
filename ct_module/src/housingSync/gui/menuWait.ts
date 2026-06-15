@@ -15,7 +15,7 @@ import { type WaitForPromise } from "../../tasks/specifics/waitFor";
 import { COST } from "../progress/costs";
 import { timed } from "../progress/timing";
 import { IMPORT_DEBUG } from "../diagnostics/importDebug";
-import { traceMenuWait } from "../progress/trace";
+import { traceMenuWait } from "../trace/importTrace";
 
 const MENU_WAIT_TIMEOUT_MS = 6000;
 
