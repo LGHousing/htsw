@@ -19,8 +19,9 @@ Build and deploy from source:
 
 ```sh
 git clone https://github.com/LGHousing/htsw
-cd htsw/language && npm install && npm run build
-cd ../ct_module && npm install
+cd htsw
+npm install                          # workspace install — every package at once
+npm run build --workspace language   # ct_module and the CLI build against language/dist
 ```
 
 Create `ct_module/.env` pointing at your ChatTriggers modules folder:
@@ -34,10 +35,10 @@ HTSW_MCP_ENABLED=false
 HTSW_MCP_PORT=37123
 ```
 
-Then:
+Then build and deploy the in-game module:
 
 ```sh
-python install.py
+cd ct_module && python install.py
 ```
 
 In-game, run `/ct reload`.
@@ -53,6 +54,6 @@ In-game, run `/ct reload`.
 ## CLI (optional)
 
 ```sh
-cd cli && npm install && npm run build
-node dist/htsw-cli.js check path/to/import.json
+npm run build --workspace cli
+node cli/dist/htsw-cli.js check path/to/import.json
 ```
