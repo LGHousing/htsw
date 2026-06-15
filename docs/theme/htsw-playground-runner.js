@@ -22,7 +22,7 @@ export function runHtsl(source) {
     const result = htsw.parseActionsResult(sm, "/playground.htsl");
 
     if (!result.value || result.value.length === 0) {
-      return { output: [], diagnostics: ["No actions parsed"] };
+      return { output: ["(no output)"], diagnostics: [] };
     }
 
     const vars = new htsw.runtime.simple.SimpleVars();
