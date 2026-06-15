@@ -27,7 +27,7 @@
       if (playIcon) {
         runBtn.innerHTML = playIcon.innerHTML;
       }
-      buttons.insertBefore(runBtn, buttons.firstChild);
+      buttons.insertBefore(runBtn, buttons.children[1]);
 
       runBtn.addEventListener("click", function () {
         var result = pre.querySelector("code.result");
