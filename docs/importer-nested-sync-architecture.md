@@ -1,5 +1,7 @@
 # Importer Nested Sync Architecture Note
 
+> **Status — historical design note.** Since this was written, the sync layer moved to a plan/apply model: there is no longer a `syncActionList`/`syncConditionList` or `actions/sync.ts`. The live code is `housingSync/actions/plan.ts` (`prereadActionList` = read + diff) and `housingSync/actions/applyDiff.ts` (`applyActionListPlan`, which recurses into nested lists itself). Read this for the *intent*; read those files for current behavior.
+
 ## Problem
 
 Action writers currently do more than write scalar fields in an open Housing action editor. `writeConditional` and `writeRandom` also open nested list menus and call `syncActionList` / `syncConditionList` directly.

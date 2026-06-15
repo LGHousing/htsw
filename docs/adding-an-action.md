@@ -15,8 +15,8 @@ To get a brand-new action parsing, printing, and importing into Housing you need
 | 3 | `language/src/types/actionSpecs.ts` | A row in `ACTION_SPECS` describing the keyword and the field list. |
 | 4 | `language/src/htsl/parse/actions.ts` | A keyword branch in `parseAction` plus a `parseActionFoo` body. |
 | 5 | `language/src/htsl/print/actions.ts` | A `case "FOO":` arm in `printActionHead`. |
-| 6 | `ct_module/src/importer/actionMappings.ts` | An entry in `ACTION_MAPPINGS` with `displayName` and `loreFields`. |
-| 7 | `ct_module/src/importer/actions.ts` | A spec in `ACTION_SPECS` (read/write functions, or an empty `{}` for zero-field add-and-return actions). |
+| 6 | `ct_module/src/housingSync/fields/actionMappings.ts` | An entry in `ACTION_MAPPINGS` with `displayName` and `loreFields`. |
+| 7 | `ct_module/src/housingSync/actions/specs.ts` | A spec in `ACTION_SPECS` (read/write functions, or an empty `{}` for zero-field add-and-return actions). |
 
 The TypeScript compiler will yell at you for **#1, #2, #5, #6, and #7** if you forget them — those use required mapped types over `Action["type"]` (or, for #5, an exhaustive switch with a `never` tripwire). The two silent gaps in the required list are **#3** (`actionSpecs.ts` is a flat `ActionSpec[]` array) and **#4** (the parser's keyword dispatch chain). See the [Compiler-enforced vs. silent gaps](#compiler-enforced-vs-silent-gaps) section below for why those two haven't been tightened.
 
@@ -45,7 +45,7 @@ export type Action =
     | ...
 ```
 
-If the action has nested action lists (like `CONDITIONAL.ifActions`), use `Action[]` and remember the importer's diff engine in `ct_module/src/importer/actions/diff.ts` will recurse into it via `getNestedListFields`.
+If the action has nested action lists (like `CONDITIONAL.ifActions`), use `Action[]` and remember the importer's diff engine in `ct_module/src/housingSync/actions/diff.ts` will recurse into it via `getNestedListFields`.
 
 #### 2. `language/src/types/constants.ts`
 
@@ -111,7 +111,7 @@ If your action has nested action lists (like `CONDITIONAL`), call `printActionLi
 
 Without these the action will parse and print fine but `/import` will silently skip it (or worse, throw mid-import).
 
-#### 6. `ct_module/src/importer/actionMappings.ts`
+#### 6. `ct_module/src/housingSync/fields/actionMappings.ts`
 
 Add an entry to `ACTION_MAPPINGS`:
 
@@ -125,11 +125,11 @@ FOO: {
 },
 ```
 
-The keys of `loreFields` are the **GUI label** strings as they appear in the Housing item lore (`"Bar:"` minus the colon). `prop` is the AST field name. `kind` is one of `"boolean" | "value" | "cycle" | "select" | "item" | "nestedList"` and drives both observation parsing and selective comparison cost — see the `UiFieldKind` type and `parseFieldValue` in `importer/loreParsing.ts`.
+The keys of `loreFields` are the **GUI label** strings as they appear in the Housing item lore (`"Bar:"` minus the colon). `prop` is the AST field name. `kind` is one of `"boolean" | "value" | "cycle" | "select" | "item" | "nestedList"` and drives both observation parsing and selective comparison cost — see the `UiFieldKind` type and `parseFieldValue` in `housingSync/fields/loreParsing.ts`.
 
 If you have nested action lists, use `kind: "nestedList"` and the importer will pick them up via `getNestedListFields`.
 
-#### 7. `ct_module/src/importer/actions.ts`
+#### 7. `ct_module/src/housingSync/actions/specs.ts`
 
 Add an entry to `ACTION_SPECS`. Three shapes:
 
@@ -155,7 +155,7 @@ FOO: {
 
 If you only define `write`, the importer assumes the action opens an editor when added/edited and clicks `Go Back` for you. If you define neither (case (a)), the action is treated as add-and-return — just inserted at the end of the list with no editor interaction.
 
-For nested action lists, use `syncActionList(ctx, action.inner)` inside `write` after navigating into the nested editor — see `CONDITIONAL` and `RANDOM` for examples.
+For nested action lists, declare a `read` in the spec and let the diff/apply engine recurse into the nested list — it hydrates and writes nested lists itself; there's no per-spec `syncActionList` call anymore. See the `CONDITIONAL` and `RANDOM` entries in `housingSync/actions/specs.ts` for the pattern.
 
 ### Optional but strongly recommended
 
@@ -197,8 +197,8 @@ If you're going through this list and rely on `tsc` to catch your mistakes, thes
 
 - `language/src/types/constants.ts:ACTION_NAMES` — required mapped type.
 - `language/src/htsl/print/actions.ts:printActionHead` switch — exhaustive `default` arm with `const _: never = action`.
-- `ct_module/src/importer/actionMappings.ts:ACTION_MAPPINGS` — `satisfies { [K in Action["type"]]: ... }` (required).
-- `ct_module/src/importer/actions.ts:ACTION_SPECS` — `satisfies ActionSpecMap` where `ActionSpecMap = { [K in Action["type"]]: ActionSpec<Extract<Action, { type: K }>> }`.
+- `ct_module/src/housingSync/fields/actionMappings.ts:ACTION_MAPPINGS` — `satisfies { [K in Action["type"]]: ... }` (required).
+- `ct_module/src/housingSync/actions/specs.ts:ACTION_SPECS` — `satisfies ActionSpecMap` where `ActionSpecMap = { [K in Action["type"]]: ActionSpec<Extract<Action, { type: K }>> }`.
 
 These are the spots where TS **won't** catch a missing entry — keep these on the manual checklist:
 
@@ -225,13 +225,13 @@ So when adding a new condition, mirror this guide with `Condition` substituted f
 | `language/src/types/actionSpecs.ts` | same file (entries are mixed in, just add a row) |
 | `language/src/htsl/parse/actions.ts` | `language/src/htsl/parse/conditions.ts` |
 | `language/src/htsl/print/actions.ts` | `language/src/htsl/print/conditions.ts` |
-| `ct_module/src/importer/actionMappings.ts` | `ct_module/src/importer/conditionMappings.ts` |
-| `ct_module/src/importer/actions.ts` (`ACTION_SPECS`) | `ct_module/src/importer/conditions.ts` (`CONDITION_SPECS`) |
+| `ct_module/src/housingSync/fields/actionMappings.ts` | `ct_module/src/housingSync/fields/conditionMappings.ts` |
+| `ct_module/src/housingSync/actions/specs.ts` (`ACTION_SPECS`) | `ct_module/src/housingSync/actions/conditions/specs.ts` (`CONDITION_SPECS`) |
 
 The two condition-specific quirks worth knowing (called out in `CLAUDE.md` too):
 
 - Every condition editor is assumed to expose an `Inverted` toggle. Writers don't need to handle invert manually — `setOpenConditionInverted` is called centrally.
-- Conditions don't have move/reorder operations in the diff engine — the differ deletes/edits/adds rather than preserving order. So nested-list cost-of-move logic in `actions/diff.ts` doesn't have a condition equivalent.
+- Conditions don't have move/reorder operations in the diff engine — the differ deletes/edits/adds rather than preserving order. So nested-list cost-of-move logic in `housingSync/actions/diff.ts` doesn't have a condition equivalent.
 
 ## Quick "did I forget anything?" grep
 
