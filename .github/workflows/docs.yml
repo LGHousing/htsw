@@ -42,7 +42,7 @@ jobs:
       - name: Bundle HTSW runtime for playground
         run: |
           npx esbuild docs/theme/htsw-playground-runner.js \
-            --bundle --format=esm \
+            --bundle --format=iife --global-name=htswPlayground \
             --outfile=docs/htsw-playground-runner.bundle.js \
             --resolve-extensions=.js,.ts
 
