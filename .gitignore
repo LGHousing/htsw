@@ -11,6 +11,9 @@ coverage/
 # mdBook output
 book/
 
+# HTSW playground runtime bundle (built artifact)
+docs/htsw-playground-runner.bundle.js
+
 # local import dumps
 examples/imports/
 .claude/settings.local.json

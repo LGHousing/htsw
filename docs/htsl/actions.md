@@ -50,7 +50,9 @@ Actions in HTSL are declared with a keyword and positional arguments.
 ### Conditional
 
 ```htsl
-if (var x > 5) {
+~var x = 10
+~var y = 10
+if (var x > 5, var y > 5) {
     chat "x and y are greater than 5"
 }
 ```
@@ -59,6 +61,8 @@ Match Any Condition is implicitly false. to set it explicitly, use `or` (true)
  or `and` (false) before the Condition list:
 
 ```htsl
+~var x = 0
+~var y = 10
 if or (var x > 5, var y > 5) {
     chat "x is greater than 5 or y is greater than 5"
 }
@@ -67,6 +71,9 @@ if or (var x > 5, var y > 5) {
 To declare Else Actions, use the optional `else` keyword:
 
 ```htsl
+~var x = 0
+~var y = 10
+~var z = 0
 if (
     var x == 0,
     var y == 0,
@@ -177,18 +184,18 @@ giveItem "Item Name" true first_available_slot false
 > Item is set by referencing the name of an existing item declared in
 `import.json`.
 
-Inventory Slot can be typed with an identifier or an index:
+Inventory Slot can be typed with a (case insensitive) identifier or an index:
 
 | Inventory Slot       | Identifier           | Index |
 | -------------------- | -------------------- | ----- |
-| First Available Slot | first_available_slot | -1    |
-| Hand Slot            | hand_slot            | -2    |
+| First Available Slot | First_Available_Slot | -1    |
+| Hand Slot            | Hand_Slot            | -2    |
 | Hotbar Slot          |                      | 0..8  |
 | Inventory Slot       |                      | 9..35 |
-| Boots                | boots                | 36    |
-| Leggings             | leggings             | 37    |
-| Chestplate           | chestplate           | 38    |
-| Helmet               | helmet               | 39    |
+| Boots                | Boots                | 36    |
+| Leggings             | Leggings             | 37    |
+| Chestplate           | Chestplate           | 38    |
+| Helmet               | Helmet               | 39    |
 
 ---
 
@@ -262,33 +269,33 @@ teamvar x Red = 5
 
 Operation can be typed with either a symbol or identifier:
 
-| Operation              | Symbol | Identifier  |
-| ---------------------- | ------ | ----------- |
-| Set                    | =      | set         |
-| Unset                  |        | unset       | 
-| Increment              | +=     | increment   |
-| Decrement              | -=     | decrement   |
-| Multiply               | *=     | multiply    |
-| Divide                 | /=     | divide      |
-| Bitwise AND            | &=     | and_assign  |
-| Bitwise OR             | \|=    | or_assign   |
-| Bitwise XOR            | ^=     | xor_assign  |
-| Left Shift             | <<=    | shift_left  |
-| Arithmetic Right Shift | >>=    | shift_right |
-| Logical Right Shift    |        |             |
+| Operation              | Symbol | Identifier             |
+| ---------------------- | ------ | ---------------------- |
+| Set                    | =      | Set                    |
+| Unset                  |        | Unset                  |
+| Increment              | +=     | Increment              |
+| Decrement              | -=     | Decrement              |
+| Multiply               | *=     | Multiply               |
+| Divide                 | /=     | Divide                 |
+| Bitwise AND            | &=     | Bitwise_AND            |
+| Bitwise OR             | \|=    | Bitwise_OR             |
+| Bitwise XOR            | ^=     | Bitwise_XOR            |
+| Left Shift             | <<=    | Left_Shift             |
+| Arithmetic Right Shift | >>=    | Arithmetic_Right_Shift |
+| Logical Right Shift    | >>>=   | Logical_Right_Shift    |
 
 ---
 
 ### Teleport Player
 
 ```htsl
-tp custom_coordinates "0 0 0"
+tp Custom_Coordinates "0 0 0"
 ```
 
 To enable Prevent Teleport Inside Blocks:
 
 ```htsl
-tp custom_coordinates "0 0 0" true
+tp Custom_Coordinates "0 0 0" true
 ```
 
 Location is [typed with an identifier](#locations).
@@ -314,7 +321,7 @@ failParkour "Reason"
 ---
 
 ```htsl
-compassTarget house_spawn_location
+compassTarget House_Spawn_Location
 ```
 
 Location is [typed with an identifier](#locations).
@@ -324,16 +331,16 @@ Location is [typed with an identifier](#locations).
 ### Set Gamemode
 
 ```htsl
-gamemode creative
+gamemode Creative
 ```
 
-Gamemode is typed with an identifier:
+Gamemode is typed with a (case insensitive) identifier:
 
 | Gamemode  | Identifier |
 | --------- | ---------- |
-| Adventure | adventure  |
-| Survival  | survival   |
-| Creative  | creative   |
+| Adventure | Adventure  |
+| Survival  | Survival   |
+| Creative  | Creative   |
 
 ---
 
@@ -368,8 +375,8 @@ random {
     var reward = 5
     var reward = 10
     var reward = 20
-    chat "You got nothing..."
 }
+~chat "Reward: %var.player/reward%"
 ```
 
 ---
@@ -429,7 +436,7 @@ displayMenu "My Menu"
 ### Drop Item
 
 ```htsl
-dropItem "Item Name" invokers_location true true true true
+dropItem "Item Name" Invokers_Location true true true true
 ```
 
 ---
@@ -446,8 +453,8 @@ changeVelocity 0 10 0
 
 ### Launch to Target
 
-```
-launchTarget custom_coordinates "~ ~10 ~" 3
+```htsl
+launchTarget Custom_Coordinates "~ ~10 ~" 3
 ```
 
 ---
@@ -483,24 +490,24 @@ Operations can be typed with either a symbol or identifier:
 
 | Operation | Symbol | Identifier |
 | ----------| ------ | ---------- |
-| Set       | =      | set        |
-| Increment | +=     | increment  |
-| Decrement | -=     | decrement  |
-| Multiply  | *=     | multiply   |
-| Divide    | /=     | divide     |
+| Set       | =      | Set        |
+| Increment | +=     | Increment  |
+| Decrement | -=     | Decrement  |
+| Multiply  | *=     | Multiply   |
+| Divide    | /=     | Divide     |
 
 ---
 
 ### Locations
 
-Locations are typed with an identifier:
+Locations are typed with a (case insensitive) identifier:
 
 | Location             | Identifier           |
 | -------------------- | -------------------- |
-| House Spawn Location | house_spawn_location |
-| Invokers Location    | invokers_location    |
-| Current Location     | current_location     |
-| Custom Coordinates   | custom_coordinates   |
+| House Spawn Location | House_Spawn_Location |
+| Invokers Location    | Invokers_Location    |
+| Current Location     | Current_Location     |
+| Custom Coordinates   | Custom_Coordinates   |
 
 Custom Coordinates must be followed by a coordinate string.
 

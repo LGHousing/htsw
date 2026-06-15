@@ -5,6 +5,8 @@ on:
     paths:
       - 'docs/**'
       - 'book.toml'
+      - 'language/src/**'
+      - 'language/package.json'
   workflow_dispatch:
 
 permissions:
@@ -22,10 +24,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
       - name: Install mdBook
         uses: peaceiris/actions-mdbook@v2
         with:
           mdbook-version: '0.5.3'
+
+      - name: Build language package
+        run: |
+          cd language
+          npm install
+          npm run build
+
+      - name: Bundle HTSW runtime for playground
+        run: |
+          npx esbuild docs/theme/htsw-playground-runner.js \
+            --bundle --format=esm \
+            --outfile=docs/htsw-playground-runner.bundle.js \
+            --resolve-extensions=.js,.ts
 
       - name: Build book
         run: mdbook build
