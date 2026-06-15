@@ -49,8 +49,9 @@ export function upsertImportableEntry(
     let next = existing;
     const tree = json.parseTree(next);
     if (!tree) {
-        fs.writeFile(importJsonPath, `${JSON.stringify({ [section]: [entry] }, null, 4)}\n`);
-        return;
+        throw new Error(
+            `upsertImportableEntry: ${importJsonPath} is not valid JSON/JSONC; refusing to overwrite it`
+        );
     }
 
     const sectionNode = json.findNodeAtLocation(tree, [section]);
