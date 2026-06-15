@@ -19,3 +19,4 @@ runnable = true
 
 [output.html.code.hidelines]
 htsl = "~"
+json = "~"

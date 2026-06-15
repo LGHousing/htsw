@@ -1,8 +1,9 @@
 # Summary
 
 - [Overview](./overview.md)
-- [Tooling](./tooling.md)
+- [Importables](./importables.md)
 - [HTSL](./htsl/README.md)
   - [Basic Syntax](./htsl/basic-syntax.md)
   - [Actions](./htsl/actions.md)
-- [Importables](./importables.md)
+  - [Conditions](./htsl/conditions.md)
+- [Tooling](./tooling.md)
