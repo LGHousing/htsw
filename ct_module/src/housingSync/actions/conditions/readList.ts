@@ -94,6 +94,7 @@ function canonicalizeObservedConditionSlots(
 }
 
 const SCALAR_CONDITION_HYDRATION_UNITS = COST.menuClickWait + COST.goBackWait;
+const CONDITION_ITEM_CAPTURE_UNITS = COST.menuClickWait + COST.goBackWait;
 
 function shouldHydrateScalarCondition(condition: Condition): boolean {
     if (!getConditionSpec(condition.type).read) return false;
@@ -219,8 +220,33 @@ async function captureConditionItems(
     }
     if (entries.length === 0) return;
 
+    const phaseUnits = options?.phaseUnits;
+    const progress = options?.progress;
+    const baseCompletedUnits =
+        phaseUnits === undefined ? 0 : phaseUnits.reading + phaseUnits.hydrating;
+    if (phaseUnits !== undefined) {
+        phaseUnits.hydrating += entries.length * CONDITION_ITEM_CAPTURE_UNITS;
+    }
+
+    let completed = 0;
+    let completedCaptureUnits = 0;
+    const emit = (): void => {
+        if (phaseUnits === undefined || progress === undefined) return;
+        progress({
+            phase: "hydrating",
+            completedUnits: baseCompletedUnits + completedCaptureUnits,
+            totalUnits: phaseUnitsTotal(phaseUnits),
+            phaseUnits: phaseUnits,
+            sync: { completedUnits: completed, totalUnits: entries.length, parent: null },
+        });
+    };
+
     for (let i = 0; i < entries.length; i++) {
+        emit();
         await captureConditionItemFields(ctx, entries[i], observed.length, registry);
+        completed++;
+        completedCaptureUnits += CONDITION_ITEM_CAPTURE_UNITS;
+        emit();
     }
 }
 
