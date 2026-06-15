@@ -27,7 +27,12 @@ import { timedWaitForMenu } from "../../gui/menuWait";
 import { clickGoBack } from "../../gui/menuUtils";
 import { CONDITION_LIST_CONFIG } from "./listConfig";
 import { getConditionSpec, isConditionListItemInverted } from "./specs";
-import { COST, phaseUnitsTotal, type PhaseUnits } from "../../progress/costs";
+import {
+    COST,
+    ITEM_CAPTURE_FIELD_UNITS,
+    phaseUnitsTotal,
+    type PhaseUnits,
+} from "../../progress/costs";
 import type { ProgressHandler } from "../../progress/types";
 
 async function readConditionsListPage(
@@ -202,6 +207,12 @@ function getConditionItemFieldsForCapture(
     return result;
 }
 
+function conditionItemCaptureUnits(entry: ObservedConditionSlot): number {
+    if (entry.condition === null) return 0;
+    const fieldCount = getConditionItemFieldsForCapture(entry.condition.type).length;
+    return CONDITION_ITEM_CAPTURE_UNITS + fieldCount * ITEM_CAPTURE_FIELD_UNITS;
+}
+
 async function captureConditionItems(
     ctx: TaskContext,
     observed: readonly ObservedConditionSlot[],
@@ -224,8 +235,12 @@ async function captureConditionItems(
     const progress = options?.progress;
     const baseCompletedUnits =
         phaseUnits === undefined ? 0 : phaseUnits.reading + phaseUnits.hydrating;
+    let totalCaptureUnits = 0;
+    for (let i = 0; i < entries.length; i++) {
+        totalCaptureUnits += conditionItemCaptureUnits(entries[i]);
+    }
     if (phaseUnits !== undefined) {
-        phaseUnits.hydrating += entries.length * CONDITION_ITEM_CAPTURE_UNITS;
+        phaseUnits.hydrating += totalCaptureUnits;
     }
 
     let completed = 0;
@@ -245,7 +260,7 @@ async function captureConditionItems(
         emit();
         await captureConditionItemFields(ctx, entries[i], observed.length, registry);
         completed++;
-        completedCaptureUnits += CONDITION_ITEM_CAPTURE_UNITS;
+        completedCaptureUnits += conditionItemCaptureUnits(entries[i]);
         emit();
     }
 }

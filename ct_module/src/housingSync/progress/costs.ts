@@ -16,7 +16,7 @@ import {
     baselineConditionListFromConditions,
     diffConditionList,
 } from "../actions/conditions/diff";
-import { getActionScalarLoreFields } from "../fields/actionMappings";
+import { getActionLoreFields, getActionScalarLoreFields } from "../fields/actionMappings";
 import { getConditionScalarLoreFields } from "../fields/conditionMappings";
 import { isTruncatableKind } from "../fields/loreParsing";
 import {
@@ -72,6 +72,14 @@ export const COST = {
     nbtCapture: 0.25,
     itemInject: 1,
 };
+
+/**
+ * One captured item field inside an open editor: click the field to open the
+ * item picker, copy the current item, then click back — see
+ * `captureItemFromOpenEditorField`.
+ */
+export const ITEM_CAPTURE_FIELD_UNITS =
+    COST.menuClickWait + COST.itemSelect + COST.goBackWait;
 
 const LIST_ITEMS_PER_PAGE = 21;
 
@@ -135,9 +143,19 @@ function nestedActionReadUnits(nestedCount: number): number {
     );
 }
 
+function actionItemFieldCount(type: Action["type"]): number {
+    const lore = getActionLoreFields(type);
+    let count = 0;
+    for (const label in lore) {
+        if (lore[label].kind === "item") count++;
+    }
+    return count;
+}
+
 export function hydrationEntryUnits(
     entry: ObservedActionSlot,
-    propsToRead: NestedPropsToRead
+    propsToRead: NestedPropsToRead,
+    itemCaptureActive: boolean = false
 ): number {
     if (entry.action === null) return 0;
 
@@ -145,6 +163,9 @@ export function hydrationEntryUnits(
     propsToRead.forEach((prop) => {
         total += nestedPropReadUnits(entry, prop);
     });
+    if (itemCaptureActive) {
+        total += actionItemFieldCount(entry.action.type) * ITEM_CAPTURE_FIELD_UNITS;
+    }
     return total;
 }
 
