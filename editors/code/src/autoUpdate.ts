@@ -5,9 +5,10 @@ import { createWriteStream, promises as fs } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-const BASE_URL = "https://legendarygames.dev/htsw/vscode";
-const MANIFEST_URL = `${BASE_URL}/latest.json`;
+const BASE_URL = "https://github.com/LGHousing/htsw/releases/latest/download";
+const MANIFEST_URL = `${BASE_URL}/htsw-vscode-latest.json`;
 const REQUEST_TIMEOUT_MS = 30000;
+const MAX_REDIRECTS = 5;
 
 interface Manifest {
     version: string;
@@ -75,9 +76,19 @@ function parseManifest(text: string): Manifest {
     return m as Manifest;
 }
 
-function fetchText(url: string): Promise<string> {
+function fetchText(url: string, redirects = 0): Promise<string> {
     return new Promise((resolve, reject) => {
         const req = get(url, (res) => {
+            const redirect = redirectUrl(url, res.statusCode, res.headers.location);
+            if (redirect !== null) {
+                res.resume();
+                if (redirects >= MAX_REDIRECTS) {
+                    reject(new Error("too many redirects"));
+                    return;
+                }
+                fetchText(redirect, redirects + 1).then(resolve, reject);
+                return;
+            }
             if (res.statusCode !== 200) {
                 res.resume();
                 reject(new Error(`HTTP ${res.statusCode}`));
@@ -95,9 +106,19 @@ function fetchText(url: string): Promise<string> {
     });
 }
 
-function download(url: string, destPath: string): Promise<string> {
+function download(url: string, destPath: string, redirects = 0): Promise<string> {
     return new Promise((resolve, reject) => {
         const req = get(url, (res) => {
+            const redirect = redirectUrl(url, res.statusCode, res.headers.location);
+            if (redirect !== null) {
+                res.resume();
+                if (redirects >= MAX_REDIRECTS) {
+                    reject(new Error("too many redirects"));
+                    return;
+                }
+                download(redirect, destPath, redirects + 1).then(resolve, reject);
+                return;
+            }
             if (res.statusCode !== 200) {
                 res.resume();
                 reject(new Error(`HTTP ${res.statusCode}`));
@@ -115,6 +136,13 @@ function download(url: string, destPath: string): Promise<string> {
             req.destroy(new Error(`download timed out after ${REQUEST_TIMEOUT_MS}ms`))
         );
     });
+}
+
+function redirectUrl(currentUrl: string, statusCode: number | undefined, location: string | string[] | undefined): string | null {
+    if (statusCode === undefined || statusCode < 300 || statusCode >= 400) return null;
+    const next = Array.isArray(location) ? location[0] : location;
+    if (typeof next !== "string" || next.length === 0) return null;
+    return new URL(next, currentUrl).toString();
 }
 
 function isNewer(remote: string, current: string): boolean {

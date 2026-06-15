@@ -109,7 +109,7 @@
                 "htsw.autoUpdate.enabled": {
                     "type": "boolean",
                     "default": true,
-                    "description": "Check legendarygames.dev for HTSW++ updates on startup and offer to install them."
+                    "description": "Check the latest GitHub Release for HTSW++ updates on startup and offer to install them."
                 },
                 "htsw.diagnostics.excludeFolders": {
                     "type": "array",

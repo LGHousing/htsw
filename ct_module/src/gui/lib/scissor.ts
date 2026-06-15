@@ -1,4 +1,4 @@
-/// <reference types="../../CTAutocomplete" />
+/// <reference types="../../../CTAutocomplete" />
 
 import { Rect, intersectRect } from "./layout";
 import { getEffectiveOverlayScale, getOverlayScreenH } from "./overlayScale";

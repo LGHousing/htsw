@@ -10,6 +10,7 @@ import { recompile } from "./recompile";
 import { TaskManager } from "./tasks/manager";
 import { FileSystemFileLoader } from "./utils/fileLoaders";
 import { commandKnowledge } from "./importCache/commands";
+import { commandUpdate } from "./autoUpdate";
 import { toggleHtswGui } from "./gui/overlay";
 import { armGuiDebug } from "./gui/lib/debugLog";
 import {
@@ -45,6 +46,81 @@ import { ensureParentDirs } from "./utils/filesystem";
 import { getItemFromSnbt } from "./utils/nbt";
 import { C10PacketCreativeInventoryAction } from "./utils/packets";
 
+type HtswSubcommand = {
+    name: string;
+    summary: string;
+    run: (args: string[]) => void;
+    aliases?: string[];
+    usage?: string;
+    hidden?: boolean;
+};
+
+const HTSW_SUBCOMMANDS: HtswSubcommand[] = [
+    {
+        name: "knowledge",
+        summary: "Inspect local import/export knowledge",
+        run: commandKnowledge,
+    },
+    {
+        name: "saveitem",
+        summary: "Save held item as .snbt + import.json",
+        run: saveItem,
+        usage: "saveitem <name> [path]",
+    },
+    {
+        name: "giveitem",
+        summary: "Spawn an item from a .snbt file",
+        run: giveItem,
+        usage: "giveitem <path>",
+    },
+    {
+        name: "eta",
+        summary: "Show / reset / dump / trace ETA samples",
+        run: commandEta,
+        usage: "eta [reset|dump|trace on|off]",
+    },
+    {
+        name: "trace",
+        summary: "Per-op import trace JSONL for post-mortem",
+        run: commandTrace,
+        usage: "trace [on|off]",
+    },
+    {
+        name: "gui",
+        summary: "Open the in-game HTSW dashboard",
+        run: commandGui,
+    },
+    {
+        name: "waiters",
+        summary: "Show live waitFor counts (leak check; idle = ~0)",
+        run: commandWaiters,
+    },
+    {
+        name: "update",
+        summary: "Check for and install CT module updates",
+        run: commandUpdate,
+        usage: "update [check]",
+    },
+    {
+        name: "recompile",
+        summary: "Rebuild + reload the module",
+        run: () => recompile(),
+    },
+    {
+        name: "tour",
+        summary: "Reset GUI onboarding",
+        run: commandTour,
+        aliases: ["onboarding"],
+        hidden: true,
+    },
+    {
+        name: "treeperf",
+        summary: "Show importables tree render stats",
+        run: commandTreePerf,
+        hidden: true,
+    },
+];
+
 export function registerCommands() {
     register("command", (...args) => commandHtsw(args)).setName("htsw");
     register("command", (...args) => commandImport(args)).setName("import");
@@ -54,88 +130,31 @@ export function registerCommands() {
 }
 
 function commandHtsw(args: string[]) {
-    if (args.length > 0 && args[0] === "recompile") {
-        recompile();
-        return;
-    }
-
-    if (args.length > 0 && args[0] === "knowledge") {
-        commandKnowledge(args.slice(1));
-        return;
-    }
-
-    if (args.length > 0 && args[0] === "eta") {
-        commandEta(args.slice(1));
-        return;
-    }
-
-    if (args.length > 0 && args[0] === "trace") {
-        if (args[1] === "off" || args[1] === "stop") {
-            setImportTraceEnabled(false);
-            ChatLib.chat(`&7[htsw] import trace off · &f${getImportTracePath()}`);
-        } else {
-            const path = setImportTraceEnabled(true);
-            ChatLib.chat(`&a[htsw] import trace on · &f${path}`);
-        }
-        return;
-    }
-
-    if (args.length > 0 && args[0] === "gui") {
-        if (args[1] === "debug") {
-            const secs = Math.max(1, parseInt(args[2] ?? "10", 10) || 10);
-            armGuiDebug(secs);
-            ChatLib.chat(`&a[htsw] gui debug armed for ${secs}s -> gui-debug.log`);
+    if (args.length > 0) {
+        const command = findHtswSubcommand(args[0]);
+        if (command !== null) {
+            command.run(args.slice(1));
             return;
         }
-        const nowEnabled = toggleHtswGui();
-        ChatLib.chat(`&e[htsw] gui ${nowEnabled ? "&aenabled" : "&cdisabled"}`);
-        return;
+        ChatLib.chat(`&cUnknown /htsw subcommand '${args[0]}'.`);
     }
 
-    if (args.length > 0 && args[0] === "waiters") {
-        const counts = getEventContainerCounts();
-        ChatLib.chat(
-            `&7[waiters] live waitFor predicates — ` +
-            `tick: ${counts.tick}, packetReceived: ${counts.packetReceived}, ` +
-            `packetSent: ${counts.packetSent}, message: ${counts.message}`
-        );
-        ChatLib.chat(
-            `&7[waiters] Idle baseline should be ~0 across the board; ` +
-            `non-zero between imports = a leaked waiter.`
-        );
-        return;
-    }
+    printHtswHelp();
+}
 
-    if (args.length > 0 && (args[0] === "tour" || args[0] === "onboarding")) {
-        resetOnboarding();
-        rearmTourAutoStart();
-        ChatLib.chat(
-            "&a[htsw] Onboarding reset — open a Housing menu to start the tour. " +
-            "The sample-project button is back too."
-        );
-        return;
+function findHtswSubcommand(name: string): HtswSubcommand | null {
+    const key = name.toLowerCase();
+    for (let i = 0; i < HTSW_SUBCOMMANDS.length; i++) {
+        const command = HTSW_SUBCOMMANDS[i];
+        if (command.name === key) return command;
+        if (command.aliases !== undefined && command.aliases.indexOf(key) >= 0) {
+            return command;
+        }
     }
+    return null;
+}
 
-    if (args.length > 0 && args[0] === "treeperf") {
-        const s = getTreePerfStats();
-        ChatLib.chat(
-            `&7[treeperf] importables tree: ${s.rows} rows, ` +
-            `${s.builds} rebuild(s), last ${s.lastBuildMs}ms, max ${s.maxBuildMs}ms. ` +
-            `Rebuilds should tick ~3/s while the tab is open (300ms TTL), not 60/s.`
-        );
-        return;
-    }
-
-    if (args.length > 0 && args[0] === "saveitem") {
-        saveItem(args.slice(1));
-        return;
-    }
-
-    if (args.length > 0 && args[0] === "giveitem") {
-        giveItem(args.slice(1));
-        return;
-    }
-
+function printHtswHelp(): void {
     ChatLib.chat(`&7${chatSeparator()}`);
     const title = `&e&lHTSW &f&l${VERSION}`;
     ChatLib.chat(`${ChatLib.getCenteredText(title)}`);
@@ -144,15 +163,64 @@ function commandHtsw(args: string[]) {
     ChatLib.chat("");
     ChatLib.chat("&f/import &7- Import actions from HTSL files");
     ChatLib.chat("&f/simulator &7- Simulate actions from HTSL files");
-    ChatLib.chat("&f/htsw knowledge &7- Inspect local import/export knowledge");
-    ChatLib.chat("&f/htsw saveitem <name> [path] &7- Save held item as .snbt + import.json");
-    ChatLib.chat("&f/htsw giveitem <path> &7- Spawn an item from a .snbt file");
-    ChatLib.chat("&f/htsw eta [reset|dump|trace on|off] &7- Show / reset / dump / trace ETA samples");
-    ChatLib.chat("&f/htsw trace [on|off] &7- Per-op import trace JSONL for post-mortem");
-    ChatLib.chat("&f/htsw gui &7- Open the in-game HTSW dashboard");
-    ChatLib.chat("&f/htsw waiters &7- Show live waitFor counts (leak check; idle = ~0)");
-    ChatLib.chat("&f/htsw recompile &7- Rebuild + reload the module");
+    for (let i = 0; i < HTSW_SUBCOMMANDS.length; i++) {
+        const command = HTSW_SUBCOMMANDS[i];
+        if (command.hidden === true) continue;
+        ChatLib.chat(`&f/htsw ${command.usage ?? command.name} &7- ${command.summary}`);
+    }
     ChatLib.chat(`&7${chatSeparator()}`);
+}
+
+function commandTrace(args: string[]): void {
+    if (args[0] === "off" || args[0] === "stop") {
+        setImportTraceEnabled(false);
+        ChatLib.chat(`&7[htsw] import trace off · &f${getImportTracePath()}`);
+        return;
+    }
+    const path = setImportTraceEnabled(true);
+    ChatLib.chat(`&a[htsw] import trace on · &f${path}`);
+}
+
+function commandGui(args: string[]): void {
+    if (args[0] === "debug") {
+        const secs = Math.max(1, parseInt(args[1] ?? "10", 10) || 10);
+        armGuiDebug(secs);
+        ChatLib.chat(`&a[htsw] gui debug armed for ${secs}s -> gui-debug.log`);
+        return;
+    }
+    const nowEnabled = toggleHtswGui();
+    ChatLib.chat(`&e[htsw] gui ${nowEnabled ? "&aenabled" : "&cdisabled"}`);
+}
+
+function commandWaiters(): void {
+    const counts = getEventContainerCounts();
+    ChatLib.chat(
+        `&7[waiters] live waitFor predicates — ` +
+        `tick: ${counts.tick}, packetReceived: ${counts.packetReceived}, ` +
+        `packetSent: ${counts.packetSent}, message: ${counts.message}`
+    );
+    ChatLib.chat(
+        `&7[waiters] Idle baseline should be ~0 across the board; ` +
+        `non-zero between imports = a leaked waiter.`
+    );
+}
+
+function commandTour(): void {
+    resetOnboarding();
+    rearmTourAutoStart();
+    ChatLib.chat(
+        "&a[htsw] Onboarding reset — open a Housing menu to start the tour. " +
+        "The sample-project button is back too."
+    );
+}
+
+function commandTreePerf(): void {
+    const s = getTreePerfStats();
+    ChatLib.chat(
+        `&7[treeperf] importables tree: ${s.rows} rows, ` +
+        `${s.builds} rebuild(s), last ${s.lastBuildMs}ms, max ${s.maxBuildMs}ms. ` +
+        `Rebuilds should tick ~3/s while the tab is open (300ms TTL), not 60/s.`
+    );
 }
 
 function itemSaveDestination(
