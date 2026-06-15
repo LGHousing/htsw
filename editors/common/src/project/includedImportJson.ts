@@ -53,8 +53,8 @@ export function addIncludeToImportJsonSource(source: string, includePath: string
             source.substring(includeValue.end);
     }
 
-    const open = source.indexOf("{");
-    if (open < 0) throw new Error("Parent import.json must be a JSON object.");
+    const open = skipWhitespaceAndComments(source, 0);
+    if (source.charAt(open) !== "{") throw new Error("Parent import.json must be a JSON object.");
     const close = findMatching(source, open, "{", "}");
     if (close < 0) throw new Error("Parent import.json must be a JSON object.");
 
