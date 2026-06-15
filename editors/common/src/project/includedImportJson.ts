@@ -43,8 +43,9 @@ export function addIncludeToImportJsonSource(source: string, includePath: string
             const close = findMatching(source, valueStart, "[", "]");
             if (close < 0) throw new Error("Could not edit include array.");
             const hasEntries = skipWhitespaceAndComments(source, valueStart + 1) < close;
+            const trailingComma = hasEntries && lastMeaningfulIsComma(source, valueStart + 1, close);
             return source.substring(0, close) +
-                (hasEntries ? `, ${encoded}` : encoded) +
+                (hasEntries ? (trailingComma ? ` ${encoded}` : `, ${encoded}`) : encoded) +
                 source.substring(close);
         }
         return source.substring(0, includeValue.start) +
@@ -141,6 +142,18 @@ function findMatching(source: string, start: number, open: string, close: string
         i++;
     }
     return -1;
+}
+
+function lastMeaningfulIsComma(source: string, start: number, end: number): boolean {
+    let last = -1;
+    let i = start;
+    while (i < end) {
+        i = skipWhitespaceAndComments(source, i);
+        if (i >= end) break;
+        last = i;
+        i = source.charAt(i) === "\"" ? scanStringEnd(source, i) + 1 : i + 1;
+    }
+    return last >= 0 && source.charAt(last) === ",";
 }
 
 function skipWhitespaceAndComments(source: string, start: number): number {
