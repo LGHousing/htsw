@@ -62,7 +62,7 @@ function runCheck(args: string[]): void {
     const result = parseAndPrintDiagnostics(sm, filePath);
 
     if (hasErrors(result.diagnostics)) {
-        process.exit(0);
+        process.exit(1);
     }
 
     console.log(ansi("green", "OK"));
@@ -79,7 +79,7 @@ function runRun(args: string[]): void {
     const result = parseAndPrintDiagnostics(sm, filePath);
 
     if (hasErrors(result.diagnostics)) {
-        process.exit(0);
+        process.exit(1);
     }
 
     run(sm, result);
