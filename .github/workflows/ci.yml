@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "21"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build language
+        run: npm run build --workspace language
+
+      - name: Bundle docs playground
+        run: |
+          npx esbuild docs/theme/htsw-playground-runner.js \
+            --bundle --format=iife --global-name=htswPlayground \
+            --outfile=docs/htsw-playground-runner.bundle.js \
+            '--resolve-extensions=.js,.ts'
+
+      - name: Test CT module
+        run: npm test --workspace ct_module
+
+      - name: Build CT module
+        run: npm run build --workspace ct_module
+
+      - name: Build CLI
+        run: npm run build --workspace cli
+
+      - name: Check VS Code schema
+        run: npm run check:schema --workspace editors/code
+
+      - name: Build VS Code extension
+        run: npm run build --workspace editors/code

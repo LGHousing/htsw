@@ -8,5 +8,8 @@
         "editors/common",
         "editors/code",
         "editors/monaco"
-    ]
+    ],
+    "devDependencies": {
+        "esbuild": "^0.28.1"
+    }
 }

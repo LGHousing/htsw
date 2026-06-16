@@ -27,24 +27,26 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
+          cache: 'npm'
 
       - name: Install mdBook
-        uses: peaceiris/actions-mdbook@v2
-        with:
-          mdbook-version: '0.5.3'
+        run: |
+          curl -LsSf https://github.com/rust-lang/mdBook/releases/download/v0.5.3/mdbook-v0.5.3-x86_64-unknown-linux-gnu.tar.gz | tar -xz
+          sudo mv mdbook /usr/local/bin/mdbook
+          mdbook --version
+
+      - name: Install dependencies
+        run: npm ci
 
       - name: Build language package
-        run: |
-          cd language
-          npm install
-          npm run build
+        run: npm run build --workspace language
 
       - name: Bundle HTSW runtime for playground
         run: |
           npx esbuild docs/theme/htsw-playground-runner.js \
             --bundle --format=iife --global-name=htswPlayground \
             --outfile=docs/htsw-playground-runner.bundle.js \
-            --resolve-extensions=.js,.ts
+            '--resolve-extensions=.js,.ts'
 
       - name: Build book
         run: mdbook build
