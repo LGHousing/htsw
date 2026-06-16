@@ -117,12 +117,13 @@ describe("shared diagnostic formatting", () => {
         const file = sm.sourceFiles[0];
         const diagnostic = Diagnostic.error("Mismatched types")
             .addPrimarySpan(new Span(file.startPos + 4, file.startPos + 7));
-        const originalFlat = Array.prototype.flat;
-        delete (Array.prototype as { flat?: typeof originalFlat }).flat;
+        const arrayPrototype = Array.prototype as { flat?: unknown };
+        const originalFlat = arrayPrototype.flat;
+        delete arrayPrototype.flat;
         try {
             expect(formatDiagnostic(sm, diagnostic, 200).lines.length).toBeGreaterThan(0);
         } finally {
-            Array.prototype.flat = originalFlat;
+            arrayPrototype.flat = originalFlat;
         }
     });
 

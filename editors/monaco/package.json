@@ -9,6 +9,6 @@
         "htsw-editor-common": "file:../common"
     },
     "devDependencies": {
-        "typescript": "~5.7.2"
+        "typescript": "~6.0.3"
     }
 }
