@@ -1,4 +1,4 @@
-import * as htsw from "../../language/dist/index.js";
+import * as htsw from "../../language/src/index.ts";
 
 /**
  * Parse and run HTSL code, returning captured chat output.
