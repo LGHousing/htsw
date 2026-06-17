@@ -38,6 +38,7 @@ export type CodeViewProps = {
 
     scrollLocked?: Extractable<boolean>;
     emptyMessage?: Extractable<string>;
+    onOpenPath?: (path: string, options: { activate: boolean }) => void;
 };
 
 const FOLLOW_THROTTLE_MS = 80;
@@ -203,6 +204,7 @@ export function CodeView(props: CodeViewProps): Element {
                             bodyMaxWidth,
                             showFocusGutter: showStatusGutters,
                             showStateGutter: showStatusGutters,
+                            onOpenPath: props.onOpenPath,
                         });
                         for (let k = 0; k < rows.length; k++) out.push(rows[k]);
                     }
@@ -213,6 +215,7 @@ export function CodeView(props: CodeViewProps): Element {
                     bodyMaxWidth,
                     showFocusGutter: showStatusGutters,
                     showStateGutter: showStatusGutters,
+                    onOpenPath: props.onOpenPath,
                 });
                 for (let k = 0; k < rows.length; k++) out.push(rows[k]);
             }

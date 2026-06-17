@@ -110,36 +110,3 @@ export function warmIconTextures(): void {
         }
     }
 }
-
-export function backgroundPreloadIcons(): void {
-    try {
-        const FilesType = Java.type("java.nio.file.Files");
-        const PathsType = Java.type("java.nio.file.Paths");
-        const dir = PathsType.get(ICON_BASE_PATH);
-        if (!FilesType.exists(dir)) return;
-        const stream = FilesType.newDirectoryStream(dir);
-        const names: string[] = [];
-        try {
-            const it = stream.iterator();
-            while (it.hasNext()) {
-                const p = it.next();
-                const filename = String(p.getFileName().toString());
-                if (filename.length > 4 && filename.substring(filename.length - 4) === ".png") {
-                    names.push(filename.substring(0, filename.length - 4));
-                }
-            }
-        } finally {
-            stream.close();
-        }
-        let i = 0;
-        const loadNext = (): void => {
-            if (i >= names.length) return;
-            getIconImage(names[i]);
-            i++;
-            setTimeout(loadNext, 0);
-        };
-        setTimeout(loadNext, 0);
-    } catch (_e) {
-        // ignore
-    }
-}

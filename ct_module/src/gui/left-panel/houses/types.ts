@@ -123,3 +123,16 @@ export const HOUSE_CONTENT_TYPES: HouseContentType[] = [
         remove: (name) => ChatLib.command(`region delete ${name}`),
     },
 ];
+
+// Importable types with a house-side listing (the scan/enumerate path above).
+// Types absent here — ITEM, NPC — can't be enumerated from a house: an item
+// exists only where an action or menu references it, so "is it in the house?"
+// has no scan that can answer it. Presence/scan UI must gate on this.
+const SCANNABLE_TYPES = new Set<Importable["type"]>();
+for (let i = 0; i < HOUSE_CONTENT_TYPES.length; i++) {
+    SCANNABLE_TYPES.add(HOUSE_CONTENT_TYPES[i].type);
+}
+
+export function isScannableType(type: Importable["type"]): boolean {
+    return SCANNABLE_TYPES.has(type);
+}

@@ -4,7 +4,6 @@ import type { MenuAction } from "../lib/menu";
 import { showInExplorer, openInVSCode } from "../../utils/osShell";
 import {
     isInQueue,
-    
     queueItemKey,
     queueItemsForPath,
     removeFromQueueKey,
@@ -12,26 +11,21 @@ import {
     type QueueItem,
 } from "../right-panel/import-tab/queue";
 
+function isImportJsonPath(filePath: string): boolean {
+    const normalized = String(filePath).split("\\").join("/").toLowerCase();
+    const slash = normalized.lastIndexOf("/");
+    const base = slash < 0 ? normalized : normalized.substring(slash + 1);
+    return base === "import.json";
+}
+
 /**
- * Build the queue-control entry for a file path. Resolves the path
- * against every cached parse — if it matches an import.json, the entry
- * queues the whole file; if it matches a single importable's source,
- * the entry queues that importable. Falls back to a disabled-style
- * entry when nothing matches (the file just isn't part of any parsed
- * import.json yet).
+ * Build the queue-control entry for a file path that maps to one or more
+ * concrete importables.
  */
-function queueActionForPath(filePath: string): MenuAction {
+function queueActionForPath(filePath: string): MenuAction | null {
+    if (isImportJsonPath(filePath)) return null;
     const items = queueItemsForPath(filePath);
-    if (items.length === 0) {
-        return {
-            label: "Add to queue (no importable matches this file)",
-            onClick: () => {
-                ChatLib.chat(
-                    "&7[htsw] Nothing in any parsed import.json points at this file."
-                );
-            },
-        };
-    }
+    if (items.length === 0) return null;
     // Multi-match: an htsl referenced by N importables. Treat the whole
     // group as a unit so the toggle reflects "are they all queued?"
     const allQueued = items.every((it) => isInQueue(queueItemKey(it)));
@@ -61,11 +55,13 @@ function queueActionForPath(filePath: string): MenuAction {
  * specific extras via `composeFileMenu`.
  */
 function genericFileActions(filePath: string): MenuAction[] {
-    return [
-        queueActionForPath(filePath),
+    const queueAction = queueActionForPath(filePath);
+    const actions: MenuAction[] = [
         { label: "Show in explorer", onClick: () => showInExplorer(filePath) },
         { label: "Open with VSCode", onClick: () => openInVSCode(filePath) },
     ];
+    if (queueAction !== null) actions.unshift(queueAction);
+    return actions;
 }
 
 /**

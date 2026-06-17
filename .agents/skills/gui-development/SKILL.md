@@ -31,7 +31,7 @@ Library — `gui/lib/` (project-agnostic UI primitives + screen/theme):
 - `components/` — thin element-builder functions (`Button`, `Container`, `Row`, `Col`, `Input`, `Scroll`, `Text`).
 
 App state — `gui/state/` (genuinely-global mutable state ONLY; split by concern, with `index.ts` as a convenience re-export barrel — nothing else lives here):
-- `paths.ts` — active + export `import.json` path.
+- `paths.ts` — active + export `import.json` path. The active path starts empty on module load; recents are user-picked, not auto-opened.
 - `parsed.ts` — the active `ParseResult` (`getParsedResult` / `setParsedResult`).
 - `housing.ts` — current housing UUID.
 - `trust.ts` — **per-house trust set** with `isHouseTrusted` / `setHouseTrust` / `isCurrentHouseTrusted`, persisted to `trusted-houses.json`.
@@ -42,27 +42,30 @@ App state — `gui/state/` (genuinely-global mutable state ONLY; split by concer
 
 Parse cache service — `gui/parsing/` (a service, not "state"):
 - `parses.ts` — the single parse authority + per-file cache (`parseImportJsonAt`). Decides freshness by a **fingerprint** (mtimes of the import.json and every file it references via `allReferencedPaths`), re-validated throttled (`FP_RECHECK_MS`) so a referenced-file edit is picked up within ~0.4s without a separate watcher. Owns the disk snapshot and is the only thing that calls the htsw parser. `invalidateParseCacheEntry` forces a fresh parse; `touchParseCacheMtime` marks a file in-sync after an in-place edit.
-- `parseSnapshot.ts` — on-disk persisted parse output, keyed by import.json path; skips the ~1s cold full parse on `/ct reload` when nothing referenced has changed.
-- `reparse.ts` — thin DRIVER over `parses.ts`: auto-discovers `import.json`, debounces reloads, polls the authority each tick, propagates a changed parse into global state. Owns no parsing/snapshot/mtime logic itself.
+- `parseSnapshot.ts` — on-disk persisted parse output, keyed by import.json path; skips the ~1s cold full parse after `/ct reload` when the user opens a project and nothing referenced has changed.
+- `reparse.ts` — thin DRIVER over `parses.ts`: debounces reloads, polls the authority while the GUI is visible, and propagates a changed parse into global state. Owns no parsing/snapshot/mtime logic itself. It does not auto-discover or parse a remembered project on `/ct reload`.
 - `importablePaths.ts` — centralized importable→path lookups: `importableSourcePath` (htsl/.snbt/json), `importableSubListPath(imp, kind)` for sub-lists (`onEnterActions`/`onExitActions` on REGION; `leftClickActions`/`rightClickActions` on ITEM), and `allReferencedPaths`. Resolves spans through `sourceMap.getFileByPos` so a list with `actionsPath: "..."` returns the htsl while inline JSON returns the import.json.
 
 Code-view data — `gui/code-view/` (the ONE renderer + everything it parses/colors):
 - `htslParse.ts` — `parseHtslFile` + `actionsToLines`, consumed by `lineModel.ts` for the source preview.
+- `lineModel.ts` — chooses the source renderer by file extension: raw HTSL gets action-aware rows, JSON gets syntax-colored text rows, and other files stay plain text.
 - `diffPalette.ts` — the `DiffState` union + color tables (`COLOR_BY_STATE` / `ROW_BG_BY_STATE`) + `COLOR_CURSOR` (the focus-cursor color; the cursor is NOT a diff state). Shared vocabulary; holds no logic.
 - `sourceDiff.ts` — STATIC diff producer: per-action `DiffState` comparing source vs the import cache ("what would change vs last import"), for the View tab. Lazy, cached per file. Also `houseActionAt(filePath, actionPath)` — the cache's (house's) version of one action, backing the hover card on edited lines.
+- `TokenSpan.linkTarget` marks source references that the row renderer can open when `CodeView` is given `onOpenPath`; left click activates the opened file, middle click pins it without switching. The visual affordance is a hover-only marker drawn from that token metadata, not a separate hit-test overlay.
 - Diagnostic spans and formatted diagnostic blocks live in `src/diagnostics/`; chat and View-pane hover cards consume the same presentation.
 
 Code-view row hover: each row gets at most ONE hover card, built by `gui/diagnostics/hover.ts:offerLineHover` — the row's diagnostics (if any) followed by the decorator's `LineDecorations.hoverLines` (lazy callback, invoked only while hovered). Don't add a second hover path per row; merge into this one.
 
 Diff decorators — `gui/right-panel/decorators.ts` (kept OUT of `code-view/` so the renderer stays generic; the `LineDecorator` interface lives in `code-view/lineTypes.ts`):
 - `diffDecorator` — View tab; reads `sourceDiff`. Supplies `hoverLines` on edit ("In the house: <printed action>") and add lines.
-- `progressDecorator` — live import strip; reads `import-tab/livePreview` (each `PreviewLine`'s own `diffState`/`completed`, plus the live cursor + phase scalars). There is no separate overlay map — `livePreview` is the single live store.
+- `progressDecorator` — live import tab; reads `import-tab/livePreview` (each `PreviewLine`'s own `diffState`/`completed`, plus the live cursor + phase scalars). There is no separate overlay map — `livePreview` is the single live store.
 
 Right-panel state — `gui/right-panel/`:
-- `selection.ts` — preview/confirm + tab state for the right-panel source preview, plus the top-level View/Import tab.
+- `selection.ts` — preview/confirm + file-tab state for the right-panel source preview, plus the synthetic live-import tab. The live tab is not stored with confirmed/preview file tabs; it is derived from the active import path and can stay open after a run for final diff review.
+- `tabDrag.ts` — transient mouse gesture state for dragging confirmed file tabs to reorder them. It delegates the actual order mutation to `selection.ts`.
 
 Import-session state — `gui/right-panel/import-tab/`:
-- `livePreview.ts` — LIVE diff producer: per-action `DiffState` driven by import events during an actual import (was `previewLines.ts` + the `importPreviewState.ts` barrel).
+- `livePreview.ts` — LIVE diff producer: per-action `DiffState` driven by import events during an actual import (was `previewLines.ts` + the `importPreviewState.ts` barrel). It renders through the right-panel live pseudo-file tab.
 - `focusedLine.ts` — per-file focused-line id for the code view.
 - `importProgress.ts` — import-session progress, ETA, per-queue-row run state.
 - `queue.ts` — the dynamic import `QueueItem` queue.
@@ -73,31 +76,33 @@ Knowledge — `gui/knowledge/`:
 - `diagnosticCounts.ts` — per-importable diagnostic bucketing for the left-rail badges.
 
 Persistence — `gui/persistence/`:
-- `recents.ts` — persisted MRU list of recently opened import.json paths (`gui-recents.json`). Used by `popovers/file-browser.ts` and `parsing/reparse.ts`.
+- `recents.ts` — persisted MRU list of recently opened import.json paths (`gui-recents.json`). Used by `popovers/file-browser.ts` and the Importables Recent button.
 
 Menus — `gui/menus/`:
-- `fileMenu.ts` — shared file-row context menu (Add/Remove from queue + OS-shell actions), used by both the left-panel rows and the right-panel tab right-click.
+- `fileMenu.ts` — shared file-row context menu (per-importable Add/Remove from queue when a non-import.json source file maps to importables + OS-shell actions), used by both the left-panel rows and the right-panel tab right-click. import.json rows add their own "queue all importables" action instead of using a bulk import.json queue item.
 
 Importer hookup — `importer/diffSink.ts`:
 - Defines `ImportDiffSink` (`markMatch`/`beginOp`/`completeOp`/`end`) and a single global active sink. `applyActionListDiff` captures and clears the sink on entry (so nested syncs in CONDITIONAL/RANDOM bodies stay silent), pre-marks untouched desired actions as `match`, and emits per-op events. The session (`importables/importSession.ts`) sets/clears the sink around each importable; the GUI's `startImport` (in `right-panel/import-tab/importController.ts`) wires sink events into the single `import-tab/livePreview` store — `markPlanned*` / `markMatch` / `applyComplete` for per-line state and `setCurrent` for the cursor — keyed by the importable's source-file path.
 
 Popovers — `gui/popovers/`:
 - `add-importable.ts` — "Add Importable" form (Explore "+" button).
-- `alias.ts` — per-house alias editor. `openAliasPopover(rect, uuid)` takes the target UUID explicitly so the Knowledge tab can edit any known house, not just the currently-detected one.
+- `alias.ts` — per-house alias editor. `openAliasPopover(rect, uuid)` takes the target UUID explicitly so the Houses tab can edit any known house, not just the currently-detected one.
 - `file-browser.ts` — modal file browser for picking an `import.json`.
 - `open-menu.ts` — Hypixel `/functions /eventactions /regions …` shortcut menu.
 
 App shell — `gui/`:
 - `overlay.ts` — wires everything: registers triggers, owns the single fullscreen panel, runs the tick handler (reparse, focus, popover cleanup).
-- `root.ts` — root tree builder: arranges LeftPanel / center cutouts (transparent above + below the inventory) / RightPanel / chat input around the inventory bounds. **No top bar.** Right column gets `padding-left: SCREEN_PAD` so it mirrors the screen-edge gap on the inventory-facing side.
+- `root.ts` — root tree builder: arranges LeftPanel / center cutouts (transparent above + below the inventory) / RightPanel / chat input around the inventory bounds. Right column gets `padding-left: SCREEN_PAD` so it mirrors the screen-edge gap on the inventory-facing side.
 - `chat-input.ts` — `ChatInputBar` element + global `T` shortcut to focus it.
 - `knowledge-status.ts` — derives `STATUS_COLOR` / `STATUS_LABEL` / `statusForImportable` / `knowledgeStatusByImportable` from `state` for the left-rail badges.
-- `bottom-toolbar/` — slim, no-background strip under the inventory: only Housing Menu + the `/functions …` shortcut split-button. Import / Trust moved into the right panel's Import tab.
-- `left-panel/` — two tabs: **Explore** (importables list + Open file/folder/Browse buttons) and **Knowledge** (per-house list with Trust toggle + Alias button per house).
-- `right-panel/` — top-level **View / Import** tabs. View hosts the existing source-preview tabs; Import hosts the queue (checkboxes from the Explore list), the inline live-importer strip (progress bar + cancel + current path), and the Auto-proceed / Import action row.
+- `bottom-toolbar/` — slim, no-background strip under the inventory: only Housing Menu + the `/functions …` shortcut split-button.
+- `left-panel/` — three tabs: **Importables** (importables list + Open file/folder/Browse buttons), **Houses** (per-house browser with a house selector, primary Trust control, compact Alias/Detect side actions), and **Settings** (global Mute import sounds + Auto-proceed imports toggles).
+- `right-panel/` — single **View** pane: file-tab strip, source/live code view, and footer. The tab strip always paints, with a muted `No file` placeholder when no file tabs exist. File labels come from `compactFileLabel`, so `.../functions/import.json` displays as `functions.import.json` instead of every tab saying `import.json`. Leading tab icons use one shared fixed-width icon slot plus trailing gap; don't add one-off spacing constants for live/queued tab icons. The live import diff appears as a synthetic upload tab that follows the currently importing `.htsl`; the footer holds the scrollable queue, the import progress strip during a run, and the Import button. During an import, the footer progress strip shows ETA/progress and Pause/Step/Cancel controls.
 - `right-panel/import-tab/importController.ts` — `startImport()` (reads per-house trust via `isCurrentHouseTrusted()`) and `importablesForImport()`. The diff-sink wiring lives here now (was previously in `bottom-toolbar/index.ts`).
 
-The Explore row builder (`gui/left-panel/explore/index.ts`) follows a **type-aware dispatch** pattern worth knowing about: a single `resultRow(imp)` builds every row but branches on `imp.type` for behavior. Right-click always builds a menu via `buildPrimaryAndJsonMenu(primaryPath, primaryLabel, declaringPath)` which shows `fsActions(primary, label)` + a `{kind:"separator"}` + `fsActions(import.json)`, with the separator and primary suppressed when `primaryPath === declaringPath` (REGION/MENU/NPC). Double-click is dispatched through `dispatchDoubleClick(imp)` which previews htsl for FUNCTION/EVENT, .snbt for ITEM, toggles inline expansion for REGION (showing "Enter actions" / "Exit actions" sub-rows under the parent), and falls back to the import.json with a chat note for MENU/NPC. ITEM rows with click-actions also expand to show "Left/Right click actions" sub-rows. The chevron is its own clickable Container (not the whole row) so the body still toggles the multi-select checkbox as before. Sub-rows reuse the same `buildPrimaryAndJsonMenu` with the sub-list's resolved path from `importableSubListPath`. Each row also displays the source-file tail (`tailSegments(path, 3)` from `lib/pathDisplay`) — last 3 dirs joined by `/`, no `~/` or `./` prefix.
+Importables rows (`gui/left-panel/importables/rows.ts` + `tree.ts`) deliberately separate the row body from local controls. File/import.json headers, included import.json group headers, importable rows, and sub-list rows use body single-click to preview in the View pane (`previewSelect`) and body double-click to pin/keep the tab (`confirmSelect`). Queue membership changes only through the checkbox control, whose hit box spans the row prefix before the type marker. Expansion changes only through caret controls, whose hit box spans the row prefix before the file icon: import.json headers expand parsed contents, included import.json headers expand nested include groups, and expandable importables show metadata/sub-list rows. Included import.json headers are actual file rows, so they use the JSON file icon affordance instead of a type-color marker. Right-click menus still come from `composeFileMenu` / `composeImportableMenu`.
+
+The per-row file↔house status icon comes from ONE shared vocabulary (`gui/cache-status/linkStatus.ts`: `linkStatusIcon` / `LinkStatusKey` — `matches`/`differs`/`present`/`oneSided`/`unknown`) used by **both** this page and the Houses tab, so the same relationship renders with the same icon+color on each. The two pages are opposite projections of that one relationship (Importables iterates your files, Houses iterates a house's contents), so their overlap is expected, not redundant. Each page maps its own state set into the shared keys and supplies its own tooltip (file-side framing on Importables, house-side on Houses). Don't re-introduce status dots or a second icon/color table — and on Importables, a *scanned* absence must keep overriding any Knowledge match/differ state. Types with no house-side listing (ITEM, NPC — anything not in `HOUSE_CONTENT_TYPES`, tested via `isScannableType`) can't be scanned for presence at all: an item exists only where an action/menu references it. Their Importables status skips the presence/scan branch and reads the import baseline only (`cacheStateForImportable` → matches/differs, else a neutral "import to place it"); never show them the "scan this house" tooltip.
 
 ## Element model
 
@@ -106,10 +111,10 @@ The Explore row builder (`gui/left-panel/explore/index.ts`) follows a **type-awa
 | kind | extra fields | clickable? | notes |
 |------|---|---|---|
 | `container` | `style: ContainerStyle`, `children: Extractable<Child[]>`, optional `onClick(rect, info)`, `onDoubleClick(rect)`, `onHover(rect)` | yes if `onClick` or `onDoubleClick` set | `onHover` is observational and does not make a container clickable. Otherwise this is the flex-layout primitive used by buttons and rows. |
-| `text` | `style`, `text: Extractable<string>`, optional `color`, `underlineColor`, `tooltip`, `tooltipColor`, `truncate` | no | `underlineColor` draws a one-pixel underline across the laid-out fragment and is used for exact diagnostic spans. `truncate: true` clips the string with a trailing `...` to the laid-out rect width — opt-in, because bare text is allowed to overflow (some rows rely on a later sibling painting over the spill). |
+| `text` | `style`, `text: Extractable<string>`, optional `color`, `underlineColor`, `tooltip`, `tooltipColor`, `truncate` | no | `underlineColor` draws a one-pixel underline across the laid-out fragment and is used for exact diagnostic spans. `truncate: true` clips the string with a trailing `...` to the laid-out rect width — opt-in, because bare text is allowed to overflow (some rows rely on a later sibling painting over the spill). **`width: grow` does NOT constrain the draw** — the renderer paints the full string from the rect's left edge and only clips when `truncate` is set, so any `grow` text holding dynamic/user content (file names, house/importable names, paths, queue labels) must also set `truncate` or it bleeds over the next sibling. Tab-style `Button`s have no constrained width to truncate against: the left tab bar (`tabs.ts`) measures its `availW` and drops to icon-only (+ tooltip) when the widest label doesn't fit; the houses content tabs use a `grow`+`truncate` label child instead. |
 | `input` | `style`, `id: string`, `value: Extractable<string>`, `onChange(v)`, optional `placeholder` | focusable | id is used for global focus + key dispatch |
-| `scroll` | `style: ContainerStyle`, `id: string`, `children: Extractable<Element[]>`, optional `axis: "x" \| "y"` | passes through | scroll viewport with internal offset state, scrollbar overlay, mouse-wheel + drag. `axis` defaults to `"y"` (vertical); `axis: "x"` is a horizontal strip (e.g. the View-tab file-tab bar) — wheel-scrolls only, no scrollbar is drawn. |
-| `image` | `style`, `name: Extractable<IconName>`, optional `color: Extractable<number>` (ARGB tint), optional `tooltip` + `tooltipColor` (same as `text`) | no | 16×16 default; draws via `Image.fromAsset("icons/<name>.png")` cached per name. The icon PNGs are monochrome white, so `color` recolors them — implemented with `Renderer.colorize(...)` before `drawImage`, **not** `GlStateManager.color` (CT's `drawImage` resets GL color to white when its internal `colorized` is null, so only `colorize()` survives the draw). `Icon({ color, tooltip })` exposes both. See **Icons** below. |
+| `scroll` | `style: ContainerStyle`, `id: string`, `children: Extractable<Element[]>`, optional `axis: "x" \| "y"` | passes through | scroll viewport with internal offset state, scrollbar overlay, mouse-wheel + drag. `axis` defaults to `"y"` (vertical); `axis: "x"` is a horizontal strip (e.g. the View-tab file-tab bar) — wheel-scrolls only, no draggable scrollbar is drawn, with one-pixel clipped-content edge ticks. |
+| `image` | `style`, `name: Extractable<IconName>`, optional `color: Extractable<number>` (ARGB tint), optional `tooltip` + `tooltipColor` (same as `text`) | no | 16×16 default; loaded through `lib/images.ts`'s `ImageIO` path and cached per name. The icon PNGs are monochrome white, so `color` recolors them — implemented with `Renderer.colorize(...)` before `drawImage`, **not** `GlStateManager.color` (CT's `drawImage` resets GL color to white when its internal `colorized` is null, so only `colorize()` survives the draw). `Icon({ color, tooltip })` exposes both. See **Icons** below. |
 
 Children of `container` and `scroll` are `Extractable<Element[]>` so the list can be dynamic each frame (e.g. filter results). Layout is recomputed every frame; **there is no layout cache** — anything in the tree may change between frames.
 
@@ -127,7 +132,7 @@ Layout algorithm (per container):
 
 **`align: "stretch"` (default) only stretches children that have no explicit cross-axis size.** A child with `width: {kind:"px",...}` keeps that width even with stretch. This matches CSS flex.
 
-`scroll` lays out children along its axis with no main-axis bound, applies the scroll offset (clamped to `[0, contentLength - viewportMain]` where main is height for `"y"`, width for `"x"`), and tags every descendant `LaidOut` with `clipRect = viewport`. The renderer pushes a GL scissor for items with `clipRect`. The `ScrollState` (in `layout.ts`) carries `axis` + `contentLength` (size along the scroll axis); vertical scrolls reserve the scrollbar track width on the cross axis, horizontal strips draw no scrollbar (wheel-scroll only) and steal no height.
+`scroll` lays out children along its axis with no main-axis bound, applies the scroll offset (clamped to `[0, contentLength - viewportMain]` where main is height for `"y"`, width for `"x"`), and tags every descendant `LaidOut` with `clipRect = viewport`. The renderer pushes a GL scissor for items with `clipRect`. The `ScrollState` (in `layout.ts`) carries `axis` + `contentLength` (size along the scroll axis); vertical scrolls reserve the scrollbar track width on the cross axis. Horizontal strips are wheel-scroll only: they draw no draggable thumb and steal no height, but the renderer paints one-pixel edge ticks when content is clipped offscreen.
 
 ## Reactivity (`Extractable`)
 
@@ -282,7 +287,7 @@ These bit us; they will bite you again. Read these before touching CT trigger co
 PNGs live in `ct_module/assets/icons/*.png` (16×16, kebab-case filenames). Two pieces of build automation make this useable + small:
 
 1. **Enum generator** (`scripts/generateIconsList.ts`, runs before `tsc` via `npm run build`'s prefix step): scans `assets/icons/` and writes `src/gui/lib/icons.generated.ts` exporting `Icons` (a `{ camelKey: "kebab-name" } as const` object) and `IconName` (the union type). Re-run manually with `npm run generate:icons` after adding/removing PNGs.
-2. **Tree-shake plugin** (`iconShakePlugin` in `vite.config.ts`, fires in `closeBundle`): reads every emitted `.js` in `dist/`, scans for each known icon-name as a quoted string literal, and copies *only* the matched PNGs into `dist/assets/icons/`. `install.py` then mirrors `dist/assets/` to the deploy.
+2. **Tree-shake plugin** (`iconShakePlugin` in `vite.config.ts`, fires in `closeBundle`): reads every emitted `.js` in `dist/`, scans for each known icon-name as a quoted string literal, and copies *only* the matched PNGs flat into `dist/assets/`. `install.py` then mirrors `dist/assets/` to the deploy.
 
 Usage:
 
@@ -302,7 +307,7 @@ Row({ children: [
 const ARROWS: IconName[] = [Icons.arrowUp, Icons.arrowDown];
 ```
 
-`Image.fromAsset` is called lazily on first render and cached per name in `render.ts`. A failed load is cached as `null` (so no per-frame retry/log spam) — if a missing-icon symptom appears, the cause is almost always that the shake didn't pick it up.
+Icons load lazily on first render and are cached per name in `lib/images.ts`, via `new Image(javax.imageio.ImageIO.read(java.io.File(...)))` — not `Image.fromAsset`/`Image.fromFile`, which other CT 1.8.9 modules also avoid. There is no module-load icon predecode; `warmIconTextures()` runs from the panel paint path and draws each newly cached icon once offscreen so its GL texture upload doesn't flash a gray box on first real draw. A failed load is cached as `null` (so no per-frame retry/log spam) — if a missing-icon symptom appears, the cause is almost always that the shake didn't pick it up.
 
 ## Adding a new element kind
 

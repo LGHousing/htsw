@@ -4,7 +4,7 @@ import { PROJECTS_ROOT } from "../project/paths";
 import { queueSourcePath } from "./left-panel/importables/source";
 import { forceImportExpand } from "./left-panel/importables/rows";
 import { canonicalPath } from "./parsing/parses";
-import { previewSelect, setActiveRightTab } from "./right-panel/selection";
+import { previewSelect } from "./right-panel/selection";
 import { setImportJsonPath } from "./state";
 import { addRecent } from "./persistence/recents";
 import { showToast } from "./toast";
@@ -34,7 +34,6 @@ export function createStarterProject(): void {
     // import.json in the View pane.
     forceImportExpand(canon);
     previewSelect(canon);
-    setActiveRightTab("view");
     setImportJsonPath(importJsonPath);
     addRecent(importJsonPath);
 }

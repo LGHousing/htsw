@@ -428,6 +428,7 @@ function fileRow(entry: Entry): Element {
             Text({
                 text: entry.name,
                 color: loadable ? COLOR_TEXT : COLOR_TEXT_DIM,
+                truncate: true,
                 style: { width: { kind: "grow" } },
             }),
             Text({

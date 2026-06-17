@@ -13,21 +13,18 @@ import { Container, Icon, Text } from "../../lib/components";
 import { Icons } from "../../lib/icons.generated";
 import {
     ACCENT_DANGER,
-    ACCENT_INFO,
     ACCENT_SUCCESS,
     ACCENT_TEAL,
     COLOR_BUTTON_HOVER,
     COLOR_ROW,
     COLOR_ROW_HOVER,
     COLOR_TEXT_DIM,
-    GLYPH_DOT,
     PHASE_APPLYING,
     PHASE_HYDRATING,
     PHASE_READING,
     SIZE_ROW_H,
 } from "../../lib/theme";
 
-const GLYPH_CARET = "▶";
 import { getHousingUuid, isCurrentHouseTrusted, isImportableChecked, toggleImportableChecked } from "../../state";
 import { getQueueItemRunState, isCurrentQueueItem } from "./importProgress";
 import { importableIdentity, importableKey } from "../../../importCache/paths";
@@ -144,6 +141,17 @@ function isActiveQueueItem(item: QueueItem): boolean {
     return getQueueItemRunState(item).kind === "current";
 }
 
+function queueStateRail(color: number | undefined): Element {
+    return Container({
+        style: {
+            width: { kind: "px", value: 2 },
+            height: { kind: "grow" },
+            background: color,
+        },
+        children: [],
+    });
+}
+
 function queueImportableLabel(imp: Importable): string {
     return imp.type === "EVENT" ? imp.event : imp.name;
 }
@@ -173,8 +181,11 @@ export function isQueueImportJsonExpanded(item: QueueItem): boolean {
 export function queueRow(item: QueueItem): Element {
     const typeText = item.kind === "importJson" ? "ALL" : item.type;
     const isCurrent = isCurrentQueueItem(item);
+    const isActive = isActiveQueueItem(item);
+    const skip = willBeSkipped(item);
     const canExpand = item.operation === "import" && item.kind === "importJson";
     const expanded = canExpand && isQueueImportJsonExpanded(item);
+    const stateColor = isActive ? PHASE_READING : skip ? ACCENT_TEAL : undefined;
     return Container({
         style: {
             direction: "col",
@@ -196,44 +207,37 @@ export function queueRow(item: QueueItem): Element {
                     height: { kind: "grow" },
                 },
                 children: [
-                    // 2px spacer keeps row text aligned with the header.
-                    Container({
-                        style: {
-                            width: { kind: "px", value: 2 },
-                            height: { kind: "grow" },
-                        },
-                        children: [],
-                    }),
-                    Container({
+                    queueStateRail(stateColor),
+                    canExpand && Container({
                         style: {
                             direction: "col",
                             align: "center",
                             justify: "center",
                             width: { kind: "px", value: 14 },
                             height: { kind: "grow" },
-                            hoverBackground: canExpand ? COLOR_BUTTON_HOVER : undefined,
+                            hoverBackground: COLOR_BUTTON_HOVER,
                         },
                         onClick: (_rect, info) => {
-                            if (!canExpand || info.button !== 0) return;
+                            if (info.button !== 0) return;
                             const key = queueItemKey(item);
                             if (expanded) collapsedQueueImportJsonRows.add(key);
                             else collapsedQueueImportJsonRows.delete(key);
                         },
-                        children: canExpand
-                            ? [Icon({ name: expanded ? Icons.chevronDown : Icons.chevronRight })]
-                            : isActiveQueueItem(item)
-                              ? [Text({ text: GLYPH_CARET, color: ACCENT_INFO })]
-                              : willBeSkipped(item)
-                                ? [Text({ text: GLYPH_DOT, color: ACCENT_TEAL, tooltip: "Trusted — will skip", tooltipColor: ACCENT_TEAL })]
-                                : [],
+                        children: [Icon({ name: expanded ? Icons.chevronDown : Icons.chevronRight })],
                     }),
                     Text({
                         text: typeText,
-                        color: COLOR_TEXT_DIM,
+                        color: skip ? ACCENT_TEAL : COLOR_TEXT_DIM,
+                        tooltip: skip ? "Trusted - will skip" : undefined,
+                        tooltipColor: ACCENT_TEAL,
                         style: { width: { kind: "px", value: 48 } },
                     }),
                     Text({
                         text: item.label,
+                        color: skip ? ACCENT_TEAL : undefined,
+                        tooltip: skip ? "Trusted - will skip" : undefined,
+                        tooltipColor: ACCENT_TEAL,
+                        truncate: true,
                         style: { width: { kind: "grow" } },
                     }),
                     // No removal while an import is running — the queue is
@@ -267,6 +271,9 @@ export function queueRow(item: QueueItem): Element {
 
 export function queueImportJsonChildRow(item: QueueItem): Element {
     const isCurrent = isCurrentQueueItem(item);
+    const isActive = isActiveQueueItem(item);
+    const skip = willBeSkipped(item);
+    const stateColor = isActive ? PHASE_READING : skip ? ACCENT_TEAL : undefined;
     return Container({
         style: {
             direction: "col",
@@ -288,34 +295,20 @@ export function queueImportJsonChildRow(item: QueueItem): Element {
                     height: { kind: "grow" },
                 },
                 children: [
-                    Container({
-                        style: {
-                            width: { kind: "px", value: 2 },
-                            height: { kind: "grow" },
-                        },
-                        children: [],
-                    }),
-                    Container({
-                        style: {
-                            direction: "col",
-                            align: "center",
-                            justify: "center",
-                            width: { kind: "px", value: 14 },
-                            height: { kind: "grow" },
-                        },
-                        children: isActiveQueueItem(item)
-                            ? [Text({ text: GLYPH_CARET, color: ACCENT_INFO })]
-                            : willBeSkipped(item)
-                              ? [Text({ text: GLYPH_DOT, color: ACCENT_TEAL, tooltip: "Trusted — will skip", tooltipColor: ACCENT_TEAL })]
-                              : [],
-                    }),
+                    queueStateRail(stateColor),
                     Text({
                         text: item.kind === "importable" ? item.type : "ALL",
-                        color: COLOR_TEXT_DIM,
+                        color: skip ? ACCENT_TEAL : COLOR_TEXT_DIM,
+                        tooltip: skip ? "Trusted - will skip" : undefined,
+                        tooltipColor: ACCENT_TEAL,
                         style: { width: { kind: "px", value: 48 } },
                     }),
                     Text({
                         text: item.label,
+                        color: skip ? ACCENT_TEAL : undefined,
+                        tooltip: skip ? "Trusted - will skip" : undefined,
+                        tooltipColor: ACCENT_TEAL,
+                        truncate: true,
                         style: { width: { kind: "grow" } },
                     }),
                     Container({

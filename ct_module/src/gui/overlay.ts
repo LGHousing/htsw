@@ -29,7 +29,7 @@ const RenderGameOverlayElementType = javaType(
 const ForgeGuiOpenEvent = javaType("net.minecraftforge.client.event.GuiOpenEvent");
 import { RootTree, getImportCachedBounds } from "./root";
 import { getContainerBounds, getFullscreenPanelRect } from "./lib/bounds";
-import { autoDiscoverImportJson, reparseNow, tickReparse } from "./parsing/reparse";
+import { tickReparse } from "./parsing/reparse";
 import { processPendingParses } from "./parsing/parses";
 import { CHAT_INPUT_ID } from "./chat-input";
 import {
@@ -61,6 +61,7 @@ import { TaskManager } from "../tasks/manager";
 import { getChatKeyCode } from "./keybinds";
 import { renderToast } from "./toast";
 import { sampleProgressTraceTick } from "../housingSync/trace/progressTrace";
+import { endTabDrag } from "./right-panel/tabDrag";
 import {
     dispatchWheel,
     isDraggingScrollbar,
@@ -464,6 +465,7 @@ export function initHtswGui(): void {
     });
     register("guiMouseRelease", () => {
         endScrollbarDrag();
+        endTabDrag();
     });
 
     // Clear focus when the user clicks anywhere outside every visible panel.
@@ -629,28 +631,6 @@ export function initHtswGui(): void {
         endHtswOverlayDraw();
     }).setPriority(OnTrigger.Priority.LOWEST);
 
-    // Best-effort initial parse so the panel populates before the user
-    // touches the path input. autoDiscover handles the case where the
-    // default path doesn't exist by walking ./htsw/projects for any
-    // import.json. Failures are stored in state.parseError and surfaced
-    // inline by the LeftRail empty-state.
-    //
-    // Path-discovery is cheap; the parse can freeze for ~1s on large
-    // import.json projects (hundreds of .htsl files). Defer the parse
-    // to the next tick so the empty GUI paints first — the user sees
-    // the panel immediately and the parse-driven population follows.
-    try {
-        autoDiscoverImportJson();
-    } catch (_e) {
-        // ignore
-    }
-    setTimeout(() => {
-        try {
-            reparseNow();
-        } catch (_e) {
-            // ignore — state.parseError will be set
-        }
-    }, 0);
 }
 
 function findInput(id: string): Extract<Element, { kind: "input" }> | null {

@@ -8,7 +8,7 @@ import { shortPath } from "../lib/pathDisplay";
 import { FileSystemFileLoader } from "../../utils/fileLoaders";
 import { actionsToLines, parseHtslFile, type HtslLine } from "./htslParse";
 import { getParsedResult } from "../state/parsed";
-import { tokenizeHtsl, type SyntaxToken } from "../right-panel/syntax";
+import { tokenizeHtsl, tokenizeJson, type SyntaxToken } from "../right-panel/syntax";
 import type { FieldSpan, RenderableLine, TokenSpan } from "./lineTypes";
 import { normalizeDiagnosticSpans, type DiagnosticLineSpan } from "../../diagnostics/spans";
 import type { Importable } from "htsw/types";
@@ -158,6 +158,7 @@ export function tokensWithDiagnosticSpans(
                 text: token.text.substring(start - tokenStart, end - tokenStart),
                 color: token.color,
                 fieldProp: token.fieldProp,
+                linkTarget: token.linkTarget,
                 underlineColor: winner === undefined
                     ? undefined
                     : winner.kind === "secondary"
@@ -314,6 +315,13 @@ function readPlainLines(path: string): string[] {
     return lines;
 }
 
+type TextCacheEntry = {
+    mtime: number;
+    parsedRef: object | null;
+    lines: RenderableLine[];
+};
+const jsonCache = new Map<string, TextCacheEntry>();
+
 function plainTextRenderableLines(path: string): RenderableLine[] {
     const lines = readPlainLines(path);
     const diagnostics = diagnosticIndexForFile(path);
@@ -329,6 +337,62 @@ function plainTextRenderableLines(path: string): RenderableLine[] {
         decorateLineDiagnostics(renderableLine, diagnostics.get(lineNum));
         out.push(renderableLine);
     }
+    return out;
+}
+
+function jsonStringValue(tokenText: string): string | null {
+    if (tokenText.length < 2 || tokenText.charAt(0) !== '"') return null;
+    try {
+        const parsed = JSON.parse(tokenText);
+        return typeof parsed === "string" ? parsed : null;
+    } catch (_e) {
+        return null;
+    }
+}
+
+function looksLikeSourceFileRef(value: string): boolean {
+    const lower = value.toLowerCase();
+    return endsWith(lower, ".json") || endsWith(lower, ".htsl") || endsWith(lower, ".snbt");
+}
+
+function addJsonFileLinks(sourcePath: string, tokens: TokenSpan[]): TokenSpan[] {
+    let parent: string | null = null;
+    for (let i = 0; i < tokens.length; i++) {
+        const value = jsonStringValue(tokens[i].text);
+        if (value === null || !looksLikeSourceFileRef(value)) continue;
+        if (parent === null) parent = fileLoader.getParentPath(sourcePath);
+        tokens[i].linkTarget = fileLoader.resolvePath(parent, value);
+    }
+    return tokens;
+}
+
+function jsonRenderableLines(path: string): RenderableLine[] {
+    const mtime = getMtimeMs(path);
+    const parsed = getParsedResult();
+    const parsedRef: object | null = parsed === null ? null : parsed;
+    const cached = jsonCache.get(path);
+    if (cached !== undefined && cached.mtime === mtime && cached.parsedRef === parsedRef) {
+        return cached.lines;
+    }
+
+    const lines = readPlainLines(path);
+    const diagnostics = diagnosticIndexForFile(path);
+    const out: RenderableLine[] = [];
+    for (let i = 0; i < lines.length; i++) {
+        const lineNum = i + 1;
+        const renderableLine: RenderableLine = {
+            id: `json:${lineNum}`,
+            lineNum,
+            depth: 0,
+            tokens: addJsonFileLinks(
+                path,
+                attachFieldSpans(tokenizeJson(lines[i]), undefined)
+            ),
+        };
+        decorateLineDiagnostics(renderableLine, diagnostics.get(lineNum));
+        out.push(renderableLine);
+    }
+    jsonCache.set(path, { mtime, parsedRef, lines: out });
     return out;
 }
 
@@ -495,6 +559,7 @@ export function linesForFile(path: string | null): RenderableLine[] {
     if (path === null || path.length === 0) return [];
     const norm = path.split("\\").join("/").toLowerCase();
     if (endsWith(norm, ".htsl")) return htslRawRenderableLines(path);
+    if (endsWith(norm, ".json")) return jsonRenderableLines(path);
     return plainTextRenderableLines(path);
 }
 

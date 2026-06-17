@@ -5,23 +5,26 @@ import {
     Element,
     Rect,
 } from "../../lib/layout";
-import { Container, Icon, McItem, Text } from "../../lib/components";
+import { Col, Container, Icon, Input, McItem, Scroll, Text } from "../../lib/components";
 import { Icons } from "../../lib/icons.generated";
 import { openMenu, MenuAction } from "../../lib/menu";
+import { closeAllPopovers, openPopover } from "../../lib/popovers";
 import { openRenameImportablePopover } from "../../popovers/rename-importable";
 import { openConfirmPopover } from "../../popovers/confirm";
 import {
     getHousingUuid,
     isAutoTrackSource,
+    isHouseTrusted,
     isImportableChecked,
     setExportImportJsonPath,
     toggleAutoTrackSource,
     toggleImportableChecked,
 } from "../../state";
-import { ACCENT_DANGER, ACCENT_SUCCESS, ACCENT_WARN, COLOR_TEXT_DIM, COLOR_TEXT_FAINT, GLYPH_DOT } from "../../lib/theme";
+import { ACCENT_DANGER, ACCENT_INFO, ACCENT_SUCCESS, ACCENT_WARN, COLOR_TEXT, COLOR_TEXT_DIM, COLOR_TEXT_FAINT } from "../../lib/theme";
 import { diagnosticCountsFor, type SeverityCounts } from "../../cache-status/diagnosticCounts";
 import { openEditFunctionFieldPopover } from "../../popovers/edit-function";
-import { STATUS_COLOR, STATUS_LABEL, cacheStateForImportable } from "../../cache-status";
+import { cacheStateForImportable, linkStatusIcon } from "../../cache-status";
+import { isScannableType } from "../houses/types";
 import {
     hasSubList,
     importableDeclaringPath,
@@ -48,7 +51,11 @@ import {
 } from "../../parsing/parses";
 import { recordHouseBinding } from "../../../importCache/houseBindings";
 import { shortPath } from "../../lib/pathDisplay";
-import { readImportableCache } from "../../../importCache/cache";
+import {
+    houseTypeScanned,
+    listCachedImportables,
+    readImportableCache,
+} from "../../../importCache/cache";
 import { canonicalIconItem } from "../../../importCache/hash";
 import { addToQueue, makeImportableQueueItem, queueItemKey, removeFromQueueKey } from "../../right-panel/import-tab/queue";
 import { isImportRunning } from "../../../housingSync/runtimeState";
@@ -62,7 +69,6 @@ import {
     closeTabsUnder,
     confirmSelect,
     previewSelect,
-    setActiveRightTab,
 } from "../../right-panel/selection";
 import {
     Result,
@@ -159,6 +165,72 @@ function getCachedImportable(imp: Importable): Importable | null {
     if (uuid === null) return null;
     const entry = readImportableCache(uuid, imp.type, importableIdentity(imp));
     return entry === null ? null : entry.importable;
+}
+
+type HousePresenceState = "unscanned" | "present" | "absent";
+
+function housePresenceStateFor(imp: Importable): HousePresenceState {
+    const uuid = getHousingUuid();
+    if (uuid === null || !houseTypeScanned(uuid, imp.type)) return "unscanned";
+    const identity = importableIdentity(imp);
+    const items = listCachedImportables(uuid, imp.type);
+    for (let i = 0; i < items.length; i++) {
+        if (items[i].name === identity) return "present";
+    }
+    return "absent";
+}
+
+// The file<->house link icon for one of your importables. Tooltips are framed
+// from the file side ("what does this mean for importing this file?"); the
+// Houses page maps the same icons with house-side wording.
+function importableStatus(imp: Importable): Element {
+    const uuid = getHousingUuid();
+    if (uuid === null) {
+        return linkStatusIcon("unknown", "No house detected");
+    }
+    // Items and NPCs have no house-side listing to scan (not in
+    // HOUSE_CONTENT_TYPES) — an item exists only where an action or menu
+    // references it. Presence can't be answered for these, so fall back to the
+    // import baseline: does your file still match what was last imported?
+    if (!isScannableType(imp.type)) {
+        const baseline = cacheStateForImportable(imp);
+        if (baseline === "current") {
+            return linkStatusIcon("matches", "Files match this house");
+        }
+        if (baseline === "modified") {
+            return linkStatusIcon("differs", "Import will update the house from these files");
+        }
+        // Never imported: file-side only as far as we can tell (items can't be
+        // listed from a house to confirm otherwise). Show it as not-yet-linked
+        // rather than "unknown" — import is the action that places/links it.
+        return linkStatusIcon(
+            "oneSided",
+            imp.type === "ITEM"
+                ? "Items can't be listed from a house — import to place it"
+                : "Not listed from a house — import to place it"
+        );
+    }
+    const presence = housePresenceStateFor(imp);
+    // Once the type is scanned, absence is authoritative: it must win over a
+    // stale Knowledge entry, or something the house dropped still shows a match.
+    if (presence === "absent") {
+        return linkStatusIcon("oneSided", "Not in this house");
+    }
+    if (!isHouseTrusted(uuid)) {
+        return presence === "present"
+            ? linkStatusIcon("present", "Exists in this house")
+            : linkStatusIcon("unknown", "Scan this house to check whether it exists");
+    }
+    const cacheState = cacheStateForImportable(imp);
+    if (cacheState === "current") {
+        return linkStatusIcon("matches", "Files match this house");
+    }
+    if (cacheState === "modified") {
+        return linkStatusIcon("differs", "Import will update the house from these files");
+    }
+    return presence === "present"
+        ? linkStatusIcon("present", "In this house; content not read yet")
+        : linkStatusIcon("unknown", "No Knowledge read yet");
 }
 
 function valDiff(a: unknown, b: unknown): FieldDiff | undefined {
@@ -408,42 +480,322 @@ function projectHasIncludes(parent: ResultImport): boolean {
     return parent.parse !== null && includeTreeOf(parent).includes.length > 0;
 }
 
+// The "Move to…" destination picker renders the include tree as a collapsible
+// folder tree (caret expands, clicking the row moves) instead of the old flat
+// dump of every project-relative path. State is rebuilt fresh on each open.
+type MoveNode = {
+    path: string;
+    label: string;
+    depth: number;
+    isCurrent: boolean;
+    children: MoveNode[];
+    // Destinations reachable in this subtree, excluding the importable's current
+    // file — shown as a faint count on folders.
+    selectableCount: number;
+};
+
+const MOVE_INDENT = 12;
+const MOVE_CARET_W = 18;
+const MOVE_ROW_H = 18;
+const MOVE_SEARCH_THRESHOLD = 8;
+
+let moveTreeRoots: MoveNode[] = [];
+const moveExpansion: Set<string> = new Set();
+let moveFilter = "";
+let moveShowSearch = false;
+let moveCtx: { entryPath: string; section: Section; identity: string } | null = null;
+
+function dirOfPath(p: string): string {
+    const s = p.split("\\").join("/");
+    const i = s.lastIndexOf("/");
+    return i < 0 ? s : s.substring(0, i);
+}
+
+function baseNameOf(p: string): string {
+    const s = p.split("\\").join("/");
+    const i = s.lastIndexOf("/");
+    return i < 0 ? s : s.substring(i + 1);
+}
+
+// A destination's label is its path relative to its parent node's directory with
+// a trailing import.json dropped, so a sub-include reads as "clocks" instead of
+// "functions/clocks/import.json".
+function moveNodeLabel(parentDir: string, nodePath: string): string {
+    const np = nodePath.split("\\").join("/");
+    const base = parentDir.split("\\").join("/");
+    let rel = np.indexOf(base + "/") === 0 ? np.substring(base.length + 1) : np;
+    const tail = "/import.json";
+    if (
+        rel.length >= tail.length &&
+        rel.substring(rel.length - tail.length).toLowerCase() === tail
+    ) {
+        rel = rel.substring(0, rel.length - tail.length);
+    } else if (rel.toLowerCase() === "import.json") {
+        rel = baseNameOf(base);
+    }
+    return rel.length === 0 ? "import.json" : rel;
+}
+
+function buildMoveNode(
+    node: IncludeNode,
+    parentDir: string,
+    depth: number,
+    current: string
+): MoveNode {
+    const path = canonicalPath(node.path);
+    const dir = dirOfPath(path);
+    const children: MoveNode[] = [];
+    for (let i = 0; i < node.includes.length; i++) {
+        children.push(buildMoveNode(node.includes[i], dir, depth + 1, current));
+    }
+    const isCurrent = path === current;
+    let selectableCount = isCurrent ? 0 : 1;
+    for (let i = 0; i < children.length; i++) selectableCount += children[i].selectableCount;
+    return {
+        path,
+        label: moveNodeLabel(parentDir, path),
+        depth,
+        isCurrent,
+        children,
+        selectableCount,
+    };
+}
+
+// Rows visible under the current expansion (no filter) — used to size the
+// popover so the default-expanded top level fills it without dead space.
+function countVisibleMoveRows(nodes: MoveNode[]): number {
+    let n = 0;
+    for (let i = 0; i < nodes.length; i++) {
+        const node = nodes[i];
+        n += 1;
+        if (node.children.length > 0 && moveExpansion.has(node.path)) {
+            n += countVisibleMoveRows(node.children);
+        }
+    }
+    return n;
+}
+
+function moveSubtreeMatches(n: MoveNode, q: string): boolean {
+    if (n.label.toLowerCase().indexOf(q) >= 0) return true;
+    for (let i = 0; i < n.children.length; i++) {
+        if (moveSubtreeMatches(n.children[i], q)) return true;
+    }
+    return false;
+}
+
+function performMoveTo(destPath: string): void {
+    const ctx = moveCtx;
+    if (ctx === null) return;
+    const res = moveImportableEntry(ctx.entryPath, ctx.section, ctx.identity, destPath);
+    if (!res.ok) {
+        ChatLib.chat(`&c[htsw] Move failed: ${res.message}`);
+        return;
+    }
+    for (let i = 0; i < res.movedFiles.length; i++) closeTab(res.movedFiles[i].from);
+    invalidateParseCacheEntry(ctx.entryPath);
+    requestParse(ctx.entryPath);
+    bumpTreeRevision();
+    ChatLib.chat(`&a[htsw] Moved '${ctx.identity}' to ${shortPath(destPath)}.`);
+    closeAllPopovers();
+}
+
+function moveRowElement(n: MoveNode, expanded: boolean): Element {
+    const hasChildren = n.children.length > 0;
+    const children: Element[] = [];
+    if (n.depth > 0) {
+        children.push(
+            Container({
+                style: { width: { kind: "px", value: n.depth * MOVE_INDENT } },
+                children: [],
+            })
+        );
+    }
+    if (hasChildren) {
+        children.push(
+            caretButton(
+                expanded,
+                () => {
+                    if (moveExpansion.has(n.path)) moveExpansion.delete(n.path);
+                    else moveExpansion.add(n.path);
+                },
+                MOVE_CARET_W
+            )
+        );
+    } else {
+        children.push(
+            Container({
+                style: { width: { kind: "px", value: MOVE_CARET_W } },
+                children: [],
+            })
+        );
+    }
+    // Every destination is an import.json — the same blue { } the main tree
+    // uses. Expandable ones are distinguished by the caret, not a folder icon.
+    children.push(Icon({ name: Icons.fileJson, color: ACCENT_INFO }));
+    children.push(
+        Container({ style: { width: { kind: "px", value: 6 } }, children: [] })
+    );
+    children.push(
+        Text({
+            text: n.label,
+            color: n.isCurrent ? COLOR_TEXT_DIM : COLOR_TEXT,
+            truncate: true,
+            style: { width: { kind: "grow" } },
+        })
+    );
+    if (n.isCurrent) {
+        children.push(Text({ text: "here", color: COLOR_TEXT_FAINT }));
+    } else if (hasChildren) {
+        children.push(Text({ text: String(n.selectableCount), color: COLOR_TEXT_FAINT }));
+    }
+    return Container({
+        style: {
+            direction: "row",
+            align: "center",
+            padding: [
+                { side: "left", value: 4 },
+                { side: "right", value: 6 },
+            ],
+            height: { kind: "px", value: MOVE_ROW_H },
+            background: ROW_BG,
+            hoverBackground: n.isCurrent ? ROW_BG : ROW_HOVER_BG,
+        },
+        onClick: n.isCurrent
+            ? undefined
+            : (_rect, info) => {
+                  if (info.isDoubleClickSecond) return;
+                  if (info.button !== 0) return;
+                  performMoveTo(n.path);
+              },
+        children,
+    });
+}
+
+function moveTreeRows(): Element[] {
+    const q = moveFilter.trim().toLowerCase();
+    const filtering = q.length > 0;
+    const out: Element[] = [];
+    const emit = (n: MoveNode): void => {
+        if (filtering && !moveSubtreeMatches(n, q)) return;
+        const hasChildren = n.children.length > 0;
+        const expanded = filtering ? true : moveExpansion.has(n.path);
+        out.push(moveRowElement(n, expanded));
+        if (hasChildren && expanded) {
+            for (let i = 0; i < n.children.length; i++) emit(n.children[i]);
+        }
+    };
+    for (let i = 0; i < moveTreeRoots.length; i++) emit(moveTreeRoots[i]);
+    if (out.length === 0) {
+        out.push(
+            Container({
+                style: { padding: 8 },
+                children: [Text({ text: "No matches", color: COLOR_TEXT_DIM })],
+            })
+        );
+    }
+    return out;
+}
+
+function moveMenuWidth(nodes: MoveNode[]): number {
+    let maxW = 150;
+    const visit = (n: MoveNode): void => {
+        const chrome = 4 + n.depth * MOVE_INDENT + MOVE_CARET_W + 16 + 6 + 24 + 6;
+        const w = chrome + Renderer.getStringWidth(n.label);
+        if (w > maxW) maxW = w;
+        for (let i = 0; i < n.children.length; i++) visit(n.children[i]);
+    };
+    for (let i = 0; i < nodes.length; i++) visit(nodes[i]);
+    return maxW > 340 ? 340 : maxW;
+}
+
 function openMoveToMenu(parent: ResultImport, imp: Importable): void {
     if (parent.parse === null) return;
+    const root = includeTreeOf(parent);
+    const rootPath = canonicalPath(root.path);
     const current = canonicalPath(importableDeclaringPath(imp, parent.parse));
-    const candidates: Array<{ label: string; path: string }> = [];
-    const visit = (node: IncludeNode): void => {
-        const full = canonicalPath(node.path);
-        if (full !== current) {
-            candidates.push({ label: includeGroupLabel(parent, full), path: full });
+    const projectDir = dirOfPath(rootPath);
+
+    moveExpansion.clear();
+    let total: number;
+    if (rootPath === current) {
+        // The importable lives in the entry file itself — drop that row and lift
+        // its includes to the top level so the picker isn't rooted at a single
+        // disabled "here" node.
+        moveTreeRoots = [];
+        for (let i = 0; i < root.includes.length; i++) {
+            moveTreeRoots.push(buildMoveNode(root.includes[i], projectDir, 0, current));
         }
-        for (let i = 0; i < node.includes.length; i++) visit(node.includes[i]);
+        total = 0;
+        for (let i = 0; i < moveTreeRoots.length; i++) total += moveTreeRoots[i].selectableCount;
+    } else {
+        const rootNode = buildMoveNode(root, projectDir, 0, current);
+        moveTreeRoots = [rootNode];
+        total = rootNode.selectableCount;
+    }
+    if (total === 0) {
+        ChatLib.chat("&7[htsw] Nowhere else to move it.");
+        return;
+    }
+
+    // Expand the top-level folders so the picker opens showing real
+    // destinations rather than a near-empty box; deeper levels stay collapsed.
+    for (let i = 0; i < moveTreeRoots.length; i++) {
+        if (moveTreeRoots[i].children.length > 0) moveExpansion.add(moveTreeRoots[i].path);
+    }
+
+    moveFilter = "";
+    moveShowSearch = total > MOVE_SEARCH_THRESHOLD;
+    const ctx = {
+        entryPath: parent.fullPath,
+        section: SECTION_BY_TYPE[imp.type],
+        identity: importableIdentity(imp),
     };
-    visit(includeTreeOf(parent));
-    if (candidates.length === 0) return;
-    const identity = importableIdentity(imp);
-    const section = SECTION_BY_TYPE[imp.type];
-    openMenu(
-        lastMenuX,
-        lastMenuY,
-        candidates.map((c) => ({
-            label: c.label,
-            onClick: () => {
-                const res = moveImportableEntry(parent.fullPath, section, identity, c.path);
-                if (!res.ok) {
-                    ChatLib.chat(`&c[htsw] Move failed: ${res.message}`);
-                    return;
-                }
-                for (let i = 0; i < res.movedFiles.length; i++) {
-                    closeTab(res.movedFiles[i].from);
-                }
-                invalidateParseCacheEntry(parent.fullPath);
-                requestParse(parent.fullPath);
-                bumpTreeRevision();
-                ChatLib.chat(`&a[htsw] Moved '${identity}' to ${shortPath(c.path)}.`);
-            },
-        }))
+    moveCtx = ctx;
+
+    const visibleCount = countVisibleMoveRows(moveTreeRoots);
+    const visibleRows = visibleCount < 2 ? 2 : visibleCount > 12 ? 12 : visibleCount;
+    const scrollH = visibleRows * MOVE_ROW_H + 4;
+    const height = 8 + 10 + (moveShowSearch ? 12 + 22 : 6) + scrollH + 8;
+
+    const contentChildren: Element[] = [
+        Text({ text: `Move '${ctx.identity}' to…`, color: ACCENT_WARN, truncate: true }),
+    ];
+    if (moveShowSearch) {
+        contentChildren.push(
+            Input({
+                id: "move-to-filter",
+                value: () => moveFilter,
+                onChange: (v) => {
+                    moveFilter = v;
+                },
+                placeholder: "Filter destinations…",
+                style: { width: { kind: "grow" }, height: { kind: "px", value: 22 } },
+            })
+        );
+    }
+    contentChildren.push(
+        Scroll({
+            id: "move-to-tree",
+            style: { gap: 1, height: { kind: "grow" } },
+            children: () => moveTreeRows(),
+        })
     );
+    const content = Col({
+        style: { padding: 8, gap: 6, height: { kind: "grow" } },
+        children: contentChildren,
+    });
+
+    const titleW = Renderer.getStringWidth(`Move '${ctx.identity}' to…`) + 20;
+    const width = Math.min(340, Math.max(moveMenuWidth(moveTreeRoots), titleW));
+
+    openPopover({
+        anchor: { x: lastMenuX, y: lastMenuY, w: 0, h: 0 },
+        excludeAnchor: false,
+        content,
+        width,
+        height,
+        key: "move-to",
+    });
 }
 
 function importableActions(parent: ResultImport, imp: Importable): MenuAction[] {
@@ -480,10 +832,120 @@ function importableActions(parent: ResultImport, imp: Importable): MenuAction[] 
     return composeImportableMenu(extras, target, item);
 }
 
+function collectSubtreeImportables(node: IncludeNode, out: Importable[]): void {
+    for (let i = 0; i < node.includes.length; i++) {
+        collectSubtreeImportables(node.includes[i], out);
+    }
+    for (let i = 0; i < node.importables.length; i++) {
+        out.push(node.importables[i]);
+    }
+}
+
+function queueImportables(parent: ResultImport, importables: readonly Importable[]): void {
+    for (let i = 0; i < importables.length; i++) {
+        const imp = importables[i];
+        addToQueue(makeImportableQueueItem(imp, parent.fullPath));
+        const key = importableKey(imp.type, importableIdentity(imp));
+        if (!isImportableChecked(key)) toggleImportableChecked(key);
+    }
+}
+
+function queueImportJsonSubtree(parent: ResultImport, node: IncludeNode): void {
+    const importables: Importable[] = [];
+    collectSubtreeImportables(node, importables);
+    queueImportables(parent, importables);
+}
+
 // Where the last row menu opened. Submenus ("Move to…") anchor here because
 // a MenuAction's onClick receives no coordinates of its own.
 let lastMenuX = 0;
 let lastMenuY = 0;
+
+const DISCLOSURE_W = 34;
+const QUEUE_W = 28;
+const CONTROL_W = 26;
+const INNER_GAP = 6;
+
+function typeMarker(color: number): Element {
+    return Container({
+        style: {
+            width: { kind: "px", value: 6 },
+            height: { kind: "px", value: 12 },
+            background: color,
+        },
+        children: [],
+    });
+}
+
+function fileIconFor(r: Result): Element {
+    if (r.type === "import") {
+        return Icon({ name: Icons.fileJson, color: ACCENT_INFO });
+    }
+    if (r.type === "script") {
+        return Icon({ name: Icons.fileCode, color: IMPORTABLE_TYPE_COLORS.FUNCTION });
+    }
+    return Icon({ name: Icons.fileBox, color: IMPORTABLE_TYPE_COLORS.ITEM });
+}
+
+function caretButton(expanded: boolean, onToggle: () => void, width: number = CONTROL_W): Element {
+    return Container({
+        style: {
+            direction: "row",
+            width: { kind: "px", value: width },
+            height: { kind: "grow" },
+            align: "center",
+            justify: "center",
+            hoverBackground: ROW_HOVER_BG,
+        },
+        onClick: (_rect, info) => {
+            if (info.button !== 0) return;
+            onToggle();
+        },
+        children: [
+            Icon({
+                name: expanded ? Icons.chevronDown : Icons.chevronRight,
+            }),
+        ],
+    });
+}
+
+function queueCheckbox(checked: boolean, onToggle: () => void): Element {
+    const color = checked ? ACCENT_SUCCESS : COLOR_TEXT_DIM;
+    return Container({
+        style: {
+            direction: "row",
+            width: { kind: "px", value: QUEUE_W },
+            height: { kind: "grow" },
+            align: "center",
+            justify: "center",
+            hoverBackground: ROW_HOVER_BG,
+        },
+        onClick: (_rect, info) => {
+            if (info.isDoubleClickSecond) return;
+            if (info.button !== 0) return;
+            onToggle();
+        },
+        children: [
+            Icon({
+                name: checked ? Icons.squareCheck : Icons.square,
+                color,
+                tooltip: checked ? "Queued" : "Add to queue",
+                tooltipColor: color,
+                style: { width: { kind: "px", value: 12 }, height: { kind: "px", value: 12 } },
+            }),
+        ],
+    });
+}
+
+function rowSlot(w: number): Element {
+    return Container({
+        style: {
+            width: { kind: "px", value: w },
+            height: { kind: "grow" },
+        },
+        children: [],
+    });
+}
 
 function rowHandler(
     actions: MenuAction[],
@@ -519,10 +981,10 @@ export function rootRow(label: string, key: string, actions: MenuAction[]): Elem
         style: {
             direction: "row",
             padding: [
-                { side: "left", value: 3 },
+                { side: "left", value: 0 },
                 { side: "right", value: 6 },
             ],
-            gap: 6,
+            gap: 0,
             align: "center",
             height: { kind: "px", value: 18 },
             background: ROW_BG,
@@ -750,6 +1212,12 @@ export function resultRow(
         ? [
               openInViewAction(r.fullPath),
               {
+                  label: "Queue all importables",
+                  onClick: () => {
+                      queueImportJsonSubtree(r, includeTreeOf(r));
+                  },
+              },
+              {
                   label: "Queue all modified",
                   onClick: () => {
                       queueModifiedFromParse(r.fullPath, r.importables);
@@ -782,42 +1250,32 @@ export function resultRow(
         style: {
             direction: "row",
             padding: [
-                { side: "left", value: 3 },
+                { side: "left", value: 0 },
                 { side: "right", value: 6 },
             ],
-            gap: 6,
+            gap: 0,
             align: "center",
             height: { kind: "px", value: 18 },
             background: ROW_BG,
             hoverBackground: ROW_HOVER_BG,
         },
-        onClick: rowHandler(actions, () => {
-            if (isImport) {
-                importExpansion.set(expKey, !expanded);
-                bumpTreeRevision();
-            }
-        }),
-        onDoubleClick: () => {
-            if (isImport) {
-                // The first click of the double toggled expansion; a double-click
-                // means "open", not "expand" — toggle it back (same undo pattern
-                // as the checkbox rows).
-                importExpansion.set(expKey, !isImportExpanded(expKey, defaultExpanded));
-                bumpTreeRevision();
-            }
-            previewSelect(r.fullPath);
-            setActiveRightTab("view");
-        },
+        onClick: rowHandler(actions, () => previewSelect(r.fullPath)),
+        onDoubleClick: () => confirmSelect(r.fullPath),
         children: [
+            isImport
+                ? caretButton(expanded, () => {
+                      importExpansion.set(expKey, !expanded);
+                      bumpTreeRevision();
+                  }, DISCLOSURE_W)
+                : rowSlot(DISCLOSURE_W),
+            fileIconFor(r),
+            rowSlot(INNER_GAP),
             Text({
                 text: labelOverride ?? r.path,
+                truncate: true,
                 style: { width: { kind: "grow" } },
             }),
             isImport && houseBindControl(r.fullPath),
-            isImport &&
-                Icon({
-                    name: expanded ? Icons.chevronDown : Icons.chevronRight,
-                }),
         ],
     });
 }
@@ -836,34 +1294,35 @@ export function includeGroupRow(
 ): Element {
     const fullPath = canonicalPath(node.path);
     const expanded = isIncludeGroupExpanded(expKey, defaultExpanded);
-    const actions = composeFileMenu([openInViewAction(fullPath)], fullPath);
+    const actions = composeFileMenu([
+        openInViewAction(fullPath),
+        {
+            label: "Queue all importables",
+            onClick: () => queueImportJsonSubtree(parent, node),
+        },
+    ], fullPath);
     return Container({
         style: {
             direction: "row",
             padding: [
-                { side: "left", value: 3 },
+                { side: "left", value: 0 },
                 { side: "right", value: 6 },
             ],
-            gap: 6,
+            gap: 0,
             align: "center",
             height: { kind: "px", value: 18 },
             background: ROW_BG,
             hoverBackground: ROW_HOVER_BG,
         },
-        onClick: rowHandler(actions, () => {
-            includeGroupExpansion.set(expKey, !expanded);
-            bumpTreeRevision();
-        }),
-        onDoubleClick: () => {
-            // First click of the double toggled — undo it; double means
-            // "open", same pattern as the import.json header rows.
-            includeGroupExpansion.set(expKey, !isIncludeGroupExpanded(expKey, defaultExpanded));
-            bumpTreeRevision();
-            previewSelect(fullPath);
-            setActiveRightTab("view");
-        },
+        onClick: rowHandler(actions, () => previewSelect(fullPath)),
+        onDoubleClick: () => confirmSelect(fullPath),
         children: [
-            Icon({ name: expanded ? Icons.chevronDown : Icons.chevronRight }),
+            caretButton(expanded, () => {
+                includeGroupExpansion.set(expKey, !expanded);
+                bumpTreeRevision();
+            }, DISCLOSURE_W),
+            Icon({ name: Icons.fileJson, color: ACCENT_INFO }),
+            rowSlot(INNER_GAP),
             Text({
                 text: includeGroupLabel(parent, fullPath),
                 truncate: true,
@@ -940,84 +1399,52 @@ function toggleImportableInQueue(
 
 export function importableRow(parent: ResultImport, imp: Importable): Element {
     const previewPath = importablePreviewPath(parent, imp);
-    const cacheState = cacheStateForImportable(imp);
-    const dotColor = cacheState === null ? COLOR_TEXT_FAINT : STATUS_COLOR[cacheState];
-    const dotLabel = cacheState === null ? "loading…" : STATUS_LABEL[cacheState];
     const expandable = isImportableExpandable(imp);
     const expKey = importableExpansionKey(parent.fullPath, imp);
     const expanded = importableExpansion.has(expKey);
     const checkKey = importableKey(imp.type, importableIdentity(imp));
     const checked = isImportableChecked(checkKey);
     const diagCounts = diagnosticCountsFor(parent.parse, imp);
+    const showBadge = diagCounts.errors > 0 || diagCounts.warnings > 0;
     return Container({
         style: {
             direction: "row",
             width: { kind: "grow" },
             height: { kind: "grow" },
-            padding: { side: "x", value: 3 },
-            gap: 6,
+            padding: [
+                { side: "left", value: 0 },
+                { side: "right", value: 3 },
+            ],
+            gap: 0,
             align: "center",
             background: ROW_BG,
             hoverBackground: ROW_HOVER_BG,
         },
-        onClick: rowHandler(importableActions(parent, imp), () => {
-            toggleImportableInQueue(parent, imp, checkKey, checked);
-        }),
-        onDoubleClick: () => {
-            toggleImportableInQueue(parent, imp, checkKey, checked);
-            previewSelect(previewPath);
-            setActiveRightTab("view");
-        },
+        onClick: rowHandler(importableActions(parent, imp), () => previewSelect(previewPath)),
+        onDoubleClick: () => confirmSelect(previewPath),
         children: [
-            Text({
-                text: checked ? "[x]" : "[ ]",
-                color: checked ? ACCENT_SUCCESS : COLOR_TEXT_DIM,
-                style: { width: { kind: "px", value: 14 } },
-            }),
-            Container({
-                style: {
-                    width: { kind: "px", value: 6 },
-                    height: { kind: "px", value: 12 },
-                    background: IMPORTABLE_TYPE_COLORS[imp.type],
-                },
-                children: [],
-            }),
-            Text({
-                text: GLYPH_DOT,
-                color: dotColor,
-                tooltip: dotLabel,
-                tooltipColor: dotColor,
-                style: { width: { kind: "px", value: 6 } },
-            }),
+            queueCheckbox(checked, () => toggleImportableInQueue(parent, imp, checkKey, checked)),
+            typeMarker(IMPORTABLE_TYPE_COLORS[imp.type]),
+            rowSlot(INNER_GAP),
+            importableStatus(imp),
+            rowSlot(INNER_GAP),
             imp.type === "FUNCTION" && imp.icon !== undefined &&
                 McItem({ item: imp.icon.item, count: imp.icon.count ?? 1 }),
+            imp.type === "FUNCTION" && imp.icon !== undefined && rowSlot(INNER_GAP),
             Text({
                 text: importableLabel(imp),
                 truncate: true,
                 style: { width: { kind: "grow" } },
             }),
-            (diagCounts.errors > 0 || diagCounts.warnings > 0) &&
-                diagnosticBadge(diagCounts),
-            Text({ text: imp.type, color: 0xff8a92a3 | 0 }),
+            rowSlot(INNER_GAP),
+            showBadge && diagnosticBadge(diagCounts),
+            showBadge && rowSlot(INNER_GAP),
+            Text({ text: imp.type, color: COLOR_TEXT_DIM }),
             expandable &&
-                Container({
-                    style: {
-                        width: { kind: "px", value: 14 },
-                        height: { kind: "grow" },
-                        align: "center",
-                    },
-                    onClick: (_rect, info) => {
-                        if (info.isDoubleClickSecond) return;
-                        if (info.button !== 0) return;
-                        if (expanded) importableExpansion.delete(expKey);
-                        else importableExpansion.add(expKey);
-                        bumpTreeRevision();
-                    },
-                    children: [
-                        Icon({
-                            name: expanded ? Icons.chevronDown : Icons.chevronRight,
-                        }),
-                    ],
+                caretButton(expanded, () => {
+                    if (expanded) importableExpansion.delete(expKey);
+                    else importableExpansion.add(expKey);
+                    bumpTreeRevision();
                 }),
         ],
     });
@@ -1034,22 +1461,23 @@ export function subRow(parent: ResultImport, imp: Importable, kind: SubListKind)
             width: { kind: "grow" },
             height: { kind: "grow" },
             padding: { side: "x", value: 3 },
-            gap: 6,
+            gap: 0,
             align: "center",
             background: ROW_BG,
             hoverBackground: ROW_HOVER_BG,
         },
-        onClick: rowHandler(actions, () => {
-            /* preview is on double-click, matching every other row */
-        }),
-        onDoubleClick: () => {
-            previewSelect(target);
-            setActiveRightTab("view");
-        },
+        onClick: rowHandler(actions, () => previewSelect(target)),
+        onDoubleClick: () => confirmSelect(target),
         children: [
+            Icon({
+                name: Icons.fileCode,
+                color: IMPORTABLE_TYPE_COLORS[imp.type],
+                style: { width: { kind: "px", value: 11 }, height: { kind: "px", value: 11 } },
+            }),
+            rowSlot(INNER_GAP),
             Text({
                 text: label,
-                color: 0xff8a92a3 | 0,
+                color: COLOR_TEXT_DIM,
                 style: { width: { kind: "grow" } },
             }),
         ],
@@ -1096,6 +1524,7 @@ export function metadataRow(parent: ResultImport, imp: Importable, field: Metada
             Text({
                 text: field.value,
                 color: field.diff !== undefined ? DIFF_COLOR[field.diff] : COLOR_TEXT_DIM,
+                truncate: true,
                 style: { width: { kind: "grow" } },
             }),
         ],
