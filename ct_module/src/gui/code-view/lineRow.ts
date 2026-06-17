@@ -294,7 +294,7 @@ function linkRunAt(
     for (let i = 0; i < tokens.length; i++) {
         const token = tokens[i];
         const w = chatWidth(token.text, false);
-        if (x >= cursor && x <= cursor + w) {
+        if (x >= cursor && x < cursor + w) {
             return token.linkTarget === undefined
                 ? null
                 : { target: token.linkTarget, start: cursor, width: w };

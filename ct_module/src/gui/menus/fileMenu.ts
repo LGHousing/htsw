@@ -12,8 +12,10 @@ import {
 } from "../right-panel/import-tab/queue";
 
 function isImportJsonPath(filePath: string): boolean {
-    const normalized = filePath.replace(/\\/g, "/").toLowerCase();
-    return normalized === "import.json" || normalized.lastIndexOf("/import.json") === normalized.length - "/import.json".length;
+    const normalized = String(filePath).split("\\").join("/").toLowerCase();
+    const slash = normalized.lastIndexOf("/");
+    const base = slash < 0 ? normalized : normalized.substring(slash + 1);
+    return base === "import.json";
 }
 
 /**

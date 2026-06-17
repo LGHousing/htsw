@@ -25,6 +25,10 @@ function parentBasename(norm: string): string {
     return basename(norm.substring(0, slash));
 }
 
+function endsWith(s: string, suffix: string): boolean {
+    return s.length >= suffix.length && s.substring(s.length - suffix.length) === suffix;
+}
+
 function mcRoot(): string {
     if (cachedMcRoot !== null) return cachedMcRoot;
     try {
@@ -89,7 +93,7 @@ export function compactFileLabel(p: string): string {
         const parent = parentBasename(norm);
         return parent.length === 0 ? base : `${parent}.import.json`;
     }
-    if (lower.lastIndexOf(".json") === lower.length - ".json".length) return base;
+    if (endsWith(lower, ".json")) return base;
     const dot = base.lastIndexOf(".");
     return dot <= 0 ? base : base.substring(0, dot);
 }
@@ -101,7 +105,7 @@ export function compactFileLabel(p: string): string {
 export function shortPath(p: string): string {
     let norm = normalizeHtswPath(p).split("\\").join("/");
     const tail = "/import.json";
-    if (norm.substring(norm.length - tail.length) === tail) {
+    if (endsWith(norm, tail)) {
         norm = norm.substring(0, norm.length - tail.length);
     }
     return compactPathFromNormalized(norm);
