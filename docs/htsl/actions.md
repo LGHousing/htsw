@@ -2,6 +2,13 @@
 
 Actions in HTSL are declared with a keyword and positional arguments.
 
+```htsl
+chat "Hello, World!"
+tp Custom_Coordinates "0 0 0"
+```
+
+A newline terminates an action; All positional arguments must be on the same
+ line.
 
 ## List of Actions
 
@@ -510,5 +517,29 @@ Locations are typed with a (case insensitive) identifier:
 | Custom Coordinates   | Custom_Coordinates   |
 
 Custom Coordinates must be followed by a coordinate string.
+
+---
+
+### Action Notes
+
+An action can be annotated with a note by placing a `///` line above it.
+
+```htsl
+/// Clear the player's coins if they have more than 10
+if (var coins > 10) {
+    var coins = 0
+}
+
+/// You can see this note in-game!
+chat "Hello, World"
+```
+
+Note that you will get an error for orphaned notes:
+
+```htsl
+var x = 5
+
+/// Orphaned comment
+```
 
 ---
