@@ -2,7 +2,7 @@
 
 /**
  * Import-tab action surfaces: the export destination picker popover, the
- * bottom action row (Auto-proceed / Import / caret), and the caret popover
+ * bottom action row (Import / caret), and the caret popover
  * content. Pure UI — all state lives elsewhere.
  */
 
@@ -25,7 +25,7 @@ import {
     SIZE_ROW_H,
 } from "../../lib/theme";
 import { closeAllPopovers, togglePopover } from "../../lib/popovers";
-import { normalizeHtswPath, shortPath } from "../../lib/pathDisplay";
+import { compactFileLabel, normalizeHtswPath, shortPath } from "../../lib/pathDisplay";
 import {
     clearImportableChecks,
     getAutoTrackSources,
@@ -41,21 +41,11 @@ import { openFileBrowserWithImportJsonSelection } from "../../popovers/file-brow
 import { openNewProjectPopover } from "../../popovers/new-project";
 import { getAlias } from "../../../importCache/aliases";
 import { boundImportJsonPath } from "../../../importCache/houseBindings";
-import { getImportProgress } from "./importProgress";
-import { getStepAuto, setStepAuto } from "../../../housingSync/stepGate";
 import { startImport } from "./importController";
 import { createEmptyProjectFiles } from "htsw-editor-common/project";
 import { ctProjectFs } from "../../../project/projectFs";
 
 import { PROJECTS_ROOT } from "../../../project/paths";
-
-// ── Path helpers (used only by the destination picker) ────────────────
-
-function basename(p: string): string {
-    const norm = p.split("\\").join("/");
-    const slash = norm.lastIndexOf("/");
-    return slash < 0 ? norm : norm.substring(slash + 1);
-}
 
 // ── Destination state helpers ──────────────────────────────────────────
 
@@ -85,6 +75,7 @@ function createExportProject(name: string): void {
 
 function pushUniquePath(out: string[], path: string): void {
     const norm = normalizeHtswPath(path);
+    if (norm.trim() === "") return;
     for (let i = 0; i < out.length; i++) {
         if (out[i] === norm) return;
     }
@@ -130,13 +121,14 @@ function destinationRow(path: string, boundPath: string | null): Element {
         children: [
             Icon({ name: selected ? Icons.check : Icons.fileJson }),
             Text({
-                text: basename(path),
+                text: compactFileLabel(path),
                 color: bound ? ACCENT_SUCCESS : COLOR_TEXT,
                 style: { width: { kind: "px", value: 96 } },
             }),
             Text({
                 text: shortPath(path),
                 color: COLOR_TEXT_DIM,
+                truncate: true,
                 style: { width: { kind: "grow" } },
             }),
             ...(bound
@@ -247,26 +239,10 @@ function importCaretPopoverContent(): Element {
     });
 }
 
-// Idle-only: during a run, Pause/Step live in the progress strip, so this
-// toggle only sets whether the next import starts in step mode.
-function autoProceedButton(): Element {
-    return Button({
-        text: () => (getStepAuto() ? "Auto-proceed: On" : "Auto-proceed: Off"),
-        style: {
-            width: { kind: "grow" },
-            height: { kind: "grow" },
-            background: COLOR_BUTTON,
-            hoverBackground: COLOR_BUTTON_HOVER,
-        },
-        onClick: () => setStepAuto(!getStepAuto()),
-    });
-}
-
-export function importActionRow(): Element {
+export function importControl(): Element {
     return Row({
         style: { gap: 4, height: { kind: "px", value: 18 } },
         children: [
-            ...(getImportProgress() === null ? [autoProceedButton()] : []),
             Button({
                 icon: Icons.upload,
                 text: () => {

@@ -31,10 +31,15 @@ import {
     getProgressTracePath,
     setProgressTraceEnabled,
 } from "./housingSync/trace/progressTrace";
+import {
+    clearLagProbeSamples,
+    getLagProbeSamples,
+} from "./diagnostics/lagProbe";
 import { getCurrentHousingUuid } from "./importCache";
 import { isInCreativeMode } from "./housingSync/sideEffects";
 import { startImport } from "./gui/right-panel/import-tab/importController";
-import { canonicalPath } from "./gui/parsing/parses";
+import { canonicalPath, getParsePerfStats } from "./gui/parsing/parses";
+import { compactFileLabel } from "./gui/lib/pathDisplay";
 import { snbtFromItem } from "./housingSync/itemCapture";
 import {
     defaultExportRoot,
@@ -117,6 +122,18 @@ const HTSW_SUBCOMMANDS: HtswSubcommand[] = [
         name: "treeperf",
         summary: "Show importables tree render stats",
         run: commandTreePerf,
+        hidden: true,
+    },
+    {
+        name: "parseperf",
+        summary: "Show recent import.json parse timings",
+        run: commandParsePerf,
+        hidden: true,
+    },
+    {
+        name: "lagprobe",
+        summary: "Show recent main-thread stall samples",
+        run: commandLagProbe,
         hidden: true,
     },
 ];
@@ -221,6 +238,53 @@ function commandTreePerf(): void {
         `${s.builds} rebuild(s), last ${s.lastBuildMs}ms, max ${s.maxBuildMs}ms. ` +
         `Rebuilds should tick ~3/s while the tab is open (300ms TTL), not 60/s.`
     );
+}
+
+function commandParsePerf(): void {
+    const entries = getParsePerfStats();
+    if (entries.length === 0) {
+        ChatLib.chat("&7[parseperf] no parse cache activity recorded yet.");
+        return;
+    }
+    ChatLib.chat("&7[parseperf] recent import.json parse/cache reads:");
+    for (let i = 0; i < entries.length; i++) {
+        const e = entries[i];
+        const age = Math.max(0, Math.round((Date.now() - e.at) / 1000));
+        ChatLib.chat(
+            `&7  ${e.source} &f${e.ms}ms &8${age}s ago &7${shortPerfPath(e.path)}`
+        );
+    }
+}
+
+function shortPerfPath(path: string): string {
+    const norm = path.replace(/\\/g, "/");
+    const parts = norm.split("/").filter((p) => p.length > 0);
+    if (parts.length <= 4) return norm;
+    return `.../${parts.slice(parts.length - 4).join("/")}`;
+}
+
+function commandLagProbe(args: string[]): void {
+    if (args[0] === "clear") {
+        clearLagProbeSamples();
+        ChatLib.chat("&a[lagprobe] cleared samples.");
+        return;
+    }
+    const samples = getLagProbeSamples();
+    if (samples.length === 0) {
+        ChatLib.chat("&7[lagprobe] no >250ms main-thread gaps recorded.");
+        return;
+    }
+    ChatLib.chat("&7[lagprobe] recent >250ms main-thread gaps:");
+    for (let i = 0; i < samples.length; i++) {
+        const s = samples[i];
+        const age = Math.max(0, Math.round((Date.now() - s.at) / 1000));
+        ChatLib.chat(
+            `&7  &f${s.gapMs}ms&7 ${age}s ago screen=${s.screen} ` +
+            `import=${s.importing ? "yes" : "no"} task=${s.taskRunning ? "yes" : "no"} ` +
+            `waiters t${s.waiters.tick}/pr${s.waiters.packetReceived}/ps${s.waiters.packetSent}/m${s.waiters.message}`
+        );
+        ChatLib.chat(`&8    last parse: ${s.lastParse}`);
+    }
 }
 
 function itemSaveDestination(
@@ -465,9 +529,14 @@ function commandImport(args: string[]) {
     // progress UI. buildBatches parses the file on demand via the parse
     // cache and gates on diagnostics, so no separate parse pass is needed.
     const canon = canonicalPath(importPath);
-    const slash = canon.lastIndexOf("/");
-    const label = slash >= 0 ? canon.substring(slash + 1) : canon;
-    startImport([{ operation: "import", kind: "importJson", sourcePath: canon, label }]);
+    startImport([
+        {
+            operation: "import",
+            kind: "importJson",
+            sourcePath: canon,
+            label: compactFileLabel(canon),
+        },
+    ]);
 }
 
 function commandSimulator(args: string[]) {

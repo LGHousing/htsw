@@ -188,7 +188,7 @@ function suggestionRow(item: string, jsonPath: string, imp: Importable): Element
         },
         onClick: () => { editingValue = item; saveField(jsonPath, imp, "icon"); },
         children: [
-            Text({ text: item, color: COLOR_TEXT_DIM, style: { width: { kind: "grow" } } }),
+            Text({ text: item, color: COLOR_TEXT_DIM, truncate: true, style: { width: { kind: "grow" } } }),
         ],
     });
 }

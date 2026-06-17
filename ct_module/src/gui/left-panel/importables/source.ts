@@ -1,7 +1,7 @@
 /// <reference types="../../../../CTAutocomplete" />
 
 import { Result, ResultImport, bumpTreeRevision } from "./rowModel";
-import { requestParse } from "../../parsing/parses";
+import { isParsePending, requestParse } from "../../parsing/parses";
 
 export type SourceDir = {
     kind: "dir";
@@ -150,6 +150,7 @@ function visitFile(p: any, root: any, out: Result[]): void {
             path,
             fullPath,
             importables: cached?.parsed?.value ?? [],
+            parsePending: cached === null || isParsePending(fullPath),
             parse: cached?.parsed ?? null,
             parseError: cached?.error ?? undefined,
         };
@@ -265,6 +266,7 @@ export function enumerateForSource(s: Source): Result[] {
         // Cold entries return null here and warm up off-frame; only adopt a
         // real parse so we never blank out rows we've already shown.
         const fresh = requestParse(r.fullPath);
+        r.parsePending = fresh === null || isParsePending(r.fullPath);
         if (fresh !== null && fresh.parsed !== r.parse) {
             r.importables = fresh.parsed?.value ?? [];
             r.parse = fresh.parsed;

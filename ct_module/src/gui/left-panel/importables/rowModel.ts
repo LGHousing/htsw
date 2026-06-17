@@ -13,6 +13,7 @@ export type ResultImport = {
     fullPath: string;
     /** Importables parsed out of this import.json (empty if parse failed). */
     importables: Importable[];
+    parsePending: boolean;
     /** The parse result this row's importables came from. Lets callers
      * resolve `imp` through `importableSourcePath(imp, parse)` against the
      * correct source map — without it, the WeakMap lookup misses and we

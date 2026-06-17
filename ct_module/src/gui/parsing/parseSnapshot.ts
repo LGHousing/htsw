@@ -21,12 +21,9 @@
  * recorded mtime, or we fall through to a full parse. Missing included import.json files are stored in the
  * fingerprint with mtime 0, so creating them invalidates the snapshot.
  *
- * Snapshots are also stamped with the writing build's bundle mtime and
- * rejected by any other build: a snapshot stores parser OUTPUT, so a
- * parser change must invalidate it even when no source file changed.
- * Without this, a snapshot written by an old build keeps serving
- * importables in the old build's dialect forever — /ct reload, rebuilds,
- * and knowledge-cache deletes never touch it.
+ * Parser-output shape changes must bump the snapshot `version` below.
+ * Tying snapshots to the deployed GUI bundle mtime made every UI-only
+ * deploy force a full reparse of every project on first open.
  */
 
 import {
@@ -40,7 +37,6 @@ import {
 } from "htsw";
 import type { Importable } from "htsw/types";
 
-import { MODULE_DIR } from "../../autoUpdate";
 import { FileSystemFileLoader } from "../../utils/fileLoaders";
 import { ensureParentDirs } from "../../utils/filesystem";
 import { getMtimeMs } from "../lib/java";
@@ -52,13 +48,6 @@ import {
 } from "./importablePaths";
 
 const SNAPSHOT_DIR = "./htsw/.parse-snapshots";
-const MODULE_BUNDLE = MODULE_DIR + "/index.js";
-// Captured at load so it identifies the build that is RUNNING. Reading it
-// at save time instead would stamp snapshots with a freshly-deployed
-// bundle's mtime while the old parser is still executing, making its
-// output pass validation after the reload. 0 when the bundle isn't at the
-// standard path (renamed dev install) — then snapshots skip the check.
-const RUNNING_BUNDLE_MTIME = getMtimeMs(MODULE_BUNDLE);
 
 // gcx.fileTree with each importable replaced by its index into the
 // snapshot's flat `importables` array — serializing the objects in place
@@ -95,12 +84,6 @@ type SnapshotDiagnostic = {
 type Snapshot = {
     version: 10;
     importJsonPath: string;
-    // Deployed-bundle mtime of the build that wrote this snapshot. Kept
-    // separate from `fingerprint` on purpose: parses.ts reuses the
-    // fingerprint for its periodic freshness re-stat, and a mid-session
-    // redeploy must not throw the running session into a reparse loop —
-    // the build check only matters once, at load.
-    bundleMtime: number;
     fingerprint: { [path: string]: number };
     importables: Importable[];
     sourcePaths: (string | null)[];
@@ -141,17 +124,6 @@ export function loadSnapshot(importJsonPath: string): Snapshot | null {
         const parsed = JSON.parse(raw) as Snapshot;
         if (parsed.version !== 10) return null;
         if (parsed.importJsonPath !== importJsonPath) return null;
-        // A snapshot stores parser OUTPUT, so it's only valid for the build
-        // that wrote it. 0 on either side = bundle not at the standard path;
-        // fail open like before this check existed.
-        if (
-            typeof parsed.bundleMtime !== "number" ||
-            (parsed.bundleMtime !== 0 &&
-                RUNNING_BUNDLE_MTIME !== 0 &&
-                parsed.bundleMtime !== RUNNING_BUNDLE_MTIME)
-        ) {
-            return null;
-        }
         if (!Array.isArray(parsed.importables)) return null;
         if (!Array.isArray(parsed.sourcePaths)) return null;
         if (!Array.isArray(parsed.subListPaths)) return null;
@@ -280,7 +252,6 @@ export function saveSnapshot(
     const snapshot: Snapshot = {
         version: 10,
         importJsonPath,
-        bundleMtime: RUNNING_BUNDLE_MTIME,
         fingerprint,
         importables: result.value,
         sourcePaths,

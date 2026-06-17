@@ -1,4 +1,3 @@
-import { clickGoBack } from "../../housingSync/gui/menuUtils";
 import {
     timedWaitForMenu,
     timedWaitForUnformattedMessage,
@@ -6,6 +5,7 @@ import {
 import TaskContext from "../../tasks/context";
 import { MouseButton } from "../../tasks/specifics/slots";
 import { removedFormatting, unique } from "../../utils/helpers";
+import { getSessionMenuNamesLower, noteMenuCreated } from "./listMenus";
 
 export async function openMenuEditor(
     ctx: TaskContext,
@@ -18,7 +18,7 @@ export async function openMenuEditor(
         "message",
         (message) =>
             removedFormatting(message) ===
-            "Could not find a menu with that name!"
+            "Could not find a custom menu with that title!"
     );
     const opened = await ctx.withTimeout(
         ctx.race<boolean>([
@@ -85,16 +85,17 @@ export async function ensureMenuNamesExist(
     const names = unique(menuNames);
     if (names.length === 0) return;
 
-    for (const name of names) {
-        const status = await openMenuEditor(ctx, name);
-        if (status === "opened") {
-            await clickGoBack(ctx);
-            onEach?.(name);
-            continue;
-        }
+    const existing = await getSessionMenuNamesLower(ctx);
 
-        await ctx.runCommand(`/menu create ${name}`);
-        await timedWaitForUnformattedMessage(ctx, `Created menu ${name}!`);
+    for (const name of names) {
+        if (!existing.has(name.toLowerCase())) {
+            await ctx.runCommand(`/menu create ${name}`);
+            await timedWaitForUnformattedMessage(
+                ctx,
+                `Created custom menu with the title ${name}!`
+            );
+            noteMenuCreated(name);
+        }
         onEach?.(name);
     }
 }

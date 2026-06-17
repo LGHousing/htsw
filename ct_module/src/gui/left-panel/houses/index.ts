@@ -52,18 +52,19 @@ import {
     COLOR_TEXT,
     COLOR_TEXT_DIM,
     COLOR_TEXT_FAINT,
+    COLOR_TOGGLE_ON,
+    COLOR_TOGGLE_ON_HOVER,
     SIZE_ROW_H,
 } from "../../lib/theme";
 import { HOUSE_CONTENT_TYPES, type HouseContentType } from "./types";
 import { type HouseImportable } from "../../../importCache/cache";
 import { buildCacheStatusRow } from "../../../importCache/status";
-import { confirmSelect, setActiveRightTab } from "../../right-panel/selection";
+import { confirmSelect } from "../../right-panel/selection";
 import { importableSourcePath } from "../../parsing/importablePaths";
+import { linkStatusIcon, type LinkStatusKey } from "../../cache-status";
 import type { Importable } from "htsw/types";
-import type { IconName } from "../../lib/icons.generated";
 
-// Read-only trust glyph tint: green when trusted, faint otherwise. Toggling
-// trust lives only on the Import-tab Trust button; here it's a status icon.
+// Trust glyph tint: green when trusted, faint otherwise.
 const TRUST_ICON_ON = 0xff5cb85c | 0;
 
 // Rhino lacks String.prototype.repeat, so cycle through a fixed table.
@@ -204,13 +205,10 @@ function houseDropdownRow(uuid: string): Element {
             closeHouseDropdown();
         },
         children: [
-            Icon({
-                name: isCurrent ? Icons.target : Icons.circle,
-                style: { width: { kind: "px", value: 10 }, height: { kind: "px", value: 10 } },
-            }),
             Text({
                 text: houseLabel(uuid),
                 color: COLOR_TEXT,
+                truncate: true,
                 style: { width: { kind: "grow" } },
             }),
             (() => {
@@ -224,7 +222,14 @@ function houseDropdownRow(uuid: string): Element {
                     style: { width: { kind: "px", value: 10 }, height: { kind: "px", value: 10 } },
                 });
             })(),
-            Text({ text: isCurrent ? "current" : "", color: COLOR_TEXT_FAINT }),
+            isCurrent &&
+                Icon({
+                    name: Icons.target,
+                    color: COLOR_TEXT_DIM,
+                    tooltip: "Current house",
+                    tooltipColor: COLOR_TEXT_DIM,
+                    style: { width: { kind: "px", value: 10 }, height: { kind: "px", value: 10 } },
+                }),
             Container({
                 style: {
                     direction: "row",
@@ -289,11 +294,37 @@ function openHouseDropdown(rect: Rect): void {
     });
 }
 
-// Single title row: house dropdown trigger, with a read-only trust shield on
-// the left and a refresh/re-detect icon on the right. Trust is toggled only
-// from the Import tab; here the shield just reflects it. Alias lives in the
-// row's right-click menu (and on the Import header), since it's set rarely.
-function housePickerRow(): Element {
+function trustButton(uuid: string | null, trusted: boolean): Element {
+    const enabled = uuid !== null;
+    return Button({
+        style: {
+            width: { kind: "px", value: 76 },
+            height: { kind: "grow" },
+            background: trusted ? COLOR_TOGGLE_ON : COLOR_BUTTON,
+            hoverBackground: trusted ? COLOR_TOGGLE_ON_HOVER : COLOR_BUTTON_HOVER,
+        },
+        onClick: () => {
+            if (uuid === null) return;
+            setHouseTrust(uuid, !trusted);
+        },
+        children: [
+            Icon({
+                name: trusted ? Icons.shieldCheck : Icons.shield,
+                color: trusted ? TRUST_ICON_ON : COLOR_TEXT_DIM,
+                style: {
+                    width: { kind: "px", value: 12 },
+                    height: { kind: "px", value: 12 },
+                },
+            }),
+            Text({
+                text: trusted ? "Trusted" : "Trust",
+                color: enabled ? COLOR_TEXT : COLOR_TEXT_FAINT,
+            }),
+        ],
+    });
+}
+
+function houseSelector(viewed: string | null, isHere: boolean): Element {
     return Container({
         style: {
             direction: "row",
@@ -301,12 +332,11 @@ function housePickerRow(): Element {
             gap: 6,
             padding: { side: "x", value: 8 },
             width: { kind: "grow" },
-            height: { kind: "px", value: SIZE_ROW_H + 6 },
+            height: { kind: "grow" },
             background: COLOR_ROW,
             hoverBackground: COLOR_ROW_HOVER,
         },
         onClick: (rect, info) => {
-            const viewed = viewedUuid();
             if (info.button === 1) {
                 if (viewed !== null) {
                     openMenu(info.x, info.y, [
@@ -319,46 +349,73 @@ function housePickerRow(): Element {
             }
             openHouseDropdown(rect);
         },
+        children: [
+            Text({
+                text: houseLabel(viewed),
+                color: COLOR_TEXT,
+                truncate: true,
+                style: { width: { kind: "grow" } },
+            }),
+            isHere &&
+                Icon({
+                    name: Icons.target,
+                    color: COLOR_TEXT_DIM,
+                    tooltip: "Current house",
+                    tooltipColor: COLOR_TEXT_DIM,
+                    style: { width: { kind: "px", value: 10 }, height: { kind: "px", value: 10 } },
+                }),
+            Icon({
+                name: Icons.chevronDown,
+                style: {
+                    width: { kind: "px", value: 10 },
+                    height: { kind: "px", value: 10 },
+                },
+            }),
+        ],
+    });
+}
+
+// Single title row: house selector, trust/alias controls, and re-detect.
+function housePickerRow(): Element {
+    return Container({
+        style: {
+            direction: "row",
+            align: "center",
+            gap: 6,
+            padding: { side: "x", value: 8 },
+            width: { kind: "grow" },
+            height: { kind: "px", value: SIZE_ROW_H + 6 },
+            background: 0x00000000 | 0,
+        },
         children: () => {
             const viewed = viewedUuid();
             const isHere = viewed !== null && viewed === getHousingUuid();
             const trusted = viewed !== null && isHouseTrusted(viewed);
             return [
-                Icon({
-                    name: trusted ? Icons.shieldCheck : Icons.shield,
-                    color: trusted ? TRUST_ICON_ON : COLOR_TEXT_FAINT,
+                houseSelector(viewed, isHere),
+                trustButton(viewed, trusted),
+                Button({
+                    icon: Icons.pencil,
                     style: {
-                        width: { kind: "px", value: 12 },
-                        height: { kind: "px", value: 12 },
+                        width: { kind: "px", value: 24 },
+                        height: { kind: "grow" },
+                        background: COLOR_BUTTON,
+                        hoverBackground: COLOR_BUTTON_HOVER,
+                    },
+                    onClick: (rect: Rect) => {
+                        if (viewed === null) return;
+                        openAliasPopover(rect, viewed);
                     },
                 }),
-                Text({
-                    text: houseLabel(viewed),
-                    color: COLOR_TEXT,
-                    style: { width: { kind: "grow" } },
-                }),
-                isHere &&
-                    Text({
-                        text: "current",
-                        color: COLOR_TEXT_FAINT,
-                        style: { padding: { side: "right", value: 4 } },
-                    }),
                 Button({
                     icon: Icons.radar,
                     style: {
-                        width: { kind: "px", value: 22 },
+                        width: { kind: "px", value: 24 },
                         height: { kind: "grow" },
                         background: COLOR_BUTTON,
                         hoverBackground: COLOR_BUTTON_HOVER,
                     },
                     onClick: () => detectHousing(),
-                }),
-                Icon({
-                    name: Icons.chevronDown,
-                    style: {
-                        width: { kind: "px", value: 10 },
-                        height: { kind: "px", value: 10 },
-                    },
                 }),
             ];
         },
@@ -378,8 +435,10 @@ function activeType(): HouseContentType {
 function typeTabButton(t: HouseContentType): Element {
     const isActive = activeContentType === t.type;
     return Button({
-        icon: t.icon,
-        text: t.label,
+        children: [
+            Icon({ name: t.icon }),
+            Text({ text: t.label, truncate: true, style: { width: { kind: "grow" } } }),
+        ],
         style: {
             width: { kind: "grow" },
             height: { kind: "grow" },
@@ -419,7 +478,6 @@ function itemRowMenu(t: HouseContentType, uuid: string, name: string, canExport:
             icon: Icons.eye,
             onClick: () => {
                 confirmSelect(sourcePath);
-                setActiveRightTab("view");
             },
         });
     }
@@ -461,34 +519,24 @@ function exportedIdentities(type: HouseContentType["type"]): Set<string> {
     return out;
 }
 
-// How a house importable relates to your import.json:
-//  house-only — in the house, not in your file
-//  unread     — in your file, but its house content hasn't been Read yet
-//  in-sync    — in your file and matches the live house
-//  drifted    — in your file but differs from the live house
-type DriftState = "house-only" | "unread" | "in-sync" | "drifted";
+type HouseLinkState =
+    | "house-only"
+    | "exists-in-house"
+    | "unread"
+    | "matches-knowledge"
+    | "differs-from-knowledge";
 
-const DRIFT_VISUAL: { [k in DriftState]: { icon: IconName; color: number; tooltip: string } } = {
-    "house-only": {
-        icon: Icons.unlink,
-        color: COLOR_TEXT_FAINT,
-        tooltip: "In this house, not in your import.json",
-    },
-    unread: {
-        icon: Icons.link,
-        color: COLOR_TEXT_DIM,
-        tooltip: "In your import.json — Read into knowledge (export menu) to check if it matches",
-    },
-    "in-sync": {
-        icon: Icons.link,
-        color: ACCENT_SUCCESS,
-        tooltip: "In your import.json and matches the house",
-    },
-    drifted: {
-        icon: Icons.link,
-        color: ACCENT_WARN,
-        tooltip: "Differs from the house's last-read content — Read to refresh knowledge, then re-export or re-import",
-    },
+// House-side wording for the shared link-status icons. The Importables page
+// maps the same keys with file-side phrasing — keep these answering "what does
+// this house row mean?", not "what import/export action will run?".
+const HOUSE_LINK_VISUAL: {
+    [k in HouseLinkState]: { key: LinkStatusKey; tooltip: string };
+} = {
+    "house-only": { key: "oneSided", tooltip: "Only in this house" },
+    "exists-in-house": { key: "present", tooltip: "Also in your files" },
+    unread: { key: "present", tooltip: "Also in your files; content not read yet" },
+    "matches-knowledge": { key: "matches", tooltip: "Matches your files" },
+    "differs-from-knowledge": { key: "differs", tooltip: "Differs from your files" },
 };
 
 // Source importables (from the selected import.json) keyed by identity, so each
@@ -505,20 +553,30 @@ function sourceImportablesByType(type: HouseContentType["type"]): Map<string, Im
     return out;
 }
 
-function driftFor(
+function houseLinkStateFor(
     uuid: string | null,
     item: HouseImportable,
-    sourceByKey: Map<string, Importable>
-): DriftState {
+    sourceByKey: Map<string, Importable>,
+    trusted: boolean
+): HouseLinkState {
     const source = sourceByKey.get(item.name);
     if (source === undefined) return "house-only";
+    if (!trusted) return "exists-in-house";
     if (uuid === null || !item.verified) return "unread";
-    // buildCacheStatusRow diffs the source importable against the cached house
-    // content: current = matches, modified = differs, unknown = no content read.
     const state = buildCacheStatusRow(uuid, source).state;
-    if (state === "current") return "in-sync";
-    if (state === "modified") return "drifted";
+    if (state === "current") return "matches-knowledge";
+    if (state === "modified") return "differs-from-knowledge";
     return "unread";
+}
+
+function differsFromKnowledge(
+    uuid: string,
+    item: HouseImportable,
+    sourceByKey: Map<string, Importable>
+): boolean {
+    const source = sourceByKey.get(item.name);
+    if (source === undefined || !item.verified) return false;
+    return buildCacheStatusRow(uuid, source).state === "modified";
 }
 
 function itemRow(
@@ -527,7 +585,7 @@ function itemRow(
     item: HouseImportable,
     interactive: boolean,
     canExport: boolean,
-    drift: DriftState
+    state: HouseLinkState
 ): Element {
     const inSelection = isInExportSelection(uuid, t.type, item.name);
     const selected = canExport && inSelection;
@@ -583,6 +641,7 @@ function itemRow(
             Text({
                 text: item.name,
                 color: COLOR_TEXT,
+                truncate: true,
                 style: { width: { kind: "grow" } },
             }),
             interactive &&
@@ -640,23 +699,13 @@ function itemRow(
                             },
                         }),
                     ],
-                }),
-            Icon({
-                // Real drift vs your import.json: see DriftState. Needs a deep
-                // Read to tell in-sync from drifted (else "unread").
-                name: DRIFT_VISUAL[drift].icon,
-                color: DRIFT_VISUAL[drift].color,
-                style: { width: { kind: "px", value: 12 }, height: { kind: "px", value: 12 } },
-                tooltip: DRIFT_VISUAL[drift].tooltip,
-                tooltipColor: DRIFT_VISUAL[drift].color,
             }),
+            linkStatusIcon(HOUSE_LINK_VISUAL[state].key, HOUSE_LINK_VISUAL[state].tooltip, 12),
         ],
     });
 }
 
-// Names among `names` whose drift state is "drifted" — exporting those pulls
-// the house version over local content that differs.
-function driftedNamesAmong(
+function namesChangedFromKnowledge(
     t: HouseContentType,
     uuid: string,
     names: readonly string[]
@@ -667,7 +716,7 @@ function driftedNamesAmong(
     const out: string[] = [];
     for (const n of names) {
         const item = byName.get(n);
-        if (item !== undefined && driftFor(uuid, item, sourceMap) === "drifted") {
+        if (item !== undefined && differsFromKnowledge(uuid, item, sourceMap)) {
             out.push(n);
         }
     }
@@ -675,28 +724,27 @@ function driftedNamesAmong(
 }
 
 // Export overwrites local files with the house version. When the export set
-// contains drifted rows (local content differs from the house's last-read
-// content), interpose a modal confirm naming what gets overwritten. Drift
-// is judged against cached knowledge — a Read first makes it exact.
+// contains rows that differ from Knowledge, interpose a modal confirm naming
+// what gets overwritten.
 function confirmDestructiveExport(
     t: HouseContentType,
     uuid: string,
     names: readonly string[],
     run: () => void
 ): void {
-    const drifted = driftedNamesAmong(t, uuid, names);
-    if (drifted.length === 0) {
+    const changed = namesChangedFromKnowledge(t, uuid, names);
+    if (changed.length === 0) {
         run();
         return;
     }
-    const shown = drifted.slice(0, 5);
+    const shown = changed.slice(0, 5);
     const lines = shown.map((n) => `• ${n}`);
-    if (drifted.length > shown.length) {
-        lines.push(`…and ${drifted.length - shown.length} more`);
+    if (changed.length > shown.length) {
+        lines.push(`…and ${changed.length - shown.length} more`);
     }
     lines.push("Export pulls the house version over your local files.");
     openConfirmPopover({
-        title: `Overwrite local changes to ${drifted.length} ${t.label.toLowerCase()}?`,
+        title: `Overwrite local changes to ${changed.length} ${t.label.toLowerCase()}?`,
         lines,
         confirmLabel: "Export anyway",
         danger: true,
@@ -755,6 +803,7 @@ function exportActionBar(t: HouseContentType, uuid: string, totalCount: number):
                             return d.trim() === "" ? "No destination" : `→ ${shortPath(d)}`;
                         },
                         color: COLOR_TEXT_DIM,
+                        truncate: true,
                         style: {
                             width: { kind: "grow" },
                             padding: { side: "x", value: 4 },
@@ -834,7 +883,7 @@ function exportActionBar(t: HouseContentType, uuid: string, totalCount: number):
                             const actions: MenuAction[] = [
                                 {
                                     // Unexported names aren't in your file, so
-                                    // they can never be drifted — no confirm.
+                                    // they are not compared against Knowledge — no confirm.
                                     label: `Export unexported (${unexportedNames.length})`,
                                     onClick: () => {
                                         if (unexportedNames.length > 0 && t.export) {
@@ -1014,12 +1063,20 @@ function typeBrowserSection(): Element {
                 );
             } else {
                 const sourceMap = sourceImportablesByType(t.type);
+                const trusted = isHouseTrusted(uuid);
                 out.push(
                     Scroll({
                         id: "houses-type-scroll",
                         style: { height: { kind: "grow" }, gap: 1 },
                         children: shown.map((i) =>
-                            itemRow(t, uuid, i, canScan, canExport, driftFor(uuid, i, sourceMap))
+                            itemRow(
+                                t,
+                                uuid,
+                                i,
+                                canScan,
+                                canExport,
+                                houseLinkStateFor(uuid, i, sourceMap, trusted)
+                            )
                         ),
                     })
                 );

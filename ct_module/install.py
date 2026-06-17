@@ -48,6 +48,17 @@ def main() -> None:
 
     DESTINATION.mkdir(parents=True, exist_ok=True)
     dist_dir = SOURCE / 'dist'
+    dist_files = {
+        source_file.name
+        for source_file in dist_dir.iterdir()
+        if source_file.is_file()
+    }
+    generated_js = re.compile(r'^index\d*\.js$')
+    for dest_file in DESTINATION.iterdir():
+        if not dest_file.is_file():
+            continue
+        if generated_js.match(dest_file.name) and dest_file.name not in dist_files:
+            dest_file.unlink()
     for source_file in dist_dir.iterdir():
         if source_file.is_file():
             shutil.copy2(source_file, DESTINATION / source_file.name)

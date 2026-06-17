@@ -5,7 +5,6 @@ import type { Importable } from "htsw/types";
 import {
     canonicalPath,
     forEachCachedParse,
-    getParseAt,
 } from "../../parsing/parses";
 import { importableSourcePath } from "../../parsing/importablePaths";
 import { importableIdentity } from "../../../importCache/paths";
@@ -199,34 +198,14 @@ function sortedQueueForDisplay(queue: readonly QueueItem[]): QueueItem[] {
 // ── Path-based helpers ─────────────────────────────────────────────────
 
 /**
- * Build a `QueueItem` for `filePath`. Returns null when nothing in any
- * cached parse references the path. Resolution rules:
- *   - If `filePath` itself is a parsed import.json → "importJson" item.
- *   - Otherwise scan every cached parse for an importable whose source
- *     path matches; the first match becomes an "importable" item.
- *     Multi-match files (one htsl referenced by several importables)
- *     just take the first — callers wanting all matches should iterate
- *     `queueItemsForPath` instead.
+ * Build queue items for importables whose source file matches `filePath`.
+ * import.json files are deliberately not returned as a single bulk item; UI
+ * rows that want "everything under this import.json" add those importables
+ * individually so queue rows stay concrete.
  */
 export function queueItemsForPath(filePath: string): QueueItem[] {
     const target = canonicalPath(filePath);
-
-    // Match 1: target is a parsed import.json → bulk item.
-    const directParse = getParseAt(target);
-    if (directParse !== null && directParse.parsed !== null) {
-        const out: QueueItem[] = [
-            { operation: "import", kind: "importJson", sourcePath: target, label: basename(target) },
-        ];
-        return out;
-    }
-
-    // Match 2: an importable inside any cached parse references this path.
     return findImportableQueueItems(target);
-}
-
-function basename(p: string): string {
-    const slash = p.lastIndexOf("/");
-    return slash < 0 ? p : p.substring(slash + 1);
 }
 
 /**

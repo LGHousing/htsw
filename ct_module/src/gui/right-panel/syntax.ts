@@ -10,6 +10,7 @@
 // hand-written: cheaper and more readable than dragging in a full grammar.
 
 import {
+    ACCENT_DANGER,
     ACCENT_INFO,
     ACCENT_ORANGE,
     ACCENT_PURPLE,
@@ -27,6 +28,8 @@ const COLOR_VAR_REF = ACCENT_TEAL;
 const COLOR_OPERATOR = COLOR_TEXT_DIM;
 const COLOR_PUNCT = COLOR_TEXT_DIM;
 const COLOR_COMMENT = 0xff707070 | 0;
+const COLOR_JSON_KEY = ACCENT_DANGER;
+const COLOR_JSON_LITERAL = ACCENT_INFO;
 
 export type SyntaxToken = { text: string; color: number };
 
@@ -285,6 +288,118 @@ export function tokenizeHtsl(line: string): SyntaxToken[] {
 
         // Anything else passes through with the default colour. Keeps us
         // robust to characters we haven't classified (e.g. UTF glyphs).
+        tokens.push({ text: c, color: COLOR_DEFAULT });
+        i++;
+    }
+
+    return tokens;
+}
+
+function skipWhitespace(line: string, i: number): number {
+    while (i < line.length) {
+        const c = line.charAt(i);
+        if (c !== " " && c !== "\t") break;
+        i++;
+    }
+    return i;
+}
+
+function readQuotedString(line: string, i: number): number {
+    let j = i + 1;
+    while (j < line.length) {
+        const c = line.charAt(j);
+        if (c === "\\" && j + 1 < line.length) {
+            j += 2;
+            continue;
+        }
+        if (c === '"') return j + 1;
+        j++;
+    }
+    return j;
+}
+
+export function tokenizeJson(line: string): SyntaxToken[] {
+    const tokens: SyntaxToken[] = [];
+    let i = 0;
+    const n = line.length;
+
+    while (i < n) {
+        const c = line.charAt(i);
+
+        if (c === "/" && i + 1 < n && line.charAt(i + 1) === "/") {
+            tokens.push({ text: line.substring(i), color: COLOR_COMMENT });
+            break;
+        }
+
+        if (c === " " || c === "\t") {
+            let j = i + 1;
+            while (j < n) {
+                const cj = line.charAt(j);
+                if (cj !== " " && cj !== "\t") break;
+                j++;
+            }
+            tokens.push({ text: line.substring(i, j), color: COLOR_DEFAULT });
+            i = j;
+            continue;
+        }
+
+        if (c === '"') {
+            const j = readQuotedString(line, i);
+            const after = skipWhitespace(line, j);
+            const color = after < n && line.charAt(after) === ":" ? COLOR_JSON_KEY : COLOR_STRING;
+            tokens.push({ text: line.substring(i, j), color });
+            i = j;
+            continue;
+        }
+
+        if (
+            c === "{"
+            || c === "}"
+            || c === "["
+            || c === "]"
+            || c === ":"
+            || c === ","
+        ) {
+            tokens.push({ text: c, color: COLOR_PUNCT });
+            i++;
+            continue;
+        }
+
+        if (c === "-" || isDigit(c)) {
+            let j = c === "-" ? i + 1 : i;
+            while (j < n && isDigit(line.charAt(j))) j++;
+            if (j < n && line.charAt(j) === ".") {
+                j++;
+                while (j < n && isDigit(line.charAt(j))) j++;
+            }
+            if (j < n && (line.charAt(j) === "e" || line.charAt(j) === "E")) {
+                let k = j + 1;
+                if (k < n && (line.charAt(k) === "+" || line.charAt(k) === "-")) k++;
+                let hasExpDigit = false;
+                while (k < n && isDigit(line.charAt(k))) {
+                    hasExpDigit = true;
+                    k++;
+                }
+                if (hasExpDigit) j = k;
+            }
+            tokens.push({ text: line.substring(i, j), color: COLOR_NUMBER });
+            i = j;
+            continue;
+        }
+
+        if (isIdentStart(c)) {
+            let j = i + 1;
+            while (j < n && isIdentCont(line.charAt(j))) j++;
+            const text = line.substring(i, j);
+            const color =
+                text === "true" || text === "false" || text === "null"
+                    ? COLOR_JSON_LITERAL
+                    : COLOR_DEFAULT;
+            tokens.push({ text, color });
+            i = j;
+            continue;
+        }
+
         tokens.push({ text: c, color: COLOR_DEFAULT });
         i++;
     }

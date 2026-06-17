@@ -13,6 +13,39 @@ const MENU_LIST_CONFIG: PaginatedListConfig = {
     emptyPlaceholderName: "No custom menus!",
 };
 
+// Per-import-session set of the house's menu titles (lowercased), so the
+// reference preflight can confirm a menu exists without a `/menu edit` per
+// referenced name. Each such edit is a command, and Housing rate-limits
+// commands (~1s, "this command is on cooldown"), so a function touching several
+// menus would otherwise stall one cooldown at a time. Populated on first need,
+// kept in sync as we create menus, reset at the start of each import session.
+let sessionMenuNamesLower: Set<string> | null = null;
+
+export function resetMenuNameSession(): void {
+    sessionMenuNamesLower = null;
+}
+
+export function noteMenuCreated(name: string): void {
+    if (sessionMenuNamesLower !== null) {
+        sessionMenuNamesLower.add(name.toLowerCase());
+    }
+}
+
+/**
+ * The set of existing menu titles (lowercased) for this import session. Reads
+ * the `/menus` GUI once and caches it; subsequent calls are free.
+ */
+export async function getSessionMenuNamesLower(ctx: TaskContext): Promise<Set<string>> {
+    if (sessionMenuNamesLower !== null) return sessionMenuNamesLower;
+    const set = new Set<string>();
+    const names = await listAllMenuNames(ctx);
+    for (let i = 0; i < names.length; i++) {
+        set.add(names[i].toLowerCase());
+    }
+    sessionMenuNamesLower = set;
+    return set;
+}
+
 /**
  * Extract a raw menu name from a `/menus` list slot's display name. Filters the
  * list controls and strips a trailing numeric parenthetical (e.g. "(12 slots)")

@@ -85,7 +85,7 @@ function progressMsPerUnitText(): string {
     return `${Math.round(getImportMsPerUnit())}ms/u`;
 }
 
-function progressElapsedText(): string {
+export function progressElapsedText(): string {
     const ms = getImportElapsedMs();
     if (ms === null) return "";
     return `§7${formatEtaSeconds(ms / 1000)}`;
@@ -129,7 +129,7 @@ function phaseEtaText(suffix: string): string {
     return `${formatEtaSeconds(secs)} left ${suffix}`;
 }
 
-function currentPhaseLabel(): string {
+export function currentPhaseLabel(): string {
     const p = getImportProgress();
     if (p === null || p.active === null) return "";
     if (getSessionVerb() === "export") return "§lExporting";
@@ -225,7 +225,7 @@ function parkedRowPhaseChildren(key: string): Element[] {
     return rowPhaseChildrenFor(parked);
 }
 
-function progressBar(): Element {
+export function progressBar(): Element {
     return Container({
         style: {
             direction: "row",
@@ -293,7 +293,7 @@ function operationProgressText(completed: number, total: number): string {
     return `op ${current}/${safeTotal}`;
 }
 
-function progressTotalEtaLine(): string {
+export function progressTotalEtaLine(): string {
     const p = getImportProgress();
     if (p === null) return "";
     const rate = progressMsPerUnitText();
@@ -316,144 +316,166 @@ function progressTotalEtaLine(): string {
     return `total ${rough}${formatEtaSeconds(secs)}${etcText} · ${rate}`;
 }
 
-export function liveImporterPanel(): Element {
+function progressPosition(): {
+    current: NonNullable<ReturnType<typeof getImportProgress>>["active"];
+    currentNumber: number;
+    completedImportables: number;
+    failedImportables: number;
+    totalImportables: number;
+    allDone: boolean;
+} | null {
+    const p = getImportProgress();
+    if (p === null) return null;
+    const current = p.active;
+    const { completed: completedImportables, failed: failedImportables, total: totalImportables } =
+        countImportablesByStatus(p);
+    const allDone = completedImportables + failedImportables >= totalImportables;
+    let currentNumber = completedImportables + 1;
+    if (current !== null) {
+        for (let i = 0; i < p.rows.length; i++) {
+            if (p.rows[i].key === current.key) {
+                currentNumber = i + 1;
+                break;
+            }
+        }
+    }
+    return {
+        current,
+        currentNumber,
+        completedImportables,
+        failedImportables,
+        totalImportables,
+        allDone,
+    };
+}
+
+export function progressHeadlineText(): string {
+    const pos = progressPosition();
+    if (pos === null) return "";
+    const verb = getSessionVerb();
+    const noun =
+        verb === "export" ? "Export" : verb === "read" ? "Read" : "Importable";
+    const gerund =
+        verb === "export" ? "Exporting" : verb === "read" ? "Reading" : "Importing";
+    return pos.current !== null
+        ? `${noun} ${pos.currentNumber} of ${pos.totalImportables}  ·  §b§l${pos.current.identity}`
+        : pos.allDone
+          ? `${noun} ${pos.completedImportables} of ${pos.totalImportables}`
+          : `${gerund} ${pos.totalImportables} item${pos.totalImportables === 1 ? "" : "s"}…`;
+}
+
+function progressStatusText(): string {
+    const p = getImportProgress();
+    if (p === null) return "";
+    const pos = progressPosition();
+    if (pos === null) return "";
+    if (p.failure) return `§c§l✖ ${p.failure.message}`;
+    if (pos.current !== null) return currentPhaseLabel();
+    return pos.allDone ? `§lDone` : `§7Preparing…`;
+}
+
+export function progressControlButtons(): Element[] {
+    return [
+        Button({
+            text: () => (getStepAuto() ? "Pause" : "Resume"),
+            style: {
+                width: { kind: "px", value: 56 },
+                height: { kind: "grow" },
+                background: COLOR_BUTTON,
+                hoverBackground: COLOR_BUTTON_HOVER,
+            },
+            onClick: () => setStepAuto(!getStepAuto()),
+        }),
+        ...(getStepAuto()
+            ? []
+            : [
+                  Button({
+                      text: "Step",
+                      style: {
+                          width: { kind: "px", value: 44 },
+                          height: { kind: "grow" },
+                          background: COLOR_BUTTON,
+                          hoverBackground: COLOR_BUTTON_HOVER,
+                      },
+                      onClick: () => requestStepAdvance(),
+                  }),
+              ]),
+        Button({
+            icon: Icons.x,
+            text: "Cancel",
+            style: {
+                width: { kind: "auto" },
+                height: { kind: "grow" },
+                background: COLOR_BUTTON_DANGER,
+                hoverBackground: COLOR_BUTTON_DANGER_HOVER,
+            },
+            onClick: () => {
+                if (getImportProgress() === null) return;
+                cancelActiveImport();
+                setImportProgress(null);
+                setActiveImportPath(null);
+                ChatLib.chat(`&c[htsw] cancelling import…`);
+            },
+        }),
+    ];
+}
+
+export function liveImporterFooterPanel(): Element {
     return Container({
         style: {
             width: { kind: "grow" },
             padding: 4,
             background: COLOR_PANEL_RAISED,
         },
-        children: () => {
-            const p = getImportProgress();
-            if (p === null) {
-                return [Text({ text: "No import in progress.", color: COLOR_TEXT_DIM })];
-            }
-            const current = p.active;
-            const { completed: completedImportables, failed: failedImportables, total: totalImportables } =
-                countImportablesByStatus(p);
-            // "Done" means every importable reached a terminal state — NOT just
-            // "no active importable right now". At the start of a run (all rows
-            // queued, nothing active yet) active is null but the session isn't
-            // done; rendering "Done" there is the stale-looking startup state.
-            const allDone = completedImportables + failedImportables >= totalImportables;
-            let currentNumber = completedImportables + 1;
-            if (current !== null) {
-                for (let i = 0; i < p.rows.length; i++) {
-                    if (p.rows[i].key === current.key) {
-                        currentNumber = i + 1;
-                        break;
-                    }
-                }
-            }
-            return [
-                Col({
-                    style: { gap: 3, width: { kind: "grow" } },
-                    children: [
-                        Row({
-                            style: { width: { kind: "grow" }, align: "center" },
-                            children: [
-                                Text({
-                                    text: () => {
-                                        const verb = getSessionVerb();
-                                        const noun =
-                                            verb === "export" ? "Export" : verb === "read" ? "Read" : "Importable";
-                                        const gerund =
-                                            verb === "export" ? "Exporting" : verb === "read" ? "Reading" : "Importing";
-                                        return current !== null
-                                            ? `${noun} ${currentNumber} of ${totalImportables}  ·  §b§l${current.identity}`
-                                            : allDone
-                                              ? `${noun} ${completedImportables} of ${totalImportables}`
-                                              : `${gerund} ${totalImportables} item${totalImportables === 1 ? "" : "s"}…`;
-                                    },
-                                    color: COLOR_TEXT,
-                                    style: { width: { kind: "grow" } },
-                                }),
-                                Text({
-                                    text: () => progressElapsedText(),
-                                    color: COLOR_TEXT_DIM,
-                                }),
-                            ],
-                        }),
-                        Text({
-                            text: () =>
-                                p.failure
-                                    ? `§c§l✖ ${p.failure.message}`
-                                    : current !== null
-                                      ? currentPhaseLabel()
-                                      : allDone
-                                        ? `§lDone`
-                                        : `§7Preparing…`,
-                            color: COLOR_TEXT,
-                        }),
-                        Container({
-                            style: { width: { kind: "grow" }, height: { kind: "px", value: 2 } },
-                            children: [],
-                        }),
-                        progressBar(),
-                        Row({
-                            style: { gap: 6, height: { kind: "px", value: 12 }, align: "center" },
-                            children: [
-                                Text({
-                                    text: () =>
-                                        `${Math.floor(getImportProgressFraction() * 100)}%`,
-                                    color: COLOR_TEXT,
-                                    style: { width: { kind: "px", value: 30 } },
-                                }),
-                                Text({
-                                    text: () => progressTotalEtaLine(),
-                                    color: COLOR_TEXT_DIM,
-                                    style: { width: { kind: "grow" } },
-                                }),
-                                Button({
-                                    text: () => (getStepAuto() ? "Pause" : "Resume"),
-                                    style: {
-                                        width: { kind: "px", value: 56 },
-                                        height: { kind: "grow" },
-                                        background: COLOR_BUTTON,
-                                        hoverBackground: COLOR_BUTTON_HOVER,
-                                    },
-                                    onClick: () => setStepAuto(!getStepAuto()),
-                                }),
-                                ...(getStepAuto()
-                                    ? []
-                                    : [
-                                          Button({
-                                              text: "Step",
-                                              style: {
-                                                  width: { kind: "px", value: 44 },
-                                                  height: { kind: "grow" },
-                                                  background: COLOR_BUTTON,
-                                                  hoverBackground: COLOR_BUTTON_HOVER,
-                                              },
-                                              onClick: () => requestStepAdvance(),
-                                          }),
-                                      ]),
-                                Button({
-                                    icon: Icons.x,
-                                    text: "Cancel",
-                                    style: {
-                                        width: { kind: "auto" },
-                                        height: { kind: "grow" },
-                                        background: COLOR_BUTTON_DANGER,
-                                        hoverBackground: COLOR_BUTTON_DANGER_HOVER,
-                                    },
-                                    onClick: () => {
-                                        if (getImportProgress() === null) return;
-                                        cancelActiveImport();
-                                        // Clear the live UI immediately rather than waiting
-                                        // for the cancelled task to unwind through its
-                                        // finally — otherwise the header lingers on a stale
-                                        // "Done" frame until the task notices the cancel.
-                                        setImportProgress(null);
-                                        setActiveImportPath(null);
-                                        ChatLib.chat(`&c[htsw] cancelling import…`);
-                                    },
-                                }),
-                            ],
-                        }),
-                    ],
-                }),
-            ];
-        },
+        children: () => [
+            Col({
+                style: { gap: 3, width: { kind: "grow" } },
+                children: [
+                    Row({
+                        style: { gap: 6, width: { kind: "grow" }, align: "center" },
+                        children: [
+                            Text({
+                                text: () => progressHeadlineText(),
+                                color: COLOR_TEXT,
+                                truncate: true,
+                                style: { width: { kind: "grow" } },
+                            }),
+                            Text({
+                                text: () => progressElapsedText(),
+                                color: COLOR_TEXT_DIM,
+                            }),
+                        ],
+                    }),
+                    Text({
+                        text: () => progressStatusText(),
+                        color: COLOR_TEXT,
+                        truncate: true,
+                        style: { width: { kind: "grow" } },
+                    }),
+                    Container({
+                        style: { width: { kind: "grow" }, height: { kind: "px", value: 2 } },
+                        children: [],
+                    }),
+                    progressBar(),
+                    Row({
+                        style: { gap: 6, height: { kind: "px", value: 12 }, align: "center" },
+                        children: [
+                            Text({
+                                text: () => `${Math.floor(getImportProgressFraction() * 100)}%`,
+                                color: COLOR_TEXT,
+                                style: { width: { kind: "px", value: 30 } },
+                            }),
+                            Text({
+                                text: () => progressTotalEtaLine(),
+                                color: COLOR_TEXT_DIM,
+                                truncate: true,
+                                style: { width: { kind: "grow" } },
+                            }),
+                            ...progressControlButtons(),
+                        ],
+                    }),
+                ],
+            }),
+        ],
     });
 }

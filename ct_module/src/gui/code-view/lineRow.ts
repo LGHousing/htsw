@@ -1,12 +1,13 @@
 /// <reference types="../../../CTAutocomplete" />
 
 import { Container, Text } from "../lib/components";
-import type { Element } from "../lib/layout";
+import type { ClickInfo, Element, Rect } from "../lib/layout";
 import { COLOR_BY_STATE, COLOR_CURSOR, ROW_BG_BY_STATE, type DiffState } from "./diffPalette";
 import { CodeViewColors } from "./lineModel";
 import type { LineDecorations, RenderableLine, TokenSpan } from "./lineTypes";
 import { joinTokenText, wrapTokensIntoVisualRows } from "./wrap";
 import { offerLineHover } from "../diagnostics/hover";
+import { chatWidth } from "../../utils/helpers";
 
 export const LINE_H = 10;
 export const FOCUS_GUTTER_W = 8;
@@ -14,6 +15,9 @@ export const STATE_GUTTER_W = 8;
 const LINE_NUM_MIN_W = 16;
 const DETAIL_COLUMN_W = 180;
 const DETAIL_TRUNCATE_CHARS = 41;
+const ROW_PAD_X = 4;
+const ROW_GAP = 4;
+const LINK_HOVER_MARK = 0x8067a7e8 | 0;
 
 export function effectiveBodyWidth(bodyMaxWidth: number, dec: LineDecorations): number {
     return Math.max(1, bodyMaxWidth - (dec.detail !== undefined ? DETAIL_COLUMN_W + 4 : 0));
@@ -68,6 +72,7 @@ export type LineRowOptions = {
     bodyMaxWidth: number;
     showFocusGutter: boolean;
     showStateGutter: boolean;
+    onOpenPath?: (path: string, options: { activate: boolean }) => void;
 };
 
 function tokenElements(
@@ -80,7 +85,11 @@ function tokenElements(
         const t = tokens[i];
         const baseColor = overrideColor !== undefined ? overrideColor : t.color;
         const color = alpha < 1 ? applyAlpha(baseColor, alpha) : baseColor;
-        out.push(Text({ text: t.text, color, underlineColor: t.underlineColor }));
+        out.push(Text({
+            text: t.text,
+            color,
+            underlineColor: t.underlineColor,
+        }));
     }
     return out;
 }
@@ -152,6 +161,14 @@ function buildVisualLineRow(
         : (line.lineNum > 0 ? padLeft(String(line.lineNum), options.lineNumDigits) : "");
 
     const bodyChildren = bodyChildrenForTokens(tokens, dec, alpha);
+    const hasLinkedToken = hasLink(tokens);
+    const onClick = options.onOpenPath !== undefined && hasLink(tokens)
+        ? (rect: Rect, info: ClickInfo) => {
+              if ((info.button !== 0 && info.button !== 2) || info.isDoubleClickSecond) return;
+              const target = linkTargetAt(tokens, info.x - bodyX(rect, options));
+              if (target !== null) options.onOpenPath?.(target, { activate: info.button === 0 });
+          }
+        : undefined;
 
     const children: Element[] = [];
     if (options.showFocusGutter) {
@@ -217,22 +234,80 @@ function buildVisualLineRow(
     return Container({
         style: {
             direction: "row",
-            padding: { side: "x", value: 4 },
-            gap: 4,
+            padding: { side: "x", value: ROW_PAD_X },
+            gap: ROW_GAP,
             height: { kind: "px", value: LINE_H },
             background: bg,
         },
+        onClick,
         onHover:
             (line.diagnostics !== undefined && line.diagnostics.length > 0) ||
-            dec.hoverLines !== undefined
-                ? (rect, mouseX) =>
-                      offerLineHover(
-                          rect,
-                          mouseX,
-                          line.diagnostics,
-                          dec.hoverLines?.() ?? undefined
-                      )
+            dec.hoverLines !== undefined ||
+            hasLinkedToken
+                ? (rect, mouseX) => {
+                      const run = linkRunAt(tokens, mouseX - bodyX(rect, options));
+                      if (run !== null) {
+                          drawLinkHoverMark(rect, bodyX(rect, options) + run.start, run.width);
+                      }
+                      if (
+                          (line.diagnostics !== undefined && line.diagnostics.length > 0) ||
+                          dec.hoverLines !== undefined
+                      ) {
+                          offerLineHover(
+                              rect,
+                              mouseX,
+                              line.diagnostics,
+                              dec.hoverLines?.() ?? undefined
+                          );
+                      }
+                  }
                 : undefined,
         children,
     });
+}
+
+function hasLink(tokens: readonly TokenSpan[]): boolean {
+    for (let i = 0; i < tokens.length; i++) {
+        if (tokens[i].linkTarget !== undefined) return true;
+    }
+    return false;
+}
+
+function bodyX(rect: Rect, options: LineRowOptions): number {
+    let x = rect.x + ROW_PAD_X;
+    if (options.showFocusGutter) x += FOCUS_GUTTER_W + ROW_GAP;
+    if (options.showStateGutter) x += STATE_GUTTER_W + ROW_GAP;
+    return x + options.gutterWidth + ROW_GAP;
+}
+
+function linkTargetAt(tokens: readonly TokenSpan[], x: number): string | null {
+    const run = linkRunAt(tokens, x);
+    return run === null ? null : run.target;
+}
+
+function linkRunAt(
+    tokens: readonly TokenSpan[],
+    x: number
+): { target: string; start: number; width: number } | null {
+    if (x < 0) return null;
+    let cursor = 0;
+    for (let i = 0; i < tokens.length; i++) {
+        const token = tokens[i];
+        const w = chatWidth(token.text, false);
+        if (x >= cursor && x <= cursor + w) {
+            return token.linkTarget === undefined
+                ? null
+                : { target: token.linkTarget, start: cursor, width: w };
+        }
+        cursor += w;
+    }
+    return null;
+}
+
+function drawLinkHoverMark(rowRect: Rect, x: number, width: number): void {
+    const y = rowRect.y + rowRect.h - 1;
+    const end = x + width;
+    for (let px = x; px < end; px += 2) {
+        Renderer.drawRect(LINK_HOVER_MARK, px, y - ((px - x) % 4 === 0 ? 1 : 0), 1, 1);
+    }
 }
