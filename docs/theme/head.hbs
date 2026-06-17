@@ -11,6 +11,7 @@ hljs.registerLanguage("htsl", function (hljs) {
     contains: [
       { scope: "comment", variants: [hljs.C_LINE_COMMENT_MODE, hljs.C_BLOCK_COMMENT_MODE] },
       hljs.QUOTE_STRING_MODE,
+      { scope: "string", begin: /%(?!=)/, end: /%/ },
       hljs.C_NUMBER_MODE,
       { scope: "operator", begin: />>=|<<=|>>|<<|[+\-*/%&|^]=?|[><!=]=?|=/ }
     ]
