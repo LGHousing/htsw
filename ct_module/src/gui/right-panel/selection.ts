@@ -2,42 +2,71 @@ const confirmed: string[] = [];
 let preview: string | null = null;
 let active: string | null = null;
 
-/** Top-level right-panel tab selection. Lives here (next to `setActiveTab`)
- * so it can be read by the right panel and written by import-progress
- * state without creating a circular import. */
-export type RightPanelTabId = "view" | "import";
-let activeRightTab: RightPanelTabId = "view";
+export const LIVE_TAB_PATH = "__htsw_live_import__";
 
-export function getActiveRightTab(): RightPanelTabId {
-    return activeRightTab;
+export type Tab =
+    | { kind: "file"; path: string; confirmed: boolean }
+    | { kind: "live"; path: string };
+
+let liveTabActive = false;
+let dismissedLiveImport = false;
+let lastLivePath: string | null = null;
+let liveImportPathProvider: (() => string | null) | null = null;
+
+export function setLiveImportPathProvider(fn: () => string | null): void {
+    liveImportPathProvider = fn;
 }
 
-export function setActiveRightTab(id: RightPanelTabId): void {
-    activeRightTab = id;
+function liveImportPath(): string | null {
+    if (dismissedLiveImport) return null;
+    const path = liveImportPathProvider === null ? null : liveImportPathProvider();
+    if (path !== null) {
+        lastLivePath = path;
+        return path;
+    }
+    return lastLivePath;
+}
+
+export function isLiveTabActive(): boolean {
+    return liveTabActive && liveImportPath() !== null;
+}
+
+export function selectLiveTab(): void {
+    if (liveImportPath() === null) return;
+    liveTabActive = true;
+}
+
+export function closeLiveTab(): void {
+    dismissedLiveImport = true;
+    liveTabActive = false;
 }
 
 export function onImportRunningChanged(wasRunning: boolean, isRunning: boolean): void {
     if (!wasRunning && isRunning) {
-        setActiveRightTab("import");
+        dismissedLiveImport = false;
+        lastLivePath = null;
+        liveTabActive = true;
     }
 }
 
-export type Tab = { path: string; confirmed: boolean };
-
 export function getTabs(): Tab[] {
     const out: Tab[] = [];
+    const live = liveImportPath();
+    if (live !== null) out.push({ kind: "live", path: live });
     for (let i = 0; i < confirmed.length; i++) {
-        out.push({ path: confirmed[i], confirmed: true });
+        out.push({ kind: "file", path: confirmed[i], confirmed: true });
     }
-    if (preview !== null) out.push({ path: preview, confirmed: false });
+    if (preview !== null) out.push({ kind: "file", path: preview, confirmed: false });
     return out;
 }
 
 export function getActivePath(): string | null {
+    if (isLiveTabActive()) return liveImportPath();
     return active;
 }
 
 export function previewSelect(path: string): void {
+    liveTabActive = false;
     if (confirmed.indexOf(path) >= 0) {
         preview = null;
     } else {
@@ -47,25 +76,30 @@ export function previewSelect(path: string): void {
 }
 
 export function confirmSelect(path: string): void {
+    liveTabActive = false;
     if (preview === path) preview = null;
     if (confirmed.indexOf(path) < 0) confirmed.push(path);
     active = path;
-    // Double-clicking to pin a tab should bring the View panel forward so the
-    // pinned source is actually visible (no-op if already on View).
-    setActiveRightTab("view");
+}
+
+export function pinTab(path: string): void {
+    if (preview === path) preview = null;
+    if (confirmed.indexOf(path) < 0) confirmed.push(path);
 }
 
 export function setActiveTab(path: string): void {
+    liveTabActive = false;
     if (preview !== null && path !== preview) preview = null;
     active = path;
 }
-/** Close every tab living under a directory — for project deletes, where a
- * surviving tab would just render a missing-file error. */
+
 export function closeTabsUnder(dirPath: string): void {
     const prefix = dirPath.charAt(dirPath.length - 1) === "/" ? dirPath : dirPath + "/";
     const all = getTabs();
     for (let i = 0; i < all.length; i++) {
-        const p = all[i].path;
+        const tab = all[i];
+        if (tab.kind !== "file") continue;
+        const p = tab.path;
         if (p === dirPath || p.indexOf(prefix) === 0) closeTab(p);
     }
 }
@@ -75,9 +109,6 @@ export function closeTab(path: string): void {
     const idx = confirmed.indexOf(path);
     if (idx >= 0) confirmed.splice(idx, 1);
     if (active === path) {
-        // Pick a sensible neighbour to focus next: the tab that was to the
-        // right of the closed one (slides into its slot) if there is one,
-        // else the last remaining tab, else nothing.
         if (idx >= 0 && idx < confirmed.length) {
             active = confirmed[idx];
         } else if (confirmed.length > 0) {
@@ -88,11 +119,6 @@ export function closeTab(path: string): void {
     }
 }
 
-/**
- * Reorder a confirmed tab. `delta` is the signed step in the confirmed list
- * (e.g. -1 = move left, +1 = move right). Preview tabs aren't reorderable —
- * they always trail the confirmed list.
- */
 export function moveTab(path: string, delta: number): void {
     const idx = confirmed.indexOf(path);
     if (idx < 0) return;

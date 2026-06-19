@@ -34,6 +34,8 @@ export const COLOR_BUTTON_PRIMARY = 0xff3370c0 | 0;
 export const COLOR_BUTTON_PRIMARY_HOVER = 0xff4080d8 | 0;
 export const COLOR_BUTTON_DANGER = 0xff8e3838 | 0;
 export const COLOR_BUTTON_DANGER_HOVER = 0xffa84444 | 0;
+export const COLOR_TOGGLE_ON = 0xff1e3d3d | 0;
+export const COLOR_TOGGLE_ON_HOVER = 0xff2a4f4f | 0;
 
 // ── Tabs ────────────────────────────────────────────────────────────────
 export const COLOR_TAB = 0xff2c323b | 0;

@@ -24,7 +24,7 @@ import { resetSessionTiming } from "../../../housingSync/progress/timing";
 import { importableIdentity } from "../../../importCache/paths";
 import { queueItemProgressPath, type QueueItem } from "./queue";
 import { canonicalPath } from "../../parsing/parses";
-import { onImportRunningChanged } from "../selection";
+import { onImportRunningChanged, setLiveImportPathProvider } from "../selection";
 
 // Feed the progress trace's periodic sampler the *displayed* ETA values, so
 // `/htsw eta trace` captures what the user sees between events (the smoothing
@@ -66,6 +66,8 @@ let etaCalc: EtaCalculator | null = null;
  * importable.
  */
 let activeImportPath: string | null = null;
+
+setLiveImportPathProvider(() => activeImportPath);
 
 export function getImportProgress(): ImportProgress | null {
     return importProgress;

@@ -14,6 +14,7 @@ import type { Diagnostic } from "htsw";
 export type TokenSpan = SyntaxToken & {
     fieldProp?: string;
     underlineColor?: number;
+    linkTarget?: string;
 };
 
 export type FieldSpan = {

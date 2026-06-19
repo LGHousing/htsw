@@ -4,7 +4,8 @@ import {
     Element,
     getScrollState,
 } from "../../lib/layout";
-import { Col, Container } from "../../lib/components";
+import { Col, Container, Text } from "../../lib/components";
+import { COLOR_TEXT_DIM } from "../../lib/theme";
 import {
     Source,
     SourceDir,
@@ -17,6 +18,7 @@ import { isImportableTypeActive, isFilterDefault } from "./filter";
 import { Result, ResultImport, ROW_BG, getTreeRevision } from "./rowModel";
 import { IncludeNode, includeTreeOf } from "./includeTree";
 import { canonicalPath } from "../../parsing/parses";
+import { compactPath } from "../../lib/pathDisplay";
 import {
     searchQuery,
     expansionKey,
@@ -321,7 +323,33 @@ function isIncludedElsewhere(
 // hide below a long flat run. While a search/type filter narrows, groups
 // auto-expand and empty ones disappear.
 function emitImportContents(out: TreeRow[], r: ResultImport, baseLevels: LevelGuide[]): void {
+    if (r.parsePending && r.parse === null) {
+        out.push({
+            levels: baseLevels,
+            branch: "ell",
+            content: () => pendingImportablesRow(),
+            height: ENTRY_ROW_H,
+        });
+        return;
+    }
     emitIncludeNode(out, r, includeTreeOf(r), baseLevels, isNarrowing());
+}
+
+function pendingImportablesRow(): Element {
+    return Container({
+        style: {
+            direction: "row",
+            align: "center",
+            padding: { side: "left", value: 3 },
+            height: { kind: "px", value: ENTRY_ROW_H },
+        },
+        children: [
+            Text({
+                text: "Loading importables...",
+                color: COLOR_TEXT_DIM,
+            }),
+        ],
+    });
 }
 
 function emitIncludeNode(
@@ -399,17 +427,9 @@ function emitIncludeNode(
     }
 }
 
-const MAX_TAIL_SEGMENTS = 3;
-
 function formatFullDir(fullPath: string): string {
     if (!fullPath) return fullPath;
-    const norm = fullPath.replace(/\\/g, "/");
-    const parts = norm.split("/").filter((s) => s.length > 0);
-    const tail =
-        parts.length <= MAX_TAIL_SEGMENTS
-            ? parts.join("/")
-            : parts.slice(parts.length - MAX_TAIL_SEGMENTS).join("/");
-    return `.../${tail}`;
+    return compactPath(fullPath);
 }
 
 // Descriptor cache: building TreeRows walks every file and importable and

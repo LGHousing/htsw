@@ -48,11 +48,25 @@ const HEAT_SAFETY_MARGIN = 50;
 const HEAT_MAX_POST_SEND = HEAT_KICK_THRESHOLD - HEAT_SAFETY_MARGIN;
 const CHAT_MIN_INTERVAL_MS = 50;
 
+/**
+ * Housing rejects a slash command sent too soon after the previous one with
+ * "This command is on cooldown! Try again in about a second!" — so a fast
+ * `/menu edit`→`/menu create` (the edit fails instantly when the menu is
+ * missing) loses the create and the import stalls waiting for a confirmation
+ * that never comes. Space consecutive commands past that window. Field-value
+ * input goes through `sendMessage`, not here, so this floor never touches the
+ * per-field import hot path; only the sparse navigation/creation commands pay,
+ * and only when they'd otherwise fire back-to-back. Padded above the stated
+ * ~1s to absorb send→server round-trip and the "about" in the message.
+ */
+const COMMAND_COOLDOWN_MS = 1200;
+
 export default class TaskContext {
     private cancelled: boolean = false;
     private heatLevel: number = 0;
     private heatLastUpdate: number = 0;
     private heatLastChatAt: number = 0;
+    private lastCommandAt: number = 0;
 
     public cancel() {
         this.cancelled = true;
@@ -103,12 +117,22 @@ export default class TaskContext {
         this.heatLastChatAt = Date.now();
     }
 
+    private async awaitCommandCooldown(): Promise<void> {
+        if (this.lastCommandAt === 0) return;
+        const sinceLastCommand = Date.now() - this.lastCommandAt;
+        if (sinceLastCommand < COMMAND_COOLDOWN_MS) {
+            await this.sleep(COMMAND_COOLDOWN_MS - sinceLastCommand);
+        }
+    }
+
     public async runCommand(command: string): Promise<void> {
         if (!command.startsWith("/")) {
             throw new Error(`Invalid command: ${command}`);
         }
+        await this.awaitCommandCooldown();
         await this.awaitChatBudget();
         ChatLib.say(command);
+        this.lastCommandAt = Date.now();
     }
 
     public async sendMessage(message: string): Promise<void> {

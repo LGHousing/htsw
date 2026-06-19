@@ -31,6 +31,7 @@ import {
     countReferencedShells,
     ensureReferencedImportablesExist,
 } from "../references";
+import { noteMenuCreated } from "./listMenus";
 import { readLiveMenu, type LiveMenu } from "./read";
 import { openMenuEditor, openMenuElements, setMenuSize } from "./shared";
 
@@ -77,7 +78,11 @@ export async function prereadImportableMenu(
 
     if (status === "missing") {
         await ctx.runCommand(`/menu create ${importable.name}`);
-        await timedWaitForUnformattedMessage(ctx, `Created menu ${importable.name}!`);
+        await timedWaitForUnformattedMessage(
+            ctx,
+            `Created custom menu with the title ${importable.name}!`
+        );
+        noteMenuCreated(importable.name);
         await openMenuEditor(ctx, importable.name);
         setup(`created menu ${importable.name}`);
         // Fresh menu: every desired slot is a pure ADD, size always set.

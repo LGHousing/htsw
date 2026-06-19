@@ -14,6 +14,7 @@ import {
 import { printDiagnostic } from "../tui/diagnostics";
 import { createItemRegistry } from "./itemRegistry";
 import { resetFunctionNameSession } from "./functions/listFunctions";
+import { resetMenuNameSession } from "./menus/listMenus";
 import {
     applyImportablePlan,
     planIsNoOp,
@@ -93,6 +94,7 @@ export async function importSelectedImportables(
     selection: ImportSelection
 ): Promise<void> {
     resetFunctionNameSession();
+    resetMenuNameSession();
 
     const parsed = selection.parsed ?? parseImportablesResult(
         new SourceMap(new FileSystemFileLoader()),

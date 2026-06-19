@@ -28,6 +28,8 @@ const COLOR_INPUT_BORDER_FOCUS = 0xff67a7e8 | 0;
 const COLOR_SCROLLBAR_TRACK = 0x40000000 | 0;
 const COLOR_SCROLLBAR_THUMB = 0xff888888 | 0;
 const COLOR_SCROLLBAR_THUMB_HOVER = 0xffaaaaaa | 0;
+const COLOR_HORIZONTAL_SCROLL_EDGE_ACCENT = 0x9067a7e8 | 0;
+const HORIZONTAL_SCROLL_EDGE_TICK_H = 2;
 
 const LINE_H = 8;
 
@@ -346,8 +348,7 @@ function renderItem(
 }
 
 function renderScrollbar(id: string, mouseX: number, mouseY: number): void {
-    // Horizontal strips (e.g. the file-tab bar) scroll by wheel only — no
-    // track or thumb is drawn.
+    renderHorizontalScrollEdges(id);
     const thumb = scrollbarThumbRect(id);
     if (thumb === null) return;
     const v = getScrollState(id).viewportRect;
@@ -359,6 +360,31 @@ function renderScrollbar(id: string, mouseX: number, mouseY: number): void {
         thumb.y,
         thumb.w,
         thumb.h
+    );
+}
+
+function renderHorizontalScrollEdges(id: string): void {
+    const s = getScrollState(id);
+    if (s.axis !== "x") return;
+    const v = s.viewportRect;
+    const maxOffset = Math.max(0, s.contentLength - v.w);
+    if (maxOffset <= 0) return;
+    if (s.offset > 0) {
+        renderHorizontalScrollEdgeTick(v.x, v);
+    }
+    if (s.offset < maxOffset) {
+        renderHorizontalScrollEdgeTick(v.x + v.w - 1, v);
+    }
+}
+
+function renderHorizontalScrollEdgeTick(x: number, v: Rect): void {
+    Renderer.drawRect(COLOR_HORIZONTAL_SCROLL_EDGE_ACCENT, x, v.y, 1, HORIZONTAL_SCROLL_EDGE_TICK_H);
+    Renderer.drawRect(
+        COLOR_HORIZONTAL_SCROLL_EDGE_ACCENT,
+        x,
+        v.y + v.h - HORIZONTAL_SCROLL_EDGE_TICK_H,
+        1,
+        HORIZONTAL_SCROLL_EDGE_TICK_H
     );
 }
 // Returns "consumed" if a clickable was hit, "miss" otherwise.
@@ -432,7 +458,7 @@ export function dispatchClick(
 // Two clicks count as a double-click if they happen within DOUBLE_CLICK_MS and the second
 // click's position lies within the first click's rect. Resets after a double so triple-clicks
 // don't chain into a second double.
-const DOUBLE_CLICK_MS = 200;
+const DOUBLE_CLICK_MS = 350;
 let lastClickRect: Rect | null = null;
 let lastClickTime = 0;
 

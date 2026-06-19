@@ -108,6 +108,24 @@ export function canonicalPath(p: string): string {
 
 const cache = new Map<string, CachedParse>();
 
+type ParsePerfEntry = {
+    path: string;
+    ms: number;
+    source: "memory" | "snapshot" | "full" | "error";
+    at: number;
+};
+
+const parsePerf: ParsePerfEntry[] = [];
+
+function recordParsePerf(path: string, ms: number, source: ParsePerfEntry["source"]): void {
+    parsePerf.push({ path, ms, source, at: Date.now() });
+    if (parsePerf.length > 8) parsePerf.shift();
+}
+
+export function getParsePerfStats(): ParsePerfEntry[] {
+    return parsePerf.slice();
+}
+
 /**
  * Parse `rawPath` if not cached or if the file changed on disk, and return
  * the cached parse (with `parsed: null + error: ...` on failure).
@@ -121,6 +139,7 @@ const cache = new Map<string, CachedParse>();
  * user-initiated import/export tasks where a brief freeze is expected.
  */
 export function parseImportJsonBlocking(rawPath: string): CachedParse {
+    const startedAt = Date.now();
     const canon = canonicalPath(rawPath);
     const mtime = getMtimeMs(canon);
     const existing = cache.get(canon);
@@ -131,6 +150,7 @@ export function parseImportJsonBlocking(rawPath: string): CachedParse {
         existing.mtime === mtime &&
         !settledChange(existing.fingerprint, existing.freshness)
     ) {
+        recordParsePerf(canon, Date.now() - startedAt, "memory");
         return existing;
     }
 
@@ -142,6 +162,7 @@ export function parseImportJsonBlocking(rawPath: string): CachedParse {
     // `reparseNow` already used the snapshot.
     let parsed: ParseResult<Importable[]> | null = null;
     let error: string | null = null;
+    let source: ParsePerfEntry["source"] = "full";
     // For a snapshot-restored parse the rebuilt result has empty spans, so
     // `fingerprintOf` would miss sub-list htsl paths. The snapshot already
     // carries a full fingerprint (built from a full parse at save time) —
@@ -153,6 +174,7 @@ export function parseImportJsonBlocking(rawPath: string): CachedParse {
         if (changed.length === 0) {
             parsed = restoreParseFromSnapshot(snapshot);
             snapshotFingerprint = snapshot.fingerprint;
+            source = "snapshot";
         }
     }
     if (parsed === null) {
@@ -164,6 +186,7 @@ export function parseImportJsonBlocking(rawPath: string): CachedParse {
                 ? (e as { message: string }).message
                 : String(e);
             error = msg;
+            source = "error";
         }
         if (parsed !== null) {
             const fingerprint = buildParseFingerprint(canon, mtime, parsed);
@@ -185,6 +208,7 @@ export function parseImportJsonBlocking(rawPath: string): CachedParse {
         invalidateSourceDiffForParse(parsed);
         recordHouseBinding(parsed.gcx.houseUuid, canon);
     }
+    recordParsePerf(canon, Date.now() - startedAt, source);
     return entry;
 }
 
@@ -222,6 +246,12 @@ export function requestParse(rawPath: string): CachedParse | null {
     }
     pendingParsePaths.set(canon, rawPath);
     return null;
+}
+
+export function isParsePending(rawPath: string): boolean {
+    if (rawPath.trim() === "") return false;
+    const canon = canonicalPath(rawPath);
+    return parseInFlightPath === canon || pendingParsePaths.has(canon);
 }
 
 /**

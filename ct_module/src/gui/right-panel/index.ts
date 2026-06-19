@@ -2,51 +2,52 @@
 
 import { ClickInfo, Element, Rect } from "../lib/layout";
 import { Button, Col, Container, Icon, Row, Scroll, Text } from "../lib/components";
-import { Icons, IconName } from "../lib/icons.generated";
+import { Icons } from "../lib/icons.generated";
 import {
+    closeLiveTab,
     closeTab,
     confirmSelect,
     getActivePath,
-    getActiveRightTab,
     getTabs,
-    moveTab,
+    isLiveTabActive,
     moveTabToEnd,
     moveTabToStart,
-    setActiveRightTab,
+    selectLiveTab,
     setActiveTab,
-    Tab,
-    tabIndex,
-    tabCount,
-    type RightPanelTabId,
+    type Tab,
 } from "./selection";
 import { openMenu, MenuAction } from "../lib/menu";
 import {
+    ACCENT_TEAL,
     COLOR_BUTTON,
     COLOR_BUTTON_HOVER,
-    COLOR_TAB,
-    COLOR_TAB_ACCENT,
-    COLOR_TAB_ACTIVE,
-    COLOR_TAB_ACTIVE_HOVER,
-    COLOR_TAB_HOVER,
     GLYPH_DOT,
     SIZE_ROW_H,
-    SIZE_TAB_H,
 } from "../lib/theme";
 import { statusForFile, STATUS_COLOR, STATUS_LABEL } from "../cache-status";
 import { FileSystemFileLoader, StringFileLoader } from "../../utils/fileLoaders";
 import * as htsw from "htsw";
 import { viewBody } from "./view-body";
-import { normalizeHtswPath } from "../lib/pathDisplay";
+import { compactFileLabel, normalizeHtswPath } from "../lib/pathDisplay";
 import { composeFileMenu } from "../menus/fileMenu";
-import { importTab } from "./import-tab";
-
+import { viewFooter } from "./view-footer";
+import { beginTabDrag, isTabDragging, updateTabDrag } from "./tabDrag";
+import { canonicalPath } from "../parsing/parses";
+import {
+    getQueue,
+    isInQueue,
+    queueItemKey,
+    queueItemsForPath,
+    type QueueItem,
+} from "./import-tab/queue";
 
 const TAB_BG = 0xff2c323b | 0;
 const TAB_BG_HOVER = 0xff3a4350 | 0;
 const TAB_BG_ACTIVE = 0xff4a5566 | 0;
 const TAB_BG_ACTIVE_HOVER = 0xff586477 | 0;
-
-
+const TAB_STRIP_BG = 0xff15181d | 0;
+const TAB_EMPTY_TEXT = 0xff5c6371 | 0;
+const TAB_BG_DRAGGING = 0xff526074 | 0;
 
 const fileLoader = new FileSystemFileLoader();
 type CachedFile = { mtime: number; lines: string[] };
@@ -56,57 +57,92 @@ function endsWith(s: string, suffix: string): boolean {
     return s.length >= suffix.length && s.lastIndexOf(suffix) === s.length - suffix.length;
 }
 
-function stem(p: string): string {
-    // Split on both separators: tab paths can be absolute Windows paths with
-    // backslashes. Splitting on `/` alone would leave the whole `C:\…` path as
-    // the "basename", so the tab button would show the full path instead of
-    // just the file stem.
-    const fwd = p.lastIndexOf("/");
-    const back = p.lastIndexOf("\\");
-    const slash = fwd > back ? fwd : back;
-    const base = slash < 0 ? p : p.substring(slash + 1);
-    const dot = base.lastIndexOf(".");
-    return dot <= 0 ? base : base.substring(0, dot);
-}
-
 const TAB_H = 13;
 const TAB_CLOSE_W = 11;
 const TAB_LABEL_PAD_X = 5;
 const TAB_W_BUFFER = 2;
 const COLOR_TAB_CLOSE_BG_HOVER = 0x40e85c5c | 0;
+const TAB_DOT_W = 8;
+const TAB_ICON_W = 9;
+const TAB_ICON_GAP = 3;
+const TAB_ICON_SLOT_W = TAB_ICON_W + TAB_ICON_GAP;
 
-function tabReorderActions(path: string): MenuAction[] {
-    const idx = tabIndex(path);
-    const total = tabCount();
-    // Tab-specific extras pinned at the top; `composeFileMenu` appends
-    // the universal generics (Add to queue / Show in explorer / Open with
-    // VSCode) below a divider so the menu shape matches the left
-    // panel's row right-click.
+function tabActions(tab: Extract<Tab, { kind: "file" }>): MenuAction[] {
+    if (!tab.confirmed) {
+        return composeFileMenu([
+            { label: "Pin tab", onClick: () => confirmSelect(tab.path) },
+            { kind: "separator" },
+            { label: "Close tab", onClick: () => closeTab(tab.path) },
+        ], tab.path);
+    }
     const specific: MenuAction[] = [
-        { label: "Move left", onClick: () => moveTab(path, -1) },
-        { label: "Move right", onClick: () => moveTab(path, +1) },
+        { label: "Move to start", onClick: () => moveTabToStart(tab.path) },
+        { label: "Move to end", onClick: () => moveTabToEnd(tab.path) },
         { kind: "separator" },
-        { label: "Move to start", onClick: () => moveTabToStart(path) },
-        { label: "Move to end", onClick: () => moveTabToEnd(path) },
-        { kind: "separator" },
-        { label: "Close tab", onClick: () => closeTab(path) },
+        { label: "Close tab", onClick: () => closeTab(tab.path) },
     ];
-    void idx;
-    void total;
-    return composeFileMenu(specific, path);
+    return composeFileMenu(specific, tab.path);
 }
 
-const TAB_DOT_W = 8;
+function liveTabMenu(): MenuAction[] {
+    return [{ label: "Close tab", onClick: () => closeLiveTab() }];
+}
+
+function itemPath(item: QueueItem): string {
+    return item.operation === "import" ? item.sourcePath : item.destinationPath;
+}
+
+function queuedCountForTab(path: string): number {
+    const matches = queueItemsForPath(path);
+    const seen = new Set<string>();
+    let count = 0;
+    for (let i = 0; i < matches.length; i++) {
+        const key = queueItemKey(matches[i]);
+        if (isInQueue(key) && !seen.has(key)) {
+            seen.add(key);
+            count++;
+        }
+    }
+    const canonical = canonicalPath(path);
+    const queue = getQueue();
+    for (let i = 0; i < queue.length; i++) {
+        const key = queueItemKey(queue[i]);
+        if (canonicalPath(itemPath(queue[i])) === canonical && !seen.has(key)) {
+            seen.add(key);
+            count++;
+        }
+    }
+    return count;
+}
 
 function tabButton(tab: Tab): Element {
-    const isActive = getActivePath() === tab.path;
-    const labelText = tab.confirmed ? stem(tab.path) : `§o${stem(tab.path)}`;
-    const tabBg = isActive ? TAB_BG_ACTIVE : TAB_BG;
+    const isLive = tab.kind === "live";
+    const isActive = isLive
+        ? isLiveTabActive()
+        : !isLiveTabActive() && getActivePath() === tab.path;
+    const labelText = isLive
+        ? `§o${compactFileLabel(tab.path)}`
+        : tab.confirmed
+          ? compactFileLabel(tab.path)
+          : `§o${compactFileLabel(tab.path)}`;
+    const isDraggable = !isLive && tab.confirmed;
+    const tabBg = isDraggable && isTabDragging(tab.path)
+        ? TAB_BG_DRAGGING
+        : isActive ? TAB_BG_ACTIVE : TAB_BG;
     const tabHoverBg = isActive ? TAB_BG_ACTIVE_HOVER : TAB_BG_HOVER;
-    const fileStatus = statusForFile(tab.path);
+    const fileStatus = isLive ? null : statusForFile(tab.path);
     const hasDot = fileStatus !== null;
+    const queuedCount = isLive ? 0 : queuedCountForTab(tab.path);
+    const isQueued = queuedCount > 0;
     const labelW = Renderer.getStringWidth(labelText);
-    const tabW = (hasDot ? TAB_DOT_W : 0) + labelW + TAB_LABEL_PAD_X * 2 + TAB_CLOSE_W + TAB_W_BUFFER;
+    const tabW =
+        (hasDot ? TAB_DOT_W : 0) +
+        (isLive ? TAB_ICON_SLOT_W : 0) +
+        (isQueued ? TAB_ICON_SLOT_W : 0) +
+        labelW +
+        TAB_LABEL_PAD_X * 2 +
+        TAB_CLOSE_W +
+        TAB_W_BUFFER;
     return Container({
         style: {
             direction: "row",
@@ -118,13 +154,22 @@ function tabButton(tab: Tab): Element {
         },
         onClick: (_rect: Rect, info: ClickInfo) => {
             if (info.button === 1) {
-                openMenu(info.x, info.y, tabReorderActions(tab.path));
+                openMenu(info.x, info.y, tab.kind === "live" ? liveTabMenu() : tabActions(tab));
                 return;
             }
             if (info.button !== 0) return;
+            if (isLive) {
+                if (info.isDoubleClickSecond) return;
+                selectLiveTab();
+                return;
+            }
+            if (tab.confirmed) beginTabDrag(tab.path, info.x, info.y);
             if (info.isDoubleClickSecond) confirmSelect(tab.path);
             else setActiveTab(tab.path);
         },
+        onHover: isDraggable
+            ? (rect, mouseX, mouseY) => updateTabDrag(tab.path, rect, mouseX, mouseY)
+            : undefined,
         children: [
             Container({
                 style: {
@@ -132,21 +177,49 @@ function tabButton(tab: Tab): Element {
                     width: { kind: "grow" },
                     height: { kind: "grow" },
                     align: "center",
-                    // MC font glyphs sit ~1px high in their line box, so a
-                    // geometric centre reads slightly high; a 1px top pad drops
-                    // the label to optical centre (same trick as the diag badge).
                     padding: [
                         { side: "x", value: TAB_LABEL_PAD_X },
                         { side: "top", value: 1 },
                     ],
                 },
                 children: [
+                    isLive && Icon({
+                        name: Icons.upload,
+                        style: {
+                            width: { kind: "px", value: TAB_ICON_W },
+                            height: { kind: "px", value: 10 },
+                        },
+                    }),
+                    isLive && Container({
+                        style: {
+                            width: { kind: "px", value: TAB_ICON_GAP },
+                            height: { kind: "grow" },
+                        },
+                        children: [],
+                    }),
                     hasDot && Text({
                         text: GLYPH_DOT,
                         color: STATUS_COLOR[fileStatus],
                         tooltip: STATUS_LABEL[fileStatus],
                         tooltipColor: STATUS_COLOR[fileStatus],
                         style: { width: { kind: "px", value: TAB_DOT_W } },
+                    }),
+                    isQueued && Icon({
+                        name: Icons.listCheck,
+                        color: ACCENT_TEAL,
+                        tooltip: queuedCount === 1 ? "Queued" : `${queuedCount} queued`,
+                        tooltipColor: ACCENT_TEAL,
+                        style: {
+                            width: { kind: "px", value: TAB_ICON_W },
+                            height: { kind: "px", value: 10 },
+                        },
+                    }),
+                    isQueued && Container({
+                        style: {
+                            width: { kind: "px", value: TAB_ICON_GAP },
+                            height: { kind: "grow" },
+                        },
+                        children: [],
                     }),
                     Text({ text: labelText }),
                 ],
@@ -162,7 +235,8 @@ function tabButton(tab: Tab): Element {
                 },
                 onClick: (_rect, info) => {
                     if (info.button !== 0) return;
-                    closeTab(tab.path);
+                    if (isLive) closeLiveTab();
+                    else closeTab(tab.path);
                 },
                 children: [
                     Icon({
@@ -178,30 +252,36 @@ function tabButton(tab: Tab): Element {
     });
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-function sourceBody(): Element {
-    return viewBody();
+function emptyTabPlaceholder(): Element {
+    const labelText = "No file";
+    const tabW = Renderer.getStringWidth(labelText) + TAB_LABEL_PAD_X * 2 + TAB_W_BUFFER;
+    return Container({
+        style: {
+            direction: "row",
+            align: "center",
+            width: { kind: "px", value: tabW },
+            height: { kind: "grow" },
+            background: TAB_BG,
+            padding: [
+                { side: "x", value: TAB_LABEL_PAD_X },
+                { side: "top", value: 1 },
+            ],
+        },
+        children: [
+            Text({
+                text: labelText,
+                color: TAB_EMPTY_TEXT,
+            }),
+        ],
+    });
 }
 
-/**
- * Render a path as `./htsw/...` when the path passes through the htsw repo,
- * else as `./...` relative to the MC root. No length-based truncation — the
- * scissor on the path-label container clips any overflow at the panel edge.
- */
+function tabStripChildren(): Element[] {
+    const tabs = getTabs();
+    if (tabs.length === 0) return [emptyTabPlaceholder()];
+    return tabs.map(tabButton);
+}
+
 function displayPath(p: string): string {
     return normalizeHtswPath(p);
 }
@@ -221,12 +301,6 @@ function isSnbtPath(p: string): boolean {
     return endsWith(p.replace(/\\/g, "/").toLowerCase(), ".snbt");
 }
 
-/**
- * Parse the active .snbt file and rewrite it with the language printer's
- * pretty mode, then drop the plain-text view cache so the next render
- * picks up the new bytes. Surfaces any parser diagnostic in chat rather
- * than silently failing — formatting a malformed SNBT is a no-op.
- */
 function formatActiveSnbt(): void {
     const path = getActivePath();
     if (path === null) return;
@@ -263,65 +337,13 @@ function formatActiveSnbt(): void {
     ChatLib.chat(`&a[htsw] formatted ${path}`);
 }
 
-// ── Top-level View/Import panel tabs ────────────────────────────────────
-
-function panelTabButton(id: RightPanelTabId, label: string, icon: IconName): Element {
-    const isActive = getActiveRightTab() === id;
-    return Container({
-        style: {
-            direction: "col",
-            width: { kind: "grow" },
-            height: { kind: "grow" },
-        },
-        children: [
-            Button({
-                icon,
-                text: label,
-                style: {
-                    width: { kind: "grow" },
-                    height: { kind: "grow" },
-                    background: isActive ? COLOR_TAB_ACTIVE : COLOR_TAB,
-                    hoverBackground: isActive ? COLOR_TAB_ACTIVE_HOVER : COLOR_TAB_HOVER,
-                },
-                onClick: () => {
-                    setActiveRightTab(id);
-                },
-            }),
-            Container({
-                style: {
-                    width: { kind: "grow" },
-                    height: { kind: "px", value: 2 },
-                    background: isActive ? COLOR_TAB_ACCENT : undefined,
-                },
-                children: [],
-            }),
-        ],
-    });
-}
-
-function panelTabBar(): Element {
-    return Row({
-        style: {
-            gap: 2,
-            height: { kind: "px", value: SIZE_TAB_H + 2 },
-            width: { kind: "grow" },
-        },
-        children: [
-            panelTabButton("view", "View", Icons.eye),
-            panelTabButton("import", "Import", Icons.upload),
-        ],
-    });
-}
-
-// ── View tab (existing source preview + sub-tabs) ──────────────────────
-
 function viewTabHeader(): Element {
     return Row({
         style: { gap: 4, align: "center", height: { kind: "px", value: SIZE_ROW_H } },
         children: () => {
             const p = getActivePath();
             const children: Element[] = [pathLabel()];
-            if (p !== null && isSnbtPath(p)) {
+            if (!isLiveTabActive() && p !== null && isSnbtPath(p)) {
                 children.push(
                     Button({
                         text: "Format",
@@ -347,56 +369,28 @@ function viewTab(): Element {
             Scroll({
                 id: "right-view-tab-strip",
                 axis: "x",
-                style: { gap: 2, height: { kind: "px", value: TAB_H } },
-                children: () => getTabs().map(tabButton),
+                style: {
+                    gap: 2,
+                    height: { kind: "px", value: TAB_H },
+                    background: TAB_STRIP_BG,
+                },
+                children: tabStripChildren,
             }),
             viewTabHeader(),
-            sourceBody(),
+            viewBody(),
+            viewFooter(),
         ],
     });
 }
 
-// ── Import tab (queue + live importer + capture/import buttons) ─────────
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 export function RightPanel(): Element {
     return Col({
         style: { padding: 6, gap: 4, width: { kind: "grow" }, height: { kind: "grow" } },
-        children: () => [
-            panelTabBar(),
+        children: [
             Container({
                 anchorKey: "tour:right-body",
                 style: { width: { kind: "grow" }, height: { kind: "grow" } },
-                children: () => [
-                    getActiveRightTab() === "view" ? viewTab() : importTab(),
-                ],
+                children: () => [viewTab()],
             }),
         ],
     });

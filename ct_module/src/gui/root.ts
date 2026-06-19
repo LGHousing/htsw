@@ -96,8 +96,7 @@ function buildLayout(b: ContainerBounds): Element {
     return Col({
         style: { width: { kind: "grow" }, height: { kind: "grow" } },
         children: [
-            // CONTENT ROW — left + center cutouts + right, full screen height
-            // (minus SCREEN_PAD top/bottom). No top bar above this row.
+            // CONTENT ROW — left + center cutouts + right.
             Row({
                 style: { width: { kind: "grow" }, height: { kind: "grow" } },
                 children: [
@@ -109,7 +108,7 @@ function buildLayout(b: ContainerBounds): Element {
                             height: { kind: "grow" },
                         },
                         children: [
-                            bgWrap(LeftPanel(), railH),
+                            bgWrap(LeftPanel(leftColW), railH),
                             chatInputH > 0
                                 ? Container({
                                       style: {

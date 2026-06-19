@@ -20,7 +20,6 @@ import { getActivePath, previewSelect } from "../right-panel/selection";
 import { getImportJsonPath } from "../state";
 import { requestParse } from "../parsing/parses";
 import { importableSourcePath } from "../parsing/importablePaths";
-import { setActiveRightTab } from "../right-panel/selection";
 
 /**
  * First-load walkthrough. Each step can spotlight a named region (anchor
@@ -52,7 +51,6 @@ const STEPS: TourStep[] = [
         ],
         setup: () => {
             setActiveLeftTab("importables");
-            setActiveRightTab("view");
         },
     },
     {
@@ -84,6 +82,7 @@ const STEPS: TourStep[] = [
             "these two.",
         ],
         anchor: "tour:left-tabs",
+        setup: () => setActiveLeftTab("importables"),
     },
     {
         title: "Importables — your files",
@@ -106,20 +105,18 @@ const STEPS: TourStep[] = [
         ],
         anchor: "tour:right-body",
         setup: () => {
-            setActiveRightTab("view");
             previewFirstAvailableSource();
         },
     },
     {
         title: "Import — files into the house",
         lines: [
-            "Queued items land here. Import walks the real",
-            "Housing menus for you, with live progress.",
-            "Trusting a house skips re-verifying content",
-            "HTSW already knows.",
+            "Queued items sit under the code view.",
+            "Import shows live progress across the top.",
+            "The live diff appears as an upload tab and",
+            "follows the file HTSW is writing.",
         ],
         anchor: "tour:right-body",
-        setup: () => setActiveRightTab("import"),
     },
     {
         title: "Houses — the house into files",
@@ -142,7 +139,6 @@ const STEPS: TourStep[] = [
         ],
         setup: () => {
             setActiveLeftTab("importables");
-            setActiveRightTab("view");
         },
     },
 ];

@@ -11,16 +11,18 @@ function Divider(): Element {
     });
 }
 
-export function LeftPanel(): Element {
+const PANEL_PAD = 6;
+
+export function LeftPanel(width: number): Element {
     return Col({
         style: {
-            padding: 6,
+            padding: PANEL_PAD,
             gap: 6,
             width: { kind: "grow" },
             height: { kind: "grow" },
         },
         children: () => [
-            TabBar(),
+            TabBar(width - PANEL_PAD * 2),
             Divider(),
             Container({
                 anchorKey: "tour:left-body",
