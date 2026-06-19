@@ -60,7 +60,7 @@ import { canonicalIconItem } from "../../../importCache/hash";
 import { addToQueue, makeImportableQueueItem, queueItemKey, removeFromQueueKey } from "../../right-panel/import-tab/queue";
 import { isImportRunning } from "../../../housingSync/runtimeState";
 import { composeFileMenu, composeImportableMenu } from "../../menus/fileMenu";
-import { autoTrackRefresh, queueModifiedFromParse } from "../../right-panel/import-tab/importController";
+import { autoTrackRefresh, queueModifiedFromPath } from "../../autoTrack";
 import { SourceDir, SourceFile, removeSource } from "./source";
 import { type IncludeNode, includeTreeOf, subtreeImportableCount } from "./includeTree";
 import { showInExplorer, openInVSCode } from "../../../utils/osShell";
@@ -1198,6 +1198,17 @@ function houseBindControl(fullPath: string): Element | false {
     });
 }
 
+function autoTrackIndicator(fullPath: string): Element | false {
+    if (!isAutoTrackSource(fullPath)) return false;
+    return Icon({
+        name: Icons.radar,
+        color: ACCENT_INFO,
+        tooltip: "Auto-Track enabled",
+        tooltipColor: ACCENT_INFO,
+        style: { width: { kind: "px", value: 10 }, height: { kind: "px", value: 10 } },
+    });
+}
+
 export function resultRow(
     r: Result,
     sourceKey: string,
@@ -1220,7 +1231,7 @@ export function resultRow(
               {
                   label: "Queue all modified",
                   onClick: () => {
-                      queueModifiedFromParse(r.fullPath, r.importables);
+                      queueModifiedFromPath(r.fullPath);
                   },
               },
               {
@@ -1275,6 +1286,8 @@ export function resultRow(
                 truncate: true,
                 style: { width: { kind: "grow" } },
             }),
+            isImport && autoTrackIndicator(r.fullPath),
+            isImport && isAutoTrackSource(r.fullPath) && rowSlot(INNER_GAP),
             isImport && houseBindControl(r.fullPath),
         ],
     });
