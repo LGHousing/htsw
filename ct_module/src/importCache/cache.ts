@@ -2,7 +2,7 @@ import type { Importable } from "htsw/types";
 
 import TaskContext from "../tasks/context";
 import { ensureParentDirs } from "../utils/filesystem";
-import { IMPORT_DEBUG } from "../housingSync/diagnostics/importDebug";
+import { traceNote } from "../housingSync/trace/importTrace";
 import { importableHash, listHashes } from "./hash";
 import { getCurrentHousingUuid } from "./housingId";
 import {
@@ -127,8 +127,8 @@ export function writeImportableCache(
  * real import/export work is already done by the time this runs — the cache is
  * a hint, not a contract, so a missing /wtfmap reply or filesystem error must
  * never abort the caller. Exporter failures warn unconditionally (export is a
- * deliberate, low-frequency action); importer failures stay quiet unless
- * IMPORT_DEBUG, since a bulk import would otherwise spam the log.
+ * deliberate, low-frequency action); importer failures only land in the import
+ * trace, since a bulk import would otherwise spam the log.
  */
 export async function tryWriteImportableCache(
     ctx: TaskContext,
@@ -142,10 +142,8 @@ export async function tryWriteImportableCache(
     } catch (error) {
         if (writer === "exporter") {
             ctx.displayMessage(`&7[export] &eCache write skipped: ${error}`);
-        } else if (IMPORT_DEBUG) {
-            ctx.displayMessage(
-                `&7[knowledge] &eSkipped cache write for ${importable.type}: ${error}`
-            );
+        } else {
+            traceNote("cache", `skipped cache write for ${importable.type}: ${error}`);
         }
     }
 }

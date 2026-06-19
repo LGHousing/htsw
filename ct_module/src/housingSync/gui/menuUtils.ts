@@ -22,7 +22,7 @@ import {
 import { getVisiblePaginatedItemSlots } from "./paginatedList";
 import { COST } from "../progress/costs";
 import { recordTimedOp } from "../progress/timing";
-import { IMPORT_DEBUG } from "../diagnostics/importDebug";
+import { isImportTraceEnabled, traceNote } from "../trace/importTrace";
 import type { WaitForPromise } from "../../tasks/specifics/waitFor";
 
 function describeVisibleOptions(ctx: TaskContext): string {
@@ -58,15 +58,16 @@ function describeAllMenuSlots(ctx: TaskContext): string {
 
 async function scanPagesForOption(
     ctx: TaskContext,
-    name: string,
-    seenOptions: string[]
+    name: string
 ): Promise<ItemSlot | null> {
     await goToFirstPaginatedOptionPage(ctx);
     for (let page = 0; page < 100; page++) {
         const slot = ctx.tryGetMenuItemSlot(name);
         if (slot !== null) return slot;
 
-        if (IMPORT_DEBUG) seenOptions.push(`[p${page}: ${describeVisibleOptions(ctx)}]`);
+        if (isImportTraceEnabled()) {
+            traceNote("paginate", `page ${page}: ${describeVisibleOptions(ctx)}`);
+        }
 
         const nextPageSlot = findPaginationControl(ctx, "next");
         if (nextPageSlot === null) break;
@@ -79,13 +80,13 @@ async function scanPagesForOption(
 const PAGINATE_RESCAN_ATTEMPTS = 3;
 
 export async function getSlotPaginate(ctx: TaskContext, name: string): Promise<ItemSlot> {
-    const seenOptions: string[] = [];
     for (let attempt = 0; attempt < PAGINATE_RESCAN_ATTEMPTS; attempt++) {
-        const found = await scanPagesForOption(ctx, name, seenOptions);
+        const found = await scanPagesForOption(ctx, name);
         if (found !== null) {
-            if (IMPORT_DEBUG && attempt > 0) {
-                ChatLib.chat(
-                    `&e[paginate] found "${name}" only after ${attempt} rescan(s) — menu was still populating when first scanned.`
+            if (attempt > 0) {
+                traceNote(
+                    "paginate",
+                    `found "${name}" only after ${attempt} rescan(s) — menu was still populating when first scanned`
                 );
             }
             return found;
@@ -97,9 +98,7 @@ export async function getSlotPaginate(ctx: TaskContext, name: string): Promise<I
         }
     }
 
-    const detail = IMPORT_DEBUG
-        ? `${menuStateDescription()} — saw options: ${seenOptions.join(" ")} — all slots: [${describeAllMenuSlots(ctx)}]`
-        : "";
+    const detail = `${menuStateDescription()} — all slots: [${describeAllMenuSlots(ctx)}]`;
     throw new Error(`Could not find "${name}" on any page after ${PAGINATE_RESCAN_ATTEMPTS} attempts.${detail}`);
 }
 

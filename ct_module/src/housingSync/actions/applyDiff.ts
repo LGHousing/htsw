@@ -155,14 +155,13 @@ async function clickAddActionOption(
         throw Diagnostic.error(`Maximum amount of ${displayName} actions exceeded`);
     }
 
-    const before = menuStateDescription();
     const wait = timedWaitForMenu(ctx, "menuClickWait");
     slot.click();
     try {
         await wait;
     } catch (error) {
         throw new Error(
-            `After clicking Add Action option "${displayName}" (${actionType}) from${before}: ${errorMessage(error)}`
+            `After clicking Add Action option "${displayName}" (${actionType})${menuStateDescription()}: ${errorMessage(error)}`
         );
     }
 }
