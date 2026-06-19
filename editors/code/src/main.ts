@@ -10,6 +10,7 @@ import {
 import { commands, Disposable, ExtensionContext, languages, Position, Range, window, workspace } from "vscode";
 import { checkForUpdates } from "./autoUpdate";
 import { registerProjectFileHelpers } from "./projectFiles";
+import { HtswToolsViewProvider } from "./webview/toolsView";
 
 const disposables: Disposable[] = [];
 const providers: Disposable[] = [];
@@ -116,6 +117,14 @@ export function activate(context: ExtensionContext) {
         );
 
         providers.push(new languageFeatures.DiagnosticsAdapter());
+
+        providers.push(
+            window.registerWebviewViewProvider(
+                HtswToolsViewProvider.viewType,
+                new HtswToolsViewProvider(context.extensionUri, context.globalStorageUri, context.globalState),
+                { webviewOptions: { retainContextWhenHidden: true } },
+            )
+        );
     }
 
     registerProviders();

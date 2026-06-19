@@ -13,7 +13,7 @@
         "vscode": "^1.97.2"
     },
     "scripts": {
-        "build": "npm run generate:schema && tsc --noEmit && vite build --mode production",
+        "build": "npm run generate:schema && tsc --noEmit && vite build --mode production && vite build --config vite.webview.config.ts --mode production",
         "generate:schema": "node --experimental-strip-types ./scripts/generateImportSchema.ts",
         "check:schema": "node --experimental-strip-types ./scripts/generateImportSchema.ts --check",
         "package": "npx @vscode/vsce package --no-dependencies"
@@ -21,7 +21,8 @@
     "dependencies": {
         "htsw": "file:../../language",
         "htsw-editor-common": "file:../common",
-        "jsonc-parser": "^3.3.1"
+        "jsonc-parser": "^3.3.1",
+        "minecraft-icon-items": "^0.4.5"
     },
     "devDependencies": {
         "@types/node": "^25.9.3",
@@ -33,6 +34,7 @@
     "main": "./dist/extension.cjs",
     "activationEvents": [
         "onStartupFinished",
+        "onView:htsw.tools",
         "onLanguage:json",
         "onLanguage:jsonc"
     ],
@@ -54,6 +56,24 @@
                 {
                     "command": "htsw.project.createIncludedImportJson",
                     "group": "htsw@1"
+                }
+            ]
+        },
+        "viewsContainers": {
+            "activitybar": [
+                {
+                    "id": "htsw",
+                    "title": "HTSW",
+                    "icon": "media/htsw-activitybar.svg"
+                }
+            ]
+        },
+        "views": {
+            "htsw": [
+                {
+                    "id": "htsw.tools",
+                    "type": "webview",
+                    "name": "HTSW"
                 }
             ]
         },

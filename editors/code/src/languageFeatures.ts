@@ -98,6 +98,7 @@ export class InlayHintsAdapter implements vscode.InlayHintsProvider {
 export class DiagnosticsAdapter {
     private disposables: vscode.Disposable[] = [];
     private pendingValidations: Map<string, NodeJS.Timeout> = new Map();
+    private disposed = false;
     private diagnosticCollection: vscode.DiagnosticCollection =
         vscode.languages.createDiagnosticCollection("htsl");
 
@@ -144,9 +145,32 @@ export class DiagnosticsAdapter {
         this.addWorkspaceWatcher("**/*.import.json");
 
         vscode.workspace.textDocuments.forEach((document) => this.scheduleValidate(document, 0));
+        void this.scanWorkspace();
+    }
+
+    // Validate every project file once on startup so the import.json tree's
+    // error/warning badges reflect the whole project, not just open files.
+    // Runs in the background; already-open files are covered by the open path.
+    private async scanWorkspace(): Promise<void> {
+        let files: vscode.Uri[];
+        try {
+            files = await vscode.workspace.findFiles(
+                "**/{*.htsl,*.snbt,import.json,*.import.json}",
+                "**/{node_modules,.git}/**",
+            );
+        } catch {
+            return;
+        }
+        const open = new Set(vscode.workspace.textDocuments.map((document) => document.uri.toString()));
+        for (const uri of files) {
+            if (this.disposed) return;
+            if (open.has(uri.toString()) || this.isExcludedUri(uri)) continue;
+            await this.validateUriFromDisk(uri);
+        }
     }
 
     public dispose() {
+        this.disposed = true;
         for (const timer of this.pendingValidations.values()) {
             clearTimeout(timer);
         }
