@@ -2,8 +2,8 @@
 
 /**
  * Import-tab action surfaces: the export destination picker popover, the
- * bottom action row (Import / caret), and the caret popover
- * content. Pure UI — all state lives elsewhere.
+ * bottom Import action, and the export destination picker. Pure UI — all
+ * state lives elsewhere.
  */
 
 import type { Element } from "../../lib/layout";
@@ -24,11 +24,9 @@ import {
     COLOR_TEXT_FAINT,
     SIZE_ROW_H,
 } from "../../lib/theme";
-import { closeAllPopovers, togglePopover } from "../../lib/popovers";
+import { closeAllPopovers } from "../../lib/popovers";
 import { compactFileLabel, normalizeHtswPath, shortPath } from "../../lib/pathDisplay";
 import {
-    clearImportableChecks,
-    getAutoTrackSources,
     getExportImportJsonPath,
     getHousingUuid,
     getImportJsonPath,
@@ -205,40 +203,6 @@ export function exportDestinationPicker(): Element {
     });
 }
 
-function importCaretPopoverContent(): Element {
-    return Col({
-        style: { padding: 4, gap: 2, height: { kind: "grow" } },
-        children: [
-            Button({
-                text: () => {
-                    const n = getAutoTrackSources().size;
-                    return n === 0 ? "Auto-Track: OFF" : `Auto-Track: ${n} source${n === 1 ? "" : "s"}`;
-                },
-                style: {
-                    width: { kind: "grow" },
-                    height: { kind: "px", value: 20 },
-                    background: COLOR_BUTTON,
-                    hoverBackground: COLOR_BUTTON_HOVER,
-                },
-                onClick: () => {},
-            }),
-            Button({
-                text: "Clear selection",
-                style: {
-                    width: { kind: "grow" },
-                    height: { kind: "px", value: 20 },
-                    background: COLOR_BUTTON,
-                    hoverBackground: COLOR_BUTTON_HOVER,
-                },
-                onClick: () => {
-                    clearImportableChecks();
-                    closeAllPopovers();
-                },
-            }),
-        ],
-    });
-}
-
 export function importControl(): Element {
     return Row({
         style: { gap: 4, height: { kind: "px", value: 18 } },
@@ -256,25 +220,6 @@ export function importControl(): Element {
                     hoverBackground: COLOR_BUTTON_PRIMARY_HOVER,
                 },
                 onClick: () => startImport(),
-            }),
-            // Caret: alternate-source actions (selected-only import, clear selection).
-            Button({
-                icon: Icons.chevronDown,
-                style: {
-                    width: { kind: "px", value: 22 },
-                    height: { kind: "grow" },
-                    background: COLOR_BUTTON_PRIMARY,
-                    hoverBackground: COLOR_BUTTON_PRIMARY_HOVER,
-                },
-                onClick: (rect) => {
-                    togglePopover({
-                        key: "right-import-caret-menu",
-                        anchor: rect,
-                        content: importCaretPopoverContent(),
-                        width: 200,
-                        height: 56,
-                    });
-                },
             }),
         ],
     });

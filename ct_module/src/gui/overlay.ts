@@ -31,6 +31,7 @@ import { RootTree, getImportCachedBounds } from "./root";
 import { getContainerBounds, getFullscreenPanelRect } from "./lib/bounds";
 import { tickReparse } from "./parsing/reparse";
 import { processPendingParses } from "./parsing/parses";
+import { autoTrackRefresh } from "./autoTrack";
 import { CHAT_INPUT_ID } from "./chat-input";
 import {
     initPopoverRendering,
@@ -557,7 +558,7 @@ export function initHtswGui(): void {
             tickReparse();
             // Drain one off-frame parse queued by requestParse() (export pane,
             // Importables tree, queue rows) so a cold parse never blocks render.
-            processPendingParses();
+            processPendingParses(autoTrackRefresh);
         }
         // First-load walkthrough; once per session, never mid-import, and only
         // while the GUI can actually render a popover.
