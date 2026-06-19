@@ -92,7 +92,6 @@ export type ConditionComparePlaceholder = {
     placeholder?: string;
     op?: Comparison;
     amount?: Value;
-    fallback?: Value;
 };
 
 export type ConditionRequireTeam = {

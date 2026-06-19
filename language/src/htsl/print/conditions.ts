@@ -105,7 +105,6 @@ function printConditionBody(cond: Condition): string {
                 parts.push(printNumericalPlaceholder(cond.placeholder));
             if (cond.op !== undefined) parts.push(COMPARISON_SYMBOLS[cond.op]);
             if (cond.amount !== undefined) parts.push(printValue(cond.amount));
-            if (cond.fallback !== undefined) parts.push(printValue(cond.fallback));
             return parts.join(" ");
         }
         case "REQUIRE_TEAM": {
