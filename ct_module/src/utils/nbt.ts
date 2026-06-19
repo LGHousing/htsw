@@ -352,3 +352,36 @@ export function itemWithInteractData(cosmeticNbt: Tag, interactDataSnbt: string)
     }
     return getItemFromNbt(root);
 }
+
+/**
+ * Whether an item carries the enchantment glint — a non-empty `tag.ench` list.
+ * Function icons use the glint as a cosmetic flag, so which enchantment it is
+ * doesn't matter; any entry counts. Inverse of `itemWithEnchantGlint`.
+ */
+export function itemHasEnchantGlint(item: Item): boolean {
+    const tag = itemToHtswTag(item);
+    if (tag === null) return false;
+    const ench = getNestedTag(tag, ["tag", "ench"]);
+    return ench !== undefined && ench.type === "list" && ench.value.value.length > 0;
+}
+
+/**
+ * Rebuild an item with a sentinel enchantment so it renders the glint. MC shows
+ * the glint for any non-empty `tag.ench`; the enchantment itself (Protection I)
+ * is meaningless and never read back — only its presence is.
+ */
+export function itemWithEnchantGlint(item: Item): Item {
+    const tag = itemToHtswTag(item);
+    if (tag === null || tag.type !== "compound") return item;
+    const tagCompound = ensureCompoundChild(tag, "tag");
+    tagCompound.value.ench = {
+        type: "list",
+        value: {
+            type: "compound",
+            value: [
+                { id: { type: "short", value: 0 }, lvl: { type: "short", value: 1 } },
+            ],
+        },
+    } as Tag;
+    return getItemFromNbt(tag);
+}

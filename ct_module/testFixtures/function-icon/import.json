@@ -1,0 +1,12 @@
+{
+    "functions": [
+        {
+            "name": "htsw_test_fn_icon",
+            "icon": {
+                "item": "minecraft:map",
+                "count": 3,
+                "enchanted": true
+            }
+        }
+    ]
+}

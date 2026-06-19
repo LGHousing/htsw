@@ -13,7 +13,7 @@ import TaskContext from "../../tasks/context";
 import { MouseButton } from "../../tasks/specifics/slots";
 import { removedFormatting, unique } from "../../utils/helpers";
 import {
-    createPlainIconItem,
+    createIconItem,
     desiredIconSnapshot,
     iconSnapshotsEqual,
     iconStacksEqual,
@@ -163,7 +163,7 @@ async function setFunctionIconIfNeeded(
     // An icon is only ever {item, count}; match the picker selection on those,
     // not the exact-NBT compare used for GIVE_ITEM (which would never match a
     // freshly creative-spawned stack and falsely report "never appeared").
-    await setItemValue(ctx, "Edit Icon", createPlainIconItem(icon), iconStacksEqual);
+    await setItemValue(ctx, "Edit Icon", createIconItem(icon), iconStacksEqual);
 }
 
 async function functionSettingsStep<T>(

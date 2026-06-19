@@ -318,6 +318,10 @@ function parseFunctionIcon(gcx: GlobalCtxt, node: json.Node): FunctionIcon {
             icon.count = count;
             setFieldSpan(gcx, icon, "count", child);
         },
+        "enchanted": (child) => {
+            icon.enchanted = parseBoolean(gcx, child);
+            setFieldSpan(gcx, icon, "enchanted", child);
+        },
     });
 
     return icon;
