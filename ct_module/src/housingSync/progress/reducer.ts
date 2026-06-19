@@ -273,7 +273,9 @@ function applyProgress(
     const prevApplying = state.active.currentPhaseUnits.applying;
     const incomingApplying = payload.phaseUnits.applying;
     const applying =
-        incomingApplying === 0 && prevApplying > 0
+        payload.preserveApplyingEstimate !== false &&
+        incomingApplying === 0 &&
+        prevApplying > 0
             ? prevApplying
             : incomingApplying;
     const next: ActiveBookkeeping = {
