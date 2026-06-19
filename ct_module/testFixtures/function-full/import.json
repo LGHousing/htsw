@@ -1,0 +1,10 @@
+{
+    "functions": [
+        {
+            "name": "htsw_test_fn_full",
+            "actions": "actions.htsl",
+            "icon": { "item": "minecraft:map" },
+            "repeatTicks": 20
+        }
+    ]
+}
