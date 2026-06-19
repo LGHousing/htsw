@@ -15,7 +15,6 @@ const ForgeKeyboardInputEventPre = javaType(
     "net.minecraftforge.client.event.GuiScreenEvent$KeyboardInputEvent$Pre"
 );
 const GuiScreenClass = javaType("net.minecraft.client.gui.GuiScreen");
-const GuiRepairClass = javaType("net.minecraft.client.gui.inventory.GuiRepair");
 const RenderGameOverlayEventPost = javaType(
     "net.minecraftforge.client.event.RenderGameOverlayEvent$Post"
 );
@@ -32,7 +31,7 @@ import { getContainerBounds, getFullscreenPanelRect } from "./lib/bounds";
 import { tickReparse } from "./parsing/reparse";
 import { processPendingParses } from "./parsing/parses";
 import { autoTrackRefresh } from "./autoTrack";
-import { CHAT_INPUT_ID } from "./chat-input";
+import { CHAT_INPUT_ID } from "./chat";
 import {
     initPopoverRendering,
     popoverIsOpen,
@@ -42,8 +41,6 @@ import {
     mouseIsOverPopover,
 } from "./lib/popovers";
 import { maybeAutoStartTour } from "./popovers/tour";
-import { debugLog, flushGuiDebug, isGuiDebugArmed } from "./lib/debugLog";
-import { isParseInProgress } from "./state";
 import {
     closeHoverCard,
     drawHoverCard,
@@ -63,7 +60,7 @@ import { TaskManager } from "../tasks/manager";
 import { getChatKeyCode } from "./keybinds";
 import { renderToast } from "./toast";
 import { sampleProgressTraceTick } from "../housingSync/trace/progressTrace";
-import { endTabDrag } from "./right-panel/tabDrag";
+import { endTabDrag, tickTabDragAutoScroll } from "./right-panel/tabDrag";
 import {
     dispatchWheel,
     isDraggingScrollbar,
@@ -75,6 +72,7 @@ import {
     clearDeferredTooltip,
 } from "./lib/render";
 import { getFocusedInput, setFocusedInput } from "./lib/focus";
+import { markGuiDirty } from "./lib/dirty";
 import { applyFocus, getRecord, readAndSync, tickAllFields } from "./lib/inputState";
 import {
     getEffectiveOverlayScale,
@@ -120,7 +118,6 @@ function frameVisible(): boolean {
 // The transport handler also zeroes `lastUuidFetchAt` so the cooldown
 // from any prior failed fetch (e.g. one attempted from limbo where
 // `/wtfmap` returns "Unknown command") doesn't gate the new attempt.
-let lastDebugSampleAt = 0;
 let uuidFetchInFlight = false;
 let lastUuidFetchAt = 0;
 const UUID_FETCH_COOLDOWN_MS = 60_000;
@@ -163,9 +160,12 @@ function laidOutTrees(): { root: Element; rect: Rect }[] {
 
 function nativeScreenUsesTypedCharacters(): boolean {
     const screen = (Client.getMinecraft() as any).field_71462_r;
-    return screen !== null &&
-        screen !== undefined &&
-        GuiRepairClass.class.isInstance(screen);
+    if (screen === null || screen === undefined) return false;
+    try {
+        return String(screen.getClass().getName()).indexOf("GuiRepair") >= 0;
+    } catch (_e) {
+        return false;
+    }
 }
 
 /**
@@ -457,13 +457,22 @@ export function initHtswGui(): void {
                 const s = getScrollState(el.id);
                 if (!pointInRect(s.viewportRect, mx, my)) continue;
                 dispatchWheel(laid, mx, my, delta);
+                markGuiDirty(); // offset changed → different rows visible → relayout
                 cancel(event);
                 return;
             }
         }
     });
-    register("guiRender", (_mouseX: number, mouseY: number) => {
+    register("guiRender", (mouseX: number, mouseY: number) => {
         if (isDraggingScrollbar()) updateScrollbarDrag(mcToOverlay(mouseY));
+        // Auto-scroll the tab strip while a tab is dragged to its edge, so the
+        // drag can reach tabs the cull dropped off-screen and pull one back in.
+        tickTabDragAutoScroll(mcToOverlay(mouseX));
+        // Continuous rebuild while something is actively animating the tree's
+        // structure: any held-button drag (scrollbar thumb, tab reorder) and a
+        // running import (progress strip + live diff). Runs at default priority,
+        // before the panel paint (LOW), so the mark lands the same frame.
+        if (MouseClass.isButtonDown(0) || getImportProgress() !== null) markGuiDirty();
     });
     register("guiMouseRelease", () => {
         endScrollbarDrag();
@@ -514,7 +523,7 @@ export function initHtswGui(): void {
         // Esc: clear focus + close popovers, but don't cancel — let MC also close the GUI.
         if (keyCode === 1) {
             setFocusedInput(null);
-            if (popoverIsOpen()) closeAllPopovers();
+            if (popoverIsOpen()) closeAllPopovers(true);
             return;
         }
         if (keyCode === 28) {
@@ -526,6 +535,7 @@ export function initHtswGui(): void {
             } else {
                 setFocusedInput(null);
             }
+            markGuiDirty();
             cancel(event);
             return;
         }
@@ -542,6 +552,8 @@ export function initHtswGui(): void {
                 typeof inputEl.value === "function" ? inputEl.value() : inputEl.value;
             if (newText !== current) inputEl.onChange(newText);
         }
+        // Typing changes filtered results / cursor — rebuild next paint.
+        markGuiDirty();
         cancel(event);
     });
 
@@ -565,17 +577,6 @@ export function initHtswGui(): void {
         if (frameVisible() && getImportProgress() === null) {
             maybeAutoStartTour();
         }
-        if (isGuiDebugArmed()) {
-            const now = Date.now();
-            if (now - lastDebugSampleAt >= 250) {
-                lastDebugSampleAt = now;
-                debugLog(
-                    `tick frameVisible=${frameVisible()} popovers=${getOpenPopoverContents().length} ` +
-                    `parseInProgress=${isParseInProgress()} uuid=${getHousingUuid()}`
-                );
-            }
-        }
-        flushGuiDebug();
         // If the import ended while our placeholder is still up (Hypixel
         // didn't reopen a menu — e.g. the import finished naturally on
         // the last menu close), dismiss it so the player isn't trapped
@@ -594,7 +595,7 @@ export function initHtswGui(): void {
         // keying the teardown on getContainerBounds() here would drop overlay
         // popover/focus state on every one of those flickers.
         if (!frameVisible()) {
-            if (popoverIsOpen()) closeAllPopovers();
+            if (popoverIsOpen()) closeAllPopovers(true);
             closeHoverCard();
             if (getFocusedInput() !== null) setFocusedInput(null);
         } else if (getContainerBounds() !== null) {
