@@ -17,11 +17,14 @@ function stackCount(stack: any): number {
 }
 
 // The one boundary where MC's numeric item world meets HTSW's name vocabulary:
-// map a live item's id to its HTSW name. MINECRAFT_ITEMS is the same table the
-// parser validates against, and its `id` is the 1.8 getIdFromItem value.
+// map a live item's id to the canonical namespaced id (`minecraft:<name>`) that
+// the import.json loader (parseMinecraftItemId) also produces. Emitting the same
+// form on both sides is what lets a read-back icon and a loaded icon compare and
+// hash equal with no reconciliation. MINECRAFT_ITEMS is the same table the parser
+// validates against (bare `.name`); its `id` is the 1.8 getIdFromItem value.
 function itemNameForId(itemId: number): string | null {
     for (let i = 0; i < MINECRAFT_ITEMS.length; i++) {
-        if (MINECRAFT_ITEMS[i].id === itemId) return MINECRAFT_ITEMS[i].name;
+        if (MINECRAFT_ITEMS[i].id === itemId) return `minecraft:${MINECRAFT_ITEMS[i].name}`;
     }
     return null;
 }

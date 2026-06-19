@@ -56,7 +56,6 @@ import {
     listCachedImportables,
     readImportableCache,
 } from "../../../importCache/cache";
-import { canonicalIconItem } from "../../../importCache/hash";
 import { addToQueue, makeImportableQueueItem, queueItemKey, removeFromQueueKey } from "../../right-panel/import-tab/queue";
 import { isImportRunning } from "../../../housingSync/runtimeState";
 import { composeFileMenu, composeImportableMenu } from "../../menus/fileMenu";
@@ -257,14 +256,11 @@ export function metadataFieldsOf(imp: Importable): MetadataField[] {
                 key: "icon",
                 label: "Icon",
                 value: imp.icon !== undefined ? imp.icon.item : "default",
-                // Compare in canonical form — house reads store bare item
-                // names while the loader emits `minecraft:<name>`; comparing
-                // raw strings would flag identical icons as changed.
                 diff:
                     cf !== null
                         ? valDiff(
-                              imp.icon !== undefined ? canonicalIconItem(imp.icon.item) : undefined,
-                              cf.icon !== undefined ? canonicalIconItem(cf.icon.item) : undefined
+                              imp.icon !== undefined ? imp.icon.item : undefined,
+                              cf.icon !== undefined ? cf.icon.item : undefined
                           )
                         : undefined,
             },
