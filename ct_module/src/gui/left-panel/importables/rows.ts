@@ -78,6 +78,7 @@ import {
     ROW_HOVER_BG,
     bumpTreeRevision,
 } from "./rowModel";
+import { EVENT_ICONS } from "htsw/types";
 import type { Bounds, Importable } from "htsw/types";
 
 export let searchQuery = "";
@@ -1280,17 +1281,26 @@ export function resultRow(
     });
 }
 
-function includeGroupLabel(parent: ResultImport, fullPath: string): string {
-    const dir = projectDirOf(parent.fullPath);
-    if (fullPath.indexOf(dir + "/") === 0) return fullPath.substring(dir.length + 1);
-    return shortPath(fullPath);
+// Label for an include-group ROW: the included file relative to its IMMEDIATE
+// parent import.json's directory ("clocks", not "functions/clocks/import.json").
+// Indentation already conveys the nesting, so the repeated prefix is just noise.
+function includeRowLabel(parentNodePath: string, fullPath: string): string {
+    const parentDir = projectDirOf(parentNodePath);
+    if (fullPath.indexOf(parentDir + "/") !== 0) return shortPath(fullPath);
+    let rel = fullPath.substring(parentDir.length + 1);
+    const suffix = "/import.json";
+    if (rel.length > suffix.length && rel.lastIndexOf(suffix) === rel.length - suffix.length) {
+        rel = rel.substring(0, rel.length - suffix.length);
+    }
+    return rel;
 }
 
 export function includeGroupRow(
     parent: ResultImport,
     node: IncludeNode,
     expKey: string,
-    defaultExpanded: boolean
+    defaultExpanded: boolean,
+    parentNodePath: string
 ): Element {
     const fullPath = canonicalPath(node.path);
     const expanded = isIncludeGroupExpanded(expKey, defaultExpanded);
@@ -1324,7 +1334,7 @@ export function includeGroupRow(
             Icon({ name: Icons.fileJson, color: ACCENT_INFO }),
             rowSlot(INNER_GAP),
             Text({
-                text: includeGroupLabel(parent, fullPath),
+                text: includeRowLabel(parentNodePath, fullPath),
                 truncate: true,
                 style: { width: { kind: "grow" } },
             }),
@@ -1431,6 +1441,8 @@ export function importableRow(parent: ResultImport, imp: Importable): Element {
             imp.type === "FUNCTION" && imp.icon !== undefined &&
                 McItem({ item: imp.icon.item, count: imp.icon.count ?? 1 }),
             imp.type === "FUNCTION" && imp.icon !== undefined && rowSlot(INNER_GAP),
+            imp.type === "EVENT" && McItem({ item: EVENT_ICONS[imp.event] }),
+            imp.type === "EVENT" && rowSlot(INNER_GAP),
             Text({
                 text: importableLabel(imp),
                 truncate: true,

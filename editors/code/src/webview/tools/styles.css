@@ -1,0 +1,56 @@
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    color: var(--vscode-foreground);
+    background: var(--vscode-sideBar-background);
+    font-family: var(--vscode-font-family);
+    font-size: var(--vscode-font-size);
+    overflow: hidden;
+}
+
+.tools-shell {
+    height: 100vh;
+    min-height: 0;
+    display: grid;
+    grid-template-rows: auto 1fr;
+    overflow: hidden;
+}
+
+.tools-tabs {
+    flex: none;
+    z-index: 20;
+    display: flex;
+    gap: 0;
+    padding: 0 8px;
+    background: var(--vscode-sideBar-background);
+    border-bottom: 1px solid var(--vscode-panel-border);
+}
+
+.tools-tab {
+    min-height: 34px;
+    padding: 6px 12px;
+    color: var(--vscode-tab-inactiveForeground);
+    background: transparent;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+    font: inherit;
+}
+
+.tools-tab:hover {
+    color: var(--vscode-tab-activeForeground);
+}
+
+.tools-tab.active {
+    color: var(--vscode-tab-activeForeground);
+    border-bottom-color: var(--vscode-focusBorder);
+}
+
+.tools-body {
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+}

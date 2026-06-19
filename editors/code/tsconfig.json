@@ -10,7 +10,9 @@
         /* Bundler mode */
         "moduleResolution": "bundler",
         "paths": {
-            "htsw-editor-common/project": ["../common/src/project/index.ts"]
+            "htsw-editor-common/project": ["../common/src/project/index.ts"],
+            "htsw-editor-common/item/buildItemNbt": ["../common/src/item/buildItemNbt.ts"],
+            "htsw-editor-common/text/colorCodes": ["../common/src/text/colorCodes.ts"]
         },
         "types": ["node", "vscode"],
         "allowImportingTsExtensions": true,

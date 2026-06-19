@@ -89,6 +89,30 @@ export const EVENTS = [
     "Player Toggle Flight",
 ] as const;
 
+// Default Housing icon item per event, mirroring the items shown in the
+// in-game "Event Actions" menu. Events carry no per-entry icon (unlike
+// functions), so importable browsers render an event's icon from this map.
+export const EVENT_ICONS: Record<(typeof EVENTS)[number], string> = {
+    "Player Join": "minecraft:wooden_door",
+    "Player Quit": "minecraft:dark_oak_door",
+    "Player Death": "minecraft:bone",
+    "Player Kill": "minecraft:diamond_sword",
+    "Player Respawn": "minecraft:apple",
+    "Group Change": "minecraft:paper",
+    "PvP State Change": "minecraft:iron_sword",
+    "Fish Caught": "minecraft:fishing_rod",
+    "Player Enter Portal": "minecraft:obsidian",
+    "Player Damage": "minecraft:lava_bucket",
+    "Player Block Break": "minecraft:grass",
+    "Start Parkour": "minecraft:light_weighted_pressure_plate",
+    "Complete Parkour": "minecraft:light_weighted_pressure_plate",
+    "Player Drop Item": "minecraft:dispenser",
+    "Player Pick Up Item": "minecraft:hopper",
+    "Player Change Held Item": "minecraft:book",
+    "Player Toggle Sneak": "minecraft:hay_block",
+    "Player Toggle Flight": "minecraft:feather",
+};
+
 export const NPC_SKINS = ["Steve", "Alex", "Players Skin"] as const;
 
 export const IMPORT_JSON_SCHEMA = object({

@@ -6,6 +6,8 @@
     "main": "./src/index.ts",
     "exports": {
         ".": "./src/index.ts",
+        "./item/buildItemNbt": "./src/item/buildItemNbt.ts",
+        "./text/colorCodes": "./src/text/colorCodes.ts",
         "./project": "./src/project/index.ts"
     },
     "dependencies": {
