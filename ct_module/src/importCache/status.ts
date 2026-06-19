@@ -1,7 +1,7 @@
 import type { Action, Importable } from "htsw/types";
 
 import type { ImportableCacheEntry } from "./cache";
-import { importableHash } from "./hash";
+import { importableHash, listHashes } from "./hash";
 import { importableIdentity, importableKey } from "./paths";
 import { readImportableCache } from "./cache";
 import { stableStringify } from "../utils/helpers";
@@ -143,6 +143,10 @@ export function seedImportableHash(importable: Importable, hash: string): void {
 // Memoized per entry object — `readImportableCache` returns the same object
 // until the file is rewritten, at which point the WeakMap entry just drops.
 const entryHashCache = new WeakMap<ImportableCacheEntry, string>();
+const entryListHashesCache = new WeakMap<
+    ImportableCacheEntry,
+    Record<string, string[]>
+>();
 
 export function cacheEntryHash(entry: ImportableCacheEntry): string {
     let hash = entryHashCache.get(entry);
@@ -151,6 +155,17 @@ export function cacheEntryHash(entry: ImportableCacheEntry): string {
         entryHashCache.set(entry, hash);
     }
     return hash;
+}
+
+export function cacheEntryListHashes(
+    entry: ImportableCacheEntry
+): Record<string, string[]> {
+    let hashes = entryListHashesCache.get(entry);
+    if (hashes === undefined) {
+        hashes = listHashes(entry.importable);
+        entryListHashesCache.set(entry, hashes);
+    }
+    return hashes;
 }
 
 export function buildCacheStatusRow(

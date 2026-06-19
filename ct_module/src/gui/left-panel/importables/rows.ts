@@ -317,6 +317,17 @@ export function metadataFieldsOf(imp: Importable): MetadataField[] {
             },
         ];
     }
+    if (imp.type === "ITEM") {
+        const ci = cached !== null && cached.type === "ITEM" ? cached : null;
+        return [
+            {
+                key: "nbt",
+                label: "NBT",
+                value: "Item data",
+                diff: ci !== null ? valDiff(imp.nbt, ci.nbt) : undefined,
+            },
+        ];
+    }
     return [];
 }
 
@@ -328,10 +339,17 @@ function importableLabel(imp: Importable): string {
     return imp.type === "EVENT" ? imp.event : imp.name;
 }
 
-function importablePreviewPath(parent: ResultImport, imp: Importable): string {
+function importableSourceFilePath(parent: ResultImport, imp: Importable): string {
     const src = importableSourcePath(imp, parent.parse);
     if (src !== undefined) return src;
     return parent.fullPath;
+}
+
+function importablePreviewPath(parent: ResultImport, imp: Importable): string {
+    if (imp.type === "ITEM" && parent.parse !== null) {
+        return importableDeclaringPath(imp, parent.parse);
+    }
+    return importableSourceFilePath(parent, imp);
 }
 
 const SECTION_BY_TYPE: { [k in Importable["type"]]: Section } = {
@@ -348,7 +366,7 @@ const SECTION_BY_TYPE: { [k in Importable["type"]]: Section } = {
 // in the same project also references (shared files survive the delete).
 function ownedFilesOf(parent: ResultImport, imp: Importable): string[] {
     const mine = new Set<string>();
-    const primary = importablePreviewPath(parent, imp);
+    const primary = importableSourceFilePath(parent, imp);
     if (primary !== parent.fullPath) mine.add(primary);
     const kinds = subListsOf(imp);
     for (let i = 0; i < kinds.length; i++) {
@@ -360,7 +378,7 @@ function ownedFilesOf(parent: ResultImport, imp: Importable): string[] {
     for (let i = 0; i < parent.importables.length; i++) {
         const other = parent.importables[i];
         if (other === imp) continue;
-        const op = importablePreviewPath(parent, other);
+        const op = importableSourceFilePath(parent, other);
         if (mine.has(op)) shared.add(op);
         const oKinds = subListsOf(other);
         for (let j = 0; j < oKinds.length; j++) {
@@ -1488,6 +1506,13 @@ const DIFF_COLOR: { [k in FieldDiff]: number } = {
 };
 
 export function metadataRow(parent: ResultImport, imp: Importable, field: MetadataField): Element {
+    const fileTarget = imp.type === "ITEM" && field.key === "nbt"
+        ? importableSourceFilePath(parent, imp)
+        : null;
+    const actions = fileTarget === null
+        ? null
+        : composeFileMenu([openInViewAction(fileTarget)], fileTarget);
+    const value = fileTarget === null ? field.value : shortPath(fileTarget);
     return Container({
         style: {
             direction: "row",
@@ -1499,10 +1524,13 @@ export function metadataRow(parent: ResultImport, imp: Importable, field: Metada
             background: ROW_BG,
             hoverBackground: ROW_HOVER_BG,
         },
-        onClick: (rect, info) => {
-            if (info.button !== 0) return;
-            openEditFunctionFieldPopover(rect, parent.fullPath, imp, field.key);
-        },
+        onClick: fileTarget === null || actions === null
+            ? (rect, info) => {
+                  if (info.button !== 0) return;
+                  openEditFunctionFieldPopover(rect, parent.fullPath, imp, field.key);
+              }
+            : rowHandler(actions, () => previewSelect(fileTarget)),
+        onDoubleClick: fileTarget === null ? undefined : () => confirmSelect(fileTarget),
         children: [
             field.diff !== undefined
                 ? Text({
@@ -1518,7 +1546,7 @@ export function metadataRow(parent: ResultImport, imp: Importable, field: Metada
                 color: COLOR_TEXT_FAINT,
             }),
             Text({
-                text: field.value,
+                text: value,
                 color: field.diff !== undefined ? DIFF_COLOR[field.diff] : COLOR_TEXT_DIM,
                 truncate: true,
                 style: { width: { kind: "grow" } },

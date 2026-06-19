@@ -162,9 +162,8 @@ async function importImportableItem(
 
     const uuid = cachedUuid ?? session.housingUuid;
     if (!hasItemClickActions(importable)) {
-        // No click actions means nothing to import into the housing — spawning
-        // the item would just clutter the hotbar, so skip it. See issue #56.
-        setup(`skipped ${importable.name} (no click actions)`);
+        await injectHeldItem(ctx, getItemFromNbt(importable.nbt));
+        setup(`gave ${importable.name}`);
         await tryWriteImportableCache(ctx, importable, "importer", uuid);
         return;
     }

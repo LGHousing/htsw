@@ -1,15 +1,36 @@
 /// <reference types="../../../../CTAutocomplete" />
 
+import { Element, SCROLLBAR_WIDTH } from "../../lib/layout";
 import {
-    Element,
-    SCROLLBAR_WIDTH,
-} from "../../lib/layout";
-import { Button, Col, Container, Icon, Input, Row, Scroll, Text } from "../../lib/components";
+    Button,
+    Col,
+    Container,
+    Icon,
+    Input,
+    Row,
+    Scroll,
+    Text,
+} from "../../lib/components";
 import { Icons } from "../../lib/icons.generated";
 import { closeAllPopovers, togglePopover } from "../../lib/popovers";
 import { openFileBrowser } from "../../popovers/file-browser";
-import { getHousingUuid, isParseInProgress, setImportJsonPath } from "../../state";
-import { ACCENT_SUCCESS, COLOR_TEXT_DIM } from "../../lib/theme";
+import {
+    getHousingUuid,
+    isHouseTrusted,
+    isParseInProgress,
+    setHouseTrust,
+    setImportJsonPath,
+} from "../../state";
+import {
+    ACCENT_SUCCESS,
+    COLOR_BUTTON,
+    COLOR_BUTTON_HOVER,
+    COLOR_TEXT,
+    COLOR_TEXT_DIM,
+    COLOR_TEXT_FAINT,
+    COLOR_TOGGLE_ON,
+    COLOR_TOGGLE_ON_HOVER,
+} from "../../lib/theme";
 import { canonicalPath } from "../../parsing/parses";
 import { boundImportJsonPath } from "../../../importCache/houseBindings";
 import { houseDisplayName } from "../../../importCache/aliases";
@@ -23,6 +44,51 @@ import { searchQuery, setSearchQuery } from "./rows";
 import { createStarterProject } from "../../starterProject";
 import { isSampleDismissed, setSampleDismissed } from "../../persistence/onboarding";
 import { RESULTS_SCROLL_ID, renderRows } from "./tree";
+
+const TRUST_ICON_ON = ACCENT_SUCCESS;
+
+function currentHouseTrustButton(): Element {
+    const uuid = getHousingUuid();
+    const trusted = uuid !== null && isHouseTrusted(uuid);
+    return Button({
+        style: {
+            width: { kind: "px", value: 76 },
+            height: { kind: "grow" },
+            background: trusted ? COLOR_TOGGLE_ON : COLOR_BUTTON,
+            hoverBackground: trusted ? COLOR_TOGGLE_ON_HOVER : COLOR_BUTTON_HOVER,
+        },
+        onClick: () => {
+            if (uuid === null) return;
+            setHouseTrust(uuid, !trusted);
+        },
+        children: [
+            Icon({
+                name: trusted ? Icons.shieldCheck : Icons.shield,
+                color: trusted ? TRUST_ICON_ON : COLOR_TEXT_DIM,
+                tooltip:
+                    uuid === null
+                        ? "No current house detected"
+                        : trusted
+                          ? "Current house is trusted"
+                          : "Trust current house",
+                tooltipColor:
+                    uuid === null
+                        ? COLOR_TEXT_FAINT
+                        : trusted
+                          ? TRUST_ICON_ON
+                          : COLOR_TEXT_DIM,
+                style: {
+                    width: { kind: "px", value: 12 },
+                    height: { kind: "px", value: 12 },
+                },
+            }),
+            Text({
+                text: trusted ? "Trusted" : "Trust",
+                color: uuid === null ? COLOR_TEXT_FAINT : COLOR_TEXT,
+            }),
+        ],
+    });
+}
 
 function openBrowseModal(): void {
     closeAllPopovers();
@@ -119,7 +185,10 @@ function emptyStateRow(): Element {
                             Button({
                                 icon: Icons.sparkles,
                                 text: "Create sample project",
-                                style: { width: { kind: "grow" }, height: { kind: "grow" } },
+                                style: {
+                                    width: { kind: "grow" },
+                                    height: { kind: "grow" },
+                                },
                                 onClick: () => createStarterProject(),
                             }),
                             Button({
@@ -134,7 +203,10 @@ function emptyStateRow(): Element {
                                         },
                                     }),
                                 ],
-                                style: { width: { kind: "px", value: 22 }, height: { kind: "grow" } },
+                                style: {
+                                    width: { kind: "px", value: 22 },
+                                    height: { kind: "grow" },
+                                },
                                 onClick: () => setSampleDismissed(),
                             }),
                         ],
@@ -172,25 +244,47 @@ export function ImportablesView(): Element {
             Row({
                 style: { gap: 6, height: { kind: "px", value: 22 }, align: "stretch" },
                 children: [
-                    Button({
-                        icon: Icons.search,
-                        text: "Browse",
-                        style: { width: { kind: "grow" }, height: { kind: "grow" } },
-                        onClick: () => openBrowseModal(),
-                    }),
-                    Button({
-                        icon: Icons.history,
-                        text: "Recent",
-                        style: { width: { kind: "px", value: 80 }, height: { kind: "grow" } },
-                        onClick: (rect) => {
-                            togglePopover({
-                                key: "left-recents",
-                                anchor: rect,
-                                content: recentsPopoverContent(),
-                                width: 280,
-                                height: Math.min(180, getRecents().length * 20 + 12),
-                            });
+                    Row({
+                        style: {
+                            gap: 6,
+                            width: { kind: "grow" },
+                            height: { kind: "grow" },
                         },
+                        children: [
+                            Button({
+                                icon: Icons.search,
+                                text: "Browse",
+                                style: {
+                                    width: { kind: "grow" },
+                                    height: { kind: "grow" },
+                                },
+                                onClick: () => openBrowseModal(),
+                            }),
+                            Button({
+                                icon: Icons.history,
+                                text: "Recent",
+                                style: {
+                                    width: { kind: "px", value: 80 },
+                                    height: { kind: "grow" },
+                                },
+                                onClick: (rect) => {
+                                    togglePopover({
+                                        key: "left-recents",
+                                        anchor: rect,
+                                        content: recentsPopoverContent(),
+                                        width: 280,
+                                        height: Math.min(
+                                            180,
+                                            getRecents().length * 20 + 12
+                                        ),
+                                    });
+                                },
+                            }),
+                        ],
+                    }),
+                    Row({
+                        style: { height: { kind: "grow" }, align: "center" },
+                        children: () => [currentHouseTrustButton()],
                     }),
                 ],
             }),
@@ -214,7 +308,10 @@ export function ImportablesView(): Element {
                                     setSearchQuery(v);
                                 },
                                 placeholder: "Search...",
-                                style: { width: { kind: "grow" }, height: { kind: "grow" } },
+                                style: {
+                                    width: { kind: "grow" },
+                                    height: { kind: "grow" },
+                                },
                             }),
                         ],
                     }),
