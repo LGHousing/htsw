@@ -1,0 +1,3 @@
+if and (fishingEnv Water) {
+    chat "htsw fish condition"
+}

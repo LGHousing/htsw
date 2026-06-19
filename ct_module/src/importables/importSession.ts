@@ -3,7 +3,7 @@ import type { Importable, ImportableItem } from "htsw/types";
 
 import TaskContext from "../tasks/context";
 import { isTaskCancelled } from "../tasks/manager";
-import { IMPORT_DEBUG } from "../housingSync/diagnostics/importDebug";
+import { isImportTraceEnabled, traceNote } from "../housingSync/trace/importTrace";
 import { FileSystemFileLoader } from "../utils/fileLoaders";
 import {
     buildTrustPlan,
@@ -196,10 +196,10 @@ export async function importSelectedImportables(
             const diag = toImportDiagnostic(error, "read", row.importable.type);
             events?.emit({ kind: "importableFinished", key: row.key, status: "failed", error: diag.message });
             printDiagnostic(sm, diag);
-            if (IMPORT_DEBUG) {
+            if (isImportTraceEnabled()) {
                 const stack = error as { stack?: string; rhinoException?: { getScriptStackTrace?: () => string } };
                 const trace = stack.rhinoException?.getScriptStackTrace?.() ?? stack.stack;
-                if (trace) ctx.displayMessage(`&8[read-stack] ${String(trace).split("\n").slice(0, 8).join(" | ")}`);
+                if (trace) traceNote("read-stack", String(trace).split("\n").slice(0, 8).join(" | "));
             }
             ctx.displayMessage(
                 `&c[htsw] Import aborted during pre-read of ${row.importable.type} ${row.identity}; no changes applied.`

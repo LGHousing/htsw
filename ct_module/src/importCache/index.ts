@@ -16,12 +16,14 @@ export {
 
 export {
     importableHash,
+    clickActionsHash,
 } from "./hash";
 
 export {
     importableIdentity,
     importableKey,
     itemSnbtCachePath,
+    interactDataCachePath,
 } from "./paths";
 
 export { getCurrentHousingUuid } from "./housingId";

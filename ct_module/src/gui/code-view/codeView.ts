@@ -48,7 +48,6 @@ type FollowMeta = {
     focusedId: string | null;
     focusedSeenAt: number;
     lastResolvedIdx: number;
-    warnedMissingIds: { [id: string]: true };
 };
 
 const followStates: { [id: string]: FollowMeta } = {};
@@ -66,7 +65,6 @@ function getFollowMeta(scrollId: string): FollowMeta {
             focusedId: null,
             focusedSeenAt: 0,
             lastResolvedIdx: -1,
-            warnedMissingIds: {},
         };
         followStates[scrollId] = m;
     }
@@ -354,15 +352,7 @@ function applyAutoFollow(
     }
 
     const idx = lineIdToIndex[focusedId];
-    if (idx === undefined) {
-        if (meta.warnedMissingIds[focusedId] !== true) {
-            meta.warnedMissingIds[focusedId] = true;
-            console.warn(
-                `[CodeView] autoFollow: focused line id "${focusedId}" not present in ${scrollId}`
-            );
-        }
-        return;
-    }
+    if (idx === undefined) return;
 
     // The user took manual control of this scroll (wheel/drag). Don't
     // fight them — the jump-back pip in the corner can resume.

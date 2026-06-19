@@ -2,7 +2,7 @@ import type { Action, Condition, Importable, ImportableItem } from "htsw/types";
 
 import { ACTION_MAPPINGS } from "../housingSync/fields/actionMappings";
 import { CONDITION_MAPPINGS } from "../housingSync/fields/conditionMappings";
-import { importableHash, itemSnbtCachePath } from "../importCache";
+import { clickActionsHash, interactDataCachePath } from "../importCache";
 import type { ItemRegistry } from "./itemRegistry";
 
 type FieldSpec = { prop: string; kind: string };
@@ -115,7 +115,11 @@ export function expandClickActionItemDependencies(
                 (item.rightClickActions !== undefined &&
                     item.rightClickActions.length > 0);
             if (!hasClickActions) continue;
-            if (FileLib.exists(itemSnbtCachePath(housingUuid, importableHash(item)))) {
+            const actionsHash = clickActionsHash(
+                item.leftClickActions,
+                item.rightClickActions
+            );
+            if (FileLib.exists(interactDataCachePath(housingUuid, actionsHash))) {
                 continue;
             }
             presentNames.add(item.name);

@@ -169,6 +169,9 @@ export const IMPORT_JSON_SCHEMA_DEFINITIONS = {
             description: "Minecraft item id for the function icon, for example: minecraft:map",
         })),
         count: optional(integer({ minimum: 1, maximum: 64 })),
+        enchanted: optional(boolean({
+            description: "Give the icon the enchantment glint.",
+        })),
     }),
     eventImportable: object({
         event: required(string({ enum: EVENTS })),

@@ -1,0 +1,3 @@
+chat "htsw event drop"
+giveItem "htsw_test_item_basic" true First_Slot false
+cancelEvent

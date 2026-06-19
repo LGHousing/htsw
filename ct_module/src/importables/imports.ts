@@ -35,10 +35,20 @@ import {
 import {
     applyImportableRegionPlan,
     prereadImportableRegion,
+    regionPlanIsNoOp,
     type RegionImportPlan,
 } from "./regions/import";
 import type { ItemRegistry } from "./itemRegistry";
 import type { ImportEventHandler } from "../housingSync/importEvents";
+import type { ItemCaptureRegistry } from "../housingSync/itemCapture";
+
+export const IMPLEMENTED_IMPORTABLE_TYPES = [
+    "FUNCTION",
+    "EVENT",
+    "REGION",
+    "ITEM",
+    "MENU",
+] as const;
 
 export type ImportSession = {
     parsed: ParseResult<Importable[]>;
@@ -46,6 +56,7 @@ export type ImportSession = {
     housingUuid: string;
     trust: TrustPlan;
     events: ImportEventHandler | undefined;
+    itemCaptures?: ItemCaptureRegistry;
 };
 
 function trustFor(
@@ -167,6 +178,7 @@ export function planIsNoOp(plan: ImportablePlan): boolean {
         case "EVENT":
             return eventPlanIsNoOp(plan);
         case "REGION":
+            return regionPlanIsNoOp(plan);
         case "MENU":
         case "ITEM":
             return false;

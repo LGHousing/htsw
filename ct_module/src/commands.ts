@@ -1,4 +1,10 @@
-import { VERSION, SourceMap, parseImportablesResult, Diagnostic } from "htsw";
+import {
+    VERSION,
+    SourceMap,
+    parseActionsResult,
+    parseImportablesResult,
+    Diagnostic,
+} from "htsw";
 
 import {
     chatSeparator,
@@ -18,11 +24,13 @@ import {
     resetTimingStats,
 } from "./housingSync/progress/timing";
 import { COST } from "./housingSync/progress/costs";
-import { getEventContainerCounts } from "./tasks/specifics/waitFor";
+import {
+    getEventContainerCounts,
+    resetEventContainers,
+} from "./tasks/specifics/waitFor";
 import { getTreePerfStats } from "./gui/left-panel/importables/tree";
 import { resetOnboarding } from "./gui/persistence/onboarding";
 import { rearmTourAutoStart } from "./gui/popovers/tour";
-import { isPacketOrderProbeActive } from "./housingSync/diagnostics/packetOrderProbe";
 import {
     getImportTracePath,
     setImportTraceEnabled,
@@ -34,9 +42,13 @@ import {
 import {
     clearLagProbeSamples,
     getLagProbeSamples,
-} from "./diagnostics/lagProbe";
+} from "./perf/lagProbe";
+import { commandTest } from "./testSuite/command";
 import { getCurrentHousingUuid } from "./importCache";
 import { isInCreativeMode } from "./housingSync/sideEffects";
+import { appendActionsToOpenActionList } from "./housingSync/actions/applyDiff";
+import { createItemRegistry } from "./importables/itemRegistry";
+import { isImportRunning, setImportRunning } from "./housingSync/runtimeState";
 import { startImport } from "./gui/right-panel/import-tab/importController";
 import { canonicalPath, getParsePerfStats } from "./gui/parsing/parses";
 import { compactFileLabel } from "./gui/lib/pathDisplay";
@@ -91,14 +103,15 @@ const HTSW_SUBCOMMANDS: HtswSubcommand[] = [
         usage: "trace [on|off]",
     },
     {
+        name: "test",
+        summary: "Run the live importer regression suite",
+        run: commandTest,
+        usage: "test [coverage|slice]",
+    },
+    {
         name: "gui",
         summary: "Open the in-game HTSW dashboard",
         run: commandGui,
-    },
-    {
-        name: "waiters",
-        summary: "Show live waitFor counts (leak check; idle = ~0)",
-        run: commandWaiters,
     },
     {
         name: "update",
@@ -119,24 +132,57 @@ const HTSW_SUBCOMMANDS: HtswSubcommand[] = [
         hidden: true,
     },
     {
+        name: "debug",
+        summary: "Diagnostic probes: waiters, perf, lag",
+        run: commandDebug,
+        usage: "debug [waiters|treeperf|parseperf|lagprobe]",
+    },
+];
+
+// Grouped under `/htsw debug` rather than scattered as flat top-level
+// subcommands — they only matter when diagnosing the importer, and a single
+// namespace keeps `/htsw` help readable.
+const DEBUG_SUBCOMMANDS: HtswSubcommand[] = [
+    {
+        name: "waiters",
+        summary: "Live waitFor counts (leak check; idle = ~0)",
+        run: commandWaiters,
+    },
+    {
         name: "treeperf",
-        summary: "Show importables tree render stats",
+        summary: "Importables tree render stats",
         run: commandTreePerf,
-        hidden: true,
     },
     {
         name: "parseperf",
-        summary: "Show recent import.json parse timings",
+        summary: "Recent import.json parse timings",
         run: commandParsePerf,
-        hidden: true,
     },
     {
         name: "lagprobe",
-        summary: "Show recent main-thread stall samples",
+        summary: "Recent main-thread stall samples",
         run: commandLagProbe,
-        hidden: true,
+        usage: "lagprobe [clear]",
     },
 ];
+
+function commandDebug(args: string[]): void {
+    if (args.length > 0) {
+        const key = args[0].toLowerCase();
+        for (let i = 0; i < DEBUG_SUBCOMMANDS.length; i++) {
+            if (DEBUG_SUBCOMMANDS[i].name === key) {
+                DEBUG_SUBCOMMANDS[i].run(args.slice(1));
+                return;
+            }
+        }
+        ChatLib.chat(`&cUnknown /htsw debug probe '${args[0]}'.`);
+    }
+    ChatLib.chat("&7[htsw] debug probes:");
+    for (let i = 0; i < DEBUG_SUBCOMMANDS.length; i++) {
+        const c = DEBUG_SUBCOMMANDS[i];
+        ChatLib.chat(`&f/htsw debug ${c.usage ?? c.name} &7- ${c.summary}`);
+    }
+}
 
 export function registerCommands() {
     register("command", (...args) => commandHtsw(args)).setName("htsw");
@@ -428,20 +474,6 @@ function commandEta(args: string[]): void {
         return;
     }
 
-    if (args.length > 0 && args[0] === "waiters") {
-        const counts = getEventContainerCounts();
-        ChatLib.chat(
-            `&7[waiters] live waitFor predicates — ` +
-            `tick: ${counts.tick}, packetReceived: ${counts.packetReceived}, ` +
-            `packetSent: ${counts.packetSent}, message: ${counts.message}`
-        );
-        ChatLib.chat(
-            `&7[waiters] packet-order probe: ${isPacketOrderProbeActive() ? "&cACTIVE" : "&aoff"}&7. ` +
-            `Idle baseline should be ~0 across the board; non-zero between imports = leak.`
-        );
-        return;
-    }
-
     printOpKindStats();
 }
 
@@ -513,14 +545,32 @@ function commandImport(args: string[]) {
         const title = `&e&lHTSW &fImporter &f&l${VERSION}`;
         ChatLib.chat(`${ChatLib.getCenteredText(title)}`);
         ChatLib.chat("");
-        ChatLib.chat("&f/import [path]");
+        ChatLib.chat("&f/import <import.json|actions.htsl>");
+        ChatLib.chat("&f/import raw <actions.htsl> &7- Append into the open action menu");
         ChatLib.chat(`&7${chatSeparator()}`);
         return;
     }
 
-    const importPath = resolveModuleRelativePath(stripSurroundingQuotes(args.join(" ")));
+    const rawMode = isRawImportToken(args[0]);
+    if (rawMode && args.length === 1) {
+        ChatLib.chat("&cUsage: /import raw <actions.htsl>");
+        return;
+    }
+
+    const pathArgs = rawMode ? args.slice(1) : args;
+    const importPath = resolveModuleRelativePath(stripSurroundingQuotes(pathArgs.join(" ")));
     if (!FileLib.exists(importPath)) {
-        ChatLib.chat(`&cimport.json file does not exist '${importPath}'`);
+        ChatLib.chat(`&cFile does not exist '${importPath}'`);
+        return;
+    }
+
+    const lowerPath = importPath.toLowerCase();
+    if (rawMode || lowerPath.endsWith(".htsl")) {
+        if (!lowerPath.endsWith(".htsl")) {
+            ChatLib.chat("&cRaw imports require a .htsl file.");
+            return;
+        }
+        startRawHtslImport(importPath);
         return;
     }
 
@@ -539,6 +589,72 @@ function commandImport(args: string[]) {
     ]);
 }
 
+function isRawImportToken(token: string | undefined): boolean {
+    if (token === undefined) return false;
+    const lower = token.toLowerCase();
+    return lower === "raw" || lower === "open" || lower === "append";
+}
+
+function startRawHtslImport(path: string): void {
+    if (isImportRunning() || TaskManager.hasRunningTasks()) {
+        ChatLib.chat("&c[htsw] An import (or another task) is already running — wait for it to finish first.");
+        return;
+    }
+
+    const sm = new SourceMap(new FileSystemFileLoader());
+    const result = parseActionsResult(sm, path);
+    printDiagnostics(sm, result.diagnostics);
+
+    const errCount = countBlockingDiagnostics(result.diagnostics);
+    if (errCount > 0) {
+        printDiagnostic(
+            sm,
+            Diagnostic.error(
+                `Raw HTSL import failed with ${errCount} error${errCount === 1 ? "" : "s"}`
+            )
+        );
+        return;
+    }
+
+    if (result.value.length === 0) {
+        ChatLib.chat(`&c[htsw] No actions found in ${path}`);
+        return;
+    }
+
+    const items = createItemRegistry([], result.gcx);
+    TaskManager.run(async (ctx) => {
+        setImportRunning(true);
+        try {
+            const purged = resetEventContainers();
+            if (purged > 0) {
+                ChatLib.chat(`&8[htsw] purged ${purged} leaked event waiter(s) from a prior run.`);
+            }
+
+            if (ctx.tryGetMenuItemSlot("Add Action") === null) {
+                throw new Error("Open a Housing action-list menu first.");
+            }
+
+            const count = result.value.length;
+            ChatLib.chat(
+                `&7[htsw] Appending ${count} action${count === 1 ? "" : "s"} from ${compactFileLabel(path)}`
+            );
+            await appendActionsToOpenActionList(ctx, result.value, items);
+            ChatLib.chat(
+                `&a[htsw] Appended ${count} action${count === 1 ? "" : "s"} from ${compactFileLabel(path)}`
+            );
+        } finally {
+            setImportRunning(false);
+        }
+    }).catch((err: unknown) => {
+        setImportRunning(false);
+        if (err instanceof Diagnostic) {
+            printDiagnostic(sm, err);
+            return;
+        }
+        ChatLib.chat(`&c[htsw] Raw HTSL import failed: ${err}`);
+    });
+}
+
 function commandSimulator(args: string[]) {
     if (args.length === 0) {
         ChatLib.chat(`&7${chatSeparator()}`);
@@ -547,9 +663,15 @@ function commandSimulator(args: string[]) {
         ChatLib.chat("");
         ChatLib.chat("&f/simulator [start [path] | restart | stop ]");
         ChatLib.chat("");
+        ChatLib.chat("&7While a simulation is active:");
         ChatLib.chat("&f/function run <function> &7- Run a function");
         ChatLib.chat("&f// <htsl> &7- Evaluate HTSL code");
+        ChatLib.chat("&f/var <var|global:var|team:team:var> <set|inc|dec|mul|div> <value> &7- Change a variable");
+        ChatLib.chat("&f/vars [filter] &7- Dump player variables");
+        ChatLib.chat("&f/globalvars [filter] &7- Dump global variables");
+        ChatLib.chat("&f/teamvars <team> [filter] &7- Dump team variables");
         ChatLib.chat(`&7${chatSeparator()}`);
+        return;
     }
 
     if (args[0] === "start") {

@@ -4,7 +4,7 @@ import type { ImportableCacheEntry } from "./cache";
 import { importableHash, listHashes } from "./hash";
 import { importableIdentity, importableKey } from "./paths";
 import { readImportableCache } from "./cache";
-import { cacheEntryHash, sameHashList } from "./status";
+import { cacheEntryHash, cacheEntryListHashes, sameHashList } from "./status";
 
 type TrustedListPath = string;
 
@@ -57,8 +57,9 @@ export function buildTrustPlan(
 
             if (!wholeImportableTrusted) {
                 const desiredLists = listHashes(importable);
+                const cachedLists = cacheEntryListHashes(entry);
                 for (const path of Object.keys(desiredLists)) {
-                    if (sameHashList(entry.lists[path], desiredLists[path])) {
+                    if (sameHashList(cachedLists[path], desiredLists[path])) {
                         trustedListPaths.add(path);
                     }
                 }

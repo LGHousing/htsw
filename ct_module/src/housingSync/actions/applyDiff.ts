@@ -11,7 +11,7 @@ import {
     setNoteOnLastVisibleSlot,
 } from "../gui/menuUtils";
 import { timedWaitForMenu, waitForMenu } from "../gui/menuWait";
-import { MouseButton } from "../../tasks/specifics/slots";
+import { MouseButton, menuStateDescription } from "../../tasks/specifics/slots";
 import type {
     ActionListDiff,
     ActionListOperation,
@@ -49,9 +49,13 @@ import { getActionScalarLoreFields } from "../fields/actionMappings";
 import { scalarFieldDiffers } from "../fields/compare";
 import {
     createActionApplyContext,
+    type ActionApplyContext,
     type ApplyNestedActionList,
 } from "../context/actionApplyContext";
-import { applyConditionList } from "./conditions/applyDiff";
+import {
+    appendConditionsToOpenConditionList,
+    applyConditionList,
+} from "./conditions/applyDiff";
 import {
     prereadActionList,
     type ActionListPlan,
@@ -77,7 +81,7 @@ async function addAction(
     ctx: TaskContext,
     action: Action,
     itemRegistry: ItemRegistry,
-    apply?: ReturnType<typeof createActionApplyContext>,
+    apply?: ActionApplyContext,
     callbacks?: ImportActionCallbacks
 ): Promise<void> {
     ctx.getMenuItemSlot("Add Action").click();
@@ -86,17 +90,10 @@ async function addAction(
     const spec = getActionSpec(action.type);
     const displayName = spec.displayName;
 
-    const slot = await getSlotPaginate(ctx, displayName);
-
-    if (isLimitExceeded(slot, "action")) {
-        throw Diagnostic.error(`Maximum amount of ${displayName} actions exceeded`);
-    }
-
-    slot.click();
+    await clickAddActionOption(ctx, action.type, displayName);
     if (!spec.write) {
         callbacks?.onActionAdded?.();
     }
-    await timedWaitForMenu(ctx, "menuClickWait");
 
     if (spec.write) {
         await writeOpenAction(ctx, action, {
@@ -110,6 +107,67 @@ async function addAction(
     await setNoteOnLastVisibleSlot(ctx, action.note, {
         onApplied: callbacks?.onNoteApplied,
     });
+}
+
+function createAppendOnlyActionApplyContext(
+    ctx: TaskContext,
+    itemRegistry: ItemRegistry
+): ActionApplyContext {
+    return {
+        markHeaderApplied: () => undefined,
+
+        async applyNestedActions(_prop, args) {
+            await appendActionsToOpenActionList(ctx, args.desired, itemRegistry);
+        },
+
+        async applyNestedConditions(_prop, args) {
+            await appendConditionsToOpenConditionList(
+                ctx,
+                args.desired,
+                itemRegistry
+            );
+        },
+    };
+}
+
+export async function appendActionsToOpenActionList(
+    ctx: TaskContext,
+    desired: Action[],
+    itemRegistry: ItemRegistry
+): Promise<void> {
+    const apply = createAppendOnlyActionApplyContext(ctx, itemRegistry);
+    for (let i = 0; i < desired.length; i++) {
+        await addAction(ctx, desired[i], itemRegistry, apply);
+    }
+    if (desired.length > 0) {
+        await goToPaginatedListPage(ctx, 1, ACTION_LIST_CONFIG);
+    }
+}
+
+async function clickAddActionOption(
+    ctx: TaskContext,
+    actionType: Action["type"],
+    displayName: string
+): Promise<void> {
+    const slot = await getSlotPaginate(ctx, displayName);
+
+    if (isLimitExceeded(slot, "action")) {
+        throw Diagnostic.error(`Maximum amount of ${displayName} actions exceeded`);
+    }
+
+    const wait = timedWaitForMenu(ctx, "menuClickWait");
+    slot.click();
+    try {
+        await wait;
+    } catch (error) {
+        throw new Error(
+            `After clicking Add Action option "${displayName}" (${actionType})${menuStateDescription()}: ${errorMessage(error)}`
+        );
+    }
+}
+
+function errorMessage(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
 }
 
 async function deleteObservedAction(

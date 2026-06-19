@@ -1,0 +1,8 @@
+{
+    "functions": [
+        {
+            "name": "htsw_test_fn_basic",
+            "actions": "actions.htsl"
+        }
+    ]
+}

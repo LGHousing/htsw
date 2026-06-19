@@ -69,6 +69,7 @@ export async function prereadActionList(
                 phaseUnits,
                 listPath: options.listPath,
                 events: options.session.events,
+                itemCaptures: options.session.itemCaptures,
             }
         ));
     for (const entry of observed) {

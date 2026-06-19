@@ -1,4 +1,4 @@
-import { S30PacketWindowItems } from "../../utils/packets";
+import { S2DPacketOpenWindow, S30PacketWindowItems } from "../../utils/packets";
 
 type Packet = MCPacket<MCINetHandler>;
 
@@ -67,9 +67,64 @@ function maybeUpdateWindowID(packet: Packet) {
         windowID;
 }
 
+// Ring buffer of the most recent server window-opens, recorded for EVERY packet
+// regardless of whether a waiter is active. When `waitForMenu` times out having
+// never seen its window's S2D, this answers the only question that matters: did
+// an S2DPacketOpenWindow for that click actually arrive (and we missed it), or
+// did the server never open a window at all? The "ms ago" of each entry, read
+// at timeout, places it before/after the click that should have triggered it.
+type WindowOpenRecord = { at: number; windowId: number; title: string };
+const RECENT_WINDOW_OPENS_MAX = 8;
+const recentWindowOpens: WindowOpenRecord[] = [];
+
+function s2dOpenWindowId(packet: unknown): number {
+    try {
+        return (packet as { func_148901_c(): number }).func_148901_c();
+    } catch (_e) {
+        return -1;
+    }
+}
+
+function s2dOpenTitle(packet: unknown): string {
+    try {
+        const comp = (packet as {
+            func_148903_d(): { func_150260_c(): string };
+        }).func_148903_d();
+        const text = comp.func_150260_c();
+        return text === null || text === undefined ? "?" : text;
+    } catch (_e) {
+        return "?";
+    }
+}
+
+function recordWindowOpen(packet: Packet): void {
+    if (!(packet instanceof S2DPacketOpenWindow)) return;
+    recentWindowOpens.push({
+        at: Date.now(),
+        windowId: s2dOpenWindowId(packet),
+        title: s2dOpenTitle(packet),
+    });
+    if (recentWindowOpens.length > RECENT_WINDOW_OPENS_MAX) recentWindowOpens.shift();
+}
+
+/** Oldest→newest list of recent window-opens, each tagged with how long ago it
+ *  arrived relative to now. For surfacing in menu-wait timeout diagnostics. */
+export function describeRecentWindowOpens(): string {
+    if (recentWindowOpens.length === 0) return "<none>";
+    const now = Date.now();
+    const parts: string[] = [];
+    for (let i = 0; i < recentWindowOpens.length; i++) {
+        const record = recentWindowOpens[i];
+        const title = record.title.length > 24 ? `${record.title.substring(0, 24)}…` : record.title;
+        parts.push(`win${record.windowId} "${title}" ${now - record.at}ms ago`);
+    }
+    return parts.join(", ");
+}
+
 register("packetReceived", (packet) => {
     maybeResolve("packetReceived", packet);
     maybeUpdateWindowID(packet);
+    recordWindowOpen(packet);
 });
 
 register("packetSent", (packet) => {

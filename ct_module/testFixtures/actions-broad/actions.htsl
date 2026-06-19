@@ -1,0 +1,38 @@
+if and () {
+    exit
+}
+
+changePlayerGroup "Guest" true
+kill
+fullHeal
+resetInventory
+maxHealth = 20
+parkCheck
+giveItem "htsw_test_item_action" true First_Slot false
+removeItem "htsw_test_item_action"
+applyPotion Speed 60 1 false true
+clearEffects
+xpLevel 1
+lobby Housing
+var htswVar = 1
+tp House_Spawn_Location false
+failParkour "htsw fail"
+sound "note.pling" 0.7 1.0 House_Spawn_Location
+compassTarget House_Spawn_Location
+gamemode Adventure
+changeHealth = 10
+hungerLevel = 20
+random {
+    chat "htsw random"
+}
+function "htsw_test_fn_helper" false
+enchant Sharpness 1
+pause 1
+setTeam None
+displayMenu "htsw_test_menu_action"
+dropItem "htsw_test_item_action" House_Spawn_Location true false false false 6000 10
+changeVelocity 0 1 0
+launchTarget House_Spawn_Location 1
+playerWeather "Sunny"
+playerTime "1000"
+displayNametag false

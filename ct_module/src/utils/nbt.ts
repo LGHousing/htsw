@@ -1,5 +1,5 @@
 import type { Tag, TagCompound } from "htsw/nbt";
-import { Long } from "htsw";
+import { Long, nbt as htswNbt } from "htsw";
 import { removedFormatting } from "./helpers";
 
 const NBTTagByte = Java.type("net.minecraft.nbt.NBTTagByte");
@@ -309,4 +309,79 @@ function cloneTag(tag: Tag): Tag {
     }
 
     return tag;
+}
+
+const INTERACT_DATA_PATH = ["tag", "ExtraAttributes", "interact_data"];
+
+/**
+ * Pull just `tag.ExtraAttributes.interact_data` out of a captured item's SNBT,
+ * as its own SNBT string — the housing-scoped click-action blob we cache by
+ * action hash. Null if the item has none.
+ */
+export function extractInteractDataSnbt(itemSnbt: string): string | null {
+    let tag: Tag;
+    try {
+        tag = htswNbt.parseSnbtText(itemSnbt);
+    } catch (_e) {
+        return null;
+    }
+    const interactData = getNestedCompound(tag, INTERACT_DATA_PATH);
+    if (interactData === undefined) return null;
+    return htswNbt.printSnbt(interactData, { pretty: false });
+}
+
+function ensureCompoundChild(parent: TagCompound, key: string): TagCompound {
+    const existing = parent.value[key];
+    if (existing !== undefined && existing.type === "compound") return existing;
+    const created: TagCompound = { type: "compound", value: {} };
+    parent.value[key] = created;
+    return created;
+}
+
+/**
+ * Build an item from a source cosmetic NBT with a cached `interact_data` blob
+ * spliced back into `tag.ExtraAttributes.interact_data`. The inverse of
+ * `extractInteractDataSnbt`: cosmetic + actions-blob → the real housing item.
+ */
+export function itemWithInteractData(cosmeticNbt: Tag, interactDataSnbt: string): Item {
+    const root = cloneTag(cosmeticNbt);
+    if (root.type === "compound") {
+        const tagCompound = ensureCompoundChild(root, "tag");
+        const extra = ensureCompoundChild(tagCompound, "ExtraAttributes");
+        extra.value.interact_data = htswNbt.parseSnbtText(interactDataSnbt);
+    }
+    return getItemFromNbt(root);
+}
+
+/**
+ * Whether an item carries the enchantment glint — a non-empty `tag.ench` list.
+ * Function icons use the glint as a cosmetic flag, so which enchantment it is
+ * doesn't matter; any entry counts. Inverse of `itemWithEnchantGlint`.
+ */
+export function itemHasEnchantGlint(item: Item): boolean {
+    const tag = itemToHtswTag(item);
+    if (tag === null) return false;
+    const ench = getNestedTag(tag, ["tag", "ench"]);
+    return ench !== undefined && ench.type === "list" && ench.value.value.length > 0;
+}
+
+/**
+ * Rebuild an item with a sentinel enchantment so it renders the glint. MC shows
+ * the glint for any non-empty `tag.ench`; the enchantment itself (Protection I)
+ * is meaningless and never read back — only its presence is.
+ */
+export function itemWithEnchantGlint(item: Item): Item {
+    const tag = itemToHtswTag(item);
+    if (tag === null || tag.type !== "compound") return item;
+    const tagCompound = ensureCompoundChild(tag, "tag");
+    tagCompound.value.ench = {
+        type: "list",
+        value: {
+            type: "compound",
+            value: [
+                { id: { type: "short", value: 0 }, lvl: { type: "short", value: 1 } },
+            ],
+        },
+    } as Tag;
+    return getItemFromNbt(tag);
 }

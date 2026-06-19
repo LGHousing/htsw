@@ -13,10 +13,28 @@ export function getImportTracePath(): string {
     return importTrace.path();
 }
 
+export function isImportTraceEnabled(): boolean {
+    return importTrace.isEnabled();
+}
+
+/**
+ * One free-form breadcrumb in the import trace — the single home for the
+ * developer notes (paginate scans, swallowed ack timeouts, read stacks) that
+ * only matter while diagnosing an import. Written only when tracing is on
+ * (`/htsw trace on` or a test run), so it costs nothing otherwise. Callers
+ * passing an expensive `message` (a menu scan, a stack dump) must guard it with
+ * `isImportTraceEnabled()`.
+ */
+export function traceNote(category: string, message: string): void {
+    if (!importTrace.isEnabled()) return;
+    importTrace.write({ kind: "note", category, message });
+}
+
 export function traceMenuWait(
     stage: "start" | "openWindow" | "windowItems" | "ready" | "failure",
     details: Record<string, unknown>
 ): void {
+    if (!importTrace.isEnabled()) return;
     importTrace.write({ kind: "menuWait", stage, ...details });
 }
 

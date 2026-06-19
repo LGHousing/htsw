@@ -130,6 +130,10 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 64
+        },
+        "enchanted": {
+          "type": "boolean",
+          "description": "Give the icon the enchantment glint."
         }
       },
       "required": [

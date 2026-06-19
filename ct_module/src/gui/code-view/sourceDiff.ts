@@ -15,10 +15,9 @@
  *      `parseImportJsonAt`) → entries for files in that parse cleared.
  *   2. An import completes for an importable → that file's entry cleared.
  *
- * Compute uses the per-slot hashes the cache writer already stored on
- * `ImportableCacheEntry.lists` — much cheaper than re-running the
- * importer's full structural diff. See `importCache/hash.ts` for the
- * hash spec.
+ * Compute uses per-slot hashes from the cache entry's importable — much
+ * cheaper than re-running the importer's full structural diff. See
+ * `importCache/hash.ts` for the hash spec.
  *
  * For the LIVE producer (import-in-progress), see `diffPalette.ts` (shared
  * vocabulary) and `livePreview.ts` (written from import event handlers).
@@ -32,6 +31,7 @@ import type { DiffState } from "./diffPalette";
 import { readImportableCache } from "../../importCache/cache";
 import { actionHash, conditionHash } from "../../importCache/hash";
 import { importableIdentity } from "../../importCache/paths";
+import { cacheEntryListHashes } from "../../importCache/status";
 import {
     importableFilePaths,
     importableSourcePath,
@@ -75,9 +75,7 @@ export function ensureSourceDiff(filePath: string): SourceDiffEntry | undefined 
  * parse. Called on parse refresh (file edit) so the next View-tab render
  * recomputes against the new parse + cache state.
  */
-export function invalidateSourceDiffForParse(
-    parsed: ParseResult<Importable[]>
-): void {
+export function invalidateSourceDiffForParse(parsed: ParseResult<Importable[]>): void {
     for (const importable of parsed.value) {
         invalidateSourceDiffForImportable(importable, parsed);
     }
@@ -111,8 +109,9 @@ function computeFor(filePath: string): SourceDiffEntry | null {
     if (cache === null) return null;
     const sourceActions = readCachedActionList(match.importable, match.prefix);
     if (sourceActions === undefined) return null;
+    const cachedLists = cacheEntryListHashes(cache);
     const out: SourceDiffEntry = new Map();
-    walk(out, match.prefix, "", sourceActions, cache.lists);
+    walk(out, match.prefix, "", sourceActions, cachedLists);
     return out;
 }
 
@@ -196,7 +195,9 @@ function walk(
     const cacheKey = parentBracketed === "" ? prefix : `${prefix}${parentBracketed}`;
     const slots = lists[cacheKey];
     const parentDotted =
-        parentBracketed === "" ? "" : `${bracketedToDotted(parentBracketed).substring(1)}.`;
+        parentBracketed === ""
+            ? ""
+            : `${bracketedToDotted(parentBracketed).substring(1)}.`;
     for (let i = 0; i < items.length; i++) {
         const action = items[i];
         const dotted = `${parentDotted}${i}`;
@@ -210,7 +211,10 @@ function walk(
             // child lines below, so judge the head by its conditions alone.
             // Otherwise adding/editing an action inside would light the head and
             // make it look like the conditions changed.
-            state = conditionsMatchCache(action.conditions, lists[`${cacheKey}[${i}].conditions`])
+            state = conditionsMatchCache(
+                action.conditions,
+                lists[`${cacheKey}[${i}].conditions`]
+            )
                 ? "match"
                 : "edit";
         } else if (action.type === "RANDOM") {
@@ -221,8 +225,20 @@ function walk(
         }
         out.set(dotted, state);
         if (action.type === "CONDITIONAL") {
-            walk(out, prefix, `${parentBracketed}[${i}].ifActions`, action.ifActions, lists);
-            walk(out, prefix, `${parentBracketed}[${i}].elseActions`, action.elseActions, lists);
+            walk(
+                out,
+                prefix,
+                `${parentBracketed}[${i}].ifActions`,
+                action.ifActions,
+                lists
+            );
+            walk(
+                out,
+                prefix,
+                `${parentBracketed}[${i}].elseActions`,
+                action.elseActions,
+                lists
+            );
         } else if (action.type === "RANDOM") {
             walk(out, prefix, `${parentBracketed}[${i}].actions`, action.actions, lists);
         }

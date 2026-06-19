@@ -13,7 +13,7 @@ import TaskContext from "../../tasks/context";
 import { MouseButton } from "../../tasks/specifics/slots";
 import { removedFormatting, unique } from "../../utils/helpers";
 import {
-    createPlainIconItem,
+    createIconItem,
     desiredIconSnapshot,
     iconSnapshotsEqual,
     iconStacksEqual,
@@ -163,7 +163,19 @@ async function setFunctionIconIfNeeded(
     // An icon is only ever {item, count}; match the picker selection on those,
     // not the exact-NBT compare used for GIVE_ITEM (which would never match a
     // freshly creative-spawned stack and falsely report "never appeared").
-    await setItemValue(ctx, "Edit Icon", createPlainIconItem(icon), iconStacksEqual);
+    await setItemValue(ctx, "Edit Icon", createIconItem(icon), iconStacksEqual);
+}
+
+async function functionSettingsStep<T>(
+    label: string,
+    run: () => Promise<T>
+): Promise<T> {
+    try {
+        return await run();
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        throw new Error(`${label}: ${message}`);
+    }
 }
 
 /**
@@ -178,9 +190,15 @@ export async function applyFunctionSettings(
     importable: ImportableFunction
 ): Promise<void> {
     if (importable.icon !== undefined && !(await functionIconMatches(ctx, importable))) {
-        await setFunctionIconIfNeeded(ctx, importable.icon);
+        await functionSettingsStep(
+            `setting icon for function ${importable.name}`,
+            () => setFunctionIconIfNeeded(ctx, importable.icon!)
+        );
     }
-    await setAutomaticExecutionTicksIfNeeded(ctx, importable.repeatTicks ?? 0);
+    await functionSettingsStep(
+        `setting automatic execution for function ${importable.name}`,
+        () => setAutomaticExecutionTicksIfNeeded(ctx, importable.repeatTicks ?? 0)
+    );
 }
 
 /**

@@ -107,6 +107,45 @@ function conditionListsEqual(
     return true;
 }
 
+const PLAYER_TIME_PRESETS = [
+    "Reset to World Time",
+    "Sunrise (0)",
+    "Noon (6,000)",
+    "Sunset (12,000)",
+    "Midnight (18,000)",
+];
+
+function playerTimePreset(value: string): string | null {
+    const normalized = value.trim().toLowerCase();
+    for (let i = 0; i < PLAYER_TIME_PRESETS.length; i++) {
+        const preset = PLAYER_TIME_PRESETS[i];
+        if (preset.toLowerCase() === normalized) return preset;
+    }
+    return null;
+}
+
+async function setPlayerTimeValue(ctx: TaskContext, value: string): Promise<void> {
+    const slotName = getActionFieldLabel("SET_PLAYER_TIME", "time");
+    const current = readStringValue(ctx.getMenuItemSlot(slotName));
+    if (current === value) return;
+
+    await openSubmenu(ctx, slotName);
+    const preset = playerTimePreset(value);
+    if (preset !== null) {
+        const optionSlot = await getSlotPaginate(ctx, preset);
+        optionSlot.click();
+        await waitForMenu(ctx);
+        if (ctx.tryGetMenuItemSlot(slotName) !== null) return;
+        await clickGoBack(ctx);
+        return;
+    }
+
+    const customSlot = await getSlotPaginate(ctx, "Custom Time");
+    customSlot.click();
+    await enterValue(ctx, value);
+    await waitForMenu(ctx);
+}
+
 export async function writeConditional(
     ctx: TaskContext,
     action: ActionConditional,
@@ -671,9 +710,10 @@ export async function writeSetPlayerWeather(
     ctx: TaskContext,
     action: ActionSetPlayerWeather
 ): Promise<void> {
-    await setSelectValue(
+    await setCycleValue(
         ctx,
         getActionFieldLabel("SET_PLAYER_WEATHER", "weather"),
+        ["None", "Sunny", "Raining"],
         action.weather
     );
 }
@@ -682,12 +722,7 @@ export async function writeSetPlayerTime(
     ctx: TaskContext,
     action: ActionSetPlayerTime
 ): Promise<void> {
-    await setCycleValue(
-        ctx,
-        getActionFieldLabel("SET_PLAYER_TIME", "time"),
-        [action.time],
-        action.time
-    );
+    await setPlayerTimeValue(ctx, action.time);
 }
 
 export async function writeToggleNametagDisplay(

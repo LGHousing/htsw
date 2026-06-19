@@ -1,0 +1,3 @@
+if and (portal Nether_Portal) {
+    chat "htsw portal condition"
+}

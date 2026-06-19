@@ -1,0 +1,3 @@
+if and (blockType "htsw_test_item_condition") {
+    chat "htsw block condition"
+}

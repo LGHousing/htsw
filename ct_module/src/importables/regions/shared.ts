@@ -1,4 +1,3 @@
-import { clickGoBack } from "../../housingSync/gui/menuUtils";
 import {
     timedWaitForMenu,
     timedWaitForUnformattedMessage,
@@ -41,7 +40,8 @@ export async function ensureRegionNamesExist(
     for (const name of names) {
         const status = await openRegionEditor(ctx, name);
         if (status === "opened") {
-            await clickGoBack(ctx);
+            // Region exists — nothing to do. No clickGoBack: /region edit opens a
+            // parent-less "Close" menu; the next iteration/command replaces it.
             onEach?.(name);
             continue;
         }

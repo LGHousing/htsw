@@ -1,0 +1,28 @@
+{
+    "items": [
+        {
+            "name": "htsw_test_item_basic",
+            "nbt": "stone.snbt",
+            "leftClickActions": "item-left.htsl"
+        }
+    ],
+    "menus": [
+        {
+            "name": "htsw_test_menu_basic",
+            "size": 1,
+            "slots": [
+                {
+                    "slot": 0,
+                    "nbt": "stone.snbt",
+                    "actions": "menu-slot.htsl"
+                }
+            ]
+        }
+    ],
+    "events": [
+        {
+            "event": "Player Drop Item",
+            "actions": "event-drop.htsl"
+        }
+    ]
+}

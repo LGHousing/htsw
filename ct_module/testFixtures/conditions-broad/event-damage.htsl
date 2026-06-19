@@ -1,0 +1,6 @@
+if and (
+    damageCause Fall,
+    damageAmount > 0
+) {
+    chat "htsw damage conditions"
+}

@@ -62,9 +62,7 @@ import { showToast } from "../../toast";
 import { isImportRunning, setImportRunning } from "../../../housingSync/runtimeState";
 import { gmcOnImportStart, playImportSuccessSound, waitForCreativeMode } from "../../../housingSync/sideEffects";
 import { resetStepGate } from "../../../housingSync/stepGate";
-import { startPacketOrderProbe, stopPacketOrderProbe } from "../../../housingSync/diagnostics/packetOrderProbe";
 import { resetEventContainers } from "../../../tasks/specifics/waitFor";
-import { flushMenuWaitTickSummary } from "../../../housingSync/gui/menuWait";
 import {
     applyComplete,
     finalizeFromSource,
@@ -436,7 +434,6 @@ export function startImport(explicit?: readonly ImportQueueItem[]): void {
     const startedAt = Date.now();
     resetStepGate();
     gmcOnImportStart();
-    startPacketOrderProbe();
 
     TaskManager.run(async (ctx) => {
         activeImportCtx = ctx;
@@ -495,8 +492,6 @@ export function startImport(explicit?: readonly ImportQueueItem[]): void {
             }
         } finally {
             activeImportCtx = null;
-            stopPacketOrderProbe();
-            flushMenuWaitTickSummary();
             setActiveImportPath(null);
             autoTrackRefresh();
             setImportRunning(false);

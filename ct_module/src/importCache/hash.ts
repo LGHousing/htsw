@@ -1,4 +1,4 @@
-import type { Action, Condition, Importable } from "htsw/types";
+import type { Action, Condition, FunctionIcon, Importable } from "htsw/types";
 
 import { cyrb53, stableStringify } from "../utils/helpers";
 import { canonicalStringify } from "../housingSync/fields/compare";
@@ -169,7 +169,7 @@ export function importableHash(importable: Importable): string {
             }
             serialized = "[" + slotParts.join(",") + "]";
         } else if (key === "icon" && value !== null && typeof value === "object") {
-            serialized = iconCanonical(value as { item: string; count?: number });
+            serialized = iconCanonical(value as FunctionIcon);
         } else {
             serialized = stableStringify(value);
         }
@@ -180,17 +180,15 @@ export function importableHash(importable: Importable): string {
     return hashHex(str);
 }
 
-// The loader emits icons as `minecraft:<lowercase>` while a GUI read stores
-// the bare item name (and `functionIconFromSnapshot` drops count === 1), so
-// hash the icon in the loader's canonical form to keep both dialects equal.
-export function canonicalIconItem(item: string): string {
-    const lower = item.toLowerCase();
-    return lower.startsWith("minecraft:") ? lower : `minecraft:${lower}`;
-}
-
-function iconCanonical(icon: { item: string; count?: number }): string {
-    const norm: Record<string, unknown> = { item: canonicalIconItem(icon.item) };
-    if (icon.count !== undefined && icon.count !== 1) norm.count = icon.count;
+// Normalize in place rather than rebuilding from a named field list: spreading
+// the whole icon keeps every field in the hash (a rebuild silently drops any
+// field it doesn't name); then drop the optional defaults a live read omits so
+// `{item}` and `{item, count: 1}` hash alike. The item id needs no normalization
+// — both the loader and the live read already emit `minecraft:<lowercase>`.
+function iconCanonical(icon: FunctionIcon): string {
+    const norm: Record<string, unknown> = { ...icon };
+    if (norm.count === 1) delete norm.count;
+    if (norm.enchanted !== true) delete norm.enchanted;
     return stableStringify(norm);
 }
 
@@ -200,6 +198,20 @@ function actionListCanonical(actions: readonly Action[]): string {
         parts.push(canonicalStringify(actions[i]));
     }
     return "[" + parts.join(",") + "]";
+}
+
+/**
+ * Content key for an item's click actions — used to cache/share its housing
+ * `interact_data`. Same normalization as `importableHash`, so two items with
+ * the same actions collide on one cached blob.
+ */
+export function clickActionsHash(
+    left: readonly Action[] | undefined,
+    right: readonly Action[] | undefined
+): string {
+    const key =
+        actionListCanonical(left ?? []) + " " + actionListCanonical(right ?? []);
+    return String(cyrb53(key));
 }
 
 function menuSlotCanonical(slot: Record<string, unknown>): string {

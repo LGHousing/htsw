@@ -19,6 +19,7 @@ export type ImportableFunction = {
 export type FunctionIcon = {
     item: string;
     count?: number;
+    enchanted?: boolean;
 };
 
 export type ImportableRegion = {

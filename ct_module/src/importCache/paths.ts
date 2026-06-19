@@ -95,3 +95,13 @@ export function cachePathForId(
 export function itemSnbtCachePath(housingUuid: string, hash: string): string {
     return `${IMPORT_CACHE_ROOT}/${housingUuid}/items/${hash}.snbt`;
 }
+
+/**
+ * Per-housing cache of an item's `interact_data` (the housing-scoped encoding of
+ * its click actions), keyed by the HASH OF THE ACTIONS, not the item. Two items
+ * with identical click actions share one blob — and we splice it onto a source
+ * cosmetic item rather than caching a whole NBT snapshot.
+ */
+export function interactDataCachePath(housingUuid: string, actionsHash: string): string {
+    return `${IMPORT_CACHE_ROOT}/${housingUuid}/interact_data/${actionsHash}.snbt`;
+}

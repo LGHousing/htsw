@@ -7,10 +7,7 @@ import {
     stripHousingEditorValuePrefix,
     stripRedundantLeadingFormattingCodes,
 } from "./loreParsing";
-import {
-    getActionFieldDefault,
-    getActionFieldKind,
-} from "./actionMappings";
+import { getActionFieldDefault, getActionFieldKind } from "./actionMappings";
 import { getConditionFieldDefault, getConditionFieldKind } from "./conditionMappings";
 import { normalizeSoundKey } from "./sounds";
 
@@ -138,11 +135,7 @@ function quantizeHousingValue(num: number): number {
     return Math.round(num * HOUSING_VALUE_SCALE) / HOUSING_VALUE_SCALE;
 }
 
-function canonicalizeFieldValue(
-    type: string,
-    prop: string,
-    value: unknown
-): unknown {
+function canonicalizeFieldValue(type: string, prop: string, value: unknown): unknown {
     if (type === "PLAY_SOUND" && prop === "sound" && typeof value === "string") {
         value = normalizeSoundKey(value) ?? value;
     }
@@ -162,10 +155,33 @@ function canonicalizeFieldValue(
             return quantizeHousingValue(value);
         }
     }
-    if (kind === "select" || kind === "cycle" || kind === "location") {
+    if (kind === "location") {
+        return canonicalizeLocationValue(value);
+    }
+    if (kind === "select" || kind === "cycle") {
         if (typeof value === "string") return { type: value };
     }
     return value;
+}
+
+function canonicalizeLocationValue(value: unknown): unknown {
+    if (typeof value === "string") return { type: value };
+    if (typeof value !== "object" || value === null) return value;
+
+    const record = value as Record<string, unknown>;
+    if (record.type !== "Custom Coordinates") return value;
+
+    const normalized: Record<string, unknown> = { type: record.type };
+    if (typeof record.value === "string") {
+        normalized.value = normalizeCoordinateText(record.value);
+    } else if (record.value !== undefined) {
+        normalized.value = record.value;
+    }
+    return normalized;
+}
+
+function normalizeCoordinateText(value: string): string {
+    return value.trim().split(/\s+/).join(" ");
 }
 
 function normalizeValue(value: unknown): unknown {
@@ -288,7 +304,11 @@ function canonicalDefaultFor(type: string, prop: string): CachedDefault | null {
     const result: CachedDefault | null =
         def === undefined
             ? null
-            : { value: def, json: JSON.stringify(def), scalar: typeof def !== "object" || def === null };
+            : {
+                  value: def,
+                  json: JSON.stringify(def),
+                  scalar: typeof def !== "object" || def === null,
+              };
     canonicalDefaultCache.set(cacheKey, result);
     return result;
 }
@@ -391,11 +411,7 @@ export function scalarFieldDiffers(
     return !fieldsAreEqual(obsCanonical, desCanonical);
 }
 
-function canonicalizeForCompare(
-    type: string,
-    prop: string,
-    value: unknown
-): unknown {
+function canonicalizeForCompare(type: string, prop: string, value: unknown): unknown {
     if (value === undefined) return undefined;
     const coerced = canonicalizeFieldValue(type, prop, value);
     if (

@@ -104,10 +104,19 @@ export async function prereadImportableFunction(
     // first import (everything changes) pays no extra round trip here.
     let settingsHandled = settingsTrusted;
     if (!settingsHandled && actionsPlan.diff.operations.length === 0) {
-        await clickGoBack(ctx); // actions editor -> function list
-        await openFunctionSettings(ctx, importable.name);
+        await functionImportStep(
+            `leaving action editor for function ${importable.name}`,
+            () => clickGoBack(ctx)
+        );
+        await functionImportStep(
+            `opening settings for function ${importable.name}`,
+            () => openFunctionSettings(ctx, importable.name)
+        );
         await applyFunctionSettings(ctx, importable);
-        await clickGoBack(ctx); // settings -> function list
+        await functionImportStep(
+            `leaving settings for function ${importable.name}`,
+            () => clickGoBack(ctx)
+        );
         settingsHandled = true;
     }
 
@@ -127,7 +136,10 @@ export async function applyImportableFunctionPlan(
             session,
         });
         if (needsSettings) {
-            await clickGoBack(ctx);
+            await functionImportStep(
+                `leaving action editor for function ${plan.importable.name}`,
+                () => clickGoBack(ctx)
+            );
         }
     }
 
@@ -136,8 +148,23 @@ export async function applyImportableFunctionPlan(
             await ctx.runCommand(`/functions`);
             await timedWaitForMenu(ctx, "commandMenuWait");
         }
-        await openFunctionSettings(ctx, plan.importable.name);
+        await functionImportStep(
+            `opening settings for function ${plan.importable.name}`,
+            () => openFunctionSettings(ctx, plan.importable.name)
+        );
         await applyFunctionSettings(ctx, plan.importable);
+    }
+}
+
+async function functionImportStep<T>(
+    label: string,
+    run: () => Promise<T>
+): Promise<T> {
+    try {
+        return await run();
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        throw new Error(`${label}: ${message}`);
     }
 }
 
