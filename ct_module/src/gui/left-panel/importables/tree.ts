@@ -373,7 +373,7 @@ function emitIncludeNode(
         out.push({
             levels,
             branch: isLast ? "ell" : "tee",
-            content: () => includeGroupRow(r, kid, expKey, narrowing),
+            content: () => includeGroupRow(r, kid, expKey, narrowing, canonicalPath(node.path)),
             height: 18,
         });
         if (isIncludeGroupExpanded(expKey, narrowing)) {
