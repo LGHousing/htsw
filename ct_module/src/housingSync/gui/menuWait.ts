@@ -11,7 +11,7 @@ import TaskContext from "../../tasks/context";
 import { removedFormatting } from "../../utils/helpers";
 import { describeGuiScreenMenu, getMenuItemSlots, getOpenContainerWindowId, menuStateDescription } from "../../tasks/specifics/slots";
 import { S2DPacketOpenWindow, S30PacketWindowItems } from "../../utils/packets";
-import { type WaitForPromise } from "../../tasks/specifics/waitFor";
+import { describeRecentWindowOpens, type WaitForPromise } from "../../tasks/specifics/waitFor";
 import { COST } from "../progress/costs";
 import { timed } from "../progress/timing";
 import { IMPORT_DEBUG } from "../diagnostics/importDebug";
@@ -225,7 +225,7 @@ function wrapMenuWaitTimeout(
             peakItems: state.maxCount,
         });
         if (message.indexOf("Timeout after") !== -1) {
-            throw new Error(`${message}; ${details}`);
+            throw new Error(`${message}; ${details}; recent window opens: ${describeRecentWindowOpens()}`);
         }
         throw error;
     }) as WaitForPromise<void>;
@@ -311,7 +311,10 @@ export function waitForMenu(
         "Waiting for menu to load",
         MENU_WAIT_TIMEOUT_MS
     );
-    return wrapMenuWaitTimeout(timedPromise, cleanup, state);
+    // Cancel via the timed promise (stops the guard's tick loop) rather than the
+    // bare waiter cleanup, so an abandoned waitForMenu (a losing race branch)
+    // tears the timer down too instead of leaking a 6s phantom timeout.
+    return wrapMenuWaitTimeout(timedPromise, timedPromise.cleanupWaiter ?? cleanup, state);
 }
 
 export function waitForKnownMenu(
@@ -345,7 +348,7 @@ export function waitForKnownMenu(
         "Waiting for menu to load",
         MENU_WAIT_TIMEOUT_MS
     );
-    return wrapMenuWaitTimeout(timedPromise, cleanup, state);
+    return wrapMenuWaitTimeout(timedPromise, timedPromise.cleanupWaiter ?? cleanup, state);
 }
 
 export function timedWaitForMenu(

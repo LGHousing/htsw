@@ -1,0 +1,5 @@
+chat "htsw menu slot"
+closeMenu
+random {
+    exit
+}

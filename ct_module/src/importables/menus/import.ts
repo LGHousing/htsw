@@ -12,10 +12,8 @@ import {
     timedWaitForMenu,
     timedWaitForUnformattedMessage,
 } from "../../housingSync/gui/menuWait";
-import {
-    selectItemFromOpenInventory,
-    stacksEqual,
-} from "../../housingSync/items/injectItem";
+import { selectItemFromOpenInventory } from "../../housingSync/items/injectItem";
+import { canonicalItemKey, snbtFromItem } from "../../housingSync/itemCapture";
 import type { ImportableTrustPlan } from "../../importCache";
 import { createSetupStepEmitter } from "../../housingSync/progress/setupStepEmitter";
 import TaskContext from "../../tasks/context";
@@ -47,6 +45,9 @@ type MenuSlotOp = {
     /** Trust/baseline path for `syncActions` (e.g. `slots[3].actions`). */
     actionsPath?: string;
     clear?: boolean;
+    /** Diagnostic only: read-back vs desired item SNBT when the item differs,
+     * so a residual can show exactly what changed instead of just "item differs". */
+    itemCompare?: { read: string; desired: string };
 };
 
 type MenuDiff = {
@@ -149,16 +150,22 @@ function buildMenuDiff(
             continue;
         }
 
-        const itemDiffers = !stacksEqual(
-            desiredItem.getItemStack(),
-            baselineSlot.item.getItemStack()
-        );
+        const itemDiffers =
+            canonicalItemKey(desiredItem) !== canonicalItemKey(baselineSlot.item);
         const actsDiffer = actionsDiffer(baselineSlot.actions, desiredActions, itemRegistry);
         if (!itemDiffers && !actsDiffer) continue;
 
         ops.push({
             slot: slot.slot,
-            ...(itemDiffers ? { setItem: desiredItem } : {}),
+            ...(itemDiffers
+                ? {
+                      setItem: desiredItem,
+                      itemCompare: {
+                          read: snbtFromItem(baselineSlot.item, { pretty: false }) ?? "<null>",
+                          desired: snbtFromItem(desiredItem, { pretty: false }) ?? "<null>",
+                      },
+                  }
+                : {}),
             ...(actsDiffer ? { syncActions: desiredActions, actionsPath } : {}),
         });
     }
@@ -234,15 +241,12 @@ export async function applyImportableMenuPlan(
         if (op.syncActions === undefined) continue;
         menuGridClick(op.slot, "LEFT");
         await timedWaitForMenu(ctx, "menuClickWait");
-        ctx.getItemSlot("Edit Actions").click();
-        await timedWaitForMenu(ctx, "menuClickWait");
         const actionsPlan = await prereadActionList(ctx, op.syncActions, {
             session,
             baselineCurrent: getBaselineActionList(trustPlan, op.actionsPath ?? ""),
             trust: getActionListTrust(trustPlan, op.actionsPath ?? ""),
         });
         await applyActionListPlan(ctx, actionsPlan, { session });
-        await clickGoBack(ctx);
         await clickGoBack(ctx);
     }
 }

@@ -133,7 +133,15 @@ function findPaginationControl(
 }
 
 export async function clickGoBack(ctx: TaskContext): Promise<void> {
-    ctx.getMenuItemSlot("Go Back").click();
+    const slot = ctx.tryGetMenuItemSlot("Go Back");
+    if (slot === null) {
+        // No "Go Back" here means we're a level higher than the caller assumed —
+        // a top-level editor (the region editor has "Close", not "Go Back") or a
+        // nav unwind that popped one level too far. Name the menu so the desync's
+        // origin is visible instead of a bare "Could not find Go Back".
+        throw new Error(`Could not find "Go Back" to click back from${menuStateDescription()}`);
+    }
+    slot.click();
     await timedWaitForMenu(ctx, "goBackWait");
 }
 
@@ -348,6 +356,12 @@ export async function setSelectValue(
     slotName: string,
     value: string
 ): Promise<void> {
+    const currentSlot = ctx.tryGetMenuItemSlot(slotName);
+    if (currentSlot !== null) {
+        const currentValue = readStringValue(currentSlot);
+        if (currentValue !== null && currentValue === value) return;
+    }
+
     await openSubmenu(ctx, slotName);
 
     const optionSlot = await getSlotPaginate(ctx, value);

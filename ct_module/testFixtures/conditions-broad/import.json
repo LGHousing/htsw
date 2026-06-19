@@ -1,0 +1,45 @@
+{
+    "items": [
+        {
+            "name": "htsw_test_item_condition",
+            "nbt": "stone.snbt"
+        }
+    ],
+    "regions": [
+        {
+            "name": "htsw_test_region_conditions",
+            "bounds": {
+                "from": { "x": -3, "y": 108, "z": -19 },
+                "to": { "x": 3, "y": 100, "z": 0 }
+            },
+            "onEnterActions": "enter.htsl",
+            "onExitActions": "exit.htsl"
+        }
+    ],
+    "events": [
+        {
+            "event": "Player Damage",
+            "actions": "event-damage.htsl"
+        },
+        {
+            "event": "PvP State Change",
+            "actions": "event-pvp.htsl"
+        },
+        {
+            "event": "Fish Caught",
+            "actions": "event-fish.htsl"
+        },
+        {
+            "event": "Player Enter Portal",
+            "actions": "event-portal.htsl"
+        },
+        {
+            "event": "Player Block Break",
+            "actions": "event-block.htsl"
+        },
+        {
+            "event": "Player Pick Up Item",
+            "actions": "event-item.htsl"
+        }
+    ]
+}

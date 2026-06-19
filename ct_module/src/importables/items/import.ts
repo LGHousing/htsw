@@ -6,15 +6,19 @@ import { createSetupStepEmitter } from "../../housingSync/progress/setupStepEmit
 import { clickGoBack } from "../../housingSync/gui/menuUtils";
 import { timedWaitForMenu } from "../../housingSync/gui/menuWait";
 import {
-    importableHash,
-    itemSnbtCachePath,
+    clickActionsHash,
+    interactDataCachePath,
     tryWriteImportableCache,
     type ImportableTrustPlan,
 } from "../../importCache";
 import TaskContext from "../../tasks/context";
 import { ensureParentDirs } from "../../utils/filesystem";
 import { stableStringify } from "../../utils/helpers";
-import { getItemFromNbt, getItemFromSnbt } from "../../utils/nbt";
+import {
+    extractInteractDataSnbt,
+    getItemFromNbt,
+    itemWithInteractData,
+} from "../../utils/nbt";
 import {
     HOTBAR_ZERO_PACKET_SLOT,
     SET_SLOT_ACK_MAX_TICKS,
@@ -59,8 +63,8 @@ function itemShellMatchesCached(
     return stableStringify(itemShell(cached)) === stableStringify(itemShell(desired));
 }
 
-function readCachedItemSnbt(housingUuid: string, hash: string): string | undefined {
-    const path = itemSnbtCachePath(housingUuid, hash);
+function readCachedInteractData(housingUuid: string, actionsHash: string): string | undefined {
+    const path = interactDataCachePath(housingUuid, actionsHash);
     if (!FileLib.exists(path)) return undefined;
 
     const raw = FileLib.read(path);
@@ -165,11 +169,14 @@ async function importImportableItem(
         return;
     }
 
-    const hash = importableHash(importable);
-    const cachePath = itemSnbtCachePath(uuid, hash);
-    const cachedSnbt = readCachedItemSnbt(uuid, hash);
-    if (cachedSnbt !== undefined) {
-        await injectHeldItem(ctx, getItemFromSnbt(cachedSnbt));
+    const actionsHash = clickActionsHash(
+        importable.leftClickActions,
+        importable.rightClickActions
+    );
+    const cachePath = interactDataCachePath(uuid, actionsHash);
+    const cachedInteractData = readCachedInteractData(uuid, actionsHash);
+    if (cachedInteractData !== undefined) {
+        await injectHeldItem(ctx, itemWithInteractData(importable.nbt, cachedInteractData));
         setup(`gave cached ${importable.name}`);
         await tryWriteImportableCache(ctx, importable, "importer", uuid);
         return;
@@ -200,8 +207,13 @@ async function importImportableItem(
     const snbt = Player.getInventory()?.getStackInSlot(selectedHotbarSlot())?.getRawNBT();
     if (!snbt) throw Error("Why don't we have the item?");
 
-    ensureParentDirs(cachePath);
-    FileLib.write(cachePath, snbt, true);
+    // Cache only the housing-scoped interact_data blob (keyed by action hash),
+    // not the whole snapshot — a later reference splices it onto the source item.
+    const interactData = extractInteractDataSnbt(snbt);
+    if (interactData !== null) {
+        ensureParentDirs(cachePath);
+        FileLib.write(cachePath, interactData, true);
+    }
     await tryWriteImportableCache(ctx, importable, "importer", uuid);
 }
 
@@ -223,10 +235,16 @@ function chooseItemStart(
         cachedImportable?.type === "ITEM" &&
         itemShellMatchesCached(cachedImportable, importable)
     ) {
-        const cachedSnbt = readCachedItemSnbt(housingUuid, cachedEntry.hash);
-        if (cachedSnbt !== undefined) {
+        const cachedInteractData = readCachedInteractData(
+            housingUuid,
+            clickActionsHash(
+                cachedImportable.leftClickActions,
+                cachedImportable.rightClickActions
+            )
+        );
+        if (cachedInteractData !== undefined) {
             return {
-                item: getItemFromSnbt(cachedSnbt),
+                item: itemWithInteractData(cachedImportable.nbt, cachedInteractData),
                 mode: "cached",
                 cachedImportable,
             };

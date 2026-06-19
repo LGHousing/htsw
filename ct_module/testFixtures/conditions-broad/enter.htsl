@@ -1,0 +1,29 @@
+if and (
+    hasGroup "Guest" false,
+    var htswVar >= 0,
+    hasPermission Fly,
+    inRegion "htsw_test_region_conditions",
+    hasItem "htsw_test_item_condition" Metadata Anywhere Any_Amount
+) {
+    chat "htsw conditions one"
+}
+
+if and (
+    doingParkour,
+    hasPotion Speed,
+    isSneaking,
+    isFlying,
+    health > 0,
+    maxHealth > 0
+) {
+    chat "htsw conditions two"
+}
+
+if and (
+    hunger > 0,
+    gamemode Adventure,
+    placeholder "%player.health%" >= 0,
+    hasTeam None
+) {
+    chat "htsw conditions three"
+}

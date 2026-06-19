@@ -329,14 +329,18 @@ export const ACTION_MAPPINGS = {
     SET_PLAYER_WEATHER: {
         displayName: "Set Player Weather",
         loreFields: {
-            Weather: { prop: "weather", kind: "select" },
+            Weather: {
+                prop: "weather",
+                kind: "cycle",
+                options: ["None", "Sunny", "Raining"],
+            },
         },
     },
 
     SET_PLAYER_TIME: {
         displayName: "Set Player Time",
         loreFields: {
-            Time: { prop: "time", kind: "cycle" },
+            Time: { prop: "time", kind: "value" },
         },
     },
 

@@ -242,9 +242,10 @@ export function deleteImportableCache(
     const path = cachePathForId(housingUuid, type, identity);
     readCache.delete(path);
     indexRemove(housingUuid, type, identity);
-    if (!FileLib.exists(path)) return;
     try {
-        FileLib.delete(path);
+        const Paths = Java.type("java.nio.file.Paths");
+        const Files = Java.type("java.nio.file.Files");
+        Files.deleteIfExists(Paths.get(String(path)));
     } catch {
         // best-effort
     }

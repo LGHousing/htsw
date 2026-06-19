@@ -2,6 +2,8 @@
 
 import type TaskContext from "../tasks/context";
 
+const KeyBinding = Java.type("net.minecraft.client.settings.KeyBinding") as any;
+
 /**
  * Side effects coordinating the importer with the surrounding game:
  *   - Auto-run /gmc at import start (housing edits need creative).
@@ -22,6 +24,58 @@ export function isInCreativeMode(): boolean {
     // This is the flag the server checks before honouring a creative-inventory
     // spawn, so it's the one that tells us a spawn will actually land.
     return Player.getPlayer().field_71075_bZ.field_75098_d === true;
+}
+
+export function enableCreativeFlight(): void {
+    const player = Player.getPlayer();
+    const capabilities = player.field_71075_bZ;
+    capabilities.field_75101_c = true;
+    capabilities.field_75100_b = true;
+    player.func_71016_p();
+}
+
+function isFlying(): boolean {
+    return Player.getPlayer().field_71075_bZ.field_75100_b === true;
+}
+
+function getJumpKeyCode(): number | null {
+    try {
+        const settings = Client.getMinecraft().field_71474_y;
+        const binding = settings?.field_74314_A;
+        if (binding === undefined || binding === null) return null;
+        try {
+            return Number(binding.func_151463_i());
+        } catch (_e) {
+            return Number(binding.getKeyCode());
+        }
+    } catch (_e) {
+        return null;
+    }
+}
+
+async function tapJump(ctx: TaskContext, keyCode: number): Promise<void> {
+    KeyBinding.func_74510_a(keyCode, true);
+    KeyBinding.func_74507_a(keyCode);
+    await ctx.waitFor("tick");
+    KeyBinding.func_74510_a(keyCode, false);
+    await ctx.waitFor("tick");
+}
+
+const FLY_TOGGLE_MAX_TICKS = 20;
+
+export async function ensureCreativeFlight(ctx: TaskContext): Promise<boolean> {
+    if (isFlying()) return true;
+    if (!isInCreativeMode() && !(await waitForCreativeMode(ctx))) return false;
+    const keyCode = getJumpKeyCode();
+    if (keyCode === null || keyCode <= 0) return false;
+
+    await tapJump(ctx, keyCode);
+    await tapJump(ctx, keyCode);
+    for (let i = 0; i < FLY_TOGGLE_MAX_TICKS; i++) {
+        if (isFlying()) return true;
+        await ctx.waitFor("tick");
+    }
+    return isFlying();
 }
 
 const GMC_APPLY_MAX_TICKS = 60;

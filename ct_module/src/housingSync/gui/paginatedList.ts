@@ -29,9 +29,15 @@ export function isEmptyPaginatedPlaceholder(
     slot: ItemSlot,
     config: PaginatedListConfig
 ): boolean {
-    return (
-        removedFormatting(slot.getItem().getName()).trim() === config.emptyPlaceholderName
-    );
+    const item = slot.getItem();
+    if (item === null || item === undefined) return false;
+    const actual = stripTooltipDebugSuffix(removedFormatting(item.getName()).trim());
+    const expected = config.emptyPlaceholderName.trim();
+    return actual.toLowerCase() === expected.toLowerCase();
+}
+
+function stripTooltipDebugSuffix(name: string): string {
+    return name.replace(/\s*\(#[0-9a-fA-F]+\)\s*$/, "").trim();
 }
 
 function parsePaginatedTitlePage(

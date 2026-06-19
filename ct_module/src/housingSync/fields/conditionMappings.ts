@@ -152,7 +152,7 @@ export const CONDITION_MAPPINGS = {
     PORTAL_TYPE: {
         displayName: "Portal Type",
         loreFields: {
-            Type: { prop: "portalType", kind: "select" },
+            "Portal Type": { prop: "portalType", kind: "select" },
         },
     },
 

@@ -205,6 +205,28 @@ export function getOpenContainerWindowId(): number | null {
     }
 }
 
+function listSize(value: unknown): number {
+    try {
+        const n = (value as { size(): number }).size();
+        if (typeof n === "number") return n;
+    } catch (_e) {}
+    try {
+        const n = (value as { length?: number }).length;
+        if (typeof n === "number") return n;
+    } catch (_e) {}
+    return 0;
+}
+
+function listItem(value: unknown, index: number): unknown {
+    try {
+        return (value as { get(i: number): unknown }).get(index);
+    } catch (_e) {}
+    try {
+        return (value as unknown[])[index];
+    } catch (_e) {}
+    return null;
+}
+
 /**
  * Menu-item count read straight off the DISPLAYED GuiContainer's own container
  * (1.8.9 obf: GuiContainer.field_147002_h = inventorySlots), not via
@@ -226,14 +248,11 @@ export function describeGuiScreenMenu(): string {
             field_75152_c?: number;
         };
         const inv = c.func_75138_a();
-        const size = typeof inv.size === "function" ? inv.size() : inv.length ?? 0;
-        const get = typeof inv.get === "function"
-            ? (i: number): unknown => inv.get?.(i)
-            : (i: number): unknown => (inv as unknown as unknown[])[i];
+        const size = listSize(inv);
         const end = size < 36 ? size : size - 36;
         let n = 0;
         for (let i = 0; i < end; i++) {
-            if (get(i) != null) n++;
+            if (listItem(inv, i) != null) n++;
         }
         return `${short}:${n}items/win${c.field_75152_c}`;
     } catch (e) {

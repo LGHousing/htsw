@@ -2,6 +2,7 @@ import TaskContext from "../../tasks/context";
 import { timedWaitForMenu } from "../../housingSync/gui/menuWait";
 import {
     getVisiblePaginatedItemSlots,
+    isEmptyPaginatedPlaceholder,
     readPaginatedList,
     type PaginatedListConfig,
 } from "../../housingSync/gui/paginatedList";
@@ -11,7 +12,7 @@ import { extractFunctionNameFromSlot } from "./shared";
 
 const FUNCTION_LIST_CONFIG: PaginatedListConfig = {
     label: "function",
-    emptyPlaceholderName: "No Functions!",
+    emptyPlaceholderName: "No items!",
 };
 
 // Per-import-session cache of the house's functions (lowercased name → current
@@ -81,6 +82,7 @@ export async function listAllFunctionEntries(ctx: TaskContext): Promise<Function
             const out: Entry[] = [];
             const slots = getVisiblePaginatedItemSlots(ctx);
             for (let i = 0; i < slots.length; i++) {
+                if (isEmptyPaginatedPlaceholder(slots[i], FUNCTION_LIST_CONFIG)) continue;
                 const item = slots[i].getItem();
                 if (item === null || item === undefined) continue;
                 const extracted = extractFunctionNameFromSlot(

@@ -50,16 +50,18 @@ const CHAT_MIN_INTERVAL_MS = 50;
 
 /**
  * Housing rejects a slash command sent too soon after the previous one with
- * "This command is on cooldown! Try again in about a second!" — so a fast
- * `/menu edit`→`/menu create` (the edit fails instantly when the menu is
- * missing) loses the create and the import stalls waiting for a confirmation
- * that never comes. Space consecutive commands past that window. Field-value
- * input goes through `sendMessage`, not here, so this floor never touches the
- * per-field import hot path; only the sparse navigation/creation commands pay,
- * and only when they'd otherwise fire back-to-back. Padded above the stated
- * ~1s to absorb send→server round-trip and the "about" in the message.
+ * "This command is on cooldown! Try again in about a second!" — a fast
+ * `/menu edit`→`/menu create` loses the create and the import stalls waiting
+ * for a confirmation that never comes. The "about a second" wording is
+ * misleading: the measured threshold is ~150ms (the `/htsw cooldownprobe`
+ * diagnostic saw edit→create clean at ~180ms and throttled at ~115ms;
+ * create→create clean by 200ms). This floor spaces consecutive commands past
+ * it with round-trip margin. Field-value input goes through `sendMessage`, not
+ * here, so this never touches the per-field import hot path; only the sparse
+ * navigation/creation commands pay, and only when they'd otherwise fire
+ * back-to-back.
  */
-const COMMAND_COOLDOWN_MS = 1200;
+const COMMAND_COOLDOWN_MS = 300;
 
 export default class TaskContext {
     private cancelled: boolean = false;
@@ -184,17 +186,22 @@ export default class TaskContext {
         }
     }
 
-    public async withTimeout<T>(
+    public withTimeout<T>(
         promise: Promise<T> | (() => Promise<T>),
         reason: string,
         duration: number = 2000
-    ): Promise<T> {
+    ): WaitForPromise<T> {
         if (this.cancelled) {
-            throw { __taskCancelled: true, reason: "Task cancelled" };
+            const rejected = Promise.reject({
+                __taskCancelled: true,
+                reason: "Task cancelled",
+            }) as WaitForPromise<T>;
+            rejected.cleanupWaiter = () => {};
+            rejected.catch(() => {});
+            return rejected;
         }
         const pending = typeof promise === "function" ? promise() : promise;
-        const cleanup = (pending as Promise<T> & { cleanupWaiter?: () => void })
-            .cleanupWaiter;
+        const innerCleanup = (pending as WaitForPromise<T>).cleanupWaiter;
         // A single tick-driven guard for both cancel and timeout. Polling per tick
         // makes a GUI cancel take effect mid-wait (instead of after the full
         // duration), and — critically — makes the timeout actually fire: CT's
@@ -205,11 +212,11 @@ export default class TaskContext {
         const guard = (async (): Promise<T> => {
             while (!settled) {
                 if (this.cancelled) {
-                    cleanup?.();
+                    innerCleanup?.();
                     throw { __taskCancelled: true, reason: "Task cancelled" };
                 }
                 if (Date.now() >= end) {
-                    cleanup?.();
+                    innerCleanup?.();
                     throw new Error(`Timeout after ${duration}ms: ${reason}`);
                 }
                 await this.waitFor("tick");
@@ -218,11 +225,28 @@ export default class TaskContext {
         })();
         guard.catch(() => {});
 
-        try {
-            return await Promise.race([pending, guard]);
-        } finally {
+        const raced = Promise.race([pending, guard]).then(
+            (value): T => {
+                settled = true;
+                return value;
+            },
+            (error): never => {
+                settled = true;
+                throw error;
+            }
+        ) as WaitForPromise<T>;
+        // Abandoning this result — e.g. a losing branch of an outer ctx.race —
+        // must STOP the guard's tick loop, not leave it polling until it times
+        // out `duration`ms later and reports a phantom failure. Settling here
+        // ends the guard within a tick; the inner waiter teardown is the same
+        // cleanup the guard would have run. Both are idempotent with the settle
+        // in the `.then` above, so a normal resolve and an abandon can't collide.
+        raced.cleanupWaiter = (): void => {
             settled = true;
-        }
+            innerCleanup?.();
+        };
+        raced.catch(() => {});
+        return raced;
     }
 
     /**

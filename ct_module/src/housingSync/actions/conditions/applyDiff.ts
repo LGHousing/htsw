@@ -101,6 +101,16 @@ async function importCondition(
     await setNoteOnLastVisibleSlot(ctx, condition.note);
 }
 
+export async function appendConditionsToOpenConditionList(
+    ctx: TaskContext,
+    desired: Condition[],
+    itemRegistry: ItemRegistry
+): Promise<void> {
+    for (let i = 0; i < desired.length; i++) {
+        await importCondition(ctx, desired[i], itemRegistry);
+    }
+}
+
 async function deleteObservedCondition(
     ctx: TaskContext,
     index: number,

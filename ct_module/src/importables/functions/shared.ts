@@ -166,6 +166,18 @@ async function setFunctionIconIfNeeded(
     await setItemValue(ctx, "Edit Icon", createPlainIconItem(icon), iconStacksEqual);
 }
 
+async function functionSettingsStep<T>(
+    label: string,
+    run: () => Promise<T>
+): Promise<T> {
+    try {
+        return await run();
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        throw new Error(`${label}: ${message}`);
+    }
+}
+
 /**
  * Assuming the function-settings menu is open, apply the icon and
  * automatic-execution tick count from `importable`. Both setters short-circuit
@@ -178,9 +190,15 @@ export async function applyFunctionSettings(
     importable: ImportableFunction
 ): Promise<void> {
     if (importable.icon !== undefined && !(await functionIconMatches(ctx, importable))) {
-        await setFunctionIconIfNeeded(ctx, importable.icon);
+        await functionSettingsStep(
+            `setting icon for function ${importable.name}`,
+            () => setFunctionIconIfNeeded(ctx, importable.icon!)
+        );
     }
-    await setAutomaticExecutionTicksIfNeeded(ctx, importable.repeatTicks ?? 0);
+    await functionSettingsStep(
+        `setting automatic execution for function ${importable.name}`,
+        () => setAutomaticExecutionTicksIfNeeded(ctx, importable.repeatTicks ?? 0)
+    );
 }
 
 /**

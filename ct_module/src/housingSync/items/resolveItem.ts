@@ -3,8 +3,8 @@ import type { Action, Condition } from "htsw/types";
 
 import TaskContext from "../../tasks/context";
 import { type ItemRegistry, getMemoizedHousingUuid } from "../../importables/itemRegistry";
-import { getItemFromSnbt } from "../../utils/nbt";
-import { importableHash, itemSnbtCachePath } from "../../importCache";
+import { itemWithInteractData } from "../../utils/nbt";
+import { clickActionsHash, interactDataCachePath } from "../../importCache";
 
 type Owner = Action | Condition;
 
@@ -42,15 +42,17 @@ export async function resolveImportableItem(
     }
 
     const uuid = await getMemoizedHousingUuid(ctx, itemRegistry);
-    const hash = importableHash(importable);
-    const cachePath = itemSnbtCachePath(uuid, hash);
+    const cachePath = interactDataCachePath(
+        uuid,
+        clickActionsHash(importable.leftClickActions, importable.rightClickActions)
+    );
     if (!FileLib.exists(cachePath)) {
         throw Diagnostic.error(
-            `Cannot set item "${itemName}" for ${owner.type}: it has click actions but isn't cached at ${cachePath}. ` +
+            `Cannot set item "${itemName}" for ${owner.type}: it has click actions but its interact_data isn't cached at ${cachePath}. ` +
                 `Declare the item as a top-level importable in the same import.json so it imports first, ` +
                 `or run /import on it before whatever ${kind} references it.`
         );
     }
-    const snbt = String(FileLib.read(cachePath));
-    return getItemFromSnbt(snbt);
+    const interactDataSnbt = String(FileLib.read(cachePath));
+    return itemWithInteractData(importable.nbt, interactDataSnbt);
 }
