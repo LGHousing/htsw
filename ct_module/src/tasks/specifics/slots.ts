@@ -1,5 +1,4 @@
 import { removedFormatting } from "../../utils/helpers";
-import { IMPORT_DEBUG } from "../../housingSync/diagnostics/importDebug";
 import { lastWindowID___FromS30PacketWindowItemsPacketReceived__ThisIsNecessary_sadly_itIncrementsFrom1To100ThenItGoesBackAround_ButSometimesItSkipsOneOrMoreWeAreNotSureMaybeMore_AndItWillNeverBeZero as lastObservedWindowID } from "./waitFor";
 
 export enum MouseButton {
@@ -152,7 +151,7 @@ export function getMenuItemSlot(
         const base = typeof check === "string"
             ? `Could not find "${check}"`
             : "Could not find item slot";
-        throw new Error(IMPORT_DEBUG ? `${base}${menuStateDescription()}` : base);
+        throw new Error(`${base}${menuStateDescription()}`);
     }
     return slot;
 }

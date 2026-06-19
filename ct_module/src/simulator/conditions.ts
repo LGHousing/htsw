@@ -73,17 +73,10 @@ function behaviorRequireGamemode(
 
 function behaviorRequireItem(
     _rt: runtime.Runtime,
-    condition: ConditionRequireItem
+    _condition: ConditionRequireItem
 ): boolean {
-    if (
-        !condition.itemName ||
-        !condition.whatToCheck ||
-        !condition.whereToCheck ||
-        !condition.amount
-    )
-        return false;
-
-    return false; // TODO: items!
+    // Item-inventory checks aren't simulated yet, so the condition never holds.
+    return false;
 }
 
 function behaviorRequirePotionEffect(

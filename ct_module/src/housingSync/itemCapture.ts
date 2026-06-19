@@ -13,7 +13,7 @@ import {
     sendCreativeInventoryAction,
     waitForAnySetSlot,
 } from "./gui/packets";
-import { IMPORT_DEBUG } from "./diagnostics/importDebug";
+import { traceNote } from "./trace/importTrace";
 
 const SCRATCH_PACKET_SLOT = 26;
 const INVENTORY_SIZE = 36;
@@ -303,9 +303,7 @@ async function waitForSetSlotAck(
             SET_SLOT_ACK_TIMEOUT_MS
         );
     } catch (error) {
-        if (IMPORT_DEBUG) {
-            ctx.displayMessage(`&7[item-capture] &e${label} timeout: ${error}`);
-        }
+        traceNote("item-capture", `${label} timeout: ${error}`);
     }
 }
 
@@ -488,9 +486,7 @@ export async function restoreInventoryToSnapshot(
                 SET_SLOT_ACK_TIMEOUT_MS
             );
         } catch (error) {
-            if (IMPORT_DEBUG) {
-                ctx.displayMessage(`&7[item-capture] &erestore slot ${entry.slotId} ack timeout: ${error}`);
-            }
+            traceNote("item-capture", `restore slot ${entry.slotId} ack timeout: ${error}`);
         }
     }
 }

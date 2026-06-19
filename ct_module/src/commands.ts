@@ -31,7 +31,6 @@ import {
 import { getTreePerfStats } from "./gui/left-panel/importables/tree";
 import { resetOnboarding } from "./gui/persistence/onboarding";
 import { rearmTourAutoStart } from "./gui/popovers/tour";
-import { isPacketOrderProbeActive } from "./housingSync/diagnostics/packetOrderProbe";
 import {
     getImportTracePath,
     setImportTraceEnabled,
@@ -43,8 +42,7 @@ import {
 import {
     clearLagProbeSamples,
     getLagProbeSamples,
-} from "./diagnostics/lagProbe";
-import { runCooldownProbe, type CooldownProbeMode } from "./diagnostics/cooldownProbe";
+} from "./perf/lagProbe";
 import { commandTest } from "./testSuite/command";
 import { getCurrentHousingUuid } from "./importCache";
 import { isInCreativeMode } from "./housingSync/sideEffects";
@@ -116,11 +114,6 @@ const HTSW_SUBCOMMANDS: HtswSubcommand[] = [
         run: commandGui,
     },
     {
-        name: "waiters",
-        summary: "Show live waitFor counts (leak check; idle = ~0)",
-        run: commandWaiters,
-    },
-    {
         name: "update",
         summary: "Check for and install CT module updates",
         run: commandUpdate,
@@ -139,31 +132,57 @@ const HTSW_SUBCOMMANDS: HtswSubcommand[] = [
         hidden: true,
     },
     {
+        name: "debug",
+        summary: "Diagnostic probes: waiters, perf, lag",
+        run: commandDebug,
+        usage: "debug [waiters|treeperf|parseperf|lagprobe]",
+    },
+];
+
+// Grouped under `/htsw debug` rather than scattered as flat top-level
+// subcommands — they only matter when diagnosing the importer, and a single
+// namespace keeps `/htsw` help readable.
+const DEBUG_SUBCOMMANDS: HtswSubcommand[] = [
+    {
+        name: "waiters",
+        summary: "Live waitFor counts (leak check; idle = ~0)",
+        run: commandWaiters,
+    },
+    {
         name: "treeperf",
-        summary: "Show importables tree render stats",
+        summary: "Importables tree render stats",
         run: commandTreePerf,
-        hidden: true,
     },
     {
         name: "parseperf",
-        summary: "Show recent import.json parse timings",
+        summary: "Recent import.json parse timings",
         run: commandParsePerf,
-        hidden: true,
     },
     {
         name: "lagprobe",
-        summary: "Show recent main-thread stall samples",
+        summary: "Recent main-thread stall samples",
         run: commandLagProbe,
-        hidden: true,
-    },
-    {
-        name: "cooldownprobe",
-        summary: "Measure Hypixel's slash-command cooldown empirically",
-        run: commandCooldownProbe,
-        usage: "cooldownprobe [edit|create|mutate|cleanup]",
-        hidden: true,
+        usage: "lagprobe [clear]",
     },
 ];
+
+function commandDebug(args: string[]): void {
+    if (args.length > 0) {
+        const key = args[0].toLowerCase();
+        for (let i = 0; i < DEBUG_SUBCOMMANDS.length; i++) {
+            if (DEBUG_SUBCOMMANDS[i].name === key) {
+                DEBUG_SUBCOMMANDS[i].run(args.slice(1));
+                return;
+            }
+        }
+        ChatLib.chat(`&cUnknown /htsw debug probe '${args[0]}'.`);
+    }
+    ChatLib.chat("&7[htsw] debug probes:");
+    for (let i = 0; i < DEBUG_SUBCOMMANDS.length; i++) {
+        const c = DEBUG_SUBCOMMANDS[i];
+        ChatLib.chat(`&f/htsw debug ${c.usage ?? c.name} &7- ${c.summary}`);
+    }
+}
 
 export function registerCommands() {
     register("command", (...args) => commandHtsw(args)).setName("htsw");
@@ -314,24 +333,6 @@ function commandLagProbe(args: string[]): void {
     }
 }
 
-function commandCooldownProbe(args: string[]): void {
-    const raw = (args[0] ?? "edit").toLowerCase();
-    const mode = raw === "mutation" ? "mutate" : raw;
-    if (mode !== "edit" && mode !== "create" && mode !== "mutate" && mode !== "cleanup") {
-        ChatLib.chat("&cUsage: /htsw cooldownprobe [edit|create|mutate|cleanup]");
-        return;
-    }
-    if (TaskManager.hasRunningTasks()) {
-        ChatLib.chat("&c[cooldownprobe] a task is already running — retry once it finishes.");
-        return;
-    }
-    TaskManager.run(async (ctx) => {
-        await runCooldownProbe(ctx, mode as CooldownProbeMode);
-    }).catch((err) => {
-        ChatLib.chat(`&c[cooldownprobe] failed: ${err}`);
-    });
-}
-
 function itemSaveDestination(
     explicitPath: string
 ): { rootDir: string; importJsonPath: string } {
@@ -470,20 +471,6 @@ function commandEta(args: string[]): void {
             const path = setProgressTraceEnabled(true);
             ChatLib.chat(`&a[eta] progress trace on · &f${path}`);
         }
-        return;
-    }
-
-    if (args.length > 0 && args[0] === "waiters") {
-        const counts = getEventContainerCounts();
-        ChatLib.chat(
-            `&7[waiters] live waitFor predicates — ` +
-            `tick: ${counts.tick}, packetReceived: ${counts.packetReceived}, ` +
-            `packetSent: ${counts.packetSent}, message: ${counts.message}`
-        );
-        ChatLib.chat(
-            `&7[waiters] packet-order probe: ${isPacketOrderProbeActive() ? "&cACTIVE" : "&aoff"}&7. ` +
-            `Idle baseline should be ~0 across the board; non-zero between imports = leak.`
-        );
         return;
     }
 
@@ -676,9 +663,15 @@ function commandSimulator(args: string[]) {
         ChatLib.chat("");
         ChatLib.chat("&f/simulator [start [path] | restart | stop ]");
         ChatLib.chat("");
+        ChatLib.chat("&7While a simulation is active:");
         ChatLib.chat("&f/function run <function> &7- Run a function");
         ChatLib.chat("&f// <htsl> &7- Evaluate HTSL code");
+        ChatLib.chat("&f/var <var|global:var|team:team:var> <set|inc|dec|mul|div> <value> &7- Change a variable");
+        ChatLib.chat("&f/vars [filter] &7- Dump player variables");
+        ChatLib.chat("&f/globalvars [filter] &7- Dump global variables");
+        ChatLib.chat("&f/teamvars <team> [filter] &7- Dump team variables");
         ChatLib.chat(`&7${chatSeparator()}`);
+        return;
     }
 
     if (args[0] === "start") {

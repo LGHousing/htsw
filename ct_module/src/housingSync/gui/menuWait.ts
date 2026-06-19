@@ -14,8 +14,7 @@ import { S2DPacketOpenWindow, S30PacketWindowItems } from "../../utils/packets";
 import { describeRecentWindowOpens, type WaitForPromise } from "../../tasks/specifics/waitFor";
 import { COST } from "../progress/costs";
 import { timed } from "../progress/timing";
-import { IMPORT_DEBUG } from "../diagnostics/importDebug";
-import { traceMenuWait } from "../trace/importTrace";
+import { isImportTraceEnabled, traceMenuWait } from "../trace/importTrace";
 
 const MENU_WAIT_TIMEOUT_MS = 6000;
 
@@ -32,40 +31,6 @@ const MENU_WAIT_TIMEOUT_MS = 6000;
 // never populated" failure beats silently scanning a half-built menu and
 // cascading into a confusing downstream error.
 const CONTAINER_SWITCH_MAX_TICKS = 80;
-
-// Histogram of how many ticks each menu wait needed before the opened window
-// was active AND populated — i.e. the received→processed latency in ticks.
-// Index = ticksWaited (1..MAX). `gaveUp` = never satisfied within the cap.
-const menuWaitTickCounts: number[] = [];
-let menuWaitGaveUp = 0;
-
-function recordMenuWaitTicks(ticksWaited: number, satisfied: boolean): void {
-    if (!satisfied) {
-        menuWaitGaveUp++;
-        return;
-    }
-    menuWaitTickCounts[ticksWaited] = (menuWaitTickCounts[ticksWaited] ?? 0) + 1;
-}
-
-/** Log the tick-latency distribution since the last flush, then reset. */
-export function flushMenuWaitTickSummary(): void {
-    if (!IMPORT_DEBUG) return;
-    const parts: string[] = [];
-    let total = 0;
-    for (let t = 0; t < menuWaitTickCounts.length; t++) {
-        const c = menuWaitTickCounts[t];
-        if (c) {
-            parts.push(`${t}t×${c}`);
-            total += c;
-        }
-    }
-    if (menuWaitGaveUp > 0) parts.push(`gaveUp×${menuWaitGaveUp}`);
-    if (total > 0 || menuWaitGaveUp > 0) {
-        ChatLib.chat(`&b[menu-wait] populate latency over ${total} waits: ${parts.join(", ")}`);
-    }
-    menuWaitTickCounts.length = 0;
-    menuWaitGaveUp = 0;
-}
 
 function s2dWindowId(packet: unknown): number | null {
     try {
@@ -187,7 +152,6 @@ async function waitForOpenedWindowToBeReady(
             }
         }
         if (state.openedWindowId !== null) {
-            recordMenuWaitTicks(state.ticksWaited, ready);
             if (!ready) {
                 const elapsed = Date.now() - loopStartMs;
                 throw new Error(
@@ -253,11 +217,13 @@ export function waitForMenu(
     let packetWaiter: WaitForPromise<unknown> | null = null;
     let tickWaiter: WaitForPromise<unknown> | null = null;
     const state = createMenuWaitState();
-    traceMenuWait("start", {
-        skipPopulateWait,
-        currentMenu: menuStateDescription(),
-        gui: describeGuiScreenMenu(),
-    });
+    if (isImportTraceEnabled()) {
+        traceMenuWait("start", {
+            skipPopulateWait,
+            currentMenu: menuStateDescription(),
+            gui: describeGuiScreenMenu(),
+        });
+    }
 
     const cleanup = (): void => {
         packetWaiter?.cleanupWaiter?.();
@@ -328,12 +294,14 @@ export function waitForKnownMenu(
     };
 
     const state = createMenuWaitState(openedWindowId);
-    traceMenuWait("start", {
-        skipPopulateWait,
-        knownWindowId: openedWindowId,
-        currentMenu: menuStateDescription(),
-        gui: describeGuiScreenMenu(),
-    });
+    if (isImportTraceEnabled()) {
+        traceMenuWait("start", {
+            skipPopulateWait,
+            knownWindowId: openedWindowId,
+            currentMenu: menuStateDescription(),
+            gui: describeGuiScreenMenu(),
+        });
+    }
     traceMenuWait("openWindow", { windowId: openedWindowId, known: true });
 
     const inner = (async (): Promise<void> => {
