@@ -259,7 +259,7 @@ export function isParsePending(rawPath: string): boolean {
  * (`setTimeout`) before the blocking parse so any "parsing" indicator can
  * paint first — mirroring the reparse driver. Call once per GUI tick.
  */
-export function processPendingParses(): void {
+export function processPendingParses(onParsed?: (entry: CachedParse) => void): void {
     if (parseInFlightPath !== null) return;
     let nextCanon: string | null = null;
     let nextRaw = "";
@@ -269,15 +269,28 @@ export function processPendingParses(): void {
         break;
     }
     if (nextCanon === null) return;
-    pendingParsePaths.delete(nextCanon);
-    parseInFlightPath = nextCanon;
+    const parseCanon = nextCanon;
+    pendingParsePaths.delete(parseCanon);
+    parseInFlightPath = parseCanon;
     setTimeout(() => {
         try {
-            parseImportJsonBlocking(nextRaw);
-        } catch (_e) {
-            // A failed parse is cached as an error entry by the authority.
+            let parsedEntry: CachedParse | null = null;
+            const previousEntry = cache.get(parseCanon);
+            try {
+                parsedEntry = parseImportJsonBlocking(nextRaw);
+            } catch (_e) {
+                // A failed parse is cached as an error entry by the authority.
+            }
+            if (
+                parsedEntry !== null &&
+                parsedEntry !== previousEntry &&
+                onParsed !== undefined
+            ) {
+                onParsed(parsedEntry);
+            }
+        } finally {
+            parseInFlightPath = null;
         }
-        parseInFlightPath = null;
     }, 0);
 }
 

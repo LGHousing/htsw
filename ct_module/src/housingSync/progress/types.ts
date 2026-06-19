@@ -31,6 +31,7 @@ export type ProgressPayload = {
     totalUnits: number;
     phaseUnits: PhaseUnits;
     sync: SyncProgress;
+    preserveApplyingEstimate?: boolean;
 };
 
 export type ImportableEntry = {

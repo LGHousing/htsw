@@ -17,6 +17,7 @@ import {
     type CachedParse,
 } from "./parses";
 import { javaType } from "../lib/java";
+import { autoTrackRefresh } from "../autoTrack";
 
 /**
  * `reparse` is a thin DRIVER over the single parse authority,
@@ -63,6 +64,7 @@ function propagate(path: string, cached: CachedParse): void {
     setParsedResult(cached.parsed);
     if (cached.parsed === null) return;
     addRecent(path);
+    autoTrackRefresh();
 }
 
 /**

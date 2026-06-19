@@ -59,7 +59,7 @@ import {
 import { addToQueue, makeImportableQueueItem, queueItemKey, removeFromQueueKey } from "../../right-panel/import-tab/queue";
 import { isImportRunning } from "../../../housingSync/runtimeState";
 import { composeFileMenu, composeImportableMenu } from "../../menus/fileMenu";
-import { autoTrackRefresh, queueModifiedFromParse } from "../../right-panel/import-tab/importController";
+import { autoTrackRefresh, queueModifiedFromPath } from "../../autoTrack";
 import { SourceDir, SourceFile, removeSource } from "./source";
 import { type IncludeNode, includeTreeOf, subtreeImportableCount } from "./includeTree";
 import { showInExplorer, openInVSCode } from "../../../utils/osShell";
@@ -77,6 +77,7 @@ import {
     ROW_HOVER_BG,
     bumpTreeRevision,
 } from "./rowModel";
+import { EVENT_ICONS } from "htsw/types";
 import type { Bounds, Importable } from "htsw/types";
 
 export let searchQuery = "";
@@ -1212,6 +1213,17 @@ function houseBindControl(fullPath: string): Element | false {
     });
 }
 
+function autoTrackIndicator(fullPath: string): Element | false {
+    if (!isAutoTrackSource(fullPath)) return false;
+    return Icon({
+        name: Icons.radar,
+        color: ACCENT_INFO,
+        tooltip: "Auto-Track enabled",
+        tooltipColor: ACCENT_INFO,
+        style: { width: { kind: "px", value: 10 }, height: { kind: "px", value: 10 } },
+    });
+}
+
 export function resultRow(
     r: Result,
     sourceKey: string,
@@ -1234,7 +1246,7 @@ export function resultRow(
               {
                   label: "Queue all modified",
                   onClick: () => {
-                      queueModifiedFromParse(r.fullPath, r.importables);
+                      queueModifiedFromPath(r.fullPath);
                   },
               },
               {
@@ -1289,22 +1301,33 @@ export function resultRow(
                 truncate: true,
                 style: { width: { kind: "grow" } },
             }),
+            isImport && autoTrackIndicator(r.fullPath),
+            isImport && isAutoTrackSource(r.fullPath) && rowSlot(INNER_GAP),
             isImport && houseBindControl(r.fullPath),
         ],
     });
 }
 
-function includeGroupLabel(parent: ResultImport, fullPath: string): string {
-    const dir = projectDirOf(parent.fullPath);
-    if (fullPath.indexOf(dir + "/") === 0) return fullPath.substring(dir.length + 1);
-    return shortPath(fullPath);
+// Label for an include-group ROW: the included file relative to its IMMEDIATE
+// parent import.json's directory ("clocks", not "functions/clocks/import.json").
+// Indentation already conveys the nesting, so the repeated prefix is just noise.
+function includeRowLabel(parentNodePath: string, fullPath: string): string {
+    const parentDir = projectDirOf(parentNodePath);
+    if (fullPath.indexOf(parentDir + "/") !== 0) return shortPath(fullPath);
+    let rel = fullPath.substring(parentDir.length + 1);
+    const suffix = "/import.json";
+    if (rel.length > suffix.length && rel.lastIndexOf(suffix) === rel.length - suffix.length) {
+        rel = rel.substring(0, rel.length - suffix.length);
+    }
+    return rel;
 }
 
 export function includeGroupRow(
     parent: ResultImport,
     node: IncludeNode,
     expKey: string,
-    defaultExpanded: boolean
+    defaultExpanded: boolean,
+    parentNodePath: string
 ): Element {
     const fullPath = canonicalPath(node.path);
     const expanded = isIncludeGroupExpanded(expKey, defaultExpanded);
@@ -1338,7 +1361,7 @@ export function includeGroupRow(
             Icon({ name: Icons.fileJson, color: ACCENT_INFO }),
             rowSlot(INNER_GAP),
             Text({
-                text: includeGroupLabel(parent, fullPath),
+                text: includeRowLabel(parentNodePath, fullPath),
                 truncate: true,
                 style: { width: { kind: "grow" } },
             }),
@@ -1445,6 +1468,8 @@ export function importableRow(parent: ResultImport, imp: Importable): Element {
             imp.type === "FUNCTION" && imp.icon !== undefined &&
                 McItem({ item: imp.icon.item, count: imp.icon.count ?? 1 }),
             imp.type === "FUNCTION" && imp.icon !== undefined && rowSlot(INNER_GAP),
+            imp.type === "EVENT" && McItem({ item: EVENT_ICONS[imp.event] }),
+            imp.type === "EVENT" && rowSlot(INNER_GAP),
             Text({
                 text: importableLabel(imp),
                 truncate: true,

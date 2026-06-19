@@ -165,23 +165,17 @@ export function createExportProgressSink(
         },
         itemProgress(index, payload) {
             if (names.length === 0 || index !== currentIndex || currentClosed) return;
-            // The payload counts read-phase units only, while units[i] is the
-            // whole-import cost estimate — so scale by fraction rather than
-            // adding raw payload units to the item's budget.
-            const itemUnits = Math.max(1, units[index] ?? 1);
-            const frac =
-                payload.totalUnits > 0
-                    ? Math.min(1, payload.completedUnits / payload.totalUnits)
-                    : 0;
+            const knownReadUnits = Math.max(0, payload.totalUnits, payload.completedUnits);
             emit({
                 kind: "progress",
                 scope: { kind: "topLevel" },
                 progress: {
                     phase: "reading",
-                    completedUnits: Math.min(itemUnits, Math.round(frac * itemUnits)),
-                    totalUnits: itemUnits,
-                    phaseUnits: { setup: 0, reading: itemUnits, hydrating: 0, applying: 0 },
+                    completedUnits: Math.max(0, payload.completedUnits),
+                    totalUnits: knownReadUnits,
+                    phaseUnits: { setup: 0, reading: knownReadUnits, hydrating: 0, applying: 0 },
                     sync: payload.sync,
+                    preserveApplyingEstimate: false,
                 },
             });
         },

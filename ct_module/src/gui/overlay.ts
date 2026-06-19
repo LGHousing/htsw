@@ -31,6 +31,7 @@ import { RootTree, getImportCachedBounds } from "./root";
 import { getContainerBounds, getFullscreenPanelRect } from "./lib/bounds";
 import { tickReparse } from "./parsing/reparse";
 import { processPendingParses } from "./parsing/parses";
+import { autoTrackRefresh } from "./autoTrack";
 import { CHAT_INPUT_ID } from "./chat-input";
 import {
     initPopoverRendering,
@@ -56,6 +57,7 @@ import {
 } from "./state";
 import { getImportProgress } from "./right-panel/import-tab/importProgress";
 import { getCurrentHousingUuid } from "../importCache/housingId";
+import { isImportRunning } from "../housingSync/runtimeState";
 import { TaskManager } from "../tasks/manager";
 
 import { getChatKeyCode } from "./keybinds";
@@ -550,15 +552,13 @@ export function initHtswGui(): void {
         tickAllFields();
         applyFocus(getFocusedInput());
         // Reparse polling stats the import.json every tick and (throttled)
-        // every referenced file — hundreds of game-thread disk stats per
-        // second on a big project. Only pay that while the overlay can
-        // actually show the result; with no GUI open we do zero disk I/O,
-        // and the next open picks up any external edits.
-        if (frameVisible()) {
+        // every referenced file. During import/export those parses compete
+        // with the task on the game thread; the next idle tick catches up.
+        if (frameVisible() && !isImportRunning()) {
             tickReparse();
             // Drain one off-frame parse queued by requestParse() (export pane,
             // Importables tree, queue rows) so a cold parse never blocks render.
-            processPendingParses();
+            processPendingParses(autoTrackRefresh);
         }
         // First-load walkthrough; once per session, never mid-import, and only
         // while the GUI can actually render a popover.

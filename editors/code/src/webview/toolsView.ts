@@ -1,0 +1,59 @@
+import * as vscode from "vscode";
+import { handleItemEditorMessage } from "./itemEditorView";
+import { renderWebviewHtml } from "./html";
+import { handleProjectMessage } from "./projectView";
+import type { ItemEditorToHostMessage, ProjectToHostMessage, SoundPreviewToHostMessage } from "./protocol";
+import { SoundPreviewController } from "./soundPreviewView";
+
+type HtswToolsMessage = ProjectToHostMessage | ItemEditorToHostMessage | SoundPreviewToHostMessage;
+
+const PROJECT_MESSAGE_TYPES = new Set(["requestProjectTree", "openProjectFile", "createIncludedImportJson"]);
+const ITEM_MESSAGE_TYPES = new Set(["requestImportTargets", "submitItem"]);
+
+export class HtswToolsViewProvider implements vscode.WebviewViewProvider {
+    public static readonly viewType = "htsw.tools";
+    private readonly soundController: SoundPreviewController;
+
+    public constructor(
+        private readonly extensionUri: vscode.Uri,
+        globalStorageUri: vscode.Uri,
+        globalState: vscode.Memento,
+    ) {
+        this.soundController = new SoundPreviewController(globalStorageUri, globalState);
+    }
+
+    public resolveWebviewView(view: vscode.WebviewView): void {
+        view.webview.html = renderWebviewHtml(view.webview, this.extensionUri, {
+            scriptName: "tools.js",
+            extraLocalResourceRoots: [this.soundController.cacheRootUri()],
+        });
+
+        view.webview.onDidReceiveMessage((message: HtswToolsMessage) => {
+            if (PROJECT_MESSAGE_TYPES.has(message.type)) {
+                void handleProjectMessage(view.webview, message as ProjectToHostMessage);
+                return;
+            }
+            if (ITEM_MESSAGE_TYPES.has(message.type)) {
+                void handleItemEditorMessage(view.webview, message as ItemEditorToHostMessage);
+                return;
+            }
+            void this.soundController.handleMessage(view.webview, message as SoundPreviewToHostMessage);
+        });
+
+        // Re-push the tree when diagnostics change so the error/warning badges
+        // track the editor live, like VS Code's explorer. Debounced because
+        // diagnostics fire on every keystroke-parse; skipped while hidden.
+        let diagTimer: ReturnType<typeof setTimeout> | undefined;
+        const diagSub = vscode.languages.onDidChangeDiagnostics(() => {
+            if (diagTimer) clearTimeout(diagTimer);
+            diagTimer = setTimeout(() => {
+                if (!view.visible) return;
+                void handleProjectMessage(view.webview, { type: "requestProjectTree" });
+            }, 750);
+        });
+        view.onDidDispose(() => {
+            if (diagTimer) clearTimeout(diagTimer);
+            diagSub.dispose();
+        });
+    }
+}

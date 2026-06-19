@@ -4,13 +4,9 @@ import {
     getExportImportJsonPath,
     getHousingUuid,
     clearImportableChecks,
-    getAutoTrackSources,
-    isAnyAutoTrackEnabled,
     isCurrentHouseTrusted,
-    isImportableChecked,
     isImportSoundsMuted,
     setHousingUuid,
-    toggleImportableChecked,
 } from "../../state";
 import {
     createImportRows,
@@ -26,13 +22,11 @@ import {
     endQueueSession,
     getQueue,
     isImportQueueItem,
-    makeImportableQueueItem,
     queueItemKey,
     removeFromQueueKey,
     type ImportQueueItem,
 } from "./queue";
 import {
-    forEachCachedParse,
     getParseAt,
     markParseStale,
     parseImportJsonBlocking,
@@ -43,7 +37,7 @@ import {
     orderImportablesForImportSession,
 } from "../../../importables/importSession";
 import type { ExportResult } from "../../../importables/exportSession";
-import { importableIdentity, importableKey } from "../../../importCache/paths";
+import { importableIdentity } from "../../../importCache/paths";
 import { getCurrentHousingUuid } from "../../../importCache/housingId";
 import { TaskManager, isTaskCancelled } from "../../../tasks/manager";
 import type TaskContext from "../../../tasks/context";
@@ -51,7 +45,6 @@ import type { Importable, ImportableItem } from "htsw/types";
 import type { Diagnostic, ParseResult } from "htsw";
 import { closeAllPopovers } from "../../lib/popovers";
 import { shortPath } from "../../lib/pathDisplay";
-import { statusForImportable } from "../../cache-status";
 import { importableSourcePath } from "../../parsing/importablePaths";
 import { attributeDiagnostics } from "../../cache-status/diagnosticCounts";
 import type {
@@ -87,6 +80,7 @@ import {
     setObservedTopLevel,
 } from "./livePreview";
 import { setFocusLineId } from "./focusedLine";
+import { autoTrackRefresh } from "../../autoTrack";
 
 
 /**
@@ -111,33 +105,6 @@ function formatElapsedSeconds(secs: number): string {
     const h = Math.floor(m / 60);
     const mm = m % 60;
     return mm === 0 ? `${h}h` : `${h}h${mm}m`;
-}
-
-export function autoTrackRefresh(): void {
-    if (!isAnyAutoTrackEnabled()) return;
-    const uuid = getHousingUuid();
-    if (uuid === null) return;
-    const tracked = getAutoTrackSources();
-    forEachCachedParse((entry) => {
-        if (entry.parsed === null) return;
-        if (!tracked.has(entry.canonicalPath)) return;
-        queueModifiedFromParse(entry.canonicalPath, entry.parsed.value);
-    });
-}
-
-export function queueModifiedFromParse(
-    sourcePath: string,
-    importables: readonly Importable[]
-): void {
-    for (const imp of importables) {
-        const status = statusForImportable(imp);
-        if (status === "modified" || status === "unknown") {
-            const item = makeImportableQueueItem(imp, sourcePath);
-            addToQueue(item);
-            const key = importableKey(imp.type, importableIdentity(imp));
-            if (!isImportableChecked(key)) toggleImportableChecked(key);
-        }
-    }
 }
 
 const BODY_LIST_PROPS: Record<string, true> = {

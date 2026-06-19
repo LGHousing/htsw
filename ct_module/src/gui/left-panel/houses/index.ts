@@ -2,7 +2,7 @@
 
 import { Element, Rect } from "../../lib/layout";
 import { Button, Col, Container, Icon, Input, Row, Scroll, Text } from "../../lib/components";
-import { Icons } from "../../lib/icons.generated";
+import { Icons, IconName } from "../../lib/icons.generated";
 import {
     getExportImportJsonPath,
     getHousingUuid,
@@ -375,6 +375,32 @@ function houseSelector(viewed: string | null, isHere: boolean): Element {
     });
 }
 
+// Compact square icon button for the house's secondary actions (rename,
+// detect). Each carries a tooltip — a bare icon here reads as a mystery glyph.
+function houseActionButton(
+    icon: IconName,
+    tooltip: string,
+    onClick: (rect: Rect) => void
+): Element {
+    return Button({
+        children: [
+            Icon({
+                name: icon,
+                tooltip,
+                tooltipColor: COLOR_TEXT_DIM,
+                style: { width: { kind: "px", value: 12 }, height: { kind: "px", value: 12 } },
+            }),
+        ],
+        style: {
+            width: { kind: "px", value: 24 },
+            height: { kind: "grow" },
+            background: COLOR_BUTTON,
+            hoverBackground: COLOR_BUTTON_HOVER,
+        },
+        onClick,
+    });
+}
+
 // Single title row: house selector, trust/alias controls, and re-detect.
 function housePickerRow(): Element {
     return Container({
@@ -394,29 +420,15 @@ function housePickerRow(): Element {
             return [
                 houseSelector(viewed, isHere),
                 trustButton(viewed, trusted),
-                Button({
-                    icon: Icons.pencil,
-                    style: {
-                        width: { kind: "px", value: 24 },
-                        height: { kind: "grow" },
-                        background: COLOR_BUTTON,
-                        hoverBackground: COLOR_BUTTON_HOVER,
-                    },
-                    onClick: (rect: Rect) => {
-                        if (viewed === null) return;
-                        openAliasPopover(rect, viewed);
-                    },
+                houseActionButton(Icons.pencil, "Rename this house", (rect: Rect) => {
+                    if (viewed === null) return;
+                    openAliasPopover(rect, viewed);
                 }),
-                Button({
-                    icon: Icons.radar,
-                    style: {
-                        width: { kind: "px", value: 24 },
-                        height: { kind: "grow" },
-                        background: COLOR_BUTTON,
-                        hoverBackground: COLOR_BUTTON_HOVER,
-                    },
-                    onClick: () => detectHousing(),
-                }),
+                houseActionButton(
+                    Icons.locateFixed,
+                    "Detect the house you're standing in",
+                    () => detectHousing()
+                ),
             ];
         },
     });
@@ -764,6 +776,10 @@ function exportActionBar(t: HouseContentType, uuid: string, totalCount: number):
         .items(uuid)
         .filter((i) => !exportedSet.has(i.name))
         .map((i) => i.name);
+    // Without a destination import.json every export path just toasts "pick a
+    // destination first", so grey the export split-button to say so up front.
+    // The Change button stays enabled — it's how you pick one.
+    const hasDest = getExportImportJsonPath().trim() !== "";
     return Col({
         // Right inset so the caret split-button isn't flush against the panel
         // edge (it sat right at the boundary and read as clipped).
@@ -800,7 +816,7 @@ function exportActionBar(t: HouseContentType, uuid: string, totalCount: number):
                     Text({
                         text: () => {
                             const d = getExportImportJsonPath();
-                            return d.trim() === "" ? "No destination" : `→ ${shortPath(d)}`;
+                            return d.trim() === "" ? "No export destination" : `→ ${shortPath(d)}`;
                         },
                         color: COLOR_TEXT_DIM,
                         truncate: true,
@@ -832,16 +848,26 @@ function exportActionBar(t: HouseContentType, uuid: string, totalCount: number):
                 style: { gap: 4, height: { kind: "px", value: 20 } },
                 children: [
                     Button({
-                        icon: Icons.fileUp,
-                        text:
-                            selectedCount > 0
-                                ? `Export Selected (${selectedCount})`
-                                : `Export All (${totalCount})`,
+                        children: [
+                            Icon({
+                                name: Icons.fileUp,
+                                color: hasDest ? undefined : COLOR_TEXT_FAINT,
+                            }),
+                            Text({
+                                text:
+                                    selectedCount > 0
+                                        ? `Export Selected (${selectedCount})`
+                                        : `Export All (${totalCount})`,
+                                color: hasDest ? undefined : COLOR_TEXT_FAINT,
+                            }),
+                        ],
                         style: {
                             width: { kind: "grow" },
                             height: { kind: "grow" },
-                            background: COLOR_BUTTON_PRIMARY,
-                            hoverBackground: COLOR_BUTTON_PRIMARY_HOVER,
+                            background: hasDest ? COLOR_BUTTON_PRIMARY : COLOR_BUTTON,
+                            hoverBackground: hasDest
+                                ? COLOR_BUTTON_PRIMARY_HOVER
+                                : COLOR_BUTTON,
                         },
                         onClick: () => {
                             if (t.export === undefined) return;
@@ -864,6 +890,7 @@ function exportActionBar(t: HouseContentType, uuid: string, totalCount: number):
                         children: [
                             Icon({
                                 name: Icons.chevronUp,
+                                color: hasDest ? undefined : COLOR_TEXT_FAINT,
                                 style: {
                                     width: { kind: "px", value: 12 },
                                     height: { kind: "px", value: 12 },
@@ -873,22 +900,52 @@ function exportActionBar(t: HouseContentType, uuid: string, totalCount: number):
                         style: {
                             width: { kind: "px", value: 22 },
                             height: { kind: "grow" },
-                            background: COLOR_BUTTON_PRIMARY,
-                            hoverBackground: COLOR_BUTTON_PRIMARY_HOVER,
+                            background: hasDest ? COLOR_BUTTON_PRIMARY : COLOR_BUTTON,
+                            hoverBackground: hasDest
+                                ? COLOR_BUTTON_PRIMARY_HOVER
+                                : COLOR_BUTTON,
                         },
                         // Anchor to the caret's rect (not the cursor) so the menu
                         // right-aligns under the button and drops up consistently.
                         onClick: (rect: Rect) => {
                             if (t.export === undefined) return;
+                            const exp = t.export;
+                            // The yellow "differs" rows: in your file but the
+                            // house version has diverged. Computed exactly as the
+                            // rows render their status so the count matches what
+                            // you see. Export pulls the house version over local,
+                            // so it always routes through the overwrite confirm.
+                            const trusted = isHouseTrusted(uuid);
+                            const sourceMap = sourceImportablesByType(t.type);
+                            const differingNames = t
+                                .items(uuid)
+                                .filter(
+                                    (i) =>
+                                        houseLinkStateFor(uuid, i, sourceMap, trusted) ===
+                                        "differs-from-knowledge"
+                                )
+                                .map((i) => i.name);
                             const actions: MenuAction[] = [
                                 {
                                     // Unexported names aren't in your file, so
                                     // they are not compared against Knowledge — no confirm.
                                     label: `Export unexported (${unexportedNames.length})`,
                                     onClick: () => {
-                                        if (unexportedNames.length > 0 && t.export) {
-                                            t.export.selected(unexportedNames, () =>
+                                        if (unexportedNames.length > 0) {
+                                            exp.selected(unexportedNames, () =>
                                                 clearExportSelection()
+                                            );
+                                        }
+                                    },
+                                },
+                                {
+                                    label: `Export differing (${differingNames.length})`,
+                                    onClick: () => {
+                                        if (differingNames.length > 0) {
+                                            confirmDestructiveExport(t, uuid, differingNames, () =>
+                                                exp.selected(differingNames, () =>
+                                                    clearExportSelection()
+                                                )
                                             );
                                         }
                                     },
@@ -897,9 +954,7 @@ function exportActionBar(t: HouseContentType, uuid: string, totalCount: number):
                                     label: `Export all (${totalCount})`,
                                     onClick: () => {
                                         const names = t.items(uuid).map((i) => i.name);
-                                        confirmDestructiveExport(t, uuid, names, () =>
-                                            t.export?.all()
-                                        );
+                                        confirmDestructiveExport(t, uuid, names, () => exp.all());
                                     },
                                 },
                             ];
@@ -1128,7 +1183,7 @@ function emptyState(): Element {
                 color: COLOR_TEXT_FAINT,
             }),
             Button({
-                icon: Icons.radar,
+                icon: Icons.locateFixed,
                 text: "Detect (/wtfmap)",
                 style: {
                     width: { kind: "grow" },

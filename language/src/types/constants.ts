@@ -359,7 +359,7 @@ export const POTION_EFFECTS = [
     "Absorption",
 ] as const;
 
-export { EVENTS } from "../importjson/schemaSpec";
+export { EVENTS, EVENT_ICONS } from "../importjson/schemaSpec";
 
 export const LOBBIES = [
     "Main Lobby",
