@@ -123,7 +123,22 @@ export class Parser {
             }
         }
 
-        return this.parseListFromFirst(this.parseTag(), lo);
+        return this.parseListFromFirst(this.parseListElement(), lo);
+    }
+
+    // Minecraft 1.8.9's NBTTagList.toString() emits indexed elements
+    // ("[0:a,1:b]"), and that's what reading an item's NBT off the client
+    // (getRawNBT) returns. Accept and skip an optional numeric `<index>:`
+    // prefix so that raw client NBT round-trips through the parser.
+    parseListElement(): Tag {
+        if (this.check("bare") && /^\d+$/.test((this.token as BareKind).value)) {
+            const raw = (this.token as BareKind).value;
+            const span = this.token.span;
+            this.next();
+            if (this.eat("colon")) return this.parseTag();
+            return this.parseBareTag(raw, span);
+        }
+        return this.parseTag();
     }
 
     parseListFromFirst(first: Tag, lo: number): Tag {
@@ -136,7 +151,7 @@ export class Parser {
             this.expect("comma");
             if (this.eat({ kind: "close_delim", delim: "bracket" })) break;
 
-            const tag = this.parseTag();
+            const tag = this.parseListElement();
             if (tag.type !== elementType) {
                 throw Diagnostic.error("SNBT list values must have the same tag type")
                     .addPrimarySpan(this.prev.span, `Expected ${elementType}`);
