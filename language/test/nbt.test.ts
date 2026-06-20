@@ -92,6 +92,26 @@ describe("SNBT parser tags", () => {
         });
     });
 
+    it("parses Minecraft 1.8.9 indexed lists", () => {
+        // 1.8.9's NBTTagList.toString() emits elements with an index prefix —
+        // [0:a,1:b] — and that's what reading an item's NBT off the client returns.
+        expect(parseSnbt('[0:"a",1:"b"]').value).toEqual({
+            type: "list",
+            value: { type: "string", value: ["a", "b"] },
+        });
+        expect(parseSnbt('{Lore:[0:"x",1:"y"]}').value).toEqual({
+            type: "compound",
+            value: {
+                Lore: { type: "list", value: { type: "string", value: ["x", "y"] } },
+            },
+        });
+        // A plain bare-number list keeps parsing as ints, not stripped indices.
+        expect(parseSnbt("[1,2,3]").value).toEqual({
+            type: "list",
+            value: { type: "int", value: [1, 2, 3] },
+        });
+    });
+
     it("reports diagnostics for invalid syntax", () => {
         const result = parseSnbt("{foo: [1, 2}");
         expect(result.value).toBeUndefined();
