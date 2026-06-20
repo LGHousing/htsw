@@ -29,7 +29,20 @@ export type SoundEntry = {
     mapped1_21: string | null;
 };
 
+/** A nested file reachable from an importable: a region's enter/exit actions,
+ * an item's or npc's click actions, npc armor, or a menu slot's item/actions. */
+export type ProjectImportableSub = {
+    label: string;
+    fsPath: string;
+    /** Drives the row glyph: `actions` = htsl action list, `item` = snbt item. */
+    kind: "actions" | "item";
+    errors?: number;
+    warnings?: number;
+};
+
 export type ProjectImportableSummary = {
+    /** Stable key for expand state: `${importJsonPath}|${type}|${identity}`. */
+    id: string;
     label: string;
     type: "function" | "event" | "region" | "item" | "menu" | "npc";
     typeLabel: string;
@@ -42,6 +55,8 @@ export type ProjectImportableSummary = {
     /** Diagnostics in this importable's own source file (htsl/snbt). */
     errors?: number;
     warnings?: number;
+    /** Nested action lists / item refs, shown as expandable child rows. */
+    subEntries?: ProjectImportableSub[];
 };
 
 export type ProjectImportJsonNode = {
@@ -61,7 +76,13 @@ export type ProjectImportJsonNode = {
 export type ProjectToHostMessage =
     | { type: "requestProjectTree" }
     | { type: "openProjectFile"; fsPath: string; preview: boolean }
-    | { type: "createIncludedImportJson"; parentImportJsonPath: string; folderPath: string };
+    | { type: "createIncludedImportJson"; parentImportJsonPath: string; folderPath: string }
+    | {
+          type: "addImportable";
+          importJsonPath: string;
+          kind: ProjectImportableSummary["type"];
+          identity: string;
+      };
 
 export type ProjectFromHostMessage =
     | { type: "projectTree"; roots: ProjectImportJsonNode[]; workspaceName?: string }

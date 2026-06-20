@@ -4,11 +4,16 @@ import * as json from "jsonc-parser";
 import * as htsw from "htsw";
 import {
     createIncludedImportJsonFiles,
+    htslTargetForEventExport,
+    htslTargetForFunctionExport,
+    upsertImportableEntry,
     type ProjectFs,
+    type Section,
 } from "htsw-editor-common/project";
 import { nodeProjectFs } from "../nodeProjectFs";
 import type {
     ProjectFromHostMessage,
+    ProjectImportableSub,
     ProjectImportableSummary,
     ProjectImportJsonNode,
     ProjectToHostMessage,
@@ -31,6 +36,30 @@ const SECTION_META: Record<ImportableSection, {
     npcs: { identityField: "name", type: "npc", typeLabel: "NPC" },
 };
 
+// Nested file references shown as expandable child rows under an importable.
+// Each value is a string path (htsl/snbt) per the import schema; menus are
+// special-cased because their refs live per-slot.
+type SubSpec = { keyPath: (string | number)[]; label: string; kind: "actions" | "item" };
+const SUB_SPECS: Partial<Record<ImportableSection, SubSpec[]>> = {
+    regions: [
+        { keyPath: ["onEnterActions"], label: "On enter", kind: "actions" },
+        { keyPath: ["onExitActions"], label: "On exit", kind: "actions" },
+    ],
+    items: [
+        { keyPath: ["leftClickActions"], label: "Left click", kind: "actions" },
+        { keyPath: ["rightClickActions"], label: "Right click", kind: "actions" },
+    ],
+    npcs: [
+        { keyPath: ["leftClickActions"], label: "Left click", kind: "actions" },
+        { keyPath: ["rightClickActions"], label: "Right click", kind: "actions" },
+        { keyPath: ["equipment", "helmet"], label: "Helmet", kind: "item" },
+        { keyPath: ["equipment", "chestplate"], label: "Chestplate", kind: "item" },
+        { keyPath: ["equipment", "leggings"], label: "Leggings", kind: "item" },
+        { keyPath: ["equipment", "boots"], label: "Boots", kind: "item" },
+        { keyPath: ["equipment", "hand"], label: "Hand", kind: "item" },
+    ],
+};
+
 export async function handleProjectMessage(
     webview: vscode.Webview,
     message: ProjectToHostMessage,
@@ -45,6 +74,152 @@ export async function handleProjectMessage(
         case "createIncludedImportJson":
             await createIncludedImportJson(webview, message.parentImportJsonPath, message.folderPath);
             return;
+        case "addImportable":
+            await addImportable(webview, message.importJsonPath, message.kind, message.identity);
+            return;
+    }
+}
+
+const SECTION_BY_KIND: Record<ProjectImportableSummary["type"], ImportableSection> = {
+    function: "functions",
+    event: "events",
+    region: "regions",
+    item: "items",
+    menu: "menus",
+    npc: "npcs",
+};
+
+async function addImportable(
+    webview: vscode.Webview,
+    importJsonPath: string,
+    kind: ProjectImportableSummary["type"],
+    identity: string,
+): Promise<void> {
+    try {
+        if (!nodeProjectFs.exists(importJsonPath)) {
+            throw new Error("Choose an existing import.json.");
+        }
+        const id = identity.trim();
+        if (!id) throw new Error(kind === "event" ? "Choose an event." : "Enter a name.");
+        if (kind === "item") throw new Error("Items are created in the Item / SNBT editor.");
+
+        const section = SECTION_BY_KIND[kind];
+        const readFs = projectFsWithOpenDocuments();
+
+        // Functions/events get a starter .htsl; the export-target helper resolves
+        // the declaring file (the picked file, for a new entry) and a collision-
+        // free filename. Regions/npcs/menus are pure JSON entries.
+        let targetImportJson = importJsonPath;
+        const entry: Record<string, unknown> = {};
+        const created: string[] = [];
+
+        if (kind === "function" || kind === "event") {
+            const target = kind === "function"
+                ? htslTargetForFunctionExport(readFs, importJsonPath, id)
+                : htslTargetForEventExport(readFs, importJsonPath, id);
+            targetImportJson = target.importJsonPath;
+            requireNew(readFs, targetImportJson, section, id, kind);
+            if (!nodeProjectFs.exists(target.htslPath)) {
+                nodeProjectFs.ensureDir(path.dirname(target.htslPath));
+                nodeProjectFs.writeFile(target.htslPath, "\n");
+                created.push(target.htslPath);
+            }
+            entry[kind === "function" ? "name" : "event"] = id;
+            entry.actions = target.htslReference;
+        } else {
+            requireNew(readFs, targetImportJson, section, id, kind);
+            entry.name = id;
+            if (kind === "npc") entry.pos = { x: 0, y: 0, z: 0 };
+            else if (kind === "menu") entry.slots = [];
+        }
+
+        await applyImportableUpsert(targetImportJson, section, entry);
+
+        // Land the user on the new starter file if there is one, else the
+        // import.json so they can fill in the remaining fields.
+        await openProjectFile(created[0] ?? targetImportJson, false);
+        await webview.postMessage({
+            type: "projectResult",
+            ok: true,
+            message: `Added ${kind} "${id}".`,
+        } satisfies ProjectFromHostMessage);
+        await postProjectTree(webview);
+    } catch (err) {
+        const error = err instanceof Error ? err.message : String(err);
+        await webview.postMessage({ type: "projectResult", ok: false, error } satisfies ProjectFromHostMessage);
+        void vscode.window.showWarningMessage(`Could not add importable: ${error}`);
+    }
+}
+
+function requireNew(
+    fs: ProjectFs,
+    importJsonPath: string,
+    section: Section,
+    identity: string,
+    kind: string,
+): void {
+    if (!importableExists(fs, importJsonPath, section, identity)) return;
+    throw new Error(
+        `A ${kind} named "${identity}" already exists in ` +
+            `${vscode.workspace.asRelativePath(importJsonPath, false)}.`,
+    );
+}
+
+function importableExists(
+    fs: ProjectFs,
+    importJsonPath: string,
+    section: Section,
+    identity: string,
+): boolean {
+    const tree = parseImportJson(fs, importJsonPath);
+    const sectionNode = tree ? json.findNodeAtLocation(tree, [section]) : null;
+    if (!sectionNode || sectionNode.type !== "array") return false;
+    const idField = section === "events" ? "event" : "name";
+    for (const item of sectionNode.children ?? []) {
+        const idNode = json.findNodeAtLocation(item, [idField]);
+        if (idNode?.type === "string" && idNode.value === identity) return true;
+    }
+    return false;
+}
+
+// Write the entry through a doc-aware fs: an import.json that's open (possibly
+// with unsaved edits) gets a WorkspaceEdit + save rather than a disk write that
+// would clobber the buffer. Mirrors the Item Editor's upsert path.
+async function applyImportableUpsert(
+    importJsonPath: string,
+    section: Section,
+    entry: Record<string, unknown>,
+): Promise<void> {
+    const replacements = new Map<string, string>();
+    const fs: ProjectFs = {
+        ...nodeProjectFs,
+        readFile(filePath) {
+            const open = openTextDocumentForPath(filePath);
+            return open ? open.getText() : nodeProjectFs.readFile(filePath);
+        },
+        writeFile(filePath, text) {
+            const open = openTextDocumentForPath(filePath);
+            if (open) {
+                replacements.set(pathKey(filePath), text);
+                return;
+            }
+            nodeProjectFs.writeFile(filePath, text);
+        },
+    };
+
+    const document = await vscode.workspace.openTextDocument(vscode.Uri.file(importJsonPath));
+    upsertImportableEntry(fs, importJsonPath, section, entry);
+
+    const replacement = replacements.get(pathKey(importJsonPath));
+    if (replacement !== undefined) {
+        const edit = new vscode.WorkspaceEdit();
+        edit.replace(
+            document.uri,
+            new vscode.Range(document.positionAt(0), document.positionAt(document.getText().length)),
+            replacement,
+        );
+        await vscode.workspace.applyEdit(edit);
+        await document.save();
     }
 }
 
@@ -197,6 +372,10 @@ function buildImportJsonNode(
     for (const entry of importables) {
         errors += entry.errors ?? 0;
         warnings += entry.warnings ?? 0;
+        for (const sub of entry.subEntries ?? []) {
+            errors += sub.errors ?? 0;
+            warnings += sub.warnings ?? 0;
+        }
     }
     for (const child of children) {
         errors += child.errors ?? 0;
@@ -356,7 +535,9 @@ function readImportables(
             // Only attribute diagnostics when the importable has its own source
             // file — otherwise every importable would inherit the import.json's.
             const ownDiag = openPath !== importJsonPath ? diags.get(pathKey(openPath)) : undefined;
+            const subEntries = readSubEntries(item, section, importJsonPath, fs, diags);
             importables.push({
+                id: `${importJsonPath}|${meta.type}|${idNode.value}`,
                 label: idNode.value,
                 type: meta.type,
                 typeLabel: meta.typeLabel,
@@ -364,10 +545,71 @@ function readImportables(
                 ...readImportableIcon(item, section, idNode.value, refPath, fs),
                 errors: ownDiag?.errors || undefined,
                 warnings: ownDiag?.warnings || undefined,
+                subEntries: subEntries.length > 0 ? subEntries : undefined,
             });
         }
     }
     return importables;
+}
+
+function readSubEntries(
+    item: json.Node,
+    section: ImportableSection,
+    importJsonPath: string,
+    fs: ProjectFs,
+    diags: Map<string, SeverityCount>,
+): ProjectImportableSub[] {
+    if (section === "menus") return readMenuSubEntries(item, importJsonPath, fs, diags);
+    const specs = SUB_SPECS[section];
+    if (!specs) return [];
+    const out: ProjectImportableSub[] = [];
+    for (const spec of specs) {
+        const fsPath = resolveStringRef(item, spec.keyPath, importJsonPath, fs);
+        if (fsPath) out.push(subEntry(spec.label, fsPath, spec.kind, diags));
+    }
+    return out;
+}
+
+function readMenuSubEntries(
+    item: json.Node,
+    importJsonPath: string,
+    fs: ProjectFs,
+    diags: Map<string, SeverityCount>,
+): ProjectImportableSub[] {
+    const slotsNode = json.findNodeAtLocation(item, ["slots"]);
+    if (slotsNode?.type !== "array") return [];
+    const out: ProjectImportableSub[] = [];
+    for (const slot of slotsNode.children ?? []) {
+        const slotNumNode = json.findNodeAtLocation(slot, ["slot"]);
+        const tag = slotNumNode?.type === "number" ? `Slot ${Number(slotNumNode.value)}` : "Slot";
+        const nbt = resolveStringRef(slot, ["nbt"], importJsonPath, fs);
+        if (nbt) out.push(subEntry(`${tag} item`, nbt, "item", diags));
+        const actions = resolveStringRef(slot, ["actions"], importJsonPath, fs);
+        if (actions) out.push(subEntry(`${tag} actions`, actions, "actions", diags));
+    }
+    return out;
+}
+
+function resolveStringRef(
+    node: json.Node,
+    keyPath: (string | number)[],
+    importJsonPath: string,
+    fs: ProjectFs,
+): string | null {
+    const ref = json.findNodeAtLocation(node, keyPath);
+    if (ref?.type !== "string" || typeof ref.value !== "string") return null;
+    const resolved = fs.resolvePath(fs.parentDir(importJsonPath), ref.value);
+    return fs.exists(resolved) ? resolved : null;
+}
+
+function subEntry(
+    label: string,
+    fsPath: string,
+    kind: "actions" | "item",
+    diags: Map<string, SeverityCount>,
+): ProjectImportableSub {
+    const diag = diags.get(pathKey(fsPath));
+    return { label, fsPath, kind, errors: diag?.errors || undefined, warnings: diag?.warnings || undefined };
 }
 
 function readImportableIcon(
