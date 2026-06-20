@@ -194,7 +194,14 @@ export function mountProjectExplorer(
                 render();
                 return;
             }
-            const identity = state.addName.trim();
+            // Read the live field, not just state.addName: a freshly-opened
+            // event form shows its first <option> selected before any change
+            // event has synced state, so submitting would otherwise no-op.
+            const nameField = document.getElementById("addName") as
+                | HTMLInputElement
+                | HTMLSelectElement
+                | null;
+            const identity = (nameField?.value ?? state.addName).trim();
             if (!state.selectedParent || !identity) return;
             state.status = { kind: "idle", text: "Adding…" };
             renderStatus();
