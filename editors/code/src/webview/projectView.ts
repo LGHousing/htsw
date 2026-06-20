@@ -6,6 +6,7 @@ import {
     createIncludedImportJsonFiles,
     htslTargetForEventExport,
     htslTargetForFunctionExport,
+    resolveImportableFile,
     upsertImportableEntry,
     type ProjectFs,
     type Section,
@@ -127,6 +128,11 @@ async function addImportable(
             entry[kind === "function" ? "name" : "event"] = id;
             entry.actions = target.htslReference;
         } else {
+            // Region/menu/npc are pure-JSON entries, but the name may already
+            // be declared in an INCLUDED file — resolve that declaring file
+            // first (like the function/event path) so the duplicate check sees
+            // it and we don't write a second declaration into the parent.
+            targetImportJson = resolveImportableFile(readFs, importJsonPath, section, id);
             requireNew(readFs, targetImportJson, section, id, kind);
             entry.name = id;
             if (kind === "npc") entry.pos = { x: 0, y: 0, z: 0 };
