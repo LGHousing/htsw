@@ -15,10 +15,8 @@ import { printDiagnostic, printDiagnostics } from "./tui/diagnostics";
 import { recompile } from "./recompile";
 import { TaskManager } from "./tasks/manager";
 import { FileSystemFileLoader } from "./utils/fileLoaders";
-import { commandKnowledge } from "./importCache/commands";
 import { commandUpdate } from "./autoUpdate";
 import { toggleHtswGui } from "./gui/overlay";
-import { armGuiDebug } from "./gui/lib/debugLog";
 import {
     getTimingStats,
     resetTimingStats,
@@ -74,13 +72,8 @@ type HtswSubcommand = {
 
 const HTSW_SUBCOMMANDS: HtswSubcommand[] = [
     {
-        name: "knowledge",
-        summary: "Inspect local import/export knowledge",
-        run: commandKnowledge,
-    },
-    {
         name: "saveitem",
-        summary: "Save held item as .snbt + import.json",
+        summary: "Save held item as .snbt",
         run: saveItem,
         usage: "saveitem <name> [path]",
     },
@@ -91,31 +84,19 @@ const HTSW_SUBCOMMANDS: HtswSubcommand[] = [
         usage: "giveitem <path>",
     },
     {
-        name: "eta",
-        summary: "Show / reset / dump / trace ETA samples",
-        run: commandEta,
-        usage: "eta [reset|dump|trace on|off]",
-    },
-    {
-        name: "trace",
-        summary: "Per-op import trace JSONL for post-mortem",
-        run: commandTrace,
-        usage: "trace [on|off]",
-    },
-    {
         name: "test",
-        summary: "Run the live importer regression suite",
+        summary: "Run the live importer tests",
         run: commandTest,
         usage: "test [coverage|slice]",
     },
     {
         name: "gui",
-        summary: "Open the in-game HTSW dashboard",
+        summary: "Toggle the in-game HTSW dashboard",
         run: commandGui,
     },
     {
         name: "update",
-        summary: "Check for and install CT module updates",
+        summary: "Check for module updates",
         run: commandUpdate,
         usage: "update [check]",
     },
@@ -133,9 +114,9 @@ const HTSW_SUBCOMMANDS: HtswSubcommand[] = [
     },
     {
         name: "debug",
-        summary: "Diagnostic probes: waiters, perf, lag",
+        summary: "Diagnostics: waiters, perf, traces",
         run: commandDebug,
-        usage: "debug [waiters|treeperf|parseperf|lagprobe]",
+        usage: "debug [probe]",
     },
 ];
 
@@ -163,6 +144,18 @@ const DEBUG_SUBCOMMANDS: HtswSubcommand[] = [
         summary: "Recent main-thread stall samples",
         run: commandLagProbe,
         usage: "lagprobe [clear]",
+    },
+    {
+        name: "eta",
+        summary: "Show / reset / dump op-timing (ETA) samples",
+        run: commandEta,
+        usage: "eta [reset|dump|trace on|off]",
+    },
+    {
+        name: "trace",
+        summary: "Per-op import trace JSONL for post-mortem",
+        run: commandTrace,
+        usage: "trace [on|off]",
     },
 ];
 
@@ -224,8 +217,8 @@ function printHtswHelp(): void {
     const subtitle = `&fCreated by @sndyx, @j_sse, and @callanftw`;
     ChatLib.chat(`${ChatLib.getCenteredText(subtitle)}`);
     ChatLib.chat("");
-    ChatLib.chat("&f/import &7- Import actions from HTSL files");
-    ChatLib.chat("&f/simulator &7- Simulate actions from HTSL files");
+    ChatLib.chat("&f/import &7- Import an import.json or .htsl file");
+    ChatLib.chat("&f/simulator &7- Simulate a project locally");
     for (let i = 0; i < HTSW_SUBCOMMANDS.length; i++) {
         const command = HTSW_SUBCOMMANDS[i];
         if (command.hidden === true) continue;
@@ -244,13 +237,7 @@ function commandTrace(args: string[]): void {
     ChatLib.chat(`&a[htsw] import trace on · &f${path}`);
 }
 
-function commandGui(args: string[]): void {
-    if (args[0] === "debug") {
-        const secs = Math.max(1, parseInt(args[1] ?? "10", 10) || 10);
-        armGuiDebug(secs);
-        ChatLib.chat(`&a[htsw] gui debug armed for ${secs}s -> gui-debug.log`);
-        return;
-    }
+function commandGui(): void {
     const nowEnabled = toggleHtswGui();
     ChatLib.chat(`&e[htsw] gui ${nowEnabled ? "&aenabled" : "&cdisabled"}`);
 }
