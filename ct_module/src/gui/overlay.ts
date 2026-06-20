@@ -56,7 +56,7 @@ import {
     setHousingUuid,
 } from "./state";
 import { getImportProgress } from "./right-panel/import-tab/importProgress";
-import { getCurrentHousingUuid } from "../importCache/housingId";
+import { detectHousingUuid } from "../importCache/housingId";
 import { isImportRunning } from "../housingSync/runtimeState";
 import { TaskManager } from "../tasks/manager";
 
@@ -107,19 +107,27 @@ function frameBounds(): Rect {
 
 function frameVisible(): boolean {
     if (!enabled) return false;
+    // Only paint over Housing menus. `housingPresence` is the live /wtfmap
+    // verdict — "in" only once we've actually confirmed a house on this
+    // server — NOT the persisted UUID, which lingers in lobbies and would
+    // otherwise keep the overlay covering non-Housing containers.
+    if (housingPresence !== "in") return false;
     if (getContainerBounds() !== null) return true;
     return getImportProgress() !== null && getImportCachedBounds() !== null;
 }
 
-// Housing-UUID auto-fetch. We only run `/wtfmap` when we actually need
-// the UUID — firing it on every inventory open spams chat. Triggers:
-//   1. Module load with a null UUID and the user opened a housing GUI.
-//   2. Hypixel just sent a "Sending you to <server>..." transport
-//      message — the user changed lobbies/houses, the cached UUID is
-//      stale. We clear it; the next inventory open path catches case 1.
-// The transport handler also zeroes `lastUuidFetchAt` so the cooldown
-// from any prior failed fetch (e.g. one attempted from limbo where
-// `/wtfmap` returns "Unknown command") doesn't gate the new attempt.
+// Housing presence + UUID auto-fetch. `/wtfmap` is the only live "are we in a
+// house right now" signal, but it costs a chat round-trip, so we run it at
+// most once per server: when a container is open and presence is still
+// "unknown". The verdict latches —
+//   - a UUID → "in" (and we keep the UUID for cache lookups);
+//   - "Unknown command" (not in a house — `/wtfmap` is housing-only) → "out".
+// A "Sending you to <server>..." transport resets presence to "unknown" (and
+// zeroes the cooldown) so the next container open re-checks the new server.
+// The persisted UUID is deliberately NOT the gate: it survives into lobbies,
+// so the overlay keys on `housingPresence` instead.
+type HousingPresence = "unknown" | "in" | "out";
+let housingPresence: HousingPresence = "unknown";
 let lastDebugSampleAt = 0;
 let uuidFetchInFlight = false;
 let lastUuidFetchAt = 0;
@@ -127,16 +135,21 @@ const UUID_FETCH_COOLDOWN_MS = 60_000;
 
 function maybeAutoFetchHousingUuid(): void {
     if (uuidFetchInFlight) return;
-    if (getHousingUuid() !== null) return;
+    if (housingPresence !== "unknown") return;
     if (Date.now() - lastUuidFetchAt < UUID_FETCH_COOLDOWN_MS) return;
     uuidFetchInFlight = true;
     lastUuidFetchAt = Date.now();
     void TaskManager.run(async (ctx) => {
-        const uuid = await getCurrentHousingUuid(ctx);
-        setHousingUuid(uuid);
+        const uuid = await detectHousingUuid(ctx);
+        if (uuid === null) {
+            housingPresence = "out";
+        } else {
+            housingPresence = "in";
+            setHousingUuid(uuid);
+        }
     })
         .catch(() => {
-            /* not in a housing / timeout — leave dots as-is */
+            /* timeout — stay "unknown" and allow a retry after the cooldown */
         })
         .then(() => {
             uuidFetchInFlight = false;
@@ -251,6 +264,7 @@ export function initHtswGui(): void {
         if (typeof msg !== "string") return;
         if (msg.indexOf("Sending you to ") !== 0) return;
         setHousingUuid(null);
+        housingPresence = "unknown";
         lastUuidFetchAt = 0;
     }).setCriteria("${*}");
 
@@ -588,6 +602,13 @@ export function initHtswGui(): void {
                 mc.func_147108_a(null);
             }
         }
+        // Learn the housing UUID whenever a container is open, even before the
+        // overlay shows — frameVisible() now gates on a known UUID, so the
+        // fetch has to run independently of it or the overlay could never
+        // appear (null UUID → hidden → never fetched).
+        if (getContainerBounds() !== null) {
+            maybeAutoFetchHousingUuid();
+        }
         // Only tear down popovers + focus when the overlay isn't showing at all.
         // frameVisible() stays true during an import gap (cached bounds), even
         // though getContainerBounds() flickers null between menu operations —
@@ -597,8 +618,6 @@ export function initHtswGui(): void {
             if (popoverIsOpen()) closeAllPopovers();
             closeHoverCard();
             if (getFocusedInput() !== null) setFocusedInput(null);
-        } else if (getContainerBounds() !== null) {
-            maybeAutoFetchHousingUuid();
         }
     });
 
