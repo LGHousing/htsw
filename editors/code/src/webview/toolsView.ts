@@ -7,7 +7,12 @@ import { SoundPreviewController } from "./soundPreviewView";
 
 type HtswToolsMessage = ProjectToHostMessage | ItemEditorToHostMessage | SoundPreviewToHostMessage;
 
-const PROJECT_MESSAGE_TYPES = new Set(["requestProjectTree", "openProjectFile", "createIncludedImportJson"]);
+const PROJECT_MESSAGE_TYPES = new Set([
+    "requestProjectTree",
+    "openProjectFile",
+    "createIncludedImportJson",
+    "addImportable",
+]);
 const ITEM_MESSAGE_TYPES = new Set(["requestImportTargets", "submitItem"]);
 
 export class HtswToolsViewProvider implements vscode.WebviewViewProvider {

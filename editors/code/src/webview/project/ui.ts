@@ -2,6 +2,7 @@ import * as htsw from "htsw";
 import * as itemIcons from "minecraft-icon-items";
 import type {
     ProjectFromHostMessage,
+    ProjectImportableSub,
     ProjectImportableSummary,
     ProjectImportJsonNode,
     ProjectToHostMessage,
@@ -11,6 +12,8 @@ type VsCodeApi = ReturnType<typeof acquireVsCodeApi>;
 
 type SortMode = "default" | "name" | "type";
 
+type ImportableKind = ProjectImportableSummary["type"];
+
 type State = {
     roots: ProjectImportJsonNode[];
     expanded: Set<string>;
@@ -18,10 +21,24 @@ type State = {
     sort: SortMode;
     selectedParent: string;
     showCreate: boolean;
+    showAdd: boolean;
+    addKind: ImportableKind;
+    addName: string;
     workspaceName: string;
     status: { kind: "idle" | "ok" | "error"; text: string };
     loading: boolean;
 };
+
+const ADD_KINDS: { value: ImportableKind; label: string }[] = [
+    { value: "function", label: "Function" },
+    { value: "event", label: "Event" },
+    { value: "region", label: "Region" },
+    { value: "item", label: "Item" },
+    { value: "menu", label: "Menu" },
+    { value: "npc", label: "NPC" },
+];
+
+const EVENT_NAMES = htsw.types.EVENTS as readonly string[];
 
 const SORT_LABEL: Record<SortMode, string> = {
     default: "File order",
@@ -29,7 +46,11 @@ const SORT_LABEL: Record<SortMode, string> = {
     type: "Type",
 };
 
-export function mountProjectExplorer(app: HTMLElement, vscode: VsCodeApi): () => void {
+export function mountProjectExplorer(
+    app: HTMLElement,
+    vscode: VsCodeApi,
+    onOpenItemEditor?: () => void,
+): () => void {
     const state: State = {
         roots: [],
         expanded: new Set(),
@@ -37,6 +58,9 @@ export function mountProjectExplorer(app: HTMLElement, vscode: VsCodeApi): () =>
         sort: "default",
         selectedParent: "",
         showCreate: false,
+        showAdd: false,
+        addKind: "function",
+        addName: "",
         workspaceName: "",
         status: { kind: "idle", text: "" },
         loading: true,
@@ -91,9 +115,11 @@ export function mountProjectExplorer(app: HTMLElement, vscode: VsCodeApi): () =>
                     </div>
                     <button id="sortProject" class="icon-button" type="button" title="Sort: ${SORT_LABEL[state.sort]}">${SVG.sort}</button>
                     <button id="refreshProject" class="icon-button" type="button" title="Refresh">${SVG.refresh}</button>
+                    <button id="toggleAdd" class="icon-button ${state.showAdd ? "active" : ""}" type="button" title="Add importable">${SVG.addImportable}</button>
                     <button id="toggleCreate" class="icon-button ${state.showCreate ? "active" : ""}" type="button" title="New module">${SVG.plus}</button>
                 </div>
                 <div id="projectContext">${renderContext(state)}</div>
+                ${renderAddPanel(state)}
                 ${renderCreatePanel(state)}
                 <div id="projectStatus" class="project-status"></div>
                 <div id="projectTree" class="project-tree">
@@ -108,6 +134,9 @@ export function mountProjectExplorer(app: HTMLElement, vscode: VsCodeApi): () =>
         if (tree) tree.scrollTop = scroll;
         if (state.showCreate) {
             (document.getElementById("modulePath") as HTMLInputElement | null)?.focus();
+        }
+        if (state.showAdd) {
+            (document.getElementById("addName") as HTMLInputElement | null)?.focus();
         }
     }
 
@@ -132,6 +161,56 @@ export function mountProjectExplorer(app: HTMLElement, vscode: VsCodeApi): () =>
 
         document.getElementById("toggleCreate")?.addEventListener("click", () => {
             state.showCreate = !state.showCreate;
+            if (state.showCreate) state.showAdd = false;
+            render();
+        });
+
+        document.getElementById("toggleAdd")?.addEventListener("click", () => {
+            state.showAdd = !state.showAdd;
+            if (state.showAdd) state.showCreate = false;
+            render();
+        });
+
+        document.getElementById("addKind")?.addEventListener("change", (event) => {
+            state.addKind = (event.target as HTMLSelectElement).value as ImportableKind;
+            if (state.addKind === "event" && !EVENT_NAMES.includes(state.addName)) {
+                state.addName = EVENT_NAMES[0] ?? "";
+            }
+            render();
+        });
+
+        const addName = document.getElementById("addName") as HTMLInputElement | HTMLSelectElement | null;
+        addName?.addEventListener("input", () => { state.addName = addName.value; });
+        addName?.addEventListener("change", () => { state.addName = addName.value; });
+
+        const addParent = document.getElementById("addParent") as HTMLSelectElement | null;
+        addParent?.addEventListener("change", () => updateSelectedParent(addParent.value));
+
+        document.getElementById("addImportableForm")?.addEventListener("submit", (event) => {
+            event.preventDefault();
+            if (state.addKind === "item") {
+                state.showAdd = false;
+                onOpenItemEditor?.();
+                render();
+                return;
+            }
+            const identity = state.addName.trim();
+            if (!state.selectedParent || !identity) return;
+            state.status = { kind: "idle", text: "Adding…" };
+            renderStatus();
+            post(vscode, {
+                type: "addImportable",
+                importJsonPath: state.selectedParent,
+                kind: state.addKind,
+                identity,
+            });
+            state.addName = "";
+            state.showAdd = false;
+            render();
+        });
+
+        document.getElementById("cancelAdd")?.addEventListener("click", () => {
+            state.showAdd = false;
             render();
         });
 
@@ -173,9 +252,11 @@ export function mountProjectExplorer(app: HTMLElement, vscode: VsCodeApi): () =>
         for (const button of document.querySelectorAll<HTMLButtonElement>("[data-toggle-node]")) {
             button.addEventListener("click", (event) => {
                 event.stopPropagation();
-                const fsPath = button.dataset.toggleNode;
-                if (!fsPath) return;
-                toggleExpanded(state, fsPath);
+                // A file node's fsPath or an importable's sub-list id — both are
+                // just opaque keys into state.expanded.
+                const key = button.dataset.toggleNode;
+                if (!key) return;
+                toggleExpanded(state, key);
                 renderTreeOnly();
             });
         }
@@ -257,6 +338,63 @@ function renderCreatePanel(state: State): string {
     `;
 }
 
+function renderAddPanel(state: State): string {
+    if (!state.showAdd) return "";
+    const isItem = state.addKind === "item";
+    const isEvent = state.addKind === "event";
+    const typeOptions = ADD_KINDS.map((kind) =>
+        `<option value="${kind.value}" ${kind.value === state.addKind ? "selected" : ""}>${kind.label}</option>`
+    ).join("");
+
+    let identityField: string;
+    if (isItem) {
+        identityField = `<p class="create-hint">Items have a dedicated editor (icon, name, lore, enchants). “Open Item Editor” switches to the Item / SNBT tab.</p>`;
+    } else if (isEvent) {
+        const options = EVENT_NAMES.map((name) =>
+            `<option value="${escapeAttr(name)}" ${name === state.addName ? "selected" : ""}>${escapeHtml(name)}</option>`
+        ).join("");
+        identityField = `
+            <label class="create-field">
+                <span>Event</span>
+                <select id="addName">${options}</select>
+            </label>`;
+    } else {
+        identityField = `
+            <label class="create-field">
+                <span>Name</span>
+                <input id="addName" value="${escapeAttr(state.addName)}" placeholder="${escapeAttr(namePlaceholder(state.addKind))}" autocomplete="off">
+            </label>`;
+    }
+
+    return `
+        <form id="addImportableForm" class="create-panel">
+            <div class="create-title">Add importable</div>
+            <p class="create-hint">Adds the entry to the chosen <code>import.json</code> — plus a starter <code>.htsl</code> for functions and events.</p>
+            <label class="create-field">
+                <span>In file</span>
+                <select id="addParent">${parentOptions(state).join("")}</select>
+            </label>
+            <label class="create-field">
+                <span>Type</span>
+                <select id="addKind">${typeOptions}</select>
+            </label>
+            ${identityField}
+            <div class="create-actions">
+                <button id="cancelAdd" class="secondary" type="button">Cancel</button>
+                <button type="submit">${isItem ? "Open Item Editor" : "Add"}</button>
+            </div>
+        </form>
+    `;
+}
+
+function namePlaceholder(kind: ImportableKind): string {
+    if (kind === "function") return "my_function";
+    if (kind === "region") return "spawn";
+    if (kind === "menu") return "shop";
+    if (kind === "npc") return "guide";
+    return "name";
+}
+
 function renderContext(state: State): string {
     if (state.loading || !state.workspaceName) return "";
     const count = state.roots.length;
@@ -321,20 +459,49 @@ function renderNode(
     if (!expanded) return row;
     return row +
         visibleChildren.map((child) => renderNode(child, state, depth + 1, false, query)).join("") +
-        visibleImportables.map((entry) => renderImportable(entry, depth + 1)).join("");
+        visibleImportables.map((entry) => renderImportable(entry, depth + 1, state, query)).join("");
 }
 
-function renderImportable(entry: ProjectImportableSummary, depth: number): string {
-    return `
+function renderImportable(
+    entry: ProjectImportableSummary,
+    depth: number,
+    state: State,
+    query: string,
+): string {
+    const subs = entry.subEntries ?? [];
+    const hasSubs = subs.length > 0;
+    const expanded = hasSubs && (query.length > 0 || state.expanded.has(entry.id));
+    const row = `
         <div class="row imp ${entry.type}" data-open-path="${escapeAttr(entry.openPath ?? "")}">
             ${indentGuides(depth)}
-            <span class="twisty empty"></span>
+            <button class="twisty ${hasSubs ? "" : "empty"} ${expanded ? "open" : ""}" type="button"
+                data-toggle-node="${escapeAttr(entry.id)}" ${hasSubs ? "" : "disabled"}>${SVG.chevron}</button>
             ${importableIcon(entry)}
             <span class="row-label ${diagClass(entry.errors, entry.warnings)}">${escapeHtml(entry.label)}</span>
             ${diagBadge(entry.errors, entry.warnings)}
             <span class="row-type">${escapeHtml(entry.typeLabel)}</span>
         </div>
     `;
+    if (!expanded) return row;
+    return row + subs.map((sub) => renderSubEntry(sub, depth + 1)).join("");
+}
+
+function renderSubEntry(sub: ProjectImportableSub, depth: number): string {
+    return `
+        <div class="row sub" data-open-path="${escapeAttr(sub.fsPath)}">
+            ${indentGuides(depth)}
+            <span class="twisty empty"></span>
+            <span class="row-icon sub ${sub.kind}">${SUB_GLYPH[sub.kind]}</span>
+            <span class="row-label ${diagClass(sub.errors, sub.warnings)}">${escapeHtml(sub.label)}</span>
+            ${diagBadge(sub.errors, sub.warnings)}
+            <span class="row-type">${escapeHtml(baseName(sub.fsPath))}</span>
+        </div>
+    `;
+}
+
+function baseName(fsPath: string): string {
+    const parts = fsPath.split(/[\\/]/);
+    return parts[parts.length - 1] ?? fsPath;
 }
 
 function importableIcon(entry: ProjectImportableSummary): string {
@@ -435,7 +602,8 @@ function nodeMatches(node: ProjectImportJsonNode, query: string): boolean {
 
 function importableMatches(entry: ProjectImportableSummary, query: string): boolean {
     if (!query) return true;
-    return `${entry.label} ${entry.typeLabel} ${entry.type}`.toLowerCase().includes(query);
+    const subs = (entry.subEntries ?? []).map((sub) => sub.label).join(" ");
+    return `${entry.label} ${entry.typeLabel} ${entry.type} ${subs}`.toLowerCase().includes(query);
 }
 
 type MinecraftItem = { id: number; name: string };
@@ -474,8 +642,14 @@ const SVG = {
     refresh: `<svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12.8 8a4.8 4.8 0 1 1-1.4-3.4"/><polyline points="12.9,2.6 12.9,5 10.5,5"/></svg>`,
     sort: `<svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="3" y1="4.5" x2="13" y2="4.5"/><line x1="3" y1="8" x2="10" y2="8"/><line x1="3" y1="11.5" x2="7" y2="11.5"/></svg>`,
     plus: `<svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="8" y1="3.5" x2="8" y2="12.5"/><line x1="3.5" y1="8" x2="12.5" y2="8"/></svg>`,
+    addImportable: `<svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><line x1="2.5" y1="4" x2="13.5" y2="4"/><line x1="2.5" y1="8" x2="9" y2="8"/><line x1="2.5" y1="12" x2="7" y2="12"/><line x1="11.8" y1="9.6" x2="11.8" y2="14.4"/><line x1="9.4" y1="12" x2="14.2" y2="12"/></svg>`,
     braces: `<svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M6.4 2.5C5 2.5 4.5 3.2 4.5 4.5v1.2c0 1-.5 1.5-1.3 1.5.8 0 1.3.5 1.3 1.5v1.3c0 1.3.5 2 1.9 2"/><path d="M9.6 2.5c1.4 0 1.9.7 1.9 2v1.2c0 1 .5 1.5 1.3 1.5-.8 0-1.3.5-1.3 1.5v1.3c0 1.3-.5 2-1.9 2"/></svg>`,
     folder: `<svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M1.8 4.4c0-.7.5-1.2 1.2-1.2h2.9l1.5 1.6h5.6c.7 0 1.2.5 1.2 1.2v5.8c0 .7-.5 1.2-1.2 1.2H3c-.7 0-1.2-.5-1.2-1.2z"/></svg>`,
+};
+
+const SUB_GLYPH: Record<ProjectImportableSub["kind"], string> = {
+    actions: `<svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="4.5" y1="5" x2="11.5" y2="5"/><line x1="4.5" y1="8" x2="11.5" y2="8"/><line x1="4.5" y1="11" x2="8.5" y2="11"/></svg>`,
+    item: `<svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><path d="M8 2.4 13.4 5.4v5.2L8 13.6 2.6 10.6V5.4z"/><path d="M2.6 5.4 8 8.4l5.4-3M8 8.4v5.2"/></svg>`,
 };
 
 const TYPE_GLYPH: Record<ProjectImportableSummary["type"], string> = {

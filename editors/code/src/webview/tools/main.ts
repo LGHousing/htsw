@@ -50,7 +50,7 @@ function renderShell(): void {
     document.head.appendChild(activeStyle);
 
     if (activeTool === "project") {
-        disposeActive = mountProjectExplorer(body, vscode);
+        disposeActive = mountProjectExplorer(body, vscode, () => selectTool("item"));
     } else if (activeTool === "item") {
         disposeActive = mountItemEditor(body, vscode);
     } else {
