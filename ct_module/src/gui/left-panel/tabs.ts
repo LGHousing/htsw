@@ -103,13 +103,26 @@ export function TabBar(availW: number): Element {
         if (w > widestLabel) widestLabel = w;
     }
     const showLabels = labelSpace - LABEL_FIT_MARGIN >= widestLabel;
+    const buttons = TABS.map((t) => tabButton(t, showLabels));
+    // Importables + Houses are the two "sides of your project" the tour's step 3
+    // points at; Settings isn't one of them. Grouping just those two under the
+    // anchor keeps the spotlight off Settings. The pair group takes grow 2 to
+    // the lone Settings tab's grow 1, so all three tabs keep their even thirds.
+    const projectTabs = Row({
+        anchorKey: "tour:project-tabs",
+        style: {
+            gap: TAB_GAP,
+            width: { kind: "grow", factor: 2 },
+            height: { kind: "grow" },
+        },
+        children: [buttons[0], buttons[1]],
+    });
     return Row({
-        anchorKey: "tour:left-tabs",
         style: {
             gap: TAB_GAP,
             height: { kind: "px", value: SIZE_TAB_H + 2 },
             width: { kind: "grow" },
         },
-        children: TABS.map((t) => tabButton(t, showLabels)),
+        children: [projectTabs, ...buttons.slice(2)],
     });
 }

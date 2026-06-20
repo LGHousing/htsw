@@ -21,7 +21,7 @@ Library — `gui/lib/` (project-agnostic UI primitives + screen/theme):
 - `popovers.ts` — global popover stack, anchored/modal render, click dispatch helper, hover-suppression query.
 - `hoverCards.ts` — delayed, scrollable informational hover cards that absorb wheel/click input without becoming modal.
 - `anchoredRect.ts` — shared below/above placement and screen clamping used by popovers and hover cards.
-- `menu.ts` — `openMenu(x, y, actions[])` builds a context-menu popover from `{label, onClick, icon?}` actions, plus `{kind: "separator"}` dividers. Auto-closes on click. Menu width auto-sizes to the widest label via `Renderer.getStringWidth` (floored at `MIN_MENU_WIDTH`, plus an icon allowance when any action has an `icon`); callers don't need to truncate. The `(x, y)` is a 0×0 anchor and the popover **right-aligns** to it (menu's right edge sits at `x`), so for a split-button drop-up pass the trigger's right edge (`rect.x + rect.w`).
+- `menu.ts` — `openMenu(x, y, actions[])` builds a context-menu popover from `{label, onClick, icon?}` actions, plus `{kind: "separator"}` dividers. Auto-closes on click. Use `closeActiveMenu()` when the underlying parent view changes without closing its own popover. Menu width auto-sizes to the widest label via `Renderer.getStringWidth` (floored at `MIN_MENU_WIDTH`, plus an icon allowance when any action has an `icon`); callers don't need to truncate. The `(x, y)` is a 0×0 anchor and the popover **right-aligns** to it (menu's right edge sits at `x`), so for a split-button drop-up pass the trigger's right edge (`rect.x + rect.w`).
 - `focus.ts` — single global focused-input id.
 - `inputState.ts` — per-input `GuiTextField` instances (cursor, selection, clipboard, arrow keys).
 - `scissor.ts` — GL scissor stack. Multiplies overlay coords by `getEffectiveOverlayScale()` to get real pixels (see Coordinate space).
@@ -85,7 +85,9 @@ Importer hookup — `importer/diffSink.ts`:
 - Defines `ImportDiffSink` (`markMatch`/`beginOp`/`completeOp`/`end`) and a single global active sink. `applyActionListDiff` captures and clears the sink on entry (so nested syncs in CONDITIONAL/RANDOM bodies stay silent), pre-marks untouched desired actions as `match`, and emits per-op events. The session (`importables/importSession.ts`) sets/clears the sink around each importable; the GUI's `startImport` (in `right-panel/import-tab/importController.ts`) wires sink events into the single `import-tab/livePreview` store — `markPlanned*` / `markMatch` / `applyComplete` for per-line state and `setCurrent` for the cursor — keyed by the importable's source-file path.
 
 Popovers — `gui/popovers/`:
-- `add-importable.ts` — "Add Importable" form (Explore "+" button).
+- `new-project.ts` — name-a-new-project prompt (invokes a callback with the chosen name). There is **no** in-game "add importable" popover — new importables are created from the VS Code tools view.
+- `rename-file.ts` / `rename-importable.ts` — in-place rename of a project file / an importable.
+- `edit-function.ts` — in-place editor for a single importable field (a value, or an x/y/z position), written via `updateImportableField`; despite the name it edits any importable type, not just functions.
 - `alias.ts` — per-house alias editor. `openAliasPopover(rect, uuid)` takes the target UUID explicitly so the Houses tab can edit any known house, not just the currently-detected one.
 - `file-browser.ts` — modal file browser for picking an `import.json`.
 - `open-menu.ts` — Hypixel `/functions /eventactions /regions …` shortcut menu.
@@ -96,6 +98,7 @@ App shell — `gui/`:
 - `autoTrack.ts` — central helper for "Queue all modified" and Auto-Track queue updates. Manual bulk queueing forces the parse authority to check disk first; parse propagation and the pending-parse pump call `autoTrackRefresh()` after changed parses.
 - `chat-input.ts` — `ChatInputBar` element + global `T` shortcut to focus it.
 - `knowledge-status.ts` — derives `STATUS_COLOR` / `STATUS_LABEL` / `statusForImportable` / `knowledgeStatusByImportable` from `state` for the left-rail badges.
+- `houseBinding.ts` — shared import.json `houseUuid` bind/rebind confirmation and cache-index update, used by Importables and Houses.
 - `bottom-toolbar/` — slim, no-background strip under the inventory: only Housing Menu + the `/functions …` shortcut split-button.
 - `left-panel/` — three tabs: **Importables** (importables list + Browse/Recent source controls plus the current-house Trust toggle), **Houses** (per-house browser with a house selector, primary Trust control, compact Alias/Detect side actions), and **Settings** (global Mute import sounds + Auto-proceed imports toggles).
 - `right-panel/` — single **View** pane: file-tab strip, source/live code view, and footer. The tab strip always paints, with a muted `No file` placeholder when no file tabs exist. File labels come from `compactFileLabel`, so `.../functions/import.json` displays as `functions.import.json` instead of every tab saying `import.json`. Leading tab icons use one shared fixed-width icon slot plus trailing gap; don't add one-off spacing constants for live/queued tab icons. The live import diff appears as a synthetic upload tab that follows the currently importing `.htsl`; the footer holds the scrollable queue, the import progress strip during a run, and the Import button. During an import, the footer progress strip shows ETA/progress and Pause/Step/Cancel controls.
@@ -111,7 +114,7 @@ The per-row file↔house status icon comes from ONE shared vocabulary (`gui/cach
 
 | kind | extra fields | clickable? | notes |
 |------|---|---|---|
-| `container` | `style: ContainerStyle`, `children: Extractable<Child[]>`, optional `onClick(rect, info)`, `onDoubleClick(rect)`, `onHover(rect)` | yes if `onClick` or `onDoubleClick` set | `onHover` is observational and does not make a container clickable. Otherwise this is the flex-layout primitive used by buttons and rows. |
+| `container` | `style: ContainerStyle`, `children: Extractable<Child[]>`, optional `onClick(rect, info)`, `onDoubleClick(rect)`, `onHover(rect)`, `tooltip`, `tooltipColor` | yes if `onClick` or `onDoubleClick` set | `onHover` and tooltip are observational and do not make a container clickable. Otherwise this is the flex-layout primitive used by buttons and rows. |
 | `text` | `style`, `text: Extractable<string>`, optional `color`, `underlineColor`, `tooltip`, `tooltipColor`, `truncate` | no | `underlineColor` draws a one-pixel underline across the laid-out fragment and is used for exact diagnostic spans. `truncate: true` clips the string with a trailing `...` to the laid-out rect width — opt-in, because bare text is allowed to overflow (some rows rely on a later sibling painting over the spill). **`width: grow` does NOT constrain the draw** — the renderer paints the full string from the rect's left edge and only clips when `truncate` is set, so any `grow` text holding dynamic/user content (file names, house/importable names, paths, queue labels) must also set `truncate` or it bleeds over the next sibling. Tab-style `Button`s have no constrained width to truncate against: the left tab bar (`tabs.ts`) measures its `availW` and drops to icon-only (+ tooltip) when the widest label doesn't fit; the houses content tabs use a `grow`+`truncate` label child instead. |
 | `input` | `style`, `id: string`, `value: Extractable<string>`, `onChange(v)`, optional `placeholder` | focusable | id is used for global focus + key dispatch |
 | `scroll` | `style: ContainerStyle`, `id: string`, `children: Extractable<Element[]>`, optional `axis: "x" \| "y"` | passes through | scroll viewport with internal offset state, scrollbar overlay, mouse-wheel + drag. `axis` defaults to `"y"` (vertical); `axis: "x"` is a horizontal strip (e.g. the View-tab file-tab bar) — wheel-scrolls only, no draggable scrollbar is drawn, with one-pixel clipped-content edge ticks. |
@@ -190,6 +193,7 @@ CT's `guiRender` maps to Forge's `GuiScreenEvent$BackgroundDrawnEvent` — it fi
 Click flow when a popover is open:
 - Panel handler runs, sees `popoverIsOpen()`, and calls `tryDispatchPopoverClick(x,y)` (guarded so it runs once per click via `claimPopoverClick`).
 - Click inside popover rect → dispatch into popover content, panel cancels the event, returns.
+- Click inside a lower popover while a higher non-sticky popover is open → close the higher popover first, then dispatch into the lower one. If the closed higher popover was modal, absorb the click instead of dispatching underneath.
 - Click outside every popover → auto-close popovers and **fall through** to the panel's normal `dispatchClick`. This is intentional: the same click that closes a popover should also focus an input or hit a button under the cursor. **Exception:** modals (`placement: "modal"`) absorb the dismissing click — closing a modal does NOT propagate to the panel underneath, since modals are interaction-blocking by design.
 - The exception: if the click lands on the popover's own anchor AND `excludeAnchor` is true (default), the popover stays open. This avoids a race with `togglePopover` where auto-close fires first, then the trigger's `onClick` reopens a fresh popover, requiring a second click to dismiss. Cursor-anchored menus (`openMenu`) opt out by passing `excludeAnchor: false` since they have no re-clickable trigger — any subsequent click should close them.
 
@@ -197,7 +201,7 @@ Hover follows click propagation: panels pass `interactive = !mouseIsOverPopover(
 
 Scrollable hover cards are separate from popovers. They open after a stable hover delay, remain alive while crossing from anchor to card, and absorb wheel/click input inside the card. Explicit popovers always suppress and close hover cards.
 
-When the inventory closes (`getContainerBounds() === null`), the tick handler in `overlay.ts` calls `closeAllPopovers()` and clears focus so popovers don't linger across opens.
+When the inventory closes (`getContainerBounds() === null`), the tick handler in `overlay.ts` calls `closeAllPopovers(true)` and clears focus so popovers don't linger across opens. `closeAllPopovers()` (no arg) keeps `sticky` popovers (the tour card) — it's for clearing transient menus/forms, and `openMenu` calls it, so a context menu opening must not whisk the tour away; the `true` here forces even sticky ones to close since nothing can render once the overlay is gone.
 
 Scrollbar hover suppression: items whose rect is under a visible scrollbar track *and* live inside that scroll's viewport do not show hover (the click would land on the scrollbar, not the item). Tracks are precomputed once per `renderElement` call — see `collectScrollbarTracks` in `render.ts`.
 

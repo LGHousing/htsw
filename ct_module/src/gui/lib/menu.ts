@@ -92,6 +92,13 @@ function menuWidthFor(actions: MenuAction[]): number {
 // right-click would stack a second menu on top of the first.
 let activeMenu: PopoverHandle | null = null;
 
+export function closeActiveMenu(): void {
+    if (activeMenu !== null) {
+        closePopover(activeMenu);
+        activeMenu = null;
+    }
+}
+
 // Open a context menu anchored at the given screen position (typically the cursor).
 // By default any currently-open popovers are closed first so successive right-clicks don't
 // stack menus. Pass `keepUnderlying: true` to keep parent popovers (e.g. when right-clicking
@@ -103,10 +110,7 @@ export function openMenu(
     options?: { keepUnderlying?: boolean }
 ): void {
     if (actions.length === 0) return;
-    if (activeMenu !== null) {
-        closePopover(activeMenu);
-        activeMenu = null;
-    }
+    closeActiveMenu();
     if (!options?.keepUnderlying) closeAllPopovers();
     let height = PAD * 2;
     for (let i = 0; i < actions.length; i++) {

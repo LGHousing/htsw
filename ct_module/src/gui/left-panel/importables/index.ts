@@ -50,6 +50,14 @@ const TRUST_ICON_ON = ACCENT_SUCCESS;
 function currentHouseTrustButton(): Element {
     const uuid = getHousingUuid();
     const trusted = uuid !== null && isHouseTrusted(uuid);
+    const tooltip =
+        uuid === null
+            ? "No current house detected"
+            : trusted
+              ? "Current house is trusted"
+              : "Trust current house";
+    const tooltipColor =
+        uuid === null ? COLOR_TEXT_FAINT : trusted ? TRUST_ICON_ON : COLOR_TEXT_DIM;
     return Button({
         style: {
             width: { kind: "px", value: 76 },
@@ -61,22 +69,12 @@ function currentHouseTrustButton(): Element {
             if (uuid === null) return;
             setHouseTrust(uuid, !trusted);
         },
+        tooltip,
+        tooltipColor,
         children: [
             Icon({
                 name: trusted ? Icons.shieldCheck : Icons.shield,
                 color: trusted ? TRUST_ICON_ON : COLOR_TEXT_DIM,
-                tooltip:
-                    uuid === null
-                        ? "No current house detected"
-                        : trusted
-                          ? "Current house is trusted"
-                          : "Trust current house",
-                tooltipColor:
-                    uuid === null
-                        ? COLOR_TEXT_FAINT
-                        : trusted
-                          ? TRUST_ICON_ON
-                          : COLOR_TEXT_DIM,
                 style: {
                     width: { kind: "px", value: 12 },
                     height: { kind: "px", value: 12 },

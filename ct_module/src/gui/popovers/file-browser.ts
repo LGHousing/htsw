@@ -1,9 +1,10 @@
 /// <reference types="../../../CTAutocomplete" />
 
 import { Child, Element, Rect } from "../lib/layout";
-import { Button, Col, Container, Input, Row, Scroll, Text } from "../lib/components";
+import { Button, Col, Container, Icon, Input, Row, Scroll, Text } from "../lib/components";
 import { closeAllPopovers, openPopover } from "../lib/popovers";
-import { openMenu } from "../lib/menu";
+import { closeActiveMenu, openMenu } from "../lib/menu";
+import { Icons, type IconName } from "../lib/icons.generated";
 import { openRenameFilePopover } from "./rename-file";
 import { openConfirmPopover } from "./confirm";
 import { showInExplorer } from "../../utils/osShell";
@@ -28,7 +29,6 @@ import {
     GLYPH_HTSL,
     GLYPH_JSON,
     GLYPH_SNBT,
-    GLYPH_X,
     SIZE_ROW_H,
 } from "../lib/theme";
 import { setImportJsonPath } from "../state";
@@ -62,6 +62,7 @@ let selectedImportName: string | null = null;
 let selectImportJsonOnly: ((path: string) => void) | null = null;
 
 function setCwd(next: string): void {
+    closeActiveMenu();
     cwd = normalizeHtswPath(next);
     pathDraft = cwd;
     selectedImportPath = null;
@@ -261,6 +262,16 @@ function openInOS(): void {
     }
 }
 
+function pathExists(path: string): boolean {
+    try {
+        const Files = javaType("java.nio.file.Files");
+        const Paths = javaType("java.nio.file.Paths");
+        return Files.exists(Paths.get(String(path)));
+    } catch (_e) {
+        return false;
+    }
+}
+
 function newFolder(): void {
     try {
         const Files = javaType("java.nio.file.Files");
@@ -281,6 +292,19 @@ function newFolder(): void {
     }
 }
 
+function confirmNewImportJson(): void {
+    const target = `${cwd}/import.json`;
+    const exists = pathExists(target);
+    openConfirmPopover({
+        title: exists ? "Open existing import.json?" : "Create import.json here?",
+        lines: exists
+            ? ["This folder already has an import.json.", "It will be loaded as the active project."]
+            : ["Creates an empty import.json in this folder.", "It will be loaded as the active project."],
+        confirmLabel: exists ? "Open" : "Create",
+        onConfirm: () => newImportJson(),
+    });
+}
+
 function newImportJson(): void {
     try {
         const Files = javaType("java.nio.file.Files");
@@ -288,7 +312,6 @@ function newImportJson(): void {
         const target = `${cwd}/import.json`;
         const p = Paths.get(String(target));
         if (Files.exists(p)) {
-            ChatLib.chat("&c[htsw] import.json already exists here");
             loadAsImport(target);
             return;
         }
@@ -439,6 +462,36 @@ function fileRow(entry: Entry): Element {
     });
 }
 
+const HEADER_ICON_SIZE = 12;
+
+function headerActionButton(
+    icon: IconName,
+    text: string,
+    width: number,
+    onClick: () => void
+): Element {
+    return Button({
+        style: {
+            width: { kind: "px", value: width },
+            height: { kind: "grow" },
+            justify: "start",
+            gap: 5,
+            padding: { side: "x", value: 6 },
+        },
+        children: [
+            Icon({
+                name: icon,
+                style: {
+                    width: { kind: "px", value: HEADER_ICON_SIZE },
+                    height: { kind: "px", value: HEADER_ICON_SIZE },
+                },
+            }),
+            Text({ text }),
+        ],
+        onClick,
+    });
+}
+
 function header(): Element {
     return Row({
         style: { gap: 4, height: { kind: "px", value: 18 }, align: "center" },
@@ -449,41 +502,32 @@ function header(): Element {
                 style: { width: { kind: "px", value: 60 } },
             }),
             Button({
-                text: "Up",
-                style: { width: { kind: "px", value: 36 }, height: { kind: "grow" } },
+                tooltip: "Up one folder",
+                tooltipColor: COLOR_TEXT_DIM,
+                style: { width: { kind: "px", value: 28 }, height: { kind: "grow" } },
+                children: [
+                    Icon({
+                        name: Icons.folderUp,
+                        style: {
+                            width: { kind: "px", value: HEADER_ICON_SIZE },
+                            height: { kind: "px", value: HEADER_ICON_SIZE },
+                        },
+                    }),
+                ],
                 onClick: () => {
                     setCwd(parentOf(cwd));
                 },
             }),
-            Button({
-                text: "Open in OS",
-                style: { width: { kind: "px", value: 80 }, height: { kind: "grow" } },
-                onClick: () => openInOS(),
-            }),
-            Button({
-                text: "New Folder",
-                style: { width: { kind: "px", value: 80 }, height: { kind: "grow" } },
-                onClick: () => newFolder(),
-            }),
-            Button({
-                text: "Init import.json",
-                style: { width: { kind: "px", value: 110 }, height: { kind: "grow" } },
-                onClick: () => newImportJson(),
-            }),
+            headerActionButton(Icons.externalLink, "Open in OS", 92, () => openInOS()),
+            headerActionButton(Icons.folderPlus, "New Folder", 98, () => newFolder()),
+            headerActionButton(Icons.filePlus2, "Init import.json", 128, () =>
+                confirmNewImportJson()
+            ),
             Container({
                 style: { width: { kind: "grow" } },
                 children: [],
             }),
-            Button({
-                text: `${GLYPH_X} Close`,
-                style: {
-                    width: { kind: "px", value: 60 },
-                    height: { kind: "grow" },
-                    background: COLOR_BUTTON,
-                    hoverBackground: COLOR_BUTTON_HOVER,
-                },
-                onClick: () => closeAllPopovers(),
-            }),
+            headerActionButton(Icons.x, "Close", 70, () => closeAllPopovers()),
         ],
     });
 }

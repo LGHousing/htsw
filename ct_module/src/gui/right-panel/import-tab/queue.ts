@@ -5,6 +5,7 @@ import type { Importable } from "htsw/types";
 import {
     canonicalPath,
     forEachCachedParse,
+    getParseCacheRevision,
 } from "../../parsing/parses";
 import { importableSourcePath } from "../../parsing/importablePaths";
 import { importableIdentity } from "../../../importCache/paths";
@@ -208,11 +209,26 @@ export function queueItemsForPath(filePath: string): QueueItem[] {
     return findImportableQueueItems(target);
 }
 
+// Per-(target, parse-cache revision) memo. The scan touches every importable
+// in every cached parse; the tab strip calls it per file tab per frame (via
+// `queuedCountForTab`). Membership in the queue is applied by the caller, so
+// this result depends only on the parse cache and is safe to reuse until it
+// changes.
+let queueItemsCacheRev = -1;
+const queueItemsCache = new Map<string, QueueItem[]>();
+
 /**
  * Locate every importable across every cached parse whose source file
  * matches `target` (canonical). Returns one queue item per match.
  */
 function findImportableQueueItems(target: string): QueueItem[] {
+    const rev = getParseCacheRevision();
+    if (rev !== queueItemsCacheRev) {
+        queueItemsCache.clear();
+        queueItemsCacheRev = rev;
+    }
+    const cached = queueItemsCache.get(target);
+    if (cached !== undefined) return cached;
     const out: QueueItem[] = [];
     forEachCachedParse((entry) => {
         if (entry.parsed === null) return;
@@ -230,6 +246,7 @@ function findImportableQueueItems(target: string): QueueItem[] {
             });
         }
     });
+    queueItemsCache.set(target, out);
     return out;
 }
 

@@ -95,18 +95,45 @@ function fingerprintOf(
     return buildParseFingerprint(canon, mtime, parsed);
 }
 
+// `canonicalPath` is called all over the render paths (per file tab, per
+// queue item, per importable in the cache scans) — and each call did a fresh
+// `Java.type("java.nio.file.Paths")` lookup plus NIO path ops, which `java.ts`
+// already warns is "not free". The result is a pure function of the input
+// string (the process CWD is stable for the session), so memoize by input.
+let _Paths: any = null;
+const canonicalPathCache = new Map<string, string>();
+
 export function canonicalPath(p: string): string {
     if (!p) return p;
+    const hit = canonicalPathCache.get(p);
+    if (hit !== undefined) return hit;
+    let result: string;
     try {
-        const Paths = javaType("java.nio.file.Paths");
-        return String(Paths.get(String(p)).toAbsolutePath().normalize().toString())
+        if (_Paths === null) _Paths = javaType("java.nio.file.Paths");
+        result = String(_Paths.get(String(p)).toAbsolutePath().normalize().toString())
             .replace(/\\/g, "/");
     } catch (_e) {
-        return p.replace(/\\/g, "/");
+        result = p.replace(/\\/g, "/");
     }
+    canonicalPathCache.set(p, result);
+    return result;
 }
 
 const cache = new Map<string, CachedParse>();
+
+/**
+ * Bumped whenever the SET of cached parses (or an entry's parsed value)
+ * changes — a parse is added, re-parsed, or evicted. Cache-wide scans over
+ * `forEachCachedParse` (the tab strip's per-frame file→importable lookups)
+ * memoize against this so they recompute only on an actual change instead of
+ * every frame. Freshness/mtime touches don't bump it: they leave the parsed
+ * importables untouched, so a scan's result can't change.
+ */
+let parseCacheRevision = 0;
+
+export function getParseCacheRevision(): number {
+    return parseCacheRevision;
+}
 
 type ParsePerfEntry = {
     path: string;
@@ -204,6 +231,7 @@ export function parseImportJsonBlocking(rawPath: string): CachedParse {
         freshness: createFreshness(),
     };
     cache.set(canon, entry);
+    parseCacheRevision++;
     if (parsed !== null) {
         invalidateSourceDiffForParse(parsed);
         recordHouseBinding(parsed.gcx.houseUuid, canon);
@@ -345,7 +373,7 @@ export function touchParseCacheFile(rawPath: string): void {
  * parse regardless of the fingerprint.
  */
 export function invalidateParseCacheEntry(rawPath: string): void {
-    cache.delete(canonicalPath(rawPath));
+    if (cache.delete(canonicalPath(rawPath))) parseCacheRevision++;
 }
 
 /**

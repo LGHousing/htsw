@@ -102,11 +102,22 @@ export function closePopover(handle: PopoverHandle): void {
     if (handle.onClose) handle.onClose();
 }
 
-export function closeAllPopovers(): void {
-    const popovers = openPopovers;
-    openPopovers = [];
-    for (let i = 0; i < popovers.length; i++) {
-        if (popovers[i].onClose) popovers[i].onClose!();
+// Tears down transient popovers (context menus, forms, pickers). Sticky
+// popovers (the tour card) are KEPT by default — their contract is "close
+// programmatically or via own buttons", so a context menu or form opening
+// underneath must not whisk the tour away. Pass includeSticky only for a
+// genuine teardown (the inventory/overlay is gone).
+export function closeAllPopovers(includeSticky: boolean = false): void {
+    const kept: PopoverHandle[] = [];
+    const closing: PopoverHandle[] = [];
+    for (let i = 0; i < openPopovers.length; i++) {
+        const p = openPopovers[i];
+        if (p.sticky && !includeSticky) kept.push(p);
+        else closing.push(p);
+    }
+    openPopovers = kept;
+    for (let i = 0; i < closing.length; i++) {
+        if (closing[i].onClose) closing[i].onClose!();
     }
 }
 
@@ -143,6 +154,24 @@ function computePopoverRect(p: PopoverHandle): Rect {
     return placeAnchoredRect(p.anchor, p.width, p.height, screenW, screenH);
 }
 
+function closePopoversAbove(index: number): boolean {
+    if (index >= openPopovers.length - 1) return false;
+    const kept: PopoverHandle[] = [];
+    for (let i = 0; i <= index; i++) kept.push(openPopovers[i]);
+    let closedModal = false;
+    for (let i = index + 1; i < openPopovers.length; i++) {
+        const p = openPopovers[i];
+        if (p.sticky) {
+            kept.push(p);
+            continue;
+        }
+        if (p.placement === "modal") closedModal = true;
+        if (p.onClose) p.onClose();
+    }
+    openPopovers = kept;
+    return closedModal;
+}
+
 // Called by panel click handlers BEFORE their own dispatch. Returns true if the click was
 // inside any popover (handler invoked, event should be cancelled by caller). Returns false
 // if the click was outside all popovers — caller should also return without dispatching.
@@ -157,6 +186,7 @@ export function tryDispatchPopoverClick(
         const p = openPopovers[i];
         const rect = computePopoverRect(p);
         if (pointInRect(rect, mouseX, mouseY)) {
+            if (closePopoversAbove(i)) return true;
             const laid = layoutElement(p.content, rect.x, rect.y, rect.w, rect.h);
             dispatchClick(laid, mouseX, mouseY, button);
             return true;

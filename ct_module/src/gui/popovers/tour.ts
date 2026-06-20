@@ -46,7 +46,7 @@ const STEPS: TourStep[] = [
         title: "Welcome to HTSW",
         lines: [
             "HTSW turns your Housing into files you can",
-            "edit, version, and share — and back again.",
+            "edit, version, and share, then back again.",
             "This tour points at each part of the overlay.",
         ],
         setup: () => {
@@ -58,8 +58,8 @@ const STEPS: TourStep[] = [
         // open — clicking the action advances, giving the click an ending.
         title: "Grab the sample project",
         lines: [
-            "A tiny commented project — a function, an",
-            "event, a region, and an item — showing how",
+            "A tiny commented project: a function, an",
+            "event, a region, and an item, showing how",
             "import.json and .htsl files fit together.",
             "Already have your own files? Just hit Next.",
         ],
@@ -81,50 +81,50 @@ const STEPS: TourStep[] = [
             "Everything HTSW does moves content between",
             "these two.",
         ],
-        anchor: "tour:left-tabs",
+        anchor: "tour:project-tabs",
         setup: () => setActiveLeftTab("importables"),
     },
     {
-        title: "Importables — your files",
+        title: "Importables: your files",
         lines: [
             "Each import.json lists functions, items,",
-            "regions… Checkboxes queue things to import.",
-            "The colored dot: green = matches the house,",
-            "yellow = differs, red = never read.",
+            "regions, and a checkbox to queue each.",
+            "Each row has a file/house status icon.",
+            "Hover it to see exactly what it means.",
         ],
         anchor: "tour:left-body",
         setup: () => setActiveLeftTab("importables"),
     },
     {
-        title: "View — read before you write",
+        title: "View: read before you write",
         lines: [
-            "Double-click anything on the left to peek at",
+            "Single-click anything on the left to preview",
             "its source here (italic tab = temporary).",
-            "Right-click → Open in View pins it for real.",
+            "Double-click pins the tab so it sticks.",
             "Colors show the diff against the house.",
         ],
-        anchor: "tour:right-body",
+        anchor: "tour:right-view",
         setup: () => {
             previewFirstAvailableSource();
         },
     },
     {
-        title: "Import — files into the house",
+        title: "Import: files into the house",
         lines: [
-            "Queued items sit under the code view.",
-            "Import shows live progress across the top.",
-            "The live diff appears as an upload tab and",
-            "follows the file HTSW is writing.",
+            "Queue and Import sit in the footer, below",
+            "the code. A run shows progress there (ETA,",
+            "Pause/Step/Cancel), plus a live upload tab",
+            "that follows the file being written.",
         ],
-        anchor: "tour:right-body",
+        anchor: "tour:right-import",
     },
     {
-        title: "Houses — the house into files",
+        title: "Houses: the house into files",
         lines: [
             "Scan lists names (fast). Read into knowledge",
             "(in the export dropdown) pulls full contents.",
-            "Export writes house content into your files —",
-            "it confirms before overwriting local changes.",
+            "Export writes house content to your files and",
+            "confirms before overwriting local changes.",
         ],
         anchor: "tour:left-body",
         setup: () => setActiveLeftTab("houses"),

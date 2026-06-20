@@ -27,6 +27,7 @@ import type { ParseResult } from "htsw";
 import type { Action, Condition, Importable } from "htsw/types";
 
 import { normalizeHtswPath } from "../lib/pathDisplay";
+import { matchByHash } from "./actionMatch";
 import type { DiffState } from "./diffPalette";
 import { readImportableCache } from "../../importCache/cache";
 import { actionHash, conditionHash } from "../../importCache/hash";
@@ -39,7 +40,11 @@ import {
     SUB_LIST_KINDS,
     type SubListKind,
 } from "../parsing/importablePaths";
-import { canonicalPath, forEachCachedParse } from "../parsing/parses";
+import {
+    canonicalPath,
+    forEachCachedParse,
+    getParseCacheRevision,
+} from "../parsing/parses";
 import { getHousingUuid } from "../state/housing";
 import { readCachedActionList } from "../../importables/actionListHelpers";
 
@@ -111,7 +116,7 @@ function computeFor(filePath: string): SourceDiffEntry | null {
     if (sourceActions === undefined) return null;
     const cachedLists = cacheEntryListHashes(cache);
     const out: SourceDiffEntry = new Map();
-    walk(out, match.prefix, "", sourceActions, cachedLists);
+    walk(out, match.prefix, "", "", sourceActions, cachedLists);
     return out;
 }
 
@@ -121,8 +126,22 @@ export type FileTarget = {
     prefix: string;
 };
 
+// Per-(path, parse-cache revision) memo. `findFileTarget` resolves the
+// path of EVERY importable in EVERY cached parse (each through several
+// `canonicalPath` Java NIO calls), and the tab strip calls it per file tab
+// per frame — without this, one large project left in the cache costs
+// thousands of filesystem calls every frame until /ct reload.
+let fileTargetCacheRev = -1;
+const fileTargetCache = new Map<string, FileTarget | null>();
+
 export function findFileTarget(filePath: string): FileTarget | null {
+    const rev = getParseCacheRevision();
+    if (rev !== fileTargetCacheRev) {
+        fileTargetCache.clear();
+        fileTargetCacheRev = rev;
+    }
     const norm = canonicalPath(filePath);
+    if (fileTargetCache.has(norm)) return fileTargetCache.get(norm) ?? null;
     let found: FileTarget | null = null;
     forEachCachedParse((entry) => {
         if (entry.parsed === null || found !== null) return;
@@ -144,6 +163,7 @@ export function findFileTarget(filePath: string): FileTarget | null {
             }
         }
     });
+    fileTargetCache.set(norm, found);
     return found;
 }
 
@@ -188,22 +208,24 @@ export function houseActionAt(filePath: string, actionPath: string): Action | nu
 function walk(
     out: SourceDiffEntry,
     prefix: string,
-    parentBracketed: string,
+    cacheBracketed: string,
+    sourceDotted: string,
     items: readonly Action[],
     lists: { [k: string]: string[] }
 ): void {
-    const cacheKey = parentBracketed === "" ? prefix : `${prefix}${parentBracketed}`;
+    const cacheKey = cacheBracketed === "" ? prefix : `${prefix}${cacheBracketed}`;
     const slots = lists[cacheKey];
-    const parentDotted =
-        parentBracketed === ""
-            ? ""
-            : `${bracketedToDotted(parentBracketed).substring(1)}.`;
+    // Match source actions to their cache slot by hash, NOT by position — an
+    // action inserted (or removed) at the top shifts every later index, and a
+    // positional compare reads that whole tail as edited/added. See `matchByHash`.
+    const sourceHashes = items.map((a) => actionHash(a));
+    const matched = matchByHash(sourceHashes, slots);
     for (let i = 0; i < items.length; i++) {
         const action = items[i];
-        const dotted = `${parentDotted}${i}`;
-        const cachedHash = slots === undefined ? undefined : slots[i];
+        const dotted = sourceDotted === "" ? `${i}` : `${sourceDotted}.${i}`;
+        const j = matched[i];
         let state: DiffState;
-        if (cachedHash === undefined) {
+        if (j === null) {
             state = "add";
         } else if (action.type === "CONDITIONAL") {
             // A CONDITIONAL's own line is its head — `if (conditions) {`. The full
@@ -213,7 +235,7 @@ function walk(
             // make it look like the conditions changed.
             state = conditionsMatchCache(
                 action.conditions,
-                lists[`${cacheKey}[${i}].conditions`]
+                lists[`${cacheKey}[${j}].conditions`]
             )
                 ? "match"
                 : "edit";
@@ -221,29 +243,45 @@ function walk(
             // `random {` has no head fields; nested changes show on child lines.
             state = "match";
         } else {
-            state = cachedHash === actionHash(action) ? "match" : "edit";
+            state = slots !== undefined && slots[j] === sourceHashes[i] ? "match" : "edit";
         }
         out.set(dotted, state);
+        // Recurse into nested lists against the MATCHED cache slot `j`, so a
+        // shifted CONDITIONAL/RANDOM still lines up with its cached body. For an
+        // added action (j === null) there is no counterpart; `[-1]` can't be a
+        // real cache index, so the nested lookups miss and the body reports as
+        // added too.
+        const childIndex = j === null ? -1 : j;
         if (action.type === "CONDITIONAL") {
             walk(
                 out,
                 prefix,
-                `${parentBracketed}[${i}].ifActions`,
+                `${cacheBracketed}[${childIndex}].ifActions`,
+                `${dotted}.ifActions`,
                 action.ifActions,
                 lists
             );
             walk(
                 out,
                 prefix,
-                `${parentBracketed}[${i}].elseActions`,
+                `${cacheBracketed}[${childIndex}].elseActions`,
+                `${dotted}.elseActions`,
                 action.elseActions,
                 lists
             );
         } else if (action.type === "RANDOM") {
-            walk(out, prefix, `${parentBracketed}[${i}].actions`, action.actions, lists);
+            walk(
+                out,
+                prefix,
+                `${cacheBracketed}[${childIndex}].actions`,
+                `${dotted}.actions`,
+                action.actions,
+                lists
+            );
         }
     }
 }
+
 
 function conditionsMatchCache(
     conditions: readonly Condition[],
@@ -255,9 +293,4 @@ function conditionsMatchCache(
         if (cachedHashes[i] !== conditionHash(conditions[i])) return false;
     }
     return true;
-}
-
-function bracketedToDotted(bracketed: string): string {
-    // "[0].ifActions[2]" → ".0.ifActions.2"
-    return bracketed.split("[").join(".").split("]").join("");
 }

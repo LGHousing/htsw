@@ -19,6 +19,8 @@ export type ButtonProps = {
     textColor?: Extractable<number | undefined>;
     icon?: Extractable<IconName>;
     children?: Extractable<Child[]>;
+    tooltip?: Extractable<string>;
+    tooltipColor?: Extractable<number>;
 };
 
 // Buttons are styled clickable Containers, not their own primitive: removing
@@ -55,6 +57,8 @@ export function Button(props: ButtonProps): Element {
         children,
         onClick: props.onClick,
         onDoubleClick: props.onDoubleClick,
+        tooltip: props.tooltip,
+        tooltipColor: props.tooltipColor,
     });
 }
 

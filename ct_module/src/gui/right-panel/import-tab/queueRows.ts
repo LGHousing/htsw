@@ -53,6 +53,24 @@ function willBeSkipped(item: QueueItem): boolean {
     return buildCacheStatusRow(uuid, imp).state === "current";
 }
 
+export function queueWillSkipCount(items: readonly QueueItem[]): number {
+    let count = 0;
+    for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (willBeSkipped(item)) {
+            count++;
+            continue;
+        }
+        if (item.operation === "import" && item.kind === "importJson") {
+            const children = queueImportJsonChildren(item);
+            for (let j = 0; j < children.length; j++) {
+                if (willBeSkipped(children[j])) count++;
+            }
+        }
+    }
+    return count;
+}
+
 function findImportableInList(
     list: readonly Importable[],
     identity: string,
