@@ -16,7 +16,6 @@ import {
     isAutoTrackSource,
     isHouseTrusted,
     isImportableChecked,
-    setExportImportJsonPath,
     toggleAutoTrackSource,
     toggleImportableChecked,
 } from "../../state";
@@ -37,19 +36,15 @@ import { importableIdentity, importableKey } from "../../../importCache/paths";
 import { houseDisplayName } from "../../../importCache/aliases";
 import {
     removeImportableEntry,
-    setHouseUuidKey,
     type Section,
 } from "../../../project/importJsonMutations";
 import { countFilesRecursive, deleteDirRecursive } from "../../../utils/filesystem";
 import {
     canonicalPath,
-    getParseAt,
     invalidateParseCacheEntry,
     markParseStale,
     requestParse,
-    touchParseCacheFile,
 } from "../../parsing/parses";
-import { recordHouseBinding } from "../../../importCache/houseBindings";
 import { shortPath } from "../../lib/pathDisplay";
 import {
     houseTypeScanned,
@@ -78,6 +73,7 @@ import {
     bumpTreeRevision,
 } from "./rowModel";
 import { EVENT_ICONS } from "htsw/types";
+import { confirmRebind, houseBindingActions } from "../../houseBinding";
 import type { Bounds, Importable } from "htsw/types";
 
 export let searchQuery = "";
@@ -479,7 +475,7 @@ export function dirRootActions(s: SourceDir): MenuAction[] {
 }
 
 // Right-click "open for real": pins a non-italic tab (confirmSelect), the
-// menu counterpart to the transient double-click preview.
+// menu counterpart to double-clicking the row (single-click only previews).
 function openInViewAction(path: string): MenuAction {
     return {
         label: "Open in View",
@@ -1026,115 +1022,6 @@ function projectDirOf(importJsonPath: string): string {
     if (slash === 0) return "/";
     if (slash === 2 && norm.charAt(1) === ":") return norm.substring(0, 3);
     return norm.substring(0, slash);
-}
-
-// The houseUuid the file declares, via the warm parse cache. Null while the
-// parse is cold/pending or the file is unbound — the chip simply doesn't
-// render for a frame or two until the cache warms.
-function boundHouseUuidOf(fullPath: string): string | null {
-    const parse = requestParse(fullPath);
-    if (parse === null || parse.parsed === null) return null;
-    return parse.parsed.gcx.houseUuid;
-}
-
-function rebindFile(fullPath: string, rawUuid: string | null): void {
-    const startedAt = Date.now();
-    const uuid = rawUuid === null ? null : rawUuid.toLowerCase();
-    if (!setHouseUuidKey(fullPath, uuid)) {
-        ChatLib.chat(`&c[htsw] Couldn't update ${shortPath(fullPath)}`);
-        return;
-    }
-    const wroteAt = Date.now();
-    // A binding edit only changes one metadata key, so don't invalidate the
-    // parse — a cold re-parse of a big project freezes the client for its
-    // full parse cost. Mirror the on-disk edit into the cached parse instead
-    // (the in-place pathway the parse authority supports) and update the
-    // reverse index directly, since no re-parse will record it. Only the
-    // import.json itself changed, so only its fingerprint entry is touched.
-    const entry = getParseAt(fullPath);
-    if (entry !== null && entry.parsed !== null) {
-        entry.parsed.gcx.houseUuid = uuid;
-        touchParseCacheFile(fullPath);
-        recordHouseBinding(uuid, canonicalPath(fullPath));
-    } else {
-        invalidateParseCacheEntry(fullPath);
-        requestParse(fullPath);
-    }
-    const total = Date.now() - startedAt;
-    if (total > 250) {
-        // Binding should be instant; a slow one means a phase regressed —
-        // say which.
-        ChatLib.chat(
-            `&8[htsw] bind took ${total}ms (file write ${wroteAt - startedAt}ms, cache ${Date.now() - wroteAt}ms)`
-        );
-    }
-    if (uuid !== null) {
-        // Binding to the house you're standing in is the same signal as
-        // walking into a bound house (state/housing.ts) — point the export
-        // destination at the file now rather than on the next uuid change.
-        if (uuid === getHousingUuid()) {
-            setExportImportJsonPath(fullPath);
-        }
-        ChatLib.chat(`&a[htsw] Bound ${shortPath(fullPath)} to ${houseDisplayName(uuid)}.`);
-    } else {
-        ChatLib.chat(`&a[htsw] Removed house binding from ${shortPath(fullPath)}.`);
-    }
-}
-
-// Binding rewrites the file and changes which house auto-selects it — ask
-// before doing either direction.
-function confirmRebind(fullPath: string, uuid: string | null): void {
-    const bound = boundHouseUuidOf(fullPath);
-    if (uuid === null) {
-        openConfirmPopover({
-            title: `Unbind ${shortPath(fullPath)}?`,
-            lines:
-                bound !== null
-                    ? [`Removes the houseUuid key linking it to ${houseDisplayName(bound)}.`]
-                    : [],
-            confirmLabel: "Unbind",
-            onConfirm: () => rebindFile(fullPath, null),
-        });
-        return;
-    }
-    const rebinding = bound !== null && bound !== uuid.toLowerCase();
-    const lines = [
-        "Writes a houseUuid key into the file; entering",
-        `${houseDisplayName(uuid)} then auto-selects it as destination.`,
-    ];
-    if (rebinding && bound !== null) {
-        lines.unshift(`Currently bound to ${houseDisplayName(bound)}.`);
-    }
-    openConfirmPopover({
-        title: `${rebinding ? "Rebind" : "Bind"} ${shortPath(fullPath)} to ${houseDisplayName(uuid)}?`,
-        lines,
-        confirmLabel: rebinding ? "Rebind" : "Bind",
-        onConfirm: () => rebindFile(fullPath, uuid),
-    });
-}
-
-function houseBindingActions(fullPath: string): MenuAction[] {
-    // Same pending guard as houseBindControl: don't offer "Bind to…" on a
-    // file whose binding isn't known yet.
-    const parse = requestParse(fullPath);
-    if (parse === null || parse.parsed === null) return [];
-    const bound = parse.parsed.gcx.houseUuid;
-    const current = getHousingUuid();
-    const actions: MenuAction[] = [];
-    if (current !== null && current !== bound) {
-        actions.push({
-            label: `Bind to ${houseDisplayName(current)}`,
-            icon: Icons.house,
-            onClick: () => confirmRebind(fullPath, current),
-        });
-    }
-    if (bound !== null) {
-        actions.push({
-            label: `Unbind from ${houseDisplayName(bound)}`,
-            onClick: () => confirmRebind(fullPath, null),
-        });
-    }
-    return actions;
 }
 
 // The house-binding control on an import.json header row. Unbound + a house

@@ -43,6 +43,7 @@ import { getMtimeMs } from "../lib/java";
 import { memoizedImportableHash, seedImportableHash } from "../../importCache/status";
 import {
     SUB_LIST_KINDS,
+    importableSourcePath,
     importableSubListPath,
     subListOf,
 } from "./importablePaths";
@@ -82,7 +83,7 @@ type SnapshotDiagnostic = {
 };
 
 type Snapshot = {
-    version: 10;
+    version: 11;
     importJsonPath: string;
     fingerprint: { [path: string]: number };
     importables: Importable[];
@@ -122,7 +123,7 @@ export function loadSnapshot(importJsonPath: string): Snapshot | null {
         const raw = String(FileLib.read(p) ?? "");
         if (raw.length === 0) return null;
         const parsed = JSON.parse(raw) as Snapshot;
-        if (parsed.version !== 10) return null;
+        if (parsed.version !== 11) return null;
         if (parsed.importJsonPath !== importJsonPath) return null;
         if (!Array.isArray(parsed.importables)) return null;
         if (!Array.isArray(parsed.sourcePaths)) return null;
@@ -237,7 +238,12 @@ export function saveSnapshot(
     const subListPaths: Array<{ [kind: string]: string }> = [];
     for (let i = 0; i < result.value.length; i++) {
         const imp = result.value[i];
-        const sp = result.gcx.sourceFiles.get(imp);
+        // The RESOLVED source path (the .snbt for ITEMs, the .htsl for
+        // FUNCTION/EVENT) — not the raw declaring file. ITEM resolves to its
+        // .snbt only through the nbt Tag's span, and the SpanTable does not
+        // survive into a restored parse, so a restored ITEM would otherwise
+        // fall back to opening the declaring import.json.
+        const sp = importableSourcePath(imp, result);
         sourcePaths.push(sp ?? null);
         const subLists: { [kind: string]: string } = {};
         for (let j = 0; j < SUB_LIST_KINDS.length; j++) {
@@ -250,7 +256,7 @@ export function saveSnapshot(
     const fingerprint: { [path: string]: number } = {};
     for (const k in watchedMtimes) fingerprint[k] = watchedMtimes[k];
     const snapshot: Snapshot = {
-        version: 10,
+        version: 11,
         importJsonPath,
         fingerprint,
         importables: result.value,

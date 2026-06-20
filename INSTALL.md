@@ -49,7 +49,7 @@ In-game, run `/ct reload`.
 - **Importables tab**: click **Create sample project** for a small commented example project, or **Browse** to open your own `import.json`.
 - Click the **house button** on an `import.json` row to bind the file to the house you're standing in — the overlay then keeps file and house lined up automatically.
 - **Houses tab**: scan what's already built in your house and export it into your files.
-- Single-click rows for their local action (expand, queue checkbox); **double-click** to peek at source in the View pane; right-click → **Open in View** to pin it.
+- **Single-click** a row to preview its source in the View pane (italic = temporary); **double-click** (or right-click → **Open in View**) to pin the tab. The checkbox and caret handle queueing and expanding on their own.
 
 ## CLI (optional)
 

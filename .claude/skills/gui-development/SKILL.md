@@ -86,16 +86,18 @@ Importer hookup — `importer/diffSink.ts`:
 
 Popovers — `gui/popovers/`:
 - `confirm.ts` — `openConfirmPopover({title, lines, confirmLabel, danger, onConfirm})`: modal yes/no, width auto-fits the widest line (`Renderer.getStringWidth`, truncate as backstop). Use this for destructive/surprising actions, never a "confirm" context-menu entry.
-- `tour.ts` — first-load walkthrough. Each step can spotlight a region (via `lib/anchors` keys: `tour:left-tabs`, `tour:left-body`, `tour:right-body`) — a border is drawn around the rect from a default-priority `postGuiRender` (paints before the LOWEST popover pass, so the card sits on top) — and can run a `setup` that switches the left tab or previews a source file so the user looks at the actual UI being described. The card is a `sticky` anchored popover (outside clicks fall through; using the GUI mid-tour is allowed), reopened per step because the anchor changes. Auto-starts once per session from the overlay tick when the GUI is visible, no import running, and `gui-onboarding.json` says it hasn't been done. `/htsw tour` resets onboarding (also restores the dismissed sample-project block) and re-arms the auto-start. If you move/rename an anchored region, keep its `anchorKey` or the step falls back to screen-center with no spotlight.
-- `add-importable.ts` — "Add Importable" form (Explore "+" button).
+- `tour.ts` — first-load walkthrough. Each step can spotlight a region (via `lib/anchors` keys: `tour:project-tabs` — only the Importables + Houses tabs, NOT Settings, since the "two sides of your project" step is about those two; `tour:left-body`; and `tour:right-view` / `tour:right-import` — the right View pane reports two anchors so the View step spotlights the reading area and the Import step spotlights the queue/Import footer, not the whole pane) — a border is drawn around the rect from a default-priority `postGuiRender` (paints before the LOWEST popover pass, so the card sits on top) — and can run a `setup` that switches the left tab or previews a source file so the user looks at the actual UI being described. The card is a `sticky` anchored popover (outside clicks fall through; using the GUI mid-tour is allowed), reopened per step because the anchor changes. Auto-starts once per session from the overlay tick when the GUI is visible, no import running, and `gui-onboarding.json` says it hasn't been done. `/htsw tour` resets onboarding (also restores the dismissed sample-project block) and re-arms the auto-start. If you move/rename an anchored region, keep its `anchorKey` or the step falls back to screen-center with no spotlight.
+- `new-project.ts` — name-a-new-project prompt (invokes a callback with the chosen name). There is **no** in-game "add importable" popover — new importables are created from the VS Code tools view.
+- `rename-file.ts` / `rename-importable.ts` — in-place rename of a project file / an importable.
+- `edit-function.ts` — in-place editor for a single importable field (a value, or an x/y/z position), written via `updateImportableField`; despite the name it edits any importable type, not just functions.
 - `alias.ts` — per-house alias editor. `openAliasPopover(rect, uuid)` takes the target UUID explicitly so the Houses tab can edit any known house, not just the currently-detected one.
 - `file-browser.ts` — modal file browser for picking an `import.json`.
 - `open-menu.ts` — Hypixel `/functions /eventactions /regions …` shortcut menu.
 
 App shell — `gui/`:
 - `overlay.ts` — wires everything: registers triggers, owns the single fullscreen panel, runs the tick handler (reparse, focus, popover cleanup).
-- `root.ts` — root tree builder: arranges LeftPanel / center cutouts (transparent above + below the inventory) / RightPanel / chat input around the inventory bounds. Right column gets `padding-left: SCREEN_PAD` so it mirrors the screen-edge gap on the inventory-facing side.
-- `chat-input.ts` — `ChatInputBar` element + global `T` shortcut to focus it.
+- `root.ts` — root tree builder: arranges LeftPanel / center cutouts (transparent above + below the inventory) / RightPanel / ChatPanel around the inventory bounds. Right column gets `padding-left: SCREEN_PAD` so it mirrors the screen-edge gap on the inventory-facing side. The left column is rail (grow) + `ChatPanel` (fixed height pinned to the bottom, reaching the screen-edge gutter).
+- `chat/` — the bottom-left chat surface. `index.ts` builds `ChatPanel` (a vanilla-style scrollback `Scroll` above the `ChatInputBar`) and owns the input/submit logic + `CHAT_INPUT_ID`; the global `T` shortcut (in `overlay.ts`) focuses that input. The scrollback sticks to the newest line unless the user scrolls up (resumes following on scroll-back-to-bottom). `mcChat.ts` reads MC's own chat-line buffer (`GuiNewChat.drawnChatLines` via reflection, formatted text with `§` codes) so server messages, `/htsw` output, and printed diagnostics all appear with vanilla ordering/formatting; rows render with NO `color` so `Renderer.drawString` honors their `§` codes. Reflection is try/caught (degrades to empty) and the extract is memoized by buffer size + newest line so idle frames are free.
 - `knowledge-status.ts` — derives `STATUS_COLOR` / `STATUS_LABEL` / `statusForImportable` / `knowledgeStatusByImportable` from `state` for the left-rail badges.
 - `bottom-toolbar/` — slim, no-background strip under the inventory: only Housing Menu + the `/functions …` shortcut split-button.
 - `left-panel/` — three tabs: **Importables** (importables list + Open file/folder/Browse buttons), **Houses** (per-house browser with a house selector, primary Trust control, compact Alias/Detect side actions), and **Settings** (global Mute import sounds + Auto-proceed imports toggles).
@@ -199,7 +201,7 @@ CT's `guiRender` maps to Forge's `GuiScreenEvent$BackgroundDrawnEvent` — it fi
 
 `openPopover({anchor, content, width, height, key?, onClose?})` pushes a popover onto a stack. They render on `postGuiRender` at LOWEST priority — i.e. *after* MC's drawScreen completes — so they paint on top of everything including MC's hover tooltips, keeping them modal. (Panels by contrast paint at `guiRender`/BackgroundDrawnEvent, before MC's tooltip; see the Panels section.) Position auto-flips: anchored *below* the trigger when the trigger is in the top half of the screen, *above* otherwise.
 
-`sticky: true` popovers are never dismissed by outside clicks, and those clicks fall through to the panels — the GUI stays fully usable underneath (the tour card). Close them programmatically.
+`sticky: true` popovers are never dismissed by outside clicks, and those clicks fall through to the panels — the GUI stays fully usable underneath (the tour card). Close them programmatically. `closeAllPopovers()` also leaves sticky popovers alone (it's for clearing transient menus/forms — e.g. `openMenu` calls it, and a context menu opening must not whisk the tour away); pass `closeAllPopovers(true)` only for a genuine teardown when the overlay/inventory is gone.
 
 `togglePopover({key, ...})` is the toggle-style helper for re-clickable triggers (e.g. a Filter button that reopens-or-dismisses): if a popover with the same `key` is open it closes it; otherwise it opens a new one.
 
@@ -213,7 +215,7 @@ Hover follows click propagation: panels pass `interactive = !mouseIsOverPopover(
 
 Scrollable hover cards are separate from popovers. They open after a stable hover delay, remain alive while crossing from anchor to card, and absorb wheel/click input inside the card. Explicit popovers always suppress and close hover cards.
 
-When the inventory closes (`getContainerBounds() === null`), the tick handler in `overlay.ts` calls `closeAllPopovers()` and clears focus so popovers don't linger across opens.
+When the inventory closes (`getContainerBounds() === null`), the tick handler in `overlay.ts` calls `closeAllPopovers(true)` and clears focus so popovers don't linger across opens (the `true` forces sticky popovers like the tour card to close too, since nothing can render once the overlay is gone).
 
 Scrollbar hover suppression: items under a scrollbar **thumb** do not show hover (the click would start a thumb drag, not reach the item). Hover suppression, drag start, and the scrollbar render all share one geometry source — `scrollbarThumbRect` / `getClickInterceptor` in `render.ts` — so visual feedback always matches click propagation. Clicks on the empty part of the track fall through to the element underneath.
 
@@ -296,6 +298,7 @@ These bit us; they will bite you again. Read these before touching CT trigger co
 - CT's chat trigger does **not** fire for messages we display via `ChatLib.chat()`. The MCP bridge can't see our own debug chat, so the diagnostic loop writes to a file (`gui-debug.log`) instead. See `armHtswGuiDebug` and `debug()` in `overlay.ts`.
 - Vite-bundled `net.minecraftforge.client.event.MouseEvent` style references work at runtime (Rhino bridge), but `Java.type("…")` is safer. Use it for new Java class references.
 - `Renderer.getStringWidth` returns the actual proportional-font width — use it for centering text. Do not use `text.length * CHAR_W`.
+- `Java.type("…").class` is **undefined** in this Rhino build, so `SomeClass.class.isInstance(obj)` throws (this silently broke `T`-to-chat for a release — the throw aborted the focus handler). To class-check a screen/object, use the string pattern the rest of the overlay uses: `String(obj.getClass().getName()).indexOf("GuiRepair") >= 0`, inside a try/catch.
 - IDE diagnostics shown after edits are often stale. Always confirm with `npx tsc --noEmit` from `ct_module/`.
 
 ## Icons

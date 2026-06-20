@@ -11,11 +11,18 @@ import { getContainerBoundsOverlay } from "./lib/overlayScale";
 import { LeftPanel } from "./left-panel";
 import { RightPanel } from "./right-panel";
 import { BottomToolbar } from "./bottom-toolbar";
-import { ChatInputBar } from "./chat-input";
+import { ChatPanel } from "./chat";
 import { getImportProgress } from "./right-panel/import-tab/importProgress";
 import { COLOR_PANEL } from "./lib/theme";
 
-const CHAT_INPUT_H = 16;
+// Smallest chat panel we'll render (input bar + a couple scrollback rows) and
+// the minimum height the left rail keeps above it, so a short window degrades
+// gracefully instead of squeezing one out entirely.
+const CHAT_MIN_H = 56;
+const RAIL_MIN_H = 60;
+// Transparent sliver between the rail and the chat, mirroring the overlay's
+// screen-edge gutters so the two read as separate panels.
+const RAIL_CHAT_GAP = 2;
 
 function transparentPad(h: number): Element {
     return Container({
@@ -87,11 +94,14 @@ function buildLayout(b: ContainerBounds): Element {
 
     const topGapH = Math.max(0, b.top - contentRowY);
     const contentRowH = Math.max(0, b.screenH - SCREEN_PAD - contentRowY);
-    const leftColBottom = contentRowY + contentRowH;
+    // Chat fills from the vanilla chat top straight down to the bottom of the
+    // column (no dead transparent gap below it). Clamp so neither the chat nor
+    // the rail above it collapses on a short window.
     const chatTopInLeftCol = Math.max(0, chat.y - contentRowY);
-    const chatSpacerH = Math.max(0, Math.min(leftColBottom - chat.y, chat.h));
-    const chatInputH = chatTopInLeftCol >= CHAT_INPUT_H + 20 ? CHAT_INPUT_H : 0;
-    const railH = Math.max(0, chatTopInLeftCol - chatInputH);
+    let chatH = contentRowH - chatTopInLeftCol;
+    chatH = Math.max(chatH, CHAT_MIN_H);
+    chatH = Math.min(chatH, Math.max(0, contentRowH - RAIL_MIN_H - RAIL_CHAT_GAP));
+    chatH = Math.max(0, chatH);
 
     return Col({
         style: { width: { kind: "grow" }, height: { kind: "grow" } },
@@ -100,26 +110,17 @@ function buildLayout(b: ContainerBounds): Element {
             Row({
                 style: { width: { kind: "grow" }, height: { kind: "grow" } },
                 children: [
-                    // LEFT COLUMN — full content height, chat input + cutout
-                    // pinned to the bottom of the rail.
+                    // LEFT COLUMN — rail fills the top, chat panel pinned to
+                    // the bottom and reaching the screen-edge gutter.
                     Col({
                         style: {
                             width: { kind: "px", value: leftColW },
                             height: { kind: "grow" },
                         },
                         children: [
-                            bgWrap(LeftPanel(leftColW), railH),
-                            chatInputH > 0
-                                ? Container({
-                                      style: {
-                                          width: { kind: "grow" },
-                                          height: { kind: "px", value: chatInputH },
-                                          background: COLOR_PANEL,
-                                      },
-                                      children: [ChatInputBar()],
-                                  })
-                                : false,
-                            transparentPad(chatSpacerH),
+                            bgWrap(LeftPanel(leftColW), "grow"),
+                            transparentPad(RAIL_CHAT_GAP),
+                            ChatPanel(chatH),
                         ],
                     }),
                     // CENTER COLUMN — transparent above the inventory, the

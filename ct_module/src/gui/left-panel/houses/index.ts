@@ -35,7 +35,6 @@ import { javaType } from "../../lib/java";
 import {
     ACCENT_DANGER,
     ACCENT_SUCCESS,
-    ACCENT_WARN,
     COLOR_BUTTON,
     COLOR_BUTTON_DANGER_HOVER,
     COLOR_BUTTON_HOVER,
@@ -63,6 +62,7 @@ import { confirmSelect } from "../../right-panel/selection";
 import { importableSourcePath } from "../../parsing/importablePaths";
 import { linkStatusIcon, type LinkStatusKey } from "../../cache-status";
 import type { Importable } from "htsw/types";
+import { boundHouseUuidOf, confirmRebind } from "../../houseBinding";
 
 // Trust glyph tint: green when trusted, faint otherwise.
 const TRUST_ICON_ON = 0xff5cb85c | 0;
@@ -214,11 +214,12 @@ function houseDropdownRow(uuid: string): Element {
             (() => {
                 const bound = boundImportJsonPath(uuid);
                 if (bound === null) return false;
+                const color = isCurrent ? ACCENT_SUCCESS : COLOR_TEXT_FAINT;
                 return Icon({
                     name: Icons.house,
-                    color: ACCENT_SUCCESS,
+                    color,
                     tooltip: `Bound: ${shortPath(bound)}`,
-                    tooltipColor: ACCENT_SUCCESS,
+                    tooltipColor: color,
                     style: { width: { kind: "px", value: 10 }, height: { kind: "px", value: 10 } },
                 });
             })(),
@@ -296,6 +297,14 @@ function openHouseDropdown(rect: Rect): void {
 
 function trustButton(uuid: string | null, trusted: boolean): Element {
     const enabled = uuid !== null;
+    const tooltip =
+        uuid === null
+            ? "No house selected"
+            : trusted
+              ? "This house is trusted"
+              : "Trust this house";
+    const tooltipColor =
+        uuid === null ? COLOR_TEXT_FAINT : trusted ? TRUST_ICON_ON : COLOR_TEXT_DIM;
     return Button({
         style: {
             width: { kind: "px", value: 76 },
@@ -307,6 +316,8 @@ function trustButton(uuid: string | null, trusted: boolean): Element {
             if (uuid === null) return;
             setHouseTrust(uuid, !trusted);
         },
+        tooltip,
+        tooltipColor,
         children: [
             Icon({
                 name: trusted ? Icons.shieldCheck : Icons.shield,
@@ -383,11 +394,11 @@ function houseActionButton(
     onClick: (rect: Rect) => void
 ): Element {
     return Button({
+        tooltip,
+        tooltipColor: COLOR_TEXT_DIM,
         children: [
             Icon({
                 name: icon,
-                tooltip,
-                tooltipColor: COLOR_TEXT_DIM,
                 style: { width: { kind: "px", value: 12 }, height: { kind: "px", value: 12 } },
             }),
         ],
@@ -769,10 +780,10 @@ function exportActionBar(t: HouseContentType, uuid: string, totalCount: number):
         (it) => it.uuid === uuid && it.type === t.type
     );
     const selectedCount = selected.length;
-    // "Unexported" = house items whose identity isn't already in the loaded
-    // import.json (the faint right-dot in each row). Same comparison itemRow uses.
+    // Missing = house items whose identity isn't already in the loaded
+    // import.json. Same comparison itemRow uses.
     const exportedSet = exportedIdentities(t.type);
-    const unexportedNames = t
+    const missingNames = t
         .items(uuid)
         .filter((i) => !exportedSet.has(i.name))
         .map((i) => i.name);
@@ -780,6 +791,9 @@ function exportActionBar(t: HouseContentType, uuid: string, totalCount: number):
     // destination first", so grey the export split-button to say so up front.
     // The Change button stays enabled — it's how you pick one.
     const hasDest = getExportImportJsonPath().trim() !== "";
+    const destBound = hasDest ? boundHouseUuidOf(getExportImportJsonPath()) : null;
+    const destBoundHere = destBound !== null && destBound === uuid;
+    const canBindDest = hasDest && !destBoundHere;
     return Col({
         // Right inset so the caret split-button isn't flush against the panel
         // edge (it sat right at the boundary and read as clipped).
@@ -793,20 +807,18 @@ function exportActionBar(t: HouseContentType, uuid: string, totalCount: number):
                 },
                 children: [
                     (() => {
-                        // Bound-file indicator: green house = the destination IS
-                        // this house's bound import.json; yellow = the house has
-                        // a bound file but the destination is something else.
                         const bound = boundImportJsonPath(uuid);
                         if (bound === null) return false;
                         const d = getExportImportJsonPath();
                         const matches = d.trim() !== "" && canonicalPath(d) === bound;
+                        const color = uuid === getHousingUuid() ? ACCENT_SUCCESS : COLOR_TEXT_FAINT;
                         return Icon({
                             name: Icons.house,
-                            color: matches ? ACCENT_SUCCESS : ACCENT_WARN,
+                            color,
                             tooltip: matches
                                 ? "Destination is this house's bound file"
                                 : `This house's bound file is ${shortPath(bound)}`,
-                            tooltipColor: matches ? ACCENT_SUCCESS : ACCENT_WARN,
+                            tooltipColor: color,
                             style: {
                                 width: { kind: "px", value: 10 },
                                 height: { kind: "px", value: 10 },
@@ -823,6 +835,26 @@ function exportActionBar(t: HouseContentType, uuid: string, totalCount: number):
                         style: {
                             width: { kind: "grow" },
                             padding: { side: "x", value: 4 },
+                        },
+                    }),
+                    Button({
+                        text: destBoundHere ? "Bound" : "Bind",
+                        textColor: canBindDest ? undefined : COLOR_TEXT_FAINT,
+                        style: {
+                            width: { kind: "px", value: 52 },
+                            height: { kind: "grow" },
+                            background: COLOR_BUTTON,
+                            hoverBackground: canBindDest ? COLOR_BUTTON_HOVER : COLOR_BUTTON,
+                        },
+                        tooltip: !hasDest
+                            ? "Choose a destination first"
+                            : destBoundHere
+                              ? "Destination is already bound to this house"
+                              : "Bind destination to this house",
+                        tooltipColor: canBindDest ? COLOR_TEXT_DIM : COLOR_TEXT_FAINT,
+                        onClick: () => {
+                            if (!canBindDest) return;
+                            confirmRebind(getExportImportJsonPath(), uuid);
                         },
                     }),
                     Button({
@@ -917,22 +949,31 @@ function exportActionBar(t: HouseContentType, uuid: string, totalCount: number):
                             // so it always routes through the overwrite confirm.
                             const trusted = isHouseTrusted(uuid);
                             const sourceMap = sourceImportablesByType(t.type);
-                            const differingNames = t
-                                .items(uuid)
-                                .filter(
-                                    (i) =>
-                                        houseLinkStateFor(uuid, i, sourceMap, trusted) ===
-                                        "differs-from-knowledge"
-                                )
-                                .map((i) => i.name);
+                            const unreadNames: string[] = [];
+                            const differingNames: string[] = [];
+                            for (const i of t.items(uuid)) {
+                                const state = houseLinkStateFor(uuid, i, sourceMap, trusted);
+                                if (state === "unread") unreadNames.push(i.name);
+                                if (state === "differs-from-knowledge") differingNames.push(i.name);
+                            }
                             const actions: MenuAction[] = [
                                 {
-                                    // Unexported names aren't in your file, so
+                                    // Missing names aren't in your file, so
                                     // they are not compared against Knowledge — no confirm.
-                                    label: `Export unexported (${unexportedNames.length})`,
+                                    label: `Export missing (${missingNames.length})`,
                                     onClick: () => {
-                                        if (unexportedNames.length > 0) {
-                                            exp.selected(unexportedNames, () =>
+                                        if (missingNames.length > 0) {
+                                            exp.selected(missingNames, () =>
+                                                clearExportSelection()
+                                            );
+                                        }
+                                    },
+                                },
+                                {
+                                    label: `Export unread (${unreadNames.length})`,
+                                    onClick: () => {
+                                        if (unreadNames.length > 0) {
+                                            exp.selected(unreadNames, () =>
                                                 clearExportSelection()
                                             );
                                         }

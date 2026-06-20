@@ -31,7 +31,7 @@ import { viewBody } from "./view-body";
 import { compactFileLabel, normalizeHtswPath } from "../lib/pathDisplay";
 import { composeFileMenu } from "../menus/fileMenu";
 import { viewFooter } from "./view-footer";
-import { beginTabDrag, isTabDragging, updateTabDrag } from "./tabDrag";
+import { beginTabDrag, isTabDragging, updateTabDrag, TAB_STRIP_SCROLL_ID } from "./tabDrag";
 import { canonicalPath } from "../parsing/parses";
 import {
     getQueue,
@@ -366,19 +366,37 @@ function viewTab(): Element {
     return Col({
         style: { gap: 4, width: { kind: "grow" }, height: { kind: "grow" } },
         children: [
-            Scroll({
-                id: "right-view-tab-strip",
-                axis: "x",
+            // Split into two tour anchors so the View step spotlights the
+            // reading area and the Import step spotlights the queue/Import
+            // footer — not the whole pane each time.
+            Container({
+                anchorKey: "tour:right-view",
                 style: {
-                    gap: 2,
-                    height: { kind: "px", value: TAB_H },
-                    background: TAB_STRIP_BG,
+                    direction: "col",
+                    gap: 4,
+                    width: { kind: "grow" },
+                    height: { kind: "grow" },
                 },
-                children: tabStripChildren,
+                children: [
+                    Scroll({
+                        id: TAB_STRIP_SCROLL_ID,
+                        axis: "x",
+                        style: {
+                            gap: 2,
+                            height: { kind: "px", value: TAB_H },
+                            background: TAB_STRIP_BG,
+                        },
+                        children: tabStripChildren,
+                    }),
+                    viewTabHeader(),
+                    viewBody(),
+                ],
             }),
-            viewTabHeader(),
-            viewBody(),
-            viewFooter(),
+            Container({
+                anchorKey: "tour:right-import",
+                style: { width: { kind: "grow" } },
+                children: [viewFooter()],
+            }),
         ],
     });
 }
@@ -386,12 +404,6 @@ function viewTab(): Element {
 export function RightPanel(): Element {
     return Col({
         style: { padding: 6, gap: 4, width: { kind: "grow" }, height: { kind: "grow" } },
-        children: [
-            Container({
-                anchorKey: "tour:right-body",
-                style: { width: { kind: "grow" }, height: { kind: "grow" } },
-                children: () => [viewTab()],
-            }),
-        ],
+        children: [viewTab()],
     });
 }

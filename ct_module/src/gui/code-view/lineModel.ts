@@ -8,7 +8,7 @@ import { shortPath } from "../lib/pathDisplay";
 import { FileSystemFileLoader } from "../../utils/fileLoaders";
 import { actionsToLines, parseHtslFile, type HtslLine } from "./htslParse";
 import { getParsedResult } from "../state/parsed";
-import { tokenizeHtsl, tokenizeJson, type SyntaxToken } from "../right-panel/syntax";
+import { tokenizeHtsl, tokenizeJson, tokenizeSnbt, type SyntaxToken } from "../right-panel/syntax";
 import type { FieldSpan, RenderableLine, TokenSpan } from "./lineTypes";
 import { normalizeDiagnosticSpans, type DiagnosticLineSpan } from "../../diagnostics/spans";
 import type { Importable } from "htsw/types";
@@ -396,6 +396,35 @@ function jsonRenderableLines(path: string): RenderableLine[] {
     return out;
 }
 
+const snbtCache = new Map<string, TextCacheEntry>();
+
+function snbtRenderableLines(path: string): RenderableLine[] {
+    const mtime = getMtimeMs(path);
+    const parsed = getParsedResult();
+    const parsedRef: object | null = parsed === null ? null : parsed;
+    const cached = snbtCache.get(path);
+    if (cached !== undefined && cached.mtime === mtime && cached.parsedRef === parsedRef) {
+        return cached.lines;
+    }
+
+    const lines = readPlainLines(path);
+    const diagnostics = diagnosticIndexForFile(path);
+    const out: RenderableLine[] = [];
+    for (let i = 0; i < lines.length; i++) {
+        const lineNum = i + 1;
+        const renderableLine: RenderableLine = {
+            id: `snbt:${lineNum}`,
+            lineNum,
+            depth: 0,
+            tokens: attachFieldSpans(tokenizeSnbt(lines[i]), undefined),
+        };
+        decorateLineDiagnostics(renderableLine, diagnostics.get(lineNum));
+        out.push(renderableLine);
+    }
+    snbtCache.set(path, { mtime, parsedRef, lines: out });
+    return out;
+}
+
 type ActionLineRange = {
     actionPath: string;
     startLine: number;
@@ -560,6 +589,7 @@ export function linesForFile(path: string | null): RenderableLine[] {
     const norm = path.split("\\").join("/").toLowerCase();
     if (endsWith(norm, ".htsl")) return htslRawRenderableLines(path);
     if (endsWith(norm, ".json")) return jsonRenderableLines(path);
+    if (endsWith(norm, ".snbt")) return snbtRenderableLines(path);
     return plainTextRenderableLines(path);
 }
 

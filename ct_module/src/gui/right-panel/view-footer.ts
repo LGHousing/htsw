@@ -15,6 +15,7 @@ import { clearImportableChecks } from "../state";
 import { getActiveImportLabel, getImportProgress } from "./import-tab/importProgress";
 import {
     clearQueue,
+    getQueue,
     getQueueLength,
     queueDisplayGroups,
     type QueueItem,
@@ -25,6 +26,7 @@ import {
     queueImportJsonChildren,
     queueImportJsonChildRow,
     queueRow,
+    queueWillSkipCount,
 } from "./import-tab/queueRows";
 import { importControl } from "./import-tab/importButtons";
 import { liveImporterFooterPanel } from "./import-tab/progressPanel";
@@ -73,9 +75,11 @@ export function queueSummary(): Element {
             Text({
                 text: () => {
                     const active = getActiveImportLabel();
-                    if (active !== null) return `Queue (${getQueueLength()}) · Now: ${active}`;
                     const n = getQueueLength();
-                    return n === 0 ? "Queue (empty)" : `Queue (${n})`;
+                    const skipped = queueWillSkipCount(getQueue());
+                    const skipText = skipped === 0 ? "" : ` · ${skipped} skip`;
+                    if (active !== null) return `Queue (${n}${skipText}) · Now: ${active}`;
+                    return n === 0 ? "Queue (empty)" : `Queue (${n}${skipText})`;
                 },
                 color: COLOR_TEXT,
                 truncate: true,

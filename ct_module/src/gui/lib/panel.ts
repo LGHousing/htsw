@@ -1,8 +1,9 @@
 /// <reference types="../../../CTAutocomplete" />
 
-import { Element, Rect, layoutElement, pointInRect } from "./layout";
+import { Element, LaidOut, Rect, layoutElement, pointInRect } from "./layout";
 import { Extractable, extract } from "./extractable";
-import { renderElement, dispatchClick } from "./render";
+import { drawLaid, dispatchClick } from "./render";
+import { getGuiRevision, markGuiDirty, GUI_REBUILD_BACKSTOP_MS } from "./dirty";
 import { warmIconTextures } from "./images";
 import { debugLogError } from "./debugLog";
 import { tryDispatchPopoverClick, popoverIsOpen, mouseIsOverPopover } from "./popovers";
@@ -128,6 +129,12 @@ export class Panel {
     private paintBackground: boolean;
     private renderTrigger: Trigger | null;
     private clickTrigger: Trigger | null;
+    // Retained layout: the laid-out tree from the last rebuild, reused on frames
+    // where nothing structural changed. See lib/dirty for when we rebuild.
+    private cachedLaid: LaidOut[] | null;
+    private builtRevision: number;
+    private builtAt: number;
+    private builtBounds: Rect | null;
 
     constructor(
         bounds: Extractable<Rect>,
@@ -141,10 +148,25 @@ export class Panel {
         this.paintBackground = paintBackground;
         this.renderTrigger = null;
         this.clickTrigger = null;
+        this.cachedLaid = null;
+        this.builtRevision = -1;
+        this.builtAt = 0;
+        this.builtBounds = null;
     }
 
     public setRoot(root: Element): void {
         this.root = root;
+        this.cachedLaid = null;
+    }
+
+    private needsRebuild(b: Rect): boolean {
+        if (this.cachedLaid === null) return true;
+        if (getGuiRevision() !== this.builtRevision) return true;
+        if (Date.now() - this.builtAt >= GUI_REBUILD_BACKSTOP_MS) return true;
+        const pb = this.builtBounds;
+        return (
+            pb === null || pb.x !== b.x || pb.y !== b.y || pb.w !== b.w || pb.h !== b.h
+        );
     }
     public setBounds(bounds: Extractable<Rect>): void {
         this.bounds = bounds;
@@ -177,7 +199,13 @@ export class Panel {
             // actually over a popover (in which case the popover absorbs the click).
             const interactive = !mouseIsOverPopover(x, y) && !mouseIsOverHoverCard(x, y);
             try {
-                renderElement(this.root, b.x, b.y, b.w, b.h, x, y, interactive);
+                if (this.needsRebuild(b)) {
+                    this.cachedLaid = layoutElement(this.root, b.x, b.y, b.w, b.h);
+                    this.builtRevision = getGuiRevision();
+                    this.builtAt = Date.now();
+                    this.builtBounds = b;
+                }
+                drawLaid(this.cachedLaid as LaidOut[], this.root, x, y, interactive);
             } catch (err) {
                 debugLogError("panel render", err);
             }
@@ -203,6 +231,9 @@ export class Panel {
                 event: CancellableEvent
             ) => {
                 if (event.isCanceled()) return;
+                // A click can change anything the tree shows — rebuild next paint
+                // rather than wait for the dirty backstop.
+                markGuiDirty();
                 const x = mcToOverlay(rawX);
                 const y = mcToOverlay(rawY);
                 // Popover takes priority. Only one panel should actually run the popover dispatch

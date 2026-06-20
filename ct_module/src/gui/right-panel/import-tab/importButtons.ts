@@ -121,7 +121,8 @@ function destinationRow(path: string, boundPath: string | null): Element {
             Text({
                 text: compactFileLabel(path),
                 color: bound ? ACCENT_SUCCESS : COLOR_TEXT,
-                style: { width: { kind: "px", value: 96 } },
+                truncate: true,
+                style: { width: { kind: "grow" } },
             }),
             Text({
                 text: shortPath(path),

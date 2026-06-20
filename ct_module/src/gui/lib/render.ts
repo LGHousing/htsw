@@ -29,7 +29,6 @@ const COLOR_SCROLLBAR_TRACK = 0x40000000 | 0;
 const COLOR_SCROLLBAR_THUMB = 0xff888888 | 0;
 const COLOR_SCROLLBAR_THUMB_HOVER = 0xffaaaaaa | 0;
 const COLOR_HORIZONTAL_SCROLL_EDGE_ACCENT = 0x9067a7e8 | 0;
-const HORIZONTAL_SCROLL_EDGE_TICK_H = 2;
 
 const LINE_H = 8;
 
@@ -96,8 +95,26 @@ export function renderElement(
     mouseY: number,
     interactive: boolean
 ): LaidOut[] {
-    queuedTooltip = null;
     const laid = layoutElement(root, x, y, w, h);
+    drawLaid(laid, root, mouseX, mouseY, interactive);
+    return laid;
+}
+
+/**
+ * Paint an already-laid-out tree. Split out from `renderElement` so panels can
+ * cache the layout and re-issue only the draw on frames where nothing
+ * structural changed (see `lib/dirty`). Hover, click-flash, tooltips and every
+ * value/color closure resolve here from the live mouse + element refs, so they
+ * stay correct even when the layout is reused across frames.
+ */
+export function drawLaid(
+    laid: LaidOut[],
+    root: Element,
+    mouseX: number,
+    mouseY: number,
+    interactive: boolean
+): void {
+    queuedTooltip = null;
 
     // A click here would be intercepted by the scrollbar thumb (it starts a drag) — suppress hover
     // on items underneath so visual feedback matches click propagation. Anywhere the click would
@@ -124,8 +141,6 @@ export function renderElement(
         deferredTooltip = queuedTooltip;
         queuedTooltip = null;
     }
-
-    return laid;
 }
 
 function drawTooltip(t: QueuedTooltip): void {
@@ -152,6 +167,19 @@ function drawTooltip(t: QueuedTooltip): void {
         t.color,
         false
     );
+}
+
+function queueTooltip(
+    tooltip: string,
+    tooltipColor: number | undefined,
+    anchor: Rect
+): void {
+    if (tooltip.length === 0) return;
+    queuedTooltip = {
+        text: tooltip,
+        color: tooltipColor !== undefined ? tooltipColor : 0xffffffff | 0,
+        anchor,
+    };
 }
 
 // Returns the rect at (mx,my) that would intercept a click before it reaches normal element
@@ -232,6 +260,13 @@ function renderItem(
             }
         }
         if (hovered && e.onHover) e.onHover(r, mouseX, mouseY);
+        if (hovered && e.tooltip !== undefined) {
+            queueTooltip(
+                extract(e.tooltip),
+                e.tooltipColor !== undefined ? extract(e.tooltipColor) : undefined,
+                r
+            );
+        }
     } else if (e.kind === "text") {
         const raw = extract(e.text);
         const text = e.truncate ? truncateToWidth(raw, r.w) : raw;
@@ -255,11 +290,11 @@ function renderItem(
             }
         }
         if (hovered && e.tooltip !== undefined) {
-            const tt = extract(e.tooltip);
-            if (tt.length > 0) {
-                const tc = e.tooltipColor !== undefined ? extract(e.tooltipColor) : 0xffffffff | 0;
-                queuedTooltip = { text: tt, color: tc, anchor: r };
-            }
+            queueTooltip(
+                extract(e.tooltip),
+                e.tooltipColor !== undefined ? extract(e.tooltipColor) : undefined,
+                r
+            );
         }
     } else if (e.kind === "input") {
         const focused = isInputFocused(e.id);
@@ -334,11 +369,11 @@ function renderItem(
             }
         }
         if (hovered && e.tooltip !== undefined) {
-            const tt = extract(e.tooltip);
-            if (tt.length > 0) {
-                const tc = e.tooltipColor !== undefined ? extract(e.tooltipColor) : 0xffffffff | 0;
-                queuedTooltip = { text: tt, color: tc, anchor: r };
-            }
+            queueTooltip(
+                extract(e.tooltip),
+                e.tooltipColor !== undefined ? extract(e.tooltipColor) : undefined,
+                r
+            );
         }
     } else if (e.kind === "mcItem") {
         renderMcItem(e.item, e.count, r.x, r.y);
@@ -370,22 +405,15 @@ function renderHorizontalScrollEdges(id: string): void {
     const maxOffset = Math.max(0, s.contentLength - v.w);
     if (maxOffset <= 0) return;
     if (s.offset > 0) {
-        renderHorizontalScrollEdgeTick(v.x, v);
+        renderHorizontalScrollEdgeLine(v.x, v);
     }
     if (s.offset < maxOffset) {
-        renderHorizontalScrollEdgeTick(v.x + v.w - 1, v);
+        renderHorizontalScrollEdgeLine(v.x + v.w - 1, v);
     }
 }
 
-function renderHorizontalScrollEdgeTick(x: number, v: Rect): void {
-    Renderer.drawRect(COLOR_HORIZONTAL_SCROLL_EDGE_ACCENT, x, v.y, 1, HORIZONTAL_SCROLL_EDGE_TICK_H);
-    Renderer.drawRect(
-        COLOR_HORIZONTAL_SCROLL_EDGE_ACCENT,
-        x,
-        v.y + v.h - HORIZONTAL_SCROLL_EDGE_TICK_H,
-        1,
-        HORIZONTAL_SCROLL_EDGE_TICK_H
-    );
+function renderHorizontalScrollEdgeLine(x: number, v: Rect): void {
+    Renderer.drawRect(COLOR_HORIZONTAL_SCROLL_EDGE_ACCENT, x, v.y, 1, v.h);
 }
 // Returns "consumed" if a clickable was hit, "miss" otherwise.
 // Also handles input focusing and scrollbar drag start. `button` is the LWJGL mouse button
@@ -540,9 +568,13 @@ export function dispatchWheel(
         if (item.element.locked !== undefined && extract(item.element.locked)) return true;
         const mainView = s.axis === "x" ? s.viewportRect.w : s.viewportRect.h;
         if (s.contentLength <= mainView) return true;
+        // Cap the per-notch step to half the viewport so a short scroll area
+        // (e.g. the chat scrollback) doesn't jump more than its visible height
+        // per notch; tall panels keep the full step.
+        const step = Math.min(WHEEL_SCROLL_STEP, Math.max(16, mainView * 0.5));
         s.offset = Math.max(
             0,
-            Math.min(s.contentLength - mainView, s.offset - delta * WHEEL_SCROLL_STEP)
+            Math.min(s.contentLength - mainView, s.offset - delta * step)
         );
         markUserScroll(item.element.id);
         return true;

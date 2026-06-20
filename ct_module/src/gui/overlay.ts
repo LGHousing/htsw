@@ -32,7 +32,7 @@ import { getContainerBounds, getFullscreenPanelRect } from "./lib/bounds";
 import { tickReparse } from "./parsing/reparse";
 import { processPendingParses } from "./parsing/parses";
 import { autoTrackRefresh } from "./autoTrack";
-import { CHAT_INPUT_ID } from "./chat-input";
+import { CHAT_INPUT_ID } from "./chat";
 import {
     initPopoverRendering,
     popoverIsOpen,
