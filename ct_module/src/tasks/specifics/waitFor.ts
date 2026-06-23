@@ -1,4 +1,10 @@
-import { S2DPacketOpenWindow, S30PacketWindowItems } from "../../utils/packets";
+import {
+    C10PacketCreativeInventoryAction,
+    S2DPacketOpenWindow,
+    S2FPacketSetSlot,
+    S30PacketWindowItems,
+} from "../../utils/packets";
+import { recordImportDiagnostic } from "../../diagnostics/importDiagnosticsBuffer";
 
 type Packet = MCPacket<MCINetHandler>;
 
@@ -67,6 +73,96 @@ function maybeUpdateWindowID(packet: Packet) {
         windowID;
 }
 
+function packetClassName(packet: Packet): string {
+    try {
+        const name = packet.getClass().getName();
+        return String(name).substring(String(name).lastIndexOf(".") + 1);
+    } catch (_e) {
+        return String(packet);
+    }
+}
+
+function stackName(stack: unknown): string | null {
+    if (stack === null || stack === undefined) return null;
+    try {
+        return String((stack as { func_82833_r(): string }).func_82833_r());
+    } catch (_e) {
+        return "<stack>";
+    }
+}
+
+function packetSlot(packet: unknown): number | null {
+    try {
+        return (packet as { func_149173_d(): number }).func_149173_d();
+    } catch (_e) {
+        return null;
+    }
+}
+
+function packetWindow(packet: unknown): number | null {
+    try {
+        return (packet as { func_149175_c(): number }).func_149175_c();
+    } catch (_e) {
+        return null;
+    }
+}
+
+function packetStack(packet: unknown): string | null {
+    try {
+        return stackName((packet as { func_149174_e(): unknown }).func_149174_e());
+    } catch (_e) {
+        return null;
+    }
+}
+
+function creativePacketSlot(packet: unknown): number | null {
+    try {
+        return (packet as { func_149627_c(): number }).func_149627_c();
+    } catch (_e) {
+        return null;
+    }
+}
+
+function creativePacketStack(packet: unknown): string | null {
+    try {
+        return stackName((packet as { func_149625_d(): unknown }).func_149625_d());
+    } catch (_e) {
+        return null;
+    }
+}
+
+function recordPacket(direction: "received" | "sent", packet: Packet): void {
+    if (packet instanceof S2DPacketOpenWindow) {
+        recordImportDiagnostic("packet", {
+            direction,
+            packet: packetClassName(packet),
+            windowId: s2dOpenWindowId(packet),
+            title: s2dOpenTitle(packet),
+        });
+    } else if (packet instanceof S30PacketWindowItems) {
+        recordImportDiagnostic("packet", {
+            direction,
+            packet: packetClassName(packet),
+            windowId: packet.func_148911_c(),
+        });
+    } else if (packet instanceof S2FPacketSetSlot) {
+        recordImportDiagnostic("packet", {
+            direction,
+            packet: packetClassName(packet),
+            windowId: packetWindow(packet),
+            slot: packetSlot(packet),
+            stack: packetStack(packet),
+        });
+    } else if (packet instanceof C10PacketCreativeInventoryAction) {
+        recordImportDiagnostic("packet", {
+            direction,
+            packet: packetClassName(packet),
+            slot: creativePacketSlot(packet),
+            stack: creativePacketStack(packet),
+        });
+    }
+}
+
 // Ring buffer of the most recent server window-opens, recorded for EVERY packet
 // regardless of whether a waiter is active. When `waitForMenu` times out having
 // never seen its window's S2D, this answers the only question that matters: did
@@ -122,12 +218,14 @@ export function describeRecentWindowOpens(): string {
 }
 
 register("packetReceived", (packet) => {
+    recordPacket("received", packet);
     maybeResolve("packetReceived", packet);
     maybeUpdateWindowID(packet);
     recordWindowOpen(packet);
 });
 
 register("packetSent", (packet) => {
+    recordPacket("sent", packet);
     maybeResolve("packetSent", packet);
 });
 

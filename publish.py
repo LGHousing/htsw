@@ -1,4 +1,4 @@
-"""Build HTSW release artifacts.
+"""Build and publish HTSW autoupdate artifacts to legendarygames.dev.
 
 Produces, under dist-publish/:
   ct/htsw-ct-<version>.zip      full CT module payload (dist/* + metadata.json)
@@ -6,9 +6,16 @@ Produces, under dist-publish/:
   vscode/htsw-plus-plus-<v>.vsix
   vscode/latest.json            {version, vsix, sha256}
 
+Then uploads them to the nginx-served root on the box (via the `lg-website`
+SSH alias), staging through the opc home dir because /var/www/htsw is owned by
+nginx and needs sudo to write. nginx serves /var/www/htsw at
+https://legendarygames.dev/htsw/ via the `location ^~ /htsw/` block in
+/etc/nginx/conf.d/legendarygames.dev.conf.
+
 Usage:
-  python publish.py                 # build both and stage artifacts locally
+  python publish.py                 # build both, then upload
   python publish.py --no-build      # reuse existing builds
+  python publish.py --no-upload     # build + stage locally only
   python publish.py --ct-only
   python publish.py --vscode-only
 """
@@ -28,6 +35,11 @@ HERE = Path(__file__).resolve().parent
 CT_DIR = HERE / "ct_module"
 VSCODE_DIR = HERE / "editors" / "code"
 OUT_DIR = HERE / "dist-publish"
+
+SSH_HOST = "lg-website"
+REMOTE_STAGING = "~/htsw-publish-staging"
+REMOTE_WEB_ROOT = "/var/www/htsw"
+NGINX_USER = "nginx"
 
 IS_WINDOWS = sys.platform == "win32"
 
@@ -109,9 +121,35 @@ def build_vscode(do_build: bool) -> tuple[Path, str]:
     return out, version
 
 
+def upload(targets: list[str]) -> None:
+    # targets is a subset of {"ct", "vscode"}.
+    mk = " ".join(f"{REMOTE_STAGING}/{t}" for t in targets)
+    run(["ssh", SSH_HOST, f"mkdir -p {mk}"], HERE)
+
+    for t in targets:
+        local = OUT_DIR / t
+        # scp each file in the category to its staging subdir.
+        files = [str(p) for p in local.iterdir() if p.is_file()]
+        run(["scp", *files, f"{SSH_HOST}:{REMOTE_STAGING}/{t}/"], HERE)
+
+    copies = " && ".join(
+        f"sudo mkdir -p {REMOTE_WEB_ROOT}/{t} && sudo cp -f {REMOTE_STAGING}/{t}/* {REMOTE_WEB_ROOT}/{t}/"
+        for t in targets
+    )
+    remote = (
+        f"{copies} && "
+        f"sudo chown -R {NGINX_USER}:{NGINX_USER} {REMOTE_WEB_ROOT} && "
+        f"(sudo chcon -R -t httpd_sys_content_t {REMOTE_WEB_ROOT} 2>/dev/null || true) && "
+        f"rm -rf {REMOTE_STAGING}"
+    )
+    run(["ssh", SSH_HOST, remote], HERE)
+    print(f"[publish] Uploaded {', '.join(targets)} to {SSH_HOST}:{REMOTE_WEB_ROOT}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--no-build", action="store_true", help="reuse existing builds")
+    parser.add_argument("--no-upload", action="store_true", help="stage locally, do not upload")
     parser.add_argument("--ct-only", action="store_true")
     parser.add_argument("--vscode-only", action="store_true")
     args = parser.parse_args()
@@ -120,12 +158,20 @@ def main() -> None:
     do_vscode = not args.ct_only
     do_build = not args.no_build
 
+    targets: list[str] = []
     if do_ct:
         build_ct(do_build)
+        targets.append("ct")
     if do_vscode:
         build_vscode(do_build)
+        targets.append("vscode")
 
-    print(f"[publish] Artifacts staged in {OUT_DIR}")
+    if args.no_upload:
+        print(f"[publish] Skipped upload. Artifacts staged in {OUT_DIR}")
+        return
+
+    upload(targets)
+    print("[publish] Done.")
 
 
 if __name__ == "__main__":

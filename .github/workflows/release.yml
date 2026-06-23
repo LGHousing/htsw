@@ -42,7 +42,7 @@ jobs:
         run: npm run build --workspace language
 
       - name: Stage release artifacts
-        run: python publish.py
+        run: python publish.py --no-upload
 
       - name: Prepare GitHub release assets
         run: |

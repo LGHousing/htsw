@@ -1,8 +1,8 @@
 /// <reference types="../../CTAutocomplete" />
 
 export const MODULE_DIR = "./config/ChatTriggers/modules/HTSW";
-const BASE_URL = "https://github.com/LGHousing/htsw/releases/latest/download";
-const MANIFEST_URL = BASE_URL + "/htsw-ct-latest.json";
+const BASE_URL = "https://legendarygames.dev/htsw/ct";
+const MANIFEST_URL = BASE_URL + "/latest.json";
 const USER_AGENT = "HTSW-CT-Updater";
 
 type Manifest = { version: string; zip: string; sha256: string };

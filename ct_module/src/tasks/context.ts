@@ -9,6 +9,7 @@ import {
 } from "./specifics/slots";
 import { waitFor, type WaitForPromise } from "./specifics/waitFor";
 import { C01PacketChatMessage } from "../utils/packets";
+import { recordImportDiagnostic } from "../diagnostics/importDiagnosticsBuffer";
 
 /**
  * Hypixel accepts chat payloads up to 256 chars, but MC 1.8.9's
@@ -134,6 +135,7 @@ export default class TaskContext {
         await this.awaitCommandCooldown();
         await this.awaitChatBudget();
         ChatLib.say(command);
+        recordImportDiagnostic("command", { command });
         this.lastCommandAt = Date.now();
     }
 
@@ -155,6 +157,7 @@ export default class TaskContext {
         messageField.setAccessible(true);
         messageField.set(packet, capped);
         Client.sendPacket(packet);
+        recordImportDiagnostic("chatInput", { length: capped.length });
     }
 
     public displayMessage(message: string) {

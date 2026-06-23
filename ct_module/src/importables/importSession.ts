@@ -34,6 +34,7 @@ import {
     estimateImportableUnits,
     setupUnitsForImportable,
 } from "../housingSync/progress/costs";
+import { writeImportFailureLog } from "../diagnostics/importFailureLog";
 
 export type ImportSelection = {
     importables: Importable[];
@@ -196,6 +197,14 @@ export async function importSelectedImportables(
             const diag = toImportDiagnostic(error, "read", row.importable.type);
             events?.emit({ kind: "importableFinished", key: row.key, status: "failed", error: diag.message });
             printDiagnostic(sm, diag);
+            const logPath = writeImportFailureLog({
+                phase: "pre-read",
+                sourcePath: selection.sourcePath,
+                housingUuid: selection.housingUuid,
+                importableType: row.importable.type,
+                identity: row.identity,
+                rowIndex: row.rowIndex,
+            }, error);
             if (isImportTraceEnabled()) {
                 const stack = error as { stack?: string; rhinoException?: { getScriptStackTrace?: () => string } };
                 const trace = stack.rhinoException?.getScriptStackTrace?.() ?? stack.stack;
@@ -204,6 +213,7 @@ export async function importSelectedImportables(
             ctx.displayMessage(
                 `&c[htsw] Import aborted during pre-read of ${row.importable.type} ${row.identity}; no changes applied.`
             );
+            ctx.displayMessage(`&7[htsw] Wrote failure log: &f${logPath}`);
             events?.emit({ kind: "sessionFinished" });
             return;
         }
@@ -236,9 +246,18 @@ export async function importSelectedImportables(
             const diag = toImportDiagnostic(error, "import", row.importable.type);
             events?.emit({ kind: "importableFinished", key: row.key, status: "failed", error: diag.message });
             printDiagnostic(sm, diag);
+            const logPath = writeImportFailureLog({
+                phase: "apply",
+                sourcePath: selection.sourcePath,
+                housingUuid: selection.housingUuid,
+                importableType: row.importable.type,
+                identity: row.identity,
+                rowIndex: row.rowIndex,
+            }, error);
             ctx.displayMessage(
                 `&c[htsw] Import aborted after failure on ${row.importable.type} ${row.identity}`
             );
+            ctx.displayMessage(`&7[htsw] Wrote failure log: &f${logPath}`);
             break;
         }
     }

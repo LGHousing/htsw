@@ -171,6 +171,9 @@ export function getItemFromNbt(nbt: Tag): Item {
 
     // @ts-expect-error CTAutocomplete omits ItemStack.loadItemStackFromNBT.
     const itemStack = ItemStack.func_77949_a(/*loadItemStackFromNBT*/ mcTag);
+    if (itemStack === null || itemStack === undefined) {
+        throw new Error(`Cannot create item from NBT id '${itemIdForError(nbt)}'`);
+    }
 
     return new Item(itemStack);
 }
@@ -185,6 +188,9 @@ export function getItemFromSnbt(snbt: string): Item {
     const compound = JsonToNBT.func_180713_a(/*parseStringIntoCompound*/ snbt);
     // @ts-expect-error CTAutocomplete omits ItemStack.loadItemStackFromNBT.
     const itemStack = ItemStack.func_77949_a(/*loadItemStackFromNBT*/ compound);
+    if (itemStack === null || itemStack === undefined) {
+        throw new Error("Cannot create item from SNBT");
+    }
     return new Item(itemStack);
 }
 
@@ -226,6 +232,11 @@ function normalizeItemNbtColorCodes(tag: Tag): Tag {
     }
 
     return normalized;
+}
+
+function itemIdForError(tag: Tag): string {
+    const id = getNestedString(tag, ["id"]);
+    return id === undefined ? "<missing>" : id;
 }
 
 function normalizeFormattingStringTags(tag: Tag): Tag {

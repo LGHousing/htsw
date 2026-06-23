@@ -5,8 +5,8 @@ import { createWriteStream, promises as fs } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-const BASE_URL = "https://github.com/LGHousing/htsw/releases/latest/download";
-const MANIFEST_URL = `${BASE_URL}/htsw-vscode-latest.json`;
+const BASE_URL = "https://legendarygames.dev/htsw/vscode";
+const MANIFEST_URL = `${BASE_URL}/latest.json`;
 const REQUEST_TIMEOUT_MS = 30000;
 const MAX_REDIRECTS = 5;
 

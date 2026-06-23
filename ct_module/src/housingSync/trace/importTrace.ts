@@ -2,6 +2,7 @@
 
 import type { ImportEvent } from "../importEvents";
 import { createJsonlTrace } from "../../trace/jsonl";
+import { recordImportDiagnostic } from "../../diagnostics/importDiagnosticsBuffer";
 
 const importTrace = createJsonlTrace("./htsw/import-trace.jsonl");
 
@@ -26,6 +27,7 @@ export function isImportTraceEnabled(): boolean {
  * `isImportTraceEnabled()`.
  */
 export function traceNote(category: string, message: string): void {
+    recordImportDiagnostic("note", { category, message });
     if (!importTrace.isEnabled()) return;
     importTrace.write({ kind: "note", category, message });
 }
@@ -34,11 +36,19 @@ export function traceMenuWait(
     stage: "start" | "openWindow" | "windowItems" | "ready" | "failure",
     details: Record<string, unknown>
 ): void {
+    recordImportDiagnostic("menuWait", { stage, ...details });
     if (!importTrace.isEnabled()) return;
     importTrace.write({ kind: "menuWait", stage, ...details });
 }
 
 export function traceImportEvent(event: ImportEvent): void {
+    recordImportDiagnostic("importEvent", {
+        event: event.kind,
+        key: "key" in event ? event.key : undefined,
+        status: "status" in event ? event.status : undefined,
+        error: "error" in event ? event.error : undefined,
+        path: "path" in event ? event.path : undefined,
+    });
     if (!importTrace.isEnabled()) return;
     switch (event.kind) {
         case "importableStarted":
