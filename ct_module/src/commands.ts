@@ -1,5 +1,4 @@
 import {
-    VERSION,
     SourceMap,
     parseActionsResult,
     parseImportablesResult,
@@ -15,7 +14,7 @@ import { printDiagnostic, printDiagnostics } from "./tui/diagnostics";
 import { recompile } from "./recompile";
 import { TaskManager } from "./tasks/manager";
 import { FileSystemFileLoader } from "./utils/fileLoaders";
-import { commandUpdate } from "./autoUpdate";
+import { commandUpdate, readLocalVersion } from "./autoUpdate";
 import { toggleHtswGui } from "./gui/overlay";
 import {
     getTimingStats,
@@ -99,6 +98,12 @@ const HTSW_SUBCOMMANDS: HtswSubcommand[] = [
         summary: "Check for module updates",
         run: commandUpdate,
         usage: "update [check]",
+    },
+    {
+        name: "version",
+        summary: "Show the installed module version",
+        run: commandVersion,
+        aliases: ["ver"],
     },
     {
         name: "recompile",
@@ -212,7 +217,7 @@ function findHtswSubcommand(name: string): HtswSubcommand | null {
 
 function printHtswHelp(): void {
     ChatLib.chat(`&7${chatSeparator()}`);
-    const title = `&e&lHTSW &f&l${VERSION}`;
+    const title = `&e&lHTSW &f&l${moduleVersion()}`;
     ChatLib.chat(`${ChatLib.getCenteredText(title)}`);
     const subtitle = `&fCreated by @sndyx, @j_sse, and @callanftw`;
     ChatLib.chat(`${ChatLib.getCenteredText(subtitle)}`);
@@ -240,6 +245,21 @@ function commandTrace(args: string[]): void {
 function commandGui(): void {
     const nowEnabled = toggleHtswGui();
     ChatLib.chat(`&e[htsw] gui ${nowEnabled ? "&aenabled" : "&cdisabled"}`);
+}
+
+function moduleVersion(): string {
+    const v = readLocalVersion();
+    return v !== null ? `v${v}` : "v?";
+}
+
+function commandVersion(): void {
+    const v = readLocalVersion();
+    if (v === null) {
+        ChatLib.chat("&c[htsw] Couldn't read the installed version (metadata.json).");
+        return;
+    }
+    ChatLib.chat(`&e&lHTSW &fv${v}`);
+    ChatLib.chat("&7Run &f/htsw update&7 to check for a newer version.");
 }
 
 function commandWaiters(): void {
@@ -529,7 +549,7 @@ function dumpEtaToFile(): void {
 function commandImport(args: string[]) {
     if (args.length === 0) {
         ChatLib.chat(`&7${chatSeparator()}`);
-        const title = `&e&lHTSW &fImporter &f&l${VERSION}`;
+        const title = `&e&lHTSW &fImporter &f&l${moduleVersion()}`;
         ChatLib.chat(`${ChatLib.getCenteredText(title)}`);
         ChatLib.chat("");
         ChatLib.chat("&f/import <import.json|actions.htsl>");
@@ -645,7 +665,7 @@ function startRawHtslImport(path: string): void {
 function commandSimulator(args: string[]) {
     if (args.length === 0) {
         ChatLib.chat(`&7${chatSeparator()}`);
-        const title = `&e&lHTSW &fSimulator Runtime &f&l${VERSION}`;
+        const title = `&e&lHTSW &fSimulator Runtime &f&l${moduleVersion()}`;
         ChatLib.chat(`${ChatLib.getCenteredText(title)}`);
         ChatLib.chat("");
         ChatLib.chat("&f/simulator [start [path] | restart | stop ]");

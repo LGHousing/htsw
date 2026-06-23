@@ -130,7 +130,7 @@ function reportUpdateFailure(options: UpdateOptions, reason: string): void {
     }
 }
 
-function readLocalVersion(): string | null {
+export function readLocalVersion(): string | null {
     try {
         const raw = String(FileLib.read(MODULE_DIR + "/metadata.json") || "");
         if (raw.length === 0) return null;
