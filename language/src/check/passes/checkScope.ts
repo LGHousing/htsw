@@ -102,11 +102,6 @@ export function checkActionContext(gcx: GlobalCtxt) {
             checkAll(gcx, checkActionInRegion, importable.onEnterActions ?? [], { container: "regions" });
             checkAll(gcx, checkActionInRegion, importable.onExitActions ?? [], { container: "regions" });
         }
-
-        else if (importable.type === "NPC") {
-            checkAll(gcx, checkActionInNpc, importable.leftClickActions ?? [], { container: "npcs" });
-            checkAll(gcx, checkActionInNpc, importable.rightClickActions ?? [], { container: "npcs" });
-        }
     }
 }
 
@@ -206,14 +201,6 @@ function checkActionInMenu(gcx: GlobalCtxt, action: Action, scope: ActionScope) 
     checkNotCancelEvent(gcx, action, "menus");
     checkConditionScopes(gcx, action, undefined);
     checkNotItemOnly(gcx, action, "menus");
-    checkExitScope(gcx, action, scope);
-}
-
-function checkActionInNpc(gcx: GlobalCtxt, action: Action, scope: ActionScope) {
-    checkNestedScope(gcx, action, scope);
-    checkNotCancelEvent(gcx, action, "npcs");
-    checkConditionScopes(gcx, action, undefined);
-    checkNotMenuOnly(gcx, action, "npcs");
     checkExitScope(gcx, action, scope);
 }
 

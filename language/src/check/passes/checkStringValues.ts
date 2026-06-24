@@ -36,9 +36,6 @@ export function checkStringValues(gcx: GlobalCtxt) {
         } else if (importable.type === "REGION") {
             checkActions(gcx, importable.onEnterActions ?? []);
             checkActions(gcx, importable.onExitActions ?? []);
-        } else if (importable.type === "NPC") {
-            checkActions(gcx, importable.leftClickActions ?? []);
-            checkActions(gcx, importable.rightClickActions ?? []);
         }
     }
 }

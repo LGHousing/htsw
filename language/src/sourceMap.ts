@@ -150,6 +150,13 @@ export class SourceMap {
         this.sourceFiles.push(file);
     }
 
+    hasFile(path: string): boolean {
+        for (const file of this.sourceFiles) {
+            if (file.path === path) return true;
+        }
+        return false;
+    }
+
     getFile(path: string): SourceFile {
         for (const file of this.sourceFiles) {
             if (file.path === path) return file;

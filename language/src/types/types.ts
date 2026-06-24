@@ -1,4 +1,5 @@
 import {
+    COLORS,
     COMPARISONS,
     DAMAGE_CAUSES,
     ENCHANTMENTS,
@@ -49,6 +50,8 @@ export type InventorySlot = (typeof INVENTORY_SLOTS)[number] | number; // -1 to 
 export type ItemProperty = (typeof ITEM_PROPERTIES)[number];
 export type ItemLocation = (typeof ITEM_LOCATIONS)[number];
 export type ItemAmount = (typeof ITEM_AMOUNTS)[number];
+
+export type Color = (typeof COLORS)[number];
 
 export type Location =
     | { type: "House Spawn Location" }

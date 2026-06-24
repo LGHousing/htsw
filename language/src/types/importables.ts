@@ -1,16 +1,10 @@
 import type { Tag } from "../nbt";
 import type { Action } from "./actions";
-import type { Bounds, Event, MenuSlot } from "./types";
+import type { Bounds, Color, Event, MenuSlot, Permission } from "./types";
 
 export type ImportableFunction = {
     type: "FUNCTION";
     name: string;
-    /**
-     * Optional so an import.json entry can carry just an icon/repeatTicks
-     * without an `.htsl` reference. When omitted the importer leaves the
-     * live function's action list untouched (it does NOT sync against an
-     * empty list, which would wipe it) — see functions/import.ts.
-     */
     actions?: Action[];
     repeatTicks?: number;
     icon?: FunctionIcon;
@@ -33,11 +27,6 @@ export type ImportableRegion = {
 export type ImportableMenu = {
     type: "MENU";
     name: string;
-    /**
-     * Number of LINES (1..6). Total slot count = size * 9.
-     * Optional — when omitted the importer leaves the menu's existing
-     * size untouched (and on creation Housing's default applies).
-     */
     size?: number;
     slots: MenuSlot[];
 };
@@ -56,26 +45,26 @@ export type ImportableEvent = {
     actions: Action[];
 }
 
-export type NpcSkin = "Steve" | "Alex" | "Players Skin";
-
-export type NpcEquipment = {
-    helmet?: string;
-    chestplate?: string;
-    leggings?: string;
-    boots?: string;
-    hand?: string;
+export type ImportableTeam = {
+    type: "TEAM",
+    name: string,
+    tag?: string,
+    color?: Color,
+    friendlyFire?: boolean,
 };
 
-export type ImportableNpc = {
-    type: "NPC";
-    name: string;
-    pos: { x: number; y: number; z: number };
-    leftClickActions?: Action[];
-    rightClickActions?: Action[];
-    lookAtPlayers?: boolean;
-    hideNameTag?: boolean;
-    skin?: NpcSkin;
-    equipment?: NpcEquipment;
+export type ImportableGroup = {
+    type: "GROUP",
+    name: string,
+    tag?: string,
+    color?: Color,
+    priority?: number,
+    permissions?: Record<Permission, boolean>,
+};
+
+export type ImportableHouseName = {
+    type: "HOUSE_NAME",
+    name: string,
 };
 
 export type Importable =
@@ -84,4 +73,6 @@ export type Importable =
     | ImportableMenu
     | ImportableItem
     | ImportableEvent
-    | ImportableNpc;
+    | ImportableTeam
+    | ImportableGroup
+    | ImportableHouseName;

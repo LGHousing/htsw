@@ -1,289 +1,70 @@
 import * as json from "jsonc-parser";
-
-import type { GlobalCtxt } from "../../context";
-import { Diagnostic } from "../../diagnostic";
 import { Span } from "../../span";
-import type { Bounds, Pos } from "../../types";
-import { definition, type ObjectSchemaSpec } from "../schemaSpec";
+import { Diagnostic } from "../../diagnostic";
+import type { Parser } from "./parser";
 
-export function nodeSpan(node: json.Node): Span {
-    return new Span(node.offset, node.offset + node.length);
+export function nodeSpan(node: json.Node, startPos: number): Span {
+    return new Span(startPos + node.offset, startPos + node.offset + node.length);
 }
 
-export function setSpan<T extends object>(gcx: GlobalCtxt, value: T, node: json.Node): void {
-    gcx.spans.set(value, nodeSpan(node));
+export function getFileName(path: string): string {
+    const lastSlash = Math.max(
+        path.lastIndexOf("/"),
+        path.lastIndexOf("\\")
+    );
+    return path.slice(lastSlash + 1);
 }
 
-export function setFieldSpan<T extends object>(
-    gcx: GlobalCtxt,
-    owner: T,
-    key: keyof T,
-    node: json.Node,
-): void {
-    gcx.spans.setField(owner, key, nodeSpan(node));
-}
-
-export function parseString(gcx: GlobalCtxt, node: json.Node): string {
-    if (node.type !== "string") {
-        throw Diagnostic.error(`Expected string`)
-            .addPrimarySpan(nodeSpan(node));
-    }
-
-    return node.value as string;
-}
-
-export function parseNumber(gcx: GlobalCtxt, node: json.Node): number {
-    if (node.type !== "number") {
-        throw Diagnostic.error(`Expected number`)
-            .addPrimarySpan(nodeSpan(node));
-    }
-
-    return node.value as number;
-}
-
-export function parseBoundedNumber(
-    min: number, max: number
-): (gcx: GlobalCtxt, node: json.Node) => number {
-    return (gcx: GlobalCtxt, node: json.Node): number => {
-        const value = parseNumber(gcx, node);
-
-        if (value < min) {
-            gcx.addDiagnostic(
-                Diagnostic.error(`Value must be greater than or equal to ${min}`)
-                    .addPrimarySpan(nodeSpan(node))
-            );
-        }
-        if (value > max) {
-            gcx.addDiagnostic(
-                Diagnostic.error(`Value must be less than or equal to ${max}`)
-                    .addPrimarySpan(nodeSpan(node))
-            );
-        }
-
-        return value;
-    };
-}
-
-export function parseArray<T>(
-    gcx: GlobalCtxt,
-    node: json.Node,
-    parser: (node: json.Node) => T
-): T[] {
-    const res: T[] = [];
-
-    if (node.type !== "array" || !node.children) {
-        throw Diagnostic.error("Expected array")
-            .addPrimarySpan(nodeSpan(node));
-    }
-
-    for (const child of node.children) {
-        try {
-            const value = parser(child);
-            res.push(value);
-        } catch (e) {
-            if (e instanceof Diagnostic) {
-                gcx.addDiagnostic(e);
-                continue;
-            }
-            throw e;
-        }
-    }
-
-    return res;
+export function normalizeOption(value: string): string {
+    return value.split(" ").join("").split("_").join("").toLowerCase();
 }
 
 export function parseOption<T extends string>(
-    gcx: GlobalCtxt,
-    node: json.Node,
+    p: Parser,
     options: readonly T[],
     errorTerms?: { singular: string, plural: string },
 ): T {
-    const value = parseString(gcx, node);
+    const value = p.parseString();
+
     for (const option of options) {
-        if (value.toLowerCase() === option.toLowerCase()) return option;
+        if (option === value) return option;
     }
 
-    const err = Diagnostic.error(`Expected ${errorTerms?.singular ?? "option"}`)
-        .addPrimarySpan(nodeSpan(node));
+    const err = Diagnostic.error(`Unknown ${errorTerms?.singular ?? "option"}: \`${value}\``)
+        .addPrimarySpan(p.span());
 
-    function addHelp(message: string) {
-        err.addSubDiagnostic(Diagnostic.help(message));
+    const norm = normalizeOption(value);
+    for (const option of options) {
+        if (normalizeOption(option) === norm) {
+            err.addSubDiagnostic(Diagnostic.help(
+                `Did you mean \`${option}\`?`
+            ));
+            p.gcx.addDiagnostic(err);
+            return value as T;
+        }
     }
 
-    addHelp(`Valid ${errorTerms?.plural ?? "options"} are:`);
-
-    const optionsToDisplay = Math.min(5, options.length);
-    for (let i = 0; i < optionsToDisplay; i++) {
-        addHelp(`  ${options[i]}`);
+    err.addSubDiagnostic(Diagnostic.help(`Valid ${errorTerms?.plural ?? "options"} are:`));
+    const count = Math.min(5, options.length);
+    for (let i = 0; i < count; i++) {
+        err.addSubDiagnostic(Diagnostic.help(`  ${options[i]}`));
     }
-
     if (options.length > 5) {
-        addHelp(`And ${options.length - 5} others`);
+        err.addSubDiagnostic(Diagnostic.help(`  ...and ${options.length - 5} others`));
     }
 
-    throw err;
+    p.gcx.addDiagnostic(err);
+    return value as T;
 }
 
-type NodeParseTree = {
-    [key: string]: NodeParseTreeElement;
-};
+export function warnUnused(p: Parser, known: readonly string[]): void {
+    for (const { key } of p.parseFields()) {
+        const name = key.parseString();
+        if (known.includes(name)) continue;
 
-type NodeParseTreeElement = {
-    required: boolean;
-    parser: (node: json.Node) => void;
-};
-
-export function parseObject(
-    gcx: GlobalCtxt,
-    node: json.Node,
-    tree: NodeParseTree
-) {
-    if (node.type !== "object" || !node.children) {
-        gcx.addDiagnostic(
-            Diagnostic.error("Expected object")
-                .addPrimarySpan(nodeSpan(node))
+        p.gcx.addDiagnostic(
+            Diagnostic.warning(`Unknown key: \`${name}\``)
+                .addPrimarySpan(key.span())
         );
-        return;
     }
-
-    const seenKeys = new Map<string, json.Node>();
-    const requiredKeys = new Set<string>();
-    const treeKeys = Object.keys(tree);
-    for (let i = 0; i < treeKeys.length; i++) {
-        if (tree[treeKeys[i]].required) requiredKeys.add(treeKeys[i]);
-    }
-
-    for (const child of node.children) {
-        if (child.type !== "property" || !child.children || child.children.length < 2) {
-            gcx.addDiagnostic(
-                Diagnostic.error("Invalid property node")
-                    .addPrimarySpan(nodeSpan(child))
-            );
-            continue;
-        }
-
-        const keyNode = child.children[0];
-        const valueNode = child.children[1];
-
-        if (keyNode.type !== "string") {
-            gcx.addDiagnostic(
-                Diagnostic.error("Property key must be a string")
-                    .addPrimarySpan(nodeSpan(keyNode))
-            );
-            continue;
-        }
-
-        const key = keyNode.value as string;
-
-        if (seenKeys.has(key)) {
-            gcx.addDiagnostic(
-                Diagnostic.warning(`Duplicate key '${key}'`)
-                    .addPrimarySpan(nodeSpan(keyNode))
-            );
-        } else {
-            seenKeys.set(key, child);
-        }
-
-        const element = tree[key];
-        if (element) {
-            element.parser(valueNode);
-            requiredKeys.delete(key);
-        } else {
-            const diag = Diagnostic.error(`Unknown key '${key}'`)
-                .addPrimarySpan(nodeSpan(keyNode));
-
-            const validKeys = Object.keys(tree);
-            if (validKeys.length > 0) {
-                diag.addSubDiagnostic(
-                    Diagnostic.help(`Valid keys are: ${validKeys.join(", ")}`)
-                );
-            }
-
-            gcx.addDiagnostic(diag);
-        }
-    }
-
-    for (const missingKey of requiredKeys) {
-        const diag = Diagnostic.error(`Missing required key '${missingKey}'`)
-            .addPrimarySpan(nodeSpan(node).endSpan());
-
-        const validKeys = Object.keys(tree);
-        if (validKeys.length > 0) {
-            diag.addSubDiagnostic(
-                Diagnostic.help(`Allowed keys here: ${validKeys.join(", ")}`)
-            );
-        }
-
-        gcx.addDiagnostic(diag);
-    }
-}
-
-export function parseObjectWithSchema(
-    gcx: GlobalCtxt,
-    node: json.Node,
-    schema: ObjectSchemaSpec,
-    parsers: Record<string, (node: json.Node) => void>,
-): void {
-    const tree: NodeParseTree = {};
-    for (const key of Object.keys(schema.properties)) {
-        const parser = parsers[key];
-        if (parser === undefined) {
-            throw new Error(`Missing import.json parser for schema key '${key}'`);
-        }
-        tree[key] = {
-            required: schema.properties[key].required,
-            parser,
-        };
-    }
-
-    parseObject(gcx, node, tree);
-}
-
-export function parseBoolean(gcx: GlobalCtxt, node: json.Node): boolean {
-    if (node.type !== "boolean") {
-        throw Diagnostic.error("Expected boolean")
-            .addPrimarySpan(nodeSpan(node));
-    }
-
-    return node.value as boolean;
-}
-
-export function parseBounds(gcx: GlobalCtxt, node: json.Node): Bounds {
-    const bounds = {} as Bounds;
-    setSpan(gcx, bounds as object, node);
-
-    parseObjectWithSchema(gcx, node, definition("bounds"), {
-        "from": (child) => {
-            bounds.from = parsePos(gcx, child);
-            setFieldSpan(gcx, bounds, "from", child);
-        },
-        "to": (child) => {
-            bounds.to = parsePos(gcx, child);
-            setFieldSpan(gcx, bounds, "to", child);
-        }
-    });
-
-    return bounds;
-}
-
-export function parsePos(gcx: GlobalCtxt, node: json.Node): Pos {
-    const pos = {} as Pos;
-    setSpan(gcx, pos as object, node);
-
-    parseObjectWithSchema(gcx, node, definition("pos"), {
-        "x": (child) => {
-            pos.x = parseNumber(gcx, child);
-            setFieldSpan(gcx, pos, "x", child);
-        },
-        "y": (child) => {
-            pos.y = parseNumber(gcx, child);
-            setFieldSpan(gcx, pos, "y", child);
-        },
-        "z": (child) => {
-            pos.z = parseNumber(gcx, child);
-            setFieldSpan(gcx, pos, "z", child);
-        }
-    });
-
-    return pos;
 }

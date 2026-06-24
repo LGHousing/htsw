@@ -359,7 +359,26 @@ export const POTION_EFFECTS = [
     "Absorption",
 ] as const;
 
-export { EVENTS, EVENT_ICONS } from "../importjson/schemaSpec";
+export const EVENTS = [
+    "Player Join",
+    "Player Quit",
+    "Player Death",
+    "Player Kill",
+    "Player Respawn",
+    "Group Change",
+    "PvP State Change",
+    "Fish Caught",
+    "Player Enter Portal",
+    "Player Damage",
+    "Player Block Break",
+    "Start Parkour",
+    "Complete Parkour",
+    "Player Drop Item",
+    "Player Pick Up Item",
+    "Player Change Held Item",
+    "Player Toggle Sneak",
+    "Player Toggle Flight",
+] as const;
 
 export const LOBBIES = [
     "Main Lobby",
@@ -515,6 +534,23 @@ export const ITEM_LOCATIONS = [
 export const ITEM_AMOUNTS = [
     "Any Amount",
     "Equal or Greater Amount"
+] as const;
+
+export const COLORS = [
+    "Dark Blue",
+    "Dark Green",
+    "Dark Aqua",
+    "Dark Red",
+    "Dark Purple",
+    "Gold",
+    "Gray",
+    "Dark Gray",
+    "Blue",
+    "Green",
+    "Aqua",
+    "Red",
+    "Light Purple",
+    "Yellow",
 ] as const;
 
 export const PLACEHOLDER_SPECS = [

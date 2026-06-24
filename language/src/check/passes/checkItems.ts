@@ -5,7 +5,6 @@ import type { Action, Condition, ImportableItem } from "../../types";
 
 export function checkItems(gcx: GlobalCtxt) {
     const items = collectItems(gcx);
-    checkDuplicateItemNames(gcx, items);
     checkItemReferences(gcx, items);
 }
 
@@ -13,35 +12,6 @@ function collectItems(gcx: GlobalCtxt): ImportableItem[] {
     return gcx.importables.filter(
         (importable): importable is ImportableItem => importable.type === "ITEM"
     );
-}
-
-function checkDuplicateItemNames(gcx: GlobalCtxt, items: ImportableItem[]): void {
-    const seen: Record<string, ImportableItem> = {};
-
-    for (const item of items) {
-        const existing = seen[item.name];
-        if (existing !== undefined) {
-            gcx.addDiagnostic(
-                Diagnostic.error(`Duplicate item name '${item.name}'`)
-                    .addPrimarySpan(
-                        gcx.spans.getField(item, "name"),
-                        "duplicate item name"
-                    )
-                    .addSecondarySpan(
-                        gcx.spans.getField(existing, "name"),
-                        "first item with this name"
-                    )
-                    .addSubDiagnostic(
-                        Diagnostic.help(
-                            "Item references use top-level items[].name, so item names must be unique."
-                        )
-                    )
-            );
-            continue;
-        }
-
-        seen[item.name] = item;
-    }
 }
 
 function checkItemReferences(gcx: GlobalCtxt, items: ImportableItem[]): void {

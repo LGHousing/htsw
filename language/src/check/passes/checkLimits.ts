@@ -52,15 +52,6 @@ export function checkLimits(gcx: GlobalCtxt) {
                 importable: "regions",
                 label: `Region "${importable.name}" exit actions`,
             });
-        } else if (importable.type === "NPC") {
-            checkActionList(gcx, importable.leftClickActions ?? [], {
-                importable: "npcs",
-                label: `NPC "${importable.name}" left-click actions`,
-            });
-            checkActionList(gcx, importable.rightClickActions ?? [], {
-                importable: "npcs",
-                label: `NPC "${importable.name}" right-click actions`,
-            });
         }
     }
 }
