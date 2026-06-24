@@ -325,21 +325,33 @@ export function parseValue(runtime: Runtime, value: string): Var<any> {
 export function formatNumber(number: string): string {
     const [whole, decimal = ""] = number.split(".");
 
+    const negative = whole.startsWith("-");
+    const digits = negative ? whole.slice(1) : whole;
+
     let formattedWhole = "";
-    for (let i = whole.length - 1, count = 0; i >= 0; i--, count++) {
-        formattedWhole = whole[i] + formattedWhole;
+    for (let i = digits.length - 1, count = 0; i >= 0; i--, count++) {
+        formattedWhole = digits[i] + formattedWhole;
         if (count === 2 && i !== 0) {
             formattedWhole = "," + formattedWhole;
             count = -1;
         }
     }
 
+    if (negative) formattedWhole = "-" + formattedWhole;
+
     if (!decimal) return formattedWhole;
 
     let roundedDecimal = Math.floor((+(decimal + "0000").slice(0, 4) + 5) / 10).toString();
     while (roundedDecimal.length < 3) roundedDecimal = "0" + roundedDecimal;
+    let displayDecimal = roundedDecimal.replace(/0+$/, "");
 
-    return formattedWhole + "." + roundedDecimal.replace(/0+$/, "");
+    // If rounding destroyed all significant digits, fall back to full precision
+    if (displayDecimal === "") {
+        displayDecimal = decimal.replace(/0+$/, "");
+        if (displayDecimal === "") displayDecimal = "0";
+    }
+
+    return formattedWhole + "." + displayDecimal;
 }
 
 export function isLong(value: string): boolean {
