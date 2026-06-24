@@ -108,5 +108,6 @@ function parseInclude(p: Parser): Importable[] {
         return []; // We have already parsed this file
     }
 
-    return parseImportJson(p.gcx, path);
+    const resolved = p.gcx.resolvePath(path);
+    return parseImportJson(p.gcx.subContext(path), resolved);
 }

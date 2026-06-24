@@ -30,7 +30,7 @@ export function parseImportableFunction(p: Parser): ImportableFunction {
     p.parseFieldOrUndefined("repeatTicks")?.setField(im, "repeatTicks", (p) =>
         p.parseBoundedNumber(4, 18000)
     );
-    p.parseField("icon").setField(im, "icon", parseFunctionIcon);
+    p.parseFieldOrUndefined("icon")?.setField(im, "icon", parseFunctionIcon);
 
     warnUnused(p, ["name", "actions", "repeatTicks", "icon"]);
     return im;

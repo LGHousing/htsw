@@ -21,7 +21,8 @@ export function parseHtsl(p: Parser): Action[] {
             .addPrimarySpan(p.span(), "No such file");
     }
 
-    return parseHtslImpl(p.gcx, p.gcx.resolvePath(path));
+    const resolved = p.gcx.resolvePath(path);
+    return parseHtslImpl(p.gcx.subContext(path), resolved);
 }
 
 export function parseSnbt(p: Parser): Tag {
@@ -38,7 +39,8 @@ export function parseSnbt(p: Parser): Tag {
             .addPrimarySpan(p.span(), "No such file");
     }
 
-    const tag = parseSnbtImpl(p.gcx, p.gcx.resolvePath(path));
+    const resolvedSnbt = p.gcx.resolvePath(path);
+    const tag = parseSnbtImpl(p.gcx.subContext(path), resolvedSnbt);
 
     if (tag === undefined) {
         if (!p.gcx.isFailed()) throw Error("parseSnbt returned undefined with no diagnostics");
