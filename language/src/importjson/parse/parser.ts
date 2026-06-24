@@ -129,6 +129,7 @@ export class Parser {
     ): T[K] {
         const { value, span } = this.withSpan(parser);
         this.gcx.spans.setField(owner, key, span);
+        owner[key] = value;
         return value;
     }
     

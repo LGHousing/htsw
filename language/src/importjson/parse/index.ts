@@ -20,7 +20,9 @@ export function parseImportJson(gcx: GlobalCtxt, path: string): Importable[] {
         }
 
         const parser = new Parser(gcx, file.startPos, tree);
-        return parseImportJson0(parser);
+        const importables = parseImportJson0(parser);
+        gcx.importables.push(...importables);
+        return importables;
     } catch (e) {
         if (e instanceof Diagnostic) {
             gcx.addDiagnostic(e);
@@ -104,10 +106,10 @@ function parseInclude(p: Parser): Importable[] {
         return [];
     }
 
-    if (p.gcx.sourceMap.hasFile(path)) {
+    const resolved = p.gcx.resolvePath(path);
+    if (p.gcx.sourceMap.hasFile(resolved)) {
         return []; // We have already parsed this file
     }
 
-    const resolved = p.gcx.resolvePath(path);
     return parseImportJson(p.gcx.subContext(path), resolved);
 }

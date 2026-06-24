@@ -5,6 +5,7 @@ import { checkNbt } from "./passes/checkNbt";
 import { checkItems } from "./passes/checkItems";
 import { checkLimits } from "./passes/checkLimits";
 import { checkStringValues } from "./passes/checkStringValues";
+import { checkDuplicateDefinitions } from "./passes/checkDuplicateDefinitions";
 
 type Pass = (ctx: GlobalCtxt) => void;
 
@@ -15,6 +16,7 @@ const PASSES: Pass[] = [
     checkItems,
     checkNbt,
     checkStringValues,
+    checkDuplicateDefinitions,
 ];
 
 export function check(gcx: GlobalCtxt) {
