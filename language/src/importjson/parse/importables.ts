@@ -1,4 +1,5 @@
 import type {
+    ImportableCommand,
     ImportableEvent,
     ImportableFunction,
     ImportableGroup,
@@ -17,6 +18,7 @@ import {
     parseMenuSlots,
     parsePermissions,
     parseSnbt,
+    parseCommandMode,
 } from "./arguments";
 import { warnUnused } from "./helpers";
 import type { Parser } from "./parser";
@@ -107,9 +109,22 @@ export function parseImportableGroup(p: Parser): ImportableGroup {
     p.parseField("name").setField(im, "name", (p) => p.parseString());
     p.parseFieldOrUndefined("tag")?.setField(im, "tag", (p) => p.parseString());
     p.parseFieldOrUndefined("color")?.setField(im, "color", parseColor);
-    p.parseFieldOrUndefined("priority")?.setField(im, "priority", (p) => p.parseNumber());
+    p.parseFieldOrUndefined("priority")?.setField(im, "priority", (p) => p.parseBoundedNumber(0, 20));
     p.parseFieldOrUndefined("permissions")?.setField(im, "permissions", parsePermissions);
 
     warnUnused(p, ["name", "tag", "color", "priority", "permissions"]);
+    return im;
+}
+
+export function parseImportableCommand(p: Parser): ImportableCommand {
+    const im: ImportableCommand = { type: "COMMAND" } as any;
+    p.setNodeSpan(im);
+
+    p.parseField("name").setField(im, "name", p => p.parseString());
+    p.parseFieldOrUndefined("mode")?.setField(im, "mode", parseCommandMode);
+    p.parseFieldOrUndefined("requiredPriority")?.setField(im, "requiredPriority", p => p.parseBoundedNumber(0, 20));
+    p.parseFieldOrUndefined("listed")?.setField(im, "listed", p => p.parseBoolean());
+
+    warnUnused(p, ["name", "mode", "requiredPriority", "listed"]);
     return im;
 }

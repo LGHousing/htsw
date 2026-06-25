@@ -553,6 +553,11 @@ export const COLORS = [
     "Yellow",
 ] as const;
 
+export const COMMAND_MODES = [
+    "Self",
+    "Targeted",
+] as const;
+
 export const PLACEHOLDER_SPECS = [
     { name: "server.name", valueType: "string", args: "none" },
     { name: "server.shortname", valueType: "string", args: "none" },

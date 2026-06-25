@@ -1,5 +1,6 @@
 import {
     COLORS,
+    COMMAND_MODES,
     COMPARISONS,
     DAMAGE_CAUSES,
     ENCHANTMENTS,
@@ -52,6 +53,8 @@ export type ItemLocation = (typeof ITEM_LOCATIONS)[number];
 export type ItemAmount = (typeof ITEM_AMOUNTS)[number];
 
 export type Color = (typeof COLORS)[number];
+
+export type CommandMode = (typeof COMMAND_MODES)[number];
 
 export type Location =
     | { type: "House Spawn Location" }

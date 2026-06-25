@@ -1,6 +1,6 @@
 import type { Tag } from "../nbt";
 import type { Action } from "./actions";
-import type { Bounds, Color, Event, MenuSlot, Permission } from "./types";
+import type { Bounds, Color, CommandMode, Event, MenuSlot, Permission } from "./types";
 
 export type ImportableFunction = {
     type: "FUNCTION";
@@ -62,6 +62,14 @@ export type ImportableGroup = {
     permissions?: Record<Permission, boolean>,
 };
 
+export type ImportableCommand = {
+    type: "COMMAND",
+    name: string,
+    mode?: CommandMode,
+    requiredPriority?: number,
+    listed?: boolean,
+}
+
 export type ImportableHouseName = {
     type: "HOUSE_NAME",
     name: string,
@@ -75,4 +83,5 @@ export type Importable =
     | ImportableEvent
     | ImportableTeam
     | ImportableGroup
+    | ImportableCommand
     | ImportableHouseName;

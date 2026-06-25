@@ -1,6 +1,6 @@
 import { Diagnostic } from "../../diagnostic";
-import type { Action, Bounds, Color, Event, FunctionIcon, MenuSlot, Permission, Pos } from "../../types";
-import { COLORS, EVENTS, PERMISSIONS } from "../../types/constants";
+import type { Action, Bounds, Color, CommandMode, Event, FunctionIcon, MenuSlot, Permission, Pos } from "../../types";
+import { COLORS, COMMAND_MODES, EVENTS, PERMISSIONS } from "../../types/constants";
 import type { Parser } from "./parser";
 import { getFileName, parseOption } from "./helpers";
 import { parseHtsl as parseHtslImpl } from "../../htsl";
@@ -106,6 +106,10 @@ export function parseEvent(p: Parser): Event {
 
 export function parseColor(p: Parser): Color {
     return parseOption(p, COLORS, { singular: "color", plural: "colors" });
+}
+
+export function parseCommandMode(p: Parser): CommandMode {
+    return parseOption(p, COMMAND_MODES, { singular: "command mode", plural: "command modes" });
 }
 
 export function parsePermissions(p: Parser): Record<Permission, boolean> {
