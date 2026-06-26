@@ -27,6 +27,8 @@ function sectionForType(type: Importable["type"]): Section | null {
             return "teams";
         case "GROUP":
             return "groups";
+        case "COMMAND":
+            return "commands";
         default:
             return null;
     }

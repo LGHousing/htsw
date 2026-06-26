@@ -13,9 +13,8 @@
         "vscode": "^1.97.2"
     },
     "scripts": {
-        "build": "npm run generate:schema && tsc --noEmit && vite build --mode production && vite build --config vite.webview.config.ts --mode production",
-        "generate:schema": "node --experimental-strip-types ./scripts/generateImportSchema.ts",
-        "check:schema": "node --experimental-strip-types ./scripts/generateImportSchema.ts --check",
+        "build": "tsc --noEmit && vite build --mode production && vite build --config vite.webview.config.ts --mode production",
+        "check:schema": "node -e \"JSON.parse(require('fs').readFileSync('./schemas/import.schema.json', 'utf8'))\"",
         "package": "npx @vscode/vsce package --no-dependencies"
     },
     "dependencies": {

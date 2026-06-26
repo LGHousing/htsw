@@ -71,6 +71,7 @@ export function referencedItemNames(importable: Importable): string[] {
             break;
         case "TEAM":
         case "GROUP":
+        case "COMMAND":
         case "HOUSE_NAME":
             break;
         default: {

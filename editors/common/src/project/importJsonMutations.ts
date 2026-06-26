@@ -15,7 +15,9 @@ export type Section =
     | "items"
     | "menus"
     | "teams"
-    | "groups";
+    | "groups"
+    | "commands"
+    | "npcs";
 
 export function identityField(section: Section): "name" | "event" {
     return section === "events" ? "event" : "name";

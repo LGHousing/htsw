@@ -357,6 +357,7 @@ const SECTION_BY_TYPE: Partial<{ [k in Importable["type"]]: Section }> = {
     MENU: "menus",
     TEAM: "teams",
     GROUP: "groups",
+    COMMAND: "commands",
 };
 
 // Files this importable owns: its primary source (htsl/snbt) plus sub-list

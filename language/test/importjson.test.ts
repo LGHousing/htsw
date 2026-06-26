@@ -185,6 +185,19 @@ describe("import.json basic passing behavior", () => {
         expect(hasHardErrors(result.diagnostics)).toBe(false);
     });
 
+    it("parses a single command importable", () => {
+        const result = parseImportables(caseFilePath("command"));
+
+        expect(result.value.length).toBe(1);
+        const command = result.value[0];
+        assertImportable(command, "COMMAND");
+        expect(command.name).toBe("visit");
+        expect(command.mode).toBe("Targeted");
+        expect(command.requiredPriority).toBe(3);
+        expect(command.listed).toBe(false);
+        expect(hasHardErrors(result.diagnostics)).toBe(false);
+    });
+
     it("parses a function importable without repeatTicks", () => {
         const result = parseImportables(caseFilePath("function_no_repeat"));
 

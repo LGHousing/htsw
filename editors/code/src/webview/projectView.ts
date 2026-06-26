@@ -20,7 +20,7 @@ import type {
     ProjectToHostMessage,
 } from "./protocol";
 
-const IMPORTABLE_SECTIONS = ["functions", "events", "regions", "items", "menus", "npcs"] as const;
+const IMPORTABLE_SECTIONS = ["functions", "events", "regions", "items", "menus", "commands", "npcs"] as const;
 type ImportableSection = typeof IMPORTABLE_SECTIONS[number];
 
 const SECTION_META: Record<ImportableSection, {
@@ -34,6 +34,7 @@ const SECTION_META: Record<ImportableSection, {
     regions: { identityField: "name", type: "region", typeLabel: "REGION" },
     items: { identityField: "name", type: "item", typeLabel: "ITEM", openField: "nbt" },
     menus: { identityField: "name", type: "menu", typeLabel: "MENU" },
+    commands: { identityField: "name", type: "command", typeLabel: "COMMAND" },
     npcs: { identityField: "name", type: "npc", typeLabel: "NPC" },
 };
 
@@ -87,6 +88,7 @@ const SECTION_BY_KIND: Record<ProjectImportableSummary["type"], ImportableSectio
     region: "regions",
     item: "items",
     menu: "menus",
+    command: "commands",
     npc: "npcs",
 };
 
@@ -109,7 +111,7 @@ async function addImportable(
 
         // Functions/events get a starter .htsl; the export-target helper resolves
         // the declaring file (the picked file, for a new entry) and a collision-
-        // free filename. Regions/npcs/menus are pure JSON entries.
+        // free filename. Other importables are pure JSON entries.
         let targetImportJson = importJsonPath;
         const entry: Record<string, unknown> = {};
         const created: string[] = [];
@@ -633,13 +635,6 @@ function readImportableIcon(
                 ? Number(countNode.value)
                 : undefined;
             return { iconItem: String(itemNode.value), iconCount };
-        }
-        // Events carry no per-entry icon — fall back to the event's default
-        // Housing item so they render an icon like functions do.
-        if (section === "events") {
-            const eventIcons = htsw.types.EVENT_ICONS as Record<string, string> | undefined;
-            const fallback = eventIcons?.[identity];
-            if (fallback) return { iconItem: fallback };
         }
         return {};
     }

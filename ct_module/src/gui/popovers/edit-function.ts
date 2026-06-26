@@ -36,6 +36,7 @@ function sectionForType(type: Importable["type"]): Section | null {
         case "MENU": return "menus";
         case "TEAM": return "teams";
         case "GROUP": return "groups";
+        case "COMMAND": return "commands";
     }
     return null;
 }
@@ -43,6 +44,7 @@ function sectionForType(type: Importable["type"]): Section | null {
 const SECTION_TYPE: Partial<{ [k in Section]: Importable["type"] }> = {
     functions: "FUNCTION", events: "EVENT", regions: "REGION",
     items: "ITEM", menus: "MENU", teams: "TEAM", groups: "GROUP",
+    commands: "COMMAND",
 };
 
 function findImportableInList(

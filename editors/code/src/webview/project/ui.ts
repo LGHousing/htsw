@@ -35,6 +35,7 @@ const ADD_KINDS: { value: ImportableKind; label: string }[] = [
     { value: "region", label: "Region" },
     { value: "item", label: "Item" },
     { value: "menu", label: "Menu" },
+    { value: "command", label: "Command" },
     { value: "npc", label: "NPC" },
 ];
 
@@ -398,6 +399,7 @@ function namePlaceholder(kind: ImportableKind): string {
     if (kind === "function") return "my_function";
     if (kind === "region") return "spawn";
     if (kind === "menu") return "shop";
+    if (kind === "command") return "visit";
     if (kind === "npc") return "guide";
     return "name";
 }
@@ -665,5 +667,6 @@ const TYPE_GLYPH: Record<ProjectImportableSummary["type"], string> = {
     region: `<svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><rect x="2.8" y="2.8" width="10.4" height="10.4" rx="1.2" stroke-dasharray="2.6 1.9"/></svg>`,
     item: `<svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><path d="M8 2.4 13.4 5.4v5.2L8 13.6 2.6 10.6V5.4z"/><path d="M2.6 5.4 8 8.4l5.4-3M8 8.4v5.2"/></svg>`,
     menu: `<svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2.8" y="2.8" width="4.2" height="4.2" rx=".7"/><rect x="9" y="2.8" width="4.2" height="4.2" rx=".7"/><rect x="2.8" y="9" width="4.2" height="4.2" rx=".7"/><rect x="9" y="9" width="4.2" height="4.2" rx=".7"/></svg>`,
+    command: `<svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 5.2 2.5 8l2 2.8"/><path d="M8.1 4 6.2 12"/><path d="M11.5 5.2 13.5 8l-2 2.8"/></svg>`,
     npc: `<svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="8" cy="5.4" r="2.4"/><path d="M3.6 13c0-2.5 2-4.1 4.4-4.1s4.4 1.6 4.4 4.1"/></svg>`,
 };

@@ -125,6 +125,7 @@ export async function prereadImportable(
             );
         case "TEAM":
         case "GROUP":
+        case "COMMAND":
         case "HOUSE_NAME":
             throw Diagnostic.error(`${importable.type} imports are not implemented in the ChatTriggers module.`);
         default: {

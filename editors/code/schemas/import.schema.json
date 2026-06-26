@@ -9,6 +9,9 @@
       "description": "Housing UUID binding. Only the entry import.json's binding is used.",
       "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
     },
+    "houseName": {
+      "type": "string"
+    },
     "include": {
       "type": "array",
       "items": {
@@ -44,6 +47,24 @@
       "type": "array",
       "items": {
         "$ref": "#/definitions/menuImportable"
+      }
+    },
+    "teams": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/teamImportable"
+      }
+    },
+    "groups": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/groupImportable"
+      }
+    },
+    "commands": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/commandImportable"
       }
     },
     "npcs": {
@@ -306,7 +327,7 @@
         "size": {
           "type": "integer",
           "minimum": 1,
-          "maximum": 6
+          "maximum": 54
         },
         "slots": {
           "type": "array",
@@ -339,6 +360,109 @@
       "required": [
         "slot",
         "nbt"
+      ]
+    },
+    "color": {
+      "type": "string",
+      "enum": [
+        "Black",
+        "Dark Blue",
+        "Dark Green",
+        "Dark Aqua",
+        "Dark Red",
+        "Dark Purple",
+        "Gold",
+        "Gray",
+        "Dark Gray",
+        "Blue",
+        "Green",
+        "Aqua",
+        "Red",
+        "Light Purple",
+        "Yellow"
+      ]
+    },
+    "teamImportable": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "tag": {
+          "type": "string"
+        },
+        "color": {
+          "$ref": "#/definitions/color"
+        },
+        "friendlyFire": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name"
+      ]
+    },
+    "permissions": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "boolean"
+      }
+    },
+    "groupImportable": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "tag": {
+          "type": "string"
+        },
+        "color": {
+          "$ref": "#/definitions/color"
+        },
+        "priority": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 20
+        },
+        "permissions": {
+          "$ref": "#/definitions/permissions"
+        }
+      },
+      "required": [
+        "name"
+      ]
+    },
+    "commandMode": {
+      "type": "string",
+      "enum": [
+        "Self",
+        "Targeted"
+      ]
+    },
+    "commandImportable": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "mode": {
+          "$ref": "#/definitions/commandMode"
+        },
+        "requiredPriority": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 20
+        },
+        "listed": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name"
       ]
     }
   }

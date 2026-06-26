@@ -98,6 +98,7 @@ function collectImportableCoverage(
             return;
         case "TEAM":
         case "GROUP":
+        case "COMMAND":
         case "HOUSE_NAME":
             return;
         default: {

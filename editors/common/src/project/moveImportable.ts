@@ -9,7 +9,7 @@ import {
 } from "./importJsonMutations";
 import type { ProjectFs } from "./fs";
 
-const ALL_SECTIONS: Section[] = ["functions", "events", "regions", "items", "menus", "teams", "groups"];
+const ALL_SECTIONS: Section[] = ["functions", "events", "regions", "items", "menus", "teams", "groups", "commands", "npcs"];
 
 export type MoveImportableResult =
     | { ok: true; from: string; to: string; movedFiles: Array<{ from: string; to: string }> }

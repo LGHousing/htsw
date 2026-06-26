@@ -1,0 +1,10 @@
+{
+    "commands": [
+        {
+            "name": "visit",
+            "mode": "Targeted",
+            "requiredPriority": 3,
+            "listed": false
+        }
+    ]
+}

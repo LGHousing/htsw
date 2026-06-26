@@ -20,6 +20,7 @@ const ALL_IMPORTABLE_TYPES: ImportableType[] = [
     "MENU",
     "TEAM",
     "GROUP",
+    "COMMAND",
     "HOUSE_NAME",
 ];
 

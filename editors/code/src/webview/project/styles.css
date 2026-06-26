@@ -362,6 +362,10 @@ select {
     color: #e87a4b;
 }
 
+.row-icon.glyph.command {
+    color: #e8e06a;
+}
+
 .row-icon.glyph.npc {
     color: #7be0c0;
 }

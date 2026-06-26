@@ -36,6 +36,11 @@ export function checkDuplicateDefinitions(gcx: GlobalCtxt) {
     deduplicateBy(gcx, groups, "name", {
         specifier: "group name"
     });
+
+    const commands = gcx.importables.filter(it => it.type === "COMMAND");
+    deduplicateBy(gcx, commands, "name", {
+        specifier: "command name"
+    });
 }
 
 type Terms = {

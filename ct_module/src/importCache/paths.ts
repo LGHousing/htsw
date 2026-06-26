@@ -25,6 +25,8 @@ function dirFor(type: Importable["type"]): string {
             return "team";
         case "GROUP":
             return "group";
+        case "COMMAND":
+            return "command";
         case "HOUSE_NAME":
             return "house-name";
         default: {

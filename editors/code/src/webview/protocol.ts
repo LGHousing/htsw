@@ -44,7 +44,7 @@ export type ProjectImportableSummary = {
     /** Stable key for expand state: `${importJsonPath}|${type}|${identity}`. */
     id: string;
     label: string;
-    type: "function" | "event" | "region" | "item" | "menu" | "npc";
+    type: "function" | "event" | "region" | "item" | "menu" | "command" | "npc";
     typeLabel: string;
     openPath?: string;
     /** Minecraft item id powering the row icon, e.g. "minecraft:clock" — a
