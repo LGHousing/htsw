@@ -274,7 +274,7 @@ function resultsForSource(s: Source): Result[] {
     let anyIncludes = false;
     for (let i = 0; i < all.length; i++) {
         const r = all[i];
-        const tree = r.type !== "import" || r.parse === null ? null : r.parse.gcx.fileTree;
+        const tree = r.type !== "import" || r.parse === null ? null : r.parse.importJson.fileTree;
         if (tree === null || tree.includes.length === 0) {
             includesByRow.push(null);
             continue;

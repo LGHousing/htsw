@@ -12,7 +12,16 @@ import {
 } from "./rowModel";
 
 type ImportableType = Importable["type"];
-const ALL_IMPORTABLE_TYPES: ImportableType[] = ["FUNCTION", "EVENT", "REGION", "ITEM", "MENU", "NPC"];
+const ALL_IMPORTABLE_TYPES: ImportableType[] = [
+    "FUNCTION",
+    "EVENT",
+    "REGION",
+    "ITEM",
+    "MENU",
+    "TEAM",
+    "GROUP",
+    "HOUSE_NAME",
+];
 
 const selectedTypes: Set<ImportableType> = new Set();
 

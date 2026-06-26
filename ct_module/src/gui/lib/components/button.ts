@@ -1,7 +1,7 @@
 import { Child, ClickInfo, ContainerStyle, Element, Rect } from "../layout";
-import { Extractable } from "../extractable";
+import { Extractable, extract } from "../extractable";
 import { IconName } from "../icons.generated";
-import { COLOR_BUTTON, COLOR_BUTTON_HOVER } from "../theme";
+import { COLOR_BUTTON, COLOR_BUTTON_DISABLED, COLOR_BUTTON_HOVER, COLOR_TEXT_FAINT } from "../theme";
 import { Container } from "./container";
 import { Icon } from "./icon";
 import { Text } from "./text";
@@ -9,6 +9,10 @@ import { Text } from "./text";
 export type ButtonProps = {
     onClick: (rect: Rect, info: ClickInfo) => void;
     onDoubleClick?: (rect: Rect) => void;
+    // When true the button paints recessed with faint text/icon, drops its
+    // hover, and swallows clicks. Extractable so callers can drive it from
+    // live state (e.g. an empty queue) without rebuilding the element.
+    disabled?: Extractable<boolean>;
     style?: ContainerStyle;
     // Common shorthand: when only `text` and/or `icon` are passed the helper
     // builds [Icon?, Text?] in a centered Row. Pass `children` for fully
@@ -32,10 +36,31 @@ const DEFAULT_PADDING = { side: "x" as const, value: 4 };
 
 export function Button(props: ButtonProps): Element {
     const userStyle = props.style ?? {};
+    const baseBackground = userStyle.background ?? COLOR_BUTTON;
+    const baseHoverBackground = userStyle.hoverBackground ?? COLOR_BUTTON_HOVER;
+
+    // Buttons without `disabled` keep an identical element tree (static colors,
+    // raw handlers, untinted icon); only opt-in buttons pay for the wrappers.
+    const disabledAware = props.disabled !== undefined;
+    const isDisabled = (): boolean => extract(props.disabled ?? false);
+
+    const background: Extractable<number | undefined> = disabledAware
+        ? () => (isDisabled() ? COLOR_BUTTON_DISABLED : extract(baseBackground))
+        : baseBackground;
+    const hoverBackground: Extractable<number | undefined> = disabledAware
+        ? () => (isDisabled() ? COLOR_BUTTON_DISABLED : extract(baseHoverBackground))
+        : baseHoverBackground;
+    const textColor: Extractable<number | undefined> | undefined = disabledAware
+        ? () => (isDisabled() ? COLOR_TEXT_FAINT : extract(props.textColor ?? undefined))
+        : props.textColor;
+    const iconColor: Extractable<number | undefined> | undefined = disabledAware
+        ? () => (isDisabled() ? COLOR_TEXT_FAINT : undefined)
+        : undefined;
+
     const builtChildren: Child[] | undefined =
         props.children !== undefined
             ? undefined
-            : buildShorthandChildren(props.icon, props.text, props.textColor);
+            : buildShorthandChildren(props.icon, props.text, textColor, iconColor);
     const children: Extractable<Child[]> =
         props.children !== undefined ? props.children : (builtChildren as Child[]);
 
@@ -48,15 +73,26 @@ export function Button(props: ButtonProps): Element {
             gap: userStyle.gap ?? 4,
             padding: userStyle.padding ?? DEFAULT_PADDING,
             // Color defaults — pulled from theme so a re-skin is one file.
-            background: userStyle.background ?? COLOR_BUTTON,
-            hoverBackground: userStyle.hoverBackground ?? COLOR_BUTTON_HOVER,
+            background,
+            hoverBackground,
             // Sizes pass through so callers keep their grow/px sizing.
             width: userStyle.width,
             height: userStyle.height,
         },
         children,
-        onClick: props.onClick,
-        onDoubleClick: props.onDoubleClick,
+        onClick: disabledAware
+            ? (rect, info) => {
+                  if (isDisabled()) return;
+                  props.onClick(rect, info);
+              }
+            : props.onClick,
+        onDoubleClick:
+            disabledAware && props.onDoubleClick !== undefined
+                ? (rect) => {
+                      if (isDisabled()) return;
+                      props.onDoubleClick!(rect);
+                  }
+                : props.onDoubleClick,
         tooltip: props.tooltip,
         tooltipColor: props.tooltipColor,
     });
@@ -65,10 +101,11 @@ export function Button(props: ButtonProps): Element {
 function buildShorthandChildren(
     icon: Extractable<IconName> | undefined,
     text: Extractable<string> | undefined,
-    textColor: Extractable<number | undefined> | undefined
+    textColor: Extractable<number | undefined> | undefined,
+    iconColor: Extractable<number | undefined> | undefined
 ): Child[] {
     const out: Child[] = [];
-    if (icon !== undefined) out.push(Icon({ name: icon }));
+    if (icon !== undefined) out.push(Icon({ name: icon, color: iconColor }));
     if (text !== undefined) out.push(Text({ text, color: textColor }));
     return out;
 }

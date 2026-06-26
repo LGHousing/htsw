@@ -11,6 +11,7 @@ import {
 } from "../lib/theme";
 import {
     confirmSelect,
+    getActiveFileSelection,
     getActivePath,
     isLiveTabActive,
     pinTab,
@@ -50,12 +51,21 @@ export function viewBody(): Element {
                 : [
                       CodeView({
                           scrollId: "right-source-scroll",
-                          source: () => getActivePath(),
-                          lineDecorator: () => diffDecorator(getActivePath()),
+                          source: () => getActiveFileSelection()?.path ?? null,
+                          sourceImportJsonPath: () =>
+                              getActiveFileSelection()?.importJsonPath ?? null,
+                          lineDecorator: () => {
+                              const selection = getActiveFileSelection();
+                              return diffDecorator(
+                                  selection?.path ?? null,
+                                  selection?.importJsonPath ?? null
+                              );
+                          },
                           autoFollow: false,
                           onOpenPath: (path, options) => {
-                              if (options.activate) confirmSelect(path);
-                              else pinTab(path);
+                              const owner = getActiveFileSelection()?.importJsonPath ?? null;
+                              if (options.activate) confirmSelect(path, owner);
+                              else pinTab(path, owner);
                           },
                           emptyMessage:
                               "Click an entry on the left to preview, double-click to pin a tab.",

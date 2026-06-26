@@ -23,13 +23,27 @@
 // index 0 is the NEWEST line.
 
 const MAX_LINES = 100;
-const REFRESH_MS = 100;
 const LINE_FIELD_NAMES = ["field_146253_i", "field_146252_h"];
 
 let lineField: any = null;
 let lineFieldFailed = false;
-let lastFetchAt = 0;
+let lastLen = -1;
+let lastNewest = "";
 let cacheLines: string[] = [];
+
+function sameLines(a: readonly string[], b: readonly string[]): boolean {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) {
+        if (a[i] !== b[i]) return false;
+    }
+    return true;
+}
+
+function replaceCache(lines: string[]): boolean {
+    if (sameLines(cacheLines, lines)) return false;
+    cacheLines = lines;
+    return true;
+}
 
 function chatGuiFromMinecraft(): any | null {
     try {
@@ -120,7 +134,7 @@ function formattedTextOf(chatLine: any): string {
     }
 }
 
-function readMcBuffer(): string[] | null {
+function mcChatList(): { list: any; len: number } | null {
     let chat = chatGuiFromMinecraft();
     if (chat === null) chat = chatGuiFromClient();
     if (chat === null) return null;
@@ -130,10 +144,13 @@ function readMcBuffer(): string[] | null {
 
     const len = lengthOf(list);
     if (len < 0) return null;
+    return { list, len };
+}
 
-    // Index 0 is newest. Walk newest->oldest over the most recent MAX_LINES,
-    // pushing to build an oldest-first array; trailing nulls (an ArrayList's
-    // unused capacity slots sit at the high indices) are skipped.
+// Index 0 is newest. Walk newest->oldest over the most recent MAX_LINES,
+// pushing to build an oldest-first array; trailing nulls (an ArrayList's
+// unused capacity slots sit at the high indices) are skipped.
+function buildMcLines(list: any, len: number): string[] | null {
     const limit = Math.min(len, MAX_LINES);
     const lines: string[] = [];
     let nonEmpty = 0;
@@ -167,18 +184,33 @@ function readCtFallback(): string[] | null {
 
 /**
  * The most recent chat lines, OLDEST-FIRST (newest at the end), formatted with
- * `§` color codes intact. Throttled + cached; returns the last good snapshot
- * between refreshes or if every source is briefly unreachable.
+ * `§` color codes intact. Safe to call every frame: a change probe (line count
+ * + newest line's text) skips the full rebuild on unchanged frames, so a new
+ * message shows within a frame instead of on a fixed interval. Returns the last
+ * good snapshot when every source is briefly unreachable.
  */
+export function refreshChatLines(): boolean {
+    const mc = mcChatList();
+    if (mc === null) {
+        const fb = readCtFallback();
+        if (fb === null) return false;
+        return replaceCache(fb);
+    }
+
+    const newest = mc.len > 0 ? formattedTextOf(elementAt(mc.list, 0)) : "";
+    if (mc.len === lastLen && newest === lastNewest && cacheLines.length > 0) {
+        return false;
+    }
+
+    const lines = buildMcLines(mc.list, mc.len);
+    if (lines === null) return false;
+
+    lastLen = mc.len;
+    lastNewest = newest;
+    return replaceCache(lines);
+}
+
 export function getChatLines(): string[] {
-    const now = Date.now();
-    if (now - lastFetchAt < REFRESH_MS) return cacheLines;
-    lastFetchAt = now;
-
-    let lines = readMcBuffer();
-    if (lines === null) lines = readCtFallback();
-    if (lines === null) return cacheLines;
-
-    cacheLines = lines;
-    return lines;
+    refreshChatLines();
+    return cacheLines;
 }

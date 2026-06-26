@@ -6,9 +6,11 @@ import {
     canonicalPath,
     forEachCachedParse,
     getParseCacheRevision,
+    type CachedParse,
 } from "../../parsing/parses";
-import { importableSourcePath } from "../../parsing/importablePaths";
+import { importableFilePaths } from "../../parsing/importablePaths";
 import { importableIdentity } from "../../../importCache/paths";
+import { markGuiDirty } from "../../lib/dirty";
 
 /**
  * Right-panel run queue. Import entries are real work selected by the user;
@@ -92,6 +94,7 @@ export function beginQueueSession(): void {
     for (let i = 0; i < items.length; i++) {
         sessionKeys.add(queueItemKey(items[i]));
     }
+    markGuiDirty();
 }
 
 /**
@@ -101,11 +104,14 @@ export function beginQueueSession(): void {
  * user can retry; only the session marking is cleared.
  */
 export function endQueueSession(removeSessionItems: boolean): void {
+    const hadSession = sessionKeys !== null;
+    const beforeLen = items.length;
     if (sessionKeys !== null && removeSessionItems) {
         const keys = sessionKeys;
         items = items.filter((i) => !keys.has(queueItemKey(i)));
     }
     sessionKeys = null;
+    if (hadSession || items.length !== beforeLen) markGuiDirty();
 }
 
 export function isQueueSessionItem(key: string): boolean {
@@ -125,11 +131,14 @@ export function addToQueue(item: QueueItem): boolean {
     const key = queueItemKey(item);
     if (isInQueue(key)) return false;
     items = items.concat([item]);
+    markGuiDirty();
     return true;
 }
 
 export function removeFromQueueKey(key: string): void {
+    const beforeLen = items.length;
     items = items.filter((i) => queueItemKey(i) !== key);
+    if (items.length !== beforeLen) markGuiDirty();
 }
 /** Toggle membership. Returns the *new* state (true = now in the queue). */
 export function toggleQueue(item: QueueItem): boolean {
@@ -138,13 +147,14 @@ export function toggleQueue(item: QueueItem): boolean {
         removeFromQueueKey(key);
         return false;
     }
-    items = items.concat([item]);
-    return true;
+    return addToQueue(item);
 }
 
 export function clearQueue(): void {
+    if (items.length === 0 && sessionKeys === null) return;
     items = [];
     sessionKeys = null;
+    markGuiDirty();
 }
 
 /**
@@ -204,9 +214,9 @@ function sortedQueueForDisplay(queue: readonly QueueItem[]): QueueItem[] {
  * rows that want "everything under this import.json" add those importables
  * individually so queue rows stay concrete.
  */
-export function queueItemsForPath(filePath: string): QueueItem[] {
+export function queueItemsForPath(filePath: string, importJsonPath?: string | null): QueueItem[] {
     const target = canonicalPath(filePath);
-    return findImportableQueueItems(target);
+    return findImportableQueueItems(target, importJsonPath);
 }
 
 // Per-(target, parse-cache revision) memo. The scan touches every importable
@@ -221,21 +231,32 @@ const queueItemsCache = new Map<string, QueueItem[]>();
  * Locate every importable across every cached parse whose source file
  * matches `target` (canonical). Returns one queue item per match.
  */
-function findImportableQueueItems(target: string): QueueItem[] {
+function findImportableQueueItems(target: string, importJsonPath?: string | null): QueueItem[] {
     const rev = getParseCacheRevision();
     if (rev !== queueItemsCacheRev) {
         queueItemsCache.clear();
         queueItemsCacheRev = rev;
     }
-    const cached = queueItemsCache.get(target);
+    const scope =
+        importJsonPath === null || importJsonPath === undefined || importJsonPath === ""
+            ? ""
+            : canonicalPath(importJsonPath);
+    const cacheKey = `${scope}\n${target}`;
+    const cached = queueItemsCache.get(cacheKey);
     if (cached !== undefined) return cached;
     const out: QueueItem[] = [];
-    forEachCachedParse((entry) => {
+    const visit = (entry: CachedParse): void => {
         if (entry.parsed === null) return;
         for (const imp of entry.parsed.value) {
-            const src = importableSourcePath(imp, entry.parsed);
-            if (src === undefined) continue;
-            if (canonicalPath(src) !== target) continue;
+            const paths = importableFilePaths(imp, entry.parsed);
+            let matches = false;
+            for (let i = 0; i < paths.length; i++) {
+                if (canonicalPath(paths[i]) === target) {
+                    matches = true;
+                    break;
+                }
+            }
+            if (!matches) continue;
             out.push({
                 operation: "import",
                 kind: "importable",
@@ -245,8 +266,18 @@ function findImportableQueueItems(target: string): QueueItem[] {
                 label: importableLabel(imp),
             });
         }
-    });
-    queueItemsCache.set(target, out);
+    };
+    if (scope !== "") {
+        let found = false;
+        forEachCachedParse((entry) => {
+            if (found || entry.canonicalPath !== scope) return;
+            found = true;
+            visit(entry);
+        });
+    } else {
+        forEachCachedParse(visit);
+    }
+    queueItemsCache.set(cacheKey, out);
     return out;
 }
 

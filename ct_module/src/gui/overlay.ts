@@ -1,7 +1,17 @@
 /// <reference types="../../CTAutocomplete" />
 
 import { Panel } from "./lib/panel";
-import { Element, Rect, layoutElement, pointInRect, getScrollState } from "./lib/layout";
+import {
+    Element,
+    Rect,
+    layoutElement,
+    pointInRect,
+    getScrollState,
+    setScrollEasingProvider,
+    anyScrollAnimating,
+} from "./lib/layout";
+import { markGuiDirty } from "./lib/dirty";
+import { getSmoothScrolling } from "../settings";
 import { javaType } from "./lib/java";
 
 declare const JavaAdapter: new (baseClass: any, implementation: object) => any;
@@ -29,10 +39,10 @@ const RenderGameOverlayElementType = javaType(
 const ForgeGuiOpenEvent = javaType("net.minecraftforge.client.event.GuiOpenEvent");
 import { RootTree, getImportCachedBounds } from "./root";
 import { getContainerBounds, getFullscreenPanelRect } from "./lib/bounds";
-import { tickReparse } from "./parsing/reparse";
+import { handleCompletedParse, tickReparse } from "./parsing/reparse";
 import { processPendingParses } from "./parsing/parses";
-import { autoTrackRefresh } from "./autoTrack";
 import { CHAT_INPUT_ID } from "./chat";
+import { refreshChatLines } from "./chat/mcChat";
 import {
     initPopoverRendering,
     popoverIsOpen,
@@ -63,7 +73,7 @@ import { TaskManager } from "../tasks/manager";
 import { getChatKeyCode } from "./keybinds";
 import { renderToast } from "./toast";
 import { sampleProgressTraceTick } from "../housingSync/trace/progressTrace";
-import { endTabDrag } from "./right-panel/tabDrag";
+import { endTabDrag, tickTabDragAutoScroll } from "./right-panel/tabDrag";
 import {
     dispatchWheel,
     isDraggingScrollbar,
@@ -75,6 +85,12 @@ import {
     clearDeferredTooltip,
 } from "./lib/render";
 import { getFocusedInput, setFocusedInput } from "./lib/focus";
+import {
+    clearSelection,
+    copyActiveSelection,
+    hasActiveSelection,
+    selectAllActive,
+} from "./code-view/selection";
 import { applyFocus, getRecord, readAndSync, tickAllFields } from "./lib/inputState";
 import {
     getEffectiveOverlayScale,
@@ -249,6 +265,9 @@ function isPlaceholderScreen(s: any): boolean {
 export function initHtswGui(): void {
     if (initialized) return;
     initialized = true;
+
+    // Drive the lib's wheel easing from the user's "Smooth scrolling" setting.
+    setScrollEasingProvider(getSmoothScrolling);
 
     // Hypixel server-transport messages are the cleanest "you may have
     // changed housings" signal. When we see one, drop the cached UUID and
@@ -471,13 +490,24 @@ export function initHtswGui(): void {
                 const s = getScrollState(el.id);
                 if (!pointInRect(s.viewportRect, mx, my)) continue;
                 dispatchWheel(laid, mx, my, delta);
+                // The overlay caches its laid-out tree (lib/dirty); a scroll
+                // changes element positions, so force a rebuild or the new
+                // offset wouldn't render until the 200ms backstop.
+                markGuiDirty();
                 cancel(event);
                 return;
             }
         }
     });
-    register("guiRender", (_mouseX: number, mouseY: number) => {
-        if (isDraggingScrollbar()) updateScrollbarDrag(mcToOverlay(mouseY));
+    register("guiRender", (mouseX: number, mouseY: number) => {
+        tickTabDragAutoScroll(mcToOverlay(mouseX));
+        const dragging = isDraggingScrollbar();
+        if (dragging) updateScrollbarDrag(mcToOverlay(mouseY));
+        if (frameVisible() && refreshChatLines()) markGuiDirty();
+        // Rebuild every frame while the thumb is dragged or the wheel offset is
+        // still easing, so scrolled content tracks at the refresh rate instead
+        // of stepping on the dirty backstop.
+        if (dragging || anyScrollAnimating()) markGuiDirty();
     });
     register("guiMouseRelease", () => {
         endScrollbarDrag();
@@ -513,12 +543,28 @@ export function initHtswGui(): void {
         if (focusedId === null && enabled && chatKey > 0 && keyCode === chatKey) {
             if (getContainerBounds() !== null && !nativeScreenUsesTypedCharacters()) {
                 setFocusedInput(CHAT_INPUT_ID);
+                markGuiDirty();
                 cancel(event);
             }
             return;
         }
 
-        if (focusedId === null) return;
+        if (focusedId === null) {
+            // No text input focused: route copy/select-all to the code view's
+            // read-only text selection when it owns one, but only while the
+            // HTSW overlay is showing so we don't swallow Ctrl+C on other screens.
+            if (frameVisible() && hasActiveSelection()) {
+                const ctrlDown = KeyboardClass.isKeyDown(29) || KeyboardClass.isKeyDown(157);
+                if (ctrlDown && keyCode === 46) {
+                    copyActiveSelection();
+                    cancel(event);
+                } else if (ctrlDown && keyCode === 30) {
+                    selectAllActive();
+                    cancel(event);
+                }
+            }
+            return;
+        }
         const inputEl = findInput(focusedId);
         if (inputEl === null) {
             setFocusedInput(null);
@@ -540,6 +586,7 @@ export function initHtswGui(): void {
             } else {
                 setFocusedInput(null);
             }
+            markGuiDirty();
             cancel(event);
             return;
         }
@@ -554,7 +601,12 @@ export function initHtswGui(): void {
         if (newText !== null) {
             const current =
                 typeof inputEl.value === "function" ? inputEl.value() : inputEl.value;
-            if (newText !== current) inputEl.onChange(newText);
+            if (newText !== current) {
+                inputEl.onChange(newText);
+                // Typing changes what the tree shows (filtered results, text
+                // width) — rebuild next paint instead of waiting on the backstop.
+                markGuiDirty();
+            }
         }
         cancel(event);
     });
@@ -572,7 +624,7 @@ export function initHtswGui(): void {
             tickReparse();
             // Drain one off-frame parse queued by requestParse() (export pane,
             // Importables tree, queue rows) so a cold parse never blocks render.
-            processPendingParses(autoTrackRefresh);
+            processPendingParses(handleCompletedParse);
         }
         // First-load walkthrough; once per session, never mid-import, and only
         // while the GUI can actually render a popover.
@@ -618,6 +670,7 @@ export function initHtswGui(): void {
             if (popoverIsOpen()) closeAllPopovers();
             closeHoverCard();
             if (getFocusedInput() !== null) setFocusedInput(null);
+            clearSelection();
         }
     });
 

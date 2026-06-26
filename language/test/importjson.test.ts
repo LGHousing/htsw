@@ -92,7 +92,7 @@ describe("import.json include", () => {
         const dir = dirname(entry);
         const aPath = resolve(dir, "a.import.json");
         const bPath = resolve(dir, "b.import.json");
-        const root = result.gcx.fileTree;
+        const root = result.importJson.fileTree;
         expect(root?.path).toBe(entry);
         expect(root?.includes.map((n) => n.path)).toEqual([aPath]);
         const aNode = root!.includes[0];
@@ -104,7 +104,7 @@ describe("import.json include", () => {
         );
         expect(regionA).toBeDefined();
         expect(aNode.importables).toContain(regionA!);
-        expect(result.gcx.declaringPathOf(regionA!)).toBe(aPath);
+        expect(result.importJson.declaringPathOf(regionA!)).toBe(aPath);
     });
 
     it("attaches no node for cyclic includes", () => {
@@ -112,7 +112,7 @@ describe("import.json include", () => {
         const result = parseImportables(entry);
 
         const otherPath = resolve(dirname(entry), "other.import.json");
-        const root = result.gcx.fileTree;
+        const root = result.importJson.fileTree;
         expect(root?.includes.map((n) => n.path)).toEqual([otherPath]);
         // other includes the entry again — the cycle is rejected, no node.
         expect(root?.includes[0].includes).toEqual([]);
@@ -235,24 +235,6 @@ describe("import.json basic passing behavior", () => {
         expect(hasHardErrors(result.diagnostics)).toBe(false);
     });
 
-    it("parses a single npc importable", () => {
-        const result = parseImportables(caseFilePath("npc"));
-
-        expect(result.value.length).toBe(1);
-        const npc = result.value[0];
-        assertImportable(npc, "NPC");
-        expect(npc.name).toBe("Guide");
-        expect(npc.pos?.x).toBe(1);
-        expect(npc.pos?.y).toBe(2);
-        expect(npc.pos?.z).toBe(3);
-        expect(npc.lookAtPlayers).toBe(true);
-        expect(npc.hideNameTag).toBe(false);
-        expect(npc.skin).toBe("Steve");
-        expect(npc.equipment?.helmet).toBe("empty.snbt");
-        expect(npc.equipment?.hand).toBe("empty.snbt");
-        expect(hasHardErrors(result.diagnostics)).toBe(false);
-    });
-
     it("parses a single item importable", () => {
         const result = parseImportables(caseFilePath("item"));
 
@@ -291,20 +273,20 @@ describe("import.json houseUuid", () => {
     it("binds the parse to the declared house uuid, lowercased", () => {
         const result = parseImportables(caseFilePath("house_uuid"));
 
-        expect(result.gcx.houseUuid).toBe("5e9c8f33-1234-4abc-9def-0123456789ab");
+        expect(result.importJson.houseUuid).toBe("5e9c8f33-1234-4abc-9def-0123456789ab");
         expect(result.diagnostics.length).toBe(0);
     });
 
     it("leaves the parse unbound when no houseUuid is declared", () => {
         const result = parseImportables(caseFilePath("empty"));
 
-        expect(result.gcx.houseUuid).toBe(null);
+        expect(result.importJson.houseUuid).toBe(null);
     });
 
     it("reports malformed house uuids", () => {
         const result = parseImportables(caseFilePath("house_uuid_invalid"));
 
-        expect(result.gcx.houseUuid).toBe(null);
+        expect(result.importJson.houseUuid).toBe(null);
         expect(hasHardErrors(result.diagnostics)).toBe(true);
         expect(
             result.diagnostics.some((diagnostic) =>
@@ -316,7 +298,7 @@ describe("import.json houseUuid", () => {
     it("ignores houseUuid declared in an included file, with a warning", () => {
         const result = parseImportables(caseDirPath("house_uuid_include"));
 
-        expect(result.gcx.houseUuid).toBe(null);
+        expect(result.importJson.houseUuid).toBe(null);
         expect(
             result.diagnostics.some(
                 (diagnostic) =>

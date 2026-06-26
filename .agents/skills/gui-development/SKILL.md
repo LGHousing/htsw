@@ -16,6 +16,7 @@ The library code (project-agnostic UI primitives) lives in `gui/lib/`. Project-s
 Library — `gui/lib/` (project-agnostic UI primitives + screen/theme):
 - `layout.ts` — element types, padding, sizing, container/scroll layout algorithm.
 - `extractable.ts` — `Extractable<T> = T | (() => T)` and `extract`.
+- `dirty.ts` — retained-layout invalidation (`markGuiDirty`, `GUI_REBUILD_BACKSTOP_MS`). Panels reuse laid-out trees until a dirty revision, bounds change, or backstop rebuild.
 - `render.ts` — single tree renderer + click dispatcher (used by panels and popovers).
 - `panel.ts` — `Panel` class: bounds, visibility, click trigger, render trigger.
 - `popovers.ts` — global popover stack, anchored/modal render, click dispatch helper, hover-suppression query.
@@ -32,7 +33,6 @@ Library — `gui/lib/` (project-agnostic UI primitives + screen/theme):
 
 App state — `gui/state/` (genuinely-global mutable state ONLY; split by concern, with `index.ts` as a convenience re-export barrel — nothing else lives here):
 - `paths.ts` — active + export `import.json` path. The active path starts empty on module load; recents are user-picked, not auto-opened.
-- `parsed.ts` — the active `ParseResult` (`getParsedResult` / `setParsedResult`).
 - `housing.ts` — current housing UUID.
 - `trust.ts` — **per-house trust set** with `isHouseTrusted` / `setHouseTrust` / `isCurrentHouseTrusted`, persisted to `trusted-houses.json`.
 - `selectionSet.ts` — Importables-tab multi-select checkbox set.
@@ -43,7 +43,8 @@ App state — `gui/state/` (genuinely-global mutable state ONLY; split by concer
 Parse cache service — `gui/parsing/` (a service, not "state"):
 - `parses.ts` — the single parse authority + per-file cache (`parseImportJsonAt`). Decides freshness by a **fingerprint** (mtimes of the import.json and every file it references via `allReferencedPaths`), re-validated throttled (`FP_RECHECK_MS`) so a referenced-file edit is picked up within ~0.4s without a separate watcher. Owns the disk snapshot and is the only thing that calls the htsw parser. `invalidateParseCacheEntry` forces a fresh parse; `touchParseCacheMtime` marks a file in-sync after an in-place edit.
 - `parseSnapshot.ts` — on-disk persisted parse output, keyed by import.json path; skips the ~1s cold full parse after `/ct reload` when the user opens a project and nothing referenced has changed.
-- `reparse.ts` — thin DRIVER over `parses.ts`: debounces reloads, polls the authority while the GUI is visible, and propagates a changed parse into global state. Owns no parsing/snapshot/mtime logic itself. It does not auto-discover or parse a remembered project on `/ct reload`.
+- `reparse.ts` — thin DRIVER over `parses.ts`: debounces reloads, polls the authority while the GUI is visible, and runs selected-parse side effects when the cache entry changes. Owns no parsing/snapshot/mtime logic itself. It does not store a second parsed result; selected parse reads derive from the parse cache.
+- `selectedParse.ts` — read-only helper for the selected import.json's cached parse (`getSelectedParsedResult`). This is derived from `paths.ts` + `parses.ts`; never add a mutable active-parse store.
 - `importablePaths.ts` — centralized importable→path lookups: `importableSourcePath` (htsl/.snbt/json), `importableSubListPath(imp, kind)` for sub-lists (`onEnterActions`/`onExitActions` on REGION; `leftClickActions`/`rightClickActions` on ITEM), and `allReferencedPaths`. Resolves spans through `sourceMap.getFileByPos` so a list with `actionsPath: "..."` returns the htsl while inline JSON returns the import.json.
 
 Code-view data — `gui/code-view/` (the ONE renderer + everything it parses/colors):
@@ -61,14 +62,14 @@ Diff decorators — `gui/right-panel/decorators.ts` (kept OUT of `code-view/` so
 - `progressDecorator` — live import tab; reads `import-tab/livePreview` (each `PreviewLine`'s own `diffState`/`completed`, plus the live cursor + phase scalars). There is no separate overlay map — `livePreview` is the single live store.
 
 Right-panel state — `gui/right-panel/`:
-- `selection.ts` — preview/confirm + file-tab state for the right-panel source preview, plus the synthetic live-import tab. The live tab is not stored with confirmed/preview file tabs; it is derived from the active import path and can stay open after a run for final diff review.
+- `selection.ts` — preview/confirm + file-tab state for the right-panel source preview, plus the synthetic live-import tab. The live tab is not stored with confirmed/preview file tabs; it is derived from the active import path and can stay open after a run for final diff review. Tab-state mutators call `markGuiDirty()` because tour/starter-project setup can switch previews outside a click.
 - `tabDrag.ts` — transient mouse gesture state for dragging confirmed file tabs to reorder them. It delegates the actual order mutation to `selection.ts`.
 
 Import-session state — `gui/right-panel/import-tab/`:
-- `livePreview.ts` — LIVE diff producer: per-action `DiffState` driven by import events during an actual import (was `previewLines.ts` + the `importPreviewState.ts` barrel). It renders through the right-panel live pseudo-file tab.
-- `focusedLine.ts` — per-file focused-line id for the code view.
-- `importProgress.ts` — import-session progress, ETA, per-queue-row run state.
-- `queue.ts` — the dynamic import `QueueItem` queue.
+- `livePreview.ts` — LIVE diff producer: per-action `DiffState` driven by import events during an actual import (was `previewLines.ts` + the `importPreviewState.ts` barrel). It renders through the right-panel live pseudo-file tab. Preview line/cursor mutators call `markGuiDirty()` so diff rows and cursor movement repaint at event speed.
+- `focusedLine.ts` — per-file focused-line id for the code view. Mutations call `markGuiDirty()`.
+- `importProgress.ts` — import-session progress, ETA, per-queue-row run state. `setImportProgress` and active-path/session-label setters call `markGuiDirty()` because the progress bar, live tab, and footer shape are layout-driven.
+- `queue.ts` — the dynamic import `QueueItem` queue. Queue/session mutators call `markGuiDirty()` so delayed import/export cleanup updates immediately.
 
 Knowledge — `gui/knowledge/`:
 - `rows.ts` — knowledge-row storage (`getKnowledgeRows` / `setKnowledgeRows` / `refresh*`).
@@ -87,7 +88,7 @@ Importer hookup — `importer/diffSink.ts`:
 Popovers — `gui/popovers/`:
 - `new-project.ts` — name-a-new-project prompt (invokes a callback with the chosen name). There is **no** in-game "add importable" popover — new importables are created from the VS Code tools view.
 - `rename-file.ts` / `rename-importable.ts` — in-place rename of a project file / an importable.
-- `edit-function.ts` — in-place editor for a single importable field (a value, or an x/y/z position), written via `updateImportableField`; despite the name it edits any importable type, not just functions.
+- `edit-function.ts` — in-place editor for a single importable field (a value, an x/y/z position, or full region bounds), written via `updateImportableField`; despite the name it edits any importable type, not just functions.
 - `alias.ts` — per-house alias editor. `openAliasPopover(rect, uuid)` takes the target UUID explicitly so the Houses tab can edit any known house, not just the currently-detected one.
 - `file-browser.ts` — modal file browser for picking an `import.json`.
 - `open-menu.ts` — Hypixel `/functions /eventactions /regions …` shortcut menu.
@@ -120,7 +121,18 @@ The per-row file↔house status icon comes from ONE shared vocabulary (`gui/cach
 | `scroll` | `style: ContainerStyle`, `id: string`, `children: Extractable<Element[]>`, optional `axis: "x" \| "y"` | passes through | scroll viewport with internal offset state, scrollbar overlay, mouse-wheel + drag. `axis` defaults to `"y"` (vertical); `axis: "x"` is a horizontal strip (e.g. the View-tab file-tab bar) — wheel-scrolls only, no draggable scrollbar is drawn, with one-pixel clipped-content edge ticks. |
 | `image` | `style`, `name: Extractable<IconName>`, optional `color: Extractable<number>` (ARGB tint), optional `tooltip` + `tooltipColor` (same as `text`) | no | 16×16 default; loaded through `lib/images.ts`'s `ImageIO` path and cached per name. The icon PNGs are monochrome white, so `color` recolors them — implemented with `Renderer.colorize(...)` before `drawImage`, **not** `GlStateManager.color` (CT's `drawImage` resets GL color to white when its internal `colorized` is null, so only `colorize()` survives the draw). `Icon({ color, tooltip })` exposes both. See **Icons** below. |
 
-Children of `container` and `scroll` are `Extractable<Element[]>` so the list can be dynamic each frame (e.g. filter results). Layout is recomputed every frame; **there is no layout cache** — anything in the tree may change between frames.
+Children of `container` and `scroll` are `Extractable<Element[]>` so the list can be dynamic on rebuild (e.g. filter results). Panels retain their laid-out tree between dirty revisions; value closures still resolve during every draw, but changing which elements exist or their sizes requires `markGuiDirty()` or waiting for the 200ms backstop.
+
+## Retained Layout Dirtying
+
+Panels cache laid-out element trees to avoid rebuilding every `children: () => [...]` closure on idle frames. `drawLaid` still runs every frame, so text/color/background/input value closures and hover/click-flash stay live. Structural changes — rows added/removed, scroll offsets, selection highlight boxes, tab order, progress-bar segments — need a dirty revision.
+
+Dirty sources live at interaction boundaries and GUI state-store boundaries:
+- `panel.ts` marks dirty for clicks.
+- `overlay.ts` marks dirty for wheel scroll, scrollbar drag/eased wheel frames, typed input, Enter submit, chat refresh, and tab-drag autoscroll.
+- Stores that mutate layout-driving state call `markGuiDirty()` themselves: Importables `bumpTreeRevision`, right-panel tab selection/drag, code-view selection/focused line, import progress/live preview/queue, and the Importables checkbox set.
+
+Async one-shots such as parse completion, housing detection, and toasts may ride `GUI_REBUILD_BACKSTOP_MS`; keep them explicit only when a user-visible interaction or live-progress surface needs frame-rate updates.
 
 ## Layout (flex)
 

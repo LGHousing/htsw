@@ -15,6 +15,7 @@ import {
     COLOR_TEXT,
     SIZE_TAB_H,
 } from "../lib/theme";
+import { markGuiDirty } from "../lib/dirty";
 
 type TabId = "importables" | "houses" | "settings";
 
@@ -34,7 +35,9 @@ export function getActiveTab(): Tab {
 }
 
 export function setActiveLeftTab(id: TabId): void {
+    if (activeTab === id) return;
     activeTab = id;
+    markGuiDirty();
 }
 
 // Tab geometry, needed to decide whether the text labels fit or the bar must
@@ -73,7 +76,7 @@ function tabButton(t: Tab, showLabel: boolean): Element {
                     hoverBackground: isActive ? COLOR_TAB_ACTIVE_HOVER : COLOR_TAB_HOVER,
                 },
                 onClick: () => {
-                    activeTab = t.id;
+                    setActiveLeftTab(t.id);
                 },
             }),
             Container({

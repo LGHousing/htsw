@@ -9,13 +9,14 @@ function stringWidth(text: string): number {
     return chatWidth(text, false);
 }
 
-function cloneToken(token: TokenSpan, text: string): TokenSpan {
+function cloneToken(token: TokenSpan, text: string, srcStart: number): TokenSpan {
     return {
         text,
         color: token.color,
         fieldProp: token.fieldProp,
         underlineColor: token.underlineColor,
         linkTarget: token.linkTarget,
+        srcStart,
     };
 }
 
@@ -40,19 +41,24 @@ function longestPrefixThatFits(text: string, maxWidthPx: number): number {
     return best;
 }
 
-function splitToken(token: TokenSpan, maxWidthPx: number): TokenSpan[] {
+function splitToken(token: TokenSpan, maxWidthPx: number, baseSrcCol: number): TokenSpan[] {
     const out: TokenSpan[] = [];
     let rest = token.text;
+    let offset = 0;
     while (rest.length > 0) {
         if (stringWidth(rest) <= maxWidthPx) {
-            out.push(cloneToken(token, rest));
+            out.push(cloneToken(token, rest, baseSrcCol + offset));
             break;
         }
         let cut = lastWhitespaceBreak(rest, maxWidthPx);
         if (cut <= 0) cut = longestPrefixThatFits(rest, maxWidthPx);
-        out.push(cloneToken(token, rest.substring(0, cut)));
+        out.push(cloneToken(token, rest.substring(0, cut), baseSrcCol + offset));
         rest = rest.substring(cut);
-        while (rest.length > 0 && rest.charAt(0) === " ") rest = rest.substring(1);
+        offset += cut;
+        while (rest.length > 0 && rest.charAt(0) === " ") {
+            rest = rest.substring(1);
+            offset += 1;
+        }
     }
     return out;
 }
@@ -67,6 +73,7 @@ export function wrapTokensIntoVisualRows(
     const rows: TokenSpan[][] = [];
     let row: TokenSpan[] = [];
     let rowWidth = 0;
+    let srcCol = 0;
 
     function pushRow(): void {
         rows.push(row);
@@ -76,11 +83,13 @@ export function wrapTokensIntoVisualRows(
 
     for (let i = 0; i < tokens.length; i++) {
         const token = tokens[i];
+        const tokenSrcStart = srcCol;
+        srcCol += token.text.length;
         if (token.text.length === 0) continue;
 
         const tokenWidth = stringWidth(token.text);
         if (rowWidth + tokenWidth <= limit) {
-            row.push(token);
+            row.push(cloneToken(token, token.text, tokenSrcStart));
             rowWidth += tokenWidth;
             continue;
         }
@@ -88,12 +97,12 @@ export function wrapTokensIntoVisualRows(
         if (row.length > 0) pushRow();
 
         if (tokenWidth <= limit) {
-            row.push(token);
+            row.push(cloneToken(token, token.text, tokenSrcStart));
             rowWidth = tokenWidth;
             continue;
         }
 
-        const pieces = splitToken(token, limit);
+        const pieces = splitToken(token, limit, tokenSrcStart);
         for (let j = 0; j < pieces.length; j++) {
             if (row.length > 0) pushRow();
             row.push(pieces[j]);

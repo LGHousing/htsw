@@ -8,8 +8,9 @@ export type IconProps = {
     // shake and fail at runtime — typing this as `IconName` is the guard.
     name: Extractable<IconName>;
     style?: Style;
-    // Optional ARGB tint for the (white) icon, e.g. ACCENT_DANGER.
-    color?: Extractable<number>;
+    // Optional ARGB tint for the (white) icon, e.g. ACCENT_DANGER. `undefined`
+    // leaves the icon untinted (white), so a caller can tint conditionally.
+    color?: Extractable<number | undefined>;
     // Optional hover chip.
     tooltip?: Extractable<string>;
     tooltipColor?: Extractable<number>;

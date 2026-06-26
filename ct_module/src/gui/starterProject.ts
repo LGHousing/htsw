@@ -33,7 +33,7 @@ export function createStarterProject(): void {
     // true: reveal the project (past an explicit collapse) and show its
     // import.json in the View pane.
     forceImportExpand(canon);
-    previewSelect(canon);
+    previewSelect(canon, canon);
     setImportJsonPath(importJsonPath);
     addRecent(importJsonPath);
 }

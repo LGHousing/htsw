@@ -1,4 +1,4 @@
-import { Diagnostic, SourceMap, parseImportablesResult, type ParseResult } from "htsw";
+import { Diagnostic, SourceMap, parseImportablesResult, type ImportablesParseResult } from "htsw";
 import type { Importable, ImportableItem } from "htsw/types";
 
 import TaskContext from "../tasks/context";
@@ -41,7 +41,7 @@ export type ImportSelection = {
     trustMode: boolean;
     housingUuid: string;
     sourcePath: string;
-    parsed?: ParseResult<Importable[]>;
+    parsed?: ImportablesParseResult;
     events?: ImportEventHandler;
 };
 

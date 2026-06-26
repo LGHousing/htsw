@@ -96,9 +96,9 @@ function collectImportableCoverage(
                 collectActionsCoverage(coverage, importable.slots[i].actions);
             }
             return;
-        case "NPC":
-            collectActionsCoverage(coverage, importable.leftClickActions);
-            collectActionsCoverage(coverage, importable.rightClickActions);
+        case "TEAM":
+        case "GROUP":
+        case "HOUSE_NAME":
             return;
         default: {
             const _exhaustive: never = importable;

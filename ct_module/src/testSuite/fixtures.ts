@@ -1,5 +1,4 @@
-import { Diagnostic, SourceMap, parseImportablesResult, type ParseResult } from "htsw";
-import type { Importable } from "htsw/types";
+import { Diagnostic, SourceMap, parseImportablesResult, type ImportablesParseResult } from "htsw";
 
 import { FileSystemFileLoader } from "../utils/fileLoaders";
 import {
@@ -14,7 +13,7 @@ const MODULE_ENV_PATH = "./config/ChatTriggers/modules/HTSW/.env";
 export type ParsedTestFixture = {
     id: string;
     importJsonPath: string;
-    parsed: ParseResult<Importable[]>;
+    parsed: ImportablesParseResult;
     coverage: SuiteCoverage;
     blockingDiagnostics: Diagnostic[];
 };

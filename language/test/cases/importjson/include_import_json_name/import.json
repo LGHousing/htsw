@@ -1,6 +1,12 @@
 {
   "include": ["shared/import.json"],
   "regions": [
-    { "name": "RootRegion" }
+    {
+      "name": "RootRegion",
+      "bounds": {
+        "from": { "x": 0, "y": 0, "z": 0 },
+        "to": { "x": 1, "y": 1, "z": 1 }
+      }
+    }
   ]
 }

@@ -19,7 +19,7 @@ import { setHouseUuidKey } from "../project/importJsonMutations";
 export function boundHouseUuidOf(fullPath: string): string | null {
     const parse = requestParse(fullPath);
     if (parse === null || parse.parsed === null) return null;
-    return parse.parsed.gcx.houseUuid;
+    return parse.parsed.importJson.houseUuid;
 }
 
 function rebindFile(fullPath: string, rawUuid: string | null): void {
@@ -32,7 +32,7 @@ function rebindFile(fullPath: string, rawUuid: string | null): void {
     const wroteAt = Date.now();
     const entry = getParseAt(fullPath);
     if (entry !== null && entry.parsed !== null) {
-        entry.parsed.gcx.houseUuid = uuid;
+        entry.parsed.importJson.houseUuid = uuid;
         touchParseCacheFile(fullPath);
         recordHouseBinding(uuid, canonicalPath(fullPath));
     } else {
@@ -88,7 +88,7 @@ export function confirmRebind(fullPath: string, uuid: string | null): void {
 export function houseBindingActions(fullPath: string): MenuAction[] {
     const parse = requestParse(fullPath);
     if (parse === null || parse.parsed === null) return [];
-    const bound = parse.parsed.gcx.houseUuid;
+    const bound = parse.parsed.importJson.houseUuid;
     const current = getHousingUuid();
     const actions: MenuAction[] = [];
     if (current !== null && current !== bound) {

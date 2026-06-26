@@ -1,6 +1,7 @@
 /// <reference types="../../../../CTAutocomplete" />
 
 import { normalizeHtswPath } from "../../lib/pathDisplay";
+import { markGuiDirty } from "../../lib/dirty";
 
 type FileState = {
     focusedLineId: string | null;
@@ -24,7 +25,9 @@ function ensure(path: string): FileState {
 
 export function setFocusLineId(path: string, lineId: string | null): void {
     const s = ensure(path);
+    if (s.focusedLineId === lineId) return;
     s.focusedLineId = lineId;
+    markGuiDirty();
 }
 
 export function focusLineIdForFile(path: string): string | null {

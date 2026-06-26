@@ -45,10 +45,6 @@ export function readCachedActionList(
         if (basePath === "leftClickActions") return importable.leftClickActions;
         if (basePath === "rightClickActions") return importable.rightClickActions;
     }
-    if (importable.type === "NPC") {
-        if (basePath === "leftClickActions") return importable.leftClickActions;
-        if (basePath === "rightClickActions") return importable.rightClickActions;
-    }
     if (importable.type === "MENU") {
         const match = basePath.match(/^slots\[(\d+)\]\.actions$/);
         if (match !== null) {

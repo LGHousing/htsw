@@ -1,17 +1,17 @@
 /// <reference types="../../../CTAutocomplete" />
 
 import type { Action } from "htsw/types";
-import type { Diagnostic, DiagnosticLevel, ParseResult, SourceFile, SpanTable } from "htsw";
+import type { Diagnostic, DiagnosticLevel, ImportablesParseResult, SourceFile, SpanTable } from "htsw";
 
 import { getMtimeMs, pathExists } from "../lib/java";
 import { shortPath } from "../lib/pathDisplay";
 import { FileSystemFileLoader } from "../../utils/fileLoaders";
 import { actionsToLines, parseHtslFile, type HtslLine } from "./htslParse";
-import { getParsedResult } from "../state/parsed";
+import { getSelectedParsedResult } from "../parsing/selectedParse";
+import { getParseAt } from "../parsing/parses";
 import { tokenizeHtsl, tokenizeJson, tokenizeSnbt, type SyntaxToken } from "../right-panel/syntax";
 import type { FieldSpan, RenderableLine, TokenSpan } from "./lineTypes";
 import { normalizeDiagnosticSpans, type DiagnosticLineSpan } from "../../diagnostics/spans";
-import type { Importable } from "htsw/types";
 
 const COLOR_PLAIN = 0xffe5e5e5 | 0;
 const COLOR_ERROR = 0xffe85c5c | 0;
@@ -73,7 +73,7 @@ type LineDiagnosticInfo = {
 };
 
 const diagnosticIndexCache = new WeakMap<
-    ParseResult<Importable[]>,
+    ImportablesParseResult,
     Map<string, Map<number, LineDiagnosticInfo>>
 >();
 
@@ -81,10 +81,20 @@ function normalizedPath(path: string): string {
     return path.split("\\").join("/").toLowerCase();
 }
 
-function diagnosticIndexForFile(path: string): Map<number, LineDiagnosticInfo> {
+function parsedForContext(importJsonPath: string | null | undefined): ImportablesParseResult | null {
+    if (importJsonPath !== null && importJsonPath !== undefined && importJsonPath !== "") {
+        return getParseAt(importJsonPath)?.parsed ?? null;
+    }
+    return getSelectedParsedResult();
+}
+
+function diagnosticIndexForFile(
+    path: string,
+    importJsonPath: string | null | undefined
+): { parsed: ImportablesParseResult | null; byLine: Map<number, LineDiagnosticInfo> } {
     const empty = new Map<number, LineDiagnosticInfo>();
-    const parsed = getParsedResult();
-    if (parsed === null) return empty;
+    const parsed = parsedForContext(importJsonPath);
+    if (parsed === null) return { parsed: null, byLine: empty };
     let byFile = diagnosticIndexCache.get(parsed);
     if (byFile === undefined) {
         byFile = new Map();
@@ -114,7 +124,7 @@ function diagnosticIndexForFile(path: string): Map<number, LineDiagnosticInfo> {
         }
         diagnosticIndexCache.set(parsed, byFile);
     }
-    return byFile.get(normalizedPath(path)) ?? empty;
+    return { parsed, byLine: byFile.get(normalizedPath(path)) ?? empty };
 }
 
 function spanWins(a: DiagnosticLineSpan, b: DiagnosticLineSpan): boolean {
@@ -171,11 +181,16 @@ export function tokensWithDiagnosticSpans(
     return out;
 }
 
-function decorateLineDiagnostics(line: RenderableLine, info: LineDiagnosticInfo | undefined): void {
+function decorateLineDiagnostics(
+    line: RenderableLine,
+    info: LineDiagnosticInfo | undefined,
+    parsed: ImportablesParseResult | null
+): void {
     if (info === undefined) return;
     line.tokens = tokensWithDiagnosticSpans(line.tokens, info.spans);
     line.staticBackground = info.background;
     line.diagnostics = info.diagnostics;
+    if (parsed !== null) line.diagnosticParse = parsed;
 }
 
 function endsWith(s: string, suffix: string): boolean {
@@ -215,9 +230,12 @@ type HtslCacheEntry = {
 const htslCache = new Map<string, HtslCacheEntry>();
 
 
-function htslRenderableLines(path: string): RenderableLine[] {
+function htslRenderableLines(
+    path: string,
+    importJsonPath: string | null | undefined
+): RenderableLine[] {
     const mtime = getMtimeMs(path);
-    const parsed = getParsedResult();
+    const parsed = parsedForContext(importJsonPath);
     const parsedRef: object | null = parsed === null ? null : parsed;
     const cached = htslCache.get(path);
     if (
@@ -253,7 +271,7 @@ function htslRenderableLines(path: string): RenderableLine[] {
         return out;
     }
 
-    const diagnostics = diagnosticIndexForFile(path);
+    const diagnostics = diagnosticIndexForFile(path, importJsonPath);
     const out: RenderableLine[] = [];
     const seenPaths: { [p: string]: number } = {};
     for (let i = 0; i < lines.length; i++) {
@@ -285,7 +303,7 @@ function htslRenderableLines(path: string): RenderableLine[] {
             tokens,
             actionPath: ln.actionPath,
         };
-        decorateLineDiagnostics(renderableLine, diagnostics.get(lineNum));
+        decorateLineDiagnostics(renderableLine, diagnostics.byLine.get(lineNum), diagnostics.parsed);
         out.push(renderableLine);
     }
     htslCache.set(path, { mtime, parsedRef, lines: out });
@@ -322,9 +340,12 @@ type TextCacheEntry = {
 };
 const jsonCache = new Map<string, TextCacheEntry>();
 
-function plainTextRenderableLines(path: string): RenderableLine[] {
+function plainTextRenderableLines(
+    path: string,
+    importJsonPath: string | null | undefined
+): RenderableLine[] {
     const lines = readPlainLines(path);
-    const diagnostics = diagnosticIndexForFile(path);
+    const diagnostics = diagnosticIndexForFile(path, importJsonPath);
     const out: RenderableLine[] = [];
     for (let i = 0; i < lines.length; i++) {
         const lineNum = i + 1;
@@ -334,7 +355,7 @@ function plainTextRenderableLines(path: string): RenderableLine[] {
             depth: 0,
             tokens: plainTokens(lines[i], COLOR_PLAIN),
         };
-        decorateLineDiagnostics(renderableLine, diagnostics.get(lineNum));
+        decorateLineDiagnostics(renderableLine, diagnostics.byLine.get(lineNum), diagnostics.parsed);
         out.push(renderableLine);
     }
     return out;
@@ -366,9 +387,12 @@ function addJsonFileLinks(sourcePath: string, tokens: TokenSpan[]): TokenSpan[] 
     return tokens;
 }
 
-function jsonRenderableLines(path: string): RenderableLine[] {
+function jsonRenderableLines(
+    path: string,
+    importJsonPath: string | null | undefined
+): RenderableLine[] {
     const mtime = getMtimeMs(path);
-    const parsed = getParsedResult();
+    const parsed = parsedForContext(importJsonPath);
     const parsedRef: object | null = parsed === null ? null : parsed;
     const cached = jsonCache.get(path);
     if (cached !== undefined && cached.mtime === mtime && cached.parsedRef === parsedRef) {
@@ -376,7 +400,7 @@ function jsonRenderableLines(path: string): RenderableLine[] {
     }
 
     const lines = readPlainLines(path);
-    const diagnostics = diagnosticIndexForFile(path);
+    const diagnostics = diagnosticIndexForFile(path, importJsonPath);
     const out: RenderableLine[] = [];
     for (let i = 0; i < lines.length; i++) {
         const lineNum = i + 1;
@@ -389,7 +413,7 @@ function jsonRenderableLines(path: string): RenderableLine[] {
                 attachFieldSpans(tokenizeJson(lines[i]), undefined)
             ),
         };
-        decorateLineDiagnostics(renderableLine, diagnostics.get(lineNum));
+        decorateLineDiagnostics(renderableLine, diagnostics.byLine.get(lineNum), diagnostics.parsed);
         out.push(renderableLine);
     }
     jsonCache.set(path, { mtime, parsedRef, lines: out });
@@ -398,9 +422,12 @@ function jsonRenderableLines(path: string): RenderableLine[] {
 
 const snbtCache = new Map<string, TextCacheEntry>();
 
-function snbtRenderableLines(path: string): RenderableLine[] {
+function snbtRenderableLines(
+    path: string,
+    importJsonPath: string | null | undefined
+): RenderableLine[] {
     const mtime = getMtimeMs(path);
-    const parsed = getParsedResult();
+    const parsed = parsedForContext(importJsonPath);
     const parsedRef: object | null = parsed === null ? null : parsed;
     const cached = snbtCache.get(path);
     if (cached !== undefined && cached.mtime === mtime && cached.parsedRef === parsedRef) {
@@ -408,7 +435,7 @@ function snbtRenderableLines(path: string): RenderableLine[] {
     }
 
     const lines = readPlainLines(path);
-    const diagnostics = diagnosticIndexForFile(path);
+    const diagnostics = diagnosticIndexForFile(path, importJsonPath);
     const out: RenderableLine[] = [];
     for (let i = 0; i < lines.length; i++) {
         const lineNum = i + 1;
@@ -418,7 +445,7 @@ function snbtRenderableLines(path: string): RenderableLine[] {
             depth: 0,
             tokens: attachFieldSpans(tokenizeSnbt(lines[i]), undefined),
         };
-        decorateLineDiagnostics(renderableLine, diagnostics.get(lineNum));
+        decorateLineDiagnostics(renderableLine, diagnostics.byLine.get(lineNum), diagnostics.parsed);
         out.push(renderableLine);
     }
     snbtCache.set(path, { mtime, parsedRef, lines: out });
@@ -529,9 +556,12 @@ function depthPerLine(
 
 const htslRawCache = new Map<string, { mtime: number; parsedRef: object | null; lines: RenderableLine[] }>();
 
-function htslRawRenderableLines(path: string): RenderableLine[] {
+function htslRawRenderableLines(
+    path: string,
+    importJsonPath: string | null | undefined
+): RenderableLine[] {
     const mtime = getMtimeMs(path);
-    const projectParsed = getParsedResult();
+    const projectParsed = parsedForContext(importJsonPath);
     const parsedRef: object | null = projectParsed === null ? null : projectParsed;
     const cached = htslRawCache.get(path);
     if (cached !== undefined && cached.mtime === mtime && cached.parsedRef === parsedRef) {
@@ -542,14 +572,14 @@ function htslRawRenderableLines(path: string): RenderableLine[] {
     if (parsed.parseError !== null || parsed.file === null || parsed.spans === null) {
         // Fall back to the reconstruction renderer; it has its own error
         // path that surfaces the parse failure message.
-        return htslRenderableLines(path);
+        return htslRenderableLines(path, importJsonPath);
     }
 
     const ranges = collectActionLineRanges(parsed.actions, parsed.spans, parsed.file);
     const rawLines = parsed.file.src.split("\n");
     const linePaths = pathPerLine(rawLines.length, ranges);
     const lineDepths = depthPerLine(rawLines.length, ranges);
-    const diagnostics = diagnosticIndexForFile(path);
+    const diagnostics = diagnosticIndexForFile(path, importJsonPath);
 
     const seenPaths: { [p: string]: number } = {};
     const out: RenderableLine[] = [];
@@ -577,20 +607,23 @@ function htslRawRenderableLines(path: string): RenderableLine[] {
             tokens,
             actionPath,
         };
-        decorateLineDiagnostics(renderableLine, diagnostics.get(lineNum));
+        decorateLineDiagnostics(renderableLine, diagnostics.byLine.get(lineNum), diagnostics.parsed);
         out.push(renderableLine);
     }
     htslRawCache.set(path, { mtime, parsedRef, lines: out });
     return out;
 }
 
-export function linesForFile(path: string | null): RenderableLine[] {
+export function linesForFile(
+    path: string | null,
+    importJsonPath?: string | null
+): RenderableLine[] {
     if (path === null || path.length === 0) return [];
     const norm = path.split("\\").join("/").toLowerCase();
-    if (endsWith(norm, ".htsl")) return htslRawRenderableLines(path);
-    if (endsWith(norm, ".json")) return jsonRenderableLines(path);
-    if (endsWith(norm, ".snbt")) return snbtRenderableLines(path);
-    return plainTextRenderableLines(path);
+    if (endsWith(norm, ".htsl")) return htslRawRenderableLines(path, importJsonPath);
+    if (endsWith(norm, ".json")) return jsonRenderableLines(path, importJsonPath);
+    if (endsWith(norm, ".snbt")) return snbtRenderableLines(path, importJsonPath);
+    return plainTextRenderableLines(path, importJsonPath);
 }
 
 export const CodeViewColors = {

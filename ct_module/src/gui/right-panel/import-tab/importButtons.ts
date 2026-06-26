@@ -214,6 +214,7 @@ export function importControl(): Element {
                     const n = getQueueLength();
                     return n === 0 ? "Import" : `Import (${n})`;
                 },
+                disabled: () => getQueueLength() === 0,
                 style: {
                     width: { kind: "grow" },
                     height: { kind: "grow" },

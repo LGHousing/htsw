@@ -10,7 +10,7 @@ import type {
     ObservedActionSlot,
 } from "../src/housingSync/types";
 
-import { conditional, message, observedSlot as obs, playSound, random } from "./utils";
+import { changeVar, conditional, message, observedSlot as obs, playSound, random } from "./utils";
 
 function ops(observed: ObservedActionSlot[], desired: Action[]): ActionListOperation[] {
     return diffActionList(baselineActionListFromSlots(observed), desired).operations;
@@ -144,6 +144,36 @@ describe("diffActionList — edits", () => {
         expect(edit!.nestedDiffs[0].diff.operations[0].kind).toBe("edit");
     });
 
+    test("conditional team var tail shift does not move the whole nested list", () => {
+        const actions = Array.from({ length: 25 }, (_, index) =>
+            changeVar({
+                holder: { type: "Team", team: "Blue" },
+                key: `x${index + 1}`,
+                value: String(index + 1),
+            })
+        );
+        const observed = [
+            obs(0, conditional({ ifActions: actions, elseActions: [] })),
+        ];
+        const desired = [
+            conditional({
+                ifActions: [...actions.slice(23), ...actions.slice(0, 23)],
+                elseActions: [],
+            }),
+        ];
+
+        const result = ops(observed, desired);
+        const edit = result.find((op) => op.kind === "edit") as
+            | Extract<ActionListOperation, { kind: "edit" }>
+            | undefined;
+        const nestedMoves = edit?.nestedDiffs[0].diff.operations.filter(
+            (op) => op.kind === "move"
+        );
+
+        expect(kindCounts(result)).toMatchObject({ edit: 1, add: 0, delete: 0, move: 0 });
+        expect(nestedMoves).toHaveLength(2);
+    });
+
     test("random edit carries nested action list diffs", () => {
         const observed = [obs(0, random({ actions: [message("old")] }))];
         const desired = [random({ actions: [message("old"), playSound()] })];
@@ -170,6 +200,22 @@ describe("diffActionList — moves", () => {
         expect(counts.add).toBe(0);
         expect(counts.delete).toBe(0);
         expect(counts.move).toBeGreaterThan(0);
+    });
+
+    test("tail-to-front shift only emits moves for the shifted tail", () => {
+        const actions = Array.from({ length: 25 }, (_, index) =>
+            changeVar({ key: `x${index + 1}`, value: String(index + 1) })
+        );
+        const desired = [...actions.slice(23), ...actions.slice(0, 23)];
+        const result = ops(actions.map((action, index) => obs(index, action)), desired);
+        const moves = result.filter((op) => op.kind === "move");
+
+        expect(kindCounts(result)).toMatchObject({ edit: 0, add: 0, delete: 0 });
+        expect(moves).toHaveLength(2);
+        expect(moves.map((op) => [op.fromIndex, op.toIndex])).toEqual([
+            [23, 0],
+            [24, 1],
+        ]);
     });
 });
 

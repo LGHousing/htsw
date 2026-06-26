@@ -1,12 +1,13 @@
-import type { Importable } from "htsw/types";
+import type { Action, Importable } from "htsw/types";
 
 import type { ImportableCacheEntry } from "./cache";
-import { importableHash, listHashes } from "./hash";
+import { actionHash, conditionHash, importableHash } from "./hash";
 import { importableIdentity, importableKey } from "./paths";
 import { readImportableCache } from "./cache";
 import { cacheEntryHash, cacheEntryListHashes, sameHashList } from "./status";
+import { matchByHash } from "./actionMatch";
 
-type TrustedListPath = string;
+export type TrustedListPath = string;
 
 export type ImportableTrustPlan = {
     importable: Importable;
@@ -56,13 +57,9 @@ export function buildTrustPlan(
             wholeImportableTrusted = cacheEntryHash(entry) === sourceHash;
 
             if (!wholeImportableTrusted) {
-                const desiredLists = listHashes(importable);
                 const cachedLists = cacheEntryListHashes(entry);
-                for (const path of Object.keys(desiredLists)) {
-                    if (sameHashList(cachedLists[path], desiredLists[path])) {
-                        trustedListPaths.add(path);
-                    }
-                }
+                const remapped = trustedListPathsForImportable(importable, cachedLists);
+                remapped.forEach((path) => trustedListPaths.add(path));
             }
         }
 
@@ -81,4 +78,111 @@ export function buildTrustPlan(
         housingUuid,
         importables: plans,
     };
+}
+
+export function trustedListPathsForImportable(
+    importable: Importable,
+    cachedLists: Record<string, string[]>
+): Set<TrustedListPath> {
+    const trusted = new Set<TrustedListPath>();
+    forEachTopLevelActionList(importable, (path, actions) => {
+        collectTrustedActionListPaths(trusted, path, path, actions, cachedLists);
+    });
+    return trusted;
+}
+
+function forEachTopLevelActionList(
+    importable: Importable,
+    visit: (path: string, actions: readonly Action[]) => void
+): void {
+    switch (importable.type) {
+        case "FUNCTION":
+            visit("actions", importable.actions ?? []);
+            break;
+        case "EVENT":
+            visit("actions", importable.actions);
+            break;
+        case "REGION":
+            if (importable.onEnterActions !== undefined) {
+                visit("onEnterActions", importable.onEnterActions);
+            }
+            if (importable.onExitActions !== undefined) {
+                visit("onExitActions", importable.onExitActions);
+            }
+            break;
+        case "ITEM":
+            if (importable.leftClickActions !== undefined) {
+                visit("leftClickActions", importable.leftClickActions);
+            }
+            if (importable.rightClickActions !== undefined) {
+                visit("rightClickActions", importable.rightClickActions);
+            }
+            break;
+        case "MENU":
+            for (let i = 0; i < importable.slots.length; i++) {
+                const actions = importable.slots[i].actions;
+                if (actions !== undefined && actions.length > 0) {
+                    visit(`slots[${i}].actions`, actions);
+                }
+            }
+            break;
+    }
+}
+
+function collectTrustedActionListPaths(
+    trusted: Set<TrustedListPath>,
+    desiredPath: string,
+    cachedPath: string,
+    desiredActions: readonly Action[],
+    cachedLists: Record<string, string[]>
+): void {
+    const desiredHashes = desiredActions.map(actionHash);
+    const cachedHashes = cachedLists[cachedPath];
+    if (sameHashList(cachedHashes, desiredHashes)) {
+        trusted.add(desiredPath);
+    }
+
+    const matched = matchByHash(desiredHashes, cachedHashes);
+    for (let i = 0; i < desiredActions.length; i++) {
+        const cachedIndex = matched[i];
+        if (cachedIndex === null) continue;
+        const action = desiredActions[i];
+        const desiredChildBase = `${desiredPath}[${i}]`;
+        const cachedChildBase = `${cachedPath}[${cachedIndex}]`;
+        if (action.type === "CONDITIONAL") {
+            const conditions = action.conditions ?? [];
+            const desiredConditionsPath = `${desiredChildBase}.conditions`;
+            const cachedConditionsPath = `${cachedChildBase}.conditions`;
+            if (
+                sameHashList(
+                    cachedLists[cachedConditionsPath],
+                    conditions.map(conditionHash)
+                )
+            ) {
+                trusted.add(desiredConditionsPath);
+            }
+            collectTrustedActionListPaths(
+                trusted,
+                `${desiredChildBase}.ifActions`,
+                `${cachedChildBase}.ifActions`,
+                action.ifActions ?? [],
+                cachedLists
+            );
+            collectTrustedActionListPaths(
+                trusted,
+                `${desiredChildBase}.elseActions`,
+                `${cachedChildBase}.elseActions`,
+                action.elseActions ?? [],
+                cachedLists
+            );
+        } else if (action.type === "RANDOM") {
+            collectTrustedActionListPaths(
+                trusted,
+                `${desiredChildBase}.actions`,
+                `${cachedChildBase}.actions`,
+                action.actions ?? [],
+                cachedLists
+            );
+        }
+    }
 }

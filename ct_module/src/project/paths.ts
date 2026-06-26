@@ -56,12 +56,14 @@ export function htslTargetForEventExport(
 export function snbtTargetForItemExport(
     entryImportJsonPath: string,
     rootDir: string,
-    itemName: string
+    itemName: string,
+    subdir?: string
 ): SnbtExportTarget {
     return snbtTargetForItemExportWithFs(
         ctProjectFs,
         entryImportJsonPath,
         rootDir,
-        itemName
+        itemName,
+        subdir
     );
 }

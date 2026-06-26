@@ -1,8 +1,8 @@
 /// <reference types="../../../CTAutocomplete" />
 
-import type { ImportJsonFileNode, ParseResult } from "htsw";
+import type { ImportJsonFileNode, ImportablesParseResult } from "htsw";
 import type { Importable } from "htsw/types";
-import { getParsedResult } from "../state/index";
+import { getSelectedParsedResult } from "./selectedParse";
 
 /**
  * Centralized importable→path lookups.
@@ -12,7 +12,7 @@ import { getParsedResult } from "../state/index";
  * 1. **Source path** (`importableSourcePath`) — the file the user expects
  *    to open when they say "show me this importable". For FUNCTION/EVENT
  *    that's the resolved `.htsl`; for ITEM it's the `.snbt` (resolved via
- *    the parsed `nbt` Tag's span); for REGION/MENU/NPC it's the declaring
+ *    the parsed `nbt` Tag's span); for REGION/MENU it's the declaring
  *    import.json (since those types live entirely as JSON inline).
  *
  * 2. **Sub-list source path** (`importableSubListPath`) — for nested
@@ -40,7 +40,7 @@ export type SubListKind = (typeof SUB_LIST_KINDS)[number];
  * extracted so neither has to inline the try/catch + double dereference.
  */
 function pathFromSpan(
-    parsed: ParseResult<Importable[]>,
+    parsed: ImportablesParseResult,
     key: object
 ): string | undefined {
     try {
@@ -52,7 +52,7 @@ function pathFromSpan(
 }
 
 function actionPathFromFieldSpan(
-    parsed: ParseResult<Importable[]>,
+    parsed: ImportablesParseResult,
     imp: Importable,
     kind: SubListKind
 ): string | undefined {
@@ -77,7 +77,7 @@ function actionPathFromFieldSpan(
  * Resolve `imp`'s source file path. Pass `parse` when looking up
  * importables that came from a parse other than the globally-active one
  * (multi-parse Importables + queue use-case); omit it to fall back to
- * `getParsedResult()` for legacy single-parse callers.
+ * `getSelectedParsedResult()` for legacy single-parse callers.
  */
 /**
  * The import.json file that DECLARED `imp` — distinct from
@@ -86,16 +86,16 @@ function actionPathFromFieldSpan(
  */
 export function importableDeclaringPath(
     imp: Importable,
-    parse: ParseResult<Importable[]>
+    parse: ImportablesParseResult
 ): string {
-    return parse.gcx.declaringPathOf(imp) ?? parse.gcx.path;
+    return parse.importJson.declaringPathOf(imp) ?? parse.gcx.path;
 }
 
 export function importableSourcePath(
     imp: Importable,
-    parse?: ParseResult<Importable[]> | null
+    parse?: ImportablesParseResult | null
 ): string | undefined {
-    const parsed = parse ?? getParsedResult();
+    const parsed = parse ?? getSelectedParsedResult();
     if (parsed === null || parsed === undefined) return undefined;
     if (imp.type === "ITEM" && imp.nbt !== undefined) {
         const fromNbt = pathFromSpan(parsed, imp.nbt);
@@ -103,7 +103,7 @@ export function importableSourcePath(
         // Fall through to the declaring file when the nbt span doesn't
         // resolve (e.g. inline NBT with no span recorded).
     }
-    return parsed.gcx.sourceFiles.get(imp);
+    return parsed.importJson.sourcePathOf(imp);
 }
 export function subListOf(imp: Importable, kind: SubListKind): readonly object[] | undefined {
     if (kind === "onEnterActions" && imp.type === "REGION") {
@@ -134,14 +134,13 @@ export function hasSubList(imp: Importable, kind: SubListKind): boolean {
 export function importableSubListPath(
     imp: Importable,
     kind: SubListKind,
-    parse?: ParseResult<Importable[]> | null
+    parse?: ImportablesParseResult | null
 ): string | undefined {
-    const parsed = parse ?? getParsedResult();
+    const parsed = parse ?? getSelectedParsedResult();
     if (parsed === null || parsed === undefined) return undefined;
     const list = subListOf(imp, kind);
     if (list === undefined) return undefined;
-    const sourceFiles = parsed.gcx.sourceFiles as unknown as Map<object, string>;
-    const fromListSource = sourceFiles.get(list);
+    const fromListSource = parsed.importJson.sourcePathOf(list as object);
     if (fromListSource !== undefined) return fromListSource;
     if (list.length === 0) return actionPathFromFieldSpan(parsed, imp, kind);
     // The first action's span resolves through the SourceMap to whatever
@@ -159,7 +158,7 @@ export function importableSubListPath(
  */
 export function importableFilePaths(
     imp: Importable,
-    parse: ParseResult<Importable[]>
+    parse: ImportablesParseResult
 ): string[] {
     const out: string[] = [];
     const primary = importableSourcePath(imp, parse);
@@ -178,7 +177,7 @@ export function importableFilePaths(
  */
 export function allReferencedPaths(
     importJsonPath: string,
-    parse: ParseResult<Importable[]> | null
+    parse: ImportablesParseResult | null
 ): string[] {
     const seen = new Set<string>();
     const out: string[] = [];
@@ -195,7 +194,7 @@ export function allReferencedPaths(
         push(node.path);
         for (let i = 0; i < node.includes.length; i++) pushTree(node.includes[i]);
     };
-    if (parse.gcx.fileTree !== null) pushTree(parse.gcx.fileTree);
+    if (parse.importJson.fileTree !== null) pushTree(parse.importJson.fileTree);
     for (const imp of parse.value) {
         for (const p of importableFilePaths(imp, parse)) push(p);
     }

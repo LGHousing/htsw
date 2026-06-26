@@ -42,7 +42,7 @@ import { getCurrentHousingUuid } from "../../../importCache/housingId";
 import { TaskManager, isTaskCancelled } from "../../../tasks/manager";
 import type TaskContext from "../../../tasks/context";
 import type { Importable, ImportableItem } from "htsw/types";
-import type { Diagnostic, ParseResult } from "htsw";
+import type { Diagnostic, ImportablesParseResult } from "htsw";
 import { closeAllPopovers } from "../../lib/popovers";
 import { shortPath } from "../../lib/pathDisplay";
 import { importableSourcePath } from "../../parsing/importablePaths";
@@ -131,7 +131,7 @@ type SessionEventHandler = ImportEventHandler & {
 };
 
 function createImportEventHandler(args: {
-    parsed: ParseResult<Importable[]>;
+    parsed: ImportablesParseResult;
     sessionSourcePath: string;
     trustMode: boolean;
     housingUuid: string;
@@ -276,7 +276,7 @@ function createImportEventHandler(args: {
 
 type ImportBatch = {
     sourcePath: string; // canonical absolute path of the import.json
-    parsed: ParseResult<Importable[]>;
+    parsed: ImportablesParseResult;
     importables: Importable[]; // ordered for the importer
 };
 
@@ -294,7 +294,7 @@ function buildBatches(explicit?: readonly ImportQueueItem[]): ImportBatch[] | nu
     const queue = explicit ?? getQueue().filter(isImportQueueItem);
     if (queue.length === 0) return null;
     type Group = {
-        parsed: ParseResult<Importable[]>;
+        parsed: ImportablesParseResult;
         /** Identity keys in queue insertion order. */
         orderedIds: string[];
         seen: Set<string>;

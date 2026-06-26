@@ -122,10 +122,13 @@ export function drawHoverCard(mouseX: number, mouseY: number): void {
         h: rect.h - PAD * 2 - TEXT_TOP_INSET,
     };
     pushScissor(viewport);
-    for (let i = 0; i < card.content.lines.length; i++) {
+    for (let i = 0; i < card.content.segments.length; i++) {
         const y = viewport.y + i * LINE_H - card.scrollOffset;
         if (y + LINE_H < viewport.y || y > viewport.y + viewport.h) continue;
-        Renderer.drawString(card.content.lines[i], viewport.x, y);
+        const segs = card.content.segments[i];
+        for (let s = 0; s < segs.length; s++) {
+            Renderer.drawString(segs[s].text, viewport.x + segs[s].x, y);
+        }
     }
     popScissor();
     const scrollMax = maxScroll(rect, card.content);

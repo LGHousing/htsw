@@ -104,8 +104,9 @@ export type Element =
           // and copies only the matched PNGs into dist/assets/icons/.
           name: Extractable<string>;
           // Optional ARGB tint multiplied over the (white) PNG at draw time.
-          // The icon set is monochrome white, so this recolors it.
-          color?: Extractable<number>;
+          // The icon set is monochrome white, so this recolors it. `undefined`
+          // (extracted) leaves it white — the renderer skips the tint.
+          color?: Extractable<number | undefined>;
           // Hover chip, same semantics as the text element's tooltip.
           tooltip?: Extractable<string>;
           tooltipColor?: Extractable<number>;
@@ -136,6 +137,22 @@ const LINE_H = 8;
 const INPUT_PAD_Y = 6;
 const TEXT_PAD = 0;
 const SCROLLBAR_W = 4;
+
+// Time constant for easing the rendered scroll offset toward its wheel-set
+// target. MC drains mouse-wheel events at tick rate (~20Hz) while panels
+// repaint every frame, so applying the target directly makes a continuous
+// scroll travel in visible ~50ms steps. ~20ms smooths a trackpad's event
+// bursts into per-frame motion while settling a single notch in ~2-3 frames.
+// Lower = snappier/closer to raw, higher = floatier.
+const SCROLL_SMOOTH_TAU_MS = 20;
+
+// Whether wheel easing is on. The lib is project-agnostic, so the GUI injects
+// the user's "Smooth scrolling" setting here; default true until it does.
+// When false, `advanceScrollOffset` snaps to target (instant, original feel).
+let scrollEasingEnabled: () => boolean = () => true;
+export function setScrollEasingProvider(fn: () => boolean): void {
+    scrollEasingEnabled = fn;
+}
 
 function resolvePadding(p: Padding | undefined): ResolvedPadding {
     const out: ResolvedPadding = { t: 0, r: 0, b: 0, l: 0 };
@@ -178,68 +195,71 @@ function isPaddingEntry(p: PaddingEntry | PaddingEntry[]): p is PaddingEntry {
     return !(p instanceof Array);
 }
 
-function textContent(text: string): { w: number; h: number } {
-    const w = Client.getMinecraft().field_71466_p.func_78256_a(text);
-    return { w: w + TEXT_PAD * 2, h: LINE_H + TEXT_PAD * 2 };
-}
-
-function inputContent(_: string): { w: number; h: number } {
-    return { w: 80, h: LINE_H + INPUT_PAD_Y * 2 };
-}
-
 const ICON_DEFAULT_SIZE = 16;
-function imageContent(): { w: number; h: number } {
-    return { w: ICON_DEFAULT_SIZE, h: ICON_DEFAULT_SIZE };
+
+// Intrinsic content size of an element on ONE axis. Deliberately per-axis:
+// layoutScroll totals every child's main-axis size each frame, and for a
+// vertical scroll that axis is HEIGHT — a constant for text/input. Resolving it
+// must not trigger the font width measurement (`func_78256_a`), which is the
+// dominant per-frame layout cost on long unvirtualized lists (the chat
+// scrollback re-measured all ~100 lines every frame just to total their height).
+function intrinsicAxis(e: Element, axis: "w" | "h"): number {
+    switch (e.kind) {
+        case "text":
+            return axis === "w"
+                ? Client.getMinecraft().field_71466_p.func_78256_a(extract(e.text)) +
+                      TEXT_PAD * 2
+                : LINE_H + TEXT_PAD * 2;
+        case "input":
+            return axis === "w" ? 80 : LINE_H + INPUT_PAD_Y * 2;
+        case "image":
+            return ICON_DEFAULT_SIZE;
+        case "mcItem":
+            return 16;
+        case "scroll":
+            return 0;
+        default:
+            return containerAxis(e, axis);
+    }
 }
 
-function containerContent(c: { style: ContainerStyle; children: Extractable<Child[]> }): {
-    w: number;
-    h: number;
-} {
+// One axis of a child for intrinsic sizing: an explicit px wins; grow has no
+// intrinsic size and falls back to its content (matching the prior behavior).
+function measuredAxis(e: Element, axis: "w" | "h"): number {
+    const s = axis === "w" ? e.style.width : e.style.height;
+    if (s && s.kind === "px") return s.value;
+    return intrinsicAxis(e, axis);
+}
+
+function containerAxis(
+    c: { style: ContainerStyle; children: Extractable<Child[]> },
+    axis: "w" | "h"
+): number {
     const pad = resolvePadding(c.style.padding);
     const dir = c.style.direction ?? "col";
     const gap = c.style.gap ?? 0;
+    const padAxis = axis === "w" ? pad.l + pad.r : pad.t + pad.b;
     const children = extractChildren(c.children);
-    let mainSum = 0;
-    let crossMax = 0;
-    for (let i = 0; i < children.length; i++) {
-        const m = measure(children[i]);
-        if (dir === "row") {
-            mainSum += m.w;
-            if (m.h > crossMax) crossMax = m.h;
-        } else {
-            mainSum += m.h;
-            if (m.w > crossMax) crossMax = m.w;
+    const isMainAxis = dir === "row" ? axis === "w" : axis === "h";
+    if (isMainAxis) {
+        let sum = 0;
+        for (let i = 0; i < children.length; i++) {
+            sum += measuredAxis(children[i], axis);
         }
+        if (children.length > 1) sum += gap * (children.length - 1);
+        return sum + padAxis;
     }
-    if (children.length > 1) mainSum += gap * (children.length - 1);
-    return dir === "row"
-        ? { w: mainSum + pad.l + pad.r, h: crossMax + pad.t + pad.b }
-        : { w: crossMax + pad.l + pad.r, h: mainSum + pad.t + pad.b };
-}
-
-function measure(e: Element): { w: number; h: number } {
-    let content: { w: number; h: number };
-    if (e.kind === "text") content = textContent(extract(e.text));
-    else if (e.kind === "input") content = inputContent(extract(e.value));
-    else if (e.kind === "scroll") content = { w: 0, h: 0 };
-    else if (e.kind === "image") content = imageContent();
-    else if (e.kind === "mcItem") content = { w: 16, h: 16 };
-    else content = containerContent(e);
-    const w = e.style.width;
-    const h = e.style.height;
-    return {
-        w: w && w.kind === "px" ? w.value : content.w,
-        h: h && h.kind === "px" ? h.value : content.h,
-    };
+    let max = 0;
+    for (let i = 0; i < children.length; i++) {
+        const v = measuredAxis(children[i], axis);
+        if (v > max) max = v;
+    }
+    return max + padAxis;
 }
 
 function resolveAxis(e: Element, axis: "w" | "h"): number | null {
     const s = axis === "w" ? e.style.width : e.style.height;
-    if (!s || s.kind === "auto") {
-        const m = measure(e);
-        return axis === "w" ? m.w : m.h;
-    }
+    if (!s || s.kind === "auto") return intrinsicAxis(e, axis);
     if (s.kind === "px") return s.value;
     return null;
 }
@@ -276,7 +296,16 @@ function placeCross(
 
 // Per-id scroll state. Reset across reloads but persists across frames.
 type ScrollState = {
+    /** Rendered position, eased toward `target` each frame. */
     offset: number;
+    /**
+     * Where the offset is heading. The wheel accumulates into this so rapid
+     * notches stack smoothly; the rendered `offset` chases it. Drag and
+     * programmatic jumps set both to the same value (instant, no easing).
+     */
+    target: number;
+    /** Wall-clock ms of the last easing step; 0 forces a snap on first use. */
+    animAt: number;
     /** Content size along the scroll axis (height for "y", width for "x"). */
     contentLength: number;
     axis: "x" | "y";
@@ -296,6 +325,8 @@ export function getScrollState(id: string): ScrollState {
     if (!s) {
         s = {
             offset: 0,
+            target: 0,
+            animAt: 0,
             contentLength: 0,
             axis: "y",
             viewportRect: { x: 0, y: 0, w: 0, h: 0 },
@@ -306,10 +337,69 @@ export function getScrollState(id: string): ScrollState {
     return s;
 }
 
+function clampOffset(s: ScrollState, value: number): number {
+    const view = s.axis === "x" ? s.viewportRect.w : s.viewportRect.h;
+    return Math.max(0, Math.min(Math.max(0, s.contentLength - view), value));
+}
+
+/** Jump instantly (no easing): autofollow, chat stick-to-bottom, tab autoscroll. */
 export function setScrollOffset(id: string, offset: number): void {
     const s = getScrollState(id);
-    const view = s.axis === "x" ? s.viewportRect.w : s.viewportRect.h;
-    s.offset = Math.max(0, Math.min(Math.max(0, s.contentLength - view), offset));
+    const v = clampOffset(s, offset);
+    s.offset = v;
+    s.target = v;
+}
+
+/** Set where the offset eases toward (the smoothed wheel path). */
+export function setScrollTarget(id: string, target: number): void {
+    const s = getScrollState(id);
+    s.target = clampOffset(s, target);
+}
+
+/**
+ * True while any currently-rendering scroll's offset is still easing toward its
+ * target. The overlay marks the GUI dirty each frame this returns true so the
+ * retained layout keeps rebuilding — and the eased motion actually renders —
+ * until it settles. Gated on a fresh `animAt` so a scroll left mid-ease in a
+ * hidden tab (never re-laid-out, so never converging) doesn't pin it dirty.
+ */
+export function anyScrollAnimating(): boolean {
+    const now = Date.now();
+    for (const id in scrollStates) {
+        const s = scrollStates[id];
+        if (now - s.animAt > 80) continue;
+        const d = s.target - s.offset;
+        if (d > 0.5 || d < -0.5) return true;
+    }
+    return false;
+}
+
+// Ease `offset` toward `target` by the wall-clock time since the last step.
+// The exponential form is exact under split dt, so advancing more than once per
+// frame (wheel hit-test relayout + paint) integrates to the same result.
+function advanceScrollOffset(s: ScrollState, maxOffset: number): void {
+    if (s.target > maxOffset) s.target = maxOffset;
+    else if (s.target < 0) s.target = 0;
+    if (s.offset > maxOffset) s.offset = maxOffset;
+    else if (s.offset < 0) s.offset = 0;
+
+    const now = Date.now();
+    const dt = now - s.animAt;
+    s.animAt = now;
+
+    if (!scrollEasingEnabled()) {
+        s.offset = s.target;
+        return;
+    }
+
+    const diff = s.target - s.offset;
+    // First use, a long gap (tab switch / low FPS), or sub-pixel remainder:
+    // snap so it neither lurches from a stale clock nor asymptotes forever.
+    if (dt <= 0 || dt > 100 || (diff > -0.5 && diff < 0.5)) {
+        s.offset = s.target;
+        return;
+    }
+    s.offset = s.target - diff * Math.exp(-dt / SCROLL_SMOOTH_TAU_MS);
 }
 
 export function markUserScroll(id: string): void {
@@ -480,8 +570,7 @@ function layoutScroll(
     state.contentLength = contentMain;
 
     const maxOffset = Math.max(0, contentMain - mainLen);
-    if (state.offset > maxOffset) state.offset = maxOffset;
-    if (state.offset < 0) state.offset = 0;
+    advanceScrollOffset(state, maxOffset);
 
     // The vertical scrollbar is drawn inside the viewport, so reserve its track
     // width instead of letting right-aligned labels sit underneath it. The

@@ -8,7 +8,14 @@ const FORMATTING: json.FormattingOptions = {
     eol: "\n",
 };
 
-export type Section = "functions" | "events" | "regions" | "items" | "menus" | "npcs";
+export type Section =
+    | "functions"
+    | "events"
+    | "regions"
+    | "items"
+    | "menus"
+    | "teams"
+    | "groups";
 
 export function identityField(section: Section): "name" | "event" {
     return section === "events" ? "event" : "name";

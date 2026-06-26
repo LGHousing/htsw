@@ -163,12 +163,13 @@ function tourWidth(): number {
 // file of the active project, but never replace something already showing.
 function previewFirstAvailableSource(): void {
     if (getActivePath() !== null) return;
-    const parse = requestParse(getImportJsonPath());
+    const importJsonPath = getImportJsonPath();
+    const parse = requestParse(importJsonPath);
     if (parse === null || parse.parsed === null) return;
     for (let i = 0; i < parse.parsed.value.length; i++) {
         const p = importableSourcePath(parse.parsed.value[i], parse.parsed);
         if (p !== undefined) {
-            previewSelect(p);
+            previewSelect(p, importJsonPath);
             return;
         }
     }

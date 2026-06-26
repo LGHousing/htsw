@@ -26,7 +26,7 @@ export function parseImportableFunction(p: Parser): ImportableFunction {
     p.setNodeSpan(im);
 
     p.parseField("name").setField(im, "name", (p) => p.parseString());
-    p.parseField("actions").setField(im, "actions", parseHtsl);
+    p.parseFieldOrUndefined("actions")?.setField(im, "actions", parseHtsl);
     p.parseFieldOrUndefined("repeatTicks")?.setField(im, "repeatTicks", (p) =>
         p.parseBoundedNumber(4, 18000)
     );
@@ -68,7 +68,7 @@ export function parseImportableItem(p: Parser): ImportableItem {
     p.setNodeSpan(im);
 
     p.parseField("name").setField(im, "name", (p) => p.parseString());
-    p.parseField("nbt").setField(im, "nbt", (p) => parseSnbt(p));
+    p.parseField("nbt").setField(im, "nbt", parseSnbt);
     p.parseFieldOrUndefined("leftClickActions")?.setField(im, "leftClickActions", parseHtsl);
     p.parseFieldOrUndefined("rightClickActions")?.setField(im, "rightClickActions", parseHtsl);
 

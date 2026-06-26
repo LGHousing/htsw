@@ -1,7 +1,7 @@
 /// <reference types="../../../CTAutocomplete" />
 
 import type { MenuAction } from "../lib/menu";
-import { showInExplorer, openInVSCode } from "../../utils/osShell";
+import { showInExplorer, openInVSCode, revealInFilesLabel } from "../../utils/osShell";
 import {
     isInQueue,
     queueItemKey,
@@ -22,9 +22,9 @@ function isImportJsonPath(filePath: string): boolean {
  * Build the queue-control entry for a file path that maps to one or more
  * concrete importables.
  */
-function queueActionForPath(filePath: string): MenuAction | null {
+function queueActionForPath(filePath: string, importJsonPath?: string | null): MenuAction | null {
     if (isImportJsonPath(filePath)) return null;
-    const items = queueItemsForPath(filePath);
+    const items = queueItemsForPath(filePath, importJsonPath);
     if (items.length === 0) return null;
     // Multi-match: an htsl referenced by N importables. Treat the whole
     // group as a unit so the toggle reflects "are they all queued?"
@@ -54,10 +54,10 @@ function queueActionForPath(filePath: string): MenuAction | null {
  * from queue, then the generic OS-shell actions. Compose with side-
  * specific extras via `composeFileMenu`.
  */
-function genericFileActions(filePath: string): MenuAction[] {
-    const queueAction = queueActionForPath(filePath);
+function genericFileActions(filePath: string, importJsonPath?: string | null): MenuAction[] {
+    const queueAction = queueActionForPath(filePath, importJsonPath);
     const actions: MenuAction[] = [
-        { label: "Show in explorer", onClick: () => showInExplorer(filePath) },
+        { label: revealInFilesLabel(), onClick: () => showInExplorer(filePath) },
         { label: "Open with VSCode", onClick: () => openInVSCode(filePath) },
     ];
     if (queueAction !== null) actions.unshift(queueAction);
@@ -72,10 +72,11 @@ function genericFileActions(filePath: string): MenuAction[] {
  */
 export function composeFileMenu(
     specific: MenuAction[],
-    filePath: string
+    filePath: string,
+    importJsonPath?: string | null
 ): MenuAction[] {
-    if (specific.length === 0) return genericFileActions(filePath);
-    return specific.concat([{ kind: "separator" }], genericFileActions(filePath));
+    if (specific.length === 0) return genericFileActions(filePath, importJsonPath);
+    return specific.concat([{ kind: "separator" }], genericFileActions(filePath, importJsonPath));
 }
 
 /**
@@ -98,7 +99,7 @@ export function composeImportableMenu(
     };
     const generics: MenuAction[] = [
         queueAction,
-        { label: "Show in explorer", onClick: () => showInExplorer(filePath) },
+        { label: revealInFilesLabel(), onClick: () => showInExplorer(filePath) },
         { label: "Open with VSCode", onClick: () => openInVSCode(filePath) },
     ];
     if (specific.length === 0) return generics;

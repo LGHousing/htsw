@@ -1,4 +1,4 @@
-import { Diagnostic, type ParseResult } from "htsw";
+import { Diagnostic, type ImportablesParseResult } from "htsw";
 import { Importable } from "htsw/types";
 
 import TaskContext from "../tasks/context";
@@ -51,7 +51,7 @@ export const IMPLEMENTED_IMPORTABLE_TYPES = [
 ] as const;
 
 export type ImportSession = {
-    parsed: ParseResult<Importable[]>;
+    parsed: ImportablesParseResult;
     items: ItemRegistry;
     housingUuid: string;
     trust: TrustPlan;
@@ -123,8 +123,10 @@ export async function prereadImportable(
                 session,
                 trust
             );
-        case "NPC":
-            throw Diagnostic.error("NPC imports are not implemented in the ChatTriggers module.");
+        case "TEAM":
+        case "GROUP":
+        case "HOUSE_NAME":
+            throw Diagnostic.error(`${importable.type} imports are not implemented in the ChatTriggers module.`);
         default: {
             const _exhaustiveCheck: never = importable;
             return _exhaustiveCheck;

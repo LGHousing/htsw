@@ -63,8 +63,11 @@ export function warnUnused(p: Parser, known: readonly string[]): void {
         if (known.includes(name)) continue;
 
         p.gcx.addDiagnostic(
-            Diagnostic.warning(`Unknown key: \`${name}\``)
+            Diagnostic.warning(`Unknown key '${name}'`)
                 .addPrimarySpan(key.span())
+                .addSubDiagnostic(
+                    Diagnostic.help(`Valid keys are: ${known.join(", ")}`)
+                )
         );
     }
 }

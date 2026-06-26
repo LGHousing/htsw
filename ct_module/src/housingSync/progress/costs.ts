@@ -646,7 +646,7 @@ function actionListCost(
  * estimates fall back to "assume housing is empty" → predict only the
  * worst-case apply work.
  *
- * MENU / NPC fall through to a cache-blind rough estimate — their slots
+ * MENU falls through to a cache-blind rough estimate — its slots
  * have variable indexing and aren't worth special-casing yet.
  */
 export function estimateImportableCost(

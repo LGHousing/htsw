@@ -22,7 +22,9 @@ export function parseHtsl(p: Parser): Action[] {
     }
 
     const resolved = p.gcx.resolvePath(path);
-    return parseHtslImpl(p.gcx.subContext(path), resolved);
+    const actions = parseHtslImpl(p.gcx.subContext(path), resolved);
+    p.importJson.setSourcePath(actions, resolved);
+    return actions;
 }
 
 export function parseSnbt(p: Parser): Tag {
@@ -48,6 +50,7 @@ export function parseSnbt(p: Parser): Tag {
             .addPrimarySpan(p.span());
     }
 
+    p.importJson.setSourcePath(tag, resolvedSnbt);
     return tag;
 }
 

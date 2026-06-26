@@ -1,15 +1,13 @@
-import type { Diagnostic, ParseResult } from "htsw";
-import type { Importable } from "htsw/types";
+import type { Diagnostic, ImportablesParseResult } from "htsw";
 
-import { formatDiagnostics, type FormattedTextBlock } from "../../diagnostics/format";
+import { formatDiagnostics, type FormattedTextBlock, type LineSegment } from "../../diagnostics/format";
 import { chatWidth } from "../../utils/helpers";
 import type { Rect } from "../lib/layout";
 import { hoverCardContentWidth, offerHoverCard } from "../lib/hoverCards";
-import { getParsedResult } from "../state/parsed";
 
 const diagnosticIds = new WeakMap<Diagnostic, number>();
 let nextDiagnosticId = 1;
-const cache = new WeakMap<ParseResult<Importable[]>, Map<string, FormattedTextBlock>>();
+const cache = new WeakMap<ImportablesParseResult, Map<string, FormattedTextBlock>>();
 
 function diagnosticId(diagnostic: Diagnostic): number {
     let id = diagnosticIds.get(diagnostic);
@@ -29,9 +27,11 @@ export function hoverPath(path: string): string {
     return normalized;
 }
 
-function diagnosticsBlock(diagnostics: readonly Diagnostic[]): FormattedTextBlock | null {
-    const parsed = getParsedResult();
-    if (parsed === null || diagnostics.length === 0) return null;
+function diagnosticsBlock(
+    diagnostics: readonly Diagnostic[],
+    parsed: ImportablesParseResult | undefined
+): FormattedTextBlock | null {
+    if (parsed === undefined || diagnostics.length === 0) return null;
     const ids: string[] = [];
     for (let i = 0; i < diagnostics.length; i++) ids.push(String(diagnosticId(diagnostics[i])));
     const width = hoverCardContentWidth();
@@ -63,25 +63,39 @@ export function offerLineHover(
     rect: Rect,
     mouseX: number,
     diagnostics: readonly Diagnostic[] | undefined,
+    diagnosticParse: ImportablesParseResult | undefined,
     extraLines: readonly string[] | undefined
 ): void {
-    const diagBlock = diagnostics !== undefined ? diagnosticsBlock(diagnostics) : null;
+    const diagBlock =
+        diagnostics !== undefined ? diagnosticsBlock(diagnostics, diagnosticParse) : null;
     const extras = extraLines !== undefined && extraLines.length > 0 ? extraLines : null;
     if (diagBlock === null && extras === null) return;
 
     let lines: string[];
+    let segments: LineSegment[][];
     let width: number;
     if (diagBlock !== null) {
-        lines = extras === null ? diagBlock.lines : [...diagBlock.lines, "", ...extras];
+        if (extras === null) {
+            lines = diagBlock.lines;
+            segments = diagBlock.segments;
+        } else {
+            lines = [...diagBlock.lines, "", ...extras];
+            segments = [
+                ...diagBlock.segments,
+                [{ x: 0, text: "" }],
+                ...extras.map((line) => [{ x: 0, text: line }]),
+            ];
+        }
         width = diagBlock.width;
     } else {
         lines = extras!.slice();
+        segments = extras!.map((line) => [{ x: 0, text: line }]);
         width = 0;
     }
     if (extras !== null) {
         for (const line of extras) width = Math.max(width, chatWidth(line));
     }
-    const content: FormattedTextBlock = { lines, width, height: lines.length };
+    const content: FormattedTextBlock = { lines, segments, width, height: lines.length };
     const key =
         (diagBlock !== null ? diagBlock.lines.length + ":" : "") +
         lines.join("\n") + "@" + width;

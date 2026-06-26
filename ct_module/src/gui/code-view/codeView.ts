@@ -19,11 +19,19 @@ import {
     LINE_H,
     STATE_GUTTER_W,
 } from "./lineRow";
-import type { LineDecorations, LineDecorator, RenderableLine, TokenSpan } from "./lineTypes";
-import { wrapTokensIntoVisualRows } from "./wrap";
+import type {
+    LineDecorations,
+    LineDecorator,
+    LineSelection,
+    RenderableLine,
+    TokenSpan,
+} from "./lineTypes";
+import { joinTokenText, wrapTokensIntoVisualRows } from "./wrap";
+import { getViewSelection, publishCodeView } from "./selection";
 
 export type CodeViewProps = {
     source?: Extractable<string | null>;
+    sourceImportJsonPath?: Extractable<string | null>;
     lines?: Extractable<readonly RenderableLine[] | null>;
     scrollId: string;
     /**
@@ -78,6 +86,15 @@ export function CodeView(props: CodeViewProps): Element {
         locked: props.scrollLocked,
         children: () => {
             const lineDecorator = extract(props.lineDecorator);
+            const sourcePath = props.source !== undefined ? extract(props.source) : null;
+            const sourceImportJsonPath =
+                props.sourceImportJsonPath !== undefined
+                    ? extract(props.sourceImportJsonPath)
+                    : null;
+            const viewIdentity =
+                sourcePath !== null && sourcePath.length > 0
+                    ? `${sourceImportJsonPath ?? ""}\n${sourcePath}`
+                    : "__live__";
             let lines: readonly RenderableLine[] | null = null;
             if (props.lines !== undefined) {
                 const explicit = extract(props.lines);
@@ -85,13 +102,11 @@ export function CodeView(props: CodeViewProps): Element {
                     lines = explicit;
                 }
             }
-            if (lines === null && props.source !== undefined) {
-                const path = extract(props.source);
-                if (path !== null) {
-                    lines = linesForFile(path);
-                }
+            if (lines === null && sourcePath !== null) {
+                lines = linesForFile(sourcePath, sourceImportJsonPath);
             }
             if (lines === null || lines.length === 0) {
+                publishCodeView(props.scrollId, viewIdentity, []);
                 return buildEmptyMessageRows(
                     props.emptyMessage === undefined
                         ? "(no file)"
@@ -136,6 +151,8 @@ export function CodeView(props: CodeViewProps): Element {
             const lineIdToIndex: { [id: string]: number } = {};
             const entryRowStart: number[] = new Array(decorated.length);
             const entryRowEnd: number[] = new Array(decorated.length);
+            const orderedLines: RenderableLine[] = [];
+            const idToOrdinal: { [id: string]: number } = {};
             let totalRows = 0;
             for (let i = 0; i < decorated.length; i++) {
                 const line = decorated[i].line;
@@ -147,15 +164,29 @@ export function CodeView(props: CodeViewProps): Element {
                         if (lineIdToIndex[extra.line.id] === undefined) {
                             lineIdToIndex[extra.line.id] = totalRows;
                         }
+                        if (idToOrdinal[extra.line.id] === undefined) {
+                            idToOrdinal[extra.line.id] = orderedLines.length;
+                        }
+                        orderedLines.push(extra.line);
                         totalRows += wrapRowCount(extra.line, bodyMaxWidth, extra.decorations);
                     }
                 }
                 if (lineIdToIndex[line.id] === undefined) {
                     lineIdToIndex[line.id] = totalRows;
                 }
+                if (idToOrdinal[line.id] === undefined) {
+                    idToOrdinal[line.id] = orderedLines.length;
+                }
+                orderedLines.push(line);
                 totalRows += wrapRowCount(line, bodyMaxWidth, dec);
                 entryRowEnd[i] = totalRows;
             }
+
+            publishCodeView(props.scrollId, viewIdentity, orderedLines);
+            const resolvedSelection = resolveSelection(
+                getViewSelection(props.scrollId, viewIdentity),
+                idToOrdinal
+            );
 
             // ── Visibility window ────────────────────────────────────
             const scrollState = getScrollState(props.scrollId);
@@ -196,25 +227,37 @@ export function CodeView(props: CodeViewProps): Element {
                 if (dec.extraLinesBefore !== undefined) {
                     for (let j = 0; j < dec.extraLinesBefore.length; j++) {
                         const extra = dec.extraLinesBefore[j];
-                        const rows = buildLineRows(extra.line, extra.decorations, {
-                            gutterWidth: gutterW,
-                            lineNumDigits,
-                            bodyMaxWidth,
-                            showFocusGutter: showStatusGutters,
-                            showStateGutter: showStatusGutters,
-                            onOpenPath: props.onOpenPath,
-                        });
+                        const rows = buildLineRows(
+                            extra.line,
+                            extra.decorations,
+                            {
+                                scrollId: props.scrollId,
+                                gutterWidth: gutterW,
+                                lineNumDigits,
+                                bodyMaxWidth,
+                                showFocusGutter: showStatusGutters,
+                                showStateGutter: showStatusGutters,
+                                onOpenPath: props.onOpenPath,
+                            },
+                            lineSelectionFor(extra.line, resolvedSelection, idToOrdinal)
+                        );
                         for (let k = 0; k < rows.length; k++) out.push(rows[k]);
                     }
                 }
-                const rows = buildLineRows(line, dec, {
-                    gutterWidth: gutterW,
-                    lineNumDigits,
-                    bodyMaxWidth,
-                    showFocusGutter: showStatusGutters,
-                    showStateGutter: showStatusGutters,
-                    onOpenPath: props.onOpenPath,
-                });
+                const rows = buildLineRows(
+                    line,
+                    dec,
+                    {
+                        scrollId: props.scrollId,
+                        gutterWidth: gutterW,
+                        lineNumDigits,
+                        bodyMaxWidth,
+                        showFocusGutter: showStatusGutters,
+                        showStateGutter: showStatusGutters,
+                        onOpenPath: props.onOpenPath,
+                    },
+                    lineSelectionFor(line, resolvedSelection, idToOrdinal)
+                );
                 for (let k = 0; k < rows.length; k++) out.push(rows[k]);
             }
 
@@ -285,6 +328,48 @@ function digitsOf(n: number): number {
         x = Math.floor(x / 10);
     }
     return d;
+}
+
+type ResolvedSelection = {
+    startOrd: number;
+    startCol: number;
+    endOrd: number;
+    endCol: number;
+};
+
+function resolveSelection(
+    sel: { anchorId: string; anchorCol: number; focusId: string; focusCol: number } | null,
+    idToOrdinal: { [id: string]: number }
+): ResolvedSelection | null {
+    if (sel === null) return null;
+    const aOrd = idToOrdinal[sel.anchorId];
+    const fOrd = idToOrdinal[sel.focusId];
+    if (aOrd === undefined || fOrd === undefined) return null;
+    let start = { ord: aOrd, col: sel.anchorCol };
+    let end = { ord: fOrd, col: sel.focusCol };
+    if (end.ord < start.ord || (end.ord === start.ord && end.col < start.col)) {
+        const swap = start;
+        start = end;
+        end = swap;
+    }
+    if (start.ord === end.ord && start.col === end.col) return null;
+    return { startOrd: start.ord, startCol: start.col, endOrd: end.ord, endCol: end.col };
+}
+
+function lineSelectionFor(
+    line: RenderableLine,
+    resolved: ResolvedSelection | null,
+    idToOrdinal: { [id: string]: number }
+): LineSelection | null {
+    if (resolved === null) return null;
+    const ord = idToOrdinal[line.id];
+    if (ord === undefined || ord < resolved.startOrd || ord > resolved.endOrd) return null;
+    const len = joinTokenText(line.tokens).length;
+    const start = ord === resolved.startOrd ? resolved.startCol : 0;
+    const end = ord === resolved.endOrd ? resolved.endCol : len;
+    const continuesRight = ord < resolved.endOrd;
+    if (start >= end && !continuesRight) return null;
+    return { start, end, continuesRight };
 }
 
 function hasStatusGutterContent(dec: LineDecorations): boolean {

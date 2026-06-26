@@ -69,9 +69,6 @@ function collectReferencedImportables(
         for (const slot of importable.slots) {
             collectActionReferences(slot.actions, refs);
         }
-    } else if (importable.type === "NPC") {
-        collectActionReferences(importable.leftClickActions, refs);
-        collectActionReferences(importable.rightClickActions, refs);
     }
 
     return {

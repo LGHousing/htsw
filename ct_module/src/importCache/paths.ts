@@ -21,8 +21,16 @@ function dirFor(type: Importable["type"]): string {
             return "item";
         case "MENU":
             return "menu";
-        case "NPC":
-            return "npc";
+        case "TEAM":
+            return "team";
+        case "GROUP":
+            return "group";
+        case "HOUSE_NAME":
+            return "house-name";
+        default: {
+            const _exhaustive: never = type;
+            return _exhaustive;
+        }
     }
 }
 

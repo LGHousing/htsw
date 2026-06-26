@@ -6,16 +6,16 @@ import {
     getAutoTrackSources,
     isAnyAutoTrackEnabled,
     getHousingUuid,
+    importableSelectionKey,
     isImportableChecked,
     toggleImportableChecked,
 } from "./state";
 import {
     canonicalPath,
     forEachCachedParse,
-    markParseStale,
     parseImportJsonBlocking,
 } from "./parsing/parses";
-import { importableIdentity, importableKey } from "../importCache/paths";
+import { importableIdentity } from "../importCache/paths";
 import { statusForImportable } from "./cache-status";
 import { addToQueue, makeImportableQueueItem } from "./right-panel/import-tab/queue";
 
@@ -29,14 +29,17 @@ export function queueModifiedFromParse(
         if (status === "modified" || status === "unknown") {
             const item = makeImportableQueueItem(imp, canonicalSourcePath);
             addToQueue(item);
-            const key = importableKey(imp.type, importableIdentity(imp));
+            const key = importableSelectionKey(
+                canonicalSourcePath,
+                imp.type,
+                importableIdentity(imp)
+            );
             if (!isImportableChecked(key)) toggleImportableChecked(key);
         }
     }
 }
 
 export function queueModifiedFromPath(sourcePath: string): void {
-    markParseStale(sourcePath);
     const cached = parseImportJsonBlocking(sourcePath);
     if (cached.parsed === null) {
         ChatLib.chat(`&c[htsw] Skipping ${sourcePath}: ${cached.error ?? "parse failed"}`);

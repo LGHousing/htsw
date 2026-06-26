@@ -4,14 +4,22 @@ import type { GlobalCtxt } from "../../context";
 import { Diagnostic } from "../../diagnostic";
 import { nodeSpan } from "./helpers";
 import type { Span } from "../../span";
+import type { ImportJsonParseMetadata } from "../metadata";
 
 export class Parser {
     readonly gcx: GlobalCtxt;
+    readonly importJson: ImportJsonParseMetadata;
     readonly startPos: number;
     readonly node: json.Node;
     
-    constructor(gcx: GlobalCtxt, startPos: number, node: json.Node) {
+    constructor(
+        gcx: GlobalCtxt,
+        startPos: number,
+        node: json.Node,
+        importJson: ImportJsonParseMetadata,
+    ) {
         this.gcx = gcx;
+        this.importJson = importJson;
         this.startPos = startPos;
         this.node = node;
     }
@@ -26,7 +34,7 @@ export class Parser {
             const [key, value] = prop.children ?? [];
 
             if (key?.value === name) {
-                return new Parser(this.gcx, this.startPos, value);
+                return new Parser(this.gcx, this.startPos, value, this.importJson);
             }
         }
     }
@@ -34,8 +42,15 @@ export class Parser {
     parseField(name: string): Parser {
         const field = this.parseFieldOrUndefined(name);
         if (!field) {
-            throw Diagnostic.error(`Missing required field '${name}'`)
-                .addPrimarySpan(this.span().endSpan());
+            throw Diagnostic.error(`Missing required key '${name}'`)
+                .addPrimarySpan(this.span().endSpan())
+                .addSubDiagnostic(
+                    Diagnostic.help(
+                        `Allowed keys here: ${this.parseFields()
+                            .map(({ key }) => key.parseString())
+                            .join(", ")}`
+                    )
+                );
         }
         return field;
     }
@@ -51,8 +66,8 @@ export class Parser {
             const [key, value] = prop.children ?? [];
             if (!key || !value) continue;
             fields.push({
-                key: new Parser(this.gcx, this.startPos, key),
-                value: new Parser(this.gcx, this.startPos, value),
+                key: new Parser(this.gcx, this.startPos, key, this.importJson),
+                value: new Parser(this.gcx, this.startPos, value, this.importJson),
             });
         }
         return fields;
@@ -66,7 +81,7 @@ export class Parser {
 
         const parsers: Parser[] = [];
         for (const child of this.node.children ?? []) {
-            parsers.push(new Parser(this.gcx, this.startPos, child));
+            parsers.push(new Parser(this.gcx, this.startPos, child, this.importJson));
         }
         return parsers;
     }
@@ -130,7 +145,21 @@ export class Parser {
         const { value, span } = this.withSpan(parser);
         this.gcx.spans.setField(owner, key, span);
         owner[key] = value;
+        this.recordSourceFile(owner, key, value);
         return value;
+    }
+
+    private recordSourceFile<T extends object, K extends keyof T>(
+        owner: T,
+        key: K,
+        value: T[K],
+    ): void {
+        if (value === null || typeof value !== "object") return;
+        const sourcePath = this.importJson.sourcePathOf(value as object);
+        if (sourcePath === undefined) return;
+        if (key === "actions" || key === "nbt") {
+            this.importJson.setSourcePath(owner, sourcePath);
+        }
     }
     
     withSpan<T>(parser: (p: Parser) => T): { value: T, span: Span } {

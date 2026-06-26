@@ -674,14 +674,15 @@ function diffActionListInner(
     const desiredOrderedMatches = [...matchResult.matches].sort(
         (a, b) => a.desiredIndex - b.desiredIndex
     );
-    const currentOrderedMatches = [...matchResult.matches].sort(
+    const currentOrder = [...matchResult.matches].sort(
         (a, b) => a.current.index - b.current.index
     );
 
     for (let targetIndex = 0; targetIndex < desiredOrderedMatches.length; targetIndex++) {
         const match = desiredOrderedMatches[targetIndex];
+        const currentIndex = currentOrder.indexOf(match);
 
-        if (currentOrderedMatches[targetIndex] !== match) {
+        if (currentIndex !== targetIndex) {
             operations.push({
                 kind: "move",
                 entryId: match.current.entryId,
@@ -689,6 +690,8 @@ function diffActionListInner(
                 toIndex: targetIndex,
                 action: match.desired,
             });
+            currentOrder.splice(currentIndex, 1);
+            currentOrder.splice(targetIndex, 0, match);
         }
 
         if (!actionsEqual(match.current.action, match.desired)) {

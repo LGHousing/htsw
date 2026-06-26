@@ -33,7 +33,8 @@ import {
     Span,
     SpanTable,
     type ImportJsonFileNode,
-    type ParseResult,
+    ImportJsonParseMetadata,
+    type ImportablesParseResult,
 } from "htsw";
 import type { Importable } from "htsw/types";
 
@@ -50,7 +51,7 @@ import {
 
 const SNAPSHOT_DIR = "./htsw/.parse-snapshots";
 
-// gcx.fileTree with each importable replaced by its index into the
+// importJson.fileTree with each importable replaced by its index into the
 // snapshot's flat `importables` array — serializing the objects in place
 // would store every importable twice.
 type SerializedFileNode = {
@@ -92,11 +93,11 @@ type Snapshot = {
     // importableHash per importable, index-aligned with `importables`. Persisted
     // so a reload reuses them instead of re-hashing every action tree.
     hashes: string[];
-    // gcx.houseUuid of the snapshotted parse — the entry file's "houseUuid"
+    // importJson.houseUuid of the snapshotted parse — the entry file's "houseUuid"
     // binding. Must round-trip, or a snapshot-served session sees every
     // bound file as unbound.
     houseUuid: string | null;
-    // gcx.fileTree. Must round-trip, or a snapshot-served session renders
+    // importJson.fileTree. Must round-trip, or a snapshot-served session renders
     // the Importables include tree as one flat list.
     fileTree: SerializedFileNode | null;
     // The parse's diagnostics, pre-rendered.
@@ -231,7 +232,7 @@ function restoreDiagnostic(sm: SourceMap, stored: SnapshotDiagnostic): Diagnosti
 
 export function saveSnapshot(
     importJsonPath: string,
-    result: ParseResult<Importable[]>,
+    result: ImportablesParseResult,
     watchedMtimes: { [path: string]: number }
 ): void {
     const sourcePaths: (string | null)[] = [];
@@ -263,8 +264,8 @@ export function saveSnapshot(
         sourcePaths,
         subListPaths,
         hashes: result.value.map(memoizedImportableHash),
-        houseUuid: result.gcx.houseUuid,
-        fileTree: serializeFileTree(result.gcx.fileTree, result.value),
+        houseUuid: result.importJson.houseUuid,
+        fileTree: serializeFileTree(result.importJson.fileTree, result.value),
         diagnostics: result.diagnostics.map((d) =>
             serializeDiagnostic(result.gcx.sourceMap, d)
         ),
@@ -325,28 +326,28 @@ function writeSnapshotFile(snapshot: Snapshot): void {
 }
 
 /**
- * Reconstructs a `ParseResult<Importable[]>` from a cached snapshot.
+ * Reconstructs a `ImportablesParseResult` from a cached snapshot.
  * Diagnostics come back with real spans (their files are loaded into the
  * fresh SourceMap), so `isFailed()`, rendering, and code-view placement
  * match the original parse. The AST `SpanTable` stays empty — action and
- * field span lookups return nothing. `gcx.sourceFiles` is rebuilt from
+ * field span lookups return nothing. Import.json metadata is rebuilt from
  * `sourcePaths` / `subListPaths` so watching and source-path resolution
  * work unchanged.
  */
 export function restoreParseFromSnapshot(
     snapshot: Snapshot
-): ParseResult<Importable[]> {
+): ImportablesParseResult {
     const sm = new SourceMap(new FileSystemFileLoader());
     const gcx = new GlobalCtxt(sm, snapshot.importJsonPath);
-    gcx.houseUuid = snapshot.houseUuid;
+    const importJson = new ImportJsonParseMetadata();
+    importJson.houseUuid = snapshot.houseUuid;
     for (const stored of snapshot.diagnostics) {
         gcx.addDiagnostic(restoreDiagnostic(sm, stored));
     }
-    const sourceFiles = gcx.sourceFiles as unknown as Map<object, string>;
     for (let i = 0; i < snapshot.importables.length; i++) {
         const path = snapshot.sourcePaths[i];
         if (path !== null && path !== undefined) {
-            gcx.sourceFiles.set(snapshot.importables[i], path);
+            importJson.setSourcePath(snapshot.importables[i], path);
         }
         const subLists = snapshot.subListPaths[i];
         for (let j = 0; j < SUB_LIST_KINDS.length; j++) {
@@ -354,16 +355,17 @@ export function restoreParseFromSnapshot(
             const subList = subListOf(snapshot.importables[i], kind);
             const subPath = subLists[kind];
             if (subList !== undefined && subPath !== undefined) {
-                sourceFiles.set(subList, subPath);
+                importJson.setSourcePath(subList, subPath);
             }
         }
         seedImportableHash(snapshot.importables[i], snapshot.hashes[i]);
     }
-    gcx.fileTree = deserializeFileTree(snapshot.fileTree, snapshot.importables);
+    importJson.fileTree = deserializeFileTree(snapshot.fileTree, snapshot.importables);
     return {
         value: snapshot.importables,
         spans: new SpanTable(),
         diagnostics: gcx.diagnostics,
         gcx,
+        importJson,
     };
 }

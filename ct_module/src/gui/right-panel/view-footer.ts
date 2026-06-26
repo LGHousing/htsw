@@ -51,54 +51,61 @@ function appendQueueRows(rows: Child[], items: readonly QueueItem[]): void {
 }
 
 export function queueSummary(): Element {
+    const children: Child[] = [];
+    // Nothing to expand when the queue is empty, so drop the caret entirely
+    // (its row width goes too, letting the label sit flush-left).
+    if (getQueueLength() > 0) children.push(queueChevron());
+    children.push(
+        Text({
+            text: () => {
+                const active = getActiveImportLabel();
+                const n = getQueueLength();
+                const skipped = queueWillSkipCount(getQueue());
+                const skipText = skipped === 0 ? "" : ` · ${skipped} skip`;
+                if (active !== null) return `Queue (${n}${skipText}) · Now: ${active}`;
+                return n === 0 ? "Queue (empty)" : `Queue (${n}${skipText})`;
+            },
+            color: COLOR_TEXT,
+            truncate: true,
+            style: { width: { kind: "grow" } },
+        }),
+        Button({
+            text: "Clear",
+            disabled: () => isImportRunning() || getQueueLength() === 0,
+            style: {
+                width: { kind: "px", value: 38 },
+                height: { kind: "grow" },
+                background: COLOR_BUTTON,
+                hoverBackground: COLOR_BUTTON_HOVER,
+            },
+            onClick: () => {
+                clearQueue();
+                clearImportableChecks();
+            },
+        })
+    );
     return Row({
         style: { gap: 4, height: { kind: "px", value: 16 }, align: "center" },
+        children,
+    });
+}
+
+function queueChevron(): Element {
+    return Container({
+        style: {
+            direction: "col",
+            align: "center",
+            justify: "center",
+            width: { kind: "px", value: 14 },
+            height: { kind: "grow" },
+            hoverBackground: COLOR_BUTTON_HOVER,
+        },
+        onClick: (_rect, info) => {
+            if (info.button !== 0) return;
+            queueExpanded = !queueExpanded;
+        },
         children: [
-            Container({
-                style: {
-                    direction: "col",
-                    align: "center",
-                    justify: "center",
-                    width: { kind: "px", value: 14 },
-                    height: { kind: "grow" },
-                    hoverBackground: COLOR_BUTTON_HOVER,
-                },
-                onClick: (_rect, info) => {
-                    if (info.button !== 0) return;
-                    if (getQueueLength() === 0) return;
-                    queueExpanded = !queueExpanded;
-                },
-                children: [
-                    Icon({ name: () => (isQueueExpanded() ? Icons.chevronDown : Icons.chevronRight) }),
-                ],
-            }),
-            Text({
-                text: () => {
-                    const active = getActiveImportLabel();
-                    const n = getQueueLength();
-                    const skipped = queueWillSkipCount(getQueue());
-                    const skipText = skipped === 0 ? "" : ` · ${skipped} skip`;
-                    if (active !== null) return `Queue (${n}${skipText}) · Now: ${active}`;
-                    return n === 0 ? "Queue (empty)" : `Queue (${n}${skipText})`;
-                },
-                color: COLOR_TEXT,
-                truncate: true,
-                style: { width: { kind: "grow" } },
-            }),
-            Button({
-                text: "Clear",
-                style: {
-                    width: { kind: "px", value: 38 },
-                    height: { kind: "grow" },
-                    background: COLOR_BUTTON,
-                    hoverBackground: COLOR_BUTTON_HOVER,
-                },
-                onClick: () => {
-                    if (isImportRunning()) return;
-                    clearQueue();
-                    clearImportableChecks();
-                },
-            }),
+            Icon({ name: () => (isQueueExpanded() ? Icons.chevronDown : Icons.chevronRight) }),
         ],
     });
 }

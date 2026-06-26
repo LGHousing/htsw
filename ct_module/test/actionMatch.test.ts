@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 
-import { matchByHash } from "../src/gui/code-view/actionMatch";
+import { matchByHash } from "../src/importCache/actionMatch";
 
 describe("matchByHash", () => {
     it("returns all-null when there is no cache baseline", () => {

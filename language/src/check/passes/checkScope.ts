@@ -3,7 +3,7 @@ import { Diagnostic } from "../../diagnostic";
 import type { Action, Condition, Event } from "../../types";
 import { ACTION_NAMES } from "../../types";
 
-type ActionContainer = "functions" | "events" | "items" | "menus" | "regions" | "npcs";
+type ActionContainer = "functions" | "events" | "items" | "menus" | "regions";
 type NestedActionContainer = "conditional" | "random";
 
 type ActionScope = {

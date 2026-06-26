@@ -1,6 +1,6 @@
 /// <reference types="../../../CTAutocomplete" />
 
-import type { Importable } from "htsw/types";
+import type { Bounds, Importable, Pos } from "htsw/types";
 import { MINECRAFT_ITEMS } from "htsw/types";
 
 import { Element, Rect } from "../lib/layout";
@@ -17,6 +17,12 @@ let editingValue = "";
 let editingX = "";
 let editingY = "";
 let editingZ = "";
+let editingFromX = "";
+let editingFromY = "";
+let editingFromZ = "";
+let editingToX = "";
+let editingToY = "";
+let editingToZ = "";
 let editingFor = "";
 
 const MAX_SUGGESTIONS = 6;
@@ -28,14 +34,15 @@ function sectionForType(type: Importable["type"]): Section | null {
         case "REGION": return "regions";
         case "ITEM": return "items";
         case "MENU": return "menus";
-        case "NPC": return "npcs";
+        case "TEAM": return "teams";
+        case "GROUP": return "groups";
     }
     return null;
 }
 
-const SECTION_TYPE: { [k in Section]: Importable["type"] } = {
+const SECTION_TYPE: Partial<{ [k in Section]: Importable["type"] }> = {
     functions: "FUNCTION", events: "EVENT", regions: "REGION",
-    items: "ITEM", menus: "MENU", npcs: "NPC",
+    items: "ITEM", menus: "MENU", teams: "TEAM", groups: "GROUP",
 };
 
 function findImportableInList(
@@ -44,6 +51,7 @@ function findImportableInList(
     identity: string
 ): Importable | null {
     const type = SECTION_TYPE[section];
+    if (type === undefined) return null;
     for (let i = 0; i < list.length; i++) {
         const imp = list[i];
         if (imp.type !== type) continue;
@@ -100,6 +108,47 @@ function clearState(): void {
     editingX = "";
     editingY = "";
     editingZ = "";
+    editingFromX = "";
+    editingFromY = "";
+    editingFromZ = "";
+    editingToX = "";
+    editingToY = "";
+    editingToZ = "";
+}
+
+function currentBlockPos(): Pos {
+    return {
+        x: Math.floor(Player.getX()),
+        y: Math.floor(Player.getY()),
+        z: Math.floor(Player.getZ()),
+    };
+}
+
+function optionalBounds(imp: Importable): Bounds | undefined {
+    return imp.type === "REGION" ? (imp.bounds as Bounds | undefined) : undefined;
+}
+
+function setSingleCoordinateFields(pos: Pos): void {
+    editingX = String(pos.x);
+    editingY = String(pos.y);
+    editingZ = String(pos.z);
+}
+
+function setBoundsFields(bounds: Bounds): void {
+    editingFromX = String(bounds.from.x);
+    editingFromY = String(bounds.from.y);
+    editingFromZ = String(bounds.from.z);
+    editingToX = String(bounds.to.x);
+    editingToY = String(bounds.to.y);
+    editingToZ = String(bounds.to.z);
+}
+
+function parsePos(x: string, y: string, z: string): Pos | null {
+    const parsedX = parseFloat(x.trim());
+    const parsedY = parseFloat(y.trim());
+    const parsedZ = parseFloat(z.trim());
+    if (isNaN(parsedX) || isNaN(parsedY) || isNaN(parsedZ)) return null;
+    return { x: parsedX, y: parsedY, z: parsedZ };
 }
 
 function saveField(jsonPath: string, imp: Importable, fieldKey: string): void {
@@ -132,13 +181,16 @@ function saveField(jsonPath: string, imp: Importable, fieldKey: string): void {
             if (isNaN(n) || n < 1 || n > 64) { ChatLib.chat("&c[htsw] Invalid count (1-64)."); return; }
             value = n;
         }
+    } else if (fieldKey === "bounds") {
+        const from = parsePos(editingFromX, editingFromY, editingFromZ);
+        const to = parsePos(editingToX, editingToY, editingToZ);
+        if (from === null || to === null) { ChatLib.chat("&c[htsw] Invalid coordinates."); return; }
+        value = { from, to };
     } else if (fieldKey === "boundsFrom" || fieldKey === "boundsTo") {
-        const x = parseFloat(editingX.trim());
-        const y = parseFloat(editingY.trim());
-        const z = parseFloat(editingZ.trim());
-        if (isNaN(x) || isNaN(y) || isNaN(z)) { ChatLib.chat("&c[htsw] Invalid coordinates."); return; }
+        const pos = parsePos(editingX, editingY, editingZ);
+        if (pos === null) { ChatLib.chat("&c[htsw] Invalid coordinates."); return; }
         field = ["bounds", fieldKey === "boundsFrom" ? "from" : "to"];
-        value = { x, y, z };
+        value = pos;
     } else if (fieldKey === "size") {
         const trimmed = editingValue.trim();
         if (trimmed === "" || trimmed === "default") { value = undefined; }
@@ -246,6 +298,98 @@ function coordinateContent(jsonPath: string, imp: Importable, fieldKey: string, 
     });
 }
 
+function boundsCoordinateRow(
+    idPart: string,
+    label: string,
+    getX: () => string,
+    setX: (v: string) => void,
+    getY: () => string,
+    setY: (v: string) => void,
+    getZ: () => string,
+    setZ: (v: string) => void,
+    jsonPath: string,
+    imp: Importable
+): Element {
+    return Row({
+        style: { width: { kind: "grow" }, height: { kind: "px", value: 18 }, gap: 4 },
+        children: [
+            Text({ text: label, style: { width: { kind: "px", value: 34 } } }),
+            Input({
+                id: "edit-bounds-" + idPart + "-x",
+                value: getX,
+                onChange: setX,
+                onSubmit: () => saveField(jsonPath, imp, "bounds"),
+                placeholder: "x",
+                style: { width: { kind: "grow" }, height: { kind: "grow" } },
+            }),
+            Input({
+                id: "edit-bounds-" + idPart + "-y",
+                value: getY,
+                onChange: setY,
+                onSubmit: () => saveField(jsonPath, imp, "bounds"),
+                placeholder: "y",
+                style: { width: { kind: "grow" }, height: { kind: "grow" } },
+            }),
+            Input({
+                id: "edit-bounds-" + idPart + "-z",
+                value: getZ,
+                onChange: setZ,
+                onSubmit: () => saveField(jsonPath, imp, "bounds"),
+                placeholder: "z",
+                style: { width: { kind: "grow" }, height: { kind: "grow" } },
+            }),
+        ],
+    });
+}
+
+function boundsContent(jsonPath: string, imp: Importable): Element {
+    return Col({
+        style: { padding: 6, gap: 4 },
+        children: [
+            Text({ text: "Bounds", style: { width: { kind: "grow" } } }),
+            boundsCoordinateRow(
+                "from",
+                "From",
+                () => editingFromX,
+                (v) => { editingFromX = v; },
+                () => editingFromY,
+                (v) => { editingFromY = v; },
+                () => editingFromZ,
+                (v) => { editingFromZ = v; },
+                jsonPath,
+                imp
+            ),
+            boundsCoordinateRow(
+                "to",
+                "To",
+                () => editingToX,
+                (v) => { editingToX = v; },
+                () => editingToY,
+                (v) => { editingToY = v; },
+                () => editingToZ,
+                (v) => { editingToZ = v; },
+                jsonPath,
+                imp
+            ),
+            Row({
+                style: { width: { kind: "grow" }, height: { kind: "px", value: 18 }, gap: 4 },
+                children: [
+                    Button({
+                        text: "Save",
+                        style: { width: { kind: "grow" }, height: { kind: "px", value: 18 } },
+                        onClick: () => saveField(jsonPath, imp, "bounds"),
+                    }),
+                    Button({
+                        text: "Cancel",
+                        style: { width: { kind: "grow" }, height: { kind: "px", value: 18 } },
+                        onClick: () => closeAllPopovers(),
+                    }),
+                ],
+            }),
+        ],
+    });
+}
+
 function singleFieldContent(jsonPath: string, imp: Importable, fieldKey: string, label: string, placeholder: string): Element {
     return Col({
         style: { padding: 6, gap: 4 },
@@ -341,14 +485,14 @@ export function openEditFunctionFieldPopover(
                     ? String(imp.icon.count) : "";
             }
         } else if (imp.type === "REGION") {
-            if (fieldKey === "boundsFrom") {
-                editingX = String(imp.bounds.from.x);
-                editingY = String(imp.bounds.from.y);
-                editingZ = String(imp.bounds.from.z);
+            const current = currentBlockPos();
+            const bounds = optionalBounds(imp);
+            if (fieldKey === "bounds") {
+                setBoundsFields(bounds ?? { from: current, to: current });
+            } else if (fieldKey === "boundsFrom") {
+                setSingleCoordinateFields(bounds !== undefined ? bounds.from : current);
             } else if (fieldKey === "boundsTo") {
-                editingX = String(imp.bounds.to.x);
-                editingY = String(imp.bounds.to.y);
-                editingZ = String(imp.bounds.to.z);
+                setSingleCoordinateFields(bounds !== undefined ? bounds.to : current);
             }
         } else if (imp.type === "MENU") {
             if (fieldKey === "size") {
@@ -364,6 +508,10 @@ export function openEditFunctionFieldPopover(
     if (fieldKey === "icon") {
         content = iconFieldContent(jsonPath, imp);
         height = 160;
+    } else if (fieldKey === "bounds") {
+        content = boundsContent(jsonPath, imp);
+        width = 280;
+        height = 88;
     } else if (fieldKey === "boundsFrom") {
         content = coordinateContent(jsonPath, imp, fieldKey, "Bounds from");
         width = 260;

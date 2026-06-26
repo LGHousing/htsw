@@ -16,7 +16,11 @@ import {
     isImportSoundsMuted,
     setImportSoundsMuted,
 } from "../../state/flags";
-import { getStepAuto, setStepAuto } from "../../../housingSync/stepGate";
+import {
+    getAutoProceedPreference,
+    setAutoProceedPreference,
+} from "../../../housingSync/stepGate";
+import { getSmoothScrolling, setSmoothScrolling } from "../../../settings";
 
 type ToggleRow = {
     icon: () => IconName;
@@ -72,10 +76,17 @@ export function SettingsView(): Element {
                 onToggle: () => setImportSoundsMuted(!isImportSoundsMuted()),
             }),
             toggleRow({
-                icon: () => (getStepAuto() ? Icons.play : Icons.pause),
+                icon: () => (getAutoProceedPreference() ? Icons.play : Icons.pause),
                 label: "Auto-proceed imports",
-                isOn: () => getStepAuto(),
-                onToggle: () => setStepAuto(!getStepAuto()),
+                isOn: () => getAutoProceedPreference(),
+                onToggle: () =>
+                    setAutoProceedPreference(!getAutoProceedPreference()),
+            }),
+            toggleRow({
+                icon: () => (getSmoothScrolling() ? Icons.waves : Icons.mouse),
+                label: "Smooth scrolling",
+                isOn: () => getSmoothScrolling(),
+                onToggle: () => setSmoothScrolling(!getSmoothScrolling()),
             }),
         ],
     });

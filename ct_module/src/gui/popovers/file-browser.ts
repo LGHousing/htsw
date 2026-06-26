@@ -7,7 +7,7 @@ import { closeActiveMenu, openMenu } from "../lib/menu";
 import { Icons, type IconName } from "../lib/icons.generated";
 import { openRenameFilePopover } from "./rename-file";
 import { openConfirmPopover } from "./confirm";
-import { showInExplorer } from "../../utils/osShell";
+import { openPathInOS, showInExplorer, revealInFilesLabel } from "../../utils/osShell";
 import {
     ACCENT_INFO,
     ACCENT_SUCCESS,
@@ -254,9 +254,7 @@ function commitPathDraft(): void {
 
 function openInOS(): void {
     try {
-        const Desktop = javaType("java.awt.Desktop");
-        const FileClass = javaType("java.io.File");
-        Desktop.getDesktop().open(new FileClass(String(cwd)));
+        openPathInOS(cwd);
     } catch (err) {
         ChatLib.chat(`&c[htsw] Open in OS failed: ${err}`);
     }
@@ -404,7 +402,7 @@ function fileRow(entry: Entry): Element {
                             },
                         },
                         {
-                            label: "Show in explorer",
+                            label: revealInFilesLabel(),
                             onClick: () => showInExplorer(entry.fullPath),
                         },
                         { kind: "separator" },

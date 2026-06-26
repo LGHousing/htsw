@@ -10,11 +10,13 @@
  * frame, and hover / click-flash / cursor / value closures all resolve at draw
  * time, so they stay live at 60fps without a rebuild).
  *
- * Two signals, both framework-level — tree-building consumers never opt in:
+ * Two signals:
  *
  *  - `markGuiDirty()`: an interaction or active animation that may change the
  *    tree's STRUCTURE — clicks, wheel, typed input, an in-progress drag, a
- *    running import. Bumps a revision the panel compares against.
+ *    running import — or a GUI state store that owns a structural mutation
+ *    (queue rows, live preview lines, tab order, selection highlights, chat
+ *    rows). Bumps a revision the panel compares against.
  *  - a time backstop (`GUI_REBUILD_BACKSTOP_MS`, applied in the panel): async
  *    changes that don't route through `markGuiDirty` — a parse finishing,
  *    housing detection, a toast — self-heal within the backstop window instead

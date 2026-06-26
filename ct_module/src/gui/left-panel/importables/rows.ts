@@ -13,6 +13,7 @@ import { openRenameImportablePopover } from "../../popovers/rename-importable";
 import { openConfirmPopover } from "../../popovers/confirm";
 import {
     getHousingUuid,
+    importableSelectionKey,
     isAutoTrackSource,
     isHouseTrusted,
     isImportableChecked,
@@ -32,7 +33,7 @@ import {
     type SubListKind,
 } from "../../parsing/importablePaths";
 import { moveImportableEntry } from "../../../project/moveImportable";
-import { importableIdentity, importableKey } from "../../../importCache/paths";
+import { importableIdentity } from "../../../importCache/paths";
 import { houseDisplayName } from "../../../importCache/aliases";
 import {
     removeImportableEntry,
@@ -57,7 +58,7 @@ import { composeFileMenu, composeImportableMenu } from "../../menus/fileMenu";
 import { autoTrackRefresh, queueModifiedFromPath } from "../../autoTrack";
 import { SourceDir, SourceFile, removeSource } from "./source";
 import { type IncludeNode, includeTreeOf, subtreeImportableCount } from "./includeTree";
-import { showInExplorer, openInVSCode } from "../../../utils/osShell";
+import { showInExplorer, openInVSCode, revealInFilesLabel } from "../../../utils/osShell";
 import {
     closeTab,
     closeTabsUnder,
@@ -72,7 +73,6 @@ import {
     ROW_HOVER_BG,
     bumpTreeRevision,
 } from "./rowModel";
-import { EVENT_ICONS } from "htsw/types";
 import { confirmRebind, houseBindingActions } from "../../houseBinding";
 import type { Bounds, Importable } from "htsw/types";
 
@@ -184,7 +184,7 @@ function importableStatus(imp: Importable): Element {
     if (uuid === null) {
         return linkStatusIcon("unknown", "No house detected");
     }
-    // Items and NPCs have no house-side listing to scan (not in
+    // Items have no house-side listing to scan (not in
     // HOUSE_CONTENT_TYPES) — an item exists only where an action or menu
     // references it. Presence can't be answered for these, so fall back to the
     // import baseline: does your file still match what was last imported?
@@ -349,13 +349,14 @@ function importablePreviewPath(parent: ResultImport, imp: Importable): string {
     return importableSourceFilePath(parent, imp);
 }
 
-const SECTION_BY_TYPE: { [k in Importable["type"]]: Section } = {
+const SECTION_BY_TYPE: Partial<{ [k in Importable["type"]]: Section }> = {
     FUNCTION: "functions",
     EVENT: "events",
     REGION: "regions",
     ITEM: "items",
     MENU: "menus",
-    NPC: "npcs",
+    TEAM: "teams",
+    GROUP: "groups",
 };
 
 // Files this importable owns: its primary source (htsl/snbt) plus sub-list
@@ -404,7 +405,8 @@ function confirmDeleteImportable(parent: ResultImport, imp: Importable): void {
         confirmLabel: "Delete",
         danger: true,
         onConfirm: () => {
-            if (!removeImportableEntry(parent.fullPath, SECTION_BY_TYPE[imp.type], identity)) {
+            const section = SECTION_BY_TYPE[imp.type];
+            if (section === undefined || !removeImportableEntry(parent.fullPath, section, identity)) {
                 ChatLib.chat(`&c[htsw] Couldn't remove '${identity}' from ${shortPath(parent.fullPath)}`);
                 return;
             }
@@ -451,7 +453,7 @@ function confirmDeleteProject(importJsonPath: string): void {
 
 function fsActions(fullPath: string): MenuAction[] {
     return [
-        { label: "Show in explorer", onClick: () => showInExplorer(fullPath) },
+        { label: revealInFilesLabel(), onClick: () => showInExplorer(fullPath) },
         { label: "Open with VSCode", onClick: () => openInVSCode(fullPath) },
     ];
 }
@@ -476,11 +478,11 @@ export function dirRootActions(s: SourceDir): MenuAction[] {
 
 // Right-click "open for real": pins a non-italic tab (confirmSelect), the
 // menu counterpart to double-clicking the row (single-click only previews).
-function openInViewAction(path: string): MenuAction {
+function openInViewAction(path: string, importJsonPath?: string | null): MenuAction {
     return {
         label: "Open in View",
         icon: Icons.eye,
-        onClick: () => confirmSelect(path),
+        onClick: () => confirmSelect(path, importJsonPath),
     };
 }
 
@@ -754,11 +756,17 @@ function openMoveToMenu(parent: ResultImport, imp: Importable): void {
         if (moveTreeRoots[i].children.length > 0) moveExpansion.add(moveTreeRoots[i].path);
     }
 
+    const section = SECTION_BY_TYPE[imp.type];
+    if (section === undefined) {
+        ChatLib.chat("&7[htsw] This importable type can't be moved.");
+        return;
+    }
+
     moveFilter = "";
     moveShowSearch = total > MOVE_SEARCH_THRESHOLD;
     const ctx = {
         entryPath: parent.fullPath,
-        section: SECTION_BY_TYPE[imp.type],
+        section,
         identity: importableIdentity(imp),
     };
     moveCtx = ctx;
@@ -813,7 +821,7 @@ function importableActions(parent: ResultImport, imp: Importable): MenuAction[] 
     const target = importablePreviewPath(parent, imp);
     const item = makeImportableQueueItem(imp, parent.fullPath);
     const extras: MenuAction[] = [
-        openInViewAction(target),
+        openInViewAction(target, parent.fullPath),
         {
             label: "Rename",
             onClick: () => {
@@ -856,7 +864,7 @@ function queueImportables(parent: ResultImport, importables: readonly Importable
     for (let i = 0; i < importables.length; i++) {
         const imp = importables[i];
         addToQueue(makeImportableQueueItem(imp, parent.fullPath));
-        const key = importableKey(imp.type, importableIdentity(imp));
+        const key = importableSelectionKey(parent.fullPath, imp.type, importableIdentity(imp));
         if (!isImportableChecked(key)) toggleImportableChecked(key);
     }
 }
@@ -1035,7 +1043,7 @@ function houseBindControl(fullPath: string): Element | false {
     // icon-only gray house for a couple of seconds after every load.
     const parse = requestParse(fullPath);
     if (parse === null || parse.parsed === null) return false;
-    const bound = parse.parsed.gcx.houseUuid;
+    const bound = parse.parsed.importJson.houseUuid;
     const current = getHousingUuid();
     if (bound === null && current === null) return false;
     if (bound === null && current !== null) {
@@ -1119,11 +1127,12 @@ export function resultRow(
     labelOverride?: string
 ): Element {
     const isImport = r.type === "import";
+    const importJsonPath = isImport ? r.fullPath : null;
     const expKey = expansionKey(sourceKey, r.fullPath);
     const expanded = isImport && isImportExpanded(expKey, defaultExpanded);
     const fileExtras: MenuAction[] = isImport && r.type === "import"
         ? [
-              openInViewAction(r.fullPath),
+              openInViewAction(r.fullPath, importJsonPath),
               {
                   label: "Queue all importables",
                   onClick: () => {
@@ -1157,8 +1166,8 @@ export function resultRow(
               },
               ...extraActions,
           ]
-        : [openInViewAction(r.fullPath), ...extraActions];
-    const actions = composeFileMenu(fileExtras, r.fullPath);
+        : [openInViewAction(r.fullPath, importJsonPath), ...extraActions];
+    const actions = composeFileMenu(fileExtras, r.fullPath, importJsonPath);
     return Container({
         style: {
             direction: "row",
@@ -1172,8 +1181,8 @@ export function resultRow(
             background: ROW_BG,
             hoverBackground: ROW_HOVER_BG,
         },
-        onClick: rowHandler(actions, () => previewSelect(r.fullPath)),
-        onDoubleClick: () => confirmSelect(r.fullPath),
+        onClick: rowHandler(actions, () => previewSelect(r.fullPath, importJsonPath)),
+        onDoubleClick: () => confirmSelect(r.fullPath, importJsonPath),
         children: [
             isImport
                 ? caretButton(expanded, () => {
@@ -1219,12 +1228,12 @@ export function includeGroupRow(
     const fullPath = canonicalPath(node.path);
     const expanded = isIncludeGroupExpanded(expKey, defaultExpanded);
     const actions = composeFileMenu([
-        openInViewAction(fullPath),
+        openInViewAction(fullPath, parent.fullPath),
         {
             label: "Queue all importables",
             onClick: () => queueImportJsonSubtree(parent, node),
         },
-    ], fullPath);
+    ], fullPath, parent.fullPath);
     return Container({
         style: {
             direction: "row",
@@ -1238,8 +1247,8 @@ export function includeGroupRow(
             background: ROW_BG,
             hoverBackground: ROW_HOVER_BG,
         },
-        onClick: rowHandler(actions, () => previewSelect(fullPath)),
-        onDoubleClick: () => confirmSelect(fullPath),
+        onClick: rowHandler(actions, () => previewSelect(fullPath, parent.fullPath)),
+        onDoubleClick: () => confirmSelect(fullPath, parent.fullPath),
         children: [
             caretButton(expanded, () => {
                 includeGroupExpansion.set(expKey, !expanded);
@@ -1326,7 +1335,7 @@ export function importableRow(parent: ResultImport, imp: Importable): Element {
     const expandable = isImportableExpandable(imp);
     const expKey = importableExpansionKey(parent.fullPath, imp);
     const expanded = importableExpansion.has(expKey);
-    const checkKey = importableKey(imp.type, importableIdentity(imp));
+    const checkKey = importableSelectionKey(parent.fullPath, imp.type, importableIdentity(imp));
     const checked = isImportableChecked(checkKey);
     const diagCounts = diagnosticCountsFor(parent.parse, imp);
     const showBadge = diagCounts.errors > 0 || diagCounts.warnings > 0;
@@ -1344,8 +1353,11 @@ export function importableRow(parent: ResultImport, imp: Importable): Element {
             background: ROW_BG,
             hoverBackground: ROW_HOVER_BG,
         },
-        onClick: rowHandler(importableActions(parent, imp), () => previewSelect(previewPath)),
-        onDoubleClick: () => confirmSelect(previewPath),
+        onClick: rowHandler(
+            importableActions(parent, imp),
+            () => previewSelect(previewPath, parent.fullPath)
+        ),
+        onDoubleClick: () => confirmSelect(previewPath, parent.fullPath),
         children: [
             queueCheckbox(checked, () => toggleImportableInQueue(parent, imp, checkKey, checked)),
             typeMarker(IMPORTABLE_TYPE_COLORS[imp.type]),
@@ -1355,8 +1367,6 @@ export function importableRow(parent: ResultImport, imp: Importable): Element {
             imp.type === "FUNCTION" && imp.icon !== undefined &&
                 McItem({ item: imp.icon.item, count: imp.icon.count ?? 1 }),
             imp.type === "FUNCTION" && imp.icon !== undefined && rowSlot(INNER_GAP),
-            imp.type === "EVENT" && McItem({ item: EVENT_ICONS[imp.event] }),
-            imp.type === "EVENT" && rowSlot(INNER_GAP),
             Text({
                 text: importableLabel(imp),
                 truncate: true,
@@ -1380,7 +1390,11 @@ export function subRow(parent: ResultImport, imp: Importable, kind: SubListKind)
     const label = SUB_LIST_LABELS[kind];
     const path = importableSubListPath(imp, kind, parent.parse);
     const target = path ?? parent.fullPath;
-    const actions = composeFileMenu([openInViewAction(target)], target);
+    const actions = composeFileMenu(
+        [openInViewAction(target, parent.fullPath)],
+        target,
+        parent.fullPath
+    );
     return Container({
         style: {
             direction: "row",
@@ -1392,8 +1406,8 @@ export function subRow(parent: ResultImport, imp: Importable, kind: SubListKind)
             background: ROW_BG,
             hoverBackground: ROW_HOVER_BG,
         },
-        onClick: rowHandler(actions, () => previewSelect(target)),
-        onDoubleClick: () => confirmSelect(target),
+        onClick: rowHandler(actions, () => previewSelect(target, parent.fullPath)),
+        onDoubleClick: () => confirmSelect(target, parent.fullPath),
         children: [
             Icon({
                 name: Icons.fileCode,
@@ -1423,7 +1437,11 @@ export function metadataRow(parent: ResultImport, imp: Importable, field: Metada
         : null;
     const actions = fileTarget === null
         ? null
-        : composeFileMenu([openInViewAction(fileTarget)], fileTarget);
+        : composeFileMenu(
+              [openInViewAction(fileTarget, parent.fullPath)],
+              fileTarget,
+              parent.fullPath
+          );
     const value = fileTarget === null ? field.value : shortPath(fileTarget);
     return Container({
         style: {
@@ -1441,8 +1459,9 @@ export function metadataRow(parent: ResultImport, imp: Importable, field: Metada
                   if (info.button !== 0) return;
                   openEditFunctionFieldPopover(rect, parent.fullPath, imp, field.key);
               }
-            : rowHandler(actions, () => previewSelect(fileTarget)),
-        onDoubleClick: fileTarget === null ? undefined : () => confirmSelect(fileTarget),
+            : rowHandler(actions, () => previewSelect(fileTarget, parent.fullPath)),
+        onDoubleClick:
+            fileTarget === null ? undefined : () => confirmSelect(fileTarget, parent.fullPath),
         children: [
             field.diff !== undefined
                 ? Text({

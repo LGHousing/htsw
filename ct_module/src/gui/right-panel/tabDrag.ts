@@ -3,6 +3,7 @@
 import { getScrollState, setScrollOffset, type Rect } from "../lib/layout";
 import { javaType } from "../lib/java";
 import { moveTab, tabIndex } from "./selection";
+import { markGuiDirty } from "../lib/dirty";
 
 const MouseClass = javaType("org.lwjgl.input.Mouse");
 const DRAG_THRESHOLD = 4;
@@ -18,6 +19,7 @@ const EDGE_AUTOSCROLL_SPEED = 7;
 
 type DragState = {
     path: string;
+    importJsonPath: string | null;
     startX: number;
     startY: number;
     dragging: boolean;
@@ -25,11 +27,22 @@ type DragState = {
 
 let dragState: DragState | null = null;
 
-export function beginTabDrag(path: string, mouseX: number, mouseY: number): void {
-    dragState = { path, startX: mouseX, startY: mouseY, dragging: false };
+export function beginTabDrag(
+    path: string,
+    importJsonPath: string | null,
+    mouseX: number,
+    mouseY: number
+): void {
+    dragState = { path, importJsonPath, startX: mouseX, startY: mouseY, dragging: false };
 }
 
-export function updateTabDrag(targetPath: string, _rect: Rect, mouseX: number, mouseY: number): void {
+export function updateTabDrag(
+    targetPath: string,
+    targetImportJsonPath: string | null,
+    _rect: Rect,
+    mouseX: number,
+    mouseY: number
+): void {
     if (dragState === null) return;
     if (!MouseClass.isButtonDown(0)) {
         endTabDrag();
@@ -40,16 +53,21 @@ export function updateTabDrag(targetPath: string, _rect: Rect, mouseX: number, m
         const dy = mouseY - dragState.startY;
         if (dx * dx + dy * dy < DRAG_THRESHOLD * DRAG_THRESHOLD) return;
         dragState.dragging = true;
+        markGuiDirty();
     }
 
-    const from = tabIndex(dragState.path);
-    const to = tabIndex(targetPath);
+    const from = tabIndex(dragState.path, dragState.importJsonPath);
+    const to = tabIndex(targetPath, targetImportJsonPath);
     if (from < 0 || to < 0 || from === to) return;
-    moveTab(dragState.path, to - from);
+    moveTab(dragState.path, to - from, dragState.importJsonPath);
+    markGuiDirty();
 }
 
-export function isTabDragging(path: string): boolean {
-    return dragState !== null && dragState.dragging && dragState.path === path;
+export function isTabDragging(path: string, importJsonPath: string | null): boolean {
+    return dragState !== null &&
+        dragState.dragging &&
+        dragState.path === path &&
+        dragState.importJsonPath === importJsonPath;
 }
 
 /**
@@ -65,11 +83,15 @@ export function tickTabDragAutoScroll(mouseX: number): void {
     const maxOffset = s.contentLength - v.w;
     if (mouseX < v.x + EDGE_AUTOSCROLL_ZONE && s.offset > 0) {
         setScrollOffset(TAB_STRIP_SCROLL_ID, s.offset - EDGE_AUTOSCROLL_SPEED);
+        markGuiDirty();
     } else if (mouseX > v.x + v.w - EDGE_AUTOSCROLL_ZONE && s.offset < maxOffset) {
         setScrollOffset(TAB_STRIP_SCROLL_ID, s.offset + EDGE_AUTOSCROLL_SPEED);
+        markGuiDirty();
     }
 }
 
 export function endTabDrag(): void {
+    if (dragState === null) return;
     dragState = null;
+    markGuiDirty();
 }

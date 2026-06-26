@@ -1,18 +1,18 @@
 /// <reference types="../../../CTAutocomplete" />
 
-import type { ParseResult } from "htsw";
-import type { Importable } from "htsw/types";
+import type { ImportablesParseResult } from "htsw";
 
 import {
     getImportJsonPath,
     setParseInProgress,
-    setParsedResult,
 } from "../state";
 import { addRecent } from "../persistence/recents";
 import {
+    canonicalPath,
     getParseAt,
     markParseStale,
     parseImportJsonBlocking,
+    requestParse,
     touchParseCacheMtime,
     type CachedParse,
 } from "./parses";
@@ -27,7 +27,7 @@ import { autoTrackRefresh } from "../autoTrack";
  * with the Importables tree. This driver only:
  *   - tracks which import.json is active and debounces explicit reloads,
  *   - polls the authority when the overlay is visible,
- *   - propagates a changed parse into global state for the active import.json.
+ *   - runs side effects when the selected import.json gets a changed parse.
  */
 
 function fileExistsSafe(path: string): boolean {
@@ -42,12 +42,8 @@ function fileExistsSafe(path: string): boolean {
 
 // ── driver state ──────────────────────────────────────────────────────
 let lastSeenPath = "";
-let lastParsedRef: ParseResult<Importable[]> | null = null;
+let lastParsedRef: ImportablesParseResult | null = null;
 let forceInFlight = false;
-
-export function reparseNow(): void {
-    forceReparse(getImportJsonPath(), /*forceFresh=*/ true);
-}
 
 /**
  * Mark a file as already in sync with disk, so the next freshness check
@@ -61,9 +57,21 @@ export function markPathInSync(path: string): void {
 function propagate(path: string, cached: CachedParse): void {
     lastSeenPath = path;
     lastParsedRef = cached.parsed;
-    setParsedResult(cached.parsed);
     if (cached.parsed === null) return;
     addRecent(path);
+    autoTrackRefresh();
+}
+
+export function handleCompletedParse(cached: CachedParse): void {
+    const path = getImportJsonPath();
+    if (
+        path !== "" &&
+        canonicalPath(path) === cached.canonicalPath &&
+        cached.parsed !== lastParsedRef
+    ) {
+        propagate(path, cached);
+        return;
+    }
     autoTrackRefresh();
 }
 
@@ -80,7 +88,6 @@ function forceReparse(path: string, forceFresh: boolean): void {
     lastSeenPath = path;
     if (path === "" || !fileExistsSafe(path)) {
         lastParsedRef = null;
-        setParsedResult(null);
         return;
     }
     const existing = getParseAt(path);
@@ -103,7 +110,6 @@ function forceReparse(path: string, forceFresh: boolean): void {
             propagate(path, cached);
         } catch (_e) {
             lastParsedRef = null;
-            setParsedResult(null);
         }
         if (willFreeze) setParseInProgress(false);
         forceInFlight = false;
@@ -125,6 +131,7 @@ export function tickReparse(): void {
         return;
     }
     if (path === "" || !fileExistsSafe(path)) return;
-    const cached = parseImportJsonBlocking(path);
+    const cached = requestParse(path);
+    if (cached === null) return;
     if (cached.parsed !== lastParsedRef) propagate(path, cached);
 }

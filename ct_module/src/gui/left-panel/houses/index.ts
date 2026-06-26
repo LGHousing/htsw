@@ -419,7 +419,6 @@ function housePickerRow(): Element {
             direction: "row",
             align: "center",
             gap: 6,
-            padding: { side: "x", value: 8 },
             width: { kind: "grow" },
             height: { kind: "px", value: SIZE_ROW_H + 6 },
             background: 0x00000000 | 0,
@@ -500,7 +499,7 @@ function itemRowMenu(t: HouseContentType, uuid: string, name: string, canExport:
             label: "View diff",
             icon: Icons.eye,
             onClick: () => {
-                confirmSelect(sourcePath);
+                confirmSelect(sourcePath, getExportImportJsonPath());
             },
         });
     }

@@ -3,6 +3,7 @@ import { GlobalCtxt } from "./context";
 import type { Diagnostic } from "./diagnostic";
 import { parseHtsl } from "./htsl";
 import { parseImportJson } from "./importjson";
+import { ImportJsonParseMetadata } from "./importjson/metadata";
 import { SourceMap, type FileLoader } from "./sourceMap";
 import type { SpanTable } from "./spanTable";
 import type { Action, Importable } from "./types";
@@ -13,6 +14,7 @@ export * from "./diagnostic";
 export * from "./span";
 export * from "./spanTable";
 export * from "./long";
+export * from "./importjson/metadata";
 
 export * as types from "./types";
 export * as helpers from "./helpers"
@@ -30,6 +32,10 @@ export type ParseResult<T> = {
     spans: SpanTable;
     diagnostics: Diagnostic[];
     gcx: GlobalCtxt;
+};
+
+export type ImportablesParseResult = ParseResult<Importable[]> & {
+    importJson: ImportJsonParseMetadata;
 };
 
 export function parseActionsResult(
@@ -57,9 +63,10 @@ export function parseActions(
 export function parseImportablesResult(
     sm: SourceMap,
     path: string,
-): ParseResult<Importable[]> {
+): ImportablesParseResult {
     const gcx = new GlobalCtxt(sm, path);
-    parseImportJson(gcx, path);
+    const importJson = new ImportJsonParseMetadata();
+    parseImportJson(gcx, path, importJson);
     if (!gcx.isFailed()) {
         check(gcx);
     }
@@ -67,7 +74,8 @@ export function parseImportablesResult(
         value: gcx.importables,
         spans: gcx.spans,
         diagnostics: gcx.diagnostics,
-        gcx
+        gcx,
+        importJson
     };
 }
 

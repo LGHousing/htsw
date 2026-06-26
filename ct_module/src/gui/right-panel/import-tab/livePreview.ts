@@ -14,6 +14,7 @@ import type {
 import { actionPathKey } from "../../../housingSync/importEvents";
 import { tokenizeHtsl } from "../syntax";
 import { normalizeHtswPath } from "../../lib/pathDisplay";
+import { markGuiDirty } from "../../lib/dirty";
 
 type MaybeAction = Action;
 type MaybeNestedActions = ReadonlyArray<Action | null>;
@@ -74,6 +75,7 @@ function ensure(path: string): FileState {
 
 function bump(s: FileState): void {
     s.revision = s.revision + 1;
+    markGuiDirty();
 }
 
 const PENDING_PREFIX = "pending:";
@@ -456,7 +458,10 @@ export function previewLinesForFile(path: string): readonly PreviewLine[] {
 
 export function resetPreview(path: string): void {
     const k = keyForFile(path);
-    delete states[k];
+    if (states[k] !== undefined) {
+        delete states[k];
+        markGuiDirty();
+    }
 }
 
 export function primeWithCache(
@@ -796,11 +801,17 @@ export function getLiveSummary(path: string): DiffSummary | null {
 }
 
 export function setCurrent(path: string, actionPath: ActionPath | null): void {
-    ensure(path).currentPath = actionPath;
+    const s = ensure(path);
+    if (s.currentPath === actionPath) return;
+    s.currentPath = actionPath;
+    markGuiDirty();
 }
 
 export function setLiveSummary(path: string, summary: DiffSummary): void {
-    ensure(path).summary = summary;
+    const s = ensure(path);
+    if (s.summary === summary) return;
+    s.summary = summary;
+    markGuiDirty();
 }
 
 /**

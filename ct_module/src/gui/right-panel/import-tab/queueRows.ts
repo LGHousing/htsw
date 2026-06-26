@@ -25,9 +25,15 @@ import {
     SIZE_ROW_H,
 } from "../../lib/theme";
 
-import { getHousingUuid, isCurrentHouseTrusted, isImportableChecked, toggleImportableChecked } from "../../state";
+import {
+    getHousingUuid,
+    importableSelectionKey,
+    isCurrentHouseTrusted,
+    isImportableChecked,
+    toggleImportableChecked,
+} from "../../state";
 import { getQueueItemRunState, isCurrentQueueItem } from "./importProgress";
-import { importableIdentity, importableKey } from "../../../importCache/paths";
+import { importableIdentity } from "../../../importCache/paths";
 import { buildCacheStatusRow } from "../../../importCache/status";
 import {
     isQueueSessionItem,
@@ -93,7 +99,7 @@ const collapsedQueueImportJsonRows: Set<string> = new Set();
 function removeQueueItemAndUncheck(item: QueueItem): void {
     removeFromQueueKey(queueItemKey(item));
     if (item.operation !== "import" || item.kind !== "importable") return;
-    const checkKey = importableKey(item.type, item.identity);
+    const checkKey = importableSelectionKey(item.sourcePath, item.type, item.identity);
     if (isImportableChecked(checkKey)) toggleImportableChecked(checkKey);
 }
 

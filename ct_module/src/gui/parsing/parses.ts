@@ -1,7 +1,10 @@
 /// <reference types="../../../CTAutocomplete" />
 
-import { ParseResult, parseImportablesResult, SourceMap } from "htsw";
-import type { Importable } from "htsw/types";
+import {
+    ImportablesParseResult,
+    parseImportablesResult,
+    SourceMap,
+} from "htsw";
 
 import { FileSystemFileLoader } from "../../utils/fileLoaders";
 import { recordHouseBinding } from "../../importCache/houseBindings";
@@ -31,7 +34,7 @@ import {
 function buildParseFingerprint(
     importJsonPath: string,
     importJsonMtime: number,
-    parsed: ParseResult<Importable[]>
+    parsed: ImportablesParseResult
 ): { [path: string]: number } {
     const out: { [path: string]: number } = {};
     out[importJsonPath] = importJsonMtime;
@@ -40,7 +43,7 @@ function buildParseFingerprint(
         const p = paths[i];
         if (out[p] === undefined) out[p] = getMtimeMs(p);
     }
-    const missingImportJsonPaths = parsed.gcx.missingImportJsonPaths;
+    const missingImportJsonPaths = parsed.importJson.missingImportJsonPaths;
     for (let i = 0; i < missingImportJsonPaths.length; i++) {
         const p = missingImportJsonPaths[i];
         if (out[p] === undefined) out[p] = 0;
@@ -67,7 +70,7 @@ export type CachedParse = {
     rawPath: string;
     /** `Files.getLastModifiedTime(...).toMillis()` at last parse. */
     mtime: number;
-    parsed: ParseResult<Importable[]> | null;
+    parsed: ImportablesParseResult | null;
     /**
      * True when `parsed` was restored from a snapshot.
      * Diagnostics come back with real spans, but the AST `SpanTable` is
@@ -85,7 +88,7 @@ export type CachedParse = {
 function fingerprintOf(
     canon: string,
     mtime: number,
-    parsed: ParseResult<Importable[]> | null
+    parsed: ImportablesParseResult | null
 ): { [path: string]: number } {
     if (parsed === null) {
         const fp: { [path: string]: number } = {};
@@ -153,6 +156,55 @@ export function getParsePerfStats(): ParsePerfEntry[] {
     return parsePerf.slice();
 }
 
+function commitParseEntry(
+    canon: string,
+    rawPath: string,
+    mtime: number,
+    parsed: ImportablesParseResult | null,
+    error: string | null,
+    source: ParsePerfEntry["source"],
+    snapshotFingerprint: { [path: string]: number } | null,
+    startedAt: number
+): CachedParse {
+    let fingerprint = snapshotFingerprint ?? fingerprintOf(canon, mtime, parsed);
+    if (parsed !== null && snapshotFingerprint === null) {
+        fingerprint = buildParseFingerprint(canon, mtime, parsed);
+        saveSnapshot(canon, parsed, fingerprint);
+    }
+    const entry: CachedParse = {
+        canonicalPath: canon,
+        rawPath,
+        mtime,
+        parsed,
+        fromSnapshot: snapshotFingerprint !== null,
+        error,
+        fingerprint,
+        freshness: createFreshness(),
+    };
+    cache.set(canon, entry);
+    parseCacheRevision++;
+    if (parsed !== null) {
+        invalidateSourceDiffForParse(parsed);
+        recordHouseBinding(parsed.importJson.houseUuid, canon);
+    }
+    recordParsePerf(canon, Date.now() - startedAt, source);
+    return entry;
+}
+
+function snapshotEntryIfFresh(
+    canon: string,
+    rawPath: string,
+    mtime: number,
+    startedAt: number
+): CachedParse | null {
+    const snapshot = loadSnapshot(canon);
+    if (snapshot === null) return null;
+    const changed = diffSnapshotFingerprint(snapshot);
+    if (changed.length !== 0) return null;
+    const parsed = restoreParseFromSnapshot(snapshot);
+    return commitParseEntry(canon, rawPath, mtime, parsed, null, "snapshot", snapshot.fingerprint, startedAt);
+}
+
 /**
  * Parse `rawPath` if not cached or if the file changed on disk, and return
  * the cached parse (with `parsed: null + error: ...` on failure).
@@ -181,29 +233,11 @@ export function parseImportJsonBlocking(rawPath: string): CachedParse {
         return existing;
     }
 
-    // Disk snapshot fast path: avoids a full htsw parse when the
-    // import.json + every referenced .htsl still has the recorded
-    // mtime. Critical for the Importables tree walker — without it,
-    // discovering each large import.json freezes the main thread for
-    // its full parse cost on first sighting per session, even though
-    // `reparseNow` already used the snapshot.
-    let parsed: ParseResult<Importable[]> | null = null;
+    let parsed: ImportablesParseResult | null = null;
     let error: string | null = null;
     let source: ParsePerfEntry["source"] = "full";
-    // For a snapshot-restored parse the rebuilt result has empty spans, so
-    // `fingerprintOf` would miss sub-list htsl paths. The snapshot already
-    // carries a full fingerprint (built from a full parse at save time) —
-    // use it so a sub-list edit is still detected.
-    let snapshotFingerprint: { [path: string]: number } | null = null;
-    const snapshot = loadSnapshot(canon);
-    if (snapshot !== null) {
-        const changed = diffSnapshotFingerprint(snapshot);
-        if (changed.length === 0) {
-            parsed = restoreParseFromSnapshot(snapshot);
-            snapshotFingerprint = snapshot.fingerprint;
-            source = "snapshot";
-        }
-    }
+    const snapshotEntry = snapshotEntryIfFresh(canon, rawPath, mtime, startedAt);
+    if (snapshotEntry !== null) return snapshotEntry;
     if (parsed === null) {
         const sm = new SourceMap(new FileSystemFileLoader());
         try {
@@ -215,29 +249,8 @@ export function parseImportJsonBlocking(rawPath: string): CachedParse {
             error = msg;
             source = "error";
         }
-        if (parsed !== null) {
-            const fingerprint = buildParseFingerprint(canon, mtime, parsed);
-            saveSnapshot(canon, parsed, fingerprint);
-        }
     }
-    const entry: CachedParse = {
-        canonicalPath: canon,
-        rawPath,
-        mtime,
-        parsed,
-        fromSnapshot: snapshotFingerprint !== null,
-        error,
-        fingerprint: snapshotFingerprint ?? fingerprintOf(canon, mtime, parsed),
-        freshness: createFreshness(),
-    };
-    cache.set(canon, entry);
-    parseCacheRevision++;
-    if (parsed !== null) {
-        invalidateSourceDiffForParse(parsed);
-        recordHouseBinding(parsed.gcx.houseUuid, canon);
-    }
-    recordParsePerf(canon, Date.now() - startedAt, source);
-    return entry;
+    return commitParseEntry(canon, rawPath, mtime, parsed, error, source, null, startedAt);
 }
 
 /** Look up a previously-parsed import.json by canonical path. */

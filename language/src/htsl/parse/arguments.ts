@@ -600,8 +600,7 @@ export function parseCoordinates0(sp: Parser): Coordinates {
     sp.gcx.spans.setField(coordinates, "pitch", pitchSpan);
     
     if (!sp.check("eof")) {
-        // !!!
-        sp.gcx.addDiagnostic(Diagnostic.error("Unexpected token")
+        sp.gcx.addDiagnostic(Diagnostic.error("Custom coordinates can have at most 5 components")
             .addPrimarySpan(sp.token.span));
     }
 

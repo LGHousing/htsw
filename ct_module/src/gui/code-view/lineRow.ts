@@ -4,10 +4,12 @@ import { Container, Text } from "../lib/components";
 import type { ClickInfo, Element, Rect } from "../lib/layout";
 import { COLOR_BY_STATE, COLOR_CURSOR, ROW_BG_BY_STATE, type DiffState } from "./diffPalette";
 import { CodeViewColors } from "./lineModel";
-import type { LineDecorations, RenderableLine, TokenSpan } from "./lineTypes";
+import type { LineDecorations, LineSelection, RenderableLine, TokenSpan } from "./lineTypes";
 import { joinTokenText, wrapTokensIntoVisualRows } from "./wrap";
 import { offerLineHover } from "../diagnostics/hover";
 import { chatWidth } from "../../utils/helpers";
+import { COLOR_SELECTION } from "../lib/theme";
+import { beginSelection, onRowDrag, selectWord, sourceColAtX } from "./selection";
 
 export const LINE_H = 10;
 export const FOCUS_GUTTER_W = 8;
@@ -67,6 +69,7 @@ function applyAlpha(color: number, factor: number): number {
 }
 
 export type LineRowOptions = {
+    scrollId: string;
     gutterWidth: number;
     lineNumDigits: number;
     bodyMaxWidth: number;
@@ -115,16 +118,121 @@ function bodyChildrenForTokens(
     return tokenElements(tokens, dec.foregroundColor, alpha);
 }
 
+function rowSrcRange(tokens: readonly TokenSpan[]): { start: number; end: number } {
+    if (tokens.length === 0) return { start: 0, end: 0 };
+    const first = tokens[0];
+    const last = tokens[tokens.length - 1];
+    return {
+        start: first.srcStart ?? 0,
+        end: (last.srcStart ?? 0) + last.text.length,
+    };
+}
+
+function buildBodyChildren(
+    tokens: readonly TokenSpan[],
+    dec: LineDecorations,
+    alpha: number,
+    lineSelection: LineSelection | null
+): Element[] {
+    if (lineSelection === null) return bodyChildrenForTokens(tokens, dec, alpha);
+    const range = rowSrcRange(tokens);
+    const segStart = Math.max(lineSelection.start, range.start);
+    const segEnd = Math.min(lineSelection.end, range.end);
+    const marginExtend =
+        lineSelection.start < range.end &&
+        lineSelection.end >= range.end &&
+        (lineSelection.end > range.end || lineSelection.continuesRight);
+    if (segStart >= segEnd && !marginExtend) {
+        return bodyChildrenForTokens(tokens, dec, alpha);
+    }
+    return selectionBodyChildren(tokens, dec, alpha, segStart, segEnd, marginExtend);
+}
+
+function selectionBox(children: Element[]): Element {
+    return Container({
+        style: {
+            direction: "row",
+            align: "center",
+            width: { kind: "auto" },
+            height: { kind: "px", value: LINE_H },
+            background: COLOR_SELECTION,
+        },
+        children,
+    });
+}
+
+function marginBox(): Element {
+    return Container({
+        style: {
+            width: { kind: "grow" },
+            height: { kind: "px", value: LINE_H },
+            background: COLOR_SELECTION,
+        },
+        children: [],
+    });
+}
+
+function selectionBodyChildren(
+    tokens: readonly TokenSpan[],
+    dec: LineDecorations,
+    alpha: number,
+    segStart: number,
+    segEnd: number,
+    marginExtend: boolean
+): Element[] {
+    if (dec.italic === true) {
+        const combined = joinTokenText(tokens);
+        const base = dec.foregroundColor !== undefined
+            ? dec.foregroundColor
+            : (tokens.length > 0 ? tokens[0].color : CodeViewColors.gutter);
+        const color = alpha < 1 ? applyAlpha(base, alpha) : base;
+        const text = Text({ text: `§o${combined}§r`, color });
+        const out: Element[] = segStart < segEnd ? [selectionBox([text])] : [text];
+        if (marginExtend) out.push(marginBox());
+        return out;
+    }
+    const out: Element[] = [];
+    for (let i = 0; i < tokens.length; i++) {
+        const t = tokens[i];
+        const tStart = t.srcStart ?? 0;
+        const tEnd = tStart + t.text.length;
+        const baseColor = dec.foregroundColor !== undefined ? dec.foregroundColor : t.color;
+        const color = alpha < 1 ? applyAlpha(baseColor, alpha) : baseColor;
+        const from = Math.max(segStart, tStart);
+        const to = Math.min(segEnd, tEnd);
+        if (from >= to) {
+            out.push(Text({ text: t.text, color, underlineColor: t.underlineColor }));
+            continue;
+        }
+        const a = from - tStart;
+        const b = to - tStart;
+        if (a > 0) {
+            out.push(Text({ text: t.text.substring(0, a), color, underlineColor: t.underlineColor }));
+        }
+        out.push(
+            selectionBox([
+                Text({ text: t.text.substring(a, b), color, underlineColor: t.underlineColor }),
+            ])
+        );
+        if (b < t.text.length) {
+            out.push(Text({ text: t.text.substring(b), color, underlineColor: t.underlineColor }));
+        }
+    }
+    if (marginExtend) out.push(marginBox());
+    return out;
+}
+
 export function buildLineRows(
     line: RenderableLine,
     dec: LineDecorations,
-    options: LineRowOptions
+    options: LineRowOptions,
+    lineSelection: LineSelection | null
 ): Element[] {
     const effectiveBodyW = effectiveBodyWidth(options.bodyMaxWidth, dec);
     const visualRows = wrapTokensIntoVisualRows(line.tokens, effectiveBodyW);
     const out: Element[] = [];
     for (let i = 0; i < visualRows.length; i++) {
-        out.push(buildVisualLineRow(line, dec, options, visualRows[i], i > 0));
+        out.push(buildVisualLineRow(line, dec, options, visualRows[i], i > 0, lineSelection));
     }
     return out;
 }
@@ -134,7 +242,8 @@ function buildVisualLineRow(
     dec: LineDecorations,
     options: LineRowOptions,
     tokens: readonly TokenSpan[],
-    continuation: boolean
+    continuation: boolean,
+    lineSelection: LineSelection | null
 ): Element {
     const state: DiffState = dec.state ?? "unknown";
     const isFocused = dec.isFocused === true;
@@ -160,15 +269,26 @@ function buildVisualLineRow(
         ? ""
         : (line.lineNum > 0 ? padLeft(String(line.lineNum), options.lineNumDigits) : "");
 
-    const bodyChildren = bodyChildrenForTokens(tokens, dec, alpha);
+    const bodyChildren = buildBodyChildren(tokens, dec, alpha, lineSelection);
     const hasLinkedToken = hasLink(tokens);
-    const onClick = options.onOpenPath !== undefined && hasLink(tokens)
-        ? (rect: Rect, info: ClickInfo) => {
-              if ((info.button !== 0 && info.button !== 2) || info.isDoubleClickSecond) return;
-              const target = linkTargetAt(tokens, info.x - bodyX(rect, options));
-              if (target !== null) options.onOpenPath?.(target, { activate: info.button === 0 });
-          }
-        : undefined;
+    const scrollId = options.scrollId;
+    const onClick = (rect: Rect, info: ClickInfo) => {
+        if (info.button !== 0 && info.button !== 2) return;
+        const localX = info.x - bodyX(rect, options);
+        if (options.onOpenPath !== undefined && hasLinkedToken) {
+            const target = linkTargetAt(tokens, localX);
+            if (target !== null) {
+                if (!info.isDoubleClickSecond) {
+                    options.onOpenPath(target, { activate: info.button === 0 });
+                }
+                return;
+            }
+        }
+        if (info.button !== 0) return;
+        const col = sourceColAtX(tokens, localX);
+        if (info.isDoubleClickSecond) selectWord(scrollId, line.id, col);
+        else beginSelection(scrollId, line.id, col);
+    };
 
     const children: Element[] = [];
     if (options.showFocusGutter) {
@@ -240,28 +360,28 @@ function buildVisualLineRow(
             background: bg,
         },
         onClick,
-        onHover:
-            (line.diagnostics !== undefined && line.diagnostics.length > 0) ||
-            dec.hoverLines !== undefined ||
-            hasLinkedToken
-                ? (rect, mouseX) => {
-                      const run = linkRunAt(tokens, mouseX - bodyX(rect, options));
-                      if (run !== null) {
-                          drawLinkHoverMark(rect, bodyX(rect, options) + run.start, run.width);
-                      }
-                      if (
-                          (line.diagnostics !== undefined && line.diagnostics.length > 0) ||
-                          dec.hoverLines !== undefined
-                      ) {
-                          offerLineHover(
-                              rect,
-                              mouseX,
-                              line.diagnostics,
-                              dec.hoverLines?.() ?? undefined
-                          );
-                      }
-                  }
-                : undefined,
+        onHover: (rect, mouseX) => {
+            const localX = mouseX - bodyX(rect, options);
+            onRowDrag(scrollId, line.id, tokens, localX);
+            if (hasLinkedToken) {
+                const run = linkRunAt(tokens, localX);
+                if (run !== null) {
+                    drawLinkHoverMark(rect, bodyX(rect, options) + run.start, run.width);
+                }
+            }
+            if (
+                (line.diagnostics !== undefined && line.diagnostics.length > 0) ||
+                dec.hoverLines !== undefined
+            ) {
+                offerLineHover(
+                    rect,
+                    mouseX,
+                    line.diagnostics,
+                    line.diagnosticParse,
+                    dec.hoverLines?.() ?? undefined
+                );
+            }
+        },
         children,
     });
 }

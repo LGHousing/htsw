@@ -11,7 +11,7 @@ import type { ResultImport } from "./rowModel";
 export type IncludeNode = ImportJsonFileNode;
 
 export function includeTreeOf(r: ResultImport): IncludeNode {
-    const tree = r.parse === null ? null : r.parse.gcx.fileTree;
+    const tree = r.parse === null ? null : r.parse.importJson.fileTree;
     if (tree !== null) return tree;
     return { path: r.fullPath, importables: r.importables, includes: [] };
 }

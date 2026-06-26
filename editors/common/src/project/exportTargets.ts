@@ -239,8 +239,19 @@ export function snbtTargetForItemExport(
     fs: ProjectFs,
     entryImportJsonPath: string,
     rootDir: string,
-    itemName: string
+    itemName: string,
+    subdir: string = "items"
 ): SnbtExportTarget {
+    function freshTarget(baseDir: string, importJsonPath: string): SnbtExportTarget {
+        const dir = subdir.length > 0 ? fs.resolvePath(baseDir, subdir) : baseDir;
+        const filename = snbtFilenameForItemExport(fs, dir, itemName);
+        return {
+            importJsonPath,
+            snbtPath: fs.resolvePath(dir, filename),
+            snbtReference: subdir.length > 0 ? `${subdir}/${filename}` : filename,
+        };
+    }
+
     const declaring = findDeclaringImportJson(
         fs,
         entryImportJsonPath,
@@ -258,19 +269,7 @@ export function snbtTargetForItemExport(
                 snbtReference: sanitized,
             };
         }
-        const itemsRoot = fs.resolvePath(fs.parentDir(declaring), "items");
-        const filename = snbtFilenameForItemExport(fs, itemsRoot, itemName);
-        return {
-            importJsonPath: declaring,
-            snbtPath: fs.resolvePath(itemsRoot, filename),
-            snbtReference: `items/${filename}`,
-        };
+        return freshTarget(fs.parentDir(declaring), declaring);
     }
-    const itemsRoot = fs.resolvePath(rootDir, "items");
-    const filename = snbtFilenameForItemExport(fs, itemsRoot, itemName);
-    return {
-        importJsonPath: entryImportJsonPath,
-        snbtPath: fs.resolvePath(itemsRoot, filename),
-        snbtReference: `items/${filename}`,
-    };
+    return freshTarget(rootDir, entryImportJsonPath);
 }

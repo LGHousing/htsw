@@ -110,7 +110,7 @@ describe("Main API", () => {
                     "stat t20ms = %date.unix.ms%",
                     "stat random = %random.int/1 10%",
                     "stat existing = %var.player/random%",
-                    "if and (placeholder \"%player.pos.yaw%\" >= 0.0 0.0) {",
+                    "if and (placeholder \"%player.pos.yaw%\" >= 0.0) {",
                     "    changeVelocity \"%var.player/car/vx%\" \"-8\" \"%var.player/car/vz%\"",
                     "}",
                     "",
@@ -360,7 +360,13 @@ describe("Main API", () => {
         const sourceMap = new htsw.SourceMap(
             new SimpleFileLoader({
                 "/project/import.json": JSON.stringify({
-                    regions: [{ name: "SpawnRegion" }],
+                    regions: [{
+                        name: "SpawnRegion",
+                        bounds: {
+                            from: { x: 0, y: 0, z: 0 },
+                            to: { x: 1, y: 1, z: 1 },
+                        },
+                    }],
                 }),
             })
         );

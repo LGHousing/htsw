@@ -25,6 +25,7 @@ import { importableIdentity } from "../../../importCache/paths";
 import { queueItemProgressPath, type QueueItem } from "./queue";
 import { canonicalPath } from "../../parsing/parses";
 import { onImportRunningChanged, setLiveImportPathProvider } from "../selection";
+import { markGuiDirty } from "../../lib/dirty";
 
 // Feed the progress trace's periodic sampler the *displayed* ETA values, so
 // `/htsw eta trace` captures what the user sees between events (the smoothing
@@ -84,7 +85,9 @@ export function getSessionVerb(): SessionVerb {
     return sessionVerb;
 }
 export function setSessionVerb(v: SessionVerb): void {
+    if (sessionVerb === v) return;
     sessionVerb = v;
+    markGuiDirty();
 }
 
 /**
@@ -97,7 +100,9 @@ export function isEtaRough(): boolean {
     return etaRough;
 }
 export function setEtaRough(v: boolean): void {
+    if (etaRough === v) return;
     etaRough = v;
+    markGuiDirty();
 }
 
 /** Display name of the importable currently being processed, or null when idle. */
@@ -138,7 +143,9 @@ export function getActiveImportPath(): string | null {
     return activeImportPath;
 }
 export function setActiveImportPath(p: string | null): void {
+    if (activeImportPath === p) return;
     activeImportPath = p;
+    markGuiDirty();
 }
 
 export function createImportRows(
@@ -197,10 +204,13 @@ export function setImportProgress(p: ImportProgress | null): void {
     }
     importProgress = p === null ? null : normalizeImportProgress(p);
     onImportRunningChanged(!wasNull, p !== null);
+    markGuiDirty();
 }
 
 export function clearLastFinishedProgress(): void {
+    if (lastFinishedProgress === null) return;
     lastFinishedProgress = null;
+    markGuiDirty();
 }
 
 /**

@@ -5,12 +5,12 @@ import type { Span } from "../../span";
 export function checkDuplicateDefinitions(gcx: GlobalCtxt) {
     const functions = gcx.importables.filter(it => it.type === "FUNCTION");
     deduplicateBy(gcx, functions, "name", {
-        specifier: "name",
+        specifier: "function name",
     });
 
     const regions = gcx.importables.filter(it => it.type === "REGION");
     deduplicateBy(gcx, regions, "name", {
-        specifier: "name",
+        specifier: "region name",
     });
 
     // TODO: Menus do not have any identifiable qualities
@@ -19,7 +19,7 @@ export function checkDuplicateDefinitions(gcx: GlobalCtxt) {
 
     const items = gcx.importables.filter(it => it.type === "ITEM");
     deduplicateBy(gcx, items, "name", {
-        specifier: "name"
+        specifier: "item name"
     });
 
     const events = gcx.importables.filter(it => it.type === "EVENT");
@@ -29,12 +29,12 @@ export function checkDuplicateDefinitions(gcx: GlobalCtxt) {
 
     const teams = gcx.importables.filter(it => it.type === "TEAM");
     deduplicateBy(gcx, teams, "name", {
-        specifier: "name"
+        specifier: "team name"
     });
 
     const groups = gcx.importables.filter(it => it.type === "GROUP");
     deduplicateBy(gcx, groups, "name", {
-        specifier: "name"
+        specifier: "group name"
     });
 }
 
@@ -56,7 +56,7 @@ function deduplicateBy<T extends object, K extends keyof T>(
             const otherSpan = seen.get(id)!;
             
             gcx.addDiagnostic(
-                Diagnostic.error(`The ${terms.specifier} \`${id}\` is defined multiple times`)
+                Diagnostic.error(`Duplicate ${terms.specifier} '${id}'`)
                     .addPrimarySpan(span, `\`${id}\` redefined here`)
                     .addSecondarySpan(otherSpan, `Previous definition of \`${id}\` here`)
             );

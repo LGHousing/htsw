@@ -23,11 +23,11 @@
  * vocabulary) and `livePreview.ts` (written from import event handlers).
  */
 
-import type { ParseResult } from "htsw";
+import type { ImportablesParseResult } from "htsw";
 import type { Action, Condition, Importable } from "htsw/types";
 
 import { normalizeHtswPath } from "../lib/pathDisplay";
-import { matchByHash } from "./actionMatch";
+import { matchByHash } from "../../importCache/actionMatch";
 import type { DiffState } from "./diffPalette";
 import { readImportableCache } from "../../importCache/cache";
 import { actionHash, conditionHash } from "../../importCache/hash";
@@ -43,6 +43,7 @@ import {
 import {
     canonicalPath,
     forEachCachedParse,
+    getParseAt,
     getParseCacheRevision,
 } from "../parsing/parses";
 import { getHousingUuid } from "../state/housing";
@@ -54,8 +55,19 @@ export type SourceDiffEntry = Map<SourceActionPathKey, DiffState>;
 
 const entries: Map<string, SourceDiffEntry> = new Map();
 
-function key(filePath: string): string {
-    return normalizeHtswPath(filePath);
+function key(filePath: string, importJsonPath?: string | null): string {
+    return `${importJsonPath === null || importJsonPath === undefined ? "" : normalizeHtswPath(importJsonPath)}\n${normalizeHtswPath(filePath)}`;
+}
+
+function deleteEntriesForFile(filePath: string): void {
+    const fileKey = normalizeHtswPath(filePath);
+    entries.delete(key(filePath));
+    const suffix = "\n" + fileKey;
+    const stale: string[] = [];
+    entries.forEach((_value, entryKey) => {
+        if (entryKey.indexOf(suffix) === entryKey.length - suffix.length) stale.push(entryKey);
+    });
+    for (let i = 0; i < stale.length; i++) entries.delete(stale[i]);
 }
 
 /**
@@ -65,11 +77,14 @@ function key(filePath: string): string {
  * the result. Returns `undefined` if no cached parse references this
  * file or no cache entry exists yet (the user hasn't imported this).
  */
-export function ensureSourceDiff(filePath: string): SourceDiffEntry | undefined {
-    const k = key(filePath);
+export function ensureSourceDiff(
+    filePath: string,
+    importJsonPath?: string | null
+): SourceDiffEntry | undefined {
+    const k = key(filePath, importJsonPath);
     const cached = entries.get(k);
     if (cached !== undefined) return cached;
-    const computed = computeFor(filePath);
+    const computed = computeFor(filePath, importJsonPath);
     if (computed === null) return undefined;
     entries.set(k, computed);
     return computed;
@@ -80,7 +95,7 @@ export function ensureSourceDiff(filePath: string): SourceDiffEntry | undefined 
  * parse. Called on parse refresh (file edit) so the next View-tab render
  * recomputes against the new parse + cache state.
  */
-export function invalidateSourceDiffForParse(parsed: ParseResult<Importable[]>): void {
+export function invalidateSourceDiffForParse(parsed: ImportablesParseResult): void {
     for (const importable of parsed.value) {
         invalidateSourceDiffForImportable(importable, parsed);
     }
@@ -92,17 +107,17 @@ export function invalidateSourceDiffForParse(parsed: ParseResult<Importable[]>):
  */
 export function invalidateSourceDiffForImportable(
     importable: Importable,
-    parsed: ParseResult<Importable[]>
+    parsed: ImportablesParseResult
 ): void {
     for (const p of importableFilePaths(importable, parsed)) {
-        entries.delete(key(p));
+        deleteEntriesForFile(p);
     }
 }
 
 // ── Compute ───────────────────────────────────────────────────────────
 
-function computeFor(filePath: string): SourceDiffEntry | null {
-    const match = findFileTarget(filePath);
+function computeFor(filePath: string, importJsonPath?: string | null): SourceDiffEntry | null {
+    const match = findFileTarget(filePath, importJsonPath);
     if (match === null) return null;
     const housingUuid = getHousingUuid();
     if (housingUuid === null) return null;
@@ -134,20 +149,20 @@ export type FileTarget = {
 let fileTargetCacheRev = -1;
 const fileTargetCache = new Map<string, FileTarget | null>();
 
-export function findFileTarget(filePath: string): FileTarget | null {
+export function findFileTarget(filePath: string, importJsonPath?: string | null): FileTarget | null {
     const rev = getParseCacheRevision();
     if (rev !== fileTargetCacheRev) {
         fileTargetCache.clear();
         fileTargetCacheRev = rev;
     }
     const norm = canonicalPath(filePath);
-    if (fileTargetCache.has(norm)) return fileTargetCache.get(norm) ?? null;
+    const cacheKey = key(norm, importJsonPath);
+    if (fileTargetCache.has(cacheKey)) return fileTargetCache.get(cacheKey) ?? null;
     let found: FileTarget | null = null;
-    forEachCachedParse((entry) => {
-        if (entry.parsed === null || found !== null) return;
-        for (const importable of entry.parsed.value) {
+    const visitParse = (parsed: ImportablesParseResult): void => {
+        for (const importable of parsed.value) {
             if (importable.type === "FUNCTION" || importable.type === "EVENT") {
-                const primary = importableSourcePath(importable, entry.parsed);
+                const primary = importableSourcePath(importable, parsed);
                 if (primary !== undefined && canonicalPath(primary) === norm) {
                     found = { importable, prefix: "actions" };
                     return;
@@ -155,15 +170,24 @@ export function findFileTarget(filePath: string): FileTarget | null {
             }
             for (let k = 0; k < SUB_LIST_KINDS.length; k++) {
                 const kind: SubListKind = SUB_LIST_KINDS[k];
-                const sub = importableSubListPath(importable, kind, entry.parsed);
+                const sub = importableSubListPath(importable, kind, parsed);
                 if (sub !== undefined && canonicalPath(sub) === norm) {
                     found = { importable, prefix: kind };
                     return;
                 }
             }
         }
-    });
-    fileTargetCache.set(norm, found);
+    };
+    if (importJsonPath !== null && importJsonPath !== undefined && importJsonPath !== "") {
+        const entry = getParseAt(importJsonPath);
+        if (entry !== null && entry.parsed !== null) visitParse(entry.parsed);
+    } else {
+        forEachCachedParse((entry) => {
+            if (entry.parsed === null || found !== null) return;
+            visitParse(entry.parsed);
+        });
+    }
+    fileTargetCache.set(cacheKey, found);
     return found;
 }
 
@@ -173,8 +197,12 @@ export function findFileTarget(filePath: string): FileTarget | null {
  * "edit" lines so the user can see WHAT the house has, not just that it
  * differs. Returns null when the cache has no action at that path.
  */
-export function houseActionAt(filePath: string, actionPath: string): Action | null {
-    const match = findFileTarget(filePath);
+export function houseActionAt(
+    filePath: string,
+    actionPath: string,
+    importJsonPath?: string | null
+): Action | null {
+    const match = findFileTarget(filePath, importJsonPath);
     if (match === null) return null;
     const housingUuid = getHousingUuid();
     if (housingUuid === null) return null;

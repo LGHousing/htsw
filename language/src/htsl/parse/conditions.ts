@@ -338,8 +338,46 @@ function parseConditionComparePlaceholder(
             setField(p, condition, "placeholder", parseAnyPlaceholder);
             setField(p, condition, "op", parseComparison);
             setField(p, condition, "amount", parseValue);
+            const valueType = condition.placeholder === undefined
+                ? undefined
+                : getPlaceholderValueTypeFromValue(condition.placeholder);
+            if (
+                condition.op !== undefined &&
+                valueType === "string" &&
+                condition.op !== "Equal"
+            ) {
+                p.gcx.addDiagnostic(
+                    Diagnostic.error("String placeholders can only be compared with ==")
+                        .addPrimarySpan(p.gcx.spans.getField(condition, "op"))
+                );
+            }
+            if (
+                valueType === "number" &&
+                condition.amount !== undefined &&
+                !isNumericCompareValue(condition.amount)
+            ) {
+                p.gcx.addDiagnostic(
+                    Diagnostic.error("Expected number or numeric placeholder")
+                        .addPrimarySpan(p.gcx.spans.getField(condition, "amount"))
+                );
+            }
         }
     );
+}
+
+function isNumericCompareValue(value: string): boolean {
+    if (/^-?\d+(\.\d+)?$/.test(value)) return true;
+    if (!value.startsWith("\"") || !value.endsWith("\"")) {
+        return getPlaceholderValueTypeFromValue(value) === "number";
+    }
+
+    const inner = value.slice(1, -1);
+    if (/^-?\d+(\.\d+)?$/.test(inner)) return true;
+
+    const castMatch = inner.match(/^(%.*%)\s*[LD]$/i);
+    if (castMatch) return getPlaceholderValueTypeFromValue(castMatch[1]) === "number";
+
+    return getPlaceholderValueTypeFromValue(inner) === "number";
 }
 
 function parseConditionRequireTeam(
@@ -436,6 +474,4 @@ function parseConditionCompareDamage(
         setField(p, condition, "amount", parseNumericValue);
     });
 }
-
-
 

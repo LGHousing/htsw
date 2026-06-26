@@ -32,8 +32,8 @@ export function statusForImportable(importable: Importable): CacheState {
     return cacheStateForImportable(importable) ?? "unknown";
 }
 
-export function statusForFile(filePath: string): CacheState | null {
-    const target = findFileTarget(filePath);
+export function statusForFile(filePath: string, importJsonPath?: string | null): CacheState | null {
+    const target = findFileTarget(filePath, importJsonPath);
     if (target === null) return null;
     return statusForImportable(target.importable);
 }

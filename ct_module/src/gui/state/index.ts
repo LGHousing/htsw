@@ -6,7 +6,6 @@
  * import it from its own module.
  */
 export * from "./paths";
-export * from "./parsed";
 export * from "./housing";
 export * from "./trust";
 export * from "./selectionSet";

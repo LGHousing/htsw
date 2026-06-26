@@ -7,6 +7,7 @@ import {
     closeLiveTab,
     closeTab,
     confirmSelect,
+    getActiveFileSelection,
     getActivePath,
     getTabs,
     isLiveTabActive,
@@ -70,18 +71,18 @@ const TAB_ICON_SLOT_W = TAB_ICON_W + TAB_ICON_GAP;
 function tabActions(tab: Extract<Tab, { kind: "file" }>): MenuAction[] {
     if (!tab.confirmed) {
         return composeFileMenu([
-            { label: "Pin tab", onClick: () => confirmSelect(tab.path) },
+            { label: "Pin tab", onClick: () => confirmSelect(tab.path, tab.importJsonPath) },
             { kind: "separator" },
-            { label: "Close tab", onClick: () => closeTab(tab.path) },
-        ], tab.path);
+            { label: "Close tab", onClick: () => closeTab(tab.path, tab.importJsonPath) },
+        ], tab.path, tab.importJsonPath);
     }
     const specific: MenuAction[] = [
-        { label: "Move to start", onClick: () => moveTabToStart(tab.path) },
-        { label: "Move to end", onClick: () => moveTabToEnd(tab.path) },
+        { label: "Move to start", onClick: () => moveTabToStart(tab.path, tab.importJsonPath) },
+        { label: "Move to end", onClick: () => moveTabToEnd(tab.path, tab.importJsonPath) },
         { kind: "separator" },
-        { label: "Close tab", onClick: () => closeTab(tab.path) },
+        { label: "Close tab", onClick: () => closeTab(tab.path, tab.importJsonPath) },
     ];
-    return composeFileMenu(specific, tab.path);
+    return composeFileMenu(specific, tab.path, tab.importJsonPath);
 }
 
 function liveTabMenu(): MenuAction[] {
@@ -92,8 +93,8 @@ function itemPath(item: QueueItem): string {
     return item.operation === "import" ? item.sourcePath : item.destinationPath;
 }
 
-function queuedCountForTab(path: string): number {
-    const matches = queueItemsForPath(path);
+function queuedCountForTab(tab: Extract<Tab, { kind: "file" }>): number {
+    const matches = queueItemsForPath(tab.path, tab.importJsonPath);
     const seen = new Set<string>();
     let count = 0;
     for (let i = 0; i < matches.length; i++) {
@@ -103,7 +104,7 @@ function queuedCountForTab(path: string): number {
             count++;
         }
     }
-    const canonical = canonicalPath(path);
+    const canonical = canonicalPath(tab.path);
     const queue = getQueue();
     for (let i = 0; i < queue.length; i++) {
         const key = queueItemKey(queue[i]);
@@ -117,22 +118,25 @@ function queuedCountForTab(path: string): number {
 
 function tabButton(tab: Tab): Element {
     const isLive = tab.kind === "live";
+    const activeFile = getActiveFileSelection();
     const isActive = isLive
         ? isLiveTabActive()
-        : !isLiveTabActive() && getActivePath() === tab.path;
+        : activeFile !== null &&
+          activeFile.path === tab.path &&
+          activeFile.importJsonPath === tab.importJsonPath;
     const labelText = isLive
         ? `§o${compactFileLabel(tab.path)}`
         : tab.confirmed
           ? compactFileLabel(tab.path)
           : `§o${compactFileLabel(tab.path)}`;
     const isDraggable = !isLive && tab.confirmed;
-    const tabBg = isDraggable && isTabDragging(tab.path)
+    const tabBg = isDraggable && isTabDragging(tab.path, tab.importJsonPath)
         ? TAB_BG_DRAGGING
         : isActive ? TAB_BG_ACTIVE : TAB_BG;
     const tabHoverBg = isActive ? TAB_BG_ACTIVE_HOVER : TAB_BG_HOVER;
-    const fileStatus = isLive ? null : statusForFile(tab.path);
+    const fileStatus = isLive ? null : statusForFile(tab.path, tab.importJsonPath);
     const hasDot = fileStatus !== null;
-    const queuedCount = isLive ? 0 : queuedCountForTab(tab.path);
+    const queuedCount = isLive ? 0 : queuedCountForTab(tab);
     const isQueued = queuedCount > 0;
     const labelW = Renderer.getStringWidth(labelText);
     const tabW =
@@ -163,12 +167,13 @@ function tabButton(tab: Tab): Element {
                 selectLiveTab();
                 return;
             }
-            if (tab.confirmed) beginTabDrag(tab.path, info.x, info.y);
-            if (info.isDoubleClickSecond) confirmSelect(tab.path);
-            else setActiveTab(tab.path);
+            if (tab.confirmed) beginTabDrag(tab.path, tab.importJsonPath, info.x, info.y);
+            if (info.isDoubleClickSecond) confirmSelect(tab.path, tab.importJsonPath);
+            else setActiveTab(tab.path, tab.importJsonPath);
         },
         onHover: isDraggable
-            ? (rect, mouseX, mouseY) => updateTabDrag(tab.path, rect, mouseX, mouseY)
+            ? (rect, mouseX, mouseY) =>
+                  updateTabDrag(tab.path, tab.importJsonPath, rect, mouseX, mouseY)
             : undefined,
         children: [
             Container({
@@ -236,7 +241,7 @@ function tabButton(tab: Tab): Element {
                 onClick: (_rect, info) => {
                     if (info.button !== 0) return;
                     if (isLive) closeLiveTab();
-                    else closeTab(tab.path);
+                    else closeTab(tab.path, tab.importJsonPath);
                 },
                 children: [
                     Icon({

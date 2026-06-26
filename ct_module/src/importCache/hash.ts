@@ -104,22 +104,6 @@ export function listHashes(importable: Importable): Record<string, string[]> {
                 );
             }
             break;
-        case "NPC":
-            if (importable.leftClickActions) {
-                collectActionListHashes(
-                    out,
-                    "leftClickActions",
-                    importable.leftClickActions
-                );
-            }
-            if (importable.rightClickActions) {
-                collectActionListHashes(
-                    out,
-                    "rightClickActions",
-                    importable.rightClickActions
-                );
-            }
-            break;
         case "MENU":
             for (let i = 0; i < importable.slots.length; i++) {
                 const slot = importable.slots[i];

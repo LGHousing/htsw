@@ -8,6 +8,7 @@ import {
     markUserScroll,
     pointInRect,
     getScrollState,
+    setScrollTarget,
     SCROLLBAR_WIDTH,
 } from "./layout";
 import { extract } from "./extractable";
@@ -534,10 +535,14 @@ export function updateScrollbarDrag(mouseY: number): void {
     if (trackPx <= 0) return;
     const dy = mouseY - dragStartMouseY;
     const maxOffset = s.contentLength - v.h;
-    s.offset = Math.max(
+    // Dragging the thumb is a direct 1:1 grab — set both so it tracks the
+    // cursor instantly rather than easing behind it.
+    const pos = Math.max(
         0,
         Math.min(maxOffset, dragStartOffset + Math.floor(dy * (maxOffset / trackPx)))
     );
+    s.offset = pos;
+    s.target = pos;
     if (dy !== 0) markUserScroll(dragScrollId);
 }
 
@@ -572,10 +577,9 @@ export function dispatchWheel(
         // (e.g. the chat scrollback) doesn't jump more than its visible height
         // per notch; tall panels keep the full step.
         const step = Math.min(WHEEL_SCROLL_STEP, Math.max(16, mainView * 0.5));
-        s.offset = Math.max(
-            0,
-            Math.min(s.contentLength - mainView, s.offset - delta * step)
-        );
+        // Accumulate into the target (not the rendered offset) so rapid notches
+        // stack; layoutScroll eases the offset toward it each frame.
+        setScrollTarget(item.element.id, s.target - delta * step);
         markUserScroll(item.element.id);
         return true;
     }

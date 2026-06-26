@@ -1,4 +1,4 @@
-import { readdirSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { readFileSync } from "fs";
 import type { Importable } from "../src/types/importables";
 
@@ -14,6 +14,8 @@ export function assertImportable<T extends Importable["type"]>(
 }
 
 export function readCases(path: string): { name: string; source: string }[] {
+    if (!existsSync(path)) return [];
+
     const files = readdirSync(path);
 
     const entries: {

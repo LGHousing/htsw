@@ -52,11 +52,13 @@ import { compactFileLabel } from "./gui/lib/pathDisplay";
 import { snbtFromItem } from "./housingSync/itemCapture";
 import {
     defaultExportRoot,
+    PROJECTS_ROOT,
     resolveModuleRelativePath,
     snbtTargetForItemExport,
 } from "./project/paths";
 import { upsertImportableEntry } from "./project/importJsonMutations";
 import { ensureParentDirs } from "./utils/filesystem";
+import { openPathInOS } from "./utils/osShell";
 import { getItemFromSnbt } from "./utils/nbt";
 import { C10PacketCreativeInventoryAction } from "./utils/packets";
 
@@ -81,6 +83,11 @@ const HTSW_SUBCOMMANDS: HtswSubcommand[] = [
         summary: "Spawn an item from a .snbt file",
         run: giveItem,
         usage: "giveitem <path>",
+    },
+    {
+        name: "projects",
+        summary: "Open the projects folder in your file explorer",
+        run: commandProjects,
     },
     {
         name: "test",
@@ -247,6 +254,26 @@ function commandGui(): void {
     ChatLib.chat(`&e[htsw] gui ${nowEnabled ? "&aenabled" : "&cdisabled"}`);
 }
 
+function commandProjects(): void {
+    const Paths = Java.type("java.nio.file.Paths");
+    const Files = Java.type("java.nio.file.Files");
+    const dir = Paths.get(String(PROJECTS_ROOT)).toAbsolutePath().normalize();
+    try {
+        Files.createDirectories(dir);
+    } catch (_e) {
+        // best-effort; openPathInOS surfaces a real failure below
+    }
+    const abs = String(dir.toString());
+    try {
+        openPathInOS(abs);
+        ChatLib.chat("&a[htsw] Opened projects folder");
+        ChatLib.chat(`&7  ${abs}`);
+    } catch (err) {
+        ChatLib.chat(`&c[htsw] Couldn't open projects folder: ${err}`);
+        ChatLib.chat(`&7  ${abs}`);
+    }
+}
+
 function moduleVersion(): string {
     const v = readLocalVersion();
     return v !== null ? `v${v}` : "v?";
@@ -362,7 +389,7 @@ function writeSavedItem(
     rootDir: string,
     importJsonPath: string
 ): void {
-    const target = snbtTargetForItemExport(importJsonPath, rootDir, name);
+    const target = snbtTargetForItemExport(importJsonPath, rootDir, name, "");
 
     ensureParentDirs(target.snbtPath);
     FileLib.write(target.snbtPath, snbt, true);

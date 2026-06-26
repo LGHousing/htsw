@@ -66,9 +66,12 @@ export function referencedItemNames(importable: Importable): string[] {
             }
             break;
         case "ITEM":
-        case "NPC":
             collectFromActions(importable.leftClickActions, names);
             collectFromActions(importable.rightClickActions, names);
+            break;
+        case "TEAM":
+        case "GROUP":
+        case "HOUSE_NAME":
             break;
         default: {
             const _exhaustiveCheck: never = importable;

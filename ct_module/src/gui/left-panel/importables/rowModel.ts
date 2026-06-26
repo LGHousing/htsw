@@ -1,5 +1,6 @@
-import type { ParseResult } from "htsw";
+import type { ImportablesParseResult } from "htsw";
 import type { Importable } from "htsw/types";
+import { markGuiDirty } from "../../lib/dirty";
 
 // File-level row types: what `enumerateForSource` returns. Each row is a
 // file the Importables tree displays directly. Importables themselves are no
@@ -18,7 +19,7 @@ export type ResultImport = {
      * resolve `imp` through `importableSourcePath(imp, parse)` against the
      * correct source map — without it, the WeakMap lookup misses and we
      * fall back to the import.json instead of the htsl/snbt. */
-    parse: ParseResult<Importable[]> | null;
+    parse: ImportablesParseResult | null;
     parseError?: string;
 };
 type ResultScript = { type: "script"; path: string; fullPath: string };
@@ -32,7 +33,9 @@ export const IMPORTABLE_TYPE_COLORS: { [k in Importable["type"]]: number } = {
     REGION: 0xff5cb85c | 0,
     ITEM: 0xffe5bc4b | 0,
     MENU: 0xffe87a4b | 0,
-    NPC: 0xff7be0c0 | 0,
+    TEAM: 0xff4aa3a8 | 0,
+    GROUP: 0xffb695e8 | 0,
+    HOUSE_NAME: 0xffd9d1a3 | 0,
 };
 
 // Structure revision for the Importables tree. The tree's row DESCRIPTORS
@@ -44,6 +47,7 @@ export const IMPORTABLE_TYPE_COLORS: { [k in Importable["type"]]: number } = {
 let treeRevision = 0;
 export function bumpTreeRevision(): void {
     treeRevision++;
+    markGuiDirty();
 }
 export function getTreeRevision(): number {
     return treeRevision;

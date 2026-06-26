@@ -1,7 +1,10 @@
 import { chatWidth } from "../utils/helpers";
 
+export type LineSegment = { x: number; text: string };
+
 export type FormattedTextBlock = {
     lines: string[];
+    segments: LineSegment[][];
     width: number;
     height: number;
 };
@@ -10,15 +13,35 @@ export interface TextLayoutElement {
     getWidth(): number;
     getHeight(): number;
     render(): string[];
+    renderSegments(): LineSegment[][];
 }
 
 export function renderTextBlock(element: TextLayoutElement): FormattedTextBlock {
     const lines = element.render();
     return {
         lines,
+        segments: element.renderSegments(),
         width: element.getWidth(),
         height: lines.length,
     };
+}
+
+function clipTextToWidth(text: string, maxWidth: number): string {
+    let out = "";
+    let width = 0;
+    for (let i = 0; i < text.length; i++) {
+        const ch = text.charAt(i);
+        if (ch === "&" && i + 1 < text.length) {
+            out += ch + text.charAt(i + 1);
+            i++;
+            continue;
+        }
+        const chWidth = chatWidth(ch);
+        if (width + chWidth > maxWidth) break;
+        out += ch;
+        width += chWidth;
+    }
+    return out;
 }
 
 export class TextLayoutText implements TextLayoutElement {
@@ -38,6 +61,10 @@ export class TextLayoutText implements TextLayoutElement {
 
     render(): string[] {
         return [this.text];
+    }
+
+    renderSegments(): LineSegment[][] {
+        return [[{ x: 0, text: this.text }]];
     }
 }
 
@@ -68,6 +95,15 @@ export class TextLayoutVStack implements TextLayoutElement {
         const out: string[] = [];
         for (let i = 0; i < this.elements.length; i++) {
             const lines = this.elements[i].render();
+            for (let j = 0; j < lines.length; j++) out.push(lines[j]);
+        }
+        return out;
+    }
+
+    renderSegments(): LineSegment[][] {
+        const out: LineSegment[][] = [];
+        for (let i = 0; i < this.elements.length; i++) {
+            const lines = this.elements[i].renderSegments();
             for (let j = 0; j < lines.length; j++) out.push(lines[j]);
         }
         return out;
@@ -173,6 +209,26 @@ export class TextLayoutCanvas implements TextLayoutElement {
         }
         return result;
     }
+
+    renderSegments(): LineSegment[][] {
+        const lineMap: LineSegment[][] = [];
+        for (let k = 0; k < this.elements.length; k++) {
+            const entry = this.elements[k];
+            const childLines = entry.element.renderSegments();
+            for (let i = 0; i < childLines.length; i++) {
+                const y = entry.y + i;
+                if (lineMap[y] === undefined) lineMap[y] = [];
+                const childSegs = childLines[i];
+                for (let s = 0; s < childSegs.length; s++) {
+                    lineMap[y].push({ x: entry.x + childSegs[s].x, text: childSegs[s].text });
+                }
+            }
+        }
+        const maxY = Math.max(0, this.getHeight() - 1);
+        const out: LineSegment[][] = [];
+        for (let y = 0; y <= maxY; y++) out.push(lineMap[y] ?? []);
+        return out;
+    }
 }
 
 export class TextLayoutHLine extends TextLayoutText {
@@ -232,6 +288,36 @@ export class TextLayoutTruncate implements TextLayoutElement {
                 width += chWidth;
             }
             return truncated + ellipsis;
+        });
+    }
+
+    renderSegments(): LineSegment[][] {
+        const ellipsis = "...";
+        const ellipsisWidth = chatWidth(ellipsis);
+        return this.inner.renderSegments().map((segs) => {
+            let extent = 0;
+            for (let i = 0; i < segs.length; i++) {
+                extent = Math.max(extent, segs[i].x + chatWidth(segs[i].text));
+            }
+            if (extent <= this.maxWidth) return segs;
+            const budget = this.maxWidth - ellipsisWidth;
+            const out: LineSegment[] = [];
+            let ellipsisX = 0;
+            for (let i = 0; i < segs.length; i++) {
+                const seg = segs[i];
+                if (seg.x >= budget) continue;
+                const end = seg.x + chatWidth(seg.text);
+                if (end <= budget) {
+                    out.push(seg);
+                    ellipsisX = Math.max(ellipsisX, end);
+                    continue;
+                }
+                const clipped = clipTextToWidth(seg.text, budget - seg.x);
+                out.push({ x: seg.x, text: clipped });
+                ellipsisX = Math.max(ellipsisX, seg.x + chatWidth(clipped));
+            }
+            out.push({ x: ellipsisX, text: ellipsis });
+            return out;
         });
     }
 }

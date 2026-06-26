@@ -10,7 +10,6 @@ export class GlobalCtxt {
     spans: SpanTable;
     importables: Importable[];
     diagnostics: Diagnostic[];
-    houseUuid: string | undefined;
 
     constructor(
         sourceMap: SourceMap,

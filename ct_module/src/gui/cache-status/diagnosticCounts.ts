@@ -1,4 +1,4 @@
-import type { Diagnostic, ParseResult } from "htsw";
+import type { Diagnostic, ImportablesParseResult } from "htsw";
 import type { Importable } from "htsw/types";
 
 import { importableFilePaths } from "../parsing/importablePaths";
@@ -21,10 +21,10 @@ export type SeverityCounts = { errors: number; warnings: number };
 // Memoized per ParseResult: the GUI swaps in a fresh ParseResult on every
 // reparse, so the attribution is computed once per parse and reused across
 // frames (the importables list re-renders every frame).
-const cache = new WeakMap<ParseResult<Importable[]>, DiagnosticAttribution>();
+const cache = new WeakMap<ImportablesParseResult, DiagnosticAttribution>();
 
 export function attributeDiagnostics(
-    parsed: ParseResult<Importable[]>
+    parsed: ImportablesParseResult
 ): DiagnosticAttribution {
     const hit = cache.get(parsed);
     if (hit !== undefined) return hit;
@@ -70,7 +70,7 @@ export function attributeDiagnostics(
 }
 
 export function diagnosticCountsFor(
-    parsed: ParseResult<Importable[]> | null,
+    parsed: ImportablesParseResult | null,
     imp: Importable
 ): SeverityCounts {
     if (parsed === null) return { errors: 0, warnings: 0 };

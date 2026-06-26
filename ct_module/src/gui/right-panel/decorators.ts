@@ -20,8 +20,12 @@ const COLOR_GHOST_GRAY = 0xff444444 | 0;
 const COLOR_READ_FOCUS_ROW_BG = 0x5018365d | 0;
 const COLOR_APPLY_FOCUS_COLUMN_BG = 0xa067a7e8 | 0;
 
-function houseVersionHoverLines(path: string, actionPath: string): string[] | null {
-    const house = houseActionAt(path, actionPath);
+function houseVersionHoverLines(
+    path: string,
+    actionPath: string,
+    importJsonPath?: string | null
+): string[] | null {
+    const house = houseActionAt(path, actionPath, importJsonPath);
     if (house === null) return null;
     let printed: string;
     try {
@@ -33,11 +37,11 @@ function houseVersionHoverLines(path: string, actionPath: string): string[] | nu
     return ["&7In the house:", htslLineToChatString(firstLine)];
 }
 
-export function diffDecorator(path: string | null): LineDecorator {
+export function diffDecorator(path: string | null, importJsonPath?: string | null): LineDecorator {
     return {
         decorateLine(line: RenderableLine): LineDecorations {
             if (path === null || line.actionPath === undefined) return {};
-            const overlay = ensureSourceDiff(path);
+            const overlay = ensureSourceDiff(path, importJsonPath);
             if (overlay === undefined) return {};
             const state = overlay.get(line.actionPath);
             if (state === undefined) return {};
@@ -45,7 +49,7 @@ export function diffDecorator(path: string | null): LineDecorator {
                 const actionPath = line.actionPath;
                 return {
                     state,
-                    hoverLines: () => houseVersionHoverLines(path, actionPath),
+                    hoverLines: () => houseVersionHoverLines(path, actionPath, importJsonPath),
                 };
             }
             if (state === "add") {

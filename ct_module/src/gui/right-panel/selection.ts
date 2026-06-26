@@ -1,11 +1,18 @@
-const confirmed: string[] = [];
-let preview: string | null = null;
-let active: string | null = null;
+import { markGuiDirty } from "../lib/dirty";
+
+export type FileSelection = {
+    path: string;
+    importJsonPath: string | null;
+};
+
+const confirmed: FileSelection[] = [];
+let preview: FileSelection | null = null;
+let active: FileSelection | null = null;
 
 export const LIVE_TAB_PATH = "__htsw_live_import__";
 
 export type Tab =
-    | { kind: "file"; path: string; confirmed: boolean }
+    | { kind: "file"; path: string; importJsonPath: string | null; confirmed: boolean }
     | { kind: "live"; path: string };
 
 let liveTabActive = false;
@@ -33,12 +40,16 @@ export function isLiveTabActive(): boolean {
 
 export function selectLiveTab(): void {
     if (liveImportPath() === null) return;
+    if (liveTabActive) return;
     liveTabActive = true;
+    markGuiDirty();
 }
 
 export function closeLiveTab(): void {
+    if (dismissedLiveImport && !liveTabActive) return;
     dismissedLiveImport = true;
     liveTabActive = false;
+    markGuiDirty();
 }
 
 export function onImportRunningChanged(wasRunning: boolean, isRunning: boolean): void {
@@ -46,6 +57,7 @@ export function onImportRunningChanged(wasRunning: boolean, isRunning: boolean):
         dismissedLiveImport = false;
         lastLivePath = null;
         liveTabActive = true;
+        markGuiDirty();
     }
 }
 
@@ -54,43 +66,108 @@ export function getTabs(): Tab[] {
     const live = liveImportPath();
     if (live !== null) out.push({ kind: "live", path: live });
     for (let i = 0; i < confirmed.length; i++) {
-        out.push({ kind: "file", path: confirmed[i], confirmed: true });
+        out.push({ kind: "file", ...confirmed[i], confirmed: true });
     }
-    if (preview !== null) out.push({ kind: "file", path: preview, confirmed: false });
+    if (preview !== null) out.push({ kind: "file", ...preview, confirmed: false });
     return out;
 }
 
 export function getActivePath(): string | null {
     if (isLiveTabActive()) return liveImportPath();
-    return active;
+    return active === null ? null : active.path;
 }
 
-export function previewSelect(path: string): void {
+export function getActiveFileSelection(): FileSelection | null {
+    if (isLiveTabActive() || active === null) return null;
+    return { path: active.path, importJsonPath: active.importJsonPath };
+}
+
+function fileSelection(path: string, importJsonPath?: string | null): FileSelection {
+    return { path, importJsonPath: importJsonPath ?? null };
+}
+
+function sameSelection(a: FileSelection | null, b: FileSelection | null): boolean {
+    if (a === null || b === null) return a === b;
+    return a.path === b.path && a.importJsonPath === b.importJsonPath;
+}
+
+function confirmedIndex(selection: FileSelection): number {
+    for (let i = 0; i < confirmed.length; i++) {
+        if (sameSelection(confirmed[i], selection)) return i;
+    }
+    return -1;
+}
+
+export function previewSelect(path: string, importJsonPath?: string | null): void {
+    const next = fileSelection(path, importJsonPath);
+    const oldLive = liveTabActive;
+    const oldPreview = preview;
+    const oldActive = active;
     liveTabActive = false;
-    if (confirmed.indexOf(path) >= 0) {
+    const confirmedIdx = confirmedIndex(next);
+    if (confirmedIdx >= 0) {
         preview = null;
     } else {
-        preview = path;
+        preview = next;
     }
-    active = path;
+    active = next;
+    if (
+        oldLive !== liveTabActive ||
+        !sameSelection(oldPreview, preview) ||
+        !sameSelection(oldActive, active)
+    ) {
+        markGuiDirty();
+    }
 }
 
-export function confirmSelect(path: string): void {
+export function confirmSelect(path: string, importJsonPath?: string | null): void {
+    const next = fileSelection(path, importJsonPath);
+    const oldLive = liveTabActive;
+    const oldPreview = preview;
+    const oldActive = active;
+    const oldLen = confirmed.length;
     liveTabActive = false;
-    if (preview === path) preview = null;
-    if (confirmed.indexOf(path) < 0) confirmed.push(path);
-    active = path;
+    if (sameSelection(preview, next)) preview = null;
+    const idx = confirmedIndex(next);
+    if (idx < 0) confirmed.push(next);
+    else confirmed[idx] = next;
+    active = next;
+    if (
+        oldLive !== liveTabActive ||
+        !sameSelection(oldPreview, preview) ||
+        !sameSelection(oldActive, active) ||
+        oldLen !== confirmed.length
+    ) {
+        markGuiDirty();
+    }
 }
 
-export function pinTab(path: string): void {
-    if (preview === path) preview = null;
-    if (confirmed.indexOf(path) < 0) confirmed.push(path);
+export function pinTab(path: string, importJsonPath?: string | null): void {
+    const next = fileSelection(path, importJsonPath);
+    const oldPreview = preview;
+    const oldLen = confirmed.length;
+    if (sameSelection(preview, next)) preview = null;
+    const idx = confirmedIndex(next);
+    if (idx < 0) confirmed.push(next);
+    else confirmed[idx] = next;
+    if (!sameSelection(oldPreview, preview) || oldLen !== confirmed.length) markGuiDirty();
 }
 
-export function setActiveTab(path: string): void {
+export function setActiveTab(path: string, importJsonPath?: string | null): void {
+    const next = fileSelection(path, importJsonPath);
+    const oldLive = liveTabActive;
+    const oldPreview = preview;
+    const oldActive = active;
     liveTabActive = false;
-    if (preview !== null && path !== preview) preview = null;
-    active = path;
+    if (!sameSelection(preview, next)) preview = null;
+    active = next;
+    if (
+        oldLive !== liveTabActive ||
+        !sameSelection(oldPreview, preview) ||
+        !sameSelection(oldActive, active)
+    ) {
+        markGuiDirty();
+    }
 }
 
 export function closeTabsUnder(dirPath: string): void {
@@ -100,51 +177,90 @@ export function closeTabsUnder(dirPath: string): void {
         const tab = all[i];
         if (tab.kind !== "file") continue;
         const p = tab.path;
-        if (p === dirPath || p.indexOf(prefix) === 0) closeTab(p);
+        if (p === dirPath || p.indexOf(prefix) === 0) closeTab(p, tab.importJsonPath);
     }
 }
 
-export function closeTab(path: string): void {
-    if (preview === path) preview = null;
-    const idx = confirmed.indexOf(path);
-    if (idx >= 0) confirmed.splice(idx, 1);
-    if (active === path) {
-        if (idx >= 0 && idx < confirmed.length) {
+export function closeTab(path: string, importJsonPath?: string | null): void {
+    const exact = arguments.length >= 2;
+    const target = fileSelection(path, importJsonPath);
+    const oldPreview = preview;
+    const oldActive = active;
+    const oldLen = confirmed.length;
+    if (exact ? sameSelection(preview, target) : preview !== null && preview.path === path) {
+        preview = null;
+    }
+    let firstRemoved = confirmed.length;
+    for (let i = confirmed.length - 1; i >= 0; i--) {
+        const match = exact ? sameSelection(confirmed[i], target) : confirmed[i].path === path;
+        if (!match) continue;
+        firstRemoved = i < firstRemoved ? i : firstRemoved;
+        confirmed.splice(i, 1);
+    }
+    const activeRemoved =
+        exact ? sameSelection(active, target) : active !== null && active.path === path;
+    if (activeRemoved) {
+        if (confirmed.length > 0) {
+            const idx = firstRemoved < confirmed.length ? firstRemoved : confirmed.length - 1;
             active = confirmed[idx];
-        } else if (confirmed.length > 0) {
-            active = confirmed[confirmed.length - 1];
         } else {
             active = preview;
         }
     }
+    if (
+        !sameSelection(oldPreview, preview) ||
+        !sameSelection(oldActive, active) ||
+        oldLen !== confirmed.length
+    ) {
+        markGuiDirty();
+    }
 }
 
-export function moveTab(path: string, delta: number): void {
-    const idx = confirmed.indexOf(path);
+function confirmedIndexFor(
+    path: string,
+    importJsonPath: string | null | undefined,
+    exact: boolean
+): number {
+    if (exact) return confirmedIndex(fileSelection(path, importJsonPath));
+    for (let i = 0; i < confirmed.length; i++) {
+        if (confirmed[i].path === path) return i;
+    }
+    return -1;
+}
+
+export function moveTab(path: string, delta: number, importJsonPath?: string | null): void {
+    const idx = confirmedIndexFor(path, importJsonPath, arguments.length >= 3);
     if (idx < 0) return;
     const target = Math.max(0, Math.min(confirmed.length - 1, idx + delta));
     if (target === idx) return;
     const [tab] = confirmed.splice(idx, 1);
     confirmed.splice(target, 0, tab);
+    markGuiDirty();
 }
 
-export function moveTabToStart(path: string): void {
-    const idx = confirmed.indexOf(path);
+export function moveTabToStart(path: string, importJsonPath?: string | null): void {
+    const idx = confirmedIndexFor(path, importJsonPath, arguments.length >= 2);
     if (idx <= 0) return;
     const [tab] = confirmed.splice(idx, 1);
     confirmed.unshift(tab);
+    markGuiDirty();
 }
 
-export function moveTabToEnd(path: string): void {
-    const idx = confirmed.indexOf(path);
+export function moveTabToEnd(path: string, importJsonPath?: string | null): void {
+    const idx = confirmedIndexFor(path, importJsonPath, arguments.length >= 2);
     if (idx < 0 || idx === confirmed.length - 1) return;
     const [tab] = confirmed.splice(idx, 1);
     confirmed.push(tab);
+    markGuiDirty();
 }
 
-export function tabIndex(path: string): number {
-    if (preview === path) return confirmed.length;
-    return confirmed.indexOf(path);
+export function tabIndex(path: string, importJsonPath?: string | null): number {
+    const exact = arguments.length >= 2;
+    const target = fileSelection(path, importJsonPath);
+    if (exact ? sameSelection(preview, target) : preview !== null && preview.path === path) {
+        return confirmed.length;
+    }
+    return confirmedIndexFor(path, importJsonPath, exact);
 }
 
 export function tabCount(): number {

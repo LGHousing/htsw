@@ -5,7 +5,8 @@ import { Button, Col, Input, Row, Text } from "../lib/components";
 import { closeAllPopovers, openPopover } from "../lib/popovers";
 import type { Importable } from "htsw/types";
 import { renameImportableEntry, type Section } from "../../project/importJsonMutations";
-import { reparseNow } from "../parsing/reparse";
+import { markParseStale, requestParse } from "../parsing/parses";
+import { bumpTreeRevision } from "../left-panel/importables/rowModel";
 
 let editingValue = "";
 let editingFor: string = "";
@@ -22,8 +23,10 @@ function sectionForType(type: Importable["type"]): Section | null {
             return "items";
         case "MENU":
             return "menus";
-        case "NPC":
-            return "npcs";
+        case "TEAM":
+            return "teams";
+        case "GROUP":
+            return "groups";
         default:
             return null;
     }
@@ -75,7 +78,9 @@ function save(jsonPath: string, imp: Importable): void {
     ChatLib.chat(`&a[htsw] Renamed ${currentIdentity(imp)} → ${trimmed}`);
     editingFor = "";
     editingValue = "";
-    reparseNow();
+    markParseStale(jsonPath);
+    requestParse(jsonPath);
+    bumpTreeRevision();
     closeAllPopovers();
 }
 

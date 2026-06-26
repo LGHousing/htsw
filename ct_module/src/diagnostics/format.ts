@@ -308,4 +308,4 @@ export function formatDiagnostics(
     return renderTextBlock(stack);
 }
 
-export type { FormattedTextBlock } from "./textLayout";
+export type { FormattedTextBlock, LineSegment } from "./textLayout";

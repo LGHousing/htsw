@@ -9,12 +9,29 @@
 
 import type { SyntaxToken } from "../right-panel/syntax";
 import type { DiffState } from "./diffPalette";
-import type { Diagnostic } from "htsw";
+import type { Diagnostic, ImportablesParseResult } from "htsw";
 
 export type TokenSpan = SyntaxToken & {
     fieldProp?: string;
     underlineColor?: number;
     linkTarget?: string;
+    /**
+     * Column where this token's text begins in its source line. Stamped by
+     * `wrapTokensIntoVisualRows` so text selection can map a click on a wrapped
+     * visual row back to a position in the unwrapped source.
+     */
+    srcStart?: number;
+};
+
+/**
+ * The selected source-column range on a single logical line. `continuesRight`
+ * is true when the selection extends past this line (so the highlight should
+ * reach the right margin to show the trailing newline is included).
+ */
+export type LineSelection = {
+    start: number;
+    end: number;
+    continuesRight: boolean;
 };
 
 export type FieldSpan = {
@@ -33,6 +50,7 @@ export type RenderableLine = {
     staticForeground?: number;
     isHeader?: boolean;
     diagnostics?: readonly Diagnostic[];
+    diagnosticParse?: ImportablesParseResult;
 };
 
 export type LineDecorations = {
