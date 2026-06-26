@@ -41,14 +41,6 @@ jobs:
       - name: Build language package
         run: npm run build --workspace language
 
-      - name: Stage release artifacts
-        run: python publish.py --no-upload
-
-      - name: Prepare GitHub release assets
-        run: |
-          cp dist-publish/ct/latest.json dist-publish/htsw-ct-latest.json
-          cp dist-publish/vscode/latest.json dist-publish/htsw-vscode-latest.json
-
       - name: Resolve release tag
         id: tag
         run: |
@@ -59,9 +51,8 @@ jobs:
           fi
           echo "tag=${tag}" >> "$GITHUB_OUTPUT"
 
-      - name: Create or update release
+      - name: Ensure release tag
         env:
-          GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.tag.outputs.tag }}
         run: |
           if ! git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then
@@ -69,14 +60,52 @@ jobs:
             git push origin "refs/tags/${TAG}"
           fi
 
+      - name: Resolve release notes
+        id: notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          notes="$(gh release view "${TAG}" --json body --jq '.body // ""' 2>/dev/null || true)"
+          if [ -z "${notes//[[:space:]]/}" ]; then
+            notes="$(gh api "repos/${REPO}/releases/generate-notes" -f tag_name="${TAG}" --jq '.body // ""' 2>/dev/null || true)"
+          fi
+          if [ -z "${notes//[[:space:]]/}" ]; then
+            notes="Automated HTSW release for ${TAG}."
+          fi
+
+          {
+            echo "notes<<EOF"
+            echo "${notes}"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Stage release artifacts
+        env:
+          HTSW_RELEASE_TAG: ${{ steps.tag.outputs.tag }}
+          HTSW_RELEASE_NOTES: ${{ steps.notes.outputs.notes }}
+        run: python publish.py --no-upload
+
+      - name: Prepare GitHub release assets
+        run: |
+          cp dist-publish/ct/latest.json dist-publish/htsw-ct-latest.json
+          cp dist-publish/vscode/latest.json dist-publish/htsw-vscode-latest.json
+
+      - name: Create or update release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.tag }}
+          NOTES: ${{ steps.notes.outputs.notes }}
+        run: |
           if gh release view "${TAG}" >/dev/null 2>&1; then
             gh release edit "${TAG}" \
               --title "HTSW ${TAG}" \
-              --notes "Automated HTSW release for ${TAG}."
+              --notes "${NOTES}"
           else
             gh release create "${TAG}" \
               --title "HTSW ${TAG}" \
-              --notes "Automated HTSW release for ${TAG}."
+              --notes "${NOTES}"
           fi
 
           gh release upload "${TAG}" \

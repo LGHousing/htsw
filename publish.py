@@ -2,9 +2,9 @@
 
 Produces, under dist-publish/:
   ct/htsw-ct-<version>.zip      full CT module payload (dist/* + metadata.json)
-  ct/latest.json                {version, zip, sha256}
+  ct/latest.json                {version, zip, sha256, notes?}
   vscode/htsw-plus-plus-<v>.vsix
-  vscode/latest.json            {version, vsix, sha256}
+  vscode/latest.json            {version, vsix, sha256, notes?}
 
 Then uploads them to the nginx-served root on the box (via the `lg-website`
 SSH alias), staging through the opc home dir because /var/www/htsw is owned by
@@ -18,6 +18,9 @@ Usage:
   python publish.py --no-upload     # build + stage locally only
   python publish.py --ct-only
   python publish.py --vscode-only
+
+Set HTSW_RELEASE_NOTES, or HTSW_RELEASE_TAG when `gh` is authenticated, to
+include GitHub release notes in latest.json.
 """
 
 from __future__ import annotations
@@ -25,6 +28,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -63,6 +67,36 @@ def read_version(json_path: Path) -> str:
     return json.loads(json_path.read_text(encoding="utf-8"))["version"]
 
 
+def read_release_notes() -> str | None:
+    notes = os.getenv("HTSW_RELEASE_NOTES", "").strip()
+    if notes:
+        return notes
+
+    release_tag = os.getenv("HTSW_RELEASE_TAG", "").strip()
+    if not release_tag:
+        return None
+
+    result = subprocess.run(
+        ["gh", "release", "view", release_tag, "--json", "body", "--jq", ".body"],
+        cwd=HERE,
+        capture_output=True,
+        text=True,
+        shell=IS_WINDOWS,
+    )
+    if result.returncode == 0:
+        notes = result.stdout.strip()
+        if notes:
+            return notes
+    return None
+
+
+def manifest_json(payload: dict[str, str]) -> str:
+    notes = read_release_notes()
+    if notes is not None:
+        payload["notes"] = notes
+    return json.dumps(payload, indent=2) + "\n"
+
+
 def build_ct(do_build: bool) -> tuple[Path, str]:
     if do_build:
         run(["npm", "run", "build"], CT_DIR)
@@ -88,7 +122,7 @@ def build_ct(do_build: bool) -> tuple[Path, str]:
 
     digest = sha256_of(zip_path)
     (out / "latest.json").write_text(
-        json.dumps({"version": version, "zip": zip_name, "sha256": digest}, indent=2) + "\n",
+        manifest_json({"version": version, "zip": zip_name, "sha256": digest}),
         encoding="utf-8",
     )
     print(f"[publish] CT {version}: {zip_name} ({zip_path.stat().st_size} bytes, sha256 {digest[:12]}…)")
@@ -114,7 +148,7 @@ def build_vscode(do_build: bool) -> tuple[Path, str]:
 
     digest = sha256_of(dest)
     (out / "latest.json").write_text(
-        json.dumps({"version": version, "vsix": vsix.name, "sha256": digest}, indent=2) + "\n",
+        manifest_json({"version": version, "vsix": vsix.name, "sha256": digest}),
         encoding="utf-8",
     )
     print(f"[publish] VSCode {version}: {vsix.name} ({dest.stat().st_size} bytes, sha256 {digest[:12]}…)")

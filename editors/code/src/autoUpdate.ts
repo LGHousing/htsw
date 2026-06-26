@@ -14,6 +14,7 @@ interface Manifest {
     version: string;
     vsix: string;
     sha256: string;
+    notes?: string;
 }
 
 export async function checkForUpdates(context: ExtensionContext): Promise<void> {
@@ -32,7 +33,7 @@ export async function checkForUpdates(context: ExtensionContext): Promise<void> 
     if (!isNewer(manifest.version, current)) return;
 
     const choice = await window.showInformationMessage(
-        `HTSW++ ${manifest.version} is available (you have ${current}).`,
+        updatePrompt(manifest, current),
         "Update",
         "Later"
     );
@@ -73,7 +74,14 @@ function parseManifest(text: string): Manifest {
     if (typeof m.version !== "string" || typeof m.vsix !== "string" || typeof m.sha256 !== "string") {
         throw new Error("malformed manifest");
     }
+    if (typeof m.notes !== "string") delete m.notes;
     return m as Manifest;
+}
+
+function updatePrompt(manifest: Manifest, current: string): string {
+    const notes = manifest.notes?.trim();
+    const base = `HTSW++ ${manifest.version} is available (you have ${current}).`;
+    return notes ? `${base}\n\nRelease notes: ${notes}` : base;
 }
 
 function fetchText(url: string, redirects = 0): Promise<string> {

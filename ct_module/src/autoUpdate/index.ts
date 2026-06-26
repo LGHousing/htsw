@@ -5,7 +5,7 @@ const BASE_URL = "https://legendarygames.dev/htsw/ct";
 const MANIFEST_URL = BASE_URL + "/latest.json";
 const USER_AGENT = "HTSW-CT-Updater";
 
-type Manifest = { version: string; zip: string; sha256: string };
+type Manifest = { version: string; zip: string; sha256: string; notes?: string };
 type UpdateOptions = {
     checkOnly: boolean;
     notifyWhenCurrent: boolean;
@@ -92,6 +92,7 @@ function runUpdateCheck(options: UpdateOptions): void {
             `&eHTSW &f${manifest.version}&e is available &7(you have &f${local}&7). ` +
             "&7Run &f/htsw update&7 to install."
         );
+        showReleaseNotes(manifest);
         return;
     }
 
@@ -122,6 +123,7 @@ function runUpdateCheck(options: UpdateOptions): void {
     ChatLib.chat(
         `&aHTSW updated to &f${manifest.version}&a. Run &e/ct reload&a to apply.`
     );
+    showReleaseNotes(manifest);
 }
 
 function reportUpdateFailure(options: UpdateOptions, reason: string): void {
@@ -153,10 +155,18 @@ function fetchManifest(): Manifest | null {
         ) {
             return null;
         }
-        return parsed as Manifest;
+        const manifest = parsed as Manifest;
+        if (typeof manifest.notes !== "string") delete manifest.notes;
+        return manifest;
     } catch (_e) {
         return null;
     }
+}
+
+function showReleaseNotes(manifest: Manifest): void {
+    const notes = manifest.notes?.trim();
+    if (!notes) return;
+    ChatLib.chat(`&7Release notes: &f${notes}`);
 }
 
 function download(url: string, destPath: string): boolean {
