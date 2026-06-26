@@ -72,9 +72,18 @@ const DISALLOWED_DOUBLE_OPERATIONS: VarOperation[] = [
 ];
 
 function update(tcx: TyCtxt, action: ActionChangeVar) {
-    if (!action.holder || !action.key || !action.op || !action.value) return;
+    if (!action.holder || !action.key || !action.op) return;
 
     const key = { holder: action.holder, key: action.key } as VarKey;
+
+    // Check for unset before we actually require the RHS value
+    if (action.op === "Unset") {
+        tcx.removeState(key);
+        return;
+    }
+
+    if (!action.value) return;
+    
     const lhs = tcx.getState(key);
     const rhs = parseValue(tcx, action.value);
 
@@ -83,18 +92,23 @@ function update(tcx: TyCtxt, action: ActionChangeVar) {
     const keySpan = tcx.gcx.spans.getField(action, "key");
     const valueSpan = tcx.gcx.spans.getField(action, "value");
 
-    if (!rhs) return;
-
     if (action.op === "Set") {
+        if (!rhs) {
+             // We don't know anything about this variable anymore.
+            tcx.removeState(key);
+            return;
+        }
+        
         tcx.setState(key, { ...rhs, declSpan: span });
         return;
     }
 
-    if (action.op === "Unset") {
-        tcx.removeState(key);
+    if (!rhs) {
+        // Because we don't know the type of the RHS, we just have
+        // to trust that this operation is allowed.
         return;
     }
-
+    
     if (lhs && lhs.type === "string") {
         tcx.addDiagnostic(
             Diagnostic.warning(`Strings cannot be ${OPERATION_NAMES[action.op]}`)

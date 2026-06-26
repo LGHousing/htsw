@@ -28,35 +28,28 @@ export function parseValue(tcx: TyCtxt, value: string): VarState | undefined {
     throw Error("Invalid value type")
 }
 
-const PLACEHOLDER_REGEX = /%([^%]+?)%/g;
-const ONE_PLACEHOLDER_REGEX = /^%([^%]+?)%$/;
-const OBVIOUS_CAST_REGEX = /^%([^%]+?)%(L|D)$/;
+const PLACEHOLDER_RE = /%([^%]+?)%/g;
+const ONE_PLACEHOLDER_RE = /^%([^%]+?)%$/;
 
 function parseString(tcx: TyCtxt, value: string): VarState | undefined {
-    const placeholders = value.match(PLACEHOLDER_REGEX);
+    const placeholders = value.match(PLACEHOLDER_RE);
 
     if (!placeholders) {
         return string(value);
     }
 
-    if (ONE_PLACEHOLDER_REGEX.test(value)) {
+    if (ONE_PLACEHOLDER_RE.test(value)) {
         const placeholder = value.slice(1, -1);
         return parsePlaceholder(tcx, placeholder);
     }
 
-    if (OBVIOUS_CAST_REGEX.test(value)) {
-        const placeholder = value.slice(1, -2);
-        const state = parsePlaceholder(tcx, placeholder);
-        if (!state) return;
-
-        if (state.type !== "string") {
-            if (value.charAt(value.length - 1) === "L") {
-                return unknownLong();
-            } else {
-                return unknownDouble();
-            }
-        }
-    }
+    // If the value is not one of:
+    //  - A string with no placeholders => string
+    //  - A singular placeholder        => resolve placeholder type
+    // Then we reasonably can't say anything about it, because there
+    // Are too many possibilites for what it could become.
+    // In this case, we want to treat the value (RHS) as unknown.
+    return;
 }
 
 function parsePlaceholder(tcx: TyCtxt, placeholder: string): VarState | undefined {

@@ -107,7 +107,7 @@ export type ActionChangeVar = {
     holder: VarHolder;
     key: VarName;
     op: VarOperation;
-    value: Value;
+    value?: Value; // When op = unset, this can be undefined
     unset?: boolean;
 };
 
