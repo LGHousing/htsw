@@ -7,7 +7,7 @@ import {
     getMenuItemSlot,
     getOpenContainerTitle,
 } from "./specifics/slots";
-import { waitFor, type WaitForPromise } from "./specifics/waitFor";
+import { waitFor, waitForTimeout, type WaitForPromise } from "./specifics/waitFor";
 import { C01PacketChatMessage } from "../utils/packets";
 import { recordImportDiagnostic } from "../diagnostics/importDiagnosticsBuffer";
 
@@ -205,47 +205,26 @@ export default class TaskContext {
         }
         const pending = typeof promise === "function" ? promise() : promise;
         const innerCleanup = (pending as WaitForPromise<T>).cleanupWaiter;
-        // A single tick-driven guard for both cancel and timeout. Polling per tick
-        // makes a GUI cancel take effect mid-wait (instead of after the full
-        // duration), and — critically — makes the timeout actually fire: CT's
-        // setTimeout rides a Java timer that starves under a busy import, which
-        // would leave the timeout never firing and the wait hung with no error.
-        let settled = false;
-        const end = Date.now() + duration;
-        const guard = (async (): Promise<T> => {
-            while (!settled) {
-                if (this.cancelled) {
-                    innerCleanup?.();
-                    throw { __taskCancelled: true, reason: "Task cancelled" };
-                }
-                if (Date.now() >= end) {
-                    innerCleanup?.();
-                    throw new Error(`Timeout after ${duration}ms: ${reason}`);
-                }
-                await this.waitFor("tick");
-            }
-            return undefined as never;
-        })();
-        guard.catch(() => {});
+        const timeout = waitForTimeout(
+            reason,
+            duration,
+            () => this.cancelled,
+            innerCleanup,
+        );
+        timeout.catch(() => {});
 
-        const raced = Promise.race([pending, guard]).then(
+        const raced = Promise.race([pending, timeout]).then(
             (value): T => {
-                settled = true;
+                timeout.cleanupWaiter?.();
                 return value;
             },
             (error): never => {
-                settled = true;
+                timeout.cleanupWaiter?.();
                 throw error;
             }
         ) as WaitForPromise<T>;
-        // Abandoning this result — e.g. a losing branch of an outer ctx.race —
-        // must STOP the guard's tick loop, not leave it polling until it times
-        // out `duration`ms later and reports a phantom failure. Settling here
-        // ends the guard within a tick; the inner waiter teardown is the same
-        // cleanup the guard would have run. Both are idempotent with the settle
-        // in the `.then` above, so a normal resolve and an abandon can't collide.
         raced.cleanupWaiter = (): void => {
-            settled = true;
+            timeout.cleanupWaiter?.();
             innerCleanup?.();
         };
         raced.catch(() => {});

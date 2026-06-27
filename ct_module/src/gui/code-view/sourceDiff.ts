@@ -47,7 +47,7 @@ import {
     getParseCacheRevision,
 } from "../parsing/parses";
 import { getHousingUuid } from "../state/housing";
-import { readCachedActionList } from "../../importables/actionListHelpers";
+import { readCachedActionList } from "../../importCache/actionLists";
 
 type SourceActionPathKey = string;
 

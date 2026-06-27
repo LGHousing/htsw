@@ -1,8 +1,6 @@
 import type { Action, Condition } from "htsw/types";
 import type { Observed, UiFieldKind } from "../types";
 import {
-    DECIMAL_DISPLAY_VALUE_PATTERN,
-    INTEGER_DISPLAY_VALUE_PATTERN,
     normalizeNoteText,
     stripHousingEditorValuePrefix,
     stripRedundantLeadingFormattingCodes,
@@ -10,6 +8,7 @@ import {
 import { getActionFieldDefault, getActionFieldKind } from "./actionMappings";
 import { getConditionFieldDefault, getConditionFieldKind } from "./conditionMappings";
 import { normalizeSoundKey } from "./sounds";
+import { normalizeValueTextForCompare, quantizeHousingDecimal } from "./valueText";
 
 export function normalizeConditionCompare(
     value: Condition | Observed<Condition> | null
@@ -125,14 +124,8 @@ function getFieldKind(type: string, prop: string): UiFieldKind | undefined {
  *     produces a bare string. Wrap bare strings into `{ type }` so both
  *     sides land on the object form.
  */
-// Housing stores numeric action/condition values as limited-precision floats
-// and echoes them back expanded to the underlying float — a source `1.8095238`
-// reads back from the GUI as `1.809523821`. Both sides round to the same value
-// at the precision Housing actually displays (7 decimals), so quantize there to
-// avoid re-importing an unchanged value as a change.
-const HOUSING_VALUE_SCALE = 1e7;
-function quantizeHousingValue(num: number): number {
-    return Math.round(num * HOUSING_VALUE_SCALE) / HOUSING_VALUE_SCALE;
+function shouldCoerceNumericField(type: string, prop: string): boolean {
+    return typeof getFieldDefault(type, prop) === "number";
 }
 
 function canonicalizeFieldValue(type: string, prop: string, value: unknown): unknown {
@@ -147,13 +140,15 @@ function canonicalizeFieldValue(type: string, prop: string, value: unknown): unk
         value = normalizeMessageFormatting(value);
     }
     const kind = getFieldKind(type, prop);
-    if (kind === "value") {
+    if (kind === "value" && shouldCoerceNumericField(type, prop)) {
         if (typeof value === "string" && value !== "") {
             const num = Number(value);
-            if (Number.isFinite(num)) return quantizeHousingValue(num);
+            if (Number.isFinite(num)) return quantizeHousingDecimal(num);
         } else if (typeof value === "number" && Number.isFinite(value)) {
-            return quantizeHousingValue(value);
+            return quantizeHousingDecimal(value);
         }
+    } else if (kind === "value" && typeof value === "string") {
+        return normalizeValueTextForCompare(value);
     }
     if (kind === "location") {
         return canonicalizeLocationValue(value);
@@ -189,9 +184,7 @@ function normalizeValue(value: unknown): unknown {
         return value.map((entry) => normalizeValue(entry));
     }
 
-    if (typeof value === "string") {
-        return normalizeComparableString(value);
-    }
+    if (typeof value === "string") return value;
 
     if (typeof value !== "object" || value === null) {
         return value;
@@ -247,9 +240,7 @@ export function canonicalStringify(value: unknown): string {
         return "[" + parts.join(",") + "]";
     }
 
-    if (typeof value === "string") {
-        return JSON.stringify(normalizeComparableString(value));
-    }
+    if (typeof value === "string") return JSON.stringify(value);
 
     if (typeof value !== "object") {
         return JSON.stringify(value);
@@ -311,25 +302,6 @@ function canonicalDefaultFor(type: string, prop: string): CachedDefault | null {
               };
     canonicalDefaultCache.set(cacheKey, result);
     return result;
-}
-
-function normalizeComparableString(value: string): string {
-    const isIntegerDisplay = INTEGER_DISPLAY_VALUE_PATTERN.test(value);
-    const isDecimalDisplay = DECIMAL_DISPLAY_VALUE_PATTERN.test(value);
-    if (!isIntegerDisplay && !isDecimalDisplay) return value;
-
-    const withoutCommas = value.replace(/,/g, "");
-    const numericValue = Number(withoutCommas);
-    if (!Number.isFinite(numericValue)) {
-        return value;
-    }
-
-    const normalized = Object.is(numericValue, -0) ? "0" : String(numericValue);
-    if (isDecimalDisplay && !normalized.includes(".")) {
-        return `${normalized}.0`;
-    }
-
-    return normalized;
 }
 
 function normalizeMessageFormatting(value: string): string {

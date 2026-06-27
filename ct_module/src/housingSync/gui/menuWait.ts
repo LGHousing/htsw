@@ -9,7 +9,7 @@
  */
 import TaskContext from "../../tasks/context";
 import { removedFormatting } from "../../utils/helpers";
-import { describeGuiScreenMenu, getMenuItemSlots, getOpenContainerWindowId, menuStateDescription } from "../../tasks/specifics/slots";
+import { describeGuiScreenMenu, getDisplayedGuiMenuState, getMenuItemSlots, getOpenContainerWindowId, menuStateDescription } from "../../tasks/specifics/slots";
 import { S2DPacketOpenWindow, S30PacketWindowItems } from "../../utils/packets";
 import { describeRecentWindowOpens, type WaitForPromise } from "../../tasks/specifics/waitFor";
 import { COST } from "../progress/costs";
@@ -95,6 +95,7 @@ type MenuWaitState = {
     lastCount: number;
     maxCount: number;
     everMatchedWindow: boolean;
+    readySource: string;
 };
 
 function createMenuWaitState(openedWindowId: number | null = null): MenuWaitState {
@@ -107,6 +108,7 @@ function createMenuWaitState(openedWindowId: number | null = null): MenuWaitStat
         lastCount: 0,
         maxCount: 0,
         everMatchedWindow: false,
+        readySource: "",
     };
 }
 
@@ -115,9 +117,60 @@ function describeMenuWaitState(state: MenuWaitState): string {
         return `no S2DPacketOpenWindow/S30PacketWindowItems pair received; current${menuStateDescription()}; gui=${describeGuiScreenMenu()}`;
     }
     if (!state.everMatchedWindow) {
-        return `window ${state.openedWindowId} opened with ${state.expectedItems} items, but active container stayed on windowId ${state.lastCurId}; current${menuStateDescription()}; gui=${describeGuiScreenMenu()}`;
+        const sampled = state.ticksWaited === 0
+            ? "was not sampled before the wait timed out"
+            : `last sampled as windowId ${state.lastCurId}`;
+        return `window ${state.openedWindowId} opened with ${state.expectedItems} items, but readiness ${sampled}; current${menuStateDescription()}; gui=${describeGuiScreenMenu()}`;
     }
     return `window ${state.openedWindowId} opened, active container reached it, observed ${state.lastCount}/${state.expectedItems} items (peak ${state.maxCount}); snapshot slots=${state.snapshotSlots}; current${menuStateDescription()}; gui=${describeGuiScreenMenu()}`;
+}
+
+function expectedItemCount(state: MenuWaitState): number {
+    return Math.max(1, state.expectedItems);
+}
+
+function visibleGuiMatchesOpenedWindow(
+    state: MenuWaitState,
+    skipPopulateWait: boolean
+): boolean {
+    if (state.openedWindowId === null) return false;
+    const gui = getDisplayedGuiMenuState();
+    if (gui === null) return false;
+    if (gui.windowId !== state.openedWindowId) return false;
+    state.everMatchedWindow = true;
+    state.lastCurId = gui.windowId;
+    state.lastCount = gui.itemCount;
+    if (gui.itemCount > state.maxCount) state.maxCount = gui.itemCount;
+    if (!skipPopulateWait && gui.itemCount < expectedItemCount(state)) return false;
+    state.readySource = "visibleGui";
+    return true;
+}
+
+function displayedGuiReadySummary(state: MenuWaitState): Record<string, unknown> {
+    const gui = getDisplayedGuiMenuState();
+    return {
+        openedWindowId: state.openedWindowId,
+        expectedItems: state.expectedItems,
+        gui,
+        menu: menuStateDescription(),
+    };
+}
+
+function openContainerMatchesOpenedWindow(
+    state: MenuWaitState,
+    skipPopulateWait: boolean
+): boolean {
+    if (state.openedWindowId === null) return true;
+    const curId = getOpenContainerWindowId();
+    state.lastCurId = curId;
+    if (curId !== state.openedWindowId) return false;
+    state.everMatchedWindow = true;
+    const count = openContainerItemCount();
+    state.lastCount = count;
+    if (count > state.maxCount) state.maxCount = count;
+    if (!skipPopulateWait && count < expectedItemCount(state)) return false;
+    state.readySource = "openContainer";
+    return true;
 }
 
 async function waitForOpenedWindowToBeReady(
@@ -130,23 +183,28 @@ async function waitForOpenedWindowToBeReady(
     try {
         let ready = false;
         const loopStartMs = Date.now();
+        traceMenuWait("pollStart", {
+            windowId: state.openedWindowId,
+            expectedItems: state.expectedItems,
+            currentMenu: menuStateDescription(),
+            gui: describeGuiScreenMenu(),
+        });
         for (let i = 0; i < CONTAINER_SWITCH_MAX_TICKS; i++) {
+            if (
+                openContainerMatchesOpenedWindow(state, skipPopulateWait) ||
+                visibleGuiMatchesOpenedWindow(state, skipPopulateWait)
+            ) {
+                ready = true;
+                break;
+            }
             tickWaiter = ctx.waitFor("tick");
             setTickWaiter(tickWaiter);
             await tickWaiter;
             state.ticksWaited++;
-            if (state.openedWindowId === null) { ready = true; break; }
-            const curId = getOpenContainerWindowId();
-            state.lastCurId = curId;
-            if (curId === null) {
-                throw new Error("Container closed while waiting for menu to populate");
-            }
-            if (curId !== state.openedWindowId) continue;
-            state.everMatchedWindow = true;
-            const count = openContainerItemCount();
-            state.lastCount = count;
-            if (count > state.maxCount) state.maxCount = count;
-            if (skipPopulateWait || count >= Math.max(1, state.expectedItems)) {
+            if (
+                openContainerMatchesOpenedWindow(state, skipPopulateWait) ||
+                visibleGuiMatchesOpenedWindow(state, skipPopulateWait)
+            ) {
                 ready = true;
                 break;
             }
@@ -164,6 +222,7 @@ async function waitForOpenedWindowToBeReady(
             ticksWaited: state.ticksWaited,
             observedItems: state.lastCount,
             expectedItems: state.expectedItems,
+            source: state.readySource,
         });
     } finally {
         tickWaiter?.cleanupWaiter?.();
@@ -178,6 +237,18 @@ function wrapMenuWaitTimeout(
 ): WaitForPromise<void> {
     const wrapped = promise.catch((error) => {
         const message = error instanceof Error ? error.message : String(error);
+        if (message.indexOf("Timeout after") !== -1 && visibleGuiMatchesOpenedWindow(state, false)) {
+            traceMenuWait("timeoutRecovered", {
+                error: message,
+                ticksWaited: state.ticksWaited,
+                openedWindowId: state.openedWindowId,
+                expectedItems: state.expectedItems,
+                observedItems: state.lastCount,
+                source: state.readySource,
+                ...displayedGuiReadySummary(state),
+            });
+            return;
+        }
         const details = describeMenuWaitState(state);
         traceMenuWait("failure", {
             error: message,
@@ -187,6 +258,7 @@ function wrapMenuWaitTimeout(
             expectedItems: state.expectedItems,
             observedItems: state.lastCount,
             peakItems: state.maxCount,
+            source: state.readySource,
         });
         if (message.indexOf("Timeout after") !== -1) {
             throw new Error(`${message}; ${details}; recent window opens: ${describeRecentWindowOpens()}`);

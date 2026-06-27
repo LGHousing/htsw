@@ -15,6 +15,7 @@ export type ImportableTrustPlan = {
     entry: ImportableCacheEntry | null;
     sourceHash: string;
     cacheHash: string | null;
+    trustMode: boolean;
     wholeImportableTrusted: boolean;
     trustedListPaths: Set<TrustedListPath>;
 };
@@ -69,6 +70,7 @@ export function buildTrustPlan(
             entry,
             sourceHash: sourceHash ?? "",
             cacheHash: entry?.hash ?? null,
+            trustMode,
             wholeImportableTrusted,
             trustedListPaths,
         });

@@ -1,5 +1,7 @@
 import TaskContext from "../../tasks/context";
 import { removedFormatting } from "../../utils/helpers";
+import { recordImportDiagnostic } from "../../diagnostics/importDiagnosticsBuffer";
+import { summarizeItemStack } from "../../diagnostics/itemStackSummary";
 import { timedWaitForMenu, waitForMenu } from "../gui/menuWait";
 import { SET_SLOT_ACK_MAX_TICKS, sendCreativeInventoryAction } from "../gui/packets";
 import { COST } from "../progress/costs";
@@ -22,6 +24,12 @@ function slotMatchesStack(slotId: number, stack: any, match: StackMatcher): bool
         slot !== undefined &&
         match(slot.getItemStack(), stack)
     );
+}
+
+function containerSlotStack(slotId: number): any | null {
+    const slot = Player.getContainer()?.getItems()?.[slotId];
+    if (slot === null || slot === undefined) return null;
+    return slot.getItemStack();
 }
 
 export function stacksEqual(left: any, right: any): boolean {
@@ -93,6 +101,12 @@ export async function selectItemFromOpenInventory(
     // through to a scratch-slot injection instead. See issue #58.
     const ninthHotbarSlot = container.getSize() - 1;
     const desiredStack = item.getItemStack();
+    recordImportDiagnostic("itemInjection", {
+        stage: "selectStart",
+        label,
+        desired: summarizeItemStack(desiredStack),
+        containerSize: container.getSize(),
+    });
 
     const existingSlot = ctx.tryGetItemSlot((s) => {
         if (s.getSlotId() < playerInvStart) return false;
@@ -102,6 +116,12 @@ export async function selectItemFromOpenInventory(
     });
 
     if (existingSlot !== null) {
+        recordImportDiagnostic("itemInjection", {
+            stage: "existingSlotMatched",
+            label,
+            slot: existingSlot.getSlotId(),
+            stack: summarizeItemStack(existingSlot.getItem().getItemStack()),
+        });
         existingSlot.click();
         await timed("itemSelect", COST.itemSelect, () => waitForMenu(ctx));
         return;
@@ -113,11 +133,25 @@ export async function selectItemFromOpenInventory(
         scratchSlot !== null &&
         match(scratchSlot.getItem().getItemStack(), desiredStack)
     ) {
+        recordImportDiagnostic("itemInjection", {
+            stage: "scratchSlotMatched",
+            label,
+            slot: targetSlotInContainer,
+            stack: summarizeItemStack(scratchSlot.getItem().getItemStack()),
+        });
         scratchSlot.click();
         await timed("itemSelect", COST.itemSelect, () => waitForMenu(ctx));
         return;
     }
 
+    recordImportDiagnostic("itemInjection", {
+        stage: "creativeSend",
+        label,
+        packetSlot: INV_PACKET_SLOT,
+        targetSlot: targetSlotInContainer,
+        desired: summarizeItemStack(desiredStack),
+        before: summarizeItemStack(containerSlotStack(targetSlotInContainer)),
+    });
     sendCreativeInventoryAction(
         ctx,
         INV_PACKET_SLOT,
@@ -131,13 +165,30 @@ export async function selectItemFromOpenInventory(
     );
     if (!landed) {
         const itemName = removedFormatting(item.getName());
+        const observed = summarizeItemStack(containerSlotStack(targetSlotInContainer));
+        recordImportDiagnostic("itemInjection", {
+            stage: "creativeFailed",
+            label,
+            packetSlot: INV_PACKET_SLOT,
+            targetSlot: targetSlotInContainer,
+            desired: summarizeItemStack(desiredStack),
+            observed,
+        });
+        const observedText = observed === null
+            ? "the target slot was empty"
+            : `the target slot held "${observed.cleanName ?? observed.name}" (${observed.id ?? "unknown id"}:${observed.damage ?? "?"})`;
         throw new Error(
-            `Couldn't place "${itemName}" for "${label}" — it never appeared in your ` +
-            `inventory after a creative spawn. Hypixel blocks creative-spawning some ` +
-            `items (command blocks, mob spawners, etc.); if "${itemName}" is one, this ` +
-            `icon/item can't be imported automatically — use a normal item or set it by hand.`
+            `Couldn't place "${itemName}" for "${label}" — ${observedText} after ` +
+            `creative spawn instead of the expected item/NBT.`
         );
     }
+    recordImportDiagnostic("itemInjection", {
+        stage: "creativeMatched",
+        label,
+        packetSlot: INV_PACKET_SLOT,
+        targetSlot: targetSlotInContainer,
+        observed: summarizeItemStack(containerSlotStack(targetSlotInContainer)),
+    });
     await ctx.waitFor("tick");
 
     const slot = ctx.tryGetItemSlot((s) => s.getSlotId() === targetSlotInContainer);

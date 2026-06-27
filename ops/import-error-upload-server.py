@@ -11,7 +11,7 @@ HOST = "127.0.0.1"
 PORT = 37124
 DEST_DIR = Path("/var/lib/htsw/import-errors")
 INDEX_PATH = DEST_DIR / "index.jsonl"
-MAX_BYTES = 512 * 1024
+MAX_BYTES = 8 * 1024 * 1024
 
 
 class Handler(BaseHTTPRequestHandler):

@@ -1,9 +1,25 @@
 /// <reference types="../../CTAutocomplete" />
 
+import {
+    getAutoUpdatePreference,
+    setAutoUpdatePreference,
+    type AutoUpdatePreference,
+} from "../settings";
+
 export const MODULE_DIR = "./config/ChatTriggers/modules/HTSW";
 const BASE_URL = "https://legendarygames.dev/htsw/ct";
 const MANIFEST_URL = BASE_URL + "/latest.json";
 const USER_AGENT = "HTSW-CT-Updater";
+const LOCAL_STATE_FILES = [
+    ".env",
+    "mcp.json",
+    "gui-settings.json",
+    "gui-recents.json",
+    "gui-onboarding.json",
+    "gui-housing.json",
+    "gui-open-target.json",
+    "gui-debug.log",
+];
 
 type Manifest = { version: string; zip: string; sha256: string; notes?: string };
 type UpdateOptions = {
@@ -15,6 +31,12 @@ type UpdateOptions = {
 let updateInProgress = false;
 
 export function initAutoUpdate(): void {
+    const preference = getAutoUpdatePreference();
+    if (preference === "unset") {
+        showAutoUpdatePrompt();
+        return;
+    }
+    if (preference === "disabled") return;
     startAutoUpdate({
         checkOnly: false,
         notifyWhenCurrent: false,
@@ -23,16 +45,94 @@ export function initAutoUpdate(): void {
 }
 
 export function commandUpdate(args: string[]): void {
-    if (args.length > 0 && args[0] !== "check" && args[0] !== "status") {
-        ChatLib.chat("&cUsage: /htsw update [check]");
+    const command = args.length === 0 ? "" : args[0].toLowerCase();
+    if (args.length > 1 || !isUpdateCommand(command)) {
+        ChatLib.chat("&cUsage: /htsw update [check|status|enable|disable]");
+        return;
+    }
+
+    if (command === "status") {
+        printAutoUpdateStatus();
+        return;
+    }
+
+    if (command === "enable" || command === "on" || command === "accept") {
+        setAutoUpdatePreference("enabled");
+        ChatLib.chat("&a[htsw] Auto-updates enabled.");
+        startAutoUpdate({
+            checkOnly: false,
+            notifyWhenCurrent: true,
+            notifyOnFailure: true,
+        });
+        return;
+    }
+
+    if (command === "disable" || command === "off" || command === "decline") {
+        setAutoUpdatePreference("disabled");
+        ChatLib.chat("&7[htsw] Auto-updates disabled. Manual &f/htsw update&7 still works.");
         return;
     }
 
     startAutoUpdate({
-        checkOnly: args.length > 0,
+        checkOnly: command === "check",
         notifyWhenCurrent: true,
         notifyOnFailure: true,
     });
+}
+
+function isUpdateCommand(command: string): boolean {
+    return (
+        command === "" ||
+        command === "check" ||
+        command === "status" ||
+        command === "enable" ||
+        command === "on" ||
+        command === "accept" ||
+        command === "disable" ||
+        command === "off" ||
+        command === "decline"
+    );
+}
+
+function showAutoUpdatePrompt(): void {
+    ChatLib.chat("&e&lHTSW auto-updates are available.");
+    ChatLib.chat(
+        "&7Allow HTSW to check for and install CT module updates when it loads?"
+    );
+    ChatLib.chat(
+        new Message([
+            commandLink("&a[Enable]", "/htsw update enable", "&7Enable auto-updates and check now."),
+            " ",
+            commandLink("&c[Disable]", "/htsw update disable", "&7Keep automatic checks off."),
+            " ",
+            commandLink("&8[Status]", "/htsw update status", "&7Show updater status."),
+        ])
+    );
+}
+
+function commandLink(label: string, command: string, hover: string): TextComponent {
+    return new TextComponent(label)
+        .setClick("run_command", command)
+        .setHover("show_text", hover);
+}
+
+function printAutoUpdateStatus(): void {
+    const preference = getAutoUpdatePreference();
+    const status = formatPreference(preference);
+    const version = readLocalVersion();
+    ChatLib.chat(`&7[htsw] Auto-update: ${status}&7.`);
+    ChatLib.chat(`&7[htsw] Installed version: &f${version === null ? "unknown" : version}&7.`);
+    if (preference === "unset") {
+        ChatLib.chat("&7Run &f/htsw update enable&7 or &f/htsw update disable&7 to choose.");
+    } else {
+        ChatLib.chat("&7Run &f/htsw update check&7 to check without changing this setting.");
+    }
+}
+
+function formatPreference(preference: AutoUpdatePreference): string {
+    if (preference === "enabled") return "&aenabled";
+    if (preference === "disabled") return "&cdisabled";
+    return "&eunset";
 }
 
 function startAutoUpdate(options: UpdateOptions): void {
@@ -270,6 +370,7 @@ function replaceModuleContents(stagedDir: string): boolean {
 
         moveChildren(Files, StandardCopyOption, moduleRoot, backupRoot, ".update", false);
         moveChildren(Files, StandardCopyOption, stagedRoot, moduleRoot, null, false);
+        restoreLocalState(Files, StandardCopyOption, backupRoot, moduleRoot);
         return true;
     } catch (_e) {
         try {
@@ -280,6 +381,21 @@ function replaceModuleContents(stagedDir: string): boolean {
             // Rollback itself failed; leave the disk state for manual repair.
         }
         return false;
+    }
+}
+
+function restoreLocalState(
+    Files: any,
+    StandardCopyOption: any,
+    backupRoot: any,
+    moduleRoot: any
+): void {
+    for (let i = 0; i < LOCAL_STATE_FILES.length; i++) {
+        const source = backupRoot.resolve(LOCAL_STATE_FILES[i]);
+        if (!Files.exists(source)) continue;
+        const target = moduleRoot.resolve(LOCAL_STATE_FILES[i]);
+        deleteNioPath(Files, target);
+        Files.move(source, target, StandardCopyOption.REPLACE_EXISTING);
     }
 }
 

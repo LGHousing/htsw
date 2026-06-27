@@ -1,4 +1,7 @@
-import { recentImportDiagnostics } from "./importDiagnosticsBuffer";
+import {
+    importDiagnosticStats,
+    recentImportDiagnostics,
+} from "./importDiagnosticsBuffer";
 import { ensureParentDirs } from "../utils/filesystem";
 import {
     describeGuiScreenMenu,
@@ -59,6 +62,7 @@ export function writeImportFailureLog(
             waiters: safeRead("waiters", () => getEventContainerCounts()),
             recentWindowOpens: safeRead("window opens", () => describeRecentWindowOpens()),
         },
+        diagnosticStats: importDiagnosticStats(),
         recent: recentImportDiagnostics(),
     };
     ensureParentDirs(path);

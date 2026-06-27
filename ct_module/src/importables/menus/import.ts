@@ -6,7 +6,6 @@ import {
 } from "../../housingSync/actions/diff";
 import { canonicalizeActionItemName } from "../../housingSync/actions/readList";
 import { applyActionListPlan } from "../../housingSync/actions/applyDiff";
-import { prereadActionList } from "../../housingSync/actions/plan";
 import { clickGoBack } from "../../housingSync/gui/menuUtils";
 import {
     timedWaitForMenu,
@@ -20,8 +19,7 @@ import TaskContext from "../../tasks/context";
 import { removedFormatting } from "../../utils/helpers";
 import { getItemFromNbt, getItemFromSnbt } from "../../utils/nbt";
 import {
-    getActionListTrust,
-    getBaselineActionList,
+    prereadActionListUsingTrust,
 } from "../actionListHelpers";
 import type { ItemRegistry } from "../itemRegistry";
 import type { ImportSession } from "../imports";
@@ -75,6 +73,21 @@ export async function prereadImportableMenu(
         setup(`created ${kind} ${name}`);
     });
 
+    if (trustPlan?.trustMode === true && trustPlan.entry?.importable.type === "MENU") {
+        const cached = trustPlan.entry.importable;
+        return {
+            kind: "MENU",
+            importable,
+            trustPlan,
+            diff: buildMenuDiff(
+                importable,
+                baselineSlotsFromImportable(cached),
+                cached.size,
+                session.items
+            ),
+        };
+    }
+
     const status = await openMenuEditor(ctx, importable.name);
 
     if (status === "missing") {
@@ -116,6 +129,14 @@ function baselineSlotsFromLive(live: LiveMenu): BaselineMenuSlot[] {
         slot: s.slot,
         item: getItemFromSnbt(s.snbt),
         actions: s.actions,
+    }));
+}
+
+function baselineSlotsFromImportable(importable: ImportableMenu): BaselineMenuSlot[] {
+    return importable.slots.map((slot) => ({
+        slot: slot.slot,
+        item: getItemFromNbt(slot.nbt),
+        actions: slot.actions ?? [],
     }));
 }
 
@@ -241,10 +262,10 @@ export async function applyImportableMenuPlan(
         if (op.syncActions === undefined) continue;
         menuGridClick(op.slot, "LEFT");
         await timedWaitForMenu(ctx, "menuClickWait");
-        const actionsPlan = await prereadActionList(ctx, op.syncActions, {
+        const actionsPlan = await prereadActionListUsingTrust(ctx, op.syncActions, {
             session,
-            baselineCurrent: getBaselineActionList(trustPlan, op.actionsPath ?? ""),
-            trust: getActionListTrust(trustPlan, op.actionsPath ?? ""),
+            trustPlan,
+            basePath: op.actionsPath ?? "",
         });
         await applyActionListPlan(ctx, actionsPlan, { session });
         await clickGoBack(ctx);

@@ -33,7 +33,7 @@ export function traceNote(category: string, message: string): void {
 }
 
 export function traceMenuWait(
-    stage: "start" | "openWindow" | "windowItems" | "ready" | "failure",
+    stage: "start" | "openWindow" | "windowItems" | "pollStart" | "ready" | "timeoutRecovered" | "failure",
     details: Record<string, unknown>
 ): void {
     recordImportDiagnostic("menuWait", { stage, ...details });

@@ -4,9 +4,10 @@ type ImportDiagnosticRecord = Record<string, unknown> & {
     tMs: number;
 };
 
-const MAX_RECORDS = 500;
-const startedAt = Date.now();
+const MAX_RECORDS = 20000;
+let startedAt = Date.now();
 const records: ImportDiagnosticRecord[] = [];
+let droppedRecords = 0;
 
 export function recordImportDiagnostic(
     kind: string,
@@ -18,9 +19,27 @@ export function recordImportDiagnostic(
         kind,
         ...details,
     });
-    if (records.length > MAX_RECORDS) records.shift();
+    if (records.length > MAX_RECORDS) {
+        records.shift();
+        droppedRecords++;
+    }
 }
 
 export function recentImportDiagnostics(): ImportDiagnosticRecord[] {
     return records.slice();
+}
+
+export function resetImportDiagnostics(): void {
+    records.length = 0;
+    droppedRecords = 0;
+    startedAt = Date.now();
+}
+
+export function importDiagnosticStats(): Record<string, unknown> {
+    return {
+        maxRecords: MAX_RECORDS,
+        retainedRecords: records.length,
+        droppedRecords,
+        startedAt,
+    };
 }

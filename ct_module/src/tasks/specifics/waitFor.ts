@@ -5,6 +5,7 @@ import {
     S30PacketWindowItems,
 } from "../../utils/packets";
 import { recordImportDiagnostic } from "../../diagnostics/importDiagnosticsBuffer";
+import { summarizeItemStack } from "../../diagnostics/itemStackSummary";
 
 type Packet = MCPacket<MCINetHandler>;
 
@@ -27,12 +28,22 @@ type EventContainers = {
     [K in keyof CheckPredicateMap]: EventContainer<CheckPredicateMap[K]>[];
 };
 
+type TimeoutEntry = {
+    deadline: number;
+    reason: string;
+    duration: number;
+    reject: (error: unknown) => void;
+    isCancelled: () => boolean;
+    cleanupInner?: () => void;
+};
+
 const EVENT_CONTAINERS: EventContainers = {
     tick: [],
     packetReceived: [],
     packetSent: [],
     message: [],
 };
+const TIMEOUTS: TimeoutEntry[] = [];
 
 // Resolve only the waiters present when this event fired. resolve() can re-enter
 // synchronously (sync-drain polyfill): the awaiting continuation runs inline and
@@ -59,9 +70,42 @@ function maybeResolve<E extends EventName>(event: E, ...args: ParametersFor<E>) 
     }
 }
 
-register("tick", () => {
+function cleanupTimeout(entry: TimeoutEntry): void {
+    const idx = TIMEOUTS.indexOf(entry);
+    if (idx !== -1) TIMEOUTS.splice(idx, 1);
+}
+
+function rejectExpiredTimeouts(): void {
+    const now = Date.now();
+    const snapshot = TIMEOUTS.slice();
+    for (let i = 0; i < snapshot.length; i++) {
+        const entry = snapshot[i];
+        if (TIMEOUTS.indexOf(entry) === -1) continue;
+
+        if (entry.isCancelled()) {
+            cleanupTimeout(entry);
+            entry.cleanupInner?.();
+            entry.reject({ __taskCancelled: true, reason: "Task cancelled" });
+            continue;
+        }
+
+        if (now < entry.deadline) continue;
+        cleanupTimeout(entry);
+        recordImportDiagnostic("timeout", {
+            reason: entry.reason,
+            duration: entry.duration,
+        });
+        entry.cleanupInner?.();
+        entry.reject(new Error(`Timeout after ${entry.duration}ms: ${entry.reason}`));
+    }
+}
+
+function onTick(): void {
     maybeResolve("tick");
-});
+    rejectExpiredTimeouts();
+}
+
+register("tick", onTick);
 
 export let lastWindowID___FromS30PacketWindowItemsPacketReceived__ThisIsNecessary_sadly_itIncrementsFrom1To100ThenItGoesBackAround_ButSometimesItSkipsOneOrMoreWeAreNotSureMaybeMore_AndItWillNeverBeZero: number = 0;
 
@@ -79,15 +123,6 @@ function packetClassName(packet: Packet): string {
         return String(name).substring(String(name).lastIndexOf(".") + 1);
     } catch (_e) {
         return String(packet);
-    }
-}
-
-function stackName(stack: unknown): string | null {
-    if (stack === null || stack === undefined) return null;
-    try {
-        return String((stack as { func_82833_r(): string }).func_82833_r());
-    } catch (_e) {
-        return "<stack>";
     }
 }
 
@@ -109,7 +144,15 @@ function packetWindow(packet: unknown): number | null {
 
 function packetStack(packet: unknown): string | null {
     try {
-        return stackName((packet as { func_149174_e(): unknown }).func_149174_e());
+        return summarizeItemStack((packet as { func_149174_e(): unknown }).func_149174_e())?.name ?? null;
+    } catch (_e) {
+        return null;
+    }
+}
+
+function packetStackSummary(packet: unknown): unknown {
+    try {
+        return summarizeItemStack((packet as { func_149174_e(): unknown }).func_149174_e());
     } catch (_e) {
         return null;
     }
@@ -125,7 +168,15 @@ function creativePacketSlot(packet: unknown): number | null {
 
 function creativePacketStack(packet: unknown): string | null {
     try {
-        return stackName((packet as { func_149625_d(): unknown }).func_149625_d());
+        return summarizeItemStack((packet as { func_149625_d(): unknown }).func_149625_d())?.name ?? null;
+    } catch (_e) {
+        return null;
+    }
+}
+
+function creativePacketStackSummary(packet: unknown): unknown {
+    try {
+        return summarizeItemStack((packet as { func_149625_d(): unknown }).func_149625_d());
     } catch (_e) {
         return null;
     }
@@ -152,6 +203,7 @@ function recordPacket(direction: "received" | "sent", packet: Packet): void {
             windowId: packetWindow(packet),
             slot: packetSlot(packet),
             stack: packetStack(packet),
+            stackSummary: packetStackSummary(packet),
         });
     } else if (packet instanceof C10PacketCreativeInventoryAction) {
         recordImportDiagnostic("packet", {
@@ -159,6 +211,7 @@ function recordPacket(direction: "received" | "sent", packet: Packet): void {
             packet: packetClassName(packet),
             slot: creativePacketSlot(packet),
             stack: creativePacketStack(packet),
+            stackSummary: creativePacketStackSummary(packet),
         });
     }
 }
@@ -247,6 +300,7 @@ export function getEventContainerCounts(): { [k: string]: number } {
         packetReceived: EVENT_CONTAINERS.packetReceived.length,
         packetSent: EVENT_CONTAINERS.packetSent.length,
         message: EVENT_CONTAINERS.message.length,
+        timeout: TIMEOUTS.length,
     };
 }
 
@@ -263,11 +317,13 @@ export function resetEventContainers(): number {
         EVENT_CONTAINERS.tick.length +
         EVENT_CONTAINERS.packetReceived.length +
         EVENT_CONTAINERS.packetSent.length +
-        EVENT_CONTAINERS.message.length;
+        EVENT_CONTAINERS.message.length +
+        TIMEOUTS.length;
     EVENT_CONTAINERS.tick.length = 0;
     EVENT_CONTAINERS.packetReceived.length = 0;
     EVENT_CONTAINERS.packetSent.length = 0;
     EVENT_CONTAINERS.message.length = 0;
+    TIMEOUTS.length = 0;
     return total;
 }
 
@@ -279,6 +335,33 @@ type ParametersFor<E extends EventName> = Parameters<CheckPredicateMap[E]>;
 export type WaitForPromise<T> = Promise<T> & {
     cleanupWaiter?: () => void;
 };
+
+export function waitForTimeout(
+    reason: string,
+    duration: number,
+    isCancelled: () => boolean,
+    cleanupInner?: () => void
+): WaitForPromise<never> {
+    let entry: TimeoutEntry | null = null;
+    const promise = new Promise<never>((_resolve, reject) => {
+        entry = {
+            deadline: Date.now() + duration,
+            reason,
+            duration,
+            reject,
+            isCancelled,
+            cleanupInner,
+        };
+        TIMEOUTS.push(entry);
+    }) as WaitForPromise<never>;
+
+    promise.cleanupWaiter = (): void => {
+        if (entry === null) return;
+        cleanupTimeout(entry);
+        entry = null;
+    };
+    return promise;
+}
 
 export function waitFor<E extends EventName>(
     event: E,

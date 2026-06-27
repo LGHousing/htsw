@@ -167,7 +167,7 @@ export function itemToHtswTag(item: Item): Tag | null {
 }
 
 export function getItemFromNbt(nbt: Tag): Item {
-    const mcTag = toMinecraftTag(normalizeItemNbtColorCodes(nbt));
+    const mcTag = toMinecraftTag(normalizeItemNbtForMinecraft(nbt));
 
     // @ts-expect-error CTAutocomplete omits ItemStack.loadItemStackFromNBT.
     const itemStack = ItemStack.func_77949_a(/*loadItemStackFromNBT*/ mcTag);
@@ -203,6 +203,10 @@ export function readItemDisplayAliases(nbt: Tag): string[] {
     const normalized = normalizeFormattingForMinecraft(name);
     const stripped = removedFormatting(normalized).trim();
     return stripped === "" ? [normalized] : [normalized, stripped];
+}
+
+function normalizeItemNbtForMinecraft(tag: Tag): Tag {
+    return normalizeItemNbtColorCodes(tag);
 }
 
 function normalizeItemNbtColorCodes(tag: Tag): Tag {

@@ -45,7 +45,10 @@ export async function prereadActionList(
     desired: Action[],
     options: ActionListPrereadOptions
 ): Promise<ActionListPlan> {
-    const phaseUnits = estimateActionListPhaseUnits(desired, options.baselineCurrent);
+    const phaseUnits = estimateActionListPhaseUnits(
+        desired,
+        options.observed === undefined ? options.baselineCurrent : undefined
+    );
     const progressScope: ProgressScope = options.progressScope ?? { kind: "topLevel" };
     const progress: ProgressHandler | undefined =
         options.session.events === undefined

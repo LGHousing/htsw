@@ -159,30 +159,34 @@ export function createActionApplyContext({
         async applyNestedActions(prop, args) {
             const path = nestedPath(prop);
             const baselineCurrent = observedActionsAsBaselineCurrent(args.observed);
+            const observed = reuseObservedActions(args.observed);
+            const phaseBaseline = observed === undefined ? baselineCurrent : undefined;
             const offset = args.offset ?? nextOffset;
             await applyNestedActions(ctx, args.desired, {
                 session,
-                observed: reuseObservedActions(args.observed),
+                observed,
                 listPath: path,
                 baselineCurrent,
                 progressScope: scopeAt(path, offset),
             });
             nextOffset = offset + phaseUnitsTotal(
-                estimateActionListPhaseUnits(args.desired, baselineCurrent)
+                estimateActionListPhaseUnits(args.desired, phaseBaseline)
             );
         },
 
         async applyNestedConditions(prop, args) {
             const path = nestedPath(prop);
+            const observed = reuseObservedConditions(args.observed);
+            const phaseBaseline = observed === undefined ? args.observed : undefined;
             const offset = args.offset ?? nextOffset;
             await applyNestedConditions(ctx, args.desired, {
                 itemRegistry: session.items,
-                observed: reuseObservedConditions(args.observed),
+                observed,
                 baselineCurrent: args.observed,
                 progress: progressFromScope(events, scopeAt(path, offset)),
             });
             nextOffset = offset + phaseUnitsTotal(
-                estimateConditionListPhaseUnits(args.desired, args.observed)
+                estimateConditionListPhaseUnits(args.desired, phaseBaseline)
             );
         },
     };

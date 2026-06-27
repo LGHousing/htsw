@@ -1,7 +1,6 @@
 import type { Action, ImportableItem } from "htsw/types";
 
 import { applyActionListPlan } from "../../housingSync/actions/applyDiff";
-import { prereadActionList } from "../../housingSync/actions/plan";
 import { createSetupStepEmitter } from "../../housingSync/progress/setupStepEmitter";
 import { clickGoBack } from "../../housingSync/gui/menuUtils";
 import { timedWaitForMenu } from "../../housingSync/gui/menuWait";
@@ -26,7 +25,7 @@ import {
     selectedHotbarSlot,
     sendCreativeInventoryAction,
 } from "../../housingSync/gui/packets";
-import { getActionListTrust, getBaselineActionList } from "../actionListHelpers";
+import { prereadActionListUsingTrust } from "../actionListHelpers";
 import type { ImportSession } from "../imports";
 import {
     countReferencedShells,
@@ -320,10 +319,10 @@ async function syncItemActionLists(
         ctx.getItemSlot("Left Click Actions").click();
         await timedWaitForMenu(ctx, "menuClickWait");
 
-        const leftPlan = await prereadActionList(ctx, leftDesired, {
+        const leftPlan = await prereadActionListUsingTrust(ctx, leftDesired, {
             session,
-            baselineCurrent: getBaselineActionList(trustPlan, "leftClickActions"),
-            trust: getActionListTrust(trustPlan, "leftClickActions"),
+            trustPlan,
+            basePath: "leftClickActions",
         });
         await applyActionListPlan(ctx, leftPlan, { session });
 
@@ -342,10 +341,10 @@ async function syncItemActionLists(
         ctx.getItemSlot("Right Click Actions").click();
         await timedWaitForMenu(ctx, "menuClickWait");
 
-        const rightPlan = await prereadActionList(ctx, rightDesired, {
+        const rightPlan = await prereadActionListUsingTrust(ctx, rightDesired, {
             session,
-            baselineCurrent: getBaselineActionList(trustPlan, "rightClickActions"),
-            trust: getActionListTrust(trustPlan, "rightClickActions"),
+            trustPlan,
+            basePath: "rightClickActions",
         });
         await applyActionListPlan(ctx, rightPlan, { session });
     }
@@ -366,4 +365,3 @@ function actionListToSync(
 
     return undefined;
 }
-

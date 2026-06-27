@@ -196,6 +196,10 @@ export function getOpenContainerWindowId(): number | null {
     const container = Player.getContainer();
     if (container == null) return null;
     try {
+        const id = (container as unknown as { getWindowId?: () => number }).getWindowId?.();
+        if (typeof id === "number" && id >= 0) return id;
+    } catch (_e) {}
+    try {
         const c = container as unknown as { container?: { field_75152_c?: number } };
         const id = c.container?.field_75152_c;
         return typeof id === "number" ? id : null;
@@ -203,6 +207,14 @@ export function getOpenContainerWindowId(): number | null {
         return null;
     }
 }
+
+export type DisplayedGuiMenuState = {
+    screen: string;
+    itemCount: number;
+    slotCount: number;
+    menuSlotCount: number;
+    windowId: number | null;
+};
 
 function listSize(value: unknown): number {
     try {
@@ -226,22 +238,21 @@ function listItem(value: unknown, index: number): unknown {
     return null;
 }
 
-/**
- * Menu-item count read straight off the DISPLAYED GuiContainer's own container
- * (1.8.9 obf: GuiContainer.field_147002_h = inventorySlots), not via
- * `Player.getContainer()` (= thePlayer.openContainer). When the two disagree, we
- * are polling a different/stale container instance than the menu the user sees.
- * Returns "<screen>:<count>/<windowId>" or a reason string. Diagnostic only.
- */
-export function describeGuiScreenMenu(): string {
+export function getDisplayedGuiMenuState(): DisplayedGuiMenuState | null {
     try {
         const mc = Client.getMinecraft() as unknown as { field_71462_r?: unknown };
         const screen = mc.field_71462_r;
-        if (screen == null) return "noScreen";
+        if (screen == null) return null;
         const klass = (screen as { getClass(): { getName(): string } }).getClass().getName();
         const short = klass.substring(klass.lastIndexOf(".") + 1);
         const container = (screen as { field_147002_h?: unknown }).field_147002_h;
-        if (container == null) return `${short}:noContainer`;
+        if (container == null) return {
+            screen: short,
+            itemCount: 0,
+            slotCount: 0,
+            menuSlotCount: 0,
+            windowId: null,
+        };
         const c = container as {
             func_75138_a(): { length?: number; size?: () => number; get?: (i: number) => unknown };
             field_75152_c?: number;
@@ -253,8 +264,29 @@ export function describeGuiScreenMenu(): string {
         for (let i = 0; i < end; i++) {
             if (listItem(inv, i) != null) n++;
         }
-        return `${short}:${n}items/win${c.field_75152_c}`;
-    } catch (e) {
-        return `err:${e}`;
+        const id = c.field_75152_c;
+        return {
+            screen: short,
+            itemCount: n,
+            slotCount: size,
+            menuSlotCount: end,
+            windowId: typeof id === "number" ? id : null,
+        };
+    } catch (_e) {
+        return null;
     }
+}
+
+/**
+ * Menu-item count read straight off the DISPLAYED GuiContainer's own container
+ * (1.8.9 obf: GuiContainer.field_147002_h = inventorySlots), not via
+ * `Player.getContainer()` (= thePlayer.openContainer). When the two disagree, we
+ * are polling a different/stale container instance than the menu the user sees.
+ * Returns "<screen>:<count>/<windowId>" or a reason string. Diagnostic only.
+ */
+export function describeGuiScreenMenu(): string {
+    const state = getDisplayedGuiMenuState();
+    if (state === null) return "noScreen";
+    if (state.slotCount === 0 && state.windowId === null) return `${state.screen}:noContainer`;
+    return `${state.screen}:${state.itemCount}items/win${state.windowId}`;
 }

@@ -67,6 +67,41 @@ describe("normalizeActionCompare — value-kind numeric coercion", () => {
         const desired = playSound({ volume: 0.7 });
         expect(actionsCompareEqual(observed, desired)).toBe(false);
     });
+
+    test("large variable integers compare as exact text", () => {
+        expect(actionsCompareEqual(
+            changeVar({ value: "4466842338629" }),
+            changeVar({ value: "9999999999999" })
+        )).toBe(false);
+        expect(actionsCompareEqual(
+            changeVar({ value: "10000000000000" }),
+            changeVar({ value: "10000000000001" })
+        )).toBe(false);
+    });
+
+    test("variable integers above JS safe precision do not collapse", () => {
+        const observed = changeVar({ value: "10000000000000000" });
+        const desired = changeVar({ value: "10000000000000001" });
+        expect(actionsCompareEqual(observed, desired)).toBe(false);
+    });
+
+    test("large variable integer display commas normalize without Number coercion", () => {
+        const observed = changeVar({ value: "10,000,000,000,001" });
+        const desired = changeVar({ value: "10000000000001" });
+        expect(actionsCompareEqual(observed, desired)).toBe(true);
+    });
+
+    test("tiny variable decimals compare at Housing display precision", () => {
+        const observed = changeVar({ value: "0.0" });
+        const desired = changeVar({ value: "0.0000000123" });
+        expect(actionsCompareEqual(observed, desired)).toBe(true);
+    });
+
+    test("variable decimals still differ after display precision quantization", () => {
+        const observed = changeVar({ value: "0.0000002" });
+        const desired = changeVar({ value: "0.0000001" });
+        expect(actionsCompareEqual(observed, desired)).toBe(false);
+    });
 });
 
 describe("normalizeActionCompare — select/cycle shape coercion", () => {

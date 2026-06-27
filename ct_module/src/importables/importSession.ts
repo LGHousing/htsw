@@ -35,6 +35,7 @@ import {
     setupUnitsForImportable,
 } from "../housingSync/progress/costs";
 import { writeImportFailureLog } from "../diagnostics/importFailureLog";
+import { resetImportDiagnostics } from "../diagnostics/importDiagnosticsBuffer";
 
 export type ImportSelection = {
     importables: Importable[];
@@ -94,6 +95,7 @@ export async function importSelectedImportables(
     ctx: TaskContext,
     selection: ImportSelection
 ): Promise<void> {
+    resetImportDiagnostics();
     resetFunctionNameSession();
     resetMenuNameSession();
 
@@ -143,7 +145,7 @@ export async function importSelectedImportables(
             key: importProgressKey(importable.type, identity, selection.sourcePath),
             rowIndex,
             trustPlan: tp,
-            units: estimateImportableUnits(importable, tp?.entry ?? null),
+            units: estimateImportableUnits(importable, tp?.entry ?? null, tp?.trustMode === true),
         };
     });
 

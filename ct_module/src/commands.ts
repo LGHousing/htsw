@@ -102,9 +102,9 @@ const HTSW_SUBCOMMANDS: HtswSubcommand[] = [
     },
     {
         name: "update",
-        summary: "Check for module updates",
+        summary: "Manage module updates",
         run: commandUpdate,
-        usage: "update [check]",
+        usage: "update [check|status|enable|disable]",
     },
     {
         name: "version",

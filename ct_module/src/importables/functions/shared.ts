@@ -189,7 +189,7 @@ async function functionSettingsStep<T>(
  * automatic-execution tick count from `importable`. Both setters short-circuit
  * when the current value already matches — the icon against its /functions-list
  * snapshot, the ticks against the live field — so this is a no-op for an
- * already in-sync function. Shared by the preread fast-path and the apply pass.
+ * already in-sync function.
  */
 export async function applyFunctionSettings(
     ctx: TaskContext,

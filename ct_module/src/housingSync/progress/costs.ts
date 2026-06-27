@@ -25,7 +25,7 @@ import {
     normalizeConditionCompare,
 } from "../fields/compare";
 import { countReferencedShells } from "../../importables/references";
-import { readCachedActionList } from "../../importables/actionListHelpers";
+import { readCachedActionList } from "../../importCache/actionLists";
 import type { ImportableCacheEntry } from "../../importCache/cache";
 
 /**
@@ -633,8 +633,12 @@ function observedActionsAsBaseline(
  */
 function actionListCost(
     desired: readonly Action[],
-    baselineCurrent: readonly Action[] | undefined
+    baselineCurrent: readonly Action[] | undefined,
+    trustedBaseline: boolean = false
 ): number {
+    if (trustedBaseline) {
+        return baselineAwareApplyUnits(desired, baselineCurrent ?? []);
+    }
     return phaseUnitsTotal(estimateActionListPhaseUnits(desired, baselineCurrent));
 }
 
@@ -651,15 +655,17 @@ function actionListCost(
  */
 export function estimateImportableCost(
     importable: Importable,
-    getCached?: (basePath: string) => readonly Action[] | undefined
+    getCached?: (basePath: string) => readonly Action[] | undefined,
+    trustMode: boolean = false
 ): number {
     const get = (path: string): readonly Action[] | undefined =>
         getCached === undefined ? undefined : getCached(path);
+    const trustedBaseline = trustMode && getCached !== undefined;
 
     if (importable.type === "FUNCTION") {
         return (
             COST.commandMenuWait +
-            actionListCost(importable.actions ?? [], get("actions")) +
+            actionListCost(importable.actions ?? [], get("actions"), trustedBaseline) +
             COST.cacheWrite
         );
     }
@@ -667,7 +673,7 @@ export function estimateImportableCost(
         return (
             COST.commandMenuWait +
             COST.menuClickWait +
-            actionListCost(importable.actions, get("actions")) +
+            actionListCost(importable.actions, get("actions"), trustedBaseline) +
             COST.cacheWrite
         );
     }
@@ -675,8 +681,8 @@ export function estimateImportableCost(
         return (
             COST.commandMessageWait * 3 +
             COST.commandMenuWait +
-            actionListCost(importable.onEnterActions ?? [], get("onEnterActions")) +
-            actionListCost(importable.onExitActions ?? [], get("onExitActions")) +
+            actionListCost(importable.onEnterActions ?? [], get("onEnterActions"), trustedBaseline) +
+            actionListCost(importable.onExitActions ?? [], get("onExitActions"), trustedBaseline) +
             COST.cacheWrite
         );
     }
@@ -692,8 +698,8 @@ export function estimateImportableCost(
             COST.itemInject +
             COST.commandMenuWait +
             COST.menuClickWait +
-            actionListCost(left, get("leftClickActions")) +
-            actionListCost(right, get("rightClickActions")) +
+            actionListCost(left, get("leftClickActions"), trustedBaseline) +
+            actionListCost(right, get("rightClickActions"), trustedBaseline) +
             COST.guaranteedSleep1000 +
             COST.nbtCapture +
             COST.cacheWrite
@@ -716,7 +722,8 @@ export function estimateImportableCost(
  */
 export function estimateImportableUnits(
     importable: Importable,
-    cacheEntry: ImportableCacheEntry | null
+    cacheEntry: ImportableCacheEntry | null,
+    trustMode: boolean = false
 ): number {
     if (cacheEntry === null) {
         // Floor at 1: a 0-unit item would otherwise read as already-done.
@@ -724,5 +731,5 @@ export function estimateImportableUnits(
     }
     const getCached = (basePath: string) =>
         readCachedActionList(cacheEntry.importable, basePath);
-    return Math.max(1, estimateImportableCost(importable, getCached));
+    return Math.max(1, estimateImportableCost(importable, getCached, trustMode));
 }

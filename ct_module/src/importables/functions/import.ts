@@ -3,7 +3,6 @@ import type { Action, Importable, ImportableFunction } from "htsw/types";
 import { applyActionListPlan } from "../../housingSync/actions/applyDiff";
 import {
     actionsFullyHydrated,
-    prereadActionList,
     type ActionListPlan,
 } from "../../housingSync/actions/plan";
 import { clickGoBack } from "../../housingSync/gui/menuUtils";
@@ -11,7 +10,10 @@ import { timedWaitForMenu } from "../../housingSync/gui/menuWait";
 import type { ImportableTrustPlan } from "../../importCache";
 import { createSetupStepEmitter } from "../../housingSync/progress/setupStepEmitter";
 import TaskContext from "../../tasks/context";
-import { getActionListTrust, getBaselineActionList } from "../actionListHelpers";
+import {
+    hasTrustedActionListBaseline,
+    prereadActionListUsingTrust,
+} from "../actionListHelpers";
 import type { ImportSession } from "../imports";
 import {
     countReferencedShells,
@@ -31,9 +33,8 @@ export type FunctionImportPlan = {
     trustPlan?: ImportableTrustPlan;
     actionsPlan: ActionListPlan | null;
     /**
-     * True when the icon/tick settings need no further work — either trusted,
-     * or already applied inline during preread (which happens when the action
-     * diff was empty). When true, the apply pass skips the settings menu.
+     * True when icon/tick settings need no further work. When false, the apply
+     * pass opens the settings menu after all prereads have succeeded.
      */
     settingsHandled: boolean;
 };
@@ -89,38 +90,38 @@ export async function prereadImportableFunction(
         return { kind: "FUNCTION", importable, trustPlan, actionsPlan: null, settingsHandled };
     }
 
-    await ensureFunctionExists(ctx, importable.name);
-    setup(`opened function ${importable.name}`);
-    const actionsPlan = await prereadActionList(ctx, importable.actions, {
-        session,
-        baselineCurrent: getBaselineActionList(trustPlan, "actions"),
-        trust: getActionListTrust(trustPlan, "actions"),
-    });
+    if (hasTrustedActionListBaseline(trustPlan, "actions")) {
+        setup(`planned ${importable.name} from cache`);
+        const actionsPlan = await prereadActionListUsingTrust(ctx, importable.actions, {
+            session,
+            trustPlan,
+            basePath: "actions",
+        });
 
-    // When the actions already match, the only work left is icon/ticks. We're
-    // one go-back from the settings menu, so just apply them now (the setters
-    // short-circuit when unchanged) and let pass 2 skip this function entirely.
-    // Skipped when the diff is non-empty — pass 2 visits settings anyway, so a
-    // first import (everything changes) pays no extra round trip here.
-    let settingsHandled = settingsTrusted;
-    if (!settingsHandled && actionsPlan.diff.operations.length === 0) {
-        await functionImportStep(
-            `leaving action editor for function ${importable.name}`,
-            () => clickGoBack(ctx)
-        );
-        await functionImportStep(
-            `opening settings for function ${importable.name}`,
-            () => openFunctionSettings(ctx, importable.name)
-        );
-        await applyFunctionSettings(ctx, importable);
-        await functionImportStep(
-            `leaving settings for function ${importable.name}`,
-            () => clickGoBack(ctx)
-        );
-        settingsHandled = true;
+        return {
+            kind: "FUNCTION",
+            importable,
+            trustPlan,
+            actionsPlan,
+            settingsHandled: settingsTrusted,
+        };
     }
 
-    return { kind: "FUNCTION", importable, trustPlan, actionsPlan, settingsHandled };
+    await ensureFunctionExists(ctx, importable.name);
+    setup(`opened function ${importable.name}`);
+    const actionsPlan = await prereadActionListUsingTrust(ctx, importable.actions, {
+        session,
+        trustPlan,
+        basePath: "actions",
+    });
+
+    return {
+        kind: "FUNCTION",
+        importable,
+        trustPlan,
+        actionsPlan,
+        settingsHandled: settingsTrusted,
+    };
 }
 
 export async function applyImportableFunctionPlan(
@@ -188,7 +189,7 @@ function functionSettingsTrusted(
     importable: ImportableFunction,
     plan: ImportableTrustPlan | undefined
 ): boolean {
-    if (plan?.entry?.importable.type !== "FUNCTION") {
+    if (plan?.trustMode !== true || plan.entry?.importable.type !== "FUNCTION") {
         return false;
     }
     const cached = plan.entry.importable;
