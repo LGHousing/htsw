@@ -56,6 +56,7 @@ Before writing a comment: **did you verify this, or are you narrating your menta
 
 - Short progress updates before edits, builds, installs, and when findings change the plan.
 - Be direct about what changed and why. No vague reassurance.
+- Release notes are user-facing update text. Write the important changes in plain language, avoid internal jargon, and do not publish changelog-only Markdown into the CT updater feed.
 - When answering an architecture or code question, don't only describe current behavior — judge it. Say whether a responsibility belongs where it is, and what to change if the design is accidental, overbuilt, or misleading.
 - When you see two code paths doing the same job, an abstraction that doesn't earn its place, or a name that hides who owns what, say so and suggest the better design instead of keeping the current shape by default. If two mechanisms feed the same caller, suggest merging them into one — don't keep them split just because one side carries more math, state, or weight.
 

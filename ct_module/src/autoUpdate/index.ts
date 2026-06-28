@@ -266,7 +266,70 @@ function fetchManifest(): Manifest | null {
 function showReleaseNotes(manifest: Manifest): void {
     const notes = manifest.notes?.trim();
     if (!notes) return;
-    ChatLib.chat(`&7Release notes: &f${notes}`);
+    const lines = releaseNoteLines(notes);
+    if (lines.length === 0) return;
+    ChatLib.chat("&7Release notes:");
+    for (let i = 0; i < lines.length && i < 4; i++) {
+        chatLineWithLinks("&7- &f", lines[i]);
+    }
+}
+
+function releaseNoteLines(notes: string): string[] {
+    const rawLines = notes.replace(/\r/g, "").split("\n");
+    const lines: string[] = [];
+    for (let i = 0; i < rawLines.length; i++) {
+        const line = normalizeReleaseNoteLine(rawLines[i]);
+        if (line !== null) lines.push(line);
+    }
+    return lines;
+}
+
+function normalizeReleaseNoteLine(line: string): string | null {
+    let text = line.trim();
+    if (text.length === 0) return null;
+    text = text.replace(/^#+\s*/, "");
+    text = text.replace(/^[-*]\s+/, "");
+    text = text.replace(/\*\*/g, "");
+    text = text.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, "$1 $2");
+    if (/^Full Changelog:\s*https:\/\/github\.com\/LGHousing\/htsw\/compare\//i.test(text)) {
+        return null;
+    }
+    return text;
+}
+
+function chatLineWithLinks(prefix: string, text: string): void {
+    const regex = /https?:\/\/[^\s]+/g;
+    const parts = [prefix] as Array<string | TextComponent>;
+    let last = 0;
+    let match: RegExpExecArray | null = regex.exec(text);
+    while (match !== null) {
+        if (match.index > last) parts.push(text.substring(last, match.index));
+        const link = splitTrailingUrlPunctuation(match[0]);
+        parts.push(urlLink(link.url));
+        if (link.trailing.length > 0) parts.push(link.trailing);
+        last = match.index + match[0].length;
+        match = regex.exec(text);
+    }
+    if (last < text.length) parts.push(text.substring(last));
+    ChatLib.chat(new Message(parts));
+}
+
+function splitTrailingUrlPunctuation(rawUrl: string): { url: string; trailing: string } {
+    let url = rawUrl;
+    let trailing = "";
+    while (url.length > 0) {
+        const ch = url.charAt(url.length - 1);
+        if (".,)]".indexOf(ch) === -1) break;
+        trailing = ch + trailing;
+        url = url.substring(0, url.length - 1);
+    }
+    return { url, trailing };
+}
+
+function urlLink(url: string): TextComponent {
+    return new TextComponent("&b[link]")
+        .setClick("open_url", url)
+        .setHover("show_text", `&7Open ${url}`);
 }
 
 function download(url: string, destPath: string): boolean {

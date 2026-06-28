@@ -9,6 +9,9 @@ on:
       tag:
         description: "Release tag to create/update, for example v0.5.0"
         required: true
+      notes:
+        description: "Plain-English release notes for users; 2-4 short lines, no changelog-only markdown"
+        required: false
 
 permissions:
   contents: write
@@ -66,13 +69,15 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           TAG: ${{ steps.tag.outputs.tag }}
+          INPUT_NOTES: ${{ github.event.inputs.notes || '' }}
         run: |
-          notes="$(gh release view "${TAG}" --json body --jq '.body // ""' 2>/dev/null || true)"
+          notes="${INPUT_NOTES}"
           if [ -z "${notes//[[:space:]]/}" ]; then
-            notes="$(gh api "repos/${REPO}/releases/generate-notes" -f tag_name="${TAG}" --jq '.body // ""' 2>/dev/null || true)"
+            notes="$(gh release view "${TAG}" --json body --jq '.body // ""' 2>/dev/null || true)"
           fi
           if [ -z "${notes//[[:space:]]/}" ]; then
-            notes="Automated HTSW release for ${TAG}."
+            echo "::error::Release notes are required. Use 2-4 plain-English lines that describe the important user-visible changes."
+            exit 1
           fi
 
           {
