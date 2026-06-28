@@ -1,6 +1,7 @@
 import type { Comparison, Operation, VarOperation } from "../types";
 import type { Runtime } from "./runtime";
 
+import { Diagnostic } from "../diagnostic";
 import { Long } from "../long";
 
 export interface Var<T> {
@@ -47,6 +48,7 @@ export class VarLong implements Var<Long> {
             case "Multiply":
                 return new VarLong(this.value.mul(other.value));
             case "Divide":
+                if (other.value.eq(Long.ZERO)) return new VarLong(this.value);
                 return new VarLong(this.value.div(other.value));
             case "Left Shift":
                 return new VarLong(this.value.shl(other.value));
@@ -129,6 +131,7 @@ export class VarDouble implements Var<number> {
             case "Multiply":
                 return new VarDouble(this.value * other.value);
             case "Divide":
+                if (other.value === 0) return new VarDouble(this.value);
                 return new VarDouble(this.value / other.value);
             default:
                 throw new Error("Not implemented");
@@ -298,7 +301,10 @@ export function parseValue(runtime: Runtime, value: string): Var<any> {
         const content = value.substring(1, value.length - 1);
         let resolved = runtime.runPlaceholder(content);
         if (!resolved) {
-            throw new Error(`Placeholder "${content}" could not be resolved.`);
+            runtime.emitDiagnostic(
+                Diagnostic.warning(`Placeholder "${content}" could not be resolved`)
+            );
+            return new VarLong(Long.ZERO);
         }
         if (resolved instanceof VarString) {
             resolved = parseString(runtime, resolved.value);
