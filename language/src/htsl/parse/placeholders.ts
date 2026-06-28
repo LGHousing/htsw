@@ -138,11 +138,13 @@ function validatePlaceholder(
     switch (name) {
         case "var.player":
         case "var.global":
+        case "stat.player":
+        case "stat.global":
             if (args.length == 0) addIssueInvalidArgument("Expected stat key");
             break;
         case "var.team":
+        case "stat.team":
             if (args.length == 0) addIssueInvalidArgument("Expected stat key");
-            if (args.length == 1) addIssueInvalidArgument("Expected team name");
             if (args.length > 2)
                 addIssueInvalidArgument("Team stat key cannot contain spaces");
             break;

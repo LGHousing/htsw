@@ -203,6 +203,10 @@ export function runPlaceholder(tcx: TyCtxt, name: string, ...args: string[]): Va
             } else {
                 return undefined;
             }
+        case "stat.player":
+        case "stat.global":
+        case "stat.team":
+            return unknownLong();
         default:
             return unknownString(); // Just a raw placeholder, I guess
     }
