@@ -14,6 +14,7 @@ type BehaviorMap<T extends Node, R> = Partial<{
 
 export class Behaviors<T extends Node, R> {
     private readonly handlers: BehaviorMap<T, R> = {};
+    private unhandled?: (runtime: Runtime, node: T) => R;
 
     with<K extends T["type"]>(
         type: K,
@@ -23,10 +24,19 @@ export class Behaviors<T extends Node, R> {
         return this;
     }
 
+    withUnhandled(behavior: (runtime: Runtime, node: T) => R): this {
+        this.unhandled = behavior;
+        return this;
+    }
+
     get<K extends T["type"]>(
         type: K,
     ): ((runtime: Runtime, node: NodeForKey<T, K>) => R) | undefined {
         return this.handlers[type];
+    }
+
+    hasUnhandled(): boolean {
+        return this.unhandled !== undefined;
     }
 
     dispatch(runtime: Runtime, node: T): R | undefined {
@@ -36,6 +46,9 @@ export class Behaviors<T extends Node, R> {
             if (node.type === type) {
                 return behavior(runtime, node as NodeForKey<T, typeof type>);
             }
+        }
+        if (this.unhandled) {
+            return this.unhandled(runtime, node);
         }
         return undefined;
     }

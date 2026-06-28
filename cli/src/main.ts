@@ -74,15 +74,29 @@ function runRun(args: string[]): void {
         process.exit(0);
     }
 
-    const filePath = args[0] ?? path.resolve("import.json");
+    let tickCount = 0;
+    let filePath: string | undefined;
+    for (let i = 0; i < args.length; i++) {
+        if (args[i] === "--ticks") {
+            tickCount = parseInt(args[++i], 10);
+            if (isNaN(tickCount) || tickCount < 0) {
+                console.error("--ticks expects a non-negative integer");
+                process.exit(2);
+            }
+        } else if (!filePath) {
+            filePath = args[i];
+        }
+    }
+
+    const resolvedPath = filePath ?? path.resolve("import.json");
     const sm = new htsw.SourceMap(new NodeFileLoader());
-    const result = parseAndPrintDiagnostics(sm, filePath);
+    const result = parseAndPrintDiagnostics(sm, resolvedPath);
 
     if (hasErrors(result.diagnostics)) {
         process.exit(1);
     }
 
-    run(sm, result);
+    run(sm, result, tickCount);
 }
 
 function parseAndPrintDiagnostics(sm: htsw.SourceMap, filePath: string): htsw.ParseResult<Importable[]> {
@@ -113,11 +127,14 @@ function printCheckHelp(): void {
 }
 
 function printRunHelp(): void {
-    console.log("Usage: htsw run [path]");
+    console.log("Usage: htsw run [path] [--ticks N]");
     console.log("");
     console.log("Parses the given file and runs function `htsw:main`");
     console.log("Supported files: import.json, *.import.json");
     console.log(`Default path: ${path.resolve("import.json")}`);
+    console.log("");
+    console.log("  --ticks N    Tick the runtime N times after running htsw:main.");
+    console.log("               Drives pauses and repeating functions (default 0).");
 }
 
 main();
