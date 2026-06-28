@@ -97,7 +97,7 @@ App shell — `gui/`:
 - `overlay.ts` — wires everything: registers triggers, owns the single fullscreen panel, runs the tick handler (reparse, focus, popover cleanup).
 - `root.ts` — root tree builder: arranges LeftPanel / center cutouts (transparent above + below the inventory) / RightPanel / chat input around the inventory bounds. Right column gets `padding-left: SCREEN_PAD` so it mirrors the screen-edge gap on the inventory-facing side.
 - `autoTrack.ts` — central helper for "Queue all modified" and Auto-Track queue updates. Manual bulk queueing forces the parse authority to check disk first; parse propagation and the pending-parse pump call `autoTrackRefresh()` after changed parses.
-- `chat-input.ts` — `ChatInputBar` element + global `T` shortcut to focus it.
+- `chat/index.ts` — `ChatInputBar` element + global shortcut to focus it. The chat scrollback re-wraps mirrored Minecraft chat lines to the panel viewport width, and follows the newest message until the user scrolls upward; its bottom-follow check uses the wheel target, not only the rendered offset, because wheel motion can be eased and the rendered offset may still be at bottom on the first frame after a touchpad event.
 - `knowledge-status.ts` — derives `STATUS_COLOR` / `STATUS_LABEL` / `statusForImportable` / `knowledgeStatusByImportable` from `state` for the left-rail badges.
 - `houseBinding.ts` — shared import.json `houseUuid` bind/rebind confirmation and cache-index update, used by Importables and Houses.
 - `bottom-toolbar/` — slim, no-background strip under the inventory: only Housing Menu + the `/functions …` shortcut split-button.

@@ -2,6 +2,7 @@
 
 import {
     Element,
+    SCROLLBAR_WIDTH,
     clearUserScrollOverride,
     getScrollState,
     isScrollUserOverridden,
@@ -23,6 +24,8 @@ import { getChatLines } from "./mcChat";
 export const CHAT_INPUT_ID = "htsw-chat-input";
 const CHAT_SCROLL_ID = "htsw-chat-scroll";
 export const CHAT_INPUT_H = 16;
+const CHAT_SCROLL_PAD_LEFT = 4;
+const CHAT_SCROLL_PAD_RIGHT = 0;
 
 let chatText = "";
 
@@ -82,7 +85,7 @@ function stickScrollbackToBottom(): void {
     const s = getScrollState(CHAT_SCROLL_ID);
     const maxOffset = Math.max(0, s.contentLength - s.viewportRect.h);
     if (isScrollUserOverridden(CHAT_SCROLL_ID)) {
-        if (s.offset >= maxOffset - 1) {
+        if (s.target >= maxOffset - 1) {
             clearUserScrollOverride(CHAT_SCROLL_ID);
             setScrollOffset(CHAT_SCROLL_ID, maxOffset);
         }
@@ -91,7 +94,50 @@ function stickScrollbackToBottom(): void {
     setScrollOffset(CHAT_SCROLL_ID, maxOffset);
 }
 
-function chatRows(): Element[] {
+function javaListLength(v: any): number {
+    try {
+        if (typeof v.size === "function") return Number(v.size());
+    } catch (_e) {
+    }
+    try {
+        if (typeof v.length === "number") return Number(v.length);
+    } catch (_e) {
+    }
+    return -1;
+}
+
+function javaListAt(v: any, i: number): any {
+    try {
+        if (typeof v.get === "function") return v.get(i);
+    } catch (_e) {
+    }
+    try {
+        return v[i];
+    } catch (_e) {
+        return null;
+    }
+}
+
+function wrapFormattedLine(line: string, maxWidth: number): string[] {
+    if (maxWidth <= 0) return [line];
+    let wrapped: any;
+    try {
+        const font = Client.getMinecraft().field_71466_p as any;
+        wrapped = font.func_78271_c(line, Math.floor(maxWidth));
+    } catch (_e) {
+        return [line];
+    }
+    const n = javaListLength(wrapped);
+    if (n <= 0) return [line];
+    const out: string[] = [];
+    for (let i = 0; i < n; i++) {
+        const part = javaListAt(wrapped, i);
+        if (part !== null && part !== undefined) out.push(String(part));
+    }
+    return out.length === 0 ? [line] : out;
+}
+
+function chatRows(wrapWidth: number): Element[] {
     const lines = getChatLines();
     stickScrollbackToBottom();
     if (lines.length === 0) {
@@ -106,7 +152,10 @@ function chatRows(): Element[] {
     const rows: Element[] = [];
     for (let i = 0; i < lines.length; i++) {
         // No `color`: Renderer.drawString honors the line's own § codes.
-        rows.push(Text({ text: lines[i], style: { width: { kind: "grow" } } }));
+        const wrapped = wrapFormattedLine(lines[i], wrapWidth);
+        for (let j = 0; j < wrapped.length; j++) {
+            rows.push(Text({ text: wrapped[j], style: { width: { kind: "grow" } } }));
+        }
     }
     return rows;
 }
@@ -149,7 +198,11 @@ function ChatInputBar(): Element {
  * scrollback (reads MC's own chat buffer, so server messages, command
  * output, and diagnostics all appear) above the chat input bar.
  */
-export function ChatPanel(height: number): Element {
+export function ChatPanel(width: number, height: number): Element {
+    const wrapWidth = Math.max(
+        0,
+        width - CHAT_SCROLL_PAD_LEFT - CHAT_SCROLL_PAD_RIGHT - SCROLLBAR_WIDTH
+    );
     return Col({
         style: {
             width: { kind: "grow" },
@@ -166,12 +219,13 @@ export function ChatPanel(height: number): Element {
                     width: { kind: "grow" },
                     height: { kind: "grow" },
                     padding: [
-                        { side: "left", value: 4 },
+                        { side: "left", value: CHAT_SCROLL_PAD_LEFT },
+                        { side: "right", value: CHAT_SCROLL_PAD_RIGHT },
                         { side: "top", value: 3 },
                         { side: "bottom", value: 3 },
                     ],
                 },
-                children: () => chatRows(),
+                children: () => chatRows(wrapWidth),
             }),
             ChatInputBar(),
         ],
