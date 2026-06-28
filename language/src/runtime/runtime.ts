@@ -82,7 +82,10 @@ export class Runtime {
 
     runAction<T extends Action>(action: T): void {
         const result = this.actionBehaviors.dispatch(this, action);
-        if (result === undefined && !this.actionBehaviors.get(action.type)) {
+        if (result === undefined
+            && !this.actionBehaviors.get(action.type)
+            && !this.actionBehaviors.hasUnhandled()
+        ) {
             this.emitDiagnostic(
                 Diagnostic.warning(`No runtime behavior for action '${action.type}'`)
                     .addPrimarySpan(this.spans.getField(action, "type"))
@@ -93,7 +96,10 @@ export class Runtime {
 
     runCondition<T extends Condition>(condition: T): boolean {
         const result = this.conditionBehaviors.dispatch(this, condition);
-        if (result === undefined && !this.conditionBehaviors.get(condition.type)) {
+        if (result === undefined
+            && !this.conditionBehaviors.get(condition.type)
+            && !this.conditionBehaviors.hasUnhandled()
+        ) {
             this.emitDiagnostic(
                 Diagnostic.warning(`No runtime behavior for condition '${condition.type}'`)
                     .addPrimarySpan(this.spans.getField(condition, "type"))

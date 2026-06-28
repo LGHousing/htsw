@@ -2,7 +2,7 @@ import * as htsw from "htsw";
 import { Importable, ImportableFunction } from "htsw/types";
 import { printDiagnostic } from "./diagnostics";
 
-export function run(sm: htsw.SourceMap, result: htsw.ParseResult<Importable[]>) {
+export function run(sm: htsw.SourceMap, result: htsw.ParseResult<Importable[]>, tickCount: number = 0) {
     const vars = new htsw.runtime.simple.SimpleVars();
 
     const actionBehaviors = new htsw.runtime.simple.SimpleActionBehaviors(vars)
@@ -27,17 +27,33 @@ export function run(sm: htsw.SourceMap, result: htsw.ParseResult<Importable[]>) 
 
                 rt.runActions(fn.actions ?? []);
             }
-        );
+        )
+        .withUnhandled(() => {});
+
+    const conditionBehaviors = new htsw.runtime.simple.SimpleConditionBehaviors(vars)
+        .withUnhandled(() => false);
 
     const rt = new htsw.runtime.Runtime({
         spans: result.spans,
         actionBehaviors,
-        conditionBehaviors: new htsw.runtime.simple.SimpleConditionBehaviors(vars),
+        conditionBehaviors,
         placeholderBehaviors: new htsw.runtime.simple.SimplePlaceholderBehaviors(vars),
         onDiagnostic: (diag) => {
             printDiagnostic(sm, diag)
         }
     });
+
+    for (const importable of result.value) {
+        if (importable.type !== "FUNCTION") continue;
+        if (!importable.actions || !importable.repeatTicks) continue;
+
+        rt.schedulers.push(
+            new htsw.runtime.RepeatingActionScheduler(
+                importable.actions,
+                importable.repeatTicks
+            )
+        );
+    }
 
     const main = result.value.find(
         it => it.type === "FUNCTION" && it.name === "htsw:main"
@@ -51,6 +67,10 @@ export function run(sm: htsw.SourceMap, result: htsw.ParseResult<Importable[]>) 
     }
 
     rt.runActions(main.actions ?? []);
+
+    for (let i = 0; i < tickCount; i++) {
+        rt.tick();
+    }
 }
 
 function replacePlaceholders(rt: htsw.runtime.Runtime, value: string): string {
