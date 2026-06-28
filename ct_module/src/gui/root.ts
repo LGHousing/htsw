@@ -120,7 +120,7 @@ function buildLayout(b: ContainerBounds): Element {
                         children: [
                             bgWrap(LeftPanel(leftColW), "grow"),
                             transparentPad(RAIL_CHAT_GAP),
-                            ChatPanel(chatH),
+                            ChatPanel(leftColW, chatH),
                         ],
                     }),
                     // CENTER COLUMN — transparent above the inventory, the
