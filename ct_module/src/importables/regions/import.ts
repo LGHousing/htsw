@@ -4,21 +4,23 @@ import { applyActionListPlan } from "../../housingSync/actions/applyDiff";
 import {
     type ActionListPlan,
 } from "../../housingSync/actions/plan";
-import {
-    timedWaitForMenu,
-    timedWaitForUnformattedMessage,
-} from "../../housingSync/gui/menuWait";
+import { timedWaitForMenu } from "../../housingSync/gui/menuWait";
 import type { ImportableTrustPlan } from "../../importCache";
 import { createSetupStepEmitter } from "../../housingSync/progress/setupStepEmitter";
 import { ensureCreativeFlight } from "../../housingSync/sideEffects";
 import TaskContext from "../../tasks/context";
-import { removedFormatting } from "../../utils/helpers";
 import { prereadActionListUsingTrust } from "../actionListHelpers";
 import type { ImportSession } from "../imports";
 import {
     countReferencedShells,
     ensureReferencedImportablesExist,
 } from "../references";
+import {
+    regionCornerSet,
+    regionCreated,
+    regionMovedToSelection,
+    teleportSucceeded,
+} from "../waiters";
 import { listAllRegions, type RegionListEntry } from "./listRegions";
 import { openRegionEditor } from "./shared";
 
@@ -33,39 +35,14 @@ export type RegionImportPlan = {
 };
 
 async function setRegionCorner(ctx: TaskContext, pos: Pos, corner: "A" | "B"): Promise<void> {
-    await ctx.runCommand(`/tp ${pos.x} ${pos.y} ${pos.z}`);
-    await timedWaitForUnformattedMessage(
-        ctx,
-        `Teleporting you to ${pos.x}, ${pos.y}, ${pos.z}.`
+    await ctx.expectAfter(
+        () => ctx.runCommand(`/tp ${pos.x} ${pos.y} ${pos.z}`),
+        teleportSucceeded(pos)
     );
-    await ctx.runCommand(`//pos${corner}`);
-    await waitForRegionCornerResult(
-        ctx,
-        `Position ${corner} set to ${pos.x}, ${pos.y}, ${pos.z}.`
+    await ctx.expectAfter(
+        () => ctx.runCommand(`//pos${corner}`),
+        regionCornerSet(pos, corner)
     );
-}
-
-async function waitForRegionCornerResult(
-    ctx: TaskContext,
-    successMessage: string
-): Promise<void> {
-    let failureMessage: string | null = null;
-    const waiter = ctx.waitFor("message", (message) => {
-        const text = removedFormatting(message);
-        if (text === successMessage) return true;
-        if (
-            text === "You cannot select outside the plot!" ||
-            text === "Please use the selection tool to select a region!"
-        ) {
-            failureMessage = text;
-            return true;
-        }
-        return false;
-    });
-    await ctx.withTimeout(waiter, "Waiting for region corner result");
-    if (failureMessage !== null) {
-        throw new Error(`Failed to set region corner: ${failureMessage}`);
-    }
 }
 
 function requireRegionBounds(importable: ImportableRegion): { from: Pos; to: Pos } {
@@ -237,16 +214,16 @@ async function moveExistingRegionToBounds(
 ): Promise<void> {
     await setDesiredRegionSelection(ctx, importable);
     if ((await openRegionEditor(ctx, importable.name)) !== "opened") {
-        await ctx.runCommand(`/region create ${importable.name}`);
-        await timedWaitForUnformattedMessage(ctx, `Created region ${importable.name}!`);
+        await ctx.expectAfter(
+            () => ctx.runCommand(`/region create ${importable.name}`),
+            regionCreated(importable.name)
+        );
         await openRegionEditor(ctx, importable.name);
         return;
     }
-    ctx.getItemSlot("Move Region").click();
-    await timedWaitForUnformattedMessage(
-        ctx,
-        "Updated region to your current selection!",
-        "messageClickWait"
+    await ctx.expectAfter(
+        () => ctx.getItemSlot("Move Region").click(),
+        regionMovedToSelection()
     );
     await openRegionEditor(ctx, importable.name);
 }
@@ -256,8 +233,10 @@ async function createRegionWithBounds(
     importable: ImportableRegion
 ): Promise<void> {
     await setDesiredRegionSelection(ctx, importable);
-    await ctx.runCommand(`/region create ${importable.name}`);
-    await timedWaitForUnformattedMessage(ctx, `Created region ${importable.name}!`);
+    await ctx.expectAfter(
+        () => ctx.runCommand(`/region create ${importable.name}`),
+        regionCreated(importable.name)
+    );
     await openRegionEditor(ctx, importable.name);
 }
 

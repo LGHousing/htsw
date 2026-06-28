@@ -1,34 +1,29 @@
-import {
-    timedWaitForMenu,
-    timedWaitForUnformattedMessage,
-} from "../../housingSync/gui/menuWait";
+import { timedWaitForMenu } from "../../housingSync/gui/menuWait";
+import { clickGoBack } from "../../housingSync/gui/menuUtils";
 import TaskContext from "../../tasks/context";
 import { MouseButton } from "../../tasks/specifics/slots";
 import { removedFormatting, unique } from "../../utils/helpers";
+import {
+    chatMessage,
+    menuCreated,
+    menuSettingsOpened,
+    oneOf,
+} from "../waiters";
 import { getSessionMenuNamesLower, noteMenuCreated } from "./listMenus";
 
 export async function openMenuEditor(
     ctx: TaskContext,
     name: string
 ): Promise<"opened" | "missing"> {
-    await ctx.runCommand(`/menu edit ${name}`);
-
-    const menuWait = timedWaitForMenu(ctx, "commandMenuWait");
-    const msgWait = ctx.waitFor(
-        "message",
-        (message) =>
-            removedFormatting(message) ===
-            "Could not find a custom menu with that title!"
-    );
-    const opened = await ctx.withTimeout(
-        ctx.race<boolean>([
-            [menuWait.then(() => true), menuWait],
-            [msgWait.then(() => false), msgWait],
-        ]),
-        "Waiting for menu to open"
+    const result = await ctx.expectAfter(
+        () => ctx.runCommand(`/menu edit ${name}`),
+        oneOf({
+            opened: menuSettingsOpened(name),
+            missing: chatMessage("Could not find a custom menu with that title!"),
+        })
     );
 
-    return opened ? "opened" : "missing";
+    return result;
 }
 
 /**
@@ -89,11 +84,11 @@ export async function ensureMenuNamesExist(
 
     for (const name of names) {
         if (!existing.has(name.toLowerCase())) {
-            await ctx.runCommand(`/menu create ${name}`);
-            await timedWaitForUnformattedMessage(
-                ctx,
-                `Created custom menu with the title ${name}!`
+            await ctx.expectAfter(
+                () => ctx.runCommand(`/menu create ${name}`),
+                menuCreated(name)
             );
+            await clickGoBack(ctx);
             noteMenuCreated(name);
         }
         onEach?.(name);

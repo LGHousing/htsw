@@ -64,6 +64,11 @@ const CHAT_MIN_INTERVAL_MS = 50;
  */
 const COMMAND_COOLDOWN_MS = 300;
 
+export type TaskWaiter<T> = {
+    label: string;
+    start(ctx: TaskContext): WaitForPromise<T>;
+};
+
 export default class TaskContext {
     private cancelled: boolean = false;
     private heatLevel: number = 0;
@@ -229,6 +234,21 @@ export default class TaskContext {
         };
         raced.catch(() => {});
         return raced;
+    }
+
+    public async expectAfter<T>(
+        action: () => void | Promise<unknown>,
+        waiterFactory: TaskWaiter<T>,
+        duration: number = 8000
+    ): Promise<T> {
+        const waiter = waiterFactory.start(this);
+        try {
+            await action();
+            return await this.withTimeout(waiter, waiterFactory.label, duration);
+        } catch (error) {
+            waiter.cleanupWaiter?.();
+            throw error;
+        }
     }
 
     /**

@@ -13,6 +13,11 @@ import TaskContext from "../../tasks/context";
 import { MouseButton } from "../../tasks/specifics/slots";
 import { removedFormatting, unique } from "../../utils/helpers";
 import {
+    chatMessage,
+    functionActionEditorOpened,
+    oneOf,
+} from "../waiters";
+import {
     createIconItem,
     desiredIconSnapshot,
     iconSnapshotsEqual,
@@ -45,24 +50,15 @@ export async function openFunctionEditor(
     ctx: TaskContext,
     name: string
 ): Promise<"opened" | "missing"> {
-    await ctx.runCommand(`/function edit ${name}`);
-
-    const menuWait = timedWaitForMenu(ctx, "commandMenuWait");
-    const msgWait = ctx.waitFor(
-        "message",
-        (message) =>
-            removedFormatting(message) ===
-            "Could not find a function with that name!"
-    );
-    const exists = await ctx.withTimeout(
-        ctx.race<boolean>([
-            [menuWait.then(() => true), menuWait],
-            [msgWait.then(() => false), msgWait],
-        ]),
-        "Waiting for function to open"
+    const result = await ctx.expectAfter(
+        () => ctx.runCommand(`/function edit ${name}`),
+        oneOf({
+            opened: functionActionEditorOpened(name),
+            missing: chatMessage("Could not find a function with that name!"),
+        })
     );
 
-    return exists ? "opened" : "missing";
+    return result;
 }
 
 export async function ensureFunctionExists(
@@ -72,8 +68,10 @@ export async function ensureFunctionExists(
     const status = await openFunctionEditor(ctx, name);
     if (status === "opened") return;
 
-    await ctx.runCommand(`/function create ${name}`);
-    await timedWaitForMenu(ctx, "commandMenuWait");
+    await ctx.expectAfter(
+        () => ctx.runCommand(`/function create ${name}`),
+        functionActionEditorOpened(name)
+    );
     noteFunctionCreated(name);
 }
 
@@ -98,8 +96,10 @@ export async function ensureFunctionNamesExist(
 
     for (let i = 0; i < missing.length; i++) {
         const name = missing[i];
-        await ctx.runCommand(`/function create ${name}`);
-        await timedWaitForMenu(ctx, "commandMenuWait");
+        await ctx.expectAfter(
+            () => ctx.runCommand(`/function create ${name}`),
+            functionActionEditorOpened(name)
+        );
         await clickGoBack(ctx);
         noteFunctionCreated(name);
     }

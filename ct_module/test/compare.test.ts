@@ -1,5 +1,11 @@
 import { describe, expect, test } from "vitest";
-import type { Action, ActionPlaySound, ConditionCompareVar } from "htsw/types";
+import type {
+    Action,
+    ActionLaunch,
+    ActionPauseExecution,
+    ActionPlaySound,
+    ConditionCompareVar,
+} from "htsw/types";
 
 import {
     normalizeActionCompare,
@@ -66,6 +72,33 @@ describe("normalizeActionCompare — value-kind numeric coercion", () => {
         const observed = playSound({ volume: "0.7x" as unknown as number });
         const desired = playSound({ volume: 0.7 });
         expect(actionsCompareEqual(observed, desired)).toBe(false);
+    });
+
+    test("required numeric PAUSE ticks compare from lore string to source number", () => {
+        const observed: ActionPauseExecution = {
+            type: "PAUSE",
+            ticks: "1" as unknown as number,
+        };
+        const desired: ActionPauseExecution = {
+            type: "PAUSE",
+            ticks: 1,
+        };
+        expect(actionsCompareEqual(observed, desired)).toBe(true);
+    });
+
+    test("required numeric LAUNCH strength compare from lore string to source number", () => {
+        const location: ActionLaunch["location"] = { type: "House Spawn Location" };
+        const observed: ActionLaunch = {
+            type: "LAUNCH",
+            location,
+            strength: "1" as unknown as number,
+        };
+        const desired: ActionLaunch = {
+            type: "LAUNCH",
+            location,
+            strength: 1,
+        };
+        expect(actionsCompareEqual(observed, desired)).toBe(true);
     });
 
     test("large variable integers compare as exact text", () => {

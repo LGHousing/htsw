@@ -24,7 +24,12 @@ function getTrustedBaselineActionList(
     plan: ImportableTrustPlan | undefined,
     basePath: string
 ): readonly Action[] | undefined {
-    if (plan === undefined || plan.entry === null || !plan.trustMode) {
+    if (
+        plan === undefined ||
+        plan.entry === null ||
+        !plan.trustMode ||
+        !plan.trustedListPaths.has(basePath)
+    ) {
         return undefined;
     }
     return readCachedActionList(plan.entry.importable, basePath) ?? [];

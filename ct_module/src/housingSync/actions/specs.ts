@@ -22,6 +22,7 @@ import {
     readOpenApplyInventoryLayout,
     readOpenSetMenu,
     readOpenDropItem,
+    readOpenPause,
     readOpenLaunch,
     readOpenMessage,
 } from "./readers";
@@ -214,6 +215,7 @@ const ACTION_SPECS = {
     },
     PAUSE: {
         displayName: ACTION_MAPPINGS.PAUSE.displayName,
+        read: readOpenPause,
         write: writePause,
     },
     SET_TEAM: {

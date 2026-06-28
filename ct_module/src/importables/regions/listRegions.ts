@@ -1,6 +1,5 @@
 import TaskContext from "../../tasks/context";
 import type { Pos } from "htsw/types";
-import { timedWaitForMenu } from "../../housingSync/gui/menuWait";
 import {
     getVisiblePaginatedItemSlots,
     isEmptyPaginatedPlaceholder,
@@ -8,6 +7,7 @@ import {
     type PaginatedListConfig,
 } from "../../housingSync/gui/paginatedList";
 import { removedFormatting } from "../../utils/helpers";
+import { regionListOpened } from "../waiters";
 
 const REGION_LIST_CONFIG: PaginatedListConfig = {
     label: "region",
@@ -64,8 +64,10 @@ function parseRegionBounds(lore: string[]): { from: Pos; to: Pos } | null {
 }
 
 export async function listAllRegions(ctx: TaskContext): Promise<RegionListEntry[]> {
-    await ctx.runCommand("/regions");
-    await timedWaitForMenu(ctx, "commandMenuWait");
+    await ctx.expectAfter(
+        () => ctx.runCommand("/regions"),
+        regionListOpened()
+    );
 
     return await readPaginatedList<RegionListEntry>(
         ctx,

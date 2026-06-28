@@ -1,5 +1,5 @@
 /**
- * Low-level menu/message wait primitives, broken out from helpers.ts so
+ * Low-level menu wait primitives, broken out from helpers.ts so
  * paginatedList.ts can depend on them without creating a helpers ↔
  * paginatedList cycle (helpers.ts uses paginatedList for note-on-last-slot,
  * paginatedList needs `timedWaitForMenu` for page turns).
@@ -8,9 +8,14 @@
  * Click + wait pairs live in helpers.ts.
  */
 import TaskContext from "../../tasks/context";
-import { removedFormatting } from "../../utils/helpers";
 import { describeGuiScreenMenu, getDisplayedGuiMenuState, getMenuItemSlots, getOpenContainerWindowId, menuStateDescription } from "../../tasks/specifics/slots";
-import { S2DPacketOpenWindow, S30PacketWindowItems } from "../../utils/packets";
+import {
+    S2DPacketOpenWindow,
+    S30PacketWindowItems,
+    openWindowPacketId,
+    windowItemsPacketId,
+    windowItemsPacketStacks,
+} from "../../utils/packets";
 import { describeRecentWindowOpens, type WaitForPromise } from "../../tasks/specifics/waitFor";
 import { COST } from "../progress/costs";
 import { timed } from "../progress/timing";
@@ -32,22 +37,6 @@ const MENU_WAIT_TIMEOUT_MS = 6000;
 // cascading into a confusing downstream error.
 const CONTAINER_SWITCH_MAX_TICKS = 80;
 
-function s2dWindowId(packet: unknown): number | null {
-    try {
-        return (packet as { func_148901_c(): number }).func_148901_c();
-    } catch (_e) {
-        return null;
-    }
-}
-
-function s30WindowId(packet: unknown): number | null {
-    try {
-        return (packet as { func_148911_c(): number }).func_148911_c();
-    } catch (_e) {
-        return null;
-    }
-}
-
 const PLAYER_INVENTORY_SLOTS = 36;
 
 // Non-null menu items the WindowItems snapshot carries (its full array minus
@@ -56,17 +45,13 @@ const PLAYER_INVENTORY_SLOTS = 36;
 // exactly how many items the container will hold once the menu is fully
 // applied — our deterministic "menu ready" target.
 function s30MenuItemCount(packet: unknown): number {
-    try {
-        const items = (packet as { func_148910_d(): unknown[] }).func_148910_d();
-        const end = Math.max(0, items.length - PLAYER_INVENTORY_SLOTS);
-        let n = 0;
-        for (let i = 0; i < end; i++) {
-            if (items[i] !== null && items[i] !== undefined) n++;
-        }
-        return n;
-    } catch (_e) {
-        return 0;
+    const items = windowItemsPacketStacks(packet);
+    const end = Math.max(0, items.length - PLAYER_INVENTORY_SLOTS);
+    let n = 0;
+    for (let i = 0; i < end; i++) {
+        if (items[i] !== null && items[i] !== undefined) n++;
     }
+    return n;
 }
 
 function openContainerItemCount(): number {
@@ -79,11 +64,7 @@ function openContainerItemCount(): number {
 // container's getSize() to detect a window-size-vs-packet skew when the live
 // item count under-reads the snapshot.
 function s30SlotCount(packet: unknown): number {
-    try {
-        return (packet as { func_148910_d(): unknown[] }).func_148910_d().length;
-    } catch (_e) {
-        return 0;
-    }
+    return windowItemsPacketStacks(packet).length;
 }
 
 type MenuWaitState = {
@@ -316,7 +297,7 @@ export function waitForMenu(
         // them, landing us in the wrong menu.
         packetWaiter = ctx.waitFor("packetReceived", (packet) => {
             if (packet instanceof S2DPacketOpenWindow) {
-                const id = s2dWindowId(packet);
+                const id = openWindowPacketId(packet);
                 if (id !== null && id !== 0) {
                     state.openedWindowId = id;
                     traceMenuWait("openWindow", { windowId: id });
@@ -324,7 +305,7 @@ export function waitForMenu(
                 return false;
             }
             if (state.openedWindowId !== null && packet instanceof S30PacketWindowItems) {
-                if (s30WindowId(packet) !== state.openedWindowId) return false;
+                if (windowItemsPacketId(packet) !== state.openedWindowId) return false;
                 state.expectedItems = s30MenuItemCount(packet);
                 state.snapshotSlots = s30SlotCount(packet);
                 traceMenuWait("windowItems", {
@@ -404,29 +385,4 @@ export function timedWaitForMenu(
                 ? COST.commandMenuWait
                 : COST.menuClickWait;
     return timed(kind, expected, () => waitForMenu(ctx));
-}
-
-async function waitForUnformattedMessage(
-    ctx: TaskContext,
-    message: string
-): Promise<void> {
-    await ctx.withTimeout(
-        ctx.waitFor(
-            "message",
-            (chatMessage) => removedFormatting(chatMessage) === message
-        ),
-        "Waiting for message in chat"
-    );
-}
-
-export async function timedWaitForUnformattedMessage(
-    ctx: TaskContext,
-    message: string,
-    kind: "commandMessageWait" | "messageClickWait" = "commandMessageWait"
-): Promise<void> {
-    await timed(
-        kind,
-        kind === "messageClickWait" ? COST.messageClickWait : COST.commandMessageWait,
-        () => waitForUnformattedMessage(ctx, message)
-    );
 }

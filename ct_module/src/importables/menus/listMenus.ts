@@ -1,5 +1,4 @@
 import TaskContext from "../../tasks/context";
-import { timedWaitForMenu } from "../../housingSync/gui/menuWait";
 import {
     getVisiblePaginatedItemSlots,
     isEmptyPaginatedPlaceholder,
@@ -7,6 +6,7 @@ import {
     type PaginatedListConfig,
 } from "../../housingSync/gui/paginatedList";
 import { removedFormatting } from "../../utils/helpers";
+import { menuListOpened } from "../waiters";
 
 const MENU_LIST_CONFIG: PaginatedListConfig = {
     label: "menu",
@@ -69,8 +69,10 @@ function extractMenuNameFromSlot(rawDisplayName: string): string | null {
 }
 
 export async function listAllMenuNames(ctx: TaskContext): Promise<string[]> {
-    await ctx.runCommand("/menus");
-    await timedWaitForMenu(ctx, "commandMenuWait");
+    await ctx.expectAfter(
+        () => ctx.runCommand("/menus"),
+        menuListOpened()
+    );
 
     type Entry = { index: number; name: string };
     const entries = await readPaginatedList<Entry>(

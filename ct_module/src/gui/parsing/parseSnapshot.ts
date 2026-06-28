@@ -21,9 +21,9 @@
  * recorded mtime, or we fall through to a full parse. Missing included import.json files are stored in the
  * fingerprint with mtime 0, so creating them invalidates the snapshot.
  *
- * Parser-output shape changes must bump the snapshot `version` below.
- * Tying snapshots to the deployed GUI bundle mtime made every UI-only
- * deploy force a full reparse of every project on first open.
+ * Parser-output shape or persisted hash changes must bump the snapshot
+ * `version` below. Tying snapshots to the deployed GUI bundle mtime made
+ * every UI-only deploy force a full reparse of every project on first open.
  */
 
 import {
@@ -50,6 +50,7 @@ import {
 } from "./importablePaths";
 
 const SNAPSHOT_DIR = "./htsw/.parse-snapshots";
+const SNAPSHOT_VERSION = 12;
 
 // importJson.fileTree with each importable replaced by its index into the
 // snapshot's flat `importables` array — serializing the objects in place
@@ -84,7 +85,7 @@ type SnapshotDiagnostic = {
 };
 
 type Snapshot = {
-    version: 11;
+    version: typeof SNAPSHOT_VERSION;
     importJsonPath: string;
     fingerprint: { [path: string]: number };
     importables: Importable[];
@@ -124,7 +125,7 @@ export function loadSnapshot(importJsonPath: string): Snapshot | null {
         const raw = String(FileLib.read(p) ?? "");
         if (raw.length === 0) return null;
         const parsed = JSON.parse(raw) as Snapshot;
-        if (parsed.version !== 11) return null;
+        if (parsed.version !== SNAPSHOT_VERSION) return null;
         if (parsed.importJsonPath !== importJsonPath) return null;
         if (!Array.isArray(parsed.importables)) return null;
         if (!Array.isArray(parsed.sourcePaths)) return null;
@@ -257,7 +258,7 @@ export function saveSnapshot(
     const fingerprint: { [path: string]: number } = {};
     for (const k in watchedMtimes) fingerprint[k] = watchedMtimes[k];
     const snapshot: Snapshot = {
-        version: 11,
+        version: SNAPSHOT_VERSION,
         importJsonPath,
         fingerprint,
         importables: result.value,

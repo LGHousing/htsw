@@ -3,6 +3,7 @@ import type { Action, ImportableFunction } from "htsw/types";
 
 import type { ImportableCacheEntry } from "../src/importCache/cache";
 import { listHashes } from "../src/importCache/hash";
+import { hasTrustedActionListBaseline } from "../src/importables/actionListHelpers";
 import { trustedListPathsForImportable } from "../src/importCache/trust";
 import { estimateImportableUnits } from "../src/housingSync/progress/costs";
 
@@ -67,5 +68,23 @@ describe("trustedListPathsForImportable", () => {
         const trustOn = estimateImportableUnits(desired, entry, true);
 
         expect(trustOn).toBeLessThan(trustOff);
+    });
+
+    it("does not treat an untrusted cached top-level list as live observed slots", () => {
+        const cached = fn([chat("old")]);
+        const desired = fn([chat("new")]);
+        const trustedListPaths = trustedListPathsForImportable(desired, listHashes(cached));
+
+        expect(trustedListPaths.has("actions")).toBe(false);
+        expect(hasTrustedActionListBaseline({
+            importable: desired,
+            identity: desired.name,
+            entry: cacheEntry(cached),
+            sourceHash: "unused",
+            cacheHash: "unused",
+            trustMode: true,
+            wholeImportableTrusted: false,
+            trustedListPaths,
+        }, "actions")).toBe(false);
     });
 });

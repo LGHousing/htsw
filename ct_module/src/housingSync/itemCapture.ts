@@ -9,6 +9,7 @@ import { removedFormatting } from "../utils/helpers";
 import { clickGoBack } from "./gui/menuUtils";
 import { timedWaitForMenu } from "./gui/menuWait";
 import {
+    SET_SLOT_ACK_MAX_TICKS,
     SET_SLOT_ACK_TIMEOUT_MS,
     sendCreativeInventoryAction,
     waitForAnySetSlot,
@@ -18,6 +19,7 @@ import { traceNote } from "./trace/importTrace";
 const SCRATCH_PACKET_SLOT = 26;
 const INVENTORY_SIZE = 36;
 
+type InventoryView = "player" | "openContainer";
 type InventorySnapshotEntry = {
     slotId: number;
     nbt: string | null;
@@ -237,31 +239,24 @@ function getStackCount(stack: any): number {
 }
 
 export function snapshotInventory(): InventorySnapshot {
-    const inv = Player.getInventory();
+    return snapshotInventoryView("player");
+}
+
+function snapshotOpenContainerInventory(): InventorySnapshot {
+    return snapshotInventoryView("openContainer");
+}
+
+function snapshotInventoryView(view: InventoryView): InventorySnapshot {
     const snapshot: InventorySnapshot = [];
-    if (inv === null || inv === undefined) return snapshot;
     for (let i = 0; i < INVENTORY_SIZE; i++) {
-        const stack = inv.getStackInSlot(i);
-        if (stack === null || stack === undefined) {
-            snapshot.push({ slotId: i, nbt: null, count: 0 });
-            continue;
-        }
-        const canonical = snbtFromItem(stack, { pretty: false });
-        snapshot.push({
-            slotId: i,
-            nbt: canonical,
-            count: getStackCount(stack),
-        });
+        snapshot.push(readInventoryEntry(i, view));
     }
     return snapshot;
 }
 
-function isInventoryFull(): boolean {
-    const inv = Player.getInventory();
-    if (inv === null || inv === undefined) return false;
+function isInventoryFull(view: InventoryView): boolean {
     for (let i = 0; i < INVENTORY_SIZE; i++) {
-        const stack = inv.getStackInSlot(i);
-        if (stack === null || stack === undefined) return false;
+        if (readInventoryEntry(i, view).nbt === null) return false;
     }
     return true;
 }
@@ -285,11 +280,119 @@ function diffForCapture(
 }
 
 function mergeKey(snbt: string | null): string | null {
-    return snbt === null ? null : rewriteSnbtCount(snbt, 1);
+    if (snbt === null) return null;
+    try {
+        return canonicalItemKey(getItemFromSnbt(rewriteSnbtCount(snbt, 1)));
+    } catch (_error) {
+        return rewriteSnbtCount(snbt, 1);
+    }
+}
+
+function primitiveTagString(tag: TagLike | undefined): string {
+    if (tag === undefined) return "";
+    return String(tag.value);
+}
+
+function stackMergeCandidateKey(snbt: string | null): string | null {
+    if (snbt === null) return null;
+    try {
+        const tag = htsw.nbt.parseSnbtText(rewriteSnbtCount(snbt, 1)) as TagLike;
+        if (tag.type !== "compound") return null;
+        const damage = primitiveTagString(tagChild(tag, "Damage")) || "0";
+        return `id=${primitiveTagString(tagChild(tag, "id"))};damage=${damage}`;
+    } catch (_error) {
+        return null;
+    }
 }
 
 function inventorySlotToPacketSlot(slotId: number): number {
     return slotId < 9 ? 36 + slotId : slotId;
+}
+
+function inventorySlotToOpenContainerSlot(slotId: number): number | null {
+    const container = Player.getContainer();
+    if (container === null || container === undefined) return null;
+    const size = container.getSize();
+    if (size < INVENTORY_SIZE) return null;
+    if (slotId < 9) return size - 9 + slotId;
+    return size - INVENTORY_SIZE + (slotId - 9);
+}
+
+function shortHash(value: string | null): string {
+    if (value === null) return "null";
+    let hash = 0;
+    for (let i = 0; i < value.length; i++) {
+        hash = ((hash << 5) - hash + value.charCodeAt(i)) | 0;
+    }
+    return String(hash);
+}
+
+function inventoryEntrySummary(
+    entry: InventorySnapshotEntry,
+    targetKey: string,
+    targetMergeKey: string | null,
+    view: InventoryView
+): string {
+    const key = mergeKey(entry.nbt);
+    const candidateKey = stackMergeCandidateKey(entry.nbt);
+    const containerSlot = view === "openContainer"
+        ? inventorySlotToOpenContainerSlot(entry.slotId)
+        : null;
+    return `slot=${entry.slotId} packet=${inventorySlotToPacketSlot(entry.slotId)} container=${containerSlot === null ? "none" : containerSlot} count=${entry.count} identityMatch=${key === targetKey} mergeMatch=${targetMergeKey !== null && candidateKey === targetMergeKey} key=${shortHash(key)} merge=${shortHash(candidateKey)}`;
+}
+
+function entryFromItem(slotId: number, stack: Item | null | undefined): InventorySnapshotEntry {
+    const nbt = stack === null || stack === undefined ? null : snbtFromItem(stack, { pretty: false });
+    if (nbt === null) return { slotId, nbt: null, count: 0 };
+    return { slotId, nbt, count: getStackCount(stack) };
+}
+
+function playerInventoryEntry(slotId: number): InventorySnapshotEntry {
+    return entryFromItem(slotId, Player.getInventory()?.getStackInSlot(slotId));
+}
+
+function openContainerInventoryEntry(slotId: number): InventorySnapshotEntry {
+    const containerSlot = inventorySlotToOpenContainerSlot(slotId);
+    if (containerSlot !== null) {
+        const item = Player.getContainer()?.getItems()?.[containerSlot];
+        return entryFromItem(slotId, item);
+    }
+    return playerInventoryEntry(slotId);
+}
+
+function readInventoryEntry(slotId: number, view: InventoryView): InventorySnapshotEntry {
+    return view === "openContainer"
+        ? openContainerInventoryEntry(slotId)
+        : playerInventoryEntry(slotId);
+}
+
+function inventoryEntryMatches(
+    entry: InventorySnapshotEntry,
+    expectedNbt: string | null,
+    expectedCount: number
+): boolean {
+    return entry.nbt === expectedNbt && entry.count === expectedCount;
+}
+
+async function waitForInventorySlotMatch(
+    ctx: TaskContext,
+    view: InventoryView,
+    slotId: number,
+    expectedNbt: string | null,
+    expectedCount: number
+): Promise<boolean> {
+    let stableTicks = 0;
+    for (let i = 0; i < SET_SLOT_ACK_MAX_TICKS; i++) {
+        const entry = readInventoryEntry(slotId, view);
+        if (inventoryEntryMatches(entry, expectedNbt, expectedCount)) {
+            stableTicks++;
+            if (stableTicks >= 2) return true;
+        } else {
+            stableTicks = 0;
+        }
+        await ctx.waitFor("tick");
+    }
+    return inventoryEntryMatches(readInventoryEntry(slotId, view), expectedNbt, expectedCount);
 }
 
 async function waitForSetSlotAck(
@@ -309,13 +412,29 @@ async function waitForSetSlotAck(
 
 async function clearMergeCandidates(
     ctx: TaskContext,
+    view: InventoryView,
     snapshot: InventorySnapshot,
-    targetKey: string
+    targetKey: string,
+    targetMergeKey: string | null
 ): Promise<void> {
     let cleared = false;
+    const nonEmpty: string[] = [];
+    for (let i = 0; i < snapshot.length; i++) {
+        if (snapshot[i].nbt !== null) nonEmpty.push(inventoryEntrySummary(snapshot[i], targetKey, targetMergeKey, view));
+    }
+    traceNote(
+        "item-capture",
+        `clear merge candidates target=${shortHash(targetKey)} merge=${shortHash(targetMergeKey)} inventory=[${nonEmpty.join("; ")}]`
+    );
     for (let i = 0; i < snapshot.length; i++) {
         const entry = snapshot[i];
-        if (mergeKey(entry.nbt) !== targetKey) continue;
+        const entryKey = mergeKey(entry.nbt);
+        const entryMergeKey = stackMergeCandidateKey(entry.nbt);
+        if (entryKey !== targetKey && (targetMergeKey === null || entryMergeKey !== targetMergeKey)) continue;
+        traceNote(
+            "item-capture",
+            `clear merge candidate ${inventoryEntrySummary(entry, targetKey, targetMergeKey, view)}`
+        );
         sendCreativeInventoryAction(
             ctx,
             inventorySlotToPacketSlot(entry.slotId),
@@ -323,8 +442,26 @@ async function clearMergeCandidates(
         );
         cleared = true;
         await waitForSetSlotAck(ctx, `clear merge slot ${entry.slotId}`);
+        const matched = await waitForInventorySlotMatch(ctx, view, entry.slotId, null, 0);
+        traceNote(
+            "item-capture",
+            `after clear wait settled=${matched} ${inventoryEntrySummary(readInventoryEntry(entry.slotId, view), targetKey, targetMergeKey, view)}`
+        );
     }
-    if (cleared) await ctx.waitFor("tick");
+    if (cleared) {
+        await ctx.waitFor("tick");
+        const afterTick: string[] = [];
+        for (let i = 0; i < snapshot.length; i++) {
+            const entry = snapshot[i];
+            if (
+                mergeKey(entry.nbt) === targetKey ||
+                (targetMergeKey !== null && stackMergeCandidateKey(entry.nbt) === targetMergeKey)
+            ) {
+                afterTick.push(inventoryEntrySummary(readInventoryEntry(entry.slotId, view), targetKey, targetMergeKey, view));
+            }
+        }
+        traceNote("item-capture", `after clear tick inventory=[${afterTick.join("; ")}]`);
+    }
 }
 
 function findCapturedMatchingStack(
@@ -340,6 +477,53 @@ function findCapturedMatchingStack(
         found = { snbt: rewriteSnbtCount(entry.nbt, actionItemCount) };
     }
     return found;
+}
+
+function snapshotHasMatchingStack(
+    snapshot: InventorySnapshot,
+    targetKey: string
+): boolean {
+    for (let i = 0; i < snapshot.length; i++) {
+        if (mergeKey(snapshot[i].nbt) === targetKey) return true;
+    }
+    return false;
+}
+
+function capturedFromInventory(
+    baseline: InventorySnapshot,
+    current: InventorySnapshot,
+    targetKey: string,
+    actionItemCount: number
+): { snbt: string } | null {
+    const changed = diffForCapture(baseline, current, actionItemCount);
+    if (changed !== null) return changed;
+    if (snapshotHasMatchingStack(baseline, targetKey)) return null;
+    return findCapturedMatchingStack(current, targetKey, actionItemCount);
+}
+
+async function waitForCapturedInventoryChange(
+    ctx: TaskContext,
+    view: InventoryView,
+    baseline: InventorySnapshot,
+    targetKey: string,
+    actionItemCount: number
+): Promise<{ snbt: string } | null> {
+    for (let i = 0; i < SET_SLOT_ACK_MAX_TICKS; i++) {
+        const captured = capturedFromInventory(
+            baseline,
+            snapshotInventoryView(view),
+            targetKey,
+            actionItemCount
+        );
+        if (captured !== null) return captured;
+        await ctx.waitFor("tick");
+    }
+    return capturedFromInventory(
+        baseline,
+        snapshotInventoryView(view),
+        targetKey,
+        actionItemCount
+    );
 }
 
 function rewriteSnbtCount(snbt: string, newCount: number): string {
@@ -396,6 +580,7 @@ export async function captureItemFromOpenEditorField(
         const actionItemCount = getStackCount(currentItemSlot.getItem());
         const currentSnbt = snbtFromItem(currentItemSlot.getItem(), { pretty: false });
         const targetKey = mergeKey(currentSnbt);
+        const targetMergeKey = stackMergeCandidateKey(currentSnbt);
         if (targetKey === null) {
             ctx.displayMessage(
                 `&7[item-capture] &eCould not read current item NBT for "${displayNameHint}".`
@@ -403,29 +588,26 @@ export async function captureItemFromOpenEditorField(
             return null;
         }
 
-        const before = snapshotInventory();
+        const inventoryView: InventoryView = "openContainer";
+        const originalInventory = snapshotOpenContainerInventory();
         try {
-            await clearMergeCandidates(ctx, before, targetKey);
+            await clearMergeCandidates(ctx, inventoryView, originalInventory, targetKey, targetMergeKey);
 
-            if (isInventoryFull()) {
+            if (isInventoryFull(inventoryView)) {
                 sendCreativeInventoryAction(ctx, SCRATCH_PACKET_SLOT, null);
                 await waitForSetSlotAck(ctx, "scratch clear ack");
-                await ctx.waitFor("tick");
+                await waitForInventorySlotMatch(ctx, inventoryView, SCRATCH_PACKET_SLOT, null, 0);
             }
 
+            const captureBaseline = snapshotOpenContainerInventory();
             currentItemSlot.click();
-            await waitForSetSlotAck(ctx, `current-item copy ack for "${displayNameHint}"`);
-            await ctx.waitFor("tick");
-
-            const after = snapshotInventory();
-            let captured = findCapturedMatchingStack(
-                after,
+            const captured = await waitForCapturedInventoryChange(
+                ctx,
+                inventoryView,
+                captureBaseline,
                 targetKey,
                 actionItemCount
             );
-            if (captured === null) {
-                captured = diffForCapture(before, after, actionItemCount);
-            }
             if (captured === null) {
                 ctx.displayMessage(
                     `&7[item-capture] &eNo inventory change for "${displayNameHint}".`
@@ -435,7 +617,7 @@ export async function captureItemFromOpenEditorField(
 
             registered = registry.register(captured.snbt, displayNameHint);
         } finally {
-            await restoreInventoryToSnapshot(ctx, before);
+            await restoreInventoryToSnapshot(ctx, originalInventory, inventoryView);
         }
     } finally {
         await clickGoBack(ctx);
@@ -446,21 +628,13 @@ export async function captureItemFromOpenEditorField(
 
 export async function restoreInventoryToSnapshot(
     ctx: TaskContext,
-    snapshot: InventorySnapshot
+    snapshot: InventorySnapshot,
+    view: InventoryView = "player"
 ): Promise<void> {
-    const inv = Player.getInventory();
-    if (inv === null || inv === undefined) return;
-
     for (let si = 0; si < snapshot.length; si++) {
         const entry = snapshot[si];
-        const current = inv.getStackInSlot(entry.slotId);
-        const currentNbt =
-            current === null || current === undefined
-                ? null
-                : snbtFromItem(current, { pretty: false });
-        const currentCount = getStackCount(current);
-
-        if (currentNbt === entry.nbt && currentCount === entry.count) continue;
+        const current = readInventoryEntry(entry.slotId, view);
+        if (inventoryEntryMatches(current, entry.nbt, entry.count)) continue;
 
         const packetSlot = inventorySlotToPacketSlot(entry.slotId);
         let desiredStack: any = null;
@@ -487,6 +661,14 @@ export async function restoreInventoryToSnapshot(
             );
         } catch (error) {
             traceNote("item-capture", `restore slot ${entry.slotId} ack timeout: ${error}`);
+        }
+        const restored = await waitForInventorySlotMatch(ctx, view, entry.slotId, entry.nbt, entry.count);
+        if (!restored) {
+            const currentEntry = readInventoryEntry(entry.slotId, view);
+            traceNote(
+                "item-capture",
+                `restore slot ${entry.slotId} did not settle at snapshot; now nbt=${shortHash(currentEntry.nbt)} count=${currentEntry.count}`
+            );
         }
     }
 }

@@ -6,7 +6,11 @@ import { ItemSlot, MouseButton, menuStateDescription } from "../../tasks/specifi
 // MC 1.8.9 anvil rename field cap (GuiRepair name field maxStringLength).
 const ANVIL_NAME_MAX = 35;
 import { removedFormatting } from "../../utils/helpers";
-import { S2DPacketOpenWindow } from "../../utils/packets";
+import {
+    S2DPacketOpenWindow,
+    openWindowPacketGuiId,
+    openWindowPacketId,
+} from "../../utils/packets";
 import {
     normalizeLoreValueFormatting,
     normalizeNoteText,
@@ -173,14 +177,6 @@ function acceptNewAnvilItem(): void {
         throw new Error("No open container found");
     }
     inventory.click(2, false);
-}
-
-function openWindowId(packet: unknown): number {
-    try {
-        return (packet as { func_148901_c(): number }).func_148901_c();
-    } catch (_e) {
-        return 0;
-    }
 }
 
 export async function setListItemNote(
@@ -437,15 +433,12 @@ export async function enterValue(ctx: TaskContext, value: string): Promise<"CHAT
     const anvilWait = ctx.waitFor("packetReceived", (packet) => {
         return (
             packet instanceof S2DPacketOpenWindow &&
-            packet
-                .func_148902_e
-                /*getGuiId*/
-                () === "minecraft:anvil"
+            openWindowPacketGuiId(packet) === "minecraft:anvil"
         );
     });
     const anvilMode = anvilWait.then((args) => ({
         mode: "ANVIL" as const,
-        windowId: openWindowId(args[0]),
+        windowId: openWindowPacketId(args[0]) ?? 0,
     }));
     const inputMode = await ctx.withTimeout(
         ctx.race<"CHAT" | { mode: "ANVIL"; windowId: number }>([
@@ -534,16 +527,13 @@ export async function setStringOrPaginatedOptionValue(
     const anvilWait = ctx.waitFor("packetReceived", (packet) => {
         return (
             packet instanceof S2DPacketOpenWindow &&
-            packet
-                .func_148902_e
-                /*getGuiId*/
-                () === "minecraft:anvil"
+            openWindowPacketGuiId(packet) === "minecraft:anvil"
         );
     });
     const menuWait = waitForMenu(ctx);
     const anvilMode = anvilWait.then((args) => ({
         mode: "ANVIL" as const,
-        windowId: openWindowId(args[0]),
+        windowId: openWindowPacketId(args[0]) ?? 0,
     }));
     const inputMode = await ctx.withTimeout(
         ctx.race<"CHAT" | "MENU" | { mode: "ANVIL"; windowId: number }>([

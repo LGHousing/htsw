@@ -1,12 +1,14 @@
-import { timedWaitForMenu } from "../../housingSync/gui/menuWait";
 import TaskContext from "../../tasks/context";
 import { getMenuItemSlots } from "../../tasks/specifics/slots";
 import { removedFormatting } from "../../utils/helpers";
+import { eventActionsOpened } from "../waiters";
 import { extractEventNameFromSlot } from "./shared";
 
 export async function listAllEventNames(ctx: TaskContext): Promise<string[]> {
-    await ctx.runCommand("/eventactions");
-    await timedWaitForMenu(ctx, "commandMenuWait");
+    await ctx.expectAfter(
+        () => ctx.runCommand("/eventactions"),
+        eventActionsOpened()
+    );
 
     const slots = getMenuItemSlots();
     if (slots === null) return [];

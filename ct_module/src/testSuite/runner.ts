@@ -1,4 +1,4 @@
-import type { Action, Importable } from "htsw/types";
+import type { Action, Condition, Importable } from "htsw/types";
 
 import TaskContext from "../tasks/context";
 import { getCurrentHousingUuid } from "../importCache";
@@ -34,7 +34,6 @@ import type {
     ConditionListOperation,
     NestedListDiff,
 } from "../housingSync/types";
-import type { Condition } from "htsw/types";
 import {
     HOTBAR_ZERO_PACKET_SLOT,
     SET_SLOT_ACK_TIMEOUT_MS,
@@ -234,7 +233,10 @@ function residualPlanOperations(plan: ImportablePlan): string[] {
     switch (plan.kind) {
         case "FUNCTION": {
             const failures = actionPlanFailures("actions", plan.actionsPlan);
-            if (!plan.settingsHandled) failures.push("settings still need import");
+            const settingsFailures = functionSettingsPlanFailures(plan);
+            for (let i = 0; i < settingsFailures.length; i++) {
+                failures.push(settingsFailures[i]);
+            }
             return failures;
         }
         case "EVENT":
@@ -291,6 +293,23 @@ function residualPlanOperations(plan: ImportablePlan): string[] {
             return _exhaustive;
         }
     }
+}
+
+function functionSettingsPlanFailures(
+    plan: Extract<ImportablePlan, { kind: "FUNCTION" }>
+): string[] {
+    if (plan.settingsPlan === null) return [];
+    const failures: string[] = [];
+    if (plan.settingsPlan.iconNeedsApply) {
+        failures.push("settings icon differs");
+    }
+    const automaticExecution = plan.settingsPlan.automaticExecution;
+    if (automaticExecution.needsApply) {
+        failures.push(
+            `settings automatic execution read=${automaticExecution.current} want=${automaticExecution.desired}`
+        );
+    }
+    return failures;
 }
 
 function actionPlanFailures(

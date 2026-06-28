@@ -252,7 +252,7 @@ export const ACTION_MAPPINGS = {
     PAUSE: {
         displayName: "Pause Execution",
         loreFields: {
-            "Ticks To Wait": { prop: "ticks", kind: "value" },
+            "Ticks To Wait": { prop: "ticks", kind: "value", numeric: true },
         },
     },
 
@@ -322,7 +322,7 @@ export const ACTION_MAPPINGS = {
         displayName: "Launch to Target",
         loreFields: {
             "Target Location": { prop: "location", kind: "location" },
-            "Launch Strength": { prop: "strength", kind: "value" },
+            "Launch Strength": { prop: "strength", kind: "value", numeric: true },
         },
     },
 
@@ -374,7 +374,7 @@ export const ACTION_MAPPINGS = {
 
 export function getActionLoreFields(
     type: Action["type"]
-): Record<string, { prop: string; kind: UiFieldKind; default?: unknown }> {
+): Record<string, { prop: string; kind: UiFieldKind; default?: unknown; numeric?: boolean }> {
     return ACTION_MAPPINGS[type].loreFields;
 }
 
@@ -392,17 +392,21 @@ export function getActionFieldKind(type: string, prop: string): UiFieldKind | un
     return getActionFieldSpec(type, prop)?.kind;
 }
 
+export function getActionFieldNumeric(type: string, prop: string): boolean {
+    return getActionFieldSpec(type, prop)?.numeric === true;
+}
+
 function getActionFieldSpec(
     type: string,
     prop: string
-): { prop: string; kind: UiFieldKind; default?: unknown; options?: readonly string[] } | undefined {
+): { prop: string; kind: UiFieldKind; default?: unknown; numeric?: boolean; options?: readonly string[] } | undefined {
     const mapping = (
         ACTION_MAPPINGS as Record<
             string,
             | {
                   loreFields: Record<
                       string,
-                      { prop: string; kind: UiFieldKind; default?: unknown; options?: readonly string[] }
+                      { prop: string; kind: UiFieldKind; default?: unknown; numeric?: boolean; options?: readonly string[] }
                   >;
               }
             | undefined

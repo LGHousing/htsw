@@ -8,6 +8,7 @@ import type {
     ActionFailParkour,
     ActionFunction,
     ActionLaunch,
+    ActionPauseExecution,
     ActionPlaySound,
     ActionRandom,
     ActionSetCompassTarget,
@@ -293,6 +294,21 @@ export async function readOpenDropItem({
     return base;
 }
 
+export async function readOpenPause({
+    ctx,
+    current,
+}: ActionReadArgs<ActionPauseExecution>): Promise<Observed<ActionPauseExecution>> {
+    const base: Observed<ActionPauseExecution> =
+        current ?? { type: "PAUSE", ticks: 0 };
+    refreshStringFieldFromEditor(
+        ctx,
+        base,
+        getActionFieldLabel("PAUSE", "ticks"),
+        "ticks"
+    );
+    return base;
+}
+
 export async function readOpenLaunch({
     ctx,
     current,
@@ -303,6 +319,12 @@ export async function readOpenLaunch({
         ctx,
         base,
         getActionFieldLabel("LAUNCH", "location")
+    );
+    refreshStringFieldFromEditor(
+        ctx,
+        base,
+        getActionFieldLabel("LAUNCH", "strength"),
+        "strength"
     );
     return base;
 }

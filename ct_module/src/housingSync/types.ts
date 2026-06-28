@@ -29,6 +29,7 @@ type ConditionLoreFieldSpec<T extends Condition> = {
      * spurious diffs between parsed source and observed GUI state.
      */
     default?: unknown;
+    numeric?: boolean;
     /** Required for `kind: "cycle"`: the ordered cycle options. */
     options?: readonly string[];
 };
@@ -50,6 +51,7 @@ type ActionLoreFieldSpec<T extends Action> = {
      * spurious diffs between parsed source and observed GUI state.
      */
     default?: unknown;
+    numeric?: boolean;
     /** Required for `kind: "cycle"`: the ordered cycle options. */
     options?: readonly string[];
 };

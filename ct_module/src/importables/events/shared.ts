@@ -1,5 +1,6 @@
 import { timedWaitForMenu } from "../../housingSync/gui/menuWait";
 import TaskContext from "../../tasks/context";
+import { eventActionsOpened } from "../waiters";
 
 export function extractEventNameFromSlot(rawDisplayName: string): string | null {
     const trimmed = rawDisplayName.trim();
@@ -15,10 +16,12 @@ export async function openEventEditor(
     ctx: TaskContext,
     eventName: string
 ): Promise<void> {
-    await ctx.runCommand("/eventactions");
-    await timedWaitForMenu(ctx, "commandMenuWait");
+    await ctx.expectAfter(
+        () => ctx.runCommand("/eventactions"),
+        eventActionsOpened()
+    );
 
-    const slot = ctx.tryGetItemSlot(eventName);
+    const slot = ctx.tryGetMenuItemSlot(eventName);
     if (slot === null) {
         throw new Error(`No event named "${eventName}" in this housing.`);
     }

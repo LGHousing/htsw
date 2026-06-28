@@ -31,6 +31,7 @@ import {
     countReferencedShells,
     ensureReferencedImportablesExist,
 } from "../references";
+import { itemEditorOpened } from "../waiters";
 import { COST } from "../../housingSync/progress/costs";
 import { timed } from "../../housingSync/progress/timing";
 
@@ -184,8 +185,10 @@ async function importImportableItem(
     await injectHeldItem(ctx, start.item);
     setup(`injected item ${importable.name}`);
 
-    await ctx.runCommand("/edit");
-    await timedWaitForMenu(ctx, "commandMenuWait");
+    await ctx.expectAfter(
+        () => ctx.runCommand("/edit"),
+        itemEditorOpened()
+    );
     setup(`opened item editor`);
 
     ctx.getItemSlot("Edit Actions").click();

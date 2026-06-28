@@ -5,8 +5,16 @@ import {
     stripHousingEditorValuePrefix,
     stripRedundantLeadingFormattingCodes,
 } from "./loreParsing";
-import { getActionFieldDefault, getActionFieldKind } from "./actionMappings";
-import { getConditionFieldDefault, getConditionFieldKind } from "./conditionMappings";
+import {
+    getActionFieldDefault,
+    getActionFieldKind,
+    getActionFieldNumeric,
+} from "./actionMappings";
+import {
+    getConditionFieldDefault,
+    getConditionFieldKind,
+    getConditionFieldNumeric,
+} from "./conditionMappings";
 import { normalizeSoundKey } from "./sounds";
 import { normalizeValueTextForCompare, quantizeHousingDecimal } from "./valueText";
 
@@ -112,6 +120,10 @@ function getFieldKind(type: string, prop: string): UiFieldKind | undefined {
     return getActionFieldKind(type, prop) ?? getConditionFieldKind(type, prop);
 }
 
+function getFieldNumeric(type: string, prop: string): boolean {
+    return getActionFieldNumeric(type, prop) || getConditionFieldNumeric(type, prop);
+}
+
 /**
  * Bring an action/condition field value into a canonical form so the
  * lore-parsed observed side compares equal to the source-parsed desired
@@ -125,7 +137,7 @@ function getFieldKind(type: string, prop: string): UiFieldKind | undefined {
  *     sides land on the object form.
  */
 function shouldCoerceNumericField(type: string, prop: string): boolean {
-    return typeof getFieldDefault(type, prop) === "number";
+    return getFieldNumeric(type, prop) || typeof getFieldDefault(type, prop) === "number";
 }
 
 function canonicalizeFieldValue(type: string, prop: string, value: unknown): unknown {

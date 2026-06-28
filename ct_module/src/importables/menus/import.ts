@@ -7,10 +7,7 @@ import {
 import { canonicalizeActionItemName } from "../../housingSync/actions/readList";
 import { applyActionListPlan } from "../../housingSync/actions/applyDiff";
 import { clickGoBack } from "../../housingSync/gui/menuUtils";
-import {
-    timedWaitForMenu,
-    timedWaitForUnformattedMessage,
-} from "../../housingSync/gui/menuWait";
+import { timedWaitForMenu } from "../../housingSync/gui/menuWait";
 import { selectItemFromOpenInventory } from "../../housingSync/items/injectItem";
 import { canonicalItemKey, snbtFromItem } from "../../housingSync/itemCapture";
 import type { ImportableTrustPlan } from "../../importCache";
@@ -27,9 +24,14 @@ import {
     countReferencedShells,
     ensureReferencedImportablesExist,
 } from "../references";
+import { menuCreated } from "../waiters";
 import { noteMenuCreated } from "./listMenus";
 import { readLiveMenu, type LiveMenu } from "./read";
-import { openMenuEditor, openMenuElements, setMenuSize } from "./shared";
+import {
+    openMenuEditor,
+    openMenuElements,
+    setMenuSize,
+} from "./shared";
 
 /**
  * One grid slot's work. A slot needs at most one op, which may both set the
@@ -91,13 +93,11 @@ export async function prereadImportableMenu(
     const status = await openMenuEditor(ctx, importable.name);
 
     if (status === "missing") {
-        await ctx.runCommand(`/menu create ${importable.name}`);
-        await timedWaitForUnformattedMessage(
-            ctx,
-            `Created custom menu with the title ${importable.name}!`
+        await ctx.expectAfter(
+            () => ctx.runCommand(`/menu create ${importable.name}`),
+            menuCreated(importable.name)
         );
         noteMenuCreated(importable.name);
-        await openMenuEditor(ctx, importable.name);
         setup(`created menu ${importable.name}`);
         // Fresh menu: every desired slot is a pure ADD, size always set.
         const ops: MenuSlotOp[] = importable.slots.map((slot, i) => ({

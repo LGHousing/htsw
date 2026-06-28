@@ -1,32 +1,25 @@
-import {
-    timedWaitForMenu,
-    timedWaitForUnformattedMessage,
-} from "../../housingSync/gui/menuWait";
 import TaskContext from "../../tasks/context";
-import { removedFormatting, unique } from "../../utils/helpers";
+import { unique } from "../../utils/helpers";
+import {
+    chatMessage,
+    oneOf,
+    regionCreated,
+    regionEditorOpened,
+} from "../waiters";
 
 export async function openRegionEditor(
     ctx: TaskContext,
     name: string
 ): Promise<"opened" | "missing"> {
-    await ctx.runCommand(`/region edit ${name}`);
-
-    const menuWait = timedWaitForMenu(ctx, "commandMenuWait");
-    const msgWait = ctx.waitFor(
-        "message",
-        (message) =>
-            removedFormatting(message) ===
-            "Could not find a region with that name!"
-    );
-    const opened = await ctx.withTimeout(
-        ctx.race<boolean>([
-            [menuWait.then(() => true), menuWait],
-            [msgWait.then(() => false), msgWait],
-        ]),
-        "Waiting for region to open"
+    const result = await ctx.expectAfter(
+        () => ctx.runCommand(`/region edit ${name}`),
+        oneOf({
+            opened: regionEditorOpened(name),
+            missing: chatMessage("Could not find a region with that name!"),
+        })
     );
 
-    return opened ? "opened" : "missing";
+    return result;
 }
 
 export async function ensureRegionNamesExist(
@@ -48,8 +41,10 @@ export async function ensureRegionNamesExist(
         await ctx.runCommand(`/pos1`);
         await ctx.runCommand(`/pos2`);
 
-        await ctx.runCommand(`/region create ${name}`);
-        await timedWaitForUnformattedMessage(ctx, `Created region ${name}!`);
+        await ctx.expectAfter(
+            () => ctx.runCommand(`/region create ${name}`),
+            regionCreated(name)
+        );
         onEach?.(name);
     }
 }

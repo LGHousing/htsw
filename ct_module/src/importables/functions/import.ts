@@ -6,7 +6,6 @@ import {
     type ActionListPlan,
 } from "../../housingSync/actions/plan";
 import { clickGoBack } from "../../housingSync/gui/menuUtils";
-import { timedWaitForMenu } from "../../housingSync/gui/menuWait";
 import type { ImportableTrustPlan } from "../../importCache";
 import { createSetupStepEmitter } from "../../housingSync/progress/setupStepEmitter";
 import TaskContext from "../../tasks/context";
@@ -19,12 +18,14 @@ import {
     countReferencedShells,
     ensureReferencedImportablesExist,
 } from "../references";
+import { functionListOpened } from "../waiters";
 import {
     applyFunctionSettings,
     ensureFunctionExists,
     ensureFunctionNamesExist,
     functionIconMatches,
     openFunctionSettings,
+    readAutomaticExecutionTicks,
 } from "./shared";
 
 export type FunctionImportPlan = {
@@ -32,11 +33,16 @@ export type FunctionImportPlan = {
     importable: ImportableFunction;
     trustPlan?: ImportableTrustPlan;
     actionsPlan: ActionListPlan | null;
-    /**
-     * True when icon/tick settings need no further work. When false, the apply
-     * pass opens the settings menu after all prereads have succeeded.
-     */
-    settingsHandled: boolean;
+    settingsPlan: FunctionSettingsPlan | null;
+};
+
+export type FunctionSettingsPlan = {
+    iconNeedsApply: boolean;
+    automaticExecution: {
+        current: number;
+        desired: number;
+        needsApply: boolean;
+    };
 };
 
 export async function prereadImportableFunction(
@@ -56,12 +62,18 @@ export async function prereadImportableFunction(
 
     if (actionsTrusted && settingsTrusted) {
         setup(`skipped ${importable.name}`);
-        return { kind: "FUNCTION", importable, trustPlan, actionsPlan: null, settingsHandled: true };
+        return { kind: "FUNCTION", importable, trustPlan, actionsPlan: null, settingsPlan: null };
     }
 
     if (actionsTrusted) {
-        setup(`settings-only ${importable.name}`);
-        return { kind: "FUNCTION", importable, trustPlan, actionsPlan: null, settingsHandled: false };
+        await openFunctionList(ctx);
+        const settingsPlan = await readFunctionSettingsPlan(ctx, importable);
+        setup(
+            functionSettingsPlanNeedsApply(settingsPlan)
+                ? `settings-only ${importable.name}`
+                : `skipped ${importable.name}`
+        );
+        return { kind: "FUNCTION", importable, trustPlan, actionsPlan: null, settingsPlan };
     }
 
     // Icon-only entry: no `actions` declared in import.json. NEVER diff/sync
@@ -74,20 +86,15 @@ export async function prereadImportableFunction(
     // settings.
     if (importable.actions === undefined) {
         await ensureFunctionNamesExist(ctx, [importable.name]);
-        // The icon is the only settable thing for an icon-only entry, and it's
-        // readable straight from the /functions list we just cached — confirm a
-        // match here so an unchanged icon skips the apply pass entirely (no
-        // settings menu, no item placement). repeatTicks isn't visible in that
-        // list, so an entry that pins it still needs the apply pass.
-        const settingsHandled =
-            settingsTrusted ||
-            (importable.repeatTicks === undefined && (await functionIconMatches(ctx, importable)));
+        const settingsPlan = settingsTrusted
+            ? null
+            : await readFunctionSettingsPlan(ctx, importable);
         setup(
-            settingsHandled
-                ? `skipped ${importable.name}`
-                : `settings-only ${importable.name}`
+            functionSettingsPlanNeedsApply(settingsPlan)
+                ? `settings-only ${importable.name}`
+                : `skipped ${importable.name}`
         );
-        return { kind: "FUNCTION", importable, trustPlan, actionsPlan: null, settingsHandled };
+        return { kind: "FUNCTION", importable, trustPlan, actionsPlan: null, settingsPlan };
     }
 
     if (hasTrustedActionListBaseline(trustPlan, "actions")) {
@@ -97,13 +104,16 @@ export async function prereadImportableFunction(
             trustPlan,
             basePath: "actions",
         });
+        const settingsPlan = settingsTrusted
+            ? null
+            : await readFunctionSettingsPlanFromCommand(ctx, importable);
 
         return {
             kind: "FUNCTION",
             importable,
             trustPlan,
             actionsPlan,
-            settingsHandled: settingsTrusted,
+            settingsPlan,
         };
     }
 
@@ -114,13 +124,16 @@ export async function prereadImportableFunction(
         trustPlan,
         basePath: "actions",
     });
+    const settingsPlan = settingsTrusted
+        ? null
+        : await readFunctionSettingsPlanAfterActionEditor(ctx, importable);
 
     return {
         kind: "FUNCTION",
         importable,
         trustPlan,
         actionsPlan,
-        settingsHandled: settingsTrusted,
+        settingsPlan,
     };
 }
 
@@ -129,32 +142,75 @@ export async function applyImportableFunctionPlan(
     plan: FunctionImportPlan,
     session: ImportSession
 ): Promise<void> {
-    const needsSettings = !plan.settingsHandled;
-
-    if (plan.actionsPlan !== null) {
-        await ensureFunctionExists(ctx, plan.importable.name);
-        await applyActionListPlan(ctx, plan.actionsPlan, {
-            session,
-        });
-        if (needsSettings) {
-            await functionImportStep(
-                `leaving action editor for function ${plan.importable.name}`,
-                () => clickGoBack(ctx)
-            );
-        }
-    }
-
-    if (needsSettings) {
-        if (plan.actionsPlan === null) {
-            await ctx.runCommand(`/functions`);
-            await timedWaitForMenu(ctx, "commandMenuWait");
-        }
+    if (functionSettingsPlanNeedsApply(plan.settingsPlan)) {
+        await openFunctionList(ctx);
         await functionImportStep(
             `opening settings for function ${plan.importable.name}`,
             () => openFunctionSettings(ctx, plan.importable.name)
         );
         await applyFunctionSettings(ctx, plan.importable);
     }
+
+    if (plan.actionsPlan !== null) {
+        await ensureFunctionExists(ctx, plan.importable.name);
+        await applyActionListPlan(ctx, plan.actionsPlan, {
+            session,
+        });
+    }
+}
+
+async function openFunctionList(ctx: TaskContext): Promise<void> {
+    await ctx.expectAfter(
+        () => ctx.runCommand("/functions"),
+        functionListOpened()
+    );
+}
+
+async function readFunctionSettingsPlanFromCommand(
+    ctx: TaskContext,
+    importable: ImportableFunction
+): Promise<FunctionSettingsPlan> {
+    await openFunctionList(ctx);
+    return readFunctionSettingsPlan(ctx, importable);
+}
+
+async function readFunctionSettingsPlanAfterActionEditor(
+    ctx: TaskContext,
+    importable: ImportableFunction
+): Promise<FunctionSettingsPlan> {
+    await clickGoBack(ctx);
+    return readFunctionSettingsPlan(ctx, importable);
+}
+
+async function readFunctionSettingsPlan(
+    ctx: TaskContext,
+    importable: ImportableFunction
+): Promise<FunctionSettingsPlan> {
+    const iconNeedsApply = !(await functionIconMatches(ctx, importable));
+    await openFunctionSettings(ctx, importable.name);
+    try {
+        const current = readAutomaticExecutionTicks(ctx) ?? 0;
+        const desired = importable.repeatTicks ?? 0;
+        return {
+            iconNeedsApply,
+            automaticExecution: {
+                current,
+                desired,
+                needsApply: current !== desired,
+            },
+        };
+    } finally {
+        await clickGoBack(ctx);
+    }
+}
+
+function functionSettingsPlanNeedsApply(
+    plan: FunctionSettingsPlan | null
+): boolean {
+    return plan !== null && (
+        plan.iconNeedsApply ||
+        plan.automaticExecution.needsApply
+    );
 }
 
 async function functionImportStep<T>(
@@ -176,7 +232,7 @@ async function functionImportStep<T>(
 export function functionPlanIsNoOp(plan: FunctionImportPlan): boolean {
     const actionsNoOp =
         plan.actionsPlan === null || plan.actionsPlan.diff.operations.length === 0;
-    return actionsNoOp && plan.settingsHandled;
+    return actionsNoOp && !functionSettingsPlanNeedsApply(plan.settingsPlan);
 }
 
 export function reconstructPartialFunction(plan: FunctionImportPlan): Importable | null {

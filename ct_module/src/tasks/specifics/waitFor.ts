@@ -3,6 +3,15 @@ import {
     S2DPacketOpenWindow,
     S2FPacketSetSlot,
     S30PacketWindowItems,
+    creativeInventoryPacketSlot,
+    creativeInventoryPacketStack,
+    openWindowPacketId,
+    openWindowPacketTitle,
+    packetClassName,
+    setSlotPacketSlot,
+    setSlotPacketStack,
+    setSlotPacketWindowId,
+    windowItemsPacketId,
 } from "../../utils/packets";
 import { recordImportDiagnostic } from "../../diagnostics/importDiagnosticsBuffer";
 import { summarizeItemStack } from "../../diagnostics/itemStackSummary";
@@ -111,75 +120,26 @@ export let lastWindowID___FromS30PacketWindowItemsPacketReceived__ThisIsNecessar
 
 function maybeUpdateWindowID(packet: Packet) {
     if (!(packet instanceof S30PacketWindowItems)) return;
-    const windowID = packet.func_148911_c();
-    if (windowID === 0) return;
+    const windowID = windowItemsPacketId(packet);
+    if (windowID === null || windowID === 0) return;
     lastWindowID___FromS30PacketWindowItemsPacketReceived__ThisIsNecessary_sadly_itIncrementsFrom1To100ThenItGoesBackAround_ButSometimesItSkipsOneOrMoreWeAreNotSureMaybeMore_AndItWillNeverBeZero =
         windowID;
 }
 
-function packetClassName(packet: Packet): string {
-    try {
-        const name = packet.getClass().getName();
-        return String(name).substring(String(name).lastIndexOf(".") + 1);
-    } catch (_e) {
-        return String(packet);
-    }
-}
-
-function packetSlot(packet: unknown): number | null {
-    try {
-        return (packet as { func_149173_d(): number }).func_149173_d();
-    } catch (_e) {
-        return null;
-    }
-}
-
-function packetWindow(packet: unknown): number | null {
-    try {
-        return (packet as { func_149175_c(): number }).func_149175_c();
-    } catch (_e) {
-        return null;
-    }
-}
-
 function packetStack(packet: unknown): string | null {
-    try {
-        return summarizeItemStack((packet as { func_149174_e(): unknown }).func_149174_e())?.name ?? null;
-    } catch (_e) {
-        return null;
-    }
+    return summarizeItemStack(setSlotPacketStack(packet))?.name ?? null;
 }
 
 function packetStackSummary(packet: unknown): unknown {
-    try {
-        return summarizeItemStack((packet as { func_149174_e(): unknown }).func_149174_e());
-    } catch (_e) {
-        return null;
-    }
-}
-
-function creativePacketSlot(packet: unknown): number | null {
-    try {
-        return (packet as { func_149627_c(): number }).func_149627_c();
-    } catch (_e) {
-        return null;
-    }
+    return summarizeItemStack(setSlotPacketStack(packet));
 }
 
 function creativePacketStack(packet: unknown): string | null {
-    try {
-        return summarizeItemStack((packet as { func_149625_d(): unknown }).func_149625_d())?.name ?? null;
-    } catch (_e) {
-        return null;
-    }
+    return summarizeItemStack(creativeInventoryPacketStack(packet))?.name ?? null;
 }
 
 function creativePacketStackSummary(packet: unknown): unknown {
-    try {
-        return summarizeItemStack((packet as { func_149625_d(): unknown }).func_149625_d());
-    } catch (_e) {
-        return null;
-    }
+    return summarizeItemStack(creativeInventoryPacketStack(packet));
 }
 
 function recordPacket(direction: "received" | "sent", packet: Packet): void {
@@ -187,21 +147,21 @@ function recordPacket(direction: "received" | "sent", packet: Packet): void {
         recordImportDiagnostic("packet", {
             direction,
             packet: packetClassName(packet),
-            windowId: s2dOpenWindowId(packet),
-            title: s2dOpenTitle(packet),
+            windowId: openWindowPacketId(packet),
+            title: openWindowPacketTitle(packet) ?? "?",
         });
     } else if (packet instanceof S30PacketWindowItems) {
         recordImportDiagnostic("packet", {
             direction,
             packet: packetClassName(packet),
-            windowId: packet.func_148911_c(),
+            windowId: windowItemsPacketId(packet),
         });
     } else if (packet instanceof S2FPacketSetSlot) {
         recordImportDiagnostic("packet", {
             direction,
             packet: packetClassName(packet),
-            windowId: packetWindow(packet),
-            slot: packetSlot(packet),
+            windowId: setSlotPacketWindowId(packet),
+            slot: setSlotPacketSlot(packet),
             stack: packetStack(packet),
             stackSummary: packetStackSummary(packet),
         });
@@ -209,7 +169,7 @@ function recordPacket(direction: "received" | "sent", packet: Packet): void {
         recordImportDiagnostic("packet", {
             direction,
             packet: packetClassName(packet),
-            slot: creativePacketSlot(packet),
+            slot: creativeInventoryPacketSlot(packet),
             stack: creativePacketStack(packet),
             stackSummary: creativePacketStackSummary(packet),
         });
@@ -226,32 +186,12 @@ type WindowOpenRecord = { at: number; windowId: number; title: string };
 const RECENT_WINDOW_OPENS_MAX = 8;
 const recentWindowOpens: WindowOpenRecord[] = [];
 
-function s2dOpenWindowId(packet: unknown): number {
-    try {
-        return (packet as { func_148901_c(): number }).func_148901_c();
-    } catch (_e) {
-        return -1;
-    }
-}
-
-function s2dOpenTitle(packet: unknown): string {
-    try {
-        const comp = (packet as {
-            func_148903_d(): { func_150260_c(): string };
-        }).func_148903_d();
-        const text = comp.func_150260_c();
-        return text === null || text === undefined ? "?" : text;
-    } catch (_e) {
-        return "?";
-    }
-}
-
 function recordWindowOpen(packet: Packet): void {
     if (!(packet instanceof S2DPacketOpenWindow)) return;
     recentWindowOpens.push({
         at: Date.now(),
-        windowId: s2dOpenWindowId(packet),
-        title: s2dOpenTitle(packet),
+        windowId: openWindowPacketId(packet) ?? -1,
+        title: openWindowPacketTitle(packet) ?? "?",
     });
     if (recentWindowOpens.length > RECENT_WINDOW_OPENS_MAX) recentWindowOpens.shift();
 }

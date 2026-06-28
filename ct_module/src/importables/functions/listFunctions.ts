@@ -1,5 +1,4 @@
 import TaskContext from "../../tasks/context";
-import { timedWaitForMenu } from "../../housingSync/gui/menuWait";
 import {
     getVisiblePaginatedItemSlots,
     isEmptyPaginatedPlaceholder,
@@ -9,6 +8,7 @@ import {
 import { removedFormatting } from "../../utils/helpers";
 import { snapshotIconStack, type FunctionIconSnapshot } from "./icon";
 import { extractFunctionNameFromSlot } from "./shared";
+import { functionListOpened } from "../waiters";
 
 const FUNCTION_LIST_CONFIG: PaginatedListConfig = {
     label: "function",
@@ -71,8 +71,10 @@ export async function getSessionFunctionIcon(
 export type FunctionListEntry = { name: string; icon: FunctionIconSnapshot | null };
 
 export async function listAllFunctionEntries(ctx: TaskContext): Promise<FunctionListEntry[]> {
-    await ctx.runCommand("/functions");
-    await timedWaitForMenu(ctx, "commandMenuWait");
+    await ctx.expectAfter(
+        () => ctx.runCommand("/functions"),
+        functionListOpened()
+    );
 
     type Entry = { index: number; name: string; icon: FunctionIconSnapshot | null };
     const entries = await readPaginatedList<Entry>(

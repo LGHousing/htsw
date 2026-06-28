@@ -197,17 +197,21 @@ export function getConditionFieldKind(
     return getConditionFieldSpec(type, prop)?.kind;
 }
 
+export function getConditionFieldNumeric(type: string, prop: string): boolean {
+    return getConditionFieldSpec(type, prop)?.numeric === true;
+}
+
 function getConditionFieldSpec(
     type: string,
     prop: string
-): { prop: string; kind: UiFieldKind; default?: unknown; options?: readonly string[] } | undefined {
+): { prop: string; kind: UiFieldKind; default?: unknown; numeric?: boolean; options?: readonly string[] } | undefined {
     const mapping = (
         CONDITION_MAPPINGS as Record<
             string,
             | {
                   loreFields: Record<
                       string,
-                      { prop: string; kind: UiFieldKind; default?: unknown; options?: readonly string[] }
+                      { prop: string; kind: UiFieldKind; default?: unknown; numeric?: boolean; options?: readonly string[] }
                   >;
               }
             | undefined
