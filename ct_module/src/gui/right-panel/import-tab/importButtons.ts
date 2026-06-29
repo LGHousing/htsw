@@ -30,6 +30,7 @@ import {
     getExportImportJsonPath,
     getHousingUuid,
     getImportJsonPath,
+    isParseInProgress,
     setExportImportJsonPath,
 } from "../../state";
 import { getQueueLength } from "./queue";
@@ -205,6 +206,13 @@ export function exportDestinationPicker(): Element {
 }
 
 export function importControl(): Element {
+    const importDisabled = (): boolean => getQueueLength() === 0 || isParseInProgress();
+    const importTooltip = (): string => {
+        if (isParseInProgress()) return "Project is still loading. Import will be available when it finishes.";
+        if (getQueueLength() === 0) return "No changes queued to import.";
+        return "Import queued changes.";
+    };
+
     return Row({
         style: { gap: 4, height: { kind: "px", value: 18 } },
         children: [
@@ -214,7 +222,8 @@ export function importControl(): Element {
                     const n = getQueueLength();
                     return n === 0 ? "Import" : `Import (${n})`;
                 },
-                disabled: () => getQueueLength() === 0,
+                disabled: importDisabled,
+                tooltip: importTooltip,
                 style: {
                     width: { kind: "grow" },
                     height: { kind: "grow" },
