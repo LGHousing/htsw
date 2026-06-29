@@ -608,13 +608,7 @@ function giveItem(args: string[]): void {
 
     const literalDirPath = resolveModuleRelativePath(rawPath).split("\\").join("/");
     if (isDirectory(literalDirPath)) {
-        giveFolderItems(rawPath, 0);
-        return;
-    }
-
-    const parsedFilePath = resolveGiveItemFilePath(folderArgs.rawPath);
-    if (folderArgs.hasSkip && isRegularFile(parsedFilePath)) {
-        giveSingleItemPath(parsedFilePath);
+        giveFolderItems(rawPath, folderArgs.skip);
         return;
     }
 
