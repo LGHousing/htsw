@@ -351,9 +351,14 @@ export function setScrollOffset(id: string, offset: number): void {
 }
 
 /** Set where the offset eases toward (the smoothed wheel path). */
-export function setScrollTarget(id: string, target: number): void {
+export function setScrollTarget(id: string, target: number, applyDeltaNow = false): void {
     const s = getScrollState(id);
+    const oldTarget = s.target;
     s.target = clampOffset(s, target);
+    if (applyDeltaNow) {
+        s.offset = clampOffset(s, s.offset + (s.target - oldTarget));
+        s.animAt = Date.now();
+    }
 }
 
 /**

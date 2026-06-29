@@ -577,9 +577,10 @@ export function dispatchWheel(
         // (e.g. the chat scrollback) doesn't jump more than its visible height
         // per notch; tall panels keep the full step.
         const step = Math.min(WHEEL_SCROLL_STEP, Math.max(16, mainView * 0.5));
-        // Accumulate into the target (not the rendered offset) so rapid notches
-        // stack; layoutScroll eases the offset toward it each frame.
-        setScrollTarget(item.element.id, s.target - delta * step);
+        // Accumulate into the target so rapid notches stack, but apply this
+        // event's delta to the rendered offset immediately so the wheel never
+        // feels one or more frames behind the user's input.
+        setScrollTarget(item.element.id, s.target - delta * step, true);
         markUserScroll(item.element.id);
         return true;
     }
