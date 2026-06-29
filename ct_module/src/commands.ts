@@ -487,9 +487,24 @@ function resolveGiveItemFilePath(rawPath: string): string {
     return path;
 }
 
+function parseGiveItemFolderArgs(args: string[]): { rawPath: string; skip: number } {
+    if (args.length > 1 && /^\d+$/.test(args[args.length - 1])) {
+        return {
+            rawPath: stripSurroundingQuotes(args.slice(0, args.length - 1).join(" ")).trim(),
+            skip: Number(args[args.length - 1]),
+        };
+    }
+    return { rawPath: stripSurroundingQuotes(args.join(" ")).trim(), skip: 0 };
+}
+
+function commandArg(value: string): string {
+    if (/\s/.test(value)) return `"${value.split("\"").join("\\\"")}"`;
+    return value;
+}
+
 function giveItem(args: string[]): void {
     if (args.length === 0) {
-        ChatLib.chat("&cUsage: /htsw giveitem <path>");
+        ChatLib.chat("&cUsage: /htsw giveitem <path> [skip]");
         ChatLib.chat("&7  Spawns an item from a .snbt file, or all .snbt files in a folder.");
         return;
     }
@@ -516,7 +531,13 @@ function giveItem(args: string[]): void {
         return;
     }
 
-    const dirPath = resolveModuleRelativePath(rawPath).split("\\").join("/");
+    const folderArgs = parseGiveItemFolderArgs(args);
+    if (folderArgs.rawPath.length === 0) {
+        ChatLib.chat("&c[htsw] giveitem folder path cannot be empty.");
+        return;
+    }
+
+    const dirPath = resolveModuleRelativePath(folderArgs.rawPath).split("\\").join("/");
     if (!isDirectory(dirPath)) {
         ChatLib.chat(`&c[htsw] File or folder not found: ${dirPath}`);
         ChatLib.chat(`&7  Tried file: ${filePath}`);
@@ -534,22 +555,31 @@ function giveItem(args: string[]): void {
         ChatLib.chat(`&c[htsw] No .snbt files found in ${dirPath}`);
         return;
     }
+    if (folderArgs.skip >= files.length) {
+        ChatLib.chat(`&c[htsw] Skip ${folderArgs.skip} is past the ${files.length} item${files.length === 1 ? "" : "s"} in ${dirPath}.`);
+        return;
+    }
 
     const slots = emptyInventorySlots();
     if (slots.length === 0) {
         ChatLib.chat("&c[htsw] No empty inventory slot.");
         return;
     }
-    if (slots.length < files.length) {
-        ChatLib.chat(`&e[htsw] Only ${slots.length} empty slot${slots.length === 1 ? "" : "s"}; giving first ${slots.length} of ${files.length} items.`);
+    const remaining = files.length - folderArgs.skip;
+    if (slots.length < remaining) {
+        ChatLib.chat(`&e[htsw] Only ${slots.length} empty slot${slots.length === 1 ? "" : "s"}, giving ${slots.length} of ${remaining} remaining items.`);
     }
 
-    const count = Math.min(slots.length, files.length);
+    const count = Math.min(slots.length, remaining);
     let gave = 0;
     for (let i = 0; i < count; i++) {
-        if (giveItemFromFile(files[i], slots[i])) gave++;
+        if (giveItemFromFile(files[folderArgs.skip + i], slots[i])) gave++;
     }
     ChatLib.chat(`&7[htsw] Gave ${gave}/${files.length} item${files.length === 1 ? "" : "s"} from ${dirPath}`);
+    const nextSkip = folderArgs.skip + count;
+    if (nextSkip < files.length) {
+        ChatLib.chat(`&7  Next: &f/htsw giveitem ${commandArg(folderArgs.rawPath)} ${nextSkip}`);
+    }
 }
 
 function commandEta(args: string[]): void {
