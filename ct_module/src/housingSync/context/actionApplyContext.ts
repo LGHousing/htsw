@@ -97,19 +97,6 @@ function reuseObservedActions(
     return out;
 }
 
-function reuseObservedConditions(
-    observed: ReadonlyArray<Condition | null> | undefined
-): ObservedConditionSlot[] | undefined {
-    if (observed === undefined) return undefined;
-    const out: ObservedConditionSlot[] = [];
-    for (let i = 0; i < observed.length; i++) {
-        const condition = observed[i];
-        if (condition === null) return undefined;
-        out.push({ index: i, condition });
-    }
-    return out;
-}
-
 function nestedApplyScope(
     parentActionPath: ActionPath,
     baselineApplyUnits: number,
@@ -176,17 +163,14 @@ export function createActionApplyContext({
 
         async applyNestedConditions(prop, args) {
             const path = nestedPath(prop);
-            const observed = reuseObservedConditions(args.observed);
-            const phaseBaseline = observed === undefined ? args.observed : undefined;
             const offset = args.offset ?? nextOffset;
             await applyNestedConditions(ctx, args.desired, {
                 itemRegistry: session.items,
-                observed,
                 baselineCurrent: args.observed,
                 progress: progressFromScope(events, scopeAt(path, offset)),
             });
             nextOffset = offset + phaseUnitsTotal(
-                estimateConditionListPhaseUnits(args.desired, phaseBaseline)
+                estimateConditionListPhaseUnits(args.desired, args.observed)
             );
         },
     };
