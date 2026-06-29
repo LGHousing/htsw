@@ -487,14 +487,15 @@ function resolveGiveItemFilePath(rawPath: string): string {
     return path;
 }
 
-function parseGiveItemFolderArgs(args: string[]): { rawPath: string; skip: number } {
+function parseGiveItemFolderArgs(args: string[]): { rawPath: string; skip: number; hasSkip: boolean } {
     if (args.length > 1 && /^\d+$/.test(args[args.length - 1])) {
         return {
             rawPath: stripSurroundingQuotes(args.slice(0, args.length - 1).join(" ")).trim(),
             skip: Number(args[args.length - 1]),
+            hasSkip: true,
         };
     }
-    return { rawPath: stripSurroundingQuotes(args.join(" ")).trim(), skip: 0 };
+    return { rawPath: stripSurroundingQuotes(args.join(" ")).trim(), skip: 0, hasSkip: false };
 }
 
 function commandArg(value: string): string {
@@ -588,7 +589,7 @@ function giveItem(args: string[]): void {
 
     const folderArgs = parseGiveItemFolderArgs(args);
     const parsedFilePath = resolveGiveItemFilePath(folderArgs.rawPath);
-    if (folderArgs.skip > 0 && isRegularFile(parsedFilePath)) {
+    if (folderArgs.hasSkip && isRegularFile(parsedFilePath)) {
         giveSingleItemPath(parsedFilePath);
         return;
     }
