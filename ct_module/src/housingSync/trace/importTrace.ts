@@ -41,6 +41,24 @@ export function traceMenuWait(
     importTrace.write({ kind: "menuWait", stage, ...details });
 }
 
+export function traceRecord(category: string, details: Record<string, unknown>): void {
+    recordImportDiagnostic(category, details);
+    if (!importTrace.isEnabled()) return;
+    importTrace.write({ kind: category, ...details });
+}
+
+export function traceError(
+    category: string,
+    error: unknown,
+    details?: Record<string, unknown>
+): void {
+    const message = error instanceof Error ? error.message : String(error);
+    const record = { ...(details ?? {}), error: message };
+    recordImportDiagnostic(category, record);
+    if (!importTrace.isEnabled()) return;
+    importTrace.write({ kind: "failure", category, ...record });
+}
+
 export function traceImportEvent(event: ImportEvent): void {
     recordImportDiagnostic("importEvent", {
         event: event.kind,

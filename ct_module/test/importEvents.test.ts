@@ -11,6 +11,7 @@ import type { ActionListPlan } from "../src/housingSync/actions/plan";
 import { createItemRegistry } from "../src/importables/itemRegistry";
 import type { ImportSession } from "../src/importables/imports";
 import { orderImportablesForImportSession } from "../src/importables/importSession";
+import { createNpcLookupCache } from "../src/importables/npcs/listNpcs";
 import type { ImportableItem } from "htsw/types";
 
 function recordingHandler(): ImportEventHandler & { events: ImportEvent[] } {
@@ -44,6 +45,7 @@ function sessionWith(handler: ImportEventHandler): ImportSession {
         housingUuid: "test-house",
         trust: { housingUuid: "test-house", importables: new Map() },
         events: handler,
+        npcLookup: createNpcLookupCache(),
     };
 }
 

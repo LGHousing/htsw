@@ -16,6 +16,13 @@ import {
     type EventImportPlan,
 } from "./events/import";
 import {
+    applyImportableCommandPlan,
+    commandPlanIsNoOp,
+    prereadImportableCommand,
+    reconstructPartialCommand,
+    type CommandImportPlan,
+} from "./commands/import";
+import {
     applyImportableFunctionPlan,
     functionPlanIsNoOp,
     prereadImportableFunction,
@@ -33,6 +40,12 @@ import {
     type MenuImportPlan,
 } from "./menus/import";
 import {
+    applyImportableNpcPlan,
+    npcPlanIsNoOp,
+    prereadImportableNpc,
+    type NpcImportPlan,
+} from "./npcs/import";
+import {
     applyImportableRegionPlan,
     prereadImportableRegion,
     regionPlanIsNoOp,
@@ -41,13 +54,16 @@ import {
 import type { ItemRegistry } from "./itemRegistry";
 import type { ImportEventHandler } from "../housingSync/importEvents";
 import type { ItemCaptureRegistry } from "../housingSync/itemCapture";
+import type { NpcLookupCache } from "./npcs/listNpcs";
 
 export const IMPLEMENTED_IMPORTABLE_TYPES = [
     "FUNCTION",
     "EVENT",
+    "COMMAND",
     "REGION",
     "ITEM",
     "MENU",
+    "NPC",
 ] as const;
 
 export type ImportSession = {
@@ -57,6 +73,7 @@ export type ImportSession = {
     trust: TrustPlan;
     events: ImportEventHandler | undefined;
     itemCaptures?: ItemCaptureRegistry;
+    npcLookup: NpcLookupCache;
 };
 
 function trustFor(
@@ -71,13 +88,15 @@ function trustFor(
 /**
  * Discriminated union of per-importable plans produced by `prereadImportable`
  * and consumed by `applyImportablePlan`. FUNCTION / EVENT / REGION carry a
- * computed action-list diff so the apply pass can run without re-reading;
+ * computed action-list diff so the apply pass can run without re-reading.
  * ITEM / MENU are placeholder plans that defer all work to the apply pass.
  */
 export type ImportablePlan =
     | FunctionImportPlan
+    | CommandImportPlan
     | EventImportPlan
     | RegionImportPlan
+    | NpcImportPlan
     | ItemImportPlan
     | MenuImportPlan;
 
@@ -97,6 +116,13 @@ export async function prereadImportable(
             );
         case "EVENT":
             return prereadImportableEvent(
+                ctx,
+                importable,
+                session,
+                trust,
+            );
+        case "COMMAND":
+            return prereadImportableCommand(
                 ctx,
                 importable,
                 session,
@@ -123,9 +149,15 @@ export async function prereadImportable(
                 session,
                 trust
             );
+        case "NPC":
+            return prereadImportableNpc(
+                ctx,
+                importable,
+                session,
+                trust,
+            );
         case "TEAM":
         case "GROUP":
-        case "COMMAND":
         case "HOUSE_NAME":
             throw Diagnostic.error(`${importable.type} imports are not implemented in the ChatTriggers module.`);
         default: {
@@ -151,8 +183,14 @@ export async function applyImportablePlan(
         case "EVENT":
             await applyImportableEventPlan(ctx, plan, session);
             return;
+        case "COMMAND":
+            await applyImportableCommandPlan(ctx, plan, session);
+            return;
         case "REGION":
             await applyImportableRegionPlan(ctx, plan, session);
+            return;
+        case "NPC":
+            await applyImportableNpcPlan(ctx, plan, session);
             return;
         case "MENU":
             await applyImportableMenuPlan(ctx, plan, session);
@@ -180,8 +218,12 @@ export function planIsNoOp(plan: ImportablePlan): boolean {
             return functionPlanIsNoOp(plan);
         case "EVENT":
             return eventPlanIsNoOp(plan);
+        case "COMMAND":
+            return commandPlanIsNoOp(plan);
         case "REGION":
             return regionPlanIsNoOp(plan);
+        case "NPC":
+            return npcPlanIsNoOp(plan);
         case "MENU":
         case "ITEM":
             return false;
@@ -204,7 +246,10 @@ export function reconstructPartialImportable(plan: ImportablePlan): Importable |
             return reconstructPartialFunction(plan);
         case "EVENT":
             return reconstructPartialEvent(plan);
+        case "COMMAND":
+            return reconstructPartialCommand(plan);
         case "REGION":
+        case "NPC":
         case "MENU":
         case "ITEM":
             return null;

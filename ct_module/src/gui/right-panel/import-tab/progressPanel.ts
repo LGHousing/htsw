@@ -414,7 +414,7 @@ export function progressControlButtons(): Element[] {
                 cancelActiveImport();
                 setImportProgress(null);
                 setActiveImportPath(null);
-                ChatLib.chat(`&c[htsw] cancelling import…`);
+                ChatLib.chat(`&c[htsw] cancelling task…`);
             },
         }),
     ];

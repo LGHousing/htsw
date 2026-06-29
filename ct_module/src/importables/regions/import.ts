@@ -51,7 +51,7 @@ function requireRegionBounds(importable: ImportableRegion): { from: Pos; to: Pos
             `Region "${importable.name}" has no bounds in import.json — add bounds before importing`
         );
     }
-    return importable.bounds;
+    return importable.bounds as { from: Pos; to: Pos };
 }
 
 function normalizeBounds(bounds: { from: Pos; to: Pos }): { from: Pos; to: Pos } {
@@ -270,7 +270,7 @@ export async function prereadImportableRegion(
         importable.onExitActions !== undefined &&
         !trustPlan?.trustedListPaths.has("onExitActions");
 
-    requireRegionBounds(importable);
+    const desiredBounds = requireRegionBounds(importable);
     const regionOpenSteps = (enterEligible || exitEligible) ? 2 : 1;
     const setup = createSetupStepEmitter(session.events, countReferencedShells(importable) + regionOpenSteps);
 
@@ -283,14 +283,14 @@ export async function prereadImportableRegion(
         const liveRegion = {
             index: 0,
             name: importable.name,
-            bounds: cachedRegion.bounds,
+            bounds: cachedRegion.bounds ?? null,
         };
         return {
             kind: "REGION",
             importable,
             trustPlan,
             liveRegion,
-            boundsMatch: regionBoundsMatch(cachedRegion.bounds, importable.bounds),
+            boundsMatch: regionBoundsMatch(cachedRegion.bounds ?? null, desiredBounds),
             enterPlan: await createTrustedRegionActionPlan(
                 ctx,
                 importable.onEnterActions,
@@ -311,7 +311,7 @@ export async function prereadImportableRegion(
     const liveRegion = await findLiveRegion(ctx, importable.name);
     setup(`read region list`);
     const boundsMatch =
-        liveRegion !== null && regionBoundsMatch(liveRegion.bounds, importable.bounds);
+        liveRegion !== null && regionBoundsMatch(liveRegion.bounds, desiredBounds);
 
     if (!enterEligible && !exitEligible) {
         return {

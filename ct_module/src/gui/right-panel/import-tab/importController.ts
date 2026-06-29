@@ -81,6 +81,7 @@ import {
 } from "./livePreview";
 import { setFocusLineId } from "./focusedLine";
 import { autoTrackRefresh } from "../../autoTrack";
+import { cancelActiveExport } from "../../../exporter/activeExport";
 
 
 /**
@@ -93,7 +94,11 @@ let activeImportCtx: TaskContext | null = null;
 
 /** Cancel the running import (if any). Leaves other tasks untouched. */
 export function cancelActiveImport(): void {
-    if (activeImportCtx !== null) activeImportCtx.cancel();
+    if (activeImportCtx !== null) {
+        activeImportCtx.cancel();
+        return;
+    }
+    cancelActiveExport();
 }
 
 function formatElapsedSeconds(secs: number): string {

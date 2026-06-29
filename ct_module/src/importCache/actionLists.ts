@@ -5,7 +5,9 @@ export function readCachedActionList(
     basePath: string
 ): readonly Action[] | undefined {
     if (
-        (importable.type === "FUNCTION" || importable.type === "EVENT") &&
+        (importable.type === "FUNCTION" ||
+            importable.type === "EVENT" ||
+            importable.type === "COMMAND") &&
         basePath === "actions"
     ) {
         return importable.actions;
@@ -15,6 +17,10 @@ export function readCachedActionList(
         if (basePath === "onExitActions") return importable.onExitActions;
     }
     if (importable.type === "ITEM") {
+        if (basePath === "leftClickActions") return importable.leftClickActions;
+        if (basePath === "rightClickActions") return importable.rightClickActions;
+    }
+    if (importable.type === "NPC") {
         if (basePath === "leftClickActions") return importable.leftClickActions;
         if (basePath === "rightClickActions") return importable.rightClickActions;
     }

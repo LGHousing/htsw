@@ -12,6 +12,7 @@ import { markPathInSync } from "../parsing/reparse";
 import { getParseAt, touchParseCacheMtime } from "../parsing/parses";
 import { importableHash } from "../../importCache/hash";
 import { seedImportableHash } from "../../importCache/status";
+import { importableIdentity } from "../../importCache/paths";
 
 let editingValue = "";
 let editingX = "";
@@ -37,6 +38,7 @@ function sectionForType(type: Importable["type"]): Section | null {
         case "TEAM": return "teams";
         case "GROUP": return "groups";
         case "COMMAND": return "commands";
+        case "NPC": return "npcs";
     }
     return null;
 }
@@ -44,7 +46,7 @@ function sectionForType(type: Importable["type"]): Section | null {
 const SECTION_TYPE: Partial<{ [k in Section]: Importable["type"] }> = {
     functions: "FUNCTION", events: "EVENT", regions: "REGION",
     items: "ITEM", menus: "MENU", teams: "TEAM", groups: "GROUP",
-    commands: "COMMAND",
+    commands: "COMMAND", npcs: "NPC",
 };
 
 function findImportableInList(
@@ -57,8 +59,7 @@ function findImportableInList(
     for (let i = 0; i < list.length; i++) {
         const imp = list[i];
         if (imp.type !== type) continue;
-        const id = imp.type === "EVENT" ? imp.event : imp.name;
-        if (id === identity) return imp;
+        if (importableIdentity(imp) === identity) return imp;
     }
     return null;
 }
@@ -86,7 +87,31 @@ function setByPath(obj: object, field: string | string[], value: unknown): void 
 }
 
 function identityOf(imp: Importable): string {
-    return imp.type === "EVENT" ? imp.event : imp.name;
+    return importableIdentity(imp);
+}
+
+function parseOptionalBoolean(value: string, defaultValue: boolean): boolean | undefined | null {
+    const trimmed = value.trim().toLowerCase();
+    if (trimmed === "" || trimmed === "default") return undefined;
+    if (
+        trimmed === "true" ||
+        trimmed === "yes" ||
+        trimmed === "on" ||
+        trimmed === "enabled" ||
+        trimmed === "listed"
+    ) {
+        return defaultValue === true ? undefined : true;
+    }
+    if (
+        trimmed === "false" ||
+        trimmed === "no" ||
+        trimmed === "off" ||
+        trimmed === "disabled" ||
+        trimmed === "unlisted"
+    ) {
+        return defaultValue === false ? undefined : false;
+    }
+    return null;
 }
 
 function matchingItems(query: string): string[] {
@@ -193,6 +218,34 @@ function saveField(jsonPath: string, imp: Importable, fieldKey: string): void {
         if (pos === null) { ChatLib.chat("&c[htsw] Invalid coordinates."); return; }
         field = ["bounds", fieldKey === "boundsFrom" ? "from" : "to"];
         value = pos;
+    } else if (fieldKey === "mode") {
+        const trimmed = editingValue.trim();
+        const lower = trimmed.toLowerCase();
+        if (trimmed === "" || lower === "default" || lower === "self") {
+            value = undefined;
+        } else if (lower === "targeted") {
+            value = "Targeted";
+        } else {
+            ChatLib.chat("&c[htsw] Command mode must be Self or Targeted.");
+            return;
+        }
+    } else if (fieldKey === "requiredPriority") {
+        const trimmed = editingValue.trim();
+        if (trimmed === "" || trimmed === "0" || trimmed.toLowerCase() === "default") {
+            value = undefined;
+        } else {
+            const n = parseInt(trimmed, 10);
+            if (isNaN(n) || n < 0 || n > 20) { ChatLib.chat("&c[htsw] Priority must be 0-20."); return; }
+            value = n;
+        }
+    } else if (fieldKey === "listed") {
+        const parsed = parseOptionalBoolean(editingValue, true);
+        if (parsed === null) { ChatLib.chat("&c[htsw] Listed must be true or false."); return; }
+        value = parsed;
+    } else if (fieldKey === "leftClickRedirect") {
+        const parsed = parseOptionalBoolean(editingValue, false);
+        if (parsed === null) { ChatLib.chat("&c[htsw] Redirect must be true or false."); return; }
+        value = parsed;
     } else if (fieldKey === "size") {
         const trimmed = editingValue.trim();
         if (trimmed === "" || trimmed === "default") { value = undefined; }
@@ -500,6 +553,21 @@ export function openEditFunctionFieldPopover(
             if (fieldKey === "size") {
                 editingValue = imp.size !== undefined ? String(imp.size) : "";
             }
+        } else if (imp.type === "COMMAND") {
+            if (fieldKey === "mode") {
+                editingValue = imp.mode ?? "Self";
+            } else if (fieldKey === "requiredPriority") {
+                editingValue = String(imp.requiredPriority ?? 0);
+            } else if (fieldKey === "listed") {
+                editingValue = (imp.listed ?? true) ? "true" : "false";
+            }
+        } else if (imp.type === "NPC") {
+            if (fieldKey === "leftClickRedirect") {
+                editingValue =
+                    imp.leftClickRedirect === undefined
+                        ? ""
+                        : imp.leftClickRedirect ? "true" : "false";
+            }
         }
     }
 
@@ -526,6 +594,14 @@ export function openEditFunctionFieldPopover(
         content = singleFieldContent(jsonPath, imp, fieldKey, "Icon count", "count (1-64)");
     } else if (fieldKey === "size") {
         content = singleFieldContent(jsonPath, imp, fieldKey, "Menu size", "lines (1-6)");
+    } else if (fieldKey === "mode") {
+        content = singleFieldContent(jsonPath, imp, fieldKey, "Command mode", "Self or Targeted");
+    } else if (fieldKey === "requiredPriority") {
+        content = singleFieldContent(jsonPath, imp, fieldKey, "Required priority", "0-20");
+    } else if (fieldKey === "listed") {
+        content = singleFieldContent(jsonPath, imp, fieldKey, "Listed", "true or false");
+    } else if (fieldKey === "leftClickRedirect") {
+        content = singleFieldContent(jsonPath, imp, fieldKey, "Left-click redirect", "true or false");
     } else {
         return;
     }

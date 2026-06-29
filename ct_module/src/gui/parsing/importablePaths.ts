@@ -12,12 +12,11 @@ import { getSelectedParsedResult } from "./selectedParse";
  * 1. **Source path** (`importableSourcePath`) — the file the user expects
  *    to open when they say "show me this importable". For FUNCTION/EVENT
  *    that's the resolved `.htsl`; for ITEM it's the `.snbt` (resolved via
- *    the parsed `nbt` Tag's span); for REGION/MENU it's the declaring
- *    import.json (since those types live entirely as JSON inline).
+ *    the parsed `nbt` Tag's span); for REGION/MENU/COMMAND/NPC it's the
+ *    declaring import.json (since their metadata lives inline).
  *
  * 2. **Sub-list source path** (`importableSubListPath`) — for nested
- *    action lists on REGION (`onEnterActions` / `onExitActions`) and ITEM
- *    (`leftClickActions` / `rightClickActions`). If the JSON used
+ *    action lists on REGION, ITEM, COMMAND, and NPC. If the JSON used
  *    `{ actionsPath: "..." }` the parser materialized those actions from
  *    a separate `.htsl`; the span recorded for the resulting array
  *    resolves to that file via the SourceMap. If the actions were inline
@@ -27,6 +26,7 @@ import { getSelectedParsedResult } from "./selectedParse";
 // Single source of truth for sub-list kinds. The `SubListKind` union
 // derives from this so a new kind only gets typed in one place.
 export const SUB_LIST_KINDS = [
+    "actions",
     "onEnterActions",
     "onExitActions",
     "leftClickActions",
@@ -106,6 +106,9 @@ export function importableSourcePath(
     return parsed.importJson.sourcePathOf(imp);
 }
 export function subListOf(imp: Importable, kind: SubListKind): readonly object[] | undefined {
+    if (kind === "actions" && imp.type === "COMMAND") {
+        return imp.actions;
+    }
     if (kind === "onEnterActions" && imp.type === "REGION") {
         return imp.onEnterActions;
     }
@@ -116,6 +119,12 @@ export function subListOf(imp: Importable, kind: SubListKind): readonly object[]
         return imp.leftClickActions;
     }
     if (kind === "rightClickActions" && imp.type === "ITEM") {
+        return imp.rightClickActions;
+    }
+    if (kind === "leftClickActions" && imp.type === "NPC") {
+        return imp.leftClickActions;
+    }
+    if (kind === "rightClickActions" && imp.type === "NPC") {
         return imp.rightClickActions;
     }
     return undefined;

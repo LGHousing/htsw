@@ -78,6 +78,7 @@ export function listHashes(importable: Importable): Record<string, string[]> {
     switch (importable.type) {
         case "FUNCTION":
         case "EVENT":
+        case "COMMAND":
             collectActionListHashes(out, "actions", importable.actions ?? []);
             break;
         case "REGION":
@@ -89,6 +90,22 @@ export function listHashes(importable: Importable): Record<string, string[]> {
             }
             break;
         case "ITEM":
+            if (importable.leftClickActions) {
+                collectActionListHashes(
+                    out,
+                    "leftClickActions",
+                    importable.leftClickActions
+                );
+            }
+            if (importable.rightClickActions) {
+                collectActionListHashes(
+                    out,
+                    "rightClickActions",
+                    importable.rightClickActions
+                );
+            }
+            break;
+        case "NPC":
             if (importable.leftClickActions) {
                 collectActionListHashes(
                     out,

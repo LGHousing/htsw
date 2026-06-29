@@ -23,6 +23,8 @@ import { listAllFunctionNames } from "../importables/functions/listFunctions";
 import {
     resetFunctionNameSession,
 } from "../importables/functions/listFunctions";
+import { resetCommandNameSession } from "../importables/commands/listCommands";
+import { createNpcLookupCache } from "../importables/npcs/listNpcs";
 import { listAllRegionNames } from "../importables/regions/listRegions";
 import {
     listAllMenuNames,
@@ -171,6 +173,7 @@ async function verifyFixture(
     fixture: ParsedTestFixture
 ): Promise<string[]> {
     resetFunctionNameSession();
+    resetCommandNameSession();
     resetMenuNameSession();
     const ordered = orderImportablesForImportSession(
         fixture.parsed.value,
@@ -184,6 +187,7 @@ async function verifyFixture(
         trust: buildTrustPlan(housingUuid, ordered, false),
         events: undefined,
         itemCaptures,
+        npcLookup: createNpcLookupCache(),
     };
 
     const failures: string[] = [];
@@ -241,6 +245,11 @@ function residualPlanOperations(plan: ImportablePlan): string[] {
         }
         case "EVENT":
             return actionPlanFailures("actions", plan.actionsPlan);
+        case "COMMAND": {
+            const failures = actionPlanFailures("actions", plan.actionsPlan);
+            if (!plan.settingsHandled) failures.push("settings differ");
+            return failures;
+        }
         case "REGION": {
             const failures: string[] = [];
             if (plan.liveRegion === null) {
@@ -288,6 +297,16 @@ function residualPlanOperations(plan: ImportablePlan): string[] {
         }
         case "ITEM":
             return [];
+        case "NPC": {
+            const failures: string[] = [];
+            if (!plan.nameHandled) failures.push("name differs");
+            if (!plan.leftClickRedirectHandled) failures.push("leftClickRedirect differs");
+            const leftFailures = actionPlanFailures("leftClickActions", plan.leftPlan);
+            for (let i = 0; i < leftFailures.length; i++) failures.push(leftFailures[i]);
+            const rightFailures = actionPlanFailures("rightClickActions", plan.rightPlan);
+            for (let i = 0; i < rightFailures.length; i++) failures.push(rightFailures[i]);
+            return failures;
+        }
         default: {
             const _exhaustive: never = plan;
             return _exhaustive;

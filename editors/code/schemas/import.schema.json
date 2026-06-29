@@ -299,6 +299,9 @@
         "rightClickActions": {
           "$ref": "#/definitions/htslPath"
         },
+        "leftClickRedirect": {
+          "type": "boolean"
+        },
         "lookAtPlayers": {
           "type": "boolean"
         },
@@ -451,6 +454,9 @@
         },
         "mode": {
           "$ref": "#/definitions/commandMode"
+        },
+        "actions": {
+          "$ref": "#/definitions/htslPath"
         },
         "requiredPriority": {
           "type": "integer",

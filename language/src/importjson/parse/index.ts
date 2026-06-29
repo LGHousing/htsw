@@ -4,7 +4,7 @@ import type { GlobalCtxt } from "../../context";
 import type { Importable } from "../../types";
 import { Parser } from "./parser";
 import { Diagnostic } from "../../diagnostic";
-import { parseImportableCommand, parseImportableEvent, parseImportableFunction, parseImportableGroup, parseImportableItem, parseImportableMenu, parseImportableRegion, parseImportableTeam } from "./importables";
+import { parseImportableCommand, parseImportableEvent, parseImportableFunction, parseImportableGroup, parseImportableItem, parseImportableMenu, parseImportableNpc, parseImportableRegion, parseImportableTeam } from "./importables";
 import { warnUnused } from "./helpers";
 import type { ImportJsonFileNode, ImportJsonParseMetadata } from "../metadata";
 
@@ -83,6 +83,10 @@ function parseImportJson0(p: Parser, fileNode: ImportJsonFileNode): Importable[]
         importables.push(parseImportableItem(sp));
     }
 
+    for (const sp of p.parseFieldOrUndefined("npcs")?.parseArray() ?? []) {
+        importables.push(parseImportableNpc(sp));
+    }
+
     for (const sp of p.parseFieldOrUndefined("events")?.parseArray() ?? []) {
         importables.push(parseImportableEvent(sp));
     }
@@ -101,7 +105,7 @@ function parseImportJson0(p: Parser, fileNode: ImportJsonFileNode): Importable[]
 
     warnUnused(p, [
         "include", "houseUuid", "houseName", "functions",
-        "regions", "menus", "items", "events", "groups",
+        "regions", "menus", "items", "npcs", "events", "groups",
         "teams", "commands"
     ]);
     for (const importable of importables) {

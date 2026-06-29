@@ -8,6 +8,7 @@ export type TimedOperationKind =
     | "pageTurnWait"
     | "goBackWait"
     | "chatInput"
+    | "signInput"
     | "anvilInput"
     | "itemSelect"
     | "reorderStep"

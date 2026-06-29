@@ -54,6 +54,7 @@ export function referencedItemNames(importable: Importable): string[] {
     switch (importable.type) {
         case "FUNCTION":
         case "EVENT":
+        case "COMMAND":
             collectFromActions(importable.actions, names);
             break;
         case "REGION":
@@ -66,12 +67,12 @@ export function referencedItemNames(importable: Importable): string[] {
             }
             break;
         case "ITEM":
+        case "NPC":
             collectFromActions(importable.leftClickActions, names);
             collectFromActions(importable.rightClickActions, names);
             break;
         case "TEAM":
         case "GROUP":
-        case "COMMAND":
         case "HOUSE_NAME":
             break;
         default: {

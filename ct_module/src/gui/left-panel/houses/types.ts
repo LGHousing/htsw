@@ -28,9 +28,17 @@ import {
     isRegionScanInFlight,
     scanHouseRegions,
 } from "./sources/regionsSource";
+import {
+    getHouseCommands,
+    houseCommandsScanned,
+    isCommandScanInFlight,
+    scanHouseCommands,
+} from "./sources/commandsSource";
 import { exportAllFunctions } from "../../../importables/functions/exportAll";
 import { exportAllEvents } from "../../../importables/events/exportAll";
 import { exportAllMenus } from "../../../importables/menus/exportAll";
+import { exportAllRegions } from "../../../importables/regions/exportAll";
+import { exportAllCommands } from "../../../importables/commands/exportAll";
 import { startExport, type ExportSpec } from "../../right-panel/import-tab/importController";
 
 // One browsable category of house contents (Functions, Events, Menus). The
@@ -110,8 +118,6 @@ export const HOUSE_CONTENT_TYPES: HouseContentType[] = [
         export: exportHook({ type: "MENU", label: "menu", exportAll: exportAllMenus }),
     },
     {
-        // Browse + edit only: there's no region exporter (reading bounds is the
-        // hard part), so no export hook.
         type: "REGION",
         label: "Regions",
         icon: Icons.cuboid,
@@ -121,6 +127,19 @@ export const HOUSE_CONTENT_TYPES: HouseContentType[] = [
         scanInFlight: isRegionScanInFlight,
         edit: (name) => ChatLib.command(`region edit ${name}`),
         remove: (name) => ChatLib.command(`region delete ${name}`),
+        export: exportHook({ type: "REGION", label: "region", exportAll: exportAllRegions }),
+    },
+    {
+        type: "COMMAND",
+        label: "Commands",
+        icon: Icons.command,
+        items: getHouseCommands,
+        scanned: houseCommandsScanned,
+        scan: scanHouseCommands,
+        scanInFlight: isCommandScanInFlight,
+        edit: (name) => ChatLib.command(`command edit ${name}`),
+        remove: (name) => ChatLib.command(`command delete ${name}`),
+        export: exportHook({ type: "COMMAND", label: "command", exportAll: exportAllCommands }),
     },
 ];
 

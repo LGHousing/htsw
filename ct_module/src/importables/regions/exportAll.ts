@@ -8,37 +8,45 @@ import TaskContext from "../../tasks/context";
 import type { ImportableItem } from "htsw/types";
 import { isTaskCancelled } from "../../tasks/manager";
 import { ExportResult, withExportSession } from "../exportSession";
-import { exportEventWithSharedState } from "./export";
 import { writeCapturedItems } from "../../exporter/writeCapturedItems";
 import {
-    eventExportReferencesExist,
-    htslTargetForEventExport,
+    htslTargetsForRegionExport,
+    regionExportReferencesExist,
 } from "../../project/paths";
 import type { ExportProgressSink } from "../../housingSync/progress/types";
-import { listAllEventNames } from "./listEvents";
+import { listAllRegions, type RegionListEntry } from "./listRegions";
+import { exportRegionWithSharedState } from "./export";
 import { filterAlreadyExported } from "../exportSkip";
 
-export type ExportAllEventsOptions = {
+export type ExportAllRegionsOptions = {
     importJsonPath: string;
     rootDir: string;
     names?: readonly string[];
     progress?: ExportProgressSink;
-    // Items the destination project already declares; seeds the capture
-    // registry so identical captures reuse project names (see functions).
     projectItems?: readonly ImportableItem[];
     skipExisting?: boolean;
 };
 
-export async function exportAllEvents(
+export async function exportAllRegions(
     ctx: TaskContext,
-    options: ExportAllEventsOptions
+    options: ExportAllRegionsOptions
 ): Promise<ExportResult> {
-    return withExportSession(() => exportAllEventsInner(ctx, options));
+    return withExportSession(() => exportAllRegionsInner(ctx, options));
 }
 
-async function exportAllEventsInner(
+function findRegion(
+    regions: readonly RegionListEntry[],
+    name: string
+): RegionListEntry | null {
+    for (let i = 0; i < regions.length; i++) {
+        if (regions[i].name === name) return regions[i];
+    }
+    return null;
+}
+
+async function exportAllRegionsInner(
     ctx: TaskContext,
-    options: ExportAllEventsOptions
+    options: ExportAllRegionsOptions
 ): Promise<ExportResult> {
     const { importJsonPath, rootDir } = options;
 
@@ -49,19 +57,20 @@ async function exportAllEventsInner(
         itemCaptures.seed(projectItems[i].name, projectItems[i].nbt);
     }
 
-    const names0 =
+    const regions = await listAllRegions(ctx);
+    const names =
         options.names !== undefined
             ? options.names
-            : await listAllEventNames(ctx);
-    const names = filterAlreadyExported(
+            : regions.map((region) => region.name);
+    const exportNames = filterAlreadyExported(
         ctx,
-        "event",
-        names0,
+        "region",
+        names,
         options.skipExisting,
-        (name) => eventExportReferencesExist(importJsonPath, name)
+        (name) => regionExportReferencesExist(importJsonPath, name)
     );
-    if (names.length === 0) {
-        ctx.displayMessage("&7No events to export.");
+    if (exportNames.length === 0) {
+        ctx.displayMessage("&7No regions to export.");
         try {
             await restoreInventoryToSnapshot(ctx, inventorySnapshot);
         } catch (error) {
@@ -73,33 +82,37 @@ async function exportAllEventsInner(
     }
 
     ctx.displayMessage(
-        `&aExporting ${names.length} event${names.length === 1 ? "" : "s"}...`
+        `&aExporting ${exportNames.length} region${exportNames.length === 1 ? "" : "s"}...`
     );
-    options.progress?.start(names);
+    options.progress?.start(exportNames);
 
     let succeeded = 0;
     let failed = 0;
     try {
-        for (let i = 0; i < names.length; i++) {
+        for (let i = 0; i < exportNames.length; i++) {
             ctx.checkCancelled();
-            const name = names[i];
-            const target = htslTargetForEventExport(importJsonPath, name);
+            const name = exportNames[i];
+            const target = htslTargetsForRegionExport(importJsonPath, name);
 
             options.progress?.item(i, name);
             ctx.displayMessage(
-                `&7[${i + 1}/${names.length}] &fExporting '${name}'`
+                `&7[${i + 1}/${exportNames.length}] &fExporting '${name}'`
             );
 
             const sink = options.progress;
             try {
-                await exportEventWithSharedState(
+                const entry = findRegion(regions, name);
+                if (entry === null) {
+                    throw new Error(`No region named "${name}" exists in this housing.`);
+                }
+                await exportRegionWithSharedState(
                     ctx,
                     {
-                        name,
+                        entry,
                         importJsonPath,
                         declaringJsonPath: target.importJsonPath,
-                        htslPath: target.htslPath,
-                        htslReference: target.htslReference,
+                        onEnterTarget: target.onEnter,
+                        onExitTarget: target.onExit,
                         rootDir,
                         onReadProgress:
                             sink?.itemProgress === undefined
@@ -135,12 +148,12 @@ async function exportAllEventsInner(
         }
     }
 
-    const itemCount = itemCaptures.size();
+    const itemCounts = itemCaptures.counts();
 
     ctx.displayMessage(
-        `&aExported ${succeeded} of ${names.length} event${names.length === 1 ? "" : "s"} (${itemCount} item${itemCount === 1 ? "" : "s"} captured)${failed > 0 ? ` &c[${failed} failed]` : ""}`
+        `&aExported ${succeeded} of ${exportNames.length} region${exportNames.length === 1 ? "" : "s"} (items: ${itemCounts.matched} matched, ${itemCounts.fresh} new)${failed > 0 ? ` &c[${failed} failed]` : ""}`
     );
     ctx.displayMessage(`&7  -> ${importJsonPath}`);
 
-    return { total: names.length, succeeded, failed };
+    return { total: exportNames.length, succeeded, failed };
 }

@@ -8,52 +8,43 @@ import TaskContext from "../../tasks/context";
 import type { ImportableItem } from "htsw/types";
 import { isTaskCancelled } from "../../tasks/manager";
 import { ExportResult, withExportSession } from "../exportSession";
-import { exportFunctionWithSharedState } from "./export";
+import { exportCommandWithSharedState } from "./export";
 import { writeCapturedItems } from "../../exporter/writeCapturedItems";
 import {
-    functionExportReferencesExist,
-    htslTargetForFunctionExport,
+    commandExportReferencesExist,
+    htslTargetForCommandExport,
 } from "../../project/paths";
 import type { ExportProgressSink } from "../../housingSync/progress/types";
-import { listAllFunctionNames, resetFunctionNameSession } from "./listFunctions";
+import {
+    commandNameForHousing,
+    listAllCommandNames,
+    resetCommandNameSession,
+} from "./listCommands";
 import { filterAlreadyExported } from "../exportSkip";
 
-export type ExportAllFunctionsOptions = {
+export type ExportAllCommandsOptions = {
     importJsonPath: string;
     rootDir: string;
     names?: readonly string[];
     progress?: ExportProgressSink;
-    // Knowledge-only pass: same editor walk, but nothing is written to
-    // .htsl/import.json/item files (see ExportFunctionOptions.readOnly).
-    readOnly?: { housingUuid: string };
-    // Items the destination project already declares; seeds the capture
-    // registry so identical captures reuse project names instead of minting
-    // duplicates. Callers with a warm parse should always pass this.
     projectItems?: readonly ImportableItem[];
-    // Fires when the driver listed the house's functions itself (no `names`
-    // supplied), so the caller can record the scan.
-    onNamesListed?: (names: readonly string[]) => void;
     skipExisting?: boolean;
 };
 
-export async function exportAllFunctions(
+export async function exportAllCommands(
     ctx: TaskContext,
-    options: ExportAllFunctionsOptions
+    options: ExportAllCommandsOptions
 ): Promise<ExportResult> {
-    return withExportSession(() => exportAllFunctionsInner(ctx, options));
+    return withExportSession(() => exportAllCommandsInner(ctx, options));
 }
 
-async function exportAllFunctionsInner(
+async function exportAllCommandsInner(
     ctx: TaskContext,
-    options: ExportAllFunctionsOptions
+    options: ExportAllCommandsOptions
 ): Promise<ExportResult> {
     const { importJsonPath, rootDir } = options;
-    const readOnly = options.readOnly !== undefined;
-    const verb = readOnly ? "Reading" : "Exporting";
 
-    // Drop any function-list cache from a prior import so per-function icon
-    // reads reflect the live house, not a stale snapshot.
-    resetFunctionNameSession();
+    resetCommandNameSession();
 
     const inventorySnapshot: InventorySnapshot = snapshotInventory();
     const itemCaptures = new ItemCaptureRegistry();
@@ -62,22 +53,19 @@ async function exportAllFunctionsInner(
         itemCaptures.seed(projectItems[i].name, projectItems[i].nbt);
     }
 
-    let names: readonly string[];
-    if (options.names !== undefined) {
-        names = options.names;
-    } else {
-        names = await listAllFunctionNames(ctx);
-        options.onNamesListed?.(names);
-    }
-    names = filterAlreadyExported(
+    const names =
+        options.names !== undefined
+            ? options.names.map(commandNameForHousing)
+            : await listAllCommandNames(ctx);
+    const exportNames = filterAlreadyExported(
         ctx,
-        "function",
+        "command",
         names,
-        readOnly ? false : options.skipExisting,
-        (name) => functionExportReferencesExist(importJsonPath, name)
+        options.skipExisting,
+        (name) => commandExportReferencesExist(importJsonPath, name)
     );
-    if (names.length === 0) {
-        ctx.displayMessage(`&7No functions to ${readOnly ? "read" : "export"}.`);
+    if (exportNames.length === 0) {
+        ctx.displayMessage("&7No commands to export.");
         try {
             await restoreInventoryToSnapshot(ctx, inventorySnapshot);
         } catch (error) {
@@ -89,26 +77,26 @@ async function exportAllFunctionsInner(
     }
 
     ctx.displayMessage(
-        `&a${verb} ${names.length} function${names.length === 1 ? "" : "s"}...`
+        `&aExporting ${exportNames.length} command${exportNames.length === 1 ? "" : "s"}...`
     );
-    options.progress?.start(names);
+    options.progress?.start(exportNames);
 
     let succeeded = 0;
     let failed = 0;
     try {
-        for (let i = 0; i < names.length; i++) {
+        for (let i = 0; i < exportNames.length; i++) {
             ctx.checkCancelled();
-            const name = names[i];
-            const target = htslTargetForFunctionExport(importJsonPath, name);
+            const name = exportNames[i];
+            const target = htslTargetForCommandExport(importJsonPath, name);
 
             options.progress?.item(i, name);
             ctx.displayMessage(
-                `&7[${i + 1}/${names.length}] &f${verb} '${name}'`
+                `&7[${i + 1}/${exportNames.length}] &fExporting '/${name}'`
             );
 
             const sink = options.progress;
             try {
-                await exportFunctionWithSharedState(
+                await exportCommandWithSharedState(
                     ctx,
                     {
                         name,
@@ -117,7 +105,6 @@ async function exportAllFunctionsInner(
                         htslPath: target.htslPath,
                         htslReference: target.htslReference,
                         rootDir,
-                        readOnly: options.readOnly,
                         onReadProgress:
                             sink?.itemProgress === undefined
                                 ? undefined
@@ -133,16 +120,14 @@ async function exportAllFunctionsInner(
                 failed++;
                 sink?.itemFailed?.(i, String(error));
                 ctx.displayMessage(
-                    `&c[export-all] failed on '${name}': ${error}`
+                    `&c[export-all] failed on '/${name}': ${error}`
                 );
             }
         }
     } finally {
         options.progress?.done();
         try {
-            if (!readOnly) {
-                writeCapturedItems(ctx, itemCaptures, rootDir, importJsonPath);
-            }
+            writeCapturedItems(ctx, itemCaptures, rootDir, importJsonPath);
         } finally {
             try {
                 await restoreInventoryToSnapshot(ctx, inventorySnapshot);
@@ -154,22 +139,11 @@ async function exportAllFunctionsInner(
         }
     }
 
-    const hints = itemCaptures.takeHints();
-    for (let i = 0; i < hints.length; i++) {
-        ctx.displayMessage(`&e[export] ${hints[i]}`);
-    }
     const itemCounts = itemCaptures.counts();
+    ctx.displayMessage(
+        `&aExported ${succeeded} of ${exportNames.length} command${exportNames.length === 1 ? "" : "s"} (items: ${itemCounts.matched} matched, ${itemCounts.fresh} new)${failed > 0 ? ` &c[${failed} failed]` : ""}`
+    );
+    ctx.displayMessage(`&7  -> ${importJsonPath}`);
 
-    if (readOnly) {
-        ctx.displayMessage(
-            `&aRead ${succeeded} of ${names.length} function${names.length === 1 ? "" : "s"}${failed > 0 ? ` &c[${failed} failed]` : ""}`
-        );
-    } else {
-        ctx.displayMessage(
-            `&aExported ${succeeded} of ${names.length} function${names.length === 1 ? "" : "s"} (items: ${itemCounts.matched} matched, ${itemCounts.fresh} new)${failed > 0 ? ` &c[${failed} failed]` : ""}`
-        );
-        ctx.displayMessage(`&7  -> ${importJsonPath}`);
-    }
-
-    return { total: names.length, succeeded, failed };
+    return { total: exportNames.length, succeeded, failed };
 }

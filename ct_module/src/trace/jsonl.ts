@@ -3,7 +3,7 @@
 import { ensureParentDirs } from "../utils/filesystem";
 
 export type JsonlTrace = {
-    start(): string;
+    start(options?: { clear?: boolean }): string;
     stop(): string;
     isEnabled(): boolean;
     path(): string;
@@ -13,18 +13,20 @@ export type JsonlTrace = {
 
 export function createJsonlTrace(path: string): JsonlTrace {
     let enabled = false;
-    let buffer = "";
     let startedAt = 0;
 
     return {
-        start(): string {
+        start(options?: { clear?: boolean }): string {
             enabled = true;
-            buffer = "";
             startedAt = Date.now();
-            try {
+            if (options?.clear !== false) {
+                try {
+                    ensureParentDirs(path);
+                    FileLib.write(path, "", true);
+                } catch (_e) {}
+            } else {
                 ensureParentDirs(path);
-                FileLib.write(path, "", true);
-            } catch (_e) {}
+            }
             return path;
         },
 
@@ -48,11 +50,35 @@ export function createJsonlTrace(path: string): JsonlTrace {
         write(record: Record<string, unknown>): void {
             if (!enabled) return;
             const now = Date.now();
-            buffer +=
-                JSON.stringify({ at: now, tMs: now - startedAt, ...record }) + "\n";
+            let line: string;
             try {
-                FileLib.write(path, buffer, true);
+                line = JSON.stringify({ at: now, tMs: now - startedAt, ...record }) + "\n";
+            } catch (error) {
+                line = JSON.stringify({
+                    at: now,
+                    tMs: now - startedAt,
+                    kind: "traceWriteError",
+                    originalKind: String(record.kind),
+                    error: String(error),
+                }) + "\n";
+            }
+            try {
+                appendLine(path, line);
             } catch (_e) {}
         },
     };
+}
+
+function appendLine(path: string, line: string): void {
+    const Files = Java.type("java.nio.file.Files");
+    const Paths = Java.type("java.nio.file.Paths");
+    const StandardOpenOption = Java.type("java.nio.file.StandardOpenOption");
+    const StandardCharsets = Java.type("java.nio.charset.StandardCharsets");
+    const JString = Java.type("java.lang.String");
+    Files.write(
+        Paths.get(String(path)),
+        new JString(String(line)).getBytes(StandardCharsets.UTF_8),
+        StandardOpenOption.CREATE,
+        StandardOpenOption.APPEND
+    );
 }

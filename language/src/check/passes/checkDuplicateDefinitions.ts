@@ -41,6 +41,11 @@ export function checkDuplicateDefinitions(gcx: GlobalCtxt) {
     deduplicateBy(gcx, commands, "name", {
         specifier: "command name"
     });
+
+    const npcs = gcx.importables.filter(it => it.type === "NPC");
+    deduplicateByKey(gcx, npcs, (npc) => `${npc.pos.x},${npc.pos.y},${npc.pos.z}`, "pos", {
+        specifier: "NPC position"
+    });
 }
 
 type Terms = {
@@ -67,6 +72,29 @@ function deduplicateBy<T extends object, K extends keyof T>(
             );
         } else {
             seen.set(id, gcx.spans.getField(el, by));
+        }
+    }
+}
+
+function deduplicateByKey<T extends object, K extends keyof T>(
+    gcx: GlobalCtxt, list: T[], key: (value: T) => string, spanField: K, terms: Terms
+) {
+    const seen: Map<string, Span> = new Map();
+
+    for (const el of list) {
+        const id = key(el);
+
+        if (seen.has(id)) {
+            const span = gcx.spans.getField(el, spanField);
+            const otherSpan = seen.get(id)!;
+
+            gcx.addDiagnostic(
+                Diagnostic.error(`Duplicate ${terms.specifier} '${id}'`)
+                    .addPrimarySpan(span, `\`${id}\` redefined here`)
+                    .addSecondarySpan(otherSpan, `Previous definition of \`${id}\` here`)
+            );
+        } else {
+            seen.set(id, gcx.spans.getField(el, spanField));
         }
     }
 }

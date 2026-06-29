@@ -2,6 +2,26 @@ import * as json from "jsonc-parser";
 import { findDeclaringImportJson, walkImportJsonTree } from "./includeWalk";
 import { canonicalSlug } from "./filenames";
 import { joinPath, type ProjectFs } from "./fs";
+import { importableEntryMatchesIdentity, npcPosIdentity } from "./importJsonMutations";
+
+export type PosLike = { x: number; y: number; z: number };
+
+export type NpcExportEntry = {
+    name: string;
+    pos: PosLike;
+};
+
+function nodeNumber(node: json.Node | undefined): number | null {
+    return node && node.type === "number" ? Number(node.value) : null;
+}
+
+function readPosFromNode(node: json.Node): PosLike | null {
+    const x = nodeNumber(json.findNodeAtLocation(node, ["pos", "x"]));
+    const y = nodeNumber(json.findNodeAtLocation(node, ["pos", "y"]));
+    const z = nodeNumber(json.findNodeAtLocation(node, ["pos", "z"]));
+    if (x === null || y === null || z === null) return null;
+    return { x, y, z };
+}
 
 export function readIdentitiesFromImportJson(
     fs: ProjectFs,
@@ -42,6 +62,284 @@ export function readEventNamesFromImportJson(
     importJsonPath: string
 ): string[] {
     return readIdentitiesFromImportJson(fs, importJsonPath, "events", "event");
+}
+
+export function readRegionNamesFromImportJson(
+    fs: ProjectFs,
+    importJsonPath: string
+): string[] {
+    return readIdentitiesFromImportJson(fs, importJsonPath, "regions", "name");
+}
+
+export function readMenuNamesFromImportJson(
+    fs: ProjectFs,
+    importJsonPath: string
+): string[] {
+    return readIdentitiesFromImportJson(fs, importJsonPath, "menus", "name");
+}
+
+export function readCommandNamesFromImportJson(
+    fs: ProjectFs,
+    importJsonPath: string
+): string[] {
+    return readIdentitiesFromImportJson(fs, importJsonPath, "commands", "name");
+}
+
+export function readNpcEntriesFromImportJson(
+    fs: ProjectFs,
+    importJsonPath: string
+): NpcExportEntry[] {
+    const entries: NpcExportEntry[] = [];
+    const seen = new Set<string>();
+    walkImportJsonTree(fs, importJsonPath, (_filePath, tree) => {
+        const sectionNode = json.findNodeAtLocation(tree, ["npcs"]);
+        if (!sectionNode || sectionNode.type !== "array") return undefined;
+        const items = sectionNode.children ?? [];
+        for (let i = 0; i < items.length; i++) {
+            const nameNode = json.findNodeAtLocation(items[i], ["name"]);
+            const pos = readPosFromNode(items[i]);
+            if (!nameNode || nameNode.type !== "string" || pos === null) continue;
+            const identity = npcPosIdentity(pos);
+            if (seen.has(identity)) continue;
+            seen.add(identity);
+            entries.push({ name: String(nameNode.value), pos });
+        }
+        return undefined;
+    });
+    return entries;
+}
+
+function readDeclaringImportableNode(
+    fs: ProjectFs,
+    entryImportJsonPath: string,
+    section: string,
+    identityField: string,
+    identity: string
+): { importJsonPath: string; node: json.Node } | null {
+    const importJsonPath = findDeclaringImportJson(
+        fs,
+        entryImportJsonPath,
+        section,
+        identityField,
+        identity
+    );
+    if (importJsonPath === null) return null;
+    if (!fs.exists(importJsonPath)) return null;
+
+    const text = fs.readFile(importJsonPath);
+    if (text.trim() === "") return null;
+    const tree = json.parseTree(text);
+    if (!tree) return null;
+
+    const sectionNode = json.findNodeAtLocation(tree, [section]);
+    if (!sectionNode || sectionNode.type !== "array") return null;
+    const items = sectionNode.children ?? [];
+    for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        const idNode = json.findNodeAtLocation(item, [identityField]);
+        if (idNode && idNode.type === "string" && idNode.value === identity) {
+            return { importJsonPath, node: item };
+        }
+    }
+
+    return null;
+}
+
+function readDeclaringNpcNode(
+    fs: ProjectFs,
+    entryImportJsonPath: string,
+    pos: PosLike
+): { importJsonPath: string; node: json.Node } | null {
+    let result: { importJsonPath: string; node: json.Node } | null = null;
+    const identity = npcPosIdentity(pos);
+    walkImportJsonTree(fs, entryImportJsonPath, (filePath, tree) => {
+        const sectionNode = json.findNodeAtLocation(tree, ["npcs"]);
+        if (!sectionNode || sectionNode.type !== "array") return undefined;
+        const items = sectionNode.children ?? [];
+        for (let i = 0; i < items.length; i++) {
+            if (importableEntryMatchesIdentity("npcs", items[i], identity)) {
+                result = { importJsonPath: filePath, node: items[i] };
+                return true;
+            }
+        }
+        return undefined;
+    });
+    return result;
+}
+
+function referencedFileExists(
+    fs: ProjectFs,
+    importJsonPath: string,
+    ref: string
+): boolean {
+    const sanitized = sanitizeRelativeReference(ref);
+    if (sanitized === null) return false;
+    return fs.exists(fs.resolvePath(fs.parentDir(importJsonPath), sanitized));
+}
+
+function requiredStringReferenceExists(
+    fs: ProjectFs,
+    importJsonPath: string,
+    node: json.Node,
+    field: string
+): boolean {
+    const refNode = json.findNodeAtLocation(node, [field]);
+    if (!refNode || refNode.type !== "string") return false;
+    return referencedFileExists(fs, importJsonPath, String(refNode.value));
+}
+
+function optionalStringReferenceExists(
+    fs: ProjectFs,
+    importJsonPath: string,
+    node: json.Node,
+    field: string
+): boolean {
+    const refNode = json.findNodeAtLocation(node, [field]);
+    if (!refNode) return true;
+    if (refNode.type !== "string") return false;
+    return referencedFileExists(fs, importJsonPath, String(refNode.value));
+}
+
+function actionFileExportReferencesExist(
+    fs: ProjectFs,
+    importJsonPath: string,
+    section: string,
+    identityField: string,
+    identity: string
+): boolean {
+    const entry = readDeclaringImportableNode(
+        fs,
+        importJsonPath,
+        section,
+        identityField,
+        identity
+    );
+    if (entry === null) return false;
+    return requiredStringReferenceExists(fs, entry.importJsonPath, entry.node, "actions");
+}
+
+export function functionExportReferencesExist(
+    fs: ProjectFs,
+    importJsonPath: string,
+    name: string
+): boolean {
+    return actionFileExportReferencesExist(
+        fs,
+        importJsonPath,
+        "functions",
+        "name",
+        name
+    );
+}
+
+export function eventExportReferencesExist(
+    fs: ProjectFs,
+    importJsonPath: string,
+    event: string
+): boolean {
+    return actionFileExportReferencesExist(
+        fs,
+        importJsonPath,
+        "events",
+        "event",
+        event
+    );
+}
+
+export function commandExportReferencesExist(
+    fs: ProjectFs,
+    importJsonPath: string,
+    name: string
+): boolean {
+    return actionFileExportReferencesExist(
+        fs,
+        importJsonPath,
+        "commands",
+        "name",
+        name
+    );
+}
+
+export function npcExportReferencesExist(
+    fs: ProjectFs,
+    importJsonPath: string,
+    pos: PosLike
+): boolean {
+    const entry = readDeclaringNpcNode(fs, importJsonPath, pos);
+    if (entry === null) return false;
+    return (
+        requiredStringReferenceExists(
+            fs,
+            entry.importJsonPath,
+            entry.node,
+            "leftClickActions"
+        ) &&
+        requiredStringReferenceExists(
+            fs,
+            entry.importJsonPath,
+            entry.node,
+            "rightClickActions"
+        )
+    );
+}
+
+export function regionExportReferencesExist(
+    fs: ProjectFs,
+    importJsonPath: string,
+    name: string
+): boolean {
+    const entry = readDeclaringImportableNode(
+        fs,
+        importJsonPath,
+        "regions",
+        "name",
+        name
+    );
+    if (entry === null) return false;
+    const boundsNode = json.findNodeAtLocation(entry.node, ["bounds"]);
+    if (!boundsNode) return false;
+    return (
+        optionalStringReferenceExists(
+            fs,
+            entry.importJsonPath,
+            entry.node,
+            "onEnterActions"
+        ) &&
+        optionalStringReferenceExists(
+            fs,
+            entry.importJsonPath,
+            entry.node,
+            "onExitActions"
+        )
+    );
+}
+
+export function menuExportReferencesExist(
+    fs: ProjectFs,
+    importJsonPath: string,
+    name: string
+): boolean {
+    const entry = readDeclaringImportableNode(
+        fs,
+        importJsonPath,
+        "menus",
+        "name",
+        name
+    );
+    if (entry === null) return false;
+
+    const slotsNode = json.findNodeAtLocation(entry.node, ["slots"]);
+    if (!slotsNode || slotsNode.type !== "array") return false;
+    const slots = slotsNode.children ?? [];
+    for (let i = 0; i < slots.length; i++) {
+        if (!requiredStringReferenceExists(fs, entry.importJsonPath, slots[i], "nbt")) {
+            return false;
+        }
+        if (!optionalStringReferenceExists(fs, entry.importJsonPath, slots[i], "actions")) {
+            return false;
+        }
+    }
+    return true;
 }
 
 function readActionReferencesForSection(
@@ -119,6 +417,18 @@ export type HtslExportTarget = {
     htslReference: string;
 };
 
+export type RegionHtslExportTargets = {
+    importJsonPath: string;
+    onEnter: HtslExportTarget;
+    onExit: HtslExportTarget;
+};
+
+export type NpcHtslExportTargets = {
+    importJsonPath: string;
+    leftClick: HtslExportTarget;
+    rightClick: HtslExportTarget;
+};
+
 function htslTargetForSection(
     fs: ProjectFs,
     entryImportJsonPath: string,
@@ -173,6 +483,233 @@ export function htslTargetForEventExport(
         identity,
         "event"
     );
+}
+
+export function htslTargetForCommandExport(
+    fs: ProjectFs,
+    entryImportJsonPath: string,
+    identity: string
+): HtslExportTarget {
+    return htslTargetForSection(
+        fs,
+        entryImportJsonPath,
+        "commands",
+        "name",
+        identity,
+        "command"
+    );
+}
+
+function readActionReferencesForFields(
+    fs: ProjectFs,
+    importJsonPath: string,
+    section: string,
+    identityField: string,
+    identity: string,
+    fields: readonly string[]
+): { current: Record<string, string | null>; usedByOthers: Set<string> } {
+    const current: Record<string, string | null> = {};
+    for (let i = 0; i < fields.length; i++) current[fields[i]] = null;
+    const result = { current, usedByOthers: new Set<string>() };
+    if (!fs.exists(importJsonPath)) return result;
+
+    const text = fs.readFile(importJsonPath);
+    if (text.trim() === "") return result;
+
+    const tree = json.parseTree(text);
+    if (!tree) return result;
+
+    const sectionNode = json.findNodeAtLocation(tree, [section]);
+    if (!sectionNode || sectionNode.type !== "array") return result;
+
+    const items = sectionNode.children ?? [];
+    for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        const nameNode = json.findNodeAtLocation(item, [identityField]);
+        if (!nameNode || nameNode.type !== "string") continue;
+
+        for (let f = 0; f < fields.length; f++) {
+            const field = fields[f];
+            const refNode = json.findNodeAtLocation(item, [field]);
+            if (!refNode || refNode.type !== "string") continue;
+            const ref = String(refNode.value);
+            if (nameNode.value === identity) {
+                current[field] = ref;
+            } else {
+                result.usedByOthers.add(ref);
+            }
+        }
+    }
+
+    return result;
+}
+
+function pickHtslFilenameFromBase(
+    current: string | null,
+    usedLower: Set<string>,
+    baseName: string,
+    label: string
+): string {
+    if (current !== null) {
+        const sanitized = sanitizeRelativeReference(current);
+        if (sanitized !== null) {
+            const lower = sanitized.toLowerCase();
+            if (!usedLower.has(lower)) {
+                usedLower.add(lower);
+                return sanitized;
+            }
+        }
+    }
+
+    const slug = canonicalSlug(baseName);
+    const preferred = `${slug}.htsl`;
+    if (!usedLower.has(preferred.toLowerCase())) {
+        usedLower.add(preferred.toLowerCase());
+        return preferred;
+    }
+
+    for (let i = 2; i < 1000; i++) {
+        const candidate = `${slug}_${i}.htsl`;
+        if (!usedLower.has(candidate.toLowerCase())) {
+            usedLower.add(candidate.toLowerCase());
+            return candidate;
+        }
+    }
+
+    throw new Error(`Could not find an unused filename for ${label}.`);
+}
+
+export function htslTargetsForRegionExport(
+    fs: ProjectFs,
+    entryImportJsonPath: string,
+    identity: string
+): RegionHtslExportTargets {
+    const importJsonPath =
+        findDeclaringImportJson(fs, entryImportJsonPath, "regions", "name", identity) ??
+        entryImportJsonPath;
+    const refs = readActionReferencesForFields(
+        fs,
+        importJsonPath,
+        "regions",
+        "name",
+        identity,
+        ["onEnterActions", "onExitActions"]
+    );
+    const usedLower = new Set<string>();
+    refs.usedByOthers.forEach((name) => usedLower.add(name.toLowerCase()));
+
+    const onEnterReference = pickHtslFilenameFromBase(
+        refs.current.onEnterActions,
+        usedLower,
+        `${identity}_enter`,
+        `region entry actions for "${identity}"`
+    );
+    const onExitReference = pickHtslFilenameFromBase(
+        refs.current.onExitActions,
+        usedLower,
+        `${identity}_exit`,
+        `region exit actions for "${identity}"`
+    );
+    const dir = fs.parentDir(importJsonPath);
+    return {
+        importJsonPath,
+        onEnter: {
+            importJsonPath,
+            htslPath: fs.resolvePath(dir, onEnterReference),
+            htslReference: onEnterReference,
+        },
+        onExit: {
+            importJsonPath,
+            htslPath: fs.resolvePath(dir, onExitReference),
+            htslReference: onExitReference,
+        },
+    };
+}
+
+function readActionReferencesForNpc(
+    fs: ProjectFs,
+    importJsonPath: string,
+    pos: PosLike,
+    fields: readonly string[]
+): { current: Record<string, string | null>; usedByOthers: Set<string> } {
+    const current: Record<string, string | null> = {};
+    for (let i = 0; i < fields.length; i++) current[fields[i]] = null;
+    const result = { current, usedByOthers: new Set<string>() };
+    if (!fs.exists(importJsonPath)) return result;
+
+    const text = fs.readFile(importJsonPath);
+    if (text.trim() === "") return result;
+
+    const tree = json.parseTree(text);
+    if (!tree) return result;
+
+    const sectionNode = json.findNodeAtLocation(tree, ["npcs"]);
+    if (!sectionNode || sectionNode.type !== "array") return result;
+
+    const identity = npcPosIdentity(pos);
+    const items = sectionNode.children ?? [];
+    for (let i = 0; i < items.length; i++) {
+        const matches = importableEntryMatchesIdentity("npcs", items[i], identity);
+        for (let f = 0; f < fields.length; f++) {
+            const field = fields[f];
+            const refNode = json.findNodeAtLocation(items[i], [field]);
+            if (!refNode || refNode.type !== "string") continue;
+            const ref = String(refNode.value);
+            if (matches) {
+                current[field] = ref;
+            } else {
+                result.usedByOthers.add(ref);
+            }
+        }
+    }
+
+    return result;
+}
+
+export function htslTargetsForNpcExport(
+    fs: ProjectFs,
+    entryImportJsonPath: string,
+    entry: NpcExportEntry
+): NpcHtslExportTargets {
+    const importJsonPath =
+        readDeclaringNpcNode(fs, entryImportJsonPath, entry.pos)?.importJsonPath ??
+        entryImportJsonPath;
+    const refs = readActionReferencesForNpc(
+        fs,
+        importJsonPath,
+        entry.pos,
+        ["leftClickActions", "rightClickActions"]
+    );
+    const usedLower = new Set<string>();
+    refs.usedByOthers.forEach((name) => usedLower.add(name.toLowerCase()));
+    const base = `${entry.name}_${entry.pos.x}_${entry.pos.y}_${entry.pos.z}`;
+
+    const leftReference = pickHtslFilenameFromBase(
+        refs.current.leftClickActions,
+        usedLower,
+        `${base}_left`,
+        `NPC left-click actions for "${entry.name}"`
+    );
+    const rightReference = pickHtslFilenameFromBase(
+        refs.current.rightClickActions,
+        usedLower,
+        `${base}_right`,
+        `NPC right-click actions for "${entry.name}"`
+    );
+    const dir = fs.parentDir(importJsonPath);
+    return {
+        importJsonPath,
+        leftClick: {
+            importJsonPath,
+            htslPath: fs.resolvePath(dir, leftReference),
+            htslReference: leftReference,
+        },
+        rightClick: {
+            importJsonPath,
+            htslPath: fs.resolvePath(dir, rightReference),
+            htslReference: rightReference,
+        },
+    };
 }
 
 export function sanitizeRelativeReference(raw: string): string | null {

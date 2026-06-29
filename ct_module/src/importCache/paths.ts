@@ -21,6 +21,8 @@ function dirFor(type: Importable["type"]): string {
             return "item";
         case "MENU":
             return "menu";
+        case "NPC":
+            return "npc";
         case "TEAM":
             return "team";
         case "GROUP":
@@ -43,6 +45,9 @@ function dirFor(type: Importable["type"]): string {
  */
 export function importableIdentity(importable: Importable): string {
     if (importable.type === "EVENT") return importable.event;
+    if (importable.type === "NPC") {
+        return `${importable.pos.x},${importable.pos.y},${importable.pos.z}`;
+    }
     return importable.name;
 }
 

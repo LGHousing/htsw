@@ -7,6 +7,7 @@ import type { Importable } from "htsw/types";
 import { renameImportableEntry, type Section } from "../../project/importJsonMutations";
 import { markParseStale, requestParse } from "../parsing/parses";
 import { bumpTreeRevision } from "../left-panel/importables/rowModel";
+import { importableIdentity } from "../../importCache/paths";
 
 let editingValue = "";
 let editingFor: string = "";
@@ -29,20 +30,26 @@ function sectionForType(type: Importable["type"]): Section | null {
             return "groups";
         case "COMMAND":
             return "commands";
+        case "NPC":
+            return "npcs";
         default:
             return null;
     }
 }
 
-function currentIdentity(imp: Importable): string {
+function entryIdentity(imp: Importable): string {
+    return importableIdentity(imp);
+}
+
+function currentValue(imp: Importable): string {
     return imp.type === "EVENT" ? imp.event : imp.name;
 }
 
 function syncFor(imp: Importable): void {
-    const id = `${imp.type}:${currentIdentity(imp)}`;
+    const id = `${imp.type}:${entryIdentity(imp)}`;
     if (editingFor !== id) {
         editingFor = id;
-        editingValue = currentIdentity(imp);
+        editingValue = currentValue(imp);
     }
 }
 
@@ -52,7 +59,7 @@ function save(jsonPath: string, imp: Importable): void {
         ChatLib.chat("&c[htsw] Name can't be empty.");
         return;
     }
-    if (trimmed === currentIdentity(imp)) {
+    if (trimmed === currentValue(imp)) {
         // No-op rename — still close the popover.
         editingFor = "";
         editingValue = "";
@@ -72,12 +79,13 @@ function save(jsonPath: string, imp: Importable): void {
         ChatLib.chat("&c[htsw] EVENTs aren't renameable from here — edit the event constant directly.");
         return;
     }
-    const ok = renameImportableEntry(jsonPath, section, currentIdentity(imp), trimmed);
+    const oldValue = currentValue(imp);
+    const ok = renameImportableEntry(jsonPath, section, entryIdentity(imp), trimmed);
     if (!ok) {
-        ChatLib.chat(`&c[htsw] Rename failed: couldn't find ${currentIdentity(imp)} in ${section}`);
+        ChatLib.chat(`&c[htsw] Rename failed: couldn't find ${oldValue} in ${section}`);
         return;
     }
-    ChatLib.chat(`&a[htsw] Renamed ${currentIdentity(imp)} → ${trimmed}`);
+    ChatLib.chat(`&a[htsw] Renamed ${oldValue} → ${trimmed}`);
     editingFor = "";
     editingValue = "";
     markParseStale(jsonPath);
@@ -152,6 +160,6 @@ export function openRenameImportablePopover(
         content: popoverContent(jsonPath, imp),
         width: 240,
         height: 64,
-        key: `rename:${imp.type}:${currentIdentity(imp)}`,
+        key: `rename:${imp.type}:${entryIdentity(imp)}`,
     });
 }

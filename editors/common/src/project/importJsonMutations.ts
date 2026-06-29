@@ -1,5 +1,5 @@
 import * as json from "jsonc-parser";
-import { findDeclaringImportJson } from "./includeWalk";
+import { findDeclaringImportJson, walkImportJsonTree } from "./includeWalk";
 import type { ProjectFs } from "./fs";
 
 const FORMATTING: json.FormattingOptions = {
@@ -23,16 +23,25 @@ export function identityField(section: Section): "name" | "event" {
     return section === "events" ? "event" : "name";
 }
 
+export function npcPosIdentity(pos: PosLike): string {
+    return posIdentity(pos);
+}
+
+export function importableEntryMatchesIdentity(
+    section: Section,
+    node: json.Node,
+    identity: string
+): boolean {
+    return entryNodeMatchesIdentity(node, section, identity);
+}
+
 export function resolveImportableFile(
     fs: ProjectFs,
     entryPath: string,
     section: Section,
     identity: string
 ): string {
-    return (
-        findDeclaringImportJson(fs, entryPath, section, identityField(section), identity) ??
-        entryPath
-    );
+    return findDeclaringImportJsonForSection(fs, entryPath, section, identity) ?? entryPath;
 }
 
 export function upsertImportableEntry(
@@ -41,13 +50,7 @@ export function upsertImportableEntry(
     section: Section,
     entry: Record<string, unknown>
 ): void {
-    const idField = identityField(section);
-    const idValue = entry[idField];
-    if (typeof idValue !== "string") {
-        throw new Error(
-            `upsertImportableEntry: entry is missing string "${idField}" field`
-        );
-    }
+    const idValue = identityForEntry(section, entry);
 
     const existing = fs.exists(importJsonPath) ? fs.readFile(importJsonPath) : null;
     if (existing === null || existing.trim() === "") {
@@ -72,8 +75,7 @@ export function upsertImportableEntry(
         const items = sectionNode.children ?? [];
         let matchIndex = -1;
         for (let i = 0; i < items.length; i++) {
-            const idNode = json.findNodeAtLocation(items[i], [idField]);
-            if (idNode && idNode.type === "string" && idNode.value === idValue) {
+            if (entryNodeMatchesIdentity(items[i], section, idValue)) {
                 matchIndex = i;
                 break;
             }
@@ -223,15 +225,111 @@ function findEntry(
     const sectionNode = json.findNodeAtLocation(tree, [section]);
     if (!sectionNode || sectionNode.type !== "array") return null;
 
-    const idField = identityField(section);
     const items = sectionNode.children ?? [];
     for (let i = 0; i < items.length; i++) {
-        const idNode = json.findNodeAtLocation(items[i], [idField]);
-        if (idNode && idNode.type === "string" && idNode.value === identity) {
+        if (entryNodeMatchesIdentity(items[i], section, identity)) {
             return { text, index: i };
         }
     }
     return null;
+}
+
+function findDeclaringImportJsonForSection(
+    fs: ProjectFs,
+    entryPath: string,
+    section: Section,
+    identity: string
+): string | null {
+    if (section !== "npcs") {
+        return findDeclaringImportJson(fs, entryPath, section, identityField(section), identity);
+    }
+
+    let found: string | null = null;
+    walkImportJsonTree(fs, entryPath, (filePath, tree) => {
+        const sectionNode = json.findNodeAtLocation(tree, [section]);
+        if (!sectionNode || sectionNode.type !== "array") return undefined;
+        const items = sectionNode.children ?? [];
+        for (let i = 0; i < items.length; i++) {
+            if (entryNodeMatchesIdentity(items[i], section, identity)) {
+                found = filePath;
+                return true;
+            }
+        }
+        return undefined;
+    });
+    return found;
+}
+
+function identityForEntry(
+    section: Section,
+    entry: Record<string, unknown>
+): string {
+    if (section === "npcs") {
+        const pos = entry.pos;
+        if (!isPosLike(pos)) {
+            throw new Error('upsertImportableEntry: NPC entry is missing numeric "pos" field');
+        }
+        return posIdentity(pos);
+    }
+
+    const idField = identityField(section);
+    const idValue = entry[idField];
+    if (typeof idValue !== "string") {
+        throw new Error(
+            `upsertImportableEntry: entry is missing string "${idField}" field`
+        );
+    }
+    return idValue;
+}
+
+function entryNodeMatchesIdentity(
+    node: json.Node,
+    section: Section,
+    identity: string
+): boolean {
+    if (section === "npcs") {
+        const posNode = json.findNodeAtLocation(node, ["pos"]);
+        const pos = readPosNode(posNode);
+        return pos !== null && posIdentity(pos) === identity;
+    }
+
+    const idField = identityField(section);
+    const idNode = json.findNodeAtLocation(node, [idField]);
+    return idNode !== undefined && idNode.type === "string" && idNode.value === identity;
+}
+
+type PosLike = { x: number; y: number; z: number };
+
+function isPosLike(value: unknown): value is PosLike {
+    if (typeof value !== "object" || value === null) return false;
+    const pos = value as Record<string, unknown>;
+    return (
+        typeof pos.x === "number" &&
+        typeof pos.y === "number" &&
+        typeof pos.z === "number"
+    );
+}
+
+function readPosNode(node: json.Node | undefined): PosLike | null {
+    if (!node || node.type !== "object") return null;
+    const x = json.findNodeAtLocation(node, ["x"]);
+    const y = json.findNodeAtLocation(node, ["y"]);
+    const z = json.findNodeAtLocation(node, ["z"]);
+    if (
+        !x ||
+        !y ||
+        !z ||
+        x.type !== "number" ||
+        y.type !== "number" ||
+        z.type !== "number"
+    ) {
+        return null;
+    }
+    return { x: Number(x.value), y: Number(y.value), z: Number(z.value) };
+}
+
+function posIdentity(pos: PosLike): string {
+    return `${pos.x},${pos.y},${pos.z}`;
 }
 
 function ensureTrailingNewline(text: string): string {

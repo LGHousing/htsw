@@ -33,6 +33,7 @@ export const IMPORTABLE_TYPE_COLORS: { [k in Importable["type"]]: number } = {
     REGION: 0xff5cb85c | 0,
     ITEM: 0xffe5bc4b | 0,
     MENU: 0xffe87a4b | 0,
+    NPC: 0xff6fd38f | 0,
     TEAM: 0xff4aa3a8 | 0,
     GROUP: 0xffb695e8 | 0,
     COMMAND: 0xffe8e06a | 0,

@@ -15,6 +15,8 @@ import { printDiagnostic } from "../tui/diagnostics";
 import { createItemRegistry } from "./itemRegistry";
 import { resetFunctionNameSession } from "./functions/listFunctions";
 import { resetMenuNameSession } from "./menus/listMenus";
+import { resetCommandNameSession } from "./commands/listCommands";
+import { createNpcLookupCache } from "./npcs/listNpcs";
 import {
     applyImportablePlan,
     planIsNoOp,
@@ -98,6 +100,7 @@ export async function importSelectedImportables(
     resetImportDiagnostics();
     resetFunctionNameSession();
     resetMenuNameSession();
+    resetCommandNameSession();
 
     const parsed = selection.parsed ?? parseImportablesResult(
         new SourceMap(new FileSystemFileLoader()),
@@ -135,6 +138,7 @@ export async function importSelectedImportables(
         housingUuid: selection.housingUuid,
         trust: trustPlan,
         events,
+        npcLookup: createNpcLookupCache(),
     };
     const rowsMeta = orderedImportables.map((importable, rowIndex) => {
         const identity = importableIdentity(importable);
