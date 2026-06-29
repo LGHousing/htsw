@@ -598,6 +598,10 @@ function giveItem(args: string[]): void {
 
     const filePath = resolveGiveItemFilePath(rawPath);
     if (isRegularFile(filePath)) {
+        if (folderArgs.hasSkip) {
+            ChatLib.chat("&c[htsw] Skip is only supported for folders, not item files.");
+            return;
+        }
         giveSingleItemPath(filePath);
         return;
     }
