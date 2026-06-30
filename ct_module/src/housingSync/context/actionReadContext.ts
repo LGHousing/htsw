@@ -11,14 +11,14 @@ import type {
 } from "../types";
 import type { ReadConditionListOptions } from "../actions/conditions/readList";
 import {
-    innerListPath,
+    childListPath,
     type ActionPath,
     type ImportEventHandler,
 } from "../importEvents";
 import type { ItemCaptureRegistry } from "../itemCapture";
 
 export type ActionReadContext = {
-    readInnerActions(
+    readChildActions(
         prop: string,
         mode?: ActionListReadMode
     ): Promise<Array<Observed<Action> | null>>;
@@ -26,7 +26,7 @@ export type ActionReadContext = {
     emitSnapshot(): void;
 };
 
-type ReadInnerActions = (
+type ReadChildActions = (
     ctx: TaskContext,
     mode: ActionListReadMode,
     read?: ListReadOptions
@@ -45,7 +45,7 @@ export type CreateActionReadContextArgs = {
     itemCaptures?: ItemCaptureRegistry;
     events?: ImportEventHandler;
     emitSnapshot?: () => void;
-    readInnerActions: ReadInnerActions;
+    readChildActions: ReadChildActions;
     readConditions: ReadConditions;
 };
 
@@ -57,14 +57,14 @@ export function createActionReadContext({
     itemCaptures,
     events,
     emitSnapshot,
-    readInnerActions,
+    readChildActions,
     readConditions: readConditionList,
 }: CreateActionReadContextArgs): ActionReadContext {
-    const pathForInnerList = (prop: string): ActionPath => innerListPath(actionPath, prop);
+    const pathForChildList = (prop: string): ActionPath => childListPath(actionPath, prop);
     const focusChildField = (prop: string): ActionPath => {
-        const path = pathForInnerList(prop);
+        const path = pathForChildList(prop);
         events?.emit({
-            kind: "innerListReadStarted",
+            kind: "childListReadStarted",
             path,
             actionType,
         });
@@ -72,10 +72,10 @@ export function createActionReadContext({
     };
 
     return {
-        async readInnerActions(prop, mode = { kind: "deep" }) {
+        async readChildActions(prop, mode = { kind: "deep" }) {
             const path = focusChildField(prop);
             const actions: Array<Observed<Action> | null> = [];
-            const entries = await readInnerActions(ctx, mode, {
+            const entries = await readChildActions(ctx, mode, {
                 itemRegistry,
                 itemCaptures,
                 events,

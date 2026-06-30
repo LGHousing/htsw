@@ -80,7 +80,7 @@ function editPlan(observed: ObservedActionSlot[], desired: Action[]): ActionList
                 desired: newAction,
                 noteOnly: false,
                 noteDiffers: false,
-                innerListDiffs: [],
+                childListDiffs: [],
             },
         ],
     };

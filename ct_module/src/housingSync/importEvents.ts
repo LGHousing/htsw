@@ -18,7 +18,7 @@ export function actionPathForIndex(listPath: ActionPath | undefined, index: numb
     };
 }
 
-export function innerListPath(parent: ActionPath, prop: string): ActionPath {
+export function childListPath(parent: ActionPath, prop: string): ActionPath {
     return { parts: parent.parts.concat(prop) };
 }
 
@@ -109,7 +109,7 @@ export type PlannedOp =
 export type ProgressScope =
     | { kind: "topLevel" }
     | {
-          kind: "innerList";
+          kind: "childList";
           path: ActionPath;
           baselineApplyUnits: number;
           parentSync: {
@@ -156,7 +156,7 @@ export type ImportEvent =
     | { kind: "progress"; scope: ProgressScope; progress: ProgressPayload }
     | { kind: "setupStep"; label: string; completed: number; total: number }
     | { kind: "readStarted"; listPath: string }
-    | { kind: "innerListReadStarted"; path: ActionPath; actionType: Action["type"] | null }
+    | { kind: "childListReadStarted"; path: ActionPath; actionType: Action["type"] | null }
     | { kind: "observedSnapshot"; actions: ReadonlyArray<Action | null> }
     | {
           kind: "diffPlanned";

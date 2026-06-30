@@ -71,7 +71,7 @@ export async function appendActionsToOpenActionList(
         markHeaderApplied: () => undefined,
         shouldApplyList: () => true,
 
-        async applyInnerActions(_prop, args) {
+        async applyChildActions(_prop, args) {
             await appendActionsToOpenActionList(ctx, args.desired, itemRegistry);
         },
 

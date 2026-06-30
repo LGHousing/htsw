@@ -15,7 +15,7 @@ import type {
 import { actionPathForIndex } from "../../importEvents";
 import {
     actionListDiffApplyUnits,
-    editUnitsWithInnerLists,
+    editUnitsWithChildLists,
 } from "../../progress/costs";
 import type { PhaseUnits } from "../../progress/types";
 import { waitIfStepPaused } from "../../stepGate";
@@ -33,7 +33,7 @@ import {
     fieldsChangedForEdit,
     operationApplyUnits,
 } from "./progress";
-import type { ActionListApplyResult, ApplyInnerActionList } from "./types";
+import type { ActionListApplyResult, ApplyChildActionList } from "./types";
 
 type LiveActionListEntry = {
     entryId: number;
@@ -113,7 +113,7 @@ export class ActionListApplyRun {
             applying: Math.max(
                 actionListDiffApplyUnits(
                     plan.diff,
-                    editUnitsWithInnerLists,
+                    editUnitsWithChildLists,
                     plan.desired.length
                 ),
                 1
@@ -126,7 +126,7 @@ export class ActionListApplyRun {
         this.nextEntryId = plan.observed.length;
     }
 
-    async apply(applyInnerActionList: ApplyInnerActionList): Promise<ActionListApplyResult> {
+    async apply(applyChildActionList: ApplyChildActionList): Promise<ActionListApplyResult> {
         try {
             emitDiffPlanned(
                 this.events,
@@ -143,9 +143,9 @@ export class ActionListApplyRun {
 
             const phases = this.bucketOperations();
             await this.applyDeletes(phases.deletes);
-            await this.applyEdits(phases.edits, applyInnerActionList);
+            await this.applyEdits(phases.edits, applyChildActionList);
             await this.applyMoves(phases.moves);
-            await this.applyAdds(phases.adds, applyInnerActionList);
+            await this.applyAdds(phases.adds, applyChildActionList);
 
             await goToPaginatedListPage(this.ctx, 1, ACTION_LIST_CONFIG);
             this.finish();
@@ -211,7 +211,7 @@ export class ActionListApplyRun {
 
     private async applyEdits(
         edits: Array<ActionListOperation & { kind: "edit" }>,
-        applyInnerActionList: ApplyInnerActionList
+        applyChildActionList: ApplyChildActionList
     ): Promise<void> {
         for (const op of edits) {
             const currentIndex = this.findCurrentIndex(op.entryId);
@@ -259,7 +259,7 @@ export class ActionListApplyRun {
                 actionSlot.click();
                 await timedWaitForMenu(this.ctx, "menuClickWait");
 
-                const apply = this.writerHooksFor(op, applyInnerActionList);
+                const apply = this.writerHooksFor(op, applyChildActionList);
 
                 this.markSnapshotUnsafe();
                 await writeOpenAction(this.ctx, op.desired, {
@@ -305,7 +305,7 @@ export class ActionListApplyRun {
 
     private async applyAdds(
         adds: Array<ActionListOperation & { kind: "add" }>,
-        applyInnerActionList: ApplyInnerActionList
+        applyChildActionList: ApplyChildActionList
     ): Promise<void> {
         adds.sort((a, b) => a.toIndex - b.toIndex);
         let currentLength = this.current.length;
@@ -320,7 +320,7 @@ export class ActionListApplyRun {
                 this.appendCurrentAction(actionToImport);
                 actionAdded = true;
             };
-            const apply = this.writerHooksFor(op, applyInnerActionList);
+            const apply = this.writerHooksFor(op, applyChildActionList);
             this.markSnapshotUnsafe();
             await addAction(
                 this.ctx,
@@ -388,7 +388,7 @@ export class ActionListApplyRun {
 
     private writerHooksFor(
         op: ActionListOperation,
-        applyInnerActions: ApplyInnerActionList
+        applyChildActions: ApplyChildActionList
     ): ActionApplyContext | undefined {
         const path = this.pathForOp(op);
         if (path === null || (op.kind !== "add" && op.kind !== "edit")) {
@@ -401,8 +401,8 @@ export class ActionListApplyRun {
             appliedUnits: this.appliedUnits,
             completedOps: this.completedOps,
             totalOps: this.totalOps,
-            ...(op.kind === "edit" ? { innerListDiffs: op.innerListDiffs } : {}),
-            applyInnerActions,
+            ...(op.kind === "edit" ? { childListDiffs: op.childListDiffs } : {}),
+            applyChildActions,
             applyConditions: applyConditionList,
         });
     }

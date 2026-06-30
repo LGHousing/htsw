@@ -82,7 +82,7 @@ export function reduce(
             return finishSession(state);
         // Diff-overlay / preview events don't affect the progress snapshot.
         case "readStarted":
-        case "innerListReadStarted":
+        case "childListReadStarted":
         case "observedSnapshot":
         case "diffPlanned":
         case "operationStarted":
@@ -187,7 +187,7 @@ function parkActiveIfNeeded(
  * An importable is parked once its pass-1 pre-read (read + hydrate) is done,
  * so its completed units now reflect the *actual* read/hydrate work. The
  * read/hydrate phase estimate, though, is often far larger than that — with
- * selective hydration a list's estimated inner-list-read cost can be ~5× what's
+ * selective hydration a list's estimated child-list-read cost can be ~5× what's
  * actually read. That over-estimate sits in `currentTotalUnits` but is never
  * credited, so when the importable later finishes, `finishImportable` dumps
  * the gap to force the bar to 100% — an ETA cliff (observed ~55s).
@@ -244,7 +244,7 @@ function applyProgress(
     payload: ProgressPayload
 ): ProgressReducerState {
     if (state.active === null) return state;
-    if (scope.kind === "innerList") {
+    if (scope.kind === "childList") {
         return applyChildListProgress(state, scope, payload);
     }
     const setupUnits = state.active.setupUnits;
@@ -300,7 +300,7 @@ function applyProgress(
 
 function applyChildListProgress(
     state: ProgressReducerState,
-    scope: Extract<ProgressScope, { kind: "innerList" }>,
+    scope: Extract<ProgressScope, { kind: "childList" }>,
     payload: ProgressPayload
 ): ProgressReducerState {
     if (state.active === null) return state;

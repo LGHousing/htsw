@@ -146,7 +146,7 @@ function parseFieldValue(
             return parseLocationField(value);
         case "boolean":
             return parseBooleanText(value);
-        case "innerList":
+        case "childList":
             return undefined;
         default:
             const _exhaustiveCheck: never = kind;

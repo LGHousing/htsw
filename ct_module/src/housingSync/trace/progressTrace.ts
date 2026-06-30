@@ -79,7 +79,7 @@ export function traceProgressEvent(
     if (!progressTrace.isEnabled()) return;
     const scope = event.kind === "progress" ? event.scope.kind : "";
     const path =
-        event.kind === "progress" && event.scope.kind === "innerList"
+        event.kind === "progress" && event.scope.kind === "childList"
             ? event.scope.path
             : "";
     const msPerUnit = currentMsPerUnit();

@@ -1,14 +1,15 @@
 import type { Action, Condition } from "htsw/types";
 
-import { getActionLoreFields, getInnerListFields } from "../fields/actionMappings";
+import { getActionLoreFields, getChildListFields } from "../fields/actionMappings";
 import type {
-    InnerListName,
-    InnerListHydrationPlan,
-    InnerListsToRead,
+    ActionHydrationPlan,
+    ChildListName,
+    ChildListsToRead,
     ObservedActionSlot,
 } from "../types";
+import { createActionHydrationWork } from "./hydrationPlan";
 
-const INNER_LIST_COST_WEIGHT = 20;
+const CHILD_LIST_COST_WEIGHT = 20;
 const SCALAR_FIELD_COST_WEIGHT = 2;
 const NOTE_COST_WEIGHT = 1;
 const INDEX_DISTANCE_WEIGHT = 1;
@@ -18,23 +19,26 @@ export type DesiredActionEntry = {
     action: Action;
 };
 
-export function createInnerListHydrationPlan(
+export function createActionHydrationPlan(
     matches: Map<ObservedActionSlot, DesiredActionEntry>
-): InnerListHydrationPlan {
-    const plan: InnerListHydrationPlan = new Map();
+): ActionHydrationPlan {
+    const plan: ActionHydrationPlan = new Map();
     for (const observed of matches.keys()) {
-        plan.set(observed, getInnerListsNeedingHydration(observed));
+        const childListsToRead = getChildListsNeedingHydration(observed);
+        if (childListsToRead.size > 0) {
+            plan.set(observed, createActionHydrationWork(childListsToRead));
+        }
     }
     return plan;
 }
 
 /**
- * Pair each observed inner-list-bearing action with the desired action it
+ * Pair each observed child-list-bearing action with the desired action it
  * most likely represents. Both the hydration plan and trust application read
  * this same pairing, so they always agree on which observed action lines up
  * with which desired one; if they paired independently they could disagree.
  *
- * Only considers observed entries that still have inner lists to read (the
+ * Only considers observed entries that still have child lists to read (the
  * two consumers act on those entries alone), so it doesn't waste work pairing
  * entries neither of them would touch.
  */
@@ -57,13 +61,13 @@ export function matchObservedToDesired(
 
     const matches = new Map<ObservedActionSlot, DesiredActionEntry>();
     for (const [type, desiredBucket] of desiredByType) {
-        if (getInnerListFields(type).length === 0) continue;
+        if (getChildListFields(type).length === 0) continue;
 
         const observedBucket = observed.filter(
             (entry) =>
                 entry.action !== null &&
                 entry.action.type === type &&
-                getInnerListsNeedingHydration(entry).size > 0
+                getChildListsNeedingHydration(entry).size > 0
         );
         if (observedBucket.length === 0) continue;
 
@@ -73,7 +77,7 @@ export function matchObservedToDesired(
                 candidates.push({
                     observed: observedEntry,
                     desired: desiredEntry,
-                    cost: shallowInnerListOwnerCost(observedEntry, desiredEntry),
+                    cost: shallowChildListOwnerCost(observedEntry, desiredEntry),
                 });
             }
         }
@@ -102,26 +106,26 @@ export function matchObservedToDesired(
     return matches;
 }
 
-export function getInnerListsNeedingHydration(
+export function getChildListsNeedingHydration(
     entry: ObservedActionSlot
-): InnerListsToRead {
-    if (entry.innerListsToRead !== undefined) {
-        return new Set(entry.innerListsToRead);
+): ChildListsToRead {
+    if (entry.childListsToRead !== undefined) {
+        return new Set(entry.childListsToRead);
     }
 
-    const innerLists: InnerListsToRead = new Set();
-    if (entry.action === null) return innerLists;
+    const childLists: ChildListsToRead = new Set();
+    if (entry.action === null) return childLists;
 
-    for (const field of getInnerListFields(entry.action.type)) {
-        const prop = field.prop as InnerListName;
-        if ((entry.innerListSummaries?.[prop] ?? []).length > 0) {
-            innerLists.add(prop);
+    for (const field of getChildListFields(entry.action.type)) {
+        const prop = field.prop as ChildListName;
+        if ((entry.childListSummaries?.[prop] ?? []).length > 0) {
+            childLists.add(prop);
         }
     }
-    return innerLists;
+    return childLists;
 }
 
-function shallowInnerListOwnerCost(
+function shallowChildListOwnerCost(
     observed: ObservedActionSlot,
     desired: DesiredActionEntry
 ): number {
@@ -135,12 +139,12 @@ function shallowInnerListOwnerCost(
 
     for (const label in loreFields) {
         const field = loreFields[label];
-        if (field.kind === "innerList") {
-            const prop = field.prop as InnerListName;
-            const observedTypes = observed.innerListSummaries?.[prop] ?? [];
-            const desiredTypes = desiredInnerListTypes(desired.action, prop);
+        if (field.kind === "childList") {
+            const prop = field.prop as ChildListName;
+            const observedTypes = observed.childListSummaries?.[prop] ?? [];
+            const desiredTypes = desiredChildListTypes(desired.action, prop);
             cost +=
-                sequenceTypeCost(observedTypes, desiredTypes) * INNER_LIST_COST_WEIGHT;
+                sequenceTypeCost(observedTypes, desiredTypes) * CHILD_LIST_COST_WEIGHT;
             continue;
         }
 
@@ -171,11 +175,11 @@ function sequenceTypeCost(
     return cost;
 }
 
-export function desiredInnerListTypes(action: Action, prop: InnerListName): string[] {
+export function desiredChildListTypes(action: Action, prop: ChildListName): string[] {
     const value = (action as Record<string, unknown>)[prop];
     if (!Array.isArray(value)) return [];
     if (prop === "conditions") {
         return (value as Condition[]).map((condition) => condition.type);
     }
-    return (value as Action[]).map((innerAction) => innerAction.type);
+    return (value as Action[]).map((childAction) => childAction.type);
 }

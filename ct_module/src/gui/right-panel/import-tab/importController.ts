@@ -114,7 +114,7 @@ const BODY_LIST_PROPS: Record<string, true> = {
 };
 
 // True when an edit touches the action's head line. A CONDITIONAL/RANDOM whose
-// only changed fields are inner action lists (ifActions/elseActions/actions)
+// only changed fields are child action lists (ifActions/elseActions/actions)
 // leaves its head — `if (conditions) {` / `random {` — unchanged; those body
 // ops mark their own lines, so flagging the head would falsely show the
 // conditions as changed. An empty list (note-only edit) keeps the head marked.
@@ -191,7 +191,7 @@ function createImportEventHandler(args: {
         progress: () => {},
         setupStep: () => {},
         readStarted: () => {},
-        innerListReadStarted: (e) => {
+        childListReadStarted: (e) => {
             if (activeViewPath === null) return;
             setCurrent(activeViewPath, e.path);
             setFocusLineId(activeViewPath, previewLineIdForPath(activeViewPath, e.path));

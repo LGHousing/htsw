@@ -73,7 +73,7 @@ function isActionListTrusted(
     plan: ImportableTrustPlan | undefined,
     basePath: string
 ): boolean {
-    return plan?.trustedListPaths.has(basePath) ?? false;
+    return plan?.trustedChildListPaths.has(basePath) ?? false;
 }
 
 function getBaselineActionList(
@@ -93,9 +93,13 @@ function getActionListTrust(
     if (
         plan === undefined ||
         plan.entry === null ||
-        plan.trustedListPaths.size === 0
+        plan.trustedChildListPaths.size === 0
     ) {
         return undefined;
     }
-    return { basePath, trustedListPaths: plan.trustedListPaths };
+    return {
+        basePath,
+        trustedChildListPaths: plan.trustedChildListPaths,
+        trustedChildLists: plan.trustedChildLists,
+    };
 }

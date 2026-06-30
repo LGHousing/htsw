@@ -6,14 +6,14 @@ import type { ItemRegistry } from "../../importables/itemRegistry";
 import type {
     Observed,
     ObservedActionSlot,
-    InnerListDiff,
+    ChildListDiff,
 } from "../types";
 import type {
     ActionPath,
     ImportEventHandler,
     ProgressScope,
 } from "../importEvents";
-import { innerListPath } from "../importEvents";
+import { childListPath } from "../importEvents";
 import type { ProgressHandler } from "../progress/types";
 import {
     estimateActionListPhaseUnits,
@@ -21,7 +21,7 @@ import {
     phaseUnitsTotal,
 } from "../progress/costs";
 
-type InnerActionApplyArgs = {
+type ChildActionApplyArgs = {
     desired: Action[];
     observed?: ReadonlyArray<Observed<Action> | null>;
     offset?: number;
@@ -36,11 +36,11 @@ type ConditionApplyArgs = {
 export type ActionApplyContext = {
     markHeaderApplied(): void;
     shouldApplyList(prop: string): boolean;
-    applyInnerActions(prop: string, args: InnerActionApplyArgs): Promise<void>;
+    applyChildActions(prop: string, args: ChildActionApplyArgs): Promise<void>;
     applyConditions(prop: string, args: ConditionApplyArgs): Promise<void>;
 };
 
-export type ApplyInnerActionList = (
+export type ApplyChildActionList = (
     ctx: TaskContext,
     desired: Action[],
     options: {
@@ -69,8 +69,8 @@ export type CreateActionApplyContextArgs = {
     appliedUnits: number;
     completedOps: number;
     totalOps: number;
-    innerListDiffs?: readonly InnerListDiff[];
-    applyInnerActions: ApplyInnerActionList;
+    childListDiffs?: readonly ChildListDiff[];
+    applyChildActions: ApplyChildActionList;
     applyConditions: ApplyConditionList;
 };
 
@@ -85,13 +85,13 @@ function observedActionsAsBaselineCurrent(
     return out;
 }
 
-function innerListScope(
+function childListScope(
     baselineApplyUnits: number,
     completedOps: number,
     totalOps: number
 ): (path: ActionPath, extraOffset?: number) => ProgressScope {
     return (path, extraOffset) => ({
-        kind: "innerList",
+        kind: "childList",
         path,
         baselineApplyUnits: baselineApplyUnits + (extraOffset ?? 0),
         parentSync: {
@@ -116,16 +116,16 @@ export function createActionApplyContext({
     appliedUnits,
     completedOps,
     totalOps,
-    innerListDiffs,
-    applyInnerActions,
+    childListDiffs,
+    applyChildActions,
     applyConditions: applyConditionList,
 }: CreateActionApplyContextArgs): ActionApplyContext {
     const events = session.events;
-    const scopeAt = innerListScope(appliedUnits, completedOps, totalOps);
-    const pathForInnerList = (prop: string): ActionPath => innerListPath(actionPath, prop);
-    const listsToApply = innerListDiffs === undefined
+    const scopeAt = childListScope(appliedUnits, completedOps, totalOps);
+    const pathForChildList = (prop: string): ActionPath => childListPath(actionPath, prop);
+    const listsToApply = childListDiffs === undefined
         ? null
-        : new Set(innerListDiffs.map((diff) => diff.prop));
+        : new Set(childListDiffs.map((diff) => diff.prop));
     let nextOffset = 0;
 
     return {
@@ -134,14 +134,14 @@ export function createActionApplyContext({
         },
 
         shouldApplyList(prop) {
-            return listsToApply === null || listsToApply.has(prop as InnerListDiff["prop"]);
+            return listsToApply === null || listsToApply.has(prop as ChildListDiff["prop"]);
         },
 
-        async applyInnerActions(prop, args) {
-            const path = pathForInnerList(prop);
+        async applyChildActions(prop, args) {
+            const path = pathForChildList(prop);
             const baselineCurrent = observedActionsAsBaselineCurrent(args.observed);
             const offset = args.offset ?? nextOffset;
-            await applyInnerActions(ctx, args.desired, {
+            await applyChildActions(ctx, args.desired, {
                 session,
                 listPath: path,
                 baselineCurrent,
@@ -153,7 +153,7 @@ export function createActionApplyContext({
         },
 
         async applyConditions(prop, args) {
-            const path = pathForInnerList(prop);
+            const path = pathForChildList(prop);
             const offset = args.offset ?? nextOffset;
             await applyConditionList(ctx, args.desired, {
                 itemRegistry: session.items,

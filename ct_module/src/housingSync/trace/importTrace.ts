@@ -100,7 +100,7 @@ export function traceImportEvent(event: ImportEvent): void {
         case "sessionFinished":
         case "progress":
         case "setupStep":
-        case "innerListReadStarted":
+        case "childListReadStarted":
         case "observedSnapshot":
         case "operationCompleted":
         case "listSyncCompleted":

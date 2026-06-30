@@ -71,7 +71,7 @@ async function readFunction(
         ...(onReadProgress !== undefined
             ? {
                   progress: onReadProgress,
-                  // Mutable scratch readActionList fills in as pages/inner lists
+                  // Mutable scratch readActionList fills in as pages/child lists
                   // lists are discovered; fresh per call.
                   phaseUnits: { setup: 0, reading: 0, hydrating: 0, applying: 0 },
               }

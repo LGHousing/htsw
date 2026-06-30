@@ -12,7 +12,7 @@ export type UiFieldKind =
     | "select"
     | "location"
     | "item"
-    | "innerList";
+    | "childList";
 
 type ConditionDataKey<T extends Condition> = Exclude<
     keyof T,
@@ -61,21 +61,49 @@ export type ActionLoreSpec<T extends Action> = {
     loreFields: Record<string, ActionLoreFieldSpec<T>>;
 };
 
-export type InnerListName = "conditions" | "ifActions" | "elseActions" | "actions";
+export type ChildListName = "conditions" | "ifActions" | "elseActions" | "actions";
 
-/** Inner list properties that still need to be read by clicking in. */
-export type InnerListsToRead = Set<InnerListName>;
+/** Child list properties that still need to be read by clicking in. */
+export type ChildListsToRead = Set<ChildListName>;
 
-type InnerListReadState = "none" | "shallow" | "deep";
+type ChildListReadState = "none" | "shallow" | "deep";
 
-export type InnerListSummaries = Partial<Record<InnerListName, string[]>>;
+export type ChildListSummaries = Partial<Record<ChildListName, string[]>>;
+
+export type TrustedChildListSnapshot =
+    | {
+          kind: "actions";
+          actions: readonly Action[];
+      }
+    | {
+          kind: "conditions";
+          conditions: readonly Condition[];
+      };
 
 export type ActionListTrust = {
     basePath: string;
-    trustedListPaths: ReadonlySet<string>;
+    trustedChildListPaths: ReadonlySet<string>;
+    trustedChildLists: ReadonlyMap<string, TrustedChildListSnapshot>;
 };
 
-export type InnerListHydrationPlan = Map<ObservedActionSlot, InnerListsToRead>;
+export type ActionScalarFieldToRead = {
+    label: string;
+    prop: string;
+    kind: UiFieldKind;
+};
+
+export type ActionItemFieldToCapture = {
+    label: string;
+    prop: string;
+};
+
+export type ActionHydrationWork = {
+    childListsToRead: ChildListsToRead;
+    scalarFieldsToRead: ActionScalarFieldToRead[];
+    itemFieldsToCapture: ActionItemFieldToCapture[];
+};
+
+export type ActionHydrationPlan = Map<ObservedActionSlot, ActionHydrationWork>;
 
 export type Observed<T> = {
     [K in keyof T]: T[K] extends Action[]
@@ -90,10 +118,9 @@ export type ObservedActionSlot = {
     slotId?: number;
     slot?: ItemSlot;
     action: Observed<Action> | null;
-    innerListReadState?: InnerListReadState;
-    innerListSummaries?: InnerListSummaries;
-    innerListsToRead?: InnerListsToRead;
-    trustedInnerLists?: InnerListsToRead;
+    childListReadState?: ChildListReadState;
+    childListSummaries?: ChildListSummaries;
+    childListsToRead?: ChildListsToRead;
 };
 
 export type ObservedConditionSlot = {
@@ -107,9 +134,6 @@ export type CurrentActionListEntry = {
     entryId: number;
     index: number;
     action: Observed<Action> | null;
-    innerListReadState?: InnerListReadState;
-    innerListSummaries?: InnerListSummaries;
-    trustedInnerLists?: InnerListsToRead;
 };
 
 export type CurrentConditionListEntry = {
@@ -117,7 +141,7 @@ export type CurrentConditionListEntry = {
     condition: Condition | null;
 };
 
-export type InnerListDiff =
+export type ChildListDiff =
     | { prop: "conditions"; diff: ConditionListDiff }
     | { prop: "ifActions" | "elseActions" | "actions"; diff: ActionListDiff };
 
@@ -138,7 +162,7 @@ export type ActionListOperation =
           desired: Action;
           noteOnly: boolean;
           noteDiffers: boolean;
-          innerListDiffs: InnerListDiff[];
+          childListDiffs: ChildListDiff[];
       }
     | { kind: "add"; desiredIndex: number; desired: Action; toIndex: number }
     | {

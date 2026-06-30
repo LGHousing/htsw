@@ -27,10 +27,10 @@ export async function applyActionListPlan(
 ): Promise<ActionListApplyResult> {
     const progressScope = options.progressScope ?? { kind: "topLevel" as const };
     const run = new ActionListApplyRun(ctx, plan, options, progressScope);
-    return run.apply(applyInnerActionList);
+    return run.apply(applyChildActionList);
 }
 
-async function applyInnerActionList(
+async function applyChildActionList(
     ctx: TaskContext,
     desired: Action[],
     options: ActionListPrereadOptions

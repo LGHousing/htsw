@@ -184,7 +184,7 @@ export async function writeConditional(
     ) {
         ctx.getMenuItemSlot(getActionFieldLabel("CONDITIONAL", "ifActions")).click();
         await waitForMenu(ctx);
-        await options?.apply?.applyInnerActions("ifActions", {
+        await options?.apply?.applyChildActions("ifActions", {
             desired: action.ifActions,
             observed: current?.ifActions,
         });
@@ -198,7 +198,7 @@ export async function writeConditional(
     ) {
         ctx.getMenuItemSlot(getActionFieldLabel("CONDITIONAL", "elseActions")).click();
         await waitForMenu(ctx);
-        await options?.apply?.applyInnerActions("elseActions", {
+        await options?.apply?.applyChildActions("elseActions", {
             desired: action.elseActions,
             observed: current?.elseActions,
         });
@@ -625,7 +625,7 @@ export async function writeRandom(
 
     ctx.getMenuItemSlot(getActionFieldLabel("RANDOM", "actions")).click();
     await waitForMenu(ctx);
-    await options?.apply?.applyInnerActions("actions", {
+    await options?.apply?.applyChildActions("actions", {
         desired: action.actions,
         observed: current?.actions,
     });

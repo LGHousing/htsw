@@ -35,7 +35,7 @@ function collectFromActions(
             const value = (action as unknown as Record<string, unknown>)[field.prop];
             if (field.kind === "item") {
                 if (typeof value === "string") names.push(value);
-            } else if (field.kind === "innerList" && Array.isArray(value)) {
+            } else if (field.kind === "childList" && Array.isArray(value)) {
                 if (field.prop === "conditions") {
                     for (const condition of value as Condition[]) {
                         collectFromCondition(condition, names);

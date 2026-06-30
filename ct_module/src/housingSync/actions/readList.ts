@@ -10,7 +10,7 @@ import {
     ACTION_MAPPINGS,
     getActionLoreFields,
     getActionScalarLoreFields,
-    getInnerListFields,
+    getChildListFields,
     parseActionListItem,
     tryGetActionTypeFromDisplayName,
 } from "../fields/actionMappings";
@@ -24,20 +24,27 @@ import {
 } from "../fields/conditionMappings";
 import { canonicalizeItemFields } from "../fields/canonicalizeItems";
 import type {
+    ActionHydrationPlan,
+    ActionHydrationWork,
     ActionListTrust,
-    InnerListHydrationPlan,
-    InnerListName,
-    InnerListsToRead,
-    InnerListSummaries,
+    ActionScalarFieldToRead,
+    ChildListName,
+    ChildListsToRead,
+    ChildListSummaries,
     Observed,
     ObservedActionSlot,
     ListReadOptions,
 } from "../types";
 import {
-    createInnerListHydrationPlan,
+    createActionHydrationPlan,
     matchObservedToDesired,
-} from "./innerListMatching";
+} from "./childListMatching";
 import { applyActionListTrust } from "./applyTrust";
+import {
+    addItemFieldsToCapture,
+    addScalarFieldsToRead,
+    createActionHydrationWork,
+} from "./hydrationPlan";
 import {
     getPaginatedListPageForIndex,
     getPaginatedListSlotAtIndex,
@@ -62,17 +69,17 @@ export type ActionListReadMode =
     | { kind: "deep" }
     | { kind: "sync"; desired: readonly Action[]; trust?: ActionListTrust };
 
-function readInnerListSummaries(
+function readChildListSummaries(
     action: Observed<Action>,
     slot: ItemSlot
-): { summaries: InnerListSummaries; innerListsToRead: InnerListsToRead } {
-    const innerListFields = getInnerListFields(action.type);
+): { summaries: ChildListSummaries; childListsToRead: ChildListsToRead } {
+    const childListFields = getChildListFields(action.type);
     const lore = slot.getItem().getLore();
-    const summaries: InnerListSummaries = {};
-    const innerListsToRead: InnerListsToRead = new Set();
-    const labels = new Set(innerListFields.map((field) => field.label));
+    const summaries: ChildListSummaries = {};
+    const childListsToRead: ChildListsToRead = new Set();
+    const labels = new Set(childListFields.map((field) => field.label));
 
-    for (const { label, prop } of innerListFields) {
+    for (const { label, prop } of childListFields) {
         const itemTypes: string[] = [];
         let labelIndex = -1;
         for (let i = 0; i < lore.length; i++) {
@@ -117,11 +124,11 @@ function readInnerListSummaries(
             itemTypes.push(type ?? "UNKNOWN");
         }
 
-        summaries[prop as InnerListName] = itemTypes;
+        summaries[prop as ChildListName] = itemTypes;
         if (itemTypes.length === 0) {
             Object.assign(action, { [prop]: [] });
         } else {
-            innerListsToRead.add(prop as InnerListName);
+            childListsToRead.add(prop as ChildListName);
             // Seed one null per item so the preview can show the count
             // ("...3 conditions..." / "...3 actions...") before hydration
             // fills the real entries in. Guarded so a field the parser
@@ -132,7 +139,7 @@ function readInnerListSummaries(
         }
     }
 
-    return { summaries, innerListsToRead };
+    return { summaries, childListsToRead };
 }
 
 async function readActionsListPage(
@@ -153,21 +160,21 @@ async function readActionsListPage(
                 slotId: entry.slot.getSlotId(),
                 slot: entry.slot,
                 action: null,
-                innerListReadState: "none",
-                innerListSummaries: {},
-                innerListsToRead: new Set(),
+                childListReadState: "none",
+                childListSummaries: {},
+                childListsToRead: new Set(),
             };
             if (!entry.type) {
                 return observed;
             }
 
             const action = parseActionListItem(entry.slot, entry.type);
-            const inner = readInnerListSummaries(action, entry.slot);
+            const childList = readChildListSummaries(action, entry.slot);
             observed.action = action;
-            observed.innerListReadState =
-                getInnerListFields(action.type).length === 0 ? "none" : "shallow";
-            observed.innerListSummaries = inner.summaries;
-            observed.innerListsToRead = inner.innerListsToRead;
+            observed.childListReadState =
+                getChildListFields(action.type).length === 0 ? "none" : "shallow";
+            observed.childListSummaries = childList.summaries;
+            observed.childListsToRead = childList.childListsToRead;
             return observed;
         });
 
@@ -225,18 +232,18 @@ export async function readActionList(
     if (isTopLevelRead) {
         emitObservedSnapshot(observed, events);
     }
-    let plan: InnerListHydrationPlan;
+    let plan: ActionHydrationPlan;
     if (isTopLevelRead) {
-        // Only the top-level read can encounter inner-list-bearing
+        // Only the top-level read can encounter child-list-bearing
         // actions (CONDITIONAL/RANDOM). CONDITIONAL/RANDOM are disallowed
-        // inside their own ifActions/elseActions/actions, so any inner
+        // inside their own ifActions/elseActions/actions, so any child-list
         // read's hydration plan can only carry scalar truncation entries.
-        // Skip the inner-list plan computation entirely at inner levels.
+        // Skip the child-list plan computation entirely for child-list reads.
         if (mode.kind === "deep") {
             plan = buildFullHydrationPlan(observed);
         } else {
             const matches = matchObservedToDesired(observed, mode.desired);
-            plan = createInnerListHydrationPlan(matches);
+            plan = createActionHydrationPlan(matches);
             if (mode.trust !== undefined) {
                 applyActionListTrust(matches, plan, mode.trust);
             }
@@ -286,17 +293,17 @@ function emitObservedSnapshot(
 }
 
 function addScalarHydrationEntries(
-    plan: InnerListHydrationPlan,
+    plan: ActionHydrationPlan,
     observed: readonly ObservedActionSlot[]
 ): void {
     for (const entry of observed) {
-        if (entry.action === null || plan.has(entry)) {
-            continue;
-        }
+        if (entry.action === null) continue;
 
-        if (shouldHydrateScalarAction(entry.action)) {
-            plan.set(entry, new Set());
-        }
+        addScalarFieldsToRead(
+            plan,
+            entry,
+            scalarFieldsNeedingHydration(entry.action)
+        );
     }
 }
 
@@ -314,24 +321,28 @@ function getItemFieldsForCapture(
 }
 
 function addItemCaptureEntries(
-    plan: InnerListHydrationPlan,
+    plan: ActionHydrationPlan,
     observed: readonly ObservedActionSlot[]
 ): void {
     for (const entry of observed) {
-        if (entry.action === null || plan.has(entry)) continue;
-        if (getItemFieldsForCapture(entry.action.type).length > 0) {
-            plan.set(entry, new Set());
-        }
+        if (entry.action === null) continue;
+        addItemFieldsToCapture(plan, entry, getItemFieldsForCapture(entry.action.type));
     }
 }
 
-function shouldHydrateScalarAction(action: Observed<Action>): boolean {
+function scalarFieldsNeedingHydration(
+    action: Observed<Action>
+): ActionScalarFieldToRead[] {
     const fields = getActionScalarLoreFields(action.type);
+    const out: ActionScalarFieldToRead[] = [];
     for (let i = 0; i < fields.length; i++) {
         const field = fields[i];
         if (!isTruncatableKind(field.kind)) continue;
         const value = (action as Record<string, unknown>)[field.prop];
-        if (typeof value === "string" && looksTruncated(value)) return true;
+        if (typeof value === "string" && looksTruncated(value)) {
+            out.push(field);
+            continue;
+        }
         if (
             field.kind === "location" &&
             typeof value === "object" &&
@@ -339,23 +350,32 @@ function shouldHydrateScalarAction(action: Observed<Action>): boolean {
             (value as { type?: unknown }).type === "Custom Coordinates"
         ) {
             const coord = (value as { value?: unknown }).value;
-            if (typeof coord === "string" && looksTruncated(coord)) return true;
+            if (typeof coord === "string" && looksTruncated(coord)) {
+                out.push(field);
+            }
         }
     }
     if (action.type === "CHANGE_VAR" && action.holder?.type === "Team") {
         const team = action.holder.team;
-        if (typeof team === "string" && looksTruncated(team)) return true;
+        if (typeof team === "string" && looksTruncated(team)) {
+            for (let i = 0; i < fields.length; i++) {
+                if (fields[i].prop === "holder") {
+                    out.push(fields[i]);
+                    break;
+                }
+            }
+        }
     }
-    return false;
+    return out;
 }
 
 function buildFullHydrationPlan(
     observed: readonly ObservedActionSlot[]
-): InnerListHydrationPlan {
-    const plan: InnerListHydrationPlan = new Map();
+): ActionHydrationPlan {
+    const plan: ActionHydrationPlan = new Map();
     for (const entry of observed) {
-        if (entry.innerListsToRead && entry.innerListsToRead.size > 0) {
-            plan.set(entry, entry.innerListsToRead);
+        if (entry.childListsToRead && entry.childListsToRead.size > 0) {
+            plan.set(entry, createActionHydrationWork(entry.childListsToRead));
         }
     }
     return plan;
@@ -367,14 +387,14 @@ export function canonicalizeActionItemName(
 ): void {
     canonicalizeItemFields(action, ACTION_MAPPINGS, itemRegistry);
 
-    // Only CONDITIONAL/RANDOM carry inner lists, and their inner actions
-    // are guaranteed non-CONDITIONAL/non-RANDOM by spec — so the inner
+    // Only CONDITIONAL/RANDOM carry child lists, and their child actions
+    // are guaranteed non-CONDITIONAL/non-RANDOM by spec — so the child
     // pass is one level deep, no recursion needed.
-    for (const innerListField of getInnerListFields(action.type)) {
-        const value = (action as Record<string, unknown>)[innerListField.prop];
+    for (const childListField of getChildListFields(action.type)) {
+        const value = (action as Record<string, unknown>)[childListField.prop];
         if (!Array.isArray(value)) continue;
         const childMapping =
-            innerListField.prop === "conditions" ? CONDITION_MAPPINGS : ACTION_MAPPINGS;
+            childListField.prop === "conditions" ? CONDITION_MAPPINGS : ACTION_MAPPINGS;
         for (const child of value) {
             if (child === null) continue;
             canonicalizeItemFields(
@@ -388,7 +408,7 @@ export function canonicalizeActionItemName(
 
 async function hydrateActionDetails(
     ctx: TaskContext,
-    plan: InnerListHydrationPlan,
+    plan: ActionHydrationPlan,
     observed: readonly ObservedActionSlot[],
     isTopLevelRead: boolean = false,
     read?: ListReadOptions
@@ -397,13 +417,12 @@ async function hydrateActionDetails(
     const phaseUnits = read?.phaseUnits;
     const events = read?.events;
     const listPath = read?.listPath;
-    const itemCaptureActive = read?.itemCaptures !== undefined;
     let completed = 0;
     const total = plan.size;
     let completedHydrateUnits = 0;
     let totalHydrateUnits = 0;
-    plan.forEach((innerListsToRead, entry) => {
-        totalHydrateUnits += hydrationEntryUnits(entry, innerListsToRead, itemCaptureActive);
+    plan.forEach((work, entry) => {
+        totalHydrateUnits += hydrationEntryUnits(entry, work);
     });
     if (phaseUnits !== undefined) phaseUnits.hydrating = totalHydrateUnits;
     const emit = () => {
@@ -420,19 +439,19 @@ async function hydrateActionDetails(
         isTopLevelRead && events !== undefined
             ? () => emitObservedSnapshot(observed, events)
             : undefined;
-    for (const [entry, innerListsToRead] of plan) {
+    for (const [entry, work] of plan) {
         const entryPath = actionPathForIndex(listPath, entry.index);
         emit();
         events?.emit({
-            kind: "innerListReadStarted",
+            kind: "childListReadStarted",
             path: entryPath,
             actionType: entry.action?.type ?? null,
         });
-        const entryUnits = hydrationEntryUnits(entry, innerListsToRead, itemCaptureActive);
+        const entryUnits = hydrationEntryUnits(entry, work);
         await hydrateActionDetail(
             ctx,
             entry,
-            innerListsToRead,
+            work,
             observed.length,
             read,
             entryPath,
@@ -450,14 +469,14 @@ async function hydrateActionDetails(
 async function hydrateActionDetail(
     ctx: TaskContext,
     entry: ObservedActionSlot,
-    innerListsToRead: InnerListsToRead,
+    work: ActionHydrationWork,
     listLength: number,
     read: ListReadOptions | undefined,
     entryPath: ActionPath,
     emitSnapshot?: () => void
 ): Promise<void> {
     try {
-        return await hydrateActionDetailFromEditor(ctx, entry, innerListsToRead, listLength, read, entryPath, emitSnapshot);
+        return await hydrateActionDetailFromEditor(ctx, entry, work, listLength, read, entryPath, emitSnapshot);
     } catch (error) {
         if (isTaskCancelled(error)) throw error;
         const inner = error instanceof Error ? error.message : String(error);
@@ -470,7 +489,7 @@ async function hydrateActionDetail(
 async function hydrateActionDetailFromEditor(
     ctx: TaskContext,
     entry: ObservedActionSlot,
-    innerListsToRead: InnerListsToRead,
+    work: ActionHydrationWork,
     listLength: number,
     read: ListReadOptions | undefined,
     entryPath: ActionPath,
@@ -499,28 +518,28 @@ async function hydrateActionDetailFromEditor(
             itemCaptures: read?.itemCaptures,
             events: read?.events,
             emitSnapshot,
-            readInnerActions: readActionList,
+            readChildActions: readActionList,
             readConditions: readConditionList,
         });
         entry.action = await spec.read({
             ctx,
-            innerListsToRead,
+            childListsToRead: work.childListsToRead,
             read: readCtx,
             current: entry.action,
         });
-        entry.innerListReadState = "deep";
+        entry.childListReadState = "deep";
         if (note) {
             entry.action.note = note;
         }
-    } else if (innerListsToRead.size > 0) {
+    } else if (work.childListsToRead.size > 0) {
         throw new Error(`Reading action "${entry.action.type}" is not implemented.`);
     } else {
-        refreshTruncatedScalarFields(ctx, entry.action);
-        entry.innerListReadState = "deep";
+        refreshTruncatedScalarFields(ctx, entry.action, work.scalarFieldsToRead);
+        entry.childListReadState = "deep";
     }
 
     if (read?.itemCaptures !== undefined && entry.action !== null) {
-        const itemFields = getItemFieldsForCapture(entry.action.type);
+        const itemFields = work.itemFieldsToCapture;
         for (let i = 0; i < itemFields.length; i++) {
             const field = itemFields[i];
             const displayName = (entry.action as Record<string, unknown>)[field.prop];

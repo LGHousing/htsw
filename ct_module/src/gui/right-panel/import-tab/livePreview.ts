@@ -17,7 +17,7 @@ import { normalizeHtswPath } from "../../lib/pathDisplay";
 import { markGuiDirty } from "../../lib/dirty";
 
 type MaybeAction = Action;
-type MaybeInnerActions = ReadonlyArray<Action | null>;
+type MaybeChildActions = ReadonlyArray<Action | null>;
 
 type PreviewVariant = "body" | "else" | "close" | "ghost" | "placeholder";
 
@@ -239,7 +239,7 @@ function appendActionLines(
             depth,
         }));
         if (!shellOnly) {
-            appendInnerListBody(out, action.ifActions, actionPath, "ifActions", depth + 1, shellOnly);
+            appendChildListBody(out, action.ifActions, actionPath, "ifActions", depth + 1, shellOnly);
             if (action.elseActions !== undefined && action.elseActions !== null && action.elseActions.length > 0) {
                 const elseText = `${indent(depth)}} else {`;
                 out.push(makeLine({
@@ -248,7 +248,7 @@ function appendActionLines(
                     text: elseText,
                     depth,
                 }));
-                appendInnerListBody(out, action.elseActions, actionPath, "elseActions", depth + 1, shellOnly);
+                appendChildListBody(out, action.elseActions, actionPath, "elseActions", depth + 1, shellOnly);
             }
         }
         out.push(makeLine({
@@ -267,7 +267,7 @@ function appendActionLines(
             depth,
         }));
         if (!shellOnly) {
-            appendInnerListBody(out, action.actions, actionPath, "actions", depth + 1, shellOnly);
+            appendChildListBody(out, action.actions, actionPath, "actions", depth + 1, shellOnly);
         }
         out.push(makeLine({
             variant: "close",
@@ -285,38 +285,38 @@ function appendActionLines(
     }));
 }
 
-function appendInnerListBody(
+function appendChildListBody(
     out: PreviewLine[],
-    innerActions: MaybeInnerActions | null | undefined,
+    childActions: MaybeChildActions | null | undefined,
     parentPath: string,
     prop: string,
     depth: number,
     shellOnly: boolean
 ): void {
-    if (innerActions === null || innerActions === undefined || innerActions.length === 0) {
+    if (childActions === null || childActions === undefined || childActions.length === 0) {
         return;
     }
     let allNull = true;
-    for (let i = 0; i < innerActions.length; i++) {
-        if (innerActions[i] !== null) {
+    for (let i = 0; i < childActions.length; i++) {
+        if (childActions[i] !== null) {
             allNull = false;
             break;
         }
     }
     if (allNull || shellOnly) {
         const subListPath = `${parentPath}.${prop}`;
-        const noun = innerActions.length === 1 ? "action" : "actions";
+        const noun = childActions.length === 1 ? "action" : "actions";
         out.push(makeLine({
             variant: "placeholder",
             actionPath: subListPath,
-            text: `${indent(depth)}...${innerActions.length} ${noun}...`,
+            text: `${indent(depth)}...${childActions.length} ${noun}...`,
             depth,
             lineNum: 0,
             italic: true,
         }));
         return;
     }
-    appendActions(out, innerActions, `${parentPath}.${prop}`, depth, shellOnly);
+    appendActions(out, childActions, `${parentPath}.${prop}`, depth, shellOnly);
 }
 
 function makePlaceholderSlot(

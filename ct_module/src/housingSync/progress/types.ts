@@ -75,7 +75,7 @@ export type ImportProgress = {
  * True when the running total is locked — no future event can widen it.
  *
  * Setup/reading/hydrating phases can still discover work (longer lists
- * than predicted, deeper inner bodies, more pages), so the total may
+ * than predicted, deeper child bodies, more pages), so the total may
  * grow mid-run. The applying phase runs against a computed diff with a
  * fixed op count: the total is known, and the bar/ETA can be displayed
  * as exact rather than approximate.

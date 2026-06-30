@@ -32,7 +32,7 @@ import type { ImportEventHandler } from "../housingSync/importEvents";
 import type {
     ActionListOperation,
     ConditionListOperation,
-    InnerListDiff,
+    ChildListDiff,
 } from "../housingSync/types";
 import {
     HOTBAR_ZERO_PACKET_SLOT,
@@ -333,12 +333,12 @@ function actionOperationSummary(op: ActionListOperation): string {
         case "move":
             return `move ${actionName(op.action)} ${op.fromIndex}->${op.toIndex}`;
         case "edit": {
-            const inner = innerListDiffSummary(op.innerListDiffs);
+            const childLists = childListDiffSummary(op.childListDiffs);
             const flags =
                 op.noteOnly || op.noteDiffers
                     ? ` ${op.noteOnly ? "noteOnly" : "noteDiff"}`
                     : "";
-            return `edit ${actionName(op.baselineAction)}->${actionName(op.desired)} @${op.fromIndex}->${op.desiredIndex}${flags}${inner}`;
+            return `edit ${actionName(op.baselineAction)}->${actionName(op.desired)} @${op.fromIndex}->${op.desiredIndex}${flags}${childLists}`;
         }
         default: {
             const _exhaustive: never = op;
@@ -347,18 +347,18 @@ function actionOperationSummary(op: ActionListOperation): string {
     }
 }
 
-function innerListDiffSummary(innerListDiffs: readonly InnerListDiff[]): string {
-    if (innerListDiffs.length === 0) return "";
+function childListDiffSummary(childListDiffs: readonly ChildListDiff[]): string {
+    if (childListDiffs.length === 0) return "";
     const parts: string[] = [];
-    for (let i = 0; i < innerListDiffs.length; i++) {
-        const inner = innerListDiffs[i];
+    for (let i = 0; i < childListDiffs.length; i++) {
+        const childList = childListDiffs[i];
         const detail =
-            inner.prop === "conditions"
-                ? inner.diff.operations.map(conditionOpSummary).join("; ")
-                : inner.diff.operations.map(actionOperationSummary).join("; ");
-        parts.push(`${inner.prop}:${inner.diff.operations.length}{${detail}}`);
+            childList.prop === "conditions"
+                ? childList.diff.operations.map(conditionOpSummary).join("; ")
+                : childList.diff.operations.map(actionOperationSummary).join("; ");
+        parts.push(`${childList.prop}:${childList.diff.operations.length}{${detail}}`);
     }
-    return ` inner(${parts.join(",")})`;
+    return ` childLists(${parts.join(",")})`;
 }
 
 function conditionOpSummary(op: ConditionListOperation): string {

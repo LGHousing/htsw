@@ -76,7 +76,7 @@ describe("diffActionList — edits", () => {
         expect(edit.kind).toBe("edit");
         const editOp = edit as Extract<ActionListOperation, { kind: "edit" }>;
         expect(editOp.noteOnly).toBe(false);
-        expect(editOp.innerListDiffs).toEqual([]);
+        expect(editOp.childListDiffs).toEqual([]);
     });
 
     test("fields equal under canonicalisation produce no edit op", () => {
@@ -124,7 +124,7 @@ describe("diffActionList — edits", () => {
         expect(edit!.noteDiffers).toBe(true);
     });
 
-    test("conditional edit carries inner action list diffs", () => {
+    test("conditional edit carries child action list diffs", () => {
         const observed = [
             obs(0, conditional({ ifActions: [message("old")], elseActions: [] })),
         ];
@@ -138,13 +138,13 @@ describe("diffActionList — edits", () => {
             | undefined;
 
         expect(edit).toBeDefined();
-        expect(edit!.innerListDiffs).toHaveLength(1);
-        expect(edit!.innerListDiffs[0].prop).toBe("ifActions");
-        expect(edit!.innerListDiffs[0].diff.operations).toHaveLength(1);
-        expect(edit!.innerListDiffs[0].diff.operations[0].kind).toBe("edit");
+        expect(edit!.childListDiffs).toHaveLength(1);
+        expect(edit!.childListDiffs[0].prop).toBe("ifActions");
+        expect(edit!.childListDiffs[0].diff.operations).toHaveLength(1);
+        expect(edit!.childListDiffs[0].diff.operations[0].kind).toBe("edit");
     });
 
-    test("conditional team var tail shift does not move the whole inner list", () => {
+    test("conditional team var tail shift does not move the whole child list", () => {
         const actions = Array.from({ length: 25 }, (_, index) =>
             changeVar({
                 holder: { type: "Team", team: "Blue" },
@@ -166,15 +166,15 @@ describe("diffActionList — edits", () => {
         const edit = result.find((op) => op.kind === "edit") as
             | Extract<ActionListOperation, { kind: "edit" }>
             | undefined;
-        const innerListMoves = edit?.innerListDiffs[0].diff.operations.filter(
+        const childListMoves = edit?.childListDiffs[0].diff.operations.filter(
             (op) => op.kind === "move"
         );
 
         expect(kindCounts(result)).toMatchObject({ edit: 1, add: 0, delete: 0, move: 0 });
-        expect(innerListMoves).toHaveLength(2);
+        expect(childListMoves).toHaveLength(2);
     });
 
-    test("random edit carries inner action list diffs", () => {
+    test("random edit carries child action list diffs", () => {
         const observed = [obs(0, random({ actions: [message("old")] }))];
         const desired = [random({ actions: [message("old"), playSound()] })];
 
@@ -184,12 +184,12 @@ describe("diffActionList — edits", () => {
             | undefined;
 
         expect(edit).toBeDefined();
-        expect(edit!.innerListDiffs).toHaveLength(1);
-        expect(edit!.innerListDiffs[0].prop).toBe("actions");
-        expect(edit!.innerListDiffs[0].diff.operations.some((op) => op.kind === "add")).toBe(true);
+        expect(edit!.childListDiffs).toHaveLength(1);
+        expect(edit!.childListDiffs[0].prop).toBe("actions");
+        expect(edit!.childListDiffs[0].diff.operations.some((op) => op.kind === "add")).toBe(true);
     });
 
-    test("inner list replacement cost keeps duplicate parent matches paired with the closest body", () => {
+    test("child list replacement cost keeps duplicate parent matches paired with the closest body", () => {
         const anchorOne = message("anchor-one");
         const anchorTwo = message("anchor-two");
         const observed = [
@@ -213,17 +213,16 @@ describe("diffActionList — edits", () => {
         const replaceEdit = edits.find((op) => op.entryId === 0);
 
         expect(keepEdit?.desiredIndex).toBe(2);
-        expect(keepEdit?.innerListDiffs[0].diff.operations.some((op) => op.kind === "add")).toBe(true);
+        expect(keepEdit?.childListDiffs[0].diff.operations.some((op) => op.kind === "add")).toBe(true);
         expect(replaceEdit?.desiredIndex).toBe(3);
     });
 
-    test("trusted inner action props do not emit fake edits from shallow placeholders", () => {
+    test("completed trusted child action data does not emit fake edits", () => {
         const observed = [
             {
-                ...obs(0, conditional({ ifActions: [null as never], elseActions: [] })),
-                innerListReadState: "shallow" as const,
-                innerListSummaries: { ifActions: ["MESSAGE"] },
-                trustedInnerLists: new Set(["ifActions"] as const),
+                ...obs(0, conditional({ ifActions: [message("trusted")], elseActions: [] })),
+                childListReadState: "shallow" as const,
+                childListSummaries: { ifActions: ["MESSAGE"] },
             },
         ];
         const desired = [

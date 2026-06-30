@@ -59,7 +59,7 @@ describe("applyActionListPlan — top-level-only terminal events", () => {
         expect(kinds).toContain("listSyncCompleted");
     });
 
-    test("inner empty-diff apply does NOT emit listSyncCompleted", async () => {
+    test("child-list empty-diff apply does NOT emit listSyncCompleted", async () => {
         const handler = recordingHandler();
         await applyActionListPlan(
             null as never,

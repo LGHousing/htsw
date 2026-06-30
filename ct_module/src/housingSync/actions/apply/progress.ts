@@ -14,7 +14,7 @@ import {
 } from "../../importEvents";
 import {
     actionOperationApplyUnits,
-    editUnitsWithInnerLists,
+    editUnitsWithChildLists,
     phaseUnitsTotal,
     type PhaseUnits,
 } from "../../progress/costs";
@@ -149,16 +149,16 @@ export function fieldsChangedForEdit(
                 fields.push(String(field.prop));
             }
         }
-        for (let i = 0; i < op.innerListDiffs.length; i++) {
-            const inner = op.innerListDiffs[i];
-            if (inner.diff.operations.length > 0) fields.push(inner.prop);
+        for (let i = 0; i < op.childListDiffs.length; i++) {
+            const childList = op.childListDiffs[i];
+            if (childList.diff.operations.length > 0) fields.push(childList.prop);
         }
     }
     return fields;
 }
 
 export function operationApplyUnits(op: ActionListOperation, desiredLength: number): number {
-    return actionOperationApplyUnits(op, editUnitsWithInnerLists, desiredLength);
+    return actionOperationApplyUnits(op, editUnitsWithChildLists, desiredLength);
 }
 
 function summarizeDiff(

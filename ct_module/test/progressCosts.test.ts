@@ -38,7 +38,7 @@ describe("progress cost estimates", () => {
             desired: message("hi", { note: "new" }),
             noteOnly: true,
             noteDiffers: true,
-            innerListDiffs: [],
+            childListDiffs: [],
         };
 
         expect(actionOperationApplyUnits(op, () => 0, 1)).toBe(COST.chatInput);

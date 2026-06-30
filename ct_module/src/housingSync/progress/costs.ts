@@ -1,11 +1,11 @@
 import type { Action, Condition, Importable } from "htsw/types";
 
 import type {
+    ActionHydrationWork,
     ActionListDiff,
     ActionListOperation,
     ConditionListDiff,
-    InnerListName,
-    InnerListsToRead,
+    ChildListName,
     ObservedActionSlot,
     UiFieldKind,
 } from "../types";
@@ -16,7 +16,7 @@ import {
     baselineConditionListFromConditions,
     diffConditionList,
 } from "../actions/conditions/diff";
-import { getActionLoreFields, getActionScalarLoreFields } from "../fields/actionMappings";
+import { getActionScalarLoreFields } from "../fields/actionMappings";
 import { getConditionScalarLoreFields } from "../fields/conditionMappings";
 import { isTruncatableKind } from "../fields/loreParsing";
 import {
@@ -99,7 +99,7 @@ function fieldKindEditUnits(kind: UiFieldKind): number {
     }
     if (kind === "item") return COST.itemSelect;
     if (kind === "value") return COST.chatInput;
-    if (kind === "innerList") return COST.menuClickWait;
+    if (kind === "childList") return COST.menuClickWait;
     return COST.menuClickWait;
 }
 
@@ -133,7 +133,7 @@ export function conditionListReadUnits(conditionCount: number): number {
     return pageTurnUnitsForListItemCount(conditionCount);
 }
 
-function innerActionReadUnits(actionCount: number): number {
+function childActionReadUnits(actionCount: number): number {
     return (
         COST.menuClickWait +
         COST.menuClickWait +
@@ -143,38 +143,26 @@ function innerActionReadUnits(actionCount: number): number {
     );
 }
 
-function actionItemFieldCount(type: Action["type"]): number {
-    const lore = getActionLoreFields(type);
-    let count = 0;
-    for (const label in lore) {
-        if (lore[label].kind === "item") count++;
-    }
-    return count;
-}
-
 export function hydrationEntryUnits(
     entry: ObservedActionSlot,
-    innerListsToRead: InnerListsToRead,
-    itemCaptureActive: boolean = false
+    work: ActionHydrationWork
 ): number {
     if (entry.action === null) return 0;
 
     let total = COST.menuClickWait + COST.goBackWait;
-    innerListsToRead.forEach((prop) => {
-        total += innerListReadUnits(entry, prop);
+    work.childListsToRead.forEach((prop) => {
+        total += childListReadUnits(entry, prop);
     });
-    if (itemCaptureActive) {
-        total += actionItemFieldCount(entry.action.type) * ITEM_CAPTURE_FIELD_UNITS;
-    }
+    total += work.itemFieldsToCapture.length * ITEM_CAPTURE_FIELD_UNITS;
     return total;
 }
 
-function innerListReadUnits(entry: ObservedActionSlot, prop: InnerListName): number {
-    const summary = entry.innerListSummaries ? entry.innerListSummaries[prop] : undefined;
+function childListReadUnits(entry: ObservedActionSlot, prop: ChildListName): number {
+    const summary = entry.childListSummaries ? entry.childListSummaries[prop] : undefined;
     const count = summary === undefined ? 1 : summary.length;
     const base = COST.menuClickWait + pageTurnUnitsForListItemCount(count) + COST.goBackWait;
-    // The recursive readActionList that hydrates this inner list will
-    // also do scalar truncation hydration on its inner rows (clicking
+    // The recursive readActionList that hydrates this child list will
+    // also do scalar truncation hydration on its child rows (clicking
     // into each truncated MESSAGE/PLAY_SOUND/... and back). Add a
     // conservative estimate of that cost so the parent's hydrate ETA
     // doesn't undercount and let the displayed time finish before the
@@ -290,14 +278,14 @@ export function conditionListDiffApplyUnits(diff: ConditionListDiff): number {
 }
 
 /**
- * Cost of writing one action's payload (scalar fields + any inner-list
+ * Cost of writing one action's payload (scalar fields + any child-list
  * action/condition lists) once its shell has been added. Scalar fields
  * each cost a `chatInput`; array fields recurse — `conditions` via
  * `conditionListRoughUnits`, action-list arrays (e.g. `ifActions`,
  * `elseActions`, `actions` for RANDOM) via `actionListRoughApplyUnits`.
  *
  * Recursion terminates because CONDITIONAL/RANDOM aren't allowed to
- * nest — the inner action lists only contain non-CONDITIONAL,
+ * nest — the child action lists only contain non-CONDITIONAL,
  * non-RANDOM actions, none of which carry action-list arrays.
  *
  * When the action has any writable fields, also includes the
@@ -395,12 +383,12 @@ export function actionOperationApplyUnits(
  * Per-phase work estimate for a single action-list sync call. `readList` and
  * apply phases emit completed/total units on this shared scale.
  *
- * `readPart` / `hydratePart` cover this list only — inner action-list apply
+ * `readPart` / `hydratePart` cover this list only — child action-list apply
  * calls inside CONDITIONAL/RANDOM bodies aren't separately tracked because
  * their reading is folded into the parent's hydrate phase (via
- * `topLevelHydrateUnits`). `applyPart` does include inner-list apply
+ * `topLevelHydrateUnits`). `applyPart` does include child-list apply
  * work via the cache-aware diff recursing one level into
- * `ifActions` / `elseActions` / `actions` (see `editUnitsWithInnerLists`).
+ * `ifActions` / `elseActions` / `actions` (see `editUnitsWithChildLists`).
  */
 /** Sum of the four phase fields. Computed on demand — no cached `total`. */
 export function phaseUnitsTotal(p: PhaseUnits): number {
@@ -447,11 +435,11 @@ function topLevelHydrateUnits(desired: readonly Action[]): number {
             // A conditional parsed from .htsl may omit a branch entirely
             // (no else, no conditions), leaving the field undefined — guard
             // every length read so the ETA estimate can't crash the import.
-            total += innerActionReadUnits(a.ifActions?.length ?? 0);
-            total += innerActionReadUnits(a.elseActions?.length ?? 0);
+            total += childActionReadUnits(a.ifActions?.length ?? 0);
+            total += childActionReadUnits(a.elseActions?.length ?? 0);
             if ((a.conditions?.length ?? 0) > 0) total += COST.menuClickWait + COST.goBackWait;
         } else if (a.type === "RANDOM") {
-            total += innerActionReadUnits(a.actions?.length ?? 0);
+            total += childActionReadUnits(a.actions?.length ?? 0);
         }
     }
     return total;
@@ -484,7 +472,7 @@ export function estimateActionListPhaseUnits(
     if (baselineCurrent === undefined) {
         // No cache: we don't know what's in housing yet, so the read and
         // hydrate costs are unknowable upfront. They get filled in with
-        // exact values from observed `innerListSummaries` once the read
+        // exact values from observed `childListSummaries` once the read
         // pass finishes (readList.ts:hydrateActionDetails). The UI's
         // never-jump-up ETA guard masks the one-time totalUnits step at
         // the read→hydrate transition.
@@ -539,14 +527,14 @@ function baselineAwareApplyUnits(
 ): number {
     const current = baselineActionListFromActions(baseline);
     const diff = diffActionList(current, desired as Action[]);
-    return actionListDiffApplyUnits(diff, editUnitsWithInnerLists, desired.length);
+    return actionListDiffApplyUnits(diff, editUnitsWithChildLists, desired.length);
 }
 
 /**
  * Edit-op cost for the baseline-aware apply path. Scalar field changes are
  * derived from the edit op's observed/desired pair.
  *
- * `getActionScalarLoreFields` strips out `innerList` field kinds, so
+ * `getActionScalarLoreFields` strips out `childList` field kinds, so
  * the scalar pass never prices changes to CONDITIONAL.ifActions /
  * elseActions / RANDOM.actions — even though the diff engine still
  * emits an edit op when those bodies differ (its `actionsEqual` does a
@@ -557,42 +545,42 @@ function baselineAwareApplyUnits(
  * the catch-up work.
  *
  * We re-run the diff one level deeper for any CONDITIONAL/RANDOM edit
- * and add the inner apply cost. The HTSL constraint that
+ * and add the child apply cost. The HTSL constraint that
  * CONDITIONAL/RANDOM can't appear inside another CONDITIONAL/RANDOM
  * body bounds the recursion at one level.
  */
-export function editUnitsWithInnerLists(op: Extract<ActionListOperation, { kind: "edit" }>): number {
+export function editUnitsWithChildLists(op: Extract<ActionListOperation, { kind: "edit" }>): number {
     let total = scalarFieldEditUnitsForOp(op);
 
-    for (let i = 0; i < op.innerListDiffs.length; i++) {
-        const inner = op.innerListDiffs[i];
-        if (inner.diff.operations.length === 0) continue;
+    for (let i = 0; i < op.childListDiffs.length; i++) {
+        const childList = op.childListDiffs[i];
+        if (childList.diff.operations.length === 0) continue;
         total += COST.menuClickWait + COST.goBackWait;
-        if (inner.prop === "conditions") {
-            const baseline = innerConditionBaseline(op.baselineAction);
-            const desired = innerConditionDesired(op.desired);
+        if (childList.prop === "conditions") {
+            const baseline = childConditionBaseline(op.baselineAction);
+            const desired = childConditionDesired(op.desired);
             total += phaseUnitsTotal(estimateConditionListPhaseUnits(desired, baseline));
         } else {
-            const baseline = innerActionBaseline(op.baselineAction, inner.prop);
-            const desired = innerActionDesired(op.desired, inner.prop);
+            const baseline = childActionBaseline(op.baselineAction, childList.prop);
+            const desired = childActionDesired(op.desired, childList.prop);
             total += phaseUnitsTotal(estimateActionListPhaseUnits(desired, baseline));
         }
     }
     return total;
 }
 
-function innerConditionBaseline(
+function childConditionBaseline(
     action: ObservedActionSlot["action"] | Action
 ): ReadonlyArray<Condition | null> | undefined {
     if (action === null || action.type !== "CONDITIONAL") return undefined;
     return action.conditions;
 }
 
-function innerConditionDesired(action: Action): Condition[] {
+function childConditionDesired(action: Action): Condition[] {
     return action.type === "CONDITIONAL" ? action.conditions ?? [] : [];
 }
 
-function innerActionBaseline(
+function childActionBaseline(
     action: ObservedActionSlot["action"] | Action,
     prop: "ifActions" | "elseActions" | "actions"
 ): readonly Action[] | undefined {
@@ -607,7 +595,7 @@ function innerActionBaseline(
     return undefined;
 }
 
-function innerActionDesired(
+function childActionDesired(
     action: Action,
     prop: "ifActions" | "elseActions" | "actions"
 ): readonly Action[] {

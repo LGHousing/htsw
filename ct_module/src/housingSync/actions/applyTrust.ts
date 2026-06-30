@@ -1,51 +1,77 @@
+import type { Action, Condition } from "htsw/types";
+
 import type {
+    ActionHydrationPlan,
     ActionListTrust,
-    InnerListHydrationPlan,
-    InnerListName,
+    ChildListName,
     ObservedActionSlot,
+    TrustedChildListSnapshot,
 } from "../types";
-import { desiredInnerListTypes, type DesiredActionEntry } from "./innerListMatching";
+import { desiredChildListTypes, type DesiredActionEntry } from "./childListMatching";
+import { actionHydrationWorkRequiresHousing } from "./hydrationPlan";
 
 /**
- * Consumes the same matches as `createInnerListHydrationPlan` so trust never
+ * Consumes the same matches as `createActionHydrationPlan` so trust never
  * disagrees with hydration about which observed corresponds to which desired.
  */
 export function applyActionListTrust(
     matches: Map<ObservedActionSlot, DesiredActionEntry>,
-    plan: InnerListHydrationPlan,
+    plan: ActionHydrationPlan,
     trust: ActionListTrust
 ): void {
-    if (trust.trustedListPaths.size === 0) return;
+    if (trust.trustedChildListPaths.size === 0) return;
 
     for (const [observed, desired] of matches) {
-        const innerListsToRead = plan.get(observed);
-        if (innerListsToRead === undefined || observed.action === null) continue;
+        const work = plan.get(observed);
+        if (work === undefined || observed.action === null) continue;
 
-        for (const prop of Array.from(innerListsToRead)) {
+        for (const prop of Array.from(work.childListsToRead)) {
             const path = `${trust.basePath}[${desired.index}].${prop}`;
-            if (!trust.trustedListPaths.has(path)) continue;
-            if (!shallowInnerListShapeMatches(observed, desired, prop)) continue;
+            if (!trust.trustedChildListPaths.has(path)) continue;
+            const snapshot = trust.trustedChildLists.get(path);
+            if (snapshot === undefined) continue;
+            if (!shallowChildListShapeMatches(observed, desired, prop)) continue;
 
-            if (observed.trustedInnerLists === undefined) {
-                observed.trustedInnerLists = new Set();
-            }
-            observed.trustedInnerLists.add(prop);
-            innerListsToRead.delete(prop);
+            applyTrustedSnapshot(observed, prop, snapshot);
+            work.childListsToRead.delete(prop);
         }
 
-        if (innerListsToRead.size === 0) {
+        if (!actionHydrationWorkRequiresHousing(work)) {
             plan.delete(observed);
         }
     }
 }
 
-function shallowInnerListShapeMatches(
+function applyTrustedSnapshot(
+    observed: ObservedActionSlot,
+    prop: ChildListName,
+    snapshot: TrustedChildListSnapshot
+): void {
+    if (observed.action === null) return;
+    if (prop === "conditions") {
+        if (snapshot.kind !== "conditions") return;
+        Object.assign(observed.action, { [prop]: cloneConditions(snapshot.conditions) });
+        return;
+    }
+    if (snapshot.kind !== "actions") return;
+    Object.assign(observed.action, { [prop]: cloneActions(snapshot.actions) });
+}
+
+function cloneActions(actions: readonly Action[]): Action[] {
+    return JSON.parse(JSON.stringify(actions)) as Action[];
+}
+
+function cloneConditions(conditions: readonly Condition[]): Condition[] {
+    return JSON.parse(JSON.stringify(conditions)) as Condition[];
+}
+
+function shallowChildListShapeMatches(
     observed: ObservedActionSlot,
     desired: DesiredActionEntry,
-    prop: InnerListName
+    prop: ChildListName
 ): boolean {
-    const observedTypes = observed.innerListSummaries?.[prop] ?? [];
-    const desiredTypes = desiredInnerListTypes(desired.action, prop);
+    const observedTypes = observed.childListSummaries?.[prop] ?? [];
+    const desiredTypes = desiredChildListTypes(desired.action, prop);
     if (observedTypes.length !== desiredTypes.length) return false;
     for (let i = 0; i < observedTypes.length; i++) {
         if (observedTypes[i] !== desiredTypes[i]) return false;

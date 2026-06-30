@@ -14,10 +14,10 @@ import {
     diffActionList,
 } from "./diff";
 import { canonicalizeActionItemName, readActionList } from "./readList";
-import { getInnerListFields } from "../fields/actionMappings";
+import { getChildListFields } from "../fields/actionMappings";
 import {
     actionListDiffApplyUnits,
-    editUnitsWithInnerLists,
+    editUnitsWithChildLists,
     estimateActionListPhaseUnits,
     phaseUnitsTotal,
 } from "../progress/costs";
@@ -86,7 +86,7 @@ export async function prereadActionList(
     const diff = diffActionList(baselineActionListFromSlots(observed), desired);
     const exactApplyUnits = actionListDiffApplyUnits(
         diff,
-        editUnitsWithInnerLists,
+        editUnitsWithChildLists,
         desired.length
     );
     phaseUnits.applying = Math.max(exactApplyUnits, 1);
@@ -111,7 +111,7 @@ export function createKnownEmptyActionListPlan(
     const phaseUnits = estimateActionListPhaseUnits(desired, []);
     const diff = diffActionList(baselineActionListFromActions([]), desired);
     phaseUnits.applying = Math.max(
-        actionListDiffApplyUnits(diff, editUnitsWithInnerLists, desired.length),
+        actionListDiffApplyUnits(diff, editUnitsWithChildLists, desired.length),
         1
     );
     return { desired, observed: [], diff, phaseUnits };
@@ -119,21 +119,21 @@ export function createKnownEmptyActionListPlan(
 
 /**
  * Whether a current snapshot is fully read: no null slots and
- * every inner list (conditions / inner action bodies) hydrated. A shallow
- * snapshot holds nulls for un-read inner lists; persisting one would cache a
+ * every child list (conditions / child action bodies) hydrated. A shallow
+ * snapshot holds nulls for un-read child lists; persisting one would cache a
  * half-known list as truth.
  */
 export function actionsFullyHydrated(actions: ReadonlyArray<Action | null>): boolean {
     for (const action of actions) {
         if (action === null) return false;
-        for (const field of getInnerListFields(action.type)) {
-            const inner = (action as Record<string, unknown>)[field.prop];
-            if (!Array.isArray(inner)) continue;
+        for (const field of getChildListFields(action.type)) {
+            const childList = (action as Record<string, unknown>)[field.prop];
+            if (!Array.isArray(childList)) continue;
             if (field.prop === "conditions") {
-                for (const condition of inner) {
+                for (const condition of childList) {
                     if (condition === null) return false;
                 }
-            } else if (!actionsFullyHydrated(inner as Array<Action | null>)) {
+            } else if (!actionsFullyHydrated(childList as Array<Action | null>)) {
                 return false;
             }
         }
