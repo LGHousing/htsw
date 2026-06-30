@@ -36,7 +36,7 @@ import {
     importSelectedImportables,
     orderImportablesForImportSession,
 } from "../../../importables/importSession";
-import type { ExportResult } from "../../../importables/exportSession";
+import type { ExportResult } from "../../../importables/exports";
 import { importableIdentity } from "../../../importCache/paths";
 import { getCurrentHousingUuid } from "../../../importCache/housingId";
 import { TaskManager, isTaskCancelled } from "../../../tasks/manager";
@@ -51,7 +51,7 @@ import type {
     ImportEventHandler,
     ImportEvent,
 } from "../../../housingSync/importEvents";
-import { importProgressKey } from "../../../housingSync/progress/keys";
+import { queueRowKey } from "../../../housingSync/progress/queueRowKey";
 import type { ExportProgressSink } from "../../../housingSync/progress/types";
 import { createExportProgressSink } from "./exportProgress";
 import { initialReducerState, reduce } from "../../../housingSync/progress/reducer";
@@ -59,7 +59,7 @@ import { traceImportEvent } from "../../../housingSync/trace/importTrace";
 import { traceProgressEvent } from "../../../housingSync/trace/progressTrace";
 import { invalidateSourceDiffForImportable } from "../../code-view/sourceDiff";
 import { showToast } from "../../toast";
-import { isImportRunning, setImportRunning } from "../../../housingSync/runtimeState";
+import { isImportRunning, setImportRunning } from "../../../housingSync/importRunState";
 import { gmcOnImportStart, playImportSuccessSound, waitForCreativeMode } from "../../../housingSync/sideEffects";
 import { resetStepGate } from "../../../housingSync/stepGate";
 import { resetEventContainers } from "../../../tasks/specifics/waitFor";
@@ -114,7 +114,7 @@ const BODY_LIST_PROPS: Record<string, true> = {
 };
 
 // True when an edit touches the action's head line. A CONDITIONAL/RANDOM whose
-// only changed fields are nested body lists (ifActions/elseActions/actions)
+// only changed fields are inner action lists (ifActions/elseActions/actions)
 // leaves its head — `if (conditions) {` / `random {` — unchanged; those body
 // ops mark their own lines, so flagging the head would falsely show the
 // conditions as changed. An empty list (note-only edit) keeps the head marked.
@@ -143,7 +143,7 @@ function createImportEventHandler(args: {
     const importablesByKey = new Map<string, Importable>();
     for (const imp of args.parsed.value) {
         importablesByKey.set(
-            importProgressKey(imp.type, importableIdentity(imp), args.sessionSourcePath),
+            queueRowKey(imp.type, importableIdentity(imp), args.sessionSourcePath),
             imp
         );
     }
@@ -191,7 +191,7 @@ function createImportEventHandler(args: {
         progress: () => {},
         setupStep: () => {},
         readStarted: () => {},
-        nestedReadStarted: (e) => {
+        innerListReadStarted: (e) => {
             if (activeViewPath === null) return;
             setCurrent(activeViewPath, e.path);
             setFocusLineId(activeViewPath, previewLineIdForPath(activeViewPath, e.path));

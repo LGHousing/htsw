@@ -1,5 +1,5 @@
 import type { Action, Importable } from "htsw/types";
-import type { ImportableEntry, ProgressPayload } from "./progress/types";
+import type { ProgressPayload, QueueRow } from "./progress/types";
 
 export type DiffOpKind = "edit" | "add" | "move" | "delete";
 export type DiffFinalState = "match" | "edit" | "add" | "delete";
@@ -18,7 +18,7 @@ export function actionPathForIndex(listPath: ActionPath | undefined, index: numb
     };
 }
 
-export function nestedActionPath(parent: ActionPath, prop: string): ActionPath {
+export function innerListPath(parent: ActionPath, prop: string): ActionPath {
     return { parts: parent.parts.concat(prop) };
 }
 
@@ -109,9 +109,8 @@ export type PlannedOp =
 export type ProgressScope =
     | { kind: "topLevel" }
     | {
-          kind: "nestedActionList";
+          kind: "innerList";
           path: ActionPath;
-          parentActionPath: ActionPath;
           baselineApplyUnits: number;
           parentSync: {
               completedUnits: number;
@@ -122,7 +121,7 @@ export type ProgressScope =
 export type ImportEvent =
     | {
           kind: "sessionStarted";
-          rows: readonly ImportableEntry[];
+          rows: readonly QueueRow[];
           initialTotalUnits: number;
       }
     | {
@@ -157,7 +156,7 @@ export type ImportEvent =
     | { kind: "progress"; scope: ProgressScope; progress: ProgressPayload }
     | { kind: "setupStep"; label: string; completed: number; total: number }
     | { kind: "readStarted"; listPath: string }
-    | { kind: "nestedReadStarted"; path: ActionPath; actionType: Action["type"] | null }
+    | { kind: "innerListReadStarted"; path: ActionPath; actionType: Action["type"] | null }
     | { kind: "observedSnapshot"; actions: ReadonlyArray<Action | null> }
     | {
           kind: "diffPlanned";
@@ -179,4 +178,19 @@ export type ImportEvent =
 
 export interface ImportEventHandler {
     emit(event: ImportEvent): void;
+}
+
+export function createSetupStepEmitter(
+    events: ImportEventHandler | undefined,
+    total: number
+): (label: string) => void {
+    let step = 0;
+    return (label: string): void => {
+        events?.emit({
+            kind: "setupStep",
+            label,
+            completed: ++step,
+            total,
+        });
+    };
 }

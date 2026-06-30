@@ -42,9 +42,9 @@ import {
 } from "./perf/lagProbe";
 import { commandTest } from "./testSuite/command";
 import { isInCreativeMode } from "./housingSync/sideEffects";
-import { appendActionsToOpenActionList } from "./housingSync/actions/applyDiff";
+import { appendActionsToOpenActionList } from "./housingSync/actions/apply";
 import { createItemRegistry } from "./importables/itemRegistry";
-import { isImportRunning, setImportRunning } from "./housingSync/runtimeState";
+import { isImportRunning, setImportRunning } from "./housingSync/importRunState";
 import { startImport } from "./gui/right-panel/import-tab/importController";
 import { canonicalPath, getParsePerfStats } from "./gui/parsing/parses";
 import { compactFileLabel } from "./gui/lib/pathDisplay";

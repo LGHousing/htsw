@@ -12,7 +12,7 @@ export type UiFieldKind =
     | "select"
     | "location"
     | "item"
-    | "nestedList";
+    | "innerList";
 
 type ConditionDataKey<T extends Condition> = Exclude<
     keyof T,
@@ -61,21 +61,21 @@ export type ActionLoreSpec<T extends Action> = {
     loreFields: Record<string, ActionLoreFieldSpec<T>>;
 };
 
-export type NestedListProp = "conditions" | "ifActions" | "elseActions" | "actions";
+export type InnerListName = "conditions" | "ifActions" | "elseActions" | "actions";
 
-/** Nested list properties that still need to be read by clicking in. */
-export type NestedPropsToRead = Set<NestedListProp>;
+/** Inner list properties that still need to be read by clicking in. */
+export type InnerListsToRead = Set<InnerListName>;
 
-type NestedReadState = "none" | "summary" | "full" | "trusted";
+type InnerListReadState = "none" | "shallow" | "deep";
 
-export type NestedSummaries = Partial<Record<NestedListProp, string[]>>;
+export type InnerListSummaries = Partial<Record<InnerListName, string[]>>;
 
 export type ActionListTrust = {
     basePath: string;
     trustedListPaths: ReadonlySet<string>;
 };
 
-export type NestedHydrationPlan = Map<ObservedActionSlot, NestedPropsToRead>;
+export type InnerListHydrationPlan = Map<ObservedActionSlot, InnerListsToRead>;
 
 export type Observed<T> = {
     [K in keyof T]: T[K] extends Action[]
@@ -87,17 +87,13 @@ export type Observed<T> = {
 
 export type ObservedActionSlot = {
     index: number;
-    /**
-     * Live menu slot for this observation. Absent when the entry is a reused
-     * observation (e.g. a nested list hydrated in an earlier pass): the apply
-     * path re-acquires slots by index, so a reused entry needs no live slot.
-     */
     slotId?: number;
     slot?: ItemSlot;
     action: Observed<Action> | null;
-    nestedReadState?: NestedReadState;
-    nestedSummaries?: NestedSummaries;
-    nestedPropsToRead?: NestedPropsToRead;
+    innerListReadState?: InnerListReadState;
+    innerListSummaries?: InnerListSummaries;
+    innerListsToRead?: InnerListsToRead;
+    trustedInnerLists?: InnerListsToRead;
 };
 
 export type ObservedConditionSlot = {
@@ -111,17 +107,17 @@ export type CurrentActionListEntry = {
     entryId: number;
     index: number;
     action: Observed<Action> | null;
-    nestedReadState?: NestedReadState;
-    nestedSummaries?: NestedSummaries;
+    innerListReadState?: InnerListReadState;
+    innerListSummaries?: InnerListSummaries;
+    trustedInnerLists?: InnerListsToRead;
 };
 
 export type CurrentConditionListEntry = {
     entryId: number;
-    index: number;
     condition: Condition | null;
 };
 
-export type NestedListDiff =
+export type InnerListDiff =
     | { prop: "conditions"; diff: ConditionListDiff }
     | { prop: "ifActions" | "elseActions" | "actions"; diff: ActionListDiff };
 
@@ -142,7 +138,7 @@ export type ActionListOperation =
           desired: Action;
           noteOnly: boolean;
           noteDiffers: boolean;
-          nestedDiffs: NestedListDiff[];
+          innerListDiffs: InnerListDiff[];
       }
     | { kind: "add"; desiredIndex: number; desired: Action; toIndex: number }
     | {

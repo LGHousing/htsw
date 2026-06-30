@@ -10,7 +10,7 @@ import {
     ACTION_MAPPINGS,
     getActionLoreFields,
     getActionScalarLoreFields,
-    getNestedListFields,
+    getInnerListFields,
     parseActionListItem,
     tryGetActionTypeFromDisplayName,
 } from "../fields/actionMappings";
@@ -25,16 +25,18 @@ import {
 import { canonicalizeItemFields } from "../fields/canonicalizeItems";
 import type {
     ActionListTrust,
-    NestedHydrationPlan,
-    NestedListProp,
-    NestedPropsToRead,
-    NestedSummaries,
+    InnerListHydrationPlan,
+    InnerListName,
+    InnerListsToRead,
+    InnerListSummaries,
     Observed,
     ObservedActionSlot,
     ListReadOptions,
 } from "../types";
-import { createNestedHydrationPlan } from "./hydrationPlan";
-import { matchObservedToDesired } from "./nestedMatching";
+import {
+    createInnerListHydrationPlan,
+    matchObservedToDesired,
+} from "./innerListMatching";
 import { applyActionListTrust } from "./applyTrust";
 import {
     getPaginatedListPageForIndex,
@@ -51,27 +53,26 @@ import {
     hydrationEntryUnits,
     phaseUnitsTotal,
 } from "../progress/costs";
-import { ACTION_LIST_CONFIG } from "./listConfig";
+import { ACTION_LIST_CONFIG } from "./listConfigs";
 import { getActionSpec } from "./specs";
-import { actionLogLabel } from "./log";
 import { createActionReadContext } from "../context/actionReadContext";
 import { readConditionList } from "./conditions/readList";
 
 export type ActionListReadMode =
-    | { kind: "full" }
+    | { kind: "deep" }
     | { kind: "sync"; desired: readonly Action[]; trust?: ActionListTrust };
 
-function readNestedSummaries(
+function readInnerListSummaries(
     action: Observed<Action>,
     slot: ItemSlot
-): { summaries: NestedSummaries; propsToRead: NestedPropsToRead } {
-    const nestedFields = getNestedListFields(action.type);
+): { summaries: InnerListSummaries; innerListsToRead: InnerListsToRead } {
+    const innerListFields = getInnerListFields(action.type);
     const lore = slot.getItem().getLore();
-    const summaries: NestedSummaries = {};
-    const propsToRead: NestedPropsToRead = new Set();
-    const labels = new Set(nestedFields.map((field) => field.label));
+    const summaries: InnerListSummaries = {};
+    const innerListsToRead: InnerListsToRead = new Set();
+    const labels = new Set(innerListFields.map((field) => field.label));
 
-    for (const { label, prop } of nestedFields) {
+    for (const { label, prop } of innerListFields) {
         const itemTypes: string[] = [];
         let labelIndex = -1;
         for (let i = 0; i < lore.length; i++) {
@@ -116,11 +117,11 @@ function readNestedSummaries(
             itemTypes.push(type ?? "UNKNOWN");
         }
 
-        summaries[prop as NestedListProp] = itemTypes;
+        summaries[prop as InnerListName] = itemTypes;
         if (itemTypes.length === 0) {
             Object.assign(action, { [prop]: [] });
         } else {
-            propsToRead.add(prop as NestedListProp);
+            innerListsToRead.add(prop as InnerListName);
             // Seed one null per item so the preview can show the count
             // ("...3 conditions..." / "...3 actions...") before hydration
             // fills the real entries in. Guarded so a field the parser
@@ -131,7 +132,7 @@ function readNestedSummaries(
         }
     }
 
-    return { summaries, propsToRead };
+    return { summaries, innerListsToRead };
 }
 
 async function readActionsListPage(
@@ -152,21 +153,21 @@ async function readActionsListPage(
                 slotId: entry.slot.getSlotId(),
                 slot: entry.slot,
                 action: null,
-                nestedReadState: "none",
-                nestedSummaries: {},
-                nestedPropsToRead: new Set(),
+                innerListReadState: "none",
+                innerListSummaries: {},
+                innerListsToRead: new Set(),
             };
             if (!entry.type) {
                 return observed;
             }
 
             const action = parseActionListItem(entry.slot, entry.type);
-            const nested = readNestedSummaries(action, entry.slot);
+            const inner = readInnerListSummaries(action, entry.slot);
             observed.action = action;
-            observed.nestedReadState =
-                getNestedListFields(action.type).length === 0 ? "none" : "summary";
-            observed.nestedSummaries = nested.summaries;
-            observed.nestedPropsToRead = nested.propsToRead;
+            observed.innerListReadState =
+                getInnerListFields(action.type).length === 0 ? "none" : "shallow";
+            observed.innerListSummaries = inner.summaries;
+            observed.innerListsToRead = inner.innerListsToRead;
             return observed;
         });
 
@@ -175,7 +176,7 @@ async function readActionsListPage(
 
 export async function readActionList(
     ctx: TaskContext,
-    mode: ActionListReadMode = { kind: "full" },
+    mode: ActionListReadMode = { kind: "deep" },
     read?: ListReadOptions
 ): Promise<ObservedActionSlot[]> {
     const progress = read?.progress;
@@ -224,18 +225,18 @@ export async function readActionList(
     if (isTopLevelRead) {
         emitObservedSnapshot(observed, events);
     }
-    let plan: NestedHydrationPlan;
+    let plan: InnerListHydrationPlan;
     if (isTopLevelRead) {
-        // Only the top-level read can encounter nested-list-bearing
+        // Only the top-level read can encounter inner-list-bearing
         // actions (CONDITIONAL/RANDOM). CONDITIONAL/RANDOM are disallowed
         // inside their own ifActions/elseActions/actions, so any inner
         // read's hydration plan can only carry scalar truncation entries.
-        // Skip the nested-plan computation entirely at inner levels.
-        if (mode.kind === "full") {
+        // Skip the inner-list plan computation entirely at inner levels.
+        if (mode.kind === "deep") {
             plan = buildFullHydrationPlan(observed);
         } else {
             const matches = matchObservedToDesired(observed, mode.desired);
-            plan = createNestedHydrationPlan(matches);
+            plan = createInnerListHydrationPlan(matches);
             if (mode.trust !== undefined) {
                 applyActionListTrust(matches, plan, mode.trust);
             }
@@ -247,7 +248,7 @@ export async function readActionList(
     if (read?.itemCaptures !== undefined) {
         addItemCaptureEntries(plan, observed);
     }
-    await hydrateNestedActions(
+    await hydrateActionDetails(
         ctx,
         plan,
         observed,
@@ -285,7 +286,7 @@ function emitObservedSnapshot(
 }
 
 function addScalarHydrationEntries(
-    plan: NestedHydrationPlan,
+    plan: InnerListHydrationPlan,
     observed: readonly ObservedActionSlot[]
 ): void {
     for (const entry of observed) {
@@ -313,7 +314,7 @@ function getItemFieldsForCapture(
 }
 
 function addItemCaptureEntries(
-    plan: NestedHydrationPlan,
+    plan: InnerListHydrationPlan,
     observed: readonly ObservedActionSlot[]
 ): void {
     for (const entry of observed) {
@@ -350,11 +351,11 @@ function shouldHydrateScalarAction(action: Observed<Action>): boolean {
 
 function buildFullHydrationPlan(
     observed: readonly ObservedActionSlot[]
-): NestedHydrationPlan {
-    const plan: NestedHydrationPlan = new Map();
+): InnerListHydrationPlan {
+    const plan: InnerListHydrationPlan = new Map();
     for (const entry of observed) {
-        if (entry.nestedPropsToRead && entry.nestedPropsToRead.size > 0) {
-            plan.set(entry, entry.nestedPropsToRead);
+        if (entry.innerListsToRead && entry.innerListsToRead.size > 0) {
+            plan.set(entry, entry.innerListsToRead);
         }
     }
     return plan;
@@ -366,14 +367,14 @@ export function canonicalizeActionItemName(
 ): void {
     canonicalizeItemFields(action, ACTION_MAPPINGS, itemRegistry);
 
-    // Only CONDITIONAL/RANDOM carry nested lists, and their inner actions
+    // Only CONDITIONAL/RANDOM carry inner lists, and their inner actions
     // are guaranteed non-CONDITIONAL/non-RANDOM by spec — so the inner
     // pass is one level deep, no recursion needed.
-    for (const nestedField of getNestedListFields(action.type)) {
-        const value = (action as Record<string, unknown>)[nestedField.prop];
+    for (const innerListField of getInnerListFields(action.type)) {
+        const value = (action as Record<string, unknown>)[innerListField.prop];
         if (!Array.isArray(value)) continue;
         const childMapping =
-            nestedField.prop === "conditions" ? CONDITION_MAPPINGS : ACTION_MAPPINGS;
+            innerListField.prop === "conditions" ? CONDITION_MAPPINGS : ACTION_MAPPINGS;
         for (const child of value) {
             if (child === null) continue;
             canonicalizeItemFields(
@@ -385,9 +386,9 @@ export function canonicalizeActionItemName(
     }
 }
 
-async function hydrateNestedActions(
+async function hydrateActionDetails(
     ctx: TaskContext,
-    plan: NestedHydrationPlan,
+    plan: InnerListHydrationPlan,
     observed: readonly ObservedActionSlot[],
     isTopLevelRead: boolean = false,
     read?: ListReadOptions
@@ -401,11 +402,11 @@ async function hydrateNestedActions(
     const total = plan.size;
     let completedHydrateUnits = 0;
     let totalHydrateUnits = 0;
-    plan.forEach((propsToRead, entry) => {
-        totalHydrateUnits += hydrationEntryUnits(entry, propsToRead, itemCaptureActive);
+    plan.forEach((innerListsToRead, entry) => {
+        totalHydrateUnits += hydrationEntryUnits(entry, innerListsToRead, itemCaptureActive);
     });
     if (phaseUnits !== undefined) phaseUnits.hydrating = totalHydrateUnits;
-    const emit = (_label: string) => {
+    const emit = () => {
         if (phaseUnits === undefined) return;
         progress?.({
             phase: "hydrating",
@@ -419,20 +420,19 @@ async function hydrateNestedActions(
         isTopLevelRead && events !== undefined
             ? () => emitObservedSnapshot(observed, events)
             : undefined;
-    for (const [entry, propsToRead] of plan) {
+    for (const [entry, innerListsToRead] of plan) {
         const entryPath = actionPathForIndex(listPath, entry.index);
-        const entryLabel = `reading nested ${actionLogLabel(entry.action)}`;
-        emit(entryLabel);
+        emit();
         events?.emit({
-            kind: "nestedReadStarted",
+            kind: "innerListReadStarted",
             path: entryPath,
             actionType: entry.action?.type ?? null,
         });
-        const entryUnits = hydrationEntryUnits(entry, propsToRead, itemCaptureActive);
-        await hydrateNestedAction(
+        const entryUnits = hydrationEntryUnits(entry, innerListsToRead, itemCaptureActive);
+        await hydrateActionDetail(
             ctx,
             entry,
-            propsToRead,
+            innerListsToRead,
             observed.length,
             read,
             entryPath,
@@ -440,24 +440,24 @@ async function hydrateNestedActions(
         );
         completedHydrateUnits += entryUnits;
         completed++;
-        emit(`${completed}/${total} nested actions read`);
+        emit();
         if (isTopLevelRead) {
             emitObservedSnapshot(observed, events);
         }
     }
 }
 
-async function hydrateNestedAction(
+async function hydrateActionDetail(
     ctx: TaskContext,
     entry: ObservedActionSlot,
-    propsToRead: NestedPropsToRead,
+    innerListsToRead: InnerListsToRead,
     listLength: number,
     read: ListReadOptions | undefined,
     entryPath: ActionPath,
     emitSnapshot?: () => void
 ): Promise<void> {
     try {
-        return await hydrateNestedActionInner(ctx, entry, propsToRead, listLength, read, entryPath, emitSnapshot);
+        return await hydrateActionDetailFromEditor(ctx, entry, innerListsToRead, listLength, read, entryPath, emitSnapshot);
     } catch (error) {
         if (isTaskCancelled(error)) throw error;
         const inner = error instanceof Error ? error.message : String(error);
@@ -467,10 +467,10 @@ async function hydrateNestedAction(
     }
 }
 
-async function hydrateNestedActionInner(
+async function hydrateActionDetailFromEditor(
     ctx: TaskContext,
     entry: ObservedActionSlot,
-    propsToRead: NestedPropsToRead,
+    innerListsToRead: InnerListsToRead,
     listLength: number,
     read: ListReadOptions | undefined,
     entryPath: ActionPath,
@@ -499,24 +499,24 @@ async function hydrateNestedActionInner(
             itemCaptures: read?.itemCaptures,
             events: read?.events,
             emitSnapshot,
-            readNestedActions: readActionList,
-            readNestedConditions: readConditionList,
+            readInnerActions: readActionList,
+            readConditions: readConditionList,
         });
         entry.action = await spec.read({
             ctx,
-            propsToRead,
+            innerListsToRead,
             read: readCtx,
             current: entry.action,
         });
-        entry.nestedReadState = "full";
+        entry.innerListReadState = "deep";
         if (note) {
             entry.action.note = note;
         }
-    } else if (propsToRead.size > 0) {
+    } else if (innerListsToRead.size > 0) {
         throw new Error(`Reading action "${entry.action.type}" is not implemented.`);
     } else {
         refreshTruncatedScalarFields(ctx, entry.action);
-        entry.nestedReadState = "full";
+        entry.innerListReadState = "deep";
     }
 
     if (read?.itemCaptures !== undefined && entry.action !== null) {

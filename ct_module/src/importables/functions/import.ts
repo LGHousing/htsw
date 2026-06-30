@@ -1,22 +1,22 @@
 import type { Action, Importable, ImportableFunction } from "htsw/types";
 
-import { applyActionListPlan } from "../../housingSync/actions/applyDiff";
+import {
+    applyActionListPlan,
+    type ActionListApplyResult,
+} from "../../housingSync/actions/apply";
 import {
     actionsFullyHydrated,
     type ActionListPlan,
 } from "../../housingSync/actions/plan";
+import { prepareActionListSync } from "../../housingSync/actions/prepareSync";
 import { clickGoBack } from "../../housingSync/gui/menuUtils";
 import type { ImportableTrustPlan } from "../../importCache";
-import { createSetupStepEmitter } from "../../housingSync/progress/setupStepEmitter";
+import { createSetupStepEmitter } from "../../housingSync/importEvents";
 import TaskContext from "../../tasks/context";
-import {
-    hasTrustedActionListBaseline,
-    prereadActionListUsingTrust,
-} from "../actionListHelpers";
 import type { ImportSession } from "../imports";
 import {
     countReferencedShells,
-    ensureReferencedImportablesExist,
+    createMissingReferencedShells,
 } from "../references";
 import { functionListOpened } from "../waiters";
 import {
@@ -53,19 +53,29 @@ export async function prereadImportableFunction(
 ): Promise<FunctionImportPlan> {
     const setup = createSetupStepEmitter(session.events, countReferencedShells(importable) + 1);
 
-    await ensureReferencedImportablesExist(ctx, importable, (kind, name) => {
+    await createMissingReferencedShells(ctx, importable, (kind, name) => {
         setup(`created ${kind} ${name}`);
     });
 
-    const actionsTrusted = trustPlan?.trustedListPaths.has("actions") ?? false;
     const settingsTrusted = functionSettingsTrusted(importable, trustPlan);
 
-    if (actionsTrusted && settingsTrusted) {
+    const actionsSync = await prepareActionListSync(ctx, {
+        desired: importable.actions,
+        session,
+        trustPlan,
+        basePath: "actions",
+        open: async () => {
+            await ensureFunctionExists(ctx, importable.name);
+            setup(`opened function ${importable.name}`);
+        },
+    });
+
+    if (actionsSync.kind === "skipped" && actionsSync.reason === "trusted" && settingsTrusted) {
         setup(`skipped ${importable.name}`);
         return { kind: "FUNCTION", importable, trustPlan, actionsPlan: null, settingsPlan: null };
     }
 
-    if (actionsTrusted) {
+    if (actionsSync.kind === "skipped" && actionsSync.reason === "trusted") {
         await openFunctionList(ctx);
         const settingsPlan = await readFunctionSettingsPlan(ctx, importable);
         setup(
@@ -84,7 +94,7 @@ export async function prereadImportableFunction(
     // The session-cached name list confirms/creates existence with no editor
     // open, and the apply pass sets the icon straight from /functions →
     // settings.
-    if (importable.actions === undefined) {
+    if (actionsSync.kind === "skipped" && actionsSync.reason === "undeclared") {
         await ensureFunctionNamesExist(ctx, [importable.name]);
         const settingsPlan = settingsTrusted
             ? null
@@ -97,33 +107,10 @@ export async function prereadImportableFunction(
         return { kind: "FUNCTION", importable, trustPlan, actionsPlan: null, settingsPlan };
     }
 
-    if (hasTrustedActionListBaseline(trustPlan, "actions")) {
-        setup(`planned ${importable.name} from cache`);
-        const actionsPlan = await prereadActionListUsingTrust(ctx, importable.actions, {
-            session,
-            trustPlan,
-            basePath: "actions",
-        });
-        const settingsPlan = settingsTrusted
-            ? null
-            : await readFunctionSettingsPlanFromCommand(ctx, importable);
-
-        return {
-            kind: "FUNCTION",
-            importable,
-            trustPlan,
-            actionsPlan,
-            settingsPlan,
-        };
+    if (actionsSync.kind !== "planned") {
+        throw new Error(`Unexpected action-list sync skip for function ${importable.name}.`);
     }
 
-    await ensureFunctionExists(ctx, importable.name);
-    setup(`opened function ${importable.name}`);
-    const actionsPlan = await prereadActionListUsingTrust(ctx, importable.actions, {
-        session,
-        trustPlan,
-        basePath: "actions",
-    });
     const settingsPlan = settingsTrusted
         ? null
         : await readFunctionSettingsPlanAfterActionEditor(ctx, importable);
@@ -132,7 +119,7 @@ export async function prereadImportableFunction(
         kind: "FUNCTION",
         importable,
         trustPlan,
-        actionsPlan,
+        actionsPlan: actionsSync.plan,
         settingsPlan,
     };
 }
@@ -164,14 +151,6 @@ async function openFunctionList(ctx: TaskContext): Promise<void> {
         () => ctx.runCommand("/functions"),
         functionListOpened()
     );
-}
-
-async function readFunctionSettingsPlanFromCommand(
-    ctx: TaskContext,
-    importable: ImportableFunction
-): Promise<FunctionSettingsPlan> {
-    await openFunctionList(ctx);
-    return readFunctionSettingsPlan(ctx, importable);
 }
 
 async function readFunctionSettingsPlanAfterActionEditor(
@@ -235,10 +214,17 @@ export function functionPlanIsNoOp(plan: FunctionImportPlan): boolean {
     return actionsNoOp && !functionSettingsPlanNeedsApply(plan.settingsPlan);
 }
 
-export function reconstructPartialFunction(plan: FunctionImportPlan): Importable | null {
-    const live = plan.actionsPlan?.getLiveCurrent?.();
-    if (live === undefined || !actionsFullyHydrated(live)) return null;
-    return { type: "FUNCTION", name: plan.importable.name, actions: live as Action[] };
+export function reconstructPartialFunction(
+    plan: FunctionImportPlan,
+    result: ActionListApplyResult | null
+): Importable | null {
+    const current = result?.currentSnapshot;
+    if (current === undefined || !actionsFullyHydrated(current)) return null;
+    return {
+        type: "FUNCTION",
+        name: plan.importable.name,
+        actions: current.slice() as Action[],
+    };
 }
 
 function functionSettingsTrusted(

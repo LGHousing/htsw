@@ -12,8 +12,8 @@
 
 import type { Importable } from "htsw/types";
 
-import type { ImportProgress, ImportableEntry } from "../../../housingSync/progress/types";
-import { importProgressKey } from "../../../housingSync/progress/keys";
+import type { ImportProgress, QueueRow } from "../../../housingSync/progress/types";
+import { queueRowKey } from "../../../housingSync/progress/queueRowKey";
 import {
     createEtaCalculator,
     currentMsPerUnit,
@@ -151,13 +151,13 @@ export function setActiveImportPath(p: string | null): void {
 export function createImportRows(
     importables: readonly Importable[],
     sourcePath: string
-): ImportableEntry[] {
-    const rows: ImportableEntry[] = [];
+): QueueRow[] {
+    const rows: QueueRow[] = [];
     for (let i = 0; i < importables.length; i++) {
         const importable = importables[i];
         const identity = importableIdentity(importable);
         rows.push({
-            key: importProgressKey(importable.type, identity, sourcePath),
+            key: queueRowKey(importable.type, identity, sourcePath),
             status: "queued",
             totalUnits: 1,
         });
@@ -248,8 +248,8 @@ export function getQueueItemRunState(item: QueueItem): QueueItemRunState {
     }
     const progressPath = queueItemProgressPath(item);
     if (progressPath === null) return { kind: "queued" };
-    const key = importProgressKey(item.type, item.identity, progressPath);
-    let row: ImportableEntry | undefined;
+    const key = queueRowKey(item.type, item.identity, progressPath);
+    let row: QueueRow | undefined;
     for (let i = 0; i < progress.rows.length; i++) {
         if (progress.rows[i].key === key) {
             row = progress.rows[i];
@@ -330,7 +330,7 @@ export function isCurrentQueueItem(item: QueueItem): boolean {
     if (item.kind === "importable") {
         const progressPath = queueItemProgressPath(item);
         if (progressPath === null) return false;
-        return current.key === importProgressKey(
+        return current.key === queueRowKey(
             item.type,
             item.identity,
             progressPath

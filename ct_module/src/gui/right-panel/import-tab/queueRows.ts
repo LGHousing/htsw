@@ -43,7 +43,7 @@ import {
 } from "./queue";
 import { requestParse } from "../../parsing/parses";
 import { orderImportablesForImportSession } from "../../../importables/importSession";
-import { isImportRunning } from "../../../housingSync/runtimeState";
+import { isImportRunning } from "../../../housingSync/importRunState";
 import { phaseSegment } from "./progressPanel";
 
 function willBeSkipped(item: QueueItem): boolean {

@@ -12,7 +12,7 @@ import type { ImportEvent, ProgressScope } from "../importEvents";
 import type {
     ImportProgress,
     ImportProgressActive,
-    ImportableEntry,
+    QueueRow,
     PhaseUnits,
     ProgressPayload,
 } from "./types";
@@ -82,7 +82,7 @@ export function reduce(
             return finishSession(state);
         // Diff-overlay / preview events don't affect the progress snapshot.
         case "readStarted":
-        case "nestedReadStarted":
+        case "innerListReadStarted":
         case "observedSnapshot":
         case "diffPlanned":
         case "operationStarted":
@@ -95,7 +95,7 @@ export function reduce(
 }
 
 function startSession(
-    rows: readonly ImportableEntry[],
+    rows: readonly QueueRow[],
     initialTotalUnits: number
 ): ProgressReducerState {
     const total = initialTotalUnits === 0 ? 1 : initialTotalUnits;
@@ -187,7 +187,7 @@ function parkActiveIfNeeded(
  * An importable is parked once its pass-1 pre-read (read + hydrate) is done,
  * so its completed units now reflect the *actual* read/hydrate work. The
  * read/hydrate phase estimate, though, is often far larger than that — with
- * selective hydration a list's estimated nested-read cost can be ~5× what's
+ * selective hydration a list's estimated inner-list-read cost can be ~5× what's
  * actually read. That over-estimate sits in `currentTotalUnits` but is never
  * credited, so when the importable later finishes, `finishImportable` dumps
  * the gap to force the bar to 100% — an ETA cliff (observed ~55s).
@@ -244,8 +244,8 @@ function applyProgress(
     payload: ProgressPayload
 ): ProgressReducerState {
     if (state.active === null) return state;
-    if (scope.kind === "nestedActionList") {
-        return applyNestedProgress(state, scope, payload);
+    if (scope.kind === "innerList") {
+        return applyChildListProgress(state, scope, payload);
     }
     const setupUnits = state.active.setupUnits;
     const eventTotalUnits =
@@ -298,9 +298,9 @@ function applyProgress(
     return rebuildSnapshot(state, next);
 }
 
-function applyNestedProgress(
+function applyChildListProgress(
     state: ProgressReducerState,
-    scope: Extract<ProgressScope, { kind: "nestedActionList" }>,
+    scope: Extract<ProgressScope, { kind: "innerList" }>,
     payload: ProgressPayload
 ): ProgressReducerState {
     if (state.active === null) return state;
@@ -343,7 +343,7 @@ function finishImportable(
     const active = state.active;
     const completedAddend = active.currentTotalUnits;
     const totalAddend = active.currentTotalUnits - active.initialUnits;
-    const rows = state.progress.rows.map((r, i): ImportableEntry =>
+    const rows = state.progress.rows.map((r, i): QueueRow =>
         i === active.rowIndex
             ? { ...r, status, totalUnits: active.currentTotalUnits }
             : r
@@ -391,7 +391,7 @@ function updateRowStatus(
     status: "imported" | "skipped" | "failed",
     error?: string
 ): ProgressReducerState {
-    const rows = state.progress.rows.map((r): ImportableEntry =>
+    const rows = state.progress.rows.map((r): QueueRow =>
         r.key === key ? { ...r, status } : r
     );
     return {
@@ -408,7 +408,7 @@ function rebuildSnapshot(
     state: ProgressReducerState,
     active: ActiveBookkeeping
 ): ProgressReducerState {
-    const rows = state.progress.rows.map((r, i): ImportableEntry =>
+    const rows = state.progress.rows.map((r, i): QueueRow =>
         i === active.rowIndex
             ? { ...r, status: "current", totalUnits: active.currentTotalUnits }
             : r

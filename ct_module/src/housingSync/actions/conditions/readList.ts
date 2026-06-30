@@ -25,7 +25,7 @@ import {
 } from "../../gui/paginatedList";
 import { timedWaitForMenu } from "../../gui/menuWait";
 import { clickGoBack } from "../../gui/menuUtils";
-import { CONDITION_LIST_CONFIG } from "./listConfig";
+import { CONDITION_LIST_CONFIG } from "../listConfigs";
 import { getConditionSpec, isConditionListItemInverted } from "./specs";
 import {
     COST,

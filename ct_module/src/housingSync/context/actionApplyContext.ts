@@ -6,14 +6,14 @@ import type { ItemRegistry } from "../../importables/itemRegistry";
 import type {
     Observed,
     ObservedActionSlot,
-    ObservedConditionSlot,
+    InnerListDiff,
 } from "../types";
 import type {
     ActionPath,
     ImportEventHandler,
     ProgressScope,
 } from "../importEvents";
-import { nestedActionPath } from "../importEvents";
+import { innerListPath } from "../importEvents";
 import type { ProgressHandler } from "../progress/types";
 import {
     estimateActionListPhaseUnits,
@@ -21,13 +21,13 @@ import {
     phaseUnitsTotal,
 } from "../progress/costs";
 
-type NestedActionApplyArgs = {
+type InnerActionApplyArgs = {
     desired: Action[];
     observed?: ReadonlyArray<Observed<Action> | null>;
     offset?: number;
 };
 
-type NestedConditionApplyArgs = {
+type ConditionApplyArgs = {
     desired: Condition[];
     observed?: ReadonlyArray<Condition | null>;
     offset?: number;
@@ -35,11 +35,12 @@ type NestedConditionApplyArgs = {
 
 export type ActionApplyContext = {
     markHeaderApplied(): void;
-    applyNestedActions(prop: string, args: NestedActionApplyArgs): Promise<void>;
-    applyNestedConditions(prop: string, args: NestedConditionApplyArgs): Promise<void>;
+    shouldApplyList(prop: string): boolean;
+    applyInnerActions(prop: string, args: InnerActionApplyArgs): Promise<void>;
+    applyConditions(prop: string, args: ConditionApplyArgs): Promise<void>;
 };
 
-export type ApplyNestedActionList = (
+export type ApplyInnerActionList = (
     ctx: TaskContext,
     desired: Action[],
     options: {
@@ -51,11 +52,10 @@ export type ApplyNestedActionList = (
     }
 ) => Promise<unknown>;
 
-type ApplyNestedConditionList = (
+type ApplyConditionList = (
     ctx: TaskContext,
     desired: Condition[],
     options: {
-        observed?: ObservedConditionSlot[];
         itemRegistry: ItemRegistry;
         baselineCurrent?: ReadonlyArray<Condition | null>;
         progress?: ProgressHandler;
@@ -69,8 +69,9 @@ export type CreateActionApplyContextArgs = {
     appliedUnits: number;
     completedOps: number;
     totalOps: number;
-    applyNestedActions: ApplyNestedActionList;
-    applyNestedConditions: ApplyNestedConditionList;
+    innerListDiffs?: readonly InnerListDiff[];
+    applyInnerActions: ApplyInnerActionList;
+    applyConditions: ApplyConditionList;
 };
 
 function observedActionsAsBaselineCurrent(
@@ -84,29 +85,14 @@ function observedActionsAsBaselineCurrent(
     return out;
 }
 
-function reuseObservedActions(
-    observed: ReadonlyArray<Observed<Action> | null> | undefined
-): ObservedActionSlot[] | undefined {
-    if (observed === undefined) return undefined;
-    const out: ObservedActionSlot[] = [];
-    for (let i = 0; i < observed.length; i++) {
-        const action = observed[i];
-        if (action === null) return undefined;
-        out.push({ index: i, action, nestedReadState: "full" });
-    }
-    return out;
-}
-
-function nestedApplyScope(
-    parentActionPath: ActionPath,
+function innerListScope(
     baselineApplyUnits: number,
     completedOps: number,
     totalOps: number
 ): (path: ActionPath, extraOffset?: number) => ProgressScope {
     return (path, extraOffset) => ({
-        kind: "nestedActionList",
+        kind: "innerList",
         path,
-        parentActionPath,
         baselineApplyUnits: baselineApplyUnits + (extraOffset ?? 0),
         parentSync: {
             completedUnits: completedOps,
@@ -130,12 +116,16 @@ export function createActionApplyContext({
     appliedUnits,
     completedOps,
     totalOps,
-    applyNestedActions,
-    applyNestedConditions,
+    innerListDiffs,
+    applyInnerActions,
+    applyConditions: applyConditionList,
 }: CreateActionApplyContextArgs): ActionApplyContext {
     const events = session.events;
-    const scopeAt = nestedApplyScope(actionPath, appliedUnits, completedOps, totalOps);
-    const nestedPath = (prop: string): ActionPath => nestedActionPath(actionPath, prop);
+    const scopeAt = innerListScope(appliedUnits, completedOps, totalOps);
+    const pathForInnerList = (prop: string): ActionPath => innerListPath(actionPath, prop);
+    const listsToApply = innerListDiffs === undefined
+        ? null
+        : new Set(innerListDiffs.map((diff) => diff.prop));
     let nextOffset = 0;
 
     return {
@@ -143,28 +133,29 @@ export function createActionApplyContext({
             events?.emit({ kind: "blockActionHeaderApplied", path: actionPath });
         },
 
-        async applyNestedActions(prop, args) {
-            const path = nestedPath(prop);
+        shouldApplyList(prop) {
+            return listsToApply === null || listsToApply.has(prop as InnerListDiff["prop"]);
+        },
+
+        async applyInnerActions(prop, args) {
+            const path = pathForInnerList(prop);
             const baselineCurrent = observedActionsAsBaselineCurrent(args.observed);
-            const observed = reuseObservedActions(args.observed);
-            const phaseBaseline = observed === undefined ? baselineCurrent : undefined;
             const offset = args.offset ?? nextOffset;
-            await applyNestedActions(ctx, args.desired, {
+            await applyInnerActions(ctx, args.desired, {
                 session,
-                observed,
                 listPath: path,
                 baselineCurrent,
                 progressScope: scopeAt(path, offset),
             });
             nextOffset = offset + phaseUnitsTotal(
-                estimateActionListPhaseUnits(args.desired, phaseBaseline)
+                estimateActionListPhaseUnits(args.desired, baselineCurrent)
             );
         },
 
-        async applyNestedConditions(prop, args) {
-            const path = nestedPath(prop);
+        async applyConditions(prop, args) {
+            const path = pathForInnerList(prop);
             const offset = args.offset ?? nextOffset;
-            await applyNestedConditions(ctx, args.desired, {
+            await applyConditionList(ctx, args.desired, {
                 itemRegistry: session.items,
                 baselineCurrent: args.observed,
                 progress: progressFromScope(events, scopeAt(path, offset)),

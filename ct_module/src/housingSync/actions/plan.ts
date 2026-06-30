@@ -8,12 +8,16 @@ import type {
     ObservedActionSlot,
 } from "../types";
 import type { PhaseUnits, ProgressHandler } from "../progress/types";
-import { baselineActionListFromSlots, diffActionList } from "./diff";
+import {
+    baselineActionListFromActions,
+    baselineActionListFromSlots,
+    diffActionList,
+} from "./diff";
 import { canonicalizeActionItemName, readActionList } from "./readList";
-import { getNestedListFields } from "../fields/actionMappings";
+import { getInnerListFields } from "../fields/actionMappings";
 import {
     actionListDiffApplyUnits,
-    editUnitsWithNested,
+    editUnitsWithInnerLists,
     estimateActionListPhaseUnits,
     phaseUnitsTotal,
 } from "../progress/costs";
@@ -27,17 +31,15 @@ export type ActionListApplyOptions = {
 };
 
 export type ActionListPrereadOptions = ActionListApplyOptions & {
-    observed?: ObservedActionSlot[];
     trust?: ActionListTrust;
     baselineCurrent?: readonly Action[];
 };
 
 export type ActionListPlan = {
-    desired: Action[];
-    observed: ObservedActionSlot[];
-    diff: ActionListDiff;
-    phaseUnits: PhaseUnits;
-    getLiveCurrent?: () => Array<Action | null>;
+    readonly desired: Action[];
+    readonly observed: ObservedActionSlot[];
+    readonly diff: ActionListDiff;
+    readonly phaseUnits: Readonly<PhaseUnits>;
 };
 
 export async function prereadActionList(
@@ -47,7 +49,7 @@ export async function prereadActionList(
 ): Promise<ActionListPlan> {
     const phaseUnits = estimateActionListPhaseUnits(
         desired,
-        options.observed === undefined ? options.baselineCurrent : undefined
+        options.baselineCurrent
     );
     const progressScope: ProgressScope = options.progressScope ?? { kind: "topLevel" };
     const progress: ProgressHandler | undefined =
@@ -58,23 +60,21 @@ export async function prereadActionList(
                   scope: progressScope,
                   progress: event,
               });
-    const observed =
-        options.observed ??
-        (await readActionList(ctx,
-            {
-                kind: "sync",
-                desired,
-                trust: options.trust,
-            },
-            {
-                itemRegistry: options.session.items,
-                progress,
-                phaseUnits,
-                listPath: options.listPath,
-                events: options.session.events,
-                itemCaptures: options.session.itemCaptures,
-            }
-        ));
+    const observed = await readActionList(ctx,
+        {
+            kind: "sync",
+            desired,
+            trust: options.trust,
+        },
+        {
+            itemRegistry: options.session.items,
+            progress,
+            phaseUnits,
+            listPath: options.listPath,
+            events: options.session.events,
+            itemCaptures: options.session.itemCaptures,
+        }
+    );
     for (const entry of observed) {
         if (entry.action !== null) {
             canonicalizeActionItemName(entry.action, options.session.items);
@@ -86,7 +86,7 @@ export async function prereadActionList(
     const diff = diffActionList(baselineActionListFromSlots(observed), desired);
     const exactApplyUnits = actionListDiffApplyUnits(
         diff,
-        editUnitsWithNested,
+        editUnitsWithInnerLists,
         desired.length
     );
     phaseUnits.applying = Math.max(exactApplyUnits, 1);
@@ -101,23 +101,39 @@ export async function prereadActionList(
     return { desired, observed, diff, phaseUnits };
 }
 
+export function createKnownEmptyActionListPlan(
+    desired: Action[],
+    options: ActionListApplyOptions
+): ActionListPlan {
+    for (const action of desired) {
+        canonicalizeActionItemName(action, options.session.items);
+    }
+    const phaseUnits = estimateActionListPhaseUnits(desired, []);
+    const diff = diffActionList(baselineActionListFromActions([]), desired);
+    phaseUnits.applying = Math.max(
+        actionListDiffApplyUnits(diff, editUnitsWithInnerLists, desired.length),
+        1
+    );
+    return { desired, observed: [], diff, phaseUnits };
+}
+
 /**
- * Whether a live snapshot from `getLiveCurrent` is fully read: no null slots and
- * every nested list (conditions / nested action bodies) hydrated. A shallow
- * snapshot holds nulls for un-read nested lists; persisting one would cache a
+ * Whether a current snapshot is fully read: no null slots and
+ * every inner list (conditions / inner action bodies) hydrated. A shallow
+ * snapshot holds nulls for un-read inner lists; persisting one would cache a
  * half-known list as truth.
  */
 export function actionsFullyHydrated(actions: ReadonlyArray<Action | null>): boolean {
     for (const action of actions) {
         if (action === null) return false;
-        for (const field of getNestedListFields(action.type)) {
-            const nested = (action as Record<string, unknown>)[field.prop];
-            if (!Array.isArray(nested)) continue;
+        for (const field of getInnerListFields(action.type)) {
+            const inner = (action as Record<string, unknown>)[field.prop];
+            if (!Array.isArray(inner)) continue;
             if (field.prop === "conditions") {
-                for (const condition of nested) {
+                for (const condition of inner) {
                     if (condition === null) return false;
                 }
-            } else if (!actionsFullyHydrated(nested as Array<Action | null>)) {
+            } else if (!actionsFullyHydrated(inner as Array<Action | null>)) {
                 return false;
             }
         }

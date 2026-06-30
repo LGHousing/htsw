@@ -41,6 +41,7 @@ import {
 import type { ItemRegistry } from "./itemRegistry";
 import type { ImportEventHandler } from "../housingSync/importEvents";
 import type { ItemCaptureRegistry } from "../housingSync/itemCapture";
+import type { ActionListApplyResult } from "../housingSync/actions/apply";
 
 export const IMPLEMENTED_IMPORTABLE_TYPES = [
     "FUNCTION",
@@ -198,12 +199,15 @@ export function planIsNoOp(plan: ImportablePlan): boolean {
  * icon/ticks are dropped so a retry re-applies settings instead of trusting
  * maybe-unwritten values.
  */
-export function reconstructPartialImportable(plan: ImportablePlan): Importable | null {
+export function reconstructPartialImportable(
+    plan: ImportablePlan,
+    result: ActionListApplyResult | null
+): Importable | null {
     switch (plan.kind) {
         case "FUNCTION":
-            return reconstructPartialFunction(plan);
+            return reconstructPartialFunction(plan, result);
         case "EVENT":
-            return reconstructPartialEvent(plan);
+            return reconstructPartialEvent(plan, result);
         case "REGION":
         case "MENU":
         case "ITEM":

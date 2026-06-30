@@ -53,7 +53,7 @@ import {
     readImportableCache,
 } from "../../../importCache/cache";
 import { addToQueue, makeImportableQueueItem, queueItemKey, removeFromQueueKey } from "../../right-panel/import-tab/queue";
-import { isImportRunning } from "../../../housingSync/runtimeState";
+import { isImportRunning } from "../../../housingSync/importRunState";
 import { composeFileMenu, composeImportableMenu } from "../../menus/fileMenu";
 import { autoTrackRefresh, queueModifiedFromPath } from "../../autoTrack";
 import { SourceDir, SourceFile, removeSource } from "./source";

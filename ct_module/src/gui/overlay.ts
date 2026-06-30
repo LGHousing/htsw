@@ -67,7 +67,7 @@ import {
 } from "./state";
 import { getImportProgress } from "./right-panel/import-tab/importProgress";
 import { detectHousingUuid } from "../importCache/housingId";
-import { isImportRunning } from "../housingSync/runtimeState";
+import { isImportRunning } from "../housingSync/importRunState";
 import { TaskManager } from "../tasks/manager";
 
 import { getChatKeyCode } from "./keybinds";

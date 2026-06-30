@@ -4,8 +4,8 @@ import type {
     ActionListDiff,
     ActionListOperation,
     ConditionListDiff,
-    NestedListProp,
-    NestedPropsToRead,
+    InnerListName,
+    InnerListsToRead,
     ObservedActionSlot,
     UiFieldKind,
 } from "../types";
@@ -99,7 +99,7 @@ function fieldKindEditUnits(kind: UiFieldKind): number {
     }
     if (kind === "item") return COST.itemSelect;
     if (kind === "value") return COST.chatInput;
-    if (kind === "nestedList") return COST.menuClickWait;
+    if (kind === "innerList") return COST.menuClickWait;
     return COST.menuClickWait;
 }
 
@@ -133,11 +133,11 @@ export function conditionListReadUnits(conditionCount: number): number {
     return pageTurnUnitsForListItemCount(conditionCount);
 }
 
-function nestedActionReadUnits(nestedCount: number): number {
+function innerActionReadUnits(actionCount: number): number {
     return (
         COST.menuClickWait +
         COST.menuClickWait +
-        pageTurnUnitsForListItemCount(nestedCount) +
+        pageTurnUnitsForListItemCount(actionCount) +
         COST.goBackWait +
         COST.goBackWait
     );
@@ -154,14 +154,14 @@ function actionItemFieldCount(type: Action["type"]): number {
 
 export function hydrationEntryUnits(
     entry: ObservedActionSlot,
-    propsToRead: NestedPropsToRead,
+    innerListsToRead: InnerListsToRead,
     itemCaptureActive: boolean = false
 ): number {
     if (entry.action === null) return 0;
 
     let total = COST.menuClickWait + COST.goBackWait;
-    propsToRead.forEach((prop) => {
-        total += nestedPropReadUnits(entry, prop);
+    innerListsToRead.forEach((prop) => {
+        total += innerListReadUnits(entry, prop);
     });
     if (itemCaptureActive) {
         total += actionItemFieldCount(entry.action.type) * ITEM_CAPTURE_FIELD_UNITS;
@@ -169,11 +169,11 @@ export function hydrationEntryUnits(
     return total;
 }
 
-function nestedPropReadUnits(entry: ObservedActionSlot, prop: NestedListProp): number {
-    const summary = entry.nestedSummaries ? entry.nestedSummaries[prop] : undefined;
+function innerListReadUnits(entry: ObservedActionSlot, prop: InnerListName): number {
+    const summary = entry.innerListSummaries ? entry.innerListSummaries[prop] : undefined;
     const count = summary === undefined ? 1 : summary.length;
     const base = COST.menuClickWait + pageTurnUnitsForListItemCount(count) + COST.goBackWait;
-    // The recursive readActionList that hydrates this nested list will
+    // The recursive readActionList that hydrates this inner list will
     // also do scalar truncation hydration on its inner rows (clicking
     // into each truncated MESSAGE/PLAY_SOUND/... and back). Add a
     // conservative estimate of that cost so the parent's hydrate ETA
@@ -275,7 +275,9 @@ export function conditionOperationUnits(
     let total = op.noteOnly
         ? noteEditUnits()
         : conditionEditUnits(op.baselineCondition, op.desired);
-    if (op.desired.note !== op.baselineCondition.note) total += noteEditUnits();
+    if (!op.noteOnly && op.desired.note !== op.baselineCondition.note) {
+        total += noteEditUnits();
+    }
     return total;
 }
 
@@ -288,7 +290,7 @@ export function conditionListDiffApplyUnits(diff: ConditionListDiff): number {
 }
 
 /**
- * Cost of writing one action's payload (scalar fields + any nested
+ * Cost of writing one action's payload (scalar fields + any inner-list
  * action/condition lists) once its shell has been added. Scalar fields
  * each cost a `chatInput`; array fields recurse — `conditions` via
  * `conditionListRoughUnits`, action-list arrays (e.g. `ifActions`,
@@ -383,20 +385,22 @@ export function actionOperationApplyUnits(
     let total = op.noteOnly
         ? noteEditUnits()
         : COST.menuClickWait + editUnitsForFields(op) + COST.goBackWait;
-    if (op.desired.note !== op.baselineAction.note) total += noteEditUnits();
+    if (!op.noteOnly && op.desired.note !== op.baselineAction.note) {
+        total += noteEditUnits();
+    }
     return total;
 }
 
 /**
  * Per-phase work estimate for a single action-list sync call. `readList` and
- * `applyDiff` emit completed/total units on this shared scale.
+ * apply phases emit completed/total units on this shared scale.
  *
- * `readPart` / `hydratePart` cover this list only — nested action-list apply
+ * `readPart` / `hydratePart` cover this list only — inner action-list apply
  * calls inside CONDITIONAL/RANDOM bodies aren't separately tracked because
  * their reading is folded into the parent's hydrate phase (via
- * `topLevelHydrateUnits`). `applyPart` does include nested-body apply
+ * `topLevelHydrateUnits`). `applyPart` does include inner-list apply
  * work via the cache-aware diff recursing one level into
- * `ifActions` / `elseActions` / `actions` (see `editUnitsWithNested`).
+ * `ifActions` / `elseActions` / `actions` (see `editUnitsWithInnerLists`).
  */
 /** Sum of the four phase fields. Computed on demand — no cached `total`. */
 export function phaseUnitsTotal(p: PhaseUnits): number {
@@ -443,11 +447,11 @@ function topLevelHydrateUnits(desired: readonly Action[]): number {
             // A conditional parsed from .htsl may omit a branch entirely
             // (no else, no conditions), leaving the field undefined — guard
             // every length read so the ETA estimate can't crash the import.
-            total += nestedActionReadUnits(a.ifActions?.length ?? 0);
-            total += nestedActionReadUnits(a.elseActions?.length ?? 0);
+            total += innerActionReadUnits(a.ifActions?.length ?? 0);
+            total += innerActionReadUnits(a.elseActions?.length ?? 0);
             if ((a.conditions?.length ?? 0) > 0) total += COST.menuClickWait + COST.goBackWait;
         } else if (a.type === "RANDOM") {
-            total += nestedActionReadUnits(a.actions?.length ?? 0);
+            total += innerActionReadUnits(a.actions?.length ?? 0);
         }
     }
     return total;
@@ -480,8 +484,8 @@ export function estimateActionListPhaseUnits(
     if (baselineCurrent === undefined) {
         // No cache: we don't know what's in housing yet, so the read and
         // hydrate costs are unknowable upfront. They get filled in with
-        // exact values from observed `nestedSummaries` once the read
-        // pass finishes (readList.ts:hydrateNestedActions). The UI's
+        // exact values from observed `innerListSummaries` once the read
+        // pass finishes (readList.ts:hydrateActionDetails). The UI's
         // never-jump-up ETA guard masks the one-time totalUnits step at
         // the read→hydrate transition.
         return {
@@ -535,14 +539,14 @@ function baselineAwareApplyUnits(
 ): number {
     const current = baselineActionListFromActions(baseline);
     const diff = diffActionList(current, desired as Action[]);
-    return actionListDiffApplyUnits(diff, editUnitsWithNested, desired.length);
+    return actionListDiffApplyUnits(diff, editUnitsWithInnerLists, desired.length);
 }
 
 /**
  * Edit-op cost for the baseline-aware apply path. Scalar field changes are
  * derived from the edit op's observed/desired pair.
  *
- * `getActionScalarLoreFields` strips out `nestedList` field kinds, so
+ * `getActionScalarLoreFields` strips out `innerList` field kinds, so
  * the scalar pass never prices changes to CONDITIONAL.ifActions /
  * elseActions / RANDOM.actions — even though the diff engine still
  * emits an edit op when those bodies differ (its `actionsEqual` does a
@@ -553,42 +557,42 @@ function baselineAwareApplyUnits(
  * the catch-up work.
  *
  * We re-run the diff one level deeper for any CONDITIONAL/RANDOM edit
- * and add the nested apply cost. The HTSL constraint that
+ * and add the inner apply cost. The HTSL constraint that
  * CONDITIONAL/RANDOM can't appear inside another CONDITIONAL/RANDOM
  * body bounds the recursion at one level.
  */
-export function editUnitsWithNested(op: Extract<ActionListOperation, { kind: "edit" }>): number {
+export function editUnitsWithInnerLists(op: Extract<ActionListOperation, { kind: "edit" }>): number {
     let total = scalarFieldEditUnitsForOp(op);
 
-    for (let i = 0; i < op.nestedDiffs.length; i++) {
-        const nested = op.nestedDiffs[i];
-        if (nested.diff.operations.length === 0) continue;
+    for (let i = 0; i < op.innerListDiffs.length; i++) {
+        const inner = op.innerListDiffs[i];
+        if (inner.diff.operations.length === 0) continue;
         total += COST.menuClickWait + COST.goBackWait;
-        if (nested.prop === "conditions") {
-            const baseline = nestedConditionBaseline(op.baselineAction);
-            const desired = nestedConditionDesired(op.desired);
+        if (inner.prop === "conditions") {
+            const baseline = innerConditionBaseline(op.baselineAction);
+            const desired = innerConditionDesired(op.desired);
             total += phaseUnitsTotal(estimateConditionListPhaseUnits(desired, baseline));
         } else {
-            const baseline = nestedActionBaseline(op.baselineAction, nested.prop);
-            const desired = nestedActionDesired(op.desired, nested.prop);
+            const baseline = innerActionBaseline(op.baselineAction, inner.prop);
+            const desired = innerActionDesired(op.desired, inner.prop);
             total += phaseUnitsTotal(estimateActionListPhaseUnits(desired, baseline));
         }
     }
     return total;
 }
 
-function nestedConditionBaseline(
+function innerConditionBaseline(
     action: ObservedActionSlot["action"] | Action
 ): ReadonlyArray<Condition | null> | undefined {
     if (action === null || action.type !== "CONDITIONAL") return undefined;
     return action.conditions;
 }
 
-function nestedConditionDesired(action: Action): Condition[] {
+function innerConditionDesired(action: Action): Condition[] {
     return action.type === "CONDITIONAL" ? action.conditions ?? [] : [];
 }
 
-function nestedActionBaseline(
+function innerActionBaseline(
     action: ObservedActionSlot["action"] | Action,
     prop: "ifActions" | "elseActions" | "actions"
 ): readonly Action[] | undefined {
@@ -603,7 +607,7 @@ function nestedActionBaseline(
     return undefined;
 }
 
-function nestedActionDesired(
+function innerActionDesired(
     action: Action,
     prop: "ifActions" | "elseActions" | "actions"
 ): readonly Action[] {

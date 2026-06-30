@@ -3,7 +3,6 @@ import type { Action, ImportableFunction } from "htsw/types";
 
 import type { ImportableCacheEntry } from "../src/importCache/cache";
 import { listHashes } from "../src/importCache/hash";
-import { hasTrustedActionListBaseline } from "../src/importables/actionListHelpers";
 import { trustedListPathsForImportable } from "../src/importCache/trust";
 import { estimateImportableUnits } from "../src/housingSync/progress/costs";
 
@@ -37,7 +36,7 @@ function cacheEntry(importable: ImportableFunction): ImportableCacheEntry {
 }
 
 describe("trustedListPathsForImportable", () => {
-    it("trusts unchanged nested lists after a top-level insertion shifts indexes", () => {
+    it("trusts unchanged inner lists after a top-level insertion shifts indexes", () => {
         const cached = fn([conditional([chat("inside")])]);
         const desired = fn([chat("debug"), conditional([chat("inside")])]);
 
@@ -48,7 +47,7 @@ describe("trustedListPathsForImportable", () => {
         expect(trusted.has("actions[0].ifActions")).toBe(false);
     });
 
-    it("does not trust a nested list that changed under a matched parent", () => {
+    it("does not trust a inner list that changed under a matched parent", () => {
         const cached = fn([conditional([chat("inside")])]);
         const desired = fn([conditional([chat("debug"), chat("inside")])]);
 
@@ -70,21 +69,11 @@ describe("trustedListPathsForImportable", () => {
         expect(trustOn).toBeLessThan(trustOff);
     });
 
-    it("does not treat an untrusted cached top-level list as live observed slots", () => {
+    it("does not trust a changed top-level list", () => {
         const cached = fn([chat("old")]);
         const desired = fn([chat("new")]);
         const trustedListPaths = trustedListPathsForImportable(desired, listHashes(cached));
 
         expect(trustedListPaths.has("actions")).toBe(false);
-        expect(hasTrustedActionListBaseline({
-            importable: desired,
-            identity: desired.name,
-            entry: cacheEntry(cached),
-            sourceHash: "unused",
-            cacheHash: "unused",
-            trustMode: true,
-            wholeImportableTrusted: false,
-            trustedListPaths,
-        }, "actions")).toBe(false);
     });
 });

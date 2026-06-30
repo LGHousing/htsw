@@ -1,7 +1,7 @@
 /// <reference types="../../../../../CTAutocomplete" />
 
 import { TaskManager } from "../../../../tasks/manager";
-import { setImportRunning } from "../../../../housingSync/runtimeState";
+import { setImportRunning } from "../../../../housingSync/importRunState";
 import { getExportImportJsonPath, getHousingUuid } from "../../../state";
 import { showToast } from "../../../toast";
 import { createExportProgressSink } from "../../../right-panel/import-tab/exportProgress";

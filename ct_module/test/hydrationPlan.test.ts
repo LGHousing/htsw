@@ -1,23 +1,26 @@
 import { describe, expect, test } from "vitest";
 import type { Action, Condition } from "htsw/types";
 
-import { createNestedHydrationPlan } from "../src/housingSync/actions/hydrationPlan";
-import { matchObservedToDesired } from "../src/housingSync/actions/nestedMatching";
+import { applyActionListTrust } from "../src/housingSync/actions/applyTrust";
+import {
+    createInnerListHydrationPlan,
+    matchObservedToDesired,
+} from "../src/housingSync/actions/innerListMatching";
 import type {
-    NestedListProp,
-    NestedPropsToRead,
+    InnerListName,
+    InnerListsToRead,
     ObservedActionSlot,
 } from "../src/housingSync/types";
 
 function observed(
     index: number,
-    nestedSummaries: Partial<Record<NestedListProp, string[]>>,
+    innerListSummaries: Partial<Record<InnerListName, string[]>>,
     fields: Partial<NonNullable<ObservedActionSlot["action"]>> = {}
 ): ObservedActionSlot {
-    const nestedPropsToRead: NestedPropsToRead = new Set();
+    const innerListsToRead: InnerListsToRead = new Set();
     for (const prop of ["conditions", "ifActions", "elseActions", "actions"] as const) {
-        if ((nestedSummaries[prop] ?? []).length > 0) {
-            nestedPropsToRead.add(prop);
+        if ((innerListSummaries[prop] ?? []).length > 0) {
+            innerListsToRead.add(prop);
         }
     }
 
@@ -33,9 +36,9 @@ function observed(
             elseActions: [],
             ...fields,
         } as NonNullable<ObservedActionSlot["action"]>,
-        nestedReadState: "summary",
-        nestedSummaries,
-        nestedPropsToRead,
+        innerListReadState: "shallow",
+        innerListSummaries,
+        innerListsToRead,
     };
 }
 
@@ -55,7 +58,7 @@ function desired(
 }
 
 function plan(observedList: ObservedActionSlot[], desiredList: Action[]) {
-    return createNestedHydrationPlan(matchObservedToDesired(observedList, desiredList));
+    return createInnerListHydrationPlan(matchObservedToDesired(observedList, desiredList));
 }
 
 function plannedIndexes(p: ReturnType<typeof plan>): number[] {
@@ -64,7 +67,7 @@ function plannedIndexes(p: ReturnType<typeof plan>): number[] {
     return out.sort((a, b) => a - b);
 }
 
-describe("createNestedHydrationPlan", () => {
+describe("createInnerListHydrationPlan", () => {
     test("no matchable desired => empty plan", () => {
         const result = plan(
             [
@@ -79,7 +82,7 @@ describe("createNestedHydrationPlan", () => {
 
     test("picks the cheapest observed slots out of many candidates", () => {
         // 20 observed CONDITIONALs, mostly with mismatched condition types.
-        // Slots 8 and 14 have nested shapes that match the two desired
+        // Slots 8 and 14 have inner shapes that match the two desired
         // entries, so the matcher should pair them.
         const observedActions = Array.from({ length: 20 }, (_, index) =>
             observed(index, {
@@ -145,5 +148,36 @@ describe("createNestedHydrationPlan", () => {
             [desired(["REQUIRE_ITEM"], [])]
         );
         expect(plannedIndexes(result)).toEqual([0]);
+    });
+
+    test("trusted inner paths skip hydration without copying desired data into observed", () => {
+        const entry = observed(0, { ifActions: ["MESSAGE"] }, { ifActions: [null as never] });
+        const desiredList = [desired([], ["MESSAGE"])];
+        const matches = matchObservedToDesired([entry], desiredList);
+        const result = createInnerListHydrationPlan(matches);
+
+        applyActionListTrust(matches, result, {
+            basePath: "actions",
+            trustedListPaths: new Set(["actions[0].ifActions"]),
+        });
+
+        expect(result.has(entry)).toBe(false);
+        expect(entry.trustedInnerLists?.has("ifActions")).toBe(true);
+        expect((entry.action as { ifActions?: unknown[] } | null)?.ifActions).toEqual([null]);
+    });
+
+    test("trusted inner paths downgrade when shallow shape disagrees", () => {
+        const entry = observed(0, { ifActions: ["MESSAGE"] }, { ifActions: [null as never] });
+        const desiredList = [desired([], ["CHANGE_VAR"])];
+        const matches = matchObservedToDesired([entry], desiredList);
+        const result = createInnerListHydrationPlan(matches);
+
+        applyActionListTrust(matches, result, {
+            basePath: "actions",
+            trustedListPaths: new Set(["actions[0].ifActions"]),
+        });
+
+        expect(result.get(entry)?.has("ifActions")).toBe(true);
+        expect(entry.trustedInnerLists?.has("ifActions")).not.toBe(true);
     });
 });

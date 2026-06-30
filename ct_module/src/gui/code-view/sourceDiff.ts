@@ -224,9 +224,9 @@ export function houseActionAt(
             list = undefined;
         } else {
             if (action === null) return null;
-            const nested = (action as unknown as Record<string, unknown>)[seg];
-            if (!Array.isArray(nested)) return null;
-            list = nested as Action[];
+            const inner = (action as unknown as Record<string, unknown>)[seg];
+            if (!Array.isArray(inner)) return null;
+            list = inner as Action[];
             action = null;
         }
     }
@@ -268,16 +268,16 @@ function walk(
                 ? "match"
                 : "edit";
         } else if (action.type === "RANDOM") {
-            // `random {` has no head fields; nested changes show on child lines.
+            // `random {` has no head fields; inner-list changes show on child lines.
             state = "match";
         } else {
             state = slots !== undefined && slots[j] === sourceHashes[i] ? "match" : "edit";
         }
         out.set(dotted, state);
-        // Recurse into nested lists against the MATCHED cache slot `j`, so a
+        // Recurse into inner lists against the MATCHED cache slot `j`, so a
         // shifted CONDITIONAL/RANDOM still lines up with its cached body. For an
         // added action (j === null) there is no counterpart; `[-1]` can't be a
-        // real cache index, so the nested lookups miss and the body reports as
+        // real cache index, so the inner-list lookups miss and the body reports as
         // added too.
         const childIndex = j === null ? -1 : j;
         if (action.type === "CONDITIONAL") {

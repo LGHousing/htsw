@@ -76,7 +76,7 @@ describe("primeWithCache + previewLinesForFile", () => {
         ]);
     });
 
-    test("nested CONDITIONAL preserves dotted paths", () => {
+    test("inner CONDITIONAL preserves dotted paths", () => {
         primeWithCache(PATH, func([
             conditional({
                 ifActions: [conditional({ ifActions: [message("deep")] })],
@@ -93,7 +93,7 @@ describe("setObservedTopLevel", () => {
         expect(ids()).toEqual(["0:body", "1:body"]);
     });
 
-    test("null nested entries render as a collapsed placeholder", () => {
+    test("null inner entries render as a collapsed placeholder", () => {
         const cond = conditional({
             // Three slots, none hydrated yet.
             ifActions: [null, null, null] as unknown as Action[],
@@ -214,7 +214,7 @@ describe("applyComplete(add)", () => {
         expect(bodyAt("0")?.diffState).toBeUndefined();
     });
 
-    test("bottom-up apply (nested first, then outer) is idempotent on prefix strip", () => {
+    test("bottom-up apply (inner first, then outer) is idempotent on prefix strip", () => {
         // CONDITIONAL add inserts outer + inner with pending: prefix.
         // Inner applyComplete fires first; it should strip the inner's
         // prefix without affecting the outer. Outer applyComplete then

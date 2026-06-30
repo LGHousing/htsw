@@ -9,7 +9,7 @@ export type PhaseUnits = {
     applying: number;
 };
 
-type ImportRunRowStatus =
+type QueueRowStatus =
     | "queued"
     | "current"
     | "imported"
@@ -34,9 +34,9 @@ export type ProgressPayload = {
     preserveApplyingEstimate?: boolean;
 };
 
-export type ImportableEntry = {
+export type QueueRow = {
     key: string;
-    status: ImportRunRowStatus;
+    status: QueueRowStatus;
     totalUnits: number;
 };
 
@@ -68,14 +68,14 @@ export type ImportProgress = {
      * cursor has moved past.
      */
     parked: { [key: string]: ImportProgressActive };
-    rows: readonly ImportableEntry[];
+    rows: readonly QueueRow[];
 };
 
 /**
  * True when the running total is locked — no future event can widen it.
  *
  * Setup/reading/hydrating phases can still discover work (longer lists
- * than predicted, deeper nested bodies, more pages), so the total may
+ * than predicted, deeper inner bodies, more pages), so the total may
  * grow mid-run. The applying phase runs against a computed diff with a
  * fixed op count: the total is known, and the bar/ETA can be displayed
  * as exact rather than approximate.

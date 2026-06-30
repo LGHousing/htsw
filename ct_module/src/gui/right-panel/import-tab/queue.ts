@@ -14,7 +14,7 @@ import { markGuiDirty } from "../../lib/dirty";
 
 /**
  * Right-panel run queue. Import entries are real work selected by the user;
- * export/read entries are progress rows for work selected from the Houses tab.
+ * export/read entries are queue rows for work selected from the Houses tab.
  * The item shape keeps those meanings separate so callers can't reuse an
  * import `sourcePath` as an export destination by accident.
  */

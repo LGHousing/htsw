@@ -71,7 +71,7 @@ function fieldLooksTruncated(value: unknown, kind: UiFieldKind): boolean {
 
 export async function readOpenConditional({
     ctx,
-    propsToRead,
+    innerListsToRead,
     read,
     current,
 }: ActionReadArgs<ActionConditional>): Promise<Observed<ActionConditional>> {
@@ -87,34 +87,34 @@ export async function readOpenConditional({
         ifActions: [],
         elseActions: [],
     };
-    if (propsToRead.has("conditions")) {
+    if (innerListsToRead.has("conditions")) {
         ctx.getMenuItemSlot(conditionsLabel).click();
         await waitForMenu(ctx);
         base.conditions = read === undefined
             ? []
-            : await read.readNestedConditions("conditions");
+            : await read.readConditions("conditions");
         await clickGoBack(ctx);
         read?.emitSnapshot();
     }
 
     base.matchAny = readBooleanValue(ctx.getMenuItemSlot(matchAnyLabel)) ?? false;
 
-    if (propsToRead.has("ifActions")) {
+    if (innerListsToRead.has("ifActions")) {
         ctx.getMenuItemSlot(ifActionsLabel).click();
         await waitForMenu(ctx);
         base.ifActions = read === undefined
             ? []
-            : await read.readNestedActions("ifActions");
+            : await read.readInnerActions("ifActions");
         await clickGoBack(ctx);
         read?.emitSnapshot();
     }
 
-    if (propsToRead.has("elseActions")) {
+    if (innerListsToRead.has("elseActions")) {
         ctx.getMenuItemSlot(elseActionsLabel).click();
         await waitForMenu(ctx);
         base.elseActions = read === undefined
             ? []
-            : await read.readNestedActions("elseActions");
+            : await read.readInnerActions("elseActions");
         await clickGoBack(ctx);
         read?.emitSnapshot();
     }
@@ -227,7 +227,7 @@ export async function readOpenRandom({
 }: ActionReadArgs<ActionRandom>): Promise<Observed<ActionRandom>> {
     ctx.getMenuItemSlot(getActionFieldLabel("RANDOM", "actions")).click();
     await waitForMenu(ctx);
-    const actions = read === undefined ? [] : await read.readNestedActions("actions");
+    const actions = read === undefined ? [] : await read.readInnerActions("actions");
     await clickGoBack(ctx);
     return {
         type: "RANDOM",

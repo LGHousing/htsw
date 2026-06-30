@@ -261,7 +261,7 @@ export function getConditionScalarLoreFields(
     const result: { prop: string; kind: UiFieldKind }[] = [];
     for (const label in loreFields) {
         const field = loreFields[label];
-        if (field.kind !== "nestedList") {
+        if (field.kind !== "innerList") {
             result.push({ prop: field.prop, kind: field.kind });
         }
     }

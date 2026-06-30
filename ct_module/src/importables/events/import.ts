@@ -1,21 +1,21 @@
 import type { Action, Importable, ImportableEvent } from "htsw/types";
 
-import { applyActionListPlan } from "../../housingSync/actions/applyDiff";
+import {
+    applyActionListPlan,
+    type ActionListApplyResult,
+} from "../../housingSync/actions/apply";
 import {
     actionsFullyHydrated,
     type ActionListPlan,
 } from "../../housingSync/actions/plan";
+import { prepareActionListSync } from "../../housingSync/actions/prepareSync";
 import type { ImportableTrustPlan } from "../../importCache";
-import { createSetupStepEmitter } from "../../housingSync/progress/setupStepEmitter";
+import { createSetupStepEmitter } from "../../housingSync/importEvents";
 import TaskContext from "../../tasks/context";
-import {
-    hasTrustedActionListBaseline,
-    prereadActionListUsingTrust,
-} from "../actionListHelpers";
 import type { ImportSession } from "../imports";
 import {
     countReferencedShells,
-    ensureReferencedImportablesExist,
+    createMissingReferencedShells,
 } from "../references";
 import { openEventEditor } from "./shared";
 
@@ -32,41 +32,31 @@ export async function prereadImportableEvent(
     session: ImportSession,
     trustPlan?: ImportableTrustPlan
 ): Promise<EventImportPlan> {
-    const trustedBaseline = hasTrustedActionListBaseline(trustPlan, "actions");
     const setup = createSetupStepEmitter(
         session.events,
-        countReferencedShells(importable) + (trustedBaseline ? 1 : 2)
+        countReferencedShells(importable) + 2
     );
 
-    await ensureReferencedImportablesExist(ctx, importable, (kind, name) => {
+    await createMissingReferencedShells(ctx, importable, (kind, name) => {
         setup(`created ${kind} ${name}`);
     });
 
-    const actionsTrusted = trustPlan?.trustedListPaths.has("actions") ?? false;
-    if (actionsTrusted) {
-        return { kind: "EVENT", importable, trustPlan, actionsPlan: null };
-    }
-
-    if (trustedBaseline) {
-        setup(`planned ${importable.event} from cache`);
-        const actionsPlan = await prereadActionListUsingTrust(ctx, importable.actions, {
-            session,
-            trustPlan,
-            basePath: "actions",
-        });
-        return { kind: "EVENT", importable, trustPlan, actionsPlan };
-    }
-
-    await openEventEditor(ctx, importable.event);
-    setup(`opened event actions`);
-    setup(`selected ${importable.event}`);
-
-    const actionsPlan = await prereadActionListUsingTrust(ctx, importable.actions, {
+    const actionsSync = await prepareActionListSync(ctx, {
+        desired: importable.actions,
         session,
         trustPlan,
         basePath: "actions",
+        open: async () => {
+            await openEventEditor(ctx, importable.event);
+            setup(`opened event actions`);
+            setup(`selected ${importable.event}`);
+        },
     });
-    return { kind: "EVENT", importable, trustPlan, actionsPlan };
+    if (actionsSync.kind === "skipped") {
+        return { kind: "EVENT", importable, trustPlan, actionsPlan: null };
+    }
+
+    return { kind: "EVENT", importable, trustPlan, actionsPlan: actionsSync.plan };
 }
 
 export async function applyImportableEventPlan(
@@ -85,8 +75,15 @@ export function eventPlanIsNoOp(plan: EventImportPlan): boolean {
     return plan.actionsPlan === null || plan.actionsPlan.diff.operations.length === 0;
 }
 
-export function reconstructPartialEvent(plan: EventImportPlan): Importable | null {
-    const live = plan.actionsPlan?.getLiveCurrent?.();
-    if (live === undefined || !actionsFullyHydrated(live)) return null;
-    return { type: "EVENT", event: plan.importable.event, actions: live as Action[] };
+export function reconstructPartialEvent(
+    plan: EventImportPlan,
+    result: ActionListApplyResult | null
+): Importable | null {
+    const current = result?.currentSnapshot;
+    if (current === undefined || !actionsFullyHydrated(current)) return null;
+    return {
+        type: "EVENT",
+        event: plan.importable.event,
+        actions: current.slice() as Action[],
+    };
 }

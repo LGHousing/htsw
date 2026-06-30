@@ -20,7 +20,7 @@ import {
     queueDisplayGroups,
     type QueueItem,
 } from "./import-tab/queue";
-import { isImportRunning } from "../../housingSync/runtimeState";
+import { isImportRunning } from "../../housingSync/importRunState";
 import {
     isQueueImportJsonExpanded,
     queueImportJsonChildren,

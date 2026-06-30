@@ -2,6 +2,8 @@ import TaskContext from "../tasks/context";
 import { exportFunction } from "./functions/export";
 import { exportMenu } from "./menus/export";
 
+export type ExportResult = { total: number; succeeded: number; failed: number };
+
 export type ExportRequest =
     | {
           type: "FUNCTION";

@@ -3,7 +3,7 @@ import type { ImportableItem } from "htsw/types";
 import { isTaskCancelled } from "../../tasks/manager";
 import { ItemCaptureRegistry } from "../../housingSync/itemCapture";
 import type { ExportProgressSink } from "../../housingSync/progress/types";
-import { ExportResult, withExportSession } from "../exportSession";
+import type { ExportResult } from "../exports";
 import { exportMenu } from "./export";
 import { listAllMenuNames } from "./listMenus";
 
@@ -18,13 +18,6 @@ export type ExportAllMenusOptions = {
 };
 
 export async function exportAllMenus(
-    ctx: TaskContext,
-    options: ExportAllMenusOptions
-): Promise<ExportResult> {
-    return withExportSession(() => exportAllMenusInner(ctx, options));
-}
-
-async function exportAllMenusInner(
     ctx: TaskContext,
     options: ExportAllMenusOptions
 ): Promise<ExportResult> {

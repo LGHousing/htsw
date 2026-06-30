@@ -155,13 +155,14 @@ export async function writeConditional(
     const current = options?.current;
 
     if (
+        (options?.apply?.shouldApplyList("conditions") ?? true) &&
         !conditionListsEqual(current?.conditions, action.conditions) &&
         (action.conditions.length > 0 || (current?.conditions?.length ?? 0) > 0)
     ) {
         ctx.getMenuItemSlot(getActionFieldLabel("CONDITIONAL", "conditions")).click();
         await waitForMenu(ctx);
 
-        await options?.apply?.applyNestedConditions("conditions", {
+        await options?.apply?.applyConditions("conditions", {
             desired: action.conditions,
             observed: current?.conditions,
         });
@@ -177,12 +178,13 @@ export async function writeConditional(
     options?.apply?.markHeaderApplied();
 
     if (
+        (options?.apply?.shouldApplyList("ifActions") ?? true) &&
         !observedActionListsEqual(current?.ifActions, action.ifActions) &&
         (action.ifActions.length > 0 || (current?.ifActions?.length ?? 0) > 0)
     ) {
         ctx.getMenuItemSlot(getActionFieldLabel("CONDITIONAL", "ifActions")).click();
         await waitForMenu(ctx);
-        await options?.apply?.applyNestedActions("ifActions", {
+        await options?.apply?.applyInnerActions("ifActions", {
             desired: action.ifActions,
             observed: current?.ifActions,
         });
@@ -190,12 +192,13 @@ export async function writeConditional(
     }
 
     if (
+        (options?.apply?.shouldApplyList("elseActions") ?? true) &&
         !observedActionListsEqual(current?.elseActions, action.elseActions) &&
         (action.elseActions.length > 0 || (current?.elseActions?.length ?? 0) > 0)
     ) {
         ctx.getMenuItemSlot(getActionFieldLabel("CONDITIONAL", "elseActions")).click();
         await waitForMenu(ctx);
-        await options?.apply?.applyNestedActions("elseActions", {
+        await options?.apply?.applyInnerActions("elseActions", {
             desired: action.elseActions,
             observed: current?.elseActions,
         });
@@ -614,6 +617,7 @@ export async function writeRandom(
     options?: WriteActionOptions<ActionRandom>
 ): Promise<void> {
     const current = options?.current;
+    if (!(options?.apply?.shouldApplyList("actions") ?? true)) return;
     if (observedActionListsEqual(current?.actions, action.actions)) return;
     if (action.actions.length === 0 && (current?.actions?.length ?? 0) === 0) return;
 
@@ -621,7 +625,7 @@ export async function writeRandom(
 
     ctx.getMenuItemSlot(getActionFieldLabel("RANDOM", "actions")).click();
     await waitForMenu(ctx);
-    await options?.apply?.applyNestedActions("actions", {
+    await options?.apply?.applyInnerActions("actions", {
         desired: action.actions,
         observed: current?.actions,
     });

@@ -19,8 +19,8 @@ import type {
     ActionListDiff,
     ActionListOperation,
     CurrentActionListEntry,
-    NestedListDiff,
-    NestedListProp,
+    InnerListDiff,
+    InnerListName,
     Observed,
     ObservedActionSlot,
     UiFieldKind,
@@ -51,7 +51,7 @@ type ConditionEntry = {
 };
 
 const NOTE_ONLY_COST = 1;
-const UNREAD_NESTED_ACTION_COST = 1000;
+const UNREAD_INNER_LIST_COST = 1000;
 
 // How many server interactions it takes to change a field of each kind.
 const FIELD_KIND_COST: Record<string, number> = {
@@ -61,7 +61,7 @@ const FIELD_KIND_COST: Record<string, number> = {
     location: 2,
     value: 2,     // click the field, then type the value
     item: 2,      // click the field, then click the item
-    nestedList: 50, // syncs a whole sub-list — far more work than any scalar
+    innerList: 50, // syncs a whole sub-list — far more work than any scalar
 };
 
 // Fixed overhead for opening an action editor and going back (only paid if any field differs)
@@ -87,24 +87,24 @@ function fieldDifferenceCost(
 }
 
 function splitLoreFields(type: Action["type"]): {
-    nestedProps: NestedListProp[];
+    innerListNames: InnerListName[];
     scalarProps: { prop: string; kind: UiFieldKind }[];
 } {
     const loreFields = ACTION_MAPPINGS[type].loreFields as Record<
         string,
         { prop: string; kind: UiFieldKind }
     >;
-    const nestedProps: NestedListProp[] = [];
+    const innerListNames: InnerListName[] = [];
     const scalarProps: { prop: string; kind: UiFieldKind }[] = [];
     for (const label in loreFields) {
         const field = loreFields[label];
-        if (field.kind === "nestedList") {
-            nestedProps.push(field.prop as NestedListProp);
+        if (field.kind === "innerList") {
+            innerListNames.push(field.prop as InnerListName);
         } else {
             scalarProps.push({ prop: field.prop, kind: field.kind });
         }
     }
-    return { nestedProps, scalarProps };
+    return { innerListNames, scalarProps };
 }
 
 function circularMoveDistance(from: number, to: number, listLength: number): number {
@@ -128,7 +128,7 @@ function conditionCost(observed: Condition, desired: Condition): number {
     const scalarProps: { prop: string; kind: UiFieldKind }[] = [];
     for (const label in loreFields) {
         const field = loreFields[label];
-        if (field.kind === "nestedList") continue;
+        if (field.kind === "innerList") continue;
         scalarProps.push({ prop: field.prop, kind: field.kind });
     }
 
@@ -174,6 +174,8 @@ function conditionListCost(
             cost += 1;
         }
     }
+    const matchedObserved = new Set<number>();
+    const matchedDesired = new Set<number>();
 
     const remainingTypes = new Set(unmatchedDesired.map((entry) => entry.condition.type));
 
@@ -222,37 +224,71 @@ function conditionListCost(
 
             usedObserved.add(candidate.observed.index);
             usedDesired.add(candidate.desired.index);
+            matchedObserved.add(candidate.observed.index);
+            matchedDesired.add(candidate.desired.index);
             cost += candidate.cost;
+        }
+    }
+
+    for (const entry of unmatchedObserved) {
+        if (entry.condition !== null && !matchedObserved.has(entry.index)) {
+            cost += 1;
+        }
+    }
+    for (const entry of unmatchedDesired) {
+        if (!matchedDesired.has(entry.index)) {
+            cost += 1;
         }
     }
 
     return cost;
 }
 
-function indexOfExactAction(
+function indexOfAction(
     current: readonly KnownCurrentAction[],
-    desired: DesiredActionEntry,
-    sameIndexOnly: boolean
+    predicate: (entry: KnownCurrentAction) => boolean
 ): number {
     for (let i = 0; i < current.length; i++) {
-        const entry = current[i];
-        if (sameIndexOnly && entry.index !== desired.index) continue;
-        if (actionsEqual(entry.action, desired.action)) return i;
+        if (predicate(current[i])) return i;
     }
     return -1;
 }
 
-function indexOfNoteOnlyAction(
+function indexOfExactActionAtDesiredIndex(
     current: readonly KnownCurrentAction[],
-    desired: DesiredActionEntry,
-    sameIndexOnly: boolean
+    desired: DesiredActionEntry
 ): number {
-    for (let i = 0; i < current.length; i++) {
-        const entry = current[i];
-        if (sameIndexOnly && entry.index !== desired.index) continue;
-        if (actionOnlyNoteDiffers(desired.action, entry.action)) return i;
-    }
-    return -1;
+    return indexOfAction(
+        current,
+        (entry) => entry.index === desired.index && actionsEqual(entry.action, desired.action)
+    );
+}
+
+function indexOfExactActionAtAnyIndex(
+    current: readonly KnownCurrentAction[],
+    desired: DesiredActionEntry
+): number {
+    return indexOfAction(current, (entry) => actionsEqual(entry.action, desired.action));
+}
+
+function indexOfNoteOnlyActionAtDesiredIndex(
+    current: readonly KnownCurrentAction[],
+    desired: DesiredActionEntry
+): number {
+    return indexOfAction(
+        current,
+        (entry) =>
+            entry.index === desired.index && actionOnlyNoteDiffers(desired.action, entry.action)
+    );
+}
+
+function indexOfNoteOnlyActionAtAnyIndex(
+    current: readonly KnownCurrentAction[],
+    desired: DesiredActionEntry
+): number {
+    return indexOfAction(current, (entry) =>
+        actionOnlyNoteDiffers(desired.action, entry.action)
+    );
 }
 
 function actionCost(
@@ -272,15 +308,17 @@ function actionCost(
         return NOTE_ONLY_COST;
     }
 
-    const { nestedProps, scalarProps } = splitLoreFields(current.action.type);
+    const { innerListNames, scalarProps } = splitLoreFields(current.action.type);
 
     // Move cost: 1 input per position shifted
     let cost = circularMoveDistance(current.index, desired.index, listLength);
-    if (
-        current.nestedReadState === "summary" &&
-        nestedProps.some((prop) => (current.nestedSummaries?.[prop] ?? []).length > 0)
-    ) {
-        cost += UNREAD_NESTED_ACTION_COST;
+    const hasUnreadInnerLists = innerListNames.some(
+        (prop) =>
+            !current.trustedInnerLists?.has(prop) &&
+            (current.innerListSummaries?.[prop] ?? []).length > 0
+    );
+    if (current.innerListReadState === "shallow" && hasUnreadInnerLists) {
+        cost += UNREAD_INNER_LIST_COST;
     }
 
     // normalised field comparison so e.g. volume "0.7" vs 0.7 doesn't add
@@ -298,7 +336,9 @@ function actionCost(
         cost += EDIT_OPEN_CLOSE_COST + scalarCost + noteCost;
     }
 
-    for (const prop of nestedProps) {
+    for (const prop of innerListNames) {
+        if (current.trustedInnerLists?.has(prop)) continue;
+
         const observedValue = getFieldValue(current.action, prop);
         const desiredValue = getFieldValue(desired.action, prop);
 
@@ -340,9 +380,9 @@ function matchActions(
 
     for (let desiredIndex = 0; desiredIndex < unmatchedDesired.length; desiredIndex++) {
         const desiredEntry = unmatchedDesired[desiredIndex];
-        let currentIndex = indexOfExactAction(unmatchedCurrent, desiredEntry, true);
+        let currentIndex = indexOfExactActionAtDesiredIndex(unmatchedCurrent, desiredEntry);
         if (currentIndex === -1) {
-            currentIndex = indexOfExactAction(unmatchedCurrent, desiredEntry, false);
+            currentIndex = indexOfExactActionAtAnyIndex(unmatchedCurrent, desiredEntry);
         }
         if (currentIndex === -1) {
             continue;
@@ -363,9 +403,9 @@ function matchActions(
     // Pass 2: Note-only matching with same position preference.
     for (let desiredIndex = 0; desiredIndex < unmatchedDesired.length; desiredIndex++) {
         const desiredEntry = unmatchedDesired[desiredIndex];
-        let currentIndex = indexOfNoteOnlyAction(unmatchedCurrent, desiredEntry, true);
+        let currentIndex = indexOfNoteOnlyActionAtDesiredIndex(unmatchedCurrent, desiredEntry);
         if (currentIndex === -1) {
-            currentIndex = indexOfNoteOnlyAction(unmatchedCurrent, desiredEntry, false);
+            currentIndex = indexOfNoteOnlyActionAtAnyIndex(unmatchedCurrent, desiredEntry);
         }
         if (currentIndex === -1) {
             continue;
@@ -499,6 +539,8 @@ function actionListCost(
 
     let cost = matchResult.matches.reduce((total, match) => total + match.cost, 0);
     cost += observed.filter((entry) => entry === null).length;
+    cost += matchResult.unmatchedCurrent.length;
+    cost += matchResult.unmatchedDesired.length;
     return cost;
 }
 
@@ -511,8 +553,9 @@ export function baselineActionListFromSlots(
             entryId: i,
             index: slots[i].index,
             action: slots[i].action,
-            nestedReadState: slots[i].nestedReadState,
-            nestedSummaries: slots[i].nestedSummaries,
+            innerListReadState: slots[i].innerListReadState,
+            innerListSummaries: slots[i].innerListSummaries,
+            trustedInnerLists: slots[i].trustedInnerLists,
         });
     }
     return out;
@@ -528,30 +571,30 @@ export function baselineActionListFromActions(
             entryId: i,
             index: i,
             action,
-            nestedReadState: action === null ? "none" : "full",
+            innerListReadState: action === null ? "none" : "deep",
         });
     }
     return out;
 }
 
-function nestedActionDiff(
+function innerActionListDiff(
     prop: "ifActions" | "elseActions" | "actions",
     observed: unknown,
     desired: unknown
-): NestedListDiff | null {
+): InnerListDiff | null {
     const observedList = Array.isArray(observed)
         ? (observed as Array<Observed<Action> | null>)
         : [];
     const desiredList = Array.isArray(desired) ? (desired as Action[]) : [];
-    const diff = diffActionListInner(baselineActionListFromActions(observedList), desiredList, false);
+    const diff = diffInnerActionList(baselineActionListFromActions(observedList), desiredList);
     if (diff.operations.length === 0) return null;
     return { prop, diff };
 }
 
-function nestedConditionDiff(
+function innerConditionListDiff(
     observed: unknown,
     desired: unknown
-): NestedListDiff | null {
+): InnerListDiff | null {
     const observedList = Array.isArray(observed)
         ? (observed as Array<Condition | null>)
         : [];
@@ -564,38 +607,43 @@ function nestedConditionDiff(
     return { prop: "conditions", diff };
 }
 
-function getNestedDiffs(
-    observed: Observed<Action>,
-    desired: Action,
-    includeNested: boolean
-): NestedListDiff[] {
-    if (!includeNested || observed.type !== desired.type) return [];
+function getInnerListDiffs(
+    current: KnownCurrentAction,
+    desired: Action
+): InnerListDiff[] {
+    const observed = current.action;
+    if (observed.type !== desired.type) return [];
 
-    const out: NestedListDiff[] = [];
+    const out: InnerListDiff[] = [];
     if (observed.type === "CONDITIONAL" && desired.type === "CONDITIONAL") {
-        const conditions = nestedConditionDiff(observed.conditions, desired.conditions);
-        if (conditions !== null) out.push(conditions);
+        if (!current.trustedInnerLists?.has("conditions")) {
+            const conditions = innerConditionListDiff(observed.conditions, desired.conditions);
+            if (conditions !== null) out.push(conditions);
+        }
 
-        const ifActions = nestedActionDiff("ifActions", observed.ifActions, desired.ifActions);
-        if (ifActions !== null) out.push(ifActions);
+        if (!current.trustedInnerLists?.has("ifActions")) {
+            const ifActions = innerActionListDiff("ifActions", observed.ifActions, desired.ifActions);
+            if (ifActions !== null) out.push(ifActions);
+        }
 
-        const elseActions = nestedActionDiff(
-            "elseActions",
-            observed.elseActions,
-            desired.elseActions
-        );
-        if (elseActions !== null) out.push(elseActions);
+        if (!current.trustedInnerLists?.has("elseActions")) {
+            const elseActions = innerActionListDiff(
+                "elseActions",
+                observed.elseActions,
+                desired.elseActions
+            );
+            if (elseActions !== null) out.push(elseActions);
+        }
     } else if (observed.type === "RANDOM" && desired.type === "RANDOM") {
-        const actions = nestedActionDiff("actions", observed.actions, desired.actions);
-        if (actions !== null) out.push(actions);
+        if (!current.trustedInnerLists?.has("actions")) {
+            const actions = innerActionListDiff("actions", observed.actions, desired.actions);
+            if (actions !== null) out.push(actions);
+        }
     }
     return out;
 }
 
-function createEditOperation(
-    match: ActionMatch,
-    includeNested: boolean
-): Extract<ActionListOperation, { kind: "edit" }> {
+function createEditOperation(match: ActionMatch): Extract<ActionListOperation, { kind: "edit" }> {
     const noteOnly = match.kind === "note_only";
     return {
         kind: "edit",
@@ -606,9 +654,24 @@ function createEditOperation(
         desired: match.desired,
         noteOnly,
         noteDiffers: match.current.action.note !== match.desired.note,
-        nestedDiffs: noteOnly
+        innerListDiffs: noteOnly
             ? []
-            : getNestedDiffs(match.current.action, match.desired, includeNested),
+            : getInnerListDiffs(match.current, match.desired),
+    };
+}
+
+function createInnerListEditOperation(match: ActionMatch): Extract<ActionListOperation, { kind: "edit" }> {
+    const noteOnly = match.kind === "note_only";
+    return {
+        kind: "edit",
+        entryId: match.current.entryId,
+        fromIndex: match.current.index,
+        desiredIndex: match.desiredIndex,
+        baselineAction: match.current.action,
+        desired: match.desired,
+        noteOnly,
+        noteDiffers: match.current.action.note !== match.desired.note,
+        innerListDiffs: [],
     };
 }
 
@@ -616,14 +679,21 @@ export function diffActionList(
     current: CurrentActionListEntry[],
     desired: Action[]
 ): ActionListDiff {
-    return diffActionListInner(current, desired, true);
+    return diffActionListCore(current, desired, createEditOperation);
+}
+
+function diffInnerActionList(
+    current: CurrentActionListEntry[],
+    desired: Action[]
+): ActionListDiff {
+    return diffActionListCore(current, desired, createInnerListEditOperation);
 }
 
 function editOpIsObservablyNoop(
     op: Extract<ActionListOperation, { kind: "edit" }>
 ): boolean {
     if (op.noteDiffers) return false;
-    if (op.nestedDiffs.length > 0) return false;
+    if (op.innerListDiffs.length > 0) return false;
     const scalarFields = getActionScalarLoreFields(op.baselineAction.type);
     for (let i = 0; i < scalarFields.length; i++) {
         const field = scalarFields[i];
@@ -641,10 +711,10 @@ function editOpIsObservablyNoop(
     return true;
 }
 
-function diffActionListInner(
+function diffActionListCore(
     current: CurrentActionListEntry[],
     desired: Action[],
-    includeNested: boolean
+    createEdit: (match: ActionMatch) => Extract<ActionListOperation, { kind: "edit" }>
 ): ActionListDiff {
     const knownCurrent = current.filter(
         (entry): entry is KnownCurrentAction => entry.action !== null
@@ -695,7 +765,7 @@ function diffActionListInner(
         }
 
         if (!actionsEqual(match.current.action, match.desired)) {
-            const editOp = createEditOperation(match, includeNested);
+            const editOp = createEdit(match);
             if (editOpIsObservablyNoop(editOp)) {
                 continue;
             }

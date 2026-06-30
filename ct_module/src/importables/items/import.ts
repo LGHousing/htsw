@@ -1,7 +1,11 @@
 import type { Action, ImportableItem } from "htsw/types";
 
-import { applyActionListPlan } from "../../housingSync/actions/applyDiff";
-import { createSetupStepEmitter } from "../../housingSync/progress/setupStepEmitter";
+import { applyActionListPlan } from "../../housingSync/actions/apply";
+import {
+    prepareActionListSync,
+    shouldSyncActionList,
+} from "../../housingSync/actions/prepareSync";
+import { createSetupStepEmitter } from "../../housingSync/importEvents";
 import { clickGoBack } from "../../housingSync/gui/menuUtils";
 import { timedWaitForMenu } from "../../housingSync/gui/menuWait";
 import {
@@ -25,11 +29,10 @@ import {
     selectedHotbarSlot,
     sendCreativeInventoryAction,
 } from "../../housingSync/gui/packets";
-import { prereadActionListUsingTrust } from "../actionListHelpers";
 import type { ImportSession } from "../imports";
 import {
     countReferencedShells,
-    ensureReferencedImportablesExist,
+    createMissingReferencedShells,
 } from "../references";
 import { itemEditorOpened } from "../waiters";
 import { COST } from "../../housingSync/progress/costs";
@@ -156,7 +159,7 @@ async function importImportableItem(
     const ownSteps = hasItemClickActions(importable) ? 3 : 1;
     const setup = createSetupStepEmitter(events, countReferencedShells(importable) + ownSteps);
 
-    await ensureReferencedImportablesExist(ctx, importable, (kind, name) => {
+    await createMissingReferencedShells(ctx, importable, (kind, name) => {
         setup(`created ${kind} ${name}`);
     });
 
@@ -315,41 +318,51 @@ async function syncItemActionLists(
         start.mode
     );
 
-    if (
-        leftDesired !== undefined &&
-        !trustPlan?.trustedListPaths.has("leftClickActions")
-    ) {
-        ctx.getItemSlot("Left Click Actions").click();
-        await timedWaitForMenu(ctx, "menuClickWait");
+    const leftNeedsSync = shouldSyncActionList(
+        leftDesired,
+        trustPlan,
+        "leftClickActions"
+    );
+    const rightNeedsSync = shouldSyncActionList(
+        rightDesired,
+        trustPlan,
+        "rightClickActions"
+    );
 
-        const leftPlan = await prereadActionListUsingTrust(ctx, leftDesired, {
+    if (leftNeedsSync) {
+        const leftSync = await prepareActionListSync(ctx, {
+            desired: leftDesired,
             session,
             trustPlan,
             basePath: "leftClickActions",
+            open: async () => {
+                ctx.getItemSlot("Left Click Actions").click();
+                await timedWaitForMenu(ctx, "menuClickWait");
+            },
         });
-        await applyActionListPlan(ctx, leftPlan, { session });
+        if (leftSync.kind === "planned") {
+            await applyActionListPlan(ctx, leftSync.plan, { session });
+        }
 
-        if (
-            rightDesired !== undefined &&
-            !trustPlan?.trustedListPaths.has("rightClickActions")
-        ) {
+        if (rightNeedsSync) {
             await clickGoBack(ctx);
         }
     }
 
-    if (
-        rightDesired !== undefined &&
-        !trustPlan?.trustedListPaths.has("rightClickActions")
-    ) {
-        ctx.getItemSlot("Right Click Actions").click();
-        await timedWaitForMenu(ctx, "menuClickWait");
-
-        const rightPlan = await prereadActionListUsingTrust(ctx, rightDesired, {
+    if (rightNeedsSync) {
+        const rightSync = await prepareActionListSync(ctx, {
+            desired: rightDesired,
             session,
             trustPlan,
             basePath: "rightClickActions",
+            open: async () => {
+                ctx.getItemSlot("Right Click Actions").click();
+                await timedWaitForMenu(ctx, "menuClickWait");
+            },
         });
-        await applyActionListPlan(ctx, rightPlan, { session });
+        if (rightSync.kind === "planned") {
+            await applyActionListPlan(ctx, rightSync.plan, { session });
+        }
     }
 }
 

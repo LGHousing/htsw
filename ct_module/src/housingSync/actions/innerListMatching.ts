@@ -1,13 +1,14 @@
 import type { Action, Condition } from "htsw/types";
 
-import { getActionLoreFields, getNestedListFields } from "../fields/actionMappings";
+import { getActionLoreFields, getInnerListFields } from "../fields/actionMappings";
 import type {
-    NestedListProp,
-    NestedPropsToRead,
+    InnerListName,
+    InnerListHydrationPlan,
+    InnerListsToRead,
     ObservedActionSlot,
 } from "../types";
 
-const NESTED_LIST_COST_WEIGHT = 20;
+const INNER_LIST_COST_WEIGHT = 20;
 const SCALAR_FIELD_COST_WEIGHT = 2;
 const NOTE_COST_WEIGHT = 1;
 const INDEX_DISTANCE_WEIGHT = 1;
@@ -17,13 +18,23 @@ export type DesiredActionEntry = {
     action: Action;
 };
 
+export function createInnerListHydrationPlan(
+    matches: Map<ObservedActionSlot, DesiredActionEntry>
+): InnerListHydrationPlan {
+    const plan: InnerListHydrationPlan = new Map();
+    for (const observed of matches.keys()) {
+        plan.set(observed, getInnerListsNeedingHydration(observed));
+    }
+    return plan;
+}
+
 /**
- * Pair each observed nested-list-bearing action with the desired action it
+ * Pair each observed inner-list-bearing action with the desired action it
  * most likely represents. Both the hydration plan and trust application read
  * this same pairing, so they always agree on which observed action lines up
  * with which desired one; if they paired independently they could disagree.
  *
- * Only considers observed entries that still have nested lists to read (the
+ * Only considers observed entries that still have inner lists to read (the
  * two consumers act on those entries alone), so it doesn't waste work pairing
  * entries neither of them would touch.
  */
@@ -46,13 +57,13 @@ export function matchObservedToDesired(
 
     const matches = new Map<ObservedActionSlot, DesiredActionEntry>();
     for (const [type, desiredBucket] of desiredByType) {
-        if (getNestedListFields(type).length === 0) continue;
+        if (getInnerListFields(type).length === 0) continue;
 
         const observedBucket = observed.filter(
             (entry) =>
                 entry.action !== null &&
                 entry.action.type === type &&
-                getPropsNeedingHydration(entry).size > 0
+                getInnerListsNeedingHydration(entry).size > 0
         );
         if (observedBucket.length === 0) continue;
 
@@ -62,7 +73,7 @@ export function matchObservedToDesired(
                 candidates.push({
                     observed: observedEntry,
                     desired: desiredEntry,
-                    cost: shallowNestedActionCost(observedEntry, desiredEntry),
+                    cost: shallowInnerListOwnerCost(observedEntry, desiredEntry),
                 });
             }
         }
@@ -91,26 +102,26 @@ export function matchObservedToDesired(
     return matches;
 }
 
-export function getPropsNeedingHydration(
+export function getInnerListsNeedingHydration(
     entry: ObservedActionSlot
-): NestedPropsToRead {
-    if (entry.nestedPropsToRead !== undefined) {
-        return new Set(entry.nestedPropsToRead);
+): InnerListsToRead {
+    if (entry.innerListsToRead !== undefined) {
+        return new Set(entry.innerListsToRead);
     }
 
-    const props: NestedPropsToRead = new Set();
-    if (entry.action === null) return props;
+    const innerLists: InnerListsToRead = new Set();
+    if (entry.action === null) return innerLists;
 
-    for (const field of getNestedListFields(entry.action.type)) {
-        const prop = field.prop as NestedListProp;
-        if ((entry.nestedSummaries?.[prop] ?? []).length > 0) {
-            props.add(prop);
+    for (const field of getInnerListFields(entry.action.type)) {
+        const prop = field.prop as InnerListName;
+        if ((entry.innerListSummaries?.[prop] ?? []).length > 0) {
+            innerLists.add(prop);
         }
     }
-    return props;
+    return innerLists;
 }
 
-function shallowNestedActionCost(
+function shallowInnerListOwnerCost(
     observed: ObservedActionSlot,
     desired: DesiredActionEntry
 ): number {
@@ -124,12 +135,12 @@ function shallowNestedActionCost(
 
     for (const label in loreFields) {
         const field = loreFields[label];
-        if (field.kind === "nestedList") {
-            const prop = field.prop as NestedListProp;
-            const observedTypes = observed.nestedSummaries?.[prop] ?? [];
-            const desiredTypes = desiredNestedTypes(desired.action, prop);
+        if (field.kind === "innerList") {
+            const prop = field.prop as InnerListName;
+            const observedTypes = observed.innerListSummaries?.[prop] ?? [];
+            const desiredTypes = desiredInnerListTypes(desired.action, prop);
             cost +=
-                sequenceTypeCost(observedTypes, desiredTypes) * NESTED_LIST_COST_WEIGHT;
+                sequenceTypeCost(observedTypes, desiredTypes) * INNER_LIST_COST_WEIGHT;
             continue;
         }
 
@@ -160,11 +171,11 @@ function sequenceTypeCost(
     return cost;
 }
 
-function desiredNestedTypes(action: Action, prop: NestedListProp): string[] {
+export function desiredInnerListTypes(action: Action, prop: InnerListName): string[] {
     const value = (action as Record<string, unknown>)[prop];
     if (!Array.isArray(value)) return [];
     if (prop === "conditions") {
         return (value as Condition[]).map((condition) => condition.type);
     }
-    return (value as Action[]).map((nestedAction) => nestedAction.type);
+    return (value as Action[]).map((innerAction) => innerAction.type);
 }
