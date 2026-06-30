@@ -57,6 +57,7 @@ import { ensureParentDirs } from "./utils/filesystem";
 import { openPathInOS } from "./utils/osShell";
 import { getItemFromSnbt } from "./utils/nbt";
 import { C10PacketCreativeInventoryAction } from "./utils/packets";
+import { parseCommandArgs, quoteCommandArg } from "./utils/commandArgs";
 
 type HtswSubcommand = {
     name: string;
@@ -371,7 +372,18 @@ function saveItem(args: string[]): void {
         return;
     }
 
-    const rawPath = stripSurroundingQuotes(args.join(" ")).trim();
+    const parsed = parseCommandArgs(args);
+    if (!parsed.ok) {
+        ChatLib.chat(`&c[htsw] ${parsed.error}`);
+        return;
+    }
+    if (parsed.args.length !== 1) {
+        ChatLib.chat("&cUsage: /htsw saveitem <path>");
+        ChatLib.chat("&7  Quote paths that contain spaces.");
+        return;
+    }
+
+    const rawPath = parsed.args[0].trim();
     if (rawPath.length === 0) {
         ChatLib.chat("&c[htsw] saveitem path cannot be empty.");
         return;
@@ -487,20 +499,16 @@ function resolveGiveItemFilePath(rawPath: string): string {
     return path;
 }
 
-function parseGiveItemFolderArgs(args: string[]): { rawPath: string; skip: number; hasSkip: boolean } {
-    if (args.length > 1 && /^\d+$/.test(args[args.length - 1])) {
+function parseGiveItemFolderArgs(args: string[]): { rawPath: string; skip: number; hasSkip: boolean } | null {
+    if (args.length === 1) return { rawPath: args[0].trim(), skip: 0, hasSkip: false };
+    if (args.length === 2 && /^\d+$/.test(args[1])) {
         return {
-            rawPath: stripSurroundingQuotes(args.slice(0, args.length - 1).join(" ")).trim(),
-            skip: Number(args[args.length - 1]),
+            rawPath: args[0].trim(),
+            skip: Number(args[1]),
             hasSkip: true,
         };
     }
-    return { rawPath: stripSurroundingQuotes(args.join(" ")).trim(), skip: 0, hasSkip: false };
-}
-
-function commandArg(value: string): string {
-    if (/\s/.test(value)) return `"${value.split("\"").join("\\\"")}"`;
-    return value;
+    return null;
 }
 
 function giveSingleItemPath(filePath: string): void {
@@ -553,7 +561,7 @@ function giveFolderItems(rawPath: string, skip: number): void {
     ChatLib.chat(`&7[htsw] Gave ${gave}/${files.length} item${files.length === 1 ? "" : "s"} from ${dirPath}`);
     const nextSkip = skip + count;
     if (nextSkip < files.length) {
-        ChatLib.chat(`&7  Next: &f/htsw giveitem ${commandArg(rawPath)} ${nextSkip}`);
+        ChatLib.chat(`&7  Next: &f/htsw giveitem ${quoteCommandArg(rawPath)} ${nextSkip}`);
     }
 }
 
@@ -569,7 +577,20 @@ function giveItem(args: string[]): void {
         return;
     }
 
-    const rawPath = stripSurroundingQuotes(args.join(" ")).trim();
+    const parsed = parseCommandArgs(args);
+    if (!parsed.ok) {
+        ChatLib.chat(`&c[htsw] ${parsed.error}`);
+        return;
+    }
+
+    const folderArgs = parseGiveItemFolderArgs(parsed.args);
+    if (folderArgs === null) {
+        ChatLib.chat("&cUsage: /htsw giveitem <path> [skip]");
+        ChatLib.chat("&7  Quote paths that contain spaces.");
+        return;
+    }
+
+    const rawPath = folderArgs.rawPath;
     if (rawPath.length === 0) {
         ChatLib.chat("&c[htsw] giveitem path cannot be empty.");
         return;
@@ -577,20 +598,17 @@ function giveItem(args: string[]): void {
 
     const filePath = resolveGiveItemFilePath(rawPath);
     if (isRegularFile(filePath)) {
+        if (folderArgs.hasSkip) {
+            ChatLib.chat("&c[htsw] Skip is only supported for folders, not item files.");
+            return;
+        }
         giveSingleItemPath(filePath);
         return;
     }
 
     const literalDirPath = resolveModuleRelativePath(rawPath).split("\\").join("/");
     if (isDirectory(literalDirPath)) {
-        giveFolderItems(rawPath, 0);
-        return;
-    }
-
-    const folderArgs = parseGiveItemFolderArgs(args);
-    const parsedFilePath = resolveGiveItemFilePath(folderArgs.rawPath);
-    if (folderArgs.hasSkip && isRegularFile(parsedFilePath)) {
-        giveSingleItemPath(parsedFilePath);
+        giveFolderItems(rawPath, folderArgs.skip);
         return;
     }
 
