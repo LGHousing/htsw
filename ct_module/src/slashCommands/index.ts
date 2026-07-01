@@ -45,7 +45,7 @@ import { isInCreativeMode } from "../housingSync/sideEffects";
 import { appendActionsToOpenActionList } from "../housingSync/actions/apply";
 import { createItemRegistry } from "../importables/itemRegistry";
 import { isTaskRunning, setTaskRunning } from "../tasks/runningState";
-import { startImport } from "../gui/right-panel/import-tab/importController";
+import { startImport } from "../gui/right-panel/import-tab/taskController";
 import { canonicalPath, getParsePerfStats } from "../gui/parsing/parses";
 import { compactFileLabel } from "../gui/lib/pathDisplay";
 import { snbtFromItem } from "../housingSync/itemCapture";

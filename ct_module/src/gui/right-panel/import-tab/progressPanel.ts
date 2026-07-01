@@ -32,7 +32,7 @@ import {
     requestStepAdvance,
     setStepAuto,
 } from "../../../housingSync/stepGate";
-import { cancelActiveImport } from "./importController";
+import { cancelActiveImport } from "./taskController";
 import { isCurrentHouseTrusted } from "../../state";
 import {
     getCurrentPhaseEtaSeconds,

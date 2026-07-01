@@ -14,6 +14,12 @@ import { getCurrentHousingUuid } from "../importCache";
 import { traceError, traceRecord } from "../housingSync/trace/taskTrace";
 import { clearActiveExportContext, setActiveExportContext } from "../exporter/activeExport";
 import {
+    readExportProjectContext,
+    readProjectItemsForExport,
+    type ExportProjectContext,
+    type ExportProjectTarget,
+} from "../importables/exportContext";
+import {
     defaultExportRoot,
     readEventNamesFromImportJson,
     readFunctionNamesFromImportJson,
@@ -27,7 +33,8 @@ import {
 import { chatSeparator, stripSurroundingQuotes } from "../utils/helpers";
 import { VERSION } from "htsw";
 
-type ExportDestination = { rootDir: string; importJsonPath: string };
+type ExportDestination = ExportProjectContext;
+type ExportDestinationPath = ExportProjectTarget;
 
 type ExportBatchRequest =
     | { type: "FUNCTION"; names?: readonly string[]; skipExisting?: boolean }
@@ -122,7 +129,7 @@ function tokenizeQuoted(args: readonly string[]): string[] {
 
 function exportDestination(
     explicitPath: string | undefined
-): { rootDir: string; importJsonPath: string } | null {
+): ExportDestinationPath | null {
     if (explicitPath === undefined) return null;
     const path = resolveModuleRelativePath(trimTrailingSlashes(explicitPath));
     if (endsWithIgnoreCase(path, ".json")) {
@@ -137,10 +144,10 @@ async function resolveExportDestination(
     explicitPath: string | undefined
 ): Promise<ExportDestination> {
     const explicitDestination = exportDestination(explicitPath);
-    if (explicitDestination !== null) return explicitDestination;
+    if (explicitDestination !== null) return readExportProjectContext(explicitDestination);
     const uuid = await getCurrentHousingUuid(ctx);
     const rootDir = defaultExportRoot(uuid);
-    return { rootDir, importJsonPath: `${rootDir}/import.json` };
+    return readExportProjectContext({ rootDir, importJsonPath: `${rootDir}/import.json` });
 }
 
 function notYetExportedFunctionNames(
@@ -216,12 +223,13 @@ async function exportBatch(
     destination: ExportDestination,
     request: ExportBatchRequest
 ): Promise<void> {
-    const { importJsonPath, rootDir } = destination;
+    const { importJsonPath, rootDir, projectItems } = destination;
     switch (request.type) {
         case "FUNCTION":
             await exportAllFunctions(ctx, {
                 importJsonPath,
                 rootDir,
+                projectItems,
                 names: request.names,
                 skipExisting: request.skipExisting,
                 progress: createExportProgressSink("FUNCTION", importJsonPath),
@@ -231,6 +239,7 @@ async function exportBatch(
             await exportAllEvents(ctx, {
                 importJsonPath,
                 rootDir,
+                projectItems,
                 names: request.names,
                 skipExisting: request.skipExisting,
                 progress: createExportProgressSink("EVENT", importJsonPath),
@@ -240,6 +249,7 @@ async function exportBatch(
             await exportAllMenus(ctx, {
                 importJsonPath,
                 rootDir,
+                projectItems,
                 names: request.names,
                 skipExisting: request.skipExisting,
                 progress: createExportProgressSink("MENU", importJsonPath),
@@ -249,6 +259,7 @@ async function exportBatch(
             await exportAllRegions(ctx, {
                 importJsonPath,
                 rootDir,
+                projectItems,
                 names: request.names,
                 skipExisting: request.skipExisting,
                 progress: createExportProgressSink("REGION", importJsonPath),
@@ -258,6 +269,7 @@ async function exportBatch(
             await exportAllCommands(ctx, {
                 importJsonPath,
                 rootDir,
+                projectItems,
                 names: request.names,
                 skipExisting: request.skipExisting,
                 progress: createExportProgressSink("COMMAND", importJsonPath),
@@ -267,6 +279,7 @@ async function exportBatch(
             await exportAllNpcs(ctx, {
                 importJsonPath,
                 rootDir,
+                projectItems,
                 entries: request.entries,
                 skipExisting: request.skipExisting,
                 progress: createExportProgressSink("NPC", importJsonPath),
@@ -277,6 +290,15 @@ async function exportBatch(
             void _check;
         }
     }
+}
+
+async function exportBatchAndRefreshProjectItems(
+    ctx: TaskContext,
+    destination: ExportDestination,
+    request: ExportBatchRequest
+): Promise<void> {
+    await exportBatch(ctx, destination, request);
+    destination.projectItems = readProjectItemsForExport(destination.importJsonPath);
 }
 
 async function exportExisting(
@@ -305,22 +327,40 @@ async function exportExisting(
     }
 
     if (functionNames.length > 0) {
-        await exportBatch(ctx, destination, { type: "FUNCTION", names: functionNames });
+        await exportBatchAndRefreshProjectItems(ctx, destination, {
+            type: "FUNCTION",
+            names: functionNames,
+        });
     }
     if (eventNames.length > 0) {
-        await exportBatch(ctx, destination, { type: "EVENT", names: eventNames });
+        await exportBatchAndRefreshProjectItems(ctx, destination, {
+            type: "EVENT",
+            names: eventNames,
+        });
     }
     if (menuNames.length > 0) {
-        await exportBatch(ctx, destination, { type: "MENU", names: menuNames });
+        await exportBatchAndRefreshProjectItems(ctx, destination, {
+            type: "MENU",
+            names: menuNames,
+        });
     }
     if (regionNames.length > 0) {
-        await exportBatch(ctx, destination, { type: "REGION", names: regionNames });
+        await exportBatchAndRefreshProjectItems(ctx, destination, {
+            type: "REGION",
+            names: regionNames,
+        });
     }
     if (commandNames.length > 0) {
-        await exportBatch(ctx, destination, { type: "COMMAND", names: commandNames });
+        await exportBatchAndRefreshProjectItems(ctx, destination, {
+            type: "COMMAND",
+            names: commandNames,
+        });
     }
     if (npcEntries.length > 0) {
-        await exportBatch(ctx, destination, { type: "NPC", entries: npcEntries });
+        await exportBatchAndRefreshProjectItems(ctx, destination, {
+            type: "NPC",
+            entries: npcEntries,
+        });
     }
 }
 

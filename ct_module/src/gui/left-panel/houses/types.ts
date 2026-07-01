@@ -39,7 +39,7 @@ import { exportAllEvents } from "../../../importables/events/exportAll";
 import { exportAllMenus } from "../../../importables/menus/exportAll";
 import { exportAllRegions } from "../../../importables/regions/exportAll";
 import { exportAllCommands } from "../../../importables/commands/exportAll";
-import { startExport, type ExportSpec } from "../../right-panel/import-tab/importController";
+import { startExport, type ExportSpec } from "../../right-panel/import-tab/taskController";
 
 // One browsable category of house contents. The Houses view is generic over
 // this: it dispatches scan/list/edit/export through the active entry.

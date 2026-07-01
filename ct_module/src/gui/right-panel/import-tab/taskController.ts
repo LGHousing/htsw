@@ -37,6 +37,7 @@ import {
     orderImportablesForImportSession,
 } from "../../../importables/importSession";
 import type { ExportResult } from "../../../importables/exports";
+import { exportProjectContextFromParsedImportJson } from "../../../importables/exportContext";
 import { importableIdentity } from "../../../importables/identity";
 import { getCurrentHousingUuid } from "../../../importCache/housingId";
 import { TaskManager, isTaskCancelled } from "../../../tasks/manager";
@@ -626,18 +627,13 @@ export function startExport(
             if (purged > 0) {
                 ChatLib.chat(`&8[htsw] purged ${purged} leaked event waiter(s) from a prior run.`);
             }
-            const destParse = getParseAt(importJsonPath);
+            const exportContext = exportProjectContextFromParsedImportJson(
+                { rootDir: dir, importJsonPath },
+                getParseAt(importJsonPath)?.parsed
+            );
             result = await spec.exportAll(ctx, {
-                importJsonPath,
-                rootDir: dir,
+                ...exportContext,
                 names,
-                // Seed capture matching with the destination's declared items
-                // so re-exports reuse existing names instead of minting
-                // duplicates. Warm-cache read; null just means no seeding.
-                projectItems:
-                    destParse?.parsed?.value.filter(
-                        (imp): imp is ImportableItem => imp.type === "ITEM"
-                    ) ?? [],
                 // Feeds the same bottom progress strip the importer uses (verb
                 // flips to "export"), sized in import cost-model units.
                 progress: createExportProgressSink(spec.type, importJsonPath),

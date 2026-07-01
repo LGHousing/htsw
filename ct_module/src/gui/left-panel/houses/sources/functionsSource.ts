@@ -7,8 +7,8 @@ import { showToast } from "../../../toast";
 import { createExportProgressSink } from "../../../right-panel/import-tab/exportProgress";
 import { listAllFunctionEntries } from "../../../../importables/functions/listFunctions";
 import { exportAllFunctions } from "../../../../importables/functions/exportAll";
+import { exportProjectContextFromParsedImportJson } from "../../../../importables/exportContext";
 import { getParseAt } from "../../../parsing/parses";
-import type { ImportableItem } from "htsw/types";
 import { resetEventContainers } from "../../../../tasks/specifics/waitFor";
 import {
     clearActiveExportContext,
@@ -83,25 +83,22 @@ export function deepReadHouseFunctions(onlyNames?: string[]): void {
             if (purged > 0) {
                 ChatLib.chat(`&8[htsw] purged ${purged} leaked event waiter(s) from a prior run.`);
             }
-            const destParse = getParseAt(getExportImportJsonPath());
+            const importJsonPath = getExportImportJsonPath();
+            const exportContext = exportProjectContextFromParsedImportJson(
+                { rootDir: "", importJsonPath },
+                getParseAt(importJsonPath)?.parsed
+            );
             result = await exportAllFunctions(ctx, {
-                importJsonPath: getExportImportJsonPath(),
-                rootDir: "",
+                ...exportContext,
                 names: onlyNames,
                 readOnly: { housingUuid: uuid },
-                // Seeded matching lets read knowledge reference REAL project
-                // item names when contents are identical.
-                projectItems:
-                    destParse?.parsed?.value.filter(
-                        (imp): imp is ImportableItem => imp.type === "ITEM"
-                    ) ?? [],
                 onNamesListed: (names) =>
                     recordHouseScan(uuid, "FUNCTION", names.slice()),
                 // Same strip the importer/exporter use, verb "read" — a deep
                 // read opens every function editor, far too slow to run dark.
                 progress: createExportProgressSink(
                     "FUNCTION",
-                    getExportImportJsonPath(),
+                    importJsonPath,
                     "read"
                 ),
             });

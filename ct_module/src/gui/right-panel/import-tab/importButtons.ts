@@ -40,7 +40,7 @@ import { openFileBrowserWithImportJsonSelection } from "../../popovers/file-brow
 import { openNewProjectPopover } from "../../popovers/new-project";
 import { getAlias } from "../../../importCache/aliases";
 import { boundImportJsonPath } from "../../../importCache/houseBindings";
-import { startImport } from "./importController";
+import { startImport } from "./taskController";
 import { createEmptyProjectFiles } from "htsw-editor-common/project";
 import { ctProjectFs } from "../../../project/projectFs";
 
