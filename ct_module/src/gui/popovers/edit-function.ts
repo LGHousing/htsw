@@ -12,7 +12,7 @@ import { markPathInSync } from "../parsing/reparse";
 import { getParseAt, touchParseCacheMtime } from "../parsing/parses";
 import { importableHash } from "../../importCache/hash";
 import { seedImportableHash } from "../../importCache/status";
-import { importableIdentity } from "../../importCache/paths";
+import { importableIdentity } from "../../importables/identity";
 
 let editingValue = "";
 let editingX = "";

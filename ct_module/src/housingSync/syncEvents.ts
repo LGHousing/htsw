@@ -1,5 +1,5 @@
 import type { Action, Importable } from "htsw/types";
-import type { ImportableEntry, ProgressPayload } from "./progress/types";
+import type { TaskProgressEntry, ProgressPayload } from "./progress/types";
 
 export type DiffOpKind = "edit" | "add" | "move" | "delete";
 export type DiffFinalState = "match" | "edit" | "add" | "delete";
@@ -119,10 +119,10 @@ export type ProgressScope =
           };
       };
 
-export type ImportEvent =
+export type SyncEvent =
     | {
           kind: "sessionStarted";
-          rows: readonly ImportableEntry[];
+          rows: readonly TaskProgressEntry[];
           initialTotalUnits: number;
       }
     | {
@@ -177,6 +177,6 @@ export type ImportEvent =
     | { kind: "blockActionHeaderApplied"; path: ActionPath }
     | { kind: "finalizeSource"; actions: ReadonlyArray<Action> };
 
-export interface ImportEventHandler {
-    emit(event: ImportEvent): void;
+export interface SyncEventHandler {
+    emit(event: SyncEvent): void;
 }

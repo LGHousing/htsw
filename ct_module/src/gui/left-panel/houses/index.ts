@@ -28,7 +28,8 @@ import {
     toggleExportSelection,
 } from "./exportSelection";
 import { TaskManager } from "../../../tasks/manager";
-import { IMPORT_CACHE_ROOT, importableIdentity } from "../../../importCache/paths";
+import { IMPORT_CACHE_ROOT } from "../../../importCache/paths";
+import { importableIdentity } from "../../../importables/identity";
 import { deleteHousingCache } from "../../../importCache/cache";
 import { clearAlias } from "../../../importCache/aliases";
 import { javaType } from "../../lib/java";

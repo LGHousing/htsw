@@ -2,7 +2,7 @@ import type { Action, Importable } from "htsw/types";
 
 import type { ImportableCacheEntry } from "./cache";
 import { importableHash, listHashes } from "./hash";
-import { importableIdentity, importableKey } from "./paths";
+import { importableIdentity, importableKey } from "../importables/identity";
 import { readImportableCache } from "./cache";
 import { stableStringify } from "../utils/helpers";
 

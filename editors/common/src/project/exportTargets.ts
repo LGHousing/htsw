@@ -268,13 +268,13 @@ export function npcExportReferencesExist(
     const entry = readDeclaringNpcNode(fs, importJsonPath, pos);
     if (entry === null) return false;
     return (
-        requiredStringReferenceExists(
+        optionalStringReferenceExists(
             fs,
             entry.importJsonPath,
             entry.node,
             "leftClickActions"
         ) &&
-        requiredStringReferenceExists(
+        optionalStringReferenceExists(
             fs,
             entry.importJsonPath,
             entry.node,

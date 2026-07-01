@@ -1,5 +1,5 @@
 import TaskContext from "../tasks/context";
-import { traceError, traceRecord } from "../housingSync/trace/importTrace";
+import { traceError, traceRecord } from "../housingSync/trace/taskTrace";
 import { exportCommand } from "./commands/export";
 import { exportFunction } from "./functions/export";
 import { exportMenu } from "./menus/export";
@@ -56,118 +56,66 @@ export async function exportImportable(
         importJsonPath: request.importJsonPath,
         rootDir: request.rootDir,
     });
-    if (request.type === "FUNCTION") {
-        try {
-            await exportFunction(ctx, {
-                name: request.name,
-                importJsonPath: request.importJsonPath,
-                declaringJsonPath: request.declaringJsonPath,
-                htslPath: request.htslPath,
-                htslReference: request.htslReference,
-                rootDir: request.rootDir,
-            });
-            traceRecord("exportImportable", {
-                stage: "success",
-                type: request.type,
-                name: request.name,
-            });
-        } catch (error) {
-            traceError("exportImportable", error, {
-                type: request.type,
-                name: request.name,
-            });
-            throw error;
+
+    try {
+        switch (request.type) {
+            case "FUNCTION":
+                await exportFunction(ctx, {
+                    name: request.name,
+                    importJsonPath: request.importJsonPath,
+                    declaringJsonPath: request.declaringJsonPath,
+                    htslPath: request.htslPath,
+                    htslReference: request.htslReference,
+                    rootDir: request.rootDir,
+                });
+                break;
+            case "COMMAND":
+                await exportCommand(ctx, {
+                    name: request.name,
+                    importJsonPath: request.importJsonPath,
+                    declaringJsonPath: request.declaringJsonPath,
+                    htslPath: request.htslPath,
+                    htslReference: request.htslReference,
+                    rootDir: request.rootDir,
+                });
+                break;
+            case "MENU":
+                await exportMenu(ctx, {
+                    name: request.name,
+                    importJsonPath: request.importJsonPath,
+                    rootDir: request.rootDir,
+                });
+                break;
+            case "REGION":
+                await exportRegion(ctx, {
+                    name: request.name,
+                    importJsonPath: request.importJsonPath,
+                    rootDir: request.rootDir,
+                });
+                break;
+            case "NPC":
+                await exportNpc(ctx, {
+                    name: request.name,
+                    pos: request.pos,
+                    importJsonPath: request.importJsonPath,
+                    rootDir: request.rootDir,
+                });
+                break;
+            default: {
+                const _check: never = request;
+                void _check;
+            }
         }
-        return;
+        traceRecord("exportImportable", {
+            stage: "success",
+            type: request.type,
+            name: request.name,
+        });
+    } catch (error) {
+        traceError("exportImportable", error, {
+            type: request.type,
+            name: request.name,
+        });
+        throw error;
     }
-    if (request.type === "COMMAND") {
-        try {
-            await exportCommand(ctx, {
-                name: request.name,
-                importJsonPath: request.importJsonPath,
-                declaringJsonPath: request.declaringJsonPath,
-                htslPath: request.htslPath,
-                htslReference: request.htslReference,
-                rootDir: request.rootDir,
-            });
-            traceRecord("exportImportable", {
-                stage: "success",
-                type: request.type,
-                name: request.name,
-            });
-        } catch (error) {
-            traceError("exportImportable", error, {
-                type: request.type,
-                name: request.name,
-            });
-            throw error;
-        }
-        return;
-    }
-    if (request.type === "MENU") {
-        try {
-            await exportMenu(ctx, {
-                name: request.name,
-                importJsonPath: request.importJsonPath,
-                rootDir: request.rootDir,
-            });
-            traceRecord("exportImportable", {
-                stage: "success",
-                type: request.type,
-                name: request.name,
-            });
-        } catch (error) {
-            traceError("exportImportable", error, {
-                type: request.type,
-                name: request.name,
-            });
-            throw error;
-        }
-        return;
-    }
-    if (request.type === "REGION") {
-        try {
-            await exportRegion(ctx, {
-                name: request.name,
-                importJsonPath: request.importJsonPath,
-                rootDir: request.rootDir,
-            });
-            traceRecord("exportImportable", {
-                stage: "success",
-                type: request.type,
-                name: request.name,
-            });
-        } catch (error) {
-            traceError("exportImportable", error, {
-                type: request.type,
-                name: request.name,
-            });
-            throw error;
-        }
-        return;
-    }
-    if (request.type === "NPC") {
-        try {
-            await exportNpc(ctx, {
-                name: request.name,
-                pos: request.pos,
-                importJsonPath: request.importJsonPath,
-                rootDir: request.rootDir,
-            });
-            traceRecord("exportImportable", {
-                stage: "success",
-                type: request.type,
-                name: request.name,
-            });
-        } catch (error) {
-            traceError("exportImportable", error, {
-                type: request.type,
-                name: request.name,
-            });
-            throw error;
-        }
-        return;
-    }
-    const _check: never = request;
-    void _check;
 }

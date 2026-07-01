@@ -192,9 +192,24 @@ describe("import.json basic passing behavior", () => {
         const command = result.value[0];
         assertImportable(command, "COMMAND");
         expect(command.name).toBe("visit");
+        expect(command.actions?.length).toBe(1);
         expect(command.mode).toBe("Targeted");
         expect(command.requiredPriority).toBe(3);
         expect(command.listed).toBe(false);
+        expect(hasHardErrors(result.diagnostics)).toBe(false);
+    });
+
+    it("parses a single NPC importable", () => {
+        const result = parseImportables(caseFilePath("npc"));
+
+        expect(result.value.length).toBe(1);
+        const npc = result.value[0];
+        assertImportable(npc, "NPC");
+        expect(npc.name).toBe("&aGuide");
+        expect(npc.pos).toEqual({ x: 1, y: 64, z: -2 });
+        expect(npc.leftClickActions?.length).toBe(1);
+        expect(npc.rightClickActions?.length).toBe(1);
+        expect(npc.leftClickRedirect).toBe(true);
         expect(hasHardErrors(result.diagnostics)).toBe(false);
     });
 
@@ -389,6 +404,17 @@ describe("import.json diagnostics readability", () => {
         expect(
             result.diagnostics.some((diagnostic) =>
                 diagnostic.message.includes("Duplicate item name 'Token'")
+            )
+        ).toBe(true);
+    });
+
+    it("reports duplicate NPC positions", () => {
+        const result = parseImportables(caseFilePath("duplicate_npcs"));
+
+        expect(hasHardErrors(result.diagnostics)).toBe(true);
+        expect(
+            result.diagnostics.some((diagnostic) =>
+                diagnostic.message.includes("Duplicate NPC position '1,64,-2'")
             )
         ).toBe(true);
     });

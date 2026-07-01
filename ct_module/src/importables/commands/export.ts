@@ -15,7 +15,6 @@ import { observedSlotsToActions } from "../../housingSync/observedActions";
 import { upsertImportableEntry } from "../../project/importJsonMutations";
 import { writeCapturedItems } from "../../exporter/writeCapturedItems";
 import { ensureParentDirs } from "../../utils/filesystem";
-import { withExportSession } from "../exportSession";
 import {
     openCommandSettings,
     openExistingCommandActionsEditor,
@@ -79,7 +78,7 @@ export async function exportCommand(
     ctx: TaskContext,
     options: ExportCommandOptions
 ): Promise<void> {
-    return withExportSession(() => exportCommandInner(ctx, options));
+    return exportCommandInner(ctx, options);
 }
 
 async function exportCommandInner(

@@ -9,14 +9,14 @@ export type PhaseUnits = {
     applying: number;
 };
 
-type ImportRunRowStatus =
+type TaskRunRowStatus =
     | "queued"
     | "current"
     | "imported"
     | "skipped"
     | "failed";
 
-type SyncProgress = {
+type ListSyncProgress = {
     completedUnits: number;
     totalUnits: number;
     parent: {
@@ -30,17 +30,17 @@ export type ProgressPayload = {
     completedUnits: number;
     totalUnits: number;
     phaseUnits: PhaseUnits;
-    sync: SyncProgress;
+    sync: ListSyncProgress;
     preserveApplyingEstimate?: boolean;
 };
 
-export type ImportableEntry = {
+export type TaskProgressEntry = {
     key: string;
-    status: ImportRunRowStatus;
+    status: TaskRunRowStatus;
     totalUnits: number;
 };
 
-export type ImportProgressActive = {
+export type TaskProgressActive = {
     key: string;
     type: Importable["type"];
     identity: string;
@@ -48,10 +48,10 @@ export type ImportProgressActive = {
     completedUnits: number;
     totalUnits: number;
     phaseUnits: PhaseUnits;
-    sync: SyncProgress | null;
+    sync: ListSyncProgress | null;
 };
 
-export type ImportProgress = {
+export type TaskProgress = {
     completedUnits: number;
     totalUnits: number;
     /**
@@ -60,15 +60,15 @@ export type ImportProgress = {
      * failure banner. Null while the run is healthy.
      */
     failure?: { key: string; message: string } | null;
-    active: ImportProgressActive | null;
+    active: TaskProgressActive | null;
     /**
      * Per-key snapshots of importables that completed pass-1 (read +
      * hydrate) but haven't reached pass-2 (apply). The queue mini bar
      * uses these to keep showing pass-1 progress on rows the active
      * cursor has moved past.
      */
-    parked: { [key: string]: ImportProgressActive };
-    rows: readonly ImportableEntry[];
+    parked: { [key: string]: TaskProgressActive };
+    rows: readonly TaskProgressEntry[];
 };
 
 /**
@@ -80,13 +80,13 @@ export type ImportProgress = {
  * fixed op count: the total is known, and the bar/ETA can be displayed
  * as exact rather than approximate.
  */
-export function isImportTotalLocked(progress: ImportProgress): boolean {
+export function isTaskTotalLocked(progress: TaskProgress): boolean {
     if (progress.active === null) return true;
     return progress.active.phase === "applying" || progress.active.phase === "done";
 }
 
-export function countImportablesByStatus(
-    progress: ImportProgress
+export function countTaskRowsByStatus(
+    progress: TaskProgress
 ): { completed: number; failed: number; total: number } {
     let completed = 0;
     let failed = 0;

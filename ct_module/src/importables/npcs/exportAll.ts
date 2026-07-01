@@ -15,7 +15,7 @@ import {
     npcExportReferencesExist,
     type NpcExportEntry,
 } from "../../project/paths";
-import { ExportResult, withExportSession } from "../exportSession";
+import type { ExportResult } from "../exportSession";
 import { exportNpcWithSharedState } from "./export";
 import {
     createNpcLookupCache,
@@ -38,7 +38,7 @@ export async function exportAllNpcs(
     ctx: TaskContext,
     options: ExportAllNpcsOptions
 ): Promise<ExportResult> {
-    return withExportSession(() => exportAllNpcsInner(ctx, options));
+    return exportAllNpcsInner(ctx, options);
 }
 
 function exportEntryForLiveNpc(entry: NpcListEntry): NpcExportEntry {

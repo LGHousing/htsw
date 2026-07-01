@@ -7,7 +7,7 @@ import {
 import TaskContext from "../../tasks/context";
 import type { ImportableItem } from "htsw/types";
 import { isTaskCancelled } from "../../tasks/manager";
-import { ExportResult, withExportSession } from "../exportSession";
+import type { ExportResult } from "../exportSession";
 import { writeCapturedItems } from "../../exporter/writeCapturedItems";
 import {
     htslTargetsForRegionExport,
@@ -31,7 +31,7 @@ export async function exportAllRegions(
     ctx: TaskContext,
     options: ExportAllRegionsOptions
 ): Promise<ExportResult> {
-    return withExportSession(() => exportAllRegionsInner(ctx, options));
+    return exportAllRegionsInner(ctx, options);
 }
 
 function findRegion(

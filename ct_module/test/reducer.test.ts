@@ -4,11 +4,11 @@ import {
     initialReducerState,
     reduce,
 } from "../src/housingSync/progress/reducer";
-import type { ImportEvent } from "../src/housingSync/importEvents";
+import type { SyncEvent } from "../src/housingSync/syncEvents";
 
 const baseRow = { totalUnits: 10 };
 
-function emit(events: ImportEvent[]) {
+function emit(events: SyncEvent[]) {
     let s = initialReducerState();
     for (const e of events) s = reduce(s, e);
     return s;

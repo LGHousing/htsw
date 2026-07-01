@@ -20,7 +20,7 @@ let dismissedLiveImport = false;
 let lastLivePath: string | null = null;
 let liveImportPathProvider: (() => string | null) | null = null;
 
-export function setLiveImportPathProvider(fn: () => string | null): void {
+export function setLiveTaskPathProvider(fn: () => string | null): void {
     liveImportPathProvider = fn;
 }
 
@@ -52,7 +52,7 @@ export function closeLiveTab(): void {
     markGuiDirty();
 }
 
-export function onImportRunningChanged(wasRunning: boolean, isRunning: boolean): void {
+export function onTaskRunningChanged(wasRunning: boolean, isRunning: boolean): void {
     if (!wasRunning && isRunning) {
         dismissedLiveImport = false;
         lastLivePath = null;

@@ -1,7 +1,7 @@
 /// <reference types="../../../../../CTAutocomplete" />
 
 import { TaskManager } from "../../../../tasks/manager";
-import { setImportRunning } from "../../../../housingSync/runtimeState";
+import { setTaskRunning } from "../../../../tasks/runningState";
 import { getExportImportJsonPath, getHousingUuid } from "../../../state";
 import { showToast } from "../../../toast";
 import { createExportProgressSink } from "../../../right-panel/import-tab/exportProgress";
@@ -10,6 +10,10 @@ import { exportAllFunctions } from "../../../../importables/functions/exportAll"
 import { getParseAt } from "../../../parsing/parses";
 import type { ImportableItem } from "htsw/types";
 import { resetEventContainers } from "../../../../tasks/specifics/waitFor";
+import {
+    clearActiveExportContext,
+    setActiveExportContext,
+} from "../../../../exporter/activeExport";
 import {
     deleteImportableCache,
     houseTypeScanned,
@@ -69,15 +73,16 @@ export function deepReadHouseFunctions(onlyNames?: string[]): void {
     if (uuid === null) return;
     readInFlight = true;
     TaskManager.run(async (ctx) => {
-        setImportRunning(true);
-        // Boundary purge, mirroring import/export: leaked waiters from a prior
-        // failed run re-run per packet and jitter input until purged.
-        const purged = resetEventContainers();
-        if (purged > 0) {
-            ChatLib.chat(`&8[htsw] purged ${purged} leaked event waiter(s) from a prior run.`);
-        }
+        setActiveExportContext(ctx);
+        setTaskRunning(true);
         let result;
         try {
+            // Boundary purge, mirroring import/export: leaked waiters from a prior
+            // failed run re-run per packet and jitter input until purged.
+            const purged = resetEventContainers();
+            if (purged > 0) {
+                ChatLib.chat(`&8[htsw] purged ${purged} leaked event waiter(s) from a prior run.`);
+            }
             const destParse = getParseAt(getExportImportJsonPath());
             result = await exportAllFunctions(ctx, {
                 importJsonPath: getExportImportJsonPath(),
@@ -101,7 +106,8 @@ export function deepReadHouseFunctions(onlyNames?: string[]): void {
                 ),
             });
         } finally {
-            setImportRunning(false);
+            clearActiveExportContext(ctx);
+            setTaskRunning(false);
             readInFlight = false;
         }
         if (result.failed > 0) {

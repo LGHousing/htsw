@@ -1,6 +1,6 @@
 import type { Importable } from "htsw/types";
 
-import { importableKey } from "../../importCache/paths";
+import { importableKey } from "../../importables/identity";
 
 /**
  * Canonicalize the path component so the same file referenced as
@@ -9,7 +9,7 @@ import { importableKey } from "../../importCache/paths";
  * the level this layer cares about (slash direction only — the importer
  * doesn't need the GUI's htsw-relative collapsing).
  */
-export function importProgressKey(
+export function taskProgressKey(
     type: Importable["type"],
     identity: string,
     sourcePath: string

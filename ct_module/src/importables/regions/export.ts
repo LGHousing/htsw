@@ -10,7 +10,7 @@ import {
 } from "../../housingSync/itemCapture";
 import type { ProgressHandler } from "../../housingSync/progress/types";
 import { timedWaitForMenu } from "../../housingSync/gui/menuWait";
-import { actionSummaryHasActions } from "../../housingSync/fields/loreParsing";
+import { shallowActionListHasActions } from "../../housingSync/fields/loreParsing";
 import { tryWriteImportableCache } from "../../importCache";
 import { observedSlotsToActions } from "../../housingSync/observedActions";
 import { upsertImportableEntry } from "../../project/importJsonMutations";
@@ -18,7 +18,6 @@ import { ensureParentDirs } from "../../utils/filesystem";
 import { htslTargetsForRegionExport, type HtslExportTarget } from "../../project/paths";
 import { writeCapturedItems } from "../../exporter/writeCapturedItems";
 import TaskContext from "../../tasks/context";
-import { withExportSession } from "../exportSession";
 import { listAllRegions, type RegionListEntry } from "./listRegions";
 import { openRegionEditor } from "./shared";
 
@@ -64,7 +63,7 @@ async function readRegionActionList(
     }
 
     const slot = ctx.getItemSlot(slotName);
-    if (!actionSummaryHasActions(slot)) return undefined;
+    if (!shallowActionListHasActions(slot)) return undefined;
 
     slot.click();
     await timedWaitForMenu(ctx, "menuClickWait");
@@ -165,7 +164,7 @@ export async function exportRegion(
     ctx: TaskContext,
     options: ExportRegionOptions
 ): Promise<void> {
-    return withExportSession(() => exportRegionInner(ctx, options));
+    return exportRegionInner(ctx, options);
 }
 
 async function exportRegionInner(

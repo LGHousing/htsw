@@ -15,7 +15,7 @@ import {
     sendCreativeInventoryAction,
     waitForAnySetSlot,
 } from "./gui/packets";
-import { traceNote } from "./trace/importTrace";
+import { traceNote } from "./trace/taskTrace";
 
 const SCRATCH_PACKET_SLOT = 26;
 const INVENTORY_SIZE = 36;

@@ -33,7 +33,7 @@ import {
     type SubListKind,
 } from "../../parsing/importablePaths";
 import { moveImportableEntry } from "../../../project/moveImportable";
-import { importableIdentity } from "../../../importCache/paths";
+import { importableIdentity } from "../../../importables/identity";
 import { houseDisplayName } from "../../../importCache/aliases";
 import {
     removeImportableEntry,
@@ -53,7 +53,7 @@ import {
     readImportableCache,
 } from "../../../importCache/cache";
 import { addToQueue, makeImportableQueueItem, queueItemKey, removeFromQueueKey } from "../../right-panel/import-tab/queue";
-import { isImportRunning } from "../../../housingSync/runtimeState";
+import { isTaskRunning } from "../../../tasks/runningState";
 import { composeFileMenu, composeImportableMenu } from "../../menus/fileMenu";
 import { autoTrackRefresh, queueModifiedFromPath } from "../../autoTrack";
 import { SourceDir, SourceFile, removeSource } from "./source";
@@ -1371,7 +1371,7 @@ function toggleImportableInQueue(
     checkKey: string,
     checked: boolean
 ): void {
-    if (checked && isImportRunning()) return; // would remove — locked mid-run
+    if (checked && isTaskRunning()) return; // would remove — locked mid-run
     const nowChecked = toggleImportableChecked(checkKey);
     const item = makeImportableQueueItem(imp, parent.fullPath);
     if (nowChecked) addToQueue(item);

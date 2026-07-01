@@ -299,7 +299,7 @@ export function readListItemNote(slot: ItemSlot): string | undefined {
     return noteLines.join("\n");
 }
 
-export function actionSummaryHasActions(slot: ItemSlot): boolean {
+export function shallowActionListHasActions(slot: ItemSlot): boolean {
     const lore = slot.getItem().getLore();
     let inActions = false;
     for (let i = 0; i < lore.length; i++) {

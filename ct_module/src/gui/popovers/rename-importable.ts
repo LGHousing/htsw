@@ -7,7 +7,7 @@ import type { Importable } from "htsw/types";
 import { renameImportableEntry, type Section } from "../../project/importJsonMutations";
 import { markParseStale, requestParse } from "../parsing/parses";
 import { bumpTreeRevision } from "../left-panel/importables/rowModel";
-import { importableIdentity } from "../../importCache/paths";
+import { importableIdentity } from "../../importables/identity";
 
 let editingValue = "";
 let editingFor: string = "";

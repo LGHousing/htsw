@@ -2,6 +2,7 @@
     "commands": [
         {
             "name": "visit",
+            "actions": "command.htsl",
             "mode": "Targeted",
             "requiredPriority": 3,
             "listed": false

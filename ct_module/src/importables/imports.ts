@@ -3,11 +3,10 @@ import { Importable } from "htsw/types";
 
 import TaskContext from "../tasks/context";
 import {
-    importableIdentity,
-    importableKey,
     type ImportableTrustPlan,
     type TrustPlan,
 } from "../importCache";
+import { importableIdentity, importableKey } from "./identity";
 import {
     applyImportableEventPlan,
     eventPlanIsNoOp,
@@ -52,7 +51,7 @@ import {
     type RegionImportPlan,
 } from "./regions/import";
 import type { ItemRegistry } from "./itemRegistry";
-import type { ImportEventHandler } from "../housingSync/importEvents";
+import type { SyncEventHandler } from "../housingSync/syncEvents";
 import type { ItemCaptureRegistry } from "../housingSync/itemCapture";
 import type { NpcLookupCache } from "./npcs/listNpcs";
 
@@ -71,7 +70,7 @@ export type ImportSession = {
     items: ItemRegistry;
     housingUuid: string;
     trust: TrustPlan;
-    events: ImportEventHandler | undefined;
+    events: SyncEventHandler | undefined;
     itemCaptures?: ItemCaptureRegistry;
     npcLookup: NpcLookupCache;
 };

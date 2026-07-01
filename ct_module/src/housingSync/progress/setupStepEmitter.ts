@@ -1,4 +1,4 @@
-import type { ImportEventHandler } from "../importEvents";
+import type { SyncEventHandler } from "../syncEvents";
 
 /**
  * Build a setup-step emitter for one importable's per-type import.
@@ -16,7 +16,7 @@ import type { ImportEventHandler } from "../importEvents";
  * the call site.
  */
 export function createSetupStepEmitter(
-    events: ImportEventHandler | undefined,
+    events: SyncEventHandler | undefined,
     total: number
 ): (label: string) => void {
     let step = 0;

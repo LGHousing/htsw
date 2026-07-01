@@ -20,8 +20,6 @@ export {
 } from "./hash";
 
 export {
-    importableIdentity,
-    importableKey,
     itemSnbtCachePath,
     interactDataCachePath,
 } from "./paths";

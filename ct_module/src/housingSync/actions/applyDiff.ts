@@ -25,11 +25,11 @@ import {
 import type {
     ActionPath,
     DiffSummary,
-    ImportEventHandler,
+    SyncEventHandler,
     PlannedOp,
     ProgressScope,
-} from "../importEvents";
-import { actionPathForIndex } from "../importEvents";
+} from "../syncEvents";
+import { actionPathForIndex } from "../syncEvents";
 import {
     COST,
     actionOperationApplyUnits,
@@ -332,7 +332,7 @@ function summarizeDiff(
 }
 
 function emitApplyProgress(
-    events: ImportEventHandler | null | undefined,
+    events: SyncEventHandler | null | undefined,
     scope: ProgressScope,
     phaseUnits: PhaseUnits,
     completedUnits: number,
@@ -365,7 +365,7 @@ async function applyActionListPlanInner(
     session: ActionListApplyOptions["session"],
     listPath?: ActionPath,
     phaseUnits?: PhaseUnits,
-    events?: ImportEventHandler | null,
+    events?: SyncEventHandler | null,
     progressScope: ProgressScope = { kind: "topLevel" },
     onSnapshot?: (readCurrent: () => Array<Action | null>) => void,
     applyNestedActions?: ApplyNestedActionList

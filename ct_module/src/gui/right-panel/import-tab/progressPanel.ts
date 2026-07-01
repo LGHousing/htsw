@@ -36,20 +36,20 @@ import { cancelActiveImport } from "./importController";
 import { isCurrentHouseTrusted } from "../../state";
 import {
     getCurrentPhaseEtaSeconds,
-    getImportElapsedMs,
-    getImportEtaSeconds,
-    getImportEtcMs,
-    getImportMsPerUnit,
-    getImportProgress,
-    getImportProgressFraction,
+    getTaskElapsedMs,
+    getTaskEtaSeconds,
+    getTaskEtcMs,
+    getTaskMsPerUnit,
+    getTaskProgress,
+    getTaskProgressFraction,
     getSessionVerb,
     isEtaRough,
-    setActiveImportPath,
-    setImportProgress,
-} from "./importProgress";
+    setActiveTaskPath,
+    setTaskProgress,
+} from "./taskProgress";
 import {
-    countImportablesByStatus,
-    isImportTotalLocked,
+    countTaskRowsByStatus,
+    isTaskTotalLocked,
 } from "../../../housingSync/progress/types";
 
 const COLOR_BAR_BG = COLOR_PANEL_BORDER;
@@ -82,11 +82,11 @@ function formatClockTime(ms: number): string {
 // ── ETA + label text ───────────────────────────────────────────────────
 
 function progressMsPerUnitText(): string {
-    return `${Math.round(getImportMsPerUnit())}ms/u`;
+    return `${Math.round(getTaskMsPerUnit())}ms/u`;
 }
 
 export function progressElapsedText(): string {
-    const ms = getImportElapsedMs();
+    const ms = getTaskElapsedMs();
     if (ms === null) return "";
     return `§7${formatEtaSeconds(ms / 1000)}`;
 }
@@ -99,7 +99,7 @@ const PHASE_LABELS: { [k: string]: { title: string; etaSuffix: string } } = {
 };
 
 function opCounterText(): string {
-    const prog = getImportProgress();
+    const prog = getTaskProgress();
     if (prog === null || prog.active === null) return "";
     const sync = prog.active.sync;
     if (sync === null) return "";
@@ -116,7 +116,7 @@ function phaseEtaText(suffix: string): string {
     // Setup and untrusted reading are discovery — their totals aren't known
     // yet, so a countdown there would be invented. (Reading also self-
     // suppresses: its remaining stays ~0 until the read finishes.)
-    const p = getImportProgress();
+    const p = getTaskProgress();
     const phase = p !== null && p.active !== null ? p.active.phase : null;
     const phaseKnown =
         isCurrentHouseTrusted() ||
@@ -130,7 +130,7 @@ function phaseEtaText(suffix: string): string {
 }
 
 export function currentPhaseLabel(): string {
-    const p = getImportProgress();
+    const p = getTaskProgress();
     if (p === null || p.active === null) return "";
     if (getSessionVerb() === "export") return "§lExporting";
     if (getSessionVerb() === "read") return "§lReading";
@@ -212,13 +212,13 @@ function rowPhaseChildrenFor(snapshot: {
 }
 
 function activeRowPhaseChildren(): Element[] {
-    const p = getImportProgress();
+    const p = getTaskProgress();
     if (p === null || p.active === null) return [];
     return rowPhaseChildrenFor(p.active);
 }
 
 function parkedRowPhaseChildren(key: string): Element[] {
-    const p = getImportProgress();
+    const p = getTaskProgress();
     if (p === null) return [];
     const parked = p.parked[key];
     if (parked === undefined) return [];
@@ -234,7 +234,7 @@ export function progressBar(): Element {
             background: COLOR_BAR_BG,
         },
         children: () => {
-            const p = getImportProgress();
+            const p = getTaskProgress();
             if (p === null || p.totalUnits <= 0) return [];
             const children: Element[] = [];
             for (let i = 0; i < p.rows.length; i++) {
@@ -285,7 +285,7 @@ export function progressBar(): Element {
     });
 }
 
-// ── The "live importer" panel ──────────────────────────────────────────
+// ── The live task panel ─────────────────────────────────────────────────
 
 function operationProgressText(completed: number, total: number): string {
     const safeTotal = Math.max(1, total);
@@ -294,7 +294,7 @@ function operationProgressText(completed: number, total: number): string {
 }
 
 export function progressTotalEtaLine(): string {
-    const p = getImportProgress();
+    const p = getTaskProgress();
     if (p === null) return "";
     const rate = progressMsPerUnitText();
     // Until the apply phase, the per-importable apply cost is just a rough
@@ -302,13 +302,13 @@ export function progressTotalEtaLine(): string {
     // been read + hydrated. Showing a total before then is fiction, so we
     // withhold it (the per-phase ETA still ticks). Exception: trust on, where
     // cache baselines make every importable's diff cost real from the start.
-    const ready = isImportTotalLocked(p) || isCurrentHouseTrusted();
+    const ready = isTaskTotalLocked(p) || isCurrentHouseTrusted();
     if (!ready) {
         return `total calculating… · ${rate}`;
     }
-    const secs = getImportEtaSeconds();
+    const secs = getTaskEtaSeconds();
     if (secs === null) return `total calculating… · ${rate}`;
-    const etc = getImportEtcMs();
+    const etc = getTaskEtcMs();
     const etcText = etc === null ? "" : ` · ETC ${formatClockTime(etc)}`;
     // "~" marks a session whose item sizes are pure fallbacks (nothing cached
     // or parsed to size from), so the total is a guess, not an estimate.
@@ -317,18 +317,18 @@ export function progressTotalEtaLine(): string {
 }
 
 function progressPosition(): {
-    current: NonNullable<ReturnType<typeof getImportProgress>>["active"];
+    current: NonNullable<ReturnType<typeof getTaskProgress>>["active"];
     currentNumber: number;
     completedImportables: number;
     failedImportables: number;
     totalImportables: number;
     allDone: boolean;
 } | null {
-    const p = getImportProgress();
+    const p = getTaskProgress();
     if (p === null) return null;
     const current = p.active;
     const { completed: completedImportables, failed: failedImportables, total: totalImportables } =
-        countImportablesByStatus(p);
+        countTaskRowsByStatus(p);
     const allDone = completedImportables + failedImportables >= totalImportables;
     let currentNumber = completedImportables + 1;
     if (current !== null) {
@@ -365,7 +365,7 @@ export function progressHeadlineText(): string {
 }
 
 function progressStatusText(): string {
-    const p = getImportProgress();
+    const p = getTaskProgress();
     if (p === null) return "";
     const pos = progressPosition();
     if (pos === null) return "";
@@ -410,17 +410,17 @@ export function progressControlButtons(): Element[] {
                 hoverBackground: COLOR_BUTTON_DANGER_HOVER,
             },
             onClick: () => {
-                if (getImportProgress() === null) return;
+                if (getTaskProgress() === null) return;
                 cancelActiveImport();
-                setImportProgress(null);
-                setActiveImportPath(null);
+                setTaskProgress(null);
+                setActiveTaskPath(null);
                 ChatLib.chat(`&c[htsw] cancelling task…`);
             },
         }),
     ];
 }
 
-export function liveImporterFooterPanel(): Element {
+export function liveTaskFooterPanel(): Element {
     return Container({
         style: {
             width: { kind: "grow" },
@@ -461,7 +461,7 @@ export function liveImporterFooterPanel(): Element {
                         style: { gap: 6, height: { kind: "px", value: 12 }, align: "center" },
                         children: [
                             Text({
-                                text: () => `${Math.floor(getImportProgressFraction() * 100)}%`,
+                                text: () => `${Math.floor(getTaskProgressFraction() * 100)}%`,
                                 color: COLOR_TEXT,
                                 style: { width: { kind: "px", value: 30 } },
                             }),

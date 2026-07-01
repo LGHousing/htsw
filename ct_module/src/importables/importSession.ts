@@ -3,14 +3,13 @@ import type { Importable, ImportableItem } from "htsw/types";
 
 import TaskContext from "../tasks/context";
 import { isTaskCancelled } from "../tasks/manager";
-import { isImportTraceEnabled, traceNote } from "../housingSync/trace/importTrace";
+import { isTaskTraceEnabled, traceNote } from "../housingSync/trace/taskTrace";
 import { FileSystemFileLoader } from "../utils/fileLoaders";
 import {
     buildTrustPlan,
-    importableIdentity,
-    importableKey,
     tryWriteImportableCache,
 } from "../importCache";
+import { importableIdentity, importableKey } from "./identity";
 import { printDiagnostic } from "../tui/diagnostics";
 import { createItemRegistry } from "./itemRegistry";
 import { resetFunctionNameSession } from "./functions/listFunctions";
@@ -29,9 +28,9 @@ import {
     expandClickActionItemDependencies,
     referencedItemNames,
 } from "./itemDependencies";
-import type { ImportEventHandler } from "../housingSync/importEvents";
-import type { ImportableEntry } from "../housingSync/progress/types";
-import { importProgressKey } from "../housingSync/progress/keys";
+import type { SyncEventHandler } from "../housingSync/syncEvents";
+import type { TaskProgressEntry } from "../housingSync/progress/types";
+import { taskProgressKey } from "../housingSync/progress/keys";
 import {
     estimateImportableUnits,
     setupUnitsForImportable,
@@ -45,7 +44,7 @@ export type ImportSelection = {
     housingUuid: string;
     sourcePath: string;
     parsed?: ImportablesParseResult;
-    events?: ImportEventHandler;
+    events?: SyncEventHandler;
 };
 
 function toImportDiagnostic(
@@ -146,14 +145,14 @@ export async function importSelectedImportables(
         return {
             importable,
             identity,
-            key: importProgressKey(importable.type, identity, selection.sourcePath),
+            key: taskProgressKey(importable.type, identity, selection.sourcePath),
             rowIndex,
             trustPlan: tp,
             units: estimateImportableUnits(importable, tp?.entry ?? null, tp?.trustMode === true),
         };
     });
 
-    const rows: ImportableEntry[] = rowsMeta.map((row) => ({
+    const rows: TaskProgressEntry[] = rowsMeta.map((row) => ({
         key: row.key,
         status: "queued",
         totalUnits: row.units,
@@ -211,7 +210,7 @@ export async function importSelectedImportables(
                 identity: row.identity,
                 rowIndex: row.rowIndex,
             }, error);
-            if (isImportTraceEnabled()) {
+            if (isTaskTraceEnabled()) {
                 const stack = error as { stack?: string; rhinoException?: { getScriptStackTrace?: () => string } };
                 const trace = stack.rhinoException?.getScriptStackTrace?.() ?? stack.stack;
                 if (trace) traceNote("read-stack", String(trace).split("\n").slice(0, 8).join(" | "));

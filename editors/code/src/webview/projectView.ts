@@ -114,9 +114,8 @@ async function addImportable(
         const section = SECTION_BY_KIND[kind];
         const readFs = projectFsWithOpenDocuments();
 
-        // Functions/events get a starter .htsl; the export-target helper resolves
-        // the declaring file (the picked file, for a new entry) and a collision-
-        // free filename. Other importables are pure JSON entries.
+        // Action-backed importables get a starter .htsl; the export-target
+        // helper resolves the declaring file and a collision-free filename.
         let targetImportJson = importJsonPath;
         const entry: Record<string, unknown> = {};
         const created: string[] = [];
@@ -137,7 +136,7 @@ async function addImportable(
             entry[kind === "event" ? "event" : "name"] = id;
             entry.actions = target.htslReference;
         } else {
-            // Region/menu/npc are pure-JSON entries, but the name may already
+            // Region/menu entries are pure JSON, but the name may already
             // be declared in an INCLUDED file — resolve that declaring file
             // first (like the function/event path) so the duplicate check sees
             // it and we don't write a second declaration into the parent.

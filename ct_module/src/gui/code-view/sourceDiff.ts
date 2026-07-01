@@ -6,7 +6,7 @@
  * The STATIC producer of the View tab's diff colors — "what would change vs
  * last import," shown when you're not importing.
  *
- * Decoupled from the live importer: live import events do NOT write here.
+ * Decoupled from live task events: import/read/export progress does NOT write here.
  * Computation is lazy — invoked the first time the View tab decorator asks
  * about a file. Cached entries are dropped (and recomputed on next access)
  * when:
@@ -31,7 +31,7 @@ import { matchByHash } from "../../importCache/actionMatch";
 import type { DiffState } from "./diffPalette";
 import { readImportableCache } from "../../importCache/cache";
 import { actionHash, conditionHash } from "../../importCache/hash";
-import { importableIdentity } from "../../importCache/paths";
+import { importableIdentity } from "../../importables/identity";
 import { cacheEntryListHashes } from "../../importCache/status";
 import {
     importableFilePaths,

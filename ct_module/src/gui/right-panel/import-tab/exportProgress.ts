@@ -2,10 +2,9 @@
 
 /**
  * GUI-driving implementation of `ExportProgressSink`: a thin adapter that
- * translates sink calls into the importer's `ImportEvent`s and runs them
- * through the SAME progress reducer the import session uses — one snapshot
- * builder for both pipelines (parking, failure rows, monotonic clamping all
- * come from the reducer, not re-implemented here).
+ * translates sink calls into the existing progress event stream and runs them
+ * through the same reducer as import/read — one snapshot builder for every
+ * task pipeline.
  *
  * Each item is sized in the SAME cost-model units the importer uses
  * (`estimateImportableCost` over its action lists), so the learned ms/unit
@@ -21,16 +20,16 @@
 
 import type { Importable } from "htsw/types";
 
-import type { ImportEvent } from "../../../housingSync/importEvents";
-import { importProgressKey } from "../../../housingSync/progress/keys";
+import type { SyncEvent } from "../../../housingSync/syncEvents";
+import { taskProgressKey } from "../../../housingSync/progress/keys";
 import { initialReducerState, reduce } from "../../../housingSync/progress/reducer";
 import type { ExportProgressSink } from "../../../housingSync/progress/types";
 import { estimateImportableCost } from "../../../housingSync/progress/costs";
 import { readImportableCache } from "../../../importCache/cache";
-import { importableIdentity } from "../../../importCache/paths";
+import { importableIdentity } from "../../../importables/identity";
 import { getHousingUuid } from "../../state";
 import { canonicalPath, requestParse } from "../../parsing/parses";
-import { setEtaRough, setImportProgress, setSessionVerb } from "./importProgress";
+import { setEtaRough, setTaskProgress, setSessionVerb } from "./taskProgress";
 import {
     addToQueue,
     makeExportQueueItem,
@@ -54,11 +53,11 @@ export function createExportProgressSink(
 
     const canonicalImportJsonPath = canonicalPath(importJsonPath);
     const keyFor = (name: string): string =>
-        importProgressKey(type, name, canonicalImportJsonPath);
+        taskProgressKey(type, name, canonicalImportJsonPath);
 
-    const emit = (event: ImportEvent): void => {
+    const emit = (event: SyncEvent): void => {
         state = reduce(state, event);
-        setImportProgress(state.progress);
+        setTaskProgress(state.progress);
     };
 
     const finishCurrent = (status: "imported" | "failed", error?: string): void => {
@@ -188,7 +187,7 @@ export function createExportProgressSink(
                 finishCurrent("imported");
                 emit({ kind: "sessionFinished" });
             }
-            setImportProgress(null);
+            setTaskProgress(null);
             for (const it of queueItems) removeFromQueueKey(queueItemKey(it));
             queueItems.length = 0;
         },

@@ -6,9 +6,9 @@ import {
     buildTrustPlan,
     deleteImportableCache,
     importableHash,
-    importableIdentity,
     itemSnbtCachePath,
 } from "../importCache";
+import { importableIdentity } from "../importables/identity";
 import { createItemRegistry } from "../importables/itemRegistry";
 import {
     importSelectedImportables,
@@ -30,7 +30,7 @@ import {
     listAllMenuNames,
     resetMenuNameSession,
 } from "../importables/menus/listMenus";
-import type { ImportEventHandler } from "../housingSync/importEvents";
+import type { SyncEventHandler } from "../housingSync/syncEvents";
 import type {
     ActionListOperation,
     ConditionListOperation,
@@ -52,9 +52,9 @@ import {
     waitForCreativeMode,
 } from "../housingSync/sideEffects";
 import {
-    getImportTracePath,
-    setImportTraceEnabled,
-} from "../housingSync/trace/importTrace";
+    getTaskTracePath,
+    setTaskTraceEnabled,
+} from "../housingSync/trace/taskTrace";
 import { loadTestFixtures, type ParsedTestFixture } from "./fixtures";
 import { coverageForFixtures, emitCoverageReport } from "./report";
 
@@ -78,8 +78,8 @@ export async function runLiveTestSuite(
     // The suite is the diagnostic harness for intermittent importer hangs, so
     // every run leaves a post-mortem trace whether or not it failed — there's
     // no "turn it on first, then reproduce" step to forget.
-    const tracePath = setImportTraceEnabled(true);
-    ctx.displayMessage(`&7[htsw test] import trace → &f${tracePath}`);
+    const tracePath = setTaskTraceEnabled(true);
+    ctx.displayMessage(`&7[htsw test] task trace → &f${tracePath}`);
     try {
         gmcOnImportStart();
         if (!(await waitForCreativeMode(ctx))) {
@@ -108,8 +108,8 @@ export async function runLiveTestSuite(
             coveredFixtures.length
         );
     } finally {
-        setImportTraceEnabled(false);
-        ctx.displayMessage(`&7[htsw test] trace saved → &f${getImportTracePath()}`);
+        setTaskTraceEnabled(false);
+        ctx.displayMessage(`&7[htsw test] trace saved → &f${getTaskTracePath()}`);
     }
 }
 
@@ -534,7 +534,7 @@ async function readHouseState(ctx: TaskContext): Promise<{
     };
 }
 
-function createSuiteEventHandler(failures: string[]): ImportEventHandler {
+function createSuiteEventHandler(failures: string[]): SyncEventHandler {
     return {
         emit: (event) => {
             if (event.kind !== "importableFinished" || event.status !== "failed") return;

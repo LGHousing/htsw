@@ -1,7 +1,7 @@
 /// <reference types="../../../CTAutocomplete" />
 
-import type { ImportEvent } from "../importEvents";
-import type { ImportProgress } from "../progress/types";
+import type { SyncEvent } from "../syncEvents";
+import type { TaskProgress } from "../progress/types";
 import { currentMsPerUnit } from "../progress/eta";
 import { createJsonlTrace } from "../../trace/jsonl";
 
@@ -72,9 +72,9 @@ export function getProgressTracePath(): string {
 }
 
 export function traceProgressEvent(
-    event: ImportEvent,
-    before: ImportProgress,
-    after: ImportProgress
+    event: SyncEvent,
+    before: TaskProgress,
+    after: TaskProgress
 ): void {
     if (!progressTrace.isEnabled()) return;
     const scope = event.kind === "progress" ? event.scope.kind : "";

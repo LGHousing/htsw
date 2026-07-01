@@ -3,7 +3,7 @@ import type { ItemSlot } from "../tasks/specifics/slots";
 import type { ItemRegistry } from "../importables/itemRegistry";
 import type { ItemCaptureRegistry } from "./itemCapture";
 import type { ProgressHandler, PhaseUnits } from "./progress/types";
-import type { ActionPath, ImportEventHandler } from "./importEvents";
+import type { ActionPath, SyncEventHandler } from "./syncEvents";
 
 export type UiFieldKind =
     | "boolean"
@@ -186,7 +186,7 @@ export type ConditionListDiff = {
 type ReadContext = {
     itemRegistry?: ItemRegistry;
     itemCaptures?: ItemCaptureRegistry;
-    events?: ImportEventHandler;
+    events?: SyncEventHandler;
     listPath?: ActionPath;
     emitSnapshot?: () => void;
 };

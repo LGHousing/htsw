@@ -17,7 +17,6 @@ import { observedSlotsToActions } from "../../housingSync/observedActions";
 import { upsertImportableEntry } from "../../project/importJsonMutations";
 import { writeCapturedItems } from "../../exporter/writeCapturedItems";
 import { ensureParentDirs } from "../../utils/filesystem";
-import { withExportSession } from "../exportSession";
 import {
     openFunctionEditor,
     openFunctionSettings,
@@ -118,7 +117,7 @@ export async function exportFunction(
     ctx: TaskContext,
     options: ExportFunctionOptions
 ): Promise<void> {
-    return withExportSession(() => exportFunctionInner(ctx, options));
+    return exportFunctionInner(ctx, options);
 }
 
 async function exportFunctionInner(

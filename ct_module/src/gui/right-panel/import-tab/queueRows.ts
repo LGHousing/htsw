@@ -3,7 +3,7 @@
 /**
  * Queue rows for the import tab: the visible list of items waiting to be
  * imported, with expand/collapse for import.json bundles and per-row mini
- * progress bars driven by the live import session.
+ * progress bars driven by the live task session.
  */
 
 import type { Importable } from "htsw/types";
@@ -32,8 +32,8 @@ import {
     isImportableChecked,
     toggleImportableChecked,
 } from "../../state";
-import { getQueueItemRunState, isCurrentQueueItem } from "./importProgress";
-import { importableIdentity } from "../../../importCache/paths";
+import { getQueueItemRunState, isCurrentQueueItem } from "./taskProgress";
+import { importableIdentity } from "../../../importables/identity";
 import { buildCacheStatusRow } from "../../../importCache/status";
 import {
     isQueueSessionItem,
@@ -43,7 +43,7 @@ import {
 } from "./queue";
 import { requestParse } from "../../parsing/parses";
 import { orderImportablesForImportSession } from "../../../importables/importSession";
-import { isImportRunning } from "../../../housingSync/runtimeState";
+import { isTaskRunning } from "../../../tasks/runningState";
 import { phaseSegment } from "./progressPanel";
 
 function willBeSkipped(item: QueueItem): boolean {
@@ -266,7 +266,7 @@ export function queueRow(item: QueueItem): Element {
                     }),
                     // No removal while an import is running — the queue is
                     // locked for the duration of the run.
-                    isImportRunning() || isQueueSessionItem(queueItemKey(item))
+                    isTaskRunning() || isQueueSessionItem(queueItemKey(item))
                         ? Container({
                               style: { width: { kind: "px", value: 14 }, height: { kind: "grow" } },
                               children: [],

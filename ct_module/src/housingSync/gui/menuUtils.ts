@@ -26,7 +26,7 @@ import {
 import { getVisiblePaginatedItemSlots } from "./paginatedList";
 import { COST } from "../progress/costs";
 import { recordTimedOp } from "../progress/timing";
-import { isImportTraceEnabled, traceNote } from "../trace/importTrace";
+import { isTaskTraceEnabled, traceNote } from "../trace/taskTrace";
 import type { WaitForPromise } from "../../tasks/specifics/waitFor";
 
 const GuiEditSign = Java.type("net.minecraft.client.gui.inventory.GuiEditSign");
@@ -79,7 +79,7 @@ async function scanPagesForOption(
         const slot = ctx.tryGetMenuItemSlot(name);
         if (slot !== null) return slot;
 
-        if (isImportTraceEnabled()) {
+        if (isTaskTraceEnabled()) {
             traceNote("paginate", `page ${page}: ${describeVisibleOptions(ctx)}`);
         }
 

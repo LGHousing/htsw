@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { actionSummaryHasActions } from "../src/housingSync/fields/loreParsing";
+import { shallowActionListHasActions } from "../src/housingSync/fields/loreParsing";
 
 function slotWithLore(lore: string[]) {
     return {
@@ -10,9 +10,9 @@ function slotWithLore(lore: string[]) {
     } as never;
 }
 
-describe("actionSummaryHasActions", () => {
+describe("shallowActionListHasActions", () => {
     test("treats Actions: - None as empty", () => {
-        expect(actionSummaryHasActions(slotWithLore([
+        expect(shallowActionListHasActions(slotWithLore([
             "Edit the actions.",
             "Actions:",
             "- None",
@@ -22,7 +22,7 @@ describe("actionSummaryHasActions", () => {
     });
 
     test("detects summarized action entries", () => {
-        expect(actionSummaryHasActions(slotWithLore([
+        expect(shallowActionListHasActions(slotWithLore([
             "Actions:",
             "- Trigger Function",
             "- Display Menu",
@@ -32,6 +32,6 @@ describe("actionSummaryHasActions", () => {
     });
 
     test("defaults to true when no summary exists", () => {
-        expect(actionSummaryHasActions(slotWithLore(["Click to edit!"]))).toBe(true);
+        expect(shallowActionListHasActions(slotWithLore(["Click to edit!"]))).toBe(true);
     });
 });

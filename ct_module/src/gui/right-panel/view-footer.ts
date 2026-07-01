@@ -12,7 +12,7 @@ import {
     COLOR_TEXT_FAINT,
 } from "../lib/theme";
 import { clearImportableChecks } from "../state";
-import { getActiveImportLabel, getImportProgress } from "./import-tab/importProgress";
+import { getActiveTaskLabel, getTaskProgress } from "./import-tab/taskProgress";
 import {
     clearQueue,
     getQueue,
@@ -20,7 +20,7 @@ import {
     queueDisplayGroups,
     type QueueItem,
 } from "./import-tab/queue";
-import { isImportRunning } from "../../housingSync/runtimeState";
+import { isTaskRunning } from "../../tasks/runningState";
 import {
     isQueueImportJsonExpanded,
     queueImportJsonChildren,
@@ -29,7 +29,7 @@ import {
     queueWillSkipCount,
 } from "./import-tab/queueRows";
 import { importControl } from "./import-tab/importButtons";
-import { liveImporterFooterPanel } from "./import-tab/progressPanel";
+import { liveTaskFooterPanel } from "./import-tab/progressPanel";
 
 let queueExpanded = true;
 
@@ -58,7 +58,7 @@ export function queueSummary(): Element {
     children.push(
         Text({
             text: () => {
-                const active = getActiveImportLabel();
+                const active = getActiveTaskLabel();
                 const n = getQueueLength();
                 const skipped = queueWillSkipCount(getQueue());
                 const skipText = skipped === 0 ? "" : ` · ${skipped} skip`;
@@ -71,7 +71,7 @@ export function queueSummary(): Element {
         }),
         Button({
             text: "Clear",
-            disabled: () => isImportRunning() || getQueueLength() === 0,
+            disabled: () => isTaskRunning() || getQueueLength() === 0,
             style: {
                 width: { kind: "px", value: 38 },
                 height: { kind: "grow" },
@@ -158,7 +158,7 @@ export function viewFooter(): Element {
         children: () => {
             const children: Child[] = [divider(), queueSummary()];
             if (isQueueExpanded()) children.push(queueScroll());
-            if (getImportProgress() !== null) children.push(liveImporterFooterPanel());
+            if (getTaskProgress() !== null) children.push(liveTaskFooterPanel());
             children.push(importControl());
             return children;
         },

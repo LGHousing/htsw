@@ -12,7 +12,7 @@ import { LeftPanel } from "./left-panel";
 import { RightPanel } from "./right-panel";
 import { BottomToolbar } from "./bottom-toolbar";
 import { ChatPanel } from "./chat";
-import { getImportProgress } from "./right-panel/import-tab/importProgress";
+import { getTaskProgress } from "./right-panel/import-tab/taskProgress";
 import { COLOR_PANEL } from "./lib/theme";
 
 // Smallest chat panel we'll render (input bar + a couple scrollback rows) and
@@ -52,7 +52,7 @@ let cachedImportBounds: ContainerBounds | null = null;
 
 function getStableBounds(): ContainerBounds | null {
     const live = getContainerBoundsOverlay();
-    const importing = getImportProgress() !== null;
+    const importing = getTaskProgress() !== null;
     if (!importing) {
         cachedImportBounds = null;
         return live;

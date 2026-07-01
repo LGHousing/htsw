@@ -2,7 +2,7 @@ import type { Action, Importable } from "htsw/types";
 
 import type { ImportableCacheEntry } from "./cache";
 import { actionHash, conditionHash, importableHash } from "./hash";
-import { importableIdentity, importableKey } from "./paths";
+import { importableIdentity, importableKey } from "../importables/identity";
 import { readImportableCache } from "./cache";
 import { cacheEntryHash, cacheEntryListHashes, sameHashList } from "./status";
 import { matchByHash } from "./actionMatch";
@@ -101,6 +101,11 @@ function forEachTopLevelActionList(
         case "FUNCTION":
             visit("actions", importable.actions ?? []);
             break;
+        case "COMMAND":
+            if (importable.actions !== undefined) {
+                visit("actions", importable.actions);
+            }
+            break;
         case "EVENT":
             visit("actions", importable.actions);
             break;
@@ -113,6 +118,14 @@ function forEachTopLevelActionList(
             }
             break;
         case "ITEM":
+            if (importable.leftClickActions !== undefined) {
+                visit("leftClickActions", importable.leftClickActions);
+            }
+            if (importable.rightClickActions !== undefined) {
+                visit("rightClickActions", importable.rightClickActions);
+            }
+            break;
+        case "NPC":
             if (importable.leftClickActions !== undefined) {
                 visit("leftClickActions", importable.leftClickActions);
             }

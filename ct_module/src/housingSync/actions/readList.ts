@@ -44,8 +44,8 @@ import {
     isEmptyPaginatedPlaceholder,
     readPaginatedList,
 } from "../gui/paginatedList";
-import type { ActionPath, ImportEventHandler } from "../importEvents";
-import { actionPathForIndex, actionPathKey } from "../importEvents";
+import type { ActionPath, SyncEventHandler } from "../syncEvents";
+import { actionPathForIndex, actionPathKey } from "../syncEvents";
 import {
     COST,
     hydrationEntryUnits,
@@ -270,7 +270,7 @@ export async function readActionList(
 
 function emitObservedSnapshot(
     observed: readonly ObservedActionSlot[],
-    events?: ImportEventHandler
+    events?: SyncEventHandler
 ): void {
     if (events === undefined) return;
     const snapshot: Array<Action | null> = [];

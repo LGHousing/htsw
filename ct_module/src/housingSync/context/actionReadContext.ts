@@ -13,8 +13,8 @@ import type { ReadConditionListOptions } from "../actions/conditions/readList";
 import {
     nestedActionPath,
     type ActionPath,
-    type ImportEventHandler,
-} from "../importEvents";
+    type SyncEventHandler,
+} from "../syncEvents";
 import type { ItemCaptureRegistry } from "../itemCapture";
 
 export type ActionReadContext = {
@@ -43,7 +43,7 @@ export type CreateActionReadContextArgs = {
     actionType: Action["type"];
     itemRegistry?: ItemRegistry;
     itemCaptures?: ItemCaptureRegistry;
-    events?: ImportEventHandler;
+    events?: SyncEventHandler;
     emitSnapshot?: () => void;
     readNestedActions: ReadNestedActions;
     readNestedConditions: ReadNestedConditions;

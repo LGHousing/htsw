@@ -1,35 +1,34 @@
 /// <reference types="../../../CTAutocomplete" />
 
-import type { ImportEvent } from "../importEvents";
+import type { SyncEvent } from "../syncEvents";
 import { createJsonlTrace } from "../../trace/jsonl";
 import { recordImportDiagnostic } from "../../diagnostics/importDiagnosticsBuffer";
 
-const importTrace = createJsonlTrace("./htsw/import-trace.jsonl");
+const taskTrace = createJsonlTrace("./htsw/task-trace.jsonl");
 
-export function setImportTraceEnabled(next: boolean): string {
-    return next ? importTrace.start() : importTrace.stop();
+export function setTaskTraceEnabled(next: boolean): string {
+    return next ? taskTrace.start() : taskTrace.stop();
 }
 
-export function getImportTracePath(): string {
-    return importTrace.path();
+export function getTaskTracePath(): string {
+    return taskTrace.path();
 }
 
-export function isImportTraceEnabled(): boolean {
-    return importTrace.isEnabled();
+export function isTaskTraceEnabled(): boolean {
+    return taskTrace.isEnabled();
 }
 
 /**
- * One free-form breadcrumb in the import trace — the single home for the
- * developer notes (paginate scans, swallowed ack timeouts, read stacks) that
- * only matter while diagnosing an import. Written only when tracing is on
- * (`/htsw trace on` or a test run), so it costs nothing otherwise. Callers
- * passing an expensive `message` (a menu scan, a stack dump) must guard it with
- * `isImportTraceEnabled()`.
+ * One free-form breadcrumb in the task trace. This is the single home for
+ * developer notes from live menu tasks, including imports and exports. Written
+ * only when tracing is on (`/htsw trace on` or a test run), so it costs nothing
+ * otherwise. Callers passing an expensive `message` must guard it with
+ * `isTaskTraceEnabled()`.
  */
 export function traceNote(category: string, message: string): void {
     recordImportDiagnostic("note", { category, message });
-    if (!importTrace.isEnabled()) return;
-    importTrace.write({ kind: "note", category, message });
+    if (!taskTrace.isEnabled()) return;
+    taskTrace.write({ kind: "note", category, message });
 }
 
 export function traceMenuWait(
@@ -37,14 +36,14 @@ export function traceMenuWait(
     details: Record<string, unknown>
 ): void {
     recordImportDiagnostic("menuWait", { stage, ...details });
-    if (!importTrace.isEnabled()) return;
-    importTrace.write({ kind: "menuWait", stage, ...details });
+    if (!taskTrace.isEnabled()) return;
+    taskTrace.write({ kind: "menuWait", stage, ...details });
 }
 
 export function traceRecord(category: string, details: Record<string, unknown>): void {
     recordImportDiagnostic(category, details);
-    if (!importTrace.isEnabled()) return;
-    importTrace.write({ kind: category, ...details });
+    if (!taskTrace.isEnabled()) return;
+    taskTrace.write({ kind: category, ...details });
 }
 
 export function traceError(
@@ -55,22 +54,22 @@ export function traceError(
     const message = error instanceof Error ? error.message : String(error);
     const record = { ...(details ?? {}), error: message };
     recordImportDiagnostic(category, record);
-    if (!importTrace.isEnabled()) return;
-    importTrace.write({ kind: "failure", category, ...record });
+    if (!taskTrace.isEnabled()) return;
+    taskTrace.write({ kind: "failure", category, ...record });
 }
 
-export function traceImportEvent(event: ImportEvent): void {
-    recordImportDiagnostic("importEvent", {
+export function traceSyncEvent(event: SyncEvent): void {
+    recordImportDiagnostic("syncEvent", {
         event: event.kind,
         key: "key" in event ? event.key : undefined,
         status: "status" in event ? event.status : undefined,
         error: "error" in event ? event.error : undefined,
         path: "path" in event ? event.path : undefined,
     });
-    if (!importTrace.isEnabled()) return;
+    if (!taskTrace.isEnabled()) return;
     switch (event.kind) {
         case "importableStarted":
-            importTrace.write({
+            taskTrace.write({
                 kind: "phase",
                 phase: "read",
                 importable: `${event.type} ${event.identity}`,
@@ -78,15 +77,15 @@ export function traceImportEvent(event: ImportEvent): void {
             });
             return;
         case "importableReactivated":
-            importTrace.write({ kind: "phase", phase: "apply", rowIndex: event.rowIndex });
+            taskTrace.write({ kind: "phase", phase: "apply", rowIndex: event.rowIndex });
             return;
         case "readStarted":
-            importTrace.write({ kind: "read", listPath: event.listPath });
+            taskTrace.write({ kind: "read", listPath: event.listPath });
             return;
         case "diffPlanned":
-            importTrace.write({ kind: "diffSummary", summary: event.summary });
+            taskTrace.write({ kind: "diffSummary", summary: event.summary });
             for (const op of event.operations) {
-                importTrace.write({
+                taskTrace.write({
                     kind: "op",
                     op: op.op,
                     path: op.path,
@@ -99,7 +98,7 @@ export function traceImportEvent(event: ImportEvent): void {
             }
             return;
         case "operationStarted":
-            importTrace.write({
+            taskTrace.write({
                 kind: "opStart",
                 op: event.op,
                 path: event.path,
@@ -107,7 +106,7 @@ export function traceImportEvent(event: ImportEvent): void {
             });
             return;
         case "importableFinished":
-            importTrace.write({
+            taskTrace.write({
                 kind: event.status === "failed" ? "failure" : "phase",
                 phase: "finish",
                 status: event.status,

@@ -10,8 +10,8 @@ import type {
     DiffFinalState,
     DiffOpKind,
     DiffSummary,
-} from "../../../housingSync/importEvents";
-import { actionPathKey } from "../../../housingSync/importEvents";
+} from "../../../housingSync/syncEvents";
+import { actionPathKey } from "../../../housingSync/syncEvents";
 import { tokenizeHtsl } from "../syntax";
 import { normalizeHtswPath } from "../../lib/pathDisplay";
 import { markGuiDirty } from "../../lib/dirty";

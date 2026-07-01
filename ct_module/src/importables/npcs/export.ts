@@ -9,7 +9,7 @@ import {
     type InventorySnapshot,
 } from "../../housingSync/itemCapture";
 import { timedWaitForMenu } from "../../housingSync/gui/menuWait";
-import { actionSummaryHasActions } from "../../housingSync/fields/loreParsing";
+import { shallowActionListHasActions } from "../../housingSync/fields/loreParsing";
 import type { ProgressHandler } from "../../housingSync/progress/types";
 import { observedSlotsToActions } from "../../housingSync/observedActions";
 import { tryWriteImportableCache } from "../../importCache";
@@ -22,7 +22,6 @@ import {
 import TaskContext from "../../tasks/context";
 import { writeCapturedItems } from "../../exporter/writeCapturedItems";
 import { ensureParentDirs } from "../../utils/filesystem";
-import { withExportSession } from "../exportSession";
 import {
     openNpcLeftClickActions,
     openNpcRightClickActions,
@@ -129,32 +128,29 @@ export async function exportNpcWithSharedState(
     await openNpcEditorForPos(ctx, options.entry.pos, shared.npcLookup);
     const leftSlot = ctx.getMenuItemSlot("Left Click Actions");
     const rightSlot = ctx.getMenuItemSlot("Right Click Actions");
-    const leftSummaryHasActions = actionSummaryHasActions(leftSlot);
-    const rightSummaryHasActions = actionSummaryHasActions(rightSlot);
+    const leftShallowHasActions = shallowActionListHasActions(leftSlot);
+    const rightShallowHasActions = shallowActionListHasActions(rightSlot);
 
-    let leftClickRedirect: boolean | undefined;
     let leftActions: Action[] | undefined;
     let rightActions: Action[] | undefined;
 
-    if (leftSummaryHasActions || rightSummaryHasActions) {
-        leftSlot.click();
-        await timedWaitForMenu(ctx, "menuClickWait");
-        leftClickRedirect = readLeftClickRedirect(ctx);
+    leftSlot.click();
+    await timedWaitForMenu(ctx, "menuClickWait");
+    const leftClickRedirect = readLeftClickRedirect(ctx);
 
-        if (leftSummaryHasActions) {
-            const actions = await readOpenNpcActionList(
-                ctx,
-                shared.itemCaptures,
-                options.onReadProgress
-            );
-            if (actions.length > 0) {
-                leftActions = actions;
-            }
+    if (leftShallowHasActions) {
+        const actions = await readOpenNpcActionList(
+            ctx,
+            shared.itemCaptures,
+            options.onReadProgress
+        );
+        if (actions.length > 0) {
+            leftActions = actions;
         }
     }
     ctx.checkCancelled();
 
-    if (rightSummaryHasActions) {
+    if (rightShallowHasActions) {
         const actions = await readNpcActionList(
             ctx,
             options.entry,
@@ -177,15 +173,13 @@ export async function exportNpcWithSharedState(
         writeActionFile(ctx, options.rightClickTarget, rightActions);
     }
 
-    const hasActions = leftActions !== undefined || rightActions !== undefined;
-
     const importable: ImportableNpc = {
         type: "NPC",
         name: options.entry.name,
         pos: options.entry.pos,
         ...(leftActions !== undefined ? { leftClickActions: leftActions } : {}),
         ...(rightActions !== undefined ? { rightClickActions: rightActions } : {}),
-        ...(hasActions && leftClickRedirect !== undefined ? { leftClickRedirect } : {}),
+        leftClickRedirect,
     };
 
     upsertImportableEntry(options.declaringJsonPath, "npcs", {
@@ -197,7 +191,7 @@ export async function exportNpcWithSharedState(
         ...(rightActions !== undefined
             ? { rightClickActions: options.rightClickTarget.htslReference }
             : {}),
-        ...(hasActions && leftClickRedirect !== undefined ? { leftClickRedirect } : {}),
+        leftClickRedirect,
     });
 
     await tryWriteImportableCache(ctx, importable, "exporter");
@@ -212,7 +206,7 @@ export async function exportNpc(
     ctx: TaskContext,
     options: ExportNpcOptions
 ): Promise<void> {
-    return withExportSession(() => exportNpcInner(ctx, options));
+    return exportNpcInner(ctx, options);
 }
 
 async function exportNpcInner(

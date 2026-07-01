@@ -1,7 +1,7 @@
 import * as json from "jsonc-parser";
 import { walkImportJsonTree } from "./includeWalk";
 import {
-    identityField,
+    importableEntryMatchesIdentity,
     removeImportableEntry,
     resolveImportableFile,
     upsertImportableEntry,
@@ -53,7 +53,6 @@ function refsOfOtherEntries(
     fs: ProjectFs,
     entryJsonPath: string,
     excludeSection: Section,
-    excludeIdField: string,
     excludeIdentity: string
 ): Set<string> {
     const out = new Set<string>();
@@ -65,8 +64,7 @@ function refsOfOtherEntries(
             const items = sectionNode.children ?? [];
             for (let i = 0; i < items.length; i++) {
                 if (section === excludeSection) {
-                    const idNode = json.findNodeAtLocation(items[i], [excludeIdField]);
-                    if (idNode && idNode.type === "string" && idNode.value === excludeIdentity) {
+                    if (importableEntryMatchesIdentity(section, items[i], excludeIdentity)) {
                         continue;
                     }
                 }
@@ -86,7 +84,6 @@ function readEntryValue(
     fs: ProjectFs,
     importJsonPath: string,
     section: Section,
-    idField: string,
     identity: string
 ): Record<string, unknown> | null {
     if (!fs.exists(importJsonPath)) return null;
@@ -98,8 +95,7 @@ function readEntryValue(
     if (!sectionNode || sectionNode.type !== "array") return null;
     const items = sectionNode.children ?? [];
     for (let i = 0; i < items.length; i++) {
-        const idNode = json.findNodeAtLocation(items[i], [idField]);
-        if (idNode && idNode.type === "string" && idNode.value === identity) {
+        if (importableEntryMatchesIdentity(section, items[i], identity)) {
             return json.getNodeValue(items[i]) as Record<string, unknown>;
         }
     }
@@ -118,7 +114,6 @@ export function moveImportableEntry(
     identity: string,
     destJsonPath: string
 ): MoveImportableResult {
-    const idField = identityField(section);
     const sourceJsonPath = resolveImportableFile(fs, entryJsonPath, section, identity);
     if (canonKey(sourceJsonPath) === canonKey(destJsonPath)) {
         return { ok: false, message: `'${identity}' is already declared in that file.` };
@@ -127,14 +122,14 @@ export function moveImportableEntry(
         return { ok: false, message: `Destination doesn't exist: ${destJsonPath}` };
     }
 
-    const entry = readEntryValue(fs, sourceJsonPath, section, idField, identity);
+    const entry = readEntryValue(fs, sourceJsonPath, section, identity);
     if (entry === null) {
         return { ok: false, message: `Couldn't find '${identity}' in ${sourceJsonPath}` };
     }
 
     const srcDir = fs.parentDir(sourceJsonPath);
     const destDir = fs.parentDir(destJsonPath);
-    const otherRefs = refsOfOtherEntries(fs, entryJsonPath, section, idField, identity);
+    const otherRefs = refsOfOtherEntries(fs, entryJsonPath, section, identity);
 
     const refSlots: RefSlot[] = [];
     collectFileRefs(entry, refSlots);

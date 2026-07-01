@@ -9,13 +9,13 @@ import {
     setHousingUuid,
 } from "../../state";
 import {
-    createImportRows,
-    createImportProgress,
+    createTaskRows,
+    createTaskProgress,
     clearLastFinishedProgress,
-    getImportProgress,
-    setActiveImportPath,
-    setImportProgress,
-} from "./importProgress";
+    getTaskProgress,
+    setActiveTaskPath,
+    setTaskProgress,
+} from "./taskProgress";
 import {
     addToQueue,
     beginQueueSession,
@@ -37,7 +37,7 @@ import {
     orderImportablesForImportSession,
 } from "../../../importables/importSession";
 import type { ExportResult } from "../../../importables/exportSession";
-import { importableIdentity } from "../../../importCache/paths";
+import { importableIdentity } from "../../../importables/identity";
 import { getCurrentHousingUuid } from "../../../importCache/housingId";
 import { TaskManager, isTaskCancelled } from "../../../tasks/manager";
 import type TaskContext from "../../../tasks/context";
@@ -48,18 +48,18 @@ import { shortPath } from "../../lib/pathDisplay";
 import { importableSourcePath } from "../../parsing/importablePaths";
 import { attributeDiagnostics } from "../../cache-status/diagnosticCounts";
 import type {
-    ImportEventHandler,
-    ImportEvent,
-} from "../../../housingSync/importEvents";
-import { importProgressKey } from "../../../housingSync/progress/keys";
+    SyncEventHandler,
+    SyncEvent,
+} from "../../../housingSync/syncEvents";
+import { taskProgressKey } from "../../../housingSync/progress/keys";
 import type { ExportProgressSink } from "../../../housingSync/progress/types";
 import { createExportProgressSink } from "./exportProgress";
 import { initialReducerState, reduce } from "../../../housingSync/progress/reducer";
-import { traceImportEvent } from "../../../housingSync/trace/importTrace";
+import { traceSyncEvent } from "../../../housingSync/trace/taskTrace";
 import { traceProgressEvent } from "../../../housingSync/trace/progressTrace";
 import { invalidateSourceDiffForImportable } from "../../code-view/sourceDiff";
 import { showToast } from "../../toast";
-import { isImportRunning, setImportRunning } from "../../../housingSync/runtimeState";
+import { isTaskRunning, setTaskRunning } from "../../../tasks/runningState";
 import { gmcOnImportStart, playImportSuccessSound, waitForCreativeMode } from "../../../housingSync/sideEffects";
 import { resetStepGate } from "../../../housingSync/stepGate";
 import { resetEventContainers } from "../../../tasks/specifics/waitFor";
@@ -81,7 +81,11 @@ import {
 } from "./livePreview";
 import { setFocusLineId } from "./focusedLine";
 import { autoTrackRefresh } from "../../autoTrack";
-import { cancelActiveExport } from "../../../exporter/activeExport";
+import {
+    cancelActiveExport,
+    clearActiveExportContext,
+    setActiveExportContext,
+} from "../../../exporter/activeExport";
 
 
 /**
@@ -131,11 +135,11 @@ function editAffectsHeadLine(fieldsChanged: readonly string[]): boolean {
     return false;
 }
 
-type SessionEventHandler = ImportEventHandler & {
+type SessionEventHandler = SyncEventHandler & {
     counts(): { imported: number; skipped: number; failed: number };
 };
 
-function createImportEventHandler(args: {
+function createSyncEventHandler(args: {
     parsed: ImportablesParseResult;
     sessionSourcePath: string;
     trustMode: boolean;
@@ -148,21 +152,21 @@ function createImportEventHandler(args: {
     const importablesByKey = new Map<string, Importable>();
     for (const imp of args.parsed.value) {
         importablesByKey.set(
-            importProgressKey(imp.type, importableIdentity(imp), args.sessionSourcePath),
+            taskProgressKey(imp.type, importableIdentity(imp), args.sessionSourcePath),
             imp
         );
     }
 
     const sync = (): void => {
-        setImportProgress(state.progress);
-        setActiveImportPath(activeViewPath);
+        setTaskProgress(state.progress);
+        setActiveTaskPath(activeViewPath);
     };
 
     // Mapped type: one handler per event kind, parameter narrowed to the
     // specific event shape. TS enforces exhaustiveness — a new kind on the
     // union surfaces here as a typecheck error.
     type Handlers = {
-        [E in ImportEvent as E["kind"]]: (event: E) => void;
+        [E in SyncEvent as E["kind"]]: (event: E) => void;
     };
     const handlers: Handlers = {
         sessionStarted: () => {},
@@ -259,7 +263,7 @@ function createImportEventHandler(args: {
             const before = state.progress;
             state = reduce(state, event);
             traceProgressEvent(event, before, state.progress);
-            traceImportEvent(event);
+            traceSyncEvent(event);
             (handlers[event.kind] as (e: typeof event) => void)(event);
             sync();
         },
@@ -380,7 +384,7 @@ export function startImport(explicit?: readonly ImportQueueItem[]): void {
     // panel already reads "done" but the task hasn't fully unwound) would launch
     // a SECOND concurrent import. Two tasks driving the same Housing menus
     // deadlock — the classic "menu opened once then stopped".
-    if (isImportRunning() || TaskManager.hasRunningTasks()) {
+    if (isTaskRunning() || TaskManager.hasRunningTasks()) {
         ChatLib.chat("&c[htsw] An import (or another task) is already running — wait for it to finish or cancel it first.");
         return;
     }
@@ -412,11 +416,11 @@ export function startImport(explicit?: readonly ImportQueueItem[]): void {
     // Concatenate every batch's ordered importables for the run-row
     // tracking; the per-row UI only needs the flat list, not the
     // per-batch grouping.
-    let rows = createImportRows(batches[0].importables, batches[0].sourcePath);
+    let rows = createTaskRows(batches[0].importables, batches[0].sourcePath);
     for (let i = 1; i < batches.length; i++) {
-        rows = rows.concat(createImportRows(batches[i].importables, batches[i].sourcePath));
+        rows = rows.concat(createTaskRows(batches[i].importables, batches[i].sourcePath));
     }
-    setImportProgress(createImportProgress({
+    setTaskProgress(createTaskProgress({
         totalUnits: 1,
         rows,
     }));
@@ -432,7 +436,7 @@ export function startImport(explicit?: readonly ImportQueueItem[]): void {
     }
     beginQueueSession();
 
-    setImportRunning(true);
+    setTaskRunning(true);
     // Snapshot this session's queue keys so the post-run cleanup can drop
     // exactly these items even if a newer import supersedes the session.
     const sessionItemKeys: string[] = (explicit ?? getQueue().filter(isImportQueueItem)).map(queueItemKey);
@@ -465,7 +469,7 @@ export function startImport(explicit?: readonly ImportQueueItem[]): void {
                 ChatLib.chat("&e[htsw] Still not in creative after /gmc — item spawns may fail. Check your gamemode permissions on this plot.");
             }
             for (const batch of batches) {
-                const events = createImportEventHandler({
+                const events = createSyncEventHandler({
                     parsed: batch.parsed,
                     sessionSourcePath: batch.sourcePath,
                     trustMode,
@@ -497,9 +501,9 @@ export function startImport(explicit?: readonly ImportQueueItem[]): void {
             }
         } finally {
             activeImportCtx = null;
-            setActiveImportPath(null);
+            setActiveTaskPath(null);
             autoTrackRefresh();
-            setImportRunning(false);
+            setTaskRunning(false);
             const elapsed = formatElapsedSeconds((Date.now() - startedAt) / 1000);
             if (cancelled) {
                 showToast(
@@ -508,8 +512,8 @@ export function startImport(explicit?: readonly ImportQueueItem[]): void {
                 );
             } else if (importSucceeded) {
                 // Gate our own cue here: the overlay soundPlay interceptor only
-                // suppresses sounds while import progress is live, and this
-                // fires at completion — so the toggle must be checked directly.
+                // suppresses sounds while task progress is live, and this fires
+                // at completion — so the toggle must be checked directly.
                 if (!isImportSoundsMuted()) playImportSuccessSound();
                 showToast(
                     `Import complete in ${elapsed} · ${totalImported} imported, ${totalSkipped} skipped`,
@@ -522,7 +526,7 @@ export function startImport(explicit?: readonly ImportQueueItem[]): void {
                 // Surface the failure reason (read before clearing progress
                 // below) — a failure halts the whole run, so the *why* must be
                 // visible, not just "N failed".
-                const failure = getImportProgress()?.failure;
+                const failure = getTaskProgress()?.failure;
                 showToast(
                     failure
                         ? `Import failed: ${failure.message}`
@@ -531,7 +535,7 @@ export function startImport(explicit?: readonly ImportQueueItem[]): void {
                     8000
                 );
             }
-            setImportProgress(null);
+            setTaskProgress(null);
             // End the queue session after the 1.5s done-state window. A fully
             // successful queue run removes the session items (pending adds
             // stay); a cancel/failure keeps them for retry and just drops the
@@ -549,7 +553,7 @@ export function startImport(explicit?: readonly ImportQueueItem[]): void {
                 // The global session marking + last-finished progress belong to
                 // whichever import is live. Only clear them when nothing is
                 // running, so a stranded session can't leave the divider stuck.
-                if (!isImportRunning()) {
+                if (!isTaskRunning()) {
                     endQueueSession(false);
                     if (removeSessionItems) clearImportableChecks();
                     clearLastFinishedProgress();
@@ -557,7 +561,7 @@ export function startImport(explicit?: readonly ImportQueueItem[]): void {
             }, 1500);
         }
     }).catch((err: unknown) => {
-        setImportRunning(false);
+        setTaskRunning(false);
         ChatLib.chat(`&c[htsw] Import failed: ${err}`);
     });
 }
@@ -603,24 +607,25 @@ export function startExport(
         showToast("Nothing selected to export", 0xffe5bc4b);
         return;
     }
-    if (isImportRunning() || TaskManager.hasRunningTasks()) {
+    if (isTaskRunning() || TaskManager.hasRunningTasks()) {
         showToast("A task is already running — wait for it to finish", 0xffe5bc4b);
         return;
     }
     const dir = importJsonDir(importJsonPath);
     const count = names === undefined ? null : names.length;
     TaskManager.run(async (ctx) => {
-        setImportRunning(true);
-        // Same boundary purge the importer does: nothing legit is waiting when
-        // an export starts, so survivors are leaks — and a leaked packet waiter
-        // re-runs its predicate on every packet, lagging input even with no
-        // GUI open, until something purges it.
-        const purged = resetEventContainers();
-        if (purged > 0) {
-            ChatLib.chat(`&8[htsw] purged ${purged} leaked event waiter(s) from a prior run.`);
-        }
+        setActiveExportContext(ctx);
+        setTaskRunning(true);
         let result: ExportResult;
         try {
+            // Same boundary purge the importer does: nothing legit is waiting when
+            // an export starts, so survivors are leaks — and a leaked packet waiter
+            // re-runs its predicate on every packet, lagging input even with no
+            // GUI open, until something purges it.
+            const purged = resetEventContainers();
+            if (purged > 0) {
+                ChatLib.chat(`&8[htsw] purged ${purged} leaked event waiter(s) from a prior run.`);
+            }
             const destParse = getParseAt(importJsonPath);
             result = await spec.exportAll(ctx, {
                 importJsonPath,
@@ -638,7 +643,8 @@ export function startExport(
                 progress: createExportProgressSink(spec.type, importJsonPath),
             });
         } finally {
-            setImportRunning(false);
+            clearActiveExportContext(ctx);
+            setTaskRunning(false);
         }
         // The export rewrote the destination import.json; drop its cached parse
         // so the Houses drift icons re-read it now instead of showing the

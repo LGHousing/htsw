@@ -9,7 +9,7 @@ import {
     type CachedParse,
 } from "../../parsing/parses";
 import { importableFilePaths } from "../../parsing/importablePaths";
-import { importableIdentity } from "../../../importCache/paths";
+import { importableIdentity } from "../../../importables/identity";
 import { markGuiDirty } from "../../lib/dirty";
 
 /**

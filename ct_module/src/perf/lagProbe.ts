@@ -1,6 +1,6 @@
 /// <reference types="../../CTAutocomplete" />
 
-import { getImportProgress } from "../gui/right-panel/import-tab/importProgress";
+import { getTaskProgress } from "../gui/right-panel/import-tab/taskProgress";
 import { getParsePerfStats } from "../gui/parsing/parses";
 import { TaskManager } from "../tasks/manager";
 import { getEventContainerCounts } from "../tasks/specifics/waitFor";
@@ -57,7 +57,7 @@ function record(gapMs: number): void {
         at: Date.now(),
         gapMs,
         screen: screenName(),
-        importing: getImportProgress() !== null,
+        importing: getTaskProgress() !== null,
         taskRunning: TaskManager.hasRunningTasks(),
         waiters: getEventContainerCounts(),
         lastParse: lastParseSummary(),

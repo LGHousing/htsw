@@ -8,59 +8,60 @@ import {
 import {
     chatSeparator,
     stripSurroundingQuotes,
-} from "./utils/helpers";
-import { Simulator } from "./simulator/simulator";
-import { printDiagnostic, printDiagnostics } from "./tui/diagnostics";
-import { recompile } from "./recompile";
-import { TaskManager } from "./tasks/manager";
-import { FileSystemFileLoader } from "./utils/fileLoaders";
-import { commandUpdate, readLocalVersion } from "./autoUpdate";
-import { toggleHtswGui } from "./gui/overlay";
+} from "../utils/helpers";
+import { Simulator } from "../simulator/simulator";
+import { printDiagnostic, printDiagnostics } from "../tui/diagnostics";
+import { recompile } from "../recompile";
+import { TaskManager } from "../tasks/manager";
+import { FileSystemFileLoader } from "../utils/fileLoaders";
+import { commandUpdate, readLocalVersion } from "../autoUpdate";
+import { toggleHtswGui } from "../gui/overlay";
 import {
     getTimingStats,
     resetTimingStats,
-} from "./housingSync/progress/timing";
-import { COST } from "./housingSync/progress/costs";
+} from "../housingSync/progress/timing";
+import { COST } from "../housingSync/progress/costs";
 import {
     getEventContainerCounts,
     resetEventContainers,
-} from "./tasks/specifics/waitFor";
-import { getTreePerfStats } from "./gui/left-panel/importables/tree";
-import { resetOnboarding } from "./gui/persistence/onboarding";
-import { rearmTourAutoStart } from "./gui/popovers/tour";
+} from "../tasks/specifics/waitFor";
+import { getTreePerfStats } from "../gui/left-panel/importables/tree";
+import { resetOnboarding } from "../gui/persistence/onboarding";
+import { rearmTourAutoStart } from "../gui/popovers/tour";
 import {
-    getImportTracePath,
-    setImportTraceEnabled,
-} from "./housingSync/trace/importTrace";
+    getTaskTracePath,
+    setTaskTraceEnabled,
+} from "../housingSync/trace/taskTrace";
 import {
     getProgressTracePath,
     setProgressTraceEnabled,
-} from "./housingSync/trace/progressTrace";
+} from "../housingSync/trace/progressTrace";
 import {
     clearLagProbeSamples,
     getLagProbeSamples,
-} from "./perf/lagProbe";
-import { commandTest } from "./testSuite/command";
-import { getCurrentHousingUuid } from "./importCache";
-import { isInCreativeMode } from "./housingSync/sideEffects";
-import { appendActionsToOpenActionList } from "./housingSync/actions/applyDiff";
-import { createItemRegistry } from "./importables/itemRegistry";
-import { isImportRunning, setImportRunning } from "./housingSync/runtimeState";
-import { startImport } from "./gui/right-panel/import-tab/importController";
-import { canonicalPath, getParsePerfStats } from "./gui/parsing/parses";
-import { compactFileLabel } from "./gui/lib/pathDisplay";
-import { snbtFromItem } from "./housingSync/itemCapture";
+} from "../perf/lagProbe";
+import { commandTest } from "../testSuite/command";
+import { getCurrentHousingUuid } from "../importCache";
+import { isInCreativeMode } from "../housingSync/sideEffects";
+import { appendActionsToOpenActionList } from "../housingSync/actions/applyDiff";
+import { createItemRegistry } from "../importables/itemRegistry";
+import { isTaskRunning, setTaskRunning } from "../tasks/runningState";
+import { startImport } from "../gui/right-panel/import-tab/importController";
+import { canonicalPath, getParsePerfStats } from "../gui/parsing/parses";
+import { compactFileLabel } from "../gui/lib/pathDisplay";
+import { snbtFromItem } from "../housingSync/itemCapture";
 import {
     defaultExportRoot,
     PROJECTS_ROOT,
     resolveModuleRelativePath,
     snbtTargetForItemExport,
-} from "./project/paths";
-import { upsertImportableEntry } from "./project/importJsonMutations";
-import { ensureParentDirs } from "./utils/filesystem";
-import { openPathInOS } from "./utils/osShell";
-import { getItemFromSnbt } from "./utils/nbt";
-import { C10PacketCreativeInventoryAction } from "./utils/packets";
+} from "../project/paths";
+import { upsertImportableEntry } from "../project/importJsonMutations";
+import { ensureParentDirs } from "../utils/filesystem";
+import { openPathInOS } from "../utils/osShell";
+import { getItemFromSnbt } from "../utils/nbt";
+import { C10PacketCreativeInventoryAction } from "../utils/packets";
+import { registerExportSlashCommand } from "./export";
 
 type HtswSubcommand = {
     name: string;
@@ -133,8 +134,7 @@ const HTSW_SUBCOMMANDS: HtswSubcommand[] = [
 ];
 
 // Grouped under `/htsw debug` rather than scattered as flat top-level
-// subcommands — they only matter when diagnosing the importer, and a single
-// namespace keeps `/htsw` help readable.
+// subcommands, so the main `/htsw` help stays focused on user workflows.
 const DEBUG_SUBCOMMANDS: HtswSubcommand[] = [
     {
         name: "waiters",
@@ -165,7 +165,7 @@ const DEBUG_SUBCOMMANDS: HtswSubcommand[] = [
     },
     {
         name: "trace",
-        summary: "Per-op import trace JSONL for post-mortem",
+        summary: "Per-op task trace JSONL for post-mortem",
         run: commandTrace,
         usage: "trace [on|off]",
     },
@@ -189,12 +189,13 @@ function commandDebug(args: string[]): void {
     }
 }
 
-export function registerCommands() {
+export function registerSlashCommands() {
     register("command", (...args) => commandHtsw(args)).setName("htsw");
     register("command", (...args) => commandImport(args)).setName("import");
     register("command", (...args) => commandSimulator(args))
         .setName("simulator")
         .setAliases("sim");
+    registerExportSlashCommand();
 }
 
 function commandHtsw(args: string[]) {
@@ -241,12 +242,12 @@ function printHtswHelp(): void {
 
 function commandTrace(args: string[]): void {
     if (args[0] === "off" || args[0] === "stop") {
-        setImportTraceEnabled(false);
-        ChatLib.chat(`&7[htsw] import trace off · &f${getImportTracePath()}`);
+        setTaskTraceEnabled(false);
+        ChatLib.chat(`&7[htsw] task trace off · &f${getTaskTracePath()}`);
         return;
     }
-    const path = setImportTraceEnabled(true);
-    ChatLib.chat(`&a[htsw] import trace on · &f${path}`);
+    const path = setTaskTraceEnabled(true);
+    ChatLib.chat(`&a[htsw] task trace on · &f${path}`);
 }
 
 function commandGui(): void {
@@ -630,7 +631,7 @@ function isRawImportToken(token: string | undefined): boolean {
 }
 
 function startRawHtslImport(path: string): void {
-    if (isImportRunning() || TaskManager.hasRunningTasks()) {
+    if (isTaskRunning() || TaskManager.hasRunningTasks()) {
         ChatLib.chat("&c[htsw] An import (or another task) is already running — wait for it to finish first.");
         return;
     }
@@ -657,7 +658,7 @@ function startRawHtslImport(path: string): void {
 
     const items = createItemRegistry([], result.gcx);
     TaskManager.run(async (ctx) => {
-        setImportRunning(true);
+        setTaskRunning(true);
         try {
             const purged = resetEventContainers();
             if (purged > 0) {
@@ -677,10 +678,10 @@ function startRawHtslImport(path: string): void {
                 `&a[htsw] Appended ${count} action${count === 1 ? "" : "s"} from ${compactFileLabel(path)}`
             );
         } finally {
-            setImportRunning(false);
+            setTaskRunning(false);
         }
     }).catch((err: unknown) => {
-        setImportRunning(false);
+        setTaskRunning(false);
         if (err instanceof Diagnostic) {
             printDiagnostic(sm, err);
             return;
