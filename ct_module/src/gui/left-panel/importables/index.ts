@@ -65,6 +65,7 @@ function currentHouseTrustButton(): Element {
             background: trusted ? COLOR_TOGGLE_ON : COLOR_BUTTON,
             hoverBackground: trusted ? COLOR_TOGGLE_ON_HOVER : COLOR_BUTTON_HOVER,
         },
+        disabled: uuid === null,
         onClick: () => {
             if (uuid === null) return;
             setHouseTrust(uuid, !trusted);
@@ -74,7 +75,7 @@ function currentHouseTrustButton(): Element {
         children: [
             Icon({
                 name: trusted ? Icons.shieldCheck : Icons.shield,
-                color: trusted ? TRUST_ICON_ON : COLOR_TEXT_DIM,
+                color: trusted ? TRUST_ICON_ON : uuid === null ? COLOR_TEXT_FAINT : COLOR_TEXT_DIM,
                 style: {
                     width: { kind: "px", value: 12 },
                     height: { kind: "px", value: 12 },

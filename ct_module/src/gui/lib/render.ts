@@ -245,15 +245,16 @@ function renderItem(
     if (item.clipRect) pushScissor(item.clipRect);
 
     if (e.kind === "container") {
+        const disabled = e.disabled !== undefined && extract(e.disabled);
         const hoverBg =
             e.style.hoverBackground !== undefined
                 ? extract(e.style.hoverBackground)
                 : undefined;
         const baseBg =
             e.style.background !== undefined ? extract(e.style.background) : undefined;
-        const bg = hovered && e.onClick && hoverBg !== undefined ? hoverBg : baseBg;
+        const bg = hovered && !disabled && e.onClick && hoverBg !== undefined ? hoverBg : baseBg;
         if (bg !== undefined) Renderer.drawRect(bg, r.x, r.y, r.w, r.h);
-        if (e.onClick) {
+        if (e.onClick && !disabled) {
             const fa = clickFlashAlpha(r);
             if (fa > 0) {
                 const a = Math.round(fa * 255) & 0xff;
@@ -449,6 +450,7 @@ export function dispatchClick(
         const e = item.element;
         if (e.kind === "container" && (e.onClick || e.onDoubleClick)) {
             setFocusedInput(null);
+            if (e.disabled !== undefined && extract(e.disabled)) return true;
             if (e.onClick) registerClickFlash(item.rect);
             const isDouble =
                 button === 0 && consumeDoubleClick(item.rect, mouseX, mouseY);

@@ -312,6 +312,7 @@ function trustButton(uuid: string | null, trusted: boolean): Element {
             background: trusted ? COLOR_TOGGLE_ON : COLOR_BUTTON,
             hoverBackground: trusted ? COLOR_TOGGLE_ON_HOVER : COLOR_BUTTON_HOVER,
         },
+        disabled: !enabled,
         onClick: () => {
             if (uuid === null) return;
             setHouseTrust(uuid, !trusted);
@@ -321,7 +322,7 @@ function trustButton(uuid: string | null, trusted: boolean): Element {
         children: [
             Icon({
                 name: trusted ? Icons.shieldCheck : Icons.shield,
-                color: trusted ? TRUST_ICON_ON : COLOR_TEXT_DIM,
+                color: trusted ? TRUST_ICON_ON : enabled ? COLOR_TEXT_DIM : COLOR_TEXT_FAINT,
                 style: {
                     width: { kind: "px", value: 12 },
                     height: { kind: "px", value: 12 },
@@ -786,9 +787,6 @@ function exportActionBar(t: HouseContentType, uuid: string, totalCount: number):
         .items(uuid)
         .filter((i) => !exportedSet.has(i.name))
         .map((i) => i.name);
-    // Without a destination import.json every export path just toasts "pick a
-    // destination first", so grey the export split-button to say so up front.
-    // The Change button stays enabled — it's how you pick one.
     const hasDest = getExportImportJsonPath().trim() !== "";
     const destBound = hasDest ? boundHouseUuidOf(getExportImportJsonPath()) : null;
     const destBoundHere = destBound !== null && destBound === uuid;
@@ -851,6 +849,7 @@ function exportActionBar(t: HouseContentType, uuid: string, totalCount: number):
                               ? "Destination is already bound to this house"
                               : "Bind destination to this house",
                         tooltipColor: canBindDest ? COLOR_TEXT_DIM : COLOR_TEXT_FAINT,
+                        disabled: !canBindDest,
                         onClick: () => {
                             if (!canBindDest) return;
                             confirmRebind(getExportImportJsonPath(), uuid);
@@ -900,7 +899,11 @@ function exportActionBar(t: HouseContentType, uuid: string, totalCount: number):
                                 ? COLOR_BUTTON_PRIMARY_HOVER
                                 : COLOR_BUTTON,
                         },
+                        tooltip: hasDest ? undefined : "Choose a destination first",
+                        tooltipColor: COLOR_TEXT_FAINT,
+                        disabled: !hasDest,
                         onClick: () => {
+                            if (!hasDest) return;
                             if (t.export === undefined) return;
                             const exp = t.export;
                             if (selectedCount > 0) {
@@ -936,9 +939,13 @@ function exportActionBar(t: HouseContentType, uuid: string, totalCount: number):
                                 ? COLOR_BUTTON_PRIMARY_HOVER
                                 : COLOR_BUTTON,
                         },
+                        tooltip: hasDest ? undefined : "Choose a destination first",
+                        tooltipColor: COLOR_TEXT_FAINT,
+                        disabled: !hasDest,
                         // Anchor to the caret's rect (not the cursor) so the menu
                         // right-aligns under the button and drops up consistently.
                         onClick: (rect: Rect) => {
+                            if (!hasDest) return;
                             if (t.export === undefined) return;
                             const exp = t.export;
                             // The yellow "differs" rows: in your file but the
@@ -960,6 +967,7 @@ function exportActionBar(t: HouseContentType, uuid: string, totalCount: number):
                                     // Missing names aren't in your file, so
                                     // they are not compared against Knowledge — no confirm.
                                     label: `Export missing (${missingNames.length})`,
+                                    disabled: missingNames.length === 0,
                                     onClick: () => {
                                         if (missingNames.length > 0) {
                                             exp.selected(missingNames, () =>
@@ -970,6 +978,7 @@ function exportActionBar(t: HouseContentType, uuid: string, totalCount: number):
                                 },
                                 {
                                     label: `Export unread (${unreadNames.length})`,
+                                    disabled: unreadNames.length === 0,
                                     onClick: () => {
                                         if (unreadNames.length > 0) {
                                             exp.selected(unreadNames, () =>
@@ -980,6 +989,7 @@ function exportActionBar(t: HouseContentType, uuid: string, totalCount: number):
                                 },
                                 {
                                     label: `Export differing (${differingNames.length})`,
+                                    disabled: differingNames.length === 0,
                                     onClick: () => {
                                         if (differingNames.length > 0) {
                                             confirmDestructiveExport(t, uuid, differingNames, () =>
