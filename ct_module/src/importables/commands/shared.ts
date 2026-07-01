@@ -10,7 +10,6 @@ import TaskContext from "../../tasks/context";
 import type { ItemSlot } from "../../tasks/specifics/slots";
 import { removedFormatting } from "../../utils/helpers";
 import {
-    commandNameForHousing,
     getSessionCommandNamesLower,
     noteCommandCreated,
 } from "./listCommands";
@@ -37,13 +36,12 @@ export async function ensureCommandExists(
     ctx: TaskContext,
     name: string
 ): Promise<"existing" | "created"> {
-    const commandName = commandNameForHousing(name);
     const existing = await getSessionCommandNamesLower(ctx);
-    if (existing.has(commandName.toLowerCase())) return "existing";
+    if (existing.has(name.toLowerCase())) return "existing";
 
-    await ctx.runCommand(`/command create ${commandName}`);
+    await ctx.runCommand(`/command create ${name}`);
     await timedWaitForMenu(ctx, "commandMenuWait");
-    noteCommandCreated(commandName);
+    noteCommandCreated(name);
     return "created";
 }
 
@@ -51,11 +49,10 @@ export async function openCommandActionsEditor(
     ctx: TaskContext,
     name: string
 ): Promise<"opened" | "created"> {
-    const commandName = commandNameForHousing(name);
-    const status = await ensureCommandExists(ctx, commandName);
+    const status = await ensureCommandExists(ctx, name);
     if (status === "created") return "created";
 
-    await ctx.runCommand(`/command actions ${commandName}`);
+    await ctx.runCommand(`/command actions ${name}`);
     await timedWaitForMenu(ctx, "commandMenuWait");
     return "opened";
 }
@@ -64,13 +61,12 @@ export async function openExistingCommandActionsEditor(
     ctx: TaskContext,
     name: string
 ): Promise<void> {
-    const commandName = commandNameForHousing(name);
     const existing = await getSessionCommandNamesLower(ctx);
-    if (!existing.has(commandName.toLowerCase())) {
-        throw new Error(`No command named "/${commandName}" exists in this housing.`);
+    if (!existing.has(name.toLowerCase())) {
+        throw new Error(`No command named "/${name}" exists in this housing.`);
     }
 
-    await ctx.runCommand(`/command actions ${commandName}`);
+    await ctx.runCommand(`/command actions ${name}`);
     await timedWaitForMenu(ctx, "commandMenuWait");
 }
 
@@ -78,7 +74,7 @@ export async function openCommandSettings(
     ctx: TaskContext,
     name: string
 ): Promise<void> {
-    await ctx.runCommand(`/command edit ${commandNameForHousing(name)}`);
+    await ctx.runCommand(`/command edit ${name}`);
     await timedWaitForMenu(ctx, "commandMenuWait");
 }
 

@@ -16,7 +16,6 @@ import {
 } from "../../project/paths";
 import type { ExportProgressSink } from "../../housingSync/progress/types";
 import {
-    commandNameForHousing,
     listAllCommandNames,
     resetCommandNameSession,
 } from "./listCommands";
@@ -55,7 +54,7 @@ async function exportAllCommandsInner(
 
     const names =
         options.names !== undefined
-            ? options.names.map(commandNameForHousing)
+            ? options.names.slice()
             : await listAllCommandNames(ctx);
     const exportNames = filterAlreadyExported(
         ctx,

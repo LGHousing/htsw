@@ -35,10 +35,6 @@ export async function getSessionCommandNamesLower(ctx: TaskContext): Promise<Set
     return set;
 }
 
-export function commandNameForHousing(name: string): string {
-    return name.replace(/^\/+/, "");
-}
-
 export function extractCommandNameFromSlot(rawDisplayName: string): string | null {
     const trimmed = rawDisplayName.trim();
     if (trimmed.length === 0 || trimmed.charAt(0) !== "/") return null;

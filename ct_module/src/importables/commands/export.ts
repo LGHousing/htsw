@@ -20,7 +20,7 @@ import {
     openExistingCommandActionsEditor,
     readOpenCommandSettings,
 } from "./shared";
-import { commandNameForHousing, resetCommandNameSession } from "./listCommands";
+import { resetCommandNameSession } from "./listCommands";
 
 export type ExportCommandOptions = {
     name: string;
@@ -132,7 +132,7 @@ export async function exportCommandWithSharedState(
     options: ExportCommandOptions,
     shared: SharedExportState
 ): Promise<void> {
-    const name = commandNameForHousing(options.name);
+    const name = options.name;
     const { importJsonPath, htslPath, htslReference } = options;
 
     const importable = await readCommand(
