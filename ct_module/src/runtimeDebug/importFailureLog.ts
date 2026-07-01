@@ -1,7 +1,7 @@
 import {
-    importDiagnosticStats,
-    recentImportDiagnostics,
-} from "./importDiagnosticsBuffer";
+    recentRuntimeDebugRecords,
+    runtimeDebugStats,
+} from "./runtimeDebugBuffer";
 import { ensureParentDirs } from "../utils/filesystem";
 import {
     describeGuiScreenMenu,
@@ -73,8 +73,8 @@ export function writeImportFailureLog(
             waiters: safeRead("waiters", () => getEventContainerCounts()),
             recentWindowOpens: safeRead("window opens", () => describeRecentWindowOpens()),
         },
-        diagnosticStats: importDiagnosticStats(),
-        recent: recentImportDiagnostics(),
+        runtimeDebugStats: runtimeDebugStats(),
+        recentRuntimeDebug: recentRuntimeDebugRecords(),
     };
     ensureParentDirs(path);
     FileLib.write(path, JSON.stringify(body, null, 2), true);

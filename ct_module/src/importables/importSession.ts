@@ -39,8 +39,8 @@ import {
     actionListApplyResultFromError,
     type ActionListApplyResult,
 } from "../housingSync/actions/apply";
-import { writeImportFailureLog } from "../diagnostics/importFailureLog";
-import { resetImportDiagnostics } from "../diagnostics/importDiagnosticsBuffer";
+import { writeImportFailureLog } from "../runtimeDebug/importFailureLog";
+import { resetRuntimeDebugRecords } from "../runtimeDebug/runtimeDebugBuffer";
 
 export type ImportSelection = {
     importables: Importable[];
@@ -100,7 +100,7 @@ export async function importSelectedImportables(
     ctx: TaskContext,
     selection: ImportSelection
 ): Promise<void> {
-    resetImportDiagnostics();
+    resetRuntimeDebugRecords();
     resetFunctionNameSession();
     resetMenuNameSession();
     resetCommandNameSession();

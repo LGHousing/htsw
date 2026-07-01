@@ -1,7 +1,7 @@
 import TaskContext from "../../tasks/context";
 import { removedFormatting } from "../../utils/helpers";
-import { recordImportDiagnostic } from "../../diagnostics/importDiagnosticsBuffer";
-import { summarizeItemStack } from "../../diagnostics/itemStackSummary";
+import { recordRuntimeDebug } from "../../runtimeDebug/runtimeDebugBuffer";
+import { summarizeItemStack } from "../../runtimeDebug/itemStackSummary";
 import { timedWaitForMenu, waitForMenu } from "../gui/menuWait";
 import { SET_SLOT_ACK_MAX_TICKS, sendCreativeInventoryAction } from "../gui/packets";
 import { COST } from "../progress/costs";
@@ -101,7 +101,7 @@ export async function selectItemFromOpenInventory(
     // through to a scratch-slot injection instead. See issue #58.
     const ninthHotbarSlot = container.getSize() - 1;
     const desiredStack = item.getItemStack();
-    recordImportDiagnostic("itemInjection", {
+    recordRuntimeDebug("itemInjection", {
         stage: "selectStart",
         label,
         desired: summarizeItemStack(desiredStack),
@@ -116,7 +116,7 @@ export async function selectItemFromOpenInventory(
     });
 
     if (existingSlot !== null) {
-        recordImportDiagnostic("itemInjection", {
+        recordRuntimeDebug("itemInjection", {
             stage: "existingSlotMatched",
             label,
             slot: existingSlot.getSlotId(),
@@ -133,7 +133,7 @@ export async function selectItemFromOpenInventory(
         scratchSlot !== null &&
         match(scratchSlot.getItem().getItemStack(), desiredStack)
     ) {
-        recordImportDiagnostic("itemInjection", {
+        recordRuntimeDebug("itemInjection", {
             stage: "scratchSlotMatched",
             label,
             slot: targetSlotInContainer,
@@ -144,7 +144,7 @@ export async function selectItemFromOpenInventory(
         return;
     }
 
-    recordImportDiagnostic("itemInjection", {
+    recordRuntimeDebug("itemInjection", {
         stage: "creativeSend",
         label,
         packetSlot: INV_PACKET_SLOT,
@@ -166,7 +166,7 @@ export async function selectItemFromOpenInventory(
     if (!landed) {
         const itemName = removedFormatting(item.getName());
         const observed = summarizeItemStack(containerSlotStack(targetSlotInContainer));
-        recordImportDiagnostic("itemInjection", {
+        recordRuntimeDebug("itemInjection", {
             stage: "creativeFailed",
             label,
             packetSlot: INV_PACKET_SLOT,
@@ -182,7 +182,7 @@ export async function selectItemFromOpenInventory(
             `creative spawn instead of the expected item/NBT.`
         );
     }
-    recordImportDiagnostic("itemInjection", {
+    recordRuntimeDebug("itemInjection", {
         stage: "creativeMatched",
         label,
         packetSlot: INV_PACKET_SLOT,

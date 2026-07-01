@@ -13,8 +13,8 @@ import {
     setSlotPacketWindowId,
     windowItemsPacketId,
 } from "../../utils/packets";
-import { recordImportDiagnostic } from "../../diagnostics/importDiagnosticsBuffer";
-import { summarizeItemStack } from "../../diagnostics/itemStackSummary";
+import { recordRuntimeDebug } from "../../runtimeDebug/runtimeDebugBuffer";
+import { summarizeItemStack } from "../../runtimeDebug/itemStackSummary";
 
 type Packet = MCPacket<MCINetHandler>;
 
@@ -100,7 +100,7 @@ function rejectExpiredTimeouts(): void {
 
         if (now < entry.deadline) continue;
         cleanupTimeout(entry);
-        recordImportDiagnostic("timeout", {
+        recordRuntimeDebug("timeout", {
             reason: entry.reason,
             duration: entry.duration,
         });
@@ -144,20 +144,20 @@ function creativePacketStackSummary(packet: unknown): unknown {
 
 function recordPacket(direction: "received" | "sent", packet: Packet): void {
     if (packet instanceof S2DPacketOpenWindow) {
-        recordImportDiagnostic("packet", {
+        recordRuntimeDebug("packet", {
             direction,
             packet: packetClassName(packet),
             windowId: openWindowPacketId(packet),
             title: openWindowPacketTitle(packet) ?? "?",
         });
     } else if (packet instanceof S30PacketWindowItems) {
-        recordImportDiagnostic("packet", {
+        recordRuntimeDebug("packet", {
             direction,
             packet: packetClassName(packet),
             windowId: windowItemsPacketId(packet),
         });
     } else if (packet instanceof S2FPacketSetSlot) {
-        recordImportDiagnostic("packet", {
+        recordRuntimeDebug("packet", {
             direction,
             packet: packetClassName(packet),
             windowId: setSlotPacketWindowId(packet),
@@ -166,7 +166,7 @@ function recordPacket(direction: "received" | "sent", packet: Packet): void {
             stackSummary: packetStackSummary(packet),
         });
     } else if (packet instanceof C10PacketCreativeInventoryAction) {
-        recordImportDiagnostic("packet", {
+        recordRuntimeDebug("packet", {
             direction,
             packet: packetClassName(packet),
             slot: creativeInventoryPacketSlot(packet),

@@ -2,7 +2,7 @@
 
 import type { SyncEvent } from "../syncEvents";
 import { createJsonlTrace } from "../../trace/jsonl";
-import { recordImportDiagnostic } from "../../diagnostics/importDiagnosticsBuffer";
+import { recordRuntimeDebug } from "../../runtimeDebug/runtimeDebugBuffer";
 
 const taskTrace = createJsonlTrace("./htsw/task-trace.jsonl");
 
@@ -26,7 +26,7 @@ export function isTaskTraceEnabled(): boolean {
  * `isTaskTraceEnabled()`.
  */
 export function traceNote(category: string, message: string): void {
-    recordImportDiagnostic("note", { category, message });
+    recordRuntimeDebug("note", { category, message });
     if (!taskTrace.isEnabled()) return;
     taskTrace.write({ kind: "note", category, message });
 }
@@ -35,13 +35,13 @@ export function traceMenuWait(
     stage: "start" | "openWindow" | "windowItems" | "pollStart" | "ready" | "timeoutRecovered" | "failure",
     details: Record<string, unknown>
 ): void {
-    recordImportDiagnostic("menuWait", { stage, ...details });
+    recordRuntimeDebug("menuWait", { stage, ...details });
     if (!taskTrace.isEnabled()) return;
     taskTrace.write({ kind: "menuWait", stage, ...details });
 }
 
 export function traceRecord(category: string, details: Record<string, unknown>): void {
-    recordImportDiagnostic(category, details);
+    recordRuntimeDebug(category, details);
     if (!taskTrace.isEnabled()) return;
     taskTrace.write({ kind: category, ...details });
 }
@@ -53,13 +53,13 @@ export function traceError(
 ): void {
     const message = error instanceof Error ? error.message : String(error);
     const record = { ...(details ?? {}), error: message };
-    recordImportDiagnostic(category, record);
+    recordRuntimeDebug(category, record);
     if (!taskTrace.isEnabled()) return;
     taskTrace.write({ kind: "failure", category, ...record });
 }
 
 export function traceSyncEvent(event: SyncEvent): void {
-    recordImportDiagnostic("syncEvent", {
+    recordRuntimeDebug("syncEvent", {
         event: event.kind,
         key: "key" in event ? event.key : undefined,
         status: "status" in event ? event.status : undefined,
