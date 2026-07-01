@@ -24,11 +24,11 @@
         "minecraft-icon-items": "^0.4.5"
     },
     "devDependencies": {
-        "@types/node": "^25.9.3",
-        "@types/vscode": "^1.97",
+        "@types/node": "^26.0.1",
+        "@types/vscode": "^1.125",
         "@vscode/vsce": "^3.6",
         "typescript": "^6.0",
-        "vite": "^8.0.16"
+        "vite": "^8.1.2"
     },
     "main": "./dist/extension.cjs",
     "activationEvents": [
