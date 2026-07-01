@@ -13,7 +13,7 @@ import { tryWriteImportableCache } from "../../importCache";
 import TaskContext from "../../tasks/context";
 import { observedSlotsToActions } from "../../housingSync/observedActions";
 import { upsertImportableEntry } from "../../project/importJsonMutations";
-import { writeCapturedItems } from "../../exporter/writeCapturedItems";
+import { writeCapturedItems } from "../items/writeCapturedItems";
 import { ensureParentDirs } from "../../utils/filesystem";
 import {
     openCommandSettings,

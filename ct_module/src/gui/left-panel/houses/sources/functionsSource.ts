@@ -13,7 +13,7 @@ import { resetEventContainers } from "../../../../tasks/specifics/waitFor";
 import {
     clearActiveExportContext,
     setActiveExportContext,
-} from "../../../../exporter/activeExport";
+} from "../../../../tasks/activeExport";
 import {
     deleteImportableCache,
     houseTypeScanned,

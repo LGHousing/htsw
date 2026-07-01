@@ -9,7 +9,7 @@ import {
 import type { ExportProgressSink } from "../../housingSync/progress/types";
 import { isTaskCancelled } from "../../tasks/manager";
 import TaskContext from "../../tasks/context";
-import { writeCapturedItems } from "../../exporter/writeCapturedItems";
+import { writeCapturedItems } from "../items/writeCapturedItems";
 import {
     htslTargetsForNpcExport,
     npcExportReferencesExist,

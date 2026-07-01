@@ -16,7 +16,7 @@ import { observedSlotsToActions } from "../../housingSync/observedActions";
 import { upsertImportableEntry } from "../../project/importJsonMutations";
 import { ensureParentDirs } from "../../utils/filesystem";
 import { htslTargetsForRegionExport, type HtslExportTarget } from "../../project/paths";
-import { writeCapturedItems } from "../../exporter/writeCapturedItems";
+import { writeCapturedItems } from "../items/writeCapturedItems";
 import TaskContext from "../../tasks/context";
 import { listAllRegions, type RegionListEntry } from "./listRegions";
 import { openRegionEditor } from "./shared";

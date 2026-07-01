@@ -1,4 +1,4 @@
-import type TaskContext from "../tasks/context";
+import type TaskContext from "./context";
 
 let activeExportCtx: TaskContext | null = null;
 

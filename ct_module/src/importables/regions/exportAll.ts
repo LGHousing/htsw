@@ -8,7 +8,7 @@ import TaskContext from "../../tasks/context";
 import type { ImportableItem } from "htsw/types";
 import { isTaskCancelled } from "../../tasks/manager";
 import type { ExportResult } from "../exports";
-import { writeCapturedItems } from "../../exporter/writeCapturedItems";
+import { writeCapturedItems } from "../items/writeCapturedItems";
 import {
     htslTargetsForRegionExport,
     regionExportReferencesExist,

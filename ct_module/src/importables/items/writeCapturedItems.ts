@@ -1,11 +1,11 @@
 import {
     type ItemCaptureRegistry,
     prettySnbt,
-} from "../housingSync/itemCapture";
-import TaskContext from "../tasks/context";
-import { ensureParentDirs } from "../utils/filesystem";
-import { upsertImportableEntry } from "../project/importJsonMutations";
-import { snbtTargetForItemExport } from "../project/paths";
+} from "../../housingSync/itemCapture";
+import TaskContext from "../../tasks/context";
+import { ensureParentDirs } from "../../utils/filesystem";
+import { upsertImportableEntry } from "../../project/importJsonMutations";
+import { snbtTargetForItemExport } from "../../project/paths";
 
 export function writeCapturedItems(
     ctx: TaskContext,

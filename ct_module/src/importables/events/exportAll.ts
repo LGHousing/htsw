@@ -9,7 +9,7 @@ import type { ImportableItem } from "htsw/types";
 import { isTaskCancelled } from "../../tasks/manager";
 import type { ExportResult } from "../exports";
 import { exportEventWithSharedState } from "./export";
-import { writeCapturedItems } from "../../exporter/writeCapturedItems";
+import { writeCapturedItems } from "../items/writeCapturedItems";
 import {
     eventExportReferencesExist,
     htslTargetForEventExport,

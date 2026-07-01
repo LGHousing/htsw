@@ -20,7 +20,7 @@ import {
     type NpcExportEntry,
 } from "../../project/paths";
 import TaskContext from "../../tasks/context";
-import { writeCapturedItems } from "../../exporter/writeCapturedItems";
+import { writeCapturedItems } from "../items/writeCapturedItems";
 import { ensureParentDirs } from "../../utils/filesystem";
 import {
     openNpcLeftClickActions,

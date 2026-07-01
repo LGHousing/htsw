@@ -9,7 +9,7 @@ import type { ImportableItem } from "htsw/types";
 import { isTaskCancelled } from "../../tasks/manager";
 import type { ExportResult } from "../exports";
 import { exportCommandWithSharedState } from "./export";
-import { writeCapturedItems } from "../../exporter/writeCapturedItems";
+import { writeCapturedItems } from "../items/writeCapturedItems";
 import {
     commandExportReferencesExist,
     htslTargetForCommandExport,

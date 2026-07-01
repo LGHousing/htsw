@@ -12,7 +12,7 @@ import { isTaskRunning, setTaskRunning } from "../tasks/runningState";
 import { resetEventContainers } from "../tasks/specifics/waitFor";
 import { getCurrentHousingUuid } from "../importCache";
 import { traceError, traceRecord } from "../housingSync/trace/taskTrace";
-import { clearActiveExportContext, setActiveExportContext } from "../exporter/activeExport";
+import { clearActiveExportContext, setActiveExportContext } from "../tasks/activeExport";
 import {
     readExportProjectContext,
     readProjectItemsForExport,
