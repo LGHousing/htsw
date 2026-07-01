@@ -11,9 +11,9 @@ import { exportProjectContextFromParsedImportJson } from "../../../../importable
 import { getParseAt } from "../../../parsing/parses";
 import { resetEventContainers } from "../../../../tasks/specifics/waitFor";
 import {
-    clearActiveExportContext,
-    setActiveExportContext,
-} from "../../../../tasks/activeExport";
+    clearActiveTaskContext,
+    setActiveTaskContext,
+} from "../../../../tasks/activeTask";
 import {
     deleteImportableCache,
     houseTypeScanned,
@@ -73,7 +73,7 @@ export function deepReadHouseFunctions(onlyNames?: string[]): void {
     if (uuid === null) return;
     readInFlight = true;
     TaskManager.run(async (ctx) => {
-        setActiveExportContext(ctx);
+        setActiveTaskContext("export", ctx);
         setTaskRunning(true);
         let result;
         try {
@@ -103,7 +103,7 @@ export function deepReadHouseFunctions(onlyNames?: string[]): void {
                 ),
             });
         } finally {
-            clearActiveExportContext(ctx);
+            clearActiveTaskContext("export", ctx);
             setTaskRunning(false);
             readInFlight = false;
         }

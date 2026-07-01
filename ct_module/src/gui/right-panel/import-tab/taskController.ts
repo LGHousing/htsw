@@ -83,28 +83,9 @@ import {
 import { setFocusLineId } from "./focusedLine";
 import { autoTrackRefresh } from "../../autoTrack";
 import {
-    cancelActiveExport,
-    clearActiveExportContext,
-    setActiveExportContext,
-} from "../../../tasks/activeExport";
-
-
-/**
- * The TaskContext of the in-flight import, or null when none is running.
- * Captured so Cancel scopes to the import alone — `TaskManager.cancelAll()`
- * would also abort unrelated background tasks (e.g. the housing-UUID
- * auto-fetch in overlay.ts).
- */
-let activeImportCtx: TaskContext | null = null;
-
-/** Cancel the running import (if any). Leaves other tasks untouched. */
-export function cancelActiveImport(): void {
-    if (activeImportCtx !== null) {
-        activeImportCtx.cancel();
-        return;
-    }
-    cancelActiveExport();
-}
+    clearActiveTaskContext,
+    setActiveTaskContext,
+} from "../../../tasks/activeTask";
 
 function formatElapsedSeconds(secs: number): string {
     const total = Math.max(0, Math.round(secs));
@@ -446,7 +427,7 @@ export function startImport(explicit?: readonly ImportQueueItem[]): void {
     gmcOnImportStart();
 
     TaskManager.run(async (ctx) => {
-        activeImportCtx = ctx;
+        setActiveTaskContext("import", ctx);
         let importSucceeded = false;
         let cancelled = false;
         let totalImported = 0;
@@ -501,7 +482,7 @@ export function startImport(explicit?: readonly ImportQueueItem[]): void {
                 throw err;
             }
         } finally {
-            activeImportCtx = null;
+            clearActiveTaskContext("import", ctx);
             setActiveTaskPath(null);
             autoTrackRefresh();
             setTaskRunning(false);
@@ -615,7 +596,7 @@ export function startExport(
     const dir = importJsonDir(importJsonPath);
     const count = names === undefined ? null : names.length;
     TaskManager.run(async (ctx) => {
-        setActiveExportContext(ctx);
+        setActiveTaskContext("export", ctx);
         setTaskRunning(true);
         let result: ExportResult;
         try {
@@ -639,7 +620,7 @@ export function startExport(
                 progress: createExportProgressSink(spec.type, importJsonPath),
             });
         } finally {
-            clearActiveExportContext(ctx);
+            clearActiveTaskContext("export", ctx);
             setTaskRunning(false);
         }
         // The export rewrote the destination import.json; drop its cached parse

@@ -32,7 +32,7 @@ import {
     requestStepAdvance,
     setStepAuto,
 } from "../../../housingSync/stepGate";
-import { cancelActiveImport } from "./taskController";
+import { cancelActiveTask } from "../../../tasks/activeTask";
 import { isCurrentHouseTrusted } from "../../state";
 import {
     getCurrentPhaseEtaSeconds,
@@ -411,7 +411,7 @@ export function progressControlButtons(): Element[] {
             },
             onClick: () => {
                 if (getTaskProgress() === null) return;
-                cancelActiveImport();
+                cancelActiveTask();
                 setTaskProgress(null);
                 setActiveTaskPath(null);
                 ChatLib.chat(`&c[htsw] cancelling task…`);
