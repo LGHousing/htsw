@@ -18,6 +18,7 @@ const ALL_IMPORTABLE_TYPES: ImportableType[] = [
     "REGION",
     "ITEM",
     "MENU",
+    "NPC",
     "TEAM",
     "GROUP",
     "COMMAND",

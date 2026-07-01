@@ -19,7 +19,7 @@ import {
 import { describeRecentWindowOpens, type WaitForPromise } from "../../tasks/specifics/waitFor";
 import { COST } from "../progress/costs";
 import { timed } from "../progress/timing";
-import { isImportTraceEnabled, traceMenuWait } from "../trace/importTrace";
+import { isTaskTraceEnabled, traceMenuWait } from "../trace/taskTrace";
 
 const MENU_WAIT_TIMEOUT_MS = 6000;
 
@@ -270,7 +270,7 @@ export function waitForMenu(
     let packetWaiter: WaitForPromise<unknown> | null = null;
     let tickWaiter: WaitForPromise<unknown> | null = null;
     const state = createMenuWaitState();
-    if (isImportTraceEnabled()) {
+    if (isTaskTraceEnabled()) {
         traceMenuWait("start", {
             skipPopulateWait,
             currentMenu: menuStateDescription(),
@@ -347,7 +347,7 @@ export function waitForKnownMenu(
     };
 
     const state = createMenuWaitState(openedWindowId);
-    if (isImportTraceEnabled()) {
+    if (isTaskTraceEnabled()) {
         traceMenuWait("start", {
             skipPopulateWait,
             knownWindowId: openedWindowId,

@@ -16,7 +16,7 @@ import {
     isLiveTabActive,
     pinTab,
 } from "./selection";
-import { getActiveImportPath, getImportProgress, getSessionVerb } from "./import-tab/importProgress";
+import { getActiveTaskPath, getTaskProgress, getSessionVerb } from "./import-tab/taskProgress";
 import { CodeView, jumpToFocusedLine } from "../code-view/codeView";
 import { diffDecorator, progressDecorator } from "./decorators";
 import { previewLinesForFile } from "./import-tab/livePreview";
@@ -36,9 +36,9 @@ export function viewBody(): Element {
                           lines: () => extractLiveLines(),
                           lineDecorator: () => progressDecorator(getActivePath()),
                           autoFollow: true,
-                          scrollLocked: () => getActiveImportPath() !== null,
+                          scrollLocked: () => getActiveTaskPath() !== null,
                           emptyMessage: () => {
-                              if (getImportProgress() !== null) {
+                              if (getTaskProgress() !== null) {
                                   const verb = getSessionVerb();
                                   if (verb === "export") return "Exporting — progress above.";
                                   if (verb === "read") return "Reading house contents — progress above.";
@@ -81,7 +81,7 @@ function jumpBackPipRow(): Element {
             height: { kind: "auto" },
         },
         children: () => {
-            if (getActiveImportPath() === null) return [];
+            if (getActiveTaskPath() === null) return [];
             if (!isScrollUserOverridden(LIVE_PREVIEW_SCROLL_ID)) return [];
             return [
                 Button({

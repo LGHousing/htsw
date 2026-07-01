@@ -9,10 +9,14 @@ import type { ImportableItem } from "htsw/types";
 import { isTaskCancelled } from "../../tasks/manager";
 import type { ExportResult } from "../exports";
 import { exportEventWithSharedState } from "./export";
-import { writeCapturedItems } from "../../exporter/writeCapturedItems";
-import { htslTargetForEventExport } from "../../project/paths";
+import { writeCapturedItems } from "../items/writeCapturedItems";
+import {
+    eventExportReferencesExist,
+    htslTargetForEventExport,
+} from "../../project/paths";
 import type { ExportProgressSink } from "../../housingSync/progress/types";
 import { listAllEventNames } from "./listEvents";
+import { filterAlreadyExported } from "../exportSkip";
 
 export type ExportAllEventsOptions = {
     importJsonPath: string;
@@ -22,6 +26,7 @@ export type ExportAllEventsOptions = {
     // Items the destination project already declares; seeds the capture
     // registry so identical captures reuse project names (see functions).
     projectItems?: readonly ImportableItem[];
+    skipExisting?: boolean;
 };
 
 export async function exportAllEvents(
@@ -37,10 +42,17 @@ export async function exportAllEvents(
         itemCaptures.seed(projectItems[i].name, projectItems[i].nbt);
     }
 
-    const names =
+    const names0 =
         options.names !== undefined
             ? options.names
             : await listAllEventNames(ctx);
+    const names = filterAlreadyExported(
+        ctx,
+        "event",
+        names0,
+        options.skipExisting,
+        (name) => eventExportReferencesExist(importJsonPath, name)
+    );
     if (names.length === 0) {
         ctx.displayMessage("&7No events to export.");
         try {
@@ -62,6 +74,7 @@ export async function exportAllEvents(
     let failed = 0;
     try {
         for (let i = 0; i < names.length; i++) {
+            ctx.checkCancelled();
             const name = names[i];
             const target = htslTargetForEventExport(importJsonPath, name);
 

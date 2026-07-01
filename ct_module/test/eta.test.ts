@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
 import { createEtaCalculator, type EtaCalculator } from "../src/housingSync/progress/eta";
-import type { ImportProgress } from "../src/housingSync/progress/types";
+import type { TaskProgress } from "../src/housingSync/progress/types";
 
 let now = 0;
 const realDateNow = Date.now;
@@ -20,7 +20,7 @@ afterEach(() => {
 function progress(
     completedUnits: number,
     phase: "setup" | "reading" | "hydrating" | "applying"
-): ImportProgress {
+): TaskProgress {
     return {
         completedUnits,
         totalUnits: 120,
@@ -90,7 +90,7 @@ describe("import ETA", () => {
     });
 
     test("setup phase remaining accounts for the setup segment", () => {
-        const p: ImportProgress = { ...progress(0, "setup") };
+        const p: TaskProgress = { ...progress(0, "setup") };
         p.active!.phaseUnits = { setup: 5, reading: 10, hydrating: 100, applying: 10 };
         p.totalUnits = 125;
         // phaseStart for setup = 0, phaseLength = 5, within = 0 → 5 units.

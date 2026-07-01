@@ -4,6 +4,7 @@ import * as json from "jsonc-parser";
 import * as htsw from "htsw";
 import {
     createIncludedImportJsonFiles,
+    htslTargetForCommandExport,
     htslTargetForEventExport,
     htslTargetForFunctionExport,
     resolveImportableFile,
@@ -34,7 +35,7 @@ const SECTION_META: Record<ImportableSection, {
     regions: { identityField: "name", type: "region", typeLabel: "REGION" },
     items: { identityField: "name", type: "item", typeLabel: "ITEM", openField: "nbt" },
     menus: { identityField: "name", type: "menu", typeLabel: "MENU" },
-    commands: { identityField: "name", type: "command", typeLabel: "COMMAND" },
+    commands: { identityField: "name", type: "command", typeLabel: "COMMAND", openField: "actions" },
     npcs: { identityField: "name", type: "npc", typeLabel: "NPC" },
 };
 
@@ -50,6 +51,9 @@ const SUB_SPECS: Partial<Record<ImportableSection, SubSpec[]>> = {
     items: [
         { keyPath: ["leftClickActions"], label: "Left click", kind: "actions" },
         { keyPath: ["rightClickActions"], label: "Right click", kind: "actions" },
+    ],
+    commands: [
+        { keyPath: ["actions"], label: "Actions", kind: "actions" },
     ],
     npcs: [
         { keyPath: ["leftClickActions"], label: "Left click", kind: "actions" },
@@ -105,21 +109,23 @@ async function addImportable(
         const id = identity.trim();
         if (!id) throw new Error(kind === "event" ? "Choose an event." : "Enter a name.");
         if (kind === "item") throw new Error("Items are created in the Item / SNBT editor.");
+        if (kind === "npc") throw new Error("NPC entries are created by exporting an existing in-game NPC.");
 
         const section = SECTION_BY_KIND[kind];
         const readFs = projectFsWithOpenDocuments();
 
-        // Functions/events get a starter .htsl; the export-target helper resolves
-        // the declaring file (the picked file, for a new entry) and a collision-
-        // free filename. Other importables are pure JSON entries.
+        // Action-backed importables get a starter .htsl; the export-target
+        // helper resolves the declaring file and a collision-free filename.
         let targetImportJson = importJsonPath;
         const entry: Record<string, unknown> = {};
         const created: string[] = [];
 
-        if (kind === "function" || kind === "event") {
+        if (kind === "function" || kind === "event" || kind === "command") {
             const target = kind === "function"
                 ? htslTargetForFunctionExport(readFs, importJsonPath, id)
-                : htslTargetForEventExport(readFs, importJsonPath, id);
+                : kind === "event"
+                    ? htslTargetForEventExport(readFs, importJsonPath, id)
+                    : htslTargetForCommandExport(readFs, importJsonPath, id);
             targetImportJson = target.importJsonPath;
             requireNew(readFs, targetImportJson, section, id, kind);
             if (!nodeProjectFs.exists(target.htslPath)) {
@@ -127,18 +133,17 @@ async function addImportable(
                 nodeProjectFs.writeFile(target.htslPath, "\n");
                 created.push(target.htslPath);
             }
-            entry[kind === "function" ? "name" : "event"] = id;
+            entry[kind === "event" ? "event" : "name"] = id;
             entry.actions = target.htslReference;
         } else {
-            // Region/menu/npc are pure-JSON entries, but the name may already
+            // Region/menu entries are pure JSON, but the name may already
             // be declared in an INCLUDED file — resolve that declaring file
             // first (like the function/event path) so the duplicate check sees
             // it and we don't write a second declaration into the parent.
             targetImportJson = resolveImportableFile(readFs, importJsonPath, section, id);
             requireNew(readFs, targetImportJson, section, id, kind);
             entry.name = id;
-            if (kind === "npc") entry.pos = { x: 0, y: 0, z: 0 };
-            else if (kind === "menu") entry.slots = [];
+            if (kind === "menu") entry.slots = [];
         }
 
         await applyImportableUpsert(targetImportJson, section, entry);
@@ -530,8 +535,9 @@ function readImportables(
         const meta = SECTION_META[section];
         const items = sectionNode.children ?? [];
         for (const item of items) {
-            const idNode = json.findNodeAtLocation(item, [meta.identityField]);
-            if (!idNode || idNode.type !== "string" || typeof idNode.value !== "string") continue;
+            const identity = importableIdentityForProjectView(item, section);
+            if (identity === null) continue;
+            const label = importableLabelForProjectView(item, section, identity);
             const refNode = meta.openField
                 ? json.findNodeAtLocation(item, [meta.openField])
                 : null;
@@ -545,12 +551,12 @@ function readImportables(
             const ownDiag = openPath !== importJsonPath ? diags.get(pathKey(openPath)) : undefined;
             const subEntries = readSubEntries(item, section, importJsonPath, fs, diags);
             importables.push({
-                id: `${importJsonPath}|${meta.type}|${idNode.value}`,
-                label: idNode.value,
+                id: `${importJsonPath}|${meta.type}|${identity}`,
+                label,
                 type: meta.type,
                 typeLabel: meta.typeLabel,
                 openPath,
-                ...readImportableIcon(item, section, idNode.value, refPath, fs),
+                ...readImportableIcon(item, section, identity, refPath, fs),
                 errors: ownDiag?.errors || undefined,
                 warnings: ownDiag?.warnings || undefined,
                 subEntries: subEntries.length > 0 ? subEntries : undefined,
@@ -558,6 +564,37 @@ function readImportables(
         }
     }
     return importables;
+}
+
+function importableIdentityForProjectView(
+    item: json.Node,
+    section: ImportableSection,
+): string | null {
+    if (section === "npcs") {
+        const pos = json.findNodeAtLocation(item, ["pos"]);
+        if (!pos || pos.type !== "object") return null;
+        const x = json.findNodeAtLocation(pos, ["x"]);
+        const y = json.findNodeAtLocation(pos, ["y"]);
+        const z = json.findNodeAtLocation(pos, ["z"]);
+        if (x?.type !== "number" || y?.type !== "number" || z?.type !== "number") return null;
+        return `${Number(x.value)},${Number(y.value)},${Number(z.value)}`;
+    }
+
+    const meta = SECTION_META[section];
+    const idNode = json.findNodeAtLocation(item, [meta.identityField]);
+    if (!idNode || idNode.type !== "string" || typeof idNode.value !== "string") return null;
+    return String(idNode.value);
+}
+
+function importableLabelForProjectView(
+    item: json.Node,
+    section: ImportableSection,
+    identity: string,
+): string {
+    if (section !== "npcs") return identity;
+    const nameNode = json.findNodeAtLocation(item, ["name"]);
+    if (nameNode?.type !== "string" || typeof nameNode.value !== "string") return identity;
+    return `${String(nameNode.value)} @ ${identity}`;
 }
 
 function readSubEntries(

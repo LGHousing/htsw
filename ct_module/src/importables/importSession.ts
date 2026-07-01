@@ -3,18 +3,19 @@ import type { Importable, ImportableItem } from "htsw/types";
 
 import TaskContext from "../tasks/context";
 import { isTaskCancelled } from "../tasks/manager";
-import { isImportTraceEnabled, traceNote } from "../housingSync/trace/importTrace";
+import { isTaskTraceEnabled, traceNote } from "../housingSync/trace/taskTrace";
 import { FileSystemFileLoader } from "../utils/fileLoaders";
 import {
     buildTrustPlan,
-    importableIdentity,
-    importableKey,
     tryWriteImportableCache,
 } from "../importCache";
+import { importableIdentity, importableKey } from "./identity";
 import { printDiagnostic } from "../tui/diagnostics";
 import { createItemRegistry } from "./itemRegistry";
 import { resetFunctionNameSession } from "./functions/listFunctions";
 import { resetMenuNameSession } from "./menus/listMenus";
+import { resetCommandNameSession } from "./commands/listCommands";
+import { createNpcLookupCache } from "./npcs/listNpcs";
 import {
     applyImportablePlan,
     planIsNoOp,
@@ -27,8 +28,8 @@ import {
     expandClickActionItemDependencies,
     referencedItemNames,
 } from "./itemDependencies";
-import type { ImportEventHandler } from "../housingSync/importEvents";
-import type { QueueRow } from "../housingSync/progress/types";
+import type { SyncEventHandler } from "../housingSync/syncEvents";
+import type { TaskProgressEntry } from "../housingSync/progress/types";
 import { queueRowKey } from "../housingSync/progress/queueRowKey";
 import {
     estimateImportableUnits,
@@ -38,8 +39,8 @@ import {
     actionListApplyResultFromError,
     type ActionListApplyResult,
 } from "../housingSync/actions/apply";
-import { writeImportFailureLog } from "../diagnostics/importFailureLog";
-import { resetImportDiagnostics } from "../diagnostics/importDiagnosticsBuffer";
+import { writeImportFailureLog } from "../runtimeDebug/importFailureLog";
+import { resetRuntimeDebugRecords } from "../runtimeDebug/runtimeDebugBuffer";
 
 export type ImportSelection = {
     importables: Importable[];
@@ -47,7 +48,7 @@ export type ImportSelection = {
     housingUuid: string;
     sourcePath: string;
     parsed?: ImportablesParseResult;
-    events?: ImportEventHandler;
+    events?: SyncEventHandler;
 };
 
 function toImportDiagnostic(
@@ -99,9 +100,10 @@ export async function importSelectedImportables(
     ctx: TaskContext,
     selection: ImportSelection
 ): Promise<void> {
-    resetImportDiagnostics();
+    resetRuntimeDebugRecords();
     resetFunctionNameSession();
     resetMenuNameSession();
+    resetCommandNameSession();
 
     const parsed = selection.parsed ?? parseImportablesResult(
         new SourceMap(new FileSystemFileLoader()),
@@ -139,6 +141,7 @@ export async function importSelectedImportables(
         housingUuid: selection.housingUuid,
         trust: trustPlan,
         events,
+        npcLookup: createNpcLookupCache(),
     };
     const rowsMeta = orderedImportables.map((importable, rowIndex) => {
         const identity = importableIdentity(importable);
@@ -153,7 +156,7 @@ export async function importSelectedImportables(
         };
     });
 
-    const rows: QueueRow[] = rowsMeta.map((row) => ({
+    const rows: TaskProgressEntry[] = rowsMeta.map((row) => ({
         key: row.key,
         status: "queued",
         totalUnits: row.units,
@@ -211,7 +214,7 @@ export async function importSelectedImportables(
                 identity: row.identity,
                 rowIndex: row.rowIndex,
             }, error);
-            if (isImportTraceEnabled()) {
+            if (isTaskTraceEnabled()) {
                 const stack = error as { stack?: string; rhinoException?: { getScriptStackTrace?: () => string } };
                 const trace = stack.rhinoException?.getScriptStackTrace?.() ?? stack.stack;
                 if (trace) traceNote("read-stack", String(trace).split("\n").slice(0, 8).join(" | "));

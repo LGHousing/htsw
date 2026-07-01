@@ -83,6 +83,9 @@ function collectImportableCoverage(
         case "EVENT":
             collectActionsCoverage(coverage, importable.actions);
             return;
+        case "COMMAND":
+            collectActionsCoverage(coverage, importable.actions);
+            return;
         case "REGION":
             collectActionsCoverage(coverage, importable.onEnterActions);
             collectActionsCoverage(coverage, importable.onExitActions);
@@ -96,9 +99,12 @@ function collectImportableCoverage(
                 collectActionsCoverage(coverage, importable.slots[i].actions);
             }
             return;
+        case "NPC":
+            collectActionsCoverage(coverage, importable.leftClickActions);
+            collectActionsCoverage(coverage, importable.rightClickActions);
+            return;
         case "TEAM":
         case "GROUP":
-        case "COMMAND":
         case "HOUSE_NAME":
             return;
         default: {

@@ -9,10 +9,14 @@ import type { ImportableItem } from "htsw/types";
 import { isTaskCancelled } from "../../tasks/manager";
 import type { ExportResult } from "../exports";
 import { exportFunctionWithSharedState } from "./export";
-import { writeCapturedItems } from "../../exporter/writeCapturedItems";
-import { htslTargetForFunctionExport } from "../../project/paths";
+import { writeCapturedItems } from "../items/writeCapturedItems";
+import {
+    functionExportReferencesExist,
+    htslTargetForFunctionExport,
+} from "../../project/paths";
 import type { ExportProgressSink } from "../../housingSync/progress/types";
 import { listAllFunctionNames, resetFunctionNameSession } from "./listFunctions";
+import { filterAlreadyExported } from "../exportSkip";
 
 export type ExportAllFunctionsOptions = {
     importJsonPath: string;
@@ -29,6 +33,7 @@ export type ExportAllFunctionsOptions = {
     // Fires when the driver listed the house's functions itself (no `names`
     // supplied), so the caller can record the scan.
     onNamesListed?: (names: readonly string[]) => void;
+    skipExisting?: boolean;
 };
 
 export async function exportAllFunctions(
@@ -57,6 +62,13 @@ export async function exportAllFunctions(
         names = await listAllFunctionNames(ctx);
         options.onNamesListed?.(names);
     }
+    names = filterAlreadyExported(
+        ctx,
+        "function",
+        names,
+        readOnly ? false : options.skipExisting,
+        (name) => functionExportReferencesExist(importJsonPath, name)
+    );
     if (names.length === 0) {
         ctx.displayMessage(`&7No functions to ${readOnly ? "read" : "export"}.`);
         try {
@@ -78,6 +90,7 @@ export async function exportAllFunctions(
     let failed = 0;
     try {
         for (let i = 0; i < names.length; i++) {
+            ctx.checkCancelled();
             const name = names[i];
             const target = htslTargetForFunctionExport(importJsonPath, name);
 

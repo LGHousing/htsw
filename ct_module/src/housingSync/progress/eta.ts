@@ -1,4 +1,4 @@
-import type { ImportProgress, ProgressPhase } from "./types";
+import type { TaskProgress, ProgressPhase } from "./types";
 import { getTimingStats, getSessionTimingUnits } from "./timing";
 
 const MS_PER_UNIT_PRIOR = 150;
@@ -38,8 +38,8 @@ const JUMP_GAP_SECONDS = 4;
 type EtaSmoother = { displayed: number; at: number };
 
 export type EtaCalculator = {
-    getTotal(progress: ImportProgress | null, importStartedAt: number | null): number | null;
-    getPhase(progress: ImportProgress | null, importStartedAt: number | null): number | null;
+    getTotal(progress: TaskProgress | null, taskStartedAt: number | null): number | null;
+    getPhase(progress: TaskProgress | null, taskStartedAt: number | null): number | null;
 };
 
 function ease(prev: EtaSmoother | null, candidate: number, now: number): EtaSmoother {
@@ -156,7 +156,7 @@ export function currentMsPerUnit(): number {
     return value;
 }
 
-function phaseRemainingUnits(progress: ImportProgress, phase: ProgressPhase): number {
+function phaseRemainingUnits(progress: TaskProgress, phase: ProgressPhase): number {
     const current = progress.active;
     if (current === null) return 0;
     const units = current.phaseUnits;

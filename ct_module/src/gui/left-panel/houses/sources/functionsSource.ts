@@ -1,15 +1,19 @@
 /// <reference types="../../../../../CTAutocomplete" />
 
 import { TaskManager } from "../../../../tasks/manager";
-import { setImportRunning } from "../../../../housingSync/importRunState";
+import { setTaskRunning } from "../../../../tasks/runningState";
 import { getExportImportJsonPath, getHousingUuid } from "../../../state";
 import { showToast } from "../../../toast";
 import { createExportProgressSink } from "../../../right-panel/import-tab/exportProgress";
 import { listAllFunctionEntries } from "../../../../importables/functions/listFunctions";
 import { exportAllFunctions } from "../../../../importables/functions/exportAll";
+import { exportProjectContextFromParsedImportJson } from "../../../../importables/exportContext";
 import { getParseAt } from "../../../parsing/parses";
-import type { ImportableItem } from "htsw/types";
 import { resetEventContainers } from "../../../../tasks/specifics/waitFor";
+import {
+    clearActiveTaskContext,
+    setActiveTaskContext,
+} from "../../../../tasks/activeTask";
 import {
     deleteImportableCache,
     houseTypeScanned,
@@ -69,39 +73,38 @@ export function deepReadHouseFunctions(onlyNames?: string[]): void {
     if (uuid === null) return;
     readInFlight = true;
     TaskManager.run(async (ctx) => {
-        setImportRunning(true);
-        // Boundary purge, mirroring import/export: leaked waiters from a prior
-        // failed run re-run per packet and jitter input until purged.
-        const purged = resetEventContainers();
-        if (purged > 0) {
-            ChatLib.chat(`&8[htsw] purged ${purged} leaked event waiter(s) from a prior run.`);
-        }
+        setActiveTaskContext("export", ctx);
+        setTaskRunning(true);
         let result;
         try {
-            const destParse = getParseAt(getExportImportJsonPath());
+            // Boundary purge, mirroring import/export: leaked waiters from a prior
+            // failed run re-run per packet and jitter input until purged.
+            const purged = resetEventContainers();
+            if (purged > 0) {
+                ChatLib.chat(`&8[htsw] purged ${purged} leaked event waiter(s) from a prior run.`);
+            }
+            const importJsonPath = getExportImportJsonPath();
+            const exportContext = exportProjectContextFromParsedImportJson(
+                { rootDir: "", importJsonPath },
+                getParseAt(importJsonPath)?.parsed
+            );
             result = await exportAllFunctions(ctx, {
-                importJsonPath: getExportImportJsonPath(),
-                rootDir: "",
+                ...exportContext,
                 names: onlyNames,
                 readOnly: { housingUuid: uuid },
-                // Seeded matching lets read knowledge reference REAL project
-                // item names when contents are identical.
-                projectItems:
-                    destParse?.parsed?.value.filter(
-                        (imp): imp is ImportableItem => imp.type === "ITEM"
-                    ) ?? [],
                 onNamesListed: (names) =>
                     recordHouseScan(uuid, "FUNCTION", names.slice()),
                 // Same strip the importer/exporter use, verb "read" — a deep
                 // read opens every function editor, far too slow to run dark.
                 progress: createExportProgressSink(
                     "FUNCTION",
-                    getExportImportJsonPath(),
+                    importJsonPath,
                     "read"
                 ),
             });
         } finally {
-            setImportRunning(false);
+            clearActiveTaskContext("export", ctx);
+            setTaskRunning(false);
             readInFlight = false;
         }
         if (result.failed > 0) {

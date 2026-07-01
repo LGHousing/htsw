@@ -3,14 +3,12 @@ import "./polyfills/promiseSyncDrain";
 import "./injectLong";
 import "./tasks/manager";
 
-import { registerCommands } from "./commands";
-import { registerExportCommands } from "./exporter";
+import { registerSlashCommands } from "./slashCommands";
 import { initMcpBridge } from "./mcp/bridge";
 import { initHtswGui } from "./gui/overlay";
 import { initAutoUpdate } from "./autoUpdate";
 
-registerCommands();
-registerExportCommands();
+registerSlashCommands();
 initMcpBridge();
 initHtswGui();
 initAutoUpdate();

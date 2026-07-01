@@ -21,8 +21,8 @@ import {
     estimateActionListPhaseUnits,
     phaseUnitsTotal,
 } from "../progress/costs";
-import type { ProgressScope } from "../importEvents";
-import type { ActionPath } from "../importEvents";
+import type { ProgressScope } from "../syncEvents";
+import type { ActionPath } from "../syncEvents";
 
 export type ActionListApplyOptions = {
     session: ImportSession;

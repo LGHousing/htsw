@@ -28,15 +28,21 @@ import {
     isRegionScanInFlight,
     scanHouseRegions,
 } from "./sources/regionsSource";
+import {
+    getHouseCommands,
+    houseCommandsScanned,
+    isCommandScanInFlight,
+    scanHouseCommands,
+} from "./sources/commandsSource";
 import { exportAllFunctions } from "../../../importables/functions/exportAll";
 import { exportAllEvents } from "../../../importables/events/exportAll";
 import { exportAllMenus } from "../../../importables/menus/exportAll";
-import { startExport, type ExportSpec } from "../../right-panel/import-tab/importController";
+import { exportAllRegions } from "../../../importables/regions/exportAll";
+import { exportAllCommands } from "../../../importables/commands/exportAll";
+import { startExport, type ExportSpec } from "../../right-panel/import-tab/taskController";
 
-// One browsable category of house contents (Functions, Events, Menus). The
-// Houses view is fully generic over this: it never references a concrete type,
-// it dispatches scan/list/edit/export through the active entry. Adding a type =
-// one source module under houses/sources/ + one entry here.
+// One browsable category of house contents. The Houses view is generic over
+// this: it dispatches scan/list/edit/export through the active entry.
 export type HouseContentType = {
     type: Importable["type"];
     label: string;
@@ -110,8 +116,6 @@ export const HOUSE_CONTENT_TYPES: HouseContentType[] = [
         export: exportHook({ type: "MENU", label: "menu", exportAll: exportAllMenus }),
     },
     {
-        // Browse + edit only: there's no region exporter (reading bounds is the
-        // hard part), so no export hook.
         type: "REGION",
         label: "Regions",
         icon: Icons.cuboid,
@@ -121,13 +125,25 @@ export const HOUSE_CONTENT_TYPES: HouseContentType[] = [
         scanInFlight: isRegionScanInFlight,
         edit: (name) => ChatLib.command(`region edit ${name}`),
         remove: (name) => ChatLib.command(`region delete ${name}`),
+        export: exportHook({ type: "REGION", label: "region", exportAll: exportAllRegions }),
+    },
+    {
+        type: "COMMAND",
+        label: "Commands",
+        icon: Icons.command,
+        items: getHouseCommands,
+        scanned: houseCommandsScanned,
+        scan: scanHouseCommands,
+        scanInFlight: isCommandScanInFlight,
+        edit: (name) => ChatLib.command(`command edit ${name}`),
+        remove: (name) => ChatLib.command(`command delete ${name}`),
+        export: exportHook({ type: "COMMAND", label: "command", exportAll: exportAllCommands }),
     },
 ];
 
 // Importable types with a house-side listing (the scan/enumerate path above).
-// Types absent here — ITEM — can't be enumerated from a house: an item
-// exists only where an action or menu references it, so "is it in the house?"
-// has no scan that can answer it. Presence/scan UI must gate on this.
+// Types absent here, such as ITEM and NPC, do not have a name-shaped house
+// scan that can answer "is it in the house?". Presence UI must gate on this.
 const SCANNABLE_TYPES = new Set<Importable["type"]>();
 for (let i = 0; i < HOUSE_CONTENT_TYPES.length; i++) {
     SCANNABLE_TYPES.add(HOUSE_CONTENT_TYPES[i].type);

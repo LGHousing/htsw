@@ -26,8 +26,18 @@ import {
 import { getVisiblePaginatedItemSlots } from "./paginatedList";
 import { COST } from "../progress/costs";
 import { recordTimedOp } from "../progress/timing";
-import { isImportTraceEnabled, traceNote } from "../trace/importTrace";
+import { isTaskTraceEnabled, traceNote } from "../trace/taskTrace";
 import type { WaitForPromise } from "../../tasks/specifics/waitFor";
+
+const GuiEditSign = Java.type("net.minecraft.client.gui.inventory.GuiEditSign");
+const C12PacketUpdateSign = Java.type("net.minecraft.network.play.client.C12PacketUpdateSign");
+const ChatComponentText = Java.type("net.minecraft.util.ChatComponentText");
+const IChatComponent = Java.type("net.minecraft.util.IChatComponent");
+const JavaArray = Java.type("java.lang.reflect.Array");
+
+type SignTile = {
+    func_174877_v(): unknown;
+};
 
 function describeVisibleOptions(ctx: TaskContext): string {
     const names: string[] = [];
@@ -69,7 +79,7 @@ async function scanPagesForOption(
         const slot = ctx.tryGetMenuItemSlot(name);
         if (slot !== null) return slot;
 
-        if (isImportTraceEnabled()) {
+        if (isTaskTraceEnabled()) {
             traceNote("paginate", `page ${page}: ${describeVisibleOptions(ctx)}`);
         }
 
@@ -177,6 +187,53 @@ function acceptNewAnvilItem(): void {
         throw new Error("No open container found");
     }
     inventory.click(2, false);
+}
+
+function currentScreen(): unknown {
+    return Client.getMinecraft().field_71462_r;
+}
+
+function isSignEditorOpen(): boolean {
+    return currentScreen() instanceof GuiEditSign;
+}
+
+function getDeclaredFieldInHierarchy(obj: unknown, name: string) {
+    let cls = (obj as { class: { getDeclaredField(name: string): unknown; getSuperclass(): unknown } }).class;
+    while (cls !== null) {
+        try {
+            const field = cls.getDeclaredField(name) as {
+                setAccessible(value: boolean): void;
+                get(target: unknown): unknown;
+                set(target: unknown, value: unknown): void;
+            };
+            field.setAccessible(true);
+            return field;
+        } catch (_e) {
+            cls = cls.getSuperclass() as typeof cls;
+        }
+    }
+    throw new Error(`Could not find field ${name}`);
+}
+
+function chatComponentLines(lines: string[]) {
+    const array = JavaArray.newInstance(IChatComponent.class, 4);
+    for (let i = 0; i < 4; i++) {
+        JavaArray.set(array, i, new ChatComponentText(lines[i] ?? ""));
+    }
+    return array;
+}
+
+function submitSignValue(value: string): void {
+    const screen = currentScreen();
+    if (!(screen instanceof GuiEditSign)) {
+        throw new Error("Sign input was expected, but the sign editor is not open.");
+    }
+
+    const sign = getDeclaredFieldInHierarchy(screen, "field_146848_f").get(screen) as SignTile;
+    const lines = chatComponentLines([value, "", "", ""]);
+    getDeclaredFieldInHierarchy(sign, "field_145915_a").set(sign, lines);
+    Client.sendPacket(new C12PacketUpdateSign(sign.func_174877_v(), lines));
+    Client.getMinecraft().func_147108_a(null);
 }
 
 export async function setListItemNote(
@@ -428,7 +485,7 @@ export async function setCycleValue(
     throw new Error(`Could not set "${slotName}" to "${value}".`);
 }
 
-export async function enterValue(ctx: TaskContext, value: string): Promise<"CHAT" | "ANVIL"> {
+export async function enterValue(ctx: TaskContext, value: string): Promise<"CHAT" | "ANVIL" | "SIGN"> {
     const chatWait = waitForChatInputPrompt(ctx);
     const anvilWait = ctx.waitFor("packetReceived", (packet) => {
         return (
@@ -436,14 +493,16 @@ export async function enterValue(ctx: TaskContext, value: string): Promise<"CHAT
             openWindowPacketGuiId(packet) === "minecraft:anvil"
         );
     });
+    const signWait = ctx.waitFor("tick", isSignEditorOpen);
     const anvilMode = anvilWait.then((args) => ({
         mode: "ANVIL" as const,
         windowId: openWindowPacketId(args[0]) ?? 0,
     }));
     const inputMode = await ctx.withTimeout(
-        ctx.race<"CHAT" | { mode: "ANVIL"; windowId: number }>([
+        ctx.race<"CHAT" | "SIGN" | { mode: "ANVIL"; windowId: number }>([
             [chatWait.then(() => "CHAT" as const), chatWait],
             [anvilMode, anvilWait],
+            [signWait.then(() => "SIGN" as const), signWait],
         ]),
         "Waiting for input mode to be determined",
         8000
@@ -452,6 +511,10 @@ export async function enterValue(ctx: TaskContext, value: string): Promise<"CHAT
     if (inputMode === "CHAT") {
         await ctx.sendMessage(value);
         return "CHAT";
+    }
+    if (inputMode === "SIGN") {
+        submitSignValue(value);
+        return "SIGN";
     }
     if (value.length > ANVIL_NAME_MAX) {
         throw new Error(
@@ -464,6 +527,15 @@ export async function enterValue(ctx: TaskContext, value: string): Promise<"CHAT
     setAnvilItemName(value);
     acceptNewAnvilItem();
     return "ANVIL";
+}
+
+function valueInputTiming(mode: "CHAT" | "ANVIL" | "SIGN"): {
+    kind: "chatInput" | "anvilInput" | "signInput";
+    units: number;
+} {
+    if (mode === "CHAT") return { kind: "chatInput", units: COST.chatInput };
+    if (mode === "SIGN") return { kind: "signInput", units: COST.signInput };
+    return { kind: "anvilInput", units: COST.anvilInput };
 }
 
 function waitForChatInputPrompt(ctx: TaskContext): WaitForPromise<unknown> {
@@ -490,7 +562,8 @@ export async function setNumberValue(ctx: TaskContext, slot: ItemSlot, value: nu
     const started = Date.now();
     const mode = await enterValue(ctx, newValue);
     await waitForMenu(ctx);
-    recordTimedOp(mode === "CHAT" ? "chatInput" : "anvilInput", mode === "CHAT" ? COST.chatInput : COST.anvilInput, Date.now() - started);
+    const timing = valueInputTiming(mode);
+    recordTimedOp(timing.kind, timing.units, Date.now() - started);
 }
 
 export async function setStringValue(
@@ -506,7 +579,8 @@ export async function setStringValue(
     const started = Date.now();
     const mode = await enterValue(ctx, newValue);
     await waitForMenu(ctx);
-    recordTimedOp(mode === "CHAT" ? "chatInput" : "anvilInput", mode === "CHAT" ? COST.chatInput : COST.anvilInput, Date.now() - started);
+    const timing = valueInputTiming(mode);
+    recordTimedOp(timing.kind, timing.units, Date.now() - started);
 }
 
 export async function setStringOrPaginatedOptionValue(

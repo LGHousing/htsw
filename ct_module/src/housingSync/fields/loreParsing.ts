@@ -299,6 +299,24 @@ export function readListItemNote(slot: ItemSlot): string | undefined {
     return noteLines.join("\n");
 }
 
+export function shallowActionListHasActions(slot: ItemSlot): boolean {
+    const lore = slot.getItem().getLore();
+    let inActions = false;
+    for (let i = 0; i < lore.length; i++) {
+        const line = removedFormatting(lore[i]).trim();
+        if (line === "Actions:") {
+            inActions = true;
+            continue;
+        }
+        if (!inActions) continue;
+        if (line.length === 0) continue;
+        if (line === "- None") return false;
+        if (line.charAt(0) === "-") return true;
+        if (line === "Click to edit!") break;
+    }
+    return true;
+}
+
 export function normalizeNoteText(note: string): string {
     return note
         .split("\n")

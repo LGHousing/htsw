@@ -15,7 +15,7 @@ import {
     forEachCachedParse,
     parseImportJsonBlocking,
 } from "./parsing/parses";
-import { importableIdentity } from "../importCache/paths";
+import { importableIdentity } from "../importables/identity";
 import { statusForImportable } from "./cache-status";
 import { addToQueue, makeImportableQueueItem } from "./right-panel/import-tab/queue";
 

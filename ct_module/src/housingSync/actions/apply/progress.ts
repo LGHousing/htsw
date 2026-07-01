@@ -8,10 +8,10 @@ import {
     actionPathForIndex,
     type ActionPath,
     type DiffSummary,
-    type ImportEventHandler,
+    type SyncEventHandler,
     type PlannedOp,
     type ProgressScope,
-} from "../../importEvents";
+} from "../../syncEvents";
 import {
     actionOperationApplyUnits,
     editUnitsWithChildLists,
@@ -22,7 +22,7 @@ import { getActionScalarLoreFields } from "../../fields/actionMappings";
 import { scalarFieldDiffers } from "../../fields/compare";
 
 export function emitDiffPlanned(
-    events: ImportEventHandler | undefined,
+    events: SyncEventHandler | undefined,
     diff: ActionListDiff,
     desired: Action[],
     listPath: ActionPath | undefined
@@ -93,7 +93,7 @@ export function emitDiffPlanned(
 }
 
 export function emitApplyProgress(
-    events: ImportEventHandler | undefined,
+    events: SyncEventHandler | undefined,
     scope: ProgressScope,
     phaseUnits: PhaseUnits,
     completedUnits: number,

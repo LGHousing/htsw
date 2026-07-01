@@ -194,6 +194,65 @@ export async function getPaginatedListSlotAtIndex(
     return slot;
 }
 
+export async function findPaginatedListEntry<T extends { index: number }>(
+    ctx: TaskContext,
+    config: PaginatedListConfig,
+    readPage: () => Promise<T[]>,
+    matches: (entry: T) => boolean,
+    onPageRead?: (entries: readonly T[]) => void
+): Promise<{ entry: T; slot: ItemSlot } | null> {
+    await goToPaginatedListPage(ctx, 1, config);
+
+    let found = false;
+    try {
+        let totalEntries = 0;
+        while (true) {
+            const visibleSlots = getVisiblePaginatedItemSlots(ctx);
+            const pageEntries = await readPage();
+            const localSlotIndices: number[] = [];
+            for (let i = 0; i < pageEntries.length; i++) {
+                localSlotIndices[i] = pageEntries[i].index;
+                pageEntries[i].index = totalEntries + i;
+            }
+            onPageRead?.(pageEntries);
+
+            for (let i = 0; i < pageEntries.length; i++) {
+                const localSlotIndex = localSlotIndices[i];
+                if (!matches(pageEntries[i])) continue;
+
+                const slot = visibleSlots[localSlotIndex];
+                if (!slot) {
+                    throw new Error(
+                        `Could not resolve visible ${config.label} slot ${localSlotIndex}.`
+                    );
+                }
+                found = true;
+                return { entry: pageEntries[i], slot };
+            }
+
+            totalEntries += pageEntries.length;
+            const stateBefore = getCurrentPaginatedListPageState(ctx, config);
+            if (!stateBefore.hasNext) break;
+
+            clickPaginatedNextPage(ctx);
+            await timedWaitForMenu(ctx, "pageTurnWait");
+
+            const stateAfter = getCurrentPaginatedListPageState(ctx, config);
+            if (stateAfter.currentPage <= stateBefore.currentPage) {
+                throw new Error(
+                    `Paginated ${config.label} page did not advance after clicking next page (still on page ${stateAfter.currentPage}).`
+                );
+            }
+        }
+    } finally {
+        if (!found) {
+            await goToPaginatedListPage(ctx, 1, config);
+        }
+    }
+
+    return null;
+}
+
 function clickPaginatedNextPage(ctx: TaskContext): void {
     ctx.getItemSlot((slot) => slot.getSlotId() === NEXT_PAGE_SLOT_ID).click();
 }

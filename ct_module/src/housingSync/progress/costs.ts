@@ -60,6 +60,7 @@ export const COST = {
     goBackWait: 1.8,
 
     chatInput: 3,
+    signInput: 3,
     anvilInput: 3.8,
     itemSelect: 1.6,
 
@@ -410,9 +411,13 @@ export function setupUnitsForImportable(importable: Importable): number {
 
 function ownSetupUnits(importable: Importable): number {
     if (importable.type === "FUNCTION") return COST.commandMenuWait;
+    if (importable.type === "COMMAND") return COST.commandMenuWait;
     if (importable.type === "EVENT") return COST.commandMenuWait + COST.menuClickWait;
     if (importable.type === "REGION") {
         return COST.commandMessageWait * 3 + COST.commandMenuWait;
+    }
+    if (importable.type === "NPC") {
+        return COST.commandMenuWait + COST.menuClickWait * 3;
     }
     if (importable.type === "ITEM") {
         const hasActions =
@@ -661,6 +666,18 @@ export function estimateImportableCost(
             COST.cacheWrite
         );
     }
+    if (importable.type === "COMMAND") {
+        const settingsUnits =
+            fieldKindEditUnits("cycle") +
+            COST.signInput +
+            fieldKindEditUnits("boolean");
+        return (
+            COST.commandMenuWait +
+            actionListCost(importable.actions ?? [], get("actions"), trustedBaseline) +
+            settingsUnits +
+            COST.cacheWrite
+        );
+    }
     if (importable.type === "EVENT") {
         return (
             COST.commandMenuWait +
@@ -701,6 +718,22 @@ export function estimateImportableCost(
         return (
             COST.commandMenuWait +
             (importable.slots?.length ?? 0) * COST.menuClickWait +
+            COST.cacheWrite
+        );
+    }
+    if (importable.type === "NPC") {
+        const left = importable.leftClickActions ?? [];
+        const right = importable.rightClickActions ?? [];
+        const redirectUnits =
+            importable.leftClickRedirect === undefined ? 0 : COST.menuClickWait;
+        const renameUnits = COST.chatInput;
+        return (
+            COST.commandMenuWait +
+            COST.menuClickWait * 3 +
+            renameUnits +
+            redirectUnits +
+            actionListCost(left, get("leftClickActions"), trustedBaseline) +
+            actionListCost(right, get("rightClickActions"), trustedBaseline) +
             COST.cacheWrite
         );
     }

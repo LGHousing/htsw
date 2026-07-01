@@ -12,7 +12,7 @@ import { timedWaitForMenu } from "../../housingSync/gui/menuWait";
 import { selectItemFromOpenInventory } from "../../housingSync/items/injectItem";
 import { canonicalItemKey, snbtFromItem } from "../../housingSync/itemCapture";
 import type { ImportableTrustPlan } from "../../importCache";
-import { createSetupStepEmitter } from "../../housingSync/importEvents";
+import { createSetupStepEmitter } from "../../housingSync/syncEvents";
 import TaskContext from "../../tasks/context";
 import { removedFormatting } from "../../utils/helpers";
 import { getItemFromNbt, getItemFromSnbt } from "../../utils/nbt";

@@ -1,5 +1,6 @@
 import * as htsw from "htsw";
 import type { ImportableItem } from "htsw/types";
+import type { Tag } from "htsw/nbt";
 import { canonicalStringify } from "./fields/compare";
 
 import TaskContext from "../tasks/context";
@@ -14,7 +15,7 @@ import {
     sendCreativeInventoryAction,
     waitForAnySetSlot,
 } from "./gui/packets";
-import { traceNote } from "./trace/importTrace";
+import { traceNote } from "./trace/taskTrace";
 
 const SCRATCH_PACKET_SLOT = 26;
 const INVENTORY_SIZE = 36;
@@ -75,7 +76,8 @@ export class ItemCaptureRegistry {
     }
 
     register(snbt: string, displayNameHint: string): string {
-        const hash = canonicalItemKey(getItemFromSnbt(snbt));
+        const normalizedSnbt = normalizeItemSnbtForExport(snbt);
+        const hash = canonicalItemKey(getItemFromSnbt(normalizedSnbt));
         const existing = this.byHash[hash];
         if (existing !== undefined) {
             if (existing.seeded) this.matchedHashes[hash] = true;
@@ -101,7 +103,7 @@ export class ItemCaptureRegistry {
             );
         }
 
-        this.byHash[hash] = { name, snbt, displayName: displayNameHint, seeded: false };
+        this.byHash[hash] = { name, snbt: normalizedSnbt, displayName: displayNameHint, seeded: false };
         this.nameToHash[name] = hash;
         return name;
     }
@@ -196,6 +198,19 @@ function stripInteractData(tag: TagLike): TagLike {
     return { type: "compound", value: newRoot };
 }
 
+function normalizeBlankLoreSeparators(tag: TagLike): TagLike {
+    const lore = tagChild(tagChild(tagChild(tag, "tag"), "display"), "Lore");
+    if (lore === undefined || lore.type !== "list") return tag;
+
+    const listValue = lore.value as { type: string; value: unknown[] };
+    if (listValue.type !== "string") return tag;
+
+    for (let i = 0; i < listValue.value.length; i++) {
+        if (listValue.value[i] === "") listValue.value[i] = "§7";
+    }
+    return tag;
+}
+
 /**
  * Canonical comparison key for an item's NBT that ignores non-portable Housing
  * additions — the empty `tag:{display:{}}` it stamps on placed items, and the
@@ -205,7 +220,9 @@ function stripInteractData(tag: TagLike): TagLike {
 export function canonicalItemKey(item: Item): string {
     const tag = itemToHtswTag(item) as TagLike | null;
     if (tag === null) return "<null>";
-    return canonicalStringify(stripEmptyCompounds(stripInteractData(tag)));
+    return canonicalStringify(
+        normalizeBlankLoreSeparators(stripEmptyCompounds(stripInteractData(tag)))
+    );
 }
 
 function displayNameFromTag(root: unknown): string | null {
@@ -543,7 +560,16 @@ function rewriteSnbtCount(snbt: string, newCount: number): string {
 export function prettySnbt(snbt: string): string {
     try {
         const tag = htsw.nbt.parseSnbtText(snbt);
-        return htsw.nbt.printSnbt(tag, { pretty: true });
+        return htsw.nbt.printSnbt(normalizeBlankLoreSeparators(tag) as Tag, { pretty: true });
+    } catch (_error) {
+        return snbt;
+    }
+}
+
+export function normalizeItemSnbtForExport(snbt: string): string {
+    try {
+        const tag = htsw.nbt.parseSnbtText(snbt);
+        return htsw.nbt.printSnbt(normalizeBlankLoreSeparators(tag) as Tag, { pretty: false });
     } catch (_error) {
         return snbt;
     }
@@ -552,7 +578,7 @@ export function prettySnbt(snbt: string): string {
 export function snbtFromItem(item: Item, opts: { pretty: boolean }): string | null {
     const tag = itemToHtswTag(item);
     if (tag === null) return null;
-    return htsw.nbt.printSnbt(tag, { pretty: opts.pretty });
+    return htsw.nbt.printSnbt(normalizeBlankLoreSeparators(tag as TagLike) as Tag, { pretty: opts.pretty });
 }
 
 export async function captureItemFromOpenEditorField(

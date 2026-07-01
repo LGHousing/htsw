@@ -5,7 +5,7 @@ import type { ImportableTrustPlan } from "../../importCache";
 import { readCachedActionList } from "../../importCache/actionLists";
 import TaskContext from "../../tasks/context";
 import type { ActionListTrust } from "../types";
-import type { ActionPath, ProgressScope } from "../importEvents";
+import type { ActionPath, ProgressScope } from "../syncEvents";
 import {
     createKnownEmptyActionListPlan,
     prereadActionList,
@@ -76,7 +76,7 @@ function isActionListTrusted(
     return plan?.trustedChildListPaths.has(basePath) ?? false;
 }
 
-function getBaselineActionList(
+export function getBaselineActionList(
     plan: ImportableTrustPlan | undefined,
     basePath: string
 ): readonly Action[] | undefined {
@@ -86,7 +86,7 @@ function getBaselineActionList(
     return readCachedActionList(plan.entry.importable, basePath);
 }
 
-function getActionListTrust(
+export function getActionListTrust(
     plan: ImportableTrustPlan | undefined,
     basePath: string
 ): ActionListTrust | undefined {

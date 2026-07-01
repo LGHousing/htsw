@@ -1,18 +1,18 @@
 /// <reference types="../../../../CTAutocomplete" />
 
 /**
- * Import-session progress state. Owns the `ImportProgress` object that the
- * importer mutates, plus derived queue-row render state and a few helpers
- * for building fresh progress shapes.
+ * Shared task progress state. Owns the `TaskProgress` object used by import,
+ * read, and export flows, plus derived queue-row render state and helpers for
+ * building fresh progress shapes.
  *
- * Read by: the right-panel live importer panel, queue rows, code-view
- * focus tracking. Written by: `import-actions.ts:startImport` (via
- * `setImportProgress`) and the per-import preview event handler.
+ * Read by: the right-panel progress panel, queue rows, and code-view focus
+ * tracking. Written by import/read/export task controllers through
+ * `setTaskProgress`.
  */
 
 import type { Importable } from "htsw/types";
 
-import type { ImportProgress, QueueRow } from "../../../housingSync/progress/types";
+import type { TaskProgress, TaskProgressEntry } from "../../../housingSync/progress/types";
 import { queueRowKey } from "../../../housingSync/progress/queueRowKey";
 import {
     createEtaCalculator,
@@ -21,57 +21,57 @@ import {
 } from "../../../housingSync/progress/eta";
 import { setProgressTraceSampler } from "../../../housingSync/trace/progressTrace";
 import { resetSessionTiming } from "../../../housingSync/progress/timing";
-import { importableIdentity } from "../../../importCache/paths";
+import { importableIdentity } from "../../../importables/identity";
 import { queueItemProgressPath, type QueueItem } from "./queue";
 import { canonicalPath } from "../../parsing/parses";
-import { onImportRunningChanged, setLiveImportPathProvider } from "../selection";
+import { onTaskRunningChanged, setLiveTaskPathProvider } from "../selection";
 import { markGuiDirty } from "../../lib/dirty";
 
 // Feed the progress trace's periodic sampler the *displayed* ETA values, so
 // `/htsw eta trace` captures what the user sees between events (the smoothing
 // behavior in the gaps), not just the per-event candidate.
 setProgressTraceSampler(() => {
-    if (importProgress === null) return null;
+    if (taskProgress === null) return null;
     return {
-        etaSec: getImportEtaSeconds(),
+        etaSec: getTaskEtaSeconds(),
         phaseEtaSec: getCurrentPhaseEtaSeconds(),
         msPerUnit: currentMsPerUnit(),
-        remaining: Math.max(0, importProgress.totalUnits - importProgress.completedUnits),
-        completed: importProgress.completedUnits,
-        total: importProgress.totalUnits,
+        remaining: Math.max(0, taskProgress.totalUnits - taskProgress.completedUnits),
+        completed: taskProgress.completedUnits,
+        total: taskProgress.totalUnits,
     };
 });
 
-let importProgress: ImportProgress | null = null;
+let taskProgress: TaskProgress | null = null;
 /**
- * The last final import progress, kept after `importProgress` is cleared
+ * The last final task progress, kept after `taskProgress` is cleared
  * so the queue can still render done/skipped/failed states for a short
- * window after the import completes (the queue items stay visible briefly
+ * window after the task completes (the queue items stay visible briefly
  * for confirmation before being cleared).
  */
-let lastFinishedProgress: ImportProgress | null = null;
+let lastFinishedTaskProgress: TaskProgress | null = null;
 /**
- * `Date.now()` of the moment the in-flight import started. Captured the
- * first time `setImportProgress` transitions from null to non-null and
+ * `Date.now()` of the moment the in-flight task started. Captured the
+ * first time `setTaskProgress` transitions from null to non-null and
  * cleared on the inverse transition.
  */
-let importStartedAt: number | null = null;
-/** Fresh per import session — cleared when `importProgress` returns to null. */
+let taskStartedAt: number | null = null;
+/** Fresh per task session — cleared when `taskProgress` returns to null. */
 let etaCalc: EtaCalculator | null = null;
 /**
  * Resolved filesystem path of the importable currently being processed
- * by the in-flight import session. Drives the LiveImporter panel above
+ * by the in-flight task session. Drives the live task panel above
  * the inventory: when set, that file's HTSL is rendered with diff
  * colors; when null, the panel shows an idle state. Cleared by the
- * import's progress callback when the session reports no current
+ * task progress callback when the session reports no current
  * importable.
  */
-let activeImportPath: string | null = null;
+let activeTaskPath: string | null = null;
 
-setLiveImportPathProvider(() => activeImportPath);
+setLiveTaskPathProvider(() => activeTaskPath);
 
-export function getImportProgress(): ImportProgress | null {
-    return importProgress;
+export function getTaskProgress(): TaskProgress | null {
+    return taskProgress;
 }
 
 /**
@@ -106,53 +106,53 @@ export function setEtaRough(v: boolean): void {
 }
 
 /** Display name of the importable currently being processed, or null when idle. */
-export function getActiveImportLabel(): string | null {
-    if (importProgress === null || importProgress.active === null) return null;
-    return importProgress.active.identity;
+export function getActiveTaskLabel(): string | null {
+    if (taskProgress === null || taskProgress.active === null) return null;
+    return taskProgress.active.identity;
 }
 
-export function getImportProgressFraction(): number {
-    const p = importProgress;
+export function getTaskProgressFraction(): number {
+    const p = taskProgress;
     if (p === null || p.totalUnits <= 0) return 0;
     return Math.min(1, Math.max(0, p.completedUnits / p.totalUnits));
 }
 
-export function getImportEtaSeconds(): number | null {
-    return etaCalc === null ? null : etaCalc.getTotal(importProgress, importStartedAt);
+export function getTaskEtaSeconds(): number | null {
+    return etaCalc === null ? null : etaCalc.getTotal(taskProgress, taskStartedAt);
 }
 
 export function getCurrentPhaseEtaSeconds(): number | null {
-    return etaCalc === null ? null : etaCalc.getPhase(importProgress, importStartedAt);
+    return etaCalc === null ? null : etaCalc.getPhase(taskProgress, taskStartedAt);
 }
 
-export function getImportEtcMs(): number | null {
-    const secs = getImportEtaSeconds();
+export function getTaskEtcMs(): number | null {
+    const secs = getTaskEtaSeconds();
     if (secs === null) return null;
     return Date.now() + Math.max(0, Math.round(secs * 1000));
 }
 
-export function getImportMsPerUnit(): number {
+export function getTaskMsPerUnit(): number {
     return currentMsPerUnit();
 }
 
-export function getImportElapsedMs(): number | null {
-    return importStartedAt === null ? null : Date.now() - importStartedAt;
+export function getTaskElapsedMs(): number | null {
+    return taskStartedAt === null ? null : Date.now() - taskStartedAt;
 }
 
-export function getActiveImportPath(): string | null {
-    return activeImportPath;
+export function getActiveTaskPath(): string | null {
+    return activeTaskPath;
 }
-export function setActiveImportPath(p: string | null): void {
-    if (activeImportPath === p) return;
-    activeImportPath = p;
+export function setActiveTaskPath(p: string | null): void {
+    if (activeTaskPath === p) return;
+    activeTaskPath = p;
     markGuiDirty();
 }
 
-export function createImportRows(
+export function createTaskRows(
     importables: readonly Importable[],
     sourcePath: string
-): QueueRow[] {
-    const rows: QueueRow[] = [];
+): TaskProgressEntry[] {
+    const rows: TaskProgressEntry[] = [];
     for (let i = 0; i < importables.length; i++) {
         const importable = importables[i];
         const identity = importableIdentity(importable);
@@ -165,8 +165,8 @@ export function createImportRows(
     return rows;
 }
 
-export function createImportProgress(init: Partial<ImportProgress>): ImportProgress {
-    return normalizeImportProgress({
+export function createTaskProgress(init: Partial<TaskProgress>): TaskProgress {
+    return normalizeTaskProgress({
         completedUnits: init.completedUnits ?? 0,
         totalUnits: init.totalUnits ?? 1,
         active: init.active ?? null,
@@ -175,7 +175,7 @@ export function createImportProgress(init: Partial<ImportProgress>): ImportProgr
     });
 }
 
-function normalizeImportProgress(p: ImportProgress): ImportProgress {
+function normalizeTaskProgress(p: TaskProgress): TaskProgress {
     const completedUnits = Math.max(0, p.completedUnits);
     const totalUnits = Math.max(1, p.totalUnits, completedUnits);
     return {
@@ -185,31 +185,31 @@ function normalizeImportProgress(p: ImportProgress): ImportProgress {
     };
 }
 
-export function setImportProgress(p: ImportProgress | null): void {
-    const wasNull = importProgress === null;
-    if (p !== null && importProgress === null) {
-        importStartedAt = Date.now();
+export function setTaskProgress(p: TaskProgress | null): void {
+    const wasNull = taskProgress === null;
+    if (p !== null && taskProgress === null) {
+        taskStartedAt = Date.now();
         etaCalc = createEtaCalculator();
         resetSessionTiming();
-        lastFinishedProgress = null;
+        lastFinishedTaskProgress = null;
         // Session defaults — reset at START, not at clear: the queue keeps
-        // rendering `lastFinishedProgress` for a confirmation window after a
+        // rendering `lastFinishedTaskProgress` for a confirmation window after a
         // run, and resetting the verb on clear would mislabel those rows.
         sessionVerb = "import";
         etaRough = false;
     } else if (p === null) {
-        lastFinishedProgress = importProgress;
-        importStartedAt = null;
+        lastFinishedTaskProgress = taskProgress;
+        taskStartedAt = null;
         etaCalc = null;
     }
-    importProgress = p === null ? null : normalizeImportProgress(p);
-    onImportRunningChanged(!wasNull, p !== null);
+    taskProgress = p === null ? null : normalizeTaskProgress(p);
+    onTaskRunningChanged(!wasNull, p !== null);
     markGuiDirty();
 }
 
 export function clearLastFinishedProgress(): void {
-    if (lastFinishedProgress === null) return;
-    lastFinishedProgress = null;
+    if (lastFinishedTaskProgress === null) return;
+    lastFinishedTaskProgress = null;
     markGuiDirty();
 }
 
@@ -238,7 +238,7 @@ export type QueueItemRunState =
       };
 
 export function getQueueItemRunState(item: QueueItem): QueueItemRunState {
-    const progress = importProgress ?? lastFinishedProgress;
+    const progress = taskProgress ?? lastFinishedTaskProgress;
     if (progress === null) {
         return { kind: "queued" };
     }
@@ -248,8 +248,8 @@ export function getQueueItemRunState(item: QueueItem): QueueItemRunState {
     }
     const progressPath = queueItemProgressPath(item);
     if (progressPath === null) return { kind: "queued" };
+    let row: TaskProgressEntry | undefined;
     const key = queueRowKey(item.type, item.identity, progressPath);
-    let row: QueueRow | undefined;
     for (let i = 0; i < progress.rows.length; i++) {
         if (progress.rows[i].key === key) {
             row = progress.rows[i];
@@ -321,11 +321,11 @@ function runStateFromActive(active: {
 
 /**
  * True iff this queue item corresponds to the importable currently being
- * processed by the in-flight import session.
+ * processed by the in-flight task session.
  */
 export function isCurrentQueueItem(item: QueueItem): boolean {
-    if (importProgress === null) return false;
-    const current = importProgress.active;
+    if (taskProgress === null) return false;
+    const current = taskProgress.active;
     if (current === null) return false;
     if (item.kind === "importable") {
         const progressPath = queueItemProgressPath(item);
@@ -337,6 +337,6 @@ export function isCurrentQueueItem(item: QueueItem): boolean {
         );
     }
     if (item.operation !== "import") return false;
-    if (activeImportPath === null) return false;
-    return canonicalPath(item.sourcePath) === canonicalPath(activeImportPath);
+    if (activeTaskPath === null) return false;
+    return canonicalPath(item.sourcePath) === canonicalPath(activeTaskPath);
 }

@@ -5,7 +5,7 @@ import {
     prepareActionListSync,
     shouldSyncActionList,
 } from "../../housingSync/actions/prepareSync";
-import { createSetupStepEmitter } from "../../housingSync/importEvents";
+import { createSetupStepEmitter } from "../../housingSync/syncEvents";
 import { clickGoBack } from "../../housingSync/gui/menuUtils";
 import { timedWaitForMenu } from "../../housingSync/gui/menuWait";
 import {

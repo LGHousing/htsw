@@ -33,7 +33,7 @@ import {
     type SubListKind,
 } from "../../parsing/importablePaths";
 import { moveImportableEntry } from "../../../project/moveImportable";
-import { importableIdentity } from "../../../importCache/paths";
+import { importableIdentity } from "../../../importables/identity";
 import { houseDisplayName } from "../../../importCache/aliases";
 import {
     removeImportableEntry,
@@ -53,7 +53,7 @@ import {
     readImportableCache,
 } from "../../../importCache/cache";
 import { addToQueue, makeImportableQueueItem, queueItemKey, removeFromQueueKey } from "../../right-panel/import-tab/queue";
-import { isImportRunning } from "../../../housingSync/importRunState";
+import { isTaskRunning } from "../../../tasks/runningState";
 import { composeFileMenu, composeImportableMenu } from "../../menus/fileMenu";
 import { autoTrackRefresh, queueModifiedFromPath } from "../../autoTrack";
 import { SourceDir, SourceFile, removeSource } from "./source";
@@ -127,6 +127,7 @@ export function importableExpansionKey(parentFullPath: string, imp: Importable):
 }
 
 const SUB_LIST_LABELS: { [k in SubListKind]: string } = {
+    actions: "Actions",
     onEnterActions: "Enter actions",
     onExitActions: "Exit actions",
     leftClickActions: "Left click actions",
@@ -134,13 +135,18 @@ const SUB_LIST_LABELS: { [k in SubListKind]: string } = {
 };
 
 export function subListsOf(imp: Importable): SubListKind[] {
+    if (imp.type === "COMMAND") {
+        const out: SubListKind[] = [];
+        if (hasSubList(imp, "actions")) out.push("actions");
+        return out;
+    }
     if (imp.type === "REGION") {
         const out: SubListKind[] = [];
         if (hasSubList(imp, "onEnterActions")) out.push("onEnterActions");
         if (hasSubList(imp, "onExitActions")) out.push("onExitActions");
         return out;
     }
-    if (imp.type === "ITEM") {
+    if (imp.type === "ITEM" || imp.type === "NPC") {
         const out: SubListKind[] = [];
         if (hasSubList(imp, "leftClickActions")) out.push("leftClickActions");
         if (hasSubList(imp, "rightClickActions")) out.push("rightClickActions");
@@ -276,30 +282,51 @@ export function metadataFieldsOf(imp: Importable): MetadataField[] {
         }
         return fields;
     }
+    if (imp.type === "COMMAND") {
+        const cc = cached !== null && cached.type === "COMMAND" ? cached : null;
+        return [
+            {
+                key: "mode",
+                label: "Mode",
+                value: imp.mode ?? "Self",
+                diff: cc !== null ? valDiff(imp.mode ?? "Self", cc.mode ?? "Self") : undefined,
+            },
+            {
+                key: "requiredPriority",
+                label: "Priority",
+                value: String(imp.requiredPriority ?? 0),
+                diff: cc !== null ? valDiff(imp.requiredPriority ?? 0, cc.requiredPriority ?? 0) : undefined,
+            },
+            {
+                key: "listed",
+                label: "Listed",
+                value: (imp.listed ?? true) ? "true" : "false",
+                diff: cc !== null ? valDiff(imp.listed ?? true, cc.listed ?? true) : undefined,
+            },
+        ];
+    }
     if (imp.type === "REGION") {
         const cr = cached !== null && cached.type === "REGION" ? cached : null;
-        // The parser allows a region without bounds (the key is optional), so
-        // the declared non-optional type is a lie here — guard or this throws
-        // on every render of the expanded row.
         const bounds = imp.bounds as Bounds | undefined;
+        const cachedBounds = cr?.bounds;
         if (bounds === undefined) {
             return [
                 {
                     key: "bounds",
                     label: "Bounds",
                     value: "(not set)",
-                    diff: cr !== null ? valDiff(undefined, cr.bounds) : undefined,
+                    diff: cr !== null ? valDiff(undefined, cachedBounds) : undefined,
                 },
             ];
         }
         return [
             {
                 key: "boundsFrom", label: "From", value: formatPos(bounds.from),
-                diff: cr !== null ? valDiff(bounds.from, cr.bounds.from) : undefined,
+                diff: cachedBounds !== undefined ? valDiff(bounds.from, cachedBounds.from) : undefined,
             },
             {
                 key: "boundsTo", label: "To", value: formatPos(bounds.to),
-                diff: cr !== null ? valDiff(bounds.to, cr.bounds.to) : undefined,
+                diff: cachedBounds !== undefined ? valDiff(bounds.to, cachedBounds.to) : undefined,
             },
         ];
     }
@@ -311,6 +338,25 @@ export function metadataFieldsOf(imp: Importable): MetadataField[] {
                 label: "Size",
                 value: imp.size !== undefined ? imp.size + " lines" : "default",
                 diff: cm !== null ? valDiff(imp.size, cm.size) : undefined,
+            },
+        ];
+    }
+    if (imp.type === "NPC") {
+        const cn = cached !== null && cached.type === "NPC" ? cached : null;
+        return [
+            {
+                key: "pos",
+                label: "Pos",
+                value: formatPos(imp.pos),
+                diff: cn !== null ? valDiff(imp.pos, cn.pos) : undefined,
+            },
+            {
+                key: "leftClickRedirect",
+                label: "Redirect",
+                value: imp.leftClickRedirect === undefined
+                    ? "default"
+                    : imp.leftClickRedirect ? "true" : "false",
+                diff: cn !== null ? valDiff(imp.leftClickRedirect, cn.leftClickRedirect) : undefined,
             },
         ];
     }
@@ -355,6 +401,7 @@ const SECTION_BY_TYPE: Partial<{ [k in Importable["type"]]: Section }> = {
     REGION: "regions",
     ITEM: "items",
     MENU: "menus",
+    NPC: "npcs",
     TEAM: "teams",
     GROUP: "groups",
     COMMAND: "commands",
@@ -1324,7 +1371,7 @@ function toggleImportableInQueue(
     checkKey: string,
     checked: boolean
 ): void {
-    if (checked && isImportRunning()) return; // would remove — locked mid-run
+    if (checked && isTaskRunning()) return; // would remove — locked mid-run
     const nowChecked = toggleImportableChecked(checkKey);
     const item = makeImportableQueueItem(imp, parent.fullPath);
     if (nowChecked) addToQueue(item);
@@ -1436,6 +1483,7 @@ export function metadataRow(parent: ResultImport, imp: Importable, field: Metada
     const fileTarget = imp.type === "ITEM" && field.key === "nbt"
         ? importableSourceFilePath(parent, imp)
         : null;
+    const editable = !(imp.type === "NPC" && field.key === "pos");
     const actions = fileTarget === null
         ? null
         : composeFileMenu(
@@ -1455,7 +1503,9 @@ export function metadataRow(parent: ResultImport, imp: Importable, field: Metada
             background: ROW_BG,
             hoverBackground: ROW_HOVER_BG,
         },
-        onClick: fileTarget === null || actions === null
+        onClick: !editable
+            ? undefined
+            : fileTarget === null || actions === null
             ? (rect, info) => {
                   if (info.button !== 0) return;
                   openEditFunctionFieldPopover(rect, parent.fullPath, imp, field.key);

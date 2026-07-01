@@ -10,7 +10,7 @@ import {
 } from "../../housingSync/actions/plan";
 import { prepareActionListSync } from "../../housingSync/actions/prepareSync";
 import type { ImportableTrustPlan } from "../../importCache";
-import { createSetupStepEmitter } from "../../housingSync/importEvents";
+import { createSetupStepEmitter } from "../../housingSync/syncEvents";
 import TaskContext from "../../tasks/context";
 import type { ImportSession } from "../imports";
 import {

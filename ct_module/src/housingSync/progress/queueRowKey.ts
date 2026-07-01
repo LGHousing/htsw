@@ -1,6 +1,6 @@
 import type { Importable } from "htsw/types";
 
-import { importableKey } from "../../importCache/paths";
+import { importableKey } from "../../importables/identity";
 
 /**
  * Canonicalize slash direction so the same queue path referenced as

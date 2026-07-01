@@ -59,6 +59,8 @@ function collectReferencedImportables(
         collectActionReferences(importable.actions, refs);
     } else if (importable.type === "EVENT") {
         collectActionReferences(importable.actions, refs);
+    } else if (importable.type === "COMMAND") {
+        collectActionReferences(importable.actions, refs);
     } else if (importable.type === "REGION") {
         collectActionReferences(importable.onEnterActions, refs);
         collectActionReferences(importable.onExitActions, refs);
@@ -69,6 +71,9 @@ function collectReferencedImportables(
         for (const slot of importable.slots) {
             collectActionReferences(slot.actions, refs);
         }
+    } else if (importable.type === "NPC") {
+        collectActionReferences(importable.leftClickActions, refs);
+        collectActionReferences(importable.rightClickActions, refs);
     }
 
     return {

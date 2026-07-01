@@ -16,7 +16,7 @@ import {
     setObservedTopLevel,
     type PreviewLine,
 } from "../src/gui/right-panel/import-tab/livePreview";
-import { actionPathFromKey } from "../src/housingSync/importEvents";
+import { actionPathFromKey } from "../src/housingSync/syncEvents";
 
 import { conditional, message } from "./utils";
 

@@ -65,9 +65,9 @@ import {
     isImportSoundsMuted,
     setHousingUuid,
 } from "./state";
-import { getImportProgress } from "./right-panel/import-tab/importProgress";
+import { getTaskProgress } from "./right-panel/import-tab/taskProgress";
 import { detectHousingUuid } from "../importCache/housingId";
-import { isImportRunning } from "../housingSync/importRunState";
+import { isTaskRunning } from "../tasks/runningState";
 import { TaskManager } from "../tasks/manager";
 
 import { getChatKeyCode } from "./keybinds";
@@ -114,7 +114,7 @@ function frameBounds(): Rect {
     // Mid-import gap (Hypixel closed the housing menu to prompt for chat
     // input). Reuse the bounds we captured the last time the menu was open
     // so the panel layout stays put instead of collapsing to nothing.
-    if (getImportProgress() !== null) {
+    if (getTaskProgress() !== null) {
         const cached = getImportCachedBounds();
         if (cached !== null) return getFullscreenPanelRect(cached);
     }
@@ -129,7 +129,7 @@ function frameVisible(): boolean {
     // otherwise keep the overlay covering non-Housing containers.
     if (housingPresence !== "in") return false;
     if (getContainerBounds() !== null) return true;
-    return getImportProgress() !== null && getImportCachedBounds() !== null;
+    return getTaskProgress() !== null && getImportCachedBounds() !== null;
 }
 
 // Housing presence + UUID auto-fetch. `/wtfmap` is the only live "are we in a
@@ -215,7 +215,7 @@ const COLOR_IMPORT_GAP_SHADE = 0xc0101010 | 0;
 
 function paintImportShade(rawX: number, rawY: number, root: Element, _source: string): void {
     if (!enabled) return;
-    if (getImportProgress() === null) return;
+    if (getTaskProgress() === null) return;
     if (getContainerBounds() !== null) return;
     const cached = getImportCachedBounds();
     if (cached === null) return;
@@ -341,7 +341,7 @@ export function initHtswGui(): void {
     // and the scrim already dims them like any inventory would.
     function inImportGap(): boolean {
         if (!enabled) return false;
-        if (getImportProgress() === null) return false;
+        if (getTaskProgress() === null) return false;
         if (getImportCachedBounds() === null) return false;
         if (getContainerBounds() !== null) return false;
         return true;
@@ -382,7 +382,7 @@ export function initHtswGui(): void {
         // misses brief grab→ungrab cycles.
         const mc = Client.getMinecraft() as any;
         const inGame = mc.field_71415_G === true;
-        if (prevInGameHasFocus && !inGame && getImportProgress() !== null) {
+        if (prevInGameHasFocus && !inGame && getTaskProgress() !== null) {
             // Just transitioned grab → ungrab while an import is in flight:
             // MC just centered the cursor inside `ungrabMouseCursor`. Put
             // it back where the user had it before the grab. Don't update
@@ -414,7 +414,7 @@ export function initHtswGui(): void {
         const current = (Client.getMinecraft() as any).field_71462_r;
         if (!enabled) return;
         if (incoming !== null && incoming !== undefined) return;
-        if (getImportProgress() === null) return;
+        if (getTaskProgress() === null) return;
         if (getImportCachedBounds() === null) return;
         const isInterceptable =
             isPlaceholderScreen(current) || getContainerBounds() !== null;
@@ -438,7 +438,7 @@ export function initHtswGui(): void {
         event: any
     ) => {
         if (!enabled) return;
-        if (getImportProgress() === null) return;
+        if (getTaskProgress() === null) return;
         if (!isImportSoundsMuted()) return;
         cancel(event);
     });
@@ -620,7 +620,7 @@ export function initHtswGui(): void {
         // Reparse polling stats the import.json every tick and (throttled)
         // every referenced file. During import/export those parses compete
         // with the task on the game thread; the next idle tick catches up.
-        if (frameVisible() && !isImportRunning()) {
+        if (frameVisible() && !isTaskRunning()) {
             tickReparse();
             // Drain one off-frame parse queued by requestParse() (export pane,
             // Importables tree, queue rows) so a cold parse never blocks render.
@@ -628,7 +628,7 @@ export function initHtswGui(): void {
         }
         // First-load walkthrough; once per session, never mid-import, and only
         // while the GUI can actually render a popover.
-        if (frameVisible() && getImportProgress() === null) {
+        if (frameVisible() && getTaskProgress() === null) {
             maybeAutoStartTour();
         }
         if (isGuiDebugArmed()) {
@@ -648,7 +648,7 @@ export function initHtswGui(): void {
         // in a phantom GUI. Going placeholder → null calls
         // `grabMouseCursor` which doesn't move the cursor, so this is
         // snap-free even at import end.
-        if (getImportProgress() === null) {
+        if (getTaskProgress() === null) {
             const mc = Client.getMinecraft() as any;
             if (isPlaceholderScreen(mc.field_71462_r)) {
                 mc.func_147108_a(null);

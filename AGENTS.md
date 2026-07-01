@@ -64,7 +64,7 @@ Before writing a comment: **did you verify this, or are you narrating your menta
 
 ## ct_module importer reference
 
-Split across `ct_module/src/housingSync/` (read/diff/write live menus), `importables/` (per-type import/export), `exporter/` (cross-type export wiring), and `importCache/` (per-house cache). Reads and writes real Housing menus through async tasks, not callbacks. The procedures and coverage shift every PR — read the code for those; the rules below are what the code can't tell you.
+Split across `ct_module/src/housingSync/` (read/diff/write live menus), `importables/` (per-type import/export and importable-owned export helpers), `tasks/` (async task/cancel plumbing), and `importCache/` (per-house cache). Reads and writes real Housing menus through async tasks, not callbacks. The procedures and coverage shift every PR — read the code for those; the rules below are what the code can't tell you.
 
 **Where the current behavior is defined:**
 
@@ -76,6 +76,6 @@ Split across `ct_module/src/housingSync/` (read/diff/write live menus), `importa
 **Structure rules:**
 
 - `imports.ts` / `exports.ts` only dispatch — never inline per-type bodies.
-- A type's import + export live together under `importables/<type>/`; logic shared between the two directions stays in that folder. `exporter/` is cross-type wiring only — never `exporter/exportFunction.ts`.
+- A type's import + export live together under `importables/<type>/`; logic shared between the two directions stays in that folder. Importable-owned export helpers that cut across types live under the owning importable folder, such as `importables/items/`. Task state and cancellation helpers live under `tasks/`.
 - Exporters reuse importer reads (`readActionList`, `readConditionList`, `parse*ListItem`) — never duplicate read logic.
 - Adding an action/condition type: update `housingSync/fields/actionMappings.ts` / `conditionMappings.ts` first — they drive parsing, list-item observation, and diff cost.

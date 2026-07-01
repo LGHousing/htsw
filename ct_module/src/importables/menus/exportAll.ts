@@ -6,6 +6,8 @@ import type { ExportProgressSink } from "../../housingSync/progress/types";
 import type { ExportResult } from "../exports";
 import { exportMenu } from "./export";
 import { listAllMenuNames } from "./listMenus";
+import { menuExportReferencesExist } from "../../project/paths";
+import { filterAlreadyExported } from "../exportSkip";
 
 export type ExportAllMenusOptions = {
     importJsonPath: string;
@@ -15,6 +17,7 @@ export type ExportAllMenusOptions = {
     // Items the destination project already declares; seeds the capture
     // registry so identical captures reuse project names (see functions).
     projectItems?: readonly ImportableItem[];
+    skipExisting?: boolean;
 };
 
 export async function exportAllMenus(
@@ -32,8 +35,15 @@ export async function exportAllMenus(
     }
     const writtenItems = new Set<string>();
 
-    const names =
+    const names0 =
         options.names !== undefined ? options.names : await listAllMenuNames(ctx);
+    const names = filterAlreadyExported(
+        ctx,
+        "menu",
+        names0,
+        options.skipExisting,
+        (name) => menuExportReferencesExist(importJsonPath, name)
+    );
     if (names.length === 0) {
         ctx.displayMessage("&7No menus to export.");
         return { total: 0, succeeded: 0, failed: 0 };
@@ -48,6 +58,7 @@ export async function exportAllMenus(
     let failed = 0;
     try {
         for (let i = 0; i < names.length; i++) {
+            ctx.checkCancelled();
             const name = names[i];
             options.progress?.item(i, name);
             ctx.displayMessage(`&7[${i + 1}/${names.length}] &fExporting '${name}'`);

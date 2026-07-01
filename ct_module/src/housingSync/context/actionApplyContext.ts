@@ -10,10 +10,10 @@ import type {
 } from "../types";
 import type {
     ActionPath,
-    ImportEventHandler,
+    SyncEventHandler,
     ProgressScope,
-} from "../importEvents";
-import { childListPath } from "../importEvents";
+} from "../syncEvents";
+import { childListPath } from "../syncEvents";
 import type { ProgressHandler } from "../progress/types";
 import {
     estimateActionListPhaseUnits,
@@ -102,7 +102,7 @@ function childListScope(
 }
 
 function progressFromScope(
-    events: ImportEventHandler | undefined,
+    events: SyncEventHandler | undefined,
     scope: ProgressScope | undefined
 ): ProgressHandler | undefined {
     if (events === undefined || scope === undefined) return undefined;

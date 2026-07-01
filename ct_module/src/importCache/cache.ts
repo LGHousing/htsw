@@ -2,7 +2,7 @@ import type { Importable } from "htsw/types";
 
 import TaskContext from "../tasks/context";
 import { ensureParentDirs } from "../utils/filesystem";
-import { traceNote } from "../housingSync/trace/importTrace";
+import { traceNote } from "../housingSync/trace/taskTrace";
 import { importableHash, listHashes } from "./hash";
 import { getCurrentHousingUuid } from "./housingId";
 import {
@@ -11,8 +11,8 @@ import {
     cachePathForId,
     cacheScanMarkerPath,
     cacheTypeDir,
-    importableIdentity,
 } from "./paths";
+import { importableIdentity } from "../importables/identity";
 
 /**
  * Schema version for the importable cache format. Bump this when the shape

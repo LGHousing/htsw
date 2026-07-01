@@ -1,6 +1,6 @@
 import type { Tag } from "../nbt";
 import type { Action } from "./actions";
-import type { Bounds, Color, CommandMode, Event, MenuSlot, Permission } from "./types";
+import type { Bounds, Color, CommandMode, Event, MenuSlot, Permission, Pos } from "./types";
 
 export type ImportableFunction = {
     type: "FUNCTION";
@@ -19,7 +19,7 @@ export type FunctionIcon = {
 export type ImportableRegion = {
     type: "REGION";
     name: string;
-    bounds: Bounds;
+    bounds?: Bounds;
     onEnterActions?: Action[];
     onExitActions?: Action[];
 };
@@ -45,6 +45,29 @@ export type ImportableEvent = {
     actions: Action[];
 }
 
+export type NpcSkin = "Steve" | "Alex" | "Players Skin";
+
+export type NpcEquipment = {
+    helmet?: string;
+    chestplate?: string;
+    leggings?: string;
+    boots?: string;
+    hand?: string;
+};
+
+export type ImportableNpc = {
+    type: "NPC";
+    name: string;
+    pos: Pos;
+    leftClickActions?: Action[];
+    rightClickActions?: Action[];
+    leftClickRedirect?: boolean;
+    lookAtPlayers?: boolean;
+    hideNameTag?: boolean;
+    skin?: NpcSkin;
+    equipment?: NpcEquipment;
+};
+
 export type ImportableTeam = {
     type: "TEAM",
     name: string,
@@ -65,6 +88,7 @@ export type ImportableGroup = {
 export type ImportableCommand = {
     type: "COMMAND",
     name: string,
+    actions?: Action[],
     mode?: CommandMode,
     requiredPriority?: number,
     listed?: boolean,
@@ -81,6 +105,7 @@ export type Importable =
     | ImportableMenu
     | ImportableItem
     | ImportableEvent
+    | ImportableNpc
     | ImportableTeam
     | ImportableGroup
     | ImportableCommand

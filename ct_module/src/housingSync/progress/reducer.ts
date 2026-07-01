@@ -1,18 +1,18 @@
 /**
- * Pure reducer that turns an `ImportEvent` stream into an `ImportProgress`
- * snapshot. The importer emits events; consumers (GUI, CLI, telemetry) maintain
- * their own state by calling `reduce(state, event)` after every emit.
+ * Pure reducer that turns the existing progress event stream into an
+ * `TaskProgress` snapshot. Import, read, and export flows all feed this
+ * reducer so the UI has one progress model.
  *
  * All the snapshot-building math that used to live inside `importSession.ts`
  * (monotonic clamp, importable-scope rolling, session-scope summation) lives
- * here instead. The importer doesn't know `ImportProgress` exists.
+ * here instead.
  */
 
-import type { ImportEvent, ProgressScope } from "../importEvents";
+import type { SyncEvent, ProgressScope } from "../syncEvents";
 import type {
-    ImportProgress,
-    ImportProgressActive,
-    QueueRow,
+    TaskProgress,
+    TaskProgressActive,
+    TaskProgressEntry,
     PhaseUnits,
     ProgressPayload,
 } from "./types";
@@ -22,17 +22,17 @@ type ActiveBookkeeping = {
     rowIndex: number;
     setupUnits: number;
     initialUnits: number;
-    type: ImportProgressActive["type"];
+    type: TaskProgressActive["type"];
     identity: string;
     currentTotalUnits: number;
     currentCompletedUnits: number;
     currentPhaseUnits: PhaseUnits;
-    phase: ImportProgressActive["phase"];
-    sync: ImportProgressActive["sync"];
+    phase: TaskProgressActive["phase"];
+    sync: TaskProgressActive["sync"];
 };
 
 export type ProgressReducerState = {
-    progress: ImportProgress;
+    progress: TaskProgress;
     active: ActiveBookkeeping | null;
     /**
      * Per-importable bookkeeping preserved across active-key switches.
@@ -63,7 +63,7 @@ export function initialReducerState(): ProgressReducerState {
 
 export function reduce(
     state: ProgressReducerState,
-    event: ImportEvent
+    event: SyncEvent
 ): ProgressReducerState {
     switch (event.kind) {
         case "sessionStarted":
@@ -95,7 +95,7 @@ export function reduce(
 }
 
 function startSession(
-    rows: readonly QueueRow[],
+    rows: readonly TaskProgressEntry[],
     initialTotalUnits: number
 ): ProgressReducerState {
     const total = initialTotalUnits === 0 ? 1 : initialTotalUnits;
@@ -116,7 +116,7 @@ function startSession(
 
 function startImportable(
     state: ProgressReducerState,
-    event: Extract<ImportEvent, { kind: "importableStarted" }>
+    event: Extract<SyncEvent, { kind: "importableStarted" }>
 ): ProgressReducerState {
     const parked = state.parkedRows[event.key];
     const carriedActive = parkActiveIfNeeded(state, event.key);
@@ -343,7 +343,7 @@ function finishImportable(
     const active = state.active;
     const completedAddend = active.currentTotalUnits;
     const totalAddend = active.currentTotalUnits - active.initialUnits;
-    const rows = state.progress.rows.map((r, i): QueueRow =>
+    const rows = state.progress.rows.map((r, i): TaskProgressEntry =>
         i === active.rowIndex
             ? { ...r, status, totalUnits: active.currentTotalUnits }
             : r
@@ -391,7 +391,7 @@ function updateRowStatus(
     status: "imported" | "skipped" | "failed",
     error?: string
 ): ProgressReducerState {
-    const rows = state.progress.rows.map((r): QueueRow =>
+    const rows = state.progress.rows.map((r): TaskProgressEntry =>
         r.key === key ? { ...r, status } : r
     );
     return {
@@ -408,7 +408,7 @@ function rebuildSnapshot(
     state: ProgressReducerState,
     active: ActiveBookkeeping
 ): ProgressReducerState {
-    const rows = state.progress.rows.map((r, i): QueueRow =>
+    const rows = state.progress.rows.map((r, i): TaskProgressEntry =>
         i === active.rowIndex
             ? { ...r, status: "current", totalUnits: active.currentTotalUnits }
             : r
@@ -425,7 +425,7 @@ function rebuildSnapshot(
         active.currentTotalUnits +
         parked.refinement +
         remainingSessionUnits;
-    const activeSnapshot: ImportProgressActive = {
+    const activeSnapshot: TaskProgressActive = {
         key: active.key,
         type: active.type,
         identity: active.identity,
@@ -473,8 +473,8 @@ function parkedSums(parkedRows: { [key: string]: ActiveBookkeeping }): {
 
 function snapshotParked(parkedRows: {
     [key: string]: ActiveBookkeeping;
-}): { [key: string]: ImportProgressActive } {
-    const out: { [key: string]: ImportProgressActive } = {};
+}): { [key: string]: TaskProgressActive } {
+    const out: { [key: string]: TaskProgressActive } = {};
     for (const k in parkedRows) {
         const b = parkedRows[k];
         if (b === undefined) continue;

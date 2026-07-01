@@ -3,18 +3,19 @@ import { describe, expect, test } from "vitest";
 import { applyActionListPlan } from "../src/housingSync/actions/apply";
 import {
     actionPathFromKey,
-    type ImportEvent,
-    type ImportEventHandler,
-} from "../src/housingSync/importEvents";
+    type SyncEvent,
+    type SyncEventHandler,
+} from "../src/housingSync/syncEvents";
 import type { ActionListDiff } from "../src/housingSync/types";
 import type { ActionListPlan } from "../src/housingSync/actions/plan";
 import { createItemRegistry } from "../src/importables/itemRegistry";
 import type { ImportSession } from "../src/importables/imports";
 import { orderImportablesForImportSession } from "../src/importables/importSession";
+import { createNpcLookupCache } from "../src/importables/npcs/listNpcs";
 import type { ImportableItem } from "htsw/types";
 
-function recordingHandler(): ImportEventHandler & { events: ImportEvent[] } {
-    const events: ImportEvent[] = [];
+function recordingHandler(): SyncEventHandler & { events: SyncEvent[] } {
+    const events: SyncEvent[] = [];
     return {
         events,
         emit: (event) => { events.push(event); },
@@ -37,13 +38,14 @@ function emptyPlan(): ActionListPlan {
     };
 }
 
-function sessionWith(handler: ImportEventHandler): ImportSession {
+function sessionWith(handler: SyncEventHandler): ImportSession {
     return {
         parsed: { value: [] } as never,
         items: createItemRegistry([]),
         housingUuid: "test-house",
         trust: { housingUuid: "test-house", importables: new Map() },
         events: handler,
+        npcLookup: createNpcLookupCache(),
     };
 }
 

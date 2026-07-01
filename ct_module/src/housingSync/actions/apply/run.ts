@@ -9,10 +9,10 @@ import { getPaginatedListSlotAtIndex, goToPaginatedListPage } from "../../gui/pa
 import type {
     ActionPath,
     DiffFinalState,
-    ImportEventHandler,
+    SyncEventHandler,
     ProgressScope,
-} from "../../importEvents";
-import { actionPathForIndex } from "../../importEvents";
+} from "../../syncEvents";
+import { actionPathForIndex } from "../../syncEvents";
 import {
     actionListDiffApplyUnits,
     editUnitsWithChildLists,
@@ -84,7 +84,7 @@ function throwWithoutActionListApplyResult(error: unknown): never {
 export class ActionListApplyRun {
     private readonly current: LiveActionListEntry[] = [];
     private readonly phaseUnits: PhaseUnits;
-    private readonly events: ImportEventHandler | undefined;
+    private readonly events: SyncEventHandler | undefined;
     private readonly isTopLevel: boolean;
     private readonly baselineUnits: number;
     private readonly totalOps: number;

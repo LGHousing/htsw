@@ -1,5 +1,6 @@
 import type { Importable } from "htsw/types";
 import { encodeFilesystemComponent } from "../utils/filesystem";
+import { importableIdentity } from "../importables/identity";
 
 export const IMPORT_CACHE_ROOT = "./htsw/.cache";
 
@@ -21,6 +22,8 @@ function dirFor(type: Importable["type"]): string {
             return "item";
         case "MENU":
             return "menu";
+        case "NPC":
+            return "npc";
         case "TEAM":
             return "team";
         case "GROUP":
@@ -34,26 +37,6 @@ function dirFor(type: Importable["type"]): string {
             return _exhaustive;
         }
     }
-}
-
-/**
- * Stable identifying string for an importable, used as the cache filename.
- * For most importable types this is just the human-given name; events use
- * the event constant since they are singletons.
- */
-export function importableIdentity(importable: Importable): string {
-    if (importable.type === "EVENT") return importable.event;
-    return importable.name;
-}
-
-/**
- * Canonical `type:identity` key for an importable. The shared identity
- * string used wherever importables are tracked by a Map/Set — trust
- * plans, the Importables-tab checkbox set, queue items, progress keys.
- * Not tied to any one of those subsystems; just "which importable."
- */
-export function importableKey(type: Importable["type"], identity: string): string {
-    return `${type}:${identity}`;
 }
 
 /**
