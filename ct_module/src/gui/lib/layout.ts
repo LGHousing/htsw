@@ -49,6 +49,7 @@ export type Element =
           children: Extractable<Child[]>;
           onClick?: (rect: Rect, info: ClickInfo) => void;
           onDoubleClick?: (rect: Rect) => void;
+          disabled?: Extractable<boolean>;
           onHover?: (rect: Rect, mouseX: number, mouseY: number) => void;
           tooltip?: Extractable<string>;
           tooltipColor?: Extractable<number>;

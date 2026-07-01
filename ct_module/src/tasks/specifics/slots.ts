@@ -216,6 +216,82 @@ export type DisplayedGuiMenuState = {
     windowId: number | null;
 };
 
+export type MenuItemDebugSnapshot = {
+    slot: number;
+    name: string;
+    cleanName: string;
+    lore: string[];
+    rawStackName?: string;
+    id?: string;
+    damage?: number;
+};
+
+function itemStack(item: Item): unknown {
+    try {
+        return (item as unknown as { itemStack?: unknown }).itemStack;
+    } catch (_e) {
+        return null;
+    }
+}
+
+function rawStackName(stack: unknown): string | undefined {
+    try {
+        return String((stack as { func_82833_r(): string }).func_82833_r());
+    } catch (_e) {
+        return undefined;
+    }
+}
+
+function rawStackId(stack: unknown): string | undefined {
+    try {
+        const ItemClass = Java.type("net.minecraft.item.Item");
+        const rawItem = (stack as { func_77973_b(): unknown }).func_77973_b();
+        const key = (ItemClass as any).field_150901_e.func_148750_c(rawItem);
+        return key === null || key === undefined ? undefined : String(key);
+    } catch (_e) {
+        return undefined;
+    }
+}
+
+function rawStackDamage(stack: unknown): number | undefined {
+    try {
+        const damage = (stack as { func_77960_j(): number }).func_77960_j();
+        return typeof damage === "number" ? damage : undefined;
+    } catch (_e) {
+        return undefined;
+    }
+}
+
+export function menuItemDebugSnapshot(limit: number = 54): MenuItemDebugSnapshot[] {
+    const slots = getMenuItemSlots();
+    if (slots === null) return [];
+
+    const out: MenuItemDebugSnapshot[] = [];
+    for (let i = 0; i < slots.length && out.length < limit; i++) {
+        const slot = slots[i];
+        const item = slot.getItem();
+        const name = item.getName();
+        const stack = itemStack(item);
+        const entry: MenuItemDebugSnapshot = {
+            slot: slot.getSlotId(),
+            name,
+            cleanName: removedFormatting(name),
+            lore: item
+                .getLore()
+                .slice(0, 12)
+                .map((line) => removedFormatting(line)),
+        };
+        const stackName = rawStackName(stack);
+        if (stackName !== undefined) entry.rawStackName = stackName;
+        const id = rawStackId(stack);
+        if (id !== undefined) entry.id = id;
+        const damage = rawStackDamage(stack);
+        if (damage !== undefined) entry.damage = damage;
+        out.push(entry);
+    }
+    return out;
+}
+
 function listSize(value: unknown): number {
     try {
         const n = (value as { size(): number }).size();

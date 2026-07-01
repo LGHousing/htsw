@@ -7,7 +7,7 @@ import {
 import TaskContext from "../../tasks/context";
 import type { ImportableItem } from "htsw/types";
 import { isTaskCancelled } from "../../tasks/manager";
-import type { ExportResult } from "../exportSession";
+import type { ExportResult } from "../exports";
 import { exportFunctionWithSharedState } from "./export";
 import { writeCapturedItems } from "../../exporter/writeCapturedItems";
 import {
@@ -37,13 +37,6 @@ export type ExportAllFunctionsOptions = {
 };
 
 export async function exportAllFunctions(
-    ctx: TaskContext,
-    options: ExportAllFunctionsOptions
-): Promise<ExportResult> {
-    return exportAllFunctionsInner(ctx, options);
-}
-
-async function exportAllFunctionsInner(
     ctx: TaskContext,
     options: ExportAllFunctionsOptions
 ): Promise<ExportResult> {

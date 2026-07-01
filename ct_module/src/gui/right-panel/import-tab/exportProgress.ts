@@ -21,7 +21,7 @@
 import type { Importable } from "htsw/types";
 
 import type { SyncEvent } from "../../../housingSync/syncEvents";
-import { taskProgressKey } from "../../../housingSync/progress/keys";
+import { queueRowKey } from "../../../housingSync/progress/queueRowKey";
 import { initialReducerState, reduce } from "../../../housingSync/progress/reducer";
 import type { ExportProgressSink } from "../../../housingSync/progress/types";
 import { estimateImportableCost } from "../../../housingSync/progress/costs";
@@ -53,7 +53,7 @@ export function createExportProgressSink(
 
     const canonicalImportJsonPath = canonicalPath(importJsonPath);
     const keyFor = (name: string): string =>
-        taskProgressKey(type, name, canonicalImportJsonPath);
+        queueRowKey(type, name, canonicalImportJsonPath);
 
     const emit = (event: SyncEvent): void => {
         state = reduce(state, event);

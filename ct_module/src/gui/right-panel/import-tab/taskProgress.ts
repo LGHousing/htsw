@@ -13,7 +13,7 @@
 import type { Importable } from "htsw/types";
 
 import type { TaskProgress, TaskProgressEntry } from "../../../housingSync/progress/types";
-import { taskProgressKey } from "../../../housingSync/progress/keys";
+import { queueRowKey } from "../../../housingSync/progress/queueRowKey";
 import {
     createEtaCalculator,
     currentMsPerUnit,
@@ -157,7 +157,7 @@ export function createTaskRows(
         const importable = importables[i];
         const identity = importableIdentity(importable);
         rows.push({
-            key: taskProgressKey(importable.type, identity, sourcePath),
+            key: queueRowKey(importable.type, identity, sourcePath),
             status: "queued",
             totalUnits: 1,
         });
@@ -248,8 +248,8 @@ export function getQueueItemRunState(item: QueueItem): QueueItemRunState {
     }
     const progressPath = queueItemProgressPath(item);
     if (progressPath === null) return { kind: "queued" };
-    const key = taskProgressKey(item.type, item.identity, progressPath);
     let row: TaskProgressEntry | undefined;
+    const key = queueRowKey(item.type, item.identity, progressPath);
     for (let i = 0; i < progress.rows.length; i++) {
         if (progress.rows[i].key === key) {
             row = progress.rows[i];
@@ -330,7 +330,7 @@ export function isCurrentQueueItem(item: QueueItem): boolean {
     if (item.kind === "importable") {
         const progressPath = queueItemProgressPath(item);
         if (progressPath === null) return false;
-        return current.key === taskProgressKey(
+        return current.key === queueRowKey(
             item.type,
             item.identity,
             progressPath

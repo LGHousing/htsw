@@ -5,24 +5,22 @@ import {
     diffActionList,
 } from "../../housingSync/actions/diff";
 import { canonicalizeActionItemName } from "../../housingSync/actions/readList";
-import { applyActionListPlan } from "../../housingSync/actions/applyDiff";
+import { applyActionListPlan } from "../../housingSync/actions/apply";
+import { prepareActionListSync } from "../../housingSync/actions/prepareSync";
 import { clickGoBack } from "../../housingSync/gui/menuUtils";
 import { timedWaitForMenu } from "../../housingSync/gui/menuWait";
 import { selectItemFromOpenInventory } from "../../housingSync/items/injectItem";
 import { canonicalItemKey, snbtFromItem } from "../../housingSync/itemCapture";
 import type { ImportableTrustPlan } from "../../importCache";
-import { createSetupStepEmitter } from "../../housingSync/progress/setupStepEmitter";
+import { createSetupStepEmitter } from "../../housingSync/syncEvents";
 import TaskContext from "../../tasks/context";
 import { removedFormatting } from "../../utils/helpers";
 import { getItemFromNbt, getItemFromSnbt } from "../../utils/nbt";
-import {
-    prereadActionListUsingTrust,
-} from "../actionListHelpers";
 import type { ItemRegistry } from "../itemRegistry";
 import type { ImportSession } from "../imports";
 import {
     countReferencedShells,
-    ensureReferencedImportablesExist,
+    createMissingReferencedShells,
 } from "../references";
 import { menuCreated } from "../waiters";
 import { noteMenuCreated } from "./listMenus";
@@ -71,7 +69,7 @@ export async function prereadImportableMenu(
 ): Promise<MenuImportPlan> {
     const setup = createSetupStepEmitter(session.events, countReferencedShells(importable) + 1);
 
-    await ensureReferencedImportablesExist(ctx, importable, (kind, name) => {
+    await createMissingReferencedShells(ctx, importable, (kind, name) => {
         setup(`created ${kind} ${name}`);
     });
 
@@ -260,15 +258,20 @@ export async function applyImportableMenuPlan(
 
     for (const op of remainingOps) {
         if (op.syncActions === undefined) continue;
-        menuGridClick(op.slot, "LEFT");
-        await timedWaitForMenu(ctx, "menuClickWait");
-        const actionsPlan = await prereadActionListUsingTrust(ctx, op.syncActions, {
+        const actionsSync = await prepareActionListSync(ctx, {
+            desired: op.syncActions,
             session,
             trustPlan,
             basePath: op.actionsPath ?? "",
+            open: async () => {
+                menuGridClick(op.slot, "LEFT");
+                await timedWaitForMenu(ctx, "menuClickWait");
+            },
         });
-        await applyActionListPlan(ctx, actionsPlan, { session });
-        await clickGoBack(ctx);
+        if (actionsSync.kind === "planned") {
+            await applyActionListPlan(ctx, actionsSync.plan, { session });
+            await clickGoBack(ctx);
+        }
     }
 }
 

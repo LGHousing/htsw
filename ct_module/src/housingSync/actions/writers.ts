@@ -51,7 +51,7 @@ import {
     setNumberValue,
     readStringValue,
 } from "../gui/menuUtils";
-import { waitForMenu } from "../gui/menuWait";
+import { timedWaitForMenu, waitForMenu } from "../gui/menuWait";
 import {
     normalizeActionCompare,
     normalizeConditionCompare,
@@ -61,6 +61,7 @@ import {
     getActionFieldDefault,
     getActionFieldLabel,
 } from "../fields/actionMappings";
+import { removedFormatting } from "../../utils/helpers";
 import { normalizeSoundKey } from "../fields/sounds";
 import type { Observed } from "../types";
 import { setItemValue } from "../items/injectItem";
@@ -154,13 +155,14 @@ export async function writeConditional(
     const current = options?.current;
 
     if (
+        (options?.apply?.shouldApplyList("conditions") ?? true) &&
         !conditionListsEqual(current?.conditions, action.conditions) &&
         (action.conditions.length > 0 || (current?.conditions?.length ?? 0) > 0)
     ) {
         ctx.getMenuItemSlot(getActionFieldLabel("CONDITIONAL", "conditions")).click();
         await waitForMenu(ctx);
 
-        await options?.apply?.applyNestedConditions("conditions", {
+        await options?.apply?.applyConditions("conditions", {
             desired: action.conditions,
             observed: current?.conditions,
         });
@@ -176,12 +178,13 @@ export async function writeConditional(
     options?.apply?.markHeaderApplied();
 
     if (
+        (options?.apply?.shouldApplyList("ifActions") ?? true) &&
         !observedActionListsEqual(current?.ifActions, action.ifActions) &&
         (action.ifActions.length > 0 || (current?.ifActions?.length ?? 0) > 0)
     ) {
         ctx.getMenuItemSlot(getActionFieldLabel("CONDITIONAL", "ifActions")).click();
         await waitForMenu(ctx);
-        await options?.apply?.applyNestedActions("ifActions", {
+        await options?.apply?.applyChildActions("ifActions", {
             desired: action.ifActions,
             observed: current?.ifActions,
         });
@@ -189,12 +192,13 @@ export async function writeConditional(
     }
 
     if (
+        (options?.apply?.shouldApplyList("elseActions") ?? true) &&
         !observedActionListsEqual(current?.elseActions, action.elseActions) &&
         (action.elseActions.length > 0 || (current?.elseActions?.length ?? 0) > 0)
     ) {
         ctx.getMenuItemSlot(getActionFieldLabel("CONDITIONAL", "elseActions")).click();
         await waitForMenu(ctx);
-        await options?.apply?.applyNestedActions("elseActions", {
+        await options?.apply?.applyChildActions("elseActions", {
             desired: action.elseActions,
             observed: current?.elseActions,
         });
@@ -393,6 +397,72 @@ export async function writeSendToLobby(
     }
 }
 
+const ADVANCED_VAR_OPERATIONS = [
+    "Bitwise AND",
+    "Bitwise OR",
+    "Bitwise XOR",
+    "Left Shift",
+    "Arithmetic Right Shift",
+    "Logical Right Shift",
+] as const;
+
+function isAdvancedVarOperation(value: string): boolean {
+    return (ADVANCED_VAR_OPERATIONS as readonly string[]).indexOf(value) !== -1;
+}
+
+function isAlreadySelectedOptionSlot(slot: { getItem(): { getLore(): string[] } }): boolean {
+    return slot
+        .getItem()
+        .getLore()
+        .some((line) =>
+            removedFormatting(line).trim().toLowerCase().includes("already selected")
+        );
+}
+
+async function selectOpenOption(
+    ctx: TaskContext,
+    fieldLabel: string,
+    value: string
+): Promise<void> {
+    const optionSlot = await getSlotPaginate(ctx, value);
+    if (isAlreadySelectedOptionSlot(optionSlot)) {
+        await clickGoBack(ctx);
+        return;
+    }
+
+    optionSlot.click();
+    await timedWaitForMenu(ctx, "menuClickWait");
+
+    if (ctx.tryGetMenuItemSlot(fieldLabel) !== null) return;
+    await clickGoBack(ctx);
+}
+
+async function setChangeVarOperation(ctx: TaskContext, operation: string): Promise<void> {
+    const operationLabel = getActionFieldLabel("CHANGE_VAR", "op");
+    const currentSlot = ctx.tryGetMenuItemSlot(operationLabel);
+    if (currentSlot !== null) {
+        const currentValue = readStringValue(currentSlot);
+        if (currentValue !== null && currentValue === operation) return;
+    }
+
+    await openSubmenu(ctx, operationLabel);
+
+    try {
+        await selectOpenOption(ctx, operationLabel, operation);
+        return;
+    } catch (error) {
+        if (!isAdvancedVarOperation(operation)) throw error;
+
+        const toggleSlot = ctx.tryGetMenuItemSlot("Toggle Advanced Operations");
+        if (toggleSlot === null) throw error;
+
+        toggleSlot.click();
+        await timedWaitForMenu(ctx, "menuClickWait");
+    }
+
+    await selectOpenOption(ctx, operationLabel, operation);
+}
+
 export async function writeChangeVar(ctx: TaskContext, action: ActionChangeVar): Promise<void> {
     if (action.holder) {
         await setCycleValue(
@@ -415,7 +485,7 @@ export async function writeChangeVar(ctx: TaskContext, action: ActionChangeVar):
     }
 
     if (action.op) {
-        await setSelectValue(ctx, getActionFieldLabel("CHANGE_VAR", "op"), action.op);
+        await setChangeVarOperation(ctx, action.op);
     }
     if (action.op === "Unset") return;
 
@@ -547,6 +617,7 @@ export async function writeRandom(
     options?: WriteActionOptions<ActionRandom>
 ): Promise<void> {
     const current = options?.current;
+    if (!(options?.apply?.shouldApplyList("actions") ?? true)) return;
     if (observedActionListsEqual(current?.actions, action.actions)) return;
     if (action.actions.length === 0 && (current?.actions?.length ?? 0) === 0) return;
 
@@ -554,7 +625,7 @@ export async function writeRandom(
 
     ctx.getMenuItemSlot(getActionFieldLabel("RANDOM", "actions")).click();
     await waitForMenu(ctx);
-    await options?.apply?.applyNestedActions("actions", {
+    await options?.apply?.applyChildActions("actions", {
         desired: action.actions,
         observed: current?.actions,
     });

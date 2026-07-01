@@ -86,7 +86,7 @@ async function readOpenNpcActionList(
     itemCaptures: ItemCaptureRegistry,
     onReadProgress?: ProgressHandler
 ): Promise<Action[]> {
-    const observed = await readActionList(ctx, { kind: "full" }, {
+    const observed = await readActionList(ctx, { kind: "deep" }, {
         itemCaptures,
         ...(onReadProgress !== undefined
             ? {

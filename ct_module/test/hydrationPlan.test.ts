@@ -1,23 +1,26 @@
 import { describe, expect, test } from "vitest";
 import type { Action, Condition } from "htsw/types";
 
-import { createNestedHydrationPlan } from "../src/housingSync/actions/hydrationPlan";
-import { matchObservedToDesired } from "../src/housingSync/actions/nestedMatching";
+import { applyActionListTrust } from "../src/housingSync/actions/applyTrust";
+import {
+    createActionHydrationPlan,
+    matchObservedToDesired,
+} from "../src/housingSync/actions/childListMatching";
 import type {
-    NestedListProp,
-    NestedPropsToRead,
+    ChildListName,
+    ChildListsToRead,
     ObservedActionSlot,
 } from "../src/housingSync/types";
 
 function observed(
     index: number,
-    nestedSummaries: Partial<Record<NestedListProp, string[]>>,
+    childListSummaries: Partial<Record<ChildListName, string[]>>,
     fields: Partial<NonNullable<ObservedActionSlot["action"]>> = {}
 ): ObservedActionSlot {
-    const nestedPropsToRead: NestedPropsToRead = new Set();
+    const childListsToRead: ChildListsToRead = new Set();
     for (const prop of ["conditions", "ifActions", "elseActions", "actions"] as const) {
-        if ((nestedSummaries[prop] ?? []).length > 0) {
-            nestedPropsToRead.add(prop);
+        if ((childListSummaries[prop] ?? []).length > 0) {
+            childListsToRead.add(prop);
         }
     }
 
@@ -33,9 +36,9 @@ function observed(
             elseActions: [],
             ...fields,
         } as NonNullable<ObservedActionSlot["action"]>,
-        nestedReadState: "summary",
-        nestedSummaries,
-        nestedPropsToRead,
+        childListReadState: "shallow",
+        childListSummaries,
+        childListsToRead,
     };
 }
 
@@ -55,7 +58,7 @@ function desired(
 }
 
 function plan(observedList: ObservedActionSlot[], desiredList: Action[]) {
-    return createNestedHydrationPlan(matchObservedToDesired(observedList, desiredList));
+    return createActionHydrationPlan(matchObservedToDesired(observedList, desiredList));
 }
 
 function plannedIndexes(p: ReturnType<typeof plan>): number[] {
@@ -64,7 +67,7 @@ function plannedIndexes(p: ReturnType<typeof plan>): number[] {
     return out.sort((a, b) => a - b);
 }
 
-describe("createNestedHydrationPlan", () => {
+describe("createActionHydrationPlan", () => {
     test("no matchable desired => empty plan", () => {
         const result = plan(
             [
@@ -79,7 +82,7 @@ describe("createNestedHydrationPlan", () => {
 
     test("picks the cheapest observed slots out of many candidates", () => {
         // 20 observed CONDITIONALs, mostly with mismatched condition types.
-        // Slots 8 and 14 have nested shapes that match the two desired
+        // Slots 8 and 14 have child-list shapes that match the two desired
         // entries, so the matcher should pair them.
         const observedActions = Array.from({ length: 20 }, (_, index) =>
             observed(index, {
@@ -109,7 +112,7 @@ describe("createNestedHydrationPlan", () => {
     test("hydrates only the props that have non-empty summaries", () => {
         const entry = observed(0, { conditions: ["REQUIRE_ITEM"], elseActions: [] });
         const result = plan([entry], [desired(["REQUIRE_ITEM"], ["CHANGE_VAR"])]);
-        const props = Array.from(result.get(entry) ?? new Set<string>()).sort();
+        const props = Array.from(result.get(entry)?.childListsToRead ?? new Set<string>()).sort();
         expect(props).toEqual(["conditions"]);
     });
 
@@ -145,5 +148,46 @@ describe("createNestedHydrationPlan", () => {
             [desired(["REQUIRE_ITEM"], [])]
         );
         expect(plannedIndexes(result)).toEqual([0]);
+    });
+
+    test("trusted child paths copy cached data into observed and skip housing hydration", () => {
+        const entry = observed(0, { ifActions: ["MESSAGE"] }, { ifActions: [null as never] });
+        const desiredList = [desired([], ["MESSAGE"])];
+        const matches = matchObservedToDesired([entry], desiredList);
+        const result = createActionHydrationPlan(matches);
+        const cachedActions = [{ type: "MESSAGE", message: "trusted" }] as Action[];
+
+        applyActionListTrust(matches, result, {
+            basePath: "actions",
+            trustedChildListPaths: new Set(["actions[0].ifActions"]),
+            trustedChildLists: new Map([
+                ["actions[0].ifActions", { kind: "actions", actions: cachedActions }],
+            ]),
+        });
+
+        expect(result.has(entry)).toBe(false);
+        expect((entry.action as { ifActions?: unknown[] } | null)?.ifActions)
+            .toEqual(cachedActions);
+    });
+
+    test("trusted child paths downgrade when shallow shape disagrees", () => {
+        const entry = observed(0, { ifActions: ["MESSAGE"] }, { ifActions: [null as never] });
+        const desiredList = [desired([], ["CHANGE_VAR"])];
+        const matches = matchObservedToDesired([entry], desiredList);
+        const result = createActionHydrationPlan(matches);
+
+        applyActionListTrust(matches, result, {
+            basePath: "actions",
+            trustedChildListPaths: new Set(["actions[0].ifActions"]),
+            trustedChildLists: new Map([
+                [
+                    "actions[0].ifActions",
+                    { kind: "actions", actions: [{ type: "MESSAGE", message: "trusted" }] as Action[] },
+                ],
+            ]),
+        });
+
+        expect(result.get(entry)?.childListsToRead.has("ifActions")).toBe(true);
+        expect((entry.action as { ifActions?: unknown[] } | null)?.ifActions).toEqual([null]);
     });
 });

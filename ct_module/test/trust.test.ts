@@ -8,8 +8,10 @@ import type {
 
 import type { ImportableCacheEntry } from "../src/importCache/cache";
 import { listHashes } from "../src/importCache/hash";
-import { hasTrustedActionListBaseline } from "../src/importables/actionListHelpers";
-import { trustedListPathsForImportable } from "../src/importCache/trust";
+import {
+    trustedChildListPathsForImportable,
+    trustedChildListSnapshotsForImportable,
+} from "../src/importCache/trust";
 import { estimateImportableUnits } from "../src/housingSync/progress/costs";
 
 function chat(message: string): Action {
@@ -41,27 +43,45 @@ function cacheEntry(importable: ImportableFunction): ImportableCacheEntry {
     };
 }
 
-describe("trustedListPathsForImportable", () => {
-    it("trusts unchanged nested lists after a top-level insertion shifts indexes", () => {
+describe("trustedChildListPathsForImportable", () => {
+    it("trusts unchanged child lists after a top-level insertion shifts indexes", () => {
         const cached = fn([conditional([chat("inside")])]);
         const desired = fn([chat("debug"), conditional([chat("inside")])]);
 
-        const trusted = trustedListPathsForImportable(desired, listHashes(cached));
+        const trusted = trustedChildListPathsForImportable(desired, listHashes(cached));
+        const snapshots = trustedChildListSnapshotsForImportable(
+            desired,
+            cached,
+            listHashes(cached)
+        );
 
         expect(trusted.has("actions")).toBe(false);
         expect(trusted.has("actions[1].ifActions")).toBe(true);
         expect(trusted.has("actions[0].ifActions")).toBe(false);
+        expect(snapshots.get("actions[1].ifActions")).toEqual({
+            kind: "actions",
+            actions: [chat("inside")],
+        });
     });
 
-    it("does not trust a nested list that changed under a matched parent", () => {
+    it("does not trust a child list that changed under a matched parent", () => {
         const cached = fn([conditional([chat("inside")])]);
         const desired = fn([conditional([chat("debug"), chat("inside")])]);
 
-        const trusted = trustedListPathsForImportable(desired, listHashes(cached));
+        const trusted = trustedChildListPathsForImportable(desired, listHashes(cached));
+        const snapshots = trustedChildListSnapshotsForImportable(
+            desired,
+            cached,
+            listHashes(cached)
+        );
 
         expect(trusted.has("actions")).toBe(false);
         expect(trusted.has("actions[0].ifActions")).toBe(false);
         expect(trusted.has("actions[0].elseActions")).toBe(true);
+        expect(snapshots.get("actions[0].elseActions")).toEqual({
+            kind: "actions",
+            actions: [],
+        });
     });
 
     it("does not estimate top-level hydration work for trusted cached baselines", () => {
@@ -75,22 +95,12 @@ describe("trustedListPathsForImportable", () => {
         expect(trustOn).toBeLessThan(trustOff);
     });
 
-    it("does not treat an untrusted cached top-level list as live observed slots", () => {
+    it("does not trust a changed top-level list", () => {
         const cached = fn([chat("old")]);
         const desired = fn([chat("new")]);
-        const trustedListPaths = trustedListPathsForImportable(desired, listHashes(cached));
+        const trustedChildListPaths = trustedChildListPathsForImportable(desired, listHashes(cached));
 
-        expect(trustedListPaths.has("actions")).toBe(false);
-        expect(hasTrustedActionListBaseline({
-            importable: desired,
-            identity: desired.name,
-            entry: cacheEntry(cached),
-            sourceHash: "unused",
-            cacheHash: "unused",
-            trustMode: true,
-            wholeImportableTrusted: false,
-            trustedListPaths,
-        }, "actions")).toBe(false);
+        expect(trustedChildListPaths.has("actions")).toBe(false);
     });
 
     it("trusts unchanged command actions when command settings changed", () => {
@@ -107,7 +117,7 @@ describe("trustedListPathsForImportable", () => {
             listed: false,
         };
 
-        const trusted = trustedListPathsForImportable(desired, listHashes(cached));
+        const trusted = trustedChildListPathsForImportable(desired, listHashes(cached));
 
         expect(trusted.has("actions")).toBe(true);
     });
@@ -128,7 +138,7 @@ describe("trustedListPathsForImportable", () => {
             rightClickActions: [chat("new")],
         };
 
-        const trusted = trustedListPathsForImportable(desired, listHashes(cached));
+        const trusted = trustedChildListPathsForImportable(desired, listHashes(cached));
 
         expect(trusted.has("leftClickActions")).toBe(true);
         expect(trusted.has("rightClickActions")).toBe(false);

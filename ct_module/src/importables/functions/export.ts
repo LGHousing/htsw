@@ -66,12 +66,12 @@ async function readFunction(
         throw new Error(`No function named "${name}" exists in this housing.`);
     }
 
-    const observed = await readActionList(ctx, { kind: "full" }, {
+    const observed = await readActionList(ctx, { kind: "deep" }, {
         ...(itemCaptures !== undefined ? { itemCaptures } : {}),
         ...(onReadProgress !== undefined
             ? {
                   progress: onReadProgress,
-                  // Mutable scratch readActionList fills in as pages/nested
+                  // Mutable scratch readActionList fills in as pages/child lists
                   // lists are discovered; fresh per call.
                   phaseUnits: { setup: 0, reading: 0, hydrating: 0, applying: 0 },
               }
@@ -114,13 +114,6 @@ async function readFunctionImportable(
 }
 
 export async function exportFunction(
-    ctx: TaskContext,
-    options: ExportFunctionOptions
-): Promise<void> {
-    return exportFunctionInner(ctx, options);
-}
-
-async function exportFunctionInner(
     ctx: TaskContext,
     options: ExportFunctionOptions
 ): Promise<void> {

@@ -33,14 +33,14 @@ import {
     looksTruncated,
     parseLocationField,
 } from "../fields/loreParsing";
-import type { Observed, UiFieldKind } from "../types";
+import type { ActionScalarFieldToRead, Observed, UiFieldKind } from "../types";
 import type { ActionReadArgs } from "./specs";
 
 export function refreshTruncatedScalarFields(
     ctx: TaskContext,
-    current: Observed<Action>
+    current: Observed<Action>,
+    fields: ActionScalarFieldToRead[] = getActionScalarLoreFields(current.type)
 ): void {
-    const fields = getActionScalarLoreFields(current.type);
     for (let i = 0; i < fields.length; i++) {
         const field = fields[i];
         if (!isTruncatableKind(field.kind)) continue;
@@ -71,7 +71,7 @@ function fieldLooksTruncated(value: unknown, kind: UiFieldKind): boolean {
 
 export async function readOpenConditional({
     ctx,
-    propsToRead,
+    childListsToRead,
     read,
     current,
 }: ActionReadArgs<ActionConditional>): Promise<Observed<ActionConditional>> {
@@ -87,34 +87,34 @@ export async function readOpenConditional({
         ifActions: [],
         elseActions: [],
     };
-    if (propsToRead.has("conditions")) {
+    if (childListsToRead.has("conditions")) {
         ctx.getMenuItemSlot(conditionsLabel).click();
         await waitForMenu(ctx);
         base.conditions = read === undefined
             ? []
-            : await read.readNestedConditions("conditions");
+            : await read.readConditions("conditions");
         await clickGoBack(ctx);
         read?.emitSnapshot();
     }
 
     base.matchAny = readBooleanValue(ctx.getMenuItemSlot(matchAnyLabel)) ?? false;
 
-    if (propsToRead.has("ifActions")) {
+    if (childListsToRead.has("ifActions")) {
         ctx.getMenuItemSlot(ifActionsLabel).click();
         await waitForMenu(ctx);
         base.ifActions = read === undefined
             ? []
-            : await read.readNestedActions("ifActions");
+            : await read.readChildActions("ifActions");
         await clickGoBack(ctx);
         read?.emitSnapshot();
     }
 
-    if (propsToRead.has("elseActions")) {
+    if (childListsToRead.has("elseActions")) {
         ctx.getMenuItemSlot(elseActionsLabel).click();
         await waitForMenu(ctx);
         base.elseActions = read === undefined
             ? []
-            : await read.readNestedActions("elseActions");
+            : await read.readChildActions("elseActions");
         await clickGoBack(ctx);
         read?.emitSnapshot();
     }
@@ -227,7 +227,7 @@ export async function readOpenRandom({
 }: ActionReadArgs<ActionRandom>): Promise<Observed<ActionRandom>> {
     ctx.getMenuItemSlot(getActionFieldLabel("RANDOM", "actions")).click();
     await waitForMenu(ctx);
-    const actions = read === undefined ? [] : await read.readNestedActions("actions");
+    const actions = read === undefined ? [] : await read.readChildActions("actions");
     await clickGoBack(ctx);
     return {
         type: "RANDOM",

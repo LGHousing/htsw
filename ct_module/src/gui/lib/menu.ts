@@ -5,9 +5,16 @@ import { Button, Col, Container } from "./components";
 import { closeAllPopovers, closePopover, openPopover, type PopoverHandle } from "./popovers";
 import { COLOR_PANEL, COLOR_PANEL_BORDER } from "./theme";
 import type { IconName } from "./icons.generated";
+import type { Extractable } from "./extractable";
 
 export type MenuAction =
-    | { kind?: "action"; label: string; onClick: () => void; icon?: IconName }
+    | {
+          kind?: "action";
+          label: string;
+          onClick: () => void;
+          icon?: IconName;
+          disabled?: Extractable<boolean>;
+      }
     | { kind: "separator" };
 
 const ITEM_H = 18;
@@ -25,7 +32,13 @@ const TEXT_FRAME_W = 4 + PAD * 2 + SPACE_W;
 
 function isAction(
     a: MenuAction
-): a is { kind?: "action"; label: string; onClick: () => void } {
+): a is {
+    kind?: "action";
+    label: string;
+    onClick: () => void;
+    icon?: IconName;
+    disabled?: Extractable<boolean>;
+} {
     return a.kind !== "separator";
 }
 
@@ -55,6 +68,7 @@ function actionElement(
     return Button({
         text: a.label,
         icon: a.icon,
+        disabled: a.disabled,
         // Idle items match the menu panel (only hover lights up): with the
         // default button gray, the item rectangle reads as the menu's box and
         // the panel's own padding looks like a lopsided border instead.

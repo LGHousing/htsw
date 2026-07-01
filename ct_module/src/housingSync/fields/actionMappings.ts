@@ -14,9 +14,9 @@ export const ACTION_MAPPINGS = {
         displayName: "Conditional",
         loreFields: {
             "Match Any Condition": { prop: "matchAny", kind: "boolean", default: false },
-            Conditions: { prop: "conditions", kind: "nestedList" },
-            "If Actions": { prop: "ifActions", kind: "nestedList" },
-            "Else Actions": { prop: "elseActions", kind: "nestedList" },
+            Conditions: { prop: "conditions", kind: "childList" },
+            "If Actions": { prop: "ifActions", kind: "childList" },
+            "Else Actions": { prop: "elseActions", kind: "childList" },
         },
     },
 
@@ -218,7 +218,7 @@ export const ACTION_MAPPINGS = {
     RANDOM: {
         displayName: "Random Action",
         loreFields: {
-            Actions: { prop: "actions", kind: "nestedList" },
+            Actions: { prop: "actions", kind: "childList" },
         },
     },
 
@@ -450,13 +450,13 @@ export function getActionFieldLabel<T extends Action["type"]>(
     throw new Error(`No GUI label found for ${type}.${String(prop)} in ACTION_MAPPINGS`);
 }
 
-export function getNestedListFields(
+export function getChildListFields(
     type: Action["type"]
 ): { label: string; prop: string }[] {
     const loreFields = getActionLoreFields(type);
     const result: { label: string; prop: string }[] = [];
     for (const label in loreFields) {
-        if (loreFields[label].kind === "nestedList") {
+        if (loreFields[label].kind === "childList") {
             result.push({ label, prop: loreFields[label].prop });
         }
     }
@@ -470,7 +470,7 @@ export function getActionScalarLoreFields(
     const result: { label: string; prop: string; kind: UiFieldKind }[] = [];
     for (const label in loreFields) {
         const field = loreFields[label];
-        if (field.kind !== "nestedList") {
+        if (field.kind !== "childList") {
             result.push({ label, prop: field.prop, kind: field.kind });
         }
     }

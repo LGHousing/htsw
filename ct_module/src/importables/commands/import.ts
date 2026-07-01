@@ -1,19 +1,25 @@
 import type { Action, Importable, ImportableCommand } from "htsw/types";
 
-import { applyActionListPlan } from "../../housingSync/actions/applyDiff";
+import {
+    applyActionListPlan,
+    type ActionListApplyResult,
+} from "../../housingSync/actions/apply";
 import {
     actionsFullyHydrated,
     prereadActionList,
     type ActionListPlan,
 } from "../../housingSync/actions/plan";
 import type { ImportableTrustPlan } from "../../importCache";
-import { createSetupStepEmitter } from "../../housingSync/progress/setupStepEmitter";
+import { createSetupStepEmitter } from "../../housingSync/syncEvents";
 import TaskContext from "../../tasks/context";
-import { getActionListTrust, getBaselineActionList } from "../actionListHelpers";
+import {
+    getActionListTrust,
+    getBaselineActionList,
+} from "../../housingSync/actions/prepareSync";
 import type { ImportSession } from "../imports";
 import {
     countReferencedShells,
-    ensureReferencedImportablesExist,
+    createMissingReferencedShells,
 } from "../references";
 import {
     applyCommandSettings,
@@ -41,11 +47,11 @@ export async function prereadImportableCommand(
 ): Promise<CommandImportPlan> {
     const setup = createSetupStepEmitter(session.events, countReferencedShells(importable) + 1);
 
-    await ensureReferencedImportablesExist(ctx, importable, (kind, name) => {
+    await createMissingReferencedShells(ctx, importable, (kind, name) => {
         setup(`created ${kind} ${name}`);
     });
 
-    const actionsTrusted = trustPlan?.trustedListPaths.has("actions") ?? false;
+    const actionsTrusted = trustPlan?.trustedChildListPaths.has("actions") ?? false;
     const settingsTrusted = commandSettingsTrusted(importable, trustPlan);
 
     if (actionsTrusted && settingsTrusted) {
@@ -109,10 +115,13 @@ export function commandPlanIsNoOp(plan: CommandImportPlan): boolean {
     return actionsNoOp && plan.settingsHandled;
 }
 
-export function reconstructPartialCommand(plan: CommandImportPlan): Importable | null {
-    const live = plan.actionsPlan?.getLiveCurrent?.();
-    if (live === undefined || !actionsFullyHydrated(live)) return null;
-    return { type: "COMMAND", name: plan.importable.name, actions: live as Action[] };
+export function reconstructPartialCommand(
+    plan: CommandImportPlan,
+    result: ActionListApplyResult | null
+): Importable | null {
+    const current = result?.currentSnapshot;
+    if (current === undefined || !actionsFullyHydrated(current)) return null;
+    return { type: "COMMAND", name: plan.importable.name, actions: current.slice() as Action[] };
 }
 
 function commandSettingsTrusted(

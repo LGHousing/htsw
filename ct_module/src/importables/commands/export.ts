@@ -45,7 +45,7 @@ async function readCommand(
     onReadProgress?: ProgressHandler
 ): Promise<ImportableCommand> {
     await openExistingCommandActionsEditor(ctx, name);
-    const observed = await readActionList(ctx, { kind: "full" }, {
+    const observed = await readActionList(ctx, { kind: "deep" }, {
         ...(itemCaptures !== undefined ? { itemCaptures } : {}),
         ...(onReadProgress !== undefined
             ? {

@@ -6,6 +6,8 @@ import { exportMenu } from "./menus/export";
 import { exportNpc } from "./npcs/export";
 import { exportRegion } from "./regions/export";
 
+export type ExportResult = { total: number; succeeded: number; failed: number };
+
 export type ExportRequest =
     | {
           type: "FUNCTION";

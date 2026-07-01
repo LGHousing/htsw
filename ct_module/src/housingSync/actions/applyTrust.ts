@@ -1,48 +1,80 @@
+import type { Action, Condition } from "htsw/types";
+
 import type {
+    ActionHydrationPlan,
     ActionListTrust,
-    NestedHydrationPlan,
+    ChildListName,
     ObservedActionSlot,
+    TrustedChildListSnapshot,
 } from "../types";
-import type { DesiredActionEntry } from "./nestedMatching";
+import { desiredChildListTypes, type DesiredActionEntry } from "./childListMatching";
+import { actionHydrationWorkRequiresHousing } from "./hydrationPlan";
 
 /**
- * For each matched (observed, desired) pair, copy desired's nested list onto
- * observed for any prop whose path is in `trust.trustedListPaths`, and remove
- * it from the hydration plan so the action editor never gets opened for that
- * list. Mutates `plan` and the observed entries in place.
- *
- * Consumes the same matches as `createNestedHydrationPlan` so trust never
+ * Consumes the same matches as `createActionHydrationPlan` so trust never
  * disagrees with hydration about which observed corresponds to which desired.
  */
 export function applyActionListTrust(
     matches: Map<ObservedActionSlot, DesiredActionEntry>,
-    plan: NestedHydrationPlan,
+    plan: ActionHydrationPlan,
     trust: ActionListTrust
 ): void {
-    if (trust.trustedListPaths.size === 0) return;
+    if (trust.trustedChildListPaths.size === 0) return;
 
     for (const [observed, desired] of matches) {
-        const propsToRead = plan.get(observed);
-        if (propsToRead === undefined || observed.action === null) continue;
+        const work = plan.get(observed);
+        if (work === undefined || observed.action === null) continue;
 
-        let trustedAny = false;
-        for (const prop of Array.from(propsToRead)) {
+        for (const prop of Array.from(work.childListsToRead)) {
             const path = `${trust.basePath}[${desired.index}].${prop}`;
-            if (!trust.trustedListPaths.has(path)) continue;
+            if (!trust.trustedChildListPaths.has(path)) continue;
+            const snapshot = trust.trustedChildLists.get(path);
+            if (snapshot === undefined) continue;
+            if (!shallowChildListShapeMatches(observed, desired, prop)) continue;
 
-            const desiredValue = (desired.action as Record<string, unknown>)[prop];
-            if (!Array.isArray(desiredValue)) continue;
-
-            Object.assign(observed.action, { [prop]: desiredValue });
-            propsToRead.delete(prop);
-            trustedAny = true;
+            applyTrustedSnapshot(observed, prop, snapshot);
+            work.childListsToRead.delete(prop);
         }
 
-        if (propsToRead.size === 0) {
+        if (!actionHydrationWorkRequiresHousing(work)) {
             plan.delete(observed);
-            if (trustedAny) observed.nestedReadState = "trusted";
-        } else if (trustedAny) {
-            observed.nestedReadState = "trusted";
         }
     }
+}
+
+function applyTrustedSnapshot(
+    observed: ObservedActionSlot,
+    prop: ChildListName,
+    snapshot: TrustedChildListSnapshot
+): void {
+    if (observed.action === null) return;
+    if (prop === "conditions") {
+        if (snapshot.kind !== "conditions") return;
+        Object.assign(observed.action, { [prop]: cloneConditions(snapshot.conditions) });
+        return;
+    }
+    if (snapshot.kind !== "actions") return;
+    Object.assign(observed.action, { [prop]: cloneActions(snapshot.actions) });
+}
+
+function cloneActions(actions: readonly Action[]): Action[] {
+    return JSON.parse(JSON.stringify(actions)) as Action[];
+}
+
+function cloneConditions(conditions: readonly Condition[]): Condition[] {
+    return JSON.parse(JSON.stringify(conditions)) as Condition[];
+}
+
+function shallowChildListShapeMatches(
+    observed: ObservedActionSlot,
+    desired: DesiredActionEntry,
+    prop: ChildListName
+): boolean {
+    const observedTypes = observed.childListSummaries?.[prop] ?? [];
+    const desiredTypes = desiredChildListTypes(desired.action, prop);
+    if (observedTypes.length !== desiredTypes.length) return false;
+    for (let i = 0; i < observedTypes.length; i++) {
+        if (observedTypes[i] !== desiredTypes[i]) return false;
+    }
+    return true;
 }

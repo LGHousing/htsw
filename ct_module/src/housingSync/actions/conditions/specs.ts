@@ -5,7 +5,7 @@ import { type ItemRegistry } from "../../../importables/itemRegistry";
 import { ItemSlot } from "../../../tasks/specifics/slots";
 import { removedFormatting } from "../../../utils/helpers";
 import { CONDITION_MAPPINGS } from "../../fields/conditionMappings";
-import { onlyNoteDiffers } from "./diff";
+import { conditionOnlyNoteDiffers } from "../../fields/compare";
 import {
     readRequireGroup,
     writeRequireGroup,
@@ -150,7 +150,7 @@ export async function writeOpenCondition(
     current: Condition | undefined,
     itemRegistry: ItemRegistry
 ): Promise<void> {
-    if (current && onlyNoteDiffers(condition, current)) {
+    if (current && conditionOnlyNoteDiffers(condition, current)) {
         return;
     }
 

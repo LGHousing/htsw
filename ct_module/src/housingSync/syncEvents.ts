@@ -18,7 +18,7 @@ export function actionPathForIndex(listPath: ActionPath | undefined, index: numb
     };
 }
 
-export function nestedActionPath(parent: ActionPath, prop: string): ActionPath {
+export function childListPath(parent: ActionPath, prop: string): ActionPath {
     return { parts: parent.parts.concat(prop) };
 }
 
@@ -109,9 +109,8 @@ export type PlannedOp =
 export type ProgressScope =
     | { kind: "topLevel" }
     | {
-          kind: "nestedActionList";
+          kind: "childList";
           path: ActionPath;
-          parentActionPath: ActionPath;
           baselineApplyUnits: number;
           parentSync: {
               completedUnits: number;
@@ -157,7 +156,7 @@ export type SyncEvent =
     | { kind: "progress"; scope: ProgressScope; progress: ProgressPayload }
     | { kind: "setupStep"; label: string; completed: number; total: number }
     | { kind: "readStarted"; listPath: string }
-    | { kind: "nestedReadStarted"; path: ActionPath; actionType: Action["type"] | null }
+    | { kind: "childListReadStarted"; path: ActionPath; actionType: Action["type"] | null }
     | { kind: "observedSnapshot"; actions: ReadonlyArray<Action | null> }
     | {
           kind: "diffPlanned";
@@ -179,4 +178,19 @@ export type SyncEvent =
 
 export interface SyncEventHandler {
     emit(event: SyncEvent): void;
+}
+
+export function createSetupStepEmitter(
+    events: SyncEventHandler | undefined,
+    total: number
+): (label: string) => void {
+    let step = 0;
+    return (label: string): void => {
+        events?.emit({
+            kind: "setupStep",
+            label,
+            completed: ++step,
+            total,
+        });
+    };
 }

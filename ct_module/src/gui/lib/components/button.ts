@@ -10,8 +10,9 @@ export type ButtonProps = {
     onClick: (rect: Rect, info: ClickInfo) => void;
     onDoubleClick?: (rect: Rect) => void;
     // When true the button paints recessed with faint text/icon, drops its
-    // hover, and swallows clicks. Extractable so callers can drive it from
-    // live state (e.g. an empty queue) without rebuilding the element.
+    // hover/click flash, and consumes clicks without firing handlers.
+    // Extractable so callers can drive it from live state (e.g. an empty
+    // queue) without rebuilding the element.
     disabled?: Extractable<boolean>;
     style?: ContainerStyle;
     // Common shorthand: when only `text` and/or `icon` are passed the helper
@@ -39,8 +40,7 @@ export function Button(props: ButtonProps): Element {
     const baseBackground = userStyle.background ?? COLOR_BUTTON;
     const baseHoverBackground = userStyle.hoverBackground ?? COLOR_BUTTON_HOVER;
 
-    // Buttons without `disabled` keep an identical element tree (static colors,
-    // raw handlers, untinted icon); only opt-in buttons pay for the wrappers.
+    // Buttons without `disabled` keep static colors and an untinted icon.
     const disabledAware = props.disabled !== undefined;
     const isDisabled = (): boolean => extract(props.disabled ?? false);
 
@@ -80,19 +80,9 @@ export function Button(props: ButtonProps): Element {
             height: userStyle.height,
         },
         children,
-        onClick: disabledAware
-            ? (rect, info) => {
-                  if (isDisabled()) return;
-                  props.onClick(rect, info);
-              }
-            : props.onClick,
-        onDoubleClick:
-            disabledAware && props.onDoubleClick !== undefined
-                ? (rect) => {
-                      if (isDisabled()) return;
-                      props.onDoubleClick!(rect);
-                  }
-                : props.onDoubleClick,
+        disabled: disabledAware ? props.disabled : undefined,
+        onClick: props.onClick,
+        onDoubleClick: props.onDoubleClick,
         tooltip: props.tooltip,
         tooltipColor: props.tooltipColor,
     });

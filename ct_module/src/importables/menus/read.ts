@@ -130,7 +130,7 @@ async function readMenuSlotActions(
     container.click(slotId, false, "LEFT");
     await waitForMenu(ctx);
 
-    const observed = await readActionList(ctx, { kind: "full" });
+    const observed = await readActionList(ctx, { kind: "deep" });
     const actions = observedSlotsToActions(observed);
 
     await clickGoBack(ctx);

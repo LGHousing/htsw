@@ -289,10 +289,10 @@ describe("scalarFieldDiffers — scalar field comparison", () => {
         expect(scalarFieldDiffers(observed, desired, observed.type, "volume")).toBe(true);
     });
 
-    test("nestedList fields are excluded from the scalar prop list", () => {
+    test("childList fields are excluded from the scalar prop list", () => {
         const props = getActionScalarLoreFields("CONDITIONAL");
         for (const p of props) {
-            expect(p.kind).not.toBe("nestedList");
+            expect(p.kind).not.toBe("childList");
         }
     });
 });

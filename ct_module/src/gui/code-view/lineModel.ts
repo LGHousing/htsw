@@ -463,8 +463,8 @@ type ActionLineRange = {
  * Walks the parsed action tree, looking up each node's byte-offset span
  * and converting to a `[startLine, endLine]` range on the raw source.
  * Mirrors the actionPath naming used by `appendActions` in
- * `importPreviewState.ts`: top-level → `"i"`, CONDITIONAL inner →
- * `"i.ifActions.j"` / `"i.elseActions.j"`, RANDOM inner → `"i.actions.j"`.
+ * `importPreviewState.ts`: top-level → `"i"`, CONDITIONAL child →
+ * `"i.ifActions.j"` / `"i.elseActions.j"`, RANDOM child → `"i.actions.j"`.
  */
 function collectActionLineRanges(
     actions: readonly Action[],

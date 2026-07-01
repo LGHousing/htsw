@@ -6,6 +6,7 @@ export type ContainerProps = {
     style?: ContainerStyle;
     onClick?: (rect: Rect, info: ClickInfo) => void;
     onDoubleClick?: (rect: Rect) => void;
+    disabled?: Extractable<boolean>;
     onHover?: (rect: Rect, mouseX: number, mouseY: number) => void;
     tooltip?: Extractable<string>;
     tooltipColor?: Extractable<number>;
@@ -19,6 +20,7 @@ export function Container(props: ContainerProps): Element {
         children: props.children,
         onClick: props.onClick,
         onDoubleClick: props.onDoubleClick,
+        disabled: props.disabled,
         onHover: props.onHover,
         tooltip: props.tooltip,
         tooltipColor: props.tooltipColor,
@@ -32,6 +34,7 @@ export function Row(props: ContainerProps): Element {
         style: { ...(props.style ?? {}), direction: "row" },
         onClick: props.onClick,
         onDoubleClick: props.onDoubleClick,
+        disabled: props.disabled,
         onHover: props.onHover,
         tooltip: props.tooltip,
         tooltipColor: props.tooltipColor,
@@ -45,6 +48,7 @@ export function Col(props: ContainerProps): Element {
         style: { ...(props.style ?? {}), direction: "col" },
         onClick: props.onClick,
         onDoubleClick: props.onDoubleClick,
+        disabled: props.disabled,
         onHover: props.onHover,
         tooltip: props.tooltip,
         tooltipColor: props.tooltipColor,

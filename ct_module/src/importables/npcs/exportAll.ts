@@ -15,7 +15,7 @@ import {
     npcExportReferencesExist,
     type NpcExportEntry,
 } from "../../project/paths";
-import type { ExportResult } from "../exportSession";
+import type { ExportResult } from "../exports";
 import { exportNpcWithSharedState } from "./export";
 import {
     createNpcLookupCache,

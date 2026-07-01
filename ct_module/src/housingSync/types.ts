@@ -12,7 +12,7 @@ export type UiFieldKind =
     | "select"
     | "location"
     | "item"
-    | "nestedList";
+    | "childList";
 
 type ConditionDataKey<T extends Condition> = Exclude<
     keyof T,
@@ -61,21 +61,49 @@ export type ActionLoreSpec<T extends Action> = {
     loreFields: Record<string, ActionLoreFieldSpec<T>>;
 };
 
-export type NestedListProp = "conditions" | "ifActions" | "elseActions" | "actions";
+export type ChildListName = "conditions" | "ifActions" | "elseActions" | "actions";
 
-/** Nested list properties that still need to be read by clicking in. */
-export type NestedPropsToRead = Set<NestedListProp>;
+/** Child list properties that still need to be read by clicking in. */
+export type ChildListsToRead = Set<ChildListName>;
 
-type NestedReadState = "none" | "summary" | "full" | "trusted";
+type ChildListReadState = "none" | "shallow" | "deep";
 
-export type NestedSummaries = Partial<Record<NestedListProp, string[]>>;
+export type ChildListSummaries = Partial<Record<ChildListName, string[]>>;
+
+export type TrustedChildListSnapshot =
+    | {
+          kind: "actions";
+          actions: readonly Action[];
+      }
+    | {
+          kind: "conditions";
+          conditions: readonly Condition[];
+      };
 
 export type ActionListTrust = {
     basePath: string;
-    trustedListPaths: ReadonlySet<string>;
+    trustedChildListPaths: ReadonlySet<string>;
+    trustedChildLists: ReadonlyMap<string, TrustedChildListSnapshot>;
 };
 
-export type NestedHydrationPlan = Map<ObservedActionSlot, NestedPropsToRead>;
+export type ActionScalarFieldToRead = {
+    label: string;
+    prop: string;
+    kind: UiFieldKind;
+};
+
+export type ActionItemFieldToCapture = {
+    label: string;
+    prop: string;
+};
+
+export type ActionHydrationWork = {
+    childListsToRead: ChildListsToRead;
+    scalarFieldsToRead: ActionScalarFieldToRead[];
+    itemFieldsToCapture: ActionItemFieldToCapture[];
+};
+
+export type ActionHydrationPlan = Map<ObservedActionSlot, ActionHydrationWork>;
 
 export type Observed<T> = {
     [K in keyof T]: T[K] extends Action[]
@@ -87,17 +115,12 @@ export type Observed<T> = {
 
 export type ObservedActionSlot = {
     index: number;
-    /**
-     * Live menu slot for this observation. Absent when the entry is a reused
-     * observation (e.g. a nested list hydrated in an earlier pass): the apply
-     * path re-acquires slots by index, so a reused entry needs no live slot.
-     */
     slotId?: number;
     slot?: ItemSlot;
     action: Observed<Action> | null;
-    nestedReadState?: NestedReadState;
-    nestedSummaries?: NestedSummaries;
-    nestedPropsToRead?: NestedPropsToRead;
+    childListReadState?: ChildListReadState;
+    childListSummaries?: ChildListSummaries;
+    childListsToRead?: ChildListsToRead;
 };
 
 export type ObservedConditionSlot = {
@@ -111,17 +134,14 @@ export type CurrentActionListEntry = {
     entryId: number;
     index: number;
     action: Observed<Action> | null;
-    nestedReadState?: NestedReadState;
-    nestedSummaries?: NestedSummaries;
 };
 
 export type CurrentConditionListEntry = {
     entryId: number;
-    index: number;
     condition: Condition | null;
 };
 
-export type NestedListDiff =
+export type ChildListDiff =
     | { prop: "conditions"; diff: ConditionListDiff }
     | { prop: "ifActions" | "elseActions" | "actions"; diff: ActionListDiff };
 
@@ -142,7 +162,7 @@ export type ActionListOperation =
           desired: Action;
           noteOnly: boolean;
           noteDiffers: boolean;
-          nestedDiffs: NestedListDiff[];
+          childListDiffs: ChildListDiff[];
       }
     | { kind: "add"; desiredIndex: number; desired: Action; toIndex: number }
     | {

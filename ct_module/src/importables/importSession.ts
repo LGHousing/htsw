@@ -30,11 +30,15 @@ import {
 } from "./itemDependencies";
 import type { SyncEventHandler } from "../housingSync/syncEvents";
 import type { TaskProgressEntry } from "../housingSync/progress/types";
-import { taskProgressKey } from "../housingSync/progress/keys";
+import { queueRowKey } from "../housingSync/progress/queueRowKey";
 import {
     estimateImportableUnits,
     setupUnitsForImportable,
 } from "../housingSync/progress/costs";
+import {
+    actionListApplyResultFromError,
+    type ActionListApplyResult,
+} from "../housingSync/actions/apply";
 import { writeImportFailureLog } from "../diagnostics/importFailureLog";
 import { resetImportDiagnostics } from "../diagnostics/importDiagnosticsBuffer";
 
@@ -145,7 +149,7 @@ export async function importSelectedImportables(
         return {
             importable,
             identity,
-            key: taskProgressKey(importable.type, identity, selection.sourcePath),
+            key: queueRowKey(importable.type, identity, selection.sourcePath),
             rowIndex,
             trustPlan: tp,
             units: estimateImportableUnits(importable, tp?.entry ?? null, tp?.trustMode === true),
@@ -244,7 +248,12 @@ export async function importSelectedImportables(
             }
             events?.emit({ kind: "importableFinished", key: row.key, status: "imported" });
         } catch (error) {
-            await maybeWritePartialImportCache(ctx, plan, selection.housingUuid);
+            await maybeWritePartialImportCache(
+                ctx,
+                plan,
+                selection.housingUuid,
+                actionListApplyResultFromError(error)
+            );
             if (isTaskCancelled(error)) {
                 throw error;
             }
@@ -274,9 +283,10 @@ export async function importSelectedImportables(
 async function maybeWritePartialImportCache(
     ctx: TaskContext,
     plan: ImportablePlan,
-    housingUuid: string
+    housingUuid: string,
+    result: ActionListApplyResult | null
 ): Promise<void> {
-    const partial = reconstructPartialImportable(plan);
+    const partial = reconstructPartialImportable(plan, result);
     if (partial === null) return;
     await tryWriteImportableCache(ctx, partial, "importer", housingUuid);
 }

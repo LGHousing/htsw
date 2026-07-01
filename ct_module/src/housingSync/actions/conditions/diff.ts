@@ -8,8 +8,6 @@ import type {
     ObservedConditionSlot,
 } from "../../types";
 
-export { conditionOnlyNoteDiffers as onlyNoteDiffers } from "../../fields/compare";
-
 export function currentConditionListFromSlots(
     slots: readonly ObservedConditionSlot[]
 ): CurrentConditionListEntry[] {
@@ -17,7 +15,6 @@ export function currentConditionListFromSlots(
     for (let i = 0; i < slots.length; i++) {
         out.push({
             entryId: i,
-            index: slots[i].index,
             condition: slots[i].condition,
         });
     }
@@ -31,7 +28,6 @@ export function baselineConditionListFromConditions(
     for (let i = 0; i < conditions.length; i++) {
         out.push({
             entryId: i,
-            index: i,
             condition: conditions[i],
         });
     }
@@ -112,14 +108,12 @@ export function diffConditionList(
         }
 
         const [baselineCondition] = unmatchedCurrent.splice(currentIndex, 1);
-        if (baselineCondition.condition === null) {
-            continue;
-        }
+        const matchedCondition = baselineCondition.condition!;
         unmatchedDesired.splice(desiredIndex, 1);
         operations.push({
             kind: "edit",
             entryId: baselineCondition.entryId,
-            baselineCondition: baselineCondition.condition,
+            baselineCondition: matchedCondition,
             desired: desiredCondition,
             noteOnly: true,
         });
@@ -135,14 +129,11 @@ export function diffConditionList(
         }
 
         const [baselineCondition] = unmatchedCurrent.splice(currentIndex, 1);
-        if (baselineCondition.condition === null) {
-            operations.push({ kind: "add", desired: desiredCondition });
-            continue;
-        }
+        const matchedCondition = baselineCondition.condition!;
         operations.push({
             kind: "edit",
             entryId: baselineCondition.entryId,
-            baselineCondition: baselineCondition.condition,
+            baselineCondition: matchedCondition,
             desired: desiredCondition,
             noteOnly: false,
         });

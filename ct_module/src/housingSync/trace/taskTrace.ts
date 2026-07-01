@@ -117,7 +117,7 @@ export function traceSyncEvent(event: SyncEvent): void {
         case "sessionFinished":
         case "progress":
         case "setupStep":
-        case "nestedReadStarted":
+        case "childListReadStarted":
         case "observedSnapshot":
         case "operationCompleted":
         case "listSyncCompleted":

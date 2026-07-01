@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { applyActionListPlan } from "../src/housingSync/actions/applyDiff";
+import { applyActionListPlan } from "../src/housingSync/actions/apply";
 import {
     actionPathFromKey,
     type SyncEvent,
@@ -61,7 +61,7 @@ describe("applyActionListPlan — top-level-only terminal events", () => {
         expect(kinds).toContain("listSyncCompleted");
     });
 
-    test("nested empty-diff apply does NOT emit listSyncCompleted", async () => {
+    test("child-list empty-diff apply does NOT emit listSyncCompleted", async () => {
         const handler = recordingHandler();
         await applyActionListPlan(
             null as never,

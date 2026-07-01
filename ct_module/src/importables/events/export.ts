@@ -43,7 +43,7 @@ async function readEvent(
     onReadProgress?: ProgressHandler
 ): Promise<Action[]> {
     await openEventEditor(ctx, eventName);
-    const observed = await readActionList(ctx, { kind: "full" }, {
+    const observed = await readActionList(ctx, { kind: "deep" }, {
         ...(itemCaptures !== undefined ? { itemCaptures } : {}),
         ...(onReadProgress !== undefined
             ? {

@@ -5,6 +5,7 @@ import {
 import { ensureParentDirs } from "../utils/filesystem";
 import {
     describeGuiScreenMenu,
+    menuItemDebugSnapshot,
     menuStateDescription,
 } from "../tasks/specifics/slots";
 import {
@@ -29,9 +30,18 @@ function errorDetails(error: unknown): Record<string, unknown> {
         rhinoException?: { getScriptStackTrace?: () => string };
     };
     return {
-        message: error instanceof Error ? error.message : String(error),
+        message: error instanceof Error ? error.message : stringifyUnknown(error),
         stack: e.rhinoException?.getScriptStackTrace?.() ?? e.stack,
     };
+}
+
+function stringifyUnknown(value: unknown): string {
+    if (typeof value === "string") return value;
+    try {
+        const json = JSON.stringify(value);
+        if (json !== undefined) return json;
+    } catch (_e) {}
+    return String(value);
 }
 
 function safeRead(label: string, read: () => unknown): unknown {
@@ -58,6 +68,7 @@ export function writeImportFailureLog(
         error: errorDetails(error),
         currentState: {
             menu: safeRead("menu", () => menuStateDescription()),
+            menuItems: safeRead("menu items", () => menuItemDebugSnapshot()),
             gui: safeRead("gui", () => describeGuiScreenMenu()),
             waiters: safeRead("waiters", () => getEventContainerCounts()),
             recentWindowOpens: safeRead("window opens", () => describeRecentWindowOpens()),

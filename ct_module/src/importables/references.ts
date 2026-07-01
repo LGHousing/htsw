@@ -16,7 +16,7 @@ type RefShellKind = "function" | "menu" | "region";
 
 export type OnRefShellCreated = (kind: RefShellKind, name: string) => void;
 
-export async function ensureReferencedImportablesExist(
+export async function createMissingReferencedShells(
     ctx: TaskContext,
     importable: Importable,
     onShellCreated?: OnRefShellCreated

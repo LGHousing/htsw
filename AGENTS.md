@@ -50,6 +50,7 @@ Before writing a comment: **did you verify this, or are you narrating your menta
 
 - Prefer refactoring over explanatory comments.
 - Obviously, if something isn't immediately obvious what it does, change it.
+- If a state object has fields that many files update by hand, improve it. Put the repeated updates behind functions on the state owner instead. For example, callers should say `state.completeEdit(op)` instead of manually doing `completedOps++`, progress emit, snapshot refresh, and event emit in every phase. The goal is fewer files needing to know the bookkeeping rules.
 - Read the `gui-development` skill before touching anything under `ct_module/src/gui/`.
 
 ## Working style
@@ -57,6 +58,7 @@ Before writing a comment: **did you verify this, or are you narrating your menta
 - Short progress updates before edits, builds, installs, and when findings change the plan.
 - Be direct about what changed and why. No vague reassurance.
 - Release notes are user-facing update text. Write the important changes in plain language, avoid internal jargon, and do not publish changelog-only Markdown into the CT updater feed.
+- If you are not fully sure how Hypixel Housing behaves, ask Callan before implementing, documenting, or relying on that behavior.
 - When answering an architecture or code question, don't only describe current behavior — judge it. Say whether a responsibility belongs where it is, and what to change if the design is accidental, overbuilt, or misleading.
 - When you see two code paths doing the same job, an abstraction that doesn't earn its place, or a name that hides who owns what, say so and suggest the better design instead of keeping the current shape by default. If two mechanisms feed the same caller, suggest merging them into one — don't keep them split just because one side carries more math, state, or weight.
 
@@ -68,7 +70,7 @@ Split across `ct_module/src/housingSync/` (read/diff/write live menus), `importa
 
 - Which importable types are wired — the switches in `importables/imports.ts` / `exports.ts`.
 - Per-type import/export procedure — that type's `importables/<type>/import.ts` / `export.ts`.
-- Read/write + nested-list coverage per action/condition — `ACTION_SPECS` / `CONDITION_SPECS`, via `getActionSpec` / `getConditionSpec`.
+- Read/write + child-list coverage per action/condition — `ACTION_SPECS` / `CONDITION_SPECS`, via `getActionSpec` / `getConditionSpec`.
 - Simulator coverage (`ct_module/src/simulator/`, separate from import) — `createActionBehaviors()` / `createConditionBehaviors()`.
 
 **Structure rules:**
@@ -77,18 +79,3 @@ Split across `ct_module/src/housingSync/` (read/diff/write live menus), `importa
 - A type's import + export live together under `importables/<type>/`; logic shared between the two directions stays in that folder. `exporter/` is cross-type wiring only — never `exporter/exportFunction.ts`.
 - Exporters reuse importer reads (`readActionList`, `readConditionList`, `parse*ListItem`) — never duplicate read logic.
 - Adding an action/condition type: update `housingSync/fields/actionMappings.ts` / `conditionMappings.ts` first — they drive parsing, list-item observation, and diff cost.
-
-**Behavior to keep** (a future edit could easily undo these):
-
-- Action sync applies **delete → edit → move → add** — deletes stabilize indices, edits precede moves to avoid stale slot refs, moves resolve by current index, adds append then rotate. Action moves are circular (Housing shift-click reorder wraps). Conditions have no moves.
-- A no-`write` action is add-and-return; do **not** add an empty `write` to mean "no-op" — it still triggers click-back. A present `write` assumes the editor is open and clicks back when done. Conditions also toggle invert before clicking back; actions don't.
-- Field setters short-circuit on a matching value, so a writer is safe to re-run without per-field guards.
-- import.json writers must be include-aware: an existing identity can be declared in an INCLUDED file, and writing it into the entry instead duplicates the declaration and breaks the whole parse. `updateImportableField` / `removeImportableEntry` / `renameImportableEntry` resolve the declaring file themselves; `upsertImportableEntry` deliberately does NOT, because entry values carry file-relative refs (`actions`/`nbt`) — compute the target file and refs together via `htslTargetForFunctionExport`/`htslTargetForEventExport` / `snbtTargetForItemExport` / `resolveImportableFile` — defined in `ct_module/src/project/` (`paths.ts`, `importJsonMutations.ts`), thin adapters binding `ctProjectFs` to the shared `editors/common/src/project/` (where `includeWalk.ts` roots include resolution).
-- Nested-list action types (CONDITIONAL, RANDOM, …) need an explicit `read` in their spec — lore alone is insufficient and the importer throws if it's missing. Sync hydrates nested lists selectively (shallow, then `createNestedHydrationPlan`); export always reads full.
-- `previewHandler` is the one preview/progress path — don't add a second diff/progress callback unless something actually needs it.
-- The progress reducer (`housingSync/progress/reducer.ts`) is the only builder of `ImportProgress` snapshots. Export/read progress adapts into `ImportEvent`s via `createExportProgressSink` and runs through that same reducer — never hand-build `ImportProgress` literals for a new flow. Exporters that swallow per-item errors must call the sink's `itemFailed`, or the failed row renders as success.
-- Don't casually change `normalizeActionCompare` / `normalizeConditionCompare` — it shifts the result of every diff.
-- `waitForMenu` keys on `S30PacketWindowItems` + a tracked window ID, then waits one tick: MC applies window data on the main thread *after* the packet.
-- Notes live on list items, not inside editors.
-
-**Cache / trust / knowledge naming:** *cache* = stored baseline state, *trust* = permission to skip importer work, *Knowledge* = the user-facing name for both, surfaced by the `/htsw knowledge` cache-inspection command (`status`/`inspect`/`forget`). The GUI house-browser tab is now **Houses** (it browses houses, not the cache); it still reads cache/trust but is no longer called "Knowledge". Keep Knowledge user-facing for the cache concept; do **not** introduce new backend `knowledge` names. Item SNBT caches and the importable cache are stateful and per-housing (`interact_data` isn't portable — declare click actions in `leftClickActions` / `rightClickActions`). Debug "why didn't this re-import?" from cache state first.

@@ -4,7 +4,7 @@ import TaskContext from "../../tasks/context";
 import { type ItemRegistry } from "../../importables/itemRegistry";
 import { ACTION_MAPPINGS } from "../fields/actionMappings";
 import type {
-    NestedPropsToRead,
+    ChildListsToRead,
     Observed,
 } from "../types";
 import type { ActionApplyContext } from "../context/actionApplyContext";
@@ -69,7 +69,7 @@ export type WriteActionOptions<T extends Action = Action> = {
 
 export type ActionReadArgs<T extends Action> = {
     ctx: TaskContext;
-    propsToRead: NestedPropsToRead;
+    childListsToRead: ChildListsToRead;
     read?: ActionReadContext;
     current?: Observed<T>;
 };
@@ -278,7 +278,7 @@ export async function writeOpenAction(
     if (resolvedCurrent === undefined && spec.read) {
         resolvedCurrent = await spec.read({
             ctx,
-            propsToRead: new Set(),
+            childListsToRead: new Set(),
             read: undefined,
             current: opts.current,
         });

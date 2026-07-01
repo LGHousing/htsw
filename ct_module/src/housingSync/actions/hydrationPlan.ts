@@ -1,19 +1,60 @@
-import type { NestedHydrationPlan, ObservedActionSlot } from "../types";
-import { type DesiredActionEntry, getPropsNeedingHydration } from "./nestedMatching";
+import type {
+    ActionHydrationPlan,
+    ActionHydrationWork,
+    ActionItemFieldToCapture,
+    ActionScalarFieldToRead,
+    ChildListsToRead,
+    ObservedActionSlot,
+} from "../types";
 
-/**
- * Turn observed→desired matches into the hydration plan: one entry per
- * matched observed slot, with the props that still need to be read by
- * clicking into the action editor. Trust application may later subtract
- * props (or whole entries) when the cache says the nested list hasn't
- * drifted.
- */
-export function createNestedHydrationPlan(
-    matches: Map<ObservedActionSlot, DesiredActionEntry>
-): NestedHydrationPlan {
-    const plan: NestedHydrationPlan = new Map();
-    for (const observed of matches.keys()) {
-        plan.set(observed, getPropsNeedingHydration(observed));
+export function createActionHydrationWork(
+    childListsToRead: ChildListsToRead = new Set()
+): ActionHydrationWork {
+    return {
+        childListsToRead,
+        scalarFieldsToRead: [],
+        itemFieldsToCapture: [],
+    };
+}
+
+export function ensureActionHydrationWork(
+    plan: ActionHydrationPlan,
+    entry: ObservedActionSlot
+): ActionHydrationWork {
+    let work = plan.get(entry);
+    if (work === undefined) {
+        work = createActionHydrationWork();
+        plan.set(entry, work);
     }
-    return plan;
+    return work;
+}
+
+export function actionHydrationWorkRequiresHousing(
+    work: ActionHydrationWork
+): boolean {
+    return (
+        work.childListsToRead.size > 0 ||
+        work.scalarFieldsToRead.length > 0 ||
+        work.itemFieldsToCapture.length > 0
+    );
+}
+
+export function addScalarFieldsToRead(
+    plan: ActionHydrationPlan,
+    entry: ObservedActionSlot,
+    fields: ActionScalarFieldToRead[]
+): void {
+    if (fields.length === 0) return;
+    const work = ensureActionHydrationWork(plan, entry);
+    work.scalarFieldsToRead = fields;
+}
+
+export function addItemFieldsToCapture(
+    plan: ActionHydrationPlan,
+    entry: ObservedActionSlot,
+    fields: ActionItemFieldToCapture[]
+): void {
+    if (fields.length === 0) return;
+    const work = ensureActionHydrationWork(plan, entry);
+    work.itemFieldsToCapture = fields;
 }

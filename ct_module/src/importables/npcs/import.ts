@@ -1,19 +1,22 @@
 import type { ImportableNpc } from "htsw/types";
 
-import { applyActionListPlan } from "../../housingSync/actions/applyDiff";
+import { applyActionListPlan } from "../../housingSync/actions/apply";
 import {
     prereadActionList,
     type ActionListPlan,
 } from "../../housingSync/actions/plan";
 import { timedWaitForMenu } from "../../housingSync/gui/menuWait";
-import { createSetupStepEmitter } from "../../housingSync/progress/setupStepEmitter";
+import { createSetupStepEmitter } from "../../housingSync/syncEvents";
 import type { ImportableTrustPlan } from "../../importCache";
 import TaskContext from "../../tasks/context";
-import { getActionListTrust, getBaselineActionList } from "../actionListHelpers";
+import {
+    getActionListTrust,
+    getBaselineActionList,
+} from "../../housingSync/actions/prepareSync";
 import type { ImportSession } from "../imports";
 import {
     countReferencedShells,
-    ensureReferencedImportablesExist,
+    createMissingReferencedShells,
 } from "../references";
 import {
     npcNamesMatch,
@@ -56,10 +59,10 @@ export async function prereadImportableNpc(
 
     const leftEligible =
         importable.leftClickActions !== undefined &&
-        !trustPlan?.trustedListPaths.has("leftClickActions");
+        !trustPlan?.trustedChildListPaths.has("leftClickActions");
     const rightEligible =
         importable.rightClickActions !== undefined &&
-        !trustPlan?.trustedListPaths.has("rightClickActions");
+        !trustPlan?.trustedChildListPaths.has("rightClickActions");
     const redirectEligible =
         importable.leftClickRedirect !== undefined &&
         !leftClickRedirectTrusted(importable, trustPlan);
@@ -69,7 +72,7 @@ export async function prereadImportableNpc(
         countReferencedShells(importable) + 1
     );
 
-    await ensureReferencedImportablesExist(ctx, importable, (kind, name) => {
+    await createMissingReferencedShells(ctx, importable, (kind, name) => {
         setup(`created ${kind} ${name}`);
     });
 

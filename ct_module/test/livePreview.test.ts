@@ -55,7 +55,7 @@ describe("primeWithCache + previewLinesForFile", () => {
 
     test("CONDITIONAL renders head + close with stable ids", () => {
         primeWithCache(PATH, func([
-            conditional({ ifActions: [message("inner")], elseActions: [] }),
+            conditional({ ifActions: [message("child")], elseActions: [] }),
         ]));
         expect(ids()).toEqual(["0:body", "0.ifActions.0:body", "0:close"]);
     });
@@ -76,7 +76,7 @@ describe("primeWithCache + previewLinesForFile", () => {
         ]);
     });
 
-    test("nested CONDITIONAL preserves dotted paths", () => {
+    test("child CONDITIONAL preserves dotted paths", () => {
         primeWithCache(PATH, func([
             conditional({
                 ifActions: [conditional({ ifActions: [message("deep")] })],
@@ -93,7 +93,7 @@ describe("setObservedTopLevel", () => {
         expect(ids()).toEqual(["0:body", "1:body"]);
     });
 
-    test("null nested entries render as a collapsed placeholder", () => {
+    test("null child entries render as a collapsed placeholder", () => {
         const cond = conditional({
             // Three slots, none hydrated yet.
             ifActions: [null, null, null] as unknown as Action[],
@@ -140,12 +140,12 @@ describe("markPlannedAdd", () => {
         expect(ids()).toEqual(["pending:0:body"]);
     });
 
-    test("adds a CONDITIONAL with inner content as one contiguous prefixed block", () => {
+    test("adds a CONDITIONAL with child content as one contiguous prefixed block", () => {
         primeWithCache(PATH, func([]));
         markPlannedAdd(
             PATH,
             p("0"),
-            conditional({ ifActions: [message("inner")] }),
+            conditional({ ifActions: [message("child")] }),
             0
         );
         expect(ids()).toEqual([
@@ -185,7 +185,7 @@ describe("markPlannedDelete", () => {
 
     test("marks every line of a CONDITIONAL subtree as delete", () => {
         primeWithCache(PATH, func([
-            conditional({ ifActions: [message("inner")] }),
+            conditional({ ifActions: [message("child")] }),
         ]));
         markPlannedDelete(PATH, p("0"));
         for (const line of previewLinesForFile(PATH)) {
@@ -214,16 +214,16 @@ describe("applyComplete(add)", () => {
         expect(bodyAt("0")?.diffState).toBeUndefined();
     });
 
-    test("bottom-up apply (nested first, then outer) is idempotent on prefix strip", () => {
-        // CONDITIONAL add inserts outer + inner with pending: prefix.
-        // Inner applyComplete fires first; it should strip the inner's
-        // prefix without affecting the outer. Outer applyComplete then
-        // strips its own prefix without touching the already-stripped inner.
+    test("bottom-up apply (child first, then outer) is idempotent on prefix strip", () => {
+        // CONDITIONAL add inserts parent + child with pending: prefix.
+        // Child applyComplete fires first; it should strip the child's
+        // prefix without affecting the parent. Parent applyComplete then
+        // strips its own prefix without touching the already-stripped child.
         primeWithCache(PATH, func([]));
         markPlannedAdd(
             PATH,
             p("0"),
-            conditional({ ifActions: [message("inner")] }),
+            conditional({ ifActions: [message("child")] }),
             0
         );
         applyComplete(PATH, p("0.ifActions.0"), "add", "add");
@@ -239,7 +239,7 @@ describe("applyComplete(add)", () => {
 describe("applyComplete(delete)", () => {
     test("removes the line and its subtree", () => {
         primeWithCache(PATH, func([
-            conditional({ ifActions: [message("inner")] }),
+            conditional({ ifActions: [message("child")] }),
         ]));
         applyComplete(PATH, p("0"), "delete", "delete");
         expect(previewLinesForFile(PATH)).toEqual([]);
@@ -283,15 +283,15 @@ describe("applyComplete(move)", () => {
 });
 
 describe("markHeadApplied", () => {
-    test("flips CONDITIONAL head + close to completed without finishing inner", () => {
+    test("flips CONDITIONAL head + close to completed without finishing child", () => {
         primeWithCache(PATH, func([
-            conditional({ ifActions: [message("inner")] }),
+            conditional({ ifActions: [message("child")] }),
         ]));
         markHeadApplied(PATH, p("0"));
         expect(bodyAt("0")?.completed).toBe(true);
         const close = previewLinesForFile(PATH).find((l) => l.id === "0:close");
         expect(close?.completed).toBe(true);
-        // Inner body is NOT flipped by markHeadApplied — its own apply does that.
+        // Child body is NOT flipped by markHeadApplied — its own apply does that.
         expect(bodyAt("0.ifActions.0")?.completed).toBeFalsy();
     });
 
@@ -300,14 +300,14 @@ describe("markHeadApplied", () => {
         markPlannedAdd(
             PATH,
             p("0"),
-            conditional({ ifActions: [message("inner")] }),
+            conditional({ ifActions: [message("child")] }),
             0
         );
         markHeadApplied(PATH, p("0"));
         const after = ids();
         expect(after).toContain("0:body");
         expect(after).toContain("0:close");
-        // Inner child keeps its prefix until its own applyComplete fires.
+        // Child action keeps its prefix until its own applyComplete fires.
         expect(after).toContain("pending:0.ifActions.0:body");
     });
 

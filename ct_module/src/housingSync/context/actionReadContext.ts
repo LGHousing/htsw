@@ -11,28 +11,28 @@ import type {
 } from "../types";
 import type { ReadConditionListOptions } from "../actions/conditions/readList";
 import {
-    nestedActionPath,
+    childListPath,
     type ActionPath,
     type SyncEventHandler,
 } from "../syncEvents";
 import type { ItemCaptureRegistry } from "../itemCapture";
 
 export type ActionReadContext = {
-    readNestedActions(
+    readChildActions(
         prop: string,
         mode?: ActionListReadMode
     ): Promise<Array<Observed<Action> | null>>;
-    readNestedConditions(prop: string): Promise<Array<Condition | null>>;
+    readConditions(prop: string): Promise<Array<Condition | null>>;
     emitSnapshot(): void;
 };
 
-type ReadNestedActions = (
+type ReadChildActions = (
     ctx: TaskContext,
     mode: ActionListReadMode,
     read?: ListReadOptions
 ) => Promise<ObservedActionSlot[]>;
 
-type ReadNestedConditions = (
+type ReadConditions = (
     ctx: TaskContext,
     options?: ReadConditionListOptions
 ) => Promise<ObservedConditionSlot[]>;
@@ -45,8 +45,8 @@ export type CreateActionReadContextArgs = {
     itemCaptures?: ItemCaptureRegistry;
     events?: SyncEventHandler;
     emitSnapshot?: () => void;
-    readNestedActions: ReadNestedActions;
-    readNestedConditions: ReadNestedConditions;
+    readChildActions: ReadChildActions;
+    readConditions: ReadConditions;
 };
 
 export function createActionReadContext({
@@ -57,14 +57,14 @@ export function createActionReadContext({
     itemCaptures,
     events,
     emitSnapshot,
-    readNestedActions,
-    readNestedConditions,
+    readChildActions,
+    readConditions: readConditionList,
 }: CreateActionReadContextArgs): ActionReadContext {
-    const nestedPath = (prop: string): ActionPath => nestedActionPath(actionPath, prop);
-    const focusNested = (prop: string): ActionPath => {
-        const path = nestedPath(prop);
+    const pathForChildList = (prop: string): ActionPath => childListPath(actionPath, prop);
+    const focusChildField = (prop: string): ActionPath => {
+        const path = pathForChildList(prop);
         events?.emit({
-            kind: "nestedReadStarted",
+            kind: "childListReadStarted",
             path,
             actionType,
         });
@@ -72,10 +72,10 @@ export function createActionReadContext({
     };
 
     return {
-        async readNestedActions(prop, mode = { kind: "full" }) {
-            const path = focusNested(prop);
+        async readChildActions(prop, mode = { kind: "deep" }) {
+            const path = focusChildField(prop);
             const actions: Array<Observed<Action> | null> = [];
-            const entries = await readNestedActions(ctx, mode, {
+            const entries = await readChildActions(ctx, mode, {
                 itemRegistry,
                 itemCaptures,
                 events,
@@ -88,10 +88,10 @@ export function createActionReadContext({
             return actions;
         },
 
-        async readNestedConditions(prop) {
-            focusNested(prop);
+        async readConditions(prop) {
+            focusChildField(prop);
             const conditions: Array<Condition | null> = [];
-            const entries = await readNestedConditions(ctx, { itemRegistry, itemCaptures });
+            const entries = await readConditionList(ctx, { itemRegistry, itemCaptures });
             for (const entry of entries) {
                 conditions.push(entry.condition);
             }

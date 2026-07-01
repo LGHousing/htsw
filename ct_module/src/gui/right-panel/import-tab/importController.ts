@@ -36,7 +36,7 @@ import {
     importSelectedImportables,
     orderImportablesForImportSession,
 } from "../../../importables/importSession";
-import type { ExportResult } from "../../../importables/exportSession";
+import type { ExportResult } from "../../../importables/exports";
 import { importableIdentity } from "../../../importables/identity";
 import { getCurrentHousingUuid } from "../../../importCache/housingId";
 import { TaskManager, isTaskCancelled } from "../../../tasks/manager";
@@ -51,7 +51,7 @@ import type {
     SyncEventHandler,
     SyncEvent,
 } from "../../../housingSync/syncEvents";
-import { taskProgressKey } from "../../../housingSync/progress/keys";
+import { queueRowKey } from "../../../housingSync/progress/queueRowKey";
 import type { ExportProgressSink } from "../../../housingSync/progress/types";
 import { createExportProgressSink } from "./exportProgress";
 import { initialReducerState, reduce } from "../../../housingSync/progress/reducer";
@@ -123,7 +123,7 @@ const BODY_LIST_PROPS: Record<string, true> = {
 };
 
 // True when an edit touches the action's head line. A CONDITIONAL/RANDOM whose
-// only changed fields are nested body lists (ifActions/elseActions/actions)
+// only changed fields are child action lists (ifActions/elseActions/actions)
 // leaves its head — `if (conditions) {` / `random {` — unchanged; those body
 // ops mark their own lines, so flagging the head would falsely show the
 // conditions as changed. An empty list (note-only edit) keeps the head marked.
@@ -152,7 +152,7 @@ function createSyncEventHandler(args: {
     const importablesByKey = new Map<string, Importable>();
     for (const imp of args.parsed.value) {
         importablesByKey.set(
-            taskProgressKey(imp.type, importableIdentity(imp), args.sessionSourcePath),
+            queueRowKey(imp.type, importableIdentity(imp), args.sessionSourcePath),
             imp
         );
     }
@@ -200,7 +200,7 @@ function createSyncEventHandler(args: {
         progress: () => {},
         setupStep: () => {},
         readStarted: () => {},
-        nestedReadStarted: (e) => {
+        childListReadStarted: (e) => {
             if (activeViewPath === null) return;
             setCurrent(activeViewPath, e.path);
             setFocusLineId(activeViewPath, previewLineIdForPath(activeViewPath, e.path));

@@ -1,0 +1,87 @@
+import { Diagnostic } from "htsw";
+import type { Condition } from "htsw/types";
+
+import TaskContext from "../../../../tasks/context";
+import { type ItemRegistry } from "../../../../importables/itemRegistry";
+import {
+    clickGoBack,
+    isLimitExceeded,
+    readBooleanValue,
+    setNoteOnLastVisibleSlot,
+} from "../../../gui/menuUtils";
+import { timedWaitForMenu } from "../../../gui/menuWait";
+import { ItemSlot, MouseButton } from "../../../../tasks/specifics/slots";
+import { removedFormatting } from "../../../../utils/helpers";
+import { getPaginatedListSlotAtIndex } from "../../../gui/paginatedList";
+import { CONDITION_LIST_CONFIG } from "../../listConfigs";
+import { getConditionSpec, writeOpenCondition } from "../specs";
+
+function getInvertSlot(ctx: TaskContext): ItemSlot {
+    return ctx.getMenuItemSlot((slot) => {
+        const name = removedFormatting(slot.getItem().getName()).trim().toLowerCase();
+        return name === "invert" || name === "inverted";
+    });
+}
+
+export async function setOpenConditionInverted(
+    ctx: TaskContext,
+    desiredInverted: boolean,
+    knownCurrentInverted?: boolean
+): Promise<void> {
+    const invertSlot = getInvertSlot(ctx);
+    const currentInverted = knownCurrentInverted ?? readBooleanValue(invertSlot) ?? false;
+
+    if (currentInverted === desiredInverted) {
+        return;
+    }
+
+    invertSlot.click();
+    await timedWaitForMenu(ctx, "menuClickWait");
+}
+
+export async function addConditionToOpenConditionList(
+    ctx: TaskContext,
+    condition: Condition,
+    itemRegistry: ItemRegistry
+): Promise<void> {
+    ctx.getMenuItemSlot("Add Condition").click();
+    await timedWaitForMenu(ctx, "menuClickWait");
+
+    const spec = getConditionSpec(condition.type);
+    const slot = ctx.getMenuItemSlot(spec.displayName);
+
+    if (isLimitExceeded(slot, "condition")) {
+        throw Diagnostic.error(
+            `Maximum amount of ${spec.displayName} conditions exceeded`
+        );
+    }
+
+    slot.click();
+    await timedWaitForMenu(ctx, "menuClickWait");
+    await writeOpenCondition(ctx, condition, undefined, itemRegistry);
+
+    await setOpenConditionInverted(ctx, condition.inverted === true);
+    await clickGoBack(ctx);
+
+    await setNoteOnLastVisibleSlot(ctx, condition.note);
+}
+
+export async function appendConditionsToOpenConditionList(
+    ctx: TaskContext,
+    desired: Condition[],
+    itemRegistry: ItemRegistry
+): Promise<void> {
+    for (let i = 0; i < desired.length; i++) {
+        await addConditionToOpenConditionList(ctx, desired[i], itemRegistry);
+    }
+}
+
+export async function deleteObservedCondition(
+    ctx: TaskContext,
+    index: number,
+    listLength: number
+): Promise<void> {
+    const slot = await getPaginatedListSlotAtIndex(ctx, index, listLength, CONDITION_LIST_CONFIG);
+    slot.click(MouseButton.RIGHT);
+    await timedWaitForMenu(ctx, "menuClickWait");
+}

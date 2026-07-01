@@ -14,9 +14,9 @@ import { getMtimeMs } from "../lib/java";
 export type HtslLine = {
     /** Index into the action list this line belongs to. -1 for synthetic header/blank lines. */
     actionIndex: number;
-    /** Nested action path, e.g. `4.ifActions.2`; top-level lines use `4`. */
+    /** Child action path, e.g. `4.ifActions.2`; top-level lines use `4`. */
     actionPath: string;
-    /** Indent level (nested actions inside CONDITIONAL/RANDOM bodies). */
+    /** Indent level (child actions inside CONDITIONAL/RANDOM bodies). */
     depth: number;
     /** Rendered text (no trailing newline). */
     text: string;
@@ -28,7 +28,7 @@ export type ParsedFile = {
     mtime: number;
     actions: Action[];
     parseError: string | null;
-    /** Span table for the parsed actions (and their nested children). Null on parse error. */
+    /** Span table for the parsed actions (and their child actions). Null on parse error. */
     spans: SpanTable | null;
     /** Source file with raw text and byte→line mapping. Null on parse error. */
     file: SourceFile | null;
@@ -68,15 +68,15 @@ export function parseHtslFile(path: string): ParsedFile {
  * given action index. Indent depth is inferred from leading spaces in the
  * printer output (4-space indent per the printer's default style).
  */
-function childActionPaths(action: Action, basePath: string): string[] {
+function collectChildActionPaths(action: Action, basePath: string): string[] {
     const out: string[] = [];
     function addChildren(actions: readonly Action[] | undefined, prop: string): void {
         if (actions === undefined) return;
         for (let i = 0; i < actions.length; i++) {
             const path = `${basePath}.${prop}.${i}`;
             out.push(path);
-            const nested = childActionPaths(actions[i], path);
-            for (let j = 0; j < nested.length; j++) out.push(nested[j]);
+            const childPaths = collectChildActionPaths(actions[i], path);
+            for (let j = 0; j < childPaths.length; j++) out.push(childPaths[j]);
         }
     }
     if (action.type === "CONDITIONAL") {
@@ -102,8 +102,8 @@ function actionToLines(action: Action, actionIndex: number): HtslLine[] {
     }
     const out: HtslLine[] = [];
     const raw = src.split("\n");
-    const nestedPaths = childActionPaths(action, basePath);
-    let nestedCursor = 0;
+    const childActionPaths = collectChildActionPaths(action, basePath);
+    let childActionCursor = 0;
     for (let i = 0; i < raw.length; i++) {
         const line = raw[i];
         if (line.length === 0 && i === raw.length - 1) continue; // trailing blank
@@ -115,9 +115,9 @@ function actionToLines(action: Action, actionIndex: number): HtslLine[] {
         }
         const text = line.substring(j);
         let actionPath = basePath;
-        if (depth > 0 && !isStructuralLine(text) && nestedCursor < nestedPaths.length) {
-            actionPath = nestedPaths[nestedCursor];
-            nestedCursor++;
+        if (depth > 0 && !isStructuralLine(text) && childActionCursor < childActionPaths.length) {
+            actionPath = childActionPaths[childActionCursor];
+            childActionCursor++;
         }
         out.push({ actionIndex, actionPath, depth, text });
     }
