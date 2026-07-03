@@ -35,6 +35,19 @@ export function importableEntryMatchesIdentity(
     return entryNodeMatchesIdentity(node, section, identity);
 }
 
+export function importableEntryIdentity(
+    section: Section,
+    node: json.Node
+): string | null {
+    if (section === "npcs") {
+        const pos = readPosNode(json.findNodeAtLocation(node, ["pos"]));
+        return pos !== null ? posIdentity(pos) : null;
+    }
+    const idNode = json.findNodeAtLocation(node, [identityField(section)]);
+    if (idNode === undefined || idNode.type !== "string") return null;
+    return String(idNode.value);
+}
+
 export function resolveImportableFile(
     fs: ProjectFs,
     entryPath: string,

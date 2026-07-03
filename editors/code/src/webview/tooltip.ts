@@ -3,6 +3,7 @@
 // a floating tooltip element instead. Markup keeps using plain `title="…"`.
 
 const SHOW_DELAY_MS = 480;
+const VIEWPORT_PADDING = 4;
 
 export function installTooltips(): void {
     const tip = document.createElement("div");
@@ -14,7 +15,8 @@ export function installTooltips(): void {
         .webview-tooltip {
             position: fixed;
             display: none;
-            max-width: 320px;
+            box-sizing: border-box;
+            max-width: min(320px, calc(100vw - ${VIEWPORT_PADDING * 2}px));
             padding: 3px 7px;
             border: 1px solid var(--vscode-editorHoverWidget-border, #454545);
             border-radius: 3px;
@@ -23,7 +25,7 @@ export function installTooltips(): void {
             font-size: 12px;
             line-height: 1.4;
             white-space: pre-line;
-            overflow-wrap: break-word;
+            overflow-wrap: anywhere;
             pointer-events: none;
             z-index: 1000;
         }
@@ -46,13 +48,25 @@ export function installTooltips(): void {
         tip.style.display = "block";
         tip.style.left = "0px";
         tip.style.top = "0px";
+        tip.style.width = "";
+        tip.style.maxWidth = "";
         const anchor = target.getBoundingClientRect();
+        const viewportWidth = document.documentElement.clientWidth || window.innerWidth;
+        const viewportHeight = document.documentElement.clientHeight || window.innerHeight;
+        const availableWidth = Math.max(1, viewportWidth - VIEWPORT_PADDING * 2);
+        tip.style.maxWidth = `${availableWidth}px`;
+        if (tip.scrollWidth > availableWidth) {
+            tip.style.width = `${availableWidth}px`;
+        }
         const size = tip.getBoundingClientRect();
-        const left = Math.min(Math.max(anchor.left, 4), window.innerWidth - size.width - 4);
+        const maxLeft = Math.max(VIEWPORT_PADDING, viewportWidth - size.width - VIEWPORT_PADDING);
+        const left = Math.min(Math.max(anchor.left, VIEWPORT_PADDING), maxLeft);
         const below = anchor.bottom + 6;
-        const top = below + size.height > window.innerHeight - 4 ? anchor.top - size.height - 6 : below;
+        const top = below + size.height > viewportHeight - VIEWPORT_PADDING
+            ? anchor.top - size.height - 6
+            : below;
         tip.style.left = `${left}px`;
-        tip.style.top = `${top}px`;
+        tip.style.top = `${Math.max(VIEWPORT_PADDING, top)}px`;
     };
 
     document.addEventListener("mouseover", (event) => {

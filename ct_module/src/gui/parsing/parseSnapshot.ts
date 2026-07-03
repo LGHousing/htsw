@@ -42,12 +42,6 @@ import { FileSystemFileLoader } from "../../utils/fileLoaders";
 import { ensureParentDirs } from "../../utils/filesystem";
 import { getMtimeMs } from "../lib/java";
 import { memoizedImportableHash, seedImportableHash } from "../../importCache/status";
-import {
-    SUB_LIST_KINDS,
-    importableSourcePath,
-    importableSubListPath,
-    subListOf,
-} from "./importablePaths";
 
 const SNAPSHOT_DIR = "./htsw/.parse-snapshots";
 // 15: v13/v14 snapshots could persist a mis-homed include tree (v13:
@@ -56,7 +50,12 @@ const SNAPSHOT_DIR = "./htsw/.parse-snapshots";
 // the rehome containment check never match). A fingerprint match would
 // serve the bad tree forever.
 // 16: fileTree gained `missing` leaf nodes for nonexistent includes.
-const SNAPSHOT_VERSION = 16;
+// 17: importables carry `sourcePath` themselves; the parallel `sourcePaths`
+// array is gone.
+// 18: sub-list and menu-slot paths are fields on the importables too
+// (`onEnterActionsPath`, slot `nbtPath`/`actionsPath`, …); `subListPaths`
+// is gone.
+const SNAPSHOT_VERSION = 18;
 
 // importJson.fileTree with each importable replaced by its index into the
 // snapshot's flat `importables` array — serializing the objects in place
@@ -97,8 +96,6 @@ type Snapshot = {
     importJsonPath: string;
     fingerprint: { [path: string]: number };
     importables: Importable[];
-    sourcePaths: (string | null)[];
-    subListPaths: Array<{ [kind: string]: string }>;
     // importableHash per importable, index-aligned with `importables`. Persisted
     // so a reload reuses them instead of re-hashing every action tree.
     hashes: string[];
@@ -136,11 +133,7 @@ export function loadSnapshot(importJsonPath: string): Snapshot | null {
         if (parsed.version !== SNAPSHOT_VERSION) return null;
         if (parsed.importJsonPath !== importJsonPath) return null;
         if (!Array.isArray(parsed.importables)) return null;
-        if (!Array.isArray(parsed.sourcePaths)) return null;
-        if (!Array.isArray(parsed.subListPaths)) return null;
         if (!Array.isArray(parsed.hashes)) return null;
-        if (parsed.importables.length !== parsed.sourcePaths.length) return null;
-        if (parsed.subListPaths.length !== parsed.importables.length) return null;
         if (parsed.hashes.length !== parsed.importables.length) return null;
         if (parsed.houseUuid !== null && typeof parsed.houseUuid !== "string") return null;
         if (parsed.fingerprint === null || typeof parsed.fingerprint !== "object" || Array.isArray(parsed.fingerprint)) return null;
@@ -244,25 +237,6 @@ export function saveSnapshot(
     result: ImportablesParseResult,
     watchedMtimes: { [path: string]: number }
 ): void {
-    const sourcePaths: (string | null)[] = [];
-    const subListPaths: Array<{ [kind: string]: string }> = [];
-    for (let i = 0; i < result.value.length; i++) {
-        const imp = result.value[i];
-        // The RESOLVED source path (the .snbt for ITEMs, the .htsl for
-        // FUNCTION/EVENT) — not the raw declaring file. ITEM resolves to its
-        // .snbt only through the nbt Tag's span, and the SpanTable does not
-        // survive into a restored parse, so a restored ITEM would otherwise
-        // fall back to opening the declaring import.json.
-        const sp = importableSourcePath(imp, result);
-        sourcePaths.push(sp ?? null);
-        const subLists: { [kind: string]: string } = {};
-        for (let j = 0; j < SUB_LIST_KINDS.length; j++) {
-            const kind = SUB_LIST_KINDS[j];
-            const path = importableSubListPath(imp, kind, result);
-            if (path !== undefined) subLists[kind] = path;
-        }
-        subListPaths.push(subLists);
-    }
     const fingerprint: { [path: string]: number } = {};
     for (const k in watchedMtimes) fingerprint[k] = watchedMtimes[k];
     const snapshot: Snapshot = {
@@ -270,8 +244,6 @@ export function saveSnapshot(
         importJsonPath,
         fingerprint,
         importables: result.value,
-        sourcePaths,
-        subListPaths,
         hashes: result.value.map(memoizedImportableHash),
         houseUuid: result.importJson.houseUuid,
         fileTree: serializeFileTree(result.importJson.fileTree, result.value),
@@ -345,9 +317,9 @@ function writeSnapshotFile(snapshot: Snapshot): void {
  * Diagnostics come back with real spans (their files are loaded into the
  * fresh SourceMap), so `isFailed()`, rendering, and code-view placement
  * match the original parse. The AST `SpanTable` stays empty — action and
- * field span lookups return nothing. Import.json metadata is rebuilt from
- * `sourcePaths` / `subListPaths` so watching and source-path resolution
- * work unchanged.
+ * field span lookups return nothing. Importables carry all their path
+ * attribution (`sourcePath`, per-list `…ActionsPath`, slot paths) through
+ * serialization, so source-path resolution works unchanged.
  */
 export function restoreParseFromSnapshot(
     snapshot: Snapshot
@@ -360,19 +332,6 @@ export function restoreParseFromSnapshot(
         gcx.addDiagnostic(restoreDiagnostic(sm, stored));
     }
     for (let i = 0; i < snapshot.importables.length; i++) {
-        const path = snapshot.sourcePaths[i];
-        if (path !== null && path !== undefined) {
-            importJson.setSourcePath(snapshot.importables[i], path);
-        }
-        const subLists = snapshot.subListPaths[i];
-        for (let j = 0; j < SUB_LIST_KINDS.length; j++) {
-            const kind = SUB_LIST_KINDS[j];
-            const subList = subListOf(snapshot.importables[i], kind);
-            const subPath = subLists[kind];
-            if (subList !== undefined && subPath !== undefined) {
-                importJson.setSourcePath(subList, subPath);
-            }
-        }
         seedImportableHash(snapshot.importables[i], snapshot.hashes[i]);
     }
     importJson.fileTree = deserializeFileTree(snapshot.fileTree, snapshot.importables);

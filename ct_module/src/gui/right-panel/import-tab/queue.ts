@@ -263,7 +263,7 @@ function findImportableQueueItems(target: string, importJsonPath?: string | null
     const visit = (entry: CachedParse): void => {
         if (entry.parsed === null) return;
         for (const imp of entry.parsed.value) {
-            const paths = importableFilePaths(imp, entry.parsed);
+            const paths = importableFilePaths(imp);
             let matches = false;
             for (let i = 0; i < paths.length; i++) {
                 if (canonicalPath(paths[i]) === target) {

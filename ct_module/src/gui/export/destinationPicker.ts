@@ -25,14 +25,22 @@ import {
     setExportImportJsonPath,
 } from "../state";
 import { addRecent, getRecents } from "../persistence/recents";
-import { forEachCachedParse } from "../parsing/parses";
+import { forEachCachedParse, markParseStale } from "../parsing/parses";
 import { openFileBrowserWithImportJsonSelection } from "../popovers/file-browser";
+import { openConfirmPopover } from "../popovers/confirm";
 import { openNewProjectPopover } from "./newProjectPopover";
+import { showToast } from "../toast";
 import { getAlias } from "../../importCache/aliases";
 import { boundImportJsonPath } from "../../importCache/houseBindings";
 import { createEmptyProjectFiles } from "htsw-editor-common/project";
 import { ctProjectFs } from "../../project/projectFs";
-import { PROJECTS_ROOT } from "../../project/paths";
+import {
+    PROJECTS_ROOT,
+    parentDirOf,
+    projectPathExists,
+    projectSectionFolders,
+    restructureProjectPerSection,
+} from "../../project/paths";
 
 function selectExportImportJson(path: string): void {
     setExportImportJsonPath(path);
@@ -45,9 +53,11 @@ function aliasPrefill(): string {
     return alias !== null ? alias.split(" ").join("") : "";
 }
 
-function createExportProject(name: string): void {
+function createExportProject(name: string, sectionFolders: boolean): void {
     try {
-        const result = createEmptyProjectFiles(ctProjectFs, PROJECTS_ROOT, name);
+        const result = createEmptyProjectFiles(ctProjectFs, PROJECTS_ROOT, name, {
+            sectionFolders,
+        });
         selectExportImportJson(result.importJsonPath);
         closeAllPopovers();
         ChatLib.chat(`&a[htsw] ${result.created ? "Created" : "Selected"} ${result.importJsonPath}`);
@@ -128,9 +138,90 @@ function destinationRow(path: string, boundPath: string | null): Element {
     });
 }
 
+function splitIntoSectionFolders(importJsonPath: string): void {
+    try {
+        const result = restructureProjectPerSection(importJsonPath);
+        markParseStale(importJsonPath);
+        const moved = result.moved.length;
+        if (result.failures.length > 0) {
+            for (const failure of result.failures) {
+                ChatLib.chat(
+                    `&c[htsw] ${failure.section} '${failure.identity}': ${failure.message}`
+                );
+            }
+            showToast(
+                `Split finished with ${result.failures.length} failed, ${moved} moved`,
+                0xffe85c5c,
+                8000
+            );
+            return;
+        }
+        showToast(
+            `Split ${shortPath(importJsonPath)} into folders — ${moved} importable${moved === 1 ? "" : "s"} moved`,
+            0xff5cb85c
+        );
+    } catch (err) {
+        showToast(`Split failed: ${err}`, 0xffe85c5c, 8000);
+    }
+}
+
+// Where a NEW export lands for the current destination, stated instead of
+// implied: re-exports always follow the file that already declares them.
+function destinationPreviewRow(): Element | false {
+    const dest = getExportImportJsonPath();
+    if (dest.trim() === "" || !projectPathExists(dest)) return false;
+    const perSection = projectSectionFolders(dest).length > 0;
+    const dir = shortPath(parentDirOf(dest));
+    return Row({
+        style: { gap: 4, align: "center", height: { kind: "px", value: 20 } },
+        children: [
+            Text({
+                text: perSection
+                    ? `New exports → ${dir}/<type>/`
+                    : `New exports → ${dir}/`,
+                color: COLOR_TEXT_DIM,
+                truncate: true,
+                style: { width: { kind: "grow" }, padding: { side: "x", value: 4 } },
+            }),
+            ...(perSection
+                ? []
+                : [
+                      Button({
+                          icon: Icons.folderTree,
+                          text: "Split into folders…",
+                          style: {
+                              height: { kind: "grow" },
+                              background: COLOR_BUTTON,
+                              hoverBackground: COLOR_BUTTON_HOVER,
+                          },
+                          tooltip: "Move this project's importables into a folder per type",
+                          tooltipColor: COLOR_TEXT_DIM,
+                          onClick: () =>
+                              openConfirmPopover({
+                                  title: `Split ${compactFileLabel(dest)} into folders?`,
+                                  lines: [
+                                      "Creates functions/, events/, … each with its own import.json,",
+                                      "moves the root file's importables and their files into them,",
+                                      "and sorts future exports into those folders.",
+                                  ],
+                                  confirmLabel: "Split",
+                                  onConfirm: () => {
+                                      closeAllPopovers();
+                                      splitIntoSectionFolders(dest);
+                                  },
+                              }),
+                      }),
+                  ]),
+        ],
+    });
+}
+
 export function exportDestinationPicker(): Element {
     const open = currentExportDestinations();
-    const recents = getRecents();
+    const recents = getRecents().filter((path) => {
+        const norm = normalizeHtswPath(path);
+        return open.indexOf(norm) < 0;
+    });
     const uuid = getHousingUuid();
     const rawBound = uuid !== null ? boundImportJsonPath(uuid) : null;
     const boundPath = rawBound !== null ? normalizeHtswPath(rawBound) : null;
@@ -140,17 +231,11 @@ export function exportDestinationPicker(): Element {
         children: [
             destinationSection("Open import.jsons"),
             ...open.map(row),
-            destinationSection("Recent"),
             ...(recents.length === 0
-                ? [
-                      Text({
-                          text: "(none)",
-                          color: COLOR_TEXT_FAINT,
-                          style: { padding: { side: "x", value: 8 } },
-                      }),
-                  ]
-                : recents.map(row)),
+                ? []
+                : [destinationSection("Recent"), ...recents.map(row)]),
             Container({ style: { height: { kind: "grow" } }, children: [] }),
+            destinationPreviewRow(),
             Row({
                 style: { gap: 4, height: { kind: "px", value: 20 } },
                 children: [

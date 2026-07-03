@@ -1,11 +1,14 @@
 /// <reference types="../../../CTAutocomplete" />
 
 import { Element } from "../lib/layout";
-import { Button, Col, Input, Row, Text } from "../lib/components";
+import { Button, Col, Container, Icon, Input, Row, Text } from "../lib/components";
+import { Icons } from "../lib/icons.generated";
+import { COLOR_TEXT_DIM } from "../lib/theme";
 import { closePopover, openPopover, type PopoverHandle } from "../lib/popovers";
 
 let draft = "";
-let onCreateCallback: ((name: string) => void) | null = null;
+let sectionFoldersDraft = true;
+let onCreateCallback: ((name: string, sectionFolders: boolean) => void) | null = null;
 let activeHandle: PopoverHandle | null = null;
 
 function closeSelf(): void {
@@ -22,11 +25,12 @@ function submit(): void {
         return;
     }
     const cb = onCreateCallback;
+    const sectionFolders = sectionFoldersDraft;
     draft = "";
     closeSelf();
     if (cb !== null) {
         try {
-            cb(trimmed);
+            cb(trimmed, sectionFolders);
         } catch (_e) {
             /* ignore */
         }
@@ -47,6 +51,30 @@ function popoverContent(): Element {
                 onSubmit: () => submit(),
                 placeholder: "project name…",
                 style: { width: { kind: "grow" }, height: { kind: "px", value: 18 } },
+            }),
+            Container({
+                style: {
+                    direction: "row",
+                    align: "center",
+                    gap: 4,
+                    width: { kind: "grow" },
+                    height: { kind: "px", value: 12 },
+                },
+                onClick: () => {
+                    sectionFoldersDraft = !sectionFoldersDraft;
+                },
+                children: [
+                    Icon({
+                        name: () => (sectionFoldersDraft ? Icons.squareCheck : Icons.square),
+                        style: { width: { kind: "px", value: 10 }, height: { kind: "px", value: 10 } },
+                    }),
+                    Text({
+                        text: "Folder per type (functions/, events/, …)",
+                        color: COLOR_TEXT_DIM,
+                        truncate: true,
+                        style: { width: { kind: "grow" } },
+                    }),
+                ],
             }),
             Row({
                 style: {
@@ -76,15 +104,16 @@ function popoverContent(): Element {
 
 export function openNewProjectPopover(
     prefill: string,
-    onCreate: (name: string) => void
+    onCreate: (name: string, sectionFolders: boolean) => void
 ): void {
     draft = prefill;
+    sectionFoldersDraft = true;
     onCreateCallback = onCreate;
     activeHandle = openPopover({
         anchor: { x: 0, y: 0, w: 0, h: 0 },
         content: popoverContent(),
         width: 240,
-        height: 64,
+        height: 82,
         key: "new-project",
         placement: "modal",
         onClose: () => {

@@ -149,7 +149,7 @@ export function mountProjectExplorer(
             state.status = message.ok
                 ? { kind: "ok", text: message.message }
                 : { kind: "error", text: message.error };
-            if (message.ok) scheduleStatusDismiss(message.message);
+            scheduleStatusDismiss(state.status.text, message.ok ? 5000 : 12000);
             if (message.ok && message.createdPath) {
                 state.selectedParent = message.createdPath;
                 state.expanded.add(message.createdPath);
@@ -162,15 +162,16 @@ export function mountProjectExplorer(
         }
     };
 
-    // Success notices fade out on their own; errors stay until replaced.
+    // Status notices fade out on their own; errors linger longer so they can
+    // still be read after a missed click.
     let statusDismissTimer: ReturnType<typeof setTimeout> | undefined;
-    function scheduleStatusDismiss(text: string): void {
+    function scheduleStatusDismiss(text: string, delayMs: number): void {
         if (statusDismissTimer) clearTimeout(statusDismissTimer);
         statusDismissTimer = setTimeout(() => {
-            if (state.status.kind !== "ok" || state.status.text !== text) return;
+            if (state.status.text !== text) return;
             state.status = { kind: "idle", text: "" };
             renderStatus();
-        }, 5000);
+        }, delayMs);
     }
 
     function persistProjectState(): void {
@@ -206,7 +207,7 @@ export function mountProjectExplorer(
                     <button id="sortProject" class="icon-button" type="button" title="Sort: ${SORT_LABEL[state.sort]}">${SVG.sort}</button>
                     <button id="refreshProject" class="icon-button" type="button" title="Refresh">${SVG.refresh}</button>
                     <button id="toggleAdd" class="icon-button ${state.showAdd ? "active" : ""}" type="button" title="Add importable">${SVG.addImportable}</button>
-                    <button id="toggleCreate" class="icon-button ${state.showCreate ? "active" : ""}" type="button" title="New module">${SVG.plus}</button>
+                    <button id="toggleCreate" class="icon-button ${state.showCreate ? "active" : ""}" type="button" title="New folder">${SVG.plus}</button>
                 </div>
                 <div id="projectContext">${renderContext(state)}</div>
                 ${renderAddPanel(state)}
@@ -223,7 +224,7 @@ export function mountProjectExplorer(
         const tree = document.getElementById("projectTree");
         if (tree) tree.scrollTop = scroll;
         if (state.showCreate) {
-            (document.getElementById("modulePath") as HTMLInputElement | null)?.focus();
+            (document.getElementById("folderPath") as HTMLInputElement | null)?.focus();
         }
         if (state.showAdd) {
             (document.getElementById("addName") as HTMLInputElement | null)?.focus();
@@ -336,9 +337,9 @@ export function mountProjectExplorer(
             updateSelectedParent(parent.value);
         });
 
-        document.getElementById("createModuleForm")?.addEventListener("submit", (event) => {
+        document.getElementById("createFolderForm")?.addEventListener("submit", (event) => {
             event.preventDefault();
-            const input = document.getElementById("modulePath") as HTMLInputElement | null;
+            const input = document.getElementById("folderPath") as HTMLInputElement | null;
             const folderPath = input?.value.trim() ?? "";
             if (!state.selectedParent || !folderPath) return;
             state.status = { kind: "idle", text: "Creating…" };
@@ -476,16 +477,16 @@ export function mountProjectExplorer(
 function renderCreatePanel(state: State): string {
     if (!state.showCreate) return "";
     return `
-        <form id="createModuleForm" class="create-panel">
-            <div class="create-title">New module</div>
-            <p class="create-hint">Creates an empty <code>import.json</code> and adds it to the selected file's <code>include</code> list.</p>
+        <form id="createFolderForm" class="create-panel">
+            <div class="create-title">New folder</div>
+            <p class="create-hint">Creates a folder with an empty <code>import.json</code> and adds it to the chosen file's <code>include</code> list. Pick the parent from the dropdown, or by clicking an <code>import.json</code> in the tree.</p>
             <label class="create-field">
                 <span>Include from</span>
                 <select id="parentImportJson">${parentOptions(state).join("")}</select>
             </label>
             <label class="create-field">
                 <span>Folder</span>
-                <input id="modulePath" placeholder="functions/clocks" autocomplete="off">
+                <input id="folderPath" placeholder="functions/clocks" autocomplete="off">
             </label>
             <div class="create-actions">
                 <button id="cancelCreate" class="secondary" type="button">Cancel</button>
@@ -595,7 +596,7 @@ function renderNode(
     if (node.reference) {
         return `
             <div class="row file reference" data-jump-to="${escapeAttr(node.fsPath)}"
-                title="Also included here — click to jump to its contents">
+                title="${escapeAttr(`${node.label}\nAlso included here - click to jump to its contents`)}">
                 ${indentGuides(depth)}
                 <span class="twisty empty"></span>
                 <span class="row-icon json">${SVG.braces}</span>
@@ -618,7 +619,8 @@ function renderNode(
     const row = `
         <div class="row file ${root ? "root" : ""} ${selected ? "selected" : ""} ${problem ? "problem" : ""}"
             data-open-path="${escapeAttr(node.fsPath)}"
-            data-parent-path="${escapeAttr(node.fsPath)}">
+            data-parent-path="${escapeAttr(node.fsPath)}"
+            title="${escapeAttr(node.label)}">
             ${indentGuides(depth)}
             <button class="twisty ${hasChildren ? "" : "empty"} ${expanded ? "open" : ""}" type="button"
                 data-toggle-node="${escapeAttr(node.fsPath)}" ${hasChildren ? "" : "disabled"}>${SVG.chevron}</button>
@@ -648,7 +650,8 @@ function renderImportable(
         <div class="row imp ${entry.type}" data-open-path="${escapeAttr(entry.openPath ?? "")}"
             data-move-path="${escapeAttr(declaringPath)}"
             data-move-kind="${escapeAttr(entry.type)}"
-            data-move-identity="${escapeAttr(entry.identity)}">
+            data-move-identity="${escapeAttr(entry.identity)}"
+            title="${escapeAttr(importableTooltip(entry))}">
             ${indentGuides(depth)}
             <button class="twisty ${hasSubs ? "" : "empty"} ${expanded ? "open" : ""}" type="button"
                 data-toggle-node="${escapeAttr(entry.id)}" ${hasSubs ? "" : "disabled"}>${SVG.chevron}</button>
@@ -664,7 +667,8 @@ function renderImportable(
 
 function renderSubEntry(sub: ProjectImportableSub, depth: number): string {
     return `
-        <div class="row sub" data-open-path="${escapeAttr(sub.fsPath)}">
+        <div class="row sub" data-open-path="${escapeAttr(sub.fsPath)}"
+            title="${escapeAttr(`${sub.label}\n${baseName(sub.fsPath)}`)}">
             ${indentGuides(depth)}
             <span class="twisty empty"></span>
             <span class="row-icon sub ${sub.kind}">${SUB_GLYPH[sub.kind]}</span>
@@ -686,6 +690,10 @@ function importableIcon(entry: ProjectImportableSummary): string {
         return `<span class="row-icon mc"><img src="${uri}" alt="" draggable="false"></span>`;
     }
     return `<span class="row-icon glyph ${entry.type}">${TYPE_GLYPH[entry.type]}</span>`;
+}
+
+function importableTooltip(entry: ProjectImportableSummary): string {
+    return `${entry.label}\n${entry.typeLabel}`;
 }
 
 function indentGuides(depth: number): string {

@@ -7,7 +7,7 @@ import { ItemCaptureRegistry, prettySnbt } from "../../housingSync/itemCapture";
 import TaskContext from "../../tasks/context";
 import { ensureParentDirs } from "../../utils/filesystem";
 import { resolveImportableFile, upsertImportableEntry } from "../../project/importJsonMutations";
-import { canonicalSlug, parentDirOf } from "../../project/paths";
+import { canonicalSlug, parentDirOf, sectionFolderImportJson } from "../../project/paths";
 import { readLiveMenu } from "./read";
 import { openMenuEditor } from "./shared";
 
@@ -18,8 +18,9 @@ export type ExportMenuOptions = {
     importJsonPath: string;
     /**
      * Root directory the export is being written under. Per-slot `.htsl` files
-     * go to `<rootDir>/menus/<slug>/slot-<N>.htsl`; deduped slot items go to
-     * `<rootDir>/items/<name>.snbt`.
+     * go to `<rootDir>/menus/<slug>/slot-<N>.htsl` (just `<rootDir>/<slug>/`
+     * when the destination is the menus section folder itself); deduped slot
+     * items go to `<rootDir>/items/<name>.snbt`.
      */
     rootDir: string;
     onReadProgress?: ProgressHandler;
@@ -39,6 +40,10 @@ export type ExportMenuSharedState = {
 
 type ImportJsonMenuSlot = { slot: number; nbt: string; actions?: string };
 
+function pathKeyOf(path: string): string {
+    return path.split("\\").join("/").toLowerCase();
+}
+
 /**
  * Export one menu: each slot's item is deduped into a shared `items/<name>.snbt`
  * and its click-actions written to a `.htsl`, both referenced by path in the
@@ -56,10 +61,18 @@ export async function exportMenu(
     // A menu already declared in an INCLUDED file updates in place: the
     // entry is upserted into its declaring import.json, and since every
     // slot ref is relative to the file declaring it, the slot htsl/snbt
-    // files move under that file's folder too.
-    const importJsonPath = resolveImportableFile(options.importJsonPath, "menus", name);
+    // files move under that file's folder too. A NEW menu goes to the
+    // project's menus/import.json when that section folder is included.
+    const sectionJson = sectionFolderImportJson(options.importJsonPath, "menus");
+    const declared = resolveImportableFile(options.importJsonPath, "menus", name);
+    const importJsonPath =
+        declared !== options.importJsonPath ? declared : (sectionJson ?? options.importJsonPath);
     const rootDir =
         importJsonPath === options.importJsonPath ? options.rootDir : parentDirOf(importJsonPath);
+    // Inside the menus section folder the per-menu folder sits directly
+    // beside its import.json — a "menus/" prefix there would nest menus/menus/.
+    const inSectionFolder =
+        sectionJson !== null && pathKeyOf(importJsonPath) === pathKeyOf(sectionJson);
 
     if ((await openMenuEditor(ctx, name)) === "missing") {
         throw new Error(`No menu named "${name}" exists in this housing.`);
@@ -68,7 +81,7 @@ export async function exportMenu(
     const live = await readLiveMenu(ctx, options.onReadProgress);
 
     const slug = canonicalSlug(name);
-    const menuRel = `menus/${slug}`;
+    const menuRel = inSectionFolder ? slug : `menus/${slug}`;
     const menuAbs = `${rootDir}/${menuRel}`;
 
     const jsonSlots: ImportJsonMenuSlot[] = [];

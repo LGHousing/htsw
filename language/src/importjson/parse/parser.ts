@@ -43,14 +43,7 @@ export class Parser {
         const field = this.parseFieldOrUndefined(name);
         if (!field) {
             throw Diagnostic.error(`Missing required key '${name}'`)
-                .addPrimarySpan(this.span().endSpan())
-                .addSubDiagnostic(
-                    Diagnostic.help(
-                        `Allowed keys here: ${this.parseFields()
-                            .map(({ key }) => key.parseString())
-                            .join(", ")}`
-                    )
-                );
+                .addPrimarySpan(this.span().endSpan());
         }
         return field;
     }
@@ -145,21 +138,7 @@ export class Parser {
         const { value, span } = this.withSpan(parser);
         this.gcx.spans.setField(owner, key, span);
         owner[key] = value;
-        this.recordSourceFile(owner, key, value);
         return value;
-    }
-
-    private recordSourceFile<T extends object, K extends keyof T>(
-        owner: T,
-        key: K,
-        value: T[K],
-    ): void {
-        if (value === null || typeof value !== "object") return;
-        const sourcePath = this.importJson.sourcePathOf(value as object);
-        if (sourcePath === undefined) return;
-        if (key === "actions" || key === "nbt") {
-            this.importJson.setSourcePath(owner, sourcePath);
-        }
     }
     
     withSpan<T>(parser: (p: Parser) => T): { value: T, span: Span } {

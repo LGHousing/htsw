@@ -8,17 +8,14 @@ import type { Importable } from "./types";
  * Two concepts consumers keep re-implementing:
  *
  * 1. **Source path** (`importableSourcePath`) — the file the user expects
- *    to open when they say "show me this importable". For FUNCTION/EVENT
- *    that's the resolved `.htsl`; for ITEM it's the `.snbt` (resolved via
- *    the parsed `nbt` Tag's span); for REGION/MENU/COMMAND/NPC it's the
- *    declaring import.json (since their metadata lives inline).
+ *    to open when they say "show me this importable". The parser stamps it
+ *    on the importable itself (`sourcePath`): the resolved `.htsl`/`.snbt`
+ *    for file-backed actions/nbt, otherwise the declaring import.json.
  *
  * 2. **Sub-list source path** (`importableSubListPath`) — for nested
- *    action lists on REGION, ITEM, COMMAND, and NPC. If the JSON used
- *    `{ actionsPath: "..." }` the parser materialized those actions from
- *    a separate `.htsl`; the span recorded for the resulting array
- *    resolves to that file via the SourceMap. If the actions were inline
- *    JSON the span resolves back to the declaring import.json.
+ *    action lists on REGION, ITEM, COMMAND, and NPC. The parser stamps
+ *    the resolved `.htsl` next to each list (`onEnterActionsPath`, …);
+ *    menu slots carry `nbtPath`/`actionsPath` the same way.
  */
 
 /** The slice of a parse result these helpers need (structurally matches
@@ -41,60 +38,6 @@ export const SUB_LIST_KINDS = [
 export type SubListKind = (typeof SUB_LIST_KINDS)[number];
 
 /**
- * The file a span-bearing parsed object (an action, a Tag, …) came from,
- * resolved through the parse's source map. Undefined when no span was
- * recorded for the object.
- */
-export function parsedObjectSourcePath(
-    parsed: ImportableParseAccess,
-    key: object
-): string | undefined {
-    try {
-        const span = parsed.gcx.spans.get(key);
-        return parsed.gcx.sourceMap.getFileByPos(span.start).path;
-    } catch (_e) {
-        return undefined;
-    }
-}
-
-/**
- * The file an action list lives in: the `.htsl` it was materialized from,
- * or the declaring import.json for inline JSON lists. Undefined for an
- * empty inline list (nothing span-bearing to resolve).
- */
-export function actionListSourcePath(
-    parsed: ImportableParseAccess,
-    list: readonly object[]
-): string | undefined {
-    const fromListSource = parsed.importJson.sourcePathOf(list as object);
-    if (fromListSource !== undefined) return fromListSource;
-    if (list.length === 0) return undefined;
-    return parsedObjectSourcePath(parsed, list[0]);
-}
-
-function actionPathFromFieldSpan(
-    parsed: ImportableParseAccess,
-    imp: Importable,
-    kind: SubListKind
-): string | undefined {
-    try {
-        const span = parsed.gcx.spans.getField(imp as never, kind);
-        const file = parsed.gcx.sourceMap.getFileByPos(span.start);
-        const start = span.start - file.startPos;
-        const end = span.end - file.startPos;
-        const raw = file.src.slice(start, end);
-        const value = JSON.parse(raw);
-        if (typeof value !== "string") return undefined;
-        return parsed.gcx.sourceMap.fileLoader.resolvePath(
-            parsed.gcx.sourceMap.fileLoader.getParentPath(file.path),
-            value
-        );
-    } catch (_e) {
-        return undefined;
-    }
-}
-
-/**
  * The import.json file that DECLARED `imp` — distinct from
  * `importableSourcePath`, which prefers the htsl/snbt the content lives in.
  * Falls back to the parse's entry file when the parse didn't record one.
@@ -106,17 +49,8 @@ export function importableDeclaringPath(
     return parse.importJson.declaringPathOf(imp) ?? parse.gcx.path;
 }
 
-export function importableSourcePath(
-    imp: Importable,
-    parsed: ImportableParseAccess
-): string | undefined {
-    if (imp.type === "ITEM" && imp.nbt !== undefined) {
-        const fromNbt = parsedObjectSourcePath(parsed, imp.nbt);
-        if (fromNbt !== undefined) return fromNbt;
-        // Fall through to the declaring file when the nbt span doesn't
-        // resolve (e.g. inline NBT with no span recorded).
-    }
-    return parsed.importJson.sourcePathOf(imp);
+export function importableSourcePath(imp: Importable): string | undefined {
+    return imp.sourcePath;
 }
 
 export function subListOf(imp: Importable, kind: SubListKind): readonly object[] | undefined {
@@ -156,32 +90,47 @@ export function hasSubList(imp: Importable, kind: SubListKind): boolean {
 
 export function importableSubListPath(
     imp: Importable,
-    kind: SubListKind,
-    parsed: ImportableParseAccess
+    kind: SubListKind
 ): string | undefined {
-    const list = subListOf(imp, kind);
-    if (list === undefined) return undefined;
-    const fromList = actionListSourcePath(parsed, list);
-    if (fromList !== undefined) return fromList;
-    return actionPathFromFieldSpan(parsed, imp, kind);
+    if (subListOf(imp, kind) === undefined) return undefined;
+    if (kind === "actions" && imp.type === "COMMAND") {
+        return imp.actionsPath;
+    }
+    if (kind === "onEnterActions" && imp.type === "REGION") {
+        return imp.onEnterActionsPath;
+    }
+    if (kind === "onExitActions" && imp.type === "REGION") {
+        return imp.onExitActionsPath;
+    }
+    if (kind === "leftClickActions" && (imp.type === "ITEM" || imp.type === "NPC")) {
+        return imp.leftClickActionsPath;
+    }
+    if (kind === "rightClickActions" && (imp.type === "ITEM" || imp.type === "NPC")) {
+        return imp.rightClickActionsPath;
+    }
+    return undefined;
 }
 
 /**
  * Every source file one importable references — its primary source file
- * (htsl/snbt) plus each declared sub-list's source file. Undefined-filtered;
- * order is primary-then-sub-lists and may contain duplicates (an inline
- * sub-list resolves to the same file as its primary).
+ * (htsl/snbt), each declared sub-list's source file, and each menu slot's
+ * `.snbt`/`.htsl`. Undefined-filtered; order is primary-then-sub-lists and
+ * may contain duplicates (an inline sub-list resolves to the same file as
+ * its primary).
  */
-export function importableFilePaths(
-    imp: Importable,
-    parse: ImportableParseAccess
-): string[] {
+export function importableFilePaths(imp: Importable): string[] {
     const out: string[] = [];
-    const primary = importableSourcePath(imp, parse);
+    const primary = importableSourcePath(imp);
     if (primary !== undefined) out.push(primary);
     for (let i = 0; i < SUB_LIST_KINDS.length; i++) {
-        const sub = importableSubListPath(imp, SUB_LIST_KINDS[i], parse);
+        const sub = importableSubListPath(imp, SUB_LIST_KINDS[i]);
         if (sub !== undefined) out.push(sub);
+    }
+    if (imp.type === "MENU") {
+        for (const slot of imp.slots) {
+            if (slot.nbtPath !== undefined) out.push(slot.nbtPath);
+            if (slot.actionsPath !== undefined) out.push(slot.actionsPath);
+        }
     }
     return out;
 }
@@ -212,7 +161,7 @@ export function allReferencedPaths(
     };
     if (parse.importJson.fileTree !== null) pushTree(parse.importJson.fileTree);
     for (const imp of parse.value) {
-        for (const p of importableFilePaths(imp, parse)) push(p);
+        for (const p of importableFilePaths(imp)) push(p);
     }
     return out;
 }

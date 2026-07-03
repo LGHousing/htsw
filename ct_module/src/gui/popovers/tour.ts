@@ -167,7 +167,7 @@ function previewFirstAvailableSource(): void {
     const parse = requestParse(importJsonPath);
     if (parse === null || parse.parsed === null) return;
     for (let i = 0; i < parse.parsed.value.length; i++) {
-        const p = importableSourcePath(parse.parsed.value[i], parse.parsed);
+        const p = importableSourcePath(parse.parsed.value[i]);
         if (p !== undefined) {
             previewSelect(p, importJsonPath);
             return;

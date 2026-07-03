@@ -1,4 +1,5 @@
 import { isSafeProjectName, joinPath, parentDir, type ProjectFs } from "./fs";
+import { SECTION_FOLDERS } from "./sectionLayout";
 
 export const STARTER_PROJECT_NAME = "starter";
 
@@ -93,10 +94,17 @@ export function createStarterProjectFiles(
     };
 }
 
+export type CreateProjectOptions = {
+    /** Scaffold `<section>/import.json` per exportable section, included from
+     * the root, so exports sort themselves into folders by type. */
+    sectionFolders?: boolean;
+};
+
 export function createEmptyProjectFiles(
     fs: ProjectFs,
     projectsRoot: string,
-    name: string
+    name: string,
+    options: CreateProjectOptions = {}
 ): CreateProjectResult {
     const trimmed = name.trim();
     if (!isSafeProjectName(trimmed)) {
@@ -109,8 +117,23 @@ export function createEmptyProjectFiles(
 
     fs.ensureDir(projectDir);
     if (!fs.exists(importJsonPath)) {
-        fs.writeFile(importJsonPath, "{\n}\n");
-        writtenFiles.push(importJsonPath);
+        if (options.sectionFolders === true) {
+            const includes = SECTION_FOLDERS
+                .map((section) => `        "${section}/import.json"`)
+                .join(",\n");
+            fs.writeFile(importJsonPath, `{\n    "include": [\n${includes}\n    ]\n}\n`);
+            writtenFiles.push(importJsonPath);
+            for (const section of SECTION_FOLDERS) {
+                const sectionPath = joinPath(projectDir, `${section}/import.json`);
+                if (fs.exists(sectionPath)) continue;
+                fs.ensureDir(parentDir(sectionPath));
+                fs.writeFile(sectionPath, "{}\n");
+                writtenFiles.push(sectionPath);
+            }
+        } else {
+            fs.writeFile(importJsonPath, "{\n}\n");
+            writtenFiles.push(importJsonPath);
+        }
     }
 
     return {

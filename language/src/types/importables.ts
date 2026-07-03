@@ -2,7 +2,17 @@ import type { Tag } from "../nbt";
 import type { Action } from "./actions";
 import type { Bounds, Color, CommandMode, Event, MenuSlot, Permission, Pos } from "./types";
 
-export type ImportableFunction = {
+/**
+ * The resolved file an importable's content lives in — the `.htsl` for
+ * file-backed actions, the `.snbt` for an item's nbt, otherwise the
+ * import.json that declared it. Stamped by the import.json parser; absent
+ * on importables built elsewhere (house reads, tests).
+ */
+type ImportableSource = {
+    sourcePath?: string;
+};
+
+export type ImportableFunction = ImportableSource & {
     type: "FUNCTION";
     name: string;
     actions?: Action[];
@@ -16,30 +26,34 @@ export type FunctionIcon = {
     enchanted?: boolean;
 };
 
-export type ImportableRegion = {
+export type ImportableRegion = ImportableSource & {
     type: "REGION";
     name: string;
     bounds?: Bounds;
     onEnterActions?: Action[];
+    onEnterActionsPath?: string;
     onExitActions?: Action[];
+    onExitActionsPath?: string;
 };
 
-export type ImportableMenu = {
+export type ImportableMenu = ImportableSource & {
     type: "MENU";
     name: string;
     size?: number;
     slots: MenuSlot[];
 };
 
-export type ImportableItem = {
+export type ImportableItem = ImportableSource & {
     type: "ITEM";
     name: string;
     nbt: Tag;
     leftClickActions?: Action[];
+    leftClickActionsPath?: string;
     rightClickActions?: Action[];
+    rightClickActionsPath?: string;
 };
 
-export type ImportableEvent = {
+export type ImportableEvent = ImportableSource & {
     type: "EVENT";
     event: Event;
     actions: Action[];
@@ -55,12 +69,14 @@ export type NpcEquipment = {
     hand?: string;
 };
 
-export type ImportableNpc = {
+export type ImportableNpc = ImportableSource & {
     type: "NPC";
     name: string;
     pos: Pos;
     leftClickActions?: Action[];
+    leftClickActionsPath?: string;
     rightClickActions?: Action[];
+    rightClickActionsPath?: string;
     leftClickRedirect?: boolean;
     lookAtPlayers?: boolean;
     hideNameTag?: boolean;
@@ -68,7 +84,7 @@ export type ImportableNpc = {
     equipment?: NpcEquipment;
 };
 
-export type ImportableTeam = {
+export type ImportableTeam = ImportableSource & {
     type: "TEAM",
     name: string,
     tag?: string,
@@ -76,7 +92,7 @@ export type ImportableTeam = {
     friendlyFire?: boolean,
 };
 
-export type ImportableGroup = {
+export type ImportableGroup = ImportableSource & {
     type: "GROUP",
     name: string,
     tag?: string,
@@ -85,16 +101,17 @@ export type ImportableGroup = {
     permissions?: Record<Permission, boolean>,
 };
 
-export type ImportableCommand = {
+export type ImportableCommand = ImportableSource & {
     type: "COMMAND",
     name: string,
     actions?: Action[],
+    actionsPath?: string,
     mode?: CommandMode,
     requiredPriority?: number,
     listed?: boolean,
 }
 
-export type ImportableHouseName = {
+export type ImportableHouseName = ImportableSource & {
     type: "HOUSE_NAME",
     name: string,
 };

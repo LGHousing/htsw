@@ -139,6 +139,19 @@ export function listHashes(importable: Importable): Record<string, string[]> {
 
 const DEFAULT_FUNCTION_ICON_CANONICAL = iconCanonical({ item: "minecraft:map" });
 
+// Parser-stamped file locations (which file the content was parsed FROM),
+// not Housing content. House reads never set them, and parse-side and
+// house-side hashes must stay equal for identical content.
+const PARSE_PATH_KEYS = new Set([
+    "sourcePath",
+    "actionsPath",
+    "nbtPath",
+    "onEnterActionsPath",
+    "onExitActionsPath",
+    "leftClickActionsPath",
+    "rightClickActionsPath",
+]);
+
 export type ImportableCanonicalPart = { key: string; serialized: string };
 
 /**
@@ -155,6 +168,7 @@ export function importableCanonicalParts(
     const parts: ImportableCanonicalPart[] = [];
     for (let ki = 0; ki < keys.length; ki++) {
         const key = keys[ki];
+        if (PARSE_PATH_KEYS.has(key)) continue;
         const value = (subject as unknown as Record<string, unknown>)[key];
         if (value === undefined) continue;
         if (Array.isArray(value) && value.length === 0) continue;
@@ -280,11 +294,12 @@ export function clickActionsHash(
     return String(cyrb53(key));
 }
 
-function menuSlotCanonical(slot: Record<string, unknown>): string {
+export function menuSlotCanonical(slot: Record<string, unknown>): string {
     const keys = Object.keys(slot).sort();
     const parts: string[] = [];
     for (let i = 0; i < keys.length; i++) {
         const key = keys[i];
+        if (PARSE_PATH_KEYS.has(key)) continue;
         const value = slot[key];
         if (value === undefined) continue;
         if (Array.isArray(value) && value.length === 0) continue;

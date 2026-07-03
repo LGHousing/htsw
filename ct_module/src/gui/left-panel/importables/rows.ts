@@ -20,13 +20,15 @@ import {
     toggleImportableChecked,
 } from "../../state";
 import { ACCENT_DANGER, ACCENT_INFO, ACCENT_SUCCESS, ACCENT_WARN, COLOR_TEXT_DIM, COLOR_TEXT_FAINT } from "../../lib/theme";
-import { diagnosticCountsFor, type SeverityCounts } from "../../cache-status/diagnosticCounts";
+import { diagnosticCountsFor, diagnosticCountsForFile, type SeverityCounts } from "../../cache-status/diagnosticCounts";
 import { openEditImportableFieldPopover } from "./editFieldPopover";
 import { cacheStateForImportable, linkStatusIcon } from "../../cache-status";
+import { menuSlotCacheStatus } from "../../cache-status/menuSlotStatus";
 import { isScannableType } from "../houses/contentTypes";
 import {
     hasSubList,
     importableDeclaringPath,
+    importableFilePaths,
     importableSourcePath,
     importableSubListPath,
     type SubListKind,
@@ -72,7 +74,8 @@ import {
 } from "./rowModel";
 import { openMoveDestinationPicker } from "./moveDestinationPicker";
 import { confirmRebind, houseBindingActions } from "../../houseBinding";
-import type { Bounds, Importable } from "htsw/types";
+import type { Bounds, Importable, MenuSlot } from "htsw/types";
+import { tagChild, type TagLike } from "../../../housingSync/fields/itemTagCanonical";
 
 export let searchQuery = "";
 export function setSearchQuery(v: string): void {
@@ -395,11 +398,7 @@ function importableLabel(imp: Importable): string {
 }
 
 function importableSourceFilePath(parent: ResultImport, imp: Importable): string {
-    if (parent.parse !== null) {
-        const src = importableSourcePath(imp, parent.parse);
-        if (src !== undefined) return src;
-    }
-    return parent.fullPath;
+    return importableSourcePath(imp) ?? parent.fullPath;
 }
 
 function importablePreviewPath(parent: ResultImport, imp: Importable): string {
@@ -409,33 +408,22 @@ function importablePreviewPath(parent: ResultImport, imp: Importable): string {
     return importableSourceFilePath(parent, imp);
 }
 
-// Files this importable owns: its primary source (htsl/snbt) plus sub-list
-// htsl files — minus the import.json itself and anything another importable
-// in the same project also references (shared files survive the delete).
+// Files this importable owns: its primary source (htsl/snbt), sub-list htsl
+// files, and menu slot .snbt/.htsl files — minus the import.json itself and
+// anything another importable in the same project also references (shared
+// files survive the delete).
 function ownedFilesOf(parent: ResultImport, imp: Importable): string[] {
     const mine = new Set<string>();
-    const primary = importableSourceFilePath(parent, imp);
-    if (primary !== parent.fullPath) mine.add(primary);
-    const kinds = subListsOf(imp);
-    for (let i = 0; i < kinds.length; i++) {
-        const p = parent.parse !== null
-            ? importableSubListPath(imp, kinds[i], parent.parse)
-            : undefined;
-        if (p !== undefined && p !== parent.fullPath) mine.add(p);
+    for (const p of importableFilePaths(imp)) {
+        if (p !== parent.fullPath) mine.add(p);
     }
     if (mine.size === 0) return [];
     const shared = new Set<string>();
     for (let i = 0; i < parent.importables.length; i++) {
         const other = parent.importables[i];
         if (other === imp) continue;
-        const op = importableSourceFilePath(parent, other);
-        if (mine.has(op)) shared.add(op);
-        const oKinds = subListsOf(other);
-        for (let j = 0; j < oKinds.length; j++) {
-            const sp = parent.parse !== null
-                ? importableSubListPath(other, oKinds[j], parent.parse)
-                : undefined;
-            if (sp !== undefined && mine.has(sp)) shared.add(sp);
+        for (const p of importableFilePaths(other)) {
+            if (mine.has(p)) shared.add(p);
         }
     }
     const out: string[] = [];
@@ -540,14 +528,6 @@ function openInViewAction(path: string, importJsonPath?: string | null): MenuAct
     };
 }
 
-// Whether the project has anywhere to move an importable TO. Deliberately
-// cheap (one WeakMap hit) because the row menu is rebuilt per visible row
-// per frame — the real destination list resolves paths only on click.
-function projectHasIncludes(parent: ResultImport): boolean {
-    return parent.parse !== null && includeTreeOf(parent).includes.length > 0;
-}
-
-
 function importableActions(parent: ResultImport, imp: Importable): MenuAction[] {
     const target = importablePreviewPath(parent, imp);
     const item = makeImportableQueueItem(imp, parent.fullPath);
@@ -563,7 +543,9 @@ function importableActions(parent: ResultImport, imp: Importable): MenuAction[] 
                 );
             },
         },
-        ...(projectHasIncludes(parent)
+        // Offered even in a project with no includes yet — the picker's
+        // "New folder…" row is how the first include gets created.
+        ...(parent.parse !== null
             ? [
                   {
                       label: "Move to…",
@@ -1162,10 +1144,7 @@ export function importableRow(parent: ResultImport, imp: Importable): Element {
 
 export function subRow(parent: ResultImport, imp: Importable, kind: SubListKind): Element {
     const label = SUB_LIST_LABELS[kind];
-    const path = parent.parse !== null
-        ? importableSubListPath(imp, kind, parent.parse)
-        : undefined;
-    const target = path ?? parent.fullPath;
+    const target = importableSubListPath(imp, kind) ?? parent.fullPath;
     const actions = composeFileMenu(
         [openInViewAction(target, parent.fullPath)],
         target,
@@ -1194,6 +1173,155 @@ export function subRow(parent: ResultImport, imp: Importable, kind: SubListKind)
             Text({
                 text: label,
                 color: COLOR_TEXT_DIM,
+                style: { width: { kind: "grow" } },
+            }),
+        ],
+    });
+}
+
+export function menuSlotExpansionKey(parent: ResultImport, imp: Importable, slot: MenuSlot): string {
+    return `${importableExpansionKey(parent.fullPath, imp)}::slot:${slot.slot}`;
+}
+
+export type MenuSlotFileKind = "item" | "actions";
+
+/** The file to open for one side of a menu slot; inline JSON (no `nbtPath` /
+ * `actionsPath`) falls back to the import.json that declared the menu. */
+export function menuSlotFilePath(
+    parent: ResultImport,
+    imp: Importable,
+    slot: MenuSlot,
+    kind: MenuSlotFileKind
+): string {
+    const path = kind === "item" ? slot.nbtPath : slot.actionsPath;
+    if (path !== undefined) return path;
+    return parent.parse !== null ? importableDeclaringPath(imp, parent.parse) : parent.fullPath;
+}
+
+function slotItemId(slot: MenuSlot): string | undefined {
+    const id = tagChild(slot.nbt as TagLike, "id");
+    return id !== undefined && id.type === "string" ? String(id.value) : undefined;
+}
+
+function slotItemLabel(slot: MenuSlot): string {
+    const name = tagChild(tagChild(tagChild(slot.nbt as TagLike, "tag"), "display"), "Name");
+    if (name !== undefined && name.type === "string" && String(name.value).trim().length > 0) {
+        return String(name.value);
+    }
+    if (slot.nbtPath !== undefined) {
+        const base = slot.nbtPath.split("\\").join("/").split("/").pop();
+        if (base !== undefined && base.length > 0) return base.replace(/\.snbt$/, "");
+    }
+    return slotItemId(slot) ?? "";
+}
+
+function slotDiagnosticCounts(parent: ResultImport, slot: MenuSlot): SeverityCounts {
+    const out = { errors: 0, warnings: 0 };
+    const paths = [slot.nbtPath, slot.actionsPath];
+    for (let i = 0; i < paths.length; i++) {
+        const p = paths[i];
+        if (p === undefined) continue;
+        const c = diagnosticCountsForFile(parent.parse, p);
+        out.errors += c.errors;
+        out.warnings += c.warnings;
+    }
+    return out;
+}
+
+export function menuSlotRow(parent: ResultImport, imp: Importable, slot: MenuSlot): Element {
+    const expKey = menuSlotExpansionKey(parent, imp, slot);
+    const expanded = importableExpansion.has(expKey);
+    const target = menuSlotFilePath(parent, imp, slot, slot.actions !== undefined ? "actions" : "item");
+    const actions = composeFileMenu(
+        [openInViewAction(target, parent.fullPath)],
+        target,
+        parent.fullPath
+    );
+    const itemId = slotItemId(slot);
+    const diagCounts = slotDiagnosticCounts(parent, slot);
+    const showBadge = diagCounts.errors > 0 || diagCounts.warnings > 0;
+    const slotStatus = menuSlotCacheStatus(imp, slot);
+    return Container({
+        style: {
+            direction: "row",
+            width: { kind: "grow" },
+            height: { kind: "grow" },
+            padding: { side: "x", value: 3 },
+            gap: 0,
+            align: "center",
+            background: ROW_BG,
+            hoverBackground: ROW_HOVER_BG,
+        },
+        onClick: rowHandler(actions, () => previewSelect(target, parent.fullPath)),
+        onDoubleClick: () => confirmSelect(target, parent.fullPath),
+        children: [
+            itemId !== undefined
+                ? McItem({ item: itemId, count: 1 })
+                : Icon({
+                      name: Icons.fileCode,
+                      color: IMPORTABLE_TYPE_COLORS[imp.type],
+                      style: { width: { kind: "px", value: 11 }, height: { kind: "px", value: 11 } },
+                  }),
+            rowSlot(INNER_GAP),
+            slotStatus !== null && linkStatusIcon(slotStatus.key, slotStatus.tooltip),
+            slotStatus !== null && rowSlot(INNER_GAP),
+            Text({ text: `Slot ${slot.slot}`, color: COLOR_TEXT_FAINT }),
+            rowSlot(INNER_GAP),
+            Text({
+                text: slotItemLabel(slot),
+                truncate: true,
+                style: { width: { kind: "grow" } },
+            }),
+            showBadge && rowSlot(INNER_GAP),
+            showBadge && diagnosticBadge(diagCounts),
+            caretButton(expanded, () => {
+                if (expanded) importableExpansion.delete(expKey);
+                else importableExpansion.add(expKey);
+                bumpTreeRevision();
+            }),
+        ],
+    });
+}
+
+export function menuSlotFileRow(
+    parent: ResultImport,
+    imp: Importable,
+    slot: MenuSlot,
+    kind: MenuSlotFileKind
+): Element {
+    const target = menuSlotFilePath(parent, imp, slot, kind);
+    const inline = (kind === "item" ? slot.nbtPath : slot.actionsPath) === undefined;
+    const actions = composeFileMenu(
+        [openInViewAction(target, parent.fullPath)],
+        target,
+        parent.fullPath
+    );
+    return Container({
+        style: {
+            direction: "row",
+            width: { kind: "grow" },
+            height: { kind: "grow" },
+            padding: { side: "x", value: 3 },
+            gap: 0,
+            align: "center",
+            background: ROW_BG,
+            hoverBackground: ROW_HOVER_BG,
+        },
+        onClick: rowHandler(actions, () => previewSelect(target, parent.fullPath)),
+        onDoubleClick: () => confirmSelect(target, parent.fullPath),
+        children: [
+            Icon({
+                name: Icons.fileCode,
+                color: IMPORTABLE_TYPE_COLORS[kind === "item" ? "ITEM" : imp.type],
+                style: { width: { kind: "px", value: 11 }, height: { kind: "px", value: 11 } },
+            }),
+            rowSlot(INNER_GAP),
+            Text({ text: kind === "item" ? "Item" : "Actions", color: COLOR_TEXT_DIM }),
+            rowSlot(INNER_GAP),
+            Text({
+                text: inline ? "inline" : shortPath(target),
+                color: COLOR_TEXT_FAINT,
+                truncate: true,
                 style: { width: { kind: "grow" } },
             }),
         ],

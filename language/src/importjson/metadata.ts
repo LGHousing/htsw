@@ -18,11 +18,9 @@ export type ImportJsonFileNode = {
 
 export class ImportJsonParseMetadata {
     fileTree: ImportJsonFileNode | null = null;
-    missingImportJsonPaths: string[] = [];
     houseUuid: string | null = null;
 
     private activePaths: string[] = [];
-    private sourceFiles = new WeakMap<object, string>();
     private declaringPathCache: WeakMap<Importable, string> | null = null;
 
     beginFile(path: string, parent?: ImportJsonFileNode): ImportJsonFileNode {
@@ -62,10 +60,6 @@ export class ImportJsonParseMetadata {
 
     hasVisited(path: string): boolean {
         return treeContainsPath(this.fileTree, path);
-    }
-
-    recordMissingImportJsonPath(path: string): void {
-        this.missingImportJsonPaths.push(path);
     }
 
     recordReference(fromNode: ImportJsonFileNode, path: string): void {
@@ -144,14 +138,6 @@ export class ImportJsonParseMetadata {
     recordImportables(node: ImportJsonFileNode, importables: Importable[]): void {
         node.importables.push(...importables);
         this.declaringPathCache = null;
-    }
-
-    setSourcePath(object: object, path: string): void {
-        this.sourceFiles.set(object, path);
-    }
-
-    sourcePathOf(object: object): string | undefined {
-        return this.sourceFiles.get(object);
     }
 
     declaringPathOf(importable: Importable): string | undefined {

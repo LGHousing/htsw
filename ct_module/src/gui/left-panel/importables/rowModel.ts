@@ -19,10 +19,10 @@ export type ResultImport = {
     /** Importables parsed out of this import.json (empty if parse failed). */
     importables: Importable[];
     parsePending: boolean;
-    /** The parse result this row's importables came from. Lets callers
-     * resolve `imp` through `importableSourcePath(imp, parse)` against the
-     * correct source map — without it, the WeakMap lookup misses and we
-     * fall back to the import.json instead of the htsl/snbt. */
+    /** The parse result this row's importables came from. Still needed for
+     * what the importable itself can't answer: which import.json declared it
+     * (`importableDeclaringPath`), diagnostic bucketing, and the include
+     * `fileTree`. Null when the parse failed. */
     parse: ImportablesParseResult | null;
     parseError?: string;
 };

@@ -24,7 +24,7 @@ import {
     parseCommandMode,
     parsePos,
 } from "./arguments";
-import { parseOption, warnUnused } from "./helpers";
+import { contentFilePath, parseOption, warnUnused } from "./helpers";
 import type { Parser } from "./parser";
 
 export function parseImportableFunction(p: Parser): ImportableFunction {
@@ -32,7 +32,9 @@ export function parseImportableFunction(p: Parser): ImportableFunction {
     p.setNodeSpan(im);
 
     p.parseField("name").setField(im, "name", (p) => p.parseString());
-    p.parseFieldOrUndefined("actions")?.setField(im, "actions", parseHtsl);
+    const actionsField = p.parseFieldOrUndefined("actions");
+    actionsField?.setField(im, "actions", parseHtsl);
+    if (actionsField) im.sourcePath = contentFilePath(actionsField);
     p.parseFieldOrUndefined("repeatTicks")?.setField(im, "repeatTicks", (p) =>
         p.parseBoundedNumber(4, 18000)
     );
@@ -48,8 +50,12 @@ export function parseImportableRegion(p: Parser): ImportableRegion {
 
     p.parseField("name").setField(im, "name", (p) => p.parseString());
     p.parseFieldOrUndefined("bounds")?.setField(im, "bounds", parseBounds);
-    p.parseFieldOrUndefined("onEnterActions")?.setField(im, "onEnterActions", parseHtsl);
-    p.parseFieldOrUndefined("onExitActions")?.setField(im, "onExitActions", parseHtsl);
+    const onEnterField = p.parseFieldOrUndefined("onEnterActions");
+    onEnterField?.setField(im, "onEnterActions", parseHtsl);
+    if (onEnterField) im.onEnterActionsPath = contentFilePath(onEnterField);
+    const onExitField = p.parseFieldOrUndefined("onExitActions");
+    onExitField?.setField(im, "onExitActions", parseHtsl);
+    if (onExitField) im.onExitActionsPath = contentFilePath(onExitField);
 
     warnUnused(p, ["name", "bounds", "onEnterActions", "onExitActions"]);
     return im;
@@ -74,9 +80,15 @@ export function parseImportableItem(p: Parser): ImportableItem {
     p.setNodeSpan(im);
 
     p.parseField("name").setField(im, "name", (p) => p.parseString());
-    p.parseField("nbt").setField(im, "nbt", parseSnbt);
-    p.parseFieldOrUndefined("leftClickActions")?.setField(im, "leftClickActions", parseHtsl);
-    p.parseFieldOrUndefined("rightClickActions")?.setField(im, "rightClickActions", parseHtsl);
+    const nbtField = p.parseField("nbt");
+    nbtField.setField(im, "nbt", parseSnbt);
+    im.sourcePath = contentFilePath(nbtField);
+    const leftField = p.parseFieldOrUndefined("leftClickActions");
+    leftField?.setField(im, "leftClickActions", parseHtsl);
+    if (leftField) im.leftClickActionsPath = contentFilePath(leftField);
+    const rightField = p.parseFieldOrUndefined("rightClickActions");
+    rightField?.setField(im, "rightClickActions", parseHtsl);
+    if (rightField) im.rightClickActionsPath = contentFilePath(rightField);
 
     warnUnused(p, ["name", "nbt", "leftClickActions", "rightClickActions"]);
     return im;
@@ -87,7 +99,9 @@ export function parseImportableEvent(p: Parser): ImportableEvent {
     p.setNodeSpan(im);
 
     p.parseField("event").setField(im, "event", parseEvent);
-    p.parseField("actions").setField(im, "actions", parseHtsl);
+    const actionsField = p.parseField("actions");
+    actionsField.setField(im, "actions", parseHtsl);
+    im.sourcePath = contentFilePath(actionsField);
 
     warnUnused(p, ["event", "actions"]);
     return im;
@@ -125,7 +139,12 @@ export function parseImportableCommand(p: Parser): ImportableCommand {
     p.setNodeSpan(im);
 
     p.parseField("name").setField(im, "name", p => p.parseString());
-    p.parseFieldOrUndefined("actions")?.setField(im, "actions", parseHtsl);
+    const actionsField = p.parseFieldOrUndefined("actions");
+    actionsField?.setField(im, "actions", parseHtsl);
+    if (actionsField) {
+        im.sourcePath = contentFilePath(actionsField);
+        im.actionsPath = im.sourcePath;
+    }
     p.parseFieldOrUndefined("mode")?.setField(im, "mode", parseCommandMode);
     p.parseFieldOrUndefined("requiredPriority")?.setField(im, "requiredPriority", p => p.parseBoundedNumber(0, 20));
     p.parseFieldOrUndefined("listed")?.setField(im, "listed", p => p.parseBoolean());
@@ -140,8 +159,12 @@ export function parseImportableNpc(p: Parser): ImportableNpc {
 
     p.parseField("name").setField(im, "name", (p) => p.parseString());
     p.parseField("pos").setField(im, "pos", parsePos);
-    p.parseFieldOrUndefined("leftClickActions")?.setField(im, "leftClickActions", parseHtsl);
-    p.parseFieldOrUndefined("rightClickActions")?.setField(im, "rightClickActions", parseHtsl);
+    const leftField = p.parseFieldOrUndefined("leftClickActions");
+    leftField?.setField(im, "leftClickActions", parseHtsl);
+    if (leftField) im.leftClickActionsPath = contentFilePath(leftField);
+    const rightField = p.parseFieldOrUndefined("rightClickActions");
+    rightField?.setField(im, "rightClickActions", parseHtsl);
+    if (rightField) im.rightClickActionsPath = contentFilePath(rightField);
     p.parseFieldOrUndefined("leftClickRedirect")?.setField(im, "leftClickRedirect", (p) => p.parseBoolean());
     p.parseFieldOrUndefined("lookAtPlayers")?.setField(im, "lookAtPlayers", (p) => p.parseBoolean());
     p.parseFieldOrUndefined("hideNameTag")?.setField(im, "hideNameTag", (p) => p.parseBoolean());

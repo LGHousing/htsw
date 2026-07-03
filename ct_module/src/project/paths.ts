@@ -18,15 +18,43 @@ import {
     npcExportReferencesExist as npcExportReferencesExistWithFs,
     regionExportReferencesExist as regionExportReferencesExistWithFs,
     snbtTargetForItemExport as snbtTargetForItemExportWithFs,
+    createIncludedFolderInTree as createIncludedFolderInTreeWithFs,
+    sectionFolderImportJson as sectionFolderImportJsonWithFs,
+    projectSectionFolders as projectSectionFoldersWithFs,
+    restructureProjectPerSection as restructureProjectPerSectionWithFs,
     type HtslExportTarget,
     type NpcExportEntry,
     type NpcHtslExportTargets,
     type RegionHtslExportTargets,
+    type RestructureResult,
+    type Section,
     type SnbtExportTarget,
 } from "htsw-editor-common/project";
 import { ctProjectFs } from "./projectFs";
 
-export { canonicalSlug, type HtslExportTarget, type NpcExportEntry, type NpcHtslExportTargets, type RegionHtslExportTargets, type SnbtExportTarget };
+export { canonicalSlug, type HtslExportTarget, type NpcExportEntry, type NpcHtslExportTargets, type RegionHtslExportTargets, type RestructureResult, type SnbtExportTarget };
+
+export function sectionFolderImportJson(
+    entryImportJsonPath: string,
+    section: Section
+): string | null {
+    return sectionFolderImportJsonWithFs(ctProjectFs, entryImportJsonPath, section);
+}
+
+export function projectSectionFolders(entryImportJsonPath: string): Section[] {
+    return projectSectionFoldersWithFs(ctProjectFs, entryImportJsonPath);
+}
+
+export function restructureProjectPerSection(importJsonPath: string): RestructureResult {
+    return restructureProjectPerSectionWithFs(ctProjectFs, importJsonPath);
+}
+
+export function createIncludedFolderInTree(
+    entryImportJsonPath: string,
+    folderPath: string
+): { importJsonPath: string; parentImportJsonPath: string; includePath: string } {
+    return createIncludedFolderInTreeWithFs(ctProjectFs, entryImportJsonPath, folderPath);
+}
 
 export const PROJECTS_ROOT = "./htsw/projects";
 

@@ -24,6 +24,8 @@ import {
     moveImportableEntry,
     type Section,
 } from "../../../project/importJsonMutations";
+import { createIncludedFolderInTree } from "../../../project/paths";
+import { openTextPromptPopover } from "../../popovers/text-prompt";
 import { closeTab } from "../../right-panel/selection";
 import {
     ROW_BG,
@@ -226,6 +228,46 @@ function moveRowElement(n: MoveNode, expanded: boolean): Element {
     });
 }
 
+// Pinned below the tree: create `<folder>/import.json` (included from the
+// deepest containing file, so "functions/combat" hangs off functions/) and
+// move the importable there in one step.
+function newFolderRow(): Element {
+    return Container({
+        style: {
+            direction: "row",
+            align: "center",
+            gap: 6,
+            padding: { side: "left", value: 4 },
+            height: { kind: "px", value: MOVE_ROW_H },
+            background: ROW_BG,
+            hoverBackground: ROW_HOVER_BG,
+        },
+        onClick: (_rect, info) => {
+            if (info.isDoubleClickSecond) return;
+            if (info.button !== 0) return;
+            openTextPromptPopover({
+                title: "Move to new folder",
+                placeholder: "functions/combat",
+                submitLabel: "Create & move",
+                onSubmit: (folderPath) => {
+                    const ctx = moveCtx;
+                    if (ctx === null) return;
+                    try {
+                        const created = createIncludedFolderInTree(ctx.entryPath, folderPath);
+                        performMoveTo(created.importJsonPath);
+                    } catch (err) {
+                        ChatLib.chat(`&c[htsw] New folder failed: ${err}`);
+                    }
+                },
+            });
+        },
+        children: [
+            Icon({ name: Icons.folderPlus, color: COLOR_TEXT_DIM }),
+            Text({ text: "New folder…", color: COLOR_TEXT, style: { width: { kind: "grow" } } }),
+        ],
+    });
+}
+
 function moveTreeRows(): Element[] {
     const q = moveFilter.trim().toLowerCase();
     const filtering = q.length > 0;
@@ -244,7 +286,12 @@ function moveTreeRows(): Element[] {
         out.push(
             Container({
                 style: { padding: 8 },
-                children: [Text({ text: "No matches", color: COLOR_TEXT_DIM })],
+                children: [
+                    Text({
+                        text: filtering ? "No matches" : "No other import.json yet",
+                        color: COLOR_TEXT_DIM,
+                    }),
+                ],
             })
         );
     }
@@ -292,21 +339,19 @@ export function openMoveDestinationPicker(
         moveTreeRoots = [rootNode];
         total = rootNode.selectableCount;
     }
-    if (total === 0) {
-        ChatLib.chat("&7[htsw] Nowhere else to move it.");
+    const section = SECTION_BY_TYPE[imp.type];
+    if (section === undefined) {
+        ChatLib.chat("&7[htsw] This importable type can't be moved.");
         return;
     }
+
+    // Zero existing destinations still opens the picker — "New folder…"
+    // below is how a flat project grows its first include.
 
     // Expand the top-level folders so the picker opens showing real
     // destinations rather than a near-empty box; deeper levels stay collapsed.
     for (let i = 0; i < moveTreeRoots.length; i++) {
         if (moveTreeRoots[i].children.length > 0) moveExpansion.add(moveTreeRoots[i].path);
-    }
-
-    const section = SECTION_BY_TYPE[imp.type];
-    if (section === undefined) {
-        ChatLib.chat("&7[htsw] This importable type can't be moved.");
-        return;
     }
 
     moveFilter = "";
@@ -321,7 +366,7 @@ export function openMoveDestinationPicker(
     const visibleCount = countVisibleMoveRows(moveTreeRoots);
     const visibleRows = visibleCount < 2 ? 2 : visibleCount > 12 ? 12 : visibleCount;
     const scrollH = visibleRows * MOVE_ROW_H + 4;
-    const height = 8 + 10 + (moveShowSearch ? 12 + 22 : 6) + scrollH + 8;
+    const height = 8 + 10 + (moveShowSearch ? 12 + 22 : 6) + scrollH + 6 + MOVE_ROW_H + 8;
 
     const contentChildren: Element[] = [
         Text({ text: `Move '${ctx.identity}' to…`, color: ACCENT_WARN, truncate: true }),
@@ -346,6 +391,7 @@ export function openMoveDestinationPicker(
             children: () => moveTreeRows(),
         })
     );
+    contentChildren.push(newFolderRow());
     const content = Col({
         style: { padding: 8, gap: 6, height: { kind: "grow" } },
         children: contentChildren,

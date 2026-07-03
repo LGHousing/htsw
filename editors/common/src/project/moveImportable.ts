@@ -49,6 +49,13 @@ function canonKey(path: string): string {
     return path.split("\\").join("/").toLowerCase();
 }
 
+function pathWithinDir(dir: string, path: string): string | null {
+    const dirKey = canonKey(dir);
+    const pathNorm = path.split("\\").join("/");
+    if (canonKey(pathNorm).indexOf(`${dirKey}/`) !== 0) return null;
+    return pathNorm.substring(dirKey.length + 1);
+}
+
 function refsOfOtherEntries(
     fs: ProjectFs,
     entryJsonPath: string,
@@ -139,6 +146,16 @@ export function moveImportableEntry(
         const slot = refSlots[i];
         const srcAbs = fs.resolvePath(srcDir, slot.ref);
         if (!fs.exists(srcAbs)) continue;
+        // A file already inside the destination folder stays put; only its
+        // reference shortens. Copying it would nest it one folder deeper
+        // (e.g. "menus/x.htsl" moved into menus/ becoming menus/menus/x.htsl).
+        const insideDest = pathWithinDir(destDir, srcAbs);
+        if (insideDest !== null) {
+            if (insideDest !== slot.ref) {
+                (slot.holder as Record<string | number, unknown>)[slot.key] = insideDest;
+            }
+            continue;
+        }
         let ref = slot.ref;
         let destAbs = fs.resolvePath(destDir, ref);
         if (canonKey(srcAbs) === canonKey(destAbs)) continue;

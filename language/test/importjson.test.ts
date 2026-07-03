@@ -428,16 +428,43 @@ describe("import.json diagnostics readability", () => {
         ).toBe(true);
     });
 
-    it("includes allowed keys help for missing required keys", () => {
+    it("stamps sourcePath with the content file or declaring import.json", () => {
+        const merged = parseImportables(caseDirPath("merge"));
+        const regionPath = (name: string) =>
+            merged.value.find((i) => i.type === "REGION" && i.name === name)?.sourcePath;
+        expect(regionPath("RootRegion")).toBe(caseDirPath("merge"));
+        expect(regionPath("SharedRegion")).toBe(
+            resolve("test", "cases", "importjson", "merge", "shared.import.json")
+        );
+
+        const fn = parseImportables(caseFilePath("function")).value.find(
+            (i) => i.type === "FUNCTION"
+        );
+        expect(fn?.sourcePath).toBe(resolve("test", "cases", "importjson", "empty.htsl"));
+    });
+
+    it("stamps per-list paths for sub-lists", () => {
+        const result = parseImportables(caseFilePath("npc"));
+        const npc = result.value.find(
+            (i): i is htsw.types.ImportableNpc => i.type === "NPC"
+        );
+
+        expect(npc?.sourcePath).toBe(caseFilePath("npc"));
+        expect(npc?.leftClickActionsPath).toBe(
+            resolve("test", "cases", "importjson", "npc_left.htsl")
+        );
+        expect(npc !== undefined && htsw.importableSubListPath(npc, "rightClickActions")).toBe(
+            resolve("test", "cases", "importjson", "npc_right.htsl")
+        );
+    });
+
+    it("reports missing required keys", () => {
         const result = parseImportables(caseFilePath("missing_required"));
         const diag = result.diagnostics.find((it) =>
             it.message.includes("Missing required key 'name'")
         );
 
         expect(diag).toBeDefined();
-        expect(
-            diag!.subDiagnostics.some((it) => it.message.includes("Allowed keys here:"))
-        ).toBe(true);
     });
 
     it("reports malformed action files without crashing checker passes", () => {

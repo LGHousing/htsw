@@ -4,6 +4,7 @@ import {
     parentDir,
     type ProjectFs,
 } from "./fs";
+import { walkImportJsonTree } from "./includeWalk";
 
 export type CreateIncludedImportJsonResult = {
     importJsonPath: string;
@@ -32,6 +33,51 @@ export function createIncludedImportJsonFiles(
     fs.writeFile(parentImportJsonPath, nextParentSource);
 
     return { importJsonPath, parentImportJsonPath, includePath };
+}
+
+/**
+ * Create `<folder>/import.json` (folder relative to the entry file's project
+ * dir) and include it from the DEEPEST existing include-tree file whose folder
+ * contains it — so `functions/combat` hangs off `functions/import.json`, not
+ * the root, and the include tree keeps mirroring the directory tree.
+ */
+export function createIncludedFolderInTree(
+    fs: ProjectFs,
+    entryImportJsonPath: string,
+    folderPath: string
+): CreateIncludedImportJsonResult {
+    const rel = normalizeRelativeProjectPath(folderPath);
+    const projectDir = fs.parentDir(entryImportJsonPath);
+    const targetDir = fs.resolvePath(projectDir, rel);
+    if (fs.exists(fs.resolvePath(targetDir, "import.json"))) {
+        throw new Error(`${rel}/import.json already exists.`);
+    }
+
+    const targetKey = includeCanonKey(targetDir);
+    let parent = entryImportJsonPath;
+    let parentDepth = 0;
+    walkImportJsonTree(fs, entryImportJsonPath, (filePath) => {
+        const dirKey = includeCanonKey(fs.parentDir(filePath));
+        if (targetKey !== dirKey && targetKey.indexOf(`${dirKey}/`) !== 0) return undefined;
+        const depth = dirKey.split("/").length;
+        if (depth > parentDepth) {
+            parentDepth = depth;
+            parent = filePath;
+        }
+        return undefined;
+    });
+
+    const parentDirPath = fs.parentDir(parent);
+    return createIncludedImportJsonFiles(
+        fs,
+        parentDirPath,
+        relativePath(parentDirPath, targetDir),
+        parent
+    );
+}
+
+function includeCanonKey(path: string): string {
+    return path.split("\\").join("/").toLowerCase();
 }
 
 export function addIncludeToImportJsonSource(source: string, includePath: string): string {

@@ -109,9 +109,7 @@ function parseImportJson0(p: Parser, fileNode: ImportJsonFileNode): Importable[]
         "teams", "commands"
     ]);
     for (const importable of importables) {
-        if (p.importJson.sourcePathOf(importable) === undefined) {
-            p.importJson.setSourcePath(importable, fileNode.path);
-        }
+        if (importable.sourcePath === undefined) importable.sourcePath = fileNode.path;
     }
     p.importJson.recordImportables(fileNode, importables);
     return importables;
@@ -204,7 +202,6 @@ function prepareImportJsonParsing(
         return false;
     }
     if (!gcx.sourceMap.fileLoader.fileExists(resolvedPath)) {
-        metadata.recordMissingImportJsonPath(resolvedPath);
         if (origin !== undefined) metadata.recordMissing(origin.fromNode, resolvedPath);
         const diag = origin === undefined
             ? Diagnostic.error(`import.json file does not exist '${resolvedPath}'`)

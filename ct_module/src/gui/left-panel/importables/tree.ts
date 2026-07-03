@@ -41,6 +41,9 @@ import {
     importableRow,
     subRow,
     metadataRow,
+    menuSlotExpansionKey,
+    menuSlotRow,
+    menuSlotFileRow,
     standaloneCloseAction,
 } from "./rows";
 import type { Importable } from "htsw/types";
@@ -417,8 +420,9 @@ function emitIncludeNode(
         const subKey = importableExpansionKey(r.fullPath, imp);
         if (importableExpansion.has(subKey)) {
             const subs = subListsOf(imp);
+            const slots = imp.type === "MENU" ? imp.slots : [];
             const meta = metadataFieldsOf(imp);
-            const totalChildren = subs.length + meta.length;
+            const totalChildren = subs.length + slots.length + meta.length;
             let childIdx = 0;
             const childLevels: LevelGuide[] = levels.concat([
                 isLast ? "empty" : "vertical",
@@ -431,6 +435,37 @@ function emitIncludeNode(
                     content: () => subRow(r, imp, subs[k]),
                     height: ENTRY_ROW_H,
                 });
+            }
+            for (let k = 0; k < slots.length; k++) {
+                childIdx++;
+                const slot = slots[k];
+                const slotIsLast = childIdx === totalChildren;
+                out.push({
+                    levels: childLevels,
+                    branch: slotIsLast ? "ell" : "tee",
+                    content: () => menuSlotRow(r, imp, slot),
+                    height: ENTRY_ROW_H,
+                });
+                if (importableExpansion.has(menuSlotExpansionKey(r, imp, slot))) {
+                    const grandLevels: LevelGuide[] = childLevels.concat([
+                        slotIsLast ? "empty" : "vertical",
+                    ]);
+                    const hasActions = slot.actions !== undefined;
+                    out.push({
+                        levels: grandLevels,
+                        branch: hasActions ? "tee" : "ell",
+                        content: () => menuSlotFileRow(r, imp, slot, "item"),
+                        height: ENTRY_ROW_H,
+                    });
+                    if (hasActions) {
+                        out.push({
+                            levels: grandLevels,
+                            branch: "ell",
+                            content: () => menuSlotFileRow(r, imp, slot, "actions"),
+                            height: ENTRY_ROW_H,
+                        });
+                    }
+                }
             }
             for (let k = 0; k < meta.length; k++) {
                 childIdx++;

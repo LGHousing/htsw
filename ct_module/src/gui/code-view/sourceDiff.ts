@@ -97,7 +97,7 @@ export function ensureSourceDiff(
  */
 export function invalidateSourceDiffForParse(parsed: ImportablesParseResult): void {
     for (const importable of parsed.value) {
-        invalidateSourceDiffForImportable(importable, parsed);
+        invalidateSourceDiffForImportable(importable);
     }
 }
 
@@ -105,11 +105,8 @@ export function invalidateSourceDiffForParse(parsed: ImportablesParseResult): vo
  * Drop overlay entries for one importable. Called after an import
  * succeeds (cache just got written → diff likely now empty).
  */
-export function invalidateSourceDiffForImportable(
-    importable: Importable,
-    parsed: ImportablesParseResult
-): void {
-    for (const p of importableFilePaths(importable, parsed)) {
+export function invalidateSourceDiffForImportable(importable: Importable): void {
+    for (const p of importableFilePaths(importable)) {
         deleteEntriesForFile(p);
     }
 }
@@ -131,15 +128,32 @@ function computeFor(filePath: string, importJsonPath?: string | null): SourceDif
     if (sourceActions === undefined) return null;
     const cachedLists = cacheEntryListHashes(cache);
     const out: SourceDiffEntry = new Map();
-    walk(out, match.prefix, "", "", sourceActions, cachedLists);
+    walk(out, cacheListPrefix(match, cache.importable), "", "", sourceActions, cachedLists);
     return out;
 }
 
 export type FileTarget = {
     importable: Importable;
-    /** Cache-list prefix: "actions" / "onEnterActions" / "leftClickActions" / ... */
+    /** Parse-side list prefix: "actions" / "onEnterActions" / ... /
+     * "slots[2].actions" (index into the PARSED menu's slots array). */
     prefix: string;
+    /** For MENU slot targets: the Housing slot number. The cached menu's
+     * slots array can be ordered differently than the parsed one, so cache
+     * lookups re-locate the slot by number via `cacheListPrefix`. */
+    menuSlot?: number;
 };
+
+function cacheListPrefix(match: FileTarget, cached: Importable): string {
+    if (match.menuSlot === undefined) return match.prefix;
+    if (cached.type === "MENU") {
+        for (let i = 0; i < cached.slots.length; i++) {
+            if (cached.slots[i].slot === match.menuSlot) return `slots[${i}].actions`;
+        }
+    }
+    // Slot absent from the cached menu: every list lookup misses, so the
+    // whole source list reads as added — which is what an import would do.
+    return "slots[-1].actions";
+}
 
 // Per-(path, parse-cache revision) memo. `findFileTarget` resolves the
 // path of EVERY importable in EVERY cached parse (each through several
@@ -162,7 +176,7 @@ export function findFileTarget(filePath: string, importJsonPath?: string | null)
     const visitParse = (parsed: ImportablesParseResult): void => {
         for (const importable of parsed.value) {
             if (importable.type === "FUNCTION" || importable.type === "EVENT") {
-                const primary = importableSourcePath(importable, parsed);
+                const primary = importableSourcePath(importable);
                 if (primary !== undefined && canonicalPath(primary) === norm) {
                     found = { importable, prefix: "actions" };
                     return;
@@ -170,10 +184,26 @@ export function findFileTarget(filePath: string, importJsonPath?: string | null)
             }
             for (let k = 0; k < SUB_LIST_KINDS.length; k++) {
                 const kind: SubListKind = SUB_LIST_KINDS[k];
-                const sub = importableSubListPath(importable, kind, parsed);
+                const sub = importableSubListPath(importable, kind);
                 if (sub !== undefined && canonicalPath(sub) === norm) {
                     found = { importable, prefix: kind };
                     return;
+                }
+            }
+            if (importable.type === "MENU") {
+                for (let s = 0; s < importable.slots.length; s++) {
+                    const slot = importable.slots[s];
+                    if (
+                        slot.actionsPath !== undefined &&
+                        canonicalPath(slot.actionsPath) === norm
+                    ) {
+                        found = {
+                            importable,
+                            prefix: `slots[${s}].actions`,
+                            menuSlot: slot.slot,
+                        };
+                        return;
+                    }
                 }
             }
         }
@@ -212,7 +242,7 @@ export function houseActionAt(
         importableIdentity(match.importable)
     );
     if (cache === null) return null;
-    let list = readCachedActionList(cache.importable, match.prefix);
+    let list = readCachedActionList(cache.importable, cacheListPrefix(match, cache.importable));
     let action: Action | null = null;
     const segments = actionPath.split(".");
     for (let i = 0; i < segments.length; i++) {

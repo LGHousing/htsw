@@ -2,7 +2,7 @@ import { Diagnostic } from "../../diagnostic";
 import type { Action, Bounds, Color, CommandMode, Event, FunctionIcon, MenuSlot, Permission, Pos } from "../../types";
 import { COLORS, COMMAND_MODES, EVENTS, PERMISSIONS } from "../../types/constants";
 import type { Parser } from "./parser";
-import { getFileName, parseOption } from "./helpers";
+import { contentFilePath, getFileName, parseOption } from "./helpers";
 import { parseHtsl as parseHtslImpl } from "../../htsl";
 import { parseSnbt as parseSnbtImpl } from "../../nbt/parse";
 import type { Tag } from "../../nbt/types";
@@ -22,9 +22,7 @@ export function parseHtsl(p: Parser): Action[] {
     }
 
     const resolved = p.gcx.resolvePath(path);
-    const actions = parseHtslImpl(p.gcx.subContext(path), resolved);
-    p.importJson.setSourcePath(actions, resolved);
-    return actions;
+    return parseHtslImpl(p.gcx.subContext(path), resolved);
 }
 
 export function parseSnbt(p: Parser): Tag {
@@ -50,7 +48,6 @@ export function parseSnbt(p: Parser): Tag {
             .addPrimarySpan(p.span());
     }
 
-    p.importJson.setSourcePath(tag, resolvedSnbt);
     return tag;
 }
 
@@ -91,11 +88,15 @@ export function parseBounds(p: Parser): Bounds {
 
 export function parseMenuSlots(p: Parser): MenuSlot[] {
     return p.parseArray().map(sp => {
+        const nbtField = sp.parseField("nbt");
         const slot: MenuSlot = {
             slot: sp.parseField("slot").parseNumber(),
-            nbt: sp.parseField("nbt").setField({} as MenuSlot, "nbt", parseSnbt),
+            nbt: nbtField.setField({} as MenuSlot, "nbt", parseSnbt),
         };
-        sp.parseFieldOrUndefined("actions")?.setField(slot, "actions", parseHtsl);
+        slot.nbtPath = contentFilePath(nbtField);
+        const actionsField = sp.parseFieldOrUndefined("actions");
+        actionsField?.setField(slot, "actions", parseHtsl);
+        if (actionsField) slot.actionsPath = contentFilePath(actionsField);
         return slot;
     });
 }

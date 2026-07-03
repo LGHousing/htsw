@@ -141,8 +141,7 @@ function createSyncEventHandler(args: {
         sessionStarted: () => {},
         importableStarted: (e) => {
             const imp = importablesByKey.get(e.key) ?? null;
-            activeViewPath =
-                imp === null ? null : (importableSourcePath(imp, args.parsed) ?? null);
+            activeViewPath = imp === null ? null : (importableSourcePath(imp) ?? null);
             if (activeViewPath !== null) {
                 resetPreview(activeViewPath);
                 primeWithCache(activeViewPath, e.cached, { shellOnly: !args.trustMode });
@@ -151,7 +150,7 @@ function createSyncEventHandler(args: {
         importableFinished: (e) => {
             const imp = importablesByKey.get(e.key);
             if (imp !== undefined && e.status === "imported") {
-                invalidateSourceDiffForImportable(imp, args.parsed);
+                invalidateSourceDiffForImportable(imp);
             }
         },
         importableReactivated: (e) => {
@@ -160,8 +159,7 @@ function createSyncEventHandler(args: {
             // source file so the apply-phase diff overlay lands in the
             // right pane.
             const imp = importablesByKey.get(e.key) ?? null;
-            activeViewPath =
-                imp === null ? null : (importableSourcePath(imp, args.parsed) ?? null);
+            activeViewPath = imp === null ? null : (importableSourcePath(imp) ?? null);
         },
         sessionFinished: () => {
             activeViewPath = null;

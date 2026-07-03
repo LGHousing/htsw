@@ -100,7 +100,7 @@ function sourcePathForImportable(type: HouseContentType["type"], name: string): 
     if (parse === null || parse.parsed === null) return null;
     for (const imp of parse.parsed.value) {
         if (imp.type === type && importableIdentity(imp) === name) {
-            return importableSourcePath(imp, parse.parsed) ?? null;
+            return importableSourcePath(imp) ?? null;
         }
     }
     return null;
@@ -485,7 +485,7 @@ function exportActionBar(t: HouseContentType, uuid: string, totalCount: number):
                                 anchor: rect,
                                 content: exportDestinationPicker(),
                                 width: 360,
-                                height: 220,
+                                height: 240,
                             }),
                     }),
                 ],

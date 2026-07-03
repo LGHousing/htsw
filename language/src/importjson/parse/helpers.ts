@@ -7,6 +7,10 @@ export function nodeSpan(node: json.Node, startPos: number): Span {
     return new Span(startPos + node.offset, startPos + node.offset + node.length);
 }
 
+export function contentFilePath(field: Parser): string {
+    return field.gcx.resolvePath(field.parseString());
+}
+
 export function getFileName(path: string): string {
     const lastSlash = Math.max(
         path.lastIndexOf("/"),

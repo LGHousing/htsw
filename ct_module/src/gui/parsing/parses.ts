@@ -42,11 +42,6 @@ function buildParseFingerprint(
         const p = paths[i];
         if (out[p] === undefined) out[p] = getMtimeMs(p);
     }
-    const missingImportJsonPaths = parsed.importJson.missingImportJsonPaths;
-    for (let i = 0; i < missingImportJsonPaths.length; i++) {
-        const p = missingImportJsonPaths[i];
-        if (out[p] === undefined) out[p] = 0;
-    }
     return out;
 }
 

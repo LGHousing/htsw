@@ -4,13 +4,11 @@
 export {
     SUB_LIST_KINDS,
     type SubListKind,
-    actionListSourcePath,
     allReferencedPaths,
     hasSubList,
     importableDeclaringPath,
     importableFilePaths,
     importableSourcePath,
     importableSubListPath,
-    parsedObjectSourcePath,
     subListOf,
 } from "htsw";

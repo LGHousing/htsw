@@ -76,7 +76,11 @@ export type Pos = {
 export type MenuSlot = {
     slot: number;
     nbt: Tag;
+    /** Resolved `.snbt` file `nbt` was parsed from. */
+    nbtPath?: string;
     actions?: Action[];
+    /** Resolved `.htsl` file `actions` was parsed from. */
+    actionsPath?: string;
 };
 
 export type Coordinates = {

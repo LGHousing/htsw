@@ -3,11 +3,13 @@ import * as vscode from "vscode";
 import * as json from "jsonc-parser";
 import * as htsw from "htsw";
 import {
+    createIncludedFolderInTree,
     createIncludedImportJsonFiles,
     htslTargetForCommandExport,
     htslTargetForEventExport,
     htslTargetForFunctionExport,
     moveImportableEntry,
+    normalizeRelativeProjectPath,
     resolveImportableFile,
     upsertImportableEntry,
     type ProjectFs,
@@ -75,23 +77,50 @@ async function moveImportable(
         };
         roots.forEach((root) => visit(root, root.fsPath));
 
-        if (destinations.length === 0) {
-            throw new Error("No other import.json to move to.");
-        }
-        const pick = await vscode.window.showQuickPick(destinations, {
-            placeHolder: `Move ${kind} "${identity}" to…`,
-        });
+        const newFolderItem: vscode.QuickPickItem & { fsPath: null } = {
+            label: "$(new-folder) New folder…",
+            description: "Create an import.json and move there",
+            fsPath: null,
+        };
+        const pick = await vscode.window.showQuickPick(
+            [newFolderItem, ...destinations],
+            { placeHolder: `Move ${kind} "${identity}" to…` }
+        );
         if (!pick) return;
 
         // Walk the whole tree from its root so files also referenced by other
         // declarations get copied instead of moved.
         const entryJsonPath = treeRootOf.get(sourceKey) ?? importJsonPath;
-        await moveImportableWithOpenDocs(entryJsonPath, section, identity, pick.fsPath);
+
+        let destJsonPath: string;
+        if (pick.fsPath === null) {
+            const folderPath = await vscode.window.showInputBox({
+                prompt: "New folder, relative to the project root",
+                placeHolder: "functions/combat",
+                validateInput: (value) => {
+                    try {
+                        normalizeRelativeProjectPath(value);
+                        return undefined;
+                    } catch (err) {
+                        return err instanceof Error ? err.message : String(err);
+                    }
+                },
+            });
+            if (!folderPath) return;
+            const created = await withDocAwareWrites((fs) =>
+                createIncludedFolderInTree(fs, entryJsonPath, folderPath)
+            );
+            destJsonPath = created.importJsonPath;
+        } else {
+            destJsonPath = pick.fsPath;
+        }
+
+        await moveImportableWithOpenDocs(entryJsonPath, section, identity, destJsonPath);
 
         await webview.postMessage({
             type: "projectResult",
             ok: true,
-            message: `Moved ${kind} "${identity}" to ${pick.label}.`,
+            message: `Moved ${kind} "${identity}" to ${vscode.workspace.asRelativePath(destJsonPath, false)}.`,
         } satisfies ProjectFromHostMessage);
         await postFreshProjectTree(webview);
     } catch (err) {
@@ -180,17 +209,11 @@ async function addImportable(
 }
 
 /**
- * Run moveImportableEntry with doc-aware writes: an open import.json gets a
+ * Run a project mutation with doc-aware writes: an open import.json gets a
  * WorkspaceEdit + save instead of a disk write that would clobber unsaved
- * edits. Throws on failure. Used by the tree's right-click move and the
- * module-visibility quick fix.
+ * edits. Rethrows whatever `run` throws (before any edits are applied).
  */
-export async function moveImportableWithOpenDocs(
-    entryJsonPath: string,
-    section: Section,
-    identity: string,
-    destJsonPath: string,
-): Promise<void> {
+async function withDocAwareWrites<T>(run: (fs: ProjectFs) => T): Promise<T> {
     const replacements = new Map<string, string>();
     const fs: ProjectFs = {
         ...nodeProjectFs,
@@ -209,8 +232,7 @@ export async function moveImportableWithOpenDocs(
         },
     };
 
-    const result = moveImportableEntry(fs, entryJsonPath, section, identity, destJsonPath);
-    if (!result.ok) throw new Error(result.message);
+    const result = run(fs);
 
     for (const [key, text] of replacements) {
         const open = openTextDocumentForPath(key);
@@ -224,6 +246,23 @@ export async function moveImportableWithOpenDocs(
         await vscode.workspace.applyEdit(edit);
         await open.save();
     }
+    return result;
+}
+
+/**
+ * moveImportableEntry via withDocAwareWrites. Throws on failure. Used by the
+ * tree's right-click move and the module-visibility quick fix.
+ */
+export async function moveImportableWithOpenDocs(
+    entryJsonPath: string,
+    section: Section,
+    identity: string,
+    destJsonPath: string,
+): Promise<void> {
+    await withDocAwareWrites((fs) => {
+        const result = moveImportableEntry(fs, entryJsonPath, section, identity, destJsonPath);
+        if (!result.ok) throw new Error(result.message);
+    });
 }
 
 function requireNew(
@@ -502,7 +541,7 @@ function mapImportable(
             : (imp as { name: string }).name;
     const label = imp.type === "NPC" ? `${imp.name} @ ${identity}` : identity;
 
-    const sourcePath = htsw.importableSourcePath(imp, parse.result);
+    const sourcePath = htsw.importableSourcePath(imp);
     const openPath = sourcePath !== undefined ? sourcePath : declaringPath;
     // Only attribute diagnostics when the importable has its own source
     // file — otherwise every importable would inherit the import.json's.
@@ -559,18 +598,17 @@ function mapSubEntries(
 
     for (const kind of htsw.SUB_LIST_KINDS) {
         if (htsw.subListOf(imp, kind) === undefined) continue;
-        pushActions(SUB_LIST_LABELS[kind], htsw.importableSubListPath(imp, kind, parse.result));
+        pushActions(SUB_LIST_LABELS[kind], htsw.importableSubListPath(imp, kind));
     }
 
     if (imp.type === "MENU") {
         for (const slot of imp.slots) {
             const tag = `Slot ${slot.slot}`;
-            const nbtPath = htsw.parsedObjectSourcePath(parse.result, slot.nbt);
-            if (nbtPath !== undefined && pathKey(nbtPath) !== declaringKey) {
-                out.push(subEntryFor(`${tag} item`, nbtPath, "item", diags));
+            if (slot.nbtPath !== undefined && pathKey(slot.nbtPath) !== declaringKey) {
+                out.push(subEntryFor(`${tag} item`, slot.nbtPath, "item", diags));
             }
             if (slot.actions !== undefined) {
-                pushActions(`${tag} actions`, htsw.actionListSourcePath(parse.result, slot.actions));
+                pushActions(`${tag} actions`, slot.actionsPath);
             }
         }
     }
