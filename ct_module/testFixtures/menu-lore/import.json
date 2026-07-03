@@ -1,0 +1,15 @@
+{
+    "menus": [
+        {
+            "name": "htsw_test_menu_lore",
+            "size": 1,
+            "slots": [
+                {
+                    "slot": 0,
+                    "nbt": "fancy.snbt",
+                    "actions": "slot.htsl"
+                }
+            ]
+        }
+    ]
+}

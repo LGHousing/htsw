@@ -1,0 +1,22 @@
+{
+    "commands": [
+        {
+            "name": "htswtestplain",
+            "actions": "plain.htsl"
+        },
+        {
+            "name": "htswtestdefault",
+            "actions": "default.htsl",
+            "mode": "Self",
+            "requiredPriority": 0,
+            "listed": true
+        },
+        {
+            "name": "htswtestcustom",
+            "actions": "custom.htsl",
+            "mode": "Targeted",
+            "requiredPriority": 1,
+            "listed": false
+        }
+    ]
+}

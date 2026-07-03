@@ -26,14 +26,6 @@ export function isInCreativeMode(): boolean {
     return Player.getPlayer().field_71075_bZ.field_75098_d === true;
 }
 
-export function enableCreativeFlight(): void {
-    const player = Player.getPlayer();
-    const capabilities = player.field_71075_bZ;
-    capabilities.field_75101_c = true;
-    capabilities.field_75100_b = true;
-    player.func_71016_p();
-}
-
 function isFlying(): boolean {
     return Player.getPlayer().field_71075_bZ.field_75100_b === true;
 }
@@ -62,18 +54,37 @@ async function tapJump(ctx: TaskContext, keyCode: number): Promise<void> {
 }
 
 const FLY_TOGGLE_MAX_TICKS = 20;
+const FLY_TAP_ATTEMPTS = 2;
+
+function currentScreenIsOpen(): boolean {
+    return (Client.getMinecraft() as { field_71462_r?: unknown }).field_71462_r != null;
+}
+
+// Jump taps only reach movement input while no screen is open; a Housing menu
+// left open by an earlier step (e.g. the /regions list) silently eats them.
+async function closeOpenScreen(ctx: TaskContext): Promise<void> {
+    if (!currentScreenIsOpen()) return;
+    // func_71053_j = EntityPlayer.closeScreen — same as pressing Esc on a
+    // container, including notifying the server.
+    (Player.getPlayer() as unknown as { func_71053_j(): void }).func_71053_j();
+    await ctx.waitFor("tick");
+}
 
 export async function ensureCreativeFlight(ctx: TaskContext): Promise<boolean> {
     if (isFlying()) return true;
     if (!isInCreativeMode() && !(await waitForCreativeMode(ctx))) return false;
+
     const keyCode = getJumpKeyCode();
     if (keyCode === null || keyCode <= 0) return false;
 
-    await tapJump(ctx, keyCode);
-    await tapJump(ctx, keyCode);
-    for (let i = 0; i < FLY_TOGGLE_MAX_TICKS; i++) {
-        if (isFlying()) return true;
-        await ctx.waitFor("tick");
+    for (let attempt = 0; attempt < FLY_TAP_ATTEMPTS; attempt++) {
+        await closeOpenScreen(ctx);
+        await tapJump(ctx, keyCode);
+        await tapJump(ctx, keyCode);
+        for (let i = 0; i < FLY_TOGGLE_MAX_TICKS; i++) {
+            if (isFlying()) return true;
+            await ctx.waitFor("tick");
+        }
     }
     return isFlying();
 }
