@@ -165,7 +165,7 @@ export const ACTION_SPECS: readonly ActionSpec[] = [
     { kw: "lobby", fields: [f("lobby", "lobby")] },
     {
         kw: "maxHealth",
-        fields: [f("op", "operation"), f("amount", "value")],
+        fields: [f("op", "operation"), f("amount", "value"), f("heal", "boolean", true)],
     },
     { kw: "parkCheck", fields: [] },
     { kw: "pause", fields: [f("ticks", "number")] },

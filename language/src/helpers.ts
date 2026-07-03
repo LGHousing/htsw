@@ -1,3 +1,19 @@
+export function stripFormatting(value: string): string {
+    return value.replace(/[&§][0-9a-fk-or]/gi, "");
+}
+
+export function containsFormattingCode(value: string): boolean {
+    return /[&§][0-9a-fk-or]/i.test(value);
+}
+
+export function ampToSection(value: string): string {
+    return value.replace(/&([0-9a-fk-or])/gi, "§$1");
+}
+
+export function sectionToAmp(value: string): string {
+    return value.replace(/§([0-9a-fk-or])/gi, "&$1");
+}
+
 export function partialEq(src: any, target: any): boolean {
     const keys = Object.keys(target);
     for (let i = 0; i < keys.length; i++) {

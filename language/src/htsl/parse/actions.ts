@@ -267,6 +267,8 @@ function parseActionChangeMaxHealth(p: Parser, note: Note): Action {
     return parseActionRecovering(p, "CHANGE_MAX_HEALTH", note, (action) => {
         setField(p, action, "op", parseOperation);
         setField(p, action, "amount", parseNumericValue);
+        if (p.checkEol()) return;
+        setField(p, action, "heal", p.parseBoolean);
     });
 }
 

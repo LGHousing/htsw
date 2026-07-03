@@ -118,8 +118,10 @@ function printActionHead(
             return `changeHealth ${printOption(action.op)} ${printValue(action.amount)}`;
         case "CHANGE_HUNGER":
             return `hungerLevel ${printOption(action.op)} ${printValue(action.amount)}`;
-        case "CHANGE_MAX_HEALTH":
-            return `maxHealth ${printOption(action.op)} ${printValue(action.amount)}`;
+        case "CHANGE_MAX_HEALTH": {
+            const base = `maxHealth ${printOption(action.op)} ${printValue(action.amount)}`;
+            return action.heal === undefined ? base : `${base} ${action.heal}`;
+        }
         case "CHANGE_VAR":
             return printActionChangeVar(action);
         case "CLEAR_POTION_EFFECTS":
