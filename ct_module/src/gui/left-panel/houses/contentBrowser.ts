@@ -50,6 +50,7 @@ import { importableSourcePath } from "../../parsing/importablePaths";
 import { linkStatusIcon, type LinkStatusKey } from "../../cache-status";
 import type { Importable } from "htsw/types";
 import { boundHouseUuidOf, confirmRebind } from "../../houseBinding";
+import { TAB_GAP, tabLabelsFit } from "../tabs";
 
 // Rhino lacks String.prototype.repeat, so cycle through a fixed table.
 const SCAN_DOTS = ["", ".", "..", "..."];
@@ -63,6 +64,7 @@ function scanLabel(t: HouseContentType, uuid: string | null): string {
 
 let activeContentType: HouseContentType["type"] = HOUSE_CONTENT_TYPES[0].type;
 let itemSearch = "";
+const SCAN_BUTTON_W = 22;
 
 function activeType(): HouseContentType {
     for (let i = 0; i < HOUSE_CONTENT_TYPES.length; i++) {
@@ -71,13 +73,22 @@ function activeType(): HouseContentType {
     return HOUSE_CONTENT_TYPES[0];
 }
 
-function typeTabButton(t: HouseContentType): Element {
+function typeTabButton(t: HouseContentType, showLabel: boolean): Element {
     const isActive = activeContentType === t.type;
+    const children: Element[] = [
+        Icon({
+            name: t.icon,
+            tooltip: showLabel ? undefined : t.label,
+            tooltipColor: COLOR_TEXT,
+        }),
+    ];
+    if (showLabel) {
+        children.push(
+            Text({ text: t.label, truncate: true, style: { width: { kind: "grow" } } })
+        );
+    }
     return Button({
-        children: [
-            Icon({ name: t.icon }),
-            Text({ text: t.label, truncate: true, style: { width: { kind: "grow" } } }),
-        ],
+        children,
         style: {
             width: { kind: "grow" },
             height: { kind: "grow" },
@@ -120,10 +131,9 @@ function itemRowMenu(t: HouseContentType, uuid: string, name: string, canExport:
             },
         });
     }
-    if (t.run !== undefined)
-        actions.push({ label: "Run", icon: Icons.play, onClick: () => t.run?.(name) });
-    if (t.edit !== undefined)
-        actions.push({ label: "Edit", icon: Icons.pencil, onClick: () => t.edit?.(name) });
+    for (const a of t.rowActions ?? []) {
+        actions.push({ label: a.label, icon: a.icon, onClick: () => a.run(name) });
+    }
     if (canExport) {
         const selected = isInExportSelection(uuid, t.type, name);
         actions.push({
@@ -218,6 +228,38 @@ function differsFromKnowledge(
     return buildCacheStatusRow(uuid, source).state === "modified";
 }
 
+function itemRowActionButton(
+    action: NonNullable<HouseContentType["rowActions"]>[number],
+    name: string
+): Element {
+    return Container({
+        style: {
+            direction: "col",
+            align: "center",
+            justify: "center",
+            width: { kind: "px", value: 16 },
+            height: { kind: "grow" },
+            hoverBackground: COLOR_BUTTON_HOVER,
+        },
+        onClick: (_rect, info) => {
+            if (info.button !== 0 || info.isDoubleClickSecond) return;
+            action.run(name);
+        },
+        children: [
+            Icon({
+                name: action.icon,
+                color: COLOR_TEXT_DIM,
+                tooltip: action.label,
+                tooltipColor: COLOR_TEXT_DIM,
+                style: {
+                    width: { kind: "px", value: 12 },
+                    height: { kind: "px", value: 12 },
+                },
+            }),
+        ],
+    });
+}
+
 function itemRow(
     t: HouseContentType,
     uuid: string,
@@ -283,62 +325,11 @@ function itemRow(
                 truncate: true,
                 style: { width: { kind: "grow" } },
             }),
-            interactive &&
-                t.run !== undefined &&
-                Container({
-                    style: {
-                        direction: "col",
-                        align: "center",
-                        justify: "center",
-                        width: { kind: "px", value: 16 },
-                        height: { kind: "grow" },
-                        hoverBackground: COLOR_BUTTON_HOVER,
-                    },
-                    onClick: (_rect, info) => {
-                        if (info.button !== 0 || info.isDoubleClickSecond) return;
-                        t.run?.(item.name);
-                    },
-                    children: [
-                        Icon({
-                            name: Icons.play,
-                            color: COLOR_TEXT_DIM,
-                            tooltip: "Run",
-                            tooltipColor: COLOR_TEXT_DIM,
-                            style: {
-                                width: { kind: "px", value: 12 },
-                                height: { kind: "px", value: 12 },
-                            },
-                        }),
-                    ],
-                }),
-            interactive &&
-                t.edit !== undefined &&
-                Container({
-                    style: {
-                        direction: "col",
-                        align: "center",
-                        justify: "center",
-                        width: { kind: "px", value: 16 },
-                        height: { kind: "grow" },
-                        hoverBackground: COLOR_BUTTON_HOVER,
-                    },
-                    onClick: (_rect, info) => {
-                        if (info.button !== 0 || info.isDoubleClickSecond) return;
-                        t.edit?.(item.name);
-                    },
-                    children: [
-                        Icon({
-                            name: Icons.pencil,
-                            color: COLOR_TEXT_DIM,
-                            tooltip: "Edit",
-                            tooltipColor: COLOR_TEXT_DIM,
-                            style: {
-                                width: { kind: "px", value: 12 },
-                                height: { kind: "px", value: 12 },
-                            },
-                        }),
-                    ],
-            }),
+            ...(
+                interactive
+                    ? (t.rowActions ?? []).map((a) => itemRowActionButton(a, item.name))
+                    : []
+            ),
             linkStatusIcon(HOUSE_LINK_VISUAL[state].key, HOUSE_LINK_VISUAL[state].tooltip, 12),
         ],
     });
@@ -669,7 +660,7 @@ function exportActionBar(t: HouseContentType, uuid: string, totalCount: number):
     });
 }
 
-export function typeBrowserSection(getViewedUuid: () => string | null): Element {
+export function typeBrowserSection(getViewedUuid: () => string | null, availW: number): Element {
     return Col({
         style: { gap: 4, height: { kind: "grow" } },
         children: () => {
@@ -680,14 +671,27 @@ export function typeBrowserSection(getViewedUuid: () => string | null): Element 
             // the viewed house is the current one.
             const canScan = uuid !== null && uuid === getHousingUuid();
             const canExport = t.export !== undefined && canScan;
-            const tabStrip = HOUSE_CONTENT_TYPES.map(typeTabButton);
+            const tabCount = HOUSE_CONTENT_TYPES.length;
+            const childCount = canScan ? tabCount + 1 : tabCount;
+            const perTab =
+                (availW -
+                    (canScan ? SCAN_BUTTON_W : 0) -
+                    TAB_GAP * (childCount - 1)) /
+                tabCount;
+            const showLabels = tabLabelsFit(
+                perTab,
+                HOUSE_CONTENT_TYPES.map((type) => type.label)
+            );
+            const tabStrip = HOUSE_CONTENT_TYPES.map((type) =>
+                typeTabButton(type, showLabels)
+            );
             if (canScan) {
                 // Icon-only reload button, not a text tab — at tab width + with a
                 // label it read as a fourth type tab you'd click by mistake.
                 tabStrip.push(
                     Button({
                         style: {
-                            width: { kind: "px", value: 22 },
+                            width: { kind: "px", value: SCAN_BUTTON_W },
                             height: { kind: "grow" },
                             background: COLOR_BUTTON,
                             hoverBackground: COLOR_BUTTON_HOVER,
@@ -719,7 +723,7 @@ export function typeBrowserSection(getViewedUuid: () => string | null): Element 
             }
             const out: Element[] = [
                 Row({
-                    style: { gap: 2, height: { kind: "px", value: 18 } },
+                    style: { gap: TAB_GAP, height: { kind: "px", value: 18 } },
                     children: tabStrip,
                 }),
             ];

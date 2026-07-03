@@ -19,7 +19,7 @@ import { markGuiDirty } from "../lib/dirty";
 
 type TabId = "importables" | "houses" | "settings";
 
-type Tab = { id: TabId; label: string; icon: IconName; content: () => Element };
+type Tab = { id: TabId; label: string; icon: IconName; content: (bodyW: number) => Element };
 
 const TABS: Tab[] = [
     { id: "importables", label: "Importables", icon: Icons.compass, content: ImportablesView },
@@ -44,11 +44,22 @@ export function setActiveLeftTab(id: TabId): void {
 // fall back to icon-only. Mirrors the Button defaults (padding x:4, icon 16,
 // icon→text gap 4) and the bar's own gap so the fit test matches what is
 // actually laid out.
-const TAB_GAP = 2;
+export const TAB_GAP = 2;
 const TAB_BUTTON_PAD_X = 4;
 const TAB_ICON_W = 16;
 const TAB_ICON_LABEL_GAP = 4;
 const LABEL_FIT_MARGIN = 4;
+
+export function tabLabelsFit(perTabW: number, labels: string[]): boolean {
+    const labelSpace =
+        perTabW - TAB_BUTTON_PAD_X * 2 - TAB_ICON_W - TAB_ICON_LABEL_GAP;
+    let widestLabel = 0;
+    for (let i = 0; i < labels.length; i++) {
+        const w = Renderer.getStringWidth(labels[i]);
+        if (w > widestLabel) widestLabel = w;
+    }
+    return labelSpace - LABEL_FIT_MARGIN >= widestLabel;
+}
 
 function tabButton(t: Tab, showLabel: boolean): Element {
     const isActive = activeTab === t.id;
@@ -98,14 +109,7 @@ function tabButton(t: Tab, showLabel: boolean): Element {
 export function TabBar(availW: number): Element {
     const n = TABS.length;
     const perTab = (availW - TAB_GAP * (n - 1)) / n;
-    const labelSpace =
-        perTab - TAB_BUTTON_PAD_X * 2 - TAB_ICON_W - TAB_ICON_LABEL_GAP;
-    let widestLabel = 0;
-    for (let i = 0; i < n; i++) {
-        const w = Renderer.getStringWidth(TABS[i].label);
-        if (w > widestLabel) widestLabel = w;
-    }
-    const showLabels = labelSpace - LABEL_FIT_MARGIN >= widestLabel;
+    const showLabels = tabLabelsFit(perTab, TABS.map((t) => t.label));
     const buttons = TABS.map((t) => tabButton(t, showLabels));
     // Importables + Houses are the two "sides of your project" the tour's step 3
     // points at; Settings isn't one of them. Grouping just those two under the

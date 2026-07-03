@@ -27,7 +27,7 @@ export function LeftPanel(width: number): Element {
             Container({
                 anchorKey: "tour:left-body",
                 style: { width: { kind: "grow" }, height: { kind: "grow" } },
-                children: () => [getActiveTab().content()],
+                children: () => [getActiveTab().content(width - PANEL_PAD * 2)],
             }),
         ],
     });
