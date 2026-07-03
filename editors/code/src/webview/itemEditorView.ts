@@ -68,7 +68,7 @@ async function submitItem(webview: vscode.Webview, form: ItemEditorForm): Promis
     } catch (err) {
         const error = err instanceof Error ? err.message : String(err);
         await webview.postMessage({ type: "submitResult", ok: false, error } satisfies ItemEditorFromHostMessage);
-        void vscode.window.showWarningMessage(`Could not generate item: ${error}`);
+        void vscode.window.showWarningMessage(`Could not add item: ${error}`);
     }
 }
 

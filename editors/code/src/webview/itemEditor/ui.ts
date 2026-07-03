@@ -3,6 +3,7 @@ import * as itemIcons from "minecraft-icon-items";
 import minecraftFontDataUri from "typeface-minecraft/files/minecraft.woff2?inline";
 import { buildItemTag } from "htsw-editor-common/item/buildItemNbt";
 import { ampToSection } from "htsw-editor-common/text/colorCodes";
+import { scrollPastNumberInputs } from "../numberInputWheel";
 import type {
     ImportTarget,
     ItemEditorForm,
@@ -81,6 +82,7 @@ function ensureMinecraftFont(): void {
 
 export function mountItemEditor(app: HTMLElement, vscode: VsCodeApi): () => void {
     ensureMinecraftFont();
+    scrollPastNumberInputs();
     const firstItem = ITEMS[0];
     const state: State = {
         itemSearch: "",
@@ -111,7 +113,7 @@ export function mountItemEditor(app: HTMLElement, vscode: VsCodeApi): () => void
 
         if (message.type === "submitResult") {
             state.status = message.ok
-                ? { kind: "ok", text: "Generated item files." }
+                ? { kind: "ok", text: "Item added to the project." }
                 : { kind: "error", text: message.error };
             renderStatus();
         }
@@ -180,13 +182,13 @@ export function mountItemEditor(app: HTMLElement, vscode: VsCodeApi): () => void
                     </div>
 
                     <div class="section">
-                        <h2>Project</h2>
+                        <h2>Add to Project</h2>
                         <label>
-                            <span class="label-text">Entry name</span>
+                            <span class="label-text">Name in project</span>
                             <input id="entryName" value="${escapeAttr(state.entryName)}" placeholder="Launcher">
                         </label>
                         <label>
-                            <span class="label-text">Target import.json</span>
+                            <span class="label-text">Add to import.json</span>
                             <select id="importJsonPath">
                                 ${state.targets.map((target) => option(target.fsPath, target.label, target.fsPath === state.importJsonPath)).join("")}
                             </select>
@@ -194,14 +196,14 @@ export function mountItemEditor(app: HTMLElement, vscode: VsCodeApi): () => void
                         <div class="checks">
                             <label class="check">
                                 <input id="createLeftClickActions" type="checkbox" ${state.createLeftClickActions ? "checked" : ""}>
-                                <span>Scaffold empty left-click actions .htsl</span>
+                                <span>Create an empty actions file for left click</span>
                             </label>
                             <label class="check">
                                 <input id="createRightClickActions" type="checkbox" ${state.createRightClickActions ? "checked" : ""}>
-                                <span>Scaffold empty right-click actions .htsl</span>
+                                <span>Create an empty actions file for right click</span>
                             </label>
                         </div>
-                        <button id="generate" type="button" ${canSubmit(state) ? "" : "disabled"}>Generate</button>
+                        <button id="generate" type="button" ${canSubmit(state) ? "" : "disabled"}>Add Item</button>
                         <div id="status" class="status"></div>
                     </div>
                 </div>
@@ -518,8 +520,7 @@ function renderItemPreview(state: State): void {
         stack.appendChild(count);
     }
 
-    const rarityColor = state.enchants.length > 0 ? "&b" : "&f";
-    const namePrefix = rarityColor + (state.displayName.trim() ? "&o" : "");
+    const namePrefix = nameRarityColor(state) + (state.displayName.trim() ? "&o" : "");
 
     const tooltip = document.createElement("div");
     tooltip.className = "mc-tooltip";
@@ -551,6 +552,13 @@ function itemStackPreview(state: State, displayName: string): HTMLElement {
         stack.textContent = itemInitials(displayName);
     }
     return stack;
+}
+
+function nameRarityColor(state: State): string {
+    if (state.itemName === "golden_apple") return (state.metadata ?? 0) === 0 ? "&b" : "&d";
+    if (state.itemName.startsWith("record_")) return "&b";
+    if (state.itemName === "enchanted_book" && state.enchants.length > 0) return "&e";
+    return state.enchants.length > 0 ? "&b" : "&f";
 }
 
 function enchantmentTooltipLine(enchant: { name: string; level: number }): string {

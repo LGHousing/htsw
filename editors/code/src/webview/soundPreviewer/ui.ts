@@ -1,5 +1,6 @@
 import { AudioEngine } from "./audioEngine";
 import { SOUND_CALIBRATION } from "./calibration";
+import { scrollPastNumberInputs } from "../numberInputWheel";
 import type {
     SoundEntry,
     SoundPreviewFromHostMessage,
@@ -28,6 +29,7 @@ const VOLUME_MAX = 2;
 const SLIDER_STEP = 0.05;
 
 export function mountSoundPreviewer(app: HTMLElement, vscode: VsCodeApi): () => void {
+    scrollPastNumberInputs();
     const audio = new AudioEngine();
     const state: State = {
         sounds: [],
