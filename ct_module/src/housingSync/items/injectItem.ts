@@ -2,10 +2,11 @@ import TaskContext from "../../tasks/context";
 import { removedFormatting } from "../../utils/helpers";
 import { recordRuntimeDebug } from "../../runtimeDebug/runtimeDebugBuffer";
 import { summarizeItemStack } from "../../runtimeDebug/itemStackSummary";
-import { timedWaitForMenu, waitForMenu } from "../gui/menuWait";
-import { SET_SLOT_ACK_MAX_TICKS, sendCreativeInventoryAction } from "../gui/packets";
+import { timedWaitForMenu, waitForMenu } from "../menus/menuWait";
+import { SET_SLOT_ACK_MAX_TICKS, sendCreativeInventoryAction } from "../menus/packets";
 import { COST } from "../progress/costs";
 import { timed } from "../progress/timing";
+import { isUnspawnableItem } from "./unspawnableItems";
 
 const INV_PACKET_SLOT = 26; // inventory row 2, column 9 (for HasItem and similar, rightmost, out of the way — matches BHTSL)
 
@@ -101,10 +102,11 @@ export async function selectItemFromOpenInventory(
     // through to a scratch-slot injection instead. See issue #58.
     const ninthHotbarSlot = container.getSize() - 1;
     const desiredStack = item.getItemStack();
+    const desiredSummary = summarizeItemStack(desiredStack);
     recordRuntimeDebug("itemInjection", {
         stage: "selectStart",
         label,
-        desired: summarizeItemStack(desiredStack),
+        desired: desiredSummary,
         containerSize: container.getSize(),
     });
 
@@ -144,12 +146,16 @@ export async function selectItemFromOpenInventory(
         return;
     }
 
+    if (desiredSummary !== null && desiredSummary.id !== null && isUnspawnableItem(desiredSummary.id)) {
+        throw new Error(`Cannot creative-spawn "${desiredSummary.id}" for "${label}".`);
+    }
+
     recordRuntimeDebug("itemInjection", {
         stage: "creativeSend",
         label,
         packetSlot: INV_PACKET_SLOT,
         targetSlot: targetSlotInContainer,
-        desired: summarizeItemStack(desiredStack),
+        desired: desiredSummary,
         before: summarizeItemStack(containerSlotStack(targetSlotInContainer)),
     });
     sendCreativeInventoryAction(
@@ -171,7 +177,7 @@ export async function selectItemFromOpenInventory(
             label,
             packetSlot: INV_PACKET_SLOT,
             targetSlot: targetSlotInContainer,
-            desired: summarizeItemStack(desiredStack),
+            desired: desiredSummary,
             observed,
         });
         const observedText = observed === null

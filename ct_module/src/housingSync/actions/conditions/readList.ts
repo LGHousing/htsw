@@ -22,9 +22,9 @@ import {
     goToPaginatedListPage,
     isEmptyPaginatedPlaceholder,
     readPaginatedList,
-} from "../../gui/paginatedList";
-import { timedWaitForMenu } from "../../gui/menuWait";
-import { clickGoBack } from "../../gui/menuUtils";
+} from "../../menus/paginatedList";
+import { timedWaitForMenu } from "../../menus/menuWait";
+import { clickGoBack } from "../../menus/menuUtils";
 import { CONDITION_LIST_CONFIG } from "../listConfigs";
 import { getConditionSpec, isConditionListItemInverted } from "./specs";
 import {

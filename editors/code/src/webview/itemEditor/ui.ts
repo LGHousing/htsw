@@ -1,5 +1,6 @@
 import * as htsw from "htsw";
 import * as itemIcons from "minecraft-icon-items";
+import minecraftFontDataUri from "typeface-minecraft/files/minecraft.woff2?inline";
 import { buildItemTag } from "htsw-editor-common/item/buildItemNbt";
 import { ampToSection } from "htsw-editor-common/text/colorCodes";
 import type {
@@ -65,7 +66,21 @@ const FORMAT_COLORS: Record<string, string> = {
     f: "#FFFFFF",
 };
 
+const FONT_STYLE_ID = "minecraft-font-face";
+
+function ensureMinecraftFont(): void {
+    if (document.getElementById(FONT_STYLE_ID)) return;
+    const style = document.createElement("style");
+    style.id = FONT_STYLE_ID;
+    style.textContent = `@font-face {
+        font-family: "Minecraft";
+        src: url(${minecraftFontDataUri}) format("woff2");
+    }`;
+    document.head.appendChild(style);
+}
+
 export function mountItemEditor(app: HTMLElement, vscode: VsCodeApi): () => void {
+    ensureMinecraftFont();
     const firstItem = ITEMS[0];
     const state: State = {
         itemSearch: "",
@@ -503,14 +518,17 @@ function renderItemPreview(state: State): void {
         stack.appendChild(count);
     }
 
+    const rarityColor = state.enchants.length > 0 ? "&b" : "&f";
+    const namePrefix = rarityColor + (state.displayName.trim() ? "&o" : "");
+
     const tooltip = document.createElement("div");
     tooltip.className = "mc-tooltip";
-    tooltip.appendChild(mcLine(displayName, state.displayName.trim() ? "" : "&f"));
+    tooltip.appendChild(mcLine(displayName, namePrefix));
     for (const enchant of state.enchants) {
         tooltip.appendChild(mcLine(enchantmentTooltipLine(enchant), "&7"));
     }
     for (const line of lore) {
-        tooltip.appendChild(mcLine(line, ""));
+        tooltip.appendChild(mcLine(line, "&7"));
     }
     tooltip.appendChild(mcLine(`minecraft:${state.itemName}`, "&8"));
     tooltip.appendChild(mcLine(`NBT: ${tagCount} tag(s)`, "&8"));
@@ -565,6 +583,12 @@ function romanNumeral(value: number): string {
         }
     }
     return out;
+}
+
+function shadowColorFor(hexColor: string): string {
+    const rgb = parseInt(hexColor.slice(1), 16);
+    const quartered = (rgb >> 2) & 0x3f3f3f;
+    return `#${quartered.toString(16).padStart(6, "0")}`;
 }
 
 function mcLine(text: string, prefix: string): HTMLElement {
@@ -632,7 +656,10 @@ function formatMinecraftText(value: string): Node[] {
         } else {
             span.textContent = current;
         }
-        if (color) span.style.color = color;
+        if (color) {
+            span.style.color = color;
+            span.style.textShadow = `2px 2px ${shadowColorFor(color)}`;
+        }
         if (bold) span.style.fontWeight = "700";
         if (italic) span.style.fontStyle = "italic";
         const decorations = [underline ? "underline" : "", strike ? "line-through" : ""]

@@ -1,11 +1,8 @@
 import TaskContext from "../../tasks/context";
 import { unique } from "../../utils/helpers";
-import {
-    chatMessage,
-    oneOf,
-    regionCreated,
-    regionEditorOpened,
-} from "../waiters";
+import { oneOf } from "../../tasks/waiters";
+import { chatMessage } from "../../housingSync/menus/menuWaiters";
+import { regionCreated, regionEditorOpened } from "../waiters";
 
 export async function openRegionEditor(
     ctx: TaskContext,

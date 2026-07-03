@@ -11,7 +11,7 @@ import {
     getLastOpenTarget,
     openOpenTargetMenu,
     runOpenTarget,
-} from "../popovers/open-menu";
+} from "./openTargetMenu";
 
 /**
  * Slim strip under the inventory cutout. Only the Housing Menu shortcut

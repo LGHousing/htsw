@@ -3,7 +3,7 @@ import { Diagnostic, SourceFile } from "htsw";
 
 import { tokensWithDiagnosticSpans } from "../src/gui/code-view/lineModel";
 import { wrapTokensIntoVisualRows } from "../src/gui/code-view/wrap";
-import { hoverPath } from "../src/gui/diagnostics/hover";
+import { hoverPath } from "../src/gui/code-view/diagnosticHover";
 import type { DiagnosticLineSpan } from "../src/diagnostics/spans";
 
 function lineSpan(

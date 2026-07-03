@@ -11,16 +11,12 @@ import {
 } from "../utils/helpers";
 import { Simulator } from "../simulator/simulator";
 import { printDiagnostic, printDiagnostics } from "../tui/diagnostics";
-import { recompile } from "../recompile";
+import { recompile } from "./recompile";
 import { TaskManager } from "../tasks/manager";
 import { FileSystemFileLoader } from "../utils/fileLoaders";
 import { commandUpdate, readLocalVersion } from "../autoUpdate";
 import { toggleHtswGui } from "../gui/overlay";
-import {
-    getTimingStats,
-    resetTimingStats,
-} from "../housingSync/progress/timing";
-import { COST } from "../housingSync/progress/costs";
+import { resetTimingStats } from "../housingSync/progress/timing";
 import {
     getEventContainerCounts,
     resetEventContainers,
@@ -41,24 +37,20 @@ import {
     getLagProbeSamples,
 } from "../perf/lagProbe";
 import { commandTest } from "../testSuite/command";
-import { isInCreativeMode } from "../housingSync/sideEffects";
 import { appendActionsToOpenActionList } from "../housingSync/actions/apply";
 import { createItemRegistry } from "../importables/itemRegistry";
 import { isTaskRunning, setTaskRunning } from "../tasks/runningState";
 import { startImport } from "../gui/right-panel/import-tab/taskController";
 import { canonicalPath, getParsePerfStats } from "../gui/parsing/parses";
 import { compactFileLabel } from "../gui/lib/pathDisplay";
-import { snbtFromItem } from "../housingSync/itemCapture";
 import {
     PROJECTS_ROOT,
     resolveModuleRelativePath,
 } from "../project/paths";
-import { ensureParentDirs } from "../utils/filesystem";
 import { openPathInOS } from "../utils/osShell";
-import { getItemFromSnbt } from "../utils/nbt";
-import { C10PacketCreativeInventoryAction } from "../utils/packets";
-import { parseCommandArgs, quoteCommandArg } from "../utils/commandArgs";
 import { registerExportSlashCommand } from "./export";
+import { saveItem, giveItem } from "./debugItems";
+import { printOpKindStats, dumpEtaToFile } from "./debugEta";
 
 type HtswSubcommand = {
     name: string;
@@ -365,263 +357,6 @@ function commandLagProbe(args: string[]): void {
     }
 }
 
-function saveItem(args: string[]): void {
-    if (args.length === 0) {
-        ChatLib.chat("&cUsage: /htsw saveitem <path>");
-        ChatLib.chat("&7  Saves your held item as .snbt under the projects folder.");
-        ChatLib.chat("&7  Use folder/name to save inside a folder.");
-        return;
-    }
-
-    const parsed = parseCommandArgs(args);
-    if (!parsed.ok) {
-        ChatLib.chat(`&c[htsw] ${parsed.error}`);
-        return;
-    }
-    if (parsed.args.length !== 1) {
-        ChatLib.chat("&cUsage: /htsw saveitem <path>");
-        ChatLib.chat("&7  Quote paths that contain spaces.");
-        return;
-    }
-
-    const rawPath = parsed.args[0].trim();
-    if (rawPath.length === 0) {
-        ChatLib.chat("&c[htsw] saveitem path cannot be empty.");
-        return;
-    }
-
-    const held = Player.getHeldItem();
-    if (held === null || held === undefined) {
-        ChatLib.chat("&c[htsw] You're not holding an item.");
-        return;
-    }
-
-    const snbt = snbtFromItem(held, { pretty: true });
-    if (snbt === null) {
-        ChatLib.chat("&c[htsw] Could not read NBT from held item.");
-        return;
-    }
-
-    let path = resolveModuleRelativePath(rawPath).split("\\").join("/");
-    if (!path.toLowerCase().endsWith(".snbt")) path += ".snbt";
-
-    try {
-        ensureParentDirs(path);
-        FileLib.write(path, snbt, true);
-        ChatLib.chat("&a[htsw] Saved item");
-        ChatLib.chat(`&7  -> ${path}`);
-    } catch (err) {
-        ChatLib.chat(`&c[htsw] saveitem failed: ${err}`);
-    }
-}
-
-function javaPath(path: string): any {
-    return Java.type("java.nio.file.Paths").get(String(path));
-}
-
-function isRegularFile(path: string): boolean {
-    try {
-        const Files = Java.type("java.nio.file.Files");
-        return Files.isRegularFile(javaPath(path));
-    } catch (_e) {
-        return false;
-    }
-}
-
-function isDirectory(path: string): boolean {
-    try {
-        const Files = Java.type("java.nio.file.Files");
-        return Files.isDirectory(javaPath(path));
-    } catch (_e) {
-        return false;
-    }
-}
-
-function listSnbtFiles(path: string): string[] {
-    const out: string[] = [];
-    const Files = Java.type("java.nio.file.Files");
-    const stream = Files.newDirectoryStream(javaPath(path));
-    try {
-        const it = stream.iterator();
-        while (it.hasNext()) {
-            const child = it.next();
-            const childPath = String(child.toString()).split("\\").join("/");
-            if (Files.isRegularFile(child) && childPath.toLowerCase().endsWith(".snbt")) {
-                out.push(childPath);
-            }
-        }
-    } finally {
-        try { stream.close(); } catch (_e) {}
-    }
-    out.sort();
-    return out;
-}
-
-function emptyInventorySlots(): number[] {
-    const inv = Player.getInventory()!;
-    const slots: number[] = [];
-    for (let i = 0; i < 36; i++) {
-        if (inv.getStackInSlot(i) === null) slots.push(i);
-    }
-    return slots;
-}
-
-function packetSlotForInventorySlot(slot: number): number {
-    return slot < 9 ? slot + 36 : slot;
-}
-
-function giveItemFromFile(path: string, slot: number): boolean {
-    let snbt: string;
-    try {
-        snbt = String(FileLib.read(path) ?? "");
-    } catch (err) {
-        ChatLib.chat(`&c[htsw] Could not read ${path}: ${err}`);
-        return false;
-    }
-    if (snbt.trim() === "") {
-        ChatLib.chat(`&c[htsw] File is empty: ${path}`);
-        return false;
-    }
-
-    try {
-        const item = getItemFromSnbt(snbt);
-        Client.sendPacket(new C10PacketCreativeInventoryAction(packetSlotForInventorySlot(slot), item.getItemStack()));
-        ChatLib.chat(`&a[htsw] Gave item from ${path}`);
-        return true;
-    } catch (err) {
-        ChatLib.chat(`&c[htsw] Could not give item from ${path}: ${err}`);
-        return false;
-    }
-}
-
-function resolveGiveItemFilePath(rawPath: string): string {
-    let path = resolveModuleRelativePath(rawPath).split("\\").join("/");
-    if (!path.toLowerCase().endsWith(".snbt")) path += ".snbt";
-    return path;
-}
-
-function parseGiveItemFolderArgs(args: string[]): { rawPath: string; skip: number; hasSkip: boolean } | null {
-    if (args.length === 1) return { rawPath: args[0].trim(), skip: 0, hasSkip: false };
-    if (args.length === 2 && /^\d+$/.test(args[1])) {
-        return {
-            rawPath: args[0].trim(),
-            skip: Number(args[1]),
-            hasSkip: true,
-        };
-    }
-    return null;
-}
-
-function giveSingleItemPath(filePath: string): void {
-    const slots = emptyInventorySlots();
-    if (slots.length === 0) {
-        ChatLib.chat("&c[htsw] No empty inventory slot.");
-        return;
-    }
-    giveItemFromFile(filePath, slots[0]);
-}
-
-function giveFolderItems(rawPath: string, skip: number): void {
-    if (rawPath.length === 0) {
-        ChatLib.chat("&c[htsw] giveitem folder path cannot be empty.");
-        return;
-    }
-
-    const dirPath = resolveModuleRelativePath(rawPath).split("\\").join("/");
-    let files: string[];
-    try {
-        files = listSnbtFiles(dirPath);
-    } catch (err) {
-        ChatLib.chat(`&c[htsw] Could not list folder ${dirPath}: ${err}`);
-        return;
-    }
-    if (files.length === 0) {
-        ChatLib.chat(`&c[htsw] No .snbt files found in ${dirPath}`);
-        return;
-    }
-    if (skip >= files.length) {
-        ChatLib.chat(`&c[htsw] Skip ${skip} is past the ${files.length} item${files.length === 1 ? "" : "s"} in ${dirPath}.`);
-        return;
-    }
-
-    const slots = emptyInventorySlots();
-    if (slots.length === 0) {
-        ChatLib.chat("&c[htsw] No empty inventory slot.");
-        return;
-    }
-    const remaining = files.length - skip;
-    if (slots.length < remaining) {
-        ChatLib.chat(`&e[htsw] Only ${slots.length} empty slot${slots.length === 1 ? "" : "s"}, giving ${slots.length} of ${remaining} remaining items.`);
-    }
-
-    const count = Math.min(slots.length, remaining);
-    let gave = 0;
-    for (let i = 0; i < count; i++) {
-        if (giveItemFromFile(files[skip + i], slots[i])) gave++;
-    }
-    ChatLib.chat(`&7[htsw] Gave ${gave}/${files.length} item${files.length === 1 ? "" : "s"} from ${dirPath}`);
-    const nextSkip = skip + count;
-    if (nextSkip < files.length) {
-        ChatLib.chat(`&7  Next: &f/htsw giveitem ${quoteCommandArg(rawPath)} ${nextSkip}`);
-    }
-}
-
-function giveItem(args: string[]): void {
-    if (args.length === 0) {
-        ChatLib.chat("&cUsage: /htsw giveitem <path> [skip]");
-        ChatLib.chat("&7  Spawns an item from a .snbt file, or all .snbt files in a folder.");
-        return;
-    }
-
-    if (!isInCreativeMode()) {
-        ChatLib.chat("&c[htsw] Must be in creative mode to give an item.");
-        return;
-    }
-
-    const parsed = parseCommandArgs(args);
-    if (!parsed.ok) {
-        ChatLib.chat(`&c[htsw] ${parsed.error}`);
-        return;
-    }
-
-    const folderArgs = parseGiveItemFolderArgs(parsed.args);
-    if (folderArgs === null) {
-        ChatLib.chat("&cUsage: /htsw giveitem <path> [skip]");
-        ChatLib.chat("&7  Quote paths that contain spaces.");
-        return;
-    }
-
-    const rawPath = folderArgs.rawPath;
-    if (rawPath.length === 0) {
-        ChatLib.chat("&c[htsw] giveitem path cannot be empty.");
-        return;
-    }
-
-    const filePath = resolveGiveItemFilePath(rawPath);
-    if (isRegularFile(filePath)) {
-        if (folderArgs.hasSkip) {
-            ChatLib.chat("&c[htsw] Skip is only supported for folders, not item files.");
-            return;
-        }
-        giveSingleItemPath(filePath);
-        return;
-    }
-
-    const literalDirPath = resolveModuleRelativePath(rawPath).split("\\").join("/");
-    if (isDirectory(literalDirPath)) {
-        giveFolderItems(rawPath, folderArgs.skip);
-        return;
-    }
-
-    const parsedDirPath = resolveModuleRelativePath(folderArgs.rawPath).split("\\").join("/");
-    if (!isDirectory(parsedDirPath)) {
-        ChatLib.chat(`&c[htsw] File or folder not found: ${literalDirPath}`);
-        ChatLib.chat(`&7  Tried file: ${filePath}`);
-        return;
-    }
-    giveFolderItems(folderArgs.rawPath, folderArgs.skip);
-}
-
 function commandEta(args: string[]): void {
     if (args.length > 0 && (args[0] === "reset" || args[0] === "clear")) {
         resetTimingStats();
@@ -646,68 +381,6 @@ function commandEta(args: string[]): void {
     }
 
     printOpKindStats();
-}
-
-function printOpKindStats(): void {
-    const stats = getTimingStats();
-    const kinds: string[] = [
-        "commandMenuWait",
-        "commandMessageWait",
-        "menuClickWait",
-        "messageClickWait",
-        "pageTurnWait",
-        "goBackWait",
-        "chatInput",
-        "anvilInput",
-        "itemSelect",
-        "reorderStep",
-        "sleep1000",
-    ];
-    ChatLib.chat("&7[eta] per-op-kind units / ms/unit");
-    let printed = false;
-    for (let i = 0; i < kinds.length; i++) {
-        const kind = kinds[i];
-        const entry = stats[kind];
-        if (entry === undefined || entry.count === 0) continue;
-        printed = true;
-        const units = costForKind(kind);
-        const current = entry.avgMsPerExpectedUnit;
-        const baseline = entry.baselineMsPerExpectedUnit;
-        const delta = current - baseline;
-        const pct = baseline > 0 ? (delta / baseline) * 100 : 0;
-        let trend: string;
-        if (Math.abs(pct) < 3) trend = "&7~";
-        else if (pct > 0) trend = `&c↑${pct.toFixed(0)}%`;
-        else trend = `&a↓${Math.abs(pct).toFixed(0)}%`;
-        const unitsStr = units !== null ? `&f${units.toFixed(2)}u/op` : "&7(no cost)";
-        ChatLib.chat(
-            `&7  ${kind}: ${unitsStr} &7| &f${entry.count}&7 samples => &f${current.toFixed(0)}ms/u &7(baseline &f${baseline.toFixed(0)}&7 ${trend}&7)`
-        );
-    }
-    if (!printed) {
-        ChatLib.chat("&7  (no samples yet)");
-    }
-}
-
-function costForKind(kind: string): number | null {
-    if (kind === "sleep1000") return COST.guaranteedSleep1000;
-    const v = (COST as Record<string, number>)[kind];
-    return typeof v === "number" ? v : null;
-}
-
-function dumpEtaToFile(): void {
-    const stats = getTimingStats();
-    const dump = {
-        capturedAt: new Date().toISOString(),
-        perOpKind: stats,
-    };
-    const path = `./htsw/eta-${Date.now()}.json`;
-    try {
-        FileLib.write(path, JSON.stringify(dump, null, 2), true);
-        ChatLib.chat(`&a[eta] wrote ${path}`);
-    } catch (e) {
-        ChatLib.chat(`&c[eta] failed to write ${path}: ${e}`);
-    }
 }
 
 function commandImport(args: string[]) {

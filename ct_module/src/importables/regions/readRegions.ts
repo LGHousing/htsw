@@ -5,34 +5,15 @@ import {
     type InventorySnapshot,
 } from "../../housingSync/itemCapture";
 import TaskContext from "../../tasks/context";
-import type { ImportableItem } from "htsw/types";
-import { isTaskCancelled } from "../../tasks/manager";
-import type { ExportResult } from "../exports";
+import { runReadLoop, type ReadResult, type ReadOptions } from "../read";
 import { writeCapturedItems } from "../items/writeCapturedItems";
 import {
     htslTargetsForRegionExport,
     regionExportReferencesExist,
 } from "../../project/paths";
-import type { ExportProgressSink } from "../../housingSync/progress/types";
 import { listAllRegions, type RegionListEntry } from "./listRegions";
 import { exportRegionWithSharedState } from "./export";
 import { filterAlreadyExported } from "../exportSkip";
-
-export type ExportAllRegionsOptions = {
-    importJsonPath: string;
-    rootDir: string;
-    names?: readonly string[];
-    progress?: ExportProgressSink;
-    projectItems?: readonly ImportableItem[];
-    skipExisting?: boolean;
-};
-
-export async function exportAllRegions(
-    ctx: TaskContext,
-    options: ExportAllRegionsOptions
-): Promise<ExportResult> {
-    return exportAllRegionsInner(ctx, options);
-}
 
 function findRegion(
     regions: readonly RegionListEntry[],
@@ -44,11 +25,13 @@ function findRegion(
     return null;
 }
 
-async function exportAllRegionsInner(
+export async function readRegions(
     ctx: TaskContext,
-    options: ExportAllRegionsOptions
-): Promise<ExportResult> {
+    options: ReadOptions
+): Promise<ReadResult> {
     const { importJsonPath, rootDir } = options;
+    const readOnly = options.readOnly !== undefined;
+    const verb = readOnly ? "Reading" : "Exporting";
 
     const inventorySnapshot: InventorySnapshot = snapshotInventory();
     const itemCaptures = new ItemCaptureRegistry();
@@ -58,19 +41,22 @@ async function exportAllRegionsInner(
     }
 
     const regions = await listAllRegions(ctx);
-    const names =
-        options.names !== undefined
-            ? options.names
-            : regions.map((region) => region.name);
+    let names: readonly string[];
+    if (options.names !== undefined) {
+        names = options.names;
+    } else {
+        names = regions.map((region) => region.name);
+        options.onNamesListed?.(names);
+    }
     const exportNames = filterAlreadyExported(
         ctx,
         "region",
         names,
-        options.skipExisting,
+        readOnly ? false : options.skipExisting,
         (name) => regionExportReferencesExist(importJsonPath, name)
     );
     if (exportNames.length === 0) {
-        ctx.displayMessage("&7No regions to export.");
+        ctx.displayMessage(`&7No regions to ${readOnly ? "read" : "export"}.`);
         try {
             await restoreInventoryToSnapshot(ctx, inventorySnapshot);
         } catch (error) {
@@ -82,29 +68,21 @@ async function exportAllRegionsInner(
     }
 
     ctx.displayMessage(
-        `&aExporting ${exportNames.length} region${exportNames.length === 1 ? "" : "s"}...`
+        `&a${verb} ${exportNames.length} region${exportNames.length === 1 ? "" : "s"}...`
     );
-    options.progress?.start(exportNames);
-
     let succeeded = 0;
     let failed = 0;
     try {
-        for (let i = 0; i < exportNames.length; i++) {
-            ctx.checkCancelled();
-            const name = exportNames[i];
-            const target = htslTargetsForRegionExport(importJsonPath, name);
-
-            options.progress?.item(i, name);
-            ctx.displayMessage(
-                `&7[${i + 1}/${exportNames.length}] &fExporting '${name}'`
-            );
-
-            const sink = options.progress;
-            try {
+        const result = await runReadLoop(ctx, {
+            names: exportNames,
+            verb,
+            progress: options.progress,
+            processOne: async (ctx, name, onReadProgress) => {
                 const entry = findRegion(regions, name);
                 if (entry === null) {
                     throw new Error(`No region named "${name}" exists in this housing.`);
                 }
+                const target = htslTargetsForRegionExport(importJsonPath, name);
                 await exportRegionWithSharedState(
                     ctx,
                     {
@@ -114,29 +92,20 @@ async function exportAllRegionsInner(
                         onEnterTarget: target.onEnter,
                         onExitTarget: target.onExit,
                         rootDir,
-                        onReadProgress:
-                            sink?.itemProgress === undefined
-                                ? undefined
-                                : (payload) => sink.itemProgress!(i, payload),
+                        readOnly: options.readOnly,
+                        onReadProgress,
                     },
                     { itemCaptures, inventorySnapshot }
                 );
-                succeeded++;
-            } catch (error) {
-                if (isTaskCancelled(error)) {
-                    throw error;
-                }
-                failed++;
-                sink?.itemFailed?.(i, String(error));
-                ctx.displayMessage(
-                    `&c[export-all] failed on '${name}': ${error}`
-                );
-            }
-        }
+            },
+        });
+        succeeded = result.succeeded;
+        failed = result.failed;
     } finally {
-        options.progress?.done();
         try {
-            writeCapturedItems(ctx, itemCaptures, rootDir, importJsonPath);
+            if (!readOnly) {
+                writeCapturedItems(ctx, itemCaptures, rootDir, importJsonPath);
+            }
         } finally {
             try {
                 await restoreInventoryToSnapshot(ctx, inventorySnapshot);
@@ -146,6 +115,13 @@ async function exportAllRegionsInner(
                 );
             }
         }
+    }
+
+    if (readOnly) {
+        ctx.displayMessage(
+            `&aRead ${succeeded} of ${exportNames.length} region${exportNames.length === 1 ? "" : "s"}${failed > 0 ? ` &c[${failed} failed]` : ""}`
+        );
+        return { total: exportNames.length, succeeded, failed };
     }
 
     const itemCounts = itemCaptures.counts();

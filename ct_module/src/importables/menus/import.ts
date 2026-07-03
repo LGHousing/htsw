@@ -7,8 +7,8 @@ import {
 import { canonicalizeActionItemName } from "../../housingSync/actions/readList";
 import { applyActionListPlan } from "../../housingSync/actions/apply";
 import { prepareActionListSync } from "../../housingSync/actions/prepareSync";
-import { clickGoBack } from "../../housingSync/gui/menuUtils";
-import { timedWaitForMenu } from "../../housingSync/gui/menuWait";
+import { clickGoBack } from "../../housingSync/menus/menuUtils";
+import { timedWaitForMenu } from "../../housingSync/menus/menuWait";
 import { selectItemFromOpenInventory } from "../../housingSync/items/injectItem";
 import { canonicalItemKey, snbtFromItem } from "../../housingSync/itemCapture";
 import type { ImportableTrustPlan } from "../../importCache";
@@ -18,10 +18,8 @@ import { removedFormatting } from "../../utils/helpers";
 import { getItemFromNbt, getItemFromSnbt } from "../../utils/nbt";
 import type { ItemRegistry } from "../itemRegistry";
 import type { ImportSession } from "../imports";
-import {
-    countReferencedShells,
-    createMissingReferencedShells,
-} from "../references";
+import { createMissingReferencedShells } from "../references";
+import { countReferencedShells } from "../referenceScanner";
 import { menuCreated } from "../waiters";
 import { noteMenuCreated } from "./listMenus";
 import { readLiveMenu, type LiveMenu } from "./read";

@@ -68,14 +68,14 @@ Split across `ct_module/src/housingSync/` (read/diff/write live menus), `importa
 
 **Where the current behavior is defined:**
 
-- Which importable types are wired — the switches in `importables/imports.ts` / `exports.ts`.
-- Per-type import/export procedure — that type's `importables/<type>/import.ts` / `export.ts`.
+- Which importable types are wired — the switch in `importables/imports.ts` for import; `gui/left-panel/houses/contentTypes.ts` and `slashCommands/exportBatch.ts` for export/deep-read.
+- Per-type import procedure — that type's `importables/<type>/import.ts`. Per-type house read (export and deep read are the same walk with different sinks) — `importables/<type>/read<Type>s.ts` batch over `export.ts` per-item logic, all through the shared loop in `importables/read.ts`.
 - Read/write + child-list coverage per action/condition — `ACTION_SPECS` / `CONDITION_SPECS`, via `getActionSpec` / `getConditionSpec`.
 - Simulator coverage (`ct_module/src/simulator/`, separate from import) — `createActionBehaviors()` / `createConditionBehaviors()`.
 
 **Structure rules:**
 
-- `imports.ts` / `exports.ts` only dispatch — never inline per-type bodies.
+- `imports.ts` only dispatches — never inline per-type bodies. Export has no dispatch switch; callers hold a per-type `ReadFn` (see `contentTypes.ts`).
 - A type's import + export live together under `importables/<type>/`; logic shared between the two directions stays in that folder. Importable-owned export helpers that cut across types live under the owning importable folder, such as `importables/items/`. Task state and cancellation helpers live under `tasks/`.
 - Exporters reuse importer reads (`readActionList`, `readConditionList`, `parse*ListItem`) — never duplicate read logic.
 - Adding an action/condition type: update `housingSync/fields/actionMappings.ts` / `conditionMappings.ts` first — they drive parsing, list-item observation, and diff cost.

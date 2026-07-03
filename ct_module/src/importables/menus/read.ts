@@ -3,8 +3,8 @@ import * as htsw from "htsw";
 
 import { readActionList } from "../../housingSync/actions/readList";
 import type { ProgressHandler } from "../../housingSync/progress/types";
-import { clickGoBack } from "../../housingSync/gui/menuUtils";
-import { waitForMenu } from "../../housingSync/gui/menuWait";
+import { clickGoBack } from "../../housingSync/menus/menuUtils";
+import { waitForMenu } from "../../housingSync/menus/menuWait";
 import TaskContext from "../../tasks/context";
 import { getAllItemSlots } from "../../tasks/specifics/slots";
 import { removedFormatting } from "../../utils/helpers";

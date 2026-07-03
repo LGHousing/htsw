@@ -1,5 +1,5 @@
 import { type Bounds, type Importable, type Pos } from "htsw/types";
-import { Simulator } from "./simulator";
+import { getSimulatorImportables, runSimulatorActions } from "./session";
 
 export function registerRegionTriggers(): Trigger[] {
     return [register("tick", tick)];
@@ -20,7 +20,7 @@ function tick() {
     };
 
     const regions: ImportableRegion[] = [];
-    for (const importable of Simulator.importables) {
+    for (const importable of getSimulatorImportables()) {
         if (importable.type === "REGION") regions.push(importable);
     }
 
@@ -45,11 +45,11 @@ function tick() {
 
     if (prev !== next) {
         if (prev && prev.onExitActions) {
-            Simulator.runActions(prev.onExitActions);
+            runSimulatorActions(prev.onExitActions);
         }
 
         if (next && next.onEnterActions) {
-            Simulator.runActions(next.onEnterActions);
+            runSimulatorActions(next.onEnterActions);
         }
 
         RegionState.currentRegion = next;

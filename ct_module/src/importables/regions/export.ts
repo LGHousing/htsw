@@ -1,33 +1,22 @@
-import type { Action, ImportableItem, ImportableRegion } from "htsw/types";
+import type { Action, ImportableRegion } from "htsw/types";
 import * as htsw from "htsw";
 
 import { readActionList } from "../../housingSync/actions/readList";
 import {
     ItemCaptureRegistry,
-    restoreInventoryToSnapshot,
-    snapshotInventory,
     type InventorySnapshot,
 } from "../../housingSync/itemCapture";
 import type { ProgressHandler } from "../../housingSync/progress/types";
-import { timedWaitForMenu } from "../../housingSync/gui/menuWait";
+import { timedWaitForMenu } from "../../housingSync/menus/menuWait";
 import { shallowActionListHasActions } from "../../housingSync/fields/loreParsing";
-import { tryWriteImportableCache } from "../../importCache";
+import { tryWriteImportableCache, writeImportableCache } from "../../importCache";
 import { observedSlotsToActions } from "../../housingSync/observedActions";
 import { upsertImportableEntry } from "../../project/importJsonMutations";
 import { ensureParentDirs } from "../../utils/filesystem";
-import { htslTargetsForRegionExport, type HtslExportTarget } from "../../project/paths";
-import { writeCapturedItems } from "../items/writeCapturedItems";
+import type { HtslExportTarget } from "../../project/paths";
 import TaskContext from "../../tasks/context";
-import { listAllRegions, type RegionListEntry } from "./listRegions";
+import type { RegionListEntry } from "./listRegions";
 import { openRegionEditor } from "./shared";
-
-export type ExportRegionOptions = {
-    name: string;
-    importJsonPath: string;
-    rootDir: string;
-    onReadProgress?: ProgressHandler;
-    projectItems?: readonly ImportableItem[];
-};
 
 export type ExportRegionWithSharedStateOptions = {
     entry: RegionListEntry;
@@ -37,6 +26,8 @@ export type ExportRegionWithSharedStateOptions = {
     onExitTarget: HtslExportTarget;
     rootDir: string;
     onReadProgress?: ProgressHandler;
+    // Read-only (deep read): cache the region, write no files.
+    readOnly?: { housingUuid: string };
 };
 
 export type SharedRegionExportState = {
@@ -94,14 +85,6 @@ function writeActionFile(
     ctx.displayMessage(`&7  -> ${target.htslPath}`);
 }
 
-async function findRegionEntry(ctx: TaskContext, name: string): Promise<RegionListEntry> {
-    const regions = await listAllRegions(ctx);
-    for (let i = 0; i < regions.length; i++) {
-        if (regions[i].name === name) return regions[i];
-    }
-    throw new Error(`No region named "${name}" exists in this housing.`);
-}
-
 export async function exportRegionWithSharedState(
     ctx: TaskContext,
     options: ExportRegionWithSharedStateOptions,
@@ -124,6 +107,19 @@ export async function exportRegionWithSharedState(
         options.onReadProgress
     );
 
+    const importable: ImportableRegion = {
+        type: "REGION",
+        name: options.entry.name,
+        bounds,
+        ...(enterActions !== undefined ? { onEnterActions: enterActions } : {}),
+        ...(exitActions !== undefined ? { onExitActions: exitActions } : {}),
+    };
+
+    if (options.readOnly !== undefined) {
+        writeImportableCache(ctx, options.readOnly.housingUuid, importable, "reader", true);
+        return;
+    }
+
     if (enterActions !== undefined) {
         ctx.checkCancelled();
         writeActionFile(ctx, options.onEnterTarget, enterActions);
@@ -132,14 +128,6 @@ export async function exportRegionWithSharedState(
         ctx.checkCancelled();
         writeActionFile(ctx, options.onExitTarget, exitActions);
     }
-
-    const importable: ImportableRegion = {
-        type: "REGION",
-        name: options.entry.name,
-        bounds,
-        ...(enterActions !== undefined ? { onEnterActions: enterActions } : {}),
-        ...(exitActions !== undefined ? { onExitActions: exitActions } : {}),
-    };
 
     upsertImportableEntry(options.declaringJsonPath, "regions", {
         name: options.entry.name,
@@ -158,63 +146,4 @@ export async function exportRegionWithSharedState(
     ctx.displayMessage(
         `&aExported region '${options.entry.name}' (${actionCount} action${actionCount === 1 ? "" : "s"})`
     );
-}
-
-export async function exportRegion(
-    ctx: TaskContext,
-    options: ExportRegionOptions
-): Promise<void> {
-    return exportRegionInner(ctx, options);
-}
-
-async function exportRegionInner(
-    ctx: TaskContext,
-    options: ExportRegionOptions
-): Promise<void> {
-    const inventorySnapshot: InventorySnapshot = snapshotInventory();
-    const itemCaptures = new ItemCaptureRegistry();
-    const projectItems = options.projectItems ?? [];
-    for (let i = 0; i < projectItems.length; i++) {
-        itemCaptures.seed(projectItems[i].name, projectItems[i].nbt);
-    }
-
-    let exportError: unknown = null;
-    try {
-        const entry = await findRegionEntry(ctx, options.name);
-        const target = htslTargetsForRegionExport(options.importJsonPath, entry.name);
-        await exportRegionWithSharedState(ctx, {
-            entry,
-            importJsonPath: options.importJsonPath,
-            declaringJsonPath: target.importJsonPath,
-            onEnterTarget: target.onEnter,
-            onExitTarget: target.onExit,
-            rootDir: options.rootDir,
-            onReadProgress: options.onReadProgress,
-        }, { itemCaptures, inventorySnapshot });
-    } catch (error) {
-        exportError = error;
-    }
-
-    try {
-        writeCapturedItems(ctx, itemCaptures, options.rootDir, options.importJsonPath);
-        if (exportError === null) {
-            const c = itemCaptures.counts();
-            ctx.displayMessage(
-                `&7[export] &fItems: ${c.matched} matched, ${c.fresh} new`
-            );
-            ctx.displayMessage(`&7  -> ${options.importJsonPath}`);
-        }
-    } finally {
-        try {
-            await restoreInventoryToSnapshot(ctx, inventorySnapshot);
-        } catch (error) {
-            ctx.displayMessage(
-                `&7[export] &eInventory restore failed (export results still written): ${error}`
-            );
-        }
-    }
-
-    if (exportError !== null) {
-        throw exportError;
-    }
 }

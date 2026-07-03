@@ -1,7 +1,6 @@
 /// <reference types="../../../../CTAutocomplete" />
 
 import {
-    getExportImportJsonPath,
     getHousingUuid,
     clearImportableChecks,
     isCurrentHouseTrusted,
@@ -27,8 +26,6 @@ import {
     type ImportQueueItem,
 } from "./queue";
 import {
-    getParseAt,
-    markParseStale,
     parseImportJsonBlocking,
 } from "../../parsing/parses";
 import { printDiagnostics } from "../../../tui/diagnostics";
@@ -36,16 +33,11 @@ import {
     importSelectedImportables,
     orderImportablesForImportSession,
 } from "../../../importables/importSession";
-import type { ExportResult } from "../../../importables/exports";
-import { exportProjectContextFromParsedImportJson } from "../../../importables/exportContext";
 import { importableIdentity } from "../../../importables/identity";
 import { getCurrentHousingUuid } from "../../../importCache/housingId";
 import { TaskManager, isTaskCancelled } from "../../../tasks/manager";
-import type TaskContext from "../../../tasks/context";
-import type { Importable, ImportableItem } from "htsw/types";
+import type { Importable } from "htsw/types";
 import type { Diagnostic, ImportablesParseResult } from "htsw";
-import { closeAllPopovers } from "../../lib/popovers";
-import { shortPath } from "../../lib/pathDisplay";
 import { importableSourcePath } from "../../parsing/importablePaths";
 import { attributeDiagnostics } from "../../cache-status/diagnosticCounts";
 import type {
@@ -53,8 +45,6 @@ import type {
     SyncEvent,
 } from "../../../housingSync/syncEvents";
 import { queueRowKey } from "../../../housingSync/progress/queueRowKey";
-import type { ExportProgressSink } from "../../../housingSync/progress/types";
-import { createExportProgressSink } from "./exportProgress";
 import { initialReducerState, reduce } from "../../../housingSync/progress/reducer";
 import { traceSyncEvent } from "../../../housingSync/trace/taskTrace";
 import { traceProgressEvent } from "../../../housingSync/trace/progressTrace";
@@ -546,119 +536,4 @@ export function startImport(explicit?: readonly ImportQueueItem[]): void {
         setTaskRunning(false);
         ChatLib.chat(`&c[htsw] Import failed: ${err}`);
     });
-}
-
-// ── Batch export flow ─────────────────────────────────────────────────
-
-export type ExportSpec = {
-    type: Importable["type"];
-    /** Singular lowercase noun used in user-facing messages, e.g. "function". */
-    label: string;
-    exportAll: (
-        ctx: TaskContext,
-        opts: {
-            importJsonPath: string;
-            rootDir: string;
-            projectItems?: readonly ImportableItem[];
-            names?: readonly string[];
-            progress?: ExportProgressSink;
-        }
-    ) => Promise<ExportResult>;
-};
-
-/**
- * Drive a batch export from the Houses tab. With no `names`, exports every item
- * of the type; with `names`, only those (the tab's selection). The type-specific
- * work is the `spec.exportAll` the registry supplies (item capture, cache write,
- * etc.); this owns the shared destination/running-task guards, the post-export
- * reparse, and the result toasts. `onSuccess` fires only on a clean run — used
- * to clear the exported selection.
- */
-export function startExport(
-    spec: ExportSpec,
-    names?: readonly string[],
-    onSuccess?: () => void
-): void {
-    closeAllPopovers();
-    const importJsonPath = getExportImportJsonPath();
-    if (importJsonPath.trim() === "") {
-        showToast("No import.json loaded — pick a destination first", 0xffe85c5c);
-        return;
-    }
-    if (names !== undefined && names.length === 0) {
-        showToast("Nothing selected to export", 0xffe5bc4b);
-        return;
-    }
-    if (isTaskRunning() || TaskManager.hasRunningTasks()) {
-        showToast("A task is already running — wait for it to finish", 0xffe5bc4b);
-        return;
-    }
-    const dir = importJsonDir(importJsonPath);
-    const count = names === undefined ? null : names.length;
-    TaskManager.run(async (ctx) => {
-        setActiveTaskContext("export", ctx);
-        setTaskRunning(true);
-        let result: ExportResult;
-        try {
-            // Same boundary purge the importer does: nothing legit is waiting when
-            // an export starts, so survivors are leaks — and a leaked packet waiter
-            // re-runs its predicate on every packet, lagging input even with no
-            // GUI open, until something purges it.
-            const purged = resetEventContainers();
-            if (purged > 0) {
-                ChatLib.chat(`&8[htsw] purged ${purged} leaked event waiter(s) from a prior run.`);
-            }
-            const exportContext = exportProjectContextFromParsedImportJson(
-                { rootDir: dir, importJsonPath },
-                getParseAt(importJsonPath)?.parsed
-            );
-            result = await spec.exportAll(ctx, {
-                ...exportContext,
-                names,
-                // Feeds the same bottom progress strip the importer uses (verb
-                // flips to "export"), sized in import cost-model units.
-                progress: createExportProgressSink(spec.type, importJsonPath),
-            });
-        } finally {
-            clearActiveTaskContext("export", ctx);
-            setTaskRunning(false);
-        }
-        // The export rewrote the destination import.json; drop its cached parse
-        // so the Houses drift icons re-read it now instead of showing the
-        // pre-export state until a fingerprint recheck happens to land.
-        markParseStale(importJsonPath);
-        // Export rewrote source + cache on disk. Force a reparse so the
-        // cache-status dots rebuild against the fresh cache now, instead of
-        // waiting out the parse-authority's settle throttle (~1s of red).
-        if (result.failed > 0) {
-            // Per-item failures are swallowed so the run finishes; surface them
-            // here instead of reporting a partial run as a clean success.
-            showToast(
-                `Export finished with ${result.failed} failed, ${result.succeeded} ok → ${shortPath(importJsonPath)}`,
-                0xffe85c5c,
-                8000
-            );
-            return;
-        }
-        if (result.total === 0) {
-            showToast(`No ${spec.label}s to export`, 0xffe5bc4b);
-            return;
-        }
-        showToast(
-            count === null
-                ? `Exported all ${spec.label}s → ${shortPath(importJsonPath)}`
-                : `Exported ${count} ${spec.label}${count === 1 ? "" : "s"} → ${shortPath(importJsonPath)}`,
-            0xff5cb85c
-        );
-        if (onSuccess !== undefined) onSuccess();
-    }).catch((err: unknown) => {
-        showToast(`Export failed: ${err}`, 0xffe85c5c, 8000);
-    });
-}
-
-function importJsonDir(path: string): string {
-    const norm = path.split("\\").join("/");
-    const slash = norm.lastIndexOf("/");
-    if (slash <= 0) return ".";
-    return norm.substring(0, slash);
 }

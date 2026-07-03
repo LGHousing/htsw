@@ -3,9 +3,9 @@ import type { Action } from "htsw/types";
 import TaskContext from "../../../tasks/context";
 import type { ActionApplyContext } from "../../context/actionApplyContext";
 import { createActionApplyContext } from "../../context/actionApplyContext";
-import { timedWaitForMenu } from "../../gui/menuWait";
-import { clickGoBack, setListItemNote } from "../../gui/menuUtils";
-import { getPaginatedListSlotAtIndex, goToPaginatedListPage } from "../../gui/paginatedList";
+import { timedWaitForMenu } from "../../menus/menuWait";
+import { clickGoBack, setListItemNote } from "../../menus/menuUtils";
+import { getPaginatedListSlotAtIndex, goToPaginatedListPage } from "../../menus/paginatedList";
 import type {
     ActionPath,
     DiffFinalState,

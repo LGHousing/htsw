@@ -5,7 +5,7 @@ import {
     prereadActionList,
     type ActionListPlan,
 } from "../../housingSync/actions/plan";
-import { timedWaitForMenu } from "../../housingSync/gui/menuWait";
+import { timedWaitForMenu } from "../../housingSync/menus/menuWait";
 import { createSetupStepEmitter } from "../../housingSync/syncEvents";
 import type { ImportableTrustPlan } from "../../importCache";
 import TaskContext from "../../tasks/context";
@@ -14,10 +14,8 @@ import {
     getBaselineActionList,
 } from "../../housingSync/actions/prepareSync";
 import type { ImportSession } from "../imports";
-import {
-    countReferencedShells,
-    createMissingReferencedShells,
-} from "../references";
+import { createMissingReferencedShells } from "../references";
+import { countReferencedShells } from "../referenceScanner";
 import {
     npcNamesMatch,
     openNpcLeftClickActions,

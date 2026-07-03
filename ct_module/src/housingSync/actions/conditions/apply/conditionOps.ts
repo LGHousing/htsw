@@ -8,11 +8,11 @@ import {
     isLimitExceeded,
     readBooleanValue,
     setNoteOnLastVisibleSlot,
-} from "../../../gui/menuUtils";
-import { timedWaitForMenu } from "../../../gui/menuWait";
+} from "../../../menus/menuUtils";
+import { timedWaitForMenu } from "../../../menus/menuWait";
 import { ItemSlot, MouseButton } from "../../../../tasks/specifics/slots";
 import { removedFormatting } from "../../../../utils/helpers";
-import { getPaginatedListSlotAtIndex } from "../../../gui/paginatedList";
+import { getPaginatedListSlotAtIndex } from "../../../menus/paginatedList";
 import { CONDITION_LIST_CONFIG } from "../../listConfigs";
 import { getConditionSpec, writeOpenCondition } from "../specs";
 

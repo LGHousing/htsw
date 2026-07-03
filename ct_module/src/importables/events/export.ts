@@ -7,7 +7,7 @@ import {
     ItemCaptureRegistry,
     type InventorySnapshot,
 } from "../../housingSync/itemCapture";
-import { tryWriteImportableCache } from "../../importCache";
+import { tryWriteImportableCache, writeImportableCache } from "../../importCache";
 import TaskContext from "../../tasks/context";
 import { observedSlotsToActions } from "../../housingSync/observedActions";
 import { upsertImportableEntry } from "../../project/importJsonMutations";
@@ -29,6 +29,8 @@ export type ExportEventOptions = {
     htslReference: string;
     rootDir: string;
     onReadProgress?: ProgressHandler;
+    // Read-only (deep read): cache the event, write no files.
+    readOnly?: { housingUuid: string };
 };
 
 export type SharedExportState = {
@@ -69,6 +71,11 @@ export async function exportEventWithSharedState(
         event: name as Event,
         actions,
     };
+
+    if (options.readOnly !== undefined) {
+        writeImportableCache(ctx, options.readOnly.housingUuid, importable, "reader", true);
+        return;
+    }
 
     const { source, diagnostics } = htsw.htsl.printActionsWithDiagnostics(actions);
     for (const diag of diagnostics) {

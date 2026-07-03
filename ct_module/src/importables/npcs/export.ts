@@ -1,26 +1,19 @@
-import type { Action, ImportableItem, ImportableNpc, Pos } from "htsw/types";
+import type { Action, ImportableNpc } from "htsw/types";
 import * as htsw from "htsw";
 
 import { readActionList } from "../../housingSync/actions/readList";
 import {
     ItemCaptureRegistry,
-    restoreInventoryToSnapshot,
-    snapshotInventory,
     type InventorySnapshot,
 } from "../../housingSync/itemCapture";
-import { timedWaitForMenu } from "../../housingSync/gui/menuWait";
+import { timedWaitForMenu } from "../../housingSync/menus/menuWait";
 import { shallowActionListHasActions } from "../../housingSync/fields/loreParsing";
 import type { ProgressHandler } from "../../housingSync/progress/types";
 import { observedSlotsToActions } from "../../housingSync/observedActions";
 import { tryWriteImportableCache } from "../../importCache";
 import { upsertImportableEntry } from "../../project/importJsonMutations";
-import {
-    htslTargetsForNpcExport,
-    type HtslExportTarget,
-    type NpcExportEntry,
-} from "../../project/paths";
+import type { HtslExportTarget } from "../../project/paths";
 import TaskContext from "../../tasks/context";
-import { writeCapturedItems } from "../items/writeCapturedItems";
 import { ensureParentDirs } from "../../utils/filesystem";
 import {
     openNpcLeftClickActions,
@@ -28,21 +21,11 @@ import {
     readLeftClickRedirect,
 } from "./shared";
 import {
-    createNpcLookupCache,
     npcLabel,
     openNpcEditorForPos,
     type NpcListEntry,
     type NpcLookupCache,
 } from "./listNpcs";
-
-export type ExportNpcOptions = {
-    name: string;
-    pos: Pos;
-    importJsonPath: string;
-    rootDir: string;
-    onReadProgress?: ProgressHandler;
-    projectItems?: readonly ImportableItem[];
-};
 
 export type ExportNpcWithSharedStateOptions = {
     entry: NpcListEntry;
@@ -110,14 +93,6 @@ function writeActionFile(
     ensureParentDirs(target.htslPath);
     FileLib.write(target.htslPath, source, true);
     ctx.displayMessage(`&7  -> ${target.htslPath}`);
-}
-
-async function findNpcEntry(
-    ctx: TaskContext,
-    pos: Pos,
-    cache: NpcLookupCache
-): Promise<NpcListEntry> {
-    return await openNpcEditorForPos(ctx, pos, cache);
 }
 
 export async function exportNpcWithSharedState(
@@ -200,68 +175,4 @@ export async function exportNpcWithSharedState(
     ctx.displayMessage(
         `&aExported NPC '${npcLabel(options.entry)}' (${actionCount} action${actionCount === 1 ? "" : "s"})`
     );
-}
-
-export async function exportNpc(
-    ctx: TaskContext,
-    options: ExportNpcOptions
-): Promise<void> {
-    return exportNpcInner(ctx, options);
-}
-
-async function exportNpcInner(
-    ctx: TaskContext,
-    options: ExportNpcOptions
-): Promise<void> {
-    const inventorySnapshot: InventorySnapshot = snapshotInventory();
-    const itemCaptures = new ItemCaptureRegistry();
-    const npcLookup = createNpcLookupCache();
-    const projectItems = options.projectItems ?? [];
-    for (let i = 0; i < projectItems.length; i++) {
-        itemCaptures.seed(projectItems[i].name, projectItems[i].nbt);
-    }
-
-    let exportError: unknown = null;
-    try {
-        const entry = await findNpcEntry(ctx, options.pos, npcLookup);
-        const targetEntry: NpcExportEntry = {
-            name: entry.name,
-            pos: entry.pos,
-        };
-        const target = htslTargetsForNpcExport(options.importJsonPath, targetEntry);
-        await exportNpcWithSharedState(ctx, {
-            entry,
-            importJsonPath: options.importJsonPath,
-            declaringJsonPath: target.importJsonPath,
-            leftClickTarget: target.leftClick,
-            rightClickTarget: target.rightClick,
-            rootDir: options.rootDir,
-            onReadProgress: options.onReadProgress,
-        }, { itemCaptures, inventorySnapshot, npcLookup });
-    } catch (error) {
-        exportError = error;
-    }
-
-    try {
-        writeCapturedItems(ctx, itemCaptures, options.rootDir, options.importJsonPath);
-        if (exportError === null) {
-            const c = itemCaptures.counts();
-            ctx.displayMessage(
-                `&7[export] &fItems: ${c.matched} matched, ${c.fresh} new`
-            );
-            ctx.displayMessage(`&7  -> ${options.importJsonPath}`);
-        }
-    } finally {
-        try {
-            await restoreInventoryToSnapshot(ctx, inventorySnapshot);
-        } catch (error) {
-            ctx.displayMessage(
-                `&7[export] &eInventory restore failed (export results still written): ${error}`
-            );
-        }
-    }
-
-    if (exportError !== null) {
-        throw exportError;
-    }
 }

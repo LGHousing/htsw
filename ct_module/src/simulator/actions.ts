@@ -9,10 +9,10 @@ import type {
     ActionTitle,
 } from "htsw/types";
 
-import { Simulator } from "./simulator";
 import { replacePlaceholders } from "./placeholders";
 import { coerceWithin } from "./helpers";
 import { resolveLocation } from "./locations";
+import { getSimulatorImportables } from "./session";
 
 export function createActionBehaviors(vars: runtime.simple.Vars): runtime.ActionBehaviors {
     return new runtime.simple.SimpleActionBehaviors(vars)
@@ -28,7 +28,7 @@ export function createActionBehaviors(vars: runtime.simple.Vars): runtime.Action
 function behaviorFunction(rt: runtime.Runtime, action: ActionFunction) {
     if (!action.function) return;
 
-    for (const importable of Simulator.importables) {
+    for (const importable of getSimulatorImportables()) {
         if (importable.type !== "FUNCTION") continue;
         if (importable.name !== action.function) continue;
 

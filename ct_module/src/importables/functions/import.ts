@@ -9,15 +9,13 @@ import {
     type ActionListPlan,
 } from "../../housingSync/actions/plan";
 import { prepareActionListSync } from "../../housingSync/actions/prepareSync";
-import { clickGoBack } from "../../housingSync/gui/menuUtils";
+import { clickGoBack } from "../../housingSync/menus/menuUtils";
 import type { ImportableTrustPlan } from "../../importCache";
 import { createSetupStepEmitter } from "../../housingSync/syncEvents";
 import TaskContext from "../../tasks/context";
 import type { ImportSession } from "../imports";
-import {
-    countReferencedShells,
-    createMissingReferencedShells,
-} from "../references";
+import { createMissingReferencedShells } from "../references";
+import { countReferencedShells } from "../referenceScanner";
 import { functionListOpened } from "../waiters";
 import {
     applyFunctionSettings,

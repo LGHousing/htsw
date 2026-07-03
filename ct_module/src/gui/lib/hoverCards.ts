@@ -1,6 +1,5 @@
 /// <reference types="../../../CTAutocomplete" />
 
-import type { FormattedTextBlock } from "../../diagnostics/format";
 import { pointInRect, type Rect } from "./layout";
 import { getOverlayScreenH, getOverlayScreenW } from "./overlayScale";
 import { placeAnchoredRect } from "./anchoredRect";
@@ -19,10 +18,19 @@ const MAX_H = 240;
 const SCROLLBAR_W = 3;
 const COLOR_SCROLLBAR = 0xff888888 | 0;
 
+type HoverCardLineSegment = { x: number; text: string };
+
+export type HoverCardContent = {
+    lines: string[];
+    segments: HoverCardLineSegment[][];
+    width: number;
+    height: number;
+};
+
 type HoverCard = {
     key: string;
     anchor: Rect;
-    content: FormattedTextBlock;
+    content: HoverCardContent;
     offeredAt: number;
     lastAnchorHoverAt: number;
     scrollOffset: number;
@@ -40,7 +48,7 @@ export function hoverCardContentWidth(): number {
 export function offerHoverCard(options: {
     key: string;
     anchor: Rect;
-    content: FormattedTextBlock;
+    content: HoverCardContent;
 }): void {
     const now = Date.now();
     if (card === null || card.key !== options.key) {
@@ -74,7 +82,7 @@ export function mouseIsOverHoverCard(mouseX: number, mouseY: number): boolean {
     return isHoverCardVisible() && lastRect !== null && pointInRect(lastRect, mouseX, mouseY);
 }
 
-function cardRect(content: FormattedTextBlock): Rect {
+function cardRect(content: HoverCardContent): Rect {
     const screenW = getOverlayScreenW();
     const screenH = getOverlayScreenH();
     const maxWidth = Math.min(MAX_W, Math.floor(screenW * MAX_W_SCREEN_RATIO));
@@ -88,7 +96,7 @@ function cardRect(content: FormattedTextBlock): Rect {
     return placeAnchoredRect(card!.anchor, width, height, screenW, screenH, "left");
 }
 
-function maxScroll(rect: Rect, content: FormattedTextBlock): number {
+function maxScroll(rect: Rect, content: HoverCardContent): number {
     return Math.max(0, content.height * LINE_H - (rect.h - PAD * 2 - TEXT_TOP_INSET));
 }
 

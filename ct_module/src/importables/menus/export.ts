@@ -23,6 +23,8 @@ export type ExportMenuOptions = {
      */
     rootDir: string;
     onReadProgress?: ProgressHandler;
+    // Read-only (deep read): cache the menu, write no files.
+    readOnly?: { housingUuid: string };
 };
 
 /**
@@ -73,6 +75,17 @@ export async function exportMenu(
     const cacheSlots: MenuSlot[] = [];
 
     for (const liveSlot of live.slots) {
+        // Cache slots in the same parsed-Tag form the import.json loader
+        // produces, so the drift hash compares like with like.
+        cacheSlots.push({
+            slot: liveSlot.slot,
+            nbt: htsw.nbt.parseSnbtText(liveSlot.snbt) as MenuSlot["nbt"],
+            ...(liveSlot.actions.length > 0 ? { actions: liveSlot.actions } : {}),
+        });
+        // Read-only (deep read) records the live menu in the cache but writes no
+        // item/.htsl/import.json files.
+        if (options.readOnly !== undefined) continue;
+
         // Item: deduped by content into a shared items/<name>.snbt, written
         // before the json references it so the reference is never dangling.
         const itemName = itemCaptures.register(liveSlot.snbt, liveSlot.nameHint);
@@ -108,11 +121,6 @@ export async function exportMenu(
             nbt: nbtRel,
             ...(actionsRel !== undefined ? { actions: actionsRel } : {}),
         });
-        cacheSlots.push({
-            slot: liveSlot.slot,
-            nbt: liveSlot.snbt as unknown as MenuSlot["nbt"],
-            ...(liveSlot.actions.length > 0 ? { actions: liveSlot.actions } : {}),
-        });
     }
 
     const importable: ImportableMenu = {
@@ -121,6 +129,14 @@ export async function exportMenu(
         ...(live.size !== undefined ? { size: live.size } : {}),
         slots: cacheSlots,
     };
+
+    if (options.readOnly !== undefined) {
+        writeImportableCache(ctx, options.readOnly.housingUuid, importable, "reader", true);
+        ctx.displayMessage(
+            `&aRead menu '${name}' (${cacheSlots.length} slot${cacheSlots.length === 1 ? "" : "s"})`
+        );
+        return;
+    }
 
     // All referenced item files are already on disk (written in the loop above),
     // so upserting the menu entry now never produces a dangling reference.

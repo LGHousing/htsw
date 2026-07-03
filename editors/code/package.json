@@ -2,7 +2,7 @@
     "name": "htsw-plus-plus",
     "displayName": "HTSW++",
     "description": "HTSW completions, diagnostics, hints, and more.",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "publisher": "LGHousing",
     "license": "MIT",
     "type": "module",
@@ -21,7 +21,8 @@
         "htsw": "file:../../language",
         "htsw-editor-common": "file:../common",
         "jsonc-parser": "^3.3.1",
-        "minecraft-icon-items": "^0.4.5"
+        "minecraft-icon-items": "^0.4.5",
+        "typeface-minecraft": "^1.0.0"
     },
     "devDependencies": {
         "@types/node": "^25.9.3",
@@ -154,30 +155,150 @@
         "configurationDefaults": {
             "editor.tokenColorCustomizations": {
                 "textMateRules": [
-                    { "scope": "constant.character.format-code.color.black.snbt",         "settings": { "foreground": "#000000" } },
-                    { "scope": "constant.character.format-code.color.dark-blue.snbt",     "settings": { "foreground": "#0000AA" } },
-                    { "scope": "constant.character.format-code.color.dark-green.snbt",    "settings": { "foreground": "#00AA00" } },
-                    { "scope": "constant.character.format-code.color.dark-aqua.snbt",     "settings": { "foreground": "#00AAAA" } },
-                    { "scope": "constant.character.format-code.color.dark-red.snbt",      "settings": { "foreground": "#AA0000" } },
-                    { "scope": "constant.character.format-code.color.dark-purple.snbt",   "settings": { "foreground": "#AA00AA" } },
-                    { "scope": "constant.character.format-code.color.gold.snbt",          "settings": { "foreground": "#FFAA00" } },
-                    { "scope": "constant.character.format-code.color.gray.snbt",          "settings": { "foreground": "#AAAAAA" } },
-                    { "scope": "constant.character.format-code.color.dark-gray.snbt",     "settings": { "foreground": "#555555" } },
-                    { "scope": "constant.character.format-code.color.blue.snbt",          "settings": { "foreground": "#5555FF" } },
-                    { "scope": "constant.character.format-code.color.green.snbt",         "settings": { "foreground": "#55FF55" } },
-                    { "scope": "constant.character.format-code.color.aqua.snbt",          "settings": { "foreground": "#55FFFF" } },
-                    { "scope": "constant.character.format-code.color.red.snbt",           "settings": { "foreground": "#FF5555" } },
-                    { "scope": "constant.character.format-code.color.light-purple.snbt",  "settings": { "foreground": "#FF55FF" } },
-                    { "scope": "constant.character.format-code.color.yellow.snbt",        "settings": { "foreground": "#FFFF55" } },
-                    { "scope": "constant.character.format-code.color.white.snbt",         "settings": { "foreground": "#FFFFFF" } },
-                    { "scope": "constant.character.format-code.style.bold.snbt",          "settings": { "fontStyle": "bold" } },
-                    { "scope": "constant.character.format-code.style.italic.snbt",        "settings": { "fontStyle": "italic" } },
-                    { "scope": "constant.character.format-code.style.underline.snbt",     "settings": { "fontStyle": "underline" } },
-                    { "scope": "constant.character.format-code.style.strikethrough.snbt", "settings": { "fontStyle": "strikethrough" } },
-                    { "scope": "meta.format-code.style.bold.snbt",                      "settings": { "fontStyle": "bold" } },
-                    { "scope": "meta.format-code.style.italic.snbt",                    "settings": { "fontStyle": "italic" } },
-                    { "scope": "meta.format-code.style.underline.snbt",                 "settings": { "fontStyle": "underline" } },
-                    { "scope": "meta.format-code.style.strikethrough.snbt",             "settings": { "fontStyle": "strikethrough" } }
+                    {
+                        "scope": "constant.character.format-code.color.black.snbt",
+                        "settings": {
+                            "foreground": "#000000"
+                        }
+                    },
+                    {
+                        "scope": "constant.character.format-code.color.dark-blue.snbt",
+                        "settings": {
+                            "foreground": "#0000AA"
+                        }
+                    },
+                    {
+                        "scope": "constant.character.format-code.color.dark-green.snbt",
+                        "settings": {
+                            "foreground": "#00AA00"
+                        }
+                    },
+                    {
+                        "scope": "constant.character.format-code.color.dark-aqua.snbt",
+                        "settings": {
+                            "foreground": "#00AAAA"
+                        }
+                    },
+                    {
+                        "scope": "constant.character.format-code.color.dark-red.snbt",
+                        "settings": {
+                            "foreground": "#AA0000"
+                        }
+                    },
+                    {
+                        "scope": "constant.character.format-code.color.dark-purple.snbt",
+                        "settings": {
+                            "foreground": "#AA00AA"
+                        }
+                    },
+                    {
+                        "scope": "constant.character.format-code.color.gold.snbt",
+                        "settings": {
+                            "foreground": "#FFAA00"
+                        }
+                    },
+                    {
+                        "scope": "constant.character.format-code.color.gray.snbt",
+                        "settings": {
+                            "foreground": "#AAAAAA"
+                        }
+                    },
+                    {
+                        "scope": "constant.character.format-code.color.dark-gray.snbt",
+                        "settings": {
+                            "foreground": "#555555"
+                        }
+                    },
+                    {
+                        "scope": "constant.character.format-code.color.blue.snbt",
+                        "settings": {
+                            "foreground": "#5555FF"
+                        }
+                    },
+                    {
+                        "scope": "constant.character.format-code.color.green.snbt",
+                        "settings": {
+                            "foreground": "#55FF55"
+                        }
+                    },
+                    {
+                        "scope": "constant.character.format-code.color.aqua.snbt",
+                        "settings": {
+                            "foreground": "#55FFFF"
+                        }
+                    },
+                    {
+                        "scope": "constant.character.format-code.color.red.snbt",
+                        "settings": {
+                            "foreground": "#FF5555"
+                        }
+                    },
+                    {
+                        "scope": "constant.character.format-code.color.light-purple.snbt",
+                        "settings": {
+                            "foreground": "#FF55FF"
+                        }
+                    },
+                    {
+                        "scope": "constant.character.format-code.color.yellow.snbt",
+                        "settings": {
+                            "foreground": "#FFFF55"
+                        }
+                    },
+                    {
+                        "scope": "constant.character.format-code.color.white.snbt",
+                        "settings": {
+                            "foreground": "#FFFFFF"
+                        }
+                    },
+                    {
+                        "scope": "constant.character.format-code.style.bold.snbt",
+                        "settings": {
+                            "fontStyle": "bold"
+                        }
+                    },
+                    {
+                        "scope": "constant.character.format-code.style.italic.snbt",
+                        "settings": {
+                            "fontStyle": "italic"
+                        }
+                    },
+                    {
+                        "scope": "constant.character.format-code.style.underline.snbt",
+                        "settings": {
+                            "fontStyle": "underline"
+                        }
+                    },
+                    {
+                        "scope": "constant.character.format-code.style.strikethrough.snbt",
+                        "settings": {
+                            "fontStyle": "strikethrough"
+                        }
+                    },
+                    {
+                        "scope": "meta.format-code.style.bold.snbt",
+                        "settings": {
+                            "fontStyle": "bold"
+                        }
+                    },
+                    {
+                        "scope": "meta.format-code.style.italic.snbt",
+                        "settings": {
+                            "fontStyle": "italic"
+                        }
+                    },
+                    {
+                        "scope": "meta.format-code.style.underline.snbt",
+                        "settings": {
+                            "fontStyle": "underline"
+                        }
+                    },
+                    {
+                        "scope": "meta.format-code.style.strikethrough.snbt",
+                        "settings": {
+                            "fontStyle": "strikethrough"
+                        }
+                    }
                 ]
             }
         }

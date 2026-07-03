@@ -17,25 +17,48 @@ export type Source = SourceDir | SourceFile;
 
 const sources: Source[] = [];
 
+// Structural views of the java.nio objects this walker touches — the runtime
+// values are real Java classes; these list only the members we call.
+type JavaPath = {
+    toAbsolutePath(): JavaPath;
+    normalize(): JavaPath;
+    toString(): string;
+    getFileName(): JavaPath | null;
+    getParent(): JavaPath | null;
+    relativize(other: JavaPath): JavaPath;
+};
+type JavaDirectoryStream = {
+    iterator(): { hasNext(): boolean; next(): JavaPath };
+    close(): void;
+};
+type JavaFilesStatics = {
+    isDirectory(p: JavaPath): boolean;
+    isRegularFile(p: JavaPath): boolean;
+    newDirectoryStream(dir: JavaPath): JavaDirectoryStream;
+    exists(p: JavaPath): boolean;
+};
+type JavaPathsStatics = { get(path: string): JavaPath };
+type JavaStringQueue = { add(value: string): void; poll(): string | null };
+
 // Lazy: top-level `Java.type(...)` is known to hang CT 1.8.9 at module
 // load (see the comment block in `gui/lib/render.ts` above
 // `getIconImage`). Defer the lookup + queue construction until the
 // first source is actually queued.
-let pendingPaths: any = null;
-function getPendingPaths(): any {
+let pendingPaths: JavaStringQueue | null = null;
+function getPendingPaths(): JavaStringQueue {
     if (pendingPaths === null) {
         const ConcurrentLinkedQueue = Java.type("java.util.concurrent.ConcurrentLinkedQueue");
-        pendingPaths = new ConcurrentLinkedQueue();
+        pendingPaths = new ConcurrentLinkedQueue() as JavaStringQueue;
     }
     return pendingPaths;
 }
 
-function pathOf(absolute: string): any {
-    const Paths = Java.type("java.nio.file.Paths");
+function pathOf(absolute: string): JavaPath {
+    const Paths: JavaPathsStatics = Java.type("java.nio.file.Paths");
     return Paths.get(String(absolute)).toAbsolutePath().normalize();
 }
 
-function fileNameOf(p: any): string {
+function fileNameOf(p: JavaPath): string {
     const fn = p.getFileName();
     if (fn === null) return String(p.toString());
     return String(fn.toString());
@@ -49,8 +72,8 @@ function alreadyHas(fullPath: string): boolean {
 }
 
 function addSourceFromAbsolute(absolute: string): void {
-    const Files = Java.type("java.nio.file.Files");
-    let p: any;
+    const Files: JavaFilesStatics = Java.type("java.nio.file.Files");
+    let p: JavaPath;
     try {
         p = pathOf(absolute);
     } catch (_e) {
@@ -104,13 +127,13 @@ export function removeSource(fullPath: string): void {
     }
 }
 
-function relativePath(root: any, p: any): string {
+function relativePath(root: JavaPath, p: JavaPath): string {
     const rel = root.relativize(p);
     return String(rel.toString()).replace(/\\/g, "/");
 }
 
-function isRegularFileSafe(p: any): boolean {
-    const Files = Java.type("java.nio.file.Files");
+function isRegularFileSafe(p: JavaPath): boolean {
+    const Files: JavaFilesStatics = Java.type("java.nio.file.Files");
     try {
         return Files.isRegularFile(p);
     } catch (_e) {
@@ -118,8 +141,8 @@ function isRegularFileSafe(p: any): boolean {
     }
 }
 
-function visitFile(p: any, root: any, out: Result[]): void {
-    let fileName: any;
+function visitFile(p: JavaPath, root: JavaPath, out: Result[]): void {
+    let fileName: JavaPath | null;
     try {
         fileName = p.getFileName();
     } catch (_e) {
@@ -162,8 +185,8 @@ function visitFile(p: any, root: any, out: Result[]): void {
     }
 }
 
-function isDirectorySafe(p: any): boolean {
-    const Files = Java.type("java.nio.file.Files");
+function isDirectorySafe(p: JavaPath): boolean {
+    const Files: JavaFilesStatics = Java.type("java.nio.file.Files");
     try {
         return Files.isDirectory(p);
     } catch (_e) {
@@ -175,9 +198,9 @@ function isDirectorySafe(p: any): boolean {
 // once (so depth=1 gives the folder root + one nest deep, no further).
 // Bounded recursion keeps the Importables list usable while letting the user
 // drop a parent folder and still find the import.json one level in.
-function walkDir(dir: any, root: any, out: Result[], depth: number = 1): void {
-    const Files = Java.type("java.nio.file.Files");
-    let stream: any;
+function walkDir(dir: JavaPath, root: JavaPath, out: Result[], depth: number = 1): void {
+    const Files: JavaFilesStatics = Java.type("java.nio.file.Files");
+    let stream: JavaDirectoryStream;
     try {
         stream = Files.newDirectoryStream(dir);
     } catch (_e) {
@@ -186,7 +209,7 @@ function walkDir(dir: any, root: any, out: Result[], depth: number = 1): void {
     try {
         const it = stream.iterator();
         while (true) {
-            let entry: any;
+            let entry: JavaPath;
             try {
                 if (!it.hasNext()) break;
                 entry = it.next();
@@ -220,10 +243,10 @@ const ENUMERATION_TTL_MS = 1000;
 const enumerationCache = new Map<string, { at: number; results: Result[] }>();
 
 function enumerateForSourceUncached(s: Source): Result[] {
-    const Paths = Java.type("java.nio.file.Paths");
-    const Files = Java.type("java.nio.file.Files");
+    const Paths: JavaPathsStatics = Java.type("java.nio.file.Paths");
+    const Files: JavaFilesStatics = Java.type("java.nio.file.Files");
     const out: Result[] = [];
-    let p: any;
+    let p: JavaPath;
     try {
         p = Paths.get(String(s.fullPath));
     } catch (_e) {

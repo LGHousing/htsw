@@ -4,7 +4,6 @@ import type { Importable } from "htsw/types";
 import { Icons, type IconName } from "../../lib/icons.generated";
 import type { HouseImportable } from "../../../importCache/cache";
 import {
-    deepReadHouseFunctions,
     getHouseFunctions,
     houseFunctionsScanned,
     isFunctionScanInFlight,
@@ -34,12 +33,13 @@ import {
     isCommandScanInFlight,
     scanHouseCommands,
 } from "./sources/commandsSource";
-import { exportAllFunctions } from "../../../importables/functions/exportAll";
-import { exportAllEvents } from "../../../importables/events/exportAll";
-import { exportAllMenus } from "../../../importables/menus/exportAll";
-import { exportAllRegions } from "../../../importables/regions/exportAll";
-import { exportAllCommands } from "../../../importables/commands/exportAll";
-import { startExport, type ExportSpec } from "../../right-panel/import-tab/taskController";
+import { readFunctions } from "../../../importables/functions/readFunctions";
+import { readEvents } from "../../../importables/events/readEvents";
+import { readMenus } from "../../../importables/menus/readMenus";
+import { readRegions } from "../../../importables/regions/readRegions";
+import { readCommands } from "../../../importables/commands/readCommands";
+import { startExport, type ExportSpec } from "../../export/taskController";
+import { makeDeepRead } from "./sources/deepRead";
 
 // One browsable category of house contents. The Houses view is generic over
 // this: it dispatches scan/list/edit/export through the active entry.
@@ -54,7 +54,6 @@ export type HouseContentType = {
     // Deep read: pull importables' full content from the house into the cache
     // as verified knowledge (slow; explicit) — the export driver in read-only
     // mode. `onlyNames` limits the pass to a selection; omitted = whole house.
-    // Present only for types with a read implementation (FUNCTION today).
     deepRead?: (onlyNames?: string[]) => void;
     edit?: (name: string) => void;
     remove?: (name: string) => void;
@@ -86,11 +85,11 @@ export const HOUSE_CONTENT_TYPES: HouseContentType[] = [
         scanned: houseFunctionsScanned,
         scan: scanHouseFunctions,
         scanInFlight: isFunctionScanInFlight,
-        deepRead: deepReadHouseFunctions,
+        deepRead: makeDeepRead("FUNCTION", "function", readFunctions, isFunctionScanInFlight),
         edit: (name) => ChatLib.command(`function edit ${name}`),
         remove: (name) => ChatLib.command(`function delete ${name}`),
         run: (name) => ChatLib.command(`function run ${name}`),
-        export: exportHook({ type: "FUNCTION", label: "function", exportAll: exportAllFunctions }),
+        export: exportHook({ type: "FUNCTION", label: "function", read: readFunctions }),
     },
     {
         // Events are a fixed enumerated set — no per-name edit command and no
@@ -102,7 +101,8 @@ export const HOUSE_CONTENT_TYPES: HouseContentType[] = [
         scanned: houseEventsScanned,
         scan: scanHouseEvents,
         scanInFlight: isEventScanInFlight,
-        export: exportHook({ type: "EVENT", label: "event", exportAll: exportAllEvents }),
+        deepRead: makeDeepRead("EVENT", "event", readEvents, isEventScanInFlight),
+        export: exportHook({ type: "EVENT", label: "event", read: readEvents }),
     },
     {
         type: "MENU",
@@ -112,8 +112,9 @@ export const HOUSE_CONTENT_TYPES: HouseContentType[] = [
         scanned: houseMenusScanned,
         scan: scanHouseMenus,
         scanInFlight: isMenuScanInFlight,
+        deepRead: makeDeepRead("MENU", "menu", readMenus, isMenuScanInFlight),
         edit: (name) => ChatLib.command(`menu edit ${name}`),
-        export: exportHook({ type: "MENU", label: "menu", exportAll: exportAllMenus }),
+        export: exportHook({ type: "MENU", label: "menu", read: readMenus }),
     },
     {
         type: "REGION",
@@ -123,9 +124,10 @@ export const HOUSE_CONTENT_TYPES: HouseContentType[] = [
         scanned: houseRegionsScanned,
         scan: scanHouseRegions,
         scanInFlight: isRegionScanInFlight,
+        deepRead: makeDeepRead("REGION", "region", readRegions, isRegionScanInFlight),
         edit: (name) => ChatLib.command(`region edit ${name}`),
         remove: (name) => ChatLib.command(`region delete ${name}`),
-        export: exportHook({ type: "REGION", label: "region", exportAll: exportAllRegions }),
+        export: exportHook({ type: "REGION", label: "region", read: readRegions }),
     },
     {
         type: "COMMAND",
@@ -135,9 +137,10 @@ export const HOUSE_CONTENT_TYPES: HouseContentType[] = [
         scanned: houseCommandsScanned,
         scan: scanHouseCommands,
         scanInFlight: isCommandScanInFlight,
+        deepRead: makeDeepRead("COMMAND", "command", readCommands, isCommandScanInFlight),
         edit: (name) => ChatLib.command(`command edit ${name}`),
         remove: (name) => ChatLib.command(`command delete ${name}`),
-        export: exportHook({ type: "COMMAND", label: "command", exportAll: exportAllCommands }),
+        export: exportHook({ type: "COMMAND", label: "command", read: readCommands }),
     },
 ];
 

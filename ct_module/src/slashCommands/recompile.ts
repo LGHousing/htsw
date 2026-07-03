@@ -1,4 +1,4 @@
-import { FileSystemFileLoader } from "./utils/fileLoaders";
+import { FileSystemFileLoader } from "../utils/fileLoaders";
 
 function readDotEnv(key: string): string | null {
     // .env lives next to this CT module at install time, not at the MC

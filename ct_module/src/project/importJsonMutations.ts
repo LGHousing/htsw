@@ -1,15 +1,17 @@
 import {
+    moveImportableEntry as moveImportableEntryWithFs,
     removeImportableEntry as removeImportableEntryWithFs,
     renameImportableEntry as renameImportableEntryWithFs,
     resolveImportableFile as resolveImportableFileWithFs,
     setHouseUuidKey as setHouseUuidKeyWithFs,
     updateImportableField as updateImportableFieldWithFs,
     upsertImportableEntry as upsertImportableEntryWithFs,
+    type MoveImportableResult,
     type Section,
 } from "htsw-editor-common/project";
 import { ctProjectFs } from "./projectFs";
 
-export type { Section };
+export type { MoveImportableResult, Section };
 
 export function resolveImportableFile(
     entryPath: string,
@@ -71,5 +73,20 @@ export function renameImportableEntry(
         section,
         oldIdentity,
         newIdentity
+    );
+}
+
+export function moveImportableEntry(
+    entryJsonPath: string,
+    section: Section,
+    identity: string,
+    destJsonPath: string
+): MoveImportableResult {
+    return moveImportableEntryWithFs(
+        ctProjectFs,
+        entryJsonPath,
+        section,
+        identity,
+        destJsonPath
     );
 }

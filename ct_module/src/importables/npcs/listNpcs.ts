@@ -1,13 +1,13 @@
 import type { Pos } from "htsw/types";
 
-import { timedWaitForMenu } from "../../housingSync/gui/menuWait";
+import { timedWaitForMenu } from "../../housingSync/menus/menuWait";
 import {
     findPaginatedListEntry,
     getPaginatedListSlotAtIndex,
     getVisiblePaginatedItemSlots,
     readPaginatedList,
     type PaginatedListConfig,
-} from "../../housingSync/gui/paginatedList";
+} from "../../housingSync/menus/paginatedList";
 import TaskContext from "../../tasks/context";
 import { ItemSlot, MouseButton } from "../../tasks/specifics/slots";
 import { normalizeFormattingCodes, removedFormatting } from "../../utils/helpers";

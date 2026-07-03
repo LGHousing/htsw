@@ -5,7 +5,7 @@ import {
     isEmptyPaginatedPlaceholder,
     readPaginatedList,
     type PaginatedListConfig,
-} from "../../housingSync/gui/paginatedList";
+} from "../../housingSync/menus/paginatedList";
 import { removedFormatting } from "../../utils/helpers";
 import { regionListOpened } from "../waiters";
 

@@ -40,7 +40,8 @@ const ForgeGuiOpenEvent = javaType("net.minecraftforge.client.event.GuiOpenEvent
 import { RootTree, getImportCachedBounds } from "./root";
 import { getContainerBounds, getFullscreenPanelRect } from "./lib/bounds";
 import { handleCompletedParse, tickReparse } from "./parsing/reparse";
-import { processPendingParses } from "./parsing/parses";
+import { onParseCacheEntryChanged, processPendingParses } from "./parsing/parses";
+import { invalidateSourceDiffForParse } from "./code-view/sourceDiff";
 import { CHAT_INPUT_ID } from "./chat";
 import { refreshChatLines } from "./chat/mcChat";
 import {
@@ -99,7 +100,11 @@ import {
     getOverlayScreenW,
     getOverlayScreenH,
 } from "./lib/overlayScale";
-import { beginHtswOverlayDraw, endHtswOverlayDraw } from "./lib/panel";
+import { beginHtswOverlayDraw, endHtswOverlayDraw } from "./lib/overlayDraw";
+
+onParseCacheEntryChanged((entry) => {
+    if (entry.parsed !== null) invalidateSourceDiffForParse(entry.parsed);
+});
 
 let enabled = true;
 let initialized = false;

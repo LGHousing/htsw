@@ -22,8 +22,8 @@ import {
     clickGoBack,
     readBooleanValue,
     readStringValue,
-} from "../gui/menuUtils";
-import { waitForMenu } from "../gui/menuWait";
+} from "../menus/menuUtils";
+import { waitForMenu } from "../menus/menuWait";
 import {
     getActionFieldLabel,
     getActionScalarLoreFields,

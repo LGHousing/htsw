@@ -158,8 +158,8 @@ label {
     background: var(--vscode-editor-background);
     border: 1px solid var(--vscode-input-border, transparent);
     white-space: pre-wrap;
-    font-family: "Minecraft", "Minecraftia", "Mojangles", var(--vscode-editor-font-family), monospace;
-    font-size: 15px;
+    font-family: "Minecraft", var(--vscode-editor-font-family), monospace;
+    font-size: 16px;
     line-height: 1.25;
     image-rendering: pixelated;
     -webkit-font-smoothing: none;
@@ -217,37 +217,48 @@ pre {
     right: 3px;
     bottom: 1px;
     color: #fff;
-    font-family: "Minecraft", "Minecraftia", "Mojangles", var(--vscode-editor-font-family), monospace;
+    font-family: "Minecraft", var(--vscode-editor-font-family), monospace;
     font-size: 16px;
     text-shadow: 2px 2px #3f3f3f;
 }
 
 .mc-tooltip {
+    position: relative;
     display: inline-block;
     max-width: min(560px, 100%);
-    padding: 6px 8px;
+    padding: 8px 10px;
     color: #aaa;
-    background: linear-gradient(90deg, rgba(16, 0, 16, 0.96), rgba(32, 0, 32, 0.96));
-    border: 2px solid #2b0a42;
-    box-shadow:
-        inset 1px 0 #4b126f,
-        inset -1px 0 #4b126f,
-        inset 0 1px #4b126f,
-        inset 0 -1px #4b126f,
-        0 0 0 2px rgba(0, 0, 0, 0.6);
-    font-family: "Minecraft", "Minecraftia", "Mojangles", var(--vscode-editor-font-family), monospace;
+    background: rgba(16, 0, 16, 0.94);
+    font-family: "Minecraft", var(--vscode-editor-font-family), monospace;
     font-size: 16px;
-    line-height: 1.22;
+    line-height: 20px;
     image-rendering: pixelated;
     -webkit-font-smoothing: none;
     font-smooth: never;
 }
 
+.mc-tooltip::before {
+    content: "";
+    position: absolute;
+    inset: 2px;
+    border: 2px solid transparent;
+    background: linear-gradient(rgba(80, 0, 255, 0.31), rgba(40, 0, 127, 0.31)) border-box;
+    -webkit-mask: linear-gradient(#fff 0 0) padding-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask: linear-gradient(#fff 0 0) padding-box, linear-gradient(#fff 0 0);
+    mask-composite: exclude;
+    pointer-events: none;
+}
+
 .mc-line {
-    min-height: 19px;
+    min-height: 20px;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
     text-shadow: 2px 2px #2a2a2a;
+}
+
+.mc-line:first-child {
+    margin-bottom: 4px;
 }
 
 .mc-muted {

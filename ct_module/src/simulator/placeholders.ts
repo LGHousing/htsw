@@ -1,7 +1,7 @@
 import { VERSION, runtime } from "htsw";
 
 import { getDate, getGamemode } from "./helpers";
-import { Simulator } from "./simulator";
+import { getSimulatorRuntime } from "./session";
 
 const MOCK_DATA = {
     server: {
@@ -49,7 +49,7 @@ export function replacePlaceholders(value: string): string {
     for (const placeholder of placeholders) {
         const placeholderContent = placeholder.substring(1, placeholder.length - 1);
         try {
-            const evaluatedVar = Simulator.runtime.runPlaceholder(placeholderContent);
+            const evaluatedVar = getSimulatorRuntime().runPlaceholder(placeholderContent);
             if (!evaluatedVar) continue;
             value = value.replace(placeholder, evaluatedVar.toString());
         } catch (_error) {

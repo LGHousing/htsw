@@ -1,4 +1,4 @@
-import { timedWaitForMenu } from "../../housingSync/gui/menuWait";
+import { timedWaitForMenu } from "../../housingSync/menus/menuWait";
 import TaskContext from "../../tasks/context";
 import { eventActionsOpened } from "../waiters";
 

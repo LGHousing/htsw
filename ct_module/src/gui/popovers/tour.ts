@@ -2,7 +2,7 @@ import { Element, Rect } from "../lib/layout";
 import { Button, Col, Container, Row, Text } from "../lib/components";
 import { closePopover, openPopover, type PopoverHandle } from "../lib/popovers";
 import { getAnchorRect } from "../lib/anchors";
-import { beginHtswOverlayDraw, endHtswOverlayDraw } from "../lib/panel";
+import { beginHtswOverlayDraw, endHtswOverlayDraw } from "../lib/overlayDraw";
 import { getOverlayScreenH, getOverlayScreenW } from "../lib/overlayScale";
 import {
     COLOR_BUTTON,

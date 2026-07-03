@@ -18,7 +18,7 @@ import {
 } from "../lib/theme";
 import { setFocusedInput } from "../lib/focus";
 import { getChatKeyName } from "../keybinds";
-import { Simulator } from "../../simulator/simulator";
+import { isSimulatorActive } from "../../simulator/session";
 import { getChatLines } from "./mcChat";
 
 export const CHAT_INPUT_ID = "htsw-chat-input";
@@ -49,7 +49,7 @@ function isClientCommand(text: string): boolean {
         return true;
     }
 
-    return Simulator.isActive && (
+    return isSimulatorActive() && (
         name === "function" ||
         name === "var" ||
         name === "eval" ||

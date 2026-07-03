@@ -33,8 +33,8 @@ import {
     setCycleValue,
     setSelectValue,
     setStringValue,
-} from "../../gui/menuUtils";
-import { waitForMenu } from "../../gui/menuWait";
+} from "../../menus/menuUtils";
+import { waitForMenu } from "../../menus/menuWait";
 import { removedFormatting } from "../../../utils/helpers";
 import {
     getConditionFieldCycleOptions,

@@ -19,6 +19,7 @@ Library — `gui/lib/` (project-agnostic UI primitives + screen/theme):
 - `dirty.ts` — retained-layout invalidation (`markGuiDirty`, `GUI_REBUILD_BACKSTOP_MS`). Panels reuse laid-out trees until a dirty revision, bounds change, or backstop rebuild.
 - `render.ts` — single tree renderer + click dispatcher (used by panels and popovers).
 - `panel.ts` — `Panel` class: bounds, visibility, click trigger, render trigger.
+- `overlayDraw.ts` — overlay GL setup/teardown shared by panels and popovers.
 - `popovers.ts` — global popover stack, anchored/modal render, click dispatch helper, hover-suppression query.
 - `hoverCards.ts` — delayed, scrollable informational hover cards that absorb wheel/click input without becoming modal.
 - `anchoredRect.ts` — shared below/above placement and screen clamping used by popovers and hover cards.
@@ -41,11 +42,11 @@ App state — `gui/state/` (genuinely-global mutable state ONLY; split by concer
 - `index.ts` — re-export barrel over the above. Import-session progress is owned by `right-panel/import-tab/taskProgress.ts`, not global state.
 
 Parse cache service — `gui/parsing/` (a service, not "state"):
-- `parses.ts` — the single parse authority + per-file cache (`parseImportJsonAt`). Decides freshness by a **fingerprint** (mtimes of the import.json and every file it references via `allReferencedPaths`), re-validated throttled (`FP_RECHECK_MS`) so a referenced-file edit is picked up within ~0.4s without a separate watcher. Owns the disk snapshot and is the only thing that calls the htsw parser. `invalidateParseCacheEntry` forces a fresh parse; `touchParseCacheMtime` marks a file in-sync after an in-place edit.
+- `parses.ts` — the single parse authority + per-file cache (`parseImportJsonBlocking` for blocking callers, `requestParse` + `processPendingParses` for render-safe callers). Decides freshness by a **fingerprint** (mtimes of the import.json and every file it references via `allReferencedPaths`), re-validated throttled (`FP_RECHECK_MS`) so a referenced-file edit is picked up within ~0.4s without a separate watcher. Owns the disk snapshot and is the only thing that calls the htsw parser. `invalidateParseCacheEntry` forces a fresh parse; `touchParseCacheMtime` marks a file in-sync after an in-place edit. View-side reactions attach through `onParseCacheEntryChanged`; do not import view modules from this service.
 - `parseSnapshot.ts` — on-disk persisted parse output, keyed by import.json path; skips the ~1s cold full parse after `/ct reload` when the user opens a project and nothing referenced has changed.
 - `reparse.ts` — thin DRIVER over `parses.ts`: debounces reloads, polls the authority while the GUI is visible, and runs selected-parse side effects when the cache entry changes. Owns no parsing/snapshot/mtime logic itself. It does not store a second parsed result; selected parse reads derive from the parse cache.
 - `selectedParse.ts` — read-only helper for the selected import.json's cached parse (`getSelectedParsedResult`). This is derived from `paths.ts` + `parses.ts`; never add a mutable active-parse store.
-- `importablePaths.ts` — centralized importable→path lookups: `importableSourcePath` (htsl/.snbt/json), `importableSubListPath(imp, kind)` for sub-lists (`onEnterActions`/`onExitActions` on REGION; `leftClickActions`/`rightClickActions` on ITEM), and `allReferencedPaths`. Resolves spans through `sourceMap.getFileByPos` so a list with `actionsPath: "..."` returns the htsl while inline JSON returns the import.json.
+- `importablePaths.ts` — centralized importable→path lookups: `importableSourcePath(imp, parse)` (htsl/.snbt/json), `importableSubListPath(imp, kind, parse)` for sub-lists (`onEnterActions`/`onExitActions` on REGION; `leftClickActions`/`rightClickActions` on ITEM), and `allReferencedPaths`. These helpers require the parse that produced the importable; they do not fall back to selected global parse state. Resolves spans through `sourceMap.getFileByPos` so a list with `actionsPath: "..."` returns the htsl while inline JSON returns the import.json.
 
 Code-view data — `gui/code-view/` (the ONE renderer + everything it parses/colors):
 - `htslParse.ts` — `parseHtslFile` + `actionsToLines`, consumed by `lineModel.ts` for the source preview.
@@ -55,7 +56,7 @@ Code-view data — `gui/code-view/` (the ONE renderer + everything it parses/col
 - `TokenSpan.linkTarget` marks source references that the row renderer can open when `CodeView` is given `onOpenPath`; left click activates the opened file, middle click pins it without switching. The visual affordance is a hover-only marker drawn from that token metadata, not a separate hit-test overlay.
 - Diagnostic spans and formatted diagnostic blocks live in `src/diagnostics/`; chat and View-pane hover cards consume the same presentation.
 
-Code-view row hover: each row gets at most ONE hover card, built by `gui/diagnostics/hover.ts:offerLineHover` — the row's diagnostics (if any) followed by the decorator's `LineDecorations.hoverLines` (lazy callback, invoked only while hovered). Don't add a second hover path per row; merge into this one.
+Code-view row hover: each row gets at most ONE hover card, built by `gui/code-view/diagnosticHover.ts:offerLineHover` — the row's diagnostics (if any) followed by the decorator's `LineDecorations.hoverLines` (lazy callback, invoked only while hovered). Don't add a second hover path per row; merge into this one.
 
 Diff decorators — `gui/right-panel/decorators.ts` (kept OUT of `code-view/` so the renderer stays generic; the `LineDecorator` interface lives in `code-view/lineTypes.ts`):
 - `diffDecorator` — View tab; reads `sourceDiff`. Supplies `hoverLines` on edit ("In the house: <printed action>") and add lines.
@@ -70,6 +71,12 @@ Import-session state — `gui/right-panel/import-tab/`:
 - `focusedLine.ts` — per-file focused-line id for the code view. Mutations call `markGuiDirty()`.
 - `taskProgress.ts` — import/export task progress, ETA, per-queue-row run state. `setTaskProgress` and active-path/session-label setters call `markGuiDirty()` because the progress bar, live tab, and footer shape are layout-driven.
 - `queue.ts` — the dynamic import `QueueItem` queue. Queue/session mutators call `markGuiDirty()` so delayed import/export cleanup updates immediately.
+
+Export UI/state — `gui/export/`:
+- `destinationPicker.ts` — shared export destination picker used by Houses and export flows.
+- `newProjectPopover.ts` — name-a-new-project prompt used by the export destination picker.
+- `taskController.ts` — `startExport()` and `ExportSpec`; owns shared export task guards, progress sink setup, and post-export parse invalidation.
+- `progressSink.ts` — GUI-driving `ExportProgressSink` adapter for batch export/read flows. It writes to the existing task progress strip and queue store but is not owned by the right panel.
 
 Knowledge — `gui/knowledge/`:
 - `rows.ts` — knowledge-row storage (`getKnowledgeRows` / `setKnowledgeRows` / `refresh*`).
@@ -86,12 +93,16 @@ Importer hookup — `importer/diffSink.ts`:
 - Defines `ImportDiffSink` (`markMatch`/`beginOp`/`completeOp`/`end`) and a single global active sink. `applyActionListDiff` captures and clears the sink on entry (so child-list syncs in CONDITIONAL/RANDOM bodies stay silent), pre-marks untouched desired actions as `match`, and emits per-op events. The session (`importables/importSession.ts`) sets/clears the sink around each importable; the GUI's `startImport` (in `right-panel/import-tab/taskController.ts`) wires sink events into the single `import-tab/livePreview` store — `markPlanned*` / `markMatch` / `applyComplete` for per-line state and `setCurrent` for the cursor — keyed by the importable's source-file path.
 
 Popovers — `gui/popovers/`:
-- `new-project.ts` — name-a-new-project prompt (invokes a callback with the chosen name). There is **no** in-game "add importable" popover — new importables are created from the VS Code tools view.
-- `rename-file.ts` / `rename-importable.ts` — in-place rename of a project file / an importable.
-- `edit-function.ts` — in-place editor for a single importable field (a value, an x/y/z position, or full region bounds), written via `updateImportableField`; despite the name it edits any importable type, not just functions.
-- `alias.ts` — per-house alias editor. `openAliasPopover(rect, uuid)` takes the target UUID explicitly so the Houses tab can edit any known house, not just the currently-detected one.
+- `confirm.ts` — generic confirmation popover.
+- `rename-file.ts` — in-place rename of a project file.
 - `file-browser.ts` — modal file browser for picking an `import.json`.
-- `open-menu.ts` — Hypixel `/functions /eventactions /regions …` shortcut menu.
+- `tour.ts` — first-load walkthrough popover.
+
+Owner-local popovers live with the feature that opens them:
+- Importables rows own `left-panel/importables/renameImportablePopover.ts` and `editFieldPopover.ts`.
+- Houses owns `left-panel/houses/aliasPopover.ts`; `openAliasPopover(rect, uuid)` takes the target UUID explicitly so the Houses tab can edit any known house, not just the currently-detected one.
+- Bottom toolbar owns `bottom-toolbar/openTargetMenu.ts` for the Hypixel `/functions /eventactions /regions …` shortcut menu.
+- Export owns `export/newProjectPopover.ts`.
 
 App shell — `gui/`:
 - `overlay.ts` — wires everything: registers triggers, owns the single fullscreen panel, runs the tick handler (reparse, focus, popover cleanup).
@@ -100,10 +111,11 @@ App shell — `gui/`:
 - `chat/index.ts` — `ChatInputBar` element + global shortcut to focus it. The chat scrollback re-wraps mirrored Minecraft chat lines to the panel viewport width, and follows the newest message until the user scrolls upward; its bottom-follow check uses the wheel target, not only the rendered offset, because wheel motion can be eased and the rendered offset may still be at bottom on the first frame after a touchpad event.
 - `knowledge-status.ts` — derives `STATUS_COLOR` / `STATUS_LABEL` / `statusForImportable` / `knowledgeStatusByImportable` from `state` for the left-rail badges.
 - `houseBinding.ts` — shared import.json `houseUuid` bind/rebind confirmation and cache-index update, used by Importables and Houses.
-- `bottom-toolbar/` — slim, no-background strip under the inventory: only Housing Menu + the `/functions …` shortcut split-button.
+- `bottom-toolbar/` — slim, no-background strip under the inventory: only Housing Menu + the `/functions …` shortcut split-button and its `openTargetMenu.ts`.
 - `left-panel/` — three tabs: **Importables** (importables list + Browse/Recent source controls plus the current-house Trust toggle), **Houses** (per-house browser with a house selector, primary Trust control, compact Alias/Detect side actions), and **Settings** (global Mute import sounds + Auto-proceed imports toggles).
+- `export/` — shared export destination picker, new-project popover, export task controller, and export/read progress sink.
 - `right-panel/` — single **View** pane: file-tab strip, source/live code view, and footer. The tab strip always paints, with a muted `No file` placeholder when no file tabs exist. File labels come from `compactFileLabel`, so `.../functions/import.json` displays as `functions.import.json` instead of every tab saying `import.json`. Leading tab icons use one shared fixed-width icon slot plus trailing gap; don't add one-off spacing constants for live/queued tab icons. The live import diff appears as a synthetic upload tab that follows the currently importing `.htsl`; the footer holds the scrollable queue, the import progress strip during a run, and the Import button. During an import, the footer progress strip shows ETA/progress and Pause/Step/Cancel controls.
-- `right-panel/import-tab/taskController.ts` — `startImport()` (reads per-house trust via `isCurrentHouseTrusted()`), `startExport()`, and `importablesForImport()`. The diff-sink wiring lives here now (was previously in `bottom-toolbar/index.ts`), while import/export cancellation is shared through `tasks/activeTask.ts`.
+- `right-panel/import-tab/taskController.ts` — `startImport()` (reads per-house trust via `isCurrentHouseTrusted()`) and `importablesForImport()`. The diff-sink wiring lives here now (was previously in `bottom-toolbar/index.ts`), while import cancellation is shared through `tasks/activeTask.ts`.
 
 Importables rows (`gui/left-panel/importables/rows.ts` + `tree.ts`) deliberately separate the row body from local controls. File/import.json headers, included import.json group headers, importable rows, and sub-list rows use body single-click to preview in the View pane (`previewSelect`) and body double-click to pin/keep the tab (`confirmSelect`). Queue membership changes only through the checkbox control, whose hit box spans the row prefix before the type marker. Expansion changes only through caret controls, whose hit box spans the row prefix before the file icon: import.json headers expand parsed contents, included import.json headers expand nested include groups, and expandable importables show metadata/sub-list rows. Item importable rows open their declaring import.json; their expansion always exposes an NBT child row for the `.snbt` source, plus left/right click-action sub-list rows when those fields are declared. Included import.json headers are actual file rows, so they use the JSON file icon affordance instead of a type-color marker. Import.json rows show a radar icon when Auto-Track is enabled for that root. Right-click menus still come from `composeFileMenu` / `composeImportableMenu`.
 

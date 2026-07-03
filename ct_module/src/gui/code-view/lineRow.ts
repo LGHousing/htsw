@@ -6,7 +6,7 @@ import { COLOR_BY_STATE, COLOR_CURSOR, ROW_BG_BY_STATE, type DiffState } from ".
 import { CodeViewColors } from "./lineModel";
 import type { LineDecorations, LineSelection, RenderableLine, TokenSpan } from "./lineTypes";
 import { joinTokenText, wrapTokensIntoVisualRows } from "./wrap";
-import { offerLineHover } from "../diagnostics/hover";
+import { offerLineHover } from "./diagnosticHover";
 import { chatWidth } from "../../utils/helpers";
 import { COLOR_SELECTION } from "../lib/theme";
 import { beginSelection, onRowDrag, selectWord, sourceColAtX } from "./selection";

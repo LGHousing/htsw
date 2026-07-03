@@ -13,10 +13,8 @@ import type { ImportableTrustPlan } from "../../importCache";
 import { createSetupStepEmitter } from "../../housingSync/syncEvents";
 import TaskContext from "../../tasks/context";
 import type { ImportSession } from "../imports";
-import {
-    countReferencedShells,
-    createMissingReferencedShells,
-} from "../references";
+import { createMissingReferencedShells } from "../references";
+import { countReferencedShells } from "../referenceScanner";
 import { openEventEditor } from "./shared";
 
 export type EventImportPlan = {

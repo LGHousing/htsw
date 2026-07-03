@@ -1,4 +1,4 @@
-import { Diagnostic, SourceMap, SpanTable, runtime, types } from "htsw";
+import { SourceMap, SpanTable, runtime, types } from "htsw";
 
 import { registerCommandTriggers } from "./commands";
 import { createActionBehaviors } from "./actions";
@@ -7,6 +7,12 @@ import { registerEventTriggers } from "./events";
 import { registerRegionTriggers } from "./regions";
 import { createConditionBehaviors } from "./conditions";
 import { createPlaceholderBehaviors } from "./placeholders";
+import {
+    runSimulatorActions,
+    setSimulatorActive,
+    setSimulatorRuntime,
+    setSimulatorSource,
+} from "./session";
 
 export class Simulator {
     static isActive: boolean = false;
@@ -16,28 +22,35 @@ export class Simulator {
     static runtime: runtime.Runtime;
     static vars: runtime.simple.SimpleVars;
 
-    static triggers: Trigger[];
+    static triggers: Trigger[] = [];
 
     static start(sm: SourceMap, importables: types.Importable[], spans: SpanTable) {
         this.isActive = true;
+        setSimulatorActive(true);
 
         this.sm = sm;
         this.importables = importables;
+        setSimulatorSource(sm, importables);
         this.runtime = this.createRuntime(spans);
         this.registerTriggers();
     }
 
     static restart(): void {
+        const spans = this.runtime.spans;
         this.stop();
-        this.runtime = this.createRuntime(this.runtime.spans);
+        this.isActive = true;
+        setSimulatorActive(true);
+        this.runtime = this.createRuntime(spans);
         this.registerTriggers();
     }
 
     static stop(): void {
         this.isActive = false;
+        setSimulatorActive(false);
         for (const trigger of this.triggers) {
             trigger.unregister();
         }
+        this.triggers = [];
     }
 
     private static createRuntime(spans: SpanTable): runtime.Runtime {
@@ -50,6 +63,7 @@ export class Simulator {
             placeholderBehaviors: createPlaceholderBehaviors(vars),
             onDiagnostic: (diag) => printDiagnostic(this.sm, diag),
         });
+        setSimulatorRuntime(rt, vars);
 
         for (const importable of this.importables) {
             if (importable.type !== "FUNCTION") continue;
@@ -76,15 +90,7 @@ export class Simulator {
     }
 
     static runActions(actions: types.Action[], childCtx: boolean = false) {
-        try {
-            this.runtime.runActions(actions, childCtx);
-        } catch (err) {
-            if (err instanceof Diagnostic) {
-                printDiagnostic(this.sm, err);
-                return;
-            }
-            throw err;
-        }
+        runSimulatorActions(actions, childCtx);
     }
 
     private static tick(): void {

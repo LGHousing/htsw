@@ -5,43 +5,26 @@ import {
     type InventorySnapshot,
 } from "../../housingSync/itemCapture";
 import TaskContext from "../../tasks/context";
-import type { ImportableItem } from "htsw/types";
-import { isTaskCancelled } from "../../tasks/manager";
-import type { ExportResult } from "../exports";
+import { runReadLoop, type ReadResult, type ReadOptions } from "../read";
 import { exportCommandWithSharedState } from "./export";
 import { writeCapturedItems } from "../items/writeCapturedItems";
 import {
     commandExportReferencesExist,
     htslTargetForCommandExport,
 } from "../../project/paths";
-import type { ExportProgressSink } from "../../housingSync/progress/types";
 import {
     listAllCommandNames,
     resetCommandNameSession,
 } from "./listCommands";
 import { filterAlreadyExported } from "../exportSkip";
 
-export type ExportAllCommandsOptions = {
-    importJsonPath: string;
-    rootDir: string;
-    names?: readonly string[];
-    progress?: ExportProgressSink;
-    projectItems?: readonly ImportableItem[];
-    skipExisting?: boolean;
-};
-
-export async function exportAllCommands(
+export async function readCommands(
     ctx: TaskContext,
-    options: ExportAllCommandsOptions
-): Promise<ExportResult> {
-    return exportAllCommandsInner(ctx, options);
-}
-
-async function exportAllCommandsInner(
-    ctx: TaskContext,
-    options: ExportAllCommandsOptions
-): Promise<ExportResult> {
+    options: ReadOptions
+): Promise<ReadResult> {
     const { importJsonPath, rootDir } = options;
+    const readOnly = options.readOnly !== undefined;
+    const verb = readOnly ? "Reading" : "Exporting";
 
     resetCommandNameSession();
 
@@ -52,19 +35,22 @@ async function exportAllCommandsInner(
         itemCaptures.seed(projectItems[i].name, projectItems[i].nbt);
     }
 
-    const names =
-        options.names !== undefined
-            ? options.names.slice()
-            : await listAllCommandNames(ctx);
+    let names: readonly string[];
+    if (options.names !== undefined) {
+        names = options.names.slice();
+    } else {
+        names = await listAllCommandNames(ctx);
+        options.onNamesListed?.(names);
+    }
     const exportNames = filterAlreadyExported(
         ctx,
         "command",
         names,
-        options.skipExisting,
+        readOnly ? false : options.skipExisting,
         (name) => commandExportReferencesExist(importJsonPath, name)
     );
     if (exportNames.length === 0) {
-        ctx.displayMessage("&7No commands to export.");
+        ctx.displayMessage(`&7No commands to ${readOnly ? "read" : "export"}.`);
         try {
             await restoreInventoryToSnapshot(ctx, inventorySnapshot);
         } catch (error) {
@@ -76,25 +62,18 @@ async function exportAllCommandsInner(
     }
 
     ctx.displayMessage(
-        `&aExporting ${exportNames.length} command${exportNames.length === 1 ? "" : "s"}...`
+        `&a${verb} ${exportNames.length} command${exportNames.length === 1 ? "" : "s"}...`
     );
-    options.progress?.start(exportNames);
-
     let succeeded = 0;
     let failed = 0;
     try {
-        for (let i = 0; i < exportNames.length; i++) {
-            ctx.checkCancelled();
-            const name = exportNames[i];
-            const target = htslTargetForCommandExport(importJsonPath, name);
-
-            options.progress?.item(i, name);
-            ctx.displayMessage(
-                `&7[${i + 1}/${exportNames.length}] &fExporting '/${name}'`
-            );
-
-            const sink = options.progress;
-            try {
+        const result = await runReadLoop(ctx, {
+            names: exportNames,
+            verb,
+            displayName: (name) => `/${name}`,
+            progress: options.progress,
+            processOne: async (ctx, name, onReadProgress) => {
+                const target = htslTargetForCommandExport(importJsonPath, name);
                 await exportCommandWithSharedState(
                     ctx,
                     {
@@ -104,29 +83,20 @@ async function exportAllCommandsInner(
                         htslPath: target.htslPath,
                         htslReference: target.htslReference,
                         rootDir,
-                        onReadProgress:
-                            sink?.itemProgress === undefined
-                                ? undefined
-                                : (payload) => sink.itemProgress!(i, payload),
+                        readOnly: options.readOnly,
+                        onReadProgress,
                     },
                     { itemCaptures, inventorySnapshot }
                 );
-                succeeded++;
-            } catch (error) {
-                if (isTaskCancelled(error)) {
-                    throw error;
-                }
-                failed++;
-                sink?.itemFailed?.(i, String(error));
-                ctx.displayMessage(
-                    `&c[export-all] failed on '/${name}': ${error}`
-                );
-            }
-        }
+            },
+        });
+        succeeded = result.succeeded;
+        failed = result.failed;
     } finally {
-        options.progress?.done();
         try {
-            writeCapturedItems(ctx, itemCaptures, rootDir, importJsonPath);
+            if (!readOnly) {
+                writeCapturedItems(ctx, itemCaptures, rootDir, importJsonPath);
+            }
         } finally {
             try {
                 await restoreInventoryToSnapshot(ctx, inventorySnapshot);
@@ -136,6 +106,13 @@ async function exportAllCommandsInner(
                 );
             }
         }
+    }
+
+    if (readOnly) {
+        ctx.displayMessage(
+            `&aRead ${succeeded} of ${exportNames.length} command${exportNames.length === 1 ? "" : "s"}${failed > 0 ? ` &c[${failed} failed]` : ""}`
+        );
+        return { total: exportNames.length, succeeded, failed };
     }
 
     const itemCounts = itemCaptures.counts();

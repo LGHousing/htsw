@@ -5,41 +5,20 @@ import {
     type InventorySnapshot,
 } from "../../housingSync/itemCapture";
 import TaskContext from "../../tasks/context";
-import type { ImportableItem } from "htsw/types";
-import { isTaskCancelled } from "../../tasks/manager";
-import type { ExportResult } from "../exports";
+import { runReadLoop, type ReadResult, type ReadOptions } from "../read";
 import { exportFunctionWithSharedState } from "./export";
 import { writeCapturedItems } from "../items/writeCapturedItems";
 import {
     functionExportReferencesExist,
     htslTargetForFunctionExport,
 } from "../../project/paths";
-import type { ExportProgressSink } from "../../housingSync/progress/types";
 import { listAllFunctionNames, resetFunctionNameSession } from "./listFunctions";
 import { filterAlreadyExported } from "../exportSkip";
 
-export type ExportAllFunctionsOptions = {
-    importJsonPath: string;
-    rootDir: string;
-    names?: readonly string[];
-    progress?: ExportProgressSink;
-    // Knowledge-only pass: same editor walk, but nothing is written to
-    // .htsl/import.json/item files (see ExportFunctionOptions.readOnly).
-    readOnly?: { housingUuid: string };
-    // Items the destination project already declares; seeds the capture
-    // registry so identical captures reuse project names instead of minting
-    // duplicates. Callers with a warm parse should always pass this.
-    projectItems?: readonly ImportableItem[];
-    // Fires when the driver listed the house's functions itself (no `names`
-    // supplied), so the caller can record the scan.
-    onNamesListed?: (names: readonly string[]) => void;
-    skipExisting?: boolean;
-};
-
-export async function exportAllFunctions(
+export async function readFunctions(
     ctx: TaskContext,
-    options: ExportAllFunctionsOptions
-): Promise<ExportResult> {
+    options: ReadOptions
+): Promise<ReadResult> {
     const { importJsonPath, rootDir } = options;
     const readOnly = options.readOnly !== undefined;
     const verb = readOnly ? "Reading" : "Exporting";
@@ -84,23 +63,15 @@ export async function exportAllFunctions(
     ctx.displayMessage(
         `&a${verb} ${names.length} function${names.length === 1 ? "" : "s"}...`
     );
-    options.progress?.start(names);
-
     let succeeded = 0;
     let failed = 0;
     try {
-        for (let i = 0; i < names.length; i++) {
-            ctx.checkCancelled();
-            const name = names[i];
-            const target = htslTargetForFunctionExport(importJsonPath, name);
-
-            options.progress?.item(i, name);
-            ctx.displayMessage(
-                `&7[${i + 1}/${names.length}] &f${verb} '${name}'`
-            );
-
-            const sink = options.progress;
-            try {
+        const result = await runReadLoop(ctx, {
+            names,
+            verb,
+            progress: options.progress,
+            processOne: async (ctx, name, onReadProgress) => {
+                const target = htslTargetForFunctionExport(importJsonPath, name);
                 await exportFunctionWithSharedState(
                     ctx,
                     {
@@ -111,27 +82,15 @@ export async function exportAllFunctions(
                         htslReference: target.htslReference,
                         rootDir,
                         readOnly: options.readOnly,
-                        onReadProgress:
-                            sink?.itemProgress === undefined
-                                ? undefined
-                                : (payload) => sink.itemProgress!(i, payload),
+                        onReadProgress,
                     },
                     { itemCaptures, inventorySnapshot }
                 );
-                succeeded++;
-            } catch (error) {
-                if (isTaskCancelled(error)) {
-                    throw error;
-                }
-                failed++;
-                sink?.itemFailed?.(i, String(error));
-                ctx.displayMessage(
-                    `&c[export-all] failed on '${name}': ${error}`
-                );
-            }
-        }
+            },
+        });
+        succeeded = result.succeeded;
+        failed = result.failed;
     } finally {
-        options.progress?.done();
         try {
             if (!readOnly) {
                 writeCapturedItems(ctx, itemCaptures, rootDir, importJsonPath);

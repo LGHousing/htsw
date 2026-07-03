@@ -17,10 +17,8 @@ import {
     getBaselineActionList,
 } from "../../housingSync/actions/prepareSync";
 import type { ImportSession } from "../imports";
-import {
-    countReferencedShells,
-    createMissingReferencedShells,
-} from "../references";
+import { createMissingReferencedShells } from "../references";
+import { countReferencedShells } from "../referenceScanner";
 import {
     applyCommandSettings,
     commandSettingsMatch,

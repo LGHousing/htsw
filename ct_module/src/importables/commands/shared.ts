@@ -4,8 +4,8 @@ import {
     readBooleanValue,
     readStringValue,
     setNumberValue,
-} from "../../housingSync/gui/menuUtils";
-import { timedWaitForMenu } from "../../housingSync/gui/menuWait";
+} from "../../housingSync/menus/menuUtils";
+import { timedWaitForMenu } from "../../housingSync/menus/menuWait";
 import TaskContext from "../../tasks/context";
 import type { ItemSlot } from "../../tasks/specifics/slots";
 import { removedFormatting } from "../../utils/helpers";

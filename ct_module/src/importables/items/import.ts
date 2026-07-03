@@ -6,8 +6,8 @@ import {
     shouldSyncActionList,
 } from "../../housingSync/actions/prepareSync";
 import { createSetupStepEmitter } from "../../housingSync/syncEvents";
-import { clickGoBack } from "../../housingSync/gui/menuUtils";
-import { timedWaitForMenu } from "../../housingSync/gui/menuWait";
+import { clickGoBack } from "../../housingSync/menus/menuUtils";
+import { timedWaitForMenu } from "../../housingSync/menus/menuWait";
 import {
     clickActionsHash,
     interactDataCachePath,
@@ -28,12 +28,10 @@ import {
     selectHotbarSlot,
     selectedHotbarSlot,
     sendCreativeInventoryAction,
-} from "../../housingSync/gui/packets";
+} from "../../housingSync/menus/packets";
 import type { ImportSession } from "../imports";
-import {
-    countReferencedShells,
-    createMissingReferencedShells,
-} from "../references";
+import { createMissingReferencedShells } from "../references";
+import { countReferencedShells } from "../referenceScanner";
 import { itemEditorOpened } from "../waiters";
 import { COST } from "../../housingSync/progress/costs";
 import { timed } from "../../housingSync/progress/timing";

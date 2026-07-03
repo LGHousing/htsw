@@ -21,10 +21,10 @@ type State = {
 
 const DEFAULT_PITCH = 1;
 const DEFAULT_VOLUME = 0.7;
-const PITCH_MIN = 0.5;
+const PITCH_MIN = 0;
 const PITCH_MAX = 2;
 const VOLUME_MIN = 0;
-const VOLUME_MAX = 1;
+const VOLUME_MAX = 2;
 const SLIDER_STEP = 0.05;
 
 export function mountSoundPreviewer(app: HTMLElement, vscode: VsCodeApi): () => void {

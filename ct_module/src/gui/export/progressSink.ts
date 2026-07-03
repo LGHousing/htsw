@@ -1,4 +1,4 @@
-/// <reference types="../../../../CTAutocomplete" />
+/// <reference types="../../../CTAutocomplete" />
 
 /**
  * GUI-driving implementation of `ExportProgressSink`: a thin adapter that
@@ -20,23 +20,23 @@
 
 import type { Importable } from "htsw/types";
 
-import type { SyncEvent } from "../../../housingSync/syncEvents";
-import { queueRowKey } from "../../../housingSync/progress/queueRowKey";
-import { initialReducerState, reduce } from "../../../housingSync/progress/reducer";
-import type { ExportProgressSink } from "../../../housingSync/progress/types";
-import { estimateImportableCost } from "../../../housingSync/progress/costs";
-import { readImportableCache } from "../../../importCache/cache";
-import { importableIdentity } from "../../../importables/identity";
-import { getHousingUuid } from "../../state";
-import { canonicalPath, requestParse } from "../../parsing/parses";
-import { setEtaRough, setTaskProgress, setSessionVerb } from "./taskProgress";
+import type { SyncEvent } from "../../housingSync/syncEvents";
+import { queueRowKey } from "../../housingSync/progress/queueRowKey";
+import { initialReducerState, reduce } from "../../housingSync/progress/reducer";
+import type { ExportProgressSink } from "../../housingSync/progress/types";
+import { estimateImportableCost } from "../../housingSync/progress/costs";
+import { readImportableCache } from "../../importCache/cache";
+import { importableIdentity } from "../../importables/identity";
+import { getHousingUuid } from "../state";
+import { canonicalPath, requestParse } from "../parsing/parses";
+import { setEtaRough, setTaskProgress, setSessionVerb } from "../right-panel/import-tab/taskProgress";
 import {
     addToQueue,
     makeExportQueueItem,
     queueItemKey,
     removeFromQueueKey,
     type QueueItem,
-} from "./queue";
+} from "../right-panel/import-tab/queue";
 
 export function createExportProgressSink(
     type: Importable["type"],

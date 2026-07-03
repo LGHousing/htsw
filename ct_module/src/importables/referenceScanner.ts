@@ -1,0 +1,85 @@
+import type { Action, Condition, Importable } from "htsw/types";
+
+import { unique } from "../utils/helpers";
+
+export type ReferencedImportables = {
+    functions: string[];
+    menus: string[];
+    regions: string[];
+};
+
+export function collectReferencedImportables(
+    importable: Importable
+): ReferencedImportables {
+    const refs: ReferencedImportables = {
+        functions: [],
+        menus: [],
+        regions: [],
+    };
+
+    if (importable.type === "FUNCTION") {
+        collectActionReferences(importable.actions, refs);
+    } else if (importable.type === "EVENT") {
+        collectActionReferences(importable.actions, refs);
+    } else if (importable.type === "COMMAND") {
+        collectActionReferences(importable.actions, refs);
+    } else if (importable.type === "REGION") {
+        collectActionReferences(importable.onEnterActions, refs);
+        collectActionReferences(importable.onExitActions, refs);
+    } else if (importable.type === "ITEM") {
+        collectActionReferences(importable.leftClickActions, refs);
+        collectActionReferences(importable.rightClickActions, refs);
+    } else if (importable.type === "MENU") {
+        for (const slot of importable.slots) {
+            collectActionReferences(slot.actions, refs);
+        }
+    } else if (importable.type === "NPC") {
+        collectActionReferences(importable.leftClickActions, refs);
+        collectActionReferences(importable.rightClickActions, refs);
+    }
+
+    return {
+        functions: unique(refs.functions),
+        menus: unique(refs.menus),
+        regions: unique(refs.regions),
+    };
+}
+
+export function countReferencedShells(importable: Importable): number {
+    const refs = collectReferencedImportables(importable);
+    return refs.functions.length + refs.menus.length + refs.regions.length;
+}
+
+function collectActionReferences(
+    actions: readonly Action[] | undefined,
+    refs: ReferencedImportables
+): void {
+    if (!actions) return;
+
+    for (const action of actions) {
+        if (action.type === "FUNCTION") {
+            refs.functions.push(action.function);
+        } else if (action.type === "SET_MENU") {
+            refs.menus.push(action.menu);
+        } else if (action.type === "CONDITIONAL") {
+            collectConditionReferences(action.conditions, refs);
+            collectActionReferences(action.ifActions, refs);
+            collectActionReferences(action.elseActions, refs);
+        } else if (action.type === "RANDOM") {
+            collectActionReferences(action.actions, refs);
+        }
+    }
+}
+
+function collectConditionReferences(
+    conditions: readonly Condition[] | undefined,
+    refs: ReferencedImportables
+): void {
+    if (!conditions) return;
+
+    for (const condition of conditions) {
+        if (condition.type === "IS_IN_REGION" && condition.region) {
+            refs.regions.push(condition.region);
+        }
+    }
+}

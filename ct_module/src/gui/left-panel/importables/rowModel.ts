@@ -1,6 +1,10 @@
 import type { ImportablesParseResult } from "htsw";
 import type { Importable } from "htsw/types";
+import type { Element } from "../../lib/layout";
+import { Container, Icon } from "../../lib/components";
+import { Icons } from "../../lib/icons.generated";
 import { markGuiDirty } from "../../lib/dirty";
+import type { Section } from "../../../project/importJsonMutations";
 
 // File-level row types: what `enumerateForSource` returns. Each row is a
 // file the Importables tree displays directly. Importables themselves are no
@@ -59,3 +63,40 @@ export const ACTIVE_BG = 0xff2d4d2d | 0;
 export const ACTIVE_HOVER_BG = 0xff3a5d3a | 0;
 export const ROW_BG = 0xff2d333d | 0;
 export const ROW_HOVER_BG = 0xff3a4350 | 0;
+
+export const CONTROL_W = 26;
+
+export function caretButton(expanded: boolean, onToggle: () => void, width: number = CONTROL_W): Element {
+    return Container({
+        style: {
+            direction: "row",
+            width: { kind: "px", value: width },
+            height: { kind: "grow" },
+            align: "center",
+            justify: "center",
+            hoverBackground: ROW_HOVER_BG,
+        },
+        onClick: (_rect, info) => {
+            if (info.button !== 0) return;
+            onToggle();
+        },
+        children: [
+            Icon({
+                name: expanded ? Icons.chevronDown : Icons.chevronRight,
+            }),
+        ],
+    });
+}
+
+// The import.json section each importable type declares under.
+export const SECTION_BY_TYPE: Partial<{ [k in Importable["type"]]: Section }> = {
+    FUNCTION: "functions",
+    EVENT: "events",
+    REGION: "regions",
+    ITEM: "items",
+    MENU: "menus",
+    NPC: "npcs",
+    TEAM: "teams",
+    GROUP: "groups",
+    COMMAND: "commands",
+};

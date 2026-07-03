@@ -2,7 +2,11 @@ import { parseActionsResult, SourceMap } from "htsw";
 import type { Action } from "htsw/types";
 import type { VarOperation } from "htsw/types";
 
-import { Simulator } from "./simulator";
+import {
+    getSimulatorVars,
+    isSimulatorActive,
+    runSimulatorActions,
+} from "./session";
 import { StringFileLoader } from "../utils/fileLoaders";
 import { printDiagnostic } from "../tui/diagnostics";
 import { printUI, UIElementText } from "../tui/elements";
@@ -26,7 +30,7 @@ function commandFunction(args: string[]) {
         const name = args.slice(1).join(" ");
         if (name !== "") {
             const action: Action = { type: "FUNCTION", function: name };
-            Simulator.runActions([action]);
+            runSimulatorActions([action]);
         } else {
             ChatLib.chat("&cInvalid usage: run <name>");
         }
@@ -45,7 +49,7 @@ function commandEval(args: string[]) {
     }
 
     if (!result.gcx.isFailed()) {
-        Simulator.runActions(result.value);
+        runSimulatorActions(result.value);
     }
 }
 
@@ -96,27 +100,27 @@ function commandVariable(args: string[]) {
         value,
     };
 
-    Simulator.runActions([action]);
+    runSimulatorActions([action]);
 }
 
 function commandVars(args: string[]) {
-    if (!Simulator.isActive) {
+    if (!isSimulatorActive()) {
         ChatLib.chat("&cNo simulator active.");
         return;
     }
-    printVarTable(Simulator.vars.player, "Player", args[0]);
+    printVarTable(getSimulatorVars().player, "Player", args[0]);
 }
 
 function commandGlobalVars(args: string[]) {
-    if (!Simulator.isActive) {
+    if (!isSimulatorActive()) {
         ChatLib.chat("&cNo simulator active.");
         return;
     }
-    printVarTable(Simulator.vars.global, "Global", args[0]);
+    printVarTable(getSimulatorVars().global, "Global", args[0]);
 }
 
 function commandTeamVars(args: string[]) {
-    if (!Simulator.isActive) {
+    if (!isSimulatorActive()) {
         ChatLib.chat("&cNo simulator active.");
         return;
     }
@@ -124,7 +128,7 @@ function commandTeamVars(args: string[]) {
         ChatLib.chat("&cUsage: /teamvars <team> [filter]");
         return;
     }
-    printVarTable(Simulator.vars.team(args[0]), `Team '${args[0]}'`, args[1]);
+    printVarTable(getSimulatorVars().team(args[0]), `Team '${args[0]}'`, args[1]);
 }
 
 function printVarTable(

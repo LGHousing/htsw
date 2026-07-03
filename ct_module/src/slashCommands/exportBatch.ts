@@ -1,11 +1,11 @@
 import type TaskContext from "../tasks/context";
-import { exportAllFunctions } from "../importables/functions/exportAll";
-import { exportAllEvents } from "../importables/events/exportAll";
-import { exportAllMenus } from "../importables/menus/exportAll";
-import { exportAllRegions } from "../importables/regions/exportAll";
-import { exportAllCommands } from "../importables/commands/exportAll";
+import { readFunctions } from "../importables/functions/readFunctions";
+import { readEvents } from "../importables/events/readEvents";
+import { readMenus } from "../importables/menus/readMenus";
+import { readRegions } from "../importables/regions/readRegions";
+import { readCommands } from "../importables/commands/readCommands";
 import { exportAllNpcs } from "../importables/npcs/exportAll";
-import { createExportProgressSink } from "../gui/right-panel/import-tab/exportProgress";
+import { createExportProgressSink } from "../gui/export/progressSink";
 import { readProjectItemsForExport } from "../importables/exportContext";
 import {
     readEventNamesFromImportJson,
@@ -69,7 +69,7 @@ export async function exportBatch(
     const { importJsonPath, rootDir, projectItems } = destination;
     switch (request.type) {
         case "FUNCTION":
-            await exportAllFunctions(ctx, {
+            await readFunctions(ctx, {
                 importJsonPath,
                 rootDir,
                 projectItems,
@@ -79,7 +79,7 @@ export async function exportBatch(
             });
             return;
         case "EVENT":
-            await exportAllEvents(ctx, {
+            await readEvents(ctx, {
                 importJsonPath,
                 rootDir,
                 projectItems,
@@ -89,7 +89,7 @@ export async function exportBatch(
             });
             return;
         case "MENU":
-            await exportAllMenus(ctx, {
+            await readMenus(ctx, {
                 importJsonPath,
                 rootDir,
                 projectItems,
@@ -99,7 +99,7 @@ export async function exportBatch(
             });
             return;
         case "REGION":
-            await exportAllRegions(ctx, {
+            await readRegions(ctx, {
                 importJsonPath,
                 rootDir,
                 projectItems,
@@ -109,7 +109,7 @@ export async function exportBatch(
             });
             return;
         case "COMMAND":
-            await exportAllCommands(ctx, {
+            await readCommands(ctx, {
                 importJsonPath,
                 rootDir,
                 projectItems,

@@ -1,13 +1,11 @@
-import type { Action, ImportableFunction, ImportableItem } from "htsw/types";
+import type { Action, ImportableFunction } from "htsw/types";
 import * as htsw from "htsw";
 
 import { readActionList } from "../../housingSync/actions/readList";
 import type { ProgressHandler } from "../../housingSync/progress/types";
-import { clickGoBack } from "../../housingSync/gui/menuUtils";
+import { clickGoBack } from "../../housingSync/menus/menuUtils";
 import {
     ItemCaptureRegistry,
-    restoreInventoryToSnapshot,
-    snapshotInventory,
     type InventorySnapshot,
 } from "../../housingSync/itemCapture";
 import { tryWriteImportableCache } from "../../importCache";
@@ -15,7 +13,6 @@ import { writeImportableCache } from "../../importCache/cache";
 import TaskContext from "../../tasks/context";
 import { observedSlotsToActions } from "../../housingSync/observedActions";
 import { upsertImportableEntry } from "../../project/importJsonMutations";
-import { writeCapturedItems } from "../items/writeCapturedItems";
 import { ensureParentDirs } from "../../utils/filesystem";
 import {
     openFunctionEditor,
@@ -23,7 +20,7 @@ import {
     readAutomaticExecutionTicks,
 } from "./shared";
 import { functionIconFromSnapshot } from "./icon";
-import { getSessionFunctionIcon, resetFunctionNameSession } from "./listFunctions";
+import { getSessionFunctionIcon } from "./listFunctions";
 
 export type ExportFunctionOptions = {
     name: string;
@@ -45,10 +42,6 @@ export type ExportFunctionOptions = {
     // knowledge cache for this house — no .htsl/import.json writes. A deep
     // read IS an export minus the file writes; one driver serves both.
     readOnly?: { housingUuid: string };
-    // Destination project's declared items, for capture matching (see
-    // ItemCaptureRegistry.seed). Only read by the entry points that own a
-    // registry; exportFunctionWithSharedState receives a pre-seeded one.
-    projectItems?: readonly ImportableItem[];
 };
 
 export type SharedExportState = {
@@ -111,59 +104,6 @@ async function readFunctionImportable(
         ...(repeatTicks !== undefined ? { repeatTicks } : {}),
         ...(icon !== undefined ? { icon } : {}),
     };
-}
-
-export async function exportFunction(
-    ctx: TaskContext,
-    options: ExportFunctionOptions
-): Promise<void> {
-    // Drop any function-list cache from a prior import so the icon read reflects
-    // the live house, not a stale snapshot.
-    resetFunctionNameSession();
-    const inventorySnapshot: InventorySnapshot = snapshotInventory();
-    const itemCaptures = new ItemCaptureRegistry();
-    const projectItems = options.projectItems ?? [];
-    for (let i = 0; i < projectItems.length; i++) {
-        itemCaptures.seed(projectItems[i].name, projectItems[i].nbt);
-    }
-
-    let exportError: unknown = null;
-    try {
-        await exportFunctionWithSharedState(ctx, options, {
-            itemCaptures,
-            inventorySnapshot,
-        });
-    } catch (error) {
-        exportError = error;
-    }
-
-    try {
-        writeCapturedItems(
-            ctx,
-            itemCaptures,
-            options.rootDir,
-            options.importJsonPath
-        );
-        if (exportError === null) {
-            const c = itemCaptures.counts();
-            ctx.displayMessage(
-                `&7[export] &fItems: ${c.matched} matched, ${c.fresh} new`
-            );
-            ctx.displayMessage(`&7  -> ${options.importJsonPath}`);
-        }
-    } finally {
-        try {
-            await restoreInventoryToSnapshot(ctx, inventorySnapshot);
-        } catch (error) {
-            ctx.displayMessage(
-                `&7[export] &eInventory restore failed (export results still written): ${error}`
-            );
-        }
-    }
-
-    if (exportError !== null) {
-        throw exportError;
-    }
 }
 
 export async function exportFunctionWithSharedState(

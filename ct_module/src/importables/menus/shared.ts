@@ -1,14 +1,11 @@
-import { timedWaitForMenu } from "../../housingSync/gui/menuWait";
-import { clickGoBack } from "../../housingSync/gui/menuUtils";
+import { timedWaitForMenu } from "../../housingSync/menus/menuWait";
+import { clickGoBack } from "../../housingSync/menus/menuUtils";
 import TaskContext from "../../tasks/context";
 import { MouseButton } from "../../tasks/specifics/slots";
 import { removedFormatting, unique } from "../../utils/helpers";
-import {
-    chatMessage,
-    menuCreated,
-    menuSettingsOpened,
-    oneOf,
-} from "../waiters";
+import { oneOf } from "../../tasks/waiters";
+import { chatMessage } from "../../housingSync/menus/menuWaiters";
+import { menuCreated, menuSettingsOpened } from "../waiters";
 import { getSessionMenuNamesLower, noteMenuCreated } from "./listMenus";
 
 export async function openMenuEditor(

@@ -2,8 +2,8 @@ import type { Action } from "htsw/types";
 
 import TaskContext from "../../tasks/context";
 import type { ItemRegistry } from "../../importables/itemRegistry";
-import { clickGoBack } from "../gui/menuUtils";
-import { timedWaitForMenu } from "../gui/menuWait";
+import { clickGoBack } from "../menus/menuUtils";
+import { timedWaitForMenu } from "../menus/menuWait";
 import { ItemSlot } from "../../tasks/specifics/slots";
 import { removedFormatting } from "../../utils/helpers";
 import {
@@ -52,7 +52,7 @@ import {
     goToPaginatedListPage,
     isEmptyPaginatedPlaceholder,
     readPaginatedList,
-} from "../gui/paginatedList";
+} from "../menus/paginatedList";
 import type { ActionPath, SyncEventHandler } from "../syncEvents";
 import { actionPathForIndex, actionPathKey } from "../syncEvents";
 import {

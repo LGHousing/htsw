@@ -1,10 +1,10 @@
 import TaskContext from "../../tasks/context";
-import { timedWaitForMenu } from "../../housingSync/gui/menuWait";
+import { timedWaitForMenu } from "../../housingSync/menus/menuWait";
 import {
     getVisiblePaginatedItemSlots,
     readPaginatedList,
     type PaginatedListConfig,
-} from "../../housingSync/gui/paginatedList";
+} from "../../housingSync/menus/paginatedList";
 import { removedFormatting } from "../../utils/helpers";
 
 const COMMAND_LIST_CONFIG: PaginatedListConfig = {

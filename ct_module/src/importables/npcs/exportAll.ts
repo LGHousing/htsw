@@ -15,7 +15,7 @@ import {
     npcExportReferencesExist,
     type NpcExportEntry,
 } from "../../project/paths";
-import type { ExportResult } from "../exports";
+import type { ReadResult } from "../read";
 import { exportNpcWithSharedState } from "./export";
 import {
     createNpcLookupCache,
@@ -37,7 +37,7 @@ export type ExportAllNpcsOptions = {
 export async function exportAllNpcs(
     ctx: TaskContext,
     options: ExportAllNpcsOptions
-): Promise<ExportResult> {
+): Promise<ReadResult> {
     return exportAllNpcsInner(ctx, options);
 }
 
@@ -76,7 +76,7 @@ function filterNpcEntries(
 async function exportAllNpcsInner(
     ctx: TaskContext,
     options: ExportAllNpcsOptions
-): Promise<ExportResult> {
+): Promise<ReadResult> {
     const { importJsonPath, rootDir } = options;
 
     const inventorySnapshot: InventorySnapshot = snapshotInventory();

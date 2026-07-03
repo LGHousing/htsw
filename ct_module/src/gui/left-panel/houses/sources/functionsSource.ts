@@ -1,19 +1,9 @@
 /// <reference types="../../../../../CTAutocomplete" />
 
 import { TaskManager } from "../../../../tasks/manager";
-import { setTaskRunning } from "../../../../tasks/runningState";
-import { getExportImportJsonPath, getHousingUuid } from "../../../state";
+import { getHousingUuid } from "../../../state";
 import { showToast } from "../../../toast";
-import { createExportProgressSink } from "../../../right-panel/import-tab/exportProgress";
 import { listAllFunctionEntries } from "../../../../importables/functions/listFunctions";
-import { exportAllFunctions } from "../../../../importables/functions/exportAll";
-import { exportProjectContextFromParsedImportJson } from "../../../../importables/exportContext";
-import { getParseAt } from "../../../parsing/parses";
-import { resetEventContainers } from "../../../../tasks/specifics/waitFor";
-import {
-    clearActiveTaskContext,
-    setActiveTaskContext,
-} from "../../../../tasks/activeTask";
 import {
     deleteImportableCache,
     houseTypeScanned,
@@ -24,7 +14,6 @@ import {
 } from "../../../../importCache/cache";
 
 let scanInFlight = false;
-let readInFlight = false;
 
 export function isFunctionScanInFlight(): boolean {
     return scanInFlight;
@@ -57,71 +46,6 @@ export function scanHouseFunctions(): void {
     }).catch((err: unknown) => {
         showToast(`Function scan failed: ${err}`, 0xffe85c5c, 8000);
         ChatLib.chat(`&c[htsw] Function scan failed: ${err}`);
-    });
-}
-
-/**
- * Deep read: the export driver in read-only mode — same editor walk, but the
- * results go only into this house's knowledge cache, no files written. Slow
- * (one editor open per function), so it's an explicit action, not part of the
- * cheap names scan. With `onlyNames` it reads just those functions
- * (selection-driven); without, it scans and reads the whole house.
- */
-export function deepReadHouseFunctions(onlyNames?: string[]): void {
-    if (readInFlight || scanInFlight || TaskManager.hasRunningTasks()) return;
-    const uuid = getHousingUuid();
-    if (uuid === null) return;
-    readInFlight = true;
-    TaskManager.run(async (ctx) => {
-        setActiveTaskContext("export", ctx);
-        setTaskRunning(true);
-        let result;
-        try {
-            // Boundary purge, mirroring import/export: leaked waiters from a prior
-            // failed run re-run per packet and jitter input until purged.
-            const purged = resetEventContainers();
-            if (purged > 0) {
-                ChatLib.chat(`&8[htsw] purged ${purged} leaked event waiter(s) from a prior run.`);
-            }
-            const importJsonPath = getExportImportJsonPath();
-            const exportContext = exportProjectContextFromParsedImportJson(
-                { rootDir: "", importJsonPath },
-                getParseAt(importJsonPath)?.parsed
-            );
-            result = await exportAllFunctions(ctx, {
-                ...exportContext,
-                names: onlyNames,
-                readOnly: { housingUuid: uuid },
-                onNamesListed: (names) =>
-                    recordHouseScan(uuid, "FUNCTION", names.slice()),
-                // Same strip the importer/exporter use, verb "read" — a deep
-                // read opens every function editor, far too slow to run dark.
-                progress: createExportProgressSink(
-                    "FUNCTION",
-                    importJsonPath,
-                    "read"
-                ),
-            });
-        } finally {
-            clearActiveTaskContext("export", ctx);
-            setTaskRunning(false);
-            readInFlight = false;
-        }
-        if (result.failed > 0) {
-            showToast(
-                `Read ${result.succeeded} of ${result.total} function${result.total === 1 ? "" : "s"} (${result.failed} failed)`,
-                0xffe85c5c,
-                8000
-            );
-        } else {
-            showToast(
-                `Read ${result.succeeded} function${result.succeeded === 1 ? "" : "s"}`,
-                0xff5cb85c
-            );
-        }
-    }).catch((err: unknown) => {
-        showToast(`Function read failed: ${err}`, 0xffe85c5c, 8000);
-        ChatLib.chat(`&c[htsw] Function read failed: ${err}`);
     });
 }
 

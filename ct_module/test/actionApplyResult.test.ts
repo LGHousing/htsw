@@ -21,19 +21,19 @@ const mocks = vi.hoisted(() => ({
     writeOpenAction: vi.fn(async () => undefined),
 }));
 
-vi.mock("../src/housingSync/gui/paginatedList", () => ({
+vi.mock("../src/housingSync/menus/paginatedList", () => ({
     getPaginatedListSlotAtIndex: vi.fn(async () => ({
         click: vi.fn(),
     })),
     goToPaginatedListPage: vi.fn(async () => undefined),
 }));
 
-vi.mock("../src/housingSync/gui/menuWait", () => ({
+vi.mock("../src/housingSync/menus/menuWait", () => ({
     timedWaitForMenu: vi.fn(async () => undefined),
     waitForMenu: vi.fn(async () => undefined),
 }));
 
-vi.mock("../src/housingSync/gui/menuUtils", () => ({
+vi.mock("../src/housingSync/menus/menuUtils", () => ({
     clickGoBack: mocks.clickGoBack,
     getSlotPaginate: vi.fn(() => null),
     isLimitExceeded: vi.fn(() => false),

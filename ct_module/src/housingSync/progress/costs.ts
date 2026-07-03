@@ -24,7 +24,7 @@ import {
     normalizeActionCompare,
     normalizeConditionCompare,
 } from "../fields/compare";
-import { countReferencedShells } from "../../importables/references";
+import { countReferencedShells } from "../../importables/referenceScanner";
 import { readCachedActionList } from "../../importCache/actionLists";
 import type { ImportableCacheEntry } from "../../importCache/cache";
 

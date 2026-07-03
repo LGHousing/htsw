@@ -4,7 +4,7 @@ import {
     isEmptyPaginatedPlaceholder,
     readPaginatedList,
     type PaginatedListConfig,
-} from "../../housingSync/gui/paginatedList";
+} from "../../housingSync/menus/paginatedList";
 import { removedFormatting } from "../../utils/helpers";
 import { snapshotIconStack, type FunctionIconSnapshot } from "./icon";
 import { extractFunctionNameFromSlot } from "./shared";

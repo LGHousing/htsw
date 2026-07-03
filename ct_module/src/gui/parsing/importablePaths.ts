@@ -2,7 +2,6 @@
 
 import type { ImportJsonFileNode, ImportablesParseResult } from "htsw";
 import type { Importable } from "htsw/types";
-import { getSelectedParsedResult } from "./selectedParse";
 
 /**
  * Centralized importable→path lookups.
@@ -74,12 +73,6 @@ function actionPathFromFieldSpan(
 }
 
 /**
- * Resolve `imp`'s source file path. Pass `parse` when looking up
- * importables that came from a parse other than the globally-active one
- * (multi-parse Importables + queue use-case); omit it to fall back to
- * `getSelectedParsedResult()` for legacy single-parse callers.
- */
-/**
  * The import.json file that DECLARED `imp` — distinct from
  * `importableSourcePath`, which prefers the htsl/snbt the content lives in.
  * Falls back to the parse's entry file when the parse didn't record one.
@@ -93,10 +86,8 @@ export function importableDeclaringPath(
 
 export function importableSourcePath(
     imp: Importable,
-    parse?: ImportablesParseResult | null
+    parsed: ImportablesParseResult
 ): string | undefined {
-    const parsed = parse ?? getSelectedParsedResult();
-    if (parsed === null || parsed === undefined) return undefined;
     if (imp.type === "ITEM" && imp.nbt !== undefined) {
         const fromNbt = pathFromSpan(parsed, imp.nbt);
         if (fromNbt !== undefined) return fromNbt;
@@ -143,10 +134,8 @@ export function hasSubList(imp: Importable, kind: SubListKind): boolean {
 export function importableSubListPath(
     imp: Importable,
     kind: SubListKind,
-    parse?: ImportablesParseResult | null
+    parsed: ImportablesParseResult
 ): string | undefined {
-    const parsed = parse ?? getSelectedParsedResult();
-    if (parsed === null || parsed === undefined) return undefined;
     const list = subListOf(imp, kind);
     if (list === undefined) return undefined;
     const fromListSource = parsed.importJson.sourcePathOf(list as object);

@@ -1,7 +1,7 @@
 /// <reference types="../../CTAutocomplete" />
 
 import { getOverlayScreenW, getOverlayScreenH } from "./lib/overlayScale";
-import { beginHtswOverlayDraw, endHtswOverlayDraw } from "./lib/panel";
+import { beginHtswOverlayDraw, endHtswOverlayDraw } from "./lib/overlayDraw";
 
 type Toast = {
     message: string;

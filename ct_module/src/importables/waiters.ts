@@ -3,15 +3,9 @@ import type { Pos } from "htsw/types";
 import type { TaskWaiter } from "../tasks/context";
 import type TaskContext from "../tasks/context";
 import type { WaitForPromise } from "../tasks/specifics/waitFor";
+import { allOf } from "../tasks/waiters";
 import { removedFormatting } from "../utils/helpers";
-import {
-    allOf,
-    chatMessage,
-    menuOpened,
-    oneOf,
-} from "../housingSync/gui/waiters";
-
-export { allOf, chatMessage, menuOpened, oneOf };
+import { chatMessage, menuOpened } from "../housingSync/menus/menuWaiters";
 
 export function functionActionEditorOpened(name: string): TaskWaiter<void> {
     return menuOpened({

@@ -9,7 +9,6 @@ import {
 import { FileSystemFileLoader } from "../../utils/fileLoaders";
 import { recordHouseBinding } from "../../importCache/houseBindings";
 import { getMtimeMs, javaType } from "../lib/java";
-import { invalidateSourceDiffForParse } from "../code-view/sourceDiff";
 import { allReferencedPaths } from "./importablePaths";
 import {
     diffSnapshotFingerprint,
@@ -124,6 +123,25 @@ export function canonicalPath(p: string): string {
 
 const cache = new Map<string, CachedParse>();
 
+type ParseCacheListener = (entry: CachedParse) => void;
+const parseCacheListeners: ParseCacheListener[] = [];
+
+export function onParseCacheEntryChanged(listener: ParseCacheListener): () => void {
+    parseCacheListeners.push(listener);
+    return () => {
+        const index = parseCacheListeners.indexOf(listener);
+        if (index >= 0) parseCacheListeners.splice(index, 1);
+    };
+}
+
+function notifyParseCacheEntryChanged(entry: CachedParse): void {
+    for (let i = 0; i < parseCacheListeners.length; i++) {
+        try {
+            parseCacheListeners[i](entry);
+        } catch (_e) {}
+    }
+}
+
 /**
  * Bumped whenever the SET of cached parses (or an entry's parsed value)
  * changes — a parse is added, re-parsed, or evicted. Cache-wide scans over
@@ -184,9 +202,9 @@ function commitParseEntry(
     cache.set(canon, entry);
     parseCacheRevision++;
     if (parsed !== null) {
-        invalidateSourceDiffForParse(parsed);
         recordHouseBinding(parsed.importJson.houseUuid, canon);
     }
+    notifyParseCacheEntryChanged(entry);
     recordParsePerf(canon, Date.now() - startedAt, source);
     return entry;
 }
@@ -361,6 +379,7 @@ export function touchParseCacheMtime(rawPath: string): void {
     existing.fingerprint = fingerprintOf(canon, existing.mtime, existing.parsed);
     resetFreshness(existing.freshness);
     resaveSnapshot(existing);
+    notifyParseCacheEntryChanged(existing);
 }
 
 /**
@@ -377,6 +396,7 @@ export function touchParseCacheFile(rawPath: string): void {
     existing.fingerprint[canon] = existing.mtime;
     resetFreshness(existing.freshness);
     resaveSnapshot(existing);
+    notifyParseCacheEntryChanged(existing);
 }
 
 /**

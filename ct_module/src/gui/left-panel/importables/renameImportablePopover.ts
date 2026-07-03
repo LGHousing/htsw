@@ -1,13 +1,13 @@
-/// <reference types="../../../CTAutocomplete" />
+/// <reference types="../../../../CTAutocomplete" />
 
-import { Element, Rect } from "../lib/layout";
-import { Button, Col, Input, Row, Text } from "../lib/components";
-import { closeAllPopovers, openPopover } from "../lib/popovers";
+import { Element, Rect } from "../../lib/layout";
+import { Button, Col, Input, Row, Text } from "../../lib/components";
+import { closeAllPopovers, openPopover } from "../../lib/popovers";
 import type { Importable } from "htsw/types";
-import { renameImportableEntry, type Section } from "../../project/importJsonMutations";
-import { markParseStale, requestParse } from "../parsing/parses";
-import { bumpTreeRevision } from "../left-panel/importables/rowModel";
-import { importableIdentity } from "../../importables/identity";
+import { renameImportableEntry, type Section } from "../../../project/importJsonMutations";
+import { markParseStale, requestParse } from "../../parsing/parses";
+import { bumpTreeRevision } from "./rowModel";
+import { importableIdentity } from "../../../importables/identity";
 
 let editingValue = "";
 let editingFor: string = "";

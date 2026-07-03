@@ -1,5 +1,5 @@
 import { Event } from "htsw/types";
-import { Simulator } from "./simulator";
+import { getSimulatorImportables, runSimulatorActions } from "./session";
 
 export function registerEventTriggers(): Trigger[] {
     runEvent("Player Join");
@@ -13,9 +13,9 @@ class EventState {
 }
 
 function runEvent(event: Event) {
-    for (const importable of Simulator.importables) {
+    for (const importable of getSimulatorImportables()) {
         if (importable.type === "EVENT" && importable.event === event) {
-            Simulator.runActions(importable.actions ?? []);
+            runSimulatorActions(importable.actions ?? []);
         }
     }
 }

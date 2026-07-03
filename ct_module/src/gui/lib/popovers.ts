@@ -8,7 +8,7 @@ import {
     hasDeferredTooltip,
     drawDeferredTooltip,
 } from "./render";
-import { beginHtswOverlayDraw, endHtswOverlayDraw } from "./panel";
+import { beginHtswOverlayDraw, endHtswOverlayDraw } from "./overlayDraw";
 import { getOverlayScreenW, getOverlayScreenH, mcToOverlay } from "./overlayScale";
 import { placeAnchoredRect } from "./anchoredRect";
 import { debugLogError } from "./debugLog";

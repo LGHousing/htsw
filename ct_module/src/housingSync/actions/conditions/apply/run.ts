@@ -2,9 +2,9 @@ import type TaskContext from "../../../../tasks/context";
 import {
     clickGoBack,
     setListItemNote,
-} from "../../../gui/menuUtils";
-import { timedWaitForMenu } from "../../../gui/menuWait";
-import { getPaginatedListSlotAtIndex } from "../../../gui/paginatedList";
+} from "../../../menus/menuUtils";
+import { timedWaitForMenu } from "../../../menus/menuWait";
+import { getPaginatedListSlotAtIndex } from "../../../menus/paginatedList";
 import { CONDITION_LIST_CONFIG } from "../../listConfigs";
 import type {
     ConditionListDiff,

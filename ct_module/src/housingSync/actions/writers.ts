@@ -50,8 +50,8 @@ import {
     setCycleValue,
     setNumberValue,
     readStringValue,
-} from "../gui/menuUtils";
-import { timedWaitForMenu, waitForMenu } from "../gui/menuWait";
+} from "../menus/menuUtils";
+import { timedWaitForMenu, waitForMenu } from "../menus/menuWait";
 import {
     normalizeActionCompare,
     normalizeConditionCompare,

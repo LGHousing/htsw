@@ -7,7 +7,9 @@ import {
     deleteImportableCache,
     importableHash,
     itemSnbtCachePath,
+    readImportableCache,
 } from "../importCache";
+import { importableCanonicalParts } from "../importCache/hash";
 import { importableIdentity } from "../importables/identity";
 import { createItemRegistry } from "../importables/itemRegistry";
 import {
@@ -23,7 +25,16 @@ import { listAllFunctionNames } from "../importables/functions/listFunctions";
 import {
     resetFunctionNameSession,
 } from "../importables/functions/listFunctions";
-import { resetCommandNameSession } from "../importables/commands/listCommands";
+import {
+    listAllCommandNames,
+    resetCommandNameSession,
+} from "../importables/commands/listCommands";
+import type { ReadFn } from "../importables/read";
+import { readFunctions } from "../importables/functions/readFunctions";
+import { readEvents } from "../importables/events/readEvents";
+import { readCommands } from "../importables/commands/readCommands";
+import { readMenus } from "../importables/menus/readMenus";
+import { readRegions } from "../importables/regions/readRegions";
 import { createNpcLookupCache } from "../importables/npcs/listNpcs";
 import { listAllRegionNames } from "../importables/regions/listRegions";
 import {
@@ -41,7 +52,7 @@ import {
     SET_SLOT_ACK_TIMEOUT_MS,
     sendCreativeInventoryAction,
     waitForAnySetSlot,
-} from "../housingSync/gui/packets";
+} from "../housingSync/menus/packets";
 import {
     ItemCaptureRegistry,
     restoreInventoryToSnapshot,
@@ -55,6 +66,7 @@ import {
     getTaskTracePath,
     setTaskTraceEnabled,
 } from "../housingSync/trace/taskTrace";
+import { projectItemsFromParsedImportJson } from "../importables/exportContext";
 import { loadTestFixtures, type ParsedTestFixture } from "./fixtures";
 import { coverageForFixtures, emitCoverageReport } from "./report";
 
@@ -141,6 +153,12 @@ async function runFixture(
                 failures.push(verifyFailures[i]);
             }
         }
+        if (failures.length === 0) {
+            const readFailures = await deepReadVerifyFixture(ctx, housingUuid, fixture);
+            for (let i = 0; i < readFailures.length; i++) {
+                failures.push(readFailures[i]);
+            }
+        }
     } catch (e) {
         failures.push(String(e));
     } finally {
@@ -211,6 +229,146 @@ async function verifyFixture(
         }
     }
     return failures;
+}
+
+// Types with a house reader; ITEM and NPC have no read path, so the deep-read
+// phase skips them.
+const READERS_BY_TYPE: Partial<Record<Importable["type"], ReadFn>> = {
+    FUNCTION: readFunctions,
+    EVENT: readEvents,
+    COMMAND: readCommands,
+    MENU: readMenus,
+    REGION: readRegions,
+};
+const DEEP_READ_ORDER: Importable["type"][] = [
+    "FUNCTION",
+    "EVENT",
+    "COMMAND",
+    "MENU",
+    "REGION",
+];
+
+// Deep-read verification: wipe each importable's cache entry, re-read it from
+// the live house through the reader in read-only mode, and require the
+// reader-written entry to hash-match the fixture source — the same comparison
+// the GUI's drift status makes, so a reader that stores a different shape than
+// the parse (menu slot nbt, command defaults) fails here.
+async function deepReadVerifyFixture(
+    ctx: TaskContext,
+    housingUuid: string,
+    fixture: ParsedTestFixture
+): Promise<string[]> {
+    const failures: string[] = [];
+    const importables = fixture.parsed.value;
+    const rootDir = fixture.importJsonPath
+        .split("\\")
+        .join("/")
+        .replace(/\/[^/]*$/, "");
+
+    for (let t = 0; t < DEEP_READ_ORDER.length; t++) {
+        const type = DEEP_READ_ORDER[t];
+        const reader = READERS_BY_TYPE[type];
+        if (reader === undefined) continue;
+        const items: Importable[] = [];
+        for (let i = 0; i < importables.length; i++) {
+            if (importables[i].type === type) items.push(importables[i]);
+        }
+        if (items.length === 0) continue;
+
+        const names: string[] = [];
+        for (let i = 0; i < items.length; i++) {
+            const identity = importableIdentity(items[i]);
+            names.push(identity);
+            deleteImportableCache(housingUuid, type, identity);
+        }
+
+        ctx.displayMessage(
+            `&7[htsw test] deep-read verify &f${type.toLowerCase()}&7 (${items.length})`
+        );
+        const result = await reader(ctx, {
+            importJsonPath: fixture.importJsonPath,
+            rootDir,
+            names,
+            // Seed item captures with the fixture's declared items so an item
+            // read back from the house resolves to its project name instead of
+            // minting a fresh one (which would fail the hash comparison).
+            projectItems: projectItemsFromParsedImportJson(fixture.parsed),
+            readOnly: { housingUuid },
+        });
+        if (result.failed > 0) {
+            failures.push(
+                `${type} deep read: ${result.failed} of ${result.total} failed`
+            );
+        }
+
+        for (let i = 0; i < items.length; i++) {
+            const identity = importableIdentity(items[i]);
+            const entry = readImportableCache(housingUuid, type, identity);
+            if (entry === null) {
+                failures.push(`${type} ${identity}: deep read wrote no cache entry`);
+                continue;
+            }
+            if (importableHash(entry.importable) !== importableHash(items[i])) {
+                const diffKeys = hashDiffKeys(items[i], entry.importable);
+                failures.push(
+                    `${type} ${identity}: deep-read cache differs from source (keys: ${diffKeys.join(", ")})`
+                );
+                appendHashDiffDetail(type, identity, items[i], entry.importable, diffKeys);
+                ctx.displayMessage(
+                    `&7[htsw test] full canonical diff → &f${HASH_DIFF_LOG}`
+                );
+            }
+        }
+    }
+    return failures;
+}
+
+const HASH_DIFF_LOG = "./htsw/test-hash-diff.log";
+
+function canonicalPartsByKey(importable: Importable): Record<string, string> {
+    const parts = importableCanonicalParts(importable);
+    const byKey: Record<string, string> = {};
+    for (let i = 0; i < parts.length; i++) byKey[parts[i].key] = parts[i].serialized;
+    return byKey;
+}
+
+function hashDiffKeys(source: Importable, cached: Importable): string[] {
+    const a = canonicalPartsByKey(source);
+    const b = canonicalPartsByKey(cached);
+    const keys: string[] = [];
+    for (const key in a) {
+        if (b[key] !== a[key]) keys.push(key);
+    }
+    for (const key in b) {
+        if (a[key] === undefined) keys.push(key);
+    }
+    return keys;
+}
+
+function appendHashDiffDetail(
+    type: string,
+    identity: string,
+    source: Importable,
+    cached: Importable,
+    diffKeys: string[]
+): void {
+    const a = canonicalPartsByKey(source);
+    const b = canonicalPartsByKey(cached);
+    const lines: string[] = [
+        `=== ${type} ${identity} — differing keys: ${diffKeys.join(", ")}`,
+    ];
+    for (let i = 0; i < diffKeys.length; i++) {
+        const key = diffKeys[i];
+        lines.push(`--- ${key}`);
+        lines.push(`source: ${a[key] ?? "(absent)"}`);
+        lines.push(`house:  ${b[key] ?? "(absent)"}`);
+    }
+    const text = lines.join("\n") + "\n";
+    try {
+        FileLib.append(HASH_DIFF_LOG, text);
+    } catch (_e) {
+        FileLib.write(HASH_DIFF_LOG, text, true);
+    }
 }
 
 function createFixtureItemCaptures(
@@ -449,6 +607,9 @@ async function cleanupFixture(
         if (importable.type === "FUNCTION") {
             await ctx.runCommand(`/function delete ${importable.name}`);
             await ctx.sleep(300);
+        } else if (importable.type === "COMMAND") {
+            await ctx.runCommand(`/command delete ${importable.name}`);
+            await ctx.sleep(300);
         } else if (importable.type === "REGION") {
             await ctx.runCommand(`/region delete ${importable.name}`);
             await ctx.sleep(300);
@@ -496,6 +657,9 @@ async function cleanupResiduals(ctx: TaskContext): Promise<string[]> {
     if (state.menus.length > 0) {
         failures.push(`cleanup left menus: ${state.menus.join(", ")}`);
     }
+    if (state.commands.length > 0) {
+        failures.push(`cleanup left commands: ${state.commands.join(", ")}`);
+    }
     return failures;
 }
 
@@ -511,6 +675,9 @@ async function assertHouseStartsEmpty(ctx: TaskContext): Promise<boolean> {
     if (state.menus.length > 0) {
         problems.push(`${state.menus.length} menu(s)`);
     }
+    if (state.commands.length > 0) {
+        problems.push(`${state.commands.length} command(s)`);
+    }
     if (problems.length === 0) {
         ctx.displayMessage("&a[htsw test] empty-house gate passed.");
         return true;
@@ -522,15 +689,27 @@ async function assertHouseStartsEmpty(ctx: TaskContext): Promise<boolean> {
     return false;
 }
 
+// Housing creates /stuck and /clear in every house, so they always show up in
+// the command list; the empty-house gate and residual checks must ignore them.
+const DEFAULT_HOUSE_COMMANDS = ["stuck", "clear"];
+
+function withoutDefaultCommands(names: string[]): string[] {
+    return names.filter(
+        (name) => DEFAULT_HOUSE_COMMANDS.indexOf(name.toLowerCase()) < 0
+    );
+}
+
 async function readHouseState(ctx: TaskContext): Promise<{
     functions: string[];
     regions: string[];
     menus: string[];
+    commands: string[];
 }> {
     return {
         functions: await listAllFunctionNames(ctx),
         regions: await listAllRegionNames(ctx),
         menus: await listAllMenuNames(ctx),
+        commands: withoutDefaultCommands(await listAllCommandNames(ctx)),
     };
 }
 

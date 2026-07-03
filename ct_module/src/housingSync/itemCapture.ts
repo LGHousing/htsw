@@ -2,19 +2,25 @@ import * as htsw from "htsw";
 import type { ImportableItem } from "htsw/types";
 import type { Tag } from "htsw/nbt";
 import { canonicalStringify } from "./fields/compare";
+import {
+    type TagLike,
+    canonicalItemTag,
+    normalizeBlankLoreSeparators,
+    tagChild,
+} from "./fields/itemTagCanonical";
 
 import TaskContext from "../tasks/context";
 import { canonicalSlug } from "../project/paths";
 import { getItemFromNbt, getItemFromSnbt, itemToHtswTag } from "../utils/nbt";
 import { removedFormatting } from "../utils/helpers";
-import { clickGoBack } from "./gui/menuUtils";
-import { timedWaitForMenu } from "./gui/menuWait";
+import { clickGoBack } from "./menus/menuUtils";
+import { timedWaitForMenu } from "./menus/menuWait";
 import {
     SET_SLOT_ACK_MAX_TICKS,
     SET_SLOT_ACK_TIMEOUT_MS,
     sendCreativeInventoryAction,
     waitForAnySetSlot,
-} from "./gui/packets";
+} from "./menus/packets";
 import { traceNote } from "./trace/taskTrace";
 
 const SCRATCH_PACKET_SLOT = 26;
@@ -144,85 +150,17 @@ export class ItemCaptureRegistry {
     }
 }
 
-type TagLike = { type: string; value: unknown };
-
-function tagChild(tag: TagLike | undefined, key: string): TagLike | undefined {
-    if (tag === undefined || tag.type !== "compound") return undefined;
-    return (tag.value as Record<string, TagLike>)[key];
-}
-
-function stripEmptyCompounds(tag: TagLike): TagLike {
-    if (tag.type !== "compound") return tag;
-    const value = tag.value as Record<string, TagLike>;
-    const out: Record<string, TagLike> = {};
-    for (const key of Object.keys(value)) {
-        const child = stripEmptyCompounds(value[key]);
-        if (
-            child.type === "compound" &&
-            Object.keys(child.value as Record<string, unknown>).length === 0
-        ) {
-            continue;
-        }
-        out[key] = child;
-    }
-    return { type: "compound", value: out };
-}
-
-// Drop `tag.ExtraAttributes.interact_data` — the housing-scoped encoding of an
-// item's click actions — from a tag, rebuilding only the path it sits on. It's
-// non-portable, so it must never be part of an item's identity (an action item
-// reads back with it; its source has none).
-function stripInteractData(tag: TagLike): TagLike {
-    if (tag.type !== "compound") return tag;
-    const value = tag.value as Record<string, TagLike>;
-    const inner = value["tag"];
-    if (inner === undefined || inner.type !== "compound") return tag;
-    const innerValue = inner.value as Record<string, TagLike>;
-    const extra = innerValue["ExtraAttributes"];
-    if (extra === undefined || extra.type !== "compound") return tag;
-    const extraValue = extra.value as Record<string, TagLike>;
-    if (extraValue["interact_data"] === undefined) return tag;
-
-    const newExtra: Record<string, TagLike> = {};
-    for (const k of Object.keys(extraValue)) {
-        if (k !== "interact_data") newExtra[k] = extraValue[k];
-    }
-    const newInner: Record<string, TagLike> = {};
-    for (const k of Object.keys(innerValue)) {
-        newInner[k] = k === "ExtraAttributes" ? { type: "compound", value: newExtra } : innerValue[k];
-    }
-    const newRoot: Record<string, TagLike> = {};
-    for (const k of Object.keys(value)) {
-        newRoot[k] = k === "tag" ? { type: "compound", value: newInner } : value[k];
-    }
-    return { type: "compound", value: newRoot };
-}
-
-function normalizeBlankLoreSeparators(tag: TagLike): TagLike {
-    const lore = tagChild(tagChild(tagChild(tag, "tag"), "display"), "Lore");
-    if (lore === undefined || lore.type !== "list") return tag;
-
-    const listValue = lore.value as { type: string; value: unknown[] };
-    if (listValue.type !== "string") return tag;
-
-    for (let i = 0; i < listValue.value.length; i++) {
-        if (listValue.value[i] === "") listValue.value[i] = "§7";
-    }
-    return tag;
-}
-
 /**
  * Canonical comparison key for an item's NBT that ignores non-portable Housing
- * additions — the empty `tag:{display:{}}` it stamps on placed items, and the
- * `interact_data` click-action encoding. Two items with the same key are the
- * same item for import, so a placed/action item compares equal to its source.
+ * additions and vanilla stack defaults — the rules live in ONE place,
+ * `fields/itemTagCanonical.ts`, shared with the drift hash so the two paths
+ * cannot disagree. Two items with the same key are the same item for import,
+ * so a placed/action item compares equal to its source.
  */
 export function canonicalItemKey(item: Item): string {
     const tag = itemToHtswTag(item) as TagLike | null;
     if (tag === null) return "<null>";
-    return canonicalStringify(
-        normalizeBlankLoreSeparators(stripEmptyCompounds(stripInteractData(tag)))
-    );
+    return canonicalStringify(canonicalItemTag(tag));
 }
 
 function displayNameFromTag(root: unknown): string | null {

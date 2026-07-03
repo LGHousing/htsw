@@ -1,26 +1,22 @@
-import type { ImportableCommand, ImportableItem } from "htsw/types";
+import type { ImportableCommand } from "htsw/types";
 import * as htsw from "htsw";
 
 import { readActionList } from "../../housingSync/actions/readList";
 import type { ProgressHandler } from "../../housingSync/progress/types";
 import {
     ItemCaptureRegistry,
-    restoreInventoryToSnapshot,
-    snapshotInventory,
     type InventorySnapshot,
 } from "../../housingSync/itemCapture";
-import { tryWriteImportableCache } from "../../importCache";
+import { tryWriteImportableCache, writeImportableCache } from "../../importCache";
 import TaskContext from "../../tasks/context";
 import { observedSlotsToActions } from "../../housingSync/observedActions";
 import { upsertImportableEntry } from "../../project/importJsonMutations";
-import { writeCapturedItems } from "../items/writeCapturedItems";
 import { ensureParentDirs } from "../../utils/filesystem";
 import {
     openCommandSettings,
     openExistingCommandActionsEditor,
     readOpenCommandSettings,
 } from "./shared";
-import { resetCommandNameSession } from "./listCommands";
 
 export type ExportCommandOptions = {
     name: string;
@@ -30,7 +26,8 @@ export type ExportCommandOptions = {
     htslReference: string;
     rootDir: string;
     onReadProgress?: ProgressHandler;
-    projectItems?: readonly ImportableItem[];
+    // Read-only (deep read): cache the command, write no files.
+    readOnly?: { housingUuid: string };
 };
 
 export type SharedExportState = {
@@ -74,59 +71,6 @@ async function readCommand(
     };
 }
 
-export async function exportCommand(
-    ctx: TaskContext,
-    options: ExportCommandOptions
-): Promise<void> {
-    return exportCommandInner(ctx, options);
-}
-
-async function exportCommandInner(
-    ctx: TaskContext,
-    options: ExportCommandOptions
-): Promise<void> {
-    resetCommandNameSession();
-    const inventorySnapshot: InventorySnapshot = snapshotInventory();
-    const itemCaptures = new ItemCaptureRegistry();
-    const projectItems = options.projectItems ?? [];
-    for (let i = 0; i < projectItems.length; i++) {
-        itemCaptures.seed(projectItems[i].name, projectItems[i].nbt);
-    }
-
-    let exportError: unknown = null;
-    try {
-        await exportCommandWithSharedState(ctx, options, {
-            itemCaptures,
-            inventorySnapshot,
-        });
-    } catch (error) {
-        exportError = error;
-    }
-
-    try {
-        writeCapturedItems(ctx, itemCaptures, options.rootDir, options.importJsonPath);
-        if (exportError === null) {
-            const c = itemCaptures.counts();
-            ctx.displayMessage(
-                `&7[export] &fItems: ${c.matched} matched, ${c.fresh} new`
-            );
-            ctx.displayMessage(`&7  -> ${options.importJsonPath}`);
-        }
-    } finally {
-        try {
-            await restoreInventoryToSnapshot(ctx, inventorySnapshot);
-        } catch (error) {
-            ctx.displayMessage(
-                `&7[export] &eInventory restore failed (export results still written): ${error}`
-            );
-        }
-    }
-
-    if (exportError !== null) {
-        throw exportError;
-    }
-}
-
 export async function exportCommandWithSharedState(
     ctx: TaskContext,
     options: ExportCommandOptions,
@@ -141,6 +85,11 @@ export async function exportCommandWithSharedState(
         shared.itemCaptures,
         options.onReadProgress
     );
+
+    if (options.readOnly !== undefined) {
+        writeImportableCache(ctx, options.readOnly.housingUuid, importable, "reader", true);
+        return;
+    }
 
     const actions = importable.actions ?? [];
     const { source, diagnostics } = htsw.htsl.printActionsWithDiagnostics(actions);

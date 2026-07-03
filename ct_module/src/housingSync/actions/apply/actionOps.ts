@@ -9,12 +9,12 @@ import {
     getSlotPaginate,
     isLimitExceeded,
     setNoteOnLastVisibleSlot,
-} from "../../gui/menuUtils";
-import { timedWaitForMenu, waitForMenu } from "../../gui/menuWait";
+} from "../../menus/menuUtils";
+import { timedWaitForMenu, waitForMenu } from "../../menus/menuWait";
 import {
     getPaginatedListSlotAtIndex,
     goToPaginatedListPage,
-} from "../../gui/paginatedList";
+} from "../../menus/paginatedList";
 import { COST } from "../../progress/costs";
 import { timed } from "../../progress/timing";
 import type { ActionApplyContext } from "../../context/actionApplyContext";
