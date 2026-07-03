@@ -67,7 +67,13 @@ def read_version(json_path: Path) -> str:
     return json.loads(json_path.read_text(encoding="utf-8"))["version"]
 
 
-def read_release_notes() -> str | None:
+def read_release_notes(surface: str | None = None) -> str | None:
+    # Per-surface notes win (the CT feed and the VS Code feed reach different
+    # audiences), then the shared notes, then the GitHub release body.
+    if surface is not None:
+        surfaced = os.getenv(f"HTSW_RELEASE_NOTES_{surface.upper()}", "").strip()
+        if surfaced:
+            return surfaced
     notes = os.getenv("HTSW_RELEASE_NOTES", "").strip()
     if notes:
         return notes
@@ -90,8 +96,8 @@ def read_release_notes() -> str | None:
     return None
 
 
-def manifest_json(payload: dict[str, str]) -> str:
-    notes = read_release_notes()
+def manifest_json(payload: dict[str, str], surface: str | None = None) -> str:
+    notes = read_release_notes(surface)
     if notes is not None:
         payload["notes"] = notes
     return json.dumps(payload, indent=2) + "\n"
@@ -122,7 +128,7 @@ def build_ct(do_build: bool) -> tuple[Path, str]:
 
     digest = sha256_of(zip_path)
     (out / "latest.json").write_text(
-        manifest_json({"version": version, "zip": zip_name, "sha256": digest}),
+        manifest_json({"version": version, "zip": zip_name, "sha256": digest}, surface="ct"),
         encoding="utf-8",
     )
     print(f"[publish] CT {version}: {zip_name} ({zip_path.stat().st_size} bytes, sha256 {digest[:12]}…)")
@@ -148,7 +154,7 @@ def build_vscode(do_build: bool) -> tuple[Path, str]:
 
     digest = sha256_of(dest)
     (out / "latest.json").write_text(
-        manifest_json({"version": version, "vsix": vsix.name, "sha256": digest}),
+        manifest_json(surface="vscode", payload={"version": version, "vsix": vsix.name, "sha256": digest}),
         encoding="utf-8",
     )
     print(f"[publish] VSCode {version}: {vsix.name} ({dest.stat().st_size} bytes, sha256 {digest[:12]}…)")

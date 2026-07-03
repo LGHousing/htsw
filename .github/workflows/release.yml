@@ -12,6 +12,9 @@ on:
       notes:
         description: "Plain-English release notes for users; 2-4 short lines, no changelog-only markdown"
         required: false
+      vscode_notes:
+        description: "Optional VS Code-specific notes for the extension updater feed (falls back to the shared notes)"
+        required: false
 
 permissions:
   contents: write
@@ -90,6 +93,7 @@ jobs:
         env:
           HTSW_RELEASE_TAG: ${{ steps.tag.outputs.tag }}
           HTSW_RELEASE_NOTES: ${{ steps.notes.outputs.notes }}
+          HTSW_RELEASE_NOTES_VSCODE: ${{ github.event.inputs.vscode_notes || '' }}
         run: python publish.py --no-upload
 
       # Publishes the staged feeds to the autoupdater VM through a deploy key

@@ -73,6 +73,8 @@ npm version 1.1.0 --workspace editors/code --no-git-tag-version
 
 `publish.py` can include release notes in `latest.json`. Set
 `HTSW_RELEASE_NOTES` for direct text, or set `HTSW_RELEASE_TAG` and let the
-script read the GitHub release body through `gh`.
+script read the GitHub release body through `gh`. `HTSW_RELEASE_NOTES_VSCODE`
+overrides the notes for the VS Code feed only — the two feeds reach different
+audiences, so CT-focused notes should not land in the extension updater.
 
 Keep release notes short and user-facing.
