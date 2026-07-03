@@ -1,9 +1,9 @@
 {
     "functions": [
         {
-            "name": "Simple Function",
+            "name": "Simple Function 4t",
             "actions": "simple.htsl",
-            "repeatTicks": 67,
+            "repeatTicks": 4,
             "icon": {
                 "item": "minecraft:clock",
                 "count": 4
@@ -16,10 +16,5 @@
             "nbt": "./stone.snbt"
         }
     ],
-    "events": [
-        {
-            "event": "Player Quit",
-            "actions": "testingquit.htsl"
-        }
-    ]
+    "events": []
 }

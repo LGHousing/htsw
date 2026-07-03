@@ -1,10 +1,3 @@
-/// This is an important chat message.
-chat "hello"
-
-chat "world"
-
-chat "Jessica mogs sandy zero diff"
-
 var a = 5
 /// This is a note on a conditional
 if and (hasItem "coolItem") {
@@ -12,5 +5,4 @@ if and (hasItem "coolItem") {
 } else {
     /// Insult them.
     chat "You're not very cool. Sorry!"
-    chat "clalan"
 }
