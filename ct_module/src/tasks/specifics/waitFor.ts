@@ -15,6 +15,7 @@ import {
 } from "../../utils/packets";
 import { recordRuntimeDebug } from "../../runtimeDebug/runtimeDebugBuffer";
 import { summarizeItemStack } from "../../runtimeDebug/itemStackSummary";
+import { runOnMainThread } from "../../utils/mainThread";
 
 type Packet = MCPacket<MCINetHandler>;
 
@@ -210,22 +211,33 @@ export function describeRecentWindowOpens(): string {
     return parts.join(", ");
 }
 
+// Packet triggers fire on Netty IO threads. Resolving a waiter there resumes
+// the awaiting task code on that thread (sync-drain polyfill runs continuations
+// inline), and any GUI call it then makes crashes the client — see
+// runOnMainThread. Hop before touching EVENT_CONTAINERS or resolving anything;
+// the scheduled-task queue keeps packets in arrival order.
 register("packetReceived", (packet) => {
-    recordPacket("received", packet);
-    maybeResolve("packetReceived", packet);
-    maybeUpdateWindowID(packet);
-    recordWindowOpen(packet);
+    runOnMainThread(() => {
+        recordPacket("received", packet);
+        maybeResolve("packetReceived", packet);
+        maybeUpdateWindowID(packet);
+        recordWindowOpen(packet);
+    });
 });
 
 register("packetSent", (packet) => {
-    recordPacket("sent", packet);
-    maybeResolve("packetSent", packet);
+    runOnMainThread(() => {
+        recordPacket("sent", packet);
+        maybeResolve("packetSent", packet);
+    });
 });
 
 register("chat", (event) => {
+    // Read the message before deferring — other chat handlers may mutate or
+    // cancel the event after this trigger returns.
     // @ts-expect-error CTAutocomplete's chat trigger event type is too narrow here.
     const message = ChatLib.getChatMessage(event, true);
-    maybeResolve("message", message);
+    runOnMainThread(() => maybeResolve("message", message));
 });
 
 /**
