@@ -5,9 +5,12 @@ HTSW has two different release surfaces:
 - GitHub Releases, which publish downloadable artifacts.
 - The CT autoupdater, which reads `https://legendarygames.dev/htsw/ct/latest.json`.
 
-The GitHub release workflow currently runs `python publish.py --no-upload`, so it
-does not update the VM-backed CT autoupdater. To make `/htsw update` see a new
-CT version, publish the CT artifact to the VM.
+Tagging is releasing: the GitHub release workflow stages artifacts with
+`python publish.py --no-upload`, publishes both feeds to the autoupdater VM
+through a restricted deploy key (forced command `~/bin/htsw-deploy` on the VM,
+`HTSW_DEPLOY_*` repo secrets), and then FAILS the run if either live feed does
+not match the released versions. `python publish.py --ct-only` / `--vscode-only`
+remain the manual path for publishing without a tag.
 
 ## CT Autoupdater Release
 
