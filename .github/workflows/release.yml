@@ -120,7 +120,12 @@ jobs:
             -i ~/.ssh/htsw-deploy \
             -o IdentitiesOnly=yes \
             -o UserKnownHostsFile=~/.ssh/htsw-deploy-known-hosts \
-            "${DEPLOY_USER}@${DEPLOY_HOST}" deploy
+            "${DEPLOY_USER}@${DEPLOY_HOST}" deploy | tee deploy-output.txt
+          # The script's last line reports what actually landed on disk:
+          #   installed ct=<version> vscode=<version>
+          installed="$(grep -E '^installed ct=' deploy-output.txt | tail -1)"
+          echo "ct_live=$(sed -E 's/.*ct=([^ ]+).*/\1/' <<< "${installed}")" >> "$GITHUB_OUTPUT"
+          echo "vs_live=$(sed -E 's/.*vscode=([^ ]+).*/\1/' <<< "${installed}")" >> "$GITHUB_OUTPUT"
           echo "deployed=true" >> "$GITHUB_OUTPUT"
 
       - name: Prepare GitHub release assets
@@ -152,14 +157,18 @@ jobs:
             --clobber
 
       # Users update through the VM-backed feeds, not the GitHub release. When
-      # the deploy step ran, a stale feed means the deploy silently failed —
-      # fail the run. When the deploy was skipped (no secret), warn instead so
-      # a tagged-but-never-published release can't slip by silently again
-      # (v0.6.5 did exactly that).
+      # the deploy step ran, its read-back of the installed latest.json files
+      # is authoritative — a mismatch fails the run. When the deploy was
+      # skipped (no secret), fall back to fetching the public feed and warn,
+      # so a tagged-but-never-published release can't slip by silently again
+      # (v0.6.5 did exactly that). The public fetch is best-effort only:
+      # the site sits behind Cloudflare, which blocks GitHub runner IPs.
       - name: Check autoupdater feeds match this release
         env:
           TAG: ${{ steps.tag.outputs.tag }}
           DEPLOYED: ${{ steps.deploy.outputs.deployed }}
+          DEPLOY_CT_LIVE: ${{ steps.deploy.outputs.ct_live }}
+          DEPLOY_VS_LIVE: ${{ steps.deploy.outputs.vs_live }}
         run: |
           fetch_version() {
             local body
@@ -172,8 +181,13 @@ jobs:
           }
           ct_repo="$(jq -r .version ct_module/package.json)"
           vs_repo="$(jq -r .version editors/code/package.json)"
-          ct_live="$(fetch_version https://legendarygames.dev/htsw/ct/latest.json)"
-          vs_live="$(fetch_version https://legendarygames.dev/htsw/vscode/latest.json)"
+          if [ "${DEPLOYED}" = "true" ]; then
+            ct_live="${DEPLOY_CT_LIVE:-unreachable}"
+            vs_live="${DEPLOY_VS_LIVE:-unreachable}"
+          else
+            ct_live="$(fetch_version https://legendarygames.dev/htsw/ct/latest.json)"
+            vs_live="$(fetch_version https://legendarygames.dev/htsw/vscode/latest.json)"
+          fi
 
           {
             echo "## Autoupdater feeds"
