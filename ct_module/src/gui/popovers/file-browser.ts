@@ -10,7 +10,6 @@ import { openConfirmPopover } from "./confirm";
 import { openPathInOS, showInExplorer, revealInFilesLabel } from "../../utils/osShell";
 import {
     ACCENT_INFO,
-    ACCENT_SUCCESS,
     ACCENT_WARN,
     COLOR_BUTTON,
     COLOR_BUTTON_HOVER,
@@ -25,10 +24,6 @@ import {
     COLOR_ROW_SELECTED_HOVER,
     COLOR_TEXT,
     COLOR_TEXT_DIM,
-    GLYPH_FOLDER,
-    GLYPH_HTSL,
-    GLYPH_JSON,
-    GLYPH_SNBT,
     SIZE_ROW_H,
 } from "../lib/theme";
 import { setImportJsonPath } from "../state";
@@ -47,6 +42,9 @@ type Entry = {
 };
 
 let cwd: string = PROJECTS_ROOT;
+// Directories the user navigated away from, newest last — the Back button
+// retraces them (browser-style), it does not go to the parent folder.
+let backStack: string[] = [];
 // Mirror of the path-bar input. Decoupled from `cwd` so typing/pasting a
 // path doesn't navigate or normalize until the user commits (Enter / Go).
 // All non-typed cwd writes route through `setCwd`, which keeps the draft
@@ -67,6 +65,18 @@ function setCwd(next: string): void {
     pathDraft = cwd;
     selectedImportPath = null;
     selectedImportName = null;
+}
+
+function navigateTo(next: string): void {
+    const normalized = normalizeHtswPath(next);
+    if (normalized === cwd) return;
+    backStack.push(cwd);
+    setCwd(normalized);
+}
+
+function goBack(): void {
+    const prev = backStack.pop();
+    if (prev !== undefined) setCwd(prev);
 }
 
 function dirExists(path: string): boolean {
@@ -141,18 +151,19 @@ function listDir(dir: string): Entry[] {
             // ignore
         }
     }
+    // Loadable import.jsons first (they're what the browser is FOR), then
+    // folders, then everything else.
+    const rank = (e: Entry): number => {
+        if (!e.isDir && (e.name.toLowerCase() === "import.json" || e.ext === "json")) return 0;
+        return e.isDir ? 1 : 2;
+    };
     out.sort((a, b) => {
-        if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
+        const ra = rank(a);
+        const rb = rank(b);
+        if (ra !== rb) return ra - rb;
         return a.name.toLowerCase() < b.name.toLowerCase() ? -1 : 1;
     });
     return out;
-}
-
-function parentOf(dir: string): string {
-    const norm = dir.replace(/\\/g, "/");
-    const slash = norm.lastIndexOf("/");
-    if (slash <= 0) return normalizeHtswPath(norm);
-    return normalizeHtswPath(norm.substring(0, slash));
 }
 
 function isImportJsonEntry(entry: Entry): boolean {
@@ -167,7 +178,7 @@ function selectImport(entry: Entry): void {
 
 function navigateInto(entry: Entry): void {
     if (entry.isDir) {
-        setCwd(entry.fullPath);
+        navigateTo(entry.fullPath);
     } else if (isImportJsonEntry(entry)) {
         loadAsImport(entry.fullPath);
     }
@@ -222,12 +233,12 @@ function commitPathDraft(): void {
             isDir = false;
         }
         if (isDir) {
-            setCwd(normalized);
+            navigateTo(normalized);
             return;
         }
         const fnObj = p.getFileName();
         if (fnObj === null) {
-            setCwd(normalized);
+            navigateTo(normalized);
             return;
         }
         const fname = String(fnObj.toString()).toLowerCase();
@@ -240,7 +251,7 @@ function commitPathDraft(): void {
         }
         const parent = p.getParent();
         if (parent !== null) {
-            setCwd(String(parent.toString()).split("\\").join("/"));
+            navigateTo(String(parent.toString()).split("\\").join("/"));
             ChatLib.chat(`&7[htsw] ${fname} is not an import.json — jumped to its folder`);
             return;
         }
@@ -248,7 +259,7 @@ function commitPathDraft(): void {
         return;
     }
     const fallback = resolveExistingDir(normalized);
-    setCwd(fallback);
+    navigateTo(fallback);
     ChatLib.chat(`&c[htsw] Path not found, jumped to ${fallback}`);
 }
 
@@ -351,20 +362,19 @@ function deleteEntry(entry: Entry): void {
     }
 }
 
-function iconFor(e: Entry): string {
-    if (e.isDir) return GLYPH_FOLDER;
-    if (e.name.toLowerCase() === "import.json") return GLYPH_JSON;
-    if (e.ext === "json") return GLYPH_JSON;
-    if (e.ext === "htsl") return GLYPH_HTSL;
-    if (e.ext === "snbt") return GLYPH_SNBT;
-    return "·";
+// Same icon vocabulary as the Importables tree: blue { } for import.jsons,
+// code/box files dimmed, folders neutral.
+function iconNameFor(e: Entry): IconName {
+    if (e.isDir) return Icons.folder;
+    if (e.name.toLowerCase() === "import.json" || e.ext === "json") return Icons.fileJson;
+    if (e.ext === "htsl") return Icons.fileCode;
+    if (e.ext === "snbt") return Icons.fileBox;
+    return Icons.file;
 }
 
 function iconColorFor(e: Entry): number {
-    if (e.isDir) return ACCENT_INFO;
-    if (e.name.toLowerCase() === "import.json" || e.ext === "json") return ACCENT_SUCCESS;
-    if (e.ext === "htsl") return ACCENT_INFO;
-    if (e.ext === "snbt") return ACCENT_WARN;
+    if (e.isDir) return COLOR_TEXT_DIM;
+    if (e.name.toLowerCase() === "import.json" || e.ext === "json") return ACCENT_INFO;
     return COLOR_TEXT_DIM;
 }
 
@@ -427,13 +437,14 @@ function fileRow(entry: Entry): Element {
                 );
                 return;
             }
-            // Dirs: ignore single-click (acts as preview only); double-click navigates.
-            // import.json files: single-click selects (lights up the Load button); double
-            // -click loads. Other files: ignored entirely. All double-click work happens
-            // here via isDoubleClickSecond — no separate onDoubleClick handler so chat
-            // messages and loadAsImport don't fire twice.
+            // Dirs: single-click navigates in (the second click of a double is
+            // ignored so a fast double doesn't descend twice). import.json
+            // files: single-click selects (lights up the Load button); double-
+            // click loads. Other files: ignored entirely. All double-click work
+            // happens here via isDoubleClickSecond — no separate onDoubleClick
+            // handler so chat messages and loadAsImport don't fire twice.
             if (entry.isDir) {
-                if (info.isDoubleClickSecond) navigateInto(entry);
+                if (!info.isDoubleClickSecond) navigateInto(entry);
                 return;
             }
             if (!isJson) return;
@@ -441,10 +452,13 @@ function fileRow(entry: Entry): Element {
             else selectImport(entry);
         },
         children: [
-            Text({
-                text: iconFor(entry),
+            Icon({
+                name: iconNameFor(entry),
                 color: iconColorFor(entry),
-                style: { width: { kind: "px", value: 14 } },
+                style: {
+                    width: { kind: "px", value: 12 },
+                    height: { kind: "px", value: 12 },
+                },
             }),
             Text({
                 text: entry.name,
@@ -500,21 +514,19 @@ function header(): Element {
                 style: { width: { kind: "px", value: 60 } },
             }),
             Button({
-                tooltip: "Up one folder",
+                tooltip: "Back",
                 tooltipColor: COLOR_TEXT_DIM,
                 style: { width: { kind: "px", value: 28 }, height: { kind: "grow" } },
                 children: [
                     Icon({
-                        name: Icons.folderUp,
+                        name: Icons.arrowLeft,
                         style: {
                             width: { kind: "px", value: HEADER_ICON_SIZE },
                             height: { kind: "px", value: HEADER_ICON_SIZE },
                         },
                     }),
                 ],
-                onClick: () => {
-                    setCwd(parentOf(cwd));
-                },
+                onClick: () => goBack(),
             }),
             headerActionButton(Icons.externalLink, "Open in OS", 92, () => openInOS()),
             headerActionButton(Icons.folderPlus, "New Folder", 98, () => newFolder()),
@@ -677,6 +689,7 @@ export function openFileBrowserWithImportJsonSelection(
     onSelect: ((path: string) => void) | null
 ): void {
     selectImportJsonOnly = onSelect;
+    backStack = [];
     if (initialDir !== undefined && initialDir.length > 0) {
         setCwd(resolveExistingDir(initialDir));
     } else {
