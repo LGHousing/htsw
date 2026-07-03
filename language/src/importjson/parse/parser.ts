@@ -42,7 +42,7 @@ export class Parser {
     parseField(name: string): Parser {
         const field = this.parseFieldOrUndefined(name);
         if (!field) {
-            throw Diagnostic.error(`Missing required key '${name}'`)
+            throw Diagnostic.error(`Missing required field '${name}'`)
                 .addPrimarySpan(this.span().endSpan());
         }
         return field;
