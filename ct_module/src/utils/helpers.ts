@@ -41,7 +41,7 @@ export function cyrb53(str: string, seed: number = 0) {
 }
 
 export function unique(values: readonly string[]): string[] {
-    const seen: Record<string, boolean> = {};
+    const seen: Record<string, boolean> = Object.create(null);
     const result: string[] = [];
     for (const value of values) {
         if (seen[value]) continue;

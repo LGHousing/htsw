@@ -25,6 +25,94 @@ describe("importableHash function icons", () => {
             importableHash(fn({ item: "minecraft:map" }))
         );
     });
+
+    test("treats Housing's default map icon as icon-less", () => {
+        expect(importableHash(fn({ item: "minecraft:map" }))).toBe(
+            importableHash(fn(undefined))
+        );
+        expect(importableHash(fn({ item: "minecraft:stone" }))).not.toBe(
+            importableHash(fn(undefined))
+        );
+        expect(importableHash(fn({ item: "minecraft:map", enchanted: true }))).not.toBe(
+            importableHash(fn(undefined))
+        );
+    });
+});
+
+describe("importableHash menu slot nbt", () => {
+    test("read-back vanilla defaults hash like the source snbt", () => {
+        const menu = (nbt: unknown) =>
+            ({
+                type: "MENU",
+                name: "m",
+                slots: [{ slot: 0, nbt }],
+            }) as unknown as Parameters<typeof importableHash>[0];
+        const source = {
+            type: "compound",
+            value: {
+                Count: { type: "byte", value: 1 },
+                id: { type: "string", value: "minecraft:stone" },
+            },
+        };
+        const house = {
+            type: "compound",
+            value: {
+                Count: { type: "byte", value: 1 },
+                Damage: { type: "short", value: 0 },
+                id: { type: "string", value: "minecraft:stone" },
+                tag: {
+                    type: "compound",
+                    value: { display: { type: "compound", value: {} } },
+                },
+            },
+        };
+        expect(importableHash(menu(source))).toBe(importableHash(menu(house)));
+        const damaged = {
+            type: "compound",
+            value: {
+                Damage: { type: "short", value: 5 },
+                id: { type: "string", value: "minecraft:stone" },
+            },
+        };
+        expect(importableHash(menu(source))).not.toBe(importableHash(menu(damaged)));
+    });
+});
+
+describe("importableHash region bounds", () => {
+    test("corner pairings spanning the same box hash alike", () => {
+        const region = (from: { x: number; y: number; z: number }, to: { x: number; y: number; z: number }) => ({
+            type: "REGION" as const,
+            name: "r",
+            bounds: { from, to },
+        });
+        expect(
+            importableHash(region({ x: -3, y: 108, z: -19 }, { x: 3, y: 100, z: 0 }))
+        ).toBe(
+            importableHash(region({ x: -3, y: 100, z: -19 }, { x: 3, y: 108, z: 0 }))
+        );
+        expect(
+            importableHash(region({ x: -3, y: 108, z: -19 }, { x: 3, y: 100, z: 0 }))
+        ).not.toBe(
+            importableHash(region({ x: -3, y: 109, z: -19 }, { x: 3, y: 100, z: 0 }))
+        );
+    });
+});
+
+describe("importableHash command defaults", () => {
+    test("omitted settings hash like Housing's defaults", () => {
+        const base = { type: "COMMAND" as const, name: "cmd", actions: [] };
+        expect(
+            importableHash({
+                ...base,
+                mode: "Self",
+                requiredPriority: 0,
+                listed: true,
+            })
+        ).toBe(importableHash(base));
+        expect(
+            importableHash({ ...base, mode: "Targeted", requiredPriority: 1, listed: false })
+        ).not.toBe(importableHash(base));
+    });
 });
 
 describe("cache entry hashes", () => {

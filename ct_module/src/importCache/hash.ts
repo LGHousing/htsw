@@ -1,7 +1,11 @@
-import type { Action, Condition, FunctionIcon, Importable } from "htsw/types";
+import type { Action, Bounds, Condition, FunctionIcon, Importable } from "htsw/types";
 
 import { cyrb53, stableStringify } from "../utils/helpers";
 import { canonicalStringify } from "../housingSync/fields/compare";
+import {
+    type TagLike,
+    canonicalItemTag,
+} from "../housingSync/fields/itemTagCanonical";
 
 /**
  * Importable-cache hashing.
@@ -133,17 +137,25 @@ export function listHashes(importable: Importable): Record<string, string[]> {
     return out;
 }
 
+const DEFAULT_FUNCTION_ICON_CANONICAL = iconCanonical({ item: "minecraft:map" });
+
+export type ImportableCanonicalPart = { key: string; serialized: string };
+
 /**
- * Hash the entire importable into one fingerprint. A later run compares this
- * first: if it matches the cached value, the importable is unchanged and no
- * action-by-action comparison is needed.
+ * The per-key canonical serializations `importableHash` is built from —
+ * exposed so diagnostics (the live test suite) can name WHICH key two
+ * importables disagree on instead of reporting an opaque hash mismatch.
  */
-export function importableHash(importable: Importable): string {
-    const keys = Object.keys(importable).sort();
-    const parts: string[] = [];
+export function importableCanonicalParts(
+    importable: Importable
+): ImportableCanonicalPart[] {
+    const subject =
+        importable.type === "COMMAND" ? commandCanonical(importable) : importable;
+    const keys = Object.keys(subject).sort();
+    const parts: ImportableCanonicalPart[] = [];
     for (let ki = 0; ki < keys.length; ki++) {
         const key = keys[ki];
-        const value = (importable as unknown as Record<string, unknown>)[key];
+        const value = (subject as unknown as Record<string, unknown>)[key];
         if (value === undefined) continue;
         if (Array.isArray(value) && value.length === 0) continue;
 
@@ -169,16 +181,69 @@ export function importableHash(importable: Importable): string {
                 slotParts.push(menuSlotCanonical(value[si] as Record<string, unknown>));
             }
             serialized = "[" + slotParts.join(",") + "]";
+        } else if (
+            importable.type === "REGION" &&
+            key === "bounds" &&
+            value !== null &&
+            typeof value === "object"
+        ) {
+            serialized = boundsCanonical(value as Bounds);
         } else if (key === "icon" && value !== null && typeof value === "object") {
             serialized = iconCanonical(value as FunctionIcon);
+            // Housing assigns every function a plain map icon at creation, so a
+            // live read of a function whose source declares no icon reports
+            // {item:"minecraft:map"}; treat the default icon as icon-less so
+            // both sides hash alike.
+            if (serialized === DEFAULT_FUNCTION_ICON_CANONICAL) continue;
         } else {
             serialized = stableStringify(value);
         }
 
-        parts.push(JSON.stringify(key) + ":" + serialized);
+        parts.push({ key, serialized });
     }
-    const str = "{" + parts.join(",") + "}";
+    return parts;
+}
+
+/**
+ * Hash the entire importable into one fingerprint. A later run compares this
+ * first: if it matches the cached value, the importable is unchanged and no
+ * action-by-action comparison is needed.
+ */
+export function importableHash(importable: Importable): string {
+    const parts = importableCanonicalParts(importable);
+    const joined: string[] = [];
+    for (let i = 0; i < parts.length; i++) {
+        joined.push(JSON.stringify(parts[i].key) + ":" + parts[i].serialized);
+    }
+    const str = "{" + joined.join(",") + "}";
     return hashHex(str);
+}
+
+// Housing normalizes a region's corners to per-axis min/max, so any corner
+// pairing that spans the same box must hash alike.
+function boundsCanonical(bounds: Bounds): string {
+    const lo = {
+        x: Math.min(bounds.from.x, bounds.to.x),
+        y: Math.min(bounds.from.y, bounds.to.y),
+        z: Math.min(bounds.from.z, bounds.to.z),
+    };
+    const hi = {
+        x: Math.max(bounds.from.x, bounds.to.x),
+        y: Math.max(bounds.from.y, bounds.to.y),
+        z: Math.max(bounds.from.z, bounds.to.z),
+    };
+    return stableStringify({ from: lo, to: hi });
+}
+
+// A live read always returns concrete command settings, while an import.json
+// may omit them; drop Housing's defaults (mode Self, requiredPriority 0,
+// listed true) so both sides hash alike.
+function commandCanonical(command: Importable): Importable {
+    const norm: Record<string, unknown> = { ...command };
+    if (norm.mode === "Self") delete norm.mode;
+    if (norm.requiredPriority === 0) delete norm.requiredPriority;
+    if (norm.listed === true) delete norm.listed;
+    return norm as unknown as Importable;
 }
 
 // Normalize in place rather than rebuilding from a named field list: spreading
@@ -223,11 +288,30 @@ function menuSlotCanonical(slot: Record<string, unknown>): string {
         const value = slot[key];
         if (value === undefined) continue;
         if (Array.isArray(value) && value.length === 0) continue;
-        const serialized =
-            key === "actions" && Array.isArray(value)
-                ? actionListCanonical(value as Action[])
-                : stableStringify(value);
+        let serialized: string;
+        if (key === "actions" && Array.isArray(value)) {
+            serialized = actionListCanonical(value as Action[]);
+        } else if (key === "nbt") {
+            serialized = menuSlotNbtCanonical(value);
+        } else {
+            serialized = stableStringify(value);
+        }
         parts.push(JSON.stringify(key) + ":" + serialized);
     }
     return "{" + parts.join(",") + "}";
+}
+
+// A live menu-slot read hands back vanilla defaults and Housing noise a
+// source snbt never writes; both sides go through the ONE shared item
+// canonicalization (fields/itemTagCanonical.ts) so this hash and the
+// import-time capture matching cannot disagree about item identity.
+function menuSlotNbtCanonical(nbt: unknown): string {
+    if (
+        nbt === null ||
+        typeof nbt !== "object" ||
+        (nbt as { type?: unknown }).type !== "compound"
+    ) {
+        return stableStringify(nbt);
+    }
+    return stableStringify(canonicalItemTag(nbt as TagLike));
 }
