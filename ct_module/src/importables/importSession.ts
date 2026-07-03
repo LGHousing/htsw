@@ -39,6 +39,7 @@ import {
     actionListApplyResultFromError,
     type ActionListApplyResult,
 } from "../housingSync/actions/apply";
+import { waitIfStepPaused } from "../housingSync/stepGate";
 import { writeImportFailureLog } from "../runtimeDebug/importFailureLog";
 import { resetRuntimeDebugRecords } from "../runtimeDebug/runtimeDebugBuffer";
 
@@ -49,6 +50,13 @@ export type ImportSelection = {
     sourcePath: string;
     parsed?: ImportablesParseResult;
     events?: SyncEventHandler;
+    /**
+     * Called for each click-action item dependency the session adds beyond
+     * `importables`. Expansion needs the housing UUID, so it can only run
+     * here, after the caller's queue snapshot — this hands the additions
+     * back so the visible queue can stay in sync with the actual work set.
+     */
+    onItemAutoAdded?: (item: ImportableItem) => void;
 };
 
 function toImportDiagnostic(
@@ -58,7 +66,8 @@ function toImportDiagnostic(
 ): Diagnostic {
     if (error instanceof Diagnostic) return error;
     const verb = phase === "read" ? "read" : "import";
-    return Diagnostic.error(`Failed to ${verb} ${type}: ${error}`);
+    const message = error instanceof Error ? error.message : String(error);
+    return Diagnostic.error(`Failed to ${verb} ${type}: ${message}`);
 }
 
 export function orderImportablesForImportSession(
@@ -118,6 +127,7 @@ export async function importSelectedImportables(
         selection.housingUuid
     );
     for (const item of expansion.addedItems) {
+        selection.onItemAutoAdded?.(item);
         ctx.displayMessage(
             `&7[htsw] Also importing item '&f${item.name}&7' — it has click actions and isn't in this house yet.`
         );
@@ -170,6 +180,7 @@ export async function importSelectedImportables(
 
     // ── Pass 1: pre-read + diff every non-trusted importable. ──────────
     for (let i = 0; i < rowsMeta.length; i++) {
+        await waitIfStepPaused(ctx);
         const row = rowsMeta[i];
         const cacheEntry = row.trustPlan?.entry ?? null;
         events?.emit({
@@ -222,7 +233,7 @@ export async function importSelectedImportables(
             ctx.displayMessage(
                 `&c[htsw] Import aborted during pre-read of ${row.importable.type} ${row.identity}; no changes applied.`
             );
-            ctx.displayMessage(`&7[htsw] Wrote failure log: &f${logPath}`);
+            ctx.displayMessage(`&7[htsw] Details in the failure log: &f${logPath}`);
             events?.emit({ kind: "sessionFinished" });
             return;
         }
@@ -230,6 +241,7 @@ export async function importSelectedImportables(
 
     // ── Pass 2: apply every collected plan in original order. ──────────
     for (const { row, plan } of plans) {
+        await waitIfStepPaused(ctx);
         events?.emit({
             kind: "importableReactivated",
             key: row.key,
@@ -271,7 +283,7 @@ export async function importSelectedImportables(
             ctx.displayMessage(
                 `&c[htsw] Import aborted after failure on ${row.importable.type} ${row.identity}`
             );
-            ctx.displayMessage(`&7[htsw] Wrote failure log: &f${logPath}`);
+            ctx.displayMessage(`&7[htsw] Details in the failure log: &f${logPath}`);
             break;
         }
     }

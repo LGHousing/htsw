@@ -15,6 +15,7 @@ import {
     type ImportableTrustPlan,
 } from "../../importCache";
 import TaskContext from "../../tasks/context";
+import { pollTicks } from "../../tasks/poll";
 import { ensureParentDirs } from "../../utils/filesystem";
 import { stableStringify } from "../../utils/helpers";
 import {
@@ -33,14 +34,10 @@ import type { ImportSession } from "../imports";
 import { createMissingReferencedShells } from "../references";
 import { countReferencedShells } from "../referenceScanner";
 import { itemEditorOpened } from "../waiters";
+import { closeOpenScreen } from "../../housingSync/sideEffects";
+import { summarizeItemStack } from "../../runtimeDebug/itemStackSummary";
 import { COST } from "../../housingSync/progress/costs";
 import { timed } from "../../housingSync/progress/timing";
-
-// The 9th hotbar slot (index 8) is excluded from import: it can't be the item
-// that enters Housing menus, and an item sitting there (typically the player's
-// game-menu item) must not be reused as a spawn — we spawn fresh into slot 0
-// instead. See issue #58.
-const IMPORTABLE_HOTBAR_SLOTS = 8;
 
 function hasItemClickActions(importable: ImportableItem): boolean {
     return (
@@ -78,43 +75,31 @@ type ItemStart = {
     cachedImportable?: ImportableItem;
 };
 
-function hotbarSlotMatches(slot: number, stack: any): boolean {
+function hotbarSlotStack(slot: number): any | null {
     const current = Player.getInventory()?.getStackInSlot(slot);
+    if (current === null || current === undefined) return null;
+    return current.getItemStack();
+}
+
+// The server echoes an accepted creative set-slot back with slightly
+// rewritten NBT (observed: identical name/damage/count, tag text one char
+// longer), so exact areItemStacksEqual never recognizes a landed injection.
+// Item, damage, count, and display name survive the round-trip and are
+// enough to identify the stack we just sent to this specific slot.
+function stackLanded(current: any, sent: any): boolean {
     return (
-        current !== null &&
-        current !== undefined &&
-        stacksEqual(current.getItemStack(), stack)
+        current.func_77973_b() === sent.func_77973_b() &&
+        current.func_77960_j() === sent.func_77960_j() &&
+        current.field_77994_a === sent.field_77994_a &&
+        String(current.func_82833_r()) === String(sent.func_82833_r())
     );
 }
 
-function hotbarZeroMatches(stack: any): boolean {
-    return hotbarSlotMatches(0, stack);
+function hotbarZeroLanded(stack: any): boolean {
+    const current = hotbarSlotStack(0);
+    return current !== null && stackLanded(current, stack);
 }
 
-function findMatchingHotbarSlot(stack: any): number | null {
-    for (let slot = 0; slot < IMPORTABLE_HOTBAR_SLOTS; slot++) {
-        if (hotbarSlotMatches(slot, stack)) {
-            return slot;
-        }
-    }
-    return null;
-}
-
-function stacksEqual(left: any, right: any): boolean {
-    // func_179549_c = ItemStack.areItemStacksEqual, including item, damage, size, and NBT.
-    return left.func_179549_c(right);
-}
-
-// Must stay a finite for-loop, not a `while (!match) await SetSlot` wrapped in a
-// timeout: on timeout that leaks a SetSlot waiter that re-registers itself on
-// every future SetSlot.
-async function waitForHotbarZeroMatch(ctx: TaskContext, stack: any): Promise<boolean> {
-    for (let i = 0; i < SET_SLOT_ACK_MAX_TICKS; i++) {
-        if (hotbarZeroMatches(stack)) return true;
-        await ctx.waitFor("tick");
-    }
-    return hotbarZeroMatches(stack);
-}
 
 export type ItemImportPlan = {
     kind: "ITEM";
@@ -275,21 +260,22 @@ async function injectHeldItem(ctx: TaskContext, item: Item): Promise<void> {
         throw new Error("Cannot inject an empty item stack.");
     }
 
-    const existingHotbarSlot = findMatchingHotbarSlot(stack);
-    if (existingHotbarSlot !== null) {
-        await switchToHotbarSlot(ctx, existingHotbarSlot);
-        return;
-    }
+    // A menu left open by an earlier step (e.g. the Functions list after shell
+    // creation) makes the server drop the creative set-slot below — the ack
+    // never arrives and the injection times out.
+    await closeOpenScreen(ctx);
 
     sendCreativeInventoryAction(
         ctx,
         HOTBAR_ZERO_PACKET_SLOT,
         stack,
     );
-    const landed = await waitForHotbarZeroMatch(ctx, stack);
+    const landed = await pollTicks(ctx, SET_SLOT_ACK_MAX_TICKS, () => hotbarZeroLanded(stack));
     if (!landed) {
+        const observed = summarizeItemStack(hotbarSlotStack(0));
         throw new Error(
-            `held item injection never reached hotbar slot 0 within ${SET_SLOT_ACK_MAX_TICKS} ticks.`
+            `held item injection never landed in hotbar slot 0 within ${SET_SLOT_ACK_MAX_TICKS} ticks ` +
+                `(slot 0 holds: ${observed === null ? "nothing" : JSON.stringify(observed)}).`
         );
     }
     await ctx.waitFor("tick");

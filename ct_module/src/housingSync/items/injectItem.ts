@@ -1,7 +1,9 @@
 import TaskContext from "../../tasks/context";
+import { pollTicks } from "../../tasks/poll";
 import { removedFormatting } from "../../utils/helpers";
 import { recordRuntimeDebug } from "../../runtimeDebug/runtimeDebugBuffer";
 import { summarizeItemStack } from "../../runtimeDebug/itemStackSummary";
+import { canonicalItemKey } from "../itemCapture";
 import { timedWaitForMenu, waitForMenu } from "../menus/menuWait";
 import { SET_SLOT_ACK_MAX_TICKS, sendCreativeInventoryAction } from "../menus/packets";
 import { COST } from "../progress/costs";
@@ -12,11 +14,20 @@ const INV_PACKET_SLOT = 26; // inventory row 2, column 9 (for HasItem and simila
 
 /**
  * Compares two NMS ItemStacks for the purpose of finding/placing the item a
- * field should hold. Defaults to exact `stacksEqual` (GIVE_ITEM, menu slots,
- * conditions need the precise item incl. NBT); the icon path passes a looser
- * item+count comparator.
+ * field should hold. Defaults to `canonicalStacksEqual`; the icon path passes
+ * a looser item+count comparator.
  */
 export type StackMatcher = (a: any, b: any) => boolean;
+
+// The server rewrites item NBT on any round-trip — integral tags re-typed
+// (a source int echoes back as a byte), blank lore lines become "§7" — so
+// byte-exact areItemStacksEqual can never match a stack that lives
+// server-side against a source-built one. Compare through canonicalItemKey,
+// the one shared definition of item equivalence (also used by the drift hash
+// and capture matching).
+export function canonicalStacksEqual(left: any, right: any): boolean {
+    return canonicalItemKey(new Item(left)) === canonicalItemKey(new Item(right));
+}
 
 function slotMatchesStack(slotId: number, stack: any, match: StackMatcher): boolean {
     const slot = Player.getContainer()?.getItems()?.[slotId];
@@ -33,27 +44,6 @@ function containerSlotStack(slotId: number): any | null {
     return slot.getItemStack();
 }
 
-export function stacksEqual(left: any, right: any): boolean {
-    // func_179549_c = ItemStack.areItemStacksEqual, including item, damage, size, and NBT.
-    return left.func_179549_c(right);
-}
-
-// Must stay a finite for-loop, not a `while (!match) await SetSlot` wrapped in a
-// timeout: on timeout that leaks a SetSlot waiter that re-registers itself on
-// every future SetSlot. Polling the slot directly also means a missing server
-// ack can't hang us.
-async function waitForContainerSlotMatch(
-    ctx: TaskContext,
-    slotId: number,
-    stack: any,
-    match: StackMatcher
-): Promise<boolean> {
-    for (let i = 0; i < SET_SLOT_ACK_MAX_TICKS; i++) {
-        if (slotMatchesStack(slotId, stack, match)) return true;
-        await ctx.waitFor("tick");
-    }
-    return slotMatchesStack(slotId, stack, match);
-}
 
 /**
  * Set the value of a Housing "Item" field (GIVE_ITEM, REMOVE_ITEM, IS_ITEM, ...).
@@ -70,7 +60,7 @@ export async function setItemValue(
     ctx: TaskContext,
     fieldName: string,
     item: Item,
-    match: StackMatcher = stacksEqual
+    match: StackMatcher = canonicalStacksEqual
 ): Promise<void> {
     ctx.getItemSlot(fieldName).click();
     await timedWaitForMenu(ctx, "menuClickWait");
@@ -87,7 +77,7 @@ export async function selectItemFromOpenInventory(
     ctx: TaskContext,
     item: Item,
     label: string,
-    match: StackMatcher = stacksEqual
+    match: StackMatcher = canonicalStacksEqual
 ): Promise<void> {
     const container = Player.getContainer();
     if (container == null) {
@@ -163,11 +153,8 @@ export async function selectItemFromOpenInventory(
         INV_PACKET_SLOT,
         desiredStack,
     );
-    const landed = await waitForContainerSlotMatch(
-        ctx,
-        targetSlotInContainer,
-        desiredStack,
-        match
+    const landed = await pollTicks(ctx, SET_SLOT_ACK_MAX_TICKS, () =>
+        slotMatchesStack(targetSlotInContainer, desiredStack, match)
     );
     if (!landed) {
         const itemName = removedFormatting(item.getName());

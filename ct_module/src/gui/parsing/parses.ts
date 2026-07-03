@@ -113,9 +113,9 @@ export function canonicalPath(p: string): string {
     try {
         if (_Paths === null) _Paths = javaType("java.nio.file.Paths");
         result = String(_Paths.get(String(p)).toAbsolutePath().normalize().toString())
-            .replace(/\\/g, "/");
+            .split("\\").join("/");
     } catch (_e) {
-        result = p.replace(/\\/g, "/");
+        result = p.split("\\").join("/");
     }
     canonicalPathCache.set(p, result);
     return result;
@@ -259,7 +259,13 @@ export function parseImportJsonBlocking(rawPath: string): CachedParse {
     if (parsed === null) {
         const sm = new SourceMap(new FileSystemFileLoader());
         try {
-            parsed = parseImportablesResult(sm, rawPath);
+            // Parse with the canonical absolute path, not the stored
+            // `./htsw/...` form: the loader resolves every include to an
+            // absolute path, and mixing forms in the file tree breaks any
+            // path comparison against the root node (e.g. rehomeFileTree's
+            // directory-containment check, which can never match a `./`
+            // root against absolute children).
+            parsed = parseImportablesResult(sm, canon);
         } catch (e) {
             const msg = e && (e as { message?: string }).message
                 ? (e as { message: string }).message

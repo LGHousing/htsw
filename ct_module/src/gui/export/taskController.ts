@@ -7,19 +7,15 @@ import {
     getParseAt,
     markParseStale,
 } from "../parsing/parses";
-import type { ReadFn, ReadResult } from "../../importables/read";
+import type { ReadFn } from "../../importables/read";
 import { exportProjectContextFromParsedImportJson } from "../../importables/exportContext";
 import { TaskManager } from "../../tasks/manager";
 import { closeAllPopovers } from "../lib/popovers";
 import { shortPath } from "../lib/pathDisplay";
 import { createExportProgressSink } from "./progressSink";
 import { showToast } from "../toast";
-import { isTaskRunning, setTaskRunning } from "../../tasks/runningState";
-import { resetEventContainers } from "../../tasks/specifics/waitFor";
-import {
-    clearActiveTaskContext,
-    setActiveTaskContext,
-} from "../../tasks/activeTask";
+import { isTaskRunning } from "../../tasks/runningState";
+import { runHousingSyncTask } from "../../housingSync/taskRunner";
 
 export type ExportSpec = {
     type: Importable["type"];
@@ -48,28 +44,18 @@ export function startExport(
     }
     const dir = importJsonDir(importJsonPath);
     const count = names === undefined ? null : names.length;
-    TaskManager.run(async (ctx) => {
-        setActiveTaskContext("export", ctx);
-        setTaskRunning(true);
-        let result: ReadResult;
-        try {
-            const purged = resetEventContainers();
-            if (purged > 0) {
-                ChatLib.chat(`&8[htsw] purged ${purged} leaked event waiter(s) from a prior run.`);
-            }
-            const exportContext = exportProjectContextFromParsedImportJson(
-                { rootDir: dir, importJsonPath },
-                getParseAt(importJsonPath)?.parsed
-            );
-            result = await spec.read(ctx, {
-                ...exportContext,
-                names,
-                progress: createExportProgressSink(spec.type, importJsonPath),
-            });
-        } finally {
-            clearActiveTaskContext("export", ctx);
-            setTaskRunning(false);
-        }
+    runHousingSyncTask("export", (ctx) => {
+        const exportContext = exportProjectContextFromParsedImportJson(
+            { rootDir: dir, importJsonPath },
+            getParseAt(importJsonPath)?.parsed
+        );
+        return spec.read(ctx, {
+            ...exportContext,
+            names,
+            progress: createExportProgressSink(spec.type, importJsonPath),
+        });
+    }).then((result) => {
+        if (result === undefined) return;
         markParseStale(importJsonPath);
         if (result.failed > 0) {
             showToast(

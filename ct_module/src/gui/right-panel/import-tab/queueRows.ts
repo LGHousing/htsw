@@ -202,14 +202,25 @@ export function isQueueImportJsonExpanded(item: QueueItem): boolean {
     return item.operation === "import" && item.kind === "importJson" && !collapsedQueueImportJsonRows.has(queueItemKey(item));
 }
 
+// Teal skip badge for a queue row: predictive ("will skip") until the run
+// resolves the row, then only an actually-skipped outcome keeps the badge —
+// a prediction has no business outliving the event it predicts.
+function skipBadge(item: QueueItem): { teal: boolean; tooltip: string | undefined } {
+    const runState = getQueueItemRunState(item);
+    if (runState.kind === "skipped") return { teal: true, tooltip: "Trusted - skipped" };
+    const finished = runState.kind === "done" || runState.kind === "failed";
+    if (!finished && willBeSkipped(item)) return { teal: true, tooltip: "Trusted - will skip" };
+    return { teal: false, tooltip: undefined };
+}
+
 export function queueRow(item: QueueItem): Element {
     const typeText = item.kind === "importJson" ? "ALL" : item.type;
     const isCurrent = isCurrentQueueItem(item);
     const isActive = isActiveQueueItem(item);
-    const skip = willBeSkipped(item);
+    const { teal: skip, tooltip: skipTooltip } = skipBadge(item);
     const canExpand = item.operation === "import" && item.kind === "importJson";
     const expanded = canExpand && isQueueImportJsonExpanded(item);
-    const stateColor = isActive ? PHASE_READING : skip ? ACCENT_TEAL : undefined;
+    const stateColor = isActive ? PHASE_READING : undefined;
     return Container({
         style: {
             direction: "col",
@@ -252,14 +263,14 @@ export function queueRow(item: QueueItem): Element {
                     Text({
                         text: typeText,
                         color: skip ? ACCENT_TEAL : COLOR_TEXT_DIM,
-                        tooltip: skip ? "Trusted - will skip" : undefined,
+                        tooltip: skipTooltip,
                         tooltipColor: ACCENT_TEAL,
                         style: { width: { kind: "px", value: 48 } },
                     }),
                     Text({
                         text: item.label,
                         color: skip ? ACCENT_TEAL : undefined,
-                        tooltip: skip ? "Trusted - will skip" : undefined,
+                        tooltip: skipTooltip,
                         tooltipColor: ACCENT_TEAL,
                         truncate: true,
                         style: { width: { kind: "grow" } },
@@ -296,8 +307,8 @@ export function queueRow(item: QueueItem): Element {
 export function queueImportJsonChildRow(item: QueueItem): Element {
     const isCurrent = isCurrentQueueItem(item);
     const isActive = isActiveQueueItem(item);
-    const skip = willBeSkipped(item);
-    const stateColor = isActive ? PHASE_READING : skip ? ACCENT_TEAL : undefined;
+    const { teal: skip, tooltip: skipTooltip } = skipBadge(item);
+    const stateColor = isActive ? PHASE_READING : undefined;
     return Container({
         style: {
             direction: "col",
@@ -323,14 +334,14 @@ export function queueImportJsonChildRow(item: QueueItem): Element {
                     Text({
                         text: item.kind === "importable" ? item.type : "ALL",
                         color: skip ? ACCENT_TEAL : COLOR_TEXT_DIM,
-                        tooltip: skip ? "Trusted - will skip" : undefined,
+                        tooltip: skipTooltip,
                         tooltipColor: ACCENT_TEAL,
                         style: { width: { kind: "px", value: 48 } },
                     }),
                     Text({
                         text: item.label,
                         color: skip ? ACCENT_TEAL : undefined,
-                        tooltip: skip ? "Trusted - will skip" : undefined,
+                        tooltip: skipTooltip,
                         tooltipColor: ACCENT_TEAL,
                         truncate: true,
                         style: { width: { kind: "grow" } },

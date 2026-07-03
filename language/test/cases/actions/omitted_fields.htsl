@@ -4,3 +4,7 @@ title "Title" "Subtitle" 1 5 1
 
 function "MyFunction :)"
 function "MyFunction" true
+
+maxHealth Increment 5
+maxHealth Set 20 false
+maxHealth Set 20 true

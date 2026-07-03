@@ -12,6 +12,7 @@ const PROJECT_MESSAGE_TYPES = new Set([
     "openProjectFile",
     "createIncludedImportJson",
     "addImportable",
+    "moveImportable",
 ]);
 const ITEM_MESSAGE_TYPES = new Set(["requestImportTargets", "submitItem"]);
 

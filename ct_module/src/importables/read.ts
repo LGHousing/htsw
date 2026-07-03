@@ -2,6 +2,7 @@ import type { ImportableItem } from "htsw/types";
 
 import type TaskContext from "../tasks/context";
 import { isTaskCancelled } from "../tasks/manager";
+import { waitIfStepPaused } from "../housingSync/stepGate";
 import type {
     ExportProgressSink,
     ProgressHandler,
@@ -75,6 +76,7 @@ export async function runReadLoop(
     try {
         for (let i = 0; i < names.length; i++) {
             ctx.checkCancelled();
+            await waitIfStepPaused(ctx);
             const name = names[i];
 
             progress?.item(i, name);

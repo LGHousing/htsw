@@ -135,6 +135,21 @@ export function addToQueue(item: QueueItem): boolean {
     return true;
 }
 
+/**
+ * Add an item mid-run as part of the active session. The importer widens
+ * its work set after the session snapshot (click-action item dependencies),
+ * so a plain addToQueue would land the row in the "pending" group below the
+ * divider — session-marking it keeps the visible queue matching what the
+ * run is actually doing.
+ */
+export function addSessionQueueItem(item: QueueItem): void {
+    addToQueue(item);
+    if (sessionKeys !== null && !sessionKeys.has(queueItemKey(item))) {
+        sessionKeys.add(queueItemKey(item));
+        markGuiDirty();
+    }
+}
+
 export function removeFromQueueKey(key: string): void {
     const beforeLen = items.length;
     items = items.filter((i) => queueItemKey(i) !== key);

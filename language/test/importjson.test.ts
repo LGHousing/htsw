@@ -107,6 +107,54 @@ describe("import.json include", () => {
         expect(result.importJson.declaringPathOf(regionA!)).toBe(aPath);
     });
 
+    it("records a repeat include as a reference leaf", () => {
+        const entry = caseDirPath("repeat_include");
+        const result = parseImportables(entry);
+
+        const dir = dirname(entry);
+        const cPath = resolve(dir, "c", "import.json");
+        const root = result.importJson.fileTree;
+        const [aNode, bNode] = root!.includes;
+
+        expect(aNode.includes.map((n) => n.path)).toEqual([cPath]);
+        expect(aNode.includes[0].reference).toBeUndefined();
+        expect(aNode.includes[0].importables.length).toBe(1);
+
+        expect(bNode.includes.map((n) => n.path)).toEqual([cPath]);
+        expect(bNode.includes[0].reference).toBe(true);
+        expect(bNode.includes[0].importables).toEqual([]);
+        expect(bNode.includes[0].includes).toEqual([]);
+
+        expect(hasHardErrors(result.diagnostics)).toBe(false);
+        // The shared file's importables merge once, not per include edge.
+        expect(
+            result.value.filter((imp) => imp.type === "REGION").length
+        ).toBe(1);
+    });
+
+    it("homes a file's contents at the folder-shaped include edge", () => {
+        const entry = caseDirPath("rehome");
+        const result = parseImportables(entry);
+
+        const dir = dirname(entry);
+        const menusPath = resolve(dir, "shared", "menus", "import.json");
+        const root = result.importJson.fileTree;
+        const [alphaNode, sharedNode] = root!.includes;
+
+        // alpha parses first, but its include reaches across folders — after
+        // re-homing it holds the reference, and shared (whose directory
+        // contains menus/) holds the full node.
+        expect(alphaNode.includes.map((n) => n.path)).toEqual([menusPath]);
+        expect(alphaNode.includes[0].reference).toBe(true);
+
+        expect(sharedNode.includes.map((n) => n.path)).toEqual([menusPath]);
+        expect(sharedNode.includes[0].reference).toBeUndefined();
+        expect(sharedNode.includes[0].importables.length).toBe(1);
+        expect(result.importJson.declaringPathOf(sharedNode.includes[0].importables[0])).toBe(menusPath);
+
+        expect(hasHardErrors(result.diagnostics)).toBe(false);
+    });
+
     it("attaches no node for cyclic includes", () => {
         const entry = caseDirPath("cycle");
         const result = parseImportables(entry);
@@ -127,6 +175,17 @@ describe("import.json include", () => {
             })
         ).toBe(true);
         expect(hasHardErrors(result.diagnostics)).toBe(true);
+    });
+
+    it("records a missing include as a missing leaf in the file tree", () => {
+        const result = parseImportables(caseFilePath("missing"));
+
+        const root = result.importJson.fileTree;
+        expect(root).not.toBeNull();
+        const missingNodes = root!.includes.filter((node) => node.missing === true);
+        expect(missingNodes.length).toBe(1);
+        expect(missingNodes[0].importables).toEqual([]);
+        expect(missingNodes[0].includes).toEqual([]);
     });
 
     it("reports include cycles", () => {

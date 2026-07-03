@@ -528,6 +528,9 @@ export function markPlannedEdit(
     const actionPathKeyValue = actionPathKey(actionPath);
     const startIdx = findActionStartIndex(s.lines, actionPathKeyValue);
     if (startIdx < 0) return;
+    // diffPlanned arrives twice per list (at pre-read, again when the apply
+    // starts); a still-pending ghost means this edit is already marked.
+    if (findIndexByPathVariant(s.lines, actionPathKeyValue, "ghost") >= 0) return;
     s.lines[startIdx].diffState = "edit";
     const depth = s.lines[startIdx].depth;
     const ghostText = `${indent(depth)}${printActionOneLine(desired)}`;

@@ -77,5 +77,6 @@ Split across `ct_module/src/housingSync/` (read/diff/write live menus), `importa
 
 - `imports.ts` only dispatches — never inline per-type bodies. Export has no dispatch switch; callers hold a per-type `ReadFn` (see `contentTypes.ts`).
 - A type's import + export live together under `importables/<type>/`; logic shared between the two directions stays in that folder. Importable-owned export helpers that cut across types live under the owning importable folder, such as `importables/items/`. Task state and cancellation helpers live under `tasks/`.
+- Every import/export/deep-read task starts through `housingSync/taskRunner.ts:runHousingSyncTask` — it owns the per-run bookkeeping (active context, running flag, Pause gate reset, waiter purge). Never hand-roll that list in a new starter; the Pause button once silently broke because four starters each kept their own copy.
 - Exporters reuse importer reads (`readActionList`, `readConditionList`, `parse*ListItem`) — never duplicate read logic.
 - Adding an action/condition type: update `housingSync/fields/actionMappings.ts` / `conditionMappings.ts` first — they drive parsing, list-item observation, and diff cost.

@@ -52,6 +52,48 @@ describe("canonicalItemTag", () => {
         );
     });
 
+    test("integral tag widths fold: server's re-typed byte equals the source int", () => {
+        // Verified in-game: an injected skull with `hypixelPopulated: 1` (int)
+        // echoes back from the server as `1b` (byte).
+        const int = (value: number): TagLike => ({ type: "int", value });
+        const source = compound({
+            id: str("minecraft:skull"),
+            Damage: short(3),
+            tag: compound({ SkullOwner: compound({ hypixelPopulated: int(1) }) }),
+        });
+        const echoed = compound({
+            id: str("minecraft:skull"),
+            Damage: byte(3),
+            tag: compound({ SkullOwner: compound({ hypixelPopulated: byte(1) }) }),
+        });
+        expect(canonicalItemTag(source)).toEqual(canonicalItemTag(echoed));
+
+        // Values still matter — only the width is folded.
+        const other = compound({
+            id: str("minecraft:skull"),
+            Damage: short(3),
+            tag: compound({ SkullOwner: compound({ hypixelPopulated: int(0) }) }),
+        });
+        expect(canonicalItemTag(source)).not.toEqual(canonicalItemTag(other));
+    });
+
+    test("integral widths fold inside compound lists (ench entries)", () => {
+        const int = (value: number): TagLike => ({ type: "int", value });
+        const enchList = (lvl: TagLike, id: TagLike): TagLike => ({
+            type: "list",
+            value: { type: "compound", value: [{ lvl, id }] },
+        });
+        const source = compound({
+            id: str("minecraft:skull"),
+            tag: compound({ ench: enchList(short(1), short(17)) }),
+        });
+        const retyped = compound({
+            id: str("minecraft:skull"),
+            tag: compound({ ench: enchList(int(1), int(17)) }),
+        });
+        expect(canonicalItemTag(source)).toEqual(canonicalItemTag(retyped));
+    });
+
     test("blank lore separators equal Housing's §7 form, without mutating input", () => {
         const withBlank = compound({
             id: str("minecraft:stone"),

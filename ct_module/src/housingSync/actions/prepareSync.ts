@@ -11,6 +11,7 @@ import {
     prereadActionList,
     type ActionListPlan,
 } from "./plan";
+import { emitDiffPlanned } from "./apply/progress";
 
 export type ActionListSyncResult =
     | { kind: "skipped"; reason: "undeclared" | "trusted" }
@@ -46,17 +47,13 @@ export async function prepareActionListSync(
         return { kind: "skipped", reason: "trusted" };
     }
     if (target.current?.kind === "known-empty") {
-        return {
-            kind: "planned",
-            plan: createKnownEmptyActionListPlan(target.desired, target),
-        };
+        return planned(createKnownEmptyActionListPlan(target.desired, target), target);
     }
     if (target.open !== undefined) {
         await target.open();
     }
-    return {
-        kind: "planned",
-        plan: await prereadActionList(ctx, target.desired, {
+    return planned(
+        await prereadActionList(ctx, target.desired, {
             session: target.session,
             listPath: target.listPath,
             progressScope: target.progressScope,
@@ -66,7 +63,21 @@ export async function prepareActionListSync(
             ),
             trust: getActionListTrust(target.trustPlan, target.basePath),
         }),
-    };
+        target
+    );
+}
+
+// The apply pass re-emits diffPlanned when it starts, but in a two-pass
+// session that can be minutes after this pre-read (every other importable's
+// pre-read runs in between). Emit as soon as the diff exists so the live
+// preview shows the planned operations immediately; the preview's mark
+// handlers tolerate the later re-emission.
+function planned(
+    plan: ActionListPlan,
+    target: ActionListSyncTarget
+): ActionListSyncResult {
+    emitDiffPlanned(target.session.events, plan.diff, plan.desired, target.listPath);
+    return { kind: "planned", plan };
 }
 
 function isActionListTrusted(

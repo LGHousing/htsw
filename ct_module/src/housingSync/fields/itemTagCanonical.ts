@@ -97,6 +97,45 @@ export function normalizeBlankLoreSeparators(tag: TagLike): TagLike {
     };
 }
 
+// The server re-types integral tags when an item round-trips through it — a
+// custom int comes back as a byte (verified with a saved echo of an injected
+// skull: `hypixelPopulated: 1` returned as `1b`). Integral width therefore
+// can't be part of an item's identity; fold byte/short/int to "int",
+// preserving the value. Longs and floats keep their types — no re-typing of
+// those has been observed, and folding them risks precision/representation
+// mismatches for no known gain.
+function normalizeIntegralTypes(tag: TagLike): TagLike {
+    if (tag.type === "byte" || tag.type === "short") {
+        return { type: "int", value: tag.value };
+    }
+    if (tag.type === "compound") {
+        const value = compoundEntries(tag);
+        const out: Record<string, TagLike> = {};
+        for (const key of Object.keys(value)) {
+            out[key] = normalizeIntegralTypes(value[key]);
+        }
+        return { type: "compound", value: out };
+    }
+    if (tag.type === "list") {
+        const list = tag.value as { type: string; value: unknown[] };
+        if (list.type === "byte" || list.type === "short") {
+            return { type: "list", value: { type: "int", value: list.value.slice() } };
+        }
+        if (list.type === "compound") {
+            const items = list.value.map(
+                (entry) =>
+                    normalizeIntegralTypes({
+                        type: "compound",
+                        value: entry as Record<string, TagLike>,
+                    }).value
+            );
+            return { type: "list", value: { type: "compound", value: items } };
+        }
+        return tag;
+    }
+    return tag;
+}
+
 function isNumericTagWithValue(tag: TagLike | undefined, expected: number): boolean {
     if (tag === undefined) return false;
     return (
@@ -123,6 +162,8 @@ function normalizeItemDefaults(tag: TagLike): TagLike {
 
 export function canonicalItemTag(tag: TagLike): TagLike {
     return stripEmptyCompounds(
-        normalizeBlankLoreSeparators(normalizeItemDefaults(stripInteractData(tag)))
+        normalizeBlankLoreSeparators(
+            normalizeItemDefaults(normalizeIntegralTypes(stripInteractData(tag)))
+        )
     );
 }

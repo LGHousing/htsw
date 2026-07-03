@@ -3,6 +3,7 @@
 import {
     Element,
     getScrollState,
+    setScrollOffset,
 } from "../../lib/layout";
 import { Col, Container, Text } from "../../lib/components";
 import { COLOR_TEXT_DIM } from "../../lib/theme";
@@ -15,8 +16,8 @@ import {
 } from "./source";
 import { sortResults } from "./sort";
 import { isImportableTypeActive, isFilterDefault } from "./filter";
-import { Result, ResultImport, ROW_BG, getTreeRevision } from "./rowModel";
-import { IncludeNode, includeTreeOf } from "./includeTree";
+import { Result, ResultImport, ROW_BG, bumpTreeRevision, getTreeRevision } from "./rowModel";
+import { IncludeNode, includeAncestorPaths, includeTreeOf } from "./includeTree";
 import { canonicalPath } from "../../parsing/parses";
 import { compactPath } from "../../lib/pathDisplay";
 import {
@@ -26,9 +27,11 @@ import {
     collapsedRoots,
     importableExpansion,
     importableExpansionKey,
+    expandIncludeGroup,
     includeGroupKey,
     includeGroupRow,
     isIncludeGroupExpanded,
+    setJumpFlash,
     subListsOf,
     metadataFieldsOf,
     dirRootKey,
@@ -60,6 +63,8 @@ type TreeRow = {
     branch: BranchKind | null;
     content: () => Element;
     height: number;
+    /** Set on home include-group rows so a reference-row jump can find them. */
+    key?: string;
 };
 
 function pixel(w: number, h: number): Element {
@@ -360,23 +365,36 @@ function emitIncludeNode(
     narrowing: boolean
 ): void {
     const imps = filterImportableList(r, node.importables);
+    // Missing includes aren't rendered in-game (the manifest's own error
+    // badge already flags them); VS Code's tree does show them.
+    const present = node.includes.filter((c) => c.missing !== true);
     const kids = narrowing
-        ? node.includes.filter((c) => groupHasVisibleContent(r, c))
-        : node.includes;
+        ? present.filter((c) => groupHasVisibleContent(r, c))
+        : present;
     const total = imps.length + kids.length;
     let idx = 0;
     for (let j = 0; j < kids.length; j++) {
         idx++;
         const kid = kids[j];
         const isLast = idx === total;
-        const expKey = includeGroupKey(r.fullPath, canonicalPath(kid.path));
+        const kidPath = canonicalPath(kid.path);
+        const expKey = includeGroupKey(r.fullPath, kidPath);
+        const isReference = kid.reference === true;
         out.push({
             levels,
             branch: isLast ? "ell" : "tee",
-            content: () => includeGroupRow(r, kid, expKey, narrowing, canonicalPath(node.path)),
+            content: () => includeGroupRow(
+                r,
+                kid,
+                expKey,
+                narrowing,
+                canonicalPath(node.path),
+                isReference ? () => jumpToIncludeNode(r, kidPath) : undefined
+            ),
             height: 18,
+            key: isReference ? undefined : expKey,
         });
-        if (isIncludeGroupExpanded(expKey, narrowing)) {
+        if (!isReference && isIncludeGroupExpanded(expKey, narrowing)) {
             emitIncludeNode(
                 out,
                 r,
@@ -576,6 +594,34 @@ function buildTreeRows(): TreeRow[] {
 
 export const RESULTS_SCROLL_ID = "left-results-scroll";
 const VIRTUAL_OVERSCAN_PX = 96;
+
+// Reveal the home group of a repeat-included file: expand the groups above
+// it, rebuild the descriptors, scroll its row into the upper third of the
+// viewport, and flash it.
+function jumpToIncludeNode(r: ResultImport, targetPath: string): void {
+    const ancestors = includeAncestorPaths(includeTreeOf(r), targetPath);
+    if (ancestors === null) return;
+    for (let i = 0; i < ancestors.length; i++) {
+        expandIncludeGroup(includeGroupKey(r.fullPath, ancestors[i]));
+    }
+    const targetKey = includeGroupKey(r.fullPath, targetPath);
+    // Expand the target too — landing on a collapsed group still costs a
+    // caret click, which defeats the point of the jump.
+    expandIncludeGroup(targetKey);
+    setJumpFlash(targetKey);
+    bumpTreeRevision();
+
+    const rows = treeRows();
+    let y = 0;
+    for (let i = 0; i < rows.length; i++) {
+        if (rows[i].key === targetKey) {
+            const viewportH = getScrollState(RESULTS_SCROLL_ID).viewportRect.h;
+            setScrollOffset(RESULTS_SCROLL_ID, Math.max(0, y - Math.max(0, viewportH / 3)));
+            return;
+        }
+        y += rows[i].height + ROW_GAP_H;
+    }
+}
 
 export function renderRows(): Element[] {
     const rows = treeRows();

@@ -1,8 +1,17 @@
 import * as vscode from "vscode";
 import * as htsw from "htsw";
 import * as common from "htsw-editor-common";
+import { walkImportJsonTree } from "htsw-editor-common/project";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { nodeProjectFs } from "./nodeProjectFs";
+import {
+    type ContextParse,
+    bumpWorkspaceGeneration,
+    getCachedRootParse,
+    normalizedPathKey,
+    workspaceGeneration,
+} from "./rootParse";
 import { computeBestLayout } from "./loreLineLayout";
 import {
     formatSnbtText,
@@ -95,12 +104,19 @@ export class InlayHintsAdapter implements vscode.InlayHintsProvider {
     }
 }
 
+type DiagnosticGroup = {
+    diagnostics: htsw.Diagnostic[];
+    sourceMap?: htsw.SourceMap;
+};
+
 export class DiagnosticsAdapter {
     private disposables: vscode.Disposable[] = [];
     private pendingValidations: Map<string, NodeJS.Timeout> = new Map();
     private disposed = false;
     private diagnosticCollection: vscode.DiagnosticCollection =
         vscode.languages.createDiagnosticCollection("htsl");
+
+    private rootContextCache: Map<string, { generation: number; rootPath: string }> = new Map();
 
     constructor() {
         this.disposables.push(
@@ -186,17 +202,20 @@ export class DiagnosticsAdapter {
         this.disposables.push(watcher);
         this.disposables.push(
             watcher.onDidCreate((uri) => {
+                bumpWorkspaceGeneration();
                 void this.validateUriFromDisk(uri);
                 if (refreshWorkspace) this.refreshOpenDiagnostics();
             })
         );
         this.disposables.push(
             watcher.onDidChange((uri) => {
+                bumpWorkspaceGeneration();
                 void this.validateUriFromDisk(uri);
                 if (refreshWorkspace) this.refreshOpenDiagnostics();
             })
         );
         this.disposables.push(watcher.onDidDelete((uri) => {
+            bumpWorkspaceGeneration();
             this.diagnosticCollection.set(uri, []);
             if (refreshWorkspace) this.refreshOpenDiagnostics();
         }));
@@ -242,31 +261,32 @@ export class DiagnosticsAdapter {
     }
 
     private validate(document: vscode.TextDocument) {
-        const result = this.collectDiagnostics(document);
-        const markers = result.diagnostics.flatMap((diagnostic) => {
-            const diagnosticSpan =
-                diagnostic.spans.find((span) => span.kind === "primary")?.span ||
-                diagnostic.spans[0]?.span;
+        const groups = this.collectDiagnostics(document);
+        const markers = groups.flatMap((group) =>
+            group.diagnostics.flatMap((diagnostic) => {
+                const diagnosticSpan =
+                    diagnostic.spans.find((span) => span.kind === "primary")?.span ||
+                    diagnostic.spans[0]?.span;
 
-            if (!diagnosticSpan) return [];
+                if (!diagnosticSpan) return [];
 
-            const range = this.rangeFromSpan(document, diagnosticSpan, result.sourceMap);
-            if (!range) return [];
+                const range = this.rangeFromSpan(document, diagnosticSpan, group.sourceMap);
+                if (!range) return [];
 
-            const relatedInformation = this.buildRelatedInformation(
-                document,
-                diagnostic,
-                result.sourceMap
-            );
-
-            return [
-                this.createVscodeDiagnostic(
-                    range,
+                const relatedInformation = this.buildRelatedInformation(
+                    document,
                     diagnostic,
-                    relatedInformation
-                ),
-            ];
-        });
+                    group.sourceMap
+                );
+                return [
+                    this.createVscodeDiagnostic(
+                        range,
+                        diagnostic,
+                        relatedInformation
+                    ),
+                ];
+            })
+        );
 
         this.diagnosticCollection.set(document.uri, markers);
     }
@@ -360,31 +380,23 @@ export class DiagnosticsAdapter {
         return result;
     }
 
-    private collectDiagnostics(document: vscode.TextDocument): {
-        diagnostics: htsw.Diagnostic[];
-        sourceMap?: htsw.SourceMap;
-    } {
+    private collectDiagnostics(document: vscode.TextDocument): DiagnosticGroup[] {
         if (document.languageId === "htsl") {
             const contextual = this.collectContextualHtslDiagnostics(document);
-            if (contextual.length > 0) {
-                return {
-                    diagnostics: contextual[0].diagnostics,
-                    sourceMap: contextual[0].sourceMap,
-                };
-            }
+            if (contextual.length > 0) return contextual;
 
             const sourceMap = new htsw.SourceMap(new StringFileLoader(document.getText()));
-            return {
+            return [{
                 diagnostics: htsw.parseActionsResult(sourceMap, "file.htsl").diagnostics,
                 sourceMap,
-            };
+            }];
         }
 
         if (document.languageId === "snbt") {
             const sourceMap = new htsw.SourceMap(new StringFileLoader(document.getText()));
             const gcx = new htsw.GlobalCtxt(sourceMap, "file.snbt");
             htsw.nbt.parseSnbt(gcx, "file.snbt");
-            return { diagnostics: gcx.diagnostics, sourceMap };
+            return [{ diagnostics: gcx.diagnostics, sourceMap }];
         }
 
         if (this.isImportJsonDocument(document)) {
@@ -393,42 +405,98 @@ export class DiagnosticsAdapter {
                 new HybridFileLoader(docPath, document.getText())
             );
             const result = htsw.parseImportablesResult(sourceMap, docPath);
-            return {
+            return [{
                 diagnostics: result.diagnostics.filter((diagnostic) =>
                     this.isDiagnosticForFile(diagnostic, sourceMap, docPath)
                 ),
                 sourceMap,
-            };
+            }];
         }
 
-        return { diagnostics: [] };
+        return [];
     }
 
-    private collectContextualHtslDiagnostics(document: vscode.TextDocument): {
-        diagnostics: htsw.Diagnostic[];
-        sourceMap: htsw.SourceMap;
-    }[] {
+    // An .htsl file is checked in its ROOT scope — the outermost manifest
+    // that transitively includes its declaring import.json — so VS Code's
+    // errors match what an in-game import of the whole project sees.
+    private collectContextualHtslDiagnostics(document: vscode.TextDocument): DiagnosticGroup[] {
         if (document.uri.scheme !== "file") return [];
 
         const docPath = document.uri.fsPath;
-        const importJsonPaths = this.findImportJsonContexts(docPath);
-        const results: { diagnostics: htsw.Diagnostic[]; sourceMap: htsw.SourceMap }[] = [];
-
-        for (const importJsonPath of importJsonPaths) {
-            const sourceMap = new htsw.SourceMap(
-                new HybridFileLoader(docPath, document.getText())
+        for (const declaringPath of this.findImportJsonContexts(docPath)) {
+            const rootPath = this.findRootContext(declaringPath);
+            const rootParse = this.parseRootScope(rootPath, document);
+            const rootDiagnostics = rootParse.result.diagnostics.filter((diagnostic) =>
+                this.isDiagnosticForFile(diagnostic, rootParse.sourceMap, docPath)
             );
-            const result = htsw.parseImportablesResult(sourceMap, importJsonPath);
-            const diagnostics = result.diagnostics.filter((diagnostic) =>
-                this.isDiagnosticForFile(diagnostic, sourceMap, docPath)
-            );
-
-            if (diagnostics.length > 0) {
-                results.push({ diagnostics, sourceMap });
+            if (rootDiagnostics.length > 0) {
+                return [{ diagnostics: rootDiagnostics, sourceMap: rootParse.sourceMap }];
             }
         }
 
-        return results;
+        return [];
+    }
+
+    private parseInContext(contextPath: string, document: vscode.TextDocument): ContextParse {
+        const sourceMap = new htsw.SourceMap(
+            new HybridFileLoader(document.uri.fsPath, document.getText())
+        );
+        return { result: htsw.parseImportablesResult(sourceMap, contextPath), sourceMap };
+    }
+
+    // Dirty documents parse fresh (the shared cache reads open buffers but
+    // is only invalidated by on-disk changes); clean documents share the
+    // generation-keyed cache with the project tree.
+    private parseRootScope(rootPath: string, document: vscode.TextDocument): ContextParse {
+        if (document.isDirty) return this.parseInContext(rootPath, document);
+        return getCachedRootParse(rootPath);
+    }
+
+    // The outermost manifest in the file's ancestor directories that
+    // transitively includes the declaring manifest; the declaring manifest
+    // itself when nothing above includes it.
+    private findRootContext(declaringPath: string): string {
+        const cacheKey = normalizedPathKey(declaringPath);
+        const cached = this.rootContextCache.get(cacheKey);
+        if (cached && cached.generation === workspaceGeneration()) return cached.rootPath;
+
+        let rootPath = declaringPath;
+        const workspaceRoots = this.getContainingWorkspaceFolders(vscode.Uri.file(declaringPath))
+            .map((folder) => path.resolve(folder.uri.fsPath).toLowerCase());
+        const stopAt = workspaceRoots[0] ?? path.parse(declaringPath).root.toLowerCase();
+        let dir = path.dirname(declaringPath);
+
+        while (true) {
+            for (const candidate of this.listImportJsonFiles(dir)) {
+                if (normalizedPathKey(candidate) === cacheKey) continue;
+                if (this.manifestIncludesTransitively(candidate, declaringPath)) {
+                    rootPath = candidate;
+                }
+            }
+
+            const normalizedDir = path.resolve(dir).toLowerCase();
+            const parent = path.dirname(dir);
+            if (normalizedDir === stopAt || parent === dir) break;
+            dir = parent;
+        }
+
+        this.rootContextCache.set(cacheKey, { generation: workspaceGeneration(), rootPath });
+        return rootPath;
+    }
+
+    private manifestIncludesTransitively(entryPath: string, targetPath: string): boolean {
+        const targetKey = normalizedPathKey(targetPath);
+        let found = false;
+        try {
+            walkImportJsonTree(nodeProjectFs, entryPath, (filePath) => {
+                if (normalizedPathKey(filePath) !== targetKey) return undefined;
+                found = true;
+                return true;
+            });
+        } catch {
+            return false;
+        }
+        return found;
     }
 
     private findImportJsonContexts(filePath: string): string[] {

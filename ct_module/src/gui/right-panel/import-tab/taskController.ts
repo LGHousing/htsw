@@ -16,11 +16,13 @@ import {
     setTaskProgress,
 } from "./taskProgress";
 import {
+    addSessionQueueItem,
     addToQueue,
     beginQueueSession,
     endQueueSession,
     getQueue,
     isImportQueueItem,
+    makeImportableQueueItem,
     queueItemKey,
     removeFromQueueKey,
     type ImportQueueItem,
@@ -50,10 +52,9 @@ import { traceSyncEvent } from "../../../housingSync/trace/taskTrace";
 import { traceProgressEvent } from "../../../housingSync/trace/progressTrace";
 import { invalidateSourceDiffForImportable } from "../../code-view/sourceDiff";
 import { showToast } from "../../toast";
-import { isTaskRunning, setTaskRunning } from "../../../tasks/runningState";
+import { isTaskRunning } from "../../../tasks/runningState";
 import { gmcOnImportStart, playImportSuccessSound, waitForCreativeMode } from "../../../housingSync/sideEffects";
-import { resetStepGate } from "../../../housingSync/stepGate";
-import { resetEventContainers } from "../../../tasks/specifics/waitFor";
+import { runHousingSyncTask } from "../../../housingSync/taskRunner";
 import {
     applyComplete,
     finalizeFromSource,
@@ -72,10 +73,6 @@ import {
 } from "./livePreview";
 import { setFocusLineId } from "./focusedLine";
 import { autoTrackRefresh } from "../../autoTrack";
-import {
-    clearActiveTaskContext,
-    setActiveTaskContext,
-} from "../../../tasks/activeTask";
 
 function formatElapsedSeconds(secs: number): string {
     const total = Math.max(0, Math.round(secs));
@@ -408,29 +405,19 @@ export function startImport(explicit?: readonly ImportQueueItem[]): void {
     }
     beginQueueSession();
 
-    setTaskRunning(true);
     // Snapshot this session's queue keys so the post-run cleanup can drop
     // exactly these items even if a newer import supersedes the session.
     const sessionItemKeys: string[] = (explicit ?? getQueue().filter(isImportQueueItem)).map(queueItemKey);
     const startedAt = Date.now();
-    resetStepGate();
-    gmcOnImportStart();
 
-    TaskManager.run(async (ctx) => {
-        setActiveTaskContext("import", ctx);
+    runHousingSyncTask("import", async (ctx) => {
+        gmcOnImportStart();
         let importSucceeded = false;
         let cancelled = false;
         let totalImported = 0;
         let totalSkipped = 0;
         let totalFailed = 0;
         try {
-            // Purge any waiters left over from a prior import. Nothing legit is
-            // waiting at an import boundary, so survivors are leaks; a non-zero
-            // count is a canary that one slipped through the cleanup paths.
-            const purged = resetEventContainers();
-            if (purged > 0) {
-                ChatLib.chat(`&8[htsw] purged ${purged} leaked event waiter(s) from a prior import.`);
-            }
             const cached = getHousingUuid();
             let housingUuid = cached;
             if (housingUuid === null) {
@@ -454,6 +441,14 @@ export function startImport(explicit?: readonly ImportQueueItem[]): void {
                     sourcePath: batch.sourcePath,
                     parsed: batch.parsed,
                     events,
+                    onItemAutoAdded: (item) => {
+                        const queueItem = makeImportableQueueItem(item, batch.sourcePath);
+                        addSessionQueueItem(queueItem);
+                        // Track it with this session's keys so the
+                        // post-success cleanup removes it like any other
+                        // session row.
+                        sessionItemKeys.push(queueItemKey(queueItem));
+                    },
                 });
                 const c = events.counts();
                 totalImported += c.imported;
@@ -472,10 +467,8 @@ export function startImport(explicit?: readonly ImportQueueItem[]): void {
                 throw err;
             }
         } finally {
-            clearActiveTaskContext("import", ctx);
             setActiveTaskPath(null);
             autoTrackRefresh();
-            setTaskRunning(false);
             const elapsed = formatElapsedSeconds((Date.now() - startedAt) / 1000);
             if (cancelled) {
                 showToast(
@@ -533,7 +526,6 @@ export function startImport(explicit?: readonly ImportQueueItem[]): void {
             }, 1500);
         }
     }).catch((err: unknown) => {
-        setTaskRunning(false);
         ChatLib.chat(`&c[htsw] Import failed: ${err}`);
     });
 }

@@ -16,7 +16,7 @@ export function importControl(): Element {
     const importTooltip = (): string => {
         if (isParseInProgress()) return "Project is still loading. Import will be available when it finishes.";
         if (getQueueLength() === 0) return "No changes queued to import.";
-        return "Import queued changes.";
+        return "";
     };
 
     return Row({

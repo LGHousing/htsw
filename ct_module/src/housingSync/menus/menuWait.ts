@@ -230,10 +230,13 @@ function wrapMenuWaitTimeout(
             });
             return;
         }
-        const details = describeMenuWaitState(state);
+        // Full wait-state details go to the runtime-debug buffer (and from
+        // there into the import failure log), not the error message — the
+        // message is what the user sees in chat, so keep it short.
         traceMenuWait("failure", {
             error: message,
-            details,
+            details: describeMenuWaitState(state),
+            recentWindowOpens: describeRecentWindowOpens(),
             ticksWaited: state.ticksWaited,
             openedWindowId: state.openedWindowId,
             expectedItems: state.expectedItems,
@@ -241,9 +244,6 @@ function wrapMenuWaitTimeout(
             peakItems: state.maxCount,
             source: state.readySource,
         });
-        if (message.indexOf("Timeout after") !== -1) {
-            throw new Error(`${message}; ${details}; recent window opens: ${describeRecentWindowOpens()}`);
-        }
         throw error;
     }) as WaitForPromise<void>;
     wrapped.cleanupWaiter = cleanup;

@@ -1,12 +1,8 @@
 import { TaskManager } from "../tasks/manager";
 import type TaskContext from "../tasks/context";
-import { isTaskRunning, setTaskRunning } from "../tasks/runningState";
-import { resetEventContainers } from "../tasks/specifics/waitFor";
+import { isTaskRunning } from "../tasks/runningState";
 import { traceError, traceRecord } from "../housingSync/trace/taskTrace";
-import {
-    clearActiveTaskContext,
-    setActiveTaskContext,
-} from "../tasks/activeTask";
+import { runHousingSyncTask } from "../housingSync/taskRunner";
 import {
     resolveExportDestination,
     type ExportDestination,
@@ -27,24 +23,11 @@ function runExportTask(task: (ctx: TaskContext) => Promise<void>): void {
         return;
     }
 
-    TaskManager.run(async (ctx) => {
-        setActiveTaskContext("export", ctx);
-        setTaskRunning(true);
+    runHousingSyncTask("export", async (ctx) => {
         traceRecord("exportTask", { stage: "start" });
-        try {
-            const purged = resetEventContainers();
-            if (purged > 0) {
-                ChatLib.chat(`&8[htsw] purged ${purged} leaked event waiter(s) from a prior run.`);
-                traceRecord("waiters", { stage: "purged", count: purged });
-            }
-            await task(ctx);
-            traceRecord("exportTask", { stage: "success" });
-        } finally {
-            clearActiveTaskContext("export", ctx);
-            setTaskRunning(false);
-        }
+        await task(ctx);
+        traceRecord("exportTask", { stage: "success" });
     }).catch((err) => {
-        setTaskRunning(false);
         traceError("exportTask", err);
         ChatLib.chat(`&cExport failed: ${err}`);
     });

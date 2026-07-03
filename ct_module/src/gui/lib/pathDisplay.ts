@@ -9,14 +9,32 @@ let cachedMcRoot: string | null = null;
 
 // Rhino regex on CT 1.8.9 has been seen swallowing `/\\/g`-style replacements
 // in production (the regex returns the input unchanged), so we use split/join
-// for backslash conversion everywhere in this file.
-function toForwardSlashes(s: string): string {
+// for backslash conversion everywhere. These are exported as the GUI's shared
+// path primitives — never re-implement slash conversion or basename inline
+// (an inline `/\\/g` regex is exactly the unsafe form).
+export function toForwardSlashes(s: string): string {
     return String(s).split("\\").join("/");
 }
 
-function basename(norm: string): string {
+/** Lowercased forward-slash form — the key to use for path comparisons. */
+export function pathKey(p: string): string {
+    return toForwardSlashes(p).toLowerCase();
+}
+
+export function hasExt(p: string, ext: string): boolean {
+    return endsWith(pathKey(p), `.${ext.toLowerCase()}`);
+}
+
+export function basename(p: string): string {
+    const norm = toForwardSlashes(p);
     const slash = norm.lastIndexOf("/");
     return slash < 0 ? norm : norm.substring(slash + 1);
+}
+
+export function dirname(p: string): string {
+    const norm = toForwardSlashes(p);
+    const slash = norm.lastIndexOf("/");
+    return slash < 0 ? "" : norm.substring(0, slash);
 }
 
 function parentBasename(norm: string): string {

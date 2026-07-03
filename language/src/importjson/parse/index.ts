@@ -199,9 +199,13 @@ function prepareImportJsonParsing(
         gcx.addDiagnostic(diag);
         return false;
     }
-    if (metadata.hasVisited(resolvedPath)) return false;
+    if (metadata.hasVisited(resolvedPath)) {
+        if (origin !== undefined) metadata.recordReference(origin.fromNode, resolvedPath);
+        return false;
+    }
     if (!gcx.sourceMap.fileLoader.fileExists(resolvedPath)) {
         metadata.recordMissingImportJsonPath(resolvedPath);
+        if (origin !== undefined) metadata.recordMissing(origin.fromNode, resolvedPath);
         const diag = origin === undefined
             ? Diagnostic.error(`import.json file does not exist '${resolvedPath}'`)
             : Diagnostic.error(`Included import.json not found: '${origin.includePath}'`)

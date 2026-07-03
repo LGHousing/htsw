@@ -1,14 +1,17 @@
 import projectStyles from "../project/styles.css?inline";
 import { mountProjectExplorer } from "../project/ui";
+import type { ProjectExplorerPersistedState } from "../project/ui";
 import itemStyles from "../itemEditor/styles.css?inline";
 import { mountItemEditor } from "../itemEditor/ui";
 import soundStyles from "../soundPreviewer/styles.css?inline";
 import { mountSoundPreviewer } from "../soundPreviewer/ui";
 import shellStyles from "./styles.css?inline";
+import { installTooltips } from "../tooltip";
 
 type ActiveTool = "project" | "item" | "sound";
 type WebviewState = {
     activeTool?: ActiveTool;
+    project?: ProjectExplorerPersistedState;
 };
 
 const vscode = acquireVsCodeApi<WebviewState>();
@@ -18,6 +21,7 @@ let disposeActive: (() => void) | null = null;
 let activeStyle: HTMLStyleElement | null = null;
 
 if (root) {
+    installTooltips();
     renderShell();
 }
 
@@ -61,7 +65,7 @@ function renderShell(): void {
 function selectTool(next: ActiveTool): void {
     if (activeTool === next) return;
     activeTool = next;
-    vscode.setState({ activeTool });
+    vscode.setState({ ...(vscode.getState() ?? {}), activeTool });
     renderShell();
 }
 

@@ -283,14 +283,30 @@ export function getQueueItemRunState(item: QueueItem): QueueItemRunState {
     return runStateFromActive(current);
 }
 
-function runStateFromActive(active: {
-    phase: "setup" | "reading" | "hydrating" | "applying" | "done";
-    completedUnits: number;
-    phaseUnits: { setup: number; reading: number; hydrating: number; applying: number };
-}): Extract<QueueItemRunState, { kind: "current" }> {
-    const units = active.phaseUnits;
+export type PhaseUnits = {
+    setup: number;
+    reading: number;
+    hydrating: number;
+    applying: number;
+};
+
+/**
+ * The ONE mapping from (phase unit sizes, units completed so far) to
+ * per-phase completion fractions. Both the queue-row minibars and the footer
+ * progress bar render from this; a second copy of this math lets the two
+ * displays of the same import disagree.
+ */
+export function phaseFractions(
+    units: PhaseUnits,
+    completedUnits: number
+): {
+    readingUnits: number;
+    readFraction: number;
+    hydrateFraction: number;
+    applyFraction: number;
+} {
     const readingUnits = units.setup + units.reading;
-    const within = Math.max(0, active.completedUnits);
+    const within = Math.max(0, completedUnits);
     const readingDone = Math.min(readingUnits, within);
     const hydrateDone = Math.min(
         units.hydrating,
@@ -300,17 +316,31 @@ function runStateFromActive(active: {
         units.applying,
         Math.max(0, within - readingUnits - units.hydrating)
     );
+    return {
+        readingUnits,
+        readFraction: readingUnits > 0 ? readingDone / readingUnits : 1,
+        hydrateFraction: units.hydrating > 0 ? hydrateDone / units.hydrating : 1,
+        applyFraction: units.applying > 0 ? applyDone / units.applying : 0,
+    };
+}
+
+function runStateFromActive(active: {
+    phase: "setup" | "reading" | "hydrating" | "applying" | "done";
+    completedUnits: number;
+    phaseUnits: PhaseUnits;
+}): Extract<QueueItemRunState, { kind: "current" }> {
+    const f = phaseFractions(active.phaseUnits, active.completedUnits);
     let phase: QueuePhase;
     let phaseFraction: number;
     if (active.phase === "applying") {
         phase = "applying";
-        phaseFraction = units.applying > 0 ? applyDone / units.applying : 0;
+        phaseFraction = f.applyFraction;
     } else if (active.phase === "hydrating") {
         phase = "hydrating";
-        phaseFraction = units.hydrating > 0 ? hydrateDone / units.hydrating : 1;
+        phaseFraction = f.hydrateFraction;
     } else {
         phase = "reading";
-        phaseFraction = readingUnits > 0 ? readingDone / readingUnits : 1;
+        phaseFraction = f.readFraction;
     }
     return {
         kind: "current",

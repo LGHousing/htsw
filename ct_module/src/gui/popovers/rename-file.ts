@@ -4,6 +4,7 @@ import { Element, Rect } from "../lib/layout";
 import { Button, Col, Input, Row, Text } from "../lib/components";
 import { closePopover, openPopover, type PopoverHandle } from "../lib/popovers";
 import { javaType } from "../lib/java";
+import { basename, dirname } from "../lib/pathDisplay";
 
 let editingValue = "";
 let editingPath = "";
@@ -15,18 +16,6 @@ function closeSelf(): void {
         closePopover(activeHandle);
         activeHandle = null;
     }
-}
-
-function basename(p: string): string {
-    const norm = p.replace(/\\/g, "/");
-    const slash = norm.lastIndexOf("/");
-    return slash < 0 ? norm : norm.substring(slash + 1);
-}
-
-function dirname(p: string): string {
-    const norm = p.replace(/\\/g, "/");
-    const slash = norm.lastIndexOf("/");
-    return slash < 0 ? "" : norm.substring(0, slash);
 }
 
 function syncFor(fullPath: string): void {

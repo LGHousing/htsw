@@ -1,6 +1,7 @@
 /// <reference types="../../../../CTAutocomplete" />
 
 import { Result, ResultImport, bumpTreeRevision } from "./rowModel";
+import { toForwardSlashes } from "../../lib/pathDisplay";
 import { isParsePending, requestParse } from "../../parsing/parses";
 
 export type SourceDir = {
@@ -79,7 +80,7 @@ function addSourceFromAbsolute(absolute: string): void {
     } catch (_e) {
         return;
     }
-    const fullPath = String(p.toString()).replace(/\\/g, "/");
+    const fullPath = toForwardSlashes(String(p.toString()));
     if (alreadyHas(fullPath)) return;
     let isDir = false;
     let isFile = false;
@@ -129,7 +130,7 @@ export function removeSource(fullPath: string): void {
 
 function relativePath(root: JavaPath, p: JavaPath): string {
     const rel = root.relativize(p);
-    return String(rel.toString()).replace(/\\/g, "/");
+    return toForwardSlashes(String(rel.toString()));
 }
 
 function isRegularFileSafe(p: JavaPath): boolean {
@@ -155,7 +156,7 @@ function visitFile(p: JavaPath, root: JavaPath, out: Result[]): void {
     try {
         fname = String(fileName.toString()).toLowerCase();
         path = relativePath(root, p);
-        fullPath = String(p.toString()).replace(/\\/g, "/");
+        fullPath = toForwardSlashes(String(p.toString()));
     } catch (_e) {
         return;
     }

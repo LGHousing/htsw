@@ -10,6 +10,7 @@ import {
 } from "./fields/itemTagCanonical";
 
 import TaskContext from "../tasks/context";
+import { pollTicks } from "../tasks/poll";
 import { canonicalSlug } from "../project/paths";
 import { getItemFromNbt, getItemFromSnbt, itemToHtswTag } from "../utils/nbt";
 import { removedFormatting } from "../utils/helpers";
@@ -336,18 +337,12 @@ async function waitForInventorySlotMatch(
     expectedNbt: string | null,
     expectedCount: number
 ): Promise<boolean> {
-    let stableTicks = 0;
-    for (let i = 0; i < SET_SLOT_ACK_MAX_TICKS; i++) {
-        const entry = readInventoryEntry(slotId, view);
-        if (inventoryEntryMatches(entry, expectedNbt, expectedCount)) {
-            stableTicks++;
-            if (stableTicks >= 2) return true;
-        } else {
-            stableTicks = 0;
-        }
-        await ctx.waitFor("tick");
-    }
-    return inventoryEntryMatches(readInventoryEntry(slotId, view), expectedNbt, expectedCount);
+    return pollTicks(
+        ctx,
+        SET_SLOT_ACK_MAX_TICKS,
+        () => inventoryEntryMatches(readInventoryEntry(slotId, view), expectedNbt, expectedCount),
+        { stableTicks: 2 }
+    );
 }
 
 async function waitForSetSlotAck(

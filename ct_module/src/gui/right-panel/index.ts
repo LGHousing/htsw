@@ -29,7 +29,7 @@ import { statusForFile, STATUS_COLOR, STATUS_LABEL } from "../cache-status";
 import { FileSystemFileLoader, StringFileLoader } from "../../utils/fileLoaders";
 import * as htsw from "htsw";
 import { viewBody } from "./view-body";
-import { compactFileLabel, normalizeHtswPath } from "../lib/pathDisplay";
+import { compactFileLabel, compactPath, hasExt } from "../lib/pathDisplay";
 import { composeFileMenu } from "../menus/fileMenu";
 import { viewFooter } from "./view-footer";
 import { beginTabDrag, isTabDragging, updateTabDrag, TAB_STRIP_SCROLL_ID } from "./tabDrag";
@@ -53,10 +53,6 @@ const TAB_BG_DRAGGING = 0xff526074 | 0;
 const fileLoader = new FileSystemFileLoader();
 type CachedFile = { mtime: number; lines: string[] };
 const fileCache = new Map<string, CachedFile>();
-
-function endsWith(s: string, suffix: string): boolean {
-    return s.length >= suffix.length && s.lastIndexOf(suffix) === s.length - suffix.length;
-}
 
 const TAB_H = 13;
 const TAB_CLOSE_W = 11;
@@ -288,7 +284,12 @@ function tabStripChildren(): Element[] {
 }
 
 function displayPath(p: string): string {
-    return normalizeHtswPath(p);
+    const compact = compactPath(p);
+    const marker = "/projects/";
+    if (compact.substring(0, marker.length) === marker) {
+        return compact.substring(marker.length);
+    }
+    return compact;
 }
 
 function pathLabel(): Element {
@@ -298,12 +299,13 @@ function pathLabel(): Element {
             return p === null ? "" : displayPath(p);
         },
         color: 0xff888888 | 0,
+        truncate: true,
         style: { width: { kind: "grow" } },
     });
 }
 
 function isSnbtPath(p: string): boolean {
-    return endsWith(p.replace(/\\/g, "/").toLowerCase(), ".snbt");
+    return hasExt(p, "snbt");
 }
 
 function formatActiveSnbt(): void {

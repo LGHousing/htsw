@@ -1,6 +1,7 @@
 /// <reference types="../../../CTAutocomplete" />
 
 import { pathExists } from "../lib/java";
+import { toForwardSlashes } from "../lib/pathDisplay";
 
 const RECENTS_PATH = "./config/ChatTriggers/modules/HTSW/gui-recents.json";
 const MAX_RECENTS = 8;
@@ -58,7 +59,7 @@ export function getRecents(): string[] {
 
 export function addRecent(path: string): void {
     load();
-    const norm = path.replace(/\\/g, "/");
+    const norm = toForwardSlashes(path);
     const next: string[] = [norm];
     for (let i = 0; i < recents.length; i++) {
         if (recents[i] !== norm) next.push(recents[i]);

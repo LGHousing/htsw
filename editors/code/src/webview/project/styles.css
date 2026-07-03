@@ -231,7 +231,13 @@ select {
 /* Status --------------------------------------------------------------- */
 
 .project-status {
-    min-height: 0;
+    flex: none;
+    min-width: 0;
+    height: 16px;
+    line-height: 16px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     color: var(--vscode-descriptionForeground);
     font-size: 12px;
 }
@@ -401,6 +407,32 @@ select {
 
 .row.file.root .row-label {
     color: var(--vscode-foreground);
+}
+
+.row.file.reference .row-label {
+    font-weight: 400;
+    font-style: italic;
+    color: var(--vscode-descriptionForeground);
+}
+
+.row-jump {
+    flex: none;
+    margin-left: 6px;
+    font-size: 11px;
+    color: var(--vscode-descriptionForeground);
+}
+
+.row.jump-flash {
+    animation: jump-flash 1.2s ease-out;
+}
+
+@keyframes jump-flash {
+    0%, 50% {
+        background: var(--vscode-list-activeSelectionBackground, var(--vscode-list-hoverBackground));
+    }
+    100% {
+        background: transparent;
+    }
 }
 
 .row-label.has-error {

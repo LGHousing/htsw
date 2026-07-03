@@ -39,13 +39,14 @@ import {
     getTaskElapsedMs,
     getTaskEtaSeconds,
     getTaskEtcMs,
-    getTaskMsPerUnit,
     getTaskProgress,
     getTaskProgressFraction,
     getSessionVerb,
     isEtaRough,
+    phaseFractions,
     setActiveTaskPath,
     setTaskProgress,
+    type PhaseUnits,
 } from "./taskProgress";
 import {
     countTaskRowsByStatus,
@@ -80,10 +81,6 @@ function formatClockTime(ms: number): string {
 }
 
 // ── ETA + label text ───────────────────────────────────────────────────
-
-function progressMsPerUnitText(): string {
-    return `${Math.round(getTaskMsPerUnit())}ms/u`;
-}
 
 export function progressElapsedText(): string {
     const ms = getTaskElapsedMs();
@@ -182,7 +179,7 @@ export function phaseSegment(widthFactor: number, fraction: number, color: numbe
 }
 
 function rowPhaseChildrenFor(snapshot: {
-    phaseUnits: { setup: number; reading: number; hydrating: number; applying: number };
+    phaseUnits: PhaseUnits;
     completedUnits: number;
 }): Element[] {
     const units = snapshot.phaseUnits;
@@ -190,24 +187,11 @@ function rowPhaseChildrenFor(snapshot: {
         1,
         units.setup + units.reading + units.hydrating + units.applying
     );
-    const readingUnits = units.setup + units.reading;
-    const within = Math.max(0, snapshot.completedUnits);
-    const readingDone = Math.min(readingUnits, within);
-    const hydrateDone = Math.min(
-        units.hydrating,
-        Math.max(0, within - readingUnits)
-    );
-    const applyDone = Math.min(
-        units.applying,
-        Math.max(0, within - readingUnits - units.hydrating)
-    );
-    const readFraction = readingUnits > 0 ? readingDone / readingUnits : 1;
-    const hydrateFraction = units.hydrating > 0 ? hydrateDone / units.hydrating : 1;
-    const applyFraction = units.applying > 0 ? applyDone / units.applying : 0;
+    const f = phaseFractions(units, snapshot.completedUnits);
     return [
-        phaseSegment(readingUnits / total, readFraction, PHASE_READING),
-        phaseSegment(units.hydrating / total, hydrateFraction, PHASE_HYDRATING),
-        phaseSegment(units.applying / total, applyFraction, PHASE_APPLYING),
+        phaseSegment(f.readingUnits / total, f.readFraction, PHASE_READING),
+        phaseSegment(units.hydrating / total, f.hydrateFraction, PHASE_HYDRATING),
+        phaseSegment(units.applying / total, f.applyFraction, PHASE_APPLYING),
     ];
 }
 
@@ -296,7 +280,6 @@ function operationProgressText(completed: number, total: number): string {
 export function progressTotalEtaLine(): string {
     const p = getTaskProgress();
     if (p === null) return "";
-    const rate = progressMsPerUnitText();
     // Until the apply phase, the per-importable apply cost is just a rough
     // guess — the real op-by-op diff isn't known until each importable has
     // been read + hydrated. Showing a total before then is fiction, so we
@@ -304,16 +287,16 @@ export function progressTotalEtaLine(): string {
     // cache baselines make every importable's diff cost real from the start.
     const ready = isTaskTotalLocked(p) || isCurrentHouseTrusted();
     if (!ready) {
-        return `total calculating… · ${rate}`;
+        return "total estimating…";
     }
     const secs = getTaskEtaSeconds();
-    if (secs === null) return `total calculating… · ${rate}`;
+    if (secs === null) return "total estimating…";
     const etc = getTaskEtcMs();
-    const etcText = etc === null ? "" : ` · ETC ${formatClockTime(etc)}`;
+    const etcText = etc === null ? "" : ` · ends ${formatClockTime(etc)}`;
     // "~" marks a session whose item sizes are pure fallbacks (nothing cached
     // or parsed to size from), so the total is a guess, not an estimate.
     const rough = isEtaRough() ? "~" : "";
-    return `total ${rough}${formatEtaSeconds(secs)}${etcText} · ${rate}`;
+    return `total ${rough}${formatEtaSeconds(secs)}${etcText}`;
 }
 
 function progressPosition(): {
@@ -457,6 +440,9 @@ export function liveTaskFooterPanel(): Element {
                         children: [],
                     }),
                     progressBar(),
+                    // The total/ETA text and the Pause/Cancel buttons get
+                    // separate rows: sharing one row truncated the text to
+                    // "total 9m37s - end…" on narrow GUIs.
                     Row({
                         style: { gap: 6, height: { kind: "px", value: 12 }, align: "center" },
                         children: [
@@ -470,6 +456,15 @@ export function liveTaskFooterPanel(): Element {
                                 color: COLOR_TEXT_DIM,
                                 truncate: true,
                                 style: { width: { kind: "grow" } },
+                            }),
+                        ],
+                    }),
+                    Row({
+                        style: { gap: 6, height: { kind: "px", value: 12 } },
+                        children: [
+                            Container({
+                                style: { width: { kind: "grow" }, height: { kind: "px", value: 1 } },
+                                children: [],
                             }),
                             ...progressControlButtons(),
                         ],

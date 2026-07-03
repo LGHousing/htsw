@@ -52,7 +52,7 @@ import { isTaskRunning } from "../../../tasks/runningState";
 import { composeFileMenu, composeImportableMenu } from "../../menus/fileMenu";
 import { autoTrackRefresh, queueModifiedFromPath } from "../../autoTrack";
 import { SourceDir, SourceFile, removeSource } from "./source";
-import { type IncludeNode, includeTreeOf, subtreeImportableCount } from "./includeTree";
+import { type IncludeNode, findIncludeNode, includeTreeOf, subtreeImportableCount } from "./includeTree";
 import { showInExplorer, openInVSCode, revealInFilesLabel } from "../../../utils/osShell";
 import {
     closeTab,
@@ -117,6 +117,20 @@ export function includeGroupKey(entryFullPath: string, nodeFullPath: string): st
 }
 export function isIncludeGroupExpanded(expKey: string, defaultExpanded: boolean): boolean {
     return includeGroupExpansion.get(expKey) ?? defaultExpanded;
+}
+export function expandIncludeGroup(expKey: string): void {
+    includeGroupExpansion.set(expKey, true);
+}
+
+// Transient highlight on a group row a reference-row jump landed on.
+let jumpFlashKey: string | null = null;
+let jumpFlashUntil = 0;
+export function setJumpFlash(expKey: string): void {
+    jumpFlashKey = expKey;
+    jumpFlashUntil = Date.now() + 1500;
+}
+function isJumpFlashing(expKey: string): boolean {
+    return jumpFlashKey === expKey && Date.now() < jumpFlashUntil;
 }
 
 export const importableExpansion: Set<string> = new Set();
@@ -901,15 +915,23 @@ export function resultRow(
 // Label for an include-group ROW: the included file relative to its IMMEDIATE
 // parent import.json's directory ("clocks", not "functions/clocks/import.json").
 // Indentation already conveys the nesting, so the repeated prefix is just noise.
-function includeRowLabel(parentNodePath: string, fullPath: string): string {
-    const parentDir = projectDirOf(parentNodePath);
-    if (fullPath.indexOf(parentDir + "/") !== 0) return shortPath(fullPath);
-    let rel = fullPath.substring(parentDir.length + 1);
+// An include that reaches OUTSIDE its parent's folder falls back to the tree
+// root's directory ("shared/menus-module", not a truncated absolute path).
+function includeRowLabel(parentNodePath: string, rootNodePath: string, fullPath: string): string {
+    const rel =
+        pathUnderDir(projectDirOf(parentNodePath), fullPath) ??
+        pathUnderDir(projectDirOf(rootNodePath), fullPath);
+    if (rel === null) return shortPath(fullPath);
     const suffix = "/import.json";
     if (rel.length > suffix.length && rel.lastIndexOf(suffix) === rel.length - suffix.length) {
-        rel = rel.substring(0, rel.length - suffix.length);
+        return rel.substring(0, rel.length - suffix.length);
     }
     return rel;
+}
+
+function pathUnderDir(dir: string, fullPath: string): string | null {
+    if (fullPath.indexOf(dir + "/") !== 0) return null;
+    return fullPath.substring(dir.length + 1);
 }
 
 export function includeGroupRow(
@@ -917,8 +939,12 @@ export function includeGroupRow(
     node: IncludeNode,
     expKey: string,
     defaultExpanded: boolean,
-    parentNodePath: string
+    parentNodePath: string,
+    onJump?: () => void
 ): Element {
+    if (node.reference === true) {
+        return includeReferenceRow(parent, node, parentNodePath, onJump);
+    }
     const fullPath = canonicalPath(node.path);
     const expanded = isIncludeGroupExpanded(expKey, defaultExpanded);
     const actions = composeFileMenu([
@@ -938,7 +964,7 @@ export function includeGroupRow(
             gap: 0,
             align: "center",
             height: { kind: "px", value: 18 },
-            background: ROW_BG,
+            background: () => (isJumpFlashing(expKey) ? ROW_HOVER_BG : ROW_BG),
             hoverBackground: ROW_HOVER_BG,
         },
         onClick: rowHandler(actions, () => previewSelect(fullPath, parent.fullPath)),
@@ -951,7 +977,7 @@ export function includeGroupRow(
             Icon({ name: Icons.fileJson, color: ACCENT_INFO }),
             rowSlot(INNER_GAP),
             Text({
-                text: includeRowLabel(parentNodePath, fullPath),
+                text: includeRowLabel(parentNodePath, canonicalPath(parent.fullPath), fullPath),
                 truncate: true,
                 style: { width: { kind: "grow" } },
             }),
@@ -959,6 +985,60 @@ export function includeGroupRow(
                 text: String(subtreeImportableCount(node)),
                 color: COLOR_TEXT_FAINT,
             }),
+        ],
+    });
+}
+
+// A repeat include: the file's contents render under its home group
+// elsewhere in this tree, so this row is an unexpandable link — click jumps
+// to (expands + scrolls to + flashes) that home group.
+function includeReferenceRow(
+    parent: ResultImport,
+    node: IncludeNode,
+    parentNodePath: string,
+    onJump?: () => void
+): Element {
+    const fullPath = canonicalPath(node.path);
+    const actions = composeFileMenu(
+        [openInViewAction(fullPath, parent.fullPath)],
+        fullPath,
+        parent.fullPath
+    );
+    const home = findIncludeNode(includeTreeOf(parent), fullPath);
+    return Container({
+        style: {
+            direction: "row",
+            padding: [
+                { side: "left", value: 0 },
+                { side: "right", value: 6 },
+            ],
+            gap: 0,
+            align: "center",
+            height: { kind: "px", value: 18 },
+            background: ROW_BG,
+            hoverBackground: ROW_HOVER_BG,
+        },
+        onClick: rowHandler(actions, () => onJump?.()),
+        onDoubleClick: () => confirmSelect(fullPath, parent.fullPath),
+        children: [
+            rowSlot(DISCLOSURE_W),
+            Icon({
+                name: Icons.cornerUpLeft,
+                color: COLOR_TEXT_FAINT,
+                tooltip: "Also included here — click to jump to its contents",
+            }),
+            rowSlot(INNER_GAP),
+            Text({
+                text: includeRowLabel(parentNodePath, canonicalPath(parent.fullPath), fullPath),
+                color: COLOR_TEXT_FAINT,
+                truncate: true,
+                style: { width: { kind: "grow" } },
+            }),
+            home !== null &&
+                Text({
+                    text: String(subtreeImportableCount(home)),
+                    color: COLOR_TEXT_FAINT,
+                }),
         ],
     });
 }

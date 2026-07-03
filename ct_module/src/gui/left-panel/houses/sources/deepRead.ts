@@ -3,19 +3,14 @@
 import type { Importable } from "htsw/types";
 
 import { TaskManager } from "../../../../tasks/manager";
-import { setTaskRunning } from "../../../../tasks/runningState";
 import { getExportImportJsonPath, getHousingUuid } from "../../../state";
 import { showToast } from "../../../toast";
 import { createExportProgressSink } from "../../../export/progressSink";
 import { exportProjectContextFromParsedImportJson } from "../../../../importables/exportContext";
 import { getParseAt } from "../../../parsing/parses";
-import { resetEventContainers } from "../../../../tasks/specifics/waitFor";
-import {
-    clearActiveTaskContext,
-    setActiveTaskContext,
-} from "../../../../tasks/activeTask";
 import { recordHouseScan } from "../../../../importCache/cache";
-import type { ReadFn, ReadResult } from "../../../../importables/read";
+import { runHousingSyncTask } from "../../../../housingSync/taskRunner";
+import type { ReadFn } from "../../../../importables/read";
 
 // Shared across all content types: starting any deep read blocks starting
 // another until it settles.
@@ -40,22 +35,13 @@ export function makeDeepRead(
             return;
         }
         readInFlight = true;
-        TaskManager.run(async (ctx) => {
-            setActiveTaskContext("export", ctx);
-            setTaskRunning(true);
-            let result: ReadResult;
+        runHousingSyncTask("export", async (ctx) => {
             try {
-                const purged = resetEventContainers();
-                if (purged > 0) {
-                    ChatLib.chat(
-                        `&8[htsw] purged ${purged} leaked event waiter(s) from a prior run.`
-                    );
-                }
                 const exportContext = exportProjectContextFromParsedImportJson(
                     { rootDir: "", importJsonPath },
                     getParseAt(importJsonPath)?.parsed
                 );
-                result = await read(ctx, {
+                return await read(ctx, {
                     ...exportContext,
                     names: onlyNames,
                     readOnly: { housingUuid: uuid },
@@ -64,10 +50,10 @@ export function makeDeepRead(
                     progress: createExportProgressSink(type, importJsonPath, "read"),
                 });
             } finally {
-                clearActiveTaskContext("export", ctx);
-                setTaskRunning(false);
                 readInFlight = false;
             }
+        }).then((result) => {
+            if (result === undefined) return;
             if (result.failed > 0) {
                 showToast(
                     `Read ${result.succeeded} of ${result.total} ${label}${result.total === 1 ? "" : "s"} (${result.failed} failed)`,

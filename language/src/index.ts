@@ -15,6 +15,7 @@ export * from "./span";
 export * from "./spanTable";
 export * from "./long";
 export * from "./importjson/metadata";
+export * from "./importablePaths";
 
 export * as types from "./types";
 export * as helpers from "./helpers"
@@ -67,6 +68,7 @@ export function parseImportablesResult(
     const gcx = new GlobalCtxt(sm, path);
     const importJson = new ImportJsonParseMetadata();
     parseImportJson(gcx, path, importJson);
+    importJson.rehomeFileTree();
     if (!gcx.isFailed()) {
         check(gcx);
     }

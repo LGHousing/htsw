@@ -60,7 +60,10 @@ function truncateToWidth(text: string, maxW: number): string {
 // with a `tooltip` is hovered, then handed to `deferredTooltip` so the actual
 // draw happens at postGuiRender — after MC paints the inventory slots, which
 // would otherwise cover a chip drawn during the panel's guiRender pass.
-type QueuedTooltip = { text: string; color: number; anchor: Rect };
+// `inPlace` tooltips paint over the anchor itself (text aligned exactly on the
+// original glyphs) instead of below it — used to reveal a truncated label's
+// full text where it sits, spilling over the siblings to its right.
+type QueuedTooltip = { text: string; color: number; anchor: Rect; inPlace?: boolean };
 let queuedTooltip: QueuedTooltip | null = null;
 
 // The tooltip to paint this frame, drawn by the postGuiRender pass in overlay.ts
@@ -154,9 +157,18 @@ function drawTooltip(t: QueuedTooltip): void {
     const h = LINE_H + padY * 2;
     const screenW = getOverlayScreenW();
     const screenH = getOverlayScreenH();
-    let x = t.anchor.x;
-    let y = t.anchor.y + t.anchor.h + 2;
-    if (y + h > screenH - 2) y = t.anchor.y - h - 2; // flip above
+    let x;
+    let y;
+    if (t.inPlace) {
+        // Text draws at x + padX / y + padY, so backing off by the padding puts
+        // the revealed string exactly on top of the anchor's own glyphs.
+        x = t.anchor.x - padX;
+        y = t.anchor.y + Math.max(0, Math.floor((t.anchor.h - LINE_H) / 2)) - padY;
+    } else {
+        x = t.anchor.x;
+        y = t.anchor.y + t.anchor.h + 2;
+        if (y + h > screenH - 2) y = t.anchor.y - h - 2; // flip above
+    }
     if (x + w > screenW - 2) x = screenW - 2 - w;
     if (x < 2) x = 2;
     Renderer.drawRect(COLOR_PANEL_BORDER, x - 1, y - 1, w + 2, h + 2);
@@ -297,6 +309,15 @@ function renderItem(
                 e.tooltipColor !== undefined ? extract(e.tooltipColor) : undefined,
                 r
             );
+        } else if (hovered && text !== raw) {
+            // Truncated label with no explicit tooltip: reveal the full text in
+            // place, in the label's own color.
+            queuedTooltip = {
+                text: raw,
+                color: color !== undefined ? color : 0xffffffff | 0,
+                anchor: r,
+                inPlace: true,
+            };
         }
     } else if (e.kind === "input") {
         const focused = isInputFocused(e.id);

@@ -1,6 +1,7 @@
 /// <reference types="../../CTAutocomplete" />
 
 import type TaskContext from "../tasks/context";
+import { pollTicks } from "../tasks/poll";
 
 const KeyBinding = Java.type("net.minecraft.client.settings.KeyBinding") as any;
 
@@ -60,9 +61,10 @@ function currentScreenIsOpen(): boolean {
     return (Client.getMinecraft() as { field_71462_r?: unknown }).field_71462_r != null;
 }
 
-// Jump taps only reach movement input while no screen is open; a Housing menu
-// left open by an earlier step (e.g. the /regions list) silently eats them.
-async function closeOpenScreen(ctx: TaskContext): Promise<void> {
+// Jump taps and creative set-slot packets only take effect while no screen is
+// open; a Housing menu left open by an earlier step (e.g. the /regions list or
+// the Functions list after shell creation) silently eats them.
+export async function closeOpenScreen(ctx: TaskContext): Promise<void> {
     if (!currentScreenIsOpen()) return;
     // func_71053_j = EntityPlayer.closeScreen — same as pressing Esc on a
     // container, including notifying the server.
@@ -81,10 +83,7 @@ export async function ensureCreativeFlight(ctx: TaskContext): Promise<boolean> {
         await closeOpenScreen(ctx);
         await tapJump(ctx, keyCode);
         await tapJump(ctx, keyCode);
-        for (let i = 0; i < FLY_TOGGLE_MAX_TICKS; i++) {
-            if (isFlying()) return true;
-            await ctx.waitFor("tick");
-        }
+        if (await pollTicks(ctx, FLY_TOGGLE_MAX_TICKS, isFlying)) return true;
     }
     return isFlying();
 }
@@ -99,11 +98,7 @@ const GMC_APPLY_MAX_TICKS = 60;
  * within ~3s (caller surfaces the likely cause).
  */
 export async function waitForCreativeMode(ctx: TaskContext): Promise<boolean> {
-    for (let i = 0; i < GMC_APPLY_MAX_TICKS; i++) {
-        if (isInCreativeMode()) return true;
-        await ctx.waitFor("tick");
-    }
-    return isInCreativeMode();
+    return pollTicks(ctx, GMC_APPLY_MAX_TICKS, isInCreativeMode);
 }
 
 export function playImportSuccessSound(): void {

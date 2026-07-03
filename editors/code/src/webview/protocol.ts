@@ -43,6 +43,9 @@ export type ProjectImportableSub = {
 export type ProjectImportableSummary = {
     /** Stable key for expand state: `${importJsonPath}|${type}|${identity}`. */
     id: string;
+    /** The declared name (or event name / NPC position triple) — what
+     * import.json mutations key on. */
+    identity: string;
     label: string;
     type: "function" | "event" | "region" | "item" | "menu" | "command" | "npc";
     typeLabel: string;
@@ -67,6 +70,13 @@ export type ProjectImportJsonNode = {
     importables: ProjectImportableSummary[];
     missing?: boolean;
     cycle?: boolean;
+    /**
+     * A repeat include of a manifest whose contents are already shown under
+     * its first appearance in the tree. Rendered as an unexpandable jump
+     * link; counts/diagnostics mirror the home node but are not re-summed
+     * into ancestors.
+     */
+    reference?: boolean;
     children: ProjectImportJsonNode[];
     /** Diagnostics aggregated across this node's whole subtree (like a folder badge). */
     errors?: number;
@@ -79,6 +89,12 @@ export type ProjectToHostMessage =
     | { type: "createIncludedImportJson"; parentImportJsonPath: string; folderPath: string }
     | {
           type: "addImportable";
+          importJsonPath: string;
+          kind: ProjectImportableSummary["type"];
+          identity: string;
+      }
+    | {
+          type: "moveImportable";
           importJsonPath: string;
           kind: ProjectImportableSummary["type"];
           identity: string;

@@ -50,7 +50,13 @@ import {
 } from "./importablePaths";
 
 const SNAPSHOT_DIR = "./htsw/.parse-snapshots";
-const SNAPSHOT_VERSION = 12;
+// 15: v13/v14 snapshots could persist a mis-homed include tree (v13:
+// rehomeFileTree not yet run; v14: the parse entry was the relative
+// `./htsw/...` form, whose root node absolute-vs-relative mismatch made
+// the rehome containment check never match). A fingerprint match would
+// serve the bad tree forever.
+// 16: fileTree gained `missing` leaf nodes for nonexistent includes.
+const SNAPSHOT_VERSION = 16;
 
 // importJson.fileTree with each importable replaced by its index into the
 // snapshot's flat `importables` array — serializing the objects in place
@@ -59,6 +65,8 @@ type SerializedFileNode = {
     path: string;
     importables: number[];
     includes: SerializedFileNode[];
+    reference?: boolean;
+    missing?: boolean;
 };
 
 /**
@@ -287,11 +295,14 @@ function serializeFileTree(
             const idx = indexOf.get(node.importables[i]);
             if (idx !== undefined) indices.push(idx);
         }
-        return {
+        const out: SerializedFileNode = {
             path: node.path,
             importables: indices,
             includes: node.includes.map(visit),
         };
+        if (node.reference === true) out.reference = true;
+        if (node.missing === true) out.missing = true;
+        return out;
     };
     return visit(tree);
 }
@@ -307,11 +318,14 @@ function deserializeFileTree(
             const imp = flat[node.importables[i]];
             if (imp !== undefined) imps.push(imp);
         }
-        return {
+        const out: ImportJsonFileNode = {
             path: node.path,
             importables: imps,
             includes: node.includes.map(visit),
         };
+        if (node.reference === true) out.reference = true;
+        if (node.missing === true) out.missing = true;
+        return out;
     };
     return visit(tree);
 }

@@ -1,9 +1,11 @@
+import { helpers } from "htsw";
+
 export function removedFormatting(str: string): string {
-    return str.replace(/(?:§|&)[0-9a-fklmnor]/g, "");
+    return helpers.stripFormatting(str);
 }
 
 export function normalizeFormattingCodes(str: string): string {
-    return str.replace(/§([0-9a-fklmnor])/gi, "&$1");
+    return helpers.sectionToAmp(str);
 }
 
 export function chatWidth(string: string, removeFormatting: boolean = true): number {

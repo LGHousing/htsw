@@ -40,9 +40,9 @@ export function viewBody(): Element {
                           emptyMessage: () => {
                               if (getTaskProgress() !== null) {
                                   const verb = getSessionVerb();
-                                  if (verb === "export") return "Exporting — progress above.";
-                                  if (verb === "read") return "Reading house contents — progress above.";
-                                  return "Importing — progress above.";
+                                  if (verb === "export") return "Exporting...";
+                                  if (verb === "read") return "Reading house contents...";
+                                  return "Importing...";
                               }
                               return "No live diff to show.";
                           },

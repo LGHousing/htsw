@@ -7,12 +7,14 @@ import {
     htslTargetForCommandExport,
     htslTargetForEventExport,
     htslTargetForFunctionExport,
+    moveImportableEntry,
     resolveImportableFile,
     upsertImportableEntry,
     type ProjectFs,
     type Section,
 } from "htsw-editor-common/project";
 import { nodeProjectFs } from "../nodeProjectFs";
+import { bumpWorkspaceGeneration, type ContextParse, getCachedRootParse } from "../rootParse";
 import type {
     ProjectFromHostMessage,
     ProjectImportableSub,
@@ -23,48 +25,6 @@ import type {
 
 const IMPORTABLE_SECTIONS = ["functions", "events", "regions", "items", "menus", "commands", "npcs"] as const;
 type ImportableSection = typeof IMPORTABLE_SECTIONS[number];
-
-const SECTION_META: Record<ImportableSection, {
-    identityField: "name" | "event";
-    type: ProjectImportableSummary["type"];
-    typeLabel: string;
-    openField?: string;
-}> = {
-    functions: { identityField: "name", type: "function", typeLabel: "FUNCTION", openField: "actions" },
-    events: { identityField: "event", type: "event", typeLabel: "EVENT", openField: "actions" },
-    regions: { identityField: "name", type: "region", typeLabel: "REGION" },
-    items: { identityField: "name", type: "item", typeLabel: "ITEM", openField: "nbt" },
-    menus: { identityField: "name", type: "menu", typeLabel: "MENU" },
-    commands: { identityField: "name", type: "command", typeLabel: "COMMAND", openField: "actions" },
-    npcs: { identityField: "name", type: "npc", typeLabel: "NPC" },
-};
-
-// Nested file references shown as expandable child rows under an importable.
-// Each value is a string path (htsl/snbt) per the import schema; menus are
-// special-cased because their refs live per-slot.
-type SubSpec = { keyPath: (string | number)[]; label: string; kind: "actions" | "item" };
-const SUB_SPECS: Partial<Record<ImportableSection, SubSpec[]>> = {
-    regions: [
-        { keyPath: ["onEnterActions"], label: "On enter", kind: "actions" },
-        { keyPath: ["onExitActions"], label: "On exit", kind: "actions" },
-    ],
-    items: [
-        { keyPath: ["leftClickActions"], label: "Left click", kind: "actions" },
-        { keyPath: ["rightClickActions"], label: "Right click", kind: "actions" },
-    ],
-    commands: [
-        { keyPath: ["actions"], label: "Actions", kind: "actions" },
-    ],
-    npcs: [
-        { keyPath: ["leftClickActions"], label: "Left click", kind: "actions" },
-        { keyPath: ["rightClickActions"], label: "Right click", kind: "actions" },
-        { keyPath: ["equipment", "helmet"], label: "Helmet", kind: "item" },
-        { keyPath: ["equipment", "chestplate"], label: "Chestplate", kind: "item" },
-        { keyPath: ["equipment", "leggings"], label: "Leggings", kind: "item" },
-        { keyPath: ["equipment", "boots"], label: "Boots", kind: "item" },
-        { keyPath: ["equipment", "hand"], label: "Hand", kind: "item" },
-    ],
-};
 
 export async function handleProjectMessage(
     webview: vscode.Webview,
@@ -83,6 +43,61 @@ export async function handleProjectMessage(
         case "addImportable":
             await addImportable(webview, message.importJsonPath, message.kind, message.identity);
             return;
+        case "moveImportable":
+            await moveImportable(webview, message.importJsonPath, message.kind, message.identity);
+            return;
+    }
+}
+
+async function moveImportable(
+    webview: vscode.Webview,
+    importJsonPath: string,
+    kind: ProjectImportableSummary["type"],
+    identity: string,
+): Promise<void> {
+    try {
+        const section = SECTION_BY_KIND[kind];
+        const roots = await discoverProjectTree();
+        const sourceKey = pathKey(importJsonPath);
+
+        const destinations: Array<vscode.QuickPickItem & { fsPath: string }> = [];
+        const treeRootOf = new Map<string, string>();
+        const visit = (node: ProjectImportJsonNode, treeRoot: string): void => {
+            if (node.missing || node.cycle || node.reference) return;
+            treeRootOf.set(pathKey(node.fsPath), treeRoot);
+            if (pathKey(node.fsPath) !== sourceKey) {
+                destinations.push({
+                    label: vscode.workspace.asRelativePath(node.fsPath, false),
+                    fsPath: node.fsPath,
+                });
+            }
+            node.children.forEach((child) => visit(child, treeRoot));
+        };
+        roots.forEach((root) => visit(root, root.fsPath));
+
+        if (destinations.length === 0) {
+            throw new Error("No other import.json to move to.");
+        }
+        const pick = await vscode.window.showQuickPick(destinations, {
+            placeHolder: `Move ${kind} "${identity}" to…`,
+        });
+        if (!pick) return;
+
+        // Walk the whole tree from its root so files also referenced by other
+        // declarations get copied instead of moved.
+        const entryJsonPath = treeRootOf.get(sourceKey) ?? importJsonPath;
+        await moveImportableWithOpenDocs(entryJsonPath, section, identity, pick.fsPath);
+
+        await webview.postMessage({
+            type: "projectResult",
+            ok: true,
+            message: `Moved ${kind} "${identity}" to ${pick.label}.`,
+        } satisfies ProjectFromHostMessage);
+        await postFreshProjectTree(webview);
+    } catch (err) {
+        const error = err instanceof Error ? err.message : String(err);
+        await webview.postMessage({ type: "projectResult", ok: false, error } satisfies ProjectFromHostMessage);
+        void vscode.window.showWarningMessage(`Could not move importable: ${error}`);
     }
 }
 
@@ -156,11 +171,58 @@ async function addImportable(
             ok: true,
             message: `Added ${kind} "${id}".`,
         } satisfies ProjectFromHostMessage);
-        await postProjectTree(webview);
+        await postFreshProjectTree(webview);
     } catch (err) {
         const error = err instanceof Error ? err.message : String(err);
         await webview.postMessage({ type: "projectResult", ok: false, error } satisfies ProjectFromHostMessage);
         void vscode.window.showWarningMessage(`Could not add importable: ${error}`);
+    }
+}
+
+/**
+ * Run moveImportableEntry with doc-aware writes: an open import.json gets a
+ * WorkspaceEdit + save instead of a disk write that would clobber unsaved
+ * edits. Throws on failure. Used by the tree's right-click move and the
+ * module-visibility quick fix.
+ */
+export async function moveImportableWithOpenDocs(
+    entryJsonPath: string,
+    section: Section,
+    identity: string,
+    destJsonPath: string,
+): Promise<void> {
+    const replacements = new Map<string, string>();
+    const fs: ProjectFs = {
+        ...nodeProjectFs,
+        readFile(filePath) {
+            const pending = replacements.get(pathKey(filePath));
+            if (pending !== undefined) return pending;
+            const open = openTextDocumentForPath(filePath);
+            return open ? open.getText() : nodeProjectFs.readFile(filePath);
+        },
+        writeFile(filePath, text) {
+            if (openTextDocumentForPath(filePath)) {
+                replacements.set(pathKey(filePath), text);
+                return;
+            }
+            nodeProjectFs.writeFile(filePath, text);
+        },
+    };
+
+    const result = moveImportableEntry(fs, entryJsonPath, section, identity, destJsonPath);
+    if (!result.ok) throw new Error(result.message);
+
+    for (const [key, text] of replacements) {
+        const open = openTextDocumentForPath(key);
+        if (!open) continue;
+        const edit = new vscode.WorkspaceEdit();
+        edit.replace(
+            open.uri,
+            new vscode.Range(open.positionAt(0), open.positionAt(open.getText().length)),
+            text,
+        );
+        await vscode.workspace.applyEdit(edit);
+        await open.save();
     }
 }
 
@@ -261,6 +323,11 @@ async function postProjectTree(webview: vscode.Webview): Promise<void> {
     }
 }
 
+async function postFreshProjectTree(webview: vscode.Webview): Promise<void> {
+    bumpWorkspaceGeneration();
+    await postProjectTree(webview);
+}
+
 function workspaceLabel(): string | undefined {
     const folders = vscode.workspace.workspaceFolders;
     if (!folders || folders.length === 0) return undefined;
@@ -285,8 +352,255 @@ async function discoverProjectTree(): Promise<ProjectImportJsonNode[]> {
     const roots = rootUris.length > 0 ? rootUris : manifests;
     const diags = collectDiagnosticCounts();
     return roots
-        .map((uri) => buildImportJsonNode(fs, uri.fsPath, null, new Set<string>(), diags))
+        .map((uri) => rootNodeFromParse(uri.fsPath, diags))
         .sort((left, right) => left.label.localeCompare(right.label));
+}
+
+// The tree is a projection of the LANGUAGE parse — the same fileTree (homes,
+// jump-link references, missing includes) the in-game Importables tree
+// renders, served from the generation-keyed cache the diagnostics adapter
+// shares — so the two UIs can't drift and refreshes don't re-read the world.
+function rootNodeFromParse(
+    rootPath: string,
+    diags: Map<string, SeverityCount>,
+): ProjectImportJsonNode {
+    const rootDir = path.dirname(rootPath);
+    let parse: ContextParse | null = null;
+    try {
+        parse = getCachedRootParse(rootPath);
+    } catch {
+        parse = null;
+    }
+    const tree = parse?.result.importJson.fileTree ?? null;
+    if (parse === null || tree === null) {
+        return {
+            fsPath: rootPath,
+            label: nodeLabel(rootPath, null, rootDir),
+            name: path.basename(path.dirname(rootPath)) || path.basename(rootPath),
+            importableCount: 0,
+            importables: [],
+            children: [],
+            missing: nodeProjectFs.exists(rootPath) ? undefined : true,
+        };
+    }
+    const node = mapFileNode(tree, null, rootDir, parse, diags);
+    patchReferenceNodes(node);
+    return node;
+}
+
+function mapFileNode(
+    fileNode: htsw.ImportJsonFileNode,
+    parentPath: string | null,
+    rootDir: string,
+    parse: ContextParse,
+    diags: Map<string, SeverityCount>,
+): ProjectImportJsonNode {
+    const label = nodeLabel(fileNode.path, parentPath, rootDir);
+    const name = path.basename(path.dirname(fileNode.path)) || path.basename(fileNode.path);
+    if (fileNode.missing === true || fileNode.reference === true) {
+        return {
+            fsPath: fileNode.path,
+            label,
+            name,
+            importableCount: 0,
+            importables: [],
+            children: [],
+            missing: fileNode.missing === true || undefined,
+            reference: fileNode.reference === true || undefined,
+        };
+    }
+
+    const children = fileNode.includes.map((child) =>
+        mapFileNode(child, fileNode.path, rootDir, parse, diags)
+    );
+    const importables = fileNode.importables
+        .map((imp) => mapImportable(imp, fileNode.path, parse, diags))
+        .filter((summary): summary is ProjectImportableSummary => summary !== null);
+
+    const own = diags.get(pathKey(fileNode.path)) ?? { errors: 0, warnings: 0 };
+    let errors = own.errors;
+    let warnings = own.warnings;
+    for (const entry of importables) {
+        errors += entry.errors ?? 0;
+        warnings += entry.warnings ?? 0;
+        for (const sub of entry.subEntries ?? []) {
+            errors += sub.errors ?? 0;
+            warnings += sub.warnings ?? 0;
+        }
+    }
+    for (const child of children) {
+        if (child.reference) continue;
+        errors += child.errors ?? 0;
+        warnings += child.warnings ?? 0;
+    }
+
+    return {
+        fsPath: fileNode.path,
+        label,
+        name,
+        importableCount: importables.length,
+        importables,
+        children,
+        errors: errors || undefined,
+        warnings: warnings || undefined,
+    };
+}
+
+// Reference leaves mirror their home's badge so the jump link shows what it
+// leads to; ancestors don't re-sum them (mapFileNode skips reference children).
+function patchReferenceNodes(root: ProjectImportJsonNode): void {
+    const homes = new Map<string, ProjectImportJsonNode>();
+    const collect = (node: ProjectImportJsonNode): void => {
+        if (!node.reference && !node.missing) homes.set(pathKey(node.fsPath), node);
+        node.children.forEach(collect);
+    };
+    collect(root);
+    const patch = (node: ProjectImportJsonNode): void => {
+        if (node.reference) {
+            const home = homes.get(pathKey(node.fsPath));
+            if (home) {
+                node.importableCount = subtreeImportableCount(home);
+                node.errors = home.errors;
+                node.warnings = home.warnings;
+            }
+        }
+        node.children.forEach(patch);
+    };
+    patch(root);
+}
+
+const SUMMARY_TYPE: Partial<Record<htsw.types.Importable["type"], ProjectImportableSummary["type"]>> = {
+    FUNCTION: "function",
+    EVENT: "event",
+    REGION: "region",
+    ITEM: "item",
+    MENU: "menu",
+    COMMAND: "command",
+    NPC: "npc",
+};
+
+const SUB_LIST_LABELS: Record<htsw.SubListKind, string> = {
+    actions: "Actions",
+    onEnterActions: "On enter",
+    onExitActions: "On exit",
+    leftClickActions: "Left click",
+    rightClickActions: "Right click",
+};
+
+function mapImportable(
+    imp: htsw.types.Importable,
+    declaringPath: string,
+    parse: ContextParse,
+    diags: Map<string, SeverityCount>,
+): ProjectImportableSummary | null {
+    const type = SUMMARY_TYPE[imp.type];
+    if (type === undefined) return null;
+    const identity = imp.type === "EVENT"
+        ? imp.event
+        : imp.type === "NPC"
+            ? `${imp.pos.x},${imp.pos.y},${imp.pos.z}`
+            : (imp as { name: string }).name;
+    const label = imp.type === "NPC" ? `${imp.name} @ ${identity}` : identity;
+
+    const sourcePath = htsw.importableSourcePath(imp, parse.result);
+    const openPath = sourcePath !== undefined ? sourcePath : declaringPath;
+    // Only attribute diagnostics when the importable has its own source
+    // file — otherwise every importable would inherit the import.json's.
+    const ownDiag = pathKey(openPath) !== pathKey(declaringPath)
+        ? diags.get(pathKey(openPath))
+        : undefined;
+    const subEntries = mapSubEntries(imp, declaringPath, parse, diags);
+
+    return {
+        id: `${declaringPath}|${type}|${identity}`,
+        identity,
+        label,
+        type,
+        typeLabel: imp.type,
+        openPath,
+        ...mapImportableIcon(imp),
+        errors: ownDiag?.errors || undefined,
+        warnings: ownDiag?.warnings || undefined,
+        subEntries: subEntries.length > 0 ? subEntries : undefined,
+    };
+}
+
+function mapImportableIcon(
+    imp: htsw.types.Importable,
+): { iconItem?: string; iconMeta?: number; iconCount?: number } {
+    if (imp.type === "FUNCTION" && imp.icon !== undefined) {
+        return { iconItem: imp.icon.item, iconCount: imp.icon.count };
+    }
+    if (imp.type === "ITEM" && imp.nbt.type === "compound") {
+        const fields = imp.nbt.value as Record<string, { type: string; value: unknown } | undefined>;
+        const id = fields.id;
+        if (id?.type !== "string" || typeof id.value !== "string") return {};
+        const damage = fields.Damage;
+        const iconMeta = typeof damage?.value === "number" ? damage.value : undefined;
+        return { iconItem: id.value, iconMeta };
+    }
+    return {};
+}
+
+function mapSubEntries(
+    imp: htsw.types.Importable,
+    declaringPath: string,
+    parse: ContextParse,
+    diags: Map<string, SeverityCount>,
+): ProjectImportableSub[] {
+    const out: ProjectImportableSub[] = [];
+    const declaringKey = pathKey(declaringPath);
+    // Inline JSON lists resolve to the manifest itself — no sub-row, same
+    // as when these rows were read from `...Path: "file.htsl"` refs only.
+    const pushActions = (label: string, fsPath: string | undefined): void => {
+        if (fsPath === undefined || pathKey(fsPath) === declaringKey) return;
+        out.push(subEntryFor(label, fsPath, "actions", diags));
+    };
+
+    for (const kind of htsw.SUB_LIST_KINDS) {
+        if (htsw.subListOf(imp, kind) === undefined) continue;
+        pushActions(SUB_LIST_LABELS[kind], htsw.importableSubListPath(imp, kind, parse.result));
+    }
+
+    if (imp.type === "MENU") {
+        for (const slot of imp.slots) {
+            const tag = `Slot ${slot.slot}`;
+            const nbtPath = htsw.parsedObjectSourcePath(parse.result, slot.nbt);
+            if (nbtPath !== undefined && pathKey(nbtPath) !== declaringKey) {
+                out.push(subEntryFor(`${tag} item`, nbtPath, "item", diags));
+            }
+            if (slot.actions !== undefined) {
+                pushActions(`${tag} actions`, htsw.actionListSourcePath(parse.result, slot.actions));
+            }
+        }
+    }
+
+    if (imp.type === "NPC" && imp.equipment !== undefined) {
+        const pieces: Array<[string, string | undefined]> = [
+            ["Helmet", imp.equipment.helmet],
+            ["Chestplate", imp.equipment.chestplate],
+            ["Leggings", imp.equipment.leggings],
+            ["Boots", imp.equipment.boots],
+            ["Hand", imp.equipment.hand],
+        ];
+        for (const [label, ref] of pieces) {
+            if (ref === undefined) continue;
+            const resolved = path.resolve(path.dirname(declaringPath), ref);
+            if (nodeProjectFs.exists(resolved)) out.push(subEntryFor(label, resolved, "item", diags));
+        }
+    }
+
+    return out;
+}
+
+function subEntryFor(
+    label: string,
+    fsPath: string,
+    kind: "actions" | "item",
+    diags: Map<string, SeverityCount>,
+): ProjectImportableSub {
+    const diag = diags.get(pathKey(fsPath));
+    return { label, fsPath, kind, errors: diag?.errors || undefined, warnings: diag?.warnings || undefined };
 }
 
 type SeverityCount = { errors: number; warnings: number };
@@ -307,11 +621,20 @@ function collectDiagnosticCounts(): Map<string, SeverityCount> {
 }
 
 // A node's display label is its directory relative to the PARENT import.json's
-// directory — "clocks", not the full "functions/clocks/import.json" path. Roots
-// keep their workspace-relative path so multiple roots stay distinguishable.
-function nodeLabel(filePath: string, parentFilePath: string | null): string {
+// directory — "clocks", not the full "functions/clocks/import.json" path. When
+// the include reaches outside the parent's folder, a parent-relative path would
+// start with "../.." noise, so fall back to the ROOT import.json's directory
+// (then the workspace) — "shared/menus-module", not "../../shared/menus-module".
+// Roots keep their workspace-relative path so multiple roots stay distinguishable.
+function nodeLabel(filePath: string, parentFilePath: string | null, rootDir: string): string {
     if (parentFilePath === null) return vscode.workspace.asRelativePath(filePath, false);
-    const rel = path.relative(path.dirname(parentFilePath), filePath).split(path.sep).join("/");
+    let rel = path.relative(path.dirname(parentFilePath), filePath).split(path.sep).join("/");
+    if (rel.startsWith("..")) {
+        const fromRoot = path.relative(rootDir, filePath).split(path.sep).join("/");
+        rel = fromRoot.startsWith("..")
+            ? vscode.workspace.asRelativePath(filePath, false)
+            : fromRoot;
+    }
     if (rel.endsWith("/import.json")) return rel.slice(0, -"/import.json".length);
     if (rel === "import.json") return path.basename(path.dirname(filePath));
     return rel;
@@ -336,75 +659,11 @@ function collectIncludedKeys(
     stack.delete(key);
 }
 
-function buildImportJsonNode(
-    fs: ProjectFs,
-    filePath: string,
-    parentFilePath: string | null,
-    stack: Set<string>,
-    diags: Map<string, SeverityCount>,
-): ProjectImportJsonNode {
-    const key = pathKey(filePath);
-    const label = nodeLabel(filePath, parentFilePath);
-    const name = path.basename(path.dirname(filePath)) || path.basename(filePath);
-
-    if (stack.has(key)) {
-        return {
-            fsPath: filePath,
-            label,
-            name,
-            importableCount: 0,
-            importables: [],
-            cycle: true,
-            children: [],
-        };
-    }
-
-    if (!fs.exists(filePath)) {
-        return {
-            fsPath: filePath,
-            label,
-            name,
-            importableCount: 0,
-            importables: [],
-            missing: true,
-            children: [],
-        };
-    }
-
-    stack.add(key);
-    const tree = parseImportJson(fs, filePath);
-    const children = readIncludePathsFromTree(tree)
-        .map((includePath) => fs.resolvePath(fs.parentDir(filePath), includePath))
-        .map((childPath) => buildImportJsonNode(fs, childPath, filePath, stack, diags));
-    stack.delete(key);
-
-    const importables = readImportables(tree, filePath, fs, diags);
-    const own = diags.get(key) ?? { errors: 0, warnings: 0 };
-    let errors = own.errors;
-    let warnings = own.warnings;
-    for (const entry of importables) {
-        errors += entry.errors ?? 0;
-        warnings += entry.warnings ?? 0;
-        for (const sub of entry.subEntries ?? []) {
-            errors += sub.errors ?? 0;
-            warnings += sub.warnings ?? 0;
-        }
-    }
-    for (const child of children) {
-        errors += child.errors ?? 0;
-        warnings += child.warnings ?? 0;
-    }
-
-    return {
-        fsPath: filePath,
-        label,
-        name,
-        importableCount: countImportables(tree),
-        importables,
-        children,
-        errors: errors || undefined,
-        warnings: warnings || undefined,
-    };
+function subtreeImportableCount(node: ProjectImportJsonNode): number {
+    return node.importableCount + node.children.reduce(
+        (total, child) => total + (child.reference ? 0 : subtreeImportableCount(child)),
+        0,
+    );
 }
 
 async function createIncludedImportJson(
@@ -461,7 +720,7 @@ async function createIncludedImportJson(
             message: `Created ${vscode.workspace.asRelativePath(result.importJsonPath, false)}.`,
             createdPath: result.importJsonPath,
         } satisfies ProjectFromHostMessage);
-        await postProjectTree(webview);
+        await postFreshProjectTree(webview);
     } catch (err) {
         const error = err instanceof Error ? err.message : String(err);
         await webview.postMessage({
@@ -511,194 +770,9 @@ function readIncludePathsFromTree(tree: json.Node | null): string[] {
         .map((node) => String(node.value));
 }
 
-function countImportables(tree: json.Node | null): number {
-    if (!tree) return 0;
-    let count = 0;
-    for (const section of IMPORTABLE_SECTIONS) {
-        const node = json.findNodeAtLocation(tree, [section]);
-        if (node?.type === "array") count += node.children?.length ?? 0;
-    }
-    return count;
-}
-
-function readImportables(
-    tree: json.Node | null,
-    importJsonPath: string,
-    fs: ProjectFs,
-    diags: Map<string, SeverityCount>,
-): ProjectImportableSummary[] {
-    if (!tree) return [];
-    const importables: ProjectImportableSummary[] = [];
-    for (const section of IMPORTABLE_SECTIONS) {
-        const sectionNode = json.findNodeAtLocation(tree, [section]);
-        if (!sectionNode || sectionNode.type !== "array") continue;
-        const meta = SECTION_META[section];
-        const items = sectionNode.children ?? [];
-        for (const item of items) {
-            const identity = importableIdentityForProjectView(item, section);
-            if (identity === null) continue;
-            const label = importableLabelForProjectView(item, section, identity);
-            const refNode = meta.openField
-                ? json.findNodeAtLocation(item, [meta.openField])
-                : null;
-            const ref = refNode?.type === "string" && typeof refNode.value === "string"
-                ? String(refNode.value)
-                : null;
-            const refPath = ref ? fs.resolvePath(fs.parentDir(importJsonPath), ref) : null;
-            const openPath = refPath && fs.exists(refPath) ? refPath : importJsonPath;
-            // Only attribute diagnostics when the importable has its own source
-            // file — otherwise every importable would inherit the import.json's.
-            const ownDiag = openPath !== importJsonPath ? diags.get(pathKey(openPath)) : undefined;
-            const subEntries = readSubEntries(item, section, importJsonPath, fs, diags);
-            importables.push({
-                id: `${importJsonPath}|${meta.type}|${identity}`,
-                label,
-                type: meta.type,
-                typeLabel: meta.typeLabel,
-                openPath,
-                ...readImportableIcon(item, section, identity, refPath, fs),
-                errors: ownDiag?.errors || undefined,
-                warnings: ownDiag?.warnings || undefined,
-                subEntries: subEntries.length > 0 ? subEntries : undefined,
-            });
-        }
-    }
-    return importables;
-}
-
-function importableIdentityForProjectView(
-    item: json.Node,
-    section: ImportableSection,
-): string | null {
-    if (section === "npcs") {
-        const pos = json.findNodeAtLocation(item, ["pos"]);
-        if (!pos || pos.type !== "object") return null;
-        const x = json.findNodeAtLocation(pos, ["x"]);
-        const y = json.findNodeAtLocation(pos, ["y"]);
-        const z = json.findNodeAtLocation(pos, ["z"]);
-        if (x?.type !== "number" || y?.type !== "number" || z?.type !== "number") return null;
-        return `${Number(x.value)},${Number(y.value)},${Number(z.value)}`;
-    }
-
-    const meta = SECTION_META[section];
-    const idNode = json.findNodeAtLocation(item, [meta.identityField]);
-    if (!idNode || idNode.type !== "string" || typeof idNode.value !== "string") return null;
-    return String(idNode.value);
-}
-
-function importableLabelForProjectView(
-    item: json.Node,
-    section: ImportableSection,
-    identity: string,
-): string {
-    if (section !== "npcs") return identity;
-    const nameNode = json.findNodeAtLocation(item, ["name"]);
-    if (nameNode?.type !== "string" || typeof nameNode.value !== "string") return identity;
-    return `${String(nameNode.value)} @ ${identity}`;
-}
-
-function readSubEntries(
-    item: json.Node,
-    section: ImportableSection,
-    importJsonPath: string,
-    fs: ProjectFs,
-    diags: Map<string, SeverityCount>,
-): ProjectImportableSub[] {
-    if (section === "menus") return readMenuSubEntries(item, importJsonPath, fs, diags);
-    const specs = SUB_SPECS[section];
-    if (!specs) return [];
-    const out: ProjectImportableSub[] = [];
-    for (const spec of specs) {
-        const fsPath = resolveStringRef(item, spec.keyPath, importJsonPath, fs);
-        if (fsPath) out.push(subEntry(spec.label, fsPath, spec.kind, diags));
-    }
-    return out;
-}
-
-function readMenuSubEntries(
-    item: json.Node,
-    importJsonPath: string,
-    fs: ProjectFs,
-    diags: Map<string, SeverityCount>,
-): ProjectImportableSub[] {
-    const slotsNode = json.findNodeAtLocation(item, ["slots"]);
-    if (slotsNode?.type !== "array") return [];
-    const out: ProjectImportableSub[] = [];
-    for (const slot of slotsNode.children ?? []) {
-        const slotNumNode = json.findNodeAtLocation(slot, ["slot"]);
-        const tag = slotNumNode?.type === "number" ? `Slot ${Number(slotNumNode.value)}` : "Slot";
-        const nbt = resolveStringRef(slot, ["nbt"], importJsonPath, fs);
-        if (nbt) out.push(subEntry(`${tag} item`, nbt, "item", diags));
-        const actions = resolveStringRef(slot, ["actions"], importJsonPath, fs);
-        if (actions) out.push(subEntry(`${tag} actions`, actions, "actions", diags));
-    }
-    return out;
-}
-
-function resolveStringRef(
-    node: json.Node,
-    keyPath: (string | number)[],
-    importJsonPath: string,
-    fs: ProjectFs,
-): string | null {
-    const ref = json.findNodeAtLocation(node, keyPath);
-    if (ref?.type !== "string" || typeof ref.value !== "string") return null;
-    const resolved = fs.resolvePath(fs.parentDir(importJsonPath), ref.value);
-    return fs.exists(resolved) ? resolved : null;
-}
-
-function subEntry(
-    label: string,
-    fsPath: string,
-    kind: "actions" | "item",
-    diags: Map<string, SeverityCount>,
-): ProjectImportableSub {
-    const diag = diags.get(pathKey(fsPath));
-    return { label, fsPath, kind, errors: diag?.errors || undefined, warnings: diag?.warnings || undefined };
-}
-
-function readImportableIcon(
-    item: json.Node,
-    section: ImportableSection,
-    identity: string,
-    refPath: string | null,
-    fs: ProjectFs,
-): { iconItem?: string; iconMeta?: number; iconCount?: number } {
-    if (section === "functions" || section === "events") {
-        const itemNode = json.findNodeAtLocation(item, ["icon", "item"]);
-        if (itemNode?.type === "string" && typeof itemNode.value === "string") {
-            const countNode = json.findNodeAtLocation(item, ["icon", "count"]);
-            const iconCount = countNode?.type === "number" && typeof countNode.value === "number"
-                ? Number(countNode.value)
-                : undefined;
-            return { iconItem: String(itemNode.value), iconCount };
-        }
-        return {};
-    }
-    if (section === "items" && refPath && fs.exists(refPath)) {
-        return readSnbtIcon(refPath, fs);
-    }
-    return {};
-}
-
 // Pull just the item id and Damage out of an item's snbt for the row icon. A
 // regex rather than a full parse: a malformed snbt still renders (it falls
 // back to a type glyph) and the tree refresh stays a cheap read.
-function readSnbtIcon(snbtPath: string, fs: ProjectFs): { iconItem?: string; iconMeta?: number } {
-    try {
-        const text = fs.readFile(snbtPath);
-        const idMatch = text.match(/\bid\s*:\s*"([^"]+)"/);
-        if (!idMatch) return {};
-        const damageMatch = text.match(/\bDamage\s*:\s*(\d+)/);
-        return {
-            iconItem: idMatch[1],
-            iconMeta: damageMatch ? Number(damageMatch[1]) : undefined,
-        };
-    } catch (_err) {
-        return {};
-    }
-}
-
 function openTextDocumentForPath(filePath: string): vscode.TextDocument | undefined {
     const key = pathKey(filePath);
     return vscode.workspace.textDocuments.find(

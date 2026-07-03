@@ -1,3 +1,4 @@
+import { helpers } from "htsw";
 import type { ImportableNpc, Pos } from "htsw/types";
 
 import {
@@ -10,13 +11,9 @@ import type { ItemSlot } from "../../tasks/specifics/slots";
 import { normalizeFormattingCodes, removedFormatting } from "../../utils/helpers";
 import { openNpcEditorForPos, type NpcListEntry, type NpcLookupCache } from "./listNpcs";
 
-function hasFormattingCode(value: string): boolean {
-    return /(?:§|&)[0-9a-fklmnor]/i.test(value);
-}
-
 export function canonicalNpcName(value: string): string {
     const normalized = normalizeFormattingCodes(value).trim();
-    if (normalized.length === 0 || hasFormattingCode(normalized)) return normalized;
+    if (normalized.length === 0 || helpers.containsFormattingCode(normalized)) return normalized;
     return `&a${normalized}`;
 }
 
