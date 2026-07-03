@@ -157,10 +157,19 @@ jobs:
           TAG: ${{ steps.tag.outputs.tag }}
           DEPLOYED: ${{ steps.deploy.outputs.deployed }}
         run: |
+          fetch_version() {
+            local body
+            body="$(curl -sf "$1" || true)"
+            if [ -z "${body}" ]; then
+              echo unreachable
+              return
+            fi
+            printf '%s' "${body}" | jq -r '.version // "unreachable"'
+          }
           ct_repo="$(jq -r .version ct_module/package.json)"
           vs_repo="$(jq -r .version editors/code/package.json)"
-          ct_live="$(curl -sf https://legendarygames.dev/htsw/ct/latest.json | jq -r .version || echo unreachable)"
-          vs_live="$(curl -sf https://legendarygames.dev/htsw/vscode/latest.json | jq -r .version || echo unreachable)"
+          ct_live="$(fetch_version https://legendarygames.dev/htsw/ct/latest.json)"
+          vs_live="$(fetch_version https://legendarygames.dev/htsw/vscode/latest.json)"
 
           {
             echo "## Autoupdater feeds"
@@ -173,11 +182,15 @@ jobs:
           level="warning"
           if [ "${DEPLOYED}" = "true" ]; then level="error"; fi
           failed=0
-          if [ "${ct_live}" != "${ct_repo}" ]; then
+          if [ "${ct_live}" = "unreachable" ]; then
+            echo "::warning title=CT feed unverifiable::CI could not fetch ct/latest.json; verify manually that it serves ${ct_repo}."
+          elif [ "${ct_live}" != "${ct_repo}" ]; then
             echo "::${level} title=CT autoupdater is behind::${TAG} has module version ${ct_repo}, but https://legendarygames.dev/htsw/ct/latest.json serves ${ct_live}. Users running /htsw update will NOT get this release. Manual fix: python publish.py --ct-only"
             failed=1
           fi
-          if [ "${vs_live}" != "${vs_repo}" ]; then
+          if [ "${vs_live}" = "unreachable" ]; then
+            echo "::warning title=VS Code feed unverifiable::CI could not fetch vscode/latest.json; verify manually that it serves ${vs_repo}."
+          elif [ "${vs_live}" != "${vs_repo}" ]; then
             echo "::${level} title=VS Code updater is behind::editors/code is at ${vs_repo}, but https://legendarygames.dev/htsw/vscode/latest.json serves ${vs_live}. Manual fix: python publish.py --vscode-only"
             failed=1
           fi
