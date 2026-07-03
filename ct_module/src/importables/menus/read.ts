@@ -2,7 +2,11 @@ import type { Action } from "htsw/types";
 import * as htsw from "htsw";
 
 import { readActionList } from "../../housingSync/actions/readList";
-import type { ProgressHandler } from "../../housingSync/progress/types";
+import { COST } from "../../housingSync/progress/costs";
+import type {
+    ProgressHandler,
+    ProgressPhase,
+} from "../../housingSync/progress/types";
 import { clickGoBack } from "../../housingSync/menus/menuUtils";
 import { waitForMenu } from "../../housingSync/menus/menuWait";
 import TaskContext from "../../tasks/context";
@@ -121,7 +125,8 @@ function snapshotMenuSlots(
  */
 async function readMenuSlotActions(
     ctx: TaskContext,
-    slotId: number
+    slotId: number,
+    onListProgress?: ProgressHandler
 ): Promise<Action[]> {
     const container = Player.getContainer();
     if (container == null) {
@@ -130,7 +135,16 @@ async function readMenuSlotActions(
     container.click(slotId, false, "LEFT");
     await waitForMenu(ctx);
 
-    const observed = await readActionList(ctx, { kind: "deep" });
+    const observed = await readActionList(
+        ctx,
+        { kind: "deep" },
+        onListProgress === undefined
+            ? undefined
+            : {
+                  progress: onListProgress,
+                  phaseUnits: { setup: 0, reading: 0, hydrating: 0, applying: 0 },
+              }
+    );
     const actions = observedSlotsToActions(observed);
 
     await clickGoBack(ctx);
@@ -160,26 +174,77 @@ export async function readLiveMenu(
 
     const snapshot = snapshotMenuSlots(gridSize);
 
-    // Slot-level progress: a menu read is one editor round-trip per populated
-    // slot, so slots-done/slots-total is the honest granularity (per-slot
-    // action lists are usually tiny).
-    const emitSlotProgress = (done: number): void => {
+    // Progress is reported in cost-model units (the scale the learned
+    // ms/unit rate prices), NOT slots — a slot is a full editor round-trip
+    // plus a deep action-list read, so slot counts undercount the work by
+    // 10-100x and the ETA reads ~0 while minutes remain. Like the import
+    // path, this never predicts: the caller's upfront content-based estimate
+    // owns the forecast, and these payloads carry only known work — finished
+    // slots at their actual cost, the current slot as its nested read
+    // discovers pages/hydration, un-entered slots at the one round trip each
+    // is guaranteed to cost. Totals therefore only grow, and only when the
+    // walk observes something real.
+    const slotRoundTripUnits = COST.menuClickWait + COST.goBackWait;
+    let doneReadingUnits = 0;
+    let doneHydratingUnits = 0;
+    let doneSlots = 0;
+    let inSlot = false;
+    let currentPhase: ProgressPhase = "reading";
+    let currentSlotReadingUnits = 0;
+    let currentSlotHydratingUnits = 0;
+    let currentSlotCompletedUnits = 0;
+
+    const emitProgress = (): void => {
         if (onReadProgress === undefined || snapshot.length === 0) return;
+        const remainingSlots = snapshot.length - doneSlots - (inSlot ? 1 : 0);
+        const reading =
+            doneReadingUnits +
+            currentSlotReadingUnits +
+            remainingSlots * slotRoundTripUnits;
+        const hydrating = doneHydratingUnits + currentSlotHydratingUnits;
         onReadProgress({
-            phase: "reading",
-            completedUnits: done,
-            totalUnits: snapshot.length,
-            phaseUnits: { setup: 0, reading: snapshot.length, hydrating: 0, applying: 0 },
-            sync: { completedUnits: done, totalUnits: snapshot.length, parent: null },
+            phase: inSlot ? currentPhase : "reading",
+            completedUnits:
+                doneReadingUnits + doneHydratingUnits + currentSlotCompletedUnits,
+            totalUnits: reading + hydrating,
+            phaseUnits: { setup: 0, reading, hydrating, applying: 0 },
+            sync: { completedUnits: doneSlots, totalUnits: snapshot.length, parent: null },
         });
     };
 
     const slots: LiveMenuSlot[] = [];
-    emitSlotProgress(0);
+    emitProgress();
     for (const { slotId, snbt, nameHint } of snapshot) {
-        const actions = await readMenuSlotActions(ctx, slotId);
+        inSlot = true;
+        currentPhase = "reading";
+        currentSlotReadingUnits = slotRoundTripUnits;
+        currentSlotHydratingUnits = 0;
+        currentSlotCompletedUnits = 0;
+        emitProgress();
+        const actions = await readMenuSlotActions(
+            ctx,
+            slotId,
+            onReadProgress === undefined
+                ? undefined
+                : (payload) => {
+                      currentPhase = payload.phase;
+                      currentSlotReadingUnits =
+                          slotRoundTripUnits + payload.phaseUnits.reading;
+                      currentSlotHydratingUnits = payload.phaseUnits.hydrating;
+                      currentSlotCompletedUnits =
+                          COST.menuClickWait + payload.completedUnits;
+                      emitProgress();
+                  }
+        );
+        doneReadingUnits += currentSlotReadingUnits;
+        doneHydratingUnits += currentSlotHydratingUnits;
+        doneSlots++;
+        inSlot = false;
+        currentSlotReadingUnits = 0;
+        currentSlotHydratingUnits = 0;
+        currentSlotCompletedUnits = 0;
         slots.push({ slot: slotId, snbt, actions, nameHint });
-        emitSlotProgress(slots.length);
+        emitProgress();
     }
 
     return { size, gridSize, slots };

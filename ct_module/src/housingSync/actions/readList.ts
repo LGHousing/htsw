@@ -60,6 +60,11 @@ import {
     hydrationEntryUnits,
     phaseUnitsTotal,
 } from "../progress/costs";
+import {
+    createHydrationEntryAccount,
+    type HydrationEntryAccount,
+} from "../progress/hydrationAccount";
+import type { ProgressPayload } from "../progress/types";
 import { ACTION_LIST_CONFIG } from "./listConfigs";
 import { getActionSpec } from "./specs";
 import { createActionReadContext } from "../context/actionReadContext";
@@ -425,11 +430,25 @@ async function hydrateActionDetails(
         totalHydrateUnits += hydrationEntryUnits(entry, work);
     });
     if (phaseUnits !== undefined) phaseUnits.hydrating = totalHydrateUnits;
+    // The running entry's account replaces its lump-sum estimate with what
+    // its child reads actually establish, payload by payload — `emit` folds
+    // the live delta into the hydrate totals so the caller sees plan-derived
+    // units the moment a child read builds its plan, not when the entry ends.
+    let currentAccount: HydrationEntryAccount | null = null;
+    let currentEntryEstimate = 0;
     const emit = () => {
         if (phaseUnits === undefined) return;
+        const entryDelta =
+            currentAccount === null
+                ? 0
+                : currentAccount.bookedUnits() - currentEntryEstimate;
+        const entryCompleted =
+            currentAccount === null ? 0 : currentAccount.completedUnits();
+        phaseUnits.hydrating = totalHydrateUnits + entryDelta;
         progress?.({
             phase: "hydrating",
-            completedUnits: phaseUnits.reading + completedHydrateUnits,
+            completedUnits:
+                phaseUnits.reading + completedHydrateUnits + entryCompleted,
             totalUnits: phaseUnitsTotal(phaseUnits),
             phaseUnits: phaseUnits,
             sync: { completedUnits: completed, totalUnits: total, parent: null },
@@ -441,13 +460,14 @@ async function hydrateActionDetails(
             : undefined;
     for (const [entry, work] of plan) {
         const entryPath = actionPathForIndex(listPath, entry.index);
+        currentEntryEstimate = hydrationEntryUnits(entry, work);
+        currentAccount = createHydrationEntryAccount(entry, work, emit);
         emit();
         events?.emit({
             kind: "childListReadStarted",
             path: entryPath,
             actionType: entry.action?.type ?? null,
         });
-        const entryUnits = hydrationEntryUnits(entry, work);
         await hydrateActionDetail(
             ctx,
             entry,
@@ -455,9 +475,13 @@ async function hydrateActionDetails(
             observed.length,
             read,
             entryPath,
-            subStepSnapshot
+            subStepSnapshot,
+            currentAccount
         );
+        const entryUnits = currentAccount.finish();
+        totalHydrateUnits += entryUnits - currentEntryEstimate;
         completedHydrateUnits += entryUnits;
+        currentAccount = null;
         completed++;
         emit();
         if (isTopLevelRead) {
@@ -473,10 +497,11 @@ async function hydrateActionDetail(
     listLength: number,
     read: ListReadOptions | undefined,
     entryPath: ActionPath,
-    emitSnapshot?: () => void
+    emitSnapshot?: () => void,
+    account?: HydrationEntryAccount
 ): Promise<void> {
     try {
-        return await hydrateActionDetailFromEditor(ctx, entry, work, listLength, read, entryPath, emitSnapshot);
+        return await hydrateActionDetailFromEditor(ctx, entry, work, listLength, read, entryPath, emitSnapshot, account);
     } catch (error) {
         if (isTaskCancelled(error)) throw error;
         const inner = error instanceof Error ? error.message : String(error);
@@ -493,7 +518,8 @@ async function hydrateActionDetailFromEditor(
     listLength: number,
     read: ListReadOptions | undefined,
     entryPath: ActionPath,
-    emitSnapshot?: () => void
+    emitSnapshot?: () => void,
+    account?: HydrationEntryAccount
 ): Promise<void> {
     if (entry.action === null) {
         return;
@@ -520,6 +546,20 @@ async function hydrateActionDetailFromEditor(
             emitSnapshot,
             readChildActions: readActionList,
             readConditions: readConditionList,
+            ...(account === undefined
+                ? {}
+                : {
+                      childListProgress: (prop: ChildListName) => ({
+                          progress: (payload: ProgressPayload) =>
+                              account.onChildPayload(prop, payload),
+                          phaseUnits: {
+                              setup: 0,
+                              reading: 0,
+                              hydrating: 0,
+                              applying: 0,
+                          },
+                      }),
+                  }),
         });
         entry.action = await spec.read({
             ctx,

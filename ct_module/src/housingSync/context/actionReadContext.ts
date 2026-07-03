@@ -4,11 +4,13 @@ import TaskContext from "../../tasks/context";
 import { type ItemRegistry } from "../../importables/itemRegistry";
 import type { ActionListReadMode } from "../actions/readList";
 import type {
+    ChildListName,
     ListReadOptions,
     Observed,
     ObservedActionSlot,
     ObservedConditionSlot,
 } from "../types";
+import type { PhaseUnits, ProgressHandler } from "../progress/types";
 import type { ReadConditionListOptions } from "../actions/conditions/readList";
 import {
     childListPath,
@@ -47,6 +49,15 @@ export type CreateActionReadContextArgs = {
     emitSnapshot?: () => void;
     readChildActions: ReadChildActions;
     readConditions: ReadConditions;
+    /**
+     * Supplies a fresh progress sink per child-list read so the child's
+     * plan-derived units (pages, its own hydration entries) flow back into
+     * the parent's live totals instead of staying a lump-sum estimate.
+     */
+    childListProgress?: (prop: ChildListName) => {
+        progress: ProgressHandler;
+        phaseUnits: PhaseUnits;
+    };
 };
 
 export function createActionReadContext({
@@ -59,6 +70,7 @@ export function createActionReadContext({
     emitSnapshot,
     readChildActions,
     readConditions: readConditionList,
+    childListProgress,
 }: CreateActionReadContextArgs): ActionReadContext {
     const pathForChildList = (prop: string): ActionPath => childListPath(actionPath, prop);
     const focusChildField = (prop: string): ActionPath => {
@@ -81,6 +93,7 @@ export function createActionReadContext({
                 events,
                 listPath: path,
                 emitSnapshot,
+                ...(childListProgress?.(prop as ChildListName) ?? {}),
             });
             for (const entry of entries) {
                 actions.push(entry.action);
@@ -91,7 +104,11 @@ export function createActionReadContext({
         async readConditions(prop) {
             focusChildField(prop);
             const conditions: Array<Condition | null> = [];
-            const entries = await readConditionList(ctx, { itemRegistry, itemCaptures });
+            const entries = await readConditionList(ctx, {
+                itemRegistry,
+                itemCaptures,
+                ...(childListProgress?.(prop as ChildListName) ?? {}),
+            });
             for (const entry of entries) {
                 conditions.push(entry.condition);
             }

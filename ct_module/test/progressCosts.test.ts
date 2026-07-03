@@ -1,9 +1,10 @@
 import { describe, expect, test } from "vitest";
-import type { Condition } from "htsw/types";
+import type { Action, Condition, ImportableMenu } from "htsw/types";
 
 import {
     actionOperationApplyUnits,
     conditionOperationUnits,
+    estimateImportableCost,
     COST,
 } from "../src/housingSync/progress/costs";
 import type {
@@ -11,7 +12,7 @@ import type {
     ConditionListOperation,
 } from "../src/housingSync/types";
 
-import { message } from "./utils";
+import { conditional, message } from "./utils";
 
 describe("progress cost estimates", () => {
     test("condition note-only edits charge one note edit", () => {
@@ -42,5 +43,25 @@ describe("progress cost estimates", () => {
         };
 
         expect(actionOperationApplyUnits(op, () => 0, 1)).toBe(COST.chatInput);
+    });
+
+    test("menu estimate prices each slot as an editor round-trip plus its list", () => {
+        const menuWith = (actions: Action[]): ImportableMenu => ({
+            type: "MENU",
+            name: "m",
+            slots: [{ slot: 0, nbt: null as never, actions }],
+        });
+
+        const emptySlot = estimateImportableCost(menuWith([]));
+        // Entering and leaving a slot's action editor costs two menu waits —
+        // far more than the single click the old estimate charged.
+        expect(emptySlot).toBeGreaterThanOrEqual(
+            COST.menuClickWait + COST.goBackWait
+        );
+
+        const withChildren = estimateImportableCost(
+            menuWith([conditional({ ifActions: [message("a"), message("b")] })])
+        );
+        expect(withChildren).toBeGreaterThan(emptySlot);
     });
 });

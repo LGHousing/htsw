@@ -134,14 +134,26 @@ export function conditionListReadUnits(conditionCount: number): number {
     return pageTurnUnitsForListItemCount(conditionCount);
 }
 
-function childActionReadUnits(actionCount: number): number {
-    return (
-        COST.menuClickWait +
-        COST.menuClickWait +
-        pageTurnUnitsForListItemCount(actionCount) +
-        COST.goBackWait +
-        COST.goBackWait
-    );
+/**
+ * Cost to read one child list: open the field, page through it, go back —
+ * plus, when the rows' types are known, one editor round trip for every row
+ * whose type carries a truncatable field. Neither content nor a lore summary
+ * can tell which values will actually render truncated (only the read can),
+ * so the per-type charge is a deliberate over-estimate that live discovery
+ * trues up. Both the content-based estimates and the observed-plan pricing
+ * go through here — keep them agreeing by construction.
+ */
+function childListUnits(count: number, rowTypes?: readonly string[]): number {
+    let total =
+        COST.menuClickWait + pageTurnUnitsForListItemCount(count) + COST.goBackWait;
+    if (rowTypes !== undefined) {
+        for (let i = 0; i < rowTypes.length; i++) {
+            if (typeMaybeNeedsScalarHydrate(rowTypes[i])) {
+                total += COST.menuClickWait + COST.goBackWait;
+            }
+        }
+    }
+    return total;
 }
 
 export function hydrationEntryUnits(
@@ -158,24 +170,12 @@ export function hydrationEntryUnits(
     return total;
 }
 
-function childListReadUnits(entry: ObservedActionSlot, prop: ChildListName): number {
+export function childListReadUnits(entry: ObservedActionSlot, prop: ChildListName): number {
     const summary = entry.childListSummaries ? entry.childListSummaries[prop] : undefined;
-    const count = summary === undefined ? 1 : summary.length;
-    const base = COST.menuClickWait + pageTurnUnitsForListItemCount(count) + COST.goBackWait;
-    // The recursive readActionList that hydrates this child list will
-    // also do scalar truncation hydration on its child rows (clicking
-    // into each truncated MESSAGE/PLAY_SOUND/... and back). Add a
-    // conservative estimate of that cost so the parent's hydrate ETA
-    // doesn't undercount and let the displayed time finish before the
-    // actual work does.
-    if (prop === "conditions" || summary === undefined) return base;
-    let scalarHydrate = 0;
-    for (let i = 0; i < summary.length; i++) {
-        if (typeMaybeNeedsScalarHydrate(summary[i])) {
-            scalarHydrate += COST.menuClickWait + COST.goBackWait;
-        }
-    }
-    return base + scalarHydrate;
+    if (summary === undefined) return childListUnits(1);
+    // Condition rows hydrate by observed value, not type (see
+    // readConditionList), so they get no per-type scalar charge here.
+    return childListUnits(summary.length, prop === "conditions" ? undefined : summary);
 }
 
 function typeMaybeNeedsScalarHydrate(typeName: string): boolean {
@@ -432,22 +432,38 @@ function ownSetupUnits(importable: Importable): number {
     return COST.commandMenuWait;
 }
 
+/**
+ * Hydrate-phase estimate for a list whose full content is known (cached
+ * baseline, menu slot): the same shape the live plan prices — one editor
+ * round trip per CONDITIONAL/RANDOM entry plus `childListUnits` per
+ * non-empty child list. The reader never enters an empty child list (its
+ * lore summary reads "None"), so empty branches cost nothing here either.
+ * A conditional parsed from .htsl may omit a branch entirely, leaving the
+ * field undefined — guard every length read.
+ */
 function topLevelHydrateUnits(desired: readonly Action[]): number {
     let total = 0;
     for (let i = 0; i < desired.length; i++) {
         const a = desired[i];
+        let lists = 0;
         if (a.type === "CONDITIONAL") {
-            // A conditional parsed from .htsl may omit a branch entirely
-            // (no else, no conditions), leaving the field undefined — guard
-            // every length read so the ETA estimate can't crash the import.
-            total += childActionReadUnits(a.ifActions?.length ?? 0);
-            total += childActionReadUnits(a.elseActions?.length ?? 0);
-            if ((a.conditions?.length ?? 0) > 0) total += COST.menuClickWait + COST.goBackWait;
+            lists += knownChildListUnits(a.ifActions);
+            lists += knownChildListUnits(a.elseActions);
+            const conditionCount = a.conditions?.length ?? 0;
+            if (conditionCount > 0) lists += childListUnits(conditionCount);
         } else if (a.type === "RANDOM") {
-            total += childActionReadUnits(a.actions?.length ?? 0);
+            lists += knownChildListUnits(a.actions);
         }
+        if (lists > 0) total += COST.menuClickWait + COST.goBackWait + lists;
     }
     return total;
+}
+
+function knownChildListUnits(actions: readonly Action[] | undefined): number {
+    if (actions === undefined || actions.length === 0) return 0;
+    const types: string[] = [];
+    for (let i = 0; i < actions.length; i++) types.push(actions[i].type);
+    return childListUnits(actions.length, types);
 }
 
 /**
@@ -647,8 +663,9 @@ function actionListCost(
  * estimates fall back to "assume housing is empty" → predict only the
  * worst-case apply work.
  *
- * MENU falls through to a cache-blind rough estimate — its slots
- * have variable indexing and aren't worth special-casing yet.
+ * MENU is priced as the per-slot editor walk (both directions do one);
+ * it ignores `getCached` — slot action lists live at per-slot paths the
+ * cache lookup doesn't model.
  */
 export function estimateImportableCost(
     importable: Importable,
@@ -715,11 +732,22 @@ export function estimateImportableCost(
         );
     }
     if (importable.type === "MENU") {
-        return (
-            COST.commandMenuWait +
-            (importable.slots?.length ?? 0) * COST.menuClickWait +
-            COST.cacheWrite
-        );
+        // A menu is walked slot by slot: export and the import preread both
+        // LEFT-click into every populated slot's action editor, deep-read its
+        // list, and go back (see readLiveMenu). Price that walk per slot;
+        // pricing only the click (as this branch once did) undercounts a
+        // menu's work by the entire cost of its action lists.
+        let total = COST.commandMenuWait + COST.menuClickWait;
+        const slots = importable.slots ?? [];
+        for (let i = 0; i < slots.length; i++) {
+            const actions = slots[i].actions ?? [];
+            total +=
+                COST.menuClickWait +
+                pageTurnUnitsForListItemCount(actions.length) +
+                topLevelHydrateUnits(actions) +
+                COST.goBackWait;
+        }
+        return total + COST.cacheWrite;
     }
     if (importable.type === "NPC") {
         const left = importable.leftClickActions ?? [];

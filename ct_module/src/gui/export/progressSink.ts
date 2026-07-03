@@ -164,15 +164,18 @@ export function createExportProgressSink(
         },
         itemProgress(index, payload) {
             if (names.length === 0 || index !== currentIndex || currentClosed) return;
-            const knownReadUnits = Math.max(0, payload.totalUnits, payload.completedUnits);
+            // Forward the payload's own phase and phase split — the read
+            // emits honest reading/hydrating units and the reducer already
+            // speaks that vocabulary; rewriting it here would fork what a
+            // phase means between import and export.
             emit({
                 kind: "progress",
                 scope: { kind: "topLevel" },
                 progress: {
-                    phase: "reading",
+                    phase: payload.phase,
                     completedUnits: Math.max(0, payload.completedUnits),
-                    totalUnits: knownReadUnits,
-                    phaseUnits: { setup: 0, reading: knownReadUnits, hydrating: 0, applying: 0 },
+                    totalUnits: Math.max(0, payload.totalUnits, payload.completedUnits),
+                    phaseUnits: payload.phaseUnits,
                     sync: payload.sync,
                     preserveApplyingEstimate: false,
                 },
