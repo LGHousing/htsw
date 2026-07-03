@@ -383,7 +383,7 @@ export class DiagnosticsAdapter {
     private collectDiagnostics(document: vscode.TextDocument): DiagnosticGroup[] {
         if (document.languageId === "htsl") {
             const contextual = this.collectContextualHtslDiagnostics(document);
-            if (contextual.length > 0) return contextual;
+            if (contextual !== null) return contextual;
 
             const sourceMap = new htsw.SourceMap(new StringFileLoader(document.getText()));
             return [{
@@ -419,22 +419,26 @@ export class DiagnosticsAdapter {
     // An .htsl file is checked in its ROOT scope — the outermost manifest
     // that transitively includes its declaring import.json — so VS Code's
     // errors match what an in-game import of the whole project sees.
-    private collectContextualHtslDiagnostics(document: vscode.TextDocument): DiagnosticGroup[] {
-        if (document.uri.scheme !== "file") return [];
+    private collectContextualHtslDiagnostics(document: vscode.TextDocument): DiagnosticGroup[] | null {
+        if (document.uri.scheme !== "file") return null;
 
         const docPath = document.uri.fsPath;
+        let firstContext: DiagnosticGroup | null = null;
         for (const declaringPath of this.findImportJsonContexts(docPath)) {
             const rootPath = this.findRootContext(declaringPath);
             const rootParse = this.parseRootScope(rootPath, document);
             const rootDiagnostics = rootParse.result.diagnostics.filter((diagnostic) =>
                 this.isDiagnosticForFile(diagnostic, rootParse.sourceMap, docPath)
             );
+            if (firstContext === null) {
+                firstContext = { diagnostics: rootDiagnostics, sourceMap: rootParse.sourceMap };
+            }
             if (rootDiagnostics.length > 0) {
                 return [{ diagnostics: rootDiagnostics, sourceMap: rootParse.sourceMap }];
             }
         }
 
-        return [];
+        return firstContext === null ? null : [firstContext];
     }
 
     private parseInContext(contextPath: string, document: vscode.TextDocument): ContextParse {
