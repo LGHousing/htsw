@@ -8,6 +8,7 @@ import { ansi } from "./ansi";
 import { printDiagnostic } from "./diagnostics";
 import { Importable } from "htsw/types";
 import { run } from "./runtime";
+import { runAgents } from "./agents";
 
 class NodeFileLoader {
     fileExists(filePath: string): boolean {
@@ -32,7 +33,7 @@ function main(): void {
     const cmd = args[0];
 
     if (!cmd || cmd === "help" || cmd === "--help" || cmd === "-h") {
-        printCheckHelp();
+        printUsage();
         process.exit(0);
     }
 
@@ -46,9 +47,25 @@ function main(): void {
         return;
     }
 
+    if (cmd === "agents") {
+        runAgents(args.slice(1));
+        return;
+    }
+
     console.error(`Unknown command '${cmd}'.`);
-    printCheckHelp();
+    printUsage();
     process.exit(2);
+}
+
+function printUsage(): void {
+    console.log("Usage: htsw <command> [args]");
+    console.log("");
+    console.log("Commands:");
+    console.log("  check [path]     Parse a file and print diagnostics.");
+    console.log("  run [path]       Parse and run htsw:main.");
+    console.log("  agents install   Install the agent guides into a project.");
+    console.log("");
+    console.log("Run 'htsw <command> --help' for details.");
 }
 
 function runCheck(args: string[]): void {

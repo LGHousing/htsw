@@ -7,7 +7,8 @@
         "htsw": "dist/htsw-cli.js"
     },
     "scripts": {
-        "build": "vite build --mode production"
+        "embed-guides": "node scripts/embed-guides.mjs",
+        "build": "node scripts/embed-guides.mjs && vite build --mode production"
     },
     "engines": {
         "node": ">=20"

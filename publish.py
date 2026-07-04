@@ -5,6 +5,12 @@ Produces, under dist-publish/:
   ct/latest.json                {version, zip, sha256, notes?}
   vscode/htsw-plus-plus-<v>.vsix
   vscode/latest.json            {version, vsix, sha256, notes?}
+  cli/htsw-cli-<version>.js     bundled CLI with the LGHousing/docs guides embedded
+  cli/install.sh                curl|sh installer
+  cli/latest.json               {version, cli, sha256, notes?}
+
+Each surface also gets a stable "-latest" copy (htsw-ct-latest.zip,
+htsw-plus-plus-latest.vsix, htsw-cli-latest.js) for durable download links.
 
 Then uploads them to the nginx-served root on the box (via the `lg-website`
 SSH alias), staging through the opc home dir because /var/www/htsw is owned by
@@ -18,6 +24,7 @@ Usage:
   python publish.py --no-upload     # build + stage locally only
   python publish.py --ct-only
   python publish.py --vscode-only
+  python publish.py --cli-only      # needs HTSW_DOCS_PATH (a LGHousing/docs clone)
 
 Set HTSW_RELEASE_NOTES, or HTSW_RELEASE_TAG when `gh` is authenticated, to
 include GitHub release notes in latest.json.
@@ -38,6 +45,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 CT_DIR = HERE / "ct_module"
 VSCODE_DIR = HERE / "editors" / "code"
+CLI_DIR = HERE / "cli"
 OUT_DIR = HERE / "dist-publish"
 
 SSH_HOST = "lg-website"
@@ -48,9 +56,9 @@ NGINX_USER = "nginx"
 IS_WINDOWS = sys.platform == "win32"
 
 
-def run(cmd: list[str], cwd: Path) -> None:
+def run(cmd: list[str], cwd: Path, env: dict[str, str] | None = None) -> None:
     print(f"[publish] $ {' '.join(cmd)}  (in {cwd})")
-    status = subprocess.run(cmd, cwd=cwd, shell=IS_WINDOWS).returncode
+    status = subprocess.run(cmd, cwd=cwd, shell=IS_WINDOWS, env=env).returncode
     if status != 0:
         raise RuntimeError(f"Command failed ({status}): {' '.join(cmd)}")
 
@@ -126,6 +134,7 @@ def build_ct(do_build: bool) -> tuple[Path, str]:
                 zf.write(file, file.relative_to(dist).as_posix())
         zf.write(metadata, "metadata.json")
 
+    shutil.copy2(zip_path, out / "htsw-ct-latest.zip")
     digest = sha256_of(zip_path)
     (out / "latest.json").write_text(
         manifest_json({"version": version, "zip": zip_name, "sha256": digest}, surface="ct"),
@@ -151,6 +160,7 @@ def build_vscode(do_build: bool) -> tuple[Path, str]:
     out.mkdir(parents=True, exist_ok=True)
     dest = out / vsix.name
     shutil.copy2(vsix, dest)
+    shutil.copy2(dest, out / "htsw-plus-plus-latest.vsix")
 
     digest = sha256_of(dest)
     (out / "latest.json").write_text(
@@ -161,8 +171,42 @@ def build_vscode(do_build: bool) -> tuple[Path, str]:
     return out, version
 
 
+def build_cli(do_build: bool) -> tuple[Path, str]:
+    # The CLI embeds the private LGHousing/docs guides at build time, so the
+    # build needs HTSW_DOCS_PATH pointing at a local clone of that repo.
+    if do_build:
+        docs_path = os.getenv("HTSW_DOCS_PATH", "").strip()
+        if not docs_path or not Path(docs_path).is_dir():
+            raise RuntimeError(
+                "HTSW_DOCS_PATH must point at a LGHousing/docs clone to embed the guides "
+                "into the CLI build."
+            )
+        run(["npm", "run", "build"], CLI_DIR, env={**os.environ, "HTSW_DOCS_PATH": docs_path})
+
+    bundle = CLI_DIR / "dist" / "htsw-cli.js"
+    if not bundle.is_file():
+        raise RuntimeError(f"Missing CLI build output: {bundle}")
+
+    version = read_version(CLI_DIR / "package.json")
+    out = OUT_DIR / "cli"
+    out.mkdir(parents=True, exist_ok=True)
+    js_name = f"htsw-cli-{version}.js"
+    dest = out / js_name
+    shutil.copy2(bundle, dest)
+    shutil.copy2(dest, out / "htsw-cli-latest.js")
+    shutil.copy2(CLI_DIR / "install.sh", out / "install.sh")
+
+    digest = sha256_of(dest)
+    (out / "latest.json").write_text(
+        manifest_json({"version": version, "cli": js_name, "sha256": digest}, surface="cli"),
+        encoding="utf-8",
+    )
+    print(f"[publish] CLI {version}: {js_name} ({dest.stat().st_size} bytes, sha256 {digest[:12]}…)")
+    return out, version
+
+
 def upload(targets: list[str]) -> None:
-    # targets is a subset of {"ct", "vscode"}.
+    # targets is a subset of {"ct", "vscode", "cli"}.
     mk = " ".join(f"{REMOTE_STAGING}/{t}" for t in targets)
     run(["ssh", SSH_HOST, f"mkdir -p {mk}"], HERE)
 
@@ -192,10 +236,15 @@ def main() -> None:
     parser.add_argument("--no-upload", action="store_true", help="stage locally, do not upload")
     parser.add_argument("--ct-only", action="store_true")
     parser.add_argument("--vscode-only", action="store_true")
+    parser.add_argument("--cli-only", action="store_true", help="build+upload only the CLI (needs HTSW_DOCS_PATH)")
     args = parser.parse_args()
 
-    do_ct = not args.vscode_only
-    do_vscode = not args.ct_only
+    # The CLI is opt-in (it needs HTSW_DOCS_PATH), so the default run still
+    # builds ct + vscode only. Any "--*-only" flag narrows to that surface.
+    any_only = args.ct_only or args.vscode_only or args.cli_only
+    do_ct = args.ct_only or not any_only
+    do_vscode = args.vscode_only or not any_only
+    do_cli = args.cli_only
     do_build = not args.no_build
 
     targets: list[str] = []
@@ -205,6 +254,9 @@ def main() -> None:
     if do_vscode:
         build_vscode(do_build)
         targets.append("vscode")
+    if do_cli:
+        build_cli(do_build)
+        targets.append("cli")
 
     if args.no_upload:
         print(f"[publish] Skipped upload. Artifacts staged in {OUT_DIR}")
