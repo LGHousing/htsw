@@ -2,7 +2,6 @@
 
 - [Overview](./overview.md)
 - [Importables](./importables.md)
-- [Release](./release.md)
 - [HTSL](./htsl/README.md)
   - [Basic Syntax](./htsl/basic-syntax.md)
   - [Actions](./htsl/actions.md)
