@@ -55,7 +55,12 @@ import { composeFileMenu, composeImportableMenu } from "../../menus/fileMenu";
 import { autoTrackRefresh, queueModifiedFromPath } from "../../autoTrack";
 import { SourceDir, SourceFile, removeSource } from "./source";
 import { type IncludeNode, findIncludeNode, includeTreeOf, subtreeImportableCount } from "./includeTree";
-import { showInExplorer, openInVSCode, revealInFilesLabel } from "../../../utils/osShell";
+import {
+    showInExplorer,
+    openInVSCode,
+    revealInFilesLabel,
+    setClipboardString,
+} from "../../../utils/osShell";
 import {
     closeTab,
     closeTabsUnder,
@@ -496,6 +501,12 @@ function confirmDeleteProject(importJsonPath: string): void {
 function fsActions(fullPath: string): MenuAction[] {
     return [
         { label: revealInFilesLabel(), onClick: () => showInExplorer(fullPath) },
+        {
+            label: "Copy path",
+            onClick: () => {
+                if (setClipboardString(fullPath)) ChatLib.chat("&a[htsw] Copied path.");
+            },
+        },
         { label: "Open with VSCode", onClick: () => openInVSCode(fullPath) },
     ];
 }

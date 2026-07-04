@@ -76,6 +76,23 @@ function asPathList(fullPath: string | string[]): string[] {
     return out;
 }
 
+let _GuiScreen: any = null;
+
+export function setClipboardString(text: string): boolean {
+    try {
+        if (_GuiScreen === null) _GuiScreen = Java.type("net.minecraft.client.gui.GuiScreen");
+        _GuiScreen.setClipboardString(String(text));
+        return true;
+    } catch (e) {
+        try {
+            ChatLib.chat(`&c[htsw] clipboard failed: ${e}`);
+        } catch (_e) {
+            /* ignore */
+        }
+        return false;
+    }
+}
+
 // Opens a folder (or file) in the platform's default handler via AWT — the
 // in-process path, unlike showInExplorer which shells out to select the file in
 // the OS file manager. Throws if Desktop is unsupported so callers can report it.

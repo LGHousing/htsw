@@ -1,7 +1,12 @@
 /// <reference types="../../../CTAutocomplete" />
 
 import type { MenuAction } from "../lib/menu";
-import { showInExplorer, openInVSCode, revealInFilesLabel } from "../../utils/osShell";
+import {
+    showInExplorer,
+    openInVSCode,
+    revealInFilesLabel,
+    setClipboardString,
+} from "../../utils/osShell";
 import {
     isInQueue,
     queueItemKey,
@@ -58,6 +63,12 @@ function genericFileActions(filePath: string, importJsonPath?: string | null): M
     const queueAction = queueActionForPath(filePath, importJsonPath);
     const actions: MenuAction[] = [
         { label: revealInFilesLabel(), onClick: () => showInExplorer(filePath) },
+        {
+            label: "Copy path",
+            onClick: () => {
+                if (setClipboardString(filePath)) ChatLib.chat("&a[htsw] Copied path.");
+            },
+        },
         { label: "Open with VSCode", onClick: () => openInVSCode(filePath) },
     ];
     if (queueAction !== null) actions.unshift(queueAction);
@@ -100,6 +111,12 @@ export function composeImportableMenu(
     const generics: MenuAction[] = [
         queueAction,
         { label: revealInFilesLabel(), onClick: () => showInExplorer(filePath) },
+        {
+            label: "Copy path",
+            onClick: () => {
+                if (setClipboardString(filePath)) ChatLib.chat("&a[htsw] Copied path.");
+            },
+        },
         { label: "Open with VSCode", onClick: () => openInVSCode(filePath) },
     ];
     if (specific.length === 0) return generics;
