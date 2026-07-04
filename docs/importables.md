@@ -233,4 +233,4 @@ With the root `import.json` being simply:
 ```
 
 > Note that no structure or conventions are enforced by HTSW. You may lay your
- project out however you like.
+> project out however you like.
