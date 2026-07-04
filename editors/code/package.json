@@ -49,6 +49,31 @@
                 "command": "htsw.project.createIncludedImportJson",
                 "title": "Create Included import.json",
                 "category": "HTSW"
+            },
+            {
+                "command": "htsw.importable.move",
+                "title": "Move to...",
+                "category": "HTSW"
+            },
+            {
+                "command": "htsw.importable.rename",
+                "title": "Rename",
+                "category": "HTSW"
+            },
+            {
+                "command": "htsw.importable.reveal",
+                "title": "Reveal in Finder",
+                "category": "HTSW"
+            },
+            {
+                "command": "htsw.importable.copyPath",
+                "title": "Copy Path",
+                "category": "HTSW"
+            },
+            {
+                "command": "htsw.importable.delete",
+                "title": "Delete...",
+                "category": "HTSW"
             }
         ],
         "menus": {
@@ -56,6 +81,33 @@
                 {
                     "command": "htsw.project.createIncludedImportJson",
                     "group": "htsw@1"
+                }
+            ],
+            "webview/context": [
+                {
+                    "command": "htsw.importable.rename",
+                    "when": "webviewId == 'htsw.tools' && webviewSection == 'importable'",
+                    "group": "navigation@0"
+                },
+                {
+                    "command": "htsw.importable.move",
+                    "when": "webviewId == 'htsw.tools' && webviewSection == 'importable'",
+                    "group": "navigation@1"
+                },
+                {
+                    "command": "htsw.importable.delete",
+                    "when": "webviewId == 'htsw.tools' && webviewSection == 'importable'",
+                    "group": "navigation@2"
+                },
+                {
+                    "command": "htsw.importable.reveal",
+                    "when": "webviewId == 'htsw.tools' && webviewSection == 'importable'",
+                    "group": "navigation@3"
+                },
+                {
+                    "command": "htsw.importable.copyPath",
+                    "when": "webviewId == 'htsw.tools' && webviewSection == 'importable'",
+                    "group": "navigation@4"
                 }
             ]
         },

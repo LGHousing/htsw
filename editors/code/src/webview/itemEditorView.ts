@@ -57,6 +57,43 @@ export async function handleItemEditorMessage(
         case "submitItem":
             await submitItem(webview, message.form);
             return;
+        case "saveItem":
+            await saveItem(webview, message.snbtPath, message.tag);
+            return;
+    }
+}
+
+// Write an edited item back to its own .snbt. `tag` is the merged NBT from the
+// editor (unmanaged keys preserved), so this just prints and writes it.
+async function saveItem(webview: vscode.Webview, snbtPath: string, tag: unknown): Promise<void> {
+    try {
+        if (!nodeProjectFs.exists(snbtPath)) {
+            throw new Error(`File not found: ${snbtPath}`);
+        }
+        const snbt = `${htsw.nbt.printSnbt(tag as Parameters<typeof htsw.nbt.printSnbt>[0], {
+            pretty: true,
+            indent: "    ",
+        })}\n`;
+
+        const open = openTextDocumentForPath(snbtPath);
+        if (open) {
+            const edit = new vscode.WorkspaceEdit();
+            edit.replace(
+                open.uri,
+                new vscode.Range(open.positionAt(0), open.positionAt(open.getText().length)),
+                snbt,
+            );
+            await vscode.workspace.applyEdit(edit);
+            await open.save();
+        } else {
+            nodeProjectFs.writeFile(snbtPath, snbt);
+        }
+
+        await webview.postMessage({ type: "saveResult", ok: true, snbtPath } satisfies ItemEditorFromHostMessage);
+    } catch (err) {
+        const error = err instanceof Error ? err.message : String(err);
+        await webview.postMessage({ type: "saveResult", ok: false, error } satisfies ItemEditorFromHostMessage);
+        void vscode.window.showWarningMessage(`Could not save item: ${error}`);
     }
 }
 

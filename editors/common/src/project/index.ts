@@ -4,6 +4,7 @@ export * from "./filenames";
 export * from "./importJsonMutations";
 export * from "./includedImportJson";
 export * from "./includeWalk";
+export * from "./deleteImportable";
 export * from "./moveImportable";
 export * from "./sectionLayout";
 export * from "./starterProject";

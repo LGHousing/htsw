@@ -5,19 +5,29 @@ import * as htsw from "htsw";
 import {
     createIncludedFolderInTree,
     createIncludedImportJsonFiles,
+    collectFileRefs,
     htslTargetForCommandExport,
     htslTargetForEventExport,
     htslTargetForFunctionExport,
     moveImportableEntry,
     normalizeRelativeProjectPath,
+    planDeleteImportableEntry,
+    readEntryValue,
+    removeImportableEntryForDelete,
+    renameImportableEntry,
     resolveImportableFile,
     upsertImportableEntry,
     type ProjectFs,
+    type RefSlot,
     type Section,
 } from "htsw-editor-common/project";
+import { itemFieldsFromTag } from "htsw-editor-common/item/buildItemNbt";
 import { nodeProjectFs } from "../nodeProjectFs";
 import { bumpWorkspaceGeneration, type ContextParse, getCachedRootParse } from "../rootParse";
+import { isPathInExcludedDiagnosticFolder } from "../diagnosticExclusions";
 import type {
+    ItemEditorFromHostMessage,
+    ItemPreviewData,
     ProjectFromHostMessage,
     ProjectImportableSub,
     ProjectImportableSummary,
@@ -25,8 +35,23 @@ import type {
     ProjectToHostMessage,
 } from "./protocol";
 
+type ItemTag = Parameters<typeof itemFieldsFromTag>[0];
+
 const IMPORTABLE_SECTIONS = ["functions", "events", "regions", "items", "menus", "commands", "npcs"] as const;
 type ImportableSection = typeof IMPORTABLE_SECTIONS[number];
+
+export type ImportableContext = {
+    importJsonPath?: unknown;
+    importableKind?: unknown;
+    importableIdentity?: unknown;
+    selectedImportables?: unknown;
+};
+
+type SelectedImportable = {
+    importJsonPath: string;
+    kind: ProjectImportableSummary["type"];
+    identity: string;
+};
 
 export async function handleProjectMessage(
     webview: vscode.Webview,
@@ -34,7 +59,11 @@ export async function handleProjectMessage(
 ): Promise<void> {
     switch (message.type) {
         case "requestProjectTree":
-            await postProjectTree(webview);
+            if (message.fresh) {
+                await postFreshProjectTree(webview);
+            } else {
+                await postProjectTree(webview);
+            }
             return;
         case "openProjectFile":
             await openProjectFile(message.fsPath, message.preview);
@@ -48,10 +77,64 @@ export async function handleProjectMessage(
         case "moveImportable":
             await moveImportable(webview, message.importJsonPath, message.kind, message.identity);
             return;
+        case "openItemInEditor":
+            await openItemInEditor(webview, message.snbtPath);
+            return;
     }
 }
 
-async function moveImportable(
+// Parse an item .snbt and hand it to the Item Editor tab. Keeps the original
+// tag so a later save preserves NBT the editor doesn't model.
+async function openItemInEditor(webview: vscode.Webview, snbtPath: string): Promise<void> {
+    try {
+        if (!nodeProjectFs.exists(snbtPath)) {
+            throw new Error(`File not found: ${vscode.workspace.asRelativePath(snbtPath, false)}`);
+        }
+        const text = projectFsWithOpenDocuments().readFile(snbtPath);
+        const tag = htsw.nbt.parseSnbtText(text);
+        const item = itemPreviewFromTag(tag);
+        if (item === undefined) {
+            throw new Error("This .snbt is not a valid item (missing a string id).");
+        }
+        await webview.postMessage({
+            type: "loadItem",
+            snbtPath,
+            label: vscode.workspace.asRelativePath(snbtPath, false),
+            item,
+            tag,
+        } satisfies ItemEditorFromHostMessage);
+    } catch (err) {
+        const error = err instanceof Error ? err.message : String(err);
+        await webview.postMessage({ type: "projectResult", ok: false, error } satisfies ProjectFromHostMessage);
+        void vscode.window.showWarningMessage(`Could not open item: ${error}`);
+    }
+}
+
+function itemPreviewFromTag(nbt: ItemTag): ItemPreviewData | undefined {
+    const fields = itemFieldsFromTag(nbt);
+    if (fields === null) return undefined;
+    return {
+        itemId: fields.itemName,
+        metadata: fields.metadata,
+        count: fields.count,
+        displayName: fields.displayName,
+        lore: fields.lore,
+        enchants: fields.enchants,
+    };
+}
+
+// Menu slots carry their parsed item as `slot.nbt`; npc-equipment items are
+// only a path, so those are read + parsed on demand.
+function itemPreviewForSub(nbt: ItemTag | undefined, fsPath: string): ItemPreviewData | undefined {
+    if (nbt !== undefined) return itemPreviewFromTag(nbt);
+    try {
+        return itemPreviewFromTag(htsw.nbt.parseSnbtText(projectFsWithOpenDocuments().readFile(fsPath)));
+    } catch {
+        return undefined;
+    }
+}
+
+export async function moveImportable(
     webview: vscode.Webview,
     importJsonPath: string,
     kind: ProjectImportableSummary["type"],
@@ -128,6 +211,406 @@ async function moveImportable(
         await webview.postMessage({ type: "projectResult", ok: false, error } satisfies ProjectFromHostMessage);
         void vscode.window.showWarningMessage(`Could not move importable: ${error}`);
     }
+}
+
+export async function moveImportableFromContext(
+    webview: vscode.Webview,
+    context: ImportableContext | undefined,
+): Promise<void> {
+    const selection = parseSelectedImportables(context);
+    if (selection.length > 1) {
+        await moveImportables(webview, selection);
+        return;
+    }
+    const parsed = parseImportableContext(context);
+    if (!parsed) return;
+    await moveImportable(webview, parsed.importJsonPath, parsed.kind, parsed.identity);
+}
+
+export async function deleteImportableFromContext(
+    webview: vscode.Webview,
+    context: ImportableContext | undefined,
+): Promise<void> {
+    const selection = parseSelectedImportables(context);
+    if (selection.length > 1) {
+        await deleteImportables(webview, selection);
+        return;
+    }
+    const parsed = parseImportableContext(context);
+    if (!parsed) return;
+    await deleteImportable(webview, parsed.importJsonPath, parsed.kind, parsed.identity);
+}
+
+export async function renameImportableFromContext(
+    webview: vscode.Webview,
+    context: ImportableContext | undefined,
+): Promise<void> {
+    const parsed = parseImportableContext(context);
+    if (!parsed) return;
+    await renameImportable(webview, parsed.importJsonPath, parsed.kind, parsed.identity);
+}
+
+export async function revealImportableFromContext(
+    webview: vscode.Webview,
+    context: ImportableContext | undefined,
+): Promise<void> {
+    const parsed = parseImportableContext(context);
+    if (!parsed) return;
+    await revealImportable(webview, parsed.importJsonPath, parsed.kind, parsed.identity);
+}
+
+export async function copyImportablePathFromContext(
+    webview: vscode.Webview,
+    context: ImportableContext | undefined,
+): Promise<void> {
+    const parsed = parseImportableContext(context);
+    if (!parsed) return;
+    await copyImportablePath(webview, parsed.importJsonPath, parsed.kind, parsed.identity);
+}
+
+async function renameImportable(
+    webview: vscode.Webview,
+    importJsonPath: string,
+    kind: ProjectImportableSummary["type"],
+    identity: string,
+): Promise<void> {
+    try {
+        const section = SECTION_BY_KIND[kind];
+        const readFs = projectFsWithOpenDocuments();
+        const entryJsonPath = await treeRootForImportJson(importJsonPath);
+        const declaringJsonPath = resolveImportableFile(readFs, entryJsonPath, section, identity);
+        const value = await vscode.window.showInputBox({
+            prompt: `Rename ${kind} "${identity}"`,
+            value: identity,
+            valueSelection: [0, identity.length],
+            validateInput: (input) => {
+                const next = input.trim();
+                if (!next) return "Enter a name.";
+                if (next !== identity && importableExists(readFs, declaringJsonPath, section, next)) {
+                    return `A ${kind} named "${next}" already exists.`;
+                }
+                return undefined;
+            },
+        });
+        if (value === undefined) return;
+        const nextIdentity = value.trim();
+
+        const renamed = await withDocAwareWrites((fs) =>
+            renameImportableEntry(fs, entryJsonPath, section, identity, nextIdentity)
+        );
+        if (!renamed) throw new Error(`Couldn't rename '${identity}' in ${declaringJsonPath}`);
+
+        await webview.postMessage({
+            type: "projectResult",
+            ok: true,
+            message: `Renamed ${kind} "${identity}" to "${nextIdentity}".`,
+        } satisfies ProjectFromHostMessage);
+        await postFreshProjectTree(webview);
+    } catch (err) {
+        const error = err instanceof Error ? err.message : String(err);
+        await webview.postMessage({ type: "projectResult", ok: false, error } satisfies ProjectFromHostMessage);
+        void vscode.window.showWarningMessage(`Could not rename importable: ${error}`);
+    }
+}
+
+async function revealImportable(
+    webview: vscode.Webview,
+    importJsonPath: string,
+    kind: ProjectImportableSummary["type"],
+    identity: string,
+): Promise<void> {
+    try {
+        const targetPath = await importablePrimaryPath(importJsonPath, SECTION_BY_KIND[kind], identity);
+        await vscode.commands.executeCommand("revealFileInOS", vscode.Uri.file(targetPath));
+    } catch (err) {
+        const error = err instanceof Error ? err.message : String(err);
+        await webview.postMessage({ type: "projectResult", ok: false, error } satisfies ProjectFromHostMessage);
+        void vscode.window.showWarningMessage(`Could not reveal importable: ${error}`);
+    }
+}
+
+async function copyImportablePath(
+    webview: vscode.Webview,
+    importJsonPath: string,
+    kind: ProjectImportableSummary["type"],
+    identity: string,
+): Promise<void> {
+    try {
+        const targetPath = await importablePrimaryPath(importJsonPath, SECTION_BY_KIND[kind], identity);
+        await vscode.env.clipboard.writeText(targetPath);
+        await webview.postMessage({
+            type: "projectResult",
+            ok: true,
+            message: "Copied path",
+        } satisfies ProjectFromHostMessage);
+    } catch (err) {
+        const error = err instanceof Error ? err.message : String(err);
+        await webview.postMessage({ type: "projectResult", ok: false, error } satisfies ProjectFromHostMessage);
+        void vscode.window.showWarningMessage(`Could not copy importable path: ${error}`);
+    }
+}
+
+async function deleteImportable(
+    webview: vscode.Webview,
+    importJsonPath: string,
+    kind: ProjectImportableSummary["type"],
+    identity: string,
+): Promise<void> {
+    try {
+        const section = SECTION_BY_KIND[kind];
+        const entryJsonPath = await treeRootForImportJson(importJsonPath);
+        const plan = planDeleteImportableEntry(projectFsWithOpenDocuments(), entryJsonPath, section, identity);
+        if (!plan.ok) throw new Error(plan.message);
+
+        const deleteFilesLabel = "Delete entry and files";
+        const removeEntryLabel = "Remove entry only";
+        const ownedRelative = plan.ownedFiles.map((filePath) => vscode.workspace.asRelativePath(filePath, false));
+        const target = `${kind} "${identity}"`;
+        const message =
+            `Delete ${target}?\n\n` +
+            `This will remove the entry from ${vscode.workspace.asRelativePath(plan.importJsonPath, false)}.` +
+            (ownedRelative.length > 0
+                ? `\n\nFiles to delete:\n${ownedRelative.map((filePath) => `- ${filePath}`).join("\n")}`
+                : "\n\nNo files will be deleted.");
+        const buttons = ownedRelative.length > 0 ? [deleteFilesLabel, removeEntryLabel] : [removeEntryLabel];
+        const choice = await vscode.window.showWarningMessage(message, { modal: true }, ...buttons);
+        if (!choice) return;
+
+        const result = await withDocAwareWrites((fs) =>
+            removeImportableEntryForDelete(fs, entryJsonPath, section, identity)
+        );
+        if (!result.ok) throw new Error(result.message);
+
+        if (choice === deleteFilesLabel) {
+            for (const filePath of result.ownedFiles) {
+                await vscode.workspace.fs.delete(vscode.Uri.file(filePath), { useTrash: true });
+            }
+        }
+
+        const suffix = choice === deleteFilesLabel && result.ownedFiles.length > 0
+            ? ` and ${result.ownedFiles.length} file${result.ownedFiles.length === 1 ? "" : "s"}`
+            : "";
+        await webview.postMessage({
+            type: "projectResult",
+            ok: true,
+            message: `Deleted ${target}${suffix}.`,
+        } satisfies ProjectFromHostMessage);
+        await postFreshProjectTree(webview);
+    } catch (err) {
+        const error = err instanceof Error ? err.message : String(err);
+        await webview.postMessage({ type: "projectResult", ok: false, error } satisfies ProjectFromHostMessage);
+        void vscode.window.showWarningMessage(`Could not delete importable: ${error}`);
+    }
+}
+
+async function moveImportables(webview: vscode.Webview, items: SelectedImportable[]): Promise<void> {
+    try {
+        const roots = await discoverProjectTree();
+        const destinations: Array<vscode.QuickPickItem & { fsPath: string }> = [];
+        const treeRootOf = new Map<string, string>();
+        const visit = (node: ProjectImportJsonNode, treeRoot: string): void => {
+            if (node.missing || node.cycle || node.reference) return;
+            treeRootOf.set(pathKey(node.fsPath), treeRoot);
+            destinations.push({
+                label: vscode.workspace.asRelativePath(node.fsPath, false),
+                fsPath: node.fsPath,
+            });
+            node.children.forEach((child) => visit(child, treeRoot));
+        };
+        roots.forEach((root) => visit(root, root.fsPath));
+
+        const newFolderItem: vscode.QuickPickItem & { fsPath: null } = {
+            label: "$(new-folder) New folder…",
+            description: "Create an import.json and move there",
+            fsPath: null,
+        };
+        const pick = await vscode.window.showQuickPick(
+            [newFolderItem, ...destinations],
+            { placeHolder: `Move ${items.length} items to…` }
+        );
+        if (!pick) return;
+
+        let destJsonPath: string;
+        if (pick.fsPath === null) {
+            const folderPath = await vscode.window.showInputBox({
+                prompt: "New folder, relative to the project root",
+                placeHolder: "functions/combat",
+                validateInput: (value) => {
+                    try {
+                        normalizeRelativeProjectPath(value);
+                        return undefined;
+                    } catch (err) {
+                        return err instanceof Error ? err.message : String(err);
+                    }
+                },
+            });
+            if (!folderPath) return;
+            const anchorRoot = treeRootOf.get(pathKey(items[0].importJsonPath)) ?? roots[0]?.fsPath;
+            if (!anchorRoot) throw new Error("No project root to create a folder in.");
+            const created = await withDocAwareWrites((fs) =>
+                createIncludedFolderInTree(fs, anchorRoot, folderPath)
+            );
+            destJsonPath = created.importJsonPath;
+        } else {
+            destJsonPath = pick.fsPath;
+        }
+
+        const destKey = pathKey(destJsonPath);
+        let moved = 0;
+        const failures: string[] = [];
+        for (const item of items) {
+            try {
+                const section = SECTION_BY_KIND[item.kind];
+                const entryJsonPath = treeRootOf.get(pathKey(item.importJsonPath))
+                    ?? await treeRootForImportJson(item.importJsonPath);
+                const current = resolveImportableFile(projectFsWithOpenDocuments(), entryJsonPath, section, item.identity);
+                if (pathKey(current) === destKey) continue;
+                await moveImportableWithOpenDocs(entryJsonPath, section, item.identity, destJsonPath);
+                moved++;
+            } catch (err) {
+                failures.push(`${item.kind} "${item.identity}": ${err instanceof Error ? err.message : String(err)}`);
+            }
+        }
+
+        const rel = vscode.workspace.asRelativePath(destJsonPath, false);
+        await webview.postMessage(
+            failures.length === 0
+                ? { type: "projectResult", ok: true, message: `Moved ${moved} item${moved === 1 ? "" : "s"} to ${rel}.` }
+                : { type: "projectResult", ok: false, error: `Moved ${moved} of ${items.length} items to ${rel} (${failures.length} failed: ${failures.join("; ")}).` }
+        );
+        await postFreshProjectTree(webview);
+    } catch (err) {
+        const error = err instanceof Error ? err.message : String(err);
+        await webview.postMessage({ type: "projectResult", ok: false, error } satisfies ProjectFromHostMessage);
+        void vscode.window.showWarningMessage(`Could not move importables: ${error}`);
+    }
+}
+
+async function deleteImportables(webview: vscode.Webview, items: SelectedImportable[]): Promise<void> {
+    try {
+        const fs = projectFsWithOpenDocuments();
+        const plans: Array<{ item: SelectedImportable; section: Section; entryJsonPath: string }> = [];
+        const ownedSet = new Set<string>();
+        for (const item of items) {
+            const section = SECTION_BY_KIND[item.kind];
+            const entryJsonPath = await treeRootForImportJson(item.importJsonPath);
+            const plan = planDeleteImportableEntry(fs, entryJsonPath, section, item.identity);
+            if (!plan.ok) throw new Error(plan.message);
+            for (const filePath of plan.ownedFiles) ownedSet.add(filePath);
+            plans.push({ item, section, entryJsonPath });
+        }
+
+        const ownedFiles = [...ownedSet];
+        const ownedRelative = ownedFiles.map((filePath) => vscode.workspace.asRelativePath(filePath, false));
+        const deleteFilesLabel = `Delete ${items.length} entries and files`;
+        const removeEntryLabel = `Remove ${items.length} entries only`;
+        const entryList = items.map((item) => `- ${item.kind} "${item.identity}"`).join("\n");
+        const message =
+            `Delete ${items.length} importables?\n\n${entryList}` +
+            (ownedRelative.length > 0
+                ? `\n\nFiles to delete:\n${ownedRelative.map((filePath) => `- ${filePath}`).join("\n")}`
+                : "\n\nNo files will be deleted.");
+        const buttons = ownedRelative.length > 0 ? [deleteFilesLabel, removeEntryLabel] : [removeEntryLabel];
+        const choice = await vscode.window.showWarningMessage(message, { modal: true }, ...buttons);
+        if (!choice) return;
+
+        let removed = 0;
+        const failures: string[] = [];
+        for (const { item, section, entryJsonPath } of plans) {
+            try {
+                const result = await withDocAwareWrites((writeFs) =>
+                    removeImportableEntryForDelete(writeFs, entryJsonPath, section, item.identity)
+                );
+                if (!result.ok) {
+                    failures.push(`${item.kind} "${item.identity}": ${result.message}`);
+                    continue;
+                }
+                removed++;
+            } catch (err) {
+                failures.push(`${item.kind} "${item.identity}": ${err instanceof Error ? err.message : String(err)}`);
+            }
+        }
+
+        let filesDeleted = 0;
+        if (choice === deleteFilesLabel && failures.length === 0) {
+            for (const filePath of ownedFiles) {
+                try {
+                    await vscode.workspace.fs.delete(vscode.Uri.file(filePath), { useTrash: true });
+                    filesDeleted++;
+                } catch {
+                    // A file already gone (e.g. removed with a prior entry) is not an error.
+                }
+            }
+        }
+
+        const suffix = filesDeleted > 0 ? ` and ${filesDeleted} file${filesDeleted === 1 ? "" : "s"}` : "";
+        await webview.postMessage(
+            failures.length === 0
+                ? { type: "projectResult", ok: true, message: `Deleted ${removed} importable${removed === 1 ? "" : "s"}${suffix}.` }
+                : { type: "projectResult", ok: false, error: `Deleted ${removed} of ${items.length} importables (${failures.length} failed: ${failures.join("; ")}).` }
+        );
+        await postFreshProjectTree(webview);
+    } catch (err) {
+        const error = err instanceof Error ? err.message : String(err);
+        await webview.postMessage({ type: "projectResult", ok: false, error } satisfies ProjectFromHostMessage);
+        void vscode.window.showWarningMessage(`Could not delete importables: ${error}`);
+    }
+}
+
+function parseImportableContext(context: ImportableContext | undefined): {
+    importJsonPath: string;
+    kind: ProjectImportableSummary["type"];
+    identity: string;
+} | null {
+    if (!context) return null;
+    if (typeof context.importJsonPath !== "string") return null;
+    if (typeof context.importableKind !== "string") return null;
+    if (typeof context.importableIdentity !== "string") return null;
+    if (!isImportableKind(context.importableKind)) return null;
+    return {
+        importJsonPath: context.importJsonPath,
+        kind: context.importableKind,
+        identity: context.importableIdentity,
+    };
+}
+
+function isImportableKind(value: string): value is ProjectImportableSummary["type"] {
+    return Object.prototype.hasOwnProperty.call(SECTION_BY_KIND, value);
+}
+
+function parseSelectedImportables(context: ImportableContext | undefined): SelectedImportable[] {
+    const raw = context?.selectedImportables;
+    if (!Array.isArray(raw)) return [];
+    const out: SelectedImportable[] = [];
+    for (const element of raw) {
+        if (!element || typeof element !== "object") continue;
+        const item = element as Record<string, unknown>;
+        if (typeof item.importJsonPath !== "string") continue;
+        if (typeof item.importableKind !== "string" || !isImportableKind(item.importableKind)) continue;
+        if (typeof item.importableIdentity !== "string") continue;
+        out.push({
+            importJsonPath: item.importJsonPath,
+            kind: item.importableKind,
+            identity: item.importableIdentity,
+        });
+    }
+    return out;
+}
+
+async function treeRootForImportJson(importJsonPath: string): Promise<string> {
+    const sourceKey = pathKey(importJsonPath);
+    const roots = await discoverProjectTree();
+    let found: string | undefined;
+    const visit = (node: ProjectImportJsonNode, treeRoot: string): void => {
+        if (found || node.missing || node.cycle || node.reference) return;
+        if (pathKey(node.fsPath) === sourceKey) {
+            found = treeRoot;
+            return;
+        }
+        node.children.forEach((child) => visit(child, treeRoot));
+    };
+    roots.forEach((root) => visit(root, root.fsPath));
+    return found ?? importJsonPath;
 }
 
 const SECTION_BY_KIND: Record<ProjectImportableSummary["type"], ImportableSection> = {
@@ -296,6 +779,26 @@ function importableExists(
     return false;
 }
 
+async function importablePrimaryPath(
+    importJsonPath: string,
+    section: Section,
+    identity: string,
+): Promise<string> {
+    const fs = projectFsWithOpenDocuments();
+    const entryJsonPath = await treeRootForImportJson(importJsonPath);
+    const declaringJsonPath = resolveImportableFile(fs, entryJsonPath, section, identity);
+    const entry = readEntryValue(fs, declaringJsonPath, section, identity);
+    if (entry === null) throw new Error(`Couldn't find '${identity}' in ${declaringJsonPath}`);
+
+    const refs: RefSlot[] = [];
+    collectFileRefs(entry, refs);
+    for (const ref of refs) {
+        const sourcePath = fs.resolvePath(fs.parentDir(declaringJsonPath), ref.ref);
+        if (fs.exists(sourcePath)) return sourcePath;
+    }
+    return declaringJsonPath;
+}
+
 // Write the entry through a doc-aware fs: an import.json that's open (possibly
 // with unsaved edits) gets a WorkspaceEdit + save rather than a disk write that
 // would clobber the buffer. Mirrors the Item Editor's upsert path.
@@ -389,9 +892,8 @@ async function discoverProjectTree(): Promise<ProjectImportJsonNode[]> {
 
     const rootUris = manifests.filter((uri) => !includedKeys.has(pathKey(uri.fsPath)));
     const roots = rootUris.length > 0 ? rootUris : manifests;
-    const diags = collectDiagnosticCounts();
     return roots
-        .map((uri) => rootNodeFromParse(uri.fsPath, diags))
+        .map((uri) => rootNodeFromParse(uri.fsPath))
         .sort((left, right) => left.label.localeCompare(right.label));
 }
 
@@ -399,10 +901,7 @@ async function discoverProjectTree(): Promise<ProjectImportJsonNode[]> {
 // jump-link references, missing includes) the in-game Importables tree
 // renders, served from the generation-keyed cache the diagnostics adapter
 // shares — so the two UIs can't drift and refreshes don't re-read the world.
-function rootNodeFromParse(
-    rootPath: string,
-    diags: Map<string, SeverityCount>,
-): ProjectImportJsonNode {
+function rootNodeFromParse(rootPath: string): ProjectImportJsonNode {
     const rootDir = path.dirname(rootPath);
     let parse: ContextParse | null = null;
     try {
@@ -422,66 +921,68 @@ function rootNodeFromParse(
             missing: nodeProjectFs.exists(rootPath) ? undefined : true,
         };
     }
-    const node = mapFileNode(tree, null, rootDir, parse, diags);
+    const node = mapFileNode(tree, null, rootDir, parse).node;
     patchReferenceNodes(node);
     return node;
 }
+
+type MappedFileNode = { node: ProjectImportJsonNode; filePaths: Set<string> };
 
 function mapFileNode(
     fileNode: htsw.ImportJsonFileNode,
     parentPath: string | null,
     rootDir: string,
     parse: ContextParse,
-    diags: Map<string, SeverityCount>,
-): ProjectImportJsonNode {
+): MappedFileNode {
     const label = nodeLabel(fileNode.path, parentPath, rootDir);
     const name = path.basename(path.dirname(fileNode.path)) || path.basename(fileNode.path);
     if (fileNode.missing === true || fileNode.reference === true) {
         return {
-            fsPath: fileNode.path,
-            label,
-            name,
-            importableCount: 0,
-            importables: [],
-            children: [],
-            missing: fileNode.missing === true || undefined,
-            reference: fileNode.reference === true || undefined,
+            node: {
+                fsPath: fileNode.path,
+                label,
+                name,
+                importableCount: 0,
+                importables: [],
+                children: [],
+                missing: fileNode.missing === true || undefined,
+                reference: fileNode.reference === true || undefined,
+            },
+            filePaths: new Set([fileNode.path]),
         };
     }
 
-    const children = fileNode.includes.map((child) =>
-        mapFileNode(child, fileNode.path, rootDir, parse, diags)
+    const mappedChildren = fileNode.includes.map((child) =>
+        mapFileNode(child, fileNode.path, rootDir, parse)
     );
+    const children = mappedChildren.map((child) => child.node);
     const importables = fileNode.importables
-        .map((imp) => mapImportable(imp, fileNode.path, parse, diags))
+        .map((imp) => mapImportable(imp, fileNode.path, parse))
         .filter((summary): summary is ProjectImportableSummary => summary !== null);
 
-    const own = diags.get(pathKey(fileNode.path)) ?? { errors: 0, warnings: 0 };
-    let errors = own.errors;
-    let warnings = own.warnings;
-    for (const entry of importables) {
-        errors += entry.errors ?? 0;
-        warnings += entry.warnings ?? 0;
-        for (const sub of entry.subEntries ?? []) {
-            errors += sub.errors ?? 0;
-            warnings += sub.warnings ?? 0;
-        }
+    const filePaths = new Set<string>([fileNode.path]);
+    for (const imp of fileNode.importables) {
+        for (const filePath of htsw.importableFilePaths(imp)) filePaths.add(filePath);
     }
-    for (const child of children) {
-        if (child.reference) continue;
-        errors += child.errors ?? 0;
-        warnings += child.warnings ?? 0;
+    for (const child of mappedChildren) {
+        if (child.node.reference) continue;
+        child.filePaths.forEach((filePath) => filePaths.add(filePath));
     }
 
+    const total = sumFileCounts(parse, filePaths);
+
     return {
-        fsPath: fileNode.path,
-        label,
-        name,
-        importableCount: importables.length,
-        importables,
-        children,
-        errors: errors || undefined,
-        warnings: warnings || undefined,
+        node: {
+            fsPath: fileNode.path,
+            label,
+            name,
+            importableCount: importables.length,
+            importables,
+            children,
+            errors: total.errors || undefined,
+            warnings: total.warnings || undefined,
+        },
+        filePaths,
     };
 }
 
@@ -530,7 +1031,6 @@ function mapImportable(
     imp: htsw.types.Importable,
     declaringPath: string,
     parse: ContextParse,
-    diags: Map<string, SeverityCount>,
 ): ProjectImportableSummary | null {
     const type = SUMMARY_TYPE[imp.type];
     if (type === undefined) return null;
@@ -541,14 +1041,10 @@ function mapImportable(
             : (imp as { name: string }).name;
     const label = imp.type === "NPC" ? `${imp.name} @ ${identity}` : identity;
 
-    const sourcePath = htsw.importableSourcePath(imp);
-    const openPath = sourcePath !== undefined ? sourcePath : declaringPath;
-    // Only attribute diagnostics when the importable has its own source
-    // file — otherwise every importable would inherit the import.json's.
-    const ownDiag = pathKey(openPath) !== pathKey(declaringPath)
-        ? diags.get(pathKey(openPath))
-        : undefined;
-    const subEntries = mapSubEntries(imp, declaringPath, parse, diags);
+    const openPath = resolvedImportableSourcePath(imp, declaringPath);
+    // Sum per file so htsw.diagnostics.excludeFolders can hide only excluded files.
+    const own = sumFileCounts(parse, new Set(htsw.importableFilePaths(imp)));
+    const subEntries = mapSubEntries(imp, declaringPath, parse);
 
     return {
         id: `${declaringPath}|${type}|${identity}`,
@@ -558,10 +1054,15 @@ function mapImportable(
         typeLabel: imp.type,
         openPath,
         ...mapImportableIcon(imp),
-        errors: ownDiag?.errors || undefined,
-        warnings: ownDiag?.warnings || undefined,
+        item: imp.type === "ITEM" ? itemPreviewFromTag(imp.nbt) : undefined,
+        errors: own.errors || undefined,
+        warnings: own.warnings || undefined,
         subEntries: subEntries.length > 0 ? subEntries : undefined,
     };
+}
+
+function resolvedImportableSourcePath(imp: htsw.types.Importable, declaringPath: string): string {
+    return htsw.importableSourcePath(imp) ?? declaringPath;
 }
 
 function mapImportableIcon(
@@ -585,7 +1086,6 @@ function mapSubEntries(
     imp: htsw.types.Importable,
     declaringPath: string,
     parse: ContextParse,
-    diags: Map<string, SeverityCount>,
 ): ProjectImportableSub[] {
     const out: ProjectImportableSub[] = [];
     const declaringKey = pathKey(declaringPath);
@@ -593,7 +1093,7 @@ function mapSubEntries(
     // as when these rows were read from `...Path: "file.htsl"` refs only.
     const pushActions = (label: string, fsPath: string | undefined): void => {
         if (fsPath === undefined || pathKey(fsPath) === declaringKey) return;
-        out.push(subEntryFor(label, fsPath, "actions", diags));
+        out.push(subEntryFor(label, fsPath, "actions", parse));
     };
 
     for (const kind of htsw.SUB_LIST_KINDS) {
@@ -605,7 +1105,7 @@ function mapSubEntries(
         for (const slot of imp.slots) {
             const tag = `Slot ${slot.slot}`;
             if (slot.nbtPath !== undefined && pathKey(slot.nbtPath) !== declaringKey) {
-                out.push(subEntryFor(`${tag} item`, slot.nbtPath, "item", diags));
+                out.push(subEntryFor(`${tag} item`, slot.nbtPath, "item", parse, slot.nbt));
             }
             if (slot.actions !== undefined) {
                 pushActions(`${tag} actions`, slot.actionsPath);
@@ -624,7 +1124,7 @@ function mapSubEntries(
         for (const [label, ref] of pieces) {
             if (ref === undefined) continue;
             const resolved = path.resolve(path.dirname(declaringPath), ref);
-            if (nodeProjectFs.exists(resolved)) out.push(subEntryFor(label, resolved, "item", diags));
+            if (nodeProjectFs.exists(resolved)) out.push(subEntryFor(label, resolved, "item", parse));
         }
     }
 
@@ -635,27 +1135,36 @@ function subEntryFor(
     label: string,
     fsPath: string,
     kind: "actions" | "item",
-    diags: Map<string, SeverityCount>,
+    parse: ContextParse,
+    nbt?: ItemTag,
 ): ProjectImportableSub {
-    const diag = diags.get(pathKey(fsPath));
-    return { label, fsPath, kind, errors: diag?.errors || undefined, warnings: diag?.warnings || undefined };
+    const diag = countsForFile(parse, fsPath);
+    return {
+        label,
+        fsPath,
+        kind,
+        item: kind === "item" ? itemPreviewForSub(nbt, fsPath) : undefined,
+        errors: diag?.errors || undefined,
+        warnings: diag?.warnings || undefined,
+    };
 }
 
-type SeverityCount = { errors: number; warnings: number };
+type SeverityCount = htsw.SeverityCounts;
 
-function collectDiagnosticCounts(): Map<string, SeverityCount> {
-    const counts = new Map<string, SeverityCount>();
-    for (const [uri, list] of vscode.languages.getDiagnostics()) {
-        if (uri.scheme !== "file") continue;
-        let errors = 0;
-        let warnings = 0;
-        for (const diagnostic of list) {
-            if (diagnostic.severity === vscode.DiagnosticSeverity.Error) errors++;
-            else if (diagnostic.severity === vscode.DiagnosticSeverity.Warning) warnings++;
-        }
-        if (errors > 0 || warnings > 0) counts.set(pathKey(uri.fsPath), { errors, warnings });
-    }
-    return counts;
+function countsForFile(parse: ContextParse, rawPath: string): SeverityCount {
+    if (isPathInExcludedDiagnosticFolder(rawPath)) return { errors: 0, warnings: 0 };
+    return htsw.diagnosticCountsForFile(parse.result, rawPath);
+}
+
+function sumFileCounts(parse: ContextParse, rawPaths: Set<string>): SeverityCount {
+    let errors = 0;
+    let warnings = 0;
+    rawPaths.forEach((rawPath) => {
+        const count = countsForFile(parse, rawPath);
+        errors += count.errors;
+        warnings += count.warnings;
+    });
+    return { errors, warnings };
 }
 
 // A node's display label is its directory relative to the PARENT import.json's

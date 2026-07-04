@@ -282,6 +282,16 @@ select {
     box-shadow: inset 2px 0 0 var(--vscode-focusBorder);
 }
 
+.row.imp.selected,
+.row.imp.selected:hover {
+    background: var(--vscode-list-activeSelectionBackground);
+}
+
+.row.imp.selected .row-label,
+.row.imp.selected .row-type {
+    color: var(--vscode-list-activeSelectionForeground);
+}
+
 .row.problem .row-label {
     color: var(--vscode-errorForeground);
 }

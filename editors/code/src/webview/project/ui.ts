@@ -1,6 +1,7 @@
 import * as htsw from "htsw";
-import * as itemIcons from "minecraft-icon-items";
+import { itemSpriteDataUri } from "../mcItem/render";
 import type {
+    ItemPreviewData,
     ProjectFromHostMessage,
     ProjectImportableSub,
     ProjectImportableSummary,
@@ -30,9 +31,18 @@ type SortMode = NonNullable<ProjectExplorerPersistedState["sort"]>;
 
 type ImportableKind = NonNullable<ProjectExplorerPersistedState["addKind"]>;
 
+type ImportableSelectionPayload = {
+    importJsonPath: string;
+    importableKind: ProjectImportableSummary["type"];
+    importableIdentity: string;
+};
+
 type State = {
     roots: ProjectImportJsonNode[];
     expanded: Set<string>;
+    selection: Set<string>;
+    selectionAnchor: string | null;
+    importableIndex: Map<string, ImportableSelectionPayload & { label: string }>;
     query: string;
     sort: SortMode;
     selectedParent: string;
@@ -114,6 +124,9 @@ export function mountProjectExplorer(
     const state: State = {
         roots: [],
         expanded: new Set(persisted.expanded ?? []),
+        selection: new Set(),
+        selectionAnchor: null,
+        importableIndex: new Map(),
         query: persisted.query,
         sort: persisted.sort,
         selectedParent: persisted.selectedParent,
@@ -125,6 +138,13 @@ export function mountProjectExplorer(
         status: { kind: "idle", text: "" },
         loading: true,
     };
+    let drag: {
+        anchor: string;
+        pending: boolean;
+        dragging: boolean;
+        suppressClick: boolean;
+        removeMouseUp?: () => void;
+    } | null = null;
 
     const onMessage = (event: MessageEvent<ProjectFromHostMessage>) => {
         const message = event.data;
@@ -191,9 +211,20 @@ export function mountProjectExplorer(
     }
 
     window.addEventListener("message", onMessage);
+    window.addEventListener("keydown", onKeyDown);
     render();
     post(vscode, { type: "requestProjectTree" });
-    return () => window.removeEventListener("message", onMessage);
+    return () => {
+        window.removeEventListener("message", onMessage);
+        window.removeEventListener("keydown", onKeyDown);
+    };
+
+    function onKeyDown(event: KeyboardEvent): void {
+        if (event.key !== "Escape" || state.selection.size === 0) return;
+        state.selection.clear();
+        state.selectionAnchor = null;
+        renderTreeOnly();
+    }
 
     function render(): void {
         const scroll = document.getElementById("projectTree")?.scrollTop ?? 0;
@@ -241,7 +272,7 @@ export function mountProjectExplorer(
         document.getElementById("refreshProject")?.addEventListener("click", () => {
             state.loading = true;
             renderTreeOnly();
-            post(vscode, { type: "requestProjectTree" });
+            post(vscode, { type: "requestProjectTree", fresh: true });
         });
 
         document.getElementById("sortProject")?.addEventListener("click", () => {
@@ -362,6 +393,55 @@ export function mountProjectExplorer(
     }
 
     function bindTree(): void {
+        const tree = document.getElementById("projectTree");
+        // renderTreeOnly() reuses this container element (only its children are
+        // rebuilt), so binding these once per element keeps the listeners from
+        // stacking on every re-render. A full render() makes a fresh element,
+        // which then binds once again.
+        if (tree && tree.dataset.selectionBound !== "1") {
+            tree.dataset.selectionBound = "1";
+            tree.addEventListener("mousedown", (event) => {
+                if (event.button !== 0) return;
+                const row = selectableImportableRow(event.target);
+                if (!row) return;
+                const id = row.dataset.importableId;
+                if (!id) return;
+                drag = { anchor: id, pending: true, dragging: false, suppressClick: false };
+                const onMouseUp = () => {
+                    const wasDragging = drag?.dragging === true;
+                    if (drag) drag.pending = false;
+                    window.removeEventListener("mouseup", onMouseUp);
+                    if (drag) drag.removeMouseUp = undefined;
+                    // Sync data-vscode-context (used by the right-click menu) once,
+                    // after the cheap per-move highlight updates during the drag.
+                    if (wasDragging) renderTreeOnly();
+                };
+                drag.removeMouseUp = () => window.removeEventListener("mouseup", onMouseUp);
+                window.addEventListener("mouseup", onMouseUp);
+            });
+            tree.addEventListener("mousemove", (event) => {
+                if (!drag || (event.buttons & 1) === 0) return;
+                const element = document.elementFromPoint(event.clientX, event.clientY);
+                const row = selectableImportableRow(element);
+                const id = row?.dataset.importableId;
+                if (!id) return;
+                const range = importableRange(drag.anchor, id);
+                if (!range) return;
+                drag.dragging = true;
+                drag.suppressClick = true;
+                state.selection = range;
+                refreshSelectionHighlight();
+            });
+            tree.addEventListener("click", (event) => {
+                const row = selectableImportableRow(event.target);
+                if (!row && state.selection.size > 0) {
+                    state.selection.clear();
+                    state.selectionAnchor = null;
+                    renderTreeOnly();
+                }
+            });
+        }
+
         for (const button of document.querySelectorAll<HTMLButtonElement>("[data-toggle-node]")) {
             button.addEventListener("click", (event) => {
                 event.stopPropagation();
@@ -379,6 +459,29 @@ export function mountProjectExplorer(
             row.addEventListener("click", (event) => {
                 const target = event.target as HTMLElement | null;
                 if (target?.closest("button")) return;
+                const importableId = row.dataset.importableId;
+                if (importableId) {
+                    if (drag?.suppressClick) {
+                        drag.removeMouseUp?.();
+                        drag = null;
+                        return;
+                    }
+                    if (event.shiftKey) {
+                        if (state.selectionAnchor) {
+                            selectImportableRange(state.selectionAnchor, importableId);
+                            return;
+                        }
+                        selectSingleImportable(importableId);
+                    } else if (event.metaKey || event.ctrlKey) {
+                        toggleImportableSelection(importableId);
+                        return;
+                    } else {
+                        selectSingleImportable(importableId);
+                    }
+                    const importablePath = row.dataset.openPath;
+                    if (importablePath) post(vscode, { type: "openProjectFile", fsPath: importablePath, preview: true });
+                    return;
+                }
                 const fsPath = row.dataset.openPath;
                 if (!fsPath) return;
                 // The caret + file-icon strip toggles an expandable node, giving
@@ -398,9 +501,21 @@ export function mountProjectExplorer(
                 const target = event.target as HTMLElement | null;
                 if (target?.closest("button")) return;
                 if (target?.closest(".row-icon") && expandableTogglePath(row)) return;
+                const itemPath = row.dataset.itemPath;
+                if (itemPath) {
+                    post(vscode, { type: "openItemInEditor", snbtPath: itemPath });
+                    return;
+                }
                 const fsPath = row.dataset.openPath;
                 if (!fsPath) return;
                 post(vscode, { type: "openProjectFile", fsPath, preview: false });
+            });
+            row.addEventListener("contextmenu", () => {
+                const importableId = row.dataset.importableId;
+                if (!importableId || state.selection.has(importableId)) return;
+                state.selection = new Set([importableId]);
+                state.selectionAnchor = importableId;
+                renderTreeOnly();
             });
         }
 
@@ -415,15 +530,70 @@ export function mountProjectExplorer(
             });
         }
 
-        for (const row of document.querySelectorAll<HTMLElement>("[data-move-identity]")) {
-            row.addEventListener("contextmenu", (event) => {
-                event.preventDefault();
-                const importJsonPath = row.dataset.movePath;
-                const kind = row.dataset.moveKind as ProjectImportableSummary["type"] | undefined;
-                const identity = row.dataset.moveIdentity;
-                if (!importJsonPath || !kind || identity === undefined) return;
-                post(vscode, { type: "moveImportable", importJsonPath, kind, identity });
-            });
+    }
+
+    function selectableImportableRow(target: EventTarget | Element | null): HTMLElement | null {
+        if (!(target instanceof Element)) return null;
+        const row = target.closest<HTMLElement>(".row.imp[data-importable-id]");
+        if (!row) return null;
+        return importableContextIsSelectable(row) ? row : null;
+    }
+
+    function importableContextIsSelectable(row: HTMLElement): boolean {
+        try {
+            const context = JSON.parse(row.dataset.vscodeContext ?? "{}") as { webviewSection?: unknown };
+            return context.webviewSection === "importable";
+        } catch (_err) {
+            return false;
+        }
+    }
+
+    function orderedImportableIds(): string[] {
+        return Array.from(document.querySelectorAll<HTMLElement>(".row.imp[data-importable-id]"))
+            .map((row) => row.dataset.importableId)
+            .filter((id): id is string => typeof id === "string" && id.length > 0);
+    }
+
+    function selectSingleImportable(id: string): void {
+        state.selection = new Set([id]);
+        state.selectionAnchor = id;
+        renderTreeOnly();
+    }
+
+    function toggleImportableSelection(id: string): void {
+        const next = new Set(state.selection);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        state.selection = next;
+        state.selectionAnchor = id;
+        renderTreeOnly();
+    }
+
+    function importableRange(anchor: string, current: string): Set<string> | null {
+        const ids = orderedImportableIds();
+        const start = ids.indexOf(anchor);
+        const end = ids.indexOf(current);
+        if (start < 0 || end < 0) return null;
+        const [from, to] = start <= end ? [start, end] : [end, start];
+        return new Set(ids.slice(from, to + 1));
+    }
+
+    function selectImportableRange(anchor: string, current: string): void {
+        const range = importableRange(anchor, current);
+        if (!range) {
+            selectSingleImportable(current);
+            return;
+        }
+        state.selection = range;
+        renderTreeOnly();
+    }
+
+    // Toggle the highlight class in place — used during a drag so we don't
+    // rebuild the whole tree (and rebind every listener) on each mousemove.
+    function refreshSelectionHighlight(): void {
+        for (const row of document.querySelectorAll<HTMLElement>(".row.imp[data-importable-id]")) {
+            const id = row.dataset.importableId;
+            row.classList.toggle("selected", id !== undefined && state.selection.has(id));
         }
     }
 
@@ -567,15 +737,26 @@ function renderContext(state: State): string {
     `;
 }
 
+function pruneSelection(state: State): void {
+    for (const id of state.selection) {
+        if (!state.importableIndex.has(id)) state.selection.delete(id);
+    }
+    if (state.selectionAnchor !== null && !state.importableIndex.has(state.selectionAnchor)) {
+        state.selectionAnchor = null;
+    }
+}
+
 function renderTree(state: State): string {
     if (state.loading) return emptyState("Loading import.json tree…");
     if (state.roots.length === 0) return emptyState("No import.json files found in this workspace.");
     const query = state.query.trim().toLowerCase();
+    state.importableIndex = new Map();
     try {
         const rows = sortNodes(state.roots, state.sort)
             .filter((root) => nodeMatches(root, query))
             .map((root) => renderNode(root, state, 0, true, query))
             .join("");
+        pruneSelection(state);
         return rows || emptyState("No matching importables.");
     } catch (err) {
         return emptyState(`Failed to render tree: ${err instanceof Error ? err.message : String(err)}`);
@@ -646,11 +827,21 @@ function renderImportable(
     const subs = entry.subEntries ?? [];
     const hasSubs = subs.length > 0;
     const expanded = hasSubs && (query.length > 0 || state.expanded.has(entry.id));
+    state.importableIndex.set(entry.id, {
+        importJsonPath: declaringPath,
+        importableKind: entry.type,
+        importableIdentity: entry.identity,
+        label: entry.label,
+    });
+    const selected = state.selection.has(entry.id);
+    // Item importables open the visual editor on click (data-item-path); others
+    // keep the default open-file behavior.
+    const itemPath = entry.type === "item" ? entry.openPath : undefined;
+    const itemAttrs = itemPath ? ` data-item-path="${escapeAttr(itemPath)}"` : "";
     const row = `
-        <div class="row imp ${entry.type}" data-open-path="${escapeAttr(entry.openPath ?? "")}"
-            data-move-path="${escapeAttr(declaringPath)}"
-            data-move-kind="${escapeAttr(entry.type)}"
-            data-move-identity="${escapeAttr(entry.identity)}"
+        <div class="row imp ${entry.type} ${selected ? "selected" : ""}" data-open-path="${escapeAttr(entry.openPath ?? "")}"
+            data-importable-id="${escapeAttr(entry.id)}"
+            data-vscode-context="${escapeAttr(importableContext(entry, declaringPath, state))}"${itemAttrs}
             title="${escapeAttr(importableTooltip(entry))}">
             ${indentGuides(depth)}
             <button class="twisty ${hasSubs ? "" : "empty"} ${expanded ? "open" : ""}" type="button"
@@ -665,13 +856,45 @@ function renderImportable(
     return row + subs.map((sub) => renderSubEntry(sub, depth + 1)).join("");
 }
 
+function importableContext(entry: ProjectImportableSummary, importJsonPath: string, state: State): string {
+    const context: {
+        webviewSection: string;
+        preventDefaultContextMenuItems: boolean;
+        importJsonPath: string;
+        importableKind: ProjectImportableSummary["type"];
+        importableIdentity: string;
+        selectedImportables?: ImportableSelectionPayload[];
+    } = {
+        webviewSection: "importable",
+        preventDefaultContextMenuItems: true,
+        importJsonPath,
+        importableKind: entry.type,
+        importableIdentity: entry.identity,
+    };
+    if (state.selection.has(entry.id) && state.selection.size > 1) {
+        context.selectedImportables = [...state.selection]
+            .map((id) => state.importableIndex.get(id))
+            .filter((item): item is ImportableSelectionPayload & { label: string } => item !== undefined)
+            .map(({ importJsonPath: selectedPath, importableKind, importableIdentity }) => ({
+                importJsonPath: selectedPath,
+                importableKind,
+                importableIdentity,
+            }));
+    }
+    return JSON.stringify(context);
+}
+
 function renderSubEntry(sub: ProjectImportableSub, depth: number): string {
+    const item = sub.kind === "item" ? sub.item : undefined;
+    const icon = item ? itemRowIcon(item) : `<span class="row-icon sub ${sub.kind}">${SUB_GLYPH[sub.kind]}</span>`;
+    // Item subs open the visual editor on click (data-item-path).
+    const itemAttrs = item ? ` data-item-path="${escapeAttr(sub.fsPath)}"` : "";
     return `
-        <div class="row sub" data-open-path="${escapeAttr(sub.fsPath)}"
+        <div class="row sub" data-open-path="${escapeAttr(sub.fsPath)}"${itemAttrs}
             title="${escapeAttr(`${sub.label}\n${baseName(sub.fsPath)}`)}">
             ${indentGuides(depth)}
             <span class="twisty empty"></span>
-            <span class="row-icon sub ${sub.kind}">${SUB_GLYPH[sub.kind]}</span>
+            ${icon}
             <span class="row-label ${diagClass(sub.errors, sub.warnings)}">${escapeHtml(sub.label)}</span>
             ${diagBadge(sub.errors, sub.warnings)}
             <span class="row-type">${escapeHtml(baseName(sub.fsPath))}</span>
@@ -685,11 +908,21 @@ function baseName(fsPath: string): string {
 }
 
 function importableIcon(entry: ProjectImportableSummary): string {
-    const uri = iconDataUri(entry.iconItem, entry.iconMeta);
+    const uri = entry.iconItem ? itemSpriteDataUri(entry.iconItem, entry.iconMeta ?? 0) : null;
     if (uri) {
         return `<span class="row-icon mc"><img src="${uri}" alt="" draggable="false"></span>`;
     }
     return `<span class="row-icon glyph ${entry.type}">${TYPE_GLYPH[entry.type]}</span>`;
+}
+
+// An item sub-row (menu slot, npc armor) shows the real sprite when we could
+// resolve it, else the generic item glyph.
+function itemRowIcon(item: ItemPreviewData): string {
+    const uri = itemSpriteDataUri(item.itemId, item.metadata);
+    if (uri) {
+        return `<span class="row-icon mc"><img src="${uri}" alt="" draggable="false"></span>`;
+    }
+    return `<span class="row-icon sub item">${SUB_GLYPH.item}</span>`;
 }
 
 function importableTooltip(entry: ProjectImportableSummary): string {
@@ -847,21 +1080,6 @@ function importableMatches(entry: ProjectImportableSummary, query: string): bool
     if (!query) return true;
     const subs = (entry.subEntries ?? []).map((sub) => sub.label).join(" ");
     return `${entry.label} ${entry.typeLabel} ${entry.type} ${subs}`.toLowerCase().includes(query);
-}
-
-type MinecraftItem = { id: number; name: string };
-const ITEM_ID_BY_NAME = new Map<string, number>();
-for (const item of htsw.types.MINECRAFT_ITEMS as readonly MinecraftItem[]) {
-    ITEM_ID_BY_NAME.set(item.name, item.id);
-}
-
-function iconDataUri(iconItem: string | undefined, meta: number | undefined): string | null {
-    if (!iconItem) return null;
-    const bare = iconItem.replace(/^minecraft:/, "").toLowerCase();
-    const id = ITEM_ID_BY_NAME.get(bare);
-    if (id === undefined) return null;
-    const png = itemIcons.get(`${id}:${meta ?? 0}`)?.icon ?? itemIcons.get(`${id}:0`)?.icon;
-    return png ? `data:image/png;base64,${png}` : null;
 }
 
 function post(vscode: VsCodeApi, message: ProjectToHostMessage): void {

@@ -23,6 +23,18 @@ export type ItemEditorEnchant = {
     level: number;
 };
 
+/** Enough of a parsed item to render its in-game sprite and hover tooltip.
+ * Display name and lore keep their `&` codes. */
+export type ItemPreviewData = {
+    /** Item id, e.g. "clock" or "minecraft:clock" — the renderer normalizes. */
+    itemId: string;
+    metadata: number;
+    count: number;
+    displayName: string;
+    lore: string[];
+    enchants: ItemEditorEnchant[];
+};
+
 export type SoundEntry = {
     name: string;
     path: string;
@@ -36,6 +48,9 @@ export type ProjectImportableSub = {
     fsPath: string;
     /** Drives the row glyph: `actions` = htsl action list, `item` = snbt item. */
     kind: "actions" | "item";
+    /** For `item` subs: the parsed item, so the row shows its sprite and a
+     * hover preview instead of a generic glyph. */
+    item?: ItemPreviewData;
     errors?: number;
     warnings?: number;
 };
@@ -55,6 +70,9 @@ export type ProjectImportableSummary = {
     iconItem?: string;
     iconMeta?: number;
     iconCount?: number;
+    /** For `item` importables: the parsed item, powering the row sprite and a
+     * hover preview. (Functions use the icon fields above instead.) */
+    item?: ItemPreviewData;
     /** Diagnostics in this importable's own source file (htsl/snbt). */
     errors?: number;
     warnings?: number;
@@ -84,7 +102,7 @@ export type ProjectImportJsonNode = {
 };
 
 export type ProjectToHostMessage =
-    | { type: "requestProjectTree" }
+    | { type: "requestProjectTree"; fresh?: boolean }
     | { type: "openProjectFile"; fsPath: string; preview: boolean }
     | { type: "createIncludedImportJson"; parentImportJsonPath: string; folderPath: string }
     | {
@@ -98,7 +116,8 @@ export type ProjectToHostMessage =
           importJsonPath: string;
           kind: ProjectImportableSummary["type"];
           identity: string;
-      };
+      }
+    | { type: "openItemInEditor"; snbtPath: string };
 
 export type ProjectFromHostMessage =
     | { type: "projectTree"; roots: ProjectImportJsonNode[]; workspaceName?: string }
@@ -107,12 +126,19 @@ export type ProjectFromHostMessage =
 
 export type ItemEditorToHostMessage =
     | { type: "requestImportTargets" }
-    | { type: "submitItem"; form: ItemEditorForm };
+    | { type: "submitItem"; form: ItemEditorForm }
+    | { type: "saveItem"; snbtPath: string; tag: unknown };
 
 export type ItemEditorFromHostMessage =
     | { type: "importTargets"; targets: ImportTarget[] }
     | { type: "submitResult"; ok: true; files: string[] }
-    | { type: "submitResult"; ok: false; error: string };
+    | { type: "submitResult"; ok: false; error: string }
+    | { type: "saveResult"; ok: true; snbtPath: string }
+    | { type: "saveResult"; ok: false; error: string }
+    /** Host parsed an existing `.snbt`; the shell switches to the Item tab and
+     * loads it for editing. `tag` is the original parsed NBT, kept so a save
+     * preserves keys the editor doesn't manage. */
+    | { type: "loadItem"; snbtPath: string; label: string; item: ItemPreviewData; tag: unknown };
 
 export type SoundPreviewToHostMessage =
     | { type: "ready" }

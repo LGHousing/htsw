@@ -1,7 +1,15 @@
 import * as vscode from "vscode";
 import { handleItemEditorMessage } from "./itemEditorView";
 import { renderWebviewHtml } from "./html";
-import { handleProjectMessage } from "./projectView";
+import {
+    copyImportablePathFromContext,
+    deleteImportableFromContext,
+    handleProjectMessage,
+    moveImportableFromContext,
+    renameImportableFromContext,
+    revealImportableFromContext,
+    type ImportableContext,
+} from "./projectView";
 import type { ItemEditorToHostMessage, ProjectToHostMessage, SoundPreviewToHostMessage } from "./protocol";
 import { SoundPreviewController } from "./soundPreviewView";
 
@@ -13,12 +21,14 @@ const PROJECT_MESSAGE_TYPES = new Set([
     "createIncludedImportJson",
     "addImportable",
     "moveImportable",
+    "openItemInEditor",
 ]);
-const ITEM_MESSAGE_TYPES = new Set(["requestImportTargets", "submitItem"]);
+const ITEM_MESSAGE_TYPES = new Set(["requestImportTargets", "submitItem", "saveItem"]);
 
 export class HtswToolsViewProvider implements vscode.WebviewViewProvider {
     public static readonly viewType = "htsw.tools";
     private readonly soundController: SoundPreviewController;
+    private webview: vscode.Webview | undefined;
 
     public constructor(
         private readonly extensionUri: vscode.Uri,
@@ -28,7 +38,33 @@ export class HtswToolsViewProvider implements vscode.WebviewViewProvider {
         this.soundController = new SoundPreviewController(globalStorageUri, globalState);
     }
 
+    public registerImportableCommands(): vscode.Disposable[] {
+        return [
+            vscode.commands.registerCommand("htsw.importable.move", async (context?: ImportableContext) => {
+                if (!this.webview) return;
+                await moveImportableFromContext(this.webview, context);
+            }),
+            vscode.commands.registerCommand("htsw.importable.rename", async (context?: ImportableContext) => {
+                if (!this.webview) return;
+                await renameImportableFromContext(this.webview, context);
+            }),
+            vscode.commands.registerCommand("htsw.importable.reveal", async (context?: ImportableContext) => {
+                if (!this.webview) return;
+                await revealImportableFromContext(this.webview, context);
+            }),
+            vscode.commands.registerCommand("htsw.importable.copyPath", async (context?: ImportableContext) => {
+                if (!this.webview) return;
+                await copyImportablePathFromContext(this.webview, context);
+            }),
+            vscode.commands.registerCommand("htsw.importable.delete", async (context?: ImportableContext) => {
+                if (!this.webview) return;
+                await deleteImportableFromContext(this.webview, context);
+            }),
+        ];
+    }
+
     public resolveWebviewView(view: vscode.WebviewView): void {
+        this.webview = view.webview;
         view.webview.html = renderWebviewHtml(view.webview, this.extensionUri, {
             scriptName: "tools.js",
             extraLocalResourceRoots: [this.soundController.cacheRootUri()],
@@ -60,6 +96,7 @@ export class HtswToolsViewProvider implements vscode.WebviewViewProvider {
         view.onDidDispose(() => {
             if (diagTimer) clearTimeout(diagTimer);
             diagSub.dispose();
+            if (this.webview === view.webview) this.webview = undefined;
         });
     }
 }

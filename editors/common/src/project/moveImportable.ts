@@ -9,19 +9,19 @@ import {
 } from "./importJsonMutations";
 import type { ProjectFs } from "./fs";
 
-const ALL_SECTIONS: Section[] = ["functions", "events", "regions", "items", "menus", "teams", "groups", "commands", "npcs"];
+export const ALL_SECTIONS: Section[] = ["functions", "events", "regions", "items", "menus", "teams", "groups", "commands", "npcs"];
 
 export type MoveImportableResult =
     | { ok: true; from: string; to: string; movedFiles: Array<{ from: string; to: string }> }
     | { ok: false; message: string };
 
-type RefSlot = { holder: Record<string, unknown> | unknown[]; key: string | number; ref: string };
+export type RefSlot = { holder: Record<string, unknown> | unknown[]; key: string | number; ref: string };
 
 function isFileRef(value: unknown): value is string {
     return typeof value === "string" && /\.(htsl|snbt)$/i.test(value);
 }
 
-function collectFileRefs(value: unknown, out: RefSlot[]): void {
+export function collectFileRefs(value: unknown, out: RefSlot[]): void {
     if (Array.isArray(value)) {
         for (let i = 0; i < value.length; i++) {
             if (isFileRef(value[i])) {
@@ -45,7 +45,7 @@ function collectFileRefs(value: unknown, out: RefSlot[]): void {
     }
 }
 
-function canonKey(path: string): string {
+export function canonKey(path: string): string {
     return path.split("\\").join("/").toLowerCase();
 }
 
@@ -56,7 +56,7 @@ function pathWithinDir(dir: string, path: string): string | null {
     return pathNorm.substring(dirKey.length + 1);
 }
 
-function refsOfOtherEntries(
+export function refsOfOtherEntries(
     fs: ProjectFs,
     entryJsonPath: string,
     excludeSection: Section,
@@ -87,7 +87,7 @@ function refsOfOtherEntries(
     return out;
 }
 
-function readEntryValue(
+export function readEntryValue(
     fs: ProjectFs,
     importJsonPath: string,
     section: Section,

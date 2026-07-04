@@ -118,13 +118,20 @@ export function activate(context: ExtensionContext) {
 
         providers.push(new languageFeatures.DiagnosticsAdapter());
 
+        const toolsProvider = new HtswToolsViewProvider(
+            context.extensionUri,
+            context.globalStorageUri,
+            context.globalState,
+        );
+
         providers.push(
             window.registerWebviewViewProvider(
                 HtswToolsViewProvider.viewType,
-                new HtswToolsViewProvider(context.extensionUri, context.globalStorageUri, context.globalState),
+                toolsProvider,
                 { webviewOptions: { retainContextWhenHidden: true } },
             )
         );
+        providers.push(...toolsProvider.registerImportableCommands());
     }
 
     registerProviders();

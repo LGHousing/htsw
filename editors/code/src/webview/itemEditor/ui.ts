@@ -1,8 +1,6 @@
 import * as htsw from "htsw";
-import * as itemIcons from "minecraft-icon-items";
-import minecraftFontDataUri from "typeface-minecraft/files/minecraft.woff2?inline";
-import { buildItemTag } from "htsw-editor-common/item/buildItemNbt";
-import { ampToSection } from "htsw-editor-common/text/colorCodes";
+import { applyItemEditsToTag, buildItemTag } from "htsw-editor-common/item/buildItemNbt";
+import { ensureMinecraftFont, renderItemPreviewInto, type ItemView } from "../mcItem/render";
 import { scrollPastNumberInputs } from "../numberInputWheel";
 import type {
     ImportTarget,
@@ -12,6 +10,10 @@ import type {
 } from "../protocol";
 
 type VsCodeApi = ReturnType<typeof acquireVsCodeApi>;
+
+/** Payload that opens the editor on an existing `.snbt` (see the host's
+ * `openItemInEditor`). The shell hands it to {@link mountItemEditor}. */
+export type ItemEditorLoad = Extract<ItemEditorFromHostMessage, { type: "loadItem" }>;
 
 type MinecraftItem = {
     id: number;
@@ -44,60 +46,38 @@ type State = {
     createLeftClickActions: boolean;
     createRightClickActions: boolean;
     status: { kind: "idle" | "ok" | "error"; text: string };
+    /** Set when editing an existing `.snbt`: the file to save back to, a label
+     * for the header, and the original parsed tag (so unmanaged NBT survives). */
+    editPath?: string;
+    editLabel?: string;
+    originalTag?: unknown;
 };
 
 const ITEMS = htsw.types.MINECRAFT_ITEMS as readonly MinecraftItem[];
 const ENCHANTMENTS = htsw.types.ENCHANTMENTS;
-const FORMAT_COLORS: Record<string, string> = {
-    "0": "#000000",
-    "1": "#0000AA",
-    "2": "#00AA00",
-    "3": "#00AAAA",
-    "4": "#AA0000",
-    "5": "#AA00AA",
-    "6": "#FFAA00",
-    "7": "#AAAAAA",
-    "8": "#555555",
-    "9": "#5555FF",
-    a: "#55FF55",
-    b: "#55FFFF",
-    c: "#FF5555",
-    d: "#FF55FF",
-    e: "#FFFF55",
-    f: "#FFFFFF",
-};
 
-const FONT_STYLE_ID = "minecraft-font-face";
-
-function ensureMinecraftFont(): void {
-    if (document.getElementById(FONT_STYLE_ID)) return;
-    const style = document.createElement("style");
-    style.id = FONT_STYLE_ID;
-    style.textContent = `@font-face {
-        font-family: "Minecraft";
-        src: url(${minecraftFontDataUri}) format("woff2");
-    }`;
-    document.head.appendChild(style);
-}
-
-export function mountItemEditor(app: HTMLElement, vscode: VsCodeApi): () => void {
+export function mountItemEditor(app: HTMLElement, vscode: VsCodeApi, load?: ItemEditorLoad): () => void {
     ensureMinecraftFont();
     scrollPastNumberInputs();
     const firstItem = ITEMS[0];
+    const loadedName = load ? load.item.itemId.replace(/^minecraft:/, "") : undefined;
     const state: State = {
         itemSearch: "",
-        itemName: firstItem?.name ?? "stone",
-        metadata: firstMetadata(firstItem),
-        count: 1,
-        displayName: "",
-        lore: [""],
-        enchants: [],
+        itemName: loadedName ?? firstItem?.name ?? "stone",
+        metadata: load ? load.item.metadata : firstMetadata(firstItem),
+        count: load ? Math.max(1, load.item.count) : 1,
+        displayName: load ? load.item.displayName : "",
+        lore: load && load.item.lore.length > 0 ? [...load.item.lore] : [""],
+        enchants: load ? load.item.enchants.map((enchant) => ({ ...enchant })) : [],
         entryName: firstItem?.displayName ?? "Stone",
         importJsonPath: "",
         targets: [],
         createLeftClickActions: false,
         createRightClickActions: false,
         status: { kind: "idle", text: "" },
+        editPath: load?.snbtPath,
+        editLabel: load?.label,
+        originalTag: load?.tag,
     };
 
     const onMessage = (event: MessageEvent<ItemEditorFromHostMessage>) => {
@@ -114,6 +94,13 @@ export function mountItemEditor(app: HTMLElement, vscode: VsCodeApi): () => void
         if (message.type === "submitResult") {
             state.status = message.ok
                 ? { kind: "ok", text: "Item added to the project." }
+                : { kind: "error", text: message.error };
+            renderStatus();
+        }
+
+        if (message.type === "saveResult") {
+            state.status = message.ok
+                ? { kind: "ok", text: "Saved." }
                 : { kind: "error", text: message.error };
             renderStatus();
         }
@@ -181,31 +168,7 @@ export function mountItemEditor(app: HTMLElement, vscode: VsCodeApi): () => void
                         <button id="addEnchant" class="secondary" type="button">Add Enchant</button>
                     </div>
 
-                    <div class="section">
-                        <h2>Add to Project</h2>
-                        <label>
-                            <span class="label-text">Name in project</span>
-                            <input id="entryName" value="${escapeAttr(state.entryName)}" placeholder="Launcher">
-                        </label>
-                        <label>
-                            <span class="label-text">Add to import.json</span>
-                            <select id="importJsonPath">
-                                ${state.targets.map((target) => option(target.fsPath, target.label, target.fsPath === state.importJsonPath)).join("")}
-                            </select>
-                        </label>
-                        <div class="checks">
-                            <label class="check">
-                                <input id="createLeftClickActions" type="checkbox" ${state.createLeftClickActions ? "checked" : ""}>
-                                <span>Create an empty actions file for left click</span>
-                            </label>
-                            <label class="check">
-                                <input id="createRightClickActions" type="checkbox" ${state.createRightClickActions ? "checked" : ""}>
-                                <span>Create an empty actions file for right click</span>
-                            </label>
-                        </div>
-                        <button id="generate" type="button" ${canSubmit(state) ? "" : "disabled"}>Add Item</button>
-                        <div id="status" class="status"></div>
-                    </div>
+                    ${projectSection(state)}
                 </div>
 
                 <div class="panel preview-panel">
@@ -325,13 +288,19 @@ export function mountItemEditor(app: HTMLElement, vscode: VsCodeApi): () => void
             renderStatus();
             post(vscode, { type: "submitItem", form: toForm(state) });
         });
+        bindClick("save", () => {
+            if (state.editPath === undefined) return;
+            state.status = { kind: "idle", text: "Saving..." };
+            renderStatus();
+            post(vscode, { type: "saveItem", snbtPath: state.editPath, tag: currentItemTag(state) });
+        });
     }
 
     function updateSnbtPreview(): void {
         const preview = document.getElementById("snbtPreview");
         if (!preview) return;
         try {
-            preview.textContent = htsw.nbt.printSnbt(buildItemTag(toForm(state)), {
+            preview.textContent = htsw.nbt.printSnbt(currentItemTag(state), {
                 pretty: true,
                 indent: "    ",
             });
@@ -342,7 +311,6 @@ export function mountItemEditor(app: HTMLElement, vscode: VsCodeApi): () => void
 
     function updateFormattedPreviews(): void {
         renderItemPreview(state);
-        startMagicTicker();
     }
 
     function updateItemSelectOptions(): void {
@@ -384,6 +352,58 @@ function toForm(state: State): ItemEditorForm {
         createLeftClickActions: state.createLeftClickActions,
         createRightClickActions: state.createRightClickActions,
     };
+}
+
+// When editing an existing file, merge onto its original tag so keys the editor
+// doesn't model (skull owners, hide flags, ...) survive the round-trip.
+function currentItemTag(state: State) {
+    if (state.editPath !== undefined && state.originalTag !== undefined) {
+        return applyItemEditsToTag(
+            state.originalTag as Parameters<typeof applyItemEditsToTag>[0],
+            toForm(state),
+        );
+    }
+    return buildItemTag(toForm(state));
+}
+
+function projectSection(state: State): string {
+    if (state.editPath !== undefined) {
+        return `
+            <div class="section">
+                <h2>Save</h2>
+                <p class="label-text">Editing <code>${escapeHtml(state.editLabel ?? state.editPath)}</code>. NBT the editor doesn't manage is kept.</p>
+                <button id="save" type="button">Save</button>
+                <div id="status" class="status"></div>
+            </div>
+        `;
+    }
+    return `
+        <div class="section">
+            <h2>Add to Project</h2>
+            <label>
+                <span class="label-text">Name in project</span>
+                <input id="entryName" value="${escapeAttr(state.entryName)}" placeholder="Launcher">
+            </label>
+            <label>
+                <span class="label-text">Add to import.json</span>
+                <select id="importJsonPath">
+                    ${state.targets.map((target) => option(target.fsPath, target.label, target.fsPath === state.importJsonPath)).join("")}
+                </select>
+            </label>
+            <div class="checks">
+                <label class="check">
+                    <input id="createLeftClickActions" type="checkbox" ${state.createLeftClickActions ? "checked" : ""}>
+                    <span>Create an empty actions file for left click</span>
+                </label>
+                <label class="check">
+                    <input id="createRightClickActions" type="checkbox" ${state.createRightClickActions ? "checked" : ""}>
+                    <span>Create an empty actions file for right click</span>
+                </label>
+            </div>
+            <button id="generate" type="button" ${canSubmit(state) ? "" : "disabled"}>Add Item</button>
+            <div id="status" class="status"></div>
+        </div>
+    `;
 }
 
 function trimTrailingEmptyLines(lines: readonly string[]): string[] {
@@ -500,118 +520,18 @@ function variantSelect(item: MinecraftItem | undefined, metadata: number | null)
 function renderItemPreview(state: State): void {
     const host = document.getElementById("itemPreview");
     if (!host) return;
-
-    const item = currentItem(state);
-    const displayName = state.displayName.trim() || (
-        (item ? variantDisplayName(item, state.metadata) : undefined) ??
-        item?.displayName ??
-        state.itemName
-    );
-    const lore = trimTrailingEmptyLines(state.lore);
-    const tagCount = 1 +
-        (state.displayName.trim() || lore.length > 0 ? 1 : 0) +
-        (state.enchants.length > 0 ? 1 : 0);
-
-    const stack = itemStackPreview(state, displayName);
-    if (state.count > 1) {
-        const count = document.createElement("span");
-        count.className = "item-stack-count";
-        count.textContent = String(state.count);
-        stack.appendChild(count);
-    }
-
-    const namePrefix = nameRarityColor(state) + (state.displayName.trim() ? "&o" : "");
-
-    const tooltip = document.createElement("div");
-    tooltip.className = "mc-tooltip";
-    tooltip.appendChild(mcLine(displayName, namePrefix));
-    for (const enchant of state.enchants) {
-        tooltip.appendChild(mcLine(enchantmentTooltipLine(enchant), "&7"));
-    }
-    for (const line of lore) {
-        tooltip.appendChild(mcLine(line, "&7"));
-    }
-    tooltip.appendChild(mcLine(`minecraft:${state.itemName}`, "&8"));
-    tooltip.appendChild(mcLine(`NBT: ${tagCount} tag(s)`, "&8"));
-
-    host.replaceChildren(stack, document.createElement("br"), tooltip);
+    renderItemPreviewInto(host, itemViewFromState(state));
 }
 
-function itemStackPreview(state: State, displayName: string): HTMLElement {
-    const stack = document.createElement("div");
-    stack.className = "item-stack";
-
-    const item = currentItem(state);
-    const icon = item ? itemIcons.get(`${item.id}:${state.metadata ?? 0}`) : null;
-    if (icon?.icon) {
-        const img = document.createElement("img");
-        img.alt = displayName.replace(/[&§][0-9a-fk-or]/gi, "");
-        img.src = `data:image/png;base64,${icon.icon}`;
-        stack.appendChild(img);
-    } else {
-        stack.textContent = itemInitials(displayName);
-    }
-    return stack;
-}
-
-function nameRarityColor(state: State): string {
-    if (state.itemName === "golden_apple") return (state.metadata ?? 0) === 0 ? "&b" : "&d";
-    if (state.itemName.startsWith("record_")) return "&b";
-    if (state.itemName === "enchanted_book" && state.enchants.length > 0) return "&e";
-    return state.enchants.length > 0 ? "&b" : "&f";
-}
-
-function enchantmentTooltipLine(enchant: { name: string; level: number }): string {
-    return `${enchant.name} ${romanNumeral(enchant.level)}`;
-}
-
-function romanNumeral(value: number): string {
-    const rounded = Math.max(1, Math.min(3999, Math.trunc(value)));
-    const parts: [number, string][] = [
-        [1000, "M"],
-        [900, "CM"],
-        [500, "D"],
-        [400, "CD"],
-        [100, "C"],
-        [90, "XC"],
-        [50, "L"],
-        [40, "XL"],
-        [10, "X"],
-        [9, "IX"],
-        [5, "V"],
-        [4, "IV"],
-        [1, "I"],
-    ];
-    let remaining = rounded;
-    let out = "";
-    for (const [amount, numeral] of parts) {
-        while (remaining >= amount) {
-            out += numeral;
-            remaining -= amount;
-        }
-    }
-    return out;
-}
-
-function shadowColorFor(hexColor: string): string {
-    const rgb = parseInt(hexColor.slice(1), 16);
-    const quartered = (rgb >> 2) & 0x3f3f3f;
-    return `#${quartered.toString(16).padStart(6, "0")}`;
-}
-
-function mcLine(text: string, prefix: string): HTMLElement {
-    const line = document.createElement("div");
-    line.className = "mc-line";
-    line.replaceChildren(...formatMinecraftText(`${prefix}${text}`));
-    return line;
-}
-
-function itemInitials(displayName: string): string {
-    const plain = displayName.replace(/[&§][0-9a-fk-or]/gi, "").trim();
-    const words = plain.split(/\s+/).filter(Boolean);
-    if (words.length === 0) return "?";
-    if (words.length === 1) return words[0].slice(0, 3).toUpperCase();
-    return words.slice(0, 2).map((word) => word.charAt(0).toUpperCase()).join("");
+function itemViewFromState(state: State): ItemView {
+    return {
+        itemName: state.itemName,
+        metadata: state.metadata ?? 0,
+        count: state.count,
+        displayName: state.displayName,
+        lore: trimTrailingEmptyLines(state.lore),
+        enchants: state.enchants,
+    };
 }
 
 function loreRow(line: string, index: number): string {
@@ -637,122 +557,6 @@ function enchantRow(enchant: { name: string; level: number }, index: number): st
             <button id="enchant-remove-${index}" class="secondary icon" type="button" title="Remove">×</button>
         </div>
     `;
-}
-
-const MAGIC_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!?#@$%&";
-let magicTickerStarted = false;
-
-function formatMinecraftText(value: string): Node[] {
-    const nodes: Node[] = [];
-    let color = "";
-    let bold = false;
-    let italic = false;
-    let underline = false;
-    let strike = false;
-    let magic = false;
-    let current = "";
-    const sectioned = ampToSection(value);
-
-    function flush(): void {
-        if (!current) return;
-        const span = document.createElement("span");
-        if (magic) {
-            span.className = "mc-magic";
-            for (const ch of current) {
-                span.appendChild(magicCharNode(ch));
-            }
-        } else {
-            span.textContent = current;
-        }
-        if (color) {
-            span.style.color = color;
-            span.style.textShadow = `2px 2px ${shadowColorFor(color)}`;
-        }
-        if (bold) span.style.fontWeight = "700";
-        if (italic) span.style.fontStyle = "italic";
-        const decorations = [underline ? "underline" : "", strike ? "line-through" : ""]
-            .filter(Boolean)
-            .join(" ");
-        if (decorations) span.style.textDecoration = decorations;
-        nodes.push(span);
-        current = "";
-    }
-
-    for (let i = 0; i < sectioned.length; i++) {
-        const ch = sectioned[i];
-        if (ch !== "§" || i + 1 >= sectioned.length) {
-            current += ch;
-            continue;
-        }
-        const code = sectioned[++i].toLowerCase();
-        flush();
-        if (FORMAT_COLORS[code]) {
-            color = FORMAT_COLORS[code];
-            bold = false;
-            italic = false;
-            underline = false;
-            strike = false;
-            magic = false;
-        } else if (code === "k") {
-            magic = true;
-        } else if (code === "l") {
-            bold = true;
-        } else if (code === "o") {
-            italic = true;
-        } else if (code === "n") {
-            underline = true;
-        } else if (code === "m") {
-            strike = true;
-        } else if (code === "r") {
-            color = "";
-            bold = false;
-            italic = false;
-            underline = false;
-            strike = false;
-            magic = false;
-        }
-    }
-    flush();
-    return nodes;
-}
-
-function startMagicTicker(): void {
-    if (magicTickerStarted) return;
-    magicTickerStarted = true;
-    window.setInterval(() => {
-        for (const node of document.querySelectorAll<HTMLElement>(".mc-magic-char")) {
-            const width = Number(node.dataset.mcWidth ?? 6);
-            node.textContent = randomMagicChar(width);
-        }
-    }, 90);
-}
-
-function magicCharNode(original: string): HTMLElement {
-    const width = minecraftCharWidth(original);
-    const span = document.createElement("span");
-    span.className = "mc-magic-char";
-    span.dataset.mcWidth = String(width);
-    span.style.width = `${Math.max(1, width) * 2}px`;
-    span.textContent = randomMagicChar(width);
-    return span;
-}
-
-function randomMagicChar(width: number): string {
-    const candidates = MAGIC_CHARS
-        .split("")
-        .filter((ch) => minecraftCharWidth(ch) === width);
-    const pool = candidates.length > 0 ? candidates : MAGIC_CHARS.split("");
-    return pool[Math.floor(Math.random() * pool.length)];
-}
-
-function minecraftCharWidth(ch: string): number {
-    if (ch === " ") return 4;
-    if ("!.,:;i|'".includes(ch)) return 2;
-    if ("l`".includes(ch)) return 3;
-    if ("I[]t".includes(ch)) return 4;
-    if ("fk{}<>\"*()".includes(ch)) return 5;
-    if (ch.charCodeAt(0) > 127) return 7;
-    return 6;
 }
 
 function bindInput(id: string, handler: (value: string) => void): void {

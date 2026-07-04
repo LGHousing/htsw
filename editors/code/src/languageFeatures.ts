@@ -19,6 +19,7 @@ import {
     decodeJsonStringContent,
     encodeJsonString,
 } from "./snbtFormat";
+import { isPathInExcludedDiagnosticFolder } from "./diagnosticExclusions";
 
 export { CompletionAdapter, SnbtCompletionAdapter } from "./completions";
 
@@ -123,7 +124,13 @@ export class DiagnosticsAdapter {
             vscode.workspace.onDidOpenTextDocument((document) => this.scheduleValidate(document))
         );
         this.disposables.push(
-            vscode.workspace.onDidChangeTextDocument((e) => this.scheduleValidate(e.document))
+            vscode.workspace.onDidChangeTextDocument((e) => {
+                if (e.contentChanges.length > 0 && !e.document.isDirty && this.isSupportedDocument(e.document)) {
+                    // VS Code synced an external disk change or undo-to-saved into the buffer.
+                    bumpWorkspaceGeneration();
+                }
+                this.scheduleValidate(e.document);
+            })
         );
         this.disposables.push(
             vscode.workspace.onDidSaveTextDocument((document) => this.scheduleValidate(document))
@@ -611,31 +618,13 @@ export class DiagnosticsAdapter {
 
     private isExcludedUri(uri: vscode.Uri): boolean {
         if (uri.scheme !== "file") return false;
-
-        return this.getContainingWorkspaceFolders(uri).some((workspaceFolder) => {
-            const relativePath = this.normalizePath(
-                path.relative(workspaceFolder.uri.fsPath, uri.fsPath)
-            );
-            if (!relativePath || relativePath.startsWith("../")) return false;
-
-            return this.getExcludedFolders(workspaceFolder.uri).some(
-                (folder) => relativePath === folder || relativePath.startsWith(`${folder}/`)
-            );
-        });
+        return isPathInExcludedDiagnosticFolder(uri.fsPath);
     }
 
     private isImportJsonDocument(document: vscode.TextDocument): boolean {
         if (document.languageId !== "json" && document.languageId !== "jsonc") return false;
         const filePath = document.uri.fsPath.toLowerCase();
         return filePath.endsWith("import.json") || filePath.endsWith(".import.json");
-    }
-
-    private getExcludedFolders(uri: vscode.Uri): string[] {
-        return vscode.workspace
-            .getConfiguration("htsw", uri)
-            .get<string[]>("diagnostics.excludeFolders", [])
-            .map((folder) => this.normalizePath(folder).replace(/^\/+|\/+$/g, ""))
-            .filter(Boolean);
     }
 
     private getContainingWorkspaceFolders(uri: vscode.Uri): vscode.WorkspaceFolder[] {
