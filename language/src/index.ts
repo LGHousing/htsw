@@ -16,6 +16,7 @@ export * from "./spanTable";
 export * from "./long";
 export * from "./importjson/metadata";
 export * from "./importablePaths";
+export * from "./diagnosticAttribution";
 
 export * as types from "./types";
 export * as helpers from "./helpers"
