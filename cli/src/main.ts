@@ -9,6 +9,7 @@ import { printDiagnostic } from "./diagnostics";
 import { Importable } from "htsw/types";
 import { run } from "./runtime";
 import { runAgents } from "./agents";
+import { runUpgrade } from "./upgrade";
 
 class NodeFileLoader {
     fileExists(filePath: string): boolean {
@@ -52,6 +53,14 @@ function main(): void {
         return;
     }
 
+    if (cmd === "upgrade") {
+        runUpgrade(args.slice(1)).catch((err) => {
+            console.error(String((err as Error)?.message ?? err));
+            process.exit(1);
+        });
+        return;
+    }
+
     console.error(`Unknown command '${cmd}'.`);
     printUsage();
     process.exit(2);
@@ -64,6 +73,7 @@ function printUsage(): void {
     console.log("  check [path]     Parse a file and print diagnostics.");
     console.log("  run [path]       Parse and run htsw:main.");
     console.log("  agents install   Install the agent guides into a project.");
+    console.log("  upgrade          Update the htsw CLI in place.");
     console.log("");
     console.log("Run 'htsw <command> --help' for details.");
 }

@@ -57,3 +57,4 @@ case ":$PATH:" in
 esac
 
 say "Next: run 'htsw agents install' inside a project to add the agent guides."
+say "Update later in place with 'htsw upgrade'."

@@ -56,9 +56,9 @@ function runAgentsInstall(args: string[]): void {
         }
     }
 
-    if (Object.keys(GUIDES).length === 0) {
+    if (!Object.keys(GUIDES).some((key) => key.startsWith("agents/"))) {
         console.error(
-            "This htsw build carries no guides.\n" +
+            "This htsw build carries no agent guides.\n" +
             "Rebuild the CLI with HTSW_DOCS_PATH set to a LGHousing/docs clone, " +
             "or reinstall a release build."
         );
@@ -108,7 +108,7 @@ function resolveTargets(dir: string, explicit: Target[], all: boolean): Target[]
 
 function writeGuides(dir: string): number {
     const root = path.join(dir, ".htsw");
-    for (const sub of ["agents", "housing"]) {
+    for (const sub of ["agents", "housing", "htsw"]) {
         fs.rmSync(path.join(root, sub), { recursive: true, force: true });
     }
     let count = 0;
