@@ -8,9 +8,6 @@ coverage/
 # extension
 *.vsix
 
-# CLI: guides embedded at build time from HTSW_DOCS_PATH (source is LGHousing/docs)
-cli/src/generated/
-
 # mdBook output
 book/
 

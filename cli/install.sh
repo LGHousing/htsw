@@ -56,5 +56,4 @@ case ":$PATH:" in
     *) say "note: $BIN_DIR is not on PATH. Add it, e.g.:  export PATH=\"$BIN_DIR:\$PATH\"" ;;
 esac
 
-say "Next: run 'htsw agents install' inside a project to add the agent guides."
-say "Update later in place with 'htsw upgrade'."
+say "Update in place later with 'htsw upgrade'."

@@ -8,7 +8,6 @@ import { ansi } from "./ansi";
 import { printDiagnostic } from "./diagnostics";
 import { Importable } from "htsw/types";
 import { run } from "./runtime";
-import { runAgents } from "./agents";
 import { runUpgrade } from "./upgrade";
 
 class NodeFileLoader {
@@ -48,11 +47,6 @@ function main(): void {
         return;
     }
 
-    if (cmd === "agents") {
-        runAgents(args.slice(1));
-        return;
-    }
-
     if (cmd === "upgrade") {
         runUpgrade(args.slice(1)).catch((err) => {
             console.error(String((err as Error)?.message ?? err));
@@ -72,7 +66,6 @@ function printUsage(): void {
     console.log("Commands:");
     console.log("  check [path]     Parse a file and print diagnostics.");
     console.log("  run [path]       Parse and run htsw:main.");
-    console.log("  agents install   Install the agent guides into a project.");
     console.log("  upgrade          Update the htsw CLI in place.");
     console.log("");
     console.log("Run 'htsw <command> --help' for details.");

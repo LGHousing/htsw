@@ -5,7 +5,7 @@ Produces, under dist-publish/:
   ct/latest.json                {version, zip, sha256, notes?}
   vscode/htsw-plus-plus-<v>.vsix
   vscode/latest.json            {version, vsix, sha256, notes?}
-  cli/htsw-cli-<version>.js     bundled CLI with the LGHousing/docs guides embedded
+  cli/htsw-cli-<version>.js     bundled CLI (check / run / upgrade)
   cli/install.sh                curl|sh installer
   cli/latest.json               {version, cli, sha256, notes?}
 
@@ -24,7 +24,7 @@ Usage:
   python publish.py --no-upload     # build + stage locally only
   python publish.py --ct-only
   python publish.py --vscode-only
-  python publish.py --cli-only      # needs HTSW_DOCS_PATH (a LGHousing/docs clone)
+  python publish.py --cli-only
 
 Set HTSW_RELEASE_NOTES, or HTSW_RELEASE_TAG when `gh` is authenticated, to
 include GitHub release notes in latest.json.
@@ -172,16 +172,8 @@ def build_vscode(do_build: bool) -> tuple[Path, str]:
 
 
 def build_cli(do_build: bool) -> tuple[Path, str]:
-    # The CLI embeds the private LGHousing/docs guides at build time, so the
-    # build needs HTSW_DOCS_PATH pointing at a local clone of that repo.
     if do_build:
-        docs_path = os.getenv("HTSW_DOCS_PATH", "").strip()
-        if not docs_path or not Path(docs_path).is_dir():
-            raise RuntimeError(
-                "HTSW_DOCS_PATH must point at a LGHousing/docs clone to embed the guides "
-                "into the CLI build."
-            )
-        run(["npm", "run", "build"], CLI_DIR, env={**os.environ, "HTSW_DOCS_PATH": docs_path})
+        run(["npm", "run", "build"], CLI_DIR)
 
     bundle = CLI_DIR / "dist" / "htsw-cli.js"
     if not bundle.is_file():
