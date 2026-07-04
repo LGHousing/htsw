@@ -4,15 +4,7 @@ export type ImportJsonFileNode = {
     path: string;
     importables: Importable[];
     includes: ImportJsonFileNode[];
-    /**
-     * A repeat include of a file whose contents are recorded under another
-     * ("home") node in this tree. Reference nodes are leaves: their
-     * importables and includes are always empty. Cyclic includes are NOT
-     * recorded at all — a cycle is a parse error, not a reference.
-     */
     reference?: boolean;
-    /** An include whose target file doesn't exist — a leaf, so tree
-     * consumers can render the broken edge where it was declared. */
     missing?: boolean;
 };
 
@@ -20,7 +12,7 @@ export class ImportJsonParseMetadata {
     fileTree: ImportJsonFileNode | null = null;
     houseUuid: string | null = null;
 
-    private activePaths: string[] = [];
+    private visitedPaths = new Set<string>();
     private declaringPathCache: WeakMap<Importable, string> | null = null;
 
     beginFile(path: string, parent?: ImportJsonFileNode): ImportJsonFileNode {
@@ -31,35 +23,13 @@ export class ImportJsonParseMetadata {
         };
         if (parent === undefined) this.fileTree = node;
         else parent.includes.push(node);
-        this.activePaths.push(path);
+        this.visitedPaths.add(path);
         this.declaringPathCache = null;
         return node;
     }
 
-    endFile(path: string): void {
-        const top = this.activePaths.length - 1;
-        if (this.activePaths[top] === path) {
-            this.activePaths.pop();
-            return;
-        }
-        const index = this.activePaths.indexOf(path);
-        if (index !== -1) this.activePaths.splice(index, 1);
-    }
-
-    activeDepth(): number {
-        return this.activePaths.length;
-    }
-
-    isActive(path: string): boolean {
-        return this.activePaths.indexOf(path) !== -1;
-    }
-
-    cyclePath(path: string): string {
-        return this.activePaths.concat([path]).join(" -> ");
-    }
-
     hasVisited(path: string): boolean {
-        return treeContainsPath(this.fileTree, path);
+        return this.visitedPaths.has(path);
     }
 
     recordReference(fromNode: ImportJsonFileNode, path: string): void {
@@ -93,19 +63,20 @@ export class ImportJsonParseMetadata {
         const root = this.fileTree;
         if (root === null) return;
 
-        type Edge = { parent: ImportJsonFileNode; index: number };
+        type Edge = { parent: ImportJsonFileNode; index: number; backEdge: boolean };
         const edgesByPath = new Map<string, Edge[]>();
-        const visit = (node: ImportJsonFileNode): void => {
+        const visit = (node: ImportJsonFileNode, stack: string[]): void => {
             for (let index = 0; index < node.includes.length; index++) {
                 const child = node.includes[index];
                 if (child.missing === true) continue;
+                const edge = { parent: node, index, backEdge: stack.includes(child.path) };
                 const edges = edgesByPath.get(child.path);
-                if (edges === undefined) edgesByPath.set(child.path, [{ parent: node, index }]);
-                else edges.push({ parent: node, index });
-                if (child.reference !== true) visit(child);
+                if (edges === undefined) edgesByPath.set(child.path, [edge]);
+                else edges.push(edge);
+                if (child.reference !== true) visit(child, stack.concat([child.path]));
             }
         };
-        visit(root);
+        visit(root, [root.path]);
 
         for (const [childPath, edges] of edgesByPath) {
             if (edges.length < 2) continue;
@@ -114,6 +85,7 @@ export class ImportJsonParseMetadata {
             let designated: Edge | undefined;
             for (const edge of edges) {
                 if (edge.parent.includes[edge.index].reference !== true) home = edge;
+                if (edge.backEdge) continue;
                 const parentDir = dirKey(edge.parent.path);
                 if (!childDir.startsWith(parentDir + "/")) continue;
                 if (designated === undefined || dirKey(designated.parent.path).length < parentDir.length) {
@@ -121,10 +93,6 @@ export class ImportJsonParseMetadata {
                 }
             }
             if (home === undefined || designated === undefined || designated === home) continue;
-            // Swap in place (arrays never change length, so the other
-            // recorded indices stay valid). A reference edge can never sit
-            // inside the moved subtree: that shape is a cycle, which the
-            // parser rejects without recording a node.
             designated.parent.includes[designated.index] = home.parent.includes[home.index];
             home.parent.includes[home.index] = {
                 path: childPath,
@@ -160,16 +128,4 @@ function dirKey(path: string): string {
     const norm = path.split("\\").join("/");
     const slash = norm.lastIndexOf("/");
     return slash < 0 ? "" : norm.substring(0, slash);
-}
-
-// "Visited" means fully parsed: reference and missing leaves don't count,
-// so a file that was missing at one edge still gets its own missing node
-// (and its own diagnostic) at every other edge that includes it.
-function treeContainsPath(node: ImportJsonFileNode | null, path: string): boolean {
-    if (node === null) return false;
-    if (node.reference !== true && node.missing !== true && node.path === path) return true;
-    for (const child of node.includes) {
-        if (treeContainsPath(child, path)) return true;
-    }
-    return false;
 }

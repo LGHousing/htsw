@@ -10,12 +10,10 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
-  pages: write
-  id-token: write
+  contents: read
 
 concurrency:
-  group: pages
+  group: docs
   cancel-in-progress: false
 
 jobs:
@@ -51,8 +49,24 @@ jobs:
       - name: Build book
         run: mdbook build
 
-      - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./book
+      - name: Publish docs to VM
+        env:
+          DEPLOY_KEY: ${{ secrets.DOCS_DEPLOY_KEY }}
+          DEPLOY_HOST: ${{ secrets.HTSW_DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.HTSW_DEPLOY_USER }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.HTSW_DEPLOY_KNOWN_HOSTS }}
+        run: |
+          if [ -z "${DEPLOY_KEY}" ]; then
+            echo "::notice::DOCS_DEPLOY_KEY secret not set; skipping docs publish."
+            exit 0
+          fi
+          mkdir -p ~/.ssh
+          printf '%s\n' "${DEPLOY_KEY}" > ~/.ssh/htsw-docs-deploy
+          chmod 600 ~/.ssh/htsw-docs-deploy
+          printf '%s\n' "${DEPLOY_KNOWN_HOSTS}" > ~/.ssh/htsw-docs-deploy-known-hosts
+          mkdir -p dist-docs && cp -r book dist-docs/htsw
+          tar -C dist-docs -cf - htsw | ssh \
+            -i ~/.ssh/htsw-docs-deploy \
+            -o IdentitiesOnly=yes \
+            -o UserKnownHostsFile=~/.ssh/htsw-docs-deploy-known-hosts \
+            "${DEPLOY_USER}@${DEPLOY_HOST}" deploy

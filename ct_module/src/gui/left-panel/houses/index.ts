@@ -438,12 +438,12 @@ function emptyState(): Element {
     });
 }
 
-export function HousesView(): Element {
+export function HousesView(bodyW: number): Element {
     return Col({
         style: { gap: 6, height: { kind: "grow" }, padding: 4 },
         children: () => {
             if (knownHouses().length === 0) return [emptyState()];
-            return [housePickerRow(), typeBrowserSection(viewedUuid)];
+            return [housePickerRow(), typeBrowserSection(viewedUuid, bodyW - 8)];
         },
     });
 }

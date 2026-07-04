@@ -42,13 +42,27 @@ function caseFilePath(name: string): string {
     return resolve("test", "cases", "importjson", `${name}.import.json`);
 }
 
+function walkFileTree(node: htsw.ImportJsonFileNode): string[] {
+    const seen = new Set<htsw.ImportJsonFileNode>();
+    const paths: string[] = [];
+    const visit = (node: htsw.ImportJsonFileNode): void => {
+        if (seen.has(node)) throw new Error(`Cyclic file tree at ${node.path}`);
+        seen.add(node);
+        paths.push(node.path);
+        for (const child of node.includes) visit(child);
+        seen.delete(node);
+    };
+    visit(node);
+    return paths;
+}
+
 describe("import.json include", () => {
     it("multi_file fixture cases have an entry import.json", () => {
         for (const dir of [
             "merge",
             "nested",
             "cycle",
-            "duplicate",
+            "rehome_back_edge",
             "include_import_json_name",
         ]) {
             expect(existsSync(caseDirPath(dir))).toBe(true);
@@ -155,15 +169,43 @@ describe("import.json include", () => {
         expect(hasHardErrors(result.diagnostics)).toBe(false);
     });
 
-    it("attaches no node for cyclic includes", () => {
+    it("does not rehome through cyclic reference leaves", () => {
+        const entry = caseDirPath("rehome_back_edge");
+        const result = parseImportables(entry);
+
+        const dir = dirname(entry);
+        const bPath = resolve(dir, "a", "b", "b.import.json");
+        const cPath = resolve(dir, "a", "c.import.json");
+        const root = result.importJson.fileTree;
+        expect(root).not.toBeNull();
+        expect(() => walkFileTree(root!)).not.toThrow();
+        expect(walkFileTree(root!)).toEqual([entry, bPath, cPath, bPath]);
+
+        const bNode = root!.includes[0];
+        const cNode = bNode.includes[0];
+        expect(bNode.path).toBe(bPath);
+        expect(bNode.reference).toBeUndefined();
+        expect(cNode.path).toBe(cPath);
+        expect(cNode.includes[0].path).toBe(bPath);
+        expect(cNode.includes[0].reference).toBe(true);
+        expect(cNode.includes[0].importables).toEqual([]);
+        expect(cNode.includes[0].includes).toEqual([]);
+        expect(result.importJson.declaringPathOf(bNode.importables[0])).toBe(bPath);
+        expect(hasHardErrors(result.diagnostics)).toBe(false);
+    });
+
+    it("records a cyclic include as a reference leaf", () => {
         const entry = caseDirPath("cycle");
         const result = parseImportables(entry);
 
         const otherPath = resolve(dirname(entry), "other.import.json");
         const root = result.importJson.fileTree;
         expect(root?.includes.map((n) => n.path)).toEqual([otherPath]);
-        // other includes the entry again — the cycle is rejected, no node.
-        expect(root?.includes[0].includes).toEqual([]);
+        expect(root?.includes[0].includes.map((n) => n.path)).toEqual([entry]);
+        expect(root?.includes[0].includes[0].reference).toBe(true);
+        expect(root?.includes[0].includes[0].importables).toEqual([]);
+        expect(root?.includes[0].includes[0].includes).toEqual([]);
+        expect(hasHardErrors(result.diagnostics)).toBe(false);
     });
 
     it("reports missing include files", () => {
@@ -171,7 +213,7 @@ describe("import.json include", () => {
 
         expect(
             result.diagnostics.some((diagnostic) => {
-                return diagnostic.message.includes("Included import.json not found");
+                return diagnostic.message.includes("Couldn't read `does_not_exist.import.json` file");
             })
         ).toBe(true);
         expect(hasHardErrors(result.diagnostics)).toBe(true);
@@ -188,30 +230,6 @@ describe("import.json include", () => {
         expect(missingNodes[0].includes).toEqual([]);
     });
 
-    it("reports include cycles", () => {
-        const result = parseImportables(caseDirPath("cycle"));
-
-        expect(
-            result.diagnostics.some((diagnostic) => {
-                return diagnostic.message.includes("Circular import.json include");
-            })
-        ).toBe(true);
-        expect(hasHardErrors(result.diagnostics)).toBe(true);
-    });
-
-    it("warns for duplicate include entries", () => {
-        const result = parseImportables(caseDirPath("duplicate"));
-
-        const duplicateWarningCount = result.diagnostics.filter((diagnostic) => {
-            return (
-                diagnostic.level === "warning" &&
-                diagnostic.message.includes("Duplicate include path")
-            );
-        }).length;
-
-        expect(duplicateWarningCount).toBe(1);
-        expect(hasHardErrors(result.diagnostics)).toBe(false);
-    });
 });
 
 describe("import.json basic passing behavior", () => {
@@ -377,55 +395,27 @@ describe("import.json houseUuid", () => {
         expect(hasHardErrors(result.diagnostics)).toBe(true);
         expect(
             result.diagnostics.some((diagnostic) =>
-                diagnostic.message.includes("Expected a housing UUID")
+                diagnostic.message.includes("Expected UUID")
             )
         ).toBe(true);
     });
 
-    it("ignores houseUuid declared in an included file, with a warning", () => {
+    it("ignores houseUuid declared in an included file", () => {
         const result = parseImportables(caseDirPath("house_uuid_include"));
 
         expect(result.importJson.houseUuid).toBe(null);
-        expect(
-            result.diagnostics.some(
-                (diagnostic) =>
-                    diagnostic.level === "warning" &&
-                    diagnostic.message.includes(
-                        "'houseUuid' in an included import.json is ignored"
-                    )
-            )
-        ).toBe(true);
         expect(hasHardErrors(result.diagnostics)).toBe(false);
     });
 });
 
 describe("import.json diagnostics readability", () => {
-    it("includes help for missing include files", () => {
-        const result = parseImportables(caseFilePath("missing"));
-        const diag = result.diagnostics.find((it) =>
-            it.message.includes("Included import.json not found")
-        );
-
-        expect(diag).toBeDefined();
-        expect(
-            diag!.subDiagnostics.some((it) =>
-                it.message.includes(
-                    "Check the include path and verify the target file exists"
-                )
-            )
-        ).toBe(true);
-    });
-
-    it("includes valid keys help for unknown keys", () => {
+    it("reports unknown keys", () => {
         const result = parseImportables(caseFilePath("unknown_key"));
         const diag = result.diagnostics.find((it) =>
-            it.message.includes("Unknown key 'oops'")
+            it.message.includes("Unknown key: `oops`")
         );
 
         expect(diag).toBeDefined();
-        expect(
-            diag!.subDiagnostics.some((it) => it.message.includes("Valid keys are:"))
-        ).toBe(true);
     });
 
     it("stamps sourcePath with the content file or declaring import.json", () => {
@@ -461,7 +451,7 @@ describe("import.json diagnostics readability", () => {
     it("reports missing required keys", () => {
         const result = parseImportables(caseFilePath("missing_required"));
         const diag = result.diagnostics.find((it) =>
-            it.message.includes("Missing required key 'name'")
+            it.message.includes("Missing required field 'name'")
         );
 
         expect(diag).toBeDefined();

@@ -55,9 +55,8 @@ export type HouseContentType = {
     // as verified knowledge (slow; explicit) — the export driver in read-only
     // mode. `onlyNames` limits the pass to a selection; omitted = whole house.
     deepRead?: (onlyNames?: string[]) => void;
-    edit?: (name: string) => void;
+    rowActions?: { label: string; icon: IconName; run: (name: string) => void }[];
     remove?: (name: string) => void;
-    run?: (name: string) => void;
     // Present only for types that can be written into the loaded import.json.
     // Export reads the live housing menu, so the view still gates it on standing
     // in the house. A type without this hook is browse-only.
@@ -86,14 +85,24 @@ export const HOUSE_CONTENT_TYPES: HouseContentType[] = [
         scan: scanHouseFunctions,
         scanInFlight: isFunctionScanInFlight,
         deepRead: makeDeepRead("FUNCTION", "function", readFunctions, isFunctionScanInFlight),
-        edit: (name) => ChatLib.command(`function edit ${name}`),
+        rowActions: [
+            {
+                label: "Run",
+                icon: Icons.play,
+                run: (name) => ChatLib.command(`function run ${name}`),
+            },
+            {
+                label: "Edit",
+                icon: Icons.pencil,
+                run: (name) => ChatLib.command(`function edit ${name}`),
+            },
+        ],
         remove: (name) => ChatLib.command(`function delete ${name}`),
-        run: (name) => ChatLib.command(`function run ${name}`),
         export: exportHook({ type: "FUNCTION", label: "function", read: readFunctions }),
     },
     {
-        // Events are a fixed enumerated set — no per-name edit command and no
-        // create/delete, so this is browse + export only.
+        // Events are a fixed enumerated set: rows open the shared /eventactions
+        // page because Housing has no per-name edit command or create/delete.
         type: "EVENT",
         label: "Events",
         icon: Icons.zap,
@@ -102,6 +111,13 @@ export const HOUSE_CONTENT_TYPES: HouseContentType[] = [
         scan: scanHouseEvents,
         scanInFlight: isEventScanInFlight,
         deepRead: makeDeepRead("EVENT", "event", readEvents, isEventScanInFlight),
+        rowActions: [
+            {
+                label: "Open /eventactions",
+                icon: Icons.externalLink,
+                run: () => ChatLib.command("eventactions"),
+            },
+        ],
         export: exportHook({ type: "EVENT", label: "event", read: readEvents }),
     },
     {
@@ -113,7 +129,18 @@ export const HOUSE_CONTENT_TYPES: HouseContentType[] = [
         scan: scanHouseMenus,
         scanInFlight: isMenuScanInFlight,
         deepRead: makeDeepRead("MENU", "menu", readMenus, isMenuScanInFlight),
-        edit: (name) => ChatLib.command(`menu edit ${name}`),
+        rowActions: [
+            {
+                label: "View",
+                icon: Icons.eye,
+                run: (name) => ChatLib.command(`menu display ${name}`),
+            },
+            {
+                label: "Edit",
+                icon: Icons.pencil,
+                run: (name) => ChatLib.command(`menu edit ${name}`),
+            },
+        ],
         export: exportHook({ type: "MENU", label: "menu", read: readMenus }),
     },
     {
@@ -125,7 +152,13 @@ export const HOUSE_CONTENT_TYPES: HouseContentType[] = [
         scan: scanHouseRegions,
         scanInFlight: isRegionScanInFlight,
         deepRead: makeDeepRead("REGION", "region", readRegions, isRegionScanInFlight),
-        edit: (name) => ChatLib.command(`region edit ${name}`),
+        rowActions: [
+            {
+                label: "Edit",
+                icon: Icons.pencil,
+                run: (name) => ChatLib.command(`region edit ${name}`),
+            },
+        ],
         remove: (name) => ChatLib.command(`region delete ${name}`),
         export: exportHook({ type: "REGION", label: "region", read: readRegions }),
     },
@@ -138,7 +171,14 @@ export const HOUSE_CONTENT_TYPES: HouseContentType[] = [
         scan: scanHouseCommands,
         scanInFlight: isCommandScanInFlight,
         deepRead: makeDeepRead("COMMAND", "command", readCommands, isCommandScanInFlight),
-        edit: (name) => ChatLib.command(`command edit ${name}`),
+        rowActions: [
+            { label: "Run", icon: Icons.play, run: (name) => ChatLib.command(name) },
+            {
+                label: "Edit",
+                icon: Icons.pencil,
+                run: (name) => ChatLib.command(`command edit ${name}`),
+            },
+        ],
         remove: (name) => ChatLib.command(`command delete ${name}`),
         export: exportHook({ type: "COMMAND", label: "command", read: readCommands }),
     },
