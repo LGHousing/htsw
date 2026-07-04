@@ -35,7 +35,7 @@ After ChatTriggers is installed, unzip the mod to
 ## Documentation / Guide
 
 Documentation is available at
- [lghousing.github.io/htsw](https://lghousing.github.io/htsw/).
+[docs.legendarygames.dev/htsw](https://docs.legendarygames.dev/htsw/).
 
 A collection of examples is [here](./examples).
 
