@@ -64,14 +64,6 @@ export class ItemCaptureRegistry {
         this.seedHash(name, canonicalItemKey(getItemFromNbt(nbt)), displayNameFromTag(nbt));
     }
 
-    seedSnbtText(name: string, snbt: string): void {
-        let displayName: string | null = null;
-        try {
-            displayName = displayNameFromTag(htsw.nbt.parseSnbtText(snbt));
-        } catch (_e) {}
-        this.seedHash(name, canonicalItemKey(getItemFromSnbt(snbt)), displayName);
-    }
-
     private seedHash(name: string, hash: string, displayName: string | null): void {
         if (this.byHash[hash] !== undefined) return; // first declaration wins
         if (this.nameToHash[name] !== undefined) return;

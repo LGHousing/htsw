@@ -6,7 +6,6 @@ import {
     buildTrustPlan,
     deleteImportableCache,
     importableHash,
-    itemSnbtCachePath,
     readImportableCache,
 } from "../importCache";
 import { importableCanonicalParts } from "../importCache/hash";
@@ -197,7 +196,7 @@ async function verifyFixture(
         fixture.parsed.value,
         fixture.parsed.value
     );
-    const itemCaptures = createFixtureItemCaptures(housingUuid, fixture);
+    const itemCaptures = createFixtureItemCaptures(fixture);
     const session: ImportSession = {
         parsed: fixture.parsed,
         items: createItemRegistry(fixture.parsed.value, fixture.parsed.gcx),
@@ -372,7 +371,6 @@ function appendHashDiffDetail(
 }
 
 function createFixtureItemCaptures(
-    housingUuid: string,
     fixture: ParsedTestFixture
 ): ItemCaptureRegistry {
     const captures = new ItemCaptureRegistry();
@@ -380,13 +378,7 @@ function createFixtureItemCaptures(
     for (let i = 0; i < importables.length; i++) {
         const importable = importables[i];
         if (importable.type !== "ITEM") continue;
-        const cachePath = itemSnbtCachePath(housingUuid, importableHash(importable));
-        const cached = FileLib.exists(cachePath) ? FileLib.read(cachePath) : null;
-        if (cached !== null) {
-            captures.seedSnbtText(importable.name, String(cached));
-        } else {
-            captures.seed(importable.name, importable.nbt);
-        }
+        captures.seed(importable.name, importable.nbt);
     }
     return captures;
 }

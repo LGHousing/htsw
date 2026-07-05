@@ -6,9 +6,8 @@ export const IMPORT_CACHE_ROOT = "./htsw/.cache";
 
 /**
  * Per-importable-type subdirectory under the per-housing cache root.
- * Lowercase, plural-free, matches existing convention (`items/` is already
- * used for the SNBT cache so item importable-cache entries live next to it under
- * `item/`, intentionally singular for the new tree).
+ * Lowercase and singular by convention (e.g. the ITEM importable cache lives
+ * under `item/`).
  */
 function dirFor(type: Importable["type"]): string {
     switch (type) {
@@ -77,16 +76,6 @@ export function cachePathForId(
     identity: string
 ): string {
     return `${IMPORT_CACHE_ROOT}/${housingUuid}/${dirFor(type)}/${slug(identity)}.knowledge.json`;
-}
-
-/**
- * Per-housing SNBT cache for items with click actions. Distinct from the
- * `item/` importable-cache dir (which holds the .knowledge.json metadata) — this
- * stores the raw NBT we captured after editing so a later reference can
- * inject the same item without redoing the edits.
- */
-export function itemSnbtCachePath(housingUuid: string, hash: string): string {
-    return `${IMPORT_CACHE_ROOT}/${housingUuid}/items/${hash}.snbt`;
 }
 
 /**

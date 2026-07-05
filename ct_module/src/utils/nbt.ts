@@ -180,9 +180,7 @@ export function getItemFromNbt(nbt: Tag): Item {
 
 /**
  * Parse a Minecraft SNBT string (the format `Item.getRawNBT()` returns) into
- * a spawnable Item. Used to materialize cached, post-/edit item snapshots
- * from `./htsw/.cache/<uuid>/items/<hash>.snbt` for fields like GIVE_ITEM
- * that need the housing-tagged version of an item, not its raw source NBT.
+ * a spawnable Item.
  */
 export function getItemFromSnbt(snbt: string): Item {
     const compound = JsonToNBT.func_180713_a(/*parseStringIntoCompound*/ snbt);
