@@ -134,7 +134,7 @@ function itemPreviewForSub(nbt: ItemTag | undefined, fsPath: string): ItemPrevie
     }
 }
 
-export async function moveImportable(
+async function moveImportable(
     webview: vscode.Webview,
     importJsonPath: string,
     kind: ProjectImportableSummary["type"],
@@ -736,7 +736,7 @@ async function withDocAwareWrites<T>(run: (fs: ProjectFs) => T): Promise<T> {
  * moveImportableEntry via withDocAwareWrites. Throws on failure. Used by the
  * tree's right-click move and the module-visibility quick fix.
  */
-export async function moveImportableWithOpenDocs(
+async function moveImportableWithOpenDocs(
     entryJsonPath: string,
     section: Section,
     identity: string,

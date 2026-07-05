@@ -17,7 +17,7 @@ export function toForwardSlashes(s: string): string {
 }
 
 /** Lowercased forward-slash form — the key to use for path comparisons. */
-export function pathKey(p: string): string {
+function pathKey(p: string): string {
     return toForwardSlashes(p).toLowerCase();
 }
 

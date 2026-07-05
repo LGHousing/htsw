@@ -19,13 +19,11 @@ const INV_PACKET_SLOT = 26; // inventory row 2, column 9 (for HasItem and simila
  */
 export type StackMatcher = (a: any, b: any) => boolean;
 
-// The server rewrites item NBT on any round-trip — integral tags re-typed
-// (a source int echoes back as a byte), blank lore lines become "§7" — so
-// byte-exact areItemStacksEqual can never match a stack that lives
-// server-side against a source-built one. Compare through canonicalItemKey,
-// the one shared definition of item equivalence (also used by the drift hash
-// and capture matching).
-export function canonicalStacksEqual(left: any, right: any): boolean {
+// The server rewrites item NBT on any round-trip (integral tags re-typed, blank
+// lore lines become "§7"), so byte-exact areItemStacksEqual never matches a
+// server-side stack against a source-built one. Compare through canonicalItemKey,
+// the shared key defined in fields/itemTagCanonical.ts.
+function canonicalStacksEqual(left: any, right: any): boolean {
     return canonicalItemKey(new Item(left)) === canonicalItemKey(new Item(right));
 }
 

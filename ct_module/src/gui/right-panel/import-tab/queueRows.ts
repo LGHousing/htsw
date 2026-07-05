@@ -19,11 +19,9 @@ import {
     COLOR_ROW,
     COLOR_ROW_HOVER,
     COLOR_TEXT_DIM,
-    PHASE_APPLYING,
-    PHASE_HYDRATING,
-    PHASE_READING,
     SIZE_ROW_H,
 } from "../../lib/theme";
+import { PHASE_APPLYING, PHASE_HYDRATING, PHASE_READING } from "./phaseColors";
 
 import {
     getHousingUuid,

@@ -9,8 +9,6 @@ const confirmed: FileSelection[] = [];
 let preview: FileSelection | null = null;
 let active: FileSelection | null = null;
 
-export const LIVE_TAB_PATH = "__htsw_live_import__";
-
 export type Tab =
     | { kind: "file"; path: string; importJsonPath: string | null; confirmed: boolean }
     | { kind: "live"; path: string };
@@ -261,8 +259,4 @@ export function tabIndex(path: string, importJsonPath?: string | null): number {
         return confirmed.length;
     }
     return confirmedIndexFor(path, importJsonPath, exact);
-}
-
-export function tabCount(): number {
-    return confirmed.length + (preview === null ? 0 : 1);
 }

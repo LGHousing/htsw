@@ -151,15 +151,21 @@ async function readMenuSlotActions(
     return actions;
 }
 
+export type LiveMenuGrid = {
+    size: number | undefined;
+    gridSize: number;
+    slots: Array<{ slot: number; snbt: string; nameHint: string }>;
+};
+
 /**
- * Read the full live state of an already-open menu: size, grid size, and every
- * populated slot's item NBT + action list. The single live-menu read shared by
- * export and the import preread. Caller must have the menu editor open.
+ * Read only the grid: menu size and every populated slot's item NBT, in a
+ * single container read, without opening any slot's action editor. This is the
+ * cheap half of a menu read — the trusted import uses it to self-heal slot
+ * items against the live house while reusing cached action lists, the same way
+ * the function trust path reads the live top level and trusts unchanged nested
+ * lists. Caller must have the menu editor open.
  */
-export async function readLiveMenu(
-    ctx: TaskContext,
-    onReadProgress?: ProgressHandler
-): Promise<LiveMenu> {
+export async function snapshotLiveMenuGrid(ctx: TaskContext): Promise<LiveMenuGrid> {
     // Enter the actual slot grid (behind "Edit Menu Elements"). The grid
     // container's own slot count IS the menu size — `rows * 9` plus the 36
     // trailing player-inventory slots — so size needs no settings-screen read.
@@ -173,6 +179,26 @@ export async function readLiveMenu(
     const size = gridSize > 0 && gridSize % 9 === 0 ? gridSize / 9 : undefined;
 
     const snapshot = snapshotMenuSlots(gridSize);
+    return {
+        size,
+        gridSize,
+        slots: snapshot.map((s) => ({ slot: s.slotId, snbt: s.snbt, nameHint: s.nameHint })),
+    };
+}
+
+/**
+ * Read the full live state of an already-open menu: size, grid size, and every
+ * populated slot's item NBT + action list. The single live-menu read shared by
+ * export and the non-trusted import preread. Caller must have the menu editor
+ * open.
+ */
+export async function readLiveMenu(
+    ctx: TaskContext,
+    onReadProgress?: ProgressHandler
+): Promise<LiveMenu> {
+    const grid = await snapshotLiveMenuGrid(ctx);
+    const { size, gridSize } = grid;
+    const snapshot = grid.slots;
 
     // Progress is reported in cost-model units (the scale the learned
     // ms/unit rate prices), NOT slots — a slot is a full editor round-trip
@@ -214,7 +240,7 @@ export async function readLiveMenu(
 
     const slots: LiveMenuSlot[] = [];
     emitProgress();
-    for (const { slotId, snbt, nameHint } of snapshot) {
+    for (const { slot, snbt, nameHint } of snapshot) {
         inSlot = true;
         currentPhase = "reading";
         currentSlotReadingUnits = slotRoundTripUnits;
@@ -223,7 +249,7 @@ export async function readLiveMenu(
         emitProgress();
         const actions = await readMenuSlotActions(
             ctx,
-            slotId,
+            slot,
             onReadProgress === undefined
                 ? undefined
                 : (payload) => {
@@ -243,7 +269,7 @@ export async function readLiveMenu(
         currentSlotReadingUnits = 0;
         currentSlotHydratingUnits = 0;
         currentSlotCompletedUnits = 0;
-        slots.push({ slot: slotId, snbt, actions, nameHint });
+        slots.push({ slot, snbt, actions, nameHint });
         emitProgress();
     }
 

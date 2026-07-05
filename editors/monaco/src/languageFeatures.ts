@@ -1,6 +1,26 @@
 import { editor, IDisposable, languages, MarkerSeverity } from "monaco-editor";
-import * as htsl from "htsl/src";
-import * as common from "htsl-editor-common/src";
+import * as htsw from "htsw";
+import * as common from "htsw-editor-common";
+
+class StringFileLoader implements htsw.FileLoader {
+    constructor(private readonly src: string) {}
+
+    fileExists(_path: string): boolean {
+        return true;
+    }
+
+    readFile(_path: string): string {
+        return this.src;
+    }
+
+    getParentPath(_base: string): string {
+        return "";
+    }
+
+    resolvePath(_base: string, _other: string): string {
+        return "";
+    }
+}
 
 // --- inlay hints ---
 
@@ -94,27 +114,34 @@ export class DiagnosticsAdapter {
     }
 
     private validate(model: editor.ITextModel) {
-        const htslDiagnostics = htsl.diagnostics(model.getValue());
+        const sourceMap = new htsw.SourceMap(new StringFileLoader(model.getValue()));
+        const htslDiagnostics = htsw.parseActionsResult(sourceMap, "file.htsl").diagnostics;
 
-        const markers = htslDiagnostics.map((diagnostic) => {
-            const start = model.getPositionAt(diagnostic.span.start);
-            const end = model.getPositionAt(diagnostic.span.end);
+        const markers = htslDiagnostics.flatMap((diagnostic) => {
+            const primary =
+                diagnostic.spans.find((s) => s.kind === "primary") ?? diagnostic.spans[0];
+            if (!primary) return [];
 
-            return {
-                message: diagnostic.message,
-                severity: this.htslDiagnosticLevelToMarkerSeverity(diagnostic.level),
-                startLineNumber: start.lineNumber,
-                startColumn: start.column,
-                endLineNumber: end.lineNumber,
-                endColumn: end.column,
-            };
+            const start = model.getPositionAt(primary.span.start);
+            const end = model.getPositionAt(primary.span.end);
+
+            return [
+                {
+                    message: diagnostic.message,
+                    severity: this.htslDiagnosticLevelToMarkerSeverity(diagnostic.level),
+                    startLineNumber: start.lineNumber,
+                    startColumn: start.column,
+                    endLineNumber: end.lineNumber,
+                    endColumn: end.column,
+                },
+            ];
         });
 
         editor.setModelMarkers(model, "owner", markers);
     }
 
     private htslDiagnosticLevelToMarkerSeverity(
-        severity: htsl.DiagnosticLevel
+        severity: htsw.DiagnosticLevel
     ): MarkerSeverity {
         if (severity === "error") {
             return MarkerSeverity.Error;

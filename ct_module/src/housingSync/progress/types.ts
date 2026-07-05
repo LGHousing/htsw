@@ -40,6 +40,18 @@ export type TaskProgressEntry = {
     totalUnits: number;
 };
 
+/**
+ * The grid slot a MENU import is writing right now, with its item's display
+ * name, for the live panel. Null for non-menu importables and outside the
+ * apply pass.
+ */
+export type MenuSlotFocus = {
+    slot: number;
+    label: string | null;
+    index: number;
+    count: number;
+};
+
 export type TaskProgressActive = {
     key: string;
     type: Importable["type"];
@@ -49,6 +61,7 @@ export type TaskProgressActive = {
     totalUnits: number;
     phaseUnits: PhaseUnits;
     sync: ListSyncProgress | null;
+    currentSlot?: MenuSlotFocus | null;
 };
 
 export type TaskProgress = {

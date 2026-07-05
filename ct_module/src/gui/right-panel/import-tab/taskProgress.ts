@@ -131,10 +131,6 @@ export function getTaskEtcMs(): number | null {
     return Date.now() + Math.max(0, Math.round(secs * 1000));
 }
 
-export function getTaskMsPerUnit(): number {
-    return currentMsPerUnit();
-}
-
 export function getTaskElapsedMs(): number | null {
     return taskStartedAt === null ? null : Date.now() - taskStartedAt;
 }

@@ -23,7 +23,7 @@ import { getChatLines } from "./mcChat";
 
 export const CHAT_INPUT_ID = "htsw-chat-input";
 const CHAT_SCROLL_ID = "htsw-chat-scroll";
-export const CHAT_INPUT_H = 16;
+const CHAT_INPUT_H = 16;
 const CHAT_SCROLL_PAD_LEFT = 4;
 const CHAT_SCROLL_PAD_RIGHT = 0;
 

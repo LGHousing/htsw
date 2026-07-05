@@ -12,36 +12,12 @@ import {
     type ProjectFs,
 } from "htsw-editor-common/project";
 import { nodeProjectFs } from "../nodeProjectFs";
-import { renderWebviewHtml } from "./html";
 import type {
     ImportTarget,
     ItemEditorForm,
     ItemEditorFromHostMessage,
     ItemEditorToHostMessage,
 } from "./protocol";
-
-export class ItemEditorViewProvider implements vscode.WebviewViewProvider {
-    public static readonly viewType = "htsw.itemEditor";
-
-    public constructor(private readonly extensionUri: vscode.Uri) {}
-
-    public resolveWebviewView(view: vscode.WebviewView): void {
-        view.webview.html = renderWebviewHtml(view.webview, this.extensionUri, {
-            scriptName: "itemEditor.js",
-        });
-
-        view.webview.onDidReceiveMessage((message: ItemEditorToHostMessage) => {
-            void this.handleMessage(view, message);
-        });
-    }
-
-    private async handleMessage(
-        view: vscode.WebviewView,
-        message: ItemEditorToHostMessage,
-    ): Promise<void> {
-        await handleItemEditorMessage(view.webview, message);
-    }
-}
 
 export async function handleItemEditorMessage(
     webview: vscode.Webview,

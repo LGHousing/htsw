@@ -33,7 +33,7 @@ export type ResolvedSoundObject = {
     objectKey: string;
 };
 
-export async function resolveVersionJsonUrl(version: SoundVersionId): Promise<string> {
+async function resolveVersionJsonUrl(version: SoundVersionId): Promise<string> {
     for (const url of [MANIFEST_URL, MANIFEST_FALLBACK_URL]) {
         try {
             const manifest = await fetchJson<VersionManifest>(url);

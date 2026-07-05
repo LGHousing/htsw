@@ -1,4 +1,4 @@
-import type { Action, Condition, Importable } from "htsw/types";
+import type { Action, Condition, Importable, ImportableMenu } from "htsw/types";
 
 import TaskContext from "../tasks/context";
 import { getCurrentHousingUuid } from "../importCache";
@@ -9,7 +9,7 @@ import {
     readImportableCache,
 } from "../importCache";
 import { importableCanonicalParts } from "../importCache/hash";
-import { importableIdentity } from "../importables/identity";
+import { importableIdentity, importableKey } from "../importables/identity";
 import { createItemRegistry } from "../importables/itemRegistry";
 import {
     importSelectedImportables,
@@ -34,6 +34,8 @@ import { readEvents } from "../importables/events/readEvents";
 import { readCommands } from "../importables/commands/readCommands";
 import { readMenus } from "../importables/menus/readMenus";
 import { readRegions } from "../importables/regions/readRegions";
+import { readTeams } from "../importables/teams/readTeams";
+import { deleteTeam } from "../importables/teams/listTeams";
 import { createNpcLookupCache } from "../importables/npcs/listNpcs";
 import { listAllRegionNames } from "../importables/regions/listRegions";
 import {
@@ -153,6 +155,12 @@ async function runFixture(
             }
         }
         if (failures.length === 0) {
+            const trustFailures = await trustModeVerifyFixture(ctx, housingUuid, fixture);
+            for (let i = 0; i < trustFailures.length; i++) {
+                failures.push(trustFailures[i]);
+            }
+        }
+        if (failures.length === 0) {
             const readFailures = await deepReadVerifyFixture(ctx, housingUuid, fixture);
             for (let i = 0; i < readFailures.length; i++) {
                 failures.push(readFailures[i]);
@@ -238,6 +246,7 @@ const READERS_BY_TYPE: Partial<Record<Importable["type"], ReadFn>> = {
     COMMAND: readCommands,
     MENU: readMenus,
     REGION: readRegions,
+    TEAM: readTeams,
 };
 const DEEP_READ_ORDER: Importable["type"][] = [
     "FUNCTION",
@@ -245,6 +254,7 @@ const DEEP_READ_ORDER: Importable["type"][] = [
     "COMMAND",
     "MENU",
     "REGION",
+    "TEAM",
 ];
 
 // Deep-read verification: wipe each importable's cache entry, re-read it from
@@ -320,6 +330,167 @@ async function deepReadVerifyFixture(
         }
     }
     return failures;
+}
+
+// Trust-mode verification for the real edit-source-then-import loop. It runs
+// against the importer-written cache (the source itself), never a house read,
+// so it mirrors how menus are actually developed. Two invariants per menu:
+// re-importing the unchanged source is a whole-trusted no-op (the hash skip
+// decision and buildMenuDiff agree nothing changed), and a source with one
+// mutated slot is detected by the hash and produces exactly one op for that
+// slot. This is the menu counterpart to the function trust coverage in
+// trust.test.ts.
+async function trustModeVerifyFixture(
+    ctx: TaskContext,
+    housingUuid: string,
+    fixture: ParsedTestFixture
+): Promise<string[]> {
+    resetMenuNameSession();
+    const failures: string[] = [];
+    const importables = fixture.parsed.value;
+    for (let i = 0; i < importables.length; i++) {
+        const menu = importables[i];
+        if (menu.type !== "MENU") continue;
+
+        const session = trustModeSessionFor(housingUuid, fixture, [menu]);
+        const trust = session.trust.importables.get(
+            importableKey("MENU", importableIdentity(menu))
+        );
+        if (trust === undefined || !trust.wholeImportableTrusted) {
+            failures.push(
+                `menu ${menu.name}: re-importing the unchanged source is not whole-trusted`
+            );
+        }
+        const plan = await prereadImportable(ctx, menu, session);
+        const residuals = residualPlanOperations(plan);
+        for (let j = 0; j < residuals.length; j++) {
+            failures.push(`menu ${menu.name}: trusted re-import wants to write ${residuals[j]}`);
+        }
+
+        if (menu.slots.length === 0) continue;
+        const targetSlot = menu.slots[0].slot;
+        const itemFailures = await expectSingleMenuSlotOp(
+            ctx,
+            housingUuid,
+            fixture,
+            mutateMenuSlotItem(menu, 0),
+            targetSlot,
+            "item"
+        );
+        for (let j = 0; j < itemFailures.length; j++) failures.push(itemFailures[j]);
+        const actionFailures = await expectSingleMenuSlotOp(
+            ctx,
+            housingUuid,
+            fixture,
+            mutateMenuSlotActions(menu, 0),
+            targetSlot,
+            "actions"
+        );
+        for (let j = 0; j < actionFailures.length; j++) failures.push(actionFailures[j]);
+    }
+    return failures;
+}
+
+function trustModeSessionFor(
+    housingUuid: string,
+    fixture: ParsedTestFixture,
+    importables: Importable[]
+): ImportSession {
+    return {
+        parsed: fixture.parsed,
+        items: createItemRegistry(fixture.parsed.value, fixture.parsed.gcx),
+        housingUuid,
+        trust: buildTrustPlan(housingUuid, importables, true),
+        events: undefined,
+        itemCaptures: createFixtureItemCaptures(fixture),
+        npcLookup: createNpcLookupCache(),
+    };
+}
+
+async function expectSingleMenuSlotOp(
+    ctx: TaskContext,
+    housingUuid: string,
+    fixture: ParsedTestFixture,
+    mutated: ImportableMenu,
+    targetSlot: number,
+    mode: "item" | "actions"
+): Promise<string[]> {
+    const failures: string[] = [];
+    const session = trustModeSessionFor(housingUuid, fixture, [mutated]);
+    const trust = session.trust.importables.get(
+        importableKey("MENU", importableIdentity(mutated))
+    );
+    if (trust !== undefined && trust.wholeImportableTrusted) {
+        failures.push(
+            `menu ${mutated.name}: a ${mode} change went undetected — the hash still whole-trusts it, so trust mode would skip a real change`
+        );
+    }
+
+    const plan = await prereadImportable(ctx, mutated, session);
+    if (plan.kind !== "MENU") {
+        failures.push(`menu ${mutated.name}: expected a MENU plan`);
+        return failures;
+    }
+    const ops = plan.diff.ops;
+    if (ops.length !== 1) {
+        const touched = ops.map((op) => op.slot).join(", ");
+        failures.push(
+            `menu ${mutated.name}: a single ${mode} change produced ${ops.length} ops (slots: ${touched}), expected exactly 1`
+        );
+        return failures;
+    }
+
+    const op = ops[0];
+    if (op.slot !== targetSlot) {
+        failures.push(
+            `menu ${mutated.name}: ${mode} change wrote slot ${op.slot}, expected only slot ${targetSlot}`
+        );
+    }
+    if (mode === "item") {
+        if (op.setItem === undefined) {
+            failures.push(`menu ${mutated.name}: item change produced no item write`);
+        }
+        if (op.syncActions !== undefined) {
+            failures.push(`menu ${mutated.name}: item change also rewrote the slot's actions`);
+        }
+    } else {
+        if (op.syncActions === undefined) {
+            failures.push(`menu ${mutated.name}: actions change produced no action write`);
+        }
+        if (op.setItem !== undefined) {
+            failures.push(`menu ${mutated.name}: actions change also rewrote the slot's item`);
+        }
+    }
+    return failures;
+}
+
+// Deep-clone the menu and swap one slot's item id, so the trusted diff must see
+// exactly one item change against the cached copy.
+function mutateMenuSlotItem(menu: ImportableMenu, slotIndex: number): ImportableMenu {
+    const clone = JSON.parse(JSON.stringify(menu)) as ImportableMenu;
+    const nbt = clone.slots[slotIndex].nbt as {
+        value?: Record<string, { type: string; value: unknown }>;
+    };
+    const currentId =
+        nbt.value !== undefined && typeof nbt.value.id?.value === "string"
+            ? String(nbt.value.id.value)
+            : "";
+    const swappedId =
+        currentId === "minecraft:diamond" ? "minecraft:stone" : "minecraft:diamond";
+    if (nbt.value !== undefined) {
+        nbt.value.id = { type: "string", value: swappedId };
+    }
+    return clone;
+}
+
+// Deep-clone the menu and prepend one action to a slot, so the trusted diff
+// must see exactly one actions change against the cached copy.
+function mutateMenuSlotActions(menu: ImportableMenu, slotIndex: number): ImportableMenu {
+    const clone = JSON.parse(JSON.stringify(menu)) as ImportableMenu;
+    const slot = clone.slots[slotIndex];
+    const probe: Action = { type: "MESSAGE", message: "htsw trust probe" };
+    slot.actions = [probe, ...(slot.actions ?? [])];
+    return clone;
 }
 
 const HASH_DIFF_LOG = "./htsw/test-hash-diff.log";
@@ -455,6 +626,14 @@ function residualPlanOperations(plan: ImportablePlan): string[] {
             for (let i = 0; i < leftFailures.length; i++) failures.push(leftFailures[i]);
             const rightFailures = actionPlanFailures("rightClickActions", plan.rightPlan);
             for (let i = 0; i < rightFailures.length; i++) failures.push(rightFailures[i]);
+            return failures;
+        }
+        case "TEAM": {
+            const failures: string[] = [];
+            if (!plan.exists) failures.push("team is missing");
+            if (!plan.tagHandled) failures.push("tag differs");
+            if (!plan.colorHandled) failures.push("color differs");
+            if (!plan.friendlyFireHandled) failures.push("friendly fire differs");
             return failures;
         }
         default: {
@@ -614,6 +793,8 @@ async function cleanupFixture(
                 (importable.rightClickActions?.length ?? 0) > 0)
         ) {
             await clearImportedItemSlot(ctx);
+        } else if (importable.type === "TEAM") {
+            await deleteTeam(ctx, importable.name);
         }
         deleteImportableCache(
             housingUuid,

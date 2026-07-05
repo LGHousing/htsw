@@ -2,7 +2,7 @@ import { Span } from "../../span";
 
 export type Token = TokenType & { span: Span };
 
-export type TokenType =
+type TokenType =
     | CommaKind
     | ExclamationKind
     | TildeKind
@@ -22,18 +22,18 @@ export type TokenType =
     | EofKind
     | UnknownKind;
 
-export type CommaKind = { kind: "comma" };
-export type ExclamationKind = { kind: "exclamation" };
+type CommaKind = { kind: "comma" };
+type ExclamationKind = { kind: "exclamation" };
 
-export type TildeKind = { kind: "tilde" };
+type TildeKind = { kind: "tilde" };
 
-export type BinOpKind = { kind: "bin_op"; op: BinOp };
-export type BinOpEqKind = { kind: "bin_op_eq"; op: BinOp };
+type BinOpKind = { kind: "bin_op"; op: BinOp };
+type BinOpEqKind = { kind: "bin_op_eq"; op: BinOp };
 
-export type CmpOpKind = { kind: "cmp_op"; op: CmpOp };
-export type CmpOpEqKind = { kind: "cmp_op_eq"; op: CmpOp };
+type CmpOpKind = { kind: "cmp_op"; op: CmpOp };
+type CmpOpEqKind = { kind: "cmp_op_eq"; op: CmpOp };
 
-export type OpenDelimKind = { kind: "open_delim"; delim: Delimiter };
+type OpenDelimKind = { kind: "open_delim"; delim: Delimiter };
 export type CloseDelimKind = { kind: "close_delim"; delim: Delimiter };
 
 export type StrKind = { kind: "str"; value: string };
@@ -45,15 +45,15 @@ export type IdentKind = { kind: "ident"; value: string };
 
 export type DocCommentKind = { kind: "doc_comment", value: string };
 
-export type EolKind = { kind: "eol" };
-export type EofKind = { kind: "eof" };
+type EolKind = { kind: "eol" };
+type EofKind = { kind: "eof" };
 
-export type UnknownKind = { kind: "unknown"; value: string };
+type UnknownKind = { kind: "unknown"; value: string };
 
 export type Delimiter = "parenthesis" | "brace" | "bracket";
 
-export type BinOp = "plus" | "minus" | "star" | "slash" | "lt_lt" | "gt_gt" | "gt_gt_gt" | "ampersand" | "vertical_bar" | "caret";
-export type CmpOp = "greater_than" | "less_than" | "equals";
+type BinOp = "plus" | "minus" | "star" | "slash" | "lt_lt" | "gt_gt" | "gt_gt_gt" | "ampersand" | "vertical_bar" | "caret";
+type CmpOp = "greater_than" | "less_than" | "equals";
 
 export function token<K extends Token["kind"]>(
     kind: K,

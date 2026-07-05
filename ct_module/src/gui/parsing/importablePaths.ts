@@ -10,5 +10,4 @@ export {
     importableFilePaths,
     importableSourcePath,
     importableChildListPath,
-    childListOf,
 } from "htsw";

@@ -183,14 +183,3 @@ export function buildCacheStatusRow(
               : "modified";
     return { importable, identity, hash, state, entry };
 }
-
-export function buildCacheStatusRows(
-    housingUuid: string,
-    importables: readonly Importable[]
-): CacheStatusRow[] {
-    const rows: CacheStatusRow[] = [];
-    for (let i = 0; i < importables.length; i++) {
-        rows.push(buildCacheStatusRow(housingUuid, importables[i]));
-    }
-    return rows;
-}

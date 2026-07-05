@@ -528,7 +528,7 @@ export function parseItemAmount(p: Parser): ItemAmount {
     );
 }
 
-export function parseCoordinates(p: Parser): { value: string, coordinates: Coordinates } {
+function parseCoordinates(p: Parser): { value: string, coordinates: Coordinates } {
     if (p.token.kind !== "str") {
         throw Diagnostic.error("Expected coordinates")
             .addPrimarySpan(p.token.span);
@@ -548,7 +548,7 @@ export function parseCoordinates(p: Parser): { value: string, coordinates: Coord
     return { value, coordinates };
 }
 
-export function parseCoordinates0(sp: Parser): Coordinates {
+function parseCoordinates0(sp: Parser): Coordinates {
     const start = sp.token.span.start;
     
     const { value: x, span: xSpan } = sp.spanned(parseCoordinate);

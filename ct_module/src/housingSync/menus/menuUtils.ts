@@ -24,6 +24,7 @@ import {
     waitForMenu,
 } from "./menuWait";
 import { getVisiblePaginatedItemSlots } from "./paginatedList";
+import { decideStringWrite } from "./stringValueDecision";
 import { COST } from "../progress/costs";
 import { recordTimedOp } from "../progress/timing";
 import { isTaskTraceEnabled, traceNote } from "../trace/taskTrace";
@@ -573,7 +574,15 @@ export async function setStringValue(
 ): Promise<void> {
     const newValue = value.toString();
     const currentValue = readStringValue(slot);
-    if (currentValue !== null && currentValue === newValue) return;
+    const action = decideStringWrite(currentValue, newValue);
+    if (action === "skip") return;
+    if (action === "cannot-clear") {
+        const slotName = removedFormatting(slot.getItem().getName()).trim();
+        throw new Error(
+            `Cannot set "${slotName}" to an empty value through Housing's chat input. ` +
+            `Use a formatting-only value like "&k" instead of an empty one.`
+        );
+    }
 
     slot.click();
     const started = Date.now();

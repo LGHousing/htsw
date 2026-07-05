@@ -14,7 +14,7 @@ const VERSION_KEY = "htsw.soundPreviewer.version";
 const PITCH_KEY = "htsw.soundPreviewer.pitch";
 const VOLUME_KEY = "htsw.soundPreviewer.volume";
 
-export class SoundPreviewViewProvider implements vscode.WebviewViewProvider {
+class SoundPreviewViewProvider implements vscode.WebviewViewProvider {
     public static readonly viewType = "htsw.soundPreviewer";
     private readonly controller: SoundPreviewController;
 

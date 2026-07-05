@@ -19,7 +19,7 @@ import { importableIdentity } from "../importables/identity";
 import { statusForImportable } from "./cache-status";
 import { addToQueue, makeImportableQueueItem } from "./right-panel/import-tab/queue";
 
-export function queueModifiedFromParse(
+function queueModifiedFromParse(
     sourcePath: string,
     importables: readonly Importable[]
 ): void {

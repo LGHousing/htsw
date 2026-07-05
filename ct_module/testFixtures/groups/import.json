@@ -1,0 +1,34 @@
+{
+    "groups": [
+        {
+            "name": "htsw_test_group_staff",
+            "tag": "[STAFF]",
+            "tagShownInChat": true,
+            "color": "Gold",
+            "priority": 20,
+            "permissions": {
+                "Build": true,
+                "Use Chests": true,
+                "Use Launch Pads": true,
+                "Fly": true,
+                "Kick": true,
+                "Ban": false
+            }
+        },
+        {
+            "name": "htsw_test_group_builder",
+            "tag": "[BUILDER]",
+            "tagShownInChat": false,
+            "color": "Green",
+            "priority": 10,
+            "permissions": {
+                "Build": true,
+                "Use Chests": true,
+                "Use Launch Pads": false,
+                "Fly": false,
+                "Kick": false,
+                "Ban": false
+            }
+        }
+    ]
+}

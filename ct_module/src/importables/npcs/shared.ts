@@ -8,10 +8,10 @@ import {
 import { timedWaitForMenu } from "../../housingSync/menus/menuWait";
 import TaskContext from "../../tasks/context";
 import type { ItemSlot } from "../../tasks/specifics/slots";
-import { normalizeFormattingCodes, removedFormatting } from "../../utils/helpers";
+import { normalizeFormattingCodes } from "../../utils/helpers";
 import { openNpcEditorForPos, type NpcListEntry, type NpcLookupCache } from "./listNpcs";
 
-export function canonicalNpcName(value: string): string {
+function canonicalNpcName(value: string): string {
     const normalized = normalizeFormattingCodes(value).trim();
     if (normalized.length === 0 || helpers.containsFormattingCode(normalized)) return normalized;
     return `&a${normalized}`;
@@ -21,12 +21,8 @@ export function npcNamesMatch(left: string, right: string): boolean {
     return canonicalNpcName(left) === canonicalNpcName(right);
 }
 
-export function npcNameForInput(value: string): string {
+function npcNameForInput(value: string): string {
     return normalizeFormattingCodes(value).trim();
-}
-
-export function visibleNpcName(value: string): string {
-    return removedFormatting(value).trim();
 }
 
 export function validateSupportedNpcFields(importable: ImportableNpc): void {

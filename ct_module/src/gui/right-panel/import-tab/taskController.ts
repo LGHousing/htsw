@@ -39,9 +39,8 @@ import { importableIdentity } from "../../../importables/identity";
 import { getCurrentHousingUuid } from "../../../importCache/housingId";
 import { TaskManager, isTaskCancelled } from "../../../tasks/manager";
 import type { Importable } from "htsw/types";
-import type { Diagnostic, ImportablesParseResult } from "htsw";
+import { attributeDiagnostics, type Diagnostic, type ImportablesParseResult } from "htsw";
 import { importableSourcePath } from "../../parsing/importablePaths";
-import { attributeDiagnostics } from "../../cache-status/diagnosticCounts";
 import type {
     SyncEventHandler,
     SyncEvent,
@@ -165,6 +164,9 @@ function createSyncEventHandler(args: {
             activeViewPath = null;
         },
         progress: () => {},
+        // Slot focus lives on the progress snapshot (set by the reducer); the
+        // panel reads it from there. Nothing to mirror into the code view.
+        menuSlotStarted: () => {},
         setupStep: () => {},
         readStarted: () => {},
         childListReadStarted: (e) => {

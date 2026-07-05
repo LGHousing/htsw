@@ -29,7 +29,7 @@ export function loadTestFixtures(slice?: string): ParsedTestFixture[] {
     return fixtures;
 }
 
-export function testFixtureRootPath(): string {
+function testFixtureRootPath(): string {
     const repoPath = readModuleEnvValue("HTSW_REPOSITORY_PATH");
     if (repoPath === null || repoPath.trim() === "") {
         throw new Error(

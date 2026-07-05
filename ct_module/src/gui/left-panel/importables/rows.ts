@@ -20,7 +20,7 @@ import {
     toggleImportableChecked,
 } from "../../state";
 import { ACCENT_DANGER, ACCENT_INFO, ACCENT_SUCCESS, ACCENT_WARN, COLOR_TEXT_DIM, COLOR_TEXT_FAINT } from "../../lib/theme";
-import { diagnosticCountsFor, diagnosticCountsForFile, type SeverityCounts } from "../../cache-status/diagnosticCounts";
+import { diagnosticCountsFor, diagnosticCountsForFile, type SeverityCounts } from "htsw";
 import { openEditImportableFieldPopover } from "./editFieldPopover";
 import { cacheStateForImportable, linkStatusIcon } from "../../cache-status";
 import { menuSlotCacheStatus } from "../../cache-status/menuSlotStatus";
@@ -1198,7 +1198,7 @@ export type MenuSlotFileKind = "item" | "actions";
 
 /** The file to open for one side of a menu slot; inline JSON (no `nbtPath` /
  * `actionsPath`) falls back to the import.json that declared the menu. */
-export function menuSlotFilePath(
+function menuSlotFilePath(
     parent: ResultImport,
     imp: Importable,
     slot: MenuSlot,

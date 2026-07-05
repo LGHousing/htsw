@@ -1,0 +1,16 @@
+{
+    "teams": [
+        {
+            "name": "htsw team red",
+            "tag": "RED",
+            "color": "Red",
+            "friendlyFire": true
+        },
+        {
+            "name": "htsw team aqua",
+            "tag": "AQUA",
+            "color": "Aqua",
+            "friendlyFire": false
+        }
+    ]
+}

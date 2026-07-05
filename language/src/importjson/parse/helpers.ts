@@ -19,7 +19,7 @@ export function getFileName(path: string): string {
     return path.slice(lastSlash + 1);
 }
 
-export function normalizeOption(value: string): string {
+function normalizeOption(value: string): string {
     return value.split(" ").join("").split("_").join("").toLowerCase();
 }
 

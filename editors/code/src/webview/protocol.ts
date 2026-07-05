@@ -18,7 +18,7 @@ export type ItemEditorForm = {
     createRightClickActions: boolean;
 };
 
-export type ItemEditorEnchant = {
+type ItemEditorEnchant = {
     name: string;
     level: number;
 };

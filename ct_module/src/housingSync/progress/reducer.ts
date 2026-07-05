@@ -15,6 +15,7 @@ import type {
     TaskProgressEntry,
     PhaseUnits,
     ProgressPayload,
+    MenuSlotFocus,
 } from "./types";
 
 type ActiveBookkeeping = {
@@ -29,6 +30,7 @@ type ActiveBookkeeping = {
     currentPhaseUnits: PhaseUnits;
     phase: TaskProgressActive["phase"];
     sync: TaskProgressActive["sync"];
+    currentSlot: MenuSlotFocus | null;
 };
 
 export type ProgressReducerState = {
@@ -76,6 +78,13 @@ export function reduce(
             return applySetupStep(state, event.completed, event.total);
         case "progress":
             return applyProgress(state, event.scope, event.progress);
+        case "menuSlotStarted":
+            return applyMenuSlotStarted(state, {
+                slot: event.slot,
+                label: event.label,
+                index: event.index,
+                count: event.count,
+            });
         case "importableFinished":
             return finishImportable(state, event.key, event.status, event.error);
         case "sessionFinished":
@@ -141,6 +150,7 @@ function startImportable(
         },
         phase: "setup",
         sync: null,
+        currentSlot: null,
     };
     return rebuildSnapshot(carriedActive, active);
 }
@@ -158,7 +168,7 @@ function reactivateImportable(
         return carried;
     }
     const { [key]: _consumed, ...rest } = carried.parkedRows;
-    const restored: ActiveBookkeeping = { ...parked, rowIndex };
+    const restored: ActiveBookkeeping = { ...parked, rowIndex, currentSlot: null };
     return rebuildSnapshot({ ...carried, parkedRows: rest }, restored);
 }
 
@@ -236,6 +246,14 @@ function applySetupStep(
         sync: null,
     };
     return rebuildSnapshot(state, next);
+}
+
+function applyMenuSlotStarted(
+    state: ProgressReducerState,
+    focus: MenuSlotFocus
+): ProgressReducerState {
+    if (state.active === null) return state;
+    return rebuildSnapshot(state, { ...state.active, currentSlot: focus });
 }
 
 function applyProgress(
@@ -434,6 +452,7 @@ function rebuildSnapshot(
         totalUnits: active.currentTotalUnits,
         phaseUnits: active.currentPhaseUnits,
         sync: active.sync,
+        currentSlot: active.currentSlot,
     };
     return {
         ...state,
@@ -487,6 +506,7 @@ function snapshotParked(parkedRows: {
             totalUnits: b.currentTotalUnits,
             phaseUnits: b.currentPhaseUnits,
             sync: b.sync,
+            currentSlot: b.currentSlot,
         };
     }
     return out;

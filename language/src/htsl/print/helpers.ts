@@ -14,7 +14,7 @@ export function isPlaceholderOnly(s: string): boolean {
     return PLACEHOLDER_RE.test(s);
 }
 
-export function isBareNameSafe(s: string): boolean {
+function isBareNameSafe(s: string): boolean {
     if (s.length === 0) return false;
     return BARE_NAME_RE.test(s);
 }

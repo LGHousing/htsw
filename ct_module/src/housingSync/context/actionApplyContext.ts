@@ -40,7 +40,7 @@ export type ActionApplyContext = {
     applyConditions(prop: string, args: ConditionApplyArgs): Promise<void>;
 };
 
-export type ApplyChildActionList = (
+type ApplyChildActionList = (
     ctx: TaskContext,
     desired: Action[],
     options: {

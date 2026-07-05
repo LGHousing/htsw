@@ -1,7 +1,5 @@
 import type { SoundVersionId } from "../webview/protocol";
 
-export const SUPPORTED_VERSIONS = ["1.8.9", "1.21.1"] as const satisfies readonly SoundVersionId[];
-
 export const PINNED_VERSION_JSON: Record<SoundVersionId, string> = {
     "1.8.9": "https://piston-meta.mojang.com/v1/packages/d546f1707a3f2b7d034eece5ea2e311eda875787/1.8.9.json",
     "1.21.1": "https://piston-meta.mojang.com/v1/packages/b2175d7cf605de8e31ee9298e14113f847e6bb35/1.21.1.json",

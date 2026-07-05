@@ -64,7 +64,7 @@ export const ACTIVE_HOVER_BG = 0xff3a5d3a | 0;
 export const ROW_BG = 0xff2d333d | 0;
 export const ROW_HOVER_BG = 0xff3a4350 | 0;
 
-export const CONTROL_W = 26;
+const CONTROL_W = 26;
 
 export function caretButton(expanded: boolean, onToggle: () => void, width: number = CONTROL_W): Element {
     return Container({

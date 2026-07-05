@@ -128,6 +128,56 @@ describe("progress reducer", () => {
         expect(s.progress.active!.completedUnits).toBe(7);
     });
 
+    test("menuSlotStarted sets the active slot focus and later slots replace it", () => {
+        const s = emit([
+            {
+                kind: "sessionStarted",
+                rows: [{ key: "m", status: "queued", ...baseRow }],
+                initialTotalUnits: 10,
+            },
+            {
+                kind: "importableStarted",
+                key: "m",
+                type: "MENU",
+                identity: "Shop",
+                setupUnits: 0,
+                initialUnits: 10,
+                rowIndex: 0,
+                cached: null,
+            },
+        ]);
+        // Fresh importable has no slot focus.
+        expect(s.progress.active!.currentSlot ?? null).toBeNull();
+
+        const s2 = reduce(s, {
+            kind: "menuSlotStarted",
+            slot: 13,
+            label: "Diamond Sword",
+            index: 2,
+            count: 6,
+        });
+        expect(s2.progress.active!.currentSlot).toEqual({
+            slot: 13,
+            label: "Diamond Sword",
+            index: 2,
+            count: 6,
+        });
+
+        const s3 = reduce(s2, {
+            kind: "menuSlotStarted",
+            slot: 20,
+            label: null,
+            index: 3,
+            count: 6,
+        });
+        expect(s3.progress.active!.currentSlot).toEqual({
+            slot: 20,
+            label: null,
+            index: 3,
+            count: 6,
+        });
+    });
+
     test("importableFinished folds into session totals + clears active", () => {
         const s = emit([
             {

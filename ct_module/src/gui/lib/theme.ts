@@ -66,21 +66,10 @@ export const ACCENT_PURPLE = 0xffce7be0 | 0;
 export const ACCENT_TEAL = 0xff7be0c0 | 0;
 export const ACCENT_ORANGE = 0xffe87a4b | 0;
 
-export const PHASE_READING = ACCENT_INFO;
-export const PHASE_HYDRATING = ACCENT_PURPLE;
-export const PHASE_APPLYING = ACCENT_SUCCESS;
-
 // ── Sizes ───────────────────────────────────────────────────────────────
 export const SIZE_TAB_H = 18;
 export const SIZE_ROW_H = 18;
 
 // ── Glyphs (Minecraft default font) ─────────────────────────────────────
-// MC's font has limited unicode support; these all render in the default
-// font without falling back to a missing-glyph box.
-export const GLYPH_FOLDER = "▣";  // U+25A3 — squared box, used for directories
-export const GLYPH_JSON = "{ }";  // import.json marker
-export const GLYPH_HTSL = "▶";    // U+25B6 — play, denotes executable function
-export const GLYPH_SNBT = "◆";    // U+25C6 — diamond, item/snbt
 export const GLYPH_CHEVRON_DOWN = "▼";
 export const GLYPH_DOT = "●";
-export const GLYPH_X = "✕";

@@ -154,6 +154,20 @@ export type SyncEvent =
       }
     | { kind: "sessionFinished" }
     | { kind: "progress"; scope: ProgressScope; progress: ProgressPayload }
+    | {
+          /**
+           * A MENU import's apply pass moved to a grid slot. Carries the slot's
+           * identity so the panel can show "slot 13 (Diamond Sword)" instead of
+           * a bare op counter. `index`/`count` are the 1-based position and
+           * total across the menu's whole apply (clears + item writes + action
+           * syncs), so they climb monotonically across the two passes.
+           */
+          kind: "menuSlotStarted";
+          slot: number;
+          label: string | null;
+          index: number;
+          count: number;
+      }
     | { kind: "setupStep"; label: string; completed: number; total: number }
     | { kind: "readStarted"; listPath: string }
     | { kind: "childListReadStarted"; path: ActionPath; actionType: Action["type"] | null }

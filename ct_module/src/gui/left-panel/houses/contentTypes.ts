@@ -38,6 +38,13 @@ import { readEvents } from "../../../importables/events/readEvents";
 import { readMenus } from "../../../importables/menus/readMenus";
 import { readRegions } from "../../../importables/regions/readRegions";
 import { readCommands } from "../../../importables/commands/readCommands";
+import { readTeams } from "../../../importables/teams/readTeams";
+import {
+    getHouseTeams,
+    houseTeamsScanned,
+    isTeamScanInFlight,
+    scanHouseTeams,
+} from "./sources/teamsSource";
 import { startExport, type ExportSpec } from "../../export/taskController";
 import { makeDeepRead } from "./sources/deepRead";
 
@@ -181,6 +188,17 @@ export const HOUSE_CONTENT_TYPES: HouseContentType[] = [
         ],
         remove: (name) => ChatLib.command(`command delete ${name}`),
         export: exportHook({ type: "COMMAND", label: "command", read: readCommands }),
+    },
+    {
+        type: "TEAM",
+        label: "Teams",
+        icon: Icons.users,
+        items: getHouseTeams,
+        scanned: houseTeamsScanned,
+        scan: scanHouseTeams,
+        scanInFlight: isTeamScanInFlight,
+        deepRead: makeDeepRead("TEAM", "team", readTeams, isTeamScanInFlight),
+        export: exportHook({ type: "TEAM", label: "team", read: readTeams }),
     },
 ];
 

@@ -66,7 +66,7 @@ function parsePlaceholder(tcx: TyCtxt, placeholder: string): VarState | undefine
     return runPlaceholder(tcx, name, ...args);
 }
 
-export function runPlaceholder(tcx: TyCtxt, name: string, ...args: string[]): VarState | undefined {
+function runPlaceholder(tcx: TyCtxt, name: string, ...args: string[]): VarState | undefined {
     switch (name) {
         case "server.name":
             return unknownString();

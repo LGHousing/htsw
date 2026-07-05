@@ -597,7 +597,7 @@ async function readWorkspaceText(file: vscode.Uri): Promise<string | undefined> 
     }
 }
 
-export function provideSnbtCompletions(linePrefix: string): CompletionSpec[] {
+function provideSnbtCompletions(linePrefix: string): CompletionSpec[] {
     const trimmed = linePrefix.trimStart();
     if (trimmed.length === 0) {
         return [

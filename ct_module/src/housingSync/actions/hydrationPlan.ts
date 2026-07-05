@@ -17,7 +17,7 @@ export function createActionHydrationWork(
     };
 }
 
-export function ensureActionHydrationWork(
+function ensureActionHydrationWork(
     plan: ActionHydrationPlan,
     entry: ObservedActionSlot
 ): ActionHydrationWork {

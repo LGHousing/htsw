@@ -34,7 +34,7 @@ export type FunctionImportPlan = {
     settingsPlan: FunctionSettingsPlan | null;
 };
 
-export type FunctionSettingsPlan = {
+type FunctionSettingsPlan = {
     iconNeedsApply: boolean;
     automaticExecution: {
         current: number;

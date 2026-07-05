@@ -12,7 +12,7 @@ import TaskContext from "../../tasks/context";
 import { ItemSlot, MouseButton } from "../../tasks/specifics/slots";
 import { normalizeFormattingCodes, removedFormatting } from "../../utils/helpers";
 
-export const NPC_LIST_CONFIG: PaginatedListConfig = {
+const NPC_LIST_CONFIG: PaginatedListConfig = {
     label: "npc",
     emptyPlaceholderName: "No NPCs!",
 };
@@ -31,7 +31,7 @@ export function createNpcLookupCache(): NpcLookupCache {
     return { entriesByPos: new Map() };
 }
 
-export function npcPosIdentity(pos: Pos): string {
+function npcPosIdentity(pos: Pos): string {
     return `${pos.x},${pos.y},${pos.z}`;
 }
 
@@ -64,7 +64,7 @@ function parseNpcPos(lore: string[]): Pos | null {
     return null;
 }
 
-export async function openNpcBrowser(ctx: TaskContext): Promise<void> {
+async function openNpcBrowser(ctx: TaskContext): Promise<void> {
     await ctx.runCommand("/hmenu");
     await timedWaitForMenu(ctx, "commandMenuWait");
 

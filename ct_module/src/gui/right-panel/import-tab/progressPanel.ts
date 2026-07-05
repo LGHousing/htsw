@@ -23,10 +23,8 @@ import {
     COLOR_PANEL_RAISED,
     COLOR_TEXT,
     COLOR_TEXT_DIM,
-    PHASE_APPLYING,
-    PHASE_HYDRATING,
-    PHASE_READING,
 } from "../../lib/theme";
+import { PHASE_APPLYING, PHASE_HYDRATING, PHASE_READING } from "./phaseColors";
 import {
     getStepAuto,
     requestStepAdvance,
@@ -51,6 +49,7 @@ import {
 import {
     countTaskRowsByStatus,
     isTaskTotalLocked,
+    type MenuSlotFocus,
 } from "../../../housingSync/progress/types";
 
 const COLOR_BAR_BG = COLOR_PANEL_BORDER;
@@ -82,7 +81,7 @@ function formatClockTime(ms: number): string {
 
 // ── ETA + label text ───────────────────────────────────────────────────
 
-export function progressElapsedText(): string {
+function progressElapsedText(): string {
     const ms = getTaskElapsedMs();
     if (ms === null) return "";
     return `§7${formatEtaSeconds(ms / 1000)}`;
@@ -103,6 +102,19 @@ function opCounterText(): string {
     const target = sync.parent ?? sync;
     if (target.totalUnits <= 1) return "";
     return operationProgressText(target.completedUnits, target.totalUnits);
+}
+
+/**
+ * A menu writes slot by slot, so its most useful "where am I" is the grid slot
+ * (and the item going into it), not the current slot's action-list op count.
+ * Returns the parts to show in place of `opCounterText` while a slot is active.
+ */
+function menuSlotParts(slot: MenuSlotFocus): string[] {
+    const named =
+        slot.label !== null && slot.label.length > 0 ? ` (${slot.label})` : "";
+    const parts = [`slot ${slot.slot}${named}`];
+    if (slot.count > 1) parts.push(`${slot.index}/${slot.count}`);
+    return parts;
 }
 
 function phaseEtaText(suffix: string): string {
@@ -126,7 +138,7 @@ function phaseEtaText(suffix: string): string {
     return `${formatEtaSeconds(secs)} left ${suffix}`;
 }
 
-export function currentPhaseLabel(): string {
+function currentPhaseLabel(): string {
     const p = getTaskProgress();
     if (p === null || p.active === null) return "";
     if (getSessionVerb() === "export") return "§lExporting";
@@ -134,8 +146,13 @@ export function currentPhaseLabel(): string {
     const labels = PHASE_LABELS[p.active.phase];
     if (labels === undefined) return "§lDone";
     const parts: string[] = [];
-    const counter = opCounterText();
-    if (counter.length > 0) parts.push(counter);
+    const slot = p.active.currentSlot;
+    if (slot != null && p.active.phase === "applying") {
+        for (const part of menuSlotParts(slot)) parts.push(part);
+    } else {
+        const counter = opCounterText();
+        if (counter.length > 0) parts.push(counter);
+    }
     const eta = phaseEtaText(labels.etaSuffix);
     if (eta.length > 0) parts.push(eta);
     return parts.length > 0
@@ -209,7 +226,7 @@ function parkedRowPhaseChildren(key: string): Element[] {
     return rowPhaseChildrenFor(parked);
 }
 
-export function progressBar(): Element {
+function progressBar(): Element {
     return Container({
         style: {
             direction: "row",
@@ -277,7 +294,7 @@ function operationProgressText(completed: number, total: number): string {
     return `op ${current}/${safeTotal}`;
 }
 
-export function progressTotalEtaLine(): string {
+function progressTotalEtaLine(): string {
     const p = getTaskProgress();
     if (p === null) return "";
     // Until the apply phase, the per-importable apply cost is just a rough
@@ -332,7 +349,7 @@ function progressPosition(): {
     };
 }
 
-export function progressHeadlineText(): string {
+function progressHeadlineText(): string {
     const pos = progressPosition();
     if (pos === null) return "";
     const verb = getSessionVerb();
@@ -357,7 +374,7 @@ function progressStatusText(): string {
     return pos.allDone ? `§lDone` : `§7Preparing…`;
 }
 
-export function progressControlButtons(): Element[] {
+function progressControlButtons(): Element[] {
     return [
         Button({
             text: () => (getStepAuto() ? "Pause" : "Resume"),

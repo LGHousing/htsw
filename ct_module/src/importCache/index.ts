@@ -25,9 +25,5 @@ export {
 
 export { getCurrentHousingUuid } from "./housingId";
 
-export { buildCacheStatusRows } from "./status";
-
-export { readCachedActionList } from "./actionLists";
-
 export { buildTrustPlan } from "./trust";
 export type { ImportableTrustPlan, TrustPlan } from "./trust";

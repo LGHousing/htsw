@@ -3,7 +3,7 @@ import * as itemIcons from "minecraft-icon-items";
 import minecraftFontDataUri from "typeface-minecraft/files/minecraft.woff2?inline";
 import { ampToSection } from "htsw-editor-common/text/colorCodes";
 
-export type ItemViewEnchant = { name: string; level: number };
+type ItemViewEnchant = { name: string; level: number };
 
 /** Everything the Minecraft item preview needs, independent of where it came
  * from (the Item Editor form or a parsed `.snbt`). Display/lore keep their raw
@@ -49,7 +49,7 @@ const FORMAT_COLORS: Record<string, string> = {
     f: "#FFFFFF",
 };
 
-export function numericItemId(name: string): number | undefined {
+function numericItemId(name: string): number | undefined {
     return ITEM_BY_NAME.get(bareItemName(name))?.id;
 }
 
@@ -70,7 +70,7 @@ export function renderItemPreviewInto(host: HTMLElement, view: ItemView): void {
     startMagicTicker();
 }
 
-export function renderItemStack(view: ItemView): HTMLElement {
+function renderItemStack(view: ItemView): HTMLElement {
     ensureItemStyles();
     const stack = document.createElement("div");
     stack.className = "item-stack";
@@ -95,7 +95,7 @@ export function renderItemStack(view: ItemView): HTMLElement {
     return stack;
 }
 
-export function renderItemTooltip(view: ItemView): HTMLElement {
+function renderItemTooltip(view: ItemView): HTMLElement {
     ensureMinecraftFont();
     ensureItemStyles();
     const displayName = resolveDisplayName(view);
@@ -196,7 +196,7 @@ function shadowColorFor(hexColor: string): string {
     return `#${quartered.toString(16).padStart(6, "0")}`;
 }
 
-export function formatMinecraftText(value: string): Node[] {
+function formatMinecraftText(value: string): Node[] {
     const nodes: Node[] = [];
     let color = "";
     let bold = false;
@@ -263,7 +263,7 @@ export function formatMinecraftText(value: string): Node[] {
 const MAGIC_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!?#@$%&";
 let magicTickerStarted = false;
 
-export function startMagicTicker(): void {
+function startMagicTicker(): void {
     if (magicTickerStarted) return;
     magicTickerStarted = true;
     window.setInterval(() => {
@@ -317,7 +317,7 @@ const ITEM_STYLE_ID = "mc-item-styles";
 
 /** Injects the sprite + tooltip CSS once, so any webview (Item Editor tab or
  * project tree hover) renders the preview without shipping the rules twice. */
-export function ensureItemStyles(): void {
+function ensureItemStyles(): void {
     if (document.getElementById(ITEM_STYLE_ID)) return;
     const style = document.createElement("style");
     style.id = ITEM_STYLE_ID;

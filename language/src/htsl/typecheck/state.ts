@@ -6,12 +6,12 @@ type Maybe<T> =
     | { isKnown: true, value: T }
     | { isKnown: false };
 
-export type NumericValue<T> =
+type NumericValue<T> =
     | { type: "constant"; constant: T }
     | { type: "range"; start: T; end: T };
 
-export type NumericState<T> = Maybe<NumericValue<T>>;
-export type StringState = Maybe<string>;
+type NumericState<T> = Maybe<NumericValue<T>>;
+type StringState = Maybe<string>;
 
 export type VarState =
     | { type: "long" } & NumericState<Long>

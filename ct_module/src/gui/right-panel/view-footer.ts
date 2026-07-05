@@ -50,7 +50,7 @@ function appendQueueRows(rows: Child[], items: readonly QueueItem[]): void {
     }
 }
 
-export function queueSummary(): Element {
+function queueSummary(): Element {
     const children: Child[] = [];
     // Nothing to expand when the queue is empty, so drop the caret entirely
     // (its row width goes too, letting the label sit flush-left).
@@ -110,7 +110,7 @@ function queueChevron(): Element {
     });
 }
 
-export function queueScroll(): Element {
+function queueScroll(): Element {
     return Scroll({
         id: "right-import-queue-scroll",
         style: { gap: 2, height: { kind: "px", value: 120 } },

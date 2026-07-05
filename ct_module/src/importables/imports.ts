@@ -50,6 +50,12 @@ import {
     regionPlanIsNoOp,
     type RegionImportPlan,
 } from "./regions/import";
+import {
+    applyImportableTeamPlan,
+    prereadImportableTeam,
+    teamPlanIsNoOp,
+    type TeamImportPlan,
+} from "./teams/import";
 import type { ItemRegistry } from "./itemRegistry";
 import type { SyncEventHandler } from "../housingSync/syncEvents";
 import type { ItemCaptureRegistry } from "../housingSync/itemCapture";
@@ -64,6 +70,7 @@ export const IMPLEMENTED_IMPORTABLE_TYPES = [
     "ITEM",
     "MENU",
     "NPC",
+    "TEAM",
 ] as const;
 
 export type ImportSession = {
@@ -98,7 +105,8 @@ export type ImportablePlan =
     | RegionImportPlan
     | NpcImportPlan
     | ItemImportPlan
-    | MenuImportPlan;
+    | MenuImportPlan
+    | TeamImportPlan;
 
 export async function prereadImportable(
     ctx: TaskContext,
@@ -157,6 +165,12 @@ export async function prereadImportable(
                 trust,
             );
         case "TEAM":
+            return prereadImportableTeam(
+                ctx,
+                importable,
+                session,
+                trust,
+            );
         case "GROUP":
         case "HOUSE_NAME":
             throw Diagnostic.error(`${importable.type} imports are not implemented in the ChatTriggers module.`);
@@ -198,6 +212,9 @@ export async function applyImportablePlan(
         case "ITEM":
             await applyImportableItemPlan(ctx, plan, session);
             return;
+        case "TEAM":
+            await applyImportableTeamPlan(ctx, plan, session);
+            return;
         default: {
             const _exhaustiveCheck: never = plan;
             return _exhaustiveCheck;
@@ -224,6 +241,8 @@ export function planIsNoOp(plan: ImportablePlan): boolean {
             return regionPlanIsNoOp(plan);
         case "NPC":
             return npcPlanIsNoOp(plan);
+        case "TEAM":
+            return teamPlanIsNoOp(plan);
         case "MENU":
         case "ITEM":
             return false;
@@ -255,6 +274,7 @@ export function reconstructPartialImportable(
         case "NPC":
         case "MENU":
         case "ITEM":
+        case "TEAM":
             return null;
         default: {
             const _exhaustiveCheck: never = plan;

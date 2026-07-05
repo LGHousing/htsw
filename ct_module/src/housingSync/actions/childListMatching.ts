@@ -106,7 +106,7 @@ export function matchObservedToDesired(
     return matches;
 }
 
-export function getChildListsNeedingHydration(
+function getChildListsNeedingHydration(
     entry: ObservedActionSlot
 ): ChildListsToRead {
     if (entry.childListsToRead !== undefined) {

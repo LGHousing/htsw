@@ -1,6 +1,6 @@
 import { languages } from "monaco-editor";
 import IMonarchLanguage = languages.IMonarchLanguage;
-import * as htsl from "htsl/src";
+import { htsl } from "htsw";
 
 export const HTSL_MONARCH_DEFINITION: IMonarchLanguage = {
     keywords: [
