@@ -25,7 +25,6 @@ const ForgeKeyboardInputEventPre = javaType(
     "net.minecraftforge.client.event.GuiScreenEvent$KeyboardInputEvent$Pre"
 );
 const GuiScreenClass = javaType("net.minecraft.client.gui.GuiScreen");
-const GuiRepairClass = javaType("net.minecraft.client.gui.inventory.GuiRepair");
 const RenderGameOverlayEventPost = javaType(
     "net.minecraftforge.client.event.RenderGameOverlayEvent$Post"
 );
@@ -197,9 +196,12 @@ function laidOutTrees(): { root: Element; rect: Rect }[] {
 
 function nativeScreenUsesTypedCharacters(): boolean {
     const screen = (Client.getMinecraft() as any).field_71462_r;
-    return screen !== null &&
-        screen !== undefined &&
-        GuiRepairClass.class.isInstance(screen);
+    if (screen === null || screen === undefined) return false;
+    try {
+        return String(screen.getClass().getName()).indexOf("GuiRepair") >= 0;
+    } catch (_e) {
+        return false;
+    }
 }
 
 /**
