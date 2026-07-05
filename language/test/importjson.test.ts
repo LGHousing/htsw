@@ -357,6 +357,34 @@ describe("import.json basic passing behavior", () => {
         expect(hasHardErrors(result.diagnostics)).toBe(false);
     });
 
+    it("parses a single team importable", () => {
+        const result = parseImportables(caseFilePath("team"));
+
+        expect(result.value.length).toBe(1);
+        const team = result.value[0];
+        assertImportable(team, "TEAM");
+        expect(team.name).toBe("team tet");
+        expect(team.tag).toBe("[TET]");
+        expect(team.color).toBe("Red");
+        expect(team.friendlyFire).toBe(true);
+        expect(hasHardErrors(result.diagnostics)).toBe(false);
+    });
+
+    it("parses a single group importable, including tagShownInChat", () => {
+        const result = parseImportables(caseFilePath("group"));
+
+        expect(result.value.length).toBe(1);
+        const group = result.value[0];
+        assertImportable(group, "GROUP");
+        expect(group.name).toBe("builda");
+        expect(group.tag).toBe("[BUILDER]");
+        expect(group.tagShownInChat).toBe(true);
+        expect(group.color).toBe("Aqua");
+        expect(group.priority).toBe(5);
+        expect(group.permissions).toEqual({ "Build": true, "Use Launch Pads": false });
+        expect(hasHardErrors(result.diagnostics)).toBe(false);
+    });
+
     it("supports include using import.json filename", () => {
         const result = parseImportables(caseDirPath("include_import_json_name"));
 
@@ -433,7 +461,7 @@ describe("import.json diagnostics readability", () => {
         expect(fn?.sourcePath).toBe(resolve("test", "cases", "importjson", "empty.htsl"));
     });
 
-    it("stamps per-list paths for sub-lists", () => {
+    it("stamps per-list paths for child lists", () => {
         const result = parseImportables(caseFilePath("npc"));
         const npc = result.value.find(
             (i): i is htsw.types.ImportableNpc => i.type === "NPC"
@@ -443,7 +471,7 @@ describe("import.json diagnostics readability", () => {
         expect(npc?.leftClickActionsPath).toBe(
             resolve("test", "cases", "importjson", "npc_left.htsl")
         );
-        expect(npc !== undefined && htsw.importableSubListPath(npc, "rightClickActions")).toBe(
+        expect(npc !== undefined && htsw.importableChildListPath(npc, "rightClickActions")).toBe(
             resolve("test", "cases", "importjson", "npc_right.htsl")
         );
     });

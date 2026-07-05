@@ -445,7 +445,7 @@ export function mountProjectExplorer(
         for (const button of document.querySelectorAll<HTMLButtonElement>("[data-toggle-node]")) {
             button.addEventListener("click", (event) => {
                 event.stopPropagation();
-                // A file node's fsPath or an importable's sub-list id — both are
+                // A file node's fsPath or an importable's child list id — both are
                 // just opaque keys into state.expanded.
                 const key = button.dataset.toggleNode;
                 if (!key) return;

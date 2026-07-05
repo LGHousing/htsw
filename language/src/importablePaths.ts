@@ -12,7 +12,7 @@ import type { Importable } from "./types";
  *    on the importable itself (`sourcePath`): the resolved `.htsl`/`.snbt`
  *    for file-backed actions/nbt, otherwise the declaring import.json.
  *
- * 2. **Sub-list source path** (`importableSubListPath`) — for nested
+ * 2. **Child list source path** (`importableChildListPath`) — for nested
  *    action lists on REGION, ITEM, COMMAND, and NPC. The parser stamps
  *    the resolved `.htsl` next to each list (`onEnterActionsPath`, …);
  *    menu slots carry `nbtPath`/`actionsPath` the same way.
@@ -26,16 +26,16 @@ export type ImportableParseAccess = {
     importJson: ImportJsonParseMetadata;
 };
 
-// Single source of truth for sub-list kinds. The `SubListKind` union
+// Single source of truth for child list kinds. The `ImportableChildListName` union
 // derives from this so a new kind only gets typed in one place.
-export const SUB_LIST_KINDS = [
+export const IMPORTABLE_CHILD_LIST_NAMES = [
     "actions",
     "onEnterActions",
     "onExitActions",
     "leftClickActions",
     "rightClickActions",
 ] as const;
-export type SubListKind = (typeof SUB_LIST_KINDS)[number];
+export type ImportableChildListName = (typeof IMPORTABLE_CHILD_LIST_NAMES)[number];
 
 /**
  * The import.json file that DECLARED `imp` — distinct from
@@ -53,7 +53,7 @@ export function importableSourcePath(imp: Importable): string | undefined {
     return imp.sourcePath;
 }
 
-export function subListOf(imp: Importable, kind: SubListKind): readonly object[] | undefined {
+export function childListOf(imp: Importable, kind: ImportableChildListName): readonly object[] | undefined {
     if (kind === "actions" && imp.type === "COMMAND") {
         return imp.actions;
     }
@@ -79,20 +79,20 @@ export function subListOf(imp: Importable, kind: SubListKind): readonly object[]
 }
 
 /**
- * True when the importable declares this sub-list at all — even if the
+ * True when the importable declares this child list at all — even if the
  * list parses to an empty array (e.g. an htsl file with no actions yet).
  * A consumer may still want the row visible so the user can open the
  * empty file and edit it.
  */
-export function hasSubList(imp: Importable, kind: SubListKind): boolean {
-    return subListOf(imp, kind) !== undefined;
+export function hasChildList(imp: Importable, kind: ImportableChildListName): boolean {
+    return childListOf(imp, kind) !== undefined;
 }
 
-export function importableSubListPath(
+export function importableChildListPath(
     imp: Importable,
-    kind: SubListKind
+    kind: ImportableChildListName
 ): string | undefined {
-    if (subListOf(imp, kind) === undefined) return undefined;
+    if (childListOf(imp, kind) === undefined) return undefined;
     if (kind === "actions" && imp.type === "COMMAND") {
         return imp.actionsPath;
     }
@@ -113,17 +113,17 @@ export function importableSubListPath(
 
 /**
  * Every source file one importable references — its primary source file
- * (htsl/snbt), each declared sub-list's source file, and each menu slot's
- * `.snbt`/`.htsl`. Undefined-filtered; order is primary-then-sub-lists and
- * may contain duplicates (an inline sub-list resolves to the same file as
+ * (htsl/snbt), each declared child list's source file, and each menu slot's
+ * `.snbt`/`.htsl`. Undefined-filtered; order is primary-then-child lists and
+ * may contain duplicates (an inline child list resolves to the same file as
  * its primary).
  */
 export function importableFilePaths(imp: Importable): string[] {
     const out: string[] = [];
     const primary = importableSourcePath(imp);
     if (primary !== undefined) out.push(primary);
-    for (let i = 0; i < SUB_LIST_KINDS.length; i++) {
-        const sub = importableSubListPath(imp, SUB_LIST_KINDS[i]);
+    for (let i = 0; i < IMPORTABLE_CHILD_LIST_NAMES.length; i++) {
+        const sub = importableChildListPath(imp, IMPORTABLE_CHILD_LIST_NAMES[i]);
         if (sub !== undefined) out.push(sub);
     }
     if (imp.type === "MENU") {
@@ -137,7 +137,7 @@ export function importableFilePaths(imp: Importable): string[] {
 
 /**
  * Every file path the given parse references — the import.json itself,
- * each importable's primary source file (htsl/snbt), and each sub-list's
+ * each importable's primary source file (htsl/snbt), and each child list's
  * source file. Deduplicated, returned in stable insertion order.
  */
 export function allReferencedPaths(

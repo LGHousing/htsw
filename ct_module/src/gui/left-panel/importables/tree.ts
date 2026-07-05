@@ -32,14 +32,14 @@ import {
     includeGroupRow,
     isIncludeGroupExpanded,
     setJumpFlash,
-    subListsOf,
+    childListsOf,
     metadataFieldsOf,
     dirRootKey,
     dirRootActions,
     rootRow,
     resultRow,
     importableRow,
-    subRow,
+    childListRow,
     metadataRow,
     menuSlotExpansionKey,
     menuSlotRow,
@@ -419,7 +419,7 @@ function emitIncludeNode(
         });
         const subKey = importableExpansionKey(r.fullPath, imp);
         if (importableExpansion.has(subKey)) {
-            const subs = subListsOf(imp);
+            const subs = childListsOf(imp);
             const slots = imp.type === "MENU" ? imp.slots : [];
             const meta = metadataFieldsOf(imp);
             const totalChildren = subs.length + slots.length + meta.length;
@@ -432,7 +432,7 @@ function emitIncludeNode(
                 out.push({
                     levels: childLevels,
                     branch: childIdx === totalChildren ? "ell" : "tee",
-                    content: () => subRow(r, imp, subs[k]),
+                    content: () => childListRow(r, imp, subs[k]),
                     height: ENTRY_ROW_H,
                 });
             }

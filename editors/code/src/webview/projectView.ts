@@ -1019,7 +1019,7 @@ const SUMMARY_TYPE: Partial<Record<htsw.types.Importable["type"], ProjectImporta
     NPC: "npc",
 };
 
-const SUB_LIST_LABELS: Record<htsw.SubListKind, string> = {
+const CHILD_LIST_LABELS: Record<htsw.ImportableChildListName, string> = {
     actions: "Actions",
     onEnterActions: "On enter",
     onExitActions: "On exit",
@@ -1096,9 +1096,9 @@ function mapSubEntries(
         out.push(subEntryFor(label, fsPath, "actions", parse));
     };
 
-    for (const kind of htsw.SUB_LIST_KINDS) {
-        if (htsw.subListOf(imp, kind) === undefined) continue;
-        pushActions(SUB_LIST_LABELS[kind], htsw.importableSubListPath(imp, kind));
+    for (const kind of htsw.IMPORTABLE_CHILD_LIST_NAMES) {
+        if (htsw.childListOf(imp, kind) === undefined) continue;
+        pushActions(CHILD_LIST_LABELS[kind], htsw.importableChildListPath(imp, kind));
     }
 
     if (imp.type === "MENU") {

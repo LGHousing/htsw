@@ -5,7 +5,7 @@ import type { ImportablesParseResult } from "./index";
 
 /**
  * Diagnostics bucketed by the importable whose source file they live in
- * (`importableFilePaths` — primary, sub-lists, and menu slot files), and by
+ * (`importableFilePaths` — primary, child lists, and menu slot files), and by
  * that file itself. `unattributed` holds diagnostics whose span resolves to
  * no importable's file (e.g. import.json-level errors or span-less
  * diagnostics). Callers that gate on errors treat `unattributed` as

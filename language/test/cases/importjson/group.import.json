@@ -1,0 +1,15 @@
+{
+    "groups": [
+        {
+            "name": "builda",
+            "tag": "[BUILDER]",
+            "tagShownInChat": true,
+            "color": "Aqua",
+            "priority": 5,
+            "permissions": {
+                "Build": true,
+                "Use Launch Pads": false
+            }
+        }
+    ]
+}

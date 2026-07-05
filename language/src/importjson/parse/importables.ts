@@ -126,11 +126,12 @@ export function parseImportableGroup(p: Parser): ImportableGroup {
 
     p.parseField("name").setField(im, "name", (p) => p.parseString());
     p.parseFieldOrUndefined("tag")?.setField(im, "tag", (p) => p.parseString());
+    p.parseFieldOrUndefined("tagShownInChat")?.setField(im, "tagShownInChat", (p) => p.parseBoolean());
     p.parseFieldOrUndefined("color")?.setField(im, "color", parseColor);
     p.parseFieldOrUndefined("priority")?.setField(im, "priority", (p) => p.parseBoundedNumber(0, 20));
     p.parseFieldOrUndefined("permissions")?.setField(im, "permissions", parsePermissions);
 
-    warnUnused(p, ["name", "tag", "color", "priority", "permissions"]);
+    warnUnused(p, ["name", "tag", "tagShownInChat", "color", "priority", "permissions"]);
     return im;
 }
 

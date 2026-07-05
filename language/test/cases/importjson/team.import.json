@@ -1,0 +1,10 @@
+{
+    "teams": [
+        {
+            "name": "team tet",
+            "tag": "[TET]",
+            "color": "Red",
+            "friendlyFire": true
+        }
+    ]
+}

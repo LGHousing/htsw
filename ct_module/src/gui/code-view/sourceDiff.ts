@@ -36,9 +36,9 @@ import { cacheEntryListHashes } from "../../importCache/status";
 import {
     importableFilePaths,
     importableSourcePath,
-    importableSubListPath,
-    SUB_LIST_KINDS,
-    type SubListKind,
+    importableChildListPath,
+    IMPORTABLE_CHILD_LIST_NAMES,
+    type ImportableChildListName,
 } from "../parsing/importablePaths";
 import {
     canonicalPath,
@@ -182,9 +182,9 @@ export function findFileTarget(filePath: string, importJsonPath?: string | null)
                     return;
                 }
             }
-            for (let k = 0; k < SUB_LIST_KINDS.length; k++) {
-                const kind: SubListKind = SUB_LIST_KINDS[k];
-                const sub = importableSubListPath(importable, kind);
+            for (let k = 0; k < IMPORTABLE_CHILD_LIST_NAMES.length; k++) {
+                const kind: ImportableChildListName = IMPORTABLE_CHILD_LIST_NAMES[k];
+                const sub = importableChildListPath(importable, kind);
                 if (sub !== undefined && canonicalPath(sub) === norm) {
                     found = { importable, prefix: kind };
                     return;

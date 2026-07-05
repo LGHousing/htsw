@@ -2,13 +2,13 @@
 // parse-output utilities also needed by the VS Code extension); this module
 // stays as the GUI's import point so call sites don't churn.
 export {
-    SUB_LIST_KINDS,
-    type SubListKind,
+    IMPORTABLE_CHILD_LIST_NAMES,
+    type ImportableChildListName,
     allReferencedPaths,
-    hasSubList,
+    hasChildList,
     importableDeclaringPath,
     importableFilePaths,
     importableSourcePath,
-    importableSubListPath,
-    subListOf,
+    importableChildListPath,
+    childListOf,
 } from "htsw";

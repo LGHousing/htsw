@@ -304,11 +304,11 @@ function appendChildListBody(
         }
     }
     if (allNull || shellOnly) {
-        const subListPath = `${parentPath}.${prop}`;
+        const childListPath = `${parentPath}.${prop}`;
         const noun = childActions.length === 1 ? "action" : "actions";
         out.push(makeLine({
             variant: "placeholder",
-            actionPath: subListPath,
+            actionPath: childListPath,
             text: `${indent(depth)}...${childActions.length} ${noun}...`,
             depth,
             lineNum: 0,

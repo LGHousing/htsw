@@ -26,12 +26,12 @@ import { cacheStateForImportable, linkStatusIcon } from "../../cache-status";
 import { menuSlotCacheStatus } from "../../cache-status/menuSlotStatus";
 import { isScannableType } from "../houses/contentTypes";
 import {
-    hasSubList,
+    hasChildList,
     importableDeclaringPath,
     importableFilePaths,
     importableSourcePath,
-    importableSubListPath,
-    type SubListKind,
+    importableChildListPath,
+    type ImportableChildListName,
 } from "../../parsing/importablePaths";
 import { importableIdentity } from "../../../importables/identity";
 import { houseDisplayName } from "../../../importCache/aliases";
@@ -146,7 +146,7 @@ export function importableExpansionKey(parentFullPath: string, imp: Importable):
     return `${parentFullPath}::${imp.type}:${importableIdentity(imp)}`;
 }
 
-const SUB_LIST_LABELS: { [k in SubListKind]: string } = {
+const CHILD_LIST_LABELS: { [k in ImportableChildListName]: string } = {
     actions: "Actions",
     onEnterActions: "Enter actions",
     onExitActions: "Exit actions",
@@ -154,22 +154,22 @@ const SUB_LIST_LABELS: { [k in SubListKind]: string } = {
     rightClickActions: "Right click actions",
 };
 
-export function subListsOf(imp: Importable): SubListKind[] {
+export function childListsOf(imp: Importable): ImportableChildListName[] {
     if (imp.type === "COMMAND") {
-        const out: SubListKind[] = [];
-        if (hasSubList(imp, "actions")) out.push("actions");
+        const out: ImportableChildListName[] = [];
+        if (hasChildList(imp, "actions")) out.push("actions");
         return out;
     }
     if (imp.type === "REGION") {
-        const out: SubListKind[] = [];
-        if (hasSubList(imp, "onEnterActions")) out.push("onEnterActions");
-        if (hasSubList(imp, "onExitActions")) out.push("onExitActions");
+        const out: ImportableChildListName[] = [];
+        if (hasChildList(imp, "onEnterActions")) out.push("onEnterActions");
+        if (hasChildList(imp, "onExitActions")) out.push("onExitActions");
         return out;
     }
     if (imp.type === "ITEM" || imp.type === "NPC") {
-        const out: SubListKind[] = [];
-        if (hasSubList(imp, "leftClickActions")) out.push("leftClickActions");
-        if (hasSubList(imp, "rightClickActions")) out.push("rightClickActions");
+        const out: ImportableChildListName[] = [];
+        if (hasChildList(imp, "leftClickActions")) out.push("leftClickActions");
+        if (hasChildList(imp, "rightClickActions")) out.push("rightClickActions");
         return out;
     }
     return [];
@@ -395,7 +395,7 @@ export function metadataFieldsOf(imp: Importable): MetadataField[] {
 }
 
 function isImportableExpandable(imp: Importable): boolean {
-    return subListsOf(imp).length > 0 || metadataFieldsOf(imp).length > 0;
+    return childListsOf(imp).length > 0 || metadataFieldsOf(imp).length > 0;
 }
 
 function importableLabel(imp: Importable): string {
@@ -413,7 +413,7 @@ function importablePreviewPath(parent: ResultImport, imp: Importable): string {
     return importableSourceFilePath(parent, imp);
 }
 
-// Files this importable owns: its primary source (htsl/snbt), sub-list htsl
+// Files this importable owns: its primary source (htsl/snbt), child list htsl
 // files, and menu slot .snbt/.htsl files — minus the import.json itself and
 // anything another importable in the same project also references (shared
 // files survive the delete).
@@ -1153,9 +1153,9 @@ export function importableRow(parent: ResultImport, imp: Importable): Element {
     });
 }
 
-export function subRow(parent: ResultImport, imp: Importable, kind: SubListKind): Element {
-    const label = SUB_LIST_LABELS[kind];
-    const target = importableSubListPath(imp, kind) ?? parent.fullPath;
+export function childListRow(parent: ResultImport, imp: Importable, kind: ImportableChildListName): Element {
+    const label = CHILD_LIST_LABELS[kind];
+    const target = importableChildListPath(imp, kind) ?? parent.fullPath;
     const actions = composeFileMenu(
         [openInViewAction(target, parent.fullPath)],
         target,

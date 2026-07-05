@@ -96,6 +96,7 @@ export type ImportableGroup = ImportableSource & {
     type: "GROUP",
     name: string,
     tag?: string,
+    tagShownInChat?: boolean,
     color?: Color,
     priority?: number,
     permissions?: Record<Permission, boolean>,

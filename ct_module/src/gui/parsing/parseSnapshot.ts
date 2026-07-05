@@ -8,7 +8,7 @@
  * the main thread; loading a snapshot is a single JSON read.
  *
  * The snapshot stores `value` (the parsed `Importable[]`), importable
- * source paths, sub-list source paths, and the parse's diagnostics with
+ * source paths, child list source paths, and the parse's diagnostics with
  * their spans resolved to file-relative offsets. Restoring rebuilds the
  * diagnostics with REAL spans (loading just the diagnostic-bearing files
  * into the new SourceMap), so `isFailed()`, squiggles, and hover survive
@@ -52,8 +52,8 @@ const SNAPSHOT_DIR = "./htsw/.parse-snapshots";
 // 16: fileTree gained `missing` leaf nodes for nonexistent includes.
 // 17: importables carry `sourcePath` themselves; the parallel `sourcePaths`
 // array is gone.
-// 18: sub-list and menu-slot paths are fields on the importables too
-// (`onEnterActionsPath`, slot `nbtPath`/`actionsPath`, …); `subListPaths`
+// 18: child list and menu-slot paths are fields on the importables too
+// (`onEnterActionsPath`, slot `nbtPath`/`actionsPath`, …); `childListPaths`
 // is gone.
 const SNAPSHOT_VERSION = 18;
 
