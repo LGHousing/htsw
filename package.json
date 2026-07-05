@@ -9,6 +9,9 @@
         "editors/code",
         "editors/monaco"
     ],
+    "scripts": {
+        "knip": "knip"
+    },
     "devDependencies": {
         "esbuild": "^0.28.1"
     }
