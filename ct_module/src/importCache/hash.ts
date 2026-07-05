@@ -190,9 +190,17 @@ export function importableCanonicalParts(
             key === "slots" &&
             Array.isArray(value)
         ) {
+            // A menu has no inherent slot order: Housing keys slots by number
+            // and a house read returns them sorted by id. Sort before joining
+            // so an import.json declaring slots in any order hashes identically
+            // to the same menu read back from the house — otherwise the menu
+            // never counts as unchanged and trust mode re-diffs it every run.
+            const sortedSlots = (value as Record<string, unknown>[])
+                .slice()
+                .sort((a, b) => Number(a.slot) - Number(b.slot));
             const slotParts: string[] = [];
-            for (let si = 0; si < value.length; si++) {
-                slotParts.push(menuSlotCanonical(value[si] as Record<string, unknown>));
+            for (let si = 0; si < sortedSlots.length; si++) {
+                slotParts.push(menuSlotCanonical(sortedSlots[si]));
             }
             serialized = "[" + slotParts.join(",") + "]";
         } else if (

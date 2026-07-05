@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import type { ImportableFunction } from "htsw/types";
+import type { Action, ImportableFunction } from "htsw/types";
 
 import type { ImportableCacheEntry } from "../src/importCache/cache";
 import { importableHash, listHashes } from "../src/importCache/hash";
@@ -75,6 +75,60 @@ describe("importableHash menu slot nbt", () => {
             },
         };
         expect(importableHash(menu(source))).not.toBe(importableHash(menu(damaged)));
+    });
+});
+
+describe("importableHash menu structure", () => {
+    const nbt = (id: string) => ({
+        type: "compound",
+        value: {
+            Count: { type: "byte", value: 1 },
+            id: { type: "string", value: id },
+        },
+    });
+    const chat = (message: string): Action => ({ type: "MESSAGE", message });
+    const mslot = (slot: number, id: string, actions?: Action[]) => ({
+        slot,
+        nbt: nbt(id),
+        ...(actions ? { actions } : {}),
+    });
+    const menu = (slots: unknown[], size = 1) =>
+        ({
+            type: "MENU",
+            name: "m",
+            size,
+            slots,
+        }) as unknown as Parameters<typeof importableHash>[0];
+
+    const stoneThenDiamond = [mslot(0, "minecraft:stone"), mslot(4, "minecraft:diamond")];
+
+    test("identical menus hash alike", () => {
+        expect(importableHash(menu(stoneThenDiamond))).toBe(
+            importableHash(menu([mslot(0, "minecraft:stone"), mslot(4, "minecraft:diamond")]))
+        );
+    });
+
+    test("size, added/removed slots, item, and actions all change the hash", () => {
+        const base = importableHash(menu(stoneThenDiamond));
+        expect(base).not.toBe(importableHash(menu(stoneThenDiamond, 2)));
+        expect(base).not.toBe(
+            importableHash(menu([...stoneThenDiamond, mslot(8, "minecraft:gold")]))
+        );
+        expect(base).not.toBe(importableHash(menu([mslot(0, "minecraft:stone")])));
+        expect(base).not.toBe(
+            importableHash(menu([mslot(0, "minecraft:stone"), mslot(4, "minecraft:gold")]))
+        );
+        expect(importableHash(menu([mslot(0, "minecraft:stone", [chat("x")])]))).not.toBe(
+            importableHash(menu([mslot(0, "minecraft:stone", [chat("y")])]))
+        );
+    });
+
+    test("slot declaration order does not affect the hash", () => {
+        // A house read returns slots sorted by id, so an import.json declaring
+        // them in any order must hash the same or the menu is never trusted.
+        expect(importableHash(menu(stoneThenDiamond))).toBe(
+            importableHash(menu([mslot(4, "minecraft:diamond"), mslot(0, "minecraft:stone")]))
+        );
     });
 });
 

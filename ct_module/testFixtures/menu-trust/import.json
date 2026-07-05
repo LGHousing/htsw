@@ -1,0 +1,24 @@
+{
+    "menus": [
+        {
+            "name": "htsw_test_menu_trust",
+            "size": 1,
+            "slots": [
+                {
+                    "slot": 4,
+                    "nbt": "diamond.snbt",
+                    "actions": "four.htsl"
+                },
+                {
+                    "slot": 0,
+                    "nbt": "stone.snbt",
+                    "actions": "zero.htsl"
+                },
+                {
+                    "slot": 8,
+                    "nbt": "gold.snbt"
+                }
+            ]
+        }
+    ]
+}
