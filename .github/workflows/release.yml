@@ -139,13 +139,16 @@ jobs:
           TAG: ${{ steps.tag.outputs.tag }}
           NOTES: ${{ steps.notes.outputs.notes }}
         run: |
+          ct_version="$(jq -r .version ct_module/package.json)"
+          vs_version="$(jq -r .version editors/code/package.json)"
+          title="HTSW v${ct_version} (VScode v${vs_version})"
           if gh release view "${TAG}" >/dev/null 2>&1; then
             gh release edit "${TAG}" \
-              --title "HTSW ${TAG}" \
+              --title "${title}" \
               --notes "${NOTES}"
           else
             gh release create "${TAG}" \
-              --title "HTSW ${TAG}" \
+              --title "${title}" \
               --notes "${NOTES}"
           fi
 
