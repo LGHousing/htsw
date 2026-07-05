@@ -7,6 +7,13 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 10
+    # Babel 8 removed the `loose`/`spec` preset-env options that ct_module's
+    # vite build relies on to emit ES5 for Rhino. Bumping across that major
+    # changes the emitted JS and can only be validated in-game, so hold it out
+    # of the automated group; do the loose->assumptions migration in its own PR.
+    ignore:
+      - dependency-name: "@babel/*"
+        update-types: ["version-update:semver-major"]
     groups:
       dev-dependencies:
         applies-to: version-updates
