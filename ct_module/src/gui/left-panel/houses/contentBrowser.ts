@@ -632,7 +632,10 @@ function exportActionBar(t: HouseContentType, uuid: string, totalCount: number):
                                     onClick: () => deepRead(),
                                 });
                             }
-                            openMenu(rect.x + rect.w, rect.y, actions);
+                            openMenu(rect.x + rect.w, rect.y, actions, {
+                                key: "houses-export-menu",
+                                trigger: rect,
+                            });
                         },
                     }),
                     selectedCount > 0 &&

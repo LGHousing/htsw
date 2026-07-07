@@ -1,6 +1,6 @@
 /// <reference types="../../../CTAutocomplete" />
 
-import { Element } from "./layout";
+import { Element, Rect } from "./layout";
 import { Button, Col, Container } from "./components";
 import { closeAllPopovers, closePopover, openPopover, type PopoverHandle } from "./popovers";
 import { COLOR_PANEL, COLOR_PANEL_BORDER } from "./theme";
@@ -117,13 +117,23 @@ export function closeActiveMenu(): void {
 // By default any currently-open popovers are closed first so successive right-clicks don't
 // stack menus. Pass `keepUnderlying: true` to keep parent popovers (e.g. when right-clicking
 // inside the file-browser popover — closing the parent would whisk the browser away).
+//
+// For a menu opened from a re-clickable trigger (a split-button caret, not the cursor), pass
+// `key` + `trigger`: the menu toggles shut when the same trigger is clicked again, and the
+// trigger rect is used both to place the menu and to survive the outside-click close pass so
+// this call is the one that closes it (otherwise the close-then-reopen race leaves it stuck open).
 export function openMenu(
     x: number,
     y: number,
     actions: MenuAction[],
-    options?: { keepUnderlying?: boolean }
+    options?: { keepUnderlying?: boolean; key?: string; trigger?: Rect }
 ): void {
     if (actions.length === 0) return;
+    const key = options?.key;
+    if (key !== undefined && activeMenu !== null && activeMenu.key === key) {
+        closeActiveMenu();
+        return;
+    }
     closeActiveMenu();
     if (!options?.keepUnderlying) closeAllPopovers();
     let height = PAD * 2;
@@ -144,12 +154,16 @@ export function openMenu(
         style: { padding: PAD, gap: GAP },
         children: actions.map((a) => actionElement(a, closeMenu)),
     });
-    // 0×0 anchor at the cursor for positioning. Context menus have no re-clickable trigger so
-    // the anchor-exclusion close guard isn't useful — the off-screen `excludeAnchor` flag opts
-    // out so a left-click anywhere (including the original cursor pixel) cleanly closes the menu.
+    // Cursor menus: 0×0 anchor at (x, y) with excludeAnchor off, so a left-click anywhere
+    // (including the original cursor pixel) cleanly closes them — they have no re-clickable
+    // trigger. Trigger menus (a split-button caret): anchor to the trigger rect with
+    // excludeAnchor on, so clicking the trigger while the menu is open doesn't get auto-closed
+    // out from under the toggle above — this call closes it instead.
+    const trigger = options?.trigger;
     const menuPopover = openPopover({
-        anchor: { x, y, w: 0, h: 0 },
-        excludeAnchor: false,
+        key,
+        anchor: trigger ?? { x, y, w: 0, h: 0 },
+        excludeAnchor: trigger !== undefined,
         content,
         width: menuWidthFor(actions),
         height,
