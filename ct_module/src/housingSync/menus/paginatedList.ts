@@ -203,50 +203,42 @@ export async function findPaginatedListEntry<T extends { index: number }>(
 ): Promise<{ entry: T; slot: ItemSlot } | null> {
     await goToPaginatedListPage(ctx, 1, config);
 
-    let found = false;
-    try {
-        let totalEntries = 0;
-        while (true) {
-            const visibleSlots = getVisiblePaginatedItemSlots(ctx);
-            const pageEntries = await readPage();
-            const localSlotIndices: number[] = [];
-            for (let i = 0; i < pageEntries.length; i++) {
-                localSlotIndices[i] = pageEntries[i].index;
-                pageEntries[i].index = totalEntries + i;
-            }
-            onPageRead?.(pageEntries);
+    let totalEntries = 0;
+    while (true) {
+        const visibleSlots = getVisiblePaginatedItemSlots(ctx);
+        const pageEntries = await readPage();
+        const localSlotIndices: number[] = [];
+        for (let i = 0; i < pageEntries.length; i++) {
+            localSlotIndices[i] = pageEntries[i].index;
+            pageEntries[i].index = totalEntries + i;
+        }
+        onPageRead?.(pageEntries);
 
-            for (let i = 0; i < pageEntries.length; i++) {
-                const localSlotIndex = localSlotIndices[i];
-                if (!matches(pageEntries[i])) continue;
+        for (let i = 0; i < pageEntries.length; i++) {
+            const localSlotIndex = localSlotIndices[i];
+            if (!matches(pageEntries[i])) continue;
 
-                const slot = visibleSlots[localSlotIndex];
-                if (!slot) {
-                    throw new Error(
-                        `Could not resolve visible ${config.label} slot ${localSlotIndex}.`
-                    );
-                }
-                found = true;
-                return { entry: pageEntries[i], slot };
-            }
-
-            totalEntries += pageEntries.length;
-            const stateBefore = getCurrentPaginatedListPageState(ctx, config);
-            if (!stateBefore.hasNext) break;
-
-            clickPaginatedNextPage(ctx);
-            await timedWaitForMenu(ctx, "pageTurnWait");
-
-            const stateAfter = getCurrentPaginatedListPageState(ctx, config);
-            if (stateAfter.currentPage <= stateBefore.currentPage) {
+            const slot = visibleSlots[localSlotIndex];
+            if (!slot) {
                 throw new Error(
-                    `Paginated ${config.label} page did not advance after clicking next page (still on page ${stateAfter.currentPage}).`
+                    `Could not resolve visible ${config.label} slot ${localSlotIndex}.`
                 );
             }
+            return { entry: pageEntries[i], slot };
         }
-    } finally {
-        if (!found) {
-            await goToPaginatedListPage(ctx, 1, config);
+
+        totalEntries += pageEntries.length;
+        const stateBefore = getCurrentPaginatedListPageState(ctx, config);
+        if (!stateBefore.hasNext) break;
+
+        clickPaginatedNextPage(ctx);
+        await timedWaitForMenu(ctx, "pageTurnWait");
+
+        const stateAfter = getCurrentPaginatedListPageState(ctx, config);
+        if (stateAfter.currentPage <= stateBefore.currentPage) {
+            throw new Error(
+                `Paginated ${config.label} page did not advance after clicking next page (still on page ${stateAfter.currentPage}).`
+            );
         }
     }
 
@@ -258,10 +250,11 @@ function clickPaginatedNextPage(ctx: TaskContext): void {
 }
 
 /**
- * Read every page of a Housing paginated list and concatenate. Resets to
- * page 1 at start and end so callers don't have to remember either
- * invariant. Renumbers `entry.index` across pages so it matches the global
- * list position.
+ * Read every page of a Housing paginated list and concatenate. Navigates to
+ * page 1 at the start and leaves the GUI on the last page it read. Every
+ * caller re-navigates to the page it needs before touching the menu, so a
+ * trailing reset here would just be page turns nobody depends on. Renumbers
+ * `entry.index` across pages so it matches the global list position.
  *
  * `onPageRead` fires once per page after entries are merged; use it for
  * progress reporting. `pagesRead` starts at 1.
@@ -278,37 +271,29 @@ export async function readPaginatedList<T extends { index: number }>(
 ): Promise<T[]> {
     await goToPaginatedListPage(ctx, 1, config);
     const entries: T[] = [];
-    try {
-        let pagesRead = 0;
-        while (true) {
-            const pageEntries = await readPage();
-            for (const entry of pageEntries) {
-                entry.index = entries.length;
-                entries.push(entry);
-            }
-            pagesRead++;
-            onPageRead?.({ totalEntries: entries.length, pagesRead, entries });
-            const stateBefore = getCurrentPaginatedListPageState(ctx, config);
-            if (!stateBefore.hasNext) break;
-
-            clickPaginatedNextPage(ctx);
-            await timedWaitForMenu(ctx, "pageTurnWait");
-
-            // Guard: if the click didn't advance us, abort instead of looping
-            // forever on the same page (which would also duplicate entries).
-            const stateAfter = getCurrentPaginatedListPageState(ctx, config);
-            if (stateAfter.currentPage <= stateBefore.currentPage) {
-                throw new Error(
-                    `Paginated ${config.label} page did not advance after clicking next page (still on page ${stateAfter.currentPage}).`
-                );
-            }
+    let pagesRead = 0;
+    while (true) {
+        const pageEntries = await readPage();
+        for (const entry of pageEntries) {
+            entry.index = entries.length;
+            entries.push(entry);
         }
-    } finally {
-        // Always try to leave the GUI on page 1, even if the read body
-        // threw. If this reset itself throws, the finally error supersedes
-        // the original — accepted JS semantics; the alternative is silently
-        // swallowing a genuinely-broken GUI state.
-        await goToPaginatedListPage(ctx, 1, config);
+        pagesRead++;
+        onPageRead?.({ totalEntries: entries.length, pagesRead, entries });
+        const stateBefore = getCurrentPaginatedListPageState(ctx, config);
+        if (!stateBefore.hasNext) break;
+
+        clickPaginatedNextPage(ctx);
+        await timedWaitForMenu(ctx, "pageTurnWait");
+
+        // Guard: if the click didn't advance us, abort instead of looping
+        // forever on the same page (which would also duplicate entries).
+        const stateAfter = getCurrentPaginatedListPageState(ctx, config);
+        if (stateAfter.currentPage <= stateBefore.currentPage) {
+            throw new Error(
+                `Paginated ${config.label} page did not advance after clicking next page (still on page ${stateAfter.currentPage}).`
+            );
+        }
     }
     return entries;
 }
