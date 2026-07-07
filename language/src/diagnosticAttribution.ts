@@ -60,7 +60,16 @@ export function attributeDiagnostics(
         }
         const os = path !== undefined ? owners.get(path) : undefined;
         if (os !== undefined && os.length > 0) {
-            for (const o of os) {
+            // Several importables can share one file (inline teams/groups all in
+            // one import.json). Attribute the diagnostic to the one whose parse
+            // span contains it, so a per-importable count reflects only its own
+            // diagnostics; fall back to every owner when it sits outside all of
+            // them (a file-level error) so it is never dropped.
+            const targets =
+                os.length > 1 && primary !== undefined
+                    ? ownerContainingPos(parsed, os, primary.span.start) ?? os
+                    : os;
+            for (const o of targets) {
                 const list = byImportable.get(o);
                 if (list === undefined) byImportable.set(o, [d]);
                 else list.push(d);
@@ -73,6 +82,25 @@ export function attributeDiagnostics(
     const result: DiagnosticAttribution = { byImportable, byFile, unattributed };
     cache.set(parsed, result);
     return result;
+}
+
+// The single owner whose parse span contains `pos`, as a one-element list, or
+// null when none does (the caller keeps its multi-owner fallback then).
+function ownerContainingPos(
+    parsed: ImportablesParseResult,
+    owners: Importable[],
+    pos: number
+): Importable[] | null {
+    for (const o of owners) {
+        let span;
+        try {
+            span = parsed.gcx.spans.get(o);
+        } catch (_e) {
+            continue;
+        }
+        if (span.start <= pos && pos < span.end) return [o];
+    }
+    return null;
 }
 
 function countLevels(ds: Diagnostic[] | undefined): SeverityCounts {

@@ -1049,8 +1049,7 @@ function mapImportable(
     const label = imp.type === "NPC" ? `${imp.name} @ ${identity}` : identity;
 
     const openPath = resolvedImportableSourcePath(imp, declaringPath);
-    // Sum per file so htsw.diagnostics.excludeFolders can hide only excluded files.
-    const own = sumFileCounts(parse, new Set(htsw.importableFilePaths(imp)));
+    const own = ownDiagnosticCounts(parse, imp);
     const subEntries = mapSubEntries(imp, declaringPath, parse);
 
     return {
@@ -1171,6 +1170,32 @@ function sumFileCounts(parse: ContextParse, rawPaths: Set<string>): SeverityCoun
         errors += count.errors;
         warnings += count.warnings;
     });
+    return { errors, warnings };
+}
+
+// A single importable's own diagnostics, span-attributed so importables that
+// share one import.json (inline teams/groups) don't each show the file's total.
+// Still honors htsw.diagnostics.excludeFolders, per the diagnostic's own file.
+function ownDiagnosticCounts(parse: ContextParse, imp: htsw.types.Importable): SeverityCount {
+    const ds = htsw.attributeDiagnostics(parse.result).byImportable.get(imp);
+    if (ds === undefined) return { errors: 0, warnings: 0 };
+    const sm = parse.result.gcx.sourceMap;
+    let errors = 0;
+    let warnings = 0;
+    for (const d of ds) {
+        const primary = d.spans.find((s) => s.kind === "primary") ?? d.spans[0];
+        let filePath: string | undefined;
+        if (primary !== undefined) {
+            try {
+                filePath = sm.getFileByPos(primary.span.start).path;
+            } catch (_e) {
+                filePath = undefined;
+            }
+        }
+        if (filePath !== undefined && isPathInExcludedDiagnosticFolder(filePath)) continue;
+        if (d.level === "error" || d.level === "bug") errors++;
+        else if (d.level === "warning") warnings++;
+    }
     return { errors, warnings };
 }
 
