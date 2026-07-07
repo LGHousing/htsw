@@ -387,6 +387,7 @@ function exportActionBar(t: HouseContentType, uuid: string, totalCount: number):
         (it) => it.uuid === uuid && it.type === t.type
     );
     const selectedCount = selected.length;
+    const deepRead = t.deepRead;
     // Missing = house items whose identity isn't already in the loaded
     // import.json. Same comparison itemRow uses.
     const exportedSet = exportedIdentities(t.type);
@@ -524,6 +525,23 @@ function exportActionBar(t: HouseContentType, uuid: string, totalCount: number):
                             }
                         },
                     }),
+                    deepRead !== undefined &&
+                        selectedCount > 0 &&
+                        Button({
+                            children: [
+                                Icon({ name: Icons.scanEye }),
+                                Text({ text: `Read (${selectedCount})` }),
+                            ],
+                            style: {
+                                height: { kind: "grow" },
+                                background: COLOR_BUTTON,
+                                hoverBackground: COLOR_BUTTON_HOVER,
+                            },
+                            tooltip: "Read selected into knowledge",
+                            tooltipColor: COLOR_TEXT_DIM,
+                            onClick: () =>
+                                deepRead(selected.map((it) => it.name)),
+                        }),
                     Button({
                         // Explicit 12px icon via children: the `icon:` shorthand
                         // defaults to 16px, which overflows a ~22px button (inner
@@ -615,19 +633,10 @@ function exportActionBar(t: HouseContentType, uuid: string, totalCount: number):
                                     },
                                 },
                             ];
-                            if (t.deepRead !== undefined) {
-                                const deepRead = t.deepRead;
+                            if (deepRead !== undefined) {
                                 actions.push({ kind: "separator" });
-                                if (selectedCount > 0) {
-                                    actions.push({
-                                        label: `Read selected into knowledge (${selectedCount})`,
-                                        icon: Icons.scanEye,
-                                        onClick: () =>
-                                            deepRead(selected.map((it) => it.name)),
-                                    });
-                                }
                                 actions.push({
-                                    label: `Read all into knowledge (${totalCount}, slow)`,
+                                    label: `Read all into knowledge (${totalCount})`,
                                     icon: Icons.scanEye,
                                     onClick: () => deepRead(),
                                 });
