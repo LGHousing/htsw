@@ -153,6 +153,7 @@ jobs:
           fi
 
           gh release upload "${TAG}" \
+            dist-publish/ct/HTSW.zip \
             dist-publish/ct/htsw-ct-*.zip \
             dist-publish/vscode/*.vsix \
             dist-publish/htsw-ct-latest.json \

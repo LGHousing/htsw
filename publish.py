@@ -1,7 +1,8 @@
 """Build and publish HTSW autoupdate artifacts to legendarygames.dev.
 
 Produces, under dist-publish/:
-  ct/htsw-ct-<version>.zip      full CT module payload (dist/* + metadata.json)
+  ct/htsw-ct-<version>.zip      flat CT module payload for the autoupdater feed
+  ct/HTSW.zip                   same payload nested under HTSW/ for manual install
   ct/latest.json                {version, zip, sha256, notes?}
   vscode/htsw-plus-plus-<v>.vsix
   vscode/latest.json            {version, vsix, sha256, notes?}
@@ -111,6 +112,18 @@ def manifest_json(payload: dict[str, str], surface: str | None = None) -> str:
     return json.dumps(payload, indent=2) + "\n"
 
 
+def write_ct_zip(zip_path: Path, dist: Path, metadata: Path, root: str = "") -> None:
+    # Mirror what install.py deploys: everything under dist/ at the archive
+    # root, plus metadata.json. No .env / mcp.json (per-install config). When
+    # `root` is set, nest every entry under that folder.
+    prefix = f"{root}/" if root else ""
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        for file in sorted(dist.rglob("*")):
+            if file.is_file():
+                zf.write(file, prefix + file.relative_to(dist).as_posix())
+        zf.write(metadata, prefix + "metadata.json")
+
+
 def build_ct(do_build: bool) -> tuple[Path, str]:
     if do_build:
         run(["npm", "run", "build"], CT_DIR)
@@ -126,15 +139,17 @@ def build_ct(do_build: bool) -> tuple[Path, str]:
     zip_name = f"htsw-ct-{version}.zip"
     zip_path = out / zip_name
 
-    # Mirror what install.py deploys: everything under dist/ at the archive
-    # root, plus metadata.json. No .env / mcp.json (per-install config).
-    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-        for file in sorted(dist.rglob("*")):
-            if file.is_file():
-                zf.write(file, file.relative_to(dist).as_posix())
-        zf.write(metadata, "metadata.json")
-
+    # The feed zip stays flat: already-installed autoupdaters extract it and
+    # move its children straight into modules/HTSW.
+    write_ct_zip(zip_path, dist, metadata)
     shutil.copy2(zip_path, out / "htsw-ct-latest.zip")
+
+    # The human download nests everything under HTSW/, so extracting it by any
+    # method yields a folder named HTSW — the name ChatTriggers and the
+    # autoupdater both require. Kept separate from the feed zip because the
+    # deployed updaters can't handle the nested layout yet.
+    write_ct_zip(out / "HTSW.zip", dist, metadata, root="HTSW")
+
     digest = sha256_of(zip_path)
     (out / "latest.json").write_text(
         manifest_json({"version": version, "zip": zip_name, "sha256": digest}, surface="ct"),

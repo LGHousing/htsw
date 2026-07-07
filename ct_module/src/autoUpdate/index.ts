@@ -423,7 +423,12 @@ function replaceModuleContents(stagedDir: string): boolean {
     let backupRoot: any;
     try {
         moduleRoot = Paths.get(MODULE_DIR).toAbsolutePath().normalize();
-        const stagedRoot = Paths.get(stagedDir).toAbsolutePath().normalize();
+        let stagedRoot = Paths.get(stagedDir).toAbsolutePath().normalize();
+        // The manual-install zip wraps the payload in an HTSW/ folder; the feed
+        // zip does not. Descend into the wrapper when present so either archive
+        // lands its files directly in the module dir.
+        const wrapped = stagedRoot.resolve("HTSW");
+        if (Files.isDirectory(wrapped)) stagedRoot = wrapped;
 
         // Park the old module in .update/backup instead of deleting it, so a
         // failure mid-swap can roll back to a working module. The caller

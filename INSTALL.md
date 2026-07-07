@@ -13,9 +13,19 @@ Requirements:
 
 - Minecraft **1.8.9** with Forge
 - [ChatTriggers](https://www.chattriggers.com/) 2.2.1 for 1.8.9
-- Node.js 20+, Python 3, and a JDK (for `javac`) to build
 
-Build and deploy from source:
+### Quick install (pre-built)
+
+1. Download [`HTSW.zip`](https://legendarygames.dev/htsw/ct/HTSW.zip).
+2. Extract it — you get a folder named **`HTSW`**.
+3. Move that `HTSW` folder into `…/.minecraft/config/ChatTriggers/modules/`.
+4. In-game, run `/ct reload`.
+
+The folder must stay named `HTSW`, or ChatTriggers won't load it. After this, `/htsw update` keeps it current automatically.
+
+### Build from source
+
+Also needs Node.js 20+, Python 3, and a JDK (for `javac`).
 
 ```sh
 git clone https://github.com/LGHousing/htsw
