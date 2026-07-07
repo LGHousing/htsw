@@ -101,6 +101,61 @@ function typeTabButton(t: HouseContentType, showLabel: boolean): Element {
     });
 }
 
+function rescanButton(t: HouseContentType, uuid: string | null): Element {
+    return Button({
+        style: {
+            width: { kind: "px", value: SCAN_BUTTON_W },
+            height: { kind: "grow" },
+            background: COLOR_BUTTON,
+            hoverBackground: COLOR_BUTTON_HOVER,
+        },
+        onClick: () => {
+            if (!t.scanInFlight()) t.scan();
+        },
+        children: [
+            Icon({
+                name: Icons.refreshCw,
+                // "names" + "(fast)" to set it apart from the slow deep Read,
+                // which lives in the export dropdown ("Read … into knowledge").
+                tooltip: () => {
+                    const l = scanLabel(t, uuid);
+                    return l.indexOf("Scanning") === 0 ? l : `${l} names (fast)`;
+                },
+                tooltipColor: COLOR_TEXT_DIM,
+                style: {
+                    width: { kind: "px", value: 12 },
+                    height: { kind: "px", value: 12 },
+                },
+            }),
+        ],
+    });
+}
+
+// The search bar is the rescan button's home: it stays put through the
+// not-scanned and empty states so the button is always in the same place,
+// instead of hiding as a small icon in the tab strip.
+function searchRow(t: HouseContentType, uuid: string | null, canScan: boolean): Element {
+    const children: Element[] = [
+        Input({
+            id: "houses-item-search",
+            value: () => itemSearch,
+            onChange: (v) => {
+                itemSearch = v;
+            },
+            placeholder: `Search ${t.label.toLowerCase()}…`,
+            style: {
+                width: { kind: "grow" },
+                height: { kind: "px", value: SIZE_ROW_H + 6 },
+            },
+        }),
+    ];
+    if (canScan) children.push(rescanButton(t, uuid));
+    return Row({
+        style: { gap: 4, height: { kind: "px", value: SIZE_ROW_H + 6 } },
+        children,
+    });
+}
+
 // The source file (htsl/.snbt/json) for an importable in the selected
 // import.json, or null if it isn't in your file. Called on right-click, not per
 // frame, so re-resolving through the (cached) parse is fine.
@@ -684,12 +739,7 @@ export function typeBrowserSection(getViewedUuid: () => string | null, availW: n
             const canScan = uuid !== null && uuid === getHousingUuid();
             const canExport = t.export !== undefined && canScan;
             const tabCount = HOUSE_CONTENT_TYPES.length;
-            const childCount = canScan ? tabCount + 1 : tabCount;
-            const perTab =
-                (availW -
-                    (canScan ? SCAN_BUTTON_W : 0) -
-                    TAB_GAP * (childCount - 1)) /
-                tabCount;
+            const perTab = (availW - TAB_GAP * (tabCount - 1)) / tabCount;
             const showLabels = tabLabelsFit(
                 perTab,
                 HOUSE_CONTENT_TYPES.map((type) => type.label)
@@ -697,42 +747,6 @@ export function typeBrowserSection(getViewedUuid: () => string | null, availW: n
             const tabStrip = HOUSE_CONTENT_TYPES.map((type) =>
                 typeTabButton(type, showLabels)
             );
-            if (canScan) {
-                // Icon-only reload button, not a text tab — at tab width + with a
-                // label it read as a fourth type tab you'd click by mistake.
-                tabStrip.push(
-                    Button({
-                        style: {
-                            width: { kind: "px", value: SCAN_BUTTON_W },
-                            height: { kind: "grow" },
-                            background: COLOR_BUTTON,
-                            hoverBackground: COLOR_BUTTON_HOVER,
-                        },
-                        onClick: () => {
-                            if (!t.scanInFlight()) t.scan();
-                        },
-                        children: [
-                            Icon({
-                                name: Icons.refreshCw,
-                                // "names" + "(fast)" to set it apart from the
-                                // slow deep Read, which lives in the export
-                                // dropdown ("Read … into knowledge").
-                                tooltip: () => {
-                                    const l = scanLabel(t, uuid);
-                                    return l.indexOf("Scanning") === 0
-                                        ? l
-                                        : `${l} names (fast)`;
-                                },
-                                tooltipColor: COLOR_TEXT_DIM,
-                                style: {
-                                    width: { kind: "px", value: 12 },
-                                    height: { kind: "px", value: 12 },
-                                },
-                            }),
-                        ],
-                    })
-                );
-            }
             const out: Element[] = [
                 Row({
                     style: { gap: TAB_GAP, height: { kind: "px", value: 18 } },
@@ -748,7 +762,15 @@ export function typeBrowserSection(getViewedUuid: () => string | null, availW: n
                 );
                 return out;
             }
-            if (!t.scanned(uuid)) {
+            const scanned = t.scanned(uuid);
+            const items = scanned ? t.items(uuid) : [];
+            // Keep the search bar (with the rescan button) present whenever you
+            // can scan or there's something to search, so the button doesn't
+            // vanish in the not-scanned / empty states.
+            if (canScan || items.length > 0) {
+                out.push(searchRow(t, uuid, canScan));
+            }
+            if (!scanned) {
                 out.push(
                     Text({
                         text: () => {
@@ -764,7 +786,6 @@ export function typeBrowserSection(getViewedUuid: () => string | null, availW: n
                 );
                 return out;
             }
-            const items = t.items(uuid);
             if (items.length === 0) {
                 out.push(
                     Text({
@@ -774,17 +795,6 @@ export function typeBrowserSection(getViewedUuid: () => string | null, availW: n
                 );
                 return out;
             }
-            out.push(
-                Input({
-                    id: "houses-item-search",
-                    value: () => itemSearch,
-                    onChange: (v) => {
-                        itemSearch = v;
-                    },
-                    placeholder: `Search ${t.label.toLowerCase()}…`,
-                    style: { height: { kind: "px", value: SIZE_ROW_H + 6 } },
-                })
-            );
             const query = itemSearch.trim().toLowerCase();
             const shown =
                 query === ""
