@@ -46,10 +46,8 @@ let tickCounter = 0;
 const pollInFlight: any = new AtomicBoolean(false);
 const flushInFlight: any = new AtomicBoolean(false);
 const pendingCommands: any = new ConcurrentLinkedQueue();
-const pendingErrors: any = new ConcurrentLinkedQueue();
 let pollBackoffUntilMs = 0;
 let pollConsecutiveFailures = 0;
-let lastChatErrorAt = 0;
 
 function loadConfig(): BridgeConfig | null {
     try {
@@ -68,27 +66,15 @@ function loadConfig(): BridgeConfig | null {
     }
 }
 
-// Called from tick thread only — ChatLib.chat is not safe from arbitrary threads.
-function logErrorThrottled(msg: string): void {
-    const now = Date.now();
-    if (now - lastChatErrorAt < 5000) return;
-    lastChatErrorAt = now;
-    ChatLib.chat(`&7[htsw-mcp] &c${msg}`);
+function registerPollFailure(): void {
+    pollConsecutiveFailures++;
+    const exp = Math.min(6, pollConsecutiveFailures);
+    pollBackoffUntilMs = Date.now() + Math.min(BACKOFF_MAX_MS, BACKOFF_BASE_MS * (1 << exp));
 }
 
-function reportError(msg: string): void {
-    pendingErrors.add(msg);
-}
-
-function drainErrors(): void {
-    while (true) {
-        const msg = pendingErrors.poll();
-        if (msg === null) break;
-        logErrorThrottled(String(msg));
-    }
-}
-
-// Synchronous HTTP — only ever invoked from a daemon worker thread.
+// Synchronous HTTP — only ever invoked from a daemon worker thread. A dead or
+// unreachable server is the normal resting state (no agent driving the bridge),
+// so connection failures are silent: schedulePoll's backoff paces the retries.
 function httpGetSync(port: number, path: string): string | null {
     try {
         const url = new URLClass(`http://127.0.0.1:${port}${path}`);
@@ -107,8 +93,7 @@ function httpGetSync(port: number, path: string): string | null {
         }
         reader.close();
         return result;
-    } catch (e) {
-        reportError(`GET ${path} failed: ${e}`);
+    } catch (_e) {
         return null;
     }
 }
@@ -129,8 +114,7 @@ function httpPostJsonSync(port: number, path: string, body: unknown): boolean {
         const code = conn.getResponseCode();
         conn.disconnect();
         return code >= 200 && code < 300;
-    } catch (e) {
-        reportError(`POST ${path} failed: ${e}`);
+    } catch (_e) {
         return false;
     }
 }
@@ -178,21 +162,18 @@ function schedulePoll(): void {
         try {
             const raw = httpGetSync(port, "/poll");
             if (raw === null) {
-                pollConsecutiveFailures++;
-                const exp = Math.min(6, pollConsecutiveFailures);
-                const delay = Math.min(BACKOFF_MAX_MS, BACKOFF_BASE_MS * (1 << exp));
-                pollBackoffUntilMs = Date.now() + delay;
+                registerPollFailure();
+                return;
+            }
+            let parsed: any;
+            try {
+                parsed = JSON.parse(raw);
+            } catch (_e) {
+                registerPollFailure();
                 return;
             }
             pollConsecutiveFailures = 0;
             pollBackoffUntilMs = 0;
-            let parsed: any;
-            try {
-                parsed = JSON.parse(raw);
-            } catch (e) {
-                reportError(`poll parse failed: ${e}`);
-                return;
-            }
             const commands = Array.isArray(parsed.commands) ? parsed.commands : [];
             for (let i = 0; i < commands.length; i++) {
                 const entry = commands[i];
@@ -215,6 +196,9 @@ function schedulePoll(): void {
 
 function scheduleFlush(): void {
     if (config === null || !config.enabled) return;
+    // Reuse the poll's reachability signal: if polls are backing off, the server
+    // is unreachable, so don't burn POST attempts (and drop batches) against it.
+    if (Date.now() < pollBackoffUntilMs) return;
     if (chatQueue.length === 0) return;
     if (!flushInFlight.compareAndSet(false, true)) return;
     const batch = chatQueue.splice(0, CHAT_FLUSH_BATCH);
@@ -251,7 +235,6 @@ export function initMcpBridge(): void {
     register("tick", () => {
         tickCounter++;
         drainCommands();
-        drainErrors();
         if (tickCounter % POLL_TICK_INTERVAL === 0) schedulePoll();
         if (tickCounter % FLUSH_TICK_INTERVAL === 0) scheduleFlush();
     });
