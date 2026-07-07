@@ -1,6 +1,6 @@
 import { Diagnostic } from "../../diagnostic";
-import type { Action, Bounds, Color, CommandMode, Event, FunctionIcon, MenuSlot, Permission, Pos } from "../../types";
-import { COLORS, COMMAND_MODES, EVENTS, PERMISSIONS } from "../../types/constants";
+import type { Action, Bounds, ChatSpeed, Color, CommandMode, DefaultGameMode, Event, FunctionIcon, MenuSlot, Permission, Pos } from "../../types";
+import { CHAT_SPEEDS, COLORS, COMMAND_MODES, DEFAULT_GAME_MODES, EVENTS, PERMISSIONS } from "../../types/constants";
 import type { Parser } from "./parser";
 import { contentFilePath, getFileName, parseOption } from "./helpers";
 import { parseHtsl as parseHtslImpl } from "../../htsl";
@@ -120,4 +120,12 @@ export function parsePermissions(p: Parser): Record<Permission, boolean> {
         perms[k] = value.parseBoolean();
     }
     return perms;
+}
+
+export function parseChatSpeed(p: Parser): ChatSpeed {
+    return parseOption(p, CHAT_SPEEDS, { singular: "chat speed", plural: "chat speeds" });
+}
+
+export function parseDefaultGameMode(p: Parser): DefaultGameMode {
+    return parseOption(p, DEFAULT_GAME_MODES, { singular: "game mode", plural: "game modes" });
 }

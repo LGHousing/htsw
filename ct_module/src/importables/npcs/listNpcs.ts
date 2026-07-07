@@ -1,6 +1,7 @@
 import type { Pos } from "htsw/types";
 
 import { timedWaitForMenu } from "../../housingSync/menus/menuWait";
+import { isAtMenuTitle } from "../../housingSync/menus/currentMenu";
 import {
     findPaginatedListEntry,
     getPaginatedListSlotAtIndex,
@@ -11,6 +12,7 @@ import {
 import TaskContext from "../../tasks/context";
 import { ItemSlot, MouseButton } from "../../tasks/specifics/slots";
 import { normalizeFormattingCodes, removedFormatting } from "../../utils/helpers";
+import { teleportSucceeded } from "../waiters";
 
 const NPC_LIST_CONFIG: PaginatedListConfig = {
     label: "npc",
@@ -65,6 +67,11 @@ function parseNpcPos(lore: string[]): Pos | null {
 }
 
 async function openNpcBrowser(ctx: TaskContext): Promise<void> {
+    // Already in the NPCs list (e.g. the list phase left us here, possibly on a
+    // later page) — skip the /hmenu round-trip. The paginated navigation that
+    // follows reads the live page from the title and corrects from any page.
+    if (isAtMenuTitle(ctx, "NPCs")) return;
+
     await ctx.runCommand("/hmenu");
     await timedWaitForMenu(ctx, "commandMenuWait");
 
@@ -160,6 +167,17 @@ export async function openNpcEditorForPos(
     found.slot.click(MouseButton.LEFT);
     await timedWaitForMenu(ctx, "menuClickWait");
     return found.entry;
+}
+
+// The NPC's position is its identity, so teleport straight there with /tp
+// rather than opening the browser and right-clicking its slot. The slot's
+// right-click teleport emits no chat line to confirm on, while /tp does (the
+// same command region-corner setup uses).
+export async function teleportToNpc(ctx: TaskContext, pos: Pos): Promise<void> {
+    await ctx.expectAfter(
+        () => ctx.runCommand(`/tp ${pos.x} ${pos.y} ${pos.z}`),
+        teleportSucceeded(pos)
+    );
 }
 
 async function tryOpenCachedNpcEditor(

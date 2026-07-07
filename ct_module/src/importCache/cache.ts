@@ -13,6 +13,7 @@ import {
     cacheTypeDir,
 } from "./paths";
 import { importableIdentity } from "../importables/identity";
+import { removedFormatting } from "../utils/helpers";
 
 /**
  * Schema version for the importable cache format. Bump this when the shape
@@ -69,6 +70,10 @@ type PresenceRecord = {
     writtenAt: string;
     name: string;
     verified: false;
+    // Display label when `name` (the identity) isn't a human name — NPCs store
+    // their name here so the browser reads it without a deep read. Omitted when
+    // the identity already is the display name.
+    label?: string;
 };
 
 /**
@@ -88,6 +93,14 @@ function buildImportableCacheEntry(
         hash: importableHash(importable),
         lists: listHashes(importable),
     };
+}
+
+// A house row's display label when its identity isn't itself a name: NPCs are
+// keyed by position but should read as their name in the browser. Every other
+// type's identity already is its name, so they need no separate label.
+function houseDisplayLabel(importable: Importable): string | undefined {
+    if (importable.type === "NPC") return removedFormatting(importable.name);
+    return undefined;
 }
 
 /**
@@ -114,6 +127,7 @@ export function writeImportableCache(
             type: importable.type,
             verified: true,
             importable,
+            label: houseDisplayLabel(importable),
         });
         if (quiet !== true) ctx.displayMessage(`&7[cache] saved &f${path}`);
     } catch (error) {
@@ -156,7 +170,8 @@ export async function tryWriteImportableCache(
 export function writePresence(
     housingUuid: string,
     type: Importable["type"],
-    name: string
+    name: string,
+    label?: string
 ): void {
     // Skip if this importable is already known — as content (don't clobber a
     // verified read) or as an existing presence record (don't re-write on every
@@ -171,13 +186,20 @@ export function writePresence(
         writtenAt: new Date().toISOString(),
         name,
         verified: false,
+        ...(label !== undefined ? { label } : {}),
     };
     try {
         ensureParentDirs(path);
         FileLib.write(path, JSON.stringify(record, null, 4), true);
         // Content readers must see this as "no content".
         readCache.set(path, null);
-        indexUpsert(housingUuid, type, { name, type, verified: false, importable: null });
+        indexUpsert(housingUuid, type, {
+            name,
+            type,
+            verified: false,
+            importable: null,
+            label,
+        });
     } catch (_e) {
         // best-effort
     }
@@ -307,6 +329,9 @@ export type HouseImportable = {
     type: Importable["type"];
     verified: boolean;
     importable: Importable | null;
+    // Human-readable label when `name` (the identity) isn't itself a name, e.g.
+    // an NPC keyed by position. Undefined = display `name` directly.
+    label?: string;
 };
 
 const enumIndex = new Map<string, HouseImportable[]>();
@@ -318,7 +343,12 @@ function enumKey(uuid: string, type: Importable["type"]): string {
 
 function parseHouseRecord(raw: string | null, type: Importable["type"]): HouseImportable | null {
     if (raw === null) return null;
-    let obj: { schemaVersion?: unknown; importable?: unknown; name?: unknown };
+    let obj: {
+        schemaVersion?: unknown;
+        importable?: unknown;
+        name?: unknown;
+        label?: unknown;
+    };
     try {
         obj = JSON.parse(String(raw));
     } catch {
@@ -334,10 +364,16 @@ function parseHouseRecord(raw: string | null, type: Importable["type"]): HouseIm
     if (obj.importable !== null && typeof obj.importable === "object") {
         const imp = obj.importable as Importable;
         const name = typeof obj.name === "string" ? obj.name : importableIdentity(imp);
-        return { name, type, verified: true, importable: imp };
+        return { name, type, verified: true, importable: imp, label: houseDisplayLabel(imp) };
     }
     if (typeof obj.name === "string") {
-        return { name: obj.name, type, verified: false, importable: null };
+        return {
+            name: obj.name,
+            type,
+            verified: false,
+            importable: null,
+            label: typeof obj.label === "string" ? obj.label : undefined,
+        };
     }
     return null;
 }
@@ -451,7 +487,10 @@ export function houseTypeScanned(
 export function recordHouseScan(
     uuid: string,
     type: Importable["type"],
-    names: readonly string[]
+    names: readonly string[],
+    // Display labels keyed by identity, for types whose identity isn't a name
+    // (NPCs, keyed by position). Omitted for name-identified types.
+    labels?: ReadonlyMap<string, string>
 ): void {
     const markerPath = cacheScanMarkerPath(uuid, type);
     try {
@@ -469,5 +508,7 @@ export function recordHouseScan(
             deleteImportableCache(uuid, type, known[i].name);
         }
     }
-    for (let i = 0; i < names.length; i++) writePresence(uuid, type, names[i]);
+    for (let i = 0; i < names.length; i++) {
+        writePresence(uuid, type, names[i], labels?.get(names[i]));
+    }
 }

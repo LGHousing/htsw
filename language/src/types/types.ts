@@ -1,8 +1,10 @@
 import {
+    CHAT_SPEEDS,
     COLORS,
     COMMAND_MODES,
     COMPARISONS,
     DAMAGE_CAUSES,
+    DEFAULT_GAME_MODES,
     ENCHANTMENTS,
     EVENTS,
     FISHING_ENVIRONMENTS,
@@ -42,6 +44,8 @@ export type Lobby = (typeof LOBBIES)[number];
 export type Enchantment = (typeof ENCHANTMENTS)[number];
 export type Sound = (typeof SOUNDS)[number]["path"];
 export type Permission = (typeof PERMISSIONS)[number];
+export type ChatSpeed = (typeof CHAT_SPEEDS)[number];
+export type DefaultGameMode = (typeof DEFAULT_GAME_MODES)[number];
 export type DamageCause = (typeof DAMAGE_CAUSES)[number];
 export type FishingEnvironment = (typeof FISHING_ENVIRONMENTS)[number];
 export type PortalType = (typeof PORTAL_TYPES)[number];

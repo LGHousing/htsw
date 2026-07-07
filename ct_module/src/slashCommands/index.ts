@@ -51,6 +51,7 @@ import { openPathInOS } from "../utils/osShell";
 import { registerExportSlashCommand } from "./export";
 import { saveItem, giveItem } from "./debugItems";
 import { printOpKindStats, dumpEtaToFile } from "./debugEta";
+import { commandGroupPerms } from "../importables/groups/dumpPermissions";
 
 type HtswSubcommand = {
     name: string;
@@ -78,12 +79,20 @@ const HTSW_SUBCOMMANDS: HtswSubcommand[] = [
         name: "projects",
         summary: "Open the projects folder in your file explorer",
         run: commandProjects,
+        aliases: ["files"],
     },
     {
         name: "test",
         summary: "Run the live importer tests",
         run: commandTest,
         usage: "test [coverage|slice]",
+    },
+    {
+        name: "groupperms",
+        summary: "Dump a group's permission menu (name/type/lore) to a report",
+        run: commandGroupPerms,
+        usage: "groupperms [group name]",
+        hidden: true,
     },
     {
         name: "gui",

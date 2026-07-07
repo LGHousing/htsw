@@ -3,6 +3,7 @@ import {
     createEmptyProjectFiles,
     createIncludedFolderInTree,
     htslTargetForFunctionExport,
+    importJsonTargetForSectionEntry,
     moveImportableEntry,
     projectSectionFolders,
     restructureProjectPerSection,
@@ -45,6 +46,57 @@ function memoryFs(files: Record<string, string>): ProjectFs & { store: Map<strin
         },
         deleteFile: (path) => {
             store.delete(normalize(path));
+        },
+    };
+}
+
+// Mimics ctProjectFs: parentDir/resolvePath return ABSOLUTE, OS-separator
+// (backslash) paths while callers pass entry/preferred in relative "./…" form.
+// Storage keys on a normalized absolute forward-slash form so lookups resolve.
+function ctLikeFs(files: Record<string, string>, root: string): ProjectFs {
+    const store = new Map<string, string>();
+    const norm = (p: string): string => {
+        const raw = p.split("\\").join("/");
+        const segs = raw.split("/");
+        const drive = /^[A-Za-z]:$/.test(segs[0]) ? segs.shift()! : "";
+        const abs = drive !== "" || raw.charAt(0) === "/";
+        const source = abs ? segs : `${root}/${raw}`.split("/");
+        const parts: string[] = [];
+        for (const seg of source) {
+            if (seg === "" || seg === ".") continue;
+            if (seg === "..") {
+                parts.pop();
+                continue;
+            }
+            parts.push(seg);
+        }
+        return (drive !== "" ? `${drive}/` : "/") + parts.join("/");
+    };
+    const toWin = (s: string): string => s.split("/").join("\\");
+    for (const path of Object.keys(files)) store.set(norm(path), files[path]);
+    return {
+        exists: (path) => store.has(norm(path)),
+        readFile: (path) => {
+            const value = store.get(norm(path));
+            if (value === undefined) throw new Error(`Missing file: ${path}`);
+            return value;
+        },
+        writeFile: (path, text) => {
+            store.set(norm(path), text);
+        },
+        ensureDir: () => undefined,
+        parentDir: (path) => {
+            const n = norm(path);
+            const i = n.lastIndexOf("/");
+            return toWin(i <= 0 ? n : n.substring(0, i));
+        },
+        resolvePath: (baseDir, ref) => {
+            const r = ref.split("\\").join("/");
+            const abs = /^[A-Za-z]:\//.test(r) || r.charAt(0) === "/";
+            return toWin(norm(abs ? r : `${norm(baseDir)}/${r}`));
+        },
+        deleteFile: (path) => {
+            store.delete(norm(path));
         },
     };
 }
@@ -98,6 +150,39 @@ describe("section folder export routing", () => {
         expect(target.htslReference).toBe("mine.htsl");
     });
 
+    test("new team routes to teams/import.json when included", () => {
+        const fs = memoryFs({
+            [ROOT]: JSON.stringify({ include: ["teams/import.json"] }),
+            "/project/teams/import.json": "{}",
+        });
+
+        expect(importJsonTargetForSectionEntry(fs, ROOT, "teams", "Red")).toBe(
+            "/project/teams/import.json"
+        );
+    });
+
+    test("new team falls back to the entry file without a teams include", () => {
+        const fs = memoryFs({ [ROOT]: "{}" });
+
+        expect(importJsonTargetForSectionEntry(fs, ROOT, "teams", "Red")).toBe(ROOT);
+    });
+
+    test("a declared team wins over the teams section folder", () => {
+        const fs = memoryFs({
+            [ROOT]: JSON.stringify({
+                include: ["teams/import.json", "custom/import.json"],
+            }),
+            "/project/teams/import.json": "{}",
+            "/project/custom/import.json": JSON.stringify({
+                teams: [{ name: "Red", color: "RED" }],
+            }),
+        });
+
+        expect(importJsonTargetForSectionEntry(fs, ROOT, "teams", "Red")).toBe(
+            "/project/custom/import.json"
+        );
+    });
+
     test("new item routes beside items/import.json without nesting items/items/", () => {
         const fs = memoryFs({
             [ROOT]: JSON.stringify({ include: ["items/import.json"] }),
@@ -108,6 +193,128 @@ describe("section folder export routing", () => {
         expect(target.importJsonPath).toBe("/project/items/import.json");
         expect(target.snbtReference).toBe("Wand.snbt");
         expect(target.snbtPath).toBe("/project/items/Wand.snbt");
+    });
+});
+
+describe("preferred new-export target routing", () => {
+    test("a new importable lands in the preferred nested file, overriding the section folder", () => {
+        const fs = memoryFs({
+            [ROOT]: JSON.stringify({
+                include: ["functions/import.json", "combat/import.json"],
+            }),
+            "/project/functions/import.json": "{}",
+            "/project/combat/import.json": "{}",
+        });
+
+        const target = htslTargetForFunctionExport(
+            fs,
+            ROOT,
+            "Duel",
+            "/project/combat/import.json"
+        );
+        expect(target.importJsonPath).toBe("/project/combat/import.json");
+        expect(target.htslReference).toBe("Duel.htsl");
+        expect(target.htslPath).toBe("/project/combat/Duel.htsl");
+    });
+
+    test("an already-declared importable ignores the preferred target", () => {
+        const fs = memoryFs({
+            [ROOT]: JSON.stringify({
+                include: ["custom/import.json", "combat/import.json"],
+            }),
+            "/project/custom/import.json": JSON.stringify({
+                functions: [{ name: "Duel", actions: "mine.htsl" }],
+            }),
+            "/project/custom/mine.htsl": 'chat "hi"',
+            "/project/combat/import.json": "{}",
+        });
+
+        const target = htslTargetForFunctionExport(
+            fs,
+            ROOT,
+            "Duel",
+            "/project/combat/import.json"
+        );
+        expect(target.importJsonPath).toBe("/project/custom/import.json");
+        expect(target.htslReference).toBe("mine.htsl");
+    });
+
+    test("a preferred target not reachable in the include tree is ignored", () => {
+        const fs = memoryFs({
+            [ROOT]: JSON.stringify({ include: ["functions/import.json"] }),
+            "/project/functions/import.json": "{}",
+            // On disk but never included — the parse would never see writes here.
+            "/project/combat/import.json": "{}",
+        });
+
+        const target = htslTargetForFunctionExport(
+            fs,
+            ROOT,
+            "Duel",
+            "/project/combat/import.json"
+        );
+        expect(target.importJsonPath).toBe("/project/functions/import.json");
+    });
+
+    test("choosing the base file routes new exports there even with section folders", () => {
+        const fs = memoryFs({
+            [ROOT]: JSON.stringify({ include: ["functions/import.json"] }),
+            "/project/functions/import.json": "{}",
+        });
+
+        const target = htslTargetForFunctionExport(fs, ROOT, "Duel", ROOT);
+        expect(target.importJsonPath).toBe(ROOT);
+        expect(target.htslPath).toBe("/project/Duel.htsl");
+    });
+
+    test("honors a relative sticky target against an absolute-path fs (ctProjectFs form)", () => {
+        // Guards the real in-game path forms: the include walk yields absolute
+        // backslash paths while the sticky target arrives relative — a raw
+        // string compare would silently drop it and fall back to the section
+        // folder. fsCanonicalKey must bridge the two.
+        const fs = ctLikeFs(
+            {
+                "./htsw/proj/import.json": JSON.stringify({
+                    include: ["functions/import.json", "combat/import.json"],
+                }),
+                "./htsw/proj/functions/import.json": "{}",
+                "./htsw/proj/combat/import.json": "{}",
+            },
+            "/root"
+        );
+
+        const target = htslTargetForFunctionExport(
+            fs,
+            "./htsw/proj/import.json",
+            "Duel",
+            "./htsw/proj/combat/import.json"
+        );
+        expect(fs.exists(target.importJsonPath)).toBe(true);
+        expect(normalize(target.importJsonPath)).toContain("/htsw/proj/combat/import.json");
+        expect(normalize(target.importJsonPath)).not.toContain("/functions/");
+        expect(target.htslReference).toBe("Duel.htsl");
+    });
+
+    test("new item honors the preferred target, nesting its snbt under items/", () => {
+        const fs = memoryFs({
+            [ROOT]: JSON.stringify({
+                include: ["items/import.json", "combat/import.json"],
+            }),
+            "/project/items/import.json": "{}",
+            "/project/combat/import.json": "{}",
+        });
+
+        const target = snbtTargetForItemExport(
+            fs,
+            ROOT,
+            "/project",
+            "Wand",
+            "items",
+            "/project/combat/import.json"
+        );
+        expect(target.importJsonPath).toBe("/project/combat/import.json");
+        expect(target.snbtReference).toBe("items/Wand.snbt");
+        expect(target.snbtPath).toBe("/project/combat/items/Wand.snbt");
     });
 });
 
@@ -163,6 +370,8 @@ describe("restructureProjectPerSection", () => {
         const root = JSON.parse(fs.readFile(ROOT));
         expect(root.include).toContain("functions/import.json");
         expect(root.include).toContain("items/import.json");
+        expect(root.include).toContain("teams/import.json");
+        expect(root.include).toContain("groups/import.json");
         expect(root.functions ?? []).toEqual([]);
         expect(root.events ?? []).toEqual([]);
         expect(root.items ?? []).toEqual([]);

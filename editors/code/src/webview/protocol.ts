@@ -62,7 +62,7 @@ export type ProjectImportableSummary = {
      * import.json mutations key on. */
     identity: string;
     label: string;
-    type: "function" | "event" | "region" | "item" | "menu" | "command" | "npc";
+    type: "function" | "event" | "region" | "item" | "menu" | "command" | "npc" | "team" | "group";
     typeLabel: string;
     openPath?: string;
     /** Minecraft item id powering the row icon, e.g. "minecraft:clock" — a

@@ -27,11 +27,14 @@ import {
 
 export type ExportAllNpcsOptions = {
     importJsonPath: string;
+    newExportTargetImportJson?: string;
     rootDir: string;
     entries?: readonly NpcExportEntry[];
     progress?: ExportProgressSink;
     projectItems?: readonly ImportableItem[];
     skipExisting?: boolean;
+    // Read-only (deep read): cache each NPC, write no files.
+    readOnly?: { housingUuid: string };
 };
 
 export async function exportAllNpcs(
@@ -78,6 +81,8 @@ async function exportAllNpcsInner(
     options: ExportAllNpcsOptions
 ): Promise<ReadResult> {
     const { importJsonPath, rootDir } = options;
+    const readOnly = options.readOnly !== undefined;
+    const verb = readOnly ? "Reading" : "Exporting";
 
     const inventorySnapshot: InventorySnapshot = snapshotInventory();
     const itemCaptures = new ItemCaptureRegistry();
@@ -96,10 +101,10 @@ async function exportAllNpcsInner(
         ctx,
         importJsonPath,
         requested,
-        options.skipExisting
+        readOnly ? false : options.skipExisting
     );
     if (exportEntries.length === 0) {
-        ctx.displayMessage("&7No NPCs to export.");
+        ctx.displayMessage(`&7No NPCs to ${readOnly ? "read" : "export"}.`);
         try {
             await restoreInventoryToSnapshot(ctx, inventorySnapshot);
         } catch (error) {
@@ -111,7 +116,7 @@ async function exportAllNpcsInner(
     }
 
     ctx.displayMessage(
-        `&aExporting ${exportEntries.length} NPC${exportEntries.length === 1 ? "" : "s"}...`
+        `&a${verb} ${exportEntries.length} NPC${exportEntries.length === 1 ? "" : "s"}...`
     );
     const labels = exportEntries.map((entry) => npcLabel(entry));
     options.progress?.start(labels);
@@ -133,11 +138,15 @@ async function exportAllNpcsInner(
                 }
 
                 const targetEntry = exportEntryForLiveNpc(liveEntry);
-                const target = htslTargetsForNpcExport(importJsonPath, targetEntry);
+                const target = htslTargetsForNpcExport(
+                    importJsonPath,
+                    targetEntry,
+                    options.newExportTargetImportJson
+                );
                 label = npcLabel(liveEntry);
                 options.progress?.item(i, label);
                 ctx.displayMessage(
-                    `&7[${i + 1}/${exportEntries.length}] &fExporting NPC '${label}'`
+                    `&7[${i + 1}/${exportEntries.length}] &f${verb} NPC '${label}'`
                 );
 
                 await exportNpcWithSharedState(
@@ -149,6 +158,7 @@ async function exportAllNpcsInner(
                         leftClickTarget: target.leftClick,
                         rightClickTarget: target.rightClick,
                         rootDir,
+                        readOnly: options.readOnly,
                         onReadProgress:
                             sink?.itemProgress === undefined
                                 ? undefined
@@ -171,7 +181,15 @@ async function exportAllNpcsInner(
     } finally {
         options.progress?.done();
         try {
-            writeCapturedItems(ctx, itemCaptures, rootDir, importJsonPath);
+            if (!readOnly) {
+                writeCapturedItems(
+                    ctx,
+                    itemCaptures,
+                    rootDir,
+                    importJsonPath,
+                    options.newExportTargetImportJson
+                );
+            }
         } finally {
             try {
                 await restoreInventoryToSnapshot(ctx, inventorySnapshot);
@@ -183,9 +201,17 @@ async function exportAllNpcsInner(
         }
     }
 
+    const plural = exportEntries.length === 1 ? "" : "s";
+    const failedNote = failed > 0 ? ` &c[${failed} failed]` : "";
+    if (readOnly) {
+        ctx.displayMessage(
+            `&aRead ${succeeded} of ${exportEntries.length} NPC${plural}${failedNote}`
+        );
+        return { total: exportEntries.length, succeeded, failed };
+    }
     const itemCounts = itemCaptures.counts();
     ctx.displayMessage(
-        `&aExported ${succeeded} of ${exportEntries.length} NPC${exportEntries.length === 1 ? "" : "s"} (items: ${itemCounts.matched} matched, ${itemCounts.fresh} new)${failed > 0 ? ` &c[${failed} failed]` : ""}`
+        `&aExported ${succeeded} of ${exportEntries.length} NPC${plural} (items: ${itemCounts.matched} matched, ${itemCounts.fresh} new)${failedNote}`
     );
     ctx.displayMessage(`&7  -> ${importJsonPath}`);
 

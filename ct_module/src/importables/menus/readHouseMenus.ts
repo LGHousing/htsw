@@ -8,10 +8,13 @@ import TaskContext from "../../tasks/context";
 import { ensureParentDirs } from "../../utils/filesystem";
 import { resolveImportableFile, upsertImportableEntry } from "../../project/importJsonMutations";
 import { canonicalSlug, parentDirOf, sectionFolderImportJson } from "../../project/paths";
+import { menuExportReferencesExist } from "../../project/paths";
+import { makeReadHouse } from "../readHouse";
+import { listAllMenuNames } from "./listMenus";
 import { readLiveMenu } from "./read";
 import { openMenuEditor } from "./shared";
 
-export type ExportMenuOptions = {
+type ExportMenuOptions = {
     /** The menu name as known to Hypixel Housing. */
     name: string;
     /** Path to the `import.json` to upsert into (will be created if absent). */
@@ -33,7 +36,7 @@ export type ExportMenuOptions = {
  * across menus collapse to one file) and one `writtenItems` set (so each shared
  * item file is written exactly once across the whole batch).
  */
-export type ExportMenuSharedState = {
+type ExportMenuSharedState = {
     itemCaptures: ItemCaptureRegistry;
     writtenItems: Set<string>;
 };
@@ -49,14 +52,13 @@ function pathKeyOf(path: string): string {
  * and its click-actions written to a `.htsl`, both referenced by path in the
  * `import.json` (the language requires string paths, like functions/events).
  */
-export async function exportMenu(
+async function exportMenu(
     ctx: TaskContext,
     options: ExportMenuOptions,
-    shared?: ExportMenuSharedState
+    shared: ExportMenuSharedState
 ): Promise<void> {
     const { name } = options;
-    const itemCaptures = shared?.itemCaptures ?? new ItemCaptureRegistry();
-    const writtenItems = shared?.writtenItems ?? new Set<string>();
+    const { itemCaptures, writtenItems } = shared;
 
     // A menu already declared in an INCLUDED file updates in place: the
     // entry is upserted into its declaring import.json, and since every
@@ -172,3 +174,28 @@ export async function exportMenu(
     );
     ctx.displayMessage(`&7  -> ${importJsonPath}`);
 }
+
+// Menus read each slot's item NBT straight off the live menu, so unlike the
+// action-list types they don't pull items through the inventory — no snapshot,
+// no batch item flush. Each slot item is deduped and written inline instead.
+export const readMenus = makeReadHouse<string>({
+    noun: "menu",
+    list: listAllMenuNames,
+    referencesExist: menuExportReferencesExist,
+    exportSummary: (state) => {
+        const count = state.itemCaptures.size();
+        return ` (${count} unique item${count === 1 ? "" : "s"})`;
+    },
+    readOne: (ctx, name, options, state, onReadProgress) =>
+        exportMenu(
+            ctx,
+            {
+                name,
+                importJsonPath: options.importJsonPath,
+                rootDir: options.rootDir,
+                readOnly: options.readOnly,
+                onReadProgress,
+            },
+            { itemCaptures: state.itemCaptures, writtenItems: state.writtenItems }
+        ),
+});

@@ -405,9 +405,68 @@
     },
     "permissions": {
       "type": "object",
-      "additionalProperties": {
-        "type": "boolean"
+      "additionalProperties": false,
+      "properties": {
+        "Fly": { "type": "boolean" },
+        "Wood Door": { "type": "boolean" },
+        "Iron Door": { "type": "boolean" },
+        "Wood Trap Door": { "type": "boolean" },
+        "Iron Trap Door": { "type": "boolean" },
+        "Fence Gate": { "type": "boolean" },
+        "Button": { "type": "boolean" },
+        "Lever": { "type": "boolean" },
+        "Use Launch Pads": { "type": "boolean" },
+        "/tp": { "type": "boolean" },
+        "/tp Other Players": { "type": "boolean" },
+        "Jukebox": { "type": "boolean" },
+        "Kick": { "type": "boolean" },
+        "Ban": { "type": "boolean" },
+        "Mute": { "type": "boolean" },
+        "Pet Spawning": { "type": "boolean" },
+        "Build": { "type": "boolean" },
+        "Offline Build": { "type": "boolean" },
+        "Fluid": { "type": "boolean" },
+        "Pro Tools": { "type": "boolean" },
+        "Use Chests": { "type": "boolean" },
+        "Use Ender Chests": { "type": "boolean" },
+        "Item Editor": { "type": "boolean" },
+        "Switch Game Mode": { "type": "boolean" },
+        "Edit Variables": { "type": "boolean" },
+        "Change Player Group": { "type": "boolean" },
+        "Change Gamerules": { "type": "boolean" },
+        "Housing Menu": { "type": "boolean" },
+        "Team Chat Spy": { "type": "boolean" },
+        "Edit Actions": { "type": "boolean" },
+        "Edit Regions": { "type": "boolean" },
+        "Edit Scoreboard": { "type": "boolean" },
+        "Edit Event Actions": { "type": "boolean" },
+        "Edit Commands": { "type": "boolean" },
+        "Edit Functions": { "type": "boolean" },
+        "Edit Inventory Layouts": { "type": "boolean" },
+        "Edit Teams": { "type": "boolean" },
+        "Edit Custom Menus": { "type": "boolean" },
+        "View Analytics": { "type": "boolean" },
+        "View Logger": { "type": "boolean" },
+        "Item: Mailbox": { "type": "boolean" },
+        "Item: Egg Hunt": { "type": "boolean" },
+        "Item: Teleport Pad": { "type": "boolean" },
+        "Item: Launch Pad": { "type": "boolean" },
+        "Item: Action Pad": { "type": "boolean" },
+        "Item: Hologram": { "type": "boolean" },
+        "Item: NPCs": { "type": "boolean" },
+        "Item: Action Button": { "type": "boolean" },
+        "Item: Leaderboard": { "type": "boolean" },
+        "Item: Trash Can": { "type": "boolean" },
+        "Item: Biome Stick": { "type": "boolean" }
       }
+    },
+    "chatSpeed": {
+      "type": "string",
+      "enum": ["Off", "On", "Slow 1s", "Slow 2s", "Slow 3s", "Slow 5s", "Slow 10s", "Slow 15s", "Slow 30s", "Slow 45s", "Slow 60s"]
+    },
+    "defaultGameMode": {
+      "type": "string",
+      "enum": ["ADVENTURE", "SURVIVAL", "CREATIVE"]
     },
     "groupImportable": {
       "type": "object",
@@ -432,6 +491,12 @@
         },
         "permissions": {
           "$ref": "#/definitions/permissions"
+        },
+        "chatSpeed": {
+          "$ref": "#/definitions/chatSpeed"
+        },
+        "defaultGameMode": {
+          "$ref": "#/definitions/defaultGameMode"
         }
       },
       "required": [

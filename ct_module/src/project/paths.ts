@@ -8,13 +8,17 @@ import {
     htslTargetForFunctionExport as htslTargetForFunctionExportWithFs,
     htslTargetsForRegionExport as htslTargetsForRegionExportWithFs,
     htslTargetsForNpcExport as htslTargetsForNpcExportWithFs,
+    importJsonTargetForSectionEntry as importJsonTargetForSectionEntryWithFs,
     readEventNamesFromImportJson as readEventNamesFromImportJsonWithFs,
     readFunctionNamesFromImportJson as readFunctionNamesFromImportJsonWithFs,
     readMenuNamesFromImportJson as readMenuNamesFromImportJsonWithFs,
     readCommandNamesFromImportJson as readCommandNamesFromImportJsonWithFs,
     readNpcEntriesFromImportJson as readNpcEntriesFromImportJsonWithFs,
     readRegionNamesFromImportJson as readRegionNamesFromImportJsonWithFs,
+    readTeamNamesFromImportJson as readTeamNamesFromImportJsonWithFs,
+    readGroupNamesFromImportJson as readGroupNamesFromImportJsonWithFs,
     menuExportReferencesExist as menuExportReferencesExistWithFs,
+    teamExportReferencesExist as teamExportReferencesExistWithFs,
     npcExportReferencesExist as npcExportReferencesExistWithFs,
     regionExportReferencesExist as regionExportReferencesExistWithFs,
     snbtTargetForItemExport as snbtTargetForItemExportWithFs,
@@ -43,6 +47,21 @@ export function sectionFolderImportJson(
 
 export function projectSectionFolders(entryImportJsonPath: string): Section[] {
     return projectSectionFoldersWithFs(ctProjectFs, entryImportJsonPath);
+}
+
+export function importJsonTargetForSectionEntry(
+    entryImportJsonPath: string,
+    section: Section,
+    identity: string,
+    preferredNewTargetImportJson?: string
+): string {
+    return importJsonTargetForSectionEntryWithFs(
+        ctProjectFs,
+        entryImportJsonPath,
+        section,
+        identity,
+        preferredNewTargetImportJson
+    );
 }
 
 export function restructureProjectPerSection(importJsonPath: string): RestructureResult {
@@ -103,6 +122,14 @@ export function readNpcEntriesFromImportJson(importJsonPath: string): NpcExportE
     return readNpcEntriesFromImportJsonWithFs(ctProjectFs, importJsonPath);
 }
 
+export function readTeamNamesFromImportJson(importJsonPath: string): string[] {
+    return readTeamNamesFromImportJsonWithFs(ctProjectFs, importJsonPath);
+}
+
+export function readGroupNamesFromImportJson(importJsonPath: string): string[] {
+    return readGroupNamesFromImportJsonWithFs(ctProjectFs, importJsonPath);
+}
+
 export function functionExportReferencesExist(
     importJsonPath: string,
     name: string
@@ -138,6 +165,13 @@ export function menuExportReferencesExist(
     return menuExportReferencesExistWithFs(ctProjectFs, importJsonPath, name);
 }
 
+export function teamExportReferencesExist(
+    importJsonPath: string,
+    name: string
+): boolean {
+    return teamExportReferencesExistWithFs(ctProjectFs, importJsonPath, name);
+}
+
 export function regionExportReferencesExist(
     importJsonPath: string,
     name: string
@@ -147,50 +181,82 @@ export function regionExportReferencesExist(
 
 export function htslTargetForFunctionExport(
     entryImportJsonPath: string,
-    identity: string
+    identity: string,
+    preferredNewTargetImportJson?: string
 ): HtslExportTarget {
-    return htslTargetForFunctionExportWithFs(ctProjectFs, entryImportJsonPath, identity);
+    return htslTargetForFunctionExportWithFs(
+        ctProjectFs,
+        entryImportJsonPath,
+        identity,
+        preferredNewTargetImportJson
+    );
 }
 
 export function htslTargetForEventExport(
     entryImportJsonPath: string,
-    identity: string
+    identity: string,
+    preferredNewTargetImportJson?: string
 ): HtslExportTarget {
-    return htslTargetForEventExportWithFs(ctProjectFs, entryImportJsonPath, identity);
+    return htslTargetForEventExportWithFs(
+        ctProjectFs,
+        entryImportJsonPath,
+        identity,
+        preferredNewTargetImportJson
+    );
 }
 
 export function htslTargetForCommandExport(
     entryImportJsonPath: string,
-    identity: string
+    identity: string,
+    preferredNewTargetImportJson?: string
 ): HtslExportTarget {
-    return htslTargetForCommandExportWithFs(ctProjectFs, entryImportJsonPath, identity);
+    return htslTargetForCommandExportWithFs(
+        ctProjectFs,
+        entryImportJsonPath,
+        identity,
+        preferredNewTargetImportJson
+    );
 }
 
 export function htslTargetsForRegionExport(
     entryImportJsonPath: string,
-    identity: string
+    identity: string,
+    preferredNewTargetImportJson?: string
 ): RegionHtslExportTargets {
-    return htslTargetsForRegionExportWithFs(ctProjectFs, entryImportJsonPath, identity);
+    return htslTargetsForRegionExportWithFs(
+        ctProjectFs,
+        entryImportJsonPath,
+        identity,
+        preferredNewTargetImportJson
+    );
 }
 
 export function htslTargetsForNpcExport(
     entryImportJsonPath: string,
-    entry: NpcExportEntry
+    entry: NpcExportEntry,
+    preferredNewTargetImportJson?: string
 ): NpcHtslExportTargets {
-    return htslTargetsForNpcExportWithFs(ctProjectFs, entryImportJsonPath, entry);
+    return htslTargetsForNpcExportWithFs(
+        ctProjectFs,
+        entryImportJsonPath,
+        entry,
+        preferredNewTargetImportJson
+    );
 }
 
 export function snbtTargetForItemExport(
     entryImportJsonPath: string,
     rootDir: string,
     itemName: string,
-    subdir?: string
+    subdir?: string,
+    preferredNewTargetImportJson?: string
 ): SnbtExportTarget {
     return snbtTargetForItemExportWithFs(
         ctProjectFs,
         entryImportJsonPath,
         rootDir,
         itemName,
-        subdir
+        subdir,
+        preferredNewTargetImportJson
     );
 }

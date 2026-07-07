@@ -1,8 +1,9 @@
 /// <reference types="../../../CTAutocomplete" />
 
 import type { Element } from "../lib/layout";
-import { Button, Col, Container, Icon, Row, Text } from "../lib/components";
+import { Button, Col, Container, Icon, Row, Scroll, Text } from "../lib/components";
 import { Icons } from "../lib/icons.generated";
+import { markGuiDirty } from "../lib/dirty";
 import {
     ACCENT_SUCCESS,
     COLOR_BUTTON,
@@ -19,15 +20,32 @@ import {
 import { closeAllPopovers } from "../lib/popovers";
 import { compactFileLabel, normalizeHtswPath, shortPath } from "../lib/pathDisplay";
 import {
+    getEffectiveNewExportTarget,
     getExportImportJsonPath,
     getHousingUuid,
     getImportJsonPath,
     setExportImportJsonPath,
+    setNewExportTarget,
 } from "../state";
 import { addRecent, getRecents } from "../persistence/recents";
-import { forEachCachedParse, markParseStale } from "../parsing/parses";
+import {
+    canonicalPath,
+    forEachCachedParse,
+    invalidateParseCacheEntry,
+    markParseStale,
+    requestParse,
+} from "../parsing/parses";
 import { openFileBrowserWithImportJsonSelection } from "../popovers/file-browser";
 import { openConfirmPopover } from "../popovers/confirm";
+import { openTextPromptPopover } from "../popovers/text-prompt";
+import {
+    buildPickerNode,
+    newPickerRow,
+    pickerTreeRows,
+    type PickerNode,
+} from "../popovers/includeTreePicker";
+import type { IncludeNode } from "../left-panel/importables/includeTree";
+import { bumpTreeRevision } from "../left-panel/importables/rowModel";
 import { openNewProjectPopover } from "./newProjectPopover";
 import { showToast } from "../toast";
 import { getAlias } from "../../importCache/aliases";
@@ -36,7 +54,7 @@ import { createEmptyProjectFiles } from "htsw-editor-common/project";
 import { ctProjectFs } from "../../project/projectFs";
 import {
     PROJECTS_ROOT,
-    parentDirOf,
+    createIncludedFolderInTree,
     projectPathExists,
     projectSectionFolders,
     restructureProjectPerSection,
@@ -105,9 +123,12 @@ function destinationRow(path: string, boundPath: string | null): Element {
             background: selected ? COLOR_ROW_SELECTED : COLOR_ROW,
             hoverBackground: selected ? COLOR_ROW_SELECTED_HOVER : COLOR_ROW_HOVER,
         },
+        // Selecting a destination keeps the picker open so the "New exports
+        // land in" tree below can rebuild for it — the whole point of the
+        // revamp is to pick the project AND where new exports land in one place.
         onClick: () => {
             selectExportImportJson(path);
-            closeAllPopovers();
+            markGuiDirty();
         },
         children: [
             Icon({ name: selected ? Icons.check : Icons.fileJson }),
@@ -165,54 +186,139 @@ function splitIntoSectionFolders(importJsonPath: string): void {
     }
 }
 
-// Where a NEW export lands for the current destination, stated instead of
-// implied: re-exports always follow the file that already declares them.
-function destinationPreviewRow(): Element | false {
-    const dest = getExportImportJsonPath();
+// The sub-target tree (where a new export lands) is rebuilt from the current
+// base each time the picker opens; the base's include structure is the set of
+// files a new export can be routed into.
+const EXPORT_PROJECTS_SCROLL_H = SIZE_ROW_H * 3 + 6;
+let exportSubRoots: PickerNode[] = [];
+const exportSubExpansion: Set<string> = new Set();
+// Signature of what `exportSubRoots` was last built from, so the tree rebuilds
+// when the chosen destination changes or its parse warms (the picker stays open
+// across those), but not on every frame (which would wipe expansion state).
+let exportSubSig = "";
+
+function dirOfPath(p: string): string {
+    const s = p.split("\\").join("/");
+    const i = s.lastIndexOf("/");
+    return i < 0 ? s : s.substring(0, i);
+}
+
+function baseIncludeTree(base: string): IncludeNode | null {
+    const cached = requestParse(base);
+    return cached !== null && cached.parsed !== null ? cached.parsed.importJson.fileTree : null;
+}
+
+function exportSubSignature(base: string): string {
+    if (base.trim() === "") return "";
+    const tree = baseIncludeTree(base);
+    return `${base}|${tree !== null ? tree.includes.length : -1}`;
+}
+
+function rebuildExportSubTree(base: string): void {
+    if (base.trim() === "") {
+        exportSubRoots = [];
+        return;
+    }
+    const root = baseIncludeTree(base) ?? { path: base, importables: [], includes: [] };
+    const projectDir = dirOfPath(canonicalPath(root.path));
+    exportSubRoots = [buildPickerNode(root, projectDir, 0, null)];
+    exportSubExpansion.clear();
+    for (let i = 0; i < exportSubRoots.length; i++) {
+        if (exportSubRoots[i].children.length > 0) exportSubExpansion.add(exportSubRoots[i].path);
+    }
+}
+
+function ensureExportSubTree(): void {
+    const base = getExportImportJsonPath();
+    const sig = exportSubSignature(base);
+    if (sig === exportSubSig) return;
+    exportSubSig = sig;
+    rebuildExportSubTree(base);
+}
+
+function exportSubTreeRows(): Element[] {
+    ensureExportSubTree();
+    return pickerTreeRows(exportSubRoots, {
+        expansion: exportSubExpansion,
+        filter: "",
+        selectedPath: canonicalPath(getEffectiveNewExportTarget()),
+        disabledLabel: "",
+        onSelect: (path) => {
+            setNewExportTarget(path);
+            markGuiDirty();
+        },
+        onToggle: (path) => {
+            if (exportSubExpansion.has(path)) exportSubExpansion.delete(path);
+            else exportSubExpansion.add(path);
+            markGuiDirty();
+        },
+        emptyLabel: "Pick a destination project first",
+    });
+}
+
+// Create `<folder>/import.json` (included from the deepest existing file whose
+// folder contains it, so `functions/combat` nests under functions/) and route
+// new exports there. Closes the picker; reopening shows the new file checked.
+function newExportFileRow(): Element {
+    return newPickerRow("New import.json…", () => {
+        const base = getExportImportJsonPath();
+        if (base.trim() === "") return;
+        openTextPromptPopover({
+            title: "New import.json",
+            description: [
+                "Name a folder to hold the new import.json;",
+                "it's created and included in your project.",
+                "Use a slash to nest, e.g. functions/combat",
+            ],
+            placeholder: "combat",
+            submitLabel: "Create",
+            width: 288,
+            onSubmit: (folderPath) => {
+                try {
+                    const created = createIncludedFolderInTree(base, folderPath);
+                    setNewExportTarget(created.importJsonPath);
+                    invalidateParseCacheEntry(base);
+                    requestParse(base);
+                    bumpTreeRevision();
+                    closeAllPopovers();
+                    showToast(`New exports → ${shortPath(created.importJsonPath)}`, 0xff5cb85c);
+                } catch (err) {
+                    ChatLib.chat(`&c[htsw] New file failed: ${err}`);
+                }
+            },
+        });
+    });
+}
+
+// One-shot bulk migration into a folder per type, offered only for a flat
+// project. Once split, the folders show up as selectable rows in the tree.
+function splitAction(dest: string): Element | false {
     if (dest.trim() === "" || !projectPathExists(dest)) return false;
-    const perSection = projectSectionFolders(dest).length > 0;
-    const dir = shortPath(parentDirOf(dest));
-    return Row({
-        style: { gap: 4, align: "center", height: { kind: "px", value: 20 } },
-        children: [
-            Text({
-                text: perSection
-                    ? `New exports → ${dir}/<type>/`
-                    : `New exports → ${dir}/`,
-                color: COLOR_TEXT_DIM,
-                truncate: true,
-                style: { width: { kind: "grow" }, padding: { side: "x", value: 4 } },
+    if (projectSectionFolders(dest).length > 0) return false;
+    return Button({
+        icon: Icons.folderTree,
+        text: "Split by type…",
+        style: {
+            height: { kind: "grow" },
+            background: COLOR_BUTTON,
+            hoverBackground: COLOR_BUTTON_HOVER,
+        },
+        tooltip: "Move this project's importables into a folder per type",
+        tooltipColor: COLOR_TEXT_DIM,
+        onClick: () =>
+            openConfirmPopover({
+                title: `Split ${compactFileLabel(dest)} into folders?`,
+                lines: [
+                    "Creates functions/, events/, … each with its own import.json,",
+                    "moves the root file's importables and their files into them,",
+                    "and sorts future exports into those folders.",
+                ],
+                confirmLabel: "Split",
+                onConfirm: () => {
+                    closeAllPopovers();
+                    splitIntoSectionFolders(dest);
+                },
             }),
-            ...(perSection
-                ? []
-                : [
-                      Button({
-                          icon: Icons.folderTree,
-                          text: "Split into folders…",
-                          style: {
-                              height: { kind: "grow" },
-                              background: COLOR_BUTTON,
-                              hoverBackground: COLOR_BUTTON_HOVER,
-                          },
-                          tooltip: "Move this project's importables into a folder per type",
-                          tooltipColor: COLOR_TEXT_DIM,
-                          onClick: () =>
-                              openConfirmPopover({
-                                  title: `Split ${compactFileLabel(dest)} into folders?`,
-                                  lines: [
-                                      "Creates functions/, events/, … each with its own import.json,",
-                                      "moves the root file's importables and their files into them,",
-                                      "and sorts future exports into those folders.",
-                                  ],
-                                  confirmLabel: "Split",
-                                  onConfirm: () => {
-                                      closeAllPopovers();
-                                      splitIntoSectionFolders(dest);
-                                  },
-                              }),
-                      }),
-                  ]),
-        ],
     });
 }
 
@@ -226,16 +332,26 @@ export function exportDestinationPicker(): Element {
     const rawBound = uuid !== null ? boundImportJsonPath(uuid) : null;
     const boundPath = rawBound !== null ? normalizeHtswPath(rawBound) : null;
     const row = (path: string) => destinationRow(path, boundPath);
+    const dest = getExportImportJsonPath();
+
+    // Force a fresh sub-tree build on first render (resets expansion for the
+    // current destination); `ensureExportSubTree` keeps it current after that.
+    exportSubSig = "";
+
+    const projectRows: Element[] = [
+        ...open.map(row),
+        ...(recents.length === 0 ? [] : [destinationSection("Recent"), ...recents.map(row)]),
+    ];
+
     return Col({
-        style: { gap: 3, padding: 4, height: { kind: "grow" } },
+        style: { gap: 4, padding: 4, height: { kind: "grow" } },
         children: [
-            destinationSection("Open import.jsons"),
-            ...open.map(row),
-            ...(recents.length === 0
-                ? []
-                : [destinationSection("Recent"), ...recents.map(row)]),
-            Container({ style: { height: { kind: "grow" } }, children: [] }),
-            destinationPreviewRow(),
+            destinationSection("Destination project"),
+            Scroll({
+                id: "export-dest-projects",
+                style: { gap: 2, height: { kind: "px", value: EXPORT_PROJECTS_SCROLL_H } },
+                children: () => projectRows,
+            }),
             Row({
                 style: { gap: 4, height: { kind: "px", value: 20 } },
                 children: [
@@ -268,6 +384,23 @@ export function exportDestinationPicker(): Element {
                     }),
                 ],
             }),
+            Row({
+                style: { gap: 4, align: "center", height: { kind: "px", value: 16 } },
+                children: [
+                    Text({
+                        text: "New exports land in",
+                        color: COLOR_TEXT_FAINT,
+                        style: { width: { kind: "grow" }, padding: { side: "x", value: 4 } },
+                    }),
+                    splitAction(dest),
+                ],
+            }),
+            Scroll({
+                id: "export-subtarget-tree",
+                style: { gap: 1, height: { kind: "grow" } },
+                children: () => exportSubTreeRows(),
+            }),
+            newExportFileRow(),
         ],
     });
 }

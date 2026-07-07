@@ -71,6 +71,7 @@ Split across `ct_module/src/housingSync/` (read/diff/write live menus), `importa
 - Which importable types are wired — the switch in `importables/imports.ts` for import; `gui/left-panel/houses/contentTypes.ts` and `slashCommands/exportBatch.ts` for export/deep-read.
 - Per-type import procedure — that type's `importables/<type>/import.ts`. Per-type house read (export and deep read are the same walk with different sinks) — `importables/<type>/read<Type>s.ts` batch over `export.ts` per-item logic, all through the shared loop in `importables/read.ts`.
 - Read/write + child-list coverage per action/condition — `ACTION_SPECS` / `CONDITION_SPECS`, via `getActionSpec` / `getConditionSpec`.
+- Which import.json a NEW export lands in — `importJsonTargetForSectionEntry` (and the per-type `htslTargetFor*`/`snbtTargetForItemExport`) in `editors/common/src/project/exportTargets.ts`: an existing declaration wins, else the user's sticky sub-target (`gui/state/newExportTarget.ts`, set in the Houses "Change" picker) when it's reachable in the include tree, else the section folder, else the base file. Re-exports of already-declared importables ignore the sub-target. The choice threads in via `ReadOptions.newExportTargetImportJson` (set in `gui/export/taskController.ts:startExport`).
 - Simulator coverage (`ct_module/src/simulator/`, separate from import) — `createActionBehaviors()` / `createConditionBehaviors()`.
 
 **Structure rules:**

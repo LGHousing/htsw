@@ -138,7 +138,7 @@ Permission is typed with a (case insensitive) identifier:
 | Use Ender Chests        | Use_Ender_Chests        |
 | Item Editor             | Item_Editor             |
 | Switch Game Mode        | Switch_Game_Mode        |
-| Edit Stats              | Edit_Stats              |
+| Edit Variables          | Edit_Variables          |
 | Change Player Group     | Change_Player_Group     |
 | Change Gamerules        | Change_Gamerules        |
 | Housing Menu            | Housing_Menu            |
@@ -152,6 +152,8 @@ Permission is typed with a (case insensitive) identifier:
 | Edit Inventory Layouts  | Edit_Inventory_Layouts  |
 | Edit Teams              | Edit_Teams              |
 | Edit Custom Menus       | Edit_Custom_Menus       |
+| View Analytics          | View_Analytics          |
+| View Logger             | View_Logger             |
 | Item: Mailbox           | Item:_Mailbox           |
 | Item: Egg Hunt          | Item:_Egg_Hunt          |
 | Item: Teleport Pad      | Item:_Teleport_Pad      |

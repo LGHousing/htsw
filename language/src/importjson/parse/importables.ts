@@ -19,6 +19,8 @@ import {
     parseFunctionIcon,
     parseMenuSlots,
     parsePermissions,
+    parseChatSpeed,
+    parseDefaultGameMode,
     parseSnbt,
     parseCommandMode,
     parsePos,
@@ -129,8 +131,10 @@ export function parseImportableGroup(p: Parser): ImportableGroup {
     p.parseFieldOrUndefined("color")?.setField(im, "color", parseColor);
     p.parseFieldOrUndefined("priority")?.setField(im, "priority", (p) => p.parseBoundedNumber(0, 20));
     p.parseFieldOrUndefined("permissions")?.setField(im, "permissions", parsePermissions);
+    p.parseFieldOrUndefined("chatSpeed")?.setField(im, "chatSpeed", parseChatSpeed);
+    p.parseFieldOrUndefined("defaultGameMode")?.setField(im, "defaultGameMode", parseDefaultGameMode);
 
-    warnUnused(p, ["name", "tag", "tagShownInChat", "color", "priority", "permissions"]);
+    warnUnused(p, ["name", "tag", "tagShownInChat", "color", "priority", "permissions", "chatSpeed", "defaultGameMode"]);
     return im;
 }
 

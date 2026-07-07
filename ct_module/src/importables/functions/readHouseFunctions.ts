@@ -4,10 +4,7 @@ import * as htsw from "htsw";
 import { readActionList } from "../../housingSync/actions/readList";
 import type { ProgressHandler } from "../../housingSync/progress/types";
 import { clickGoBack } from "../../housingSync/menus/menuUtils";
-import {
-    ItemCaptureRegistry,
-    type InventorySnapshot,
-} from "../../housingSync/itemCapture";
+import { ItemCaptureRegistry } from "../../housingSync/itemCapture";
 import { tryWriteImportableCache } from "../../importCache";
 import { writeImportableCache } from "../../importCache/cache";
 import TaskContext from "../../tasks/context";
@@ -15,44 +12,26 @@ import { observedSlotsToActions } from "../../housingSync/observedActions";
 import { upsertImportableEntry } from "../../project/importJsonMutations";
 import { ensureParentDirs } from "../../utils/filesystem";
 import {
+    functionExportReferencesExist,
+    htslTargetForFunctionExport,
+} from "../../project/paths";
+import { makeReadHouse, type BatchState } from "../readHouse";
+import {
     openFunctionEditor,
     openFunctionSettings,
     readAutomaticExecutionTicks,
 } from "./shared";
 import { functionIconFromSnapshot } from "./icon";
-import { getSessionFunctionIcon } from "./listFunctions";
-
-export type ExportFunctionOptions = {
-    name: string;
-    /** The project's ENTRY import.json — captured items resolve against it. */
-    importJsonPath: string;
-    /**
-     * The import.json the function's entry is upserted into: its declaring
-     * file when the identity already exists somewhere in the include tree
-     * (see `htslTargetForFunctionExport`). Defaults to `importJsonPath`.
-     * `htslPath`/`htslReference` must be computed against the same file —
-     * the reference is relative to it.
-     */
-    declaringJsonPath?: string;
-    htslPath: string;
-    htslReference: string;
-    rootDir: string;
-    onReadProgress?: ProgressHandler;
-    // Read-only mode: same editor walk, but the result goes only into the
-    // knowledge cache for this house — no .htsl/import.json writes. A deep
-    // read IS an export minus the file writes; one driver serves both.
-    readOnly?: { housingUuid: string };
-};
-
-export type SharedExportState = {
-    itemCaptures: ItemCaptureRegistry;
-    inventorySnapshot: InventorySnapshot;
-};
+import {
+    getSessionFunctionIcon,
+    listAllFunctionNames,
+    resetFunctionNameSession,
+} from "./listFunctions";
 
 async function readFunction(
     ctx: TaskContext,
     name: string,
-    itemCaptures?: ItemCaptureRegistry,
+    itemCaptures: ItemCaptureRegistry,
     onReadProgress?: ProgressHandler
 ): Promise<{ actions: Action[]; repeatTicks?: number }> {
     if ((await openFunctionEditor(ctx, name)) === "missing") {
@@ -60,12 +39,10 @@ async function readFunction(
     }
 
     const observed = await readActionList(ctx, { kind: "deep" }, {
-        ...(itemCaptures !== undefined ? { itemCaptures } : {}),
+        itemCaptures,
         ...(onReadProgress !== undefined
             ? {
                   progress: onReadProgress,
-                  // Mutable scratch readActionList fills in as pages/child lists
-                  // lists are discovered; fresh per call.
                   phaseUnits: { setup: 0, reading: 0, hydrating: 0, applying: 0 },
               }
             : {}),
@@ -77,21 +54,22 @@ async function readFunction(
 
     const repeatTicks = readAutomaticExecutionTicks(ctx);
     await clickGoBack(ctx);
-    const validRepeatTicks = repeatTicks !== undefined && repeatTicks >= 4 && repeatTicks <= 18000
-        ? repeatTicks
-        : undefined;
-    return validRepeatTicks !== undefined ? { actions, repeatTicks: validRepeatTicks } : { actions };
+    const validRepeatTicks =
+        repeatTicks !== undefined && repeatTicks >= 4 && repeatTicks <= 18000
+            ? repeatTicks
+            : undefined;
+    return validRepeatTicks !== undefined
+        ? { actions, repeatTicks: validRepeatTicks }
+        : { actions };
 }
 
-/**
- * Read a function from the live house into a full `ImportableFunction` AST
- * (actions + repeat + icon), writing nothing. Shared by the exporter and the
- * Houses-tab deep read (which caches the result instead of writing import.json).
- */
+// Read a function from the live house into a full `ImportableFunction` AST
+// (actions + repeat + icon), writing nothing. Shared by the export and the
+// Houses-tab deep read (which caches the result instead of writing import.json).
 async function readFunctionImportable(
     ctx: TaskContext,
     name: string,
-    itemCaptures?: ItemCaptureRegistry,
+    itemCaptures: ItemCaptureRegistry,
     onReadProgress?: ProgressHandler
 ): Promise<ImportableFunction> {
     // The icon lives on the /functions list slot, not the editor — read it first.
@@ -106,18 +84,22 @@ async function readFunctionImportable(
     };
 }
 
-export async function exportFunctionWithSharedState(
+async function exportFunction(
     ctx: TaskContext,
-    options: ExportFunctionOptions,
-    shared: SharedExportState
+    name: string,
+    options: {
+        importJsonPath: string;
+        newExportTargetImportJson?: string;
+        readOnly?: { housingUuid: string };
+    },
+    state: BatchState,
+    onReadProgress: ProgressHandler | undefined
 ): Promise<void> {
-    const { name, importJsonPath, htslPath, htslReference } = options;
-
     const importable = await readFunctionImportable(
         ctx,
         name,
-        shared.itemCaptures,
-        options.onReadProgress
+        state.itemCaptures,
+        onReadProgress
     );
 
     if (options.readOnly !== undefined) {
@@ -129,23 +111,25 @@ export async function exportFunctionWithSharedState(
         return;
     }
 
+    const target = htslTargetForFunctionExport(
+        options.importJsonPath,
+        name,
+        options.newExportTargetImportJson
+    );
     const actions = importable.actions ?? [];
-    const repeatTicks = importable.repeatTicks;
-    const icon = importable.icon;
-
     const { source, diagnostics } = htsw.htsl.printActionsWithDiagnostics(actions);
     for (const diag of diagnostics) {
         ctx.displayMessage(`&7[export] &e${diag.message}`);
     }
 
-    ensureParentDirs(htslPath);
-    FileLib.write(htslPath, source, true);
+    ensureParentDirs(target.htslPath);
+    FileLib.write(target.htslPath, source, true);
 
-    upsertImportableEntry(options.declaringJsonPath ?? importJsonPath, "functions", {
+    upsertImportableEntry(target.importJsonPath, "functions", {
         name,
-        actions: htslReference,
-        ...(repeatTicks !== undefined ? { repeatTicks } : {}),
-        ...(icon !== undefined ? { icon } : {}),
+        actions: target.htslReference,
+        ...(importable.repeatTicks !== undefined ? { repeatTicks: importable.repeatTicks } : {}),
+        ...(importable.icon !== undefined ? { icon: importable.icon } : {}),
     });
 
     await tryWriteImportableCache(ctx, importable, "exporter");
@@ -153,5 +137,27 @@ export async function exportFunctionWithSharedState(
     ctx.displayMessage(
         `&aExported function '${name}' (${actions.length} action${actions.length === 1 ? "" : "s"})`
     );
-    ctx.displayMessage(`&7  -> ${htslPath}`);
+    ctx.displayMessage(`&7  -> ${target.htslPath}`);
 }
+
+export const readFunctions = makeReadHouse<string>({
+    noun: "function",
+    // Drop any function-list cache from a prior run so per-function icon reads
+    // reflect the live house, not a stale snapshot.
+    prelude: resetFunctionNameSession,
+    list: listAllFunctionNames,
+    capturesActionItems: true,
+    referencesExist: functionExportReferencesExist,
+    afterLoop: (ctx, state) => {
+        const hints = state.itemCaptures.takeHints();
+        for (let i = 0; i < hints.length; i++) {
+            ctx.displayMessage(`&e[export] ${hints[i]}`);
+        }
+    },
+    exportSummary: (state) => {
+        const counts = state.itemCaptures.counts();
+        return ` (items: ${counts.matched} matched, ${counts.fresh} new)`;
+    },
+    readOne: (ctx, name, options, state, onReadProgress) =>
+        exportFunction(ctx, name, options, state, onReadProgress),
+});

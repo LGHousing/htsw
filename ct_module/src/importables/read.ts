@@ -18,6 +18,11 @@ export type ReadResult = { total: number; succeeded: number; failed: number };
 export type ReadOptions = {
     importJsonPath: string;
     rootDir: string;
+    // Sticky "new exports land here" file for this destination. Only redirects
+    // importables that aren't already declared somewhere in the include tree,
+    // and only when it's reachable from `importJsonPath`. Omitted = the default
+    // declared/section-folder/base routing.
+    newExportTargetImportJson?: string;
     // Limit the batch to these names; omitted = list and process the whole house.
     names?: readonly string[];
     progress?: ExportProgressSink;

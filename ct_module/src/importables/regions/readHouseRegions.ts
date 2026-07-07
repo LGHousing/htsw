@@ -13,12 +13,17 @@ import { tryWriteImportableCache, writeImportableCache } from "../../importCache
 import { observedSlotsToActions } from "../../housingSync/observedActions";
 import { upsertImportableEntry } from "../../project/importJsonMutations";
 import { ensureParentDirs } from "../../utils/filesystem";
-import type { HtslExportTarget } from "../../project/paths";
+import {
+    htslTargetsForRegionExport,
+    regionExportReferencesExist,
+    type HtslExportTarget,
+} from "../../project/paths";
 import TaskContext from "../../tasks/context";
-import type { RegionListEntry } from "./listRegions";
+import { makeReadHouse } from "../readHouse";
+import { listAllRegions, type RegionListEntry } from "./listRegions";
 import { openRegionEditor } from "./shared";
 
-export type ExportRegionWithSharedStateOptions = {
+type ExportRegionWithSharedStateOptions = {
     entry: RegionListEntry;
     importJsonPath: string;
     declaringJsonPath: string;
@@ -30,7 +35,7 @@ export type ExportRegionWithSharedStateOptions = {
     readOnly?: { housingUuid: string };
 };
 
-export type SharedRegionExportState = {
+type SharedRegionExportState = {
     itemCaptures: ItemCaptureRegistry;
     inventorySnapshot: InventorySnapshot;
 };
@@ -85,7 +90,7 @@ function writeActionFile(
     ctx.displayMessage(`&7  -> ${target.htslPath}`);
 }
 
-export async function exportRegionWithSharedState(
+async function exportRegionWithSharedState(
     ctx: TaskContext,
     options: ExportRegionWithSharedStateOptions,
     shared: SharedRegionExportState
@@ -147,3 +152,42 @@ export async function exportRegionWithSharedState(
         `&aExported region '${options.entry.name}' (${actionCount} action${actionCount === 1 ? "" : "s"})`
     );
 }
+
+// Regions carry Entry/Exit action lists (and the items those actions reference),
+// so this reads through the region editor and captures items via the inventory.
+// Entry-based: the bounds come from the /regions listing, so the batch always
+// lists even for a selection.
+export const readRegions = makeReadHouse<RegionListEntry>({
+    noun: "region",
+    list: listAllRegions,
+    nameOf: (entry) => entry.name,
+    alwaysList: true,
+    capturesActionItems: true,
+    referencesExist: regionExportReferencesExist,
+    exportSummary: (state) => {
+        const counts = state.itemCaptures.counts();
+        return ` (items: ${counts.matched} matched, ${counts.fresh} new)`;
+    },
+    readOne: async (ctx, entry, options, state, onReadProgress) => {
+        const target = htslTargetsForRegionExport(
+            options.importJsonPath,
+            entry.name,
+            options.newExportTargetImportJson
+        );
+        await exportRegionWithSharedState(
+            ctx,
+            {
+                entry,
+                importJsonPath: options.importJsonPath,
+                declaringJsonPath: target.importJsonPath,
+                onEnterTarget: target.onEnter,
+                onExitTarget: target.onExit,
+                rootDir: options.rootDir,
+                readOnly: options.readOnly,
+                onReadProgress,
+            },
+            // capturesActionItems guarantees a non-null snapshot here.
+            { itemCaptures: state.itemCaptures, inventorySnapshot: state.inventorySnapshot! }
+        );
+    },
+});

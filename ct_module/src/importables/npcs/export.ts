@@ -10,7 +10,7 @@ import { timedWaitForMenu } from "../../housingSync/menus/menuWait";
 import { shallowActionListHasActions } from "../../housingSync/fields/loreParsing";
 import type { ProgressHandler } from "../../housingSync/progress/types";
 import { observedSlotsToActions } from "../../housingSync/observedActions";
-import { tryWriteImportableCache } from "../../importCache";
+import { tryWriteImportableCache, writeImportableCache } from "../../importCache";
 import { upsertImportableEntry } from "../../project/importJsonMutations";
 import type { HtslExportTarget } from "../../project/paths";
 import TaskContext from "../../tasks/context";
@@ -35,6 +35,8 @@ export type ExportNpcWithSharedStateOptions = {
     rightClickTarget: HtslExportTarget;
     rootDir: string;
     onReadProgress?: ProgressHandler;
+    // Read-only (deep read): cache the NPC, write no files.
+    readOnly?: { housingUuid: string };
 };
 
 export type SharedNpcExportState = {
@@ -139,15 +141,6 @@ export async function exportNpcWithSharedState(
         }
     }
 
-    if (leftActions !== undefined) {
-        ctx.checkCancelled();
-        writeActionFile(ctx, options.leftClickTarget, leftActions);
-    }
-    if (rightActions !== undefined) {
-        ctx.checkCancelled();
-        writeActionFile(ctx, options.rightClickTarget, rightActions);
-    }
-
     const importable: ImportableNpc = {
         type: "NPC",
         name: options.entry.name,
@@ -156,6 +149,24 @@ export async function exportNpcWithSharedState(
         ...(rightActions !== undefined ? { rightClickActions: rightActions } : {}),
         leftClickRedirect,
     };
+    const actionCount = (leftActions?.length ?? 0) + (rightActions?.length ?? 0);
+
+    if (options.readOnly !== undefined) {
+        writeImportableCache(ctx, options.readOnly.housingUuid, importable, "reader", true);
+        ctx.displayMessage(
+            `&aRead NPC '${npcLabel(options.entry)}' (${actionCount} action${actionCount === 1 ? "" : "s"})`
+        );
+        return;
+    }
+
+    if (leftActions !== undefined) {
+        ctx.checkCancelled();
+        writeActionFile(ctx, options.leftClickTarget, leftActions);
+    }
+    if (rightActions !== undefined) {
+        ctx.checkCancelled();
+        writeActionFile(ctx, options.rightClickTarget, rightActions);
+    }
 
     upsertImportableEntry(options.declaringJsonPath, "npcs", {
         name: options.entry.name,
@@ -171,7 +182,6 @@ export async function exportNpcWithSharedState(
 
     await tryWriteImportableCache(ctx, importable, "exporter");
 
-    const actionCount = (leftActions?.length ?? 0) + (rightActions?.length ?? 0);
     ctx.displayMessage(
         `&aExported NPC '${npcLabel(options.entry)}' (${actionCount} action${actionCount === 1 ? "" : "s"})`
     );

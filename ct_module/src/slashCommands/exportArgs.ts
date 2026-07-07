@@ -1,24 +1,9 @@
 import { stripSurroundingQuotes } from "../utils/helpers";
+import { houseExportTypeByToken } from "../importables/houseExportTypes";
 import type {
     ExportBatchType,
     NamedExportType,
 } from "./exportBatch";
-
-const EXPORT_TYPES: { token: string; type: ExportBatchType }[] = [
-    { token: "function", type: "FUNCTION" },
-    { token: "event", type: "EVENT" },
-    { token: "menu", type: "MENU" },
-    { token: "region", type: "REGION" },
-    { token: "command", type: "COMMAND" },
-    { token: "npc", type: "NPC" },
-];
-
-const NAMED_EXPORT_TYPES: { token: string; type: NamedExportType }[] = [
-    { token: "function", type: "FUNCTION" },
-    { token: "menu", type: "MENU" },
-    { token: "region", type: "REGION" },
-    { token: "command", type: "COMMAND" },
-];
 
 export function tokenizeQuoted(args: readonly string[]): string[] {
     const out: string[] = [];
@@ -70,15 +55,14 @@ export function pathArgument(tokens: readonly string[], start: number): string |
 }
 
 export function exportTypeFromToken(token: string | undefined): ExportBatchType | null {
-    for (let i = 0; i < EXPORT_TYPES.length; i++) {
-        if (isTypeToken(token, EXPORT_TYPES[i].token)) return EXPORT_TYPES[i].type;
-    }
+    const spec = houseExportTypeByToken(token);
+    if (spec !== null) return spec.type;
+    if (isTypeToken(token, "npc")) return "NPC";
     return null;
 }
 
 export function namedExportTypeFromToken(token: string | undefined): NamedExportType | null {
-    for (let i = 0; i < NAMED_EXPORT_TYPES.length; i++) {
-        if (token === NAMED_EXPORT_TYPES[i].token) return NAMED_EXPORT_TYPES[i].type;
-    }
+    const spec = houseExportTypeByToken(token);
+    if (spec !== null && spec.named) return spec.type as NamedExportType;
     return null;
 }

@@ -117,6 +117,45 @@ export async function getSlotPaginate(ctx: TaskContext, name: string): Promise<I
     throw new Error(`Could not find "${name}" on any page after ${PAGINATE_RESCAN_ATTEMPTS} attempts.${detail}`);
 }
 
+// Like getSlotPaginate, but matches by predicate and returns null instead of
+// throwing when nothing matches. Needed when the slot name encodes its own
+// value (e.g. a group permission shows "Button: On" / "Button: Off"), so the
+// caller can't name the exact slot up front.
+export async function tryGetSlotPaginateBy(
+    ctx: TaskContext,
+    predicate: (slot: ItemSlot) => boolean
+): Promise<ItemSlot | null> {
+    await goToFirstPaginatedOptionPage(ctx);
+    for (let page = 0; page < 100; page++) {
+        const slot = ctx.tryGetMenuItemSlot(predicate);
+        if (slot !== null) return slot;
+
+        const nextPageSlot = findPaginationControl(ctx, "next");
+        if (nextPageSlot === null) break;
+        nextPageSlot.click();
+        await timedWaitForMenu(ctx, "pageTurnWait");
+    }
+    return null;
+}
+
+// Visit every page of the currently-open paginated menu from the first page
+// forward, calling `visit` once per page. Stops when there's no next-page
+// control. Used by diagnostics that need to read the whole menu, not find one
+// slot.
+export async function forEachPaginatedPage(
+    ctx: TaskContext,
+    visit: (pageIndex: number) => void | Promise<void>
+): Promise<void> {
+    await goToFirstPaginatedOptionPage(ctx);
+    for (let page = 0; page < 100; page++) {
+        await visit(page);
+        const nextPageSlot = findPaginationControl(ctx, "next");
+        if (nextPageSlot === null) break;
+        nextPageSlot.click();
+        await timedWaitForMenu(ctx, "pageTurnWait");
+    }
+}
+
 async function goToFirstPaginatedOptionPage(ctx: TaskContext): Promise<void> {
     for (let page = 0; page < 100; page++) {
         const prevPageSlot = findPaginationControl(ctx, "previous");

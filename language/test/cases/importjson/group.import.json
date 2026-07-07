@@ -9,7 +9,9 @@
             "permissions": {
                 "Build": true,
                 "Use Launch Pads": false
-            }
+            },
+            "chatSpeed": "Slow 3s",
+            "defaultGameMode": "CREATIVE"
         }
     ]
 }

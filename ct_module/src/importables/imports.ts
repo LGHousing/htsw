@@ -1,4 +1,4 @@
-import { Diagnostic, type ImportablesParseResult } from "htsw";
+import { type ImportablesParseResult } from "htsw";
 import { Importable } from "htsw/types";
 
 import TaskContext from "../tasks/context";
@@ -56,22 +56,17 @@ import {
     teamPlanIsNoOp,
     type TeamImportPlan,
 } from "./teams/import";
+import {
+    applyImportableGroupPlan,
+    groupPlanIsNoOp,
+    prereadImportableGroup,
+    type GroupImportPlan,
+} from "./groups/import";
 import type { ItemRegistry } from "./itemRegistry";
 import type { SyncEventHandler } from "../housingSync/syncEvents";
 import type { ItemCaptureRegistry } from "../housingSync/itemCapture";
 import type { NpcLookupCache } from "./npcs/listNpcs";
 import type { ActionListApplyResult } from "../housingSync/actions/apply";
-
-export const IMPLEMENTED_IMPORTABLE_TYPES = [
-    "FUNCTION",
-    "EVENT",
-    "COMMAND",
-    "REGION",
-    "ITEM",
-    "MENU",
-    "NPC",
-    "TEAM",
-] as const;
 
 export type ImportSession = {
     parsed: ImportablesParseResult;
@@ -106,7 +101,8 @@ export type ImportablePlan =
     | NpcImportPlan
     | ItemImportPlan
     | MenuImportPlan
-    | TeamImportPlan;
+    | TeamImportPlan
+    | GroupImportPlan;
 
 export async function prereadImportable(
     ctx: TaskContext,
@@ -172,7 +168,12 @@ export async function prereadImportable(
                 trust,
             );
         case "GROUP":
-            throw Diagnostic.error(`${importable.type} imports are not implemented in the ChatTriggers module.`);
+            return prereadImportableGroup(
+                ctx,
+                importable,
+                session,
+                trust,
+            );
         default: {
             const _exhaustiveCheck: never = importable;
             return _exhaustiveCheck;
@@ -214,6 +215,9 @@ export async function applyImportablePlan(
         case "TEAM":
             await applyImportableTeamPlan(ctx, plan, session);
             return;
+        case "GROUP":
+            await applyImportableGroupPlan(ctx, plan, session);
+            return;
         default: {
             const _exhaustiveCheck: never = plan;
             return _exhaustiveCheck;
@@ -242,6 +246,8 @@ export function planIsNoOp(plan: ImportablePlan): boolean {
             return npcPlanIsNoOp(plan);
         case "TEAM":
             return teamPlanIsNoOp(plan);
+        case "GROUP":
+            return groupPlanIsNoOp(plan);
         case "MENU":
         case "ITEM":
             return false;
@@ -274,6 +280,7 @@ export function reconstructPartialImportable(
         case "MENU":
         case "ITEM":
         case "TEAM":
+        case "GROUP":
             return null;
         default: {
             const _exhaustiveCheck: never = plan;

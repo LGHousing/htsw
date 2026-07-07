@@ -12,13 +12,20 @@ export function writeCapturedItems(
     registry: ItemCaptureRegistry,
     rootDir: string,
     importJsonPath: string,
+    newExportTargetImportJson?: string,
 ): number {
     // Seeded entries already exist in the project — only minted ones write.
     const entries = registry.newEntries();
     if (entries.length === 0) return 0;
 
     for (const item of entries) {
-        const target = snbtTargetForItemExport(importJsonPath, rootDir, item.name);
+        const target = snbtTargetForItemExport(
+            importJsonPath,
+            rootDir,
+            item.name,
+            undefined,
+            newExportTargetImportJson
+        );
         ensureParentDirs(target.snbtPath);
         FileLib.write(target.snbtPath, prettySnbt(item.snbt), true);
 

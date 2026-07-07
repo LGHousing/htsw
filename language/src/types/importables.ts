@@ -1,6 +1,6 @@
 import type { Tag } from "../nbt";
 import type { Action } from "./actions";
-import type { Bounds, Color, CommandMode, Event, MenuSlot, Permission, Pos } from "./types";
+import type { Bounds, ChatSpeed, Color, CommandMode, DefaultGameMode, Event, MenuSlot, Permission, Pos } from "./types";
 
 /**
  * The resolved file an importable's content lives in — the `.htsl` for
@@ -100,6 +100,8 @@ export type ImportableGroup = ImportableSource & {
     color?: Color,
     priority?: number,
     permissions?: Record<Permission, boolean>,
+    chatSpeed?: ChatSpeed,
+    defaultGameMode?: DefaultGameMode,
 };
 
 export type ImportableCommand = ImportableSource & {

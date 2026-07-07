@@ -1,22 +1,13 @@
 import * as json from "jsonc-parser";
 import { walkImportJsonTree } from "./includeWalk";
 import { addIncludeToImportJsonSource } from "./includedImportJson";
-import { moveImportableEntry } from "./moveImportable";
+import { ALL_SECTIONS, moveImportableEntry } from "./moveImportable";
 import { importableEntryIdentity, type Section } from "./importJsonMutations";
 import type { ProjectFs } from "./fs";
 
-// The per-section project layout: each exportable section gets its own
-// `<section>/import.json` included from the root, and newly exported
-// importables of that section land there instead of in the root file.
-export const SECTION_FOLDERS: Section[] = [
-    "functions",
-    "events",
-    "commands",
-    "regions",
-    "menus",
-    "npcs",
-    "items",
-];
+// Every section gets its own `<section>/import.json` folder in the per-section
+// layout; newly exported importables land there instead of in the root file.
+export const SECTION_FOLDERS: Section[] = ALL_SECTIONS;
 
 function canonKey(path: string): string {
     return path.split("\\").join("/").toLowerCase();

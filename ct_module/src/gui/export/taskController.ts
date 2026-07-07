@@ -2,7 +2,7 @@
 
 import type { Importable } from "htsw/types";
 
-import { getExportImportJsonPath } from "../state";
+import { getExportImportJsonPath, getNewExportTarget } from "../state";
 import {
     getParseAt,
     markParseStale,
@@ -44,6 +44,7 @@ export function startExport(
     }
     const dir = importJsonDir(importJsonPath);
     const count = names === undefined ? null : names.length;
+    const newExportTarget = getNewExportTarget();
     runHousingSyncTask("export", (ctx) => {
         const exportContext = exportProjectContextFromParsedImportJson(
             { rootDir: dir, importJsonPath },
@@ -51,6 +52,9 @@ export function startExport(
         );
         return spec.read(ctx, {
             ...exportContext,
+            ...(newExportTarget !== null
+                ? { newExportTargetImportJson: newExportTarget }
+                : {}),
             names,
             progress: createExportProgressSink(spec.type, importJsonPath),
         });

@@ -28,14 +28,9 @@ import {
     listAllCommandNames,
     resetCommandNameSession,
 } from "../importables/commands/listCommands";
-import type { ReadFn } from "../importables/read";
-import { readFunctions } from "../importables/functions/readFunctions";
-import { readEvents } from "../importables/events/readEvents";
-import { readCommands } from "../importables/commands/readCommands";
-import { readMenus } from "../importables/menus/readMenus";
-import { readRegions } from "../importables/regions/readRegions";
-import { readTeams } from "../importables/teams/readTeams";
+import { HOUSE_READERS, HOUSE_READABLE_TYPES } from "../importables/houseReaders";
 import { deleteTeam } from "../importables/teams/listTeams";
+import { deleteGroup } from "../importables/groups/listGroups";
 import { createNpcLookupCache } from "../importables/npcs/listNpcs";
 import { listAllRegionNames } from "../importables/regions/listRegions";
 import {
@@ -238,25 +233,6 @@ async function verifyFixture(
     return failures;
 }
 
-// Types with a house reader; ITEM and NPC have no read path, so the deep-read
-// phase skips them.
-const READERS_BY_TYPE: Partial<Record<Importable["type"], ReadFn>> = {
-    FUNCTION: readFunctions,
-    EVENT: readEvents,
-    COMMAND: readCommands,
-    MENU: readMenus,
-    REGION: readRegions,
-    TEAM: readTeams,
-};
-const DEEP_READ_ORDER: Importable["type"][] = [
-    "FUNCTION",
-    "EVENT",
-    "COMMAND",
-    "MENU",
-    "REGION",
-    "TEAM",
-];
-
 // Deep-read verification: wipe each importable's cache entry, re-read it from
 // the live house through the reader in read-only mode, and require the
 // reader-written entry to hash-match the fixture source — the same comparison
@@ -274,10 +250,10 @@ async function deepReadVerifyFixture(
         .join("/")
         .replace(/\/[^/]*$/, "");
 
-    for (let t = 0; t < DEEP_READ_ORDER.length; t++) {
-        const type = DEEP_READ_ORDER[t];
-        const reader = READERS_BY_TYPE[type];
-        if (reader === undefined) continue;
+    for (let t = 0; t < HOUSE_READABLE_TYPES.length; t++) {
+        const type = HOUSE_READABLE_TYPES[t];
+        const reader = HOUSE_READERS[type];
+        if (reader === null) continue;
         const items: Importable[] = [];
         for (let i = 0; i < importables.length; i++) {
             if (importables[i].type === type) items.push(importables[i]);
@@ -636,6 +612,18 @@ function residualPlanOperations(plan: ImportablePlan): string[] {
             if (!plan.friendlyFireHandled) failures.push("friendly fire differs");
             return failures;
         }
+        case "GROUP": {
+            const failures: string[] = [];
+            if (!plan.exists) failures.push("group is missing");
+            if (!plan.tagHandled) failures.push("tag differs");
+            if (!plan.tagShownInChatHandled) failures.push("tag-in-chat differs");
+            if (!plan.colorHandled) failures.push("color differs");
+            if (!plan.priorityHandled) failures.push("priority differs");
+            if (!plan.permissionsHandled) failures.push("permissions differ");
+            if (!plan.chatSpeedHandled) failures.push("chat speed differs");
+            if (!plan.defaultGameModeHandled) failures.push("default game mode differs");
+            return failures;
+        }
         default: {
             const _exhaustive: never = plan;
             return _exhaustive;
@@ -795,6 +783,8 @@ async function cleanupFixture(
             await clearImportedItemSlot(ctx);
         } else if (importable.type === "TEAM") {
             await deleteTeam(ctx, importable.name);
+        } else if (importable.type === "GROUP") {
+            await deleteGroup(ctx, importable.name);
         }
         deleteImportableCache(
             housingUuid,

@@ -382,6 +382,8 @@ describe("import.json basic passing behavior", () => {
         expect(group.color).toBe("Aqua");
         expect(group.priority).toBe(5);
         expect(group.permissions).toEqual({ "Build": true, "Use Launch Pads": false });
+        expect(group.chatSpeed).toBe("Slow 3s");
+        expect(group.defaultGameMode).toBe("CREATIVE");
         expect(hasHardErrors(result.diagnostics)).toBe(false);
     });
 

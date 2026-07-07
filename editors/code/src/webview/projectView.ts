@@ -37,7 +37,7 @@ import type {
 
 type ItemTag = Parameters<typeof itemFieldsFromTag>[0];
 
-const IMPORTABLE_SECTIONS = ["functions", "events", "regions", "items", "menus", "commands", "npcs"] as const;
+const IMPORTABLE_SECTIONS = ["functions", "events", "regions", "items", "menus", "commands", "npcs", "teams", "groups"] as const;
 type ImportableSection = typeof IMPORTABLE_SECTIONS[number];
 
 export type ImportableContext = {
@@ -621,6 +621,8 @@ const SECTION_BY_KIND: Record<ProjectImportableSummary["type"], ImportableSectio
     menu: "menus",
     command: "commands",
     npc: "npcs",
+    team: "teams",
+    group: "groups",
 };
 
 async function addImportable(
@@ -1009,7 +1011,10 @@ function patchReferenceNodes(root: ProjectImportJsonNode): void {
     patch(root);
 }
 
-const SUMMARY_TYPE: Partial<Record<htsw.types.Importable["type"], ProjectImportableSummary["type"]>> = {
+// Total on Importable["type"] (not Partial) so a new importable type is a
+// compile error here until it's mapped, rather than silently dropped from the
+// panel. A `null` entry opts a type out of the panel explicitly.
+const SUMMARY_TYPE: Record<htsw.types.Importable["type"], ProjectImportableSummary["type"] | null> = {
     FUNCTION: "function",
     EVENT: "event",
     REGION: "region",
@@ -1017,6 +1022,8 @@ const SUMMARY_TYPE: Partial<Record<htsw.types.Importable["type"], ProjectImporta
     MENU: "menu",
     COMMAND: "command",
     NPC: "npc",
+    TEAM: "team",
+    GROUP: "group",
 };
 
 const CHILD_LIST_LABELS: Record<htsw.ImportableChildListName, string> = {
@@ -1033,7 +1040,7 @@ function mapImportable(
     parse: ContextParse,
 ): ProjectImportableSummary | null {
     const type = SUMMARY_TYPE[imp.type];
-    if (type === undefined) return null;
+    if (type === null) return null;
     const identity = imp.type === "EVENT"
         ? imp.event
         : imp.type === "NPC"

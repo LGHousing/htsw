@@ -2,15 +2,21 @@
 
 import { Element } from "../lib/layout";
 import { Button, Col, Input, Row, Text } from "../lib/components";
+import { COLOR_TEXT_DIM } from "../lib/theme";
 import { closePopover, openPopover, type PopoverHandle } from "../lib/popovers";
 
-// One shared "ask for a string" modal: title, input, submit/cancel. Callers
-// that need more than a single text field build their own popover.
+// One shared "ask for a string" modal: title, optional hint lines, input,
+// submit/cancel. Callers that need more than a single text field build their
+// own popover.
 export type TextPromptOptions = {
     title: string;
+    /** Dim explanatory lines shown under the title, above the input. */
+    description?: string[];
     placeholder?: string;
     prefill?: string;
     submitLabel?: string;
+    /** Popover width; widen when the hint lines need the room. Defaults to 240. */
+    width?: number;
     /** Called with the trimmed, non-empty value after the prompt closes. */
     onSubmit: (value: string) => void;
 };
@@ -43,10 +49,19 @@ function submit(): void {
 }
 
 function popoverContent(opts: TextPromptOptions): Element {
+    const hintLines = (opts.description ?? []).map((line) =>
+        Text({
+            text: line,
+            color: COLOR_TEXT_DIM,
+            truncate: true,
+            style: { width: { kind: "grow" } },
+        })
+    );
     return Col({
         style: { padding: 6, gap: 4 },
         children: [
             Text({ text: opts.title, truncate: true, style: { width: { kind: "grow" } } }),
+            ...hintLines,
             Input({
                 id: "text-prompt-input",
                 value: () => draft,
@@ -90,8 +105,8 @@ export function openTextPromptPopover(opts: TextPromptOptions): void {
     activeHandle = openPopover({
         anchor: { x: 0, y: 0, w: 0, h: 0 },
         content: popoverContent(opts),
-        width: 240,
-        height: 64,
+        width: opts.width ?? 240,
+        height: 64 + (opts.description?.length ?? 0) * 12,
         key: "text-prompt",
         placement: "modal",
         onClose: () => {

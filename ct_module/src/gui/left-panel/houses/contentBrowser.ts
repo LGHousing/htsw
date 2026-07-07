@@ -4,6 +4,7 @@ import { Element, Rect } from "../../lib/layout";
 import { Button, Col, Container, Icon, Input, Row, Scroll, Text } from "../../lib/components";
 import { Icons } from "../../lib/icons.generated";
 import {
+    getEffectiveNewExportTarget,
     getExportImportJsonPath,
     getHousingUuid,
     isHouseTrusted,
@@ -375,9 +376,14 @@ function itemRow(
                         tooltipColor: COLOR_TEXT_DIM,
                     }),
             Text({
-                text: item.name,
+                text: item.label ?? item.name,
                 color: COLOR_TEXT,
                 truncate: true,
+                // When a display label stands in for the identity (NPCs show
+                // their name but are keyed by position), reveal the identity on
+                // hover instead of the truncation preview.
+                tooltip: item.label !== undefined ? item.name : undefined,
+                tooltipColor: COLOR_TEXT_DIM,
                 style: { width: { kind: "grow" } },
             }),
             ...(
@@ -486,9 +492,14 @@ function exportActionBar(t: HouseContentType, uuid: string, totalCount: number):
                         });
                     })(),
                     Text({
+                        // Shows where NEW exports land: the base file, or the
+                        // sticky sub-target when one is chosen (its path already
+                        // carries the project prefix, so it reads as project/sub).
                         text: () => {
                             const d = getExportImportJsonPath();
-                            return d.trim() === "" ? "No export destination" : `→ ${shortPath(d)}`;
+                            if (d.trim() === "") return "No export destination";
+                            const target = getEffectiveNewExportTarget();
+                            return `→ ${shortPath(target)}`;
                         },
                         color: COLOR_TEXT_DIM,
                         truncate: true,
@@ -531,8 +542,8 @@ function exportActionBar(t: HouseContentType, uuid: string, totalCount: number):
                                 key: "houses-export-destination",
                                 anchor: rect,
                                 content: exportDestinationPicker(),
-                                width: 360,
-                                height: 240,
+                                width: 380,
+                                height: 320,
                             }),
                     }),
                 ],
@@ -799,7 +810,11 @@ export function typeBrowserSection(getViewedUuid: () => string | null, availW: n
             const shown =
                 query === ""
                     ? items
-                    : items.filter((i) => i.name.toLowerCase().indexOf(query) !== -1);
+                    : items.filter(
+                          (i) =>
+                              (i.label ?? i.name).toLowerCase().indexOf(query) !== -1 ||
+                              i.name.toLowerCase().indexOf(query) !== -1
+                      );
             if (shown.length === 0) {
                 out.push(
                     Text({

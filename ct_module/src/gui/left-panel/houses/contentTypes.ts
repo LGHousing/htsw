@@ -33,20 +33,52 @@ import {
     isCommandScanInFlight,
     scanHouseCommands,
 } from "./sources/commandsSource";
-import { readFunctions } from "../../../importables/functions/readFunctions";
-import { readEvents } from "../../../importables/events/readEvents";
-import { readMenus } from "../../../importables/menus/readMenus";
-import { readRegions } from "../../../importables/regions/readRegions";
-import { readCommands } from "../../../importables/commands/readCommands";
-import { readTeams } from "../../../importables/teams/readTeams";
+import { houseExportTypeOf } from "../../../importables/houseExportTypes";
 import {
     getHouseTeams,
     houseTeamsScanned,
     isTeamScanInFlight,
     scanHouseTeams,
 } from "./sources/teamsSource";
+import {
+    getHouseGroups,
+    houseGroupsScanned,
+    isGroupScanInFlight,
+    scanHouseGroups,
+} from "./sources/groupsSource";
+import {
+    getHouseNpcs,
+    houseNpcsScanned,
+    isNpcScanInFlight,
+    scanHouseNpcs,
+} from "./sources/npcsSource";
+import { readNpcs } from "../../../importables/npcs/readHouseNpcs";
+import { type HouseReadableType } from "../../../importables/houseReaders";
 import { startExport, type ExportSpec } from "../../export/taskController";
 import { makeDeepRead } from "./sources/deepRead";
+import type TaskContext from "../../../tasks/context";
+import { TaskManager } from "../../../tasks/manager";
+import { showToast } from "../../toast";
+import { parseNpcPosIdentity } from "../../../importables/identity";
+import { openEventEditor } from "../../../importables/events/shared";
+import { openManageTeam } from "../../../importables/teams/listTeams";
+import { openEditGroup } from "../../../importables/groups/listGroups";
+import {
+    openNpcEditorForPos,
+    teleportToNpc,
+} from "../../../importables/npcs/listNpcs";
+
+// House readers come from the shared export registry, so this browser and the
+// /export slash command can never disagree on which types export or how. A GUI
+// export row for a type missing from the registry throws on load rather than
+// silently drifting out of the slash command.
+const readFunctions = houseExportTypeOf("FUNCTION").read;
+const readEvents = houseExportTypeOf("EVENT").read;
+const readMenus = houseExportTypeOf("MENU").read;
+const readRegions = houseExportTypeOf("REGION").read;
+const readCommands = houseExportTypeOf("COMMAND").read;
+const readTeams = houseExportTypeOf("TEAM").read;
+const readGroups = houseExportTypeOf("GROUP").read;
 
 // One browsable category of house contents. The Houses view is generic over
 // this: it dispatches scan/list/edit/export through the active entry.
@@ -82,8 +114,30 @@ function exportHook(spec: ExportSpec): HouseContentType["export"] {
     };
 }
 
-export const HOUSE_CONTENT_TYPES: HouseContentType[] = [
-    {
+// Fire a one-shot menu-navigation task from a row action (open an importable's
+// editor, teleport). Types with no per-importable slash command reach their
+// editor by walking the live menu, which must run as a task. Guards against
+// overlapping tasks and toasts on failure.
+function runMenuTask(label: string, fn: (ctx: TaskContext) => Promise<unknown>): void {
+    if (TaskManager.hasRunningTasks()) {
+        showToast("A task is already running — wait for it to finish", 0xffe5bc4b);
+        return;
+    }
+    TaskManager.run(async (ctx) => {
+        await fn(ctx);
+    }).catch((err: unknown) => {
+        showToast(`${label} failed: ${err}`, 0xffe85c5c, 8000);
+        ChatLib.chat(`&c[htsw] ${label} failed: ${err}`);
+    });
+}
+
+// Keyed by importable type and total over the house-readable set (derived from
+// HOUSE_READERS), so a new house-readable type is a compile error until it gets
+// a tab here. `HouseContentType & { type: K }` also pins each entry's `type`
+// field to its key. HOUSE_CONTENT_TYPES below is the ordered array the view
+// consumes; Object.keys preserves this insertion order.
+const HOUSE_CONTENT_BY_TYPE: { [K in HouseReadableType]: HouseContentType & { type: K } } = {
+    FUNCTION: {
         type: "FUNCTION",
         label: "Functions",
         icon: Icons.squareFunction,
@@ -107,27 +161,7 @@ export const HOUSE_CONTENT_TYPES: HouseContentType[] = [
         remove: (name) => ChatLib.command(`function delete ${name}`),
         export: exportHook({ type: "FUNCTION", label: "function", read: readFunctions }),
     },
-    {
-        // Events are a fixed enumerated set: rows open the shared /eventactions
-        // page because Housing has no per-name edit command or create/delete.
-        type: "EVENT",
-        label: "Events",
-        icon: Icons.zap,
-        items: getHouseEvents,
-        scanned: houseEventsScanned,
-        scan: scanHouseEvents,
-        scanInFlight: isEventScanInFlight,
-        deepRead: makeDeepRead("EVENT", "event", readEvents, isEventScanInFlight),
-        rowActions: [
-            {
-                label: "Open /eventactions",
-                icon: Icons.externalLink,
-                run: () => ChatLib.command("eventactions"),
-            },
-        ],
-        export: exportHook({ type: "EVENT", label: "event", read: readEvents }),
-    },
-    {
+    MENU: {
         type: "MENU",
         label: "Menus",
         icon: Icons.squareMenu,
@@ -150,7 +184,7 @@ export const HOUSE_CONTENT_TYPES: HouseContentType[] = [
         ],
         export: exportHook({ type: "MENU", label: "menu", read: readMenus }),
     },
-    {
+    REGION: {
         type: "REGION",
         label: "Regions",
         icon: Icons.cuboid,
@@ -169,7 +203,7 @@ export const HOUSE_CONTENT_TYPES: HouseContentType[] = [
         remove: (name) => ChatLib.command(`region delete ${name}`),
         export: exportHook({ type: "REGION", label: "region", read: readRegions }),
     },
-    {
+    COMMAND: {
         type: "COMMAND",
         label: "Commands",
         icon: Icons.command,
@@ -189,7 +223,27 @@ export const HOUSE_CONTENT_TYPES: HouseContentType[] = [
         remove: (name) => ChatLib.command(`command delete ${name}`),
         export: exportHook({ type: "COMMAND", label: "command", read: readCommands }),
     },
-    {
+    EVENT: {
+        // Housing has no per-event edit command, so Edit walks the /eventactions
+        // menu to the specific event's action editor.
+        type: "EVENT",
+        label: "Events",
+        icon: Icons.zap,
+        items: getHouseEvents,
+        scanned: houseEventsScanned,
+        scan: scanHouseEvents,
+        scanInFlight: isEventScanInFlight,
+        deepRead: makeDeepRead("EVENT", "event", readEvents, isEventScanInFlight),
+        rowActions: [
+            {
+                label: "Edit",
+                icon: Icons.pencil,
+                run: (name) => runMenuTask("open event", (ctx) => openEventEditor(ctx, name)),
+            },
+        ],
+        export: exportHook({ type: "EVENT", label: "event", read: readEvents }),
+    },
+    TEAM: {
         type: "TEAM",
         label: "Teams",
         icon: Icons.users,
@@ -198,13 +252,83 @@ export const HOUSE_CONTENT_TYPES: HouseContentType[] = [
         scan: scanHouseTeams,
         scanInFlight: isTeamScanInFlight,
         deepRead: makeDeepRead("TEAM", "team", readTeams, isTeamScanInFlight),
+        rowActions: [
+            {
+                label: "Edit",
+                icon: Icons.pencil,
+                run: (name) => runMenuTask("open team", (ctx) => openManageTeam(ctx, name)),
+            },
+        ],
+        remove: (name) => ChatLib.command(`team delete ${name}`),
         export: exportHook({ type: "TEAM", label: "team", read: readTeams }),
     },
-];
+    GROUP: {
+        // Groups have no slash command; Edit walks Housing Menu -> Permissions
+        // and Groups to the specific group's edit menu. Deletion is menu-driven
+        // too, so there's no one-shot remove command.
+        type: "GROUP",
+        label: "Groups",
+        icon: Icons.shield,
+        items: getHouseGroups,
+        scanned: houseGroupsScanned,
+        scan: scanHouseGroups,
+        scanInFlight: isGroupScanInFlight,
+        deepRead: makeDeepRead("GROUP", "group", readGroups, isGroupScanInFlight),
+        rowActions: [
+            {
+                label: "Edit",
+                icon: Icons.pencil,
+                run: (name) => runMenuTask("open group", (ctx) => openEditGroup(ctx, name)),
+            },
+        ],
+        export: exportHook({ type: "GROUP", label: "group", read: readGroups }),
+    },
+    NPC: {
+        // NPCs are identified by position, not name, and have no per-NPC slash
+        // command: Edit walks the /hmenu -> Systems -> NPCs browser to the NPC's
+        // editor, Teleport right-clicks its slot. Export and deep read run
+        // through `readNpcs`, position-keying the selected rows onto
+        // `exportAllNpcs`.
+        type: "NPC",
+        label: "NPCs",
+        icon: Icons.user,
+        items: getHouseNpcs,
+        scanned: houseNpcsScanned,
+        scan: scanHouseNpcs,
+        scanInFlight: isNpcScanInFlight,
+        deepRead: makeDeepRead("NPC", "npc", readNpcs, isNpcScanInFlight),
+        rowActions: [
+            {
+                label: "Edit",
+                icon: Icons.pencil,
+                run: (name) =>
+                    runMenuTask("open NPC editor", (ctx) =>
+                        openNpcEditorForPos(ctx, parseNpcPosIdentity(name))
+                    ),
+            },
+            {
+                label: "Teleport",
+                icon: Icons.mapPin,
+                run: (name) =>
+                    runMenuTask("teleport to NPC", (ctx) =>
+                        teleportToNpc(ctx, parseNpcPosIdentity(name))
+                    ),
+            },
+        ],
+        export: exportHook({ type: "NPC", label: "npc", read: readNpcs }),
+    },
+};
+
+export const HOUSE_CONTENT_TYPES: HouseContentType[] =
+    (Object.keys(HOUSE_CONTENT_BY_TYPE) as HouseReadableType[]).map(
+        (type) => HOUSE_CONTENT_BY_TYPE[type]
+    );
 
 // Importable types with a house-side listing (the scan/enumerate path above).
-// Types absent here, such as ITEM and NPC, do not have a name-shaped house
-// scan that can answer "is it in the house?". Presence UI must gate on this.
+// ITEM is absent: an item has no name-shaped house scan that can answer "is it
+// in the house?" (it exists only where an action or menu references it). NPCs
+// ARE listable (by position), so they're scannable; presence UI still gates on
+// this membership.
 const SCANNABLE_TYPES = new Set<Importable["type"]>();
 for (let i = 0; i < HOUSE_CONTENT_TYPES.length; i++) {
     SCANNABLE_TYPES.add(HOUSE_CONTENT_TYPES[i].type);

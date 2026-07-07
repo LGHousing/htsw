@@ -456,7 +456,7 @@ export const PERMISSIONS = [
     "Use Ender Chests",
     "Item Editor",
     "Switch Game Mode",
-    "Edit Stats",
+    "Edit Variables",
     "Change Player Group",
     "Change Gamerules",
     "Housing Menu",
@@ -470,6 +470,8 @@ export const PERMISSIONS = [
     "Edit Inventory Layouts",
     "Edit Teams",
     "Edit Custom Menus",
+    "View Analytics",
+    "View Logger",
     "Item: Mailbox",
     "Item: Egg Hunt",
     "Item: Teleport Pad",
@@ -481,6 +483,29 @@ export const PERMISSIONS = [
     "Item: Leaderboard",
     "Item: Trash Can",
     "Item: Biome Stick",
+] as const;
+
+// Non-boolean group permissions. These live in a group's permission menu next
+// to the toggles, but cycle through a fixed set of values instead of On/Off.
+// Ordered to match the in-game cycle so the importer's click math is minimal.
+export const CHAT_SPEEDS = [
+    "Off",
+    "On",
+    "Slow 1s",
+    "Slow 2s",
+    "Slow 3s",
+    "Slow 5s",
+    "Slow 10s",
+    "Slow 15s",
+    "Slow 30s",
+    "Slow 45s",
+    "Slow 60s",
+] as const;
+
+export const DEFAULT_GAME_MODES = [
+    "ADVENTURE",
+    "SURVIVAL",
+    "CREATIVE",
 ] as const;
 
 export const DAMAGE_CAUSES = [

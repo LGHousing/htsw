@@ -2,7 +2,7 @@ import type { Action, Condition, Importable } from "htsw/types";
 
 import { ACTION_MAPPINGS } from "../housingSync/fields/actionMappings";
 import { CONDITION_MAPPINGS } from "../housingSync/fields/conditionMappings";
-import { IMPLEMENTED_IMPORTABLE_TYPES } from "../importables/imports";
+import { ALL_IMPORTABLE_TYPES } from "../importables/houseReaders";
 
 export type SuiteCoverage = {
     importableTypes: Set<string>;
@@ -29,8 +29,8 @@ export function collectImportablesCoverage(
 
 export function allImplementedImportableTypes(): string[] {
     const out: string[] = [];
-    for (let i = 0; i < IMPLEMENTED_IMPORTABLE_TYPES.length; i++) {
-        out.push(IMPLEMENTED_IMPORTABLE_TYPES[i]);
+    for (let i = 0; i < ALL_IMPORTABLE_TYPES.length; i++) {
+        out.push(ALL_IMPORTABLE_TYPES[i]);
     }
     return out.sort();
 }
