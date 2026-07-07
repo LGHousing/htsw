@@ -172,7 +172,6 @@ export async function prereadImportable(
                 trust,
             );
         case "GROUP":
-        case "HOUSE_NAME":
             throw Diagnostic.error(`${importable.type} imports are not implemented in the ChatTriggers module.`);
         default: {
             const _exhaustiveCheck: never = importable;

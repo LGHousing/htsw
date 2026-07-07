@@ -61,9 +61,6 @@ function parseImportJson0(p: Parser, fileNode: ImportJsonFileNode): Importable[]
 
     parseHouseUuid(p, p.importJson.fileTree === fileNode);
 
-    const houseName = p.parseFieldOrUndefined("houseName")?.parseString();
-    if (houseName) importables.push({ type: "HOUSE_NAME", name: houseName });
-
     for (const sp of p.parseFieldOrUndefined("functions")?.parseArray() ?? []) {
         importables.push(parseImportableFunction(sp));
     } 
@@ -101,7 +98,7 @@ function parseImportJson0(p: Parser, fileNode: ImportJsonFileNode): Importable[]
     }
 
     warnUnused(p, [
-        "include", "houseUuid", "houseName", "functions",
+        "include", "houseUuid", "functions",
         "regions", "menus", "items", "npcs", "events", "groups",
         "teams", "commands"
     ]);

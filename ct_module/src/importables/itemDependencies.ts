@@ -73,7 +73,6 @@ export function referencedItemNames(importable: Importable): string[] {
             break;
         case "TEAM":
         case "GROUP":
-        case "HOUSE_NAME":
             break;
         default: {
             const _exhaustiveCheck: never = importable;

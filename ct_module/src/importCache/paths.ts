@@ -29,8 +29,6 @@ function dirFor(type: Importable["type"]): string {
             return "group";
         case "COMMAND":
             return "command";
-        case "HOUSE_NAME":
-            return "house-name";
         default: {
             const _exhaustive: never = type;
             return _exhaustive;

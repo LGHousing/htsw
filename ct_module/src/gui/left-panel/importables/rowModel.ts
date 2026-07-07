@@ -41,7 +41,6 @@ export const IMPORTABLE_TYPE_COLORS: { [k in Importable["type"]]: number } = {
     TEAM: 0xff4aa3a8 | 0,
     GROUP: 0xffb695e8 | 0,
     COMMAND: 0xffe8e06a | 0,
-    HOUSE_NAME: 0xffd9d1a3 | 0,
 };
 
 // Structure revision for the Importables tree. The tree's row DESCRIPTORS

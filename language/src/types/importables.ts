@@ -112,11 +112,6 @@ export type ImportableCommand = ImportableSource & {
     listed?: boolean,
 }
 
-export type ImportableHouseName = ImportableSource & {
-    type: "HOUSE_NAME",
-    name: string,
-};
-
 export type Importable =
     | ImportableFunction
     | ImportableRegion
@@ -126,5 +121,4 @@ export type Importable =
     | ImportableNpc
     | ImportableTeam
     | ImportableGroup
-    | ImportableCommand
-    | ImportableHouseName;
+    | ImportableCommand;

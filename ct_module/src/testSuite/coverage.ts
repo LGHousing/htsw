@@ -105,7 +105,6 @@ function collectImportableCoverage(
             return;
         case "TEAM":
         case "GROUP":
-        case "HOUSE_NAME":
             return;
         default: {
             const _exhaustive: never = importable;

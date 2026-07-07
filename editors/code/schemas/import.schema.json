@@ -9,9 +9,6 @@
       "description": "Housing UUID binding. Only the entry import.json's binding is used.",
       "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
     },
-    "houseName": {
-      "type": "string"
-    },
     "include": {
       "type": "array",
       "items": {

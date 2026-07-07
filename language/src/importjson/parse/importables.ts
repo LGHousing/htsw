@@ -3,7 +3,6 @@ import type {
     ImportableEvent,
     ImportableFunction,
     ImportableGroup,
-    ImportableHouseName,
     ImportableItem,
     ImportableMenu,
     ImportableNpc,

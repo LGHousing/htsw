@@ -22,7 +22,6 @@ const ALL_IMPORTABLE_TYPES: ImportableType[] = [
     "TEAM",
     "GROUP",
     "COMMAND",
-    "HOUSE_NAME",
 ];
 
 const selectedTypes: Set<ImportableType> = new Set();
