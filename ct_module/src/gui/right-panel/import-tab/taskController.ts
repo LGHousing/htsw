@@ -441,8 +441,8 @@ export function startImport(explicit?: readonly ImportQueueItem[]): void {
                     sourcePath: batch.sourcePath,
                     parsed: batch.parsed,
                     events,
-                    onItemAutoAdded: (item) => {
-                        const queueItem = makeImportableQueueItem(item, batch.sourcePath);
+                    onImportableAutoAdded: (importable) => {
+                        const queueItem = makeImportableQueueItem(importable, batch.sourcePath);
                         addSessionQueueItem(queueItem);
                         // Track it with this session's keys so the
                         // post-success cleanup removes it like any other

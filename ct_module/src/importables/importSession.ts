@@ -26,6 +26,7 @@ import {
     type ImportSession,
 } from "./imports";
 import {
+    expandDeclaredTeamAndGroupDependencies,
     expandClickActionItemDependencies,
     referencedItemNames,
 } from "./itemDependencies";
@@ -57,7 +58,7 @@ export type ImportSelection = {
      * here, after the caller's queue snapshot — this hands the additions
      * back so the visible queue can stay in sync with the actual work set.
      */
-    onItemAutoAdded?: (item: ImportableItem) => void;
+    onImportableAutoAdded?: (importable: Importable) => void;
 };
 
 function toImportDiagnostic(
@@ -124,13 +125,30 @@ export async function importSelectedImportables(
     const sm = new SourceMap(new FileSystemFileLoader());
     const items = createItemRegistry(parsed.value, parsed.gcx);
 
+    const teamGroupExpansion = expandDeclaredTeamAndGroupDependencies(
+        parsed.value,
+        selection.importables
+    );
+    for (const team of teamGroupExpansion.addedTeams) {
+        selection.onImportableAutoAdded?.(team);
+        ctx.displayMessage(
+            `&7[htsw] Also importing team '&f${team.name}&7' — it is referenced by this import.`
+        );
+    }
+    for (const group of teamGroupExpansion.addedGroups) {
+        selection.onImportableAutoAdded?.(group);
+        ctx.displayMessage(
+            `&7[htsw] Also importing group '&f${group.name}&7' — it is referenced by this import.`
+        );
+    }
+
     const expansion = expandClickActionItemDependencies(
         items,
-        selection.importables,
+        teamGroupExpansion.importables,
         selection.housingUuid
     );
     for (const item of expansion.addedItems) {
-        selection.onItemAutoAdded?.(item);
+        selection.onImportableAutoAdded?.(item);
         ctx.displayMessage(
             `&7[htsw] Also importing item '&f${item.name}&7' — it has click actions and isn't in this house yet.`
         );

@@ -1,4 +1,4 @@
-import type { Action, Condition, Importable, ImportableItem } from "htsw/types";
+import type { Action, Condition, Importable, ImportableGroup, ImportableItem, ImportableTeam } from "htsw/types";
 
 import { ACTION_MAPPINGS } from "../housingSync/fields/actionMappings";
 import { CONDITION_MAPPINGS } from "../housingSync/fields/conditionMappings";
@@ -18,6 +18,24 @@ function collectFromCondition(condition: Condition, names: string[]): void {
             fields[label].prop
         ];
         if (typeof value === "string") names.push(value);
+    }
+}
+
+function collectTeamAndGroupFromCondition(
+    condition: Condition,
+    teams: string[],
+    groups: string[]
+): void {
+    if (condition.type === "REQUIRE_TEAM" && typeof condition.team === "string") {
+        teams.push(condition.team);
+    } else if (condition.type === "REQUIRE_GROUP" && typeof condition.group === "string") {
+        groups.push(condition.group);
+    } else if (
+        condition.type === "COMPARE_VAR" &&
+        condition.holder?.type === "Team" &&
+        typeof condition.holder.team === "string"
+    ) {
+        teams.push(condition.holder.team);
     }
 }
 
@@ -43,6 +61,44 @@ function collectFromActions(
                 } else {
                     collectFromActions(value as Action[], names);
                 }
+            }
+        }
+    }
+}
+
+function collectTeamAndGroupFromActions(
+    actions: readonly Action[] | undefined,
+    teams: string[],
+    groups: string[]
+): void {
+    if (actions === undefined) return;
+    for (const action of actions) {
+        if (action.type === "SET_TEAM") {
+            teams.push(action.team);
+        } else if (action.type === "SET_GROUP") {
+            groups.push(action.group);
+        } else if (
+            action.type === "CHANGE_VAR" &&
+            action.holder?.type === "Team" &&
+            typeof action.holder.team === "string"
+        ) {
+            teams.push(action.holder.team);
+        }
+
+        const fields = (ACTION_MAPPINGS as unknown as MappingTable)[action.type]
+            ?.loreFields;
+        if (fields === undefined) continue;
+        for (const label in fields) {
+            const field = fields[label];
+            if (field.kind !== "childList") continue;
+            const value = (action as unknown as Record<string, unknown>)[field.prop];
+            if (!Array.isArray(value)) continue;
+            if (field.prop === "conditions") {
+                for (const condition of value as Condition[]) {
+                    collectTeamAndGroupFromCondition(condition, teams, groups);
+                }
+            } else {
+                collectTeamAndGroupFromActions(value as Action[], teams, groups);
             }
         }
     }
@@ -80,6 +136,92 @@ export function referencedItemNames(importable: Importable): string[] {
         }
     }
     return names;
+}
+
+function collectTeamAndGroupNames(
+    importable: Importable,
+    teams: string[],
+    groups: string[]
+): void {
+    switch (importable.type) {
+        case "FUNCTION":
+        case "COMMAND":
+            collectTeamAndGroupFromActions(importable.actions, teams, groups);
+            break;
+        case "EVENT":
+            collectTeamAndGroupFromActions(importable.actions, teams, groups);
+            break;
+        case "REGION":
+            collectTeamAndGroupFromActions(importable.onEnterActions, teams, groups);
+            collectTeamAndGroupFromActions(importable.onExitActions, teams, groups);
+            break;
+        case "MENU":
+            for (const slot of importable.slots) {
+                collectTeamAndGroupFromActions(slot.actions, teams, groups);
+            }
+            break;
+        case "ITEM":
+        case "NPC":
+            collectTeamAndGroupFromActions(importable.leftClickActions, teams, groups);
+            collectTeamAndGroupFromActions(importable.rightClickActions, teams, groups);
+            break;
+        case "TEAM":
+        case "GROUP":
+            break;
+        default: {
+            const _exhaustiveCheck: never = importable;
+            return _exhaustiveCheck;
+        }
+    }
+}
+
+export function expandDeclaredTeamAndGroupDependencies(
+    allImportables: readonly Importable[],
+    selected: readonly Importable[]
+): {
+    importables: Importable[];
+    addedTeams: ImportableTeam[];
+    addedGroups: ImportableGroup[];
+} {
+    const teamsByName = new Map<string, ImportableTeam>();
+    const groupsByName = new Map<string, ImportableGroup>();
+    for (const imp of allImportables) {
+        if (imp.type === "TEAM") teamsByName.set(imp.name, imp);
+        else if (imp.type === "GROUP") groupsByName.set(imp.name, imp);
+    }
+
+    const presentTeams = new Set<string>();
+    const presentGroups = new Set<string>();
+    for (const imp of selected) {
+        if (imp.type === "TEAM") presentTeams.add(imp.name);
+        else if (imp.type === "GROUP") presentGroups.add(imp.name);
+    }
+
+    const addedTeams: ImportableTeam[] = [];
+    const addedGroups: ImportableGroup[] = [];
+    for (const imp of selected) {
+        const teams: string[] = [];
+        const groups: string[] = [];
+        collectTeamAndGroupNames(imp, teams, groups);
+        for (const name of teams) {
+            const team = teamsByName.get(name);
+            if (team === undefined || presentTeams.has(team.name)) continue;
+            presentTeams.add(team.name);
+            addedTeams.push(team);
+        }
+        for (const name of groups) {
+            const group = groupsByName.get(name);
+            if (group === undefined || presentGroups.has(group.name)) continue;
+            presentGroups.add(group.name);
+            addedGroups.push(group);
+        }
+    }
+
+    return {
+        importables: selected.concat(addedTeams, addedGroups),
+        addedTeams,
+        addedGroups,
+    };
 }
 
 /**

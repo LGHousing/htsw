@@ -11,6 +11,7 @@ import type { ActionListPlan } from "../src/housingSync/actions/plan";
 import { createItemRegistry } from "../src/importables/itemRegistry";
 import type { ImportSession } from "../src/importables/imports";
 import { orderImportablesForImportSession } from "../src/importables/importSession";
+import { expandDeclaredTeamAndGroupDependencies } from "../src/importables/itemDependencies";
 import { createNpcLookupCache } from "../src/importables/npcs/listNpcs";
 import type { ImportableFunction, ImportableGroup, ImportableItem, ImportableTeam } from "htsw/types";
 
@@ -78,6 +79,51 @@ describe("applyActionListPlan — top-level-only terminal events", () => {
 });
 
 describe("orderImportablesForImportSession", () => {
+    test("adds declared teams and groups referenced by selected action trees", () => {
+        const team: ImportableTeam = {
+            type: "TEAM",
+            name: "g",
+        };
+        const group: ImportableGroup = {
+            type: "GROUP",
+            name: "vip",
+        };
+        const func: ImportableFunction = {
+            type: "FUNCTION",
+            name: "Player 5t",
+            actions: [
+                {
+                    type: "CHANGE_VAR",
+                    holder: { type: "Team", team: "g" },
+                    key: "r g",
+                    op: "Set",
+                    value: "%var.global/p%%var.player/z% g%",
+                },
+                {
+                    type: "CONDITIONAL",
+                    matchAny: false,
+                    conditions: [
+                        {
+                            type: "REQUIRE_GROUP",
+                            group: "vip",
+                        },
+                    ],
+                    ifActions: [],
+                    elseActions: [],
+                },
+            ],
+        };
+
+        const result = expandDeclaredTeamAndGroupDependencies(
+            [func, team, group],
+            [func]
+        );
+
+        expect(result.importables).toEqual([func, team, group]);
+        expect(result.addedTeams).toEqual([team]);
+        expect(result.addedGroups).toEqual([group]);
+    });
+
     test("orders teams and groups before action-bearing importables", () => {
         const team: ImportableTeam = {
             type: "TEAM",
