@@ -42,4 +42,15 @@ describe("parseActionListItem", () => {
             value: "1",
         });
     });
+
+    test("keeps Not Set locations for export", () => {
+        expect(parseActionListItem(slotWithLore([
+            "Location: Not Set",
+            "Prevent Teleport Inside Blocks: Disabled",
+        ]), "TELEPORT")).toMatchObject({
+            type: "TELEPORT",
+            location: { type: "Not Set" },
+            preventTeleportInsideBlocks: false,
+        });
+    });
 });

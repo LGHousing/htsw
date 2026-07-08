@@ -164,7 +164,7 @@ const COORDINATE_LABEL_PREFIX = /^(?:yaw|pitch):\s*/i;
 
 export function parseLocationField(value: string): Location | undefined {
     const cleaned = removedFormatting(value).trim();
-    if (cleaned === "Not Set") return undefined;
+    if (cleaned === "Not Set") return { type: "Not Set" } as unknown as Location;
     for (let i = 0; i < KNOWN_LOCATION_LABELS.length; i++) {
         const label = KNOWN_LOCATION_LABELS[i];
         if (cleaned === label) {
