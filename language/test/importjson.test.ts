@@ -351,6 +351,30 @@ describe("import.json basic passing behavior", () => {
         expect(hasHardErrors(result.diagnostics)).toBe(false);
     });
 
+    it("canonicalizes bare function icon item ids", () => {
+        const result = parseImportables(caseFilePath("function_icon_bare"));
+
+        expect(result.value.length).toBe(1);
+        const fn = result.value[0];
+        assertImportable(fn, "FUNCTION");
+        expect(fn.icon).toEqual({
+            item: "minecraft:map",
+            count: 1,
+        });
+        expect(hasHardErrors(result.diagnostics)).toBe(false);
+    });
+
+    it("rejects function icon items outside Minecraft 1.8", () => {
+        const result = parseImportables(caseFilePath("function_icon_invalid_item"));
+
+        expect(hasHardErrors(result.diagnostics)).toBe(true);
+        expect(
+            result.diagnostics.some((diagnostic) =>
+                diagnostic.message.includes("Unknown Minecraft 1.8 item: `minecraft:target`")
+            )
+        ).toBe(true);
+    });
+
     it("parses a function importable with only metadata", () => {
         const result = parseImportables(caseFilePath("function_metadata_only"));
 

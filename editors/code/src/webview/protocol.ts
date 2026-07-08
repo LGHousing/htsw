@@ -55,6 +55,13 @@ export type ProjectImportableSub = {
     warnings?: number;
 };
 
+export type ProjectImportableMetadata = {
+    key: string;
+    label: string;
+    value: string;
+    editable?: boolean;
+};
+
 export type ProjectImportableSummary = {
     /** Stable key for expand state: `${importJsonPath}|${type}|${identity}`. */
     id: string;
@@ -70,6 +77,7 @@ export type ProjectImportableSummary = {
     iconItem?: string;
     iconMeta?: number;
     iconCount?: number;
+    repeatTicks?: number;
     /** For `item` importables: the parsed item, powering the row sprite and a
      * hover preview. (Functions use the icon fields above instead.) */
     item?: ItemPreviewData;
@@ -78,6 +86,7 @@ export type ProjectImportableSummary = {
     warnings?: number;
     /** Nested action lists / item refs, shown as expandable child rows. */
     subEntries?: ProjectImportableSub[];
+    metadataEntries?: ProjectImportableMetadata[];
 };
 
 export type ProjectImportJsonNode = {
@@ -117,6 +126,13 @@ export type ProjectToHostMessage =
           importJsonPath: string;
           kind: ProjectImportableSummary["type"];
           identity: string;
+      }
+    | {
+          type: "editImportableMetadata";
+          importJsonPath: string;
+          kind: ProjectImportableSummary["type"];
+          identity: string;
+          key: string;
       }
     | { type: "openItemInEditor"; snbtPath: string };
 

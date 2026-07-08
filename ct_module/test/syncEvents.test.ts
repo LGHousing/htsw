@@ -12,7 +12,7 @@ import { createItemRegistry } from "../src/importables/itemRegistry";
 import type { ImportSession } from "../src/importables/imports";
 import { orderImportablesForImportSession } from "../src/importables/importSession";
 import { createNpcLookupCache } from "../src/importables/npcs/listNpcs";
-import type { ImportableItem } from "htsw/types";
+import type { ImportableFunction, ImportableGroup, ImportableItem, ImportableTeam } from "htsw/types";
 
 function recordingHandler(): SyncEventHandler & { events: SyncEvent[] } {
     const events: SyncEvent[] = [];
@@ -78,6 +78,36 @@ describe("applyActionListPlan — top-level-only terminal events", () => {
 });
 
 describe("orderImportablesForImportSession", () => {
+    test("orders teams and groups before action-bearing importables", () => {
+        const team: ImportableTeam = {
+            type: "TEAM",
+            name: "g",
+        };
+        const group: ImportableGroup = {
+            type: "GROUP",
+            name: "vip",
+        };
+        const func: ImportableFunction = {
+            type: "FUNCTION",
+            name: "Player 5t",
+            actions: [
+                {
+                    type: "CHANGE_VAR",
+                    holder: { type: "Team", team: "g" },
+                    key: "r g",
+                    op: "Set",
+                    value: "%var.global/p%%var.player/z% g%",
+                },
+            ],
+        };
+
+        expect(orderImportablesForImportSession([], [func, team, group])).toEqual([
+            team,
+            group,
+            func,
+        ]);
+    });
+
     test("orders item dependencies before dependent items", () => {
         const dependency: ImportableItem = {
             type: "ITEM",

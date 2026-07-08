@@ -3,6 +3,7 @@ import { itemSpriteDataUri } from "../mcItem/render";
 import type {
     ItemPreviewData,
     ProjectFromHostMessage,
+    ProjectImportableMetadata,
     ProjectImportableSub,
     ProjectImportableSummary,
     ProjectImportJsonNode,
@@ -530,6 +531,25 @@ export function mountProjectExplorer(
             });
         }
 
+        for (const row of document.querySelectorAll<HTMLElement>("[data-edit-metadata]")) {
+            row.addEventListener("click", () => {
+                const importJsonPath = row.dataset.importJsonPath;
+                const kind = row.dataset.importableKind;
+                const identity = row.dataset.importableIdentity;
+                const key = row.dataset.metadataKey;
+                if (!importJsonPath || !kind || !identity || !key || !validImportableKind(kind)) return;
+                state.status = { kind: "idle", text: "Editing…" };
+                renderStatus();
+                post(vscode, {
+                    type: "editImportableMetadata",
+                    importJsonPath,
+                    kind,
+                    identity,
+                    key,
+                });
+            });
+        }
+
     }
 
     function selectableImportableRow(target: EventTarget | Element | null): HTMLElement | null {
@@ -642,6 +662,7 @@ export function mountProjectExplorer(
             row.classList.toggle("selected", row.dataset.parentPath === fsPath);
         }
     }
+
 }
 
 function renderCreatePanel(state: State): string {
@@ -841,8 +862,9 @@ function renderImportable(
     declaringPath: string,
 ): string {
     const subs = entry.subEntries ?? [];
-    const hasSubs = subs.length > 0;
-    const expanded = hasSubs && (query.length > 0 || state.expanded.has(entry.id));
+    const metadata = entry.metadataEntries ?? [];
+    const hasChildren = subs.length > 0 || metadata.length > 0;
+    const expanded = hasChildren && (query.length > 0 || state.expanded.has(entry.id));
     state.importableIndex.set(entry.id, {
         importJsonPath: declaringPath,
         importableKind: entry.type,
@@ -860,8 +882,8 @@ function renderImportable(
             data-vscode-context="${escapeAttr(importableContext(entry, declaringPath, state))}"${itemAttrs}
             title="${escapeAttr(importableTooltip(entry))}">
             ${indentGuides(depth)}
-            <button class="twisty ${hasSubs ? "" : "empty"} ${expanded ? "open" : ""}" type="button"
-                data-toggle-node="${escapeAttr(entry.id)}" ${hasSubs ? "" : "disabled"}>${SVG.chevron}</button>
+            <button class="twisty ${hasChildren ? "" : "empty"} ${expanded ? "open" : ""}" type="button"
+                data-toggle-node="${escapeAttr(entry.id)}" ${hasChildren ? "" : "disabled"}>${SVG.chevron}</button>
             ${importableIcon(entry)}
             <span class="row-label ${diagClass(entry.errors, entry.warnings)}">${escapeHtml(entry.label)}</span>
             ${diagBadge(entry.errors, entry.warnings)}
@@ -869,7 +891,9 @@ function renderImportable(
         </div>
     `;
     if (!expanded) return row;
-    return row + subs.map((sub) => renderSubEntry(sub, depth + 1)).join("");
+    return row +
+        subs.map((sub) => renderSubEntry(sub, depth + 1)).join("") +
+        metadata.map((field) => renderMetadataEntry(field, entry, declaringPath, depth + 1)).join("");
 }
 
 function importableContext(entry: ProjectImportableSummary, importJsonPath: string, state: State): string {
@@ -914,6 +938,30 @@ function renderSubEntry(sub: ProjectImportableSub, depth: number): string {
             <span class="row-label ${diagClass(sub.errors, sub.warnings)}">${escapeHtml(sub.label)}</span>
             ${diagBadge(sub.errors, sub.warnings)}
             <span class="row-type">${escapeHtml(baseName(sub.fsPath))}</span>
+        </div>
+    `;
+}
+
+function renderMetadataEntry(
+    field: ProjectImportableMetadata,
+    entry: ProjectImportableSummary,
+    declaringPath: string,
+    depth: number,
+): string {
+    const editable = field.editable === true;
+    return `
+        <div class="row metadata ${editable ? "editable" : ""}"
+            ${editable ? `data-edit-metadata="1"` : ""}
+            data-import-json-path="${escapeAttr(declaringPath)}"
+            data-importable-kind="${escapeAttr(entry.type)}"
+            data-importable-identity="${escapeAttr(entry.identity)}"
+            data-metadata-key="${escapeAttr(field.key)}"
+            title="${escapeAttr(`${field.label}: ${field.value}${editable ? "\nClick to edit" : ""}`)}">
+            ${indentGuides(depth)}
+            <span class="twisty empty"></span>
+            <span class="row-icon metadata">${SVG.metadata}</span>
+            <span class="metadata-label">${escapeHtml(field.label)}</span>
+            <span class="metadata-value">${escapeHtml(field.value)}</span>
         </div>
     `;
 }
@@ -1026,7 +1074,7 @@ function expandedStateKeys(nodes: ProjectImportJsonNode[]): Set<string> {
         if (node.reference) return;
         keys.add(node.fsPath);
         for (const entry of node.importables) {
-            if ((entry.subEntries ?? []).length > 0) keys.add(entry.id);
+            if ((entry.subEntries ?? []).length > 0 || (entry.metadataEntries ?? []).length > 0) keys.add(entry.id);
         }
         node.children.forEach(visit);
     };
@@ -1095,7 +1143,10 @@ function nodeMatches(node: ProjectImportJsonNode, query: string): boolean {
 function importableMatches(entry: ProjectImportableSummary, query: string): boolean {
     if (!query) return true;
     const subs = (entry.subEntries ?? []).map((sub) => sub.label).join(" ");
-    return `${entry.label} ${entry.typeLabel} ${entry.type} ${subs}`.toLowerCase().includes(query);
+    const metadata = (entry.metadataEntries ?? [])
+        .map((field) => `${field.label} ${field.value}`)
+        .join(" ");
+    return `${entry.label} ${entry.typeLabel} ${entry.type} ${subs} ${metadata}`.toLowerCase().includes(query);
 }
 
 function post(vscode: VsCodeApi, message: ProjectToHostMessage): void {
@@ -1122,6 +1173,7 @@ const SVG = {
     addImportable: `<svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><line x1="2.5" y1="4" x2="13.5" y2="4"/><line x1="2.5" y1="8" x2="9" y2="8"/><line x1="2.5" y1="12" x2="7" y2="12"/><line x1="11.8" y1="9.6" x2="11.8" y2="14.4"/><line x1="9.4" y1="12" x2="14.2" y2="12"/></svg>`,
     braces: `<svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M6.4 2.5C5 2.5 4.5 3.2 4.5 4.5v1.2c0 1-.5 1.5-1.3 1.5.8 0 1.3.5 1.3 1.5v1.3c0 1.3.5 2 1.9 2"/><path d="M9.6 2.5c1.4 0 1.9.7 1.9 2v1.2c0 1 .5 1.5 1.3 1.5-.8 0-1.3.5-1.3 1.5v1.3c0 1.3-.5 2-1.9 2"/></svg>`,
     folder: `<svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M1.8 4.4c0-.7.5-1.2 1.2-1.2h2.9l1.5 1.6h5.6c.7 0 1.2.5 1.2 1.2v5.8c0 .7-.5 1.2-1.2 1.2H3c-.7 0-1.2-.5-1.2-1.2z"/></svg>`,
+    metadata: `<svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4.2 3.2h7.6"/><path d="M4.2 8h7.6"/><path d="M4.2 12.8h7.6"/><circle cx="2.5" cy="3.2" r=".6" fill="currentColor" stroke="none"/><circle cx="2.5" cy="8" r=".6" fill="currentColor" stroke="none"/><circle cx="2.5" cy="12.8" r=".6" fill="currentColor" stroke="none"/></svg>`,
 };
 
 const SUB_GLYPH: Record<ProjectImportableSub["kind"], string> = {

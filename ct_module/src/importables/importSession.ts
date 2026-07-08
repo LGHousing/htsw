@@ -75,10 +75,12 @@ export function orderImportablesForImportSession(
     _allImportables: readonly Importable[],
     selectedImportables: readonly Importable[]
 ): Importable[] {
+    const prerequisites: Importable[] = [];
     const selectedItems: ImportableItem[] = [];
     const rest: Importable[] = [];
     for (const imp of selectedImportables) {
-        if (imp.type === "ITEM") selectedItems.push(imp);
+        if (imp.type === "TEAM" || imp.type === "GROUP") prerequisites.push(imp);
+        else if (imp.type === "ITEM") selectedItems.push(imp);
         else rest.push(imp);
     }
 
@@ -103,7 +105,7 @@ export function orderImportablesForImportSession(
     }
 
     for (const item of selectedItems) visit(item);
-    return orderedItems.concat(rest);
+    return prerequisites.concat(orderedItems, rest);
 }
 
 export async function importSelectedImportables(

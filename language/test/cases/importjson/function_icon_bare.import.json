@@ -1,0 +1,11 @@
+{
+  "functions": [
+    {
+      "name": "IconFn",
+      "actions": "empty.htsl",
+      "icon": {
+        "item": "map"
+      }
+    }
+  ]
+}

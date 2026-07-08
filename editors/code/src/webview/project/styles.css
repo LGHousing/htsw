@@ -228,6 +228,38 @@ select {
     background: var(--vscode-button-secondaryHoverBackground);
 }
 
+/* Metadata child rows -------------------------------------------------- */
+
+.row.metadata {
+    cursor: default;
+}
+
+.row.metadata.editable {
+    cursor: pointer;
+}
+
+.row-icon.metadata {
+    color: var(--vscode-descriptionForeground);
+    opacity: 0.85;
+}
+
+.metadata-label {
+    flex: none;
+    min-width: 58px;
+    margin-right: 8px;
+    color: var(--vscode-descriptionForeground);
+}
+
+.metadata-value {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--vscode-foreground);
+    opacity: 0.9;
+}
+
 /* Status --------------------------------------------------------------- */
 
 .project-status {

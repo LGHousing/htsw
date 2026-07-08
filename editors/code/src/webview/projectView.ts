@@ -17,6 +17,7 @@ import {
     removeImportableEntryForDelete,
     renameImportableEntry,
     resolveImportableFile,
+    updateImportableField,
     upsertImportableEntry,
     type ProjectFs,
     type RefSlot,
@@ -30,6 +31,7 @@ import type {
     ItemEditorFromHostMessage,
     ItemPreviewData,
     ProjectFromHostMessage,
+    ProjectImportableMetadata,
     ProjectImportableSub,
     ProjectImportableSummary,
     ProjectImportJsonNode,
@@ -83,10 +85,182 @@ export async function handleProjectMessage(
         case "moveImportable":
             await moveImportable(webview, message.importJsonPath, message.kind, message.identity);
             return;
+        case "editImportableMetadata":
+            await editImportableMetadata(webview, message);
+            return;
         case "openItemInEditor":
             await openItemInEditor(webview, message.snbtPath);
             return;
     }
+}
+
+async function editImportableMetadata(
+    webview: vscode.Webview,
+    message: Extract<ProjectToHostMessage, { type: "editImportableMetadata" }>,
+): Promise<void> {
+    try {
+        const section = SECTION_BY_KIND[message.kind];
+        const entryJsonPath = await treeRootForImportJson(message.importJsonPath);
+        const fs = projectFsWithOpenDocuments();
+        const declaringJsonPath = resolveImportableFile(fs, entryJsonPath, section, message.identity);
+        const entry = readEntryValue(fs, declaringJsonPath, section, message.identity);
+        if (entry === null) throw new Error(`Couldn't find ${message.kind} "${message.identity}".`);
+
+        const edit = await promptMetadataEdit(message.kind, message.key, entry);
+        if (edit === null) return;
+
+        await withDocAwareWrites((fs) => {
+            const ok = updateImportableField(
+                fs,
+                entryJsonPath,
+                section,
+                message.identity,
+                edit.field,
+                edit.value,
+            );
+            if (!ok) throw new Error(`Couldn't update ${message.kind} "${message.identity}".`);
+        });
+
+        await webview.postMessage({
+            type: "projectResult",
+            ok: true,
+            message: `Updated ${message.kind} "${message.identity}".`,
+        } satisfies ProjectFromHostMessage);
+        await postFreshProjectTree(webview);
+    } catch (err) {
+        const error = err instanceof Error ? err.message : String(err);
+        await webview.postMessage({ type: "projectResult", ok: false, error } satisfies ProjectFromHostMessage);
+        void vscode.window.showWarningMessage(`Could not update metadata: ${error}`);
+    }
+}
+
+type MetadataEdit = {
+    field: string | string[];
+    value: unknown;
+};
+
+async function promptMetadataEdit(
+    kind: ProjectImportableSummary["type"],
+    key: string,
+    entry: Record<string, unknown>,
+): Promise<MetadataEdit | null> {
+    if (kind === "function") return promptFunctionMetadataEdit(key, entry);
+    if (kind === "command") return promptCommandMetadataEdit(key, entry);
+    if (kind === "menu" && key === "size") {
+        const value = await numberInput("Menu size", entry.size, 1, 54, "Blank uses the default.");
+        return value === false ? null : { field: "size", value: value ?? undefined };
+    }
+    if (kind === "npc" && key === "leftClickRedirect") {
+        const value = await booleanPick("Redirect left click", entry.leftClickRedirect);
+        return value === undefined ? null : { field: "leftClickRedirect", value: value ?? undefined };
+    }
+    throw new Error("This metadata field is read-only in the VS Code sidebar.");
+}
+
+async function promptFunctionMetadataEdit(
+    key: string,
+    entry: Record<string, unknown>,
+): Promise<MetadataEdit | null> {
+    const icon = objectValue(entry.icon);
+    if (key === "repeatTicks") {
+        const value = await numberInput("Repeat ticks", entry.repeatTicks, 4, 18000, "Blank disables repeating.");
+        return value === false ? null : { field: "repeatTicks", value: value ?? undefined };
+    }
+    if (key === "icon") {
+        const value = await textInput("Function icon item", stringValue(icon?.item), "minecraft:clock", "Blank uses the default icon.");
+        if (value === undefined) return null;
+        return value.trim() === ""
+            ? { field: "icon", value: undefined }
+            : { field: ["icon", "item"], value: value.trim() };
+    }
+    if (key === "iconCount") {
+        const value = await numberInput("Function icon count", icon?.count, 1, 64, "Blank uses 1.");
+        return value === false ? null : { field: ["icon", "count"], value: value ?? undefined };
+    }
+    throw new Error("Unknown function metadata field.");
+}
+
+async function promptCommandMetadataEdit(
+    key: string,
+    entry: Record<string, unknown>,
+): Promise<MetadataEdit | null> {
+    if (key === "mode") {
+        const pick = await vscode.window.showQuickPick(["Self", "Targeted"] as const, {
+            placeHolder: "Command mode",
+        });
+        return pick === undefined ? null : { field: "mode", value: pick === "Self" ? undefined : pick };
+    }
+    if (key === "requiredPriority") {
+        const value = await numberInput("Required priority", entry.requiredPriority, 0, 20, "Blank uses 0.");
+        return value === false ? null : { field: "requiredPriority", value: value ?? undefined };
+    }
+    if (key === "listed") {
+        const value = await booleanPick("Listed", entry.listed);
+        return value === undefined ? null : { field: "listed", value: value ?? undefined };
+    }
+    throw new Error("Unknown command metadata field.");
+}
+
+async function textInput(
+    prompt: string,
+    value: string,
+    placeHolder: string,
+    description: string,
+): Promise<string | undefined> {
+    return vscode.window.showInputBox({
+        prompt: `${prompt}. ${description}`,
+        value,
+        placeHolder,
+        valueSelection: [0, value.length],
+    });
+}
+
+async function numberInput(
+    prompt: string,
+    current: unknown,
+    min: number,
+    max: number,
+    description: string,
+): Promise<number | null | false> {
+    const value = typeof current === "number" ? String(current) : "";
+    const input = await vscode.window.showInputBox({
+        prompt: `${prompt}. ${description}`,
+        value,
+        valueSelection: [0, value.length],
+        validateInput: (raw) => {
+            const trimmed = raw.trim();
+            if (trimmed === "") return undefined;
+            const parsed = Number(trimmed);
+            if (!Number.isInteger(parsed) || parsed < min || parsed > max) {
+                return `Enter a whole number from ${min} to ${max}.`;
+            }
+            return undefined;
+        },
+    });
+    if (input === undefined) return false;
+    const trimmed = input.trim();
+    return trimmed === "" ? null : Number(trimmed);
+}
+
+async function booleanPick(prompt: string, current: unknown): Promise<boolean | null | undefined> {
+    const pick = await vscode.window.showQuickPick([
+        { label: "Default", value: null },
+        { label: "True", value: true },
+        { label: "False", value: false },
+    ], {
+        placeHolder: `${prompt}${typeof current === "boolean" ? `: ${current}` : ": default"}`,
+    });
+    return pick?.value;
+}
+
+function objectValue(value: unknown): Record<string, unknown> | null {
+    return typeof value === "object" && value !== null && !Array.isArray(value)
+        ? value as Record<string, unknown>
+        : null;
+}
+
+function stringValue(value: unknown): string {
+    return typeof value === "string" ? value : "";
 }
 
 // Parse an item .snbt and hand it to the Item Editor tab. Keeps the original
@@ -1124,6 +1298,7 @@ function mapImportable(
     const openPath = resolvedImportableSourcePath(imp, declaringPath);
     const own = ownDiagnosticCounts(parse, imp);
     const subEntries = mapSubEntries(imp, declaringPath, parse);
+    const metadataEntries = metadataEntriesOf(imp);
 
     return {
         id: `${declaringPath}|${type}|${identity}`,
@@ -1133,11 +1308,79 @@ function mapImportable(
         typeLabel: imp.type,
         openPath,
         ...mapImportableIcon(imp),
+        repeatTicks: imp.type === "FUNCTION" ? imp.repeatTicks : undefined,
         item: imp.type === "ITEM" ? itemPreviewFromTag(imp.nbt) : undefined,
         errors: own.errors || undefined,
         warnings: own.warnings || undefined,
         subEntries: subEntries.length > 0 ? subEntries : undefined,
+        metadataEntries: metadataEntries.length > 0 ? metadataEntries : undefined,
     };
+}
+
+function metadataEntriesOf(imp: htsw.types.Importable): ProjectImportableMetadata[] {
+    if (imp.type === "FUNCTION") {
+        const fields: ProjectImportableMetadata[] = [
+            {
+                key: "repeatTicks",
+                label: "Repeat",
+                value: imp.repeatTicks !== undefined ? `${imp.repeatTicks}t` : "off",
+                editable: true,
+            },
+            {
+                key: "icon",
+                label: "Icon",
+                value: imp.icon !== undefined ? imp.icon.item : "default",
+                editable: true,
+            },
+        ];
+        if (imp.icon !== undefined) {
+            fields.push({
+                key: "iconCount",
+                label: "Count",
+                value: imp.icon.count !== undefined ? String(imp.icon.count) : "1",
+                editable: true,
+            });
+        }
+        return fields;
+    }
+    if (imp.type === "COMMAND") {
+        return [
+            { key: "mode", label: "Mode", value: imp.mode ?? "Self", editable: true },
+            { key: "requiredPriority", label: "Priority", value: String(imp.requiredPriority ?? 0), editable: true },
+            { key: "listed", label: "Listed", value: (imp.listed ?? true) ? "true" : "false", editable: true },
+        ];
+    }
+    if (imp.type === "REGION") {
+        if (imp.bounds === undefined) {
+            return [{ key: "bounds", label: "Bounds", value: "(not set)" }];
+        }
+        return [
+            { key: "boundsFrom", label: "From", value: formatPos(imp.bounds.from) },
+            { key: "boundsTo", label: "To", value: formatPos(imp.bounds.to) },
+        ];
+    }
+    if (imp.type === "MENU") {
+        return [{ key: "size", label: "Size", value: imp.size !== undefined ? `${imp.size} lines` : "default", editable: true }];
+    }
+    if (imp.type === "NPC") {
+        return [
+            { key: "pos", label: "Pos", value: formatPos(imp.pos) },
+            {
+                key: "leftClickRedirect",
+                label: "Redirect",
+                value: imp.leftClickRedirect === undefined ? "default" : imp.leftClickRedirect ? "true" : "false",
+                editable: true,
+            },
+        ];
+    }
+    if (imp.type === "ITEM") {
+        return [{ key: "nbt", label: "NBT", value: "Item data" }];
+    }
+    return [];
+}
+
+function formatPos(pos: { x: number; y: number; z: number }): string {
+    return `${pos.x}, ${pos.y}, ${pos.z}`;
 }
 
 function resolvedImportableSourcePath(imp: htsw.types.Importable, declaringPath: string): string {
@@ -1148,7 +1391,10 @@ function mapImportableIcon(
     imp: htsw.types.Importable,
 ): { iconItem?: string; iconMeta?: number; iconCount?: number } {
     if (imp.type === "FUNCTION" && imp.icon !== undefined) {
-        return { iconItem: imp.icon.item, iconCount: imp.icon.count };
+        return {
+            iconItem: imp.icon.item,
+            iconCount: imp.icon.count,
+        };
     }
     if (imp.type === "ITEM" && imp.nbt.type === "compound") {
         const fields = imp.nbt.value as Record<string, { type: string; value: unknown } | undefined>;

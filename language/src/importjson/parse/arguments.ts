@@ -1,6 +1,6 @@
 import { Diagnostic } from "../../diagnostic";
 import type { Action, Bounds, ChatSpeed, Color, CommandMode, DefaultGameMode, Event, FunctionIcon, MenuSlot, Permission, Pos } from "../../types";
-import { CHAT_SPEEDS, COLORS, COMMAND_MODES, DEFAULT_GAME_MODES, EVENTS, PERMISSIONS } from "../../types/constants";
+import { CHAT_SPEEDS, COLORS, COMMAND_MODES, DEFAULT_GAME_MODES, EVENTS, MINECRAFT_ITEMS, PERMISSIONS } from "../../types/constants";
 import type { Parser } from "./parser";
 import { contentFilePath, getFileName, parseOption } from "./helpers";
 import { parseHtsl as parseHtslImpl } from "../../htsl";
@@ -52,9 +52,28 @@ export function parseSnbt(p: Parser): Tag {
 }
 
 export function parseFunctionIcon(p: Parser): FunctionIcon {
-    const item = p.parseField("item").parseString();
+    const item = parseMinecraftItemId(p.parseField("item"));
     const count = p.parseFieldOrUndefined("count")?.parseBoundedNumber(1, 64) ?? 1;
     return { item, count };
+}
+
+function parseMinecraftItemId(p: Parser): string {
+    const value = p.parseString();
+    const colon = value.indexOf(":");
+    const namespace = colon >= 0 ? value.slice(0, colon) : "minecraft";
+    const name = colon >= 0 ? value.slice(colon + 1) : value;
+
+    if (namespace === "minecraft") {
+        for (let i = 0; i < MINECRAFT_ITEMS.length; i++) {
+            if (MINECRAFT_ITEMS[i].name === name) return `minecraft:${name}`;
+        }
+    }
+
+    p.gcx.addDiagnostic(
+        Diagnostic.error(`Unknown Minecraft 1.8 item: \`${value}\``)
+            .addPrimarySpan(p.span())
+    );
+    return value;
 }
 
 const HOUSE_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
