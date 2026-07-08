@@ -457,6 +457,8 @@ function exportActionBar(t: HouseContentType, uuid: string, totalCount: number):
         .filter((i) => !exportedSet.has(i.name))
         .map((i) => i.name);
     const hasDest = getExportImportJsonPath().trim() !== "";
+    const hasItems = totalCount > 0;
+    const canExportItems = hasDest && hasItems;
     const destBound = hasDest ? boundHouseUuidOf(getExportImportJsonPath()) : null;
     const destBoundHere = destBound !== null && destBound === uuid;
     const canBindDest = hasDest && !destBoundHere;
@@ -555,29 +557,33 @@ function exportActionBar(t: HouseContentType, uuid: string, totalCount: number):
                         children: [
                             Icon({
                                 name: Icons.fileUp,
-                                color: hasDest ? undefined : COLOR_TEXT_FAINT,
+                                color: canExportItems ? undefined : COLOR_TEXT_FAINT,
                             }),
                             Text({
                                 text:
                                     selectedCount > 0
                                         ? `Export Selected (${selectedCount})`
                                         : `Export All (${totalCount})`,
-                                color: hasDest ? undefined : COLOR_TEXT_FAINT,
+                                color: canExportItems ? undefined : COLOR_TEXT_FAINT,
                             }),
                         ],
                         style: {
                             width: { kind: "grow" },
                             height: { kind: "grow" },
-                            background: hasDest ? COLOR_BUTTON_PRIMARY : COLOR_BUTTON,
-                            hoverBackground: hasDest
+                            background: canExportItems ? COLOR_BUTTON_PRIMARY : COLOR_BUTTON,
+                            hoverBackground: canExportItems
                                 ? COLOR_BUTTON_PRIMARY_HOVER
                                 : COLOR_BUTTON,
                         },
-                        tooltip: hasDest ? undefined : "Choose a destination first",
+                        tooltip: !hasDest
+                            ? "Choose a destination first"
+                            : !hasItems
+                              ? `No ${t.label.toLowerCase()} in this house`
+                              : undefined,
                         tooltipColor: COLOR_TEXT_FAINT,
-                        disabled: !hasDest,
+                        disabled: !canExportItems,
                         onClick: () => {
-                            if (!hasDest) return;
+                            if (!canExportItems) return;
                             if (t.export === undefined) return;
                             const exp = t.export;
                             if (selectedCount > 0) {
@@ -615,7 +621,7 @@ function exportActionBar(t: HouseContentType, uuid: string, totalCount: number):
                         children: [
                             Icon({
                                 name: Icons.chevronUp,
-                                color: hasDest ? undefined : COLOR_TEXT_FAINT,
+                                color: canExportItems ? undefined : COLOR_TEXT_FAINT,
                                 style: {
                                     width: { kind: "px", value: 12 },
                                     height: { kind: "px", value: 12 },
@@ -625,18 +631,22 @@ function exportActionBar(t: HouseContentType, uuid: string, totalCount: number):
                         style: {
                             width: { kind: "px", value: 22 },
                             height: { kind: "grow" },
-                            background: hasDest ? COLOR_BUTTON_PRIMARY : COLOR_BUTTON,
-                            hoverBackground: hasDest
+                            background: canExportItems ? COLOR_BUTTON_PRIMARY : COLOR_BUTTON,
+                            hoverBackground: canExportItems
                                 ? COLOR_BUTTON_PRIMARY_HOVER
                                 : COLOR_BUTTON,
                         },
-                        tooltip: hasDest ? undefined : "Choose a destination first",
+                        tooltip: !hasDest
+                            ? "Choose a destination first"
+                            : !hasItems
+                              ? `No ${t.label.toLowerCase()} in this house`
+                              : undefined,
                         tooltipColor: COLOR_TEXT_FAINT,
-                        disabled: !hasDest,
+                        disabled: !canExportItems,
                         // Anchor to the caret's rect (not the cursor) so the menu
                         // right-aligns under the button and drops up consistently.
                         onClick: (rect: Rect) => {
-                            if (!hasDest) return;
+                            if (!canExportItems) return;
                             if (t.export === undefined) return;
                             const exp = t.export;
                             // The yellow "differs" rows: in your file but the
@@ -693,7 +703,9 @@ function exportActionBar(t: HouseContentType, uuid: string, totalCount: number):
                                 },
                                 {
                                     label: `Export all (${totalCount})`,
+                                    disabled: totalCount === 0,
                                     onClick: () => {
+                                        if (totalCount === 0) return;
                                         const names = t.items(uuid).map((i) => i.name);
                                         confirmDestructiveExport(t, uuid, names, () => exp.all());
                                     },
@@ -704,7 +716,10 @@ function exportActionBar(t: HouseContentType, uuid: string, totalCount: number):
                                 actions.push({
                                     label: `Read all into knowledge (${totalCount})`,
                                     icon: Icons.scanEye,
-                                    onClick: () => deepRead(),
+                                    disabled: totalCount === 0,
+                                    onClick: () => {
+                                        if (totalCount > 0) deepRead();
+                                    },
                                 });
                             }
                             openMenu(rect.x + rect.w, rect.y, actions, {
@@ -744,11 +759,9 @@ export function typeBrowserSection(getViewedUuid: () => string | null, availW: n
         children: () => {
             const t = activeType();
             const uuid = getViewedUuid();
-            // You can only open /functions for the house you're standing in, so
-            // Scan (and export, which reads the live menu) is only offered when
-            // the viewed house is the current one.
-            const canScan = uuid !== null && uuid === getHousingUuid();
-            const canExport = t.export !== undefined && canScan;
+            const inCurrentHouse = uuid !== null && uuid === getHousingUuid();
+            const canScan = inCurrentHouse && t.scanNames !== false;
+            const canExport = t.export !== undefined && inCurrentHouse;
             const tabCount = HOUSE_CONTENT_TYPES.length;
             const perTab = (availW - TAB_GAP * (tabCount - 1)) / tabCount;
             const showLabels = tabLabelsFit(
@@ -802,46 +815,47 @@ export function typeBrowserSection(getViewedUuid: () => string | null, availW: n
                     Text({
                         text: `No ${t.label.toLowerCase()} in this house.`,
                         color: COLOR_TEXT_FAINT,
-                    })
-                );
-                return out;
-            }
-            const query = itemSearch.trim().toLowerCase();
-            const shown =
-                query === ""
-                    ? items
-                    : items.filter(
-                          (i) =>
-                              (i.label ?? i.name).toLowerCase().indexOf(query) !== -1 ||
-                              i.name.toLowerCase().indexOf(query) !== -1
-                      );
-            if (shown.length === 0) {
-                out.push(
-                    Text({
-                        text: `No ${t.label.toLowerCase()} match "${itemSearch.trim()}".`,
-                        color: COLOR_TEXT_FAINT,
                         style: { height: { kind: "grow" } },
                     })
                 );
             } else {
-                const sourceMap = sourceImportablesByType(t.type);
-                const trusted = isHouseTrusted(uuid);
-                out.push(
-                    Scroll({
-                        id: "houses-type-scroll",
-                        style: { height: { kind: "grow" }, gap: 1 },
-                        children: shown.map((i) =>
-                            itemRow(
-                                t,
-                                uuid,
-                                i,
-                                canScan,
-                                canExport,
-                                houseLinkStateFor(uuid, i, sourceMap, trusted)
+                const query = itemSearch.trim().toLowerCase();
+                const shown =
+                    query === ""
+                        ? items
+                        : items.filter(
+                              (i) =>
+                                  (i.label ?? i.name).toLowerCase().indexOf(query) !== -1 ||
+                                  i.name.toLowerCase().indexOf(query) !== -1
+                          );
+                if (shown.length === 0) {
+                    out.push(
+                        Text({
+                            text: `No ${t.label.toLowerCase()} match "${itemSearch.trim()}".`,
+                            color: COLOR_TEXT_FAINT,
+                            style: { height: { kind: "grow" } },
+                        })
+                    );
+                } else {
+                    const sourceMap = sourceImportablesByType(t.type);
+                    const trusted = isHouseTrusted(uuid);
+                    out.push(
+                        Scroll({
+                            id: "houses-type-scroll",
+                            style: { height: { kind: "grow" }, gap: 1 },
+                            children: shown.map((i) =>
+                                itemRow(
+                                    t,
+                                    uuid,
+                                    i,
+                                    inCurrentHouse,
+                                    canExport,
+                                    houseLinkStateFor(uuid, i, sourceMap, trusted)
+                                )
                             )
-                        ),
-                    })
-                );
+                        })
+                    );
+                }
             }
             if (canExport) {
                 out.push(exportActionBar(t, uuid, items.length));

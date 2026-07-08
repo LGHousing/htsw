@@ -17,8 +17,12 @@ interface Manifest {
     notes?: string;
 }
 
-export async function checkForUpdates(context: ExtensionContext): Promise<void> {
-    if (!workspace.getConfiguration("htsw").get<boolean>("autoUpdate.enabled", true)) {
+interface CheckForUpdatesOptions {
+    manual?: boolean;
+}
+
+export async function checkForUpdates(context: ExtensionContext, options: CheckForUpdatesOptions = {}): Promise<void> {
+    if (!options.manual && !workspace.getConfiguration("htsw").get<boolean>("autoUpdate.enabled", true)) {
         return;
     }
 
@@ -26,11 +30,19 @@ export async function checkForUpdates(context: ExtensionContext): Promise<void> 
     let manifest: Manifest;
     try {
         manifest = parseManifest(await fetchText(MANIFEST_URL));
-    } catch {
+    } catch (err) {
+        if (options.manual) {
+            void window.showErrorMessage(`HTSW++ update check failed: ${err instanceof Error ? err.message : String(err)}`);
+        }
         return;
     }
 
-    if (!isNewer(manifest.version, current)) return;
+    if (!isNewer(manifest.version, current)) {
+        if (options.manual) {
+            void window.showInformationMessage(`HTSW++ is up to date (${current}).`);
+        }
+        return;
+    }
 
     const choice = await window.showInformationMessage(
         updatePrompt(manifest, current),

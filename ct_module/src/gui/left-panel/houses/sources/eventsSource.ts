@@ -1,46 +1,51 @@
 /// <reference types="../../../../../CTAutocomplete" />
 
-import { TaskManager } from "../../../../tasks/manager";
 import { getHousingUuid } from "../../../state";
 import { showToast } from "../../../toast";
-import { listAllEventNames } from "../../../../importables/events/listEvents";
-import { houseTypeScanned, listCachedImportables, recordHouseScan, type HouseImportable } from "../../../../importCache/cache";
+import { knownEventNames } from "../../../../importables/events/listEvents";
+import { listCachedImportables, recordHouseScan, type HouseImportable } from "../../../../importCache/cache";
 
-// Housing events are a fixed enumerated set (player join, etc.) — they aren't
-// created/deleted, so there's no liveness channel here; the list refreshes on
-// rescan only.
-let scanInFlight = false;
+function eventRows(uuid: string | null): HouseImportable[] {
+    if (uuid === null) return [];
+    const cached = listCachedImportables(uuid, "EVENT");
+    const byName = new Map<string, HouseImportable>();
+    for (let i = 0; i < cached.length; i++) byName.set(cached[i].name, cached[i]);
+
+    const names = knownEventNames();
+    const out: HouseImportable[] = [];
+    for (let i = 0; i < names.length; i++) {
+        const cachedRow = byName.get(names[i]);
+        out.push(
+            cachedRow ?? {
+                name: names[i],
+                type: "EVENT",
+                verified: false,
+                importable: null,
+            }
+        );
+    }
+    return out;
+}
 
 export function isEventScanInFlight(): boolean {
-    return scanInFlight;
+    return false;
 }
 
 export function getHouseEvents(uuid: string | null): HouseImportable[] {
-    return listCachedImportables(uuid, "EVENT");
+    return eventRows(uuid);
 }
 
 export function houseEventsScanned(uuid: string | null): boolean {
-    return houseTypeScanned(uuid, "EVENT");
+    return uuid !== null;
 }
 
 export function scanHouseEvents(): void {
-    if (scanInFlight || TaskManager.hasRunningTasks()) return;
     const uuid = getHousingUuid();
     if (uuid === null) return;
-    scanInFlight = true;
-    TaskManager.run(async (ctx) => {
-        try {
-            const names = await listAllEventNames(ctx);
-            recordHouseScan(uuid, "EVENT", names);
-            showToast(
-                `Scanned ${names.length} event${names.length === 1 ? "" : "s"}`,
-                0xff5cb85c
-            );
-        } finally {
-            scanInFlight = false;
-        }
-    }).catch((err: unknown) => {
-        showToast(`Event scan failed: ${err}`, 0xffe85c5c, 8000);
-        ChatLib.chat(`&c[htsw] Event scan failed: ${err}`);
-    });
+    const names = knownEventNames();
+    recordHouseScan(uuid, "EVENT", names);
+    showToast(
+        `Refreshed ${names.length} event${names.length === 1 ? "" : "s"}`,
+        0xff5cb85c
+    );
 }

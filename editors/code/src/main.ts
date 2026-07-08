@@ -90,6 +90,9 @@ export function activate(context: ExtensionContext) {
                 await window.showTextDocument(doc, { preview: false });
             })
         );
+        providers.push(
+            commands.registerCommand("htsw.checkForUpdates", () => checkForUpdates(context, { manual: true }))
+        );
 
         providers.push(
             workspace.onDidChangeTextDocument((event) => {

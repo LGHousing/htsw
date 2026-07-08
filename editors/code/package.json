@@ -2,7 +2,7 @@
     "name": "htsw-plus-plus",
     "displayName": "HTSW++",
     "description": "HTSW completions, diagnostics, hints, and more.",
-    "version": "1.2.4",
+    "version": "1.2.5",
     "publisher": "LGHousing",
     "license": "MIT",
     "type": "module",
@@ -34,6 +34,7 @@
     "main": "./dist/extension.cjs",
     "activationEvents": [
         "onStartupFinished",
+        "onCommand:htsw.checkForUpdates",
         "onLanguage:json",
         "onLanguage:jsonc"
     ],
@@ -48,6 +49,12 @@
                 "command": "htsw.project.createIncludedImportJson",
                 "title": "Create Included import.json",
                 "category": "HTSW"
+            },
+            {
+                "command": "htsw.checkForUpdates",
+                "title": "Check for Updates",
+                "category": "HTSW",
+                "icon": "$(cloud-download)"
             },
             {
                 "command": "htsw.importable.move",
@@ -76,6 +83,13 @@
             }
         ],
         "menus": {
+            "view/title": [
+                {
+                    "command": "htsw.checkForUpdates",
+                    "when": "view == htsw.tools",
+                    "group": "navigation@1"
+                }
+            ],
             "explorer/context": [
                 {
                     "command": "htsw.project.createIncludedImportJson",

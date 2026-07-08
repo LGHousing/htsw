@@ -90,6 +90,7 @@ export type HouseContentType = {
     scanned: (uuid: string | null) => boolean;
     scan: () => void;
     scanInFlight: () => boolean;
+    scanNames?: boolean;
     // Deep read: pull importables' full content from the house into the cache
     // as verified knowledge (slow; explicit) — the export driver in read-only
     // mode. `onlyNames` limits the pass to a selection; omitted = whole house.
@@ -233,6 +234,7 @@ const HOUSE_CONTENT_BY_TYPE: { [K in HouseReadableType]: HouseContentType & { ty
         scanned: houseEventsScanned,
         scan: scanHouseEvents,
         scanInFlight: isEventScanInFlight,
+        scanNames: false,
         deepRead: makeDeepRead("EVENT", "event", readEvents, isEventScanInFlight),
         rowActions: [
             {
