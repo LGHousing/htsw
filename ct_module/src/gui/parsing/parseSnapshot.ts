@@ -55,7 +55,9 @@ const SNAPSHOT_DIR = "./htsw/.parse-snapshots";
 // 18: child list and menu-slot paths are fields on the importables too
 // (`onEnterActionsPath`, slot `nbtPath`/`actionsPath`, …); `childListPaths`
 // is gone.
-const SNAPSHOT_VERSION = 18;
+// 19: import.json entry-level diagnostics no longer discard the rest of an
+// included file's parsed importables.
+const SNAPSHOT_VERSION = 19;
 
 // importJson.fileTree with each importable replaced by its index into the
 // snapshot's flat `importables` array — serializing the objects in place

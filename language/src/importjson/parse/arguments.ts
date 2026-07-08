@@ -12,7 +12,7 @@ export function parseHtsl(p: Parser): Action[] {
     const fileName = getFileName(path);
 
     if (!path.endsWith(".htsl")) {
-        throw Diagnostic.error("Invalid actions file")
+        throw Diagnostic.error("Invalid actions file: expected a `.htsl` file")
             .addPrimarySpan(p.span(), "Expected a `.htsl` file");
     }
 
@@ -30,7 +30,7 @@ export function parseSnbt(p: Parser): Tag {
     const fileName = getFileName(path);
 
     if (!path.endsWith(".snbt")) {
-        throw Diagnostic.error("Invalid NBT file")
+        throw Diagnostic.error("Invalid NBT file: expected a `.snbt` file")
             .addPrimarySpan(p.span(), "Expected a `.snbt` file");
     }
 

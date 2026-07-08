@@ -55,47 +55,22 @@ export function parseImportJson(
 function parseImportJson0(p: Parser, fileNode: ImportJsonFileNode): Importable[] {
     const importables: Importable[] = []
 
-    for (const sp of p.parseFieldOrUndefined("include")?.parseArray() ?? []) {
+    parseEntryList(p, "include", (sp) => {
         parseInclude(sp, fileNode);
-    }
+        return undefined;
+    });
 
     parseHouseUuid(p, p.importJson.fileTree === fileNode);
 
-    for (const sp of p.parseFieldOrUndefined("functions")?.parseArray() ?? []) {
-        importables.push(parseImportableFunction(sp));
-    } 
-
-    for (const sp of p.parseFieldOrUndefined("regions")?.parseArray() ?? []) {
-        importables.push(parseImportableRegion(sp));
-    }
-
-    for (const sp of p.parseFieldOrUndefined("menus")?.parseArray() ?? []) {
-        importables.push(parseImportableMenu(sp));
-    }
-
-    for (const sp of p.parseFieldOrUndefined("items")?.parseArray() ?? []) {
-        importables.push(parseImportableItem(sp));
-    }
-
-    for (const sp of p.parseFieldOrUndefined("npcs")?.parseArray() ?? []) {
-        importables.push(parseImportableNpc(sp));
-    }
-
-    for (const sp of p.parseFieldOrUndefined("events")?.parseArray() ?? []) {
-        importables.push(parseImportableEvent(sp));
-    }
-
-    for (const sp of p.parseFieldOrUndefined("groups")?.parseArray() ?? []) {
-        importables.push(parseImportableGroup(sp));
-    }
-
-    for (const sp of p.parseFieldOrUndefined("teams")?.parseArray() ?? []) {
-        importables.push(parseImportableTeam(sp));
-    }
-
-    for (const sp of p.parseFieldOrUndefined("commands")?.parseArray() ?? []) {
-        importables.push(parseImportableCommand(sp));
-    }
+    pushParsedEntries(p, importables, "functions", parseImportableFunction);
+    pushParsedEntries(p, importables, "regions", parseImportableRegion);
+    pushParsedEntries(p, importables, "menus", parseImportableMenu);
+    pushParsedEntries(p, importables, "items", parseImportableItem);
+    pushParsedEntries(p, importables, "npcs", parseImportableNpc);
+    pushParsedEntries(p, importables, "events", parseImportableEvent);
+    pushParsedEntries(p, importables, "groups", parseImportableGroup);
+    pushParsedEntries(p, importables, "teams", parseImportableTeam);
+    pushParsedEntries(p, importables, "commands", parseImportableCommand);
 
     warnUnused(p, [
         "include", "houseUuid", "functions",
@@ -107,6 +82,53 @@ function parseImportJson0(p: Parser, fileNode: ImportJsonFileNode): Importable[]
     }
     p.importJson.recordImportables(fileNode, importables);
     return importables;
+}
+
+function pushParsedEntries<T extends Importable>(
+    p: Parser,
+    out: Importable[],
+    fieldName: string,
+    parseEntry: (p: Parser) => T
+): void {
+    parseEntryList(p, fieldName, (sp) => {
+        out.push(parseEntry(sp));
+        return undefined;
+    });
+}
+
+function parseEntryList(
+    p: Parser,
+    fieldName: string,
+    parseEntry: (p: Parser) => void | undefined
+): void {
+    const field = p.parseFieldOrUndefined(fieldName);
+    if (field === undefined) return;
+
+    let entries: Parser[];
+    try {
+        entries = field.parseArray();
+    } catch (e) {
+        addParseFailureDiagnostic(p, e);
+        return;
+    }
+
+    for (const sp of entries) {
+        try {
+            parseEntry(sp);
+        } catch (e) {
+            addParseFailureDiagnostic(p, e);
+        }
+    }
+}
+
+function addParseFailureDiagnostic(p: Parser, e: unknown): void {
+    if (e instanceof Diagnostic) {
+        p.gcx.addDiagnostic(e);
+    } else if (e instanceof Error) {
+        p.gcx.addDiagnostic(Diagnostic.bugFromError(e));
+    } else {
+        p.gcx.addDiagnostic(Diagnostic.bug("An unknown error occurred parsing an import.json entry"));
+    }
 }
 
 function parseHouseUuid(p: Parser, isEntryFile: boolean): void {

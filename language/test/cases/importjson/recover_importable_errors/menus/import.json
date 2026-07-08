@@ -1,0 +1,32 @@
+{
+  "menus": [
+    {
+      "name": "Good Menu",
+      "slots": [
+        {
+          "slot": 0,
+          "nbt": "../stone.snbt"
+        }
+      ]
+    },
+    {
+      "name": "Broken Menu",
+      "slots": [
+        {
+          "slot": 1,
+          "nbt": "../stone.snbt",
+          "actions": "Broken_Menu/slot-1"
+        }
+      ]
+    },
+    {
+      "name": "Later Menu",
+      "slots": [
+        {
+          "slot": 2,
+          "nbt": "../stone.snbt"
+        }
+      ]
+    }
+  ]
+}

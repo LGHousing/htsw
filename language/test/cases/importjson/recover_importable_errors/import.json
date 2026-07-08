@@ -1,0 +1,8 @@
+{
+  "include": ["menus/import.json"],
+  "functions": [
+    {
+      "name": "Root Function"
+    }
+  ]
+}

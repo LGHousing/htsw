@@ -230,6 +230,43 @@ describe("import.json include", () => {
         expect(missingNodes[0].includes).toEqual([]);
     });
 
+    it("keeps parsing sibling importables after one entry reports a diagnostic", () => {
+        const entry = caseDirPath("recover_importable_errors");
+        const result = parseImportables(entry);
+
+        const menuNames = result.value
+            .filter(
+                (importable): importable is htsw.types.ImportableMenu =>
+                    importable.type === "MENU"
+            )
+            .map((importable) => importable.name);
+
+        expect(menuNames).toEqual(["Good Menu", "Later Menu"]);
+        const menusPath = resolve(dirname(entry), "menus", "import.json");
+        const diagnostic = result.diagnostics.find((diagnostic) =>
+            diagnostic.message.includes("Invalid actions file: expected a `.htsl` file")
+        );
+        expect(diagnostic).toBeDefined();
+        const primary = diagnostic!.spans.find((span) => span.kind === "primary");
+        expect(primary).toBeDefined();
+        const diagnosticFile = result.gcx.sourceMap.getFileByPos(primary!.span.start);
+        expect(diagnosticFile.path).toBe(menusPath);
+        expect(
+            diagnosticFile.src.slice(
+                primary!.span.start - diagnosticFile.startPos,
+                primary!.span.end - diagnosticFile.startPos
+            )
+        ).toBe('"Broken_Menu/slot-1"');
+
+        const menusNode = result.importJson.fileTree?.includes.find(
+            (node) => node.path === menusPath
+        );
+        expect(menusNode?.importables.map((importable) => importable.type)).toEqual([
+            "MENU",
+            "MENU",
+        ]);
+    });
+
 });
 
 describe("import.json basic passing behavior", () => {
