@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest";
 import type { Action, ImportableFunction } from "htsw/types";
 
 import type { ImportableCacheEntry } from "../src/importCache/cache";
-import { importableHash, listHashes } from "../src/importCache/hash";
+import { functionIconsEqual, importableHash, listHashes } from "../src/importCache/hash";
 import { cacheEntryListHashes } from "../src/importCache/status";
 
 function fn(icon: ImportableFunction["icon"]): ImportableFunction {
@@ -36,6 +36,17 @@ describe("importableHash function icons", () => {
         expect(importableHash(fn({ item: "minecraft:map", enchanted: true }))).not.toBe(
             importableHash(fn(undefined))
         );
+    });
+
+    test("uses the same equality as the function metadata diff", () => {
+        expect(functionIconsEqual({ item: "minecraft:map", count: 1 }, undefined)).toBe(true);
+        expect(functionIconsEqual({ item: "minecraft:brown_mushroom_block" }, undefined)).toBe(false);
+        expect(
+            functionIconsEqual(
+                { item: "minecraft:brown_mushroom_block", count: 1 },
+                { item: "minecraft:brown_mushroom_block" }
+            )
+        ).toBe(true);
     });
 });
 

@@ -137,7 +137,9 @@ export function listHashes(importable: Importable): Record<string, string[]> {
     return out;
 }
 
-const DEFAULT_FUNCTION_ICON_CANONICAL = iconCanonical({ item: "minecraft:map" });
+const DEFAULT_FUNCTION_ICON_CANONICAL = functionIconCompareKeyOf({
+    item: "minecraft:map",
+});
 
 // Parser-stamped file locations (which file the content was parsed FROM),
 // not Housing content. House reads never set them, and parse-side and
@@ -211,12 +213,13 @@ export function importableCanonicalParts(
         ) {
             serialized = boundsCanonical(value as Bounds);
         } else if (key === "icon" && value !== null && typeof value === "object") {
-            serialized = iconCanonical(value as FunctionIcon);
+            const iconKey = functionIconCompareKey(value as FunctionIcon);
             // Housing assigns every function a plain map icon at creation, so a
             // live read of a function whose source declares no icon reports
             // {item:"minecraft:map"}; treat the default icon as icon-less so
             // both sides hash alike.
-            if (serialized === DEFAULT_FUNCTION_ICON_CANONICAL) continue;
+            if (iconKey === null) continue;
+            serialized = iconKey;
         } else {
             serialized = stableStringify(value);
         }
@@ -273,11 +276,24 @@ function commandCanonical(command: Importable): Importable {
 // field it doesn't name); then drop the optional defaults a live read omits so
 // `{item}` and `{item, count: 1}` hash alike. The item id needs no normalization
 // — both the loader and the live read already emit `minecraft:<lowercase>`.
-function iconCanonical(icon: FunctionIcon): string {
+function functionIconCompareKeyOf(icon: FunctionIcon): string {
     const norm: Record<string, unknown> = { ...icon };
     if (norm.count === 1) delete norm.count;
     if (norm.enchanted !== true) delete norm.enchanted;
     return stableStringify(norm);
+}
+
+export function functionIconCompareKey(icon: FunctionIcon | undefined): string | null {
+    if (icon === undefined) return null;
+    const key = functionIconCompareKeyOf(icon);
+    return key === DEFAULT_FUNCTION_ICON_CANONICAL ? null : key;
+}
+
+export function functionIconsEqual(
+    a: FunctionIcon | undefined,
+    b: FunctionIcon | undefined
+): boolean {
+    return functionIconCompareKey(a) === functionIconCompareKey(b);
 }
 
 function actionListCanonical(actions: readonly Action[]): string {

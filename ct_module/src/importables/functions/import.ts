@@ -11,6 +11,7 @@ import {
 import { prepareActionListSync } from "../../housingSync/actions/prepareSync";
 import { clickGoBack } from "../../housingSync/menus/menuUtils";
 import type { ImportableTrustPlan } from "../../importCache";
+import { functionIconsEqual } from "../../importCache/hash";
 import { createSetupStepEmitter } from "../../housingSync/syncEvents";
 import TaskContext from "../../tasks/context";
 import type { ImportSession } from "../imports";
@@ -235,6 +236,6 @@ function functionSettingsTrusted(
     const cached = plan.entry.importable;
     return (
         cached.repeatTicks === importable.repeatTicks &&
-        JSON.stringify(cached.icon ?? null) === JSON.stringify(importable.icon ?? null)
+        functionIconsEqual(cached.icon, importable.icon)
     );
 }

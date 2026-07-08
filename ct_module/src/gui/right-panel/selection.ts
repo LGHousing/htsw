@@ -56,6 +56,11 @@ export function onTaskRunningChanged(wasRunning: boolean, isRunning: boolean): v
         lastLivePath = null;
         liveTabActive = true;
         markGuiDirty();
+    } else if (wasRunning && !isRunning) {
+        dismissedLiveImport = false;
+        lastLivePath = null;
+        liveTabActive = false;
+        markGuiDirty();
     }
 }
 

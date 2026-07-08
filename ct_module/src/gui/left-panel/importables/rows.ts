@@ -49,6 +49,7 @@ import {
     listCachedImportables,
     readImportableCache,
 } from "../../../importCache/cache";
+import { functionIconCompareKey } from "../../../importCache/hash";
 import { addToQueue, makeImportableQueueItem, queueItemKey, removeFromQueueKey } from "../../right-panel/import-tab/queue";
 import { isTaskRunning } from "../../../tasks/runningState";
 import { composeFileMenu, composeImportableMenu } from "../../menus/fileMenu";
@@ -281,10 +282,7 @@ export function metadataFieldsOf(imp: Importable): MetadataField[] {
                 value: imp.icon !== undefined ? imp.icon.item : "default",
                 diff:
                     cf !== null
-                        ? valDiff(
-                              imp.icon !== undefined ? imp.icon.item : undefined,
-                              cf.icon !== undefined ? cf.icon.item : undefined
-                          )
+                        ? valDiff(functionIconCompareKey(imp.icon), functionIconCompareKey(cf.icon))
                         : undefined,
             },
         ];

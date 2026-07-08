@@ -64,7 +64,7 @@ Diff decorators — `gui/right-panel/decorators.ts` (kept OUT of `code-view/` so
 - `progressDecorator` — live import tab; reads `import-tab/livePreview` (each `PreviewLine`'s own `diffState`/`completed`, plus the live cursor + phase scalars). There is no separate overlay map — `livePreview` is the single live store.
 
 Right-panel state — `gui/right-panel/`:
-- `selection.ts` — preview/confirm + file-tab state for the right-panel source preview, plus the synthetic live-import tab. The live tab is not stored with confirmed/preview file tabs; it is derived from the active import path and can stay open after a run for final diff review. Tab-state mutators call `markGuiDirty()` because tour/starter-project setup can switch previews outside a click.
+- `selection.ts` — preview/confirm + file-tab state for the right-panel source preview, plus the synthetic live-import tab. The live tab is not stored with confirmed/preview file tabs; it is derived from the active import path while a run is active and is cleared when the run finishes. Tab-state mutators call `markGuiDirty()` because tour/starter-project setup can switch previews outside a click.
 - `tabDrag.ts` — transient mouse gesture state for dragging confirmed file tabs to reorder them. It delegates the actual order mutation to `selection.ts`.
 
 Import-session state — `gui/right-panel/import-tab/`:

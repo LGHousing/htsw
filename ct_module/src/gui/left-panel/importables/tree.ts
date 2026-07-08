@@ -421,8 +421,8 @@ function emitIncludeNode(
         if (importableExpansion.has(subKey)) {
             const subs = childListsOf(imp);
             const slots = imp.type === "MENU" ? imp.slots : [];
-            const meta = metadataFieldsOf(imp);
-            const totalChildren = subs.length + slots.length + meta.length;
+            const metaCount = metadataFieldsOf(imp).length;
+            const totalChildren = subs.length + slots.length + metaCount;
             let childIdx = 0;
             const childLevels: LevelGuide[] = levels.concat([
                 isLast ? "empty" : "vertical",
@@ -467,12 +467,12 @@ function emitIncludeNode(
                     }
                 }
             }
-            for (let k = 0; k < meta.length; k++) {
+            for (let k = 0; k < metaCount; k++) {
                 childIdx++;
                 out.push({
                     levels: childLevels,
                     branch: childIdx === totalChildren ? "ell" : "tee",
-                    content: () => metadataRow(r, imp, meta[k]),
+                    content: () => metadataRow(r, imp, metadataFieldsOf(imp)[k]),
                     height: ENTRY_ROW_H,
                 });
             }
