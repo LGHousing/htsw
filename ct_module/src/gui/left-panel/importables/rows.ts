@@ -35,7 +35,10 @@ import {
 } from "../../parsing/importablePaths";
 import { importableIdentity } from "../../../importables/identity";
 import { houseDisplayName } from "../../../importCache/aliases";
-import { removeImportableEntry } from "../../../project/importJsonMutations";
+import {
+    removeImportableEntry,
+    removeIncludeFromImportJson,
+} from "../../../project/importJsonMutations";
 import { countFilesRecursive, deleteDirRecursive } from "../../../utils/filesystem";
 import {
     canonicalPath,
@@ -194,6 +197,7 @@ type HousePresenceState = "unscanned" | "present" | "absent";
 
 function housePresenceStateFor(imp: Importable): HousePresenceState {
     const uuid = getHousingUuid();
+    if (uuid !== null && imp.type === "EVENT") return "present";
     if (uuid === null || !houseTypeScanned(uuid, imp.type)) return "unscanned";
     const identity = importableIdentity(imp);
     const items = listCachedImportables(uuid, imp.type);
@@ -489,6 +493,37 @@ function confirmDeleteProject(importJsonPath: string): void {
             removeSource(importJsonPath);
             closeTabsUnder(dir);
             invalidateParseCacheEntry(importJsonPath);
+            bumpTreeRevision();
+            if (ok) ChatLib.chat(`&a[htsw] Deleted ${dir}.`);
+            else ChatLib.chat(`&c[htsw] Couldn't fully delete ${dir} — check it manually.`);
+        },
+    });
+}
+
+function confirmDeleteIncludedProject(parentImportJsonPath: string, includedImportJsonPath: string): void {
+    const dir = projectDirOf(includedImportJsonPath);
+    const count = countFilesRecursive(dir);
+    openConfirmPopover({
+        title: "Delete included project folder?",
+        lines: [
+            shortPath(dir),
+            `Removes it from ${shortPath(parentImportJsonPath)} and permanently deletes`,
+            `${count} file${count === 1 ? "" : "s"} in the included folder.`,
+        ],
+        confirmLabel: `Delete ${count} file${count === 1 ? "" : "s"}`,
+        danger: true,
+        onConfirm: () => {
+            if (!removeIncludeFromImportJson(parentImportJsonPath, includedImportJsonPath)) {
+                ChatLib.chat(`&c[htsw] Couldn't remove include from ${shortPath(parentImportJsonPath)}.`);
+                return;
+            }
+            const ok = deleteDirRecursive(dir);
+            removeSource(includedImportJsonPath);
+            closeTabsUnder(dir);
+            invalidateParseCacheEntry(parentImportJsonPath);
+            invalidateParseCacheEntry(includedImportJsonPath);
+            markParseStale(parentImportJsonPath);
+            requestParse(parentImportJsonPath);
             bumpTreeRevision();
             if (ok) ChatLib.chat(`&a[htsw] Deleted ${dir}.`);
             else ChatLib.chat(`&c[htsw] Couldn't fully delete ${dir} — check it manually.`);
@@ -959,6 +994,12 @@ export function includeGroupRow(
         {
             label: "Queue all importables",
             onClick: () => queueImportJsonSubtree(parent, node),
+        },
+        { kind: "separator" },
+        {
+            label: "Delete project folder…",
+            icon: Icons.trash2,
+            onClick: () => confirmDeleteIncludedProject(canonicalPath(parentNodePath), fullPath),
         },
     ], fullPath, parent.fullPath);
     return Container({

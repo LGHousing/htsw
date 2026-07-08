@@ -349,22 +349,27 @@ class HtslCompletionProvider {
         if (!normalized) return completions;
 
         return completions.flatMap((completion) => {
-            const haystack = [
+            const candidates = [
                 completion.label,
                 completion.insertText,
                 completion.filterText ?? "",
-            ].join(" ").toLowerCase();
-
-            const candidates = haystack
-                .split(/\s+/)
-                .map((candidate) => candidate.replace(/^%/, ""));
+            ].flatMap((value) =>
+                value.toLowerCase()
+                    .split(/\s+/)
+                    .map((candidate) => candidate.replace(/^%/, ""))
+                    .filter(Boolean)
+            );
             const bestCandidate = candidates
                 .filter((candidate) => candidate.startsWith(normalized))
-                .sort((left, right) => left.length - right.length)[0];
+                .sort((left, right) => {
+                    const leftRank = completionCandidateRank(left, normalized, completion);
+                    const rightRank = completionCandidateRank(right, normalized, completion);
+                    return leftRank - rightRank || left.length - right.length;
+                })[0];
 
             if (!bestCandidate) return [];
 
-            const rank = bestCandidate === normalized ? 0 : 1;
+            const rank = completionCandidateRank(bestCandidate, normalized, completion);
             return [{
                 ...completion,
                 sortText: `${rank}_${bestCandidate.length.toString().padStart(3, "0")}_${completion.label}`,
@@ -372,6 +377,18 @@ class HtslCompletionProvider {
         });
     }
 
+}
+
+function completionCandidateRank(
+    candidate: string,
+    normalized: string,
+    completion: CompletionSpec,
+): number {
+    const label = completion.label.toLowerCase().replace(/^%/, "");
+    const insertText = completion.insertText.toLowerCase().replace(/^%/, "");
+    const ownCandidate = candidate === label || candidate === insertText;
+    if (candidate === normalized) return ownCandidate ? 0 : 1;
+    return ownCandidate ? 2 : 3;
 }
 
 type CompletionSpec = {

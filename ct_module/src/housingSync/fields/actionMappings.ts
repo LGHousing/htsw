@@ -522,10 +522,9 @@ export function parseActionListItem(slot: ItemSlot, type: Action["type"]): Actio
     }
 
     if (action.type === "CHANGE_VAR") {
-        const holder = parseHolderField(slot, (action as Record<string, unknown>).holder);
-        if (holder !== undefined) {
-            (action as ActionChangeVar).holder = holder;
-        }
+        (action as ActionChangeVar).holder =
+            parseHolderField(slot, (action as Record<string, unknown>).holder) ??
+            { type: "Player" };
     }
 
     return action;

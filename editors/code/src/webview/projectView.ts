@@ -13,6 +13,7 @@ import {
     normalizeRelativeProjectPath,
     planDeleteImportableEntry,
     readEntryValue,
+    removeIncludeFromImportJson,
     removeImportableEntryForDelete,
     renameImportableEntry,
     resolveImportableFile,
@@ -45,6 +46,11 @@ export type ImportableContext = {
     importableKind?: unknown;
     importableIdentity?: unknown;
     selectedImportables?: unknown;
+};
+
+export type ImportJsonContext = {
+    importJsonPath?: unknown;
+    parentImportJsonPath?: unknown;
 };
 
 type SelectedImportable = {
@@ -241,6 +247,15 @@ export async function deleteImportableFromContext(
     await deleteImportable(webview, parsed.importJsonPath, parsed.kind, parsed.identity);
 }
 
+export async function deleteImportJsonFromContext(
+    webview: vscode.Webview,
+    context: ImportJsonContext | undefined,
+): Promise<void> {
+    const parsed = parseImportJsonContext(context);
+    if (!parsed) return;
+    await deleteImportJsonProject(webview, parsed.importJsonPath, parsed.parentImportJsonPath);
+}
+
 export async function renameImportableFromContext(
     webview: vscode.Webview,
     context: ImportableContext | undefined,
@@ -400,6 +415,48 @@ async function deleteImportable(
         const error = err instanceof Error ? err.message : String(err);
         await webview.postMessage({ type: "projectResult", ok: false, error } satisfies ProjectFromHostMessage);
         void vscode.window.showWarningMessage(`Could not delete importable: ${error}`);
+    }
+}
+
+async function deleteImportJsonProject(
+    webview: vscode.Webview,
+    importJsonPath: string,
+    parentImportJsonPath: string | null,
+): Promise<void> {
+    try {
+        const dir = path.dirname(importJsonPath);
+        const relativeDir = vscode.workspace.asRelativePath(dir, false);
+        const parentLine = parentImportJsonPath === null
+            ? ""
+            : `\n\nThis will also remove it from ${vscode.workspace.asRelativePath(parentImportJsonPath, false)}.`;
+        const choice = await vscode.window.showWarningMessage(
+            `Delete ${relativeDir}?\n\nThis moves the whole folder to the trash.${parentLine}`,
+            { modal: true },
+            "Delete Folder",
+        );
+        if (choice !== "Delete Folder") return;
+
+        if (parentImportJsonPath !== null) {
+            await withDocAwareWrites((fs) => {
+                if (!removeIncludeFromImportJson(fs, parentImportJsonPath, importJsonPath)) {
+                    throw new Error(
+                        `Could not remove include from ${vscode.workspace.asRelativePath(parentImportJsonPath, false)}.`
+                    );
+                }
+            });
+        }
+
+        await vscode.workspace.fs.delete(vscode.Uri.file(dir), { recursive: true, useTrash: true });
+        await webview.postMessage({
+            type: "projectResult",
+            ok: true,
+            message: `Deleted ${relativeDir}.`,
+        } satisfies ProjectFromHostMessage);
+        await postFreshProjectTree(webview);
+    } catch (err) {
+        const error = err instanceof Error ? err.message : String(err);
+        await webview.postMessage({ type: "projectResult", ok: false, error } satisfies ProjectFromHostMessage);
+        void vscode.window.showWarningMessage(`Could not delete import.json project: ${error}`);
     }
 }
 
@@ -571,6 +628,20 @@ function parseImportableContext(context: ImportableContext | undefined): {
         importJsonPath: context.importJsonPath,
         kind: context.importableKind,
         identity: context.importableIdentity,
+    };
+}
+
+function parseImportJsonContext(context: ImportJsonContext | undefined): {
+    importJsonPath: string;
+    parentImportJsonPath: string | null;
+} | null {
+    if (!context) return null;
+    if (typeof context.importJsonPath !== "string") return null;
+    return {
+        importJsonPath: context.importJsonPath,
+        parentImportJsonPath: typeof context.parentImportJsonPath === "string"
+            ? context.parentImportJsonPath
+            : null,
     };
 }
 
@@ -942,6 +1013,7 @@ function mapFileNode(
         return {
             node: {
                 fsPath: fileNode.path,
+                parentFsPath: parentPath ?? undefined,
                 label,
                 name,
                 importableCount: 0,
@@ -976,6 +1048,7 @@ function mapFileNode(
     return {
         node: {
             fsPath: fileNode.path,
+            parentFsPath: parentPath ?? undefined,
             label,
             name,
             importableCount: importables.length,

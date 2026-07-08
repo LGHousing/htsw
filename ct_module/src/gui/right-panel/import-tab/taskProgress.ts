@@ -22,7 +22,12 @@ import {
 import { setProgressTraceSampler } from "../../../housingSync/trace/progressTrace";
 import { resetSessionTiming } from "../../../housingSync/progress/timing";
 import { importableIdentity } from "../../../importables/identity";
-import { queueItemProgressPath, type QueueItem } from "./queue";
+import {
+    isQueueSessionItem,
+    queueItemKey,
+    queueItemProgressPath,
+    type QueueItem,
+} from "./queue";
 import { canonicalPath } from "../../parsing/parses";
 import { onTaskRunningChanged, setLiveTaskPathProvider } from "../selection";
 import { markGuiDirty } from "../../lib/dirty";
@@ -234,7 +239,9 @@ export type QueueItemRunState =
       };
 
 export function getQueueItemRunState(item: QueueItem): QueueItemRunState {
-    const progress = taskProgress ?? lastFinishedTaskProgress;
+    const progress =
+        taskProgress ??
+        (isQueueSessionItem(queueItemKey(item)) ? lastFinishedTaskProgress : null);
     if (progress === null) {
         return { kind: "queued" };
     }

@@ -6,6 +6,7 @@ import {
     setHouseUuidKey as setHouseUuidKeyWithFs,
     updateImportableField as updateImportableFieldWithFs,
     upsertImportableEntry as upsertImportableEntryWithFs,
+    removeIncludeFromImportJson as removeIncludeFromImportJsonWithFs,
     type MoveImportableResult,
     type Section,
 } from "htsw-editor-common/project";
@@ -59,6 +60,17 @@ export function removeImportableEntry(
     identity: string
 ): boolean {
     return removeImportableEntryWithFs(ctProjectFs, entryJsonPath, section, identity);
+}
+
+export function removeIncludeFromImportJson(
+    parentImportJsonPath: string,
+    includedImportJsonPath: string
+): boolean {
+    return removeIncludeFromImportJsonWithFs(
+        ctProjectFs,
+        parentImportJsonPath,
+        includedImportJsonPath
+    );
 }
 
 export function renameImportableEntry(

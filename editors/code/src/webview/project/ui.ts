@@ -801,6 +801,7 @@ function renderNode(
         <div class="row file ${root ? "root" : ""} ${selected ? "selected" : ""} ${problem ? "problem" : ""}"
             data-open-path="${escapeAttr(node.fsPath)}"
             data-parent-path="${escapeAttr(node.fsPath)}"
+            data-vscode-context="${escapeAttr(importJsonContext(node))}"
             title="${escapeAttr(node.label)}">
             ${indentGuides(depth)}
             <button class="twisty ${hasChildren ? "" : "empty"} ${expanded ? "open" : ""}" type="button"
@@ -815,6 +816,21 @@ function renderNode(
     return row +
         visibleChildren.map((child) => renderNode(child, state, depth + 1, false, query)).join("") +
         visibleImportables.map((entry) => renderImportable(entry, depth + 1, state, query, node.fsPath)).join("");
+}
+
+function importJsonContext(node: ProjectImportJsonNode): string {
+    const context: {
+        webviewSection: string;
+        preventDefaultContextMenuItems: boolean;
+        importJsonPath: string;
+        parentImportJsonPath?: string;
+    } = {
+        webviewSection: "importJson",
+        preventDefaultContextMenuItems: true,
+        importJsonPath: node.fsPath,
+    };
+    if (node.parentFsPath !== undefined) context.parentImportJsonPath = node.parentFsPath;
+    return JSON.stringify(context);
 }
 
 function renderImportable(

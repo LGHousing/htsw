@@ -4,7 +4,14 @@ import {
     parentDir,
     type ProjectFs,
 } from "./fs";
+import * as json from "jsonc-parser";
 import { walkImportJsonTree } from "./includeWalk";
+
+const FORMATTING: json.FormattingOptions = {
+    tabSize: 4,
+    insertSpaces: true,
+    eol: "\n",
+};
 
 export type CreateIncludedImportJsonResult = {
     importJsonPath: string;
@@ -74,6 +81,39 @@ export function createIncludedFolderInTree(
         relativePath(parentDirPath, targetDir),
         parent
     );
+}
+
+export function removeIncludeFromImportJson(
+    fs: ProjectFs,
+    parentImportJsonPath: string,
+    includedImportJsonPath: string
+): boolean {
+    if (!fs.exists(parentImportJsonPath)) return false;
+    const text = fs.readFile(parentImportJsonPath);
+    if (text.trim() === "") return false;
+    const tree = json.parseTree(text);
+    if (!tree) return false;
+    const includeNode = json.findNodeAtLocation(tree, ["include"]);
+    if (!includeNode || includeNode.type !== "array") return false;
+
+    const parentDirPath = parentDir(parentImportJsonPath);
+    const targetKey = includeCanonKey(includedImportJsonPath);
+    const items = includeNode.children ?? [];
+    for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (item.type !== "string") continue;
+        const resolved = fs.resolvePath(parentDirPath, String(item.value));
+        if (includeCanonKey(resolved) !== targetKey) continue;
+        const next = json.applyEdits(text, json.modify(
+            text,
+            ["include", i],
+            undefined,
+            { formattingOptions: FORMATTING }
+        ));
+        fs.writeFile(parentImportJsonPath, ensureTrailingNewline(next));
+        return true;
+    }
+    return false;
 }
 
 function includeCanonKey(path: string): string {
@@ -266,4 +306,8 @@ function pathParts(path: string): string[] {
 
 function samePathPart(left: string, right: string): boolean {
     return left.toLowerCase() === right.toLowerCase();
+}
+
+function ensureTrailingNewline(text: string): string {
+    return text.endsWith("\n") ? text : `${text}\n`;
 }

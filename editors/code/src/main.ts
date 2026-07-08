@@ -27,10 +27,12 @@ export function activate(context: ExtensionContext) {
     function registerProviders() {
         disposeAll(disposables);
 
+        const inlayHintsAdapter = new languageFeatures.InlayHintsAdapter();
         providers.push(
+            inlayHintsAdapter,
             languages.registerInlayHintsProvider(
                 "htsl",
-                new languageFeatures.InlayHintsAdapter()
+                inlayHintsAdapter
             )
         );
 

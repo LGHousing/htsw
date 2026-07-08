@@ -82,6 +82,7 @@ export type ProjectImportableSummary = {
 
 export type ProjectImportJsonNode = {
     fsPath: string;
+    parentFsPath?: string;
     label: string;
     name: string;
     importableCount: number;

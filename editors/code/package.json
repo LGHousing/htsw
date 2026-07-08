@@ -2,7 +2,7 @@
     "name": "htsw-plus-plus",
     "displayName": "HTSW++",
     "description": "HTSW completions, diagnostics, hints, and more.",
-    "version": "1.2.5",
+    "version": "1.2.6",
     "publisher": "LGHousing",
     "license": "MIT",
     "type": "module",
@@ -80,6 +80,11 @@
                 "command": "htsw.importable.delete",
                 "title": "Delete...",
                 "category": "HTSW"
+            },
+            {
+                "command": "htsw.importJson.delete",
+                "title": "Delete...",
+                "category": "HTSW"
             }
         ],
         "menus": {
@@ -121,6 +126,11 @@
                     "command": "htsw.importable.copyPath",
                     "when": "webviewId == 'htsw.tools' && webviewSection == 'importable'",
                     "group": "navigation@4"
+                },
+                {
+                    "command": "htsw.importJson.delete",
+                    "when": "webviewId == 'htsw.tools' && webviewSection == 'importJson'",
+                    "group": "navigation@0"
                 }
             ]
         },
@@ -203,6 +213,21 @@
                     },
                     "default": [],
                     "description": "Workspace-relative folder prefixes to exclude from HTSW diagnostics."
+                },
+                "htsw.inlayHints.actionArguments.enabled": {
+                    "type": "boolean",
+                    "default": true,
+                    "markdownDescription": "Enable inlay hints for regular action arguments."
+                },
+                "htsw.inlayHints.variableArguments.enabled": {
+                    "type": "boolean",
+                    "default": false,
+                    "markdownDescription": "Enable inlay hints for `var`, `globalvar`, `teamvar`, and stat-style variable arguments."
+                },
+                "htsw.inlayHints.conditionArguments.enabled": {
+                    "type": "boolean",
+                    "default": true,
+                    "markdownDescription": "Enable inlay hints for condition arguments."
                 },
                 "htsw.snbt.suggestLoreSplitting": {
                     "type": "boolean",

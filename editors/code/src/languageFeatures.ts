@@ -88,12 +88,23 @@ class HybridFileLoader implements htsw.FileLoader {
 }
 
 export class InlayHintsAdapter implements vscode.InlayHintsProvider {
+    private readonly onDidChangeEmitter = new vscode.EventEmitter<void>();
+    public readonly onDidChangeInlayHints = this.onDidChangeEmitter.event;
+    private readonly configurationListener = vscode.workspace.onDidChangeConfiguration((event) => {
+        if (event.affectsConfiguration("htsw.inlayHints")) {
+            this.onDidChangeEmitter.fire();
+        }
+    });
+
     public provideInlayHints(
         document: vscode.TextDocument
         // range: vscode.Span,
         // token: vscode.CancellationToken
     ): vscode.ProviderResult<vscode.InlayHint[]> {
-        const htslHints = common.provideInlayHints(document.getText());
+        const htslHints = common.provideInlayHints(
+            document.getText(),
+            this.getOptions(document.uri)
+        );
 
         return htslHints.map((hint) => {
             return {
@@ -103,11 +114,27 @@ export class InlayHintsAdapter implements vscode.InlayHintsProvider {
             };
         });
     }
+
+    public dispose(): void {
+        this.configurationListener.dispose();
+        this.onDidChangeEmitter.dispose();
+    }
+
+    private getOptions(uri: vscode.Uri): common.InlayHintOptions {
+        const config = vscode.workspace.getConfiguration("htsw", uri);
+        return {
+            actionArguments: config.get<boolean>("inlayHints.actionArguments.enabled", true),
+            variableArguments: config.get<boolean>("inlayHints.variableArguments.enabled", false),
+            conditionArguments: config.get<boolean>("inlayHints.conditionArguments.enabled", true),
+        };
+    }
 }
 
 type DiagnosticGroup = {
     diagnostics: htsw.Diagnostic[];
     sourceMap?: htsw.SourceMap;
+    rootPath?: string;
+    rootDiagnostics?: htsw.Diagnostic[];
 };
 
 export class DiagnosticsAdapter {
@@ -118,6 +145,7 @@ export class DiagnosticsAdapter {
         vscode.languages.createDiagnosticCollection("htsl");
 
     private rootContextCache: Map<string, { generation: number; rootPath: string }> = new Map();
+    private rootDiagnosticMarkers: Map<string, Map<string, vscode.Diagnostic[]>> = new Map();
 
     constructor() {
         this.disposables.push(
@@ -296,6 +324,53 @@ export class DiagnosticsAdapter {
         );
 
         this.diagnosticCollection.set(document.uri, markers);
+        for (const group of groups) {
+            if (group.rootPath !== undefined && group.sourceMap !== undefined && group.rootDiagnostics !== undefined) {
+                this.publishRootDiagnostics(group.rootPath, group.sourceMap, group.rootDiagnostics);
+            }
+        }
+    }
+
+    private publishRootDiagnostics(
+        rootPath: string,
+        sourceMap: htsw.SourceMap,
+        diagnostics: htsw.Diagnostic[]
+    ): void {
+        const rootKey = normalizedPathKey(rootPath);
+        const previousUris = this.rootDiagnosticMarkers.get(rootKey)?.keys() ?? [];
+
+        const byUri = new Map<string, vscode.Diagnostic[]>();
+        for (const diagnostic of diagnostics) {
+            const primary =
+                diagnostic.spans.find((span) => span.kind === "primary")?.span ||
+                diagnostic.spans[0]?.span;
+            if (!primary) continue;
+
+            let sourceFile: htsw.SourceFile;
+            try {
+                sourceFile = sourceMap.getFileByPos(primary.start);
+            } catch {
+                continue;
+            }
+            if (isPathInExcludedDiagnosticFolder(sourceFile.path)) continue;
+
+            const uriString = vscode.Uri.file(sourceFile.path).toString();
+            const range = this.rangeFromSourceFileSpan(sourceFile, primary);
+            const list = byUri.get(uriString) ?? [];
+            list.push(this.createVscodeDiagnostic(range, diagnostic, []));
+            byUri.set(uriString, list);
+        }
+
+        this.rootDiagnosticMarkers.set(rootKey, byUri);
+        const affectedUris = new Set<string>([...previousUris, ...byUri.keys()]);
+        for (const uriString of affectedUris) {
+            const markers: vscode.Diagnostic[] = [];
+            for (const rootMarkers of this.rootDiagnosticMarkers.values()) {
+                const owned = rootMarkers.get(uriString);
+                if (owned !== undefined) markers.push(...owned);
+            }
+            this.diagnosticCollection.set(vscode.Uri.parse(uriString), markers);
+        }
     }
 
     private createVscodeDiagnostic(
@@ -417,6 +492,8 @@ export class DiagnosticsAdapter {
                     this.isDiagnosticForFile(diagnostic, sourceMap, docPath)
                 ),
                 sourceMap,
+                rootPath: docPath,
+                rootDiagnostics: result.diagnostics,
             }];
         }
 
@@ -438,10 +515,20 @@ export class DiagnosticsAdapter {
                 this.isDiagnosticForFile(diagnostic, rootParse.sourceMap, docPath)
             );
             if (firstContext === null) {
-                firstContext = { diagnostics: rootDiagnostics, sourceMap: rootParse.sourceMap };
+                firstContext = {
+                    diagnostics: rootDiagnostics,
+                    sourceMap: rootParse.sourceMap,
+                    rootPath,
+                    rootDiagnostics: rootParse.result.diagnostics,
+                };
             }
             if (rootDiagnostics.length > 0) {
-                return [{ diagnostics: rootDiagnostics, sourceMap: rootParse.sourceMap }];
+                return [{
+                    diagnostics: rootDiagnostics,
+                    sourceMap: rootParse.sourceMap,
+                    rootPath,
+                    rootDiagnostics: rootParse.result.diagnostics,
+                }];
             }
         }
 
@@ -608,6 +695,15 @@ export class DiagnosticsAdapter {
         } catch {
             return new vscode.Range(document.positionAt(span.start), document.positionAt(span.end));
         }
+    }
+
+    private rangeFromSourceFileSpan(sourceFile: htsw.SourceFile, span: htsw.Span): vscode.Range {
+        const start = sourceFile.getPosition(span.start);
+        const end = sourceFile.getPosition(span.end);
+        return new vscode.Range(
+            new vscode.Position(start.line - 1, start.column - 1),
+            new vscode.Position(end.line - 1, end.column - 1)
+        );
     }
 
     private isSupportedDocument(document: vscode.TextDocument): boolean {

@@ -3,11 +3,13 @@ import { handleItemEditorMessage } from "./itemEditorView";
 import { renderWebviewHtml } from "./html";
 import {
     copyImportablePathFromContext,
+    deleteImportJsonFromContext,
     deleteImportableFromContext,
     handleProjectMessage,
     moveImportableFromContext,
     renameImportableFromContext,
     revealImportableFromContext,
+    type ImportJsonContext,
     type ImportableContext,
 } from "./projectView";
 import type { ItemEditorToHostMessage, ProjectToHostMessage, SoundPreviewToHostMessage } from "./protocol";
@@ -59,6 +61,10 @@ export class HtswToolsViewProvider implements vscode.WebviewViewProvider {
             vscode.commands.registerCommand("htsw.importable.delete", async (context?: ImportableContext) => {
                 if (!this.webview) return;
                 await deleteImportableFromContext(this.webview, context);
+            }),
+            vscode.commands.registerCommand("htsw.importJson.delete", async (context?: ImportJsonContext) => {
+                if (!this.webview) return;
+                await deleteImportJsonFromContext(this.webview, context);
             }),
         ];
     }
