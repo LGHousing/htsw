@@ -141,6 +141,7 @@ async function exportFunction(
 }
 
 export const readFunctions = makeReadHouse<string>({
+    type: "FUNCTION",
     noun: "function",
     // Drop any function-list cache from a prior run so per-function icon reads
     // reflect the live house, not a stale snapshot.

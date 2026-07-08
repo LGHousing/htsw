@@ -43,7 +43,7 @@ import {
     markParseStale,
     requestParse,
 } from "../../parsing/parses";
-import { shortPath } from "../../lib/pathDisplay";
+import { shortPath, toForwardSlashes } from "../../lib/pathDisplay";
 import {
     houseTypeScanned,
     listCachedImportables,
@@ -904,14 +904,12 @@ export function resultRow(
 }
 
 // Label for an include-group ROW: the included file relative to its IMMEDIATE
-// parent import.json's directory ("clocks", not "functions/clocks/import.json").
-// Indentation already conveys the nesting, so the repeated prefix is just noise.
-// An include that reaches OUTSIDE its parent's folder falls back to the tree
-// root's directory ("shared/menus-module", not a truncated absolute path).
+// parent import.json's directory ("clocks", "../shared/menus-module").
+// Indentation already conveys nesting for downward includes; upward includes
+// keep their "../" hops so the cross-folder relationship stays visible.
 function includeRowLabel(parentNodePath: string, rootNodePath: string, fullPath: string): string {
-    const rel =
-        pathUnderDir(projectDirOf(parentNodePath), fullPath) ??
-        pathUnderDir(projectDirOf(rootNodePath), fullPath);
+    const rel = relativePath(projectDirOf(parentNodePath), fullPath) ??
+        relativePath(projectDirOf(rootNodePath), fullPath);
     if (rel === null) return shortPath(fullPath);
     const suffix = "/import.json";
     if (rel.length > suffix.length && rel.lastIndexOf(suffix) === rel.length - suffix.length) {
@@ -920,9 +918,27 @@ function includeRowLabel(parentNodePath: string, rootNodePath: string, fullPath:
     return rel;
 }
 
-function pathUnderDir(dir: string, fullPath: string): string | null {
-    if (fullPath.indexOf(dir + "/") !== 0) return null;
-    return fullPath.substring(dir.length + 1);
+function relativePath(fromDir: string, fullPath: string): string | null {
+    const from = pathSegments(fromDir);
+    const to = pathSegments(fullPath);
+    if (from.length === 0 || to.length === 0) return null;
+    if (from[0].toLowerCase() !== to[0].toLowerCase()) return null;
+    let shared = 0;
+    while (
+        shared < from.length &&
+        shared < to.length &&
+        from[shared].toLowerCase() === to[shared].toLowerCase()
+    ) {
+        shared++;
+    }
+    const out: string[] = [];
+    for (let i = shared; i < from.length; i++) out.push("..");
+    for (let i = shared; i < to.length; i++) out.push(to[i]);
+    return out.length === 0 ? "." : out.join("/");
+}
+
+function pathSegments(path: string): string[] {
+    return toForwardSlashes(path).split("/").filter((part) => part.length > 0);
 }
 
 export function includeGroupRow(

@@ -9,6 +9,7 @@ import {
     buildTrustPlan,
     tryWriteImportableCache,
 } from "../importCache";
+import { upsertHouseLockImportable } from "../importCache/houseLock";
 import { importableIdentity, importableKey } from "./identity";
 import { printDiagnostic } from "../tui/diagnostics";
 import { createItemRegistry } from "./itemRegistry";
@@ -141,7 +142,8 @@ export async function importSelectedImportables(
     const trustPlan = buildTrustPlan(
         selection.housingUuid,
         orderedImportables,
-        selection.trustMode
+        selection.trustMode,
+        selection.sourcePath
     );
 
     const events = selection.events;
@@ -198,6 +200,7 @@ export async function importSelectedImportables(
         // the player's inventory (its apply spawns from the SNBT cache).
         if (row.trustPlan?.wholeImportableTrusted && row.importable.type !== "ITEM") {
             await tryWriteImportableCache(ctx, row.importable, "importer", selection.housingUuid);
+            upsertHouseLockImportable(selection.sourcePath, selection.housingUuid, row.importable);
             events?.emit({ kind: "importableFinished", key: row.key, status: "skipped" });
             continue;
         }
@@ -206,6 +209,7 @@ export async function importSelectedImportables(
             const plan = await prereadImportable(ctx, row.importable, session);
             if (planIsNoOp(plan)) {
                 await tryWriteImportableCache(ctx, row.importable, "importer", selection.housingUuid);
+                upsertHouseLockImportable(selection.sourcePath, selection.housingUuid, row.importable);
                 events?.emit({ kind: "importableFinished", key: row.key, status: "imported" });
                 continue;
             }
@@ -258,6 +262,7 @@ export async function importSelectedImportables(
                     selection.housingUuid
                 );
             }
+            upsertHouseLockImportable(selection.sourcePath, selection.housingUuid, row.importable);
             events?.emit({ kind: "importableFinished", key: row.key, status: "imported" });
         } catch (error) {
             await maybeWritePartialImportCache(

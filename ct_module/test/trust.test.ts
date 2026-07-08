@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
     Action,
     ImportableCommand,
@@ -7,8 +7,9 @@ import type {
 } from "htsw/types";
 
 import type { ImportableCacheEntry } from "../src/importCache/cache";
-import { listHashes } from "../src/importCache/hash";
+import { importableHash, listHashes } from "../src/importCache/hash";
 import {
+    buildTrustPlan,
     trustedChildListPathsForImportable,
     trustedChildListSnapshotsForImportable,
 } from "../src/importCache/trust";
@@ -42,6 +43,10 @@ function cacheEntry(importable: ImportableFunction): ImportableCacheEntry {
         lists: listHashes(importable),
     };
 }
+
+afterEach(() => {
+    vi.unstubAllGlobals();
+});
 
 describe("trustedChildListPathsForImportable", () => {
     it("trusts unchanged child lists after a top-level insertion shifts indexes", () => {
@@ -142,5 +147,77 @@ describe("trustedChildListPathsForImportable", () => {
 
         expect(trusted.has("leftClickActions")).toBe(true);
         expect(trusted.has("rightClickActions")).toBe(false);
+    });
+});
+
+describe("buildTrustPlan house lock gating", () => {
+    it("disables trust for an importable when the local cache does not match the project lock", () => {
+        const uuid = "lock-test-mismatch";
+        const importJsonPath = "./projects/demo/import.json";
+        const cached = fn([chat("cached")]);
+        const desired = fn([chat("cached")]);
+        const entry = cacheEntry(cached);
+        const files: Record<string, string> = {
+            [`./htsw/.cache/${uuid}/function/Debug.knowledge.json`]: JSON.stringify(entry),
+            "./projects/demo/house.lock.json": JSON.stringify({
+                schemaVersion: 1,
+                houseUuid: uuid,
+                importables: {
+                    "FUNCTION:Debug": {
+                        type: "FUNCTION",
+                        identity: "Debug",
+                        hash: importableHash(fn([chat("repo baseline")])),
+                    },
+                },
+            }),
+        };
+
+        vi.stubGlobal("FileLib", {
+            exists: (path: string) => files[path] !== undefined,
+            read: (path: string) => files[path] ?? null,
+            write: () => undefined,
+        });
+
+        const plan = buildTrustPlan(uuid, [desired], true, importJsonPath);
+        const row = plan.importables.get("FUNCTION:Debug");
+
+        expect(row?.entry?.importable).toEqual(cached);
+        expect(row?.trustMode).toBe(false);
+        expect(row?.wholeImportableTrusted).toBe(false);
+        expect(row?.cacheMatchesLock).toBe(false);
+    });
+
+    it("keeps trust available when the local cache matches the project lock", () => {
+        const uuid = "lock-test-match";
+        const importJsonPath = "./projects/demo/import.json";
+        const cached = fn([chat("same")]);
+        const entry = cacheEntry(cached);
+        const files: Record<string, string> = {
+            [`./htsw/.cache/${uuid}/function/Debug.knowledge.json`]: JSON.stringify(entry),
+            "./projects/demo/house.lock.json": JSON.stringify({
+                schemaVersion: 1,
+                houseUuid: uuid,
+                importables: {
+                    "FUNCTION:Debug": {
+                        type: "FUNCTION",
+                        identity: "Debug",
+                        hash: importableHash(cached),
+                    },
+                },
+            }),
+        };
+
+        vi.stubGlobal("FileLib", {
+            exists: (path: string) => files[path] !== undefined,
+            read: (path: string) => files[path] ?? null,
+            write: () => undefined,
+        });
+
+        const plan = buildTrustPlan(uuid, [cached], true, importJsonPath);
+        const row = plan.importables.get("FUNCTION:Debug");
+
+        expect(row?.trustMode).toBe(true);
+        expect(row?.wholeImportableTrusted).toBe(true);
+        expect(row?.cacheMatchesLock).toBe(true);
     });
 });

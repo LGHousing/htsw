@@ -104,6 +104,7 @@ async function exportCommand(
 }
 
 export const readCommands = makeReadHouse<string>({
+    type: "COMMAND",
     noun: "command",
     prelude: resetCommandNameSession,
     list: listAllCommandNames,

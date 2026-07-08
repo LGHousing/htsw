@@ -179,6 +179,7 @@ async function exportMenu(
 // action-list types they don't pull items through the inventory — no snapshot,
 // no batch item flush. Each slot item is deduped and written inline instead.
 export const readMenus = makeReadHouse<string>({
+    type: "MENU",
     noun: "menu",
     list: listAllMenuNames,
     referencesExist: menuExportReferencesExist,

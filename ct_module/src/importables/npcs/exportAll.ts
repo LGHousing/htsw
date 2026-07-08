@@ -17,6 +17,10 @@ import {
 } from "../../project/paths";
 import type { ReadResult } from "../read";
 import { exportNpcWithSharedState } from "./export";
+import { readImportableCache } from "../../importCache/cache";
+import { upsertHouseLockImportable } from "../../importCache/houseLock";
+import { getCurrentHousingUuid } from "../../importCache/housingId";
+import { npcPosIdentity } from "../identity";
 import {
     createNpcLookupCache,
     findNpcByPos,
@@ -83,6 +87,8 @@ async function exportAllNpcsInner(
     const { importJsonPath, rootDir } = options;
     const readOnly = options.readOnly !== undefined;
     const verb = readOnly ? "Reading" : "Exporting";
+    const lockHousingUuid =
+        options.readOnly?.housingUuid ?? (await getCurrentHousingUuid(ctx));
 
     const inventorySnapshot: InventorySnapshot = snapshotInventory();
     const itemCaptures = new ItemCaptureRegistry();
@@ -166,6 +172,15 @@ async function exportAllNpcsInner(
                     },
                     { itemCaptures, inventorySnapshot, npcLookup }
                 );
+                const identity = npcPosIdentity(liveEntry.pos);
+                const cached = readImportableCache(lockHousingUuid, "NPC", identity);
+                if (cached !== null) {
+                    upsertHouseLockImportable(
+                        importJsonPath,
+                        lockHousingUuid,
+                        cached.importable
+                    );
+                }
                 succeeded++;
             } catch (error) {
                 if (isTaskCancelled(error)) {

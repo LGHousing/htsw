@@ -40,6 +40,7 @@ function buildTeamJsonEntry(
 // menu, read its settings, and write the result — to the cache in read-only
 // (deep-read) mode, or to import.json plus the cache on a real export.
 export const readTeams = makeReadHouse<string>({
+    type: "TEAM",
     noun: "team",
     list: listAllTeamNames,
     referencesExist: teamExportReferencesExist,

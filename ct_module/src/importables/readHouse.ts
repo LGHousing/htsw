@@ -9,6 +9,10 @@ import TaskContext from "../tasks/context";
 import { writeCapturedItems } from "./items/writeCapturedItems";
 import { filterAlreadyExported } from "./exportSkip";
 import { runReadLoop, type ReadFn, type ReadOptions } from "./read";
+import { readImportableCache } from "../importCache/cache";
+import { getCurrentHousingUuid } from "../importCache/housingId";
+import { upsertHouseLockImportable } from "../importCache/houseLock";
+import type { Importable } from "htsw/types";
 
 // Scratch shared across every item in one export/read run: the dedup registry
 // (seeded with the destination project's items so identical captures reuse
@@ -29,6 +33,7 @@ export type BatchState = {
 // (cache only) are the same walk — `options.readOnly` picks the sink inside
 // `readOne`.
 export type ReadHouseSpec<Entry> = {
+    type: Importable["type"];
     // Singular, lowercase; pluralized with a trailing "s" in messages.
     noun: string;
     // Enumerate the house's entries of this type. Called to derive names when
@@ -79,6 +84,8 @@ export function makeReadHouse<Entry>(spec: ReadHouseSpec<Entry>): ReadFn {
         const { importJsonPath } = options;
         const readOnly = options.readOnly !== undefined;
         const verb = readOnly ? "Reading" : "Exporting";
+        const lockHousingUuid =
+            options.readOnly?.housingUuid ?? (await getCurrentHousingUuid(ctx));
 
         spec.prelude?.(ctx);
 
@@ -155,6 +162,14 @@ export function makeReadHouse<Entry>(spec: ReadHouseSpec<Entry>): ReadFn {
                         );
                     }
                     await spec.readOne(ctx, entry, options, state, onReadProgress);
+                    const cached = readImportableCache(lockHousingUuid, spec.type, name);
+                    if (cached !== null) {
+                        upsertHouseLockImportable(
+                            options.importJsonPath,
+                            lockHousingUuid,
+                            cached.importable
+                        );
+                    }
                 },
             });
             succeeded = result.succeeded;

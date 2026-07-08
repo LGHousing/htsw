@@ -7,6 +7,11 @@ import { readImportableCache } from "./cache";
 import { cacheEntryHash, cacheEntryListHashes, sameHashList } from "./status";
 import { matchByHash } from "./actionMatch";
 import { readCachedActionList } from "./actionLists";
+import {
+    houseLockEntryFor,
+    readHouseLock,
+    type HouseLock,
+} from "./houseLock";
 
 export type TrustedChildListPath = string;
 
@@ -20,6 +25,8 @@ export type ImportableTrustPlan = {
     entry: ImportableCacheEntry | null;
     sourceHash: string;
     cacheHash: string | null;
+    lockHash: string | null;
+    cacheMatchesLock: boolean;
     trustMode: boolean;
     wholeImportableTrusted: boolean;
     trustedChildListPaths: Set<TrustedChildListPath>;
@@ -45,9 +52,11 @@ export type TrustPlan = {
 export function buildTrustPlan(
     housingUuid: string,
     importables: readonly Importable[],
-    trustMode: boolean = true
+    trustMode: boolean = true,
+    importJsonPath?: string
 ): TrustPlan {
     const plans = new Map<string, ImportableTrustPlan>();
+    const lock = importJsonPath === undefined ? null : readHouseLock(importJsonPath);
 
     for (const importable of importables) {
         const identity = importableIdentity(importable);
@@ -58,12 +67,17 @@ export function buildTrustPlan(
         let sourceHash: string | null = null;
         let wholeImportableTrusted = false;
 
-        if (trustMode && entry !== null) {
+        const lockEntry = lockEntryForImportable(lock, housingUuid, importable.type, identity);
+        const entryHash = entry === null ? null : cacheEntryHash(entry);
+        const cacheMatchesLock = lockEntry === null || entryHash === lockEntry.hash;
+        const trustAllowed = trustMode && cacheMatchesLock;
+
+        if (trustAllowed && entry !== null) {
             sourceHash = importableHash(importable);
             // Recompute rather than trust the stored entry.hash — see
             // cacheEntryHash: a hash-function change must not strand old
             // entries as permanently untrusted.
-            wholeImportableTrusted = cacheEntryHash(entry) === sourceHash;
+            wholeImportableTrusted = entryHash === sourceHash;
 
             if (!wholeImportableTrusted) {
                 const cachedLists = cacheEntryListHashes(entry);
@@ -87,7 +101,9 @@ export function buildTrustPlan(
             entry,
             sourceHash: sourceHash ?? "",
             cacheHash: entry?.hash ?? null,
-            trustMode,
+            lockHash: lockEntry?.hash ?? null,
+            cacheMatchesLock,
+            trustMode: trustAllowed,
             wholeImportableTrusted,
             trustedChildListPaths,
             trustedChildLists,
@@ -98,6 +114,19 @@ export function buildTrustPlan(
         housingUuid,
         importables: plans,
     };
+}
+
+function lockEntryForImportable(
+    lock: HouseLock | null,
+    housingUuid: string,
+    type: Importable["type"],
+    identity: string
+) {
+    if (lock === null) return null;
+    if (lock.houseUuid !== null && lock.houseUuid !== housingUuid) {
+        return { hash: "" };
+    }
+    return houseLockEntryFor(lock, type, identity) ?? { hash: "" };
 }
 
 export function trustedChildListSnapshotsForImportable(

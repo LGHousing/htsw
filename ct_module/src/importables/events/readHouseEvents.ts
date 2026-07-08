@@ -77,6 +77,7 @@ async function exportEvent(
 }
 
 export const readEvents = makeReadHouse<string>({
+    type: "EVENT",
     noun: "event",
     list: listAllEventNames,
     capturesActionItems: true,

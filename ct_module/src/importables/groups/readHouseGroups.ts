@@ -73,6 +73,7 @@ function buildGroupJsonEntry(name: string, read: GroupRead): Record<string, unkn
 // cache in read-only (deep-read) mode, or to import.json plus the cache on a
 // real export.
 export const readGroups = makeReadHouse<string>({
+    type: "GROUP",
     noun: "group",
     list: listAllGroupNames,
     readOne: async (ctx, name, options) => {

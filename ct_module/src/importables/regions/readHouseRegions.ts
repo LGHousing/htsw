@@ -158,6 +158,7 @@ async function exportRegionWithSharedState(
 // Entry-based: the bounds come from the /regions listing, so the batch always
 // lists even for a selection.
 export const readRegions = makeReadHouse<RegionListEntry>({
+    type: "REGION",
     noun: "region",
     list: listAllRegions,
     nameOf: (entry) => entry.name,
