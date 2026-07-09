@@ -361,7 +361,7 @@ export function startImport(explicit?: readonly ImportQueueItem[]): void {
     if (batches === null) {
         const msg =
             explicit !== undefined
-                ? "Nothing matched the selection — try checking importables in the Importables tab first."
+                ? "Nothing matched the selection — try checking importables in the Projects tab first."
                 : "Queue is empty — right-click something and Add to queue.";
         ChatLib.chat(`&c[htsw] ${msg}`);
         return;

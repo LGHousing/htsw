@@ -76,7 +76,7 @@ const STEPS: TourStep[] = [
     {
         title: "Two sides of your project",
         lines: [
-            "Importables is your FILES; Houses is what's",
+            "Projects is your FILES; Importables is what's",
             "actually built in the house you're in.",
             "Everything HTSW does moves content between",
             "these two.",
@@ -85,7 +85,7 @@ const STEPS: TourStep[] = [
         setup: () => setActiveLeftTab("importables"),
     },
     {
-        title: "Importables: your files",
+        title: "Projects: your files",
         lines: [
             "Each import.json lists functions, items,",
             "regions, and a checkbox to queue each.",
@@ -119,7 +119,7 @@ const STEPS: TourStep[] = [
         anchor: "tour:right-import",
     },
     {
-        title: "Houses: the house into files",
+        title: "Importables: the house into files",
         lines: [
             "Scan lists names (fast). Read into knowledge",
             "(in the export dropdown) pulls full contents.",

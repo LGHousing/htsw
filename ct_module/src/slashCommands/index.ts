@@ -141,7 +141,7 @@ const DEBUG_SUBCOMMANDS: HtswSubcommand[] = [
     },
     {
         name: "treeperf",
-        summary: "Importables tree render stats",
+        summary: "Projects tree render stats",
         run: commandTreePerf,
     },
     {

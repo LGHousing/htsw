@@ -22,8 +22,8 @@ type TabId = "importables" | "houses" | "settings";
 type Tab = { id: TabId; label: string; icon: IconName; content: (bodyW: number) => Element };
 
 const TABS: Tab[] = [
-    { id: "importables", label: "Importables", icon: Icons.compass, content: ImportablesView },
-    { id: "houses", label: "Houses", icon: Icons.house, content: HousesView },
+    { id: "importables", label: "Projects", icon: Icons.compass, content: ImportablesView },
+    { id: "houses", label: "Importables", icon: Icons.house, content: HousesView },
     { id: "settings", label: "Settings", icon: Icons.settings, content: SettingsView },
 ];
 
@@ -105,13 +105,13 @@ function tabButton(t: Tab, showLabel: boolean): Element {
 // `availW` is the tab bar's own width (the left panel minus its padding). The
 // labels show only when the WIDEST one fits its tab; otherwise every tab drops
 // to icon-only (with a hover tooltip) so a narrow panel never paints a
-// half-clipped "Importables" into the next tab.
+// half-clipped label into the next tab.
 export function TabBar(availW: number): Element {
     const n = TABS.length;
     const perTab = (availW - TAB_GAP * (n - 1)) / n;
     const showLabels = tabLabelsFit(perTab, TABS.map((t) => t.label));
     const buttons = TABS.map((t) => tabButton(t, showLabels));
-    // Importables + Houses are the two "sides of your project" the tour's step 3
+    // Projects + Importables are the two "sides of your project" the tour's step 3
     // points at; Settings isn't one of them. Grouping just those two under the
     // anchor keeps the spotlight off Settings. The pair group takes grow 2 to
     // the lone Settings tab's grow 1, so all three tabs keep their even thirds.
