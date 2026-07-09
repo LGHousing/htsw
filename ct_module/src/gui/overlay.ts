@@ -100,6 +100,7 @@ import {
     getOverlayScreenH,
 } from "./lib/overlayScale";
 import { beginHtswOverlayDraw, endHtswOverlayDraw } from "./lib/overlayDraw";
+import { openBoundProjectForHouse } from "./boundProject";
 
 onParseCacheEntryChanged((entry) => {
     if (entry.parsed !== null) invalidateSourceDiffForParse(entry.parsed);
@@ -166,6 +167,7 @@ function maybeAutoFetchHousingUuid(): void {
         } else {
             housingPresence = "in";
             setHousingUuid(uuid);
+            openBoundProjectForHouse(uuid);
         }
     })
         .catch(() => {

@@ -22,6 +22,7 @@ import { IMPORT_CACHE_ROOT } from "../../../importCache/paths";
 import { deleteHousingCache } from "../../../importCache/cache";
 import { clearAlias } from "../../../importCache/aliases";
 import { javaType } from "../../lib/java";
+import { openBoundProjectForHouse } from "../../boundProject";
 import {
     ACCENT_DANGER,
     ACCENT_SUCCESS,
@@ -49,6 +50,7 @@ function detectHousing(): void {
         try {
             const uuid = await getCurrentHousingUuid(ctx);
             setHousingUuid(uuid);
+            openBoundProjectForHouse(uuid);
             ChatLib.chat(`&a[htsw] Housing UUID: ${uuid}`);
         } catch (err) {
             ChatLib.chat(`&c[htsw] Detect failed: ${err}`);
