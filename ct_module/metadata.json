@@ -2,7 +2,7 @@
     "name": "HTSW",
     "creator": "69Jesse",
     "description": "HTSL but we don't take no Ls",
-    "version": "0.8.8",
+    "version": "0.8.9",
     "entry": "index.js",
     "requires": ["axios", "Vigilance"]
 }
