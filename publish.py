@@ -114,8 +114,8 @@ def manifest_json(payload: dict[str, str], surface: str | None = None) -> str:
 
 def write_ct_zip(zip_path: Path, dist: Path, metadata: Path, root: str = "") -> None:
     # Mirror what install.py deploys: everything under dist/ at the archive
-    # root, plus metadata.json. No .env / mcp.json (per-install config). When
-    # `root` is set, nest every entry under that folder.
+    # root, plus metadata.json. No .env. When `root` is set, nest every entry
+    # under that folder.
     prefix = f"{root}/" if root else ""
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
         for file in sorted(dist.rglob("*")):

@@ -1,4 +1,4 @@
-import { defineConfig, loadEnv } from "vite";
+import { defineConfig } from "vite";
 import { getBabelOutputPlugin } from "@rollup/plugin-babel";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -35,12 +35,6 @@ const htswAliases = [
     },
     { find: /^htsw\/nbt$/, replacement: path.resolve(languageDistPath, "nbt/index.js") },
 ];
-
-// Load .env (no prefix filter) so we can gate optional features at build time.
-const env = loadEnv("production", path.resolve(fileURLToPath(import.meta.url), ".."), "");
-const mcpEnabled = ["1", "true", "yes", "on"].indexOf(
-    String(env.HTSW_MCP_ENABLED ?? "").trim().toLowerCase()
-) >= 0;
 
 // Icon tree-shake: scan the bundled JS for `Icons.<camelKey>` references and copy ONLY
 // those PNGs from assets/icons/ into dist/assets/. This keeps the deploy small
@@ -137,28 +131,9 @@ const iconShakePlugin = {
     },
 };
 
-// When MCP is disabled, redirect the bridge import to an empty stub so the real
-// implementation (HTTP code, daemon threads, /poll URL string, etc.) is never bundled
-// into dist. We use a Rollup resolver instead of a Vite alias because Vite's regex aliases
-// only replace the matched substring, which mangles absolute paths on Windows.
-const mcpAliases: { find: RegExp | string; replacement: string }[] = [];
-const mcpStubPath = path.resolve(srcDir, "mcp/bridge.stub.ts");
-const mcpResolverPlugin = mcpEnabled
-    ? null
-    : {
-          name: "htsw-mcp-disabled",
-          enforce: "pre" as const,
-          resolveId(source: string) {
-              if (source === "./mcp/bridge" || source === "./bridge") {
-                  return mcpStubPath;
-              }
-              return null;
-          },
-      };
-
 export default defineConfig({
     resolve: {
-        alias: [...mcpAliases, ...htswAliases],
+        alias: htswAliases,
     } as const,
     build: {
         minify: false,
@@ -190,8 +165,5 @@ export default defineConfig({
         },
         outDir: "dist",
     },
-    plugins: [
-        ...(mcpResolverPlugin ? [mcpResolverPlugin] : []),
-        iconShakePlugin,
-    ],
+    plugins: [iconShakePlugin],
 });

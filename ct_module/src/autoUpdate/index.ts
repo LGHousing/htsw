@@ -12,7 +12,6 @@ const MANIFEST_URL = BASE_URL + "/latest.json";
 const USER_AGENT = "HTSW-CT-Updater";
 const LOCAL_STATE_FILES = [
     ".env",
-    "mcp.json",
     "gui-settings.json",
     "gui-recents.json",
     "gui-onboarding.json",
