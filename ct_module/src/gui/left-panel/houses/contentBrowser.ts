@@ -812,10 +812,14 @@ export function typeBrowserSection(getViewedUuid: () => string | null, availW: n
             }
             if (items.length === 0) {
                 out.push(
-                    Text({
-                        text: `No ${t.label.toLowerCase()} in this house.`,
-                        color: COLOR_TEXT_FAINT,
+                    Col({
                         style: { height: { kind: "grow" } },
+                        children: [
+                            Text({
+                                text: `No ${t.label.toLowerCase()} in this house.`,
+                                color: COLOR_TEXT_FAINT,
+                            }),
+                        ],
                     })
                 );
             } else {
@@ -830,10 +834,14 @@ export function typeBrowserSection(getViewedUuid: () => string | null, availW: n
                           );
                 if (shown.length === 0) {
                     out.push(
-                        Text({
-                            text: `No ${t.label.toLowerCase()} match "${itemSearch.trim()}".`,
-                            color: COLOR_TEXT_FAINT,
+                        Col({
                             style: { height: { kind: "grow" } },
+                            children: [
+                                Text({
+                                    text: `No ${t.label.toLowerCase()} match "${itemSearch.trim()}".`,
+                                    color: COLOR_TEXT_FAINT,
+                                }),
+                            ],
                         })
                     );
                 } else {
