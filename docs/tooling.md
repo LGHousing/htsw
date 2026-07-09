@@ -26,3 +26,12 @@ The output of the
  action is redirected to the standard output.
 
 > Note that repeating functions are ignored in `htsw run`.
+
+## Minecraft MCP Events
+
+When the ChatTriggers module runs in the same Minecraft client as the
+Minecraft MCP ChatTriggers adapter, HTSW publishes best-effort import lifecycle
+events through a shared JVM queue. The adapter forwards `htsw_session`,
+`htsw_importable`, and `htsw_progress` events to `minecraft_read_events` and
+`minecraft_wait_for_event`. The bridge is optional; imports behave the same
+when the adapter is not loaded.
