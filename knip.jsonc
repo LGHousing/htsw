@@ -10,9 +10,8 @@
             "entry": ["vitest.workspace.ts"],
             "ignoreBinaries": ["knip"]
         },
-        "mcp": {},
         "ct_module": {
-            "entry": ["src/mcp/bridge.stub.ts", "scripts/*.ts", "test/**/*.test.ts"],
+            "entry": ["scripts/*.ts", "test/**/*.test.ts"],
             "project": ["src/**/*.ts", "scripts/**/*.ts", "test/**/*.ts"],
             "ignoreDependencies": ["@babel/preset-env"],
             "ignoreBinaries": ["javac"]
