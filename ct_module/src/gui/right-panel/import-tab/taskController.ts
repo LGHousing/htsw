@@ -72,7 +72,6 @@ import {
 } from "./livePreview";
 import { setFocusLineId } from "./focusedLine";
 import { autoTrackRefresh } from "../../autoTrack";
-import { publishMcpEvent, publishMcpImportableEvent } from "../../../mcpEvents";
 
 function formatElapsedSeconds(secs: number): string {
     const total = Math.max(0, Math.round(secs));
@@ -116,7 +115,6 @@ function createSyncEventHandler(args: {
 }): SessionEventHandler {
     let state = initialReducerState();
     let activeViewPath: string | null = null;
-    let lastMcpProgressBucket: number | null = null;
 
     // Precompute key → importable so importableStarted handler is O(1).
     const importablesByKey = new Map<string, Importable>();
@@ -139,14 +137,7 @@ function createSyncEventHandler(args: {
         [E in SyncEvent as E["kind"]]: (event: E) => void;
     };
     const handlers: Handlers = {
-        sessionStarted: (e) => {
-            lastMcpProgressBucket = null;
-            publishMcpEvent({
-                type: "htsw_session",
-                phase: "started",
-                rows: e.rows.length,
-            });
-        },
+        sessionStarted: () => {},
         importableStarted: (e) => {
             const imp = importablesByKey.get(e.key) ?? null;
             activeViewPath = imp === null ? null : (importableSourcePath(imp) ?? null);
@@ -157,12 +148,6 @@ function createSyncEventHandler(args: {
         },
         importableFinished: (e) => {
             const imp = importablesByKey.get(e.key);
-            publishMcpImportableEvent({
-                key: e.key,
-                importableType: imp?.type ?? null,
-                status: e.status,
-                error: e.error,
-            });
             if (imp !== undefined && e.status === "imported") {
                 invalidateSourceDiffForImportable(imp);
             }
@@ -176,16 +161,7 @@ function createSyncEventHandler(args: {
             activeViewPath = imp === null ? null : (importableSourcePath(imp) ?? null);
         },
         sessionFinished: () => {
-            const counts = countRows();
             activeViewPath = null;
-            publishMcpEvent({
-                type: "htsw_session",
-                phase: "finished",
-                status: counts.failed === 0 ? "completed" : "aborted",
-                imported: counts.imported,
-                skipped: counts.skipped,
-                failed: counts.failed,
-            });
         },
         progress: () => {},
         // Slot focus lives on the progress snapshot (set by the reducer); the
@@ -251,33 +227,6 @@ function createSyncEventHandler(args: {
         },
     };
 
-    function countRows(): { imported: number; skipped: number; failed: number } {
-        let imported = 0;
-        let skipped = 0;
-        let failed = 0;
-        for (const row of state.progress.rows) {
-            if (row.status === "imported") imported++;
-            else if (row.status === "skipped") skipped++;
-            else if (row.status === "failed") failed++;
-        }
-        return { imported, skipped, failed };
-    }
-
-    function publishMcpProgress(): void {
-        const progress = state.progress;
-        if (progress.totalUnits <= 0) return;
-        const percent = Math.max(
-            0,
-            Math.min(100, Math.floor((progress.completedUnits / progress.totalUnits) * 100))
-        );
-        if (
-            lastMcpProgressBucket !== null &&
-            Math.abs(percent - lastMcpProgressBucket) < 5
-        ) return;
-        lastMcpProgressBucket = percent;
-        publishMcpEvent({ type: "htsw_progress", percent });
-    }
-
     return {
         emit: (event) => {
             const before = state.progress;
@@ -285,10 +234,19 @@ function createSyncEventHandler(args: {
             traceProgressEvent(event, before, state.progress);
             traceSyncEvent(event);
             (handlers[event.kind] as (e: typeof event) => void)(event);
-            publishMcpProgress();
             sync();
         },
-        counts: countRows,
+        counts: () => {
+            let imported = 0;
+            let skipped = 0;
+            let failed = 0;
+            for (const row of state.progress.rows) {
+                if (row.status === "imported") imported++;
+                else if (row.status === "skipped") skipped++;
+                else if (row.status === "failed") failed++;
+            }
+            return { imported, skipped, failed };
+        },
     };
 }
 
