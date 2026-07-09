@@ -35,7 +35,7 @@ export function createIncludedImportJsonFiles(
     fs.writeFile(importJsonPath, "{}\n");
 
     const parentSource = fs.readFile(parentImportJsonPath);
-    const includePath = relativePath(parentDir(parentImportJsonPath), importJsonPath);
+    const includePath = relativePath(fs.parentDir(parentImportJsonPath), importJsonPath);
     const nextParentSource = addIncludeToImportJsonSource(parentSource, includePath);
     fs.writeFile(parentImportJsonPath, nextParentSource);
 

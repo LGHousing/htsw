@@ -295,6 +295,33 @@ describe("preferred new-export target routing", () => {
         expect(target.htslReference).toBe("Duel.htsl");
     });
 
+    test("creates nested includes relative to the parent with ctProjectFs path forms", () => {
+        const fs = ctLikeFs(
+            {
+                "./htsw/projects/Tribalists/import.json": JSON.stringify({
+                    include: ["commands/import.json"],
+                }),
+                "./htsw/projects/Tribalists/commands/import.json": "{}",
+            },
+            "C:/Users/calla/AppData/Roaming/PrismLauncher/instances/1.8.9 good/.minecraft"
+        );
+
+        const created = createIncludedFolderInTree(
+            fs,
+            "./htsw/projects/Tribalists/import.json",
+            "commands/g"
+        );
+
+        expect(normalize(created.importJsonPath)).toContain(
+            "/htsw/projects/Tribalists/commands/g/import.json"
+        );
+        expect(created.includePath).toBe("g/import.json");
+        const commands = JSON.parse(
+            fs.readFile("./htsw/projects/Tribalists/commands/import.json")
+        );
+        expect(commands.include).toEqual(["g/import.json"]);
+    });
+
     test("new item honors the preferred target, nesting its snbt under items/", () => {
         const fs = memoryFs({
             [ROOT]: JSON.stringify({
