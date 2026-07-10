@@ -17,6 +17,8 @@ export function printExportHelp(): void {
     }
     ChatLib.chat("&f/export npc <name> <x> <y> <z> [path]");
     ChatLib.chat("&7  Reads an existing NPC by position and writes left/right .htsl + import.json metadata.");
+    ChatLib.chat("&f/htsw export itemactions <path|import.json>");
+    ChatLib.chat("&7  Exports held-item actions, or updates every interactable item in a manifest.");
 
     for (let i = 0; i < HOUSE_EXPORT_TYPES.length; i++) {
         const spec = HOUSE_EXPORT_TYPES[i];
