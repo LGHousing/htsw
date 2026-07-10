@@ -214,4 +214,5 @@ type ReadContext = {
 export type ListReadOptions = ReadContext & {
     progress?: ProgressHandler;
     phaseUnits?: PhaseUnits;
+    exactHydrationEstimate?: boolean;
 };

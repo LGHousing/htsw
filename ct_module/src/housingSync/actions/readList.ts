@@ -57,6 +57,7 @@ import type { ActionPath, SyncEventHandler } from "../syncEvents";
 import { actionPathForIndex, actionPathKey } from "../syncEvents";
 import {
     COST,
+    exactHydrationPlanUnits,
     hydrationEntryUnits,
     phaseUnitsTotal,
 } from "../progress/costs";
@@ -73,6 +74,12 @@ import { readConditionList } from "./conditions/readList";
 export type ActionListReadMode =
     | { kind: "deep" }
     | { kind: "sync"; desired: readonly Action[]; trust?: ActionListTrust };
+
+export type DeferredActionListRead = {
+    observed: ObservedActionSlot[];
+    plan: ActionHydrationPlan;
+    isTopLevelRead: boolean;
+};
 
 function readChildListSummaries(
     action: Observed<Action>,
@@ -191,6 +198,16 @@ export async function readActionList(
     mode: ActionListReadMode = { kind: "deep" },
     read?: ListReadOptions
 ): Promise<ObservedActionSlot[]> {
+    const deferred = await readActionListDeferred(ctx, mode, read);
+    await hydrateDeferredActionList(ctx, deferred, read);
+    return deferred.observed;
+}
+
+export async function readActionListDeferred(
+    ctx: TaskContext,
+    mode: ActionListReadMode = { kind: "deep" },
+    read?: ListReadOptions
+): Promise<DeferredActionListRead> {
     const progress = read?.progress;
     const events = read?.events;
     const desiredTotal =
@@ -235,7 +252,7 @@ export async function readActionList(
     if (phaseUnits !== undefined) phaseUnits.reading = readCompletedUnits;
     const isTopLevelRead = read?.listPath === undefined;
     if (isTopLevelRead) {
-        emitObservedSnapshot(observed, events);
+        emitObservedSnapshot(observed, read?.events);
     }
     let plan: ActionHydrationPlan;
     if (isTopLevelRead) {
@@ -260,13 +277,32 @@ export async function readActionList(
     if (read?.itemCaptures !== undefined) {
         addItemCaptureEntries(plan, observed);
     }
-    await hydrateActionDetails(
-        ctx,
-        plan,
-        observed,
-        isTopLevelRead,
-        read
-    );
+    if (phaseUnits !== undefined && read?.exactHydrationEstimate === true) {
+        phaseUnits.reading = readCompletedUnits;
+        phaseUnits.hydrating = exactHydrationPlanUnits(plan);
+        phaseUnits.applying = 0;
+        progress?.({
+            phase: "reading",
+            completedUnits: phaseUnits.reading,
+            totalUnits: phaseUnitsTotal(phaseUnits),
+            phaseUnits: phaseUnits,
+            sync: {
+                completedUnits: observed.length,
+                totalUnits: Math.max(desiredTotal, observed.length),
+                parent: null,
+            },
+        });
+    }
+    return { observed, plan, isTopLevelRead };
+}
+
+export async function hydrateDeferredActionList(
+    ctx: TaskContext,
+    deferred: DeferredActionListRead,
+    read?: ListReadOptions
+): Promise<void> {
+    const { observed, plan, isTopLevelRead } = deferred;
+    await hydrateActionDetails(ctx, plan, observed, isTopLevelRead, read);
     await goToPaginatedListPage(ctx, 1, ACTION_LIST_CONFIG);
     if (read?.itemRegistry !== undefined) {
         for (const entry of observed) {
@@ -276,9 +312,8 @@ export async function readActionList(
         }
     }
     if (isTopLevelRead) {
-        emitObservedSnapshot(observed, events);
+        emitObservedSnapshot(observed, read?.events);
     }
-    return observed;
 }
 
 function emitObservedSnapshot(
@@ -427,7 +462,11 @@ async function hydrateActionDetails(
     let completedHydrateUnits = 0;
     let totalHydrateUnits = 0;
     plan.forEach((work, entry) => {
-        totalHydrateUnits += hydrationEntryUnits(entry, work);
+        totalHydrateUnits += hydrationEntryUnits(
+            entry,
+            work,
+            read?.exactHydrationEstimate !== true
+        );
     });
     if (phaseUnits !== undefined) phaseUnits.hydrating = totalHydrateUnits;
     // The running entry's account replaces its lump-sum estimate with what
@@ -460,8 +499,17 @@ async function hydrateActionDetails(
             : undefined;
     for (const [entry, work] of plan) {
         const entryPath = actionPathForIndex(listPath, entry.index);
-        currentEntryEstimate = hydrationEntryUnits(entry, work);
-        currentAccount = createHydrationEntryAccount(entry, work, emit);
+        currentEntryEstimate = hydrationEntryUnits(
+            entry,
+            work,
+            read?.exactHydrationEstimate !== true
+        );
+        currentAccount = createHydrationEntryAccount(
+            entry,
+            work,
+            emit,
+            read?.exactHydrationEstimate !== true
+        );
         emit();
         events?.emit({
             kind: "childListReadStarted",

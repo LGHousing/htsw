@@ -1,8 +1,14 @@
 import type { ImportableCommand } from "htsw/types";
 import * as htsw from "htsw";
 
-import { readActionList } from "../../housingSync/actions/readList";
+import {
+    type DeferredActionListRead,
+    hydrateDeferredActionList,
+    readActionList,
+    readActionListDeferred,
+} from "../../housingSync/actions/readList";
 import type { ProgressHandler } from "../../housingSync/progress/types";
+import { clickGoBack } from "../../housingSync/menus/menuUtils";
 import { ItemCaptureRegistry } from "../../housingSync/itemCapture";
 import { tryWriteImportableCache, writeImportableCache } from "../../importCache";
 import TaskContext from "../../tasks/context";
@@ -20,6 +26,15 @@ import {
     readOpenCommandSettings,
 } from "./shared";
 import { listAllCommandNames, resetCommandNameSession } from "./listCommands";
+
+type PendingCommandRead = {
+    deferred: DeferredActionListRead;
+    settings: {
+        mode: ImportableCommand["mode"];
+        requiredPriority: ImportableCommand["requiredPriority"];
+        listed: boolean;
+    };
+};
 
 async function readCommand(
     ctx: TaskContext,
@@ -44,6 +59,7 @@ async function readCommand(
     if (settings.listed === null) {
         throw new Error(`Could not read listed state for command "/${name}".`);
     }
+    await clickGoBack(ctx);
 
     return {
         type: "COMMAND",
@@ -55,19 +71,80 @@ async function readCommand(
     };
 }
 
-async function exportCommand(
+async function scanCommand(
     ctx: TaskContext,
     name: string,
+    state: BatchState,
+    onReadProgress: ProgressHandler | undefined
+): Promise<PendingCommandRead> {
+    await openExistingCommandActionsEditor(ctx, name);
+    const deferred = await readActionListDeferred(ctx, { kind: "deep" }, {
+        itemCaptures: state.itemCaptures,
+        exactHydrationEstimate: true,
+        ...(onReadProgress !== undefined
+            ? {
+                  progress: onReadProgress,
+                  phaseUnits: { setup: 0, reading: 0, hydrating: 0, applying: 0 },
+              }
+            : {}),
+    });
+
+    await openCommandSettings(ctx, name);
+    const settings = readOpenCommandSettings(ctx);
+    if (settings.listed === null) {
+        throw new Error(`Could not read listed state for command "/${name}".`);
+    }
+
+    return {
+        deferred,
+        settings: {
+            mode: settings.mode,
+            requiredPriority: settings.requiredPriority,
+            listed: settings.listed,
+        },
+    };
+}
+
+async function hydrateCommand(
+    ctx: TaskContext,
+    name: string,
+    pending: PendingCommandRead,
+    state: BatchState,
+    onReadProgress: ProgressHandler | undefined
+): Promise<ImportableCommand> {
+    await openExistingCommandActionsEditor(ctx, name);
+    await hydrateDeferredActionList(ctx, pending.deferred, {
+        itemCaptures: state.itemCaptures,
+        exactHydrationEstimate: true,
+        ...(onReadProgress !== undefined
+            ? {
+                  progress: onReadProgress,
+                  phaseUnits: { setup: 0, reading: 0, hydrating: 0, applying: 0 },
+              }
+            : {}),
+    });
+    await clickGoBack(ctx);
+
+    return {
+        type: "COMMAND",
+        name,
+        actions: observedSlotsToActions(pending.deferred.observed),
+        mode: pending.settings.mode,
+        requiredPriority: pending.settings.requiredPriority,
+        listed: pending.settings.listed,
+    };
+}
+
+async function writeCommandResult(
+    ctx: TaskContext,
+    name: string,
+    importable: ImportableCommand,
     options: {
         importJsonPath: string;
         newExportTargetImportJson?: string;
         readOnly?: { housingUuid: string };
-    },
-    state: BatchState,
-    onReadProgress: ProgressHandler | undefined
+    }
 ): Promise<void> {
-    const importable = await readCommand(ctx, name, state.itemCaptures, onReadProgress);
-
     if (options.readOnly !== undefined) {
         writeImportableCache(ctx, options.readOnly.housingUuid, importable, "reader", true);
         return;
@@ -103,6 +180,25 @@ async function exportCommand(
     ctx.displayMessage(`&7  -> ${target.htslPath}`);
 }
 
+async function exportCommand(
+    ctx: TaskContext,
+    name: string,
+    options: {
+        importJsonPath: string;
+        newExportTargetImportJson?: string;
+        readOnly?: { housingUuid: string };
+    },
+    state: BatchState,
+    onReadProgress: ProgressHandler | undefined
+): Promise<void> {
+    await writeCommandResult(
+        ctx,
+        name,
+        await readCommand(ctx, name, state.itemCaptures, onReadProgress),
+        options
+    );
+}
+
 export const readCommands = makeReadHouse<string>({
     type: "COMMAND",
     noun: "command",
@@ -117,4 +213,16 @@ export const readCommands = makeReadHouse<string>({
     },
     readOne: (ctx, name, options, state, onReadProgress) =>
         exportCommand(ctx, name, options, state, onReadProgress),
+    scanOne: (ctx, name, _options, state, onReadProgress) =>
+        scanCommand(ctx, name, state, onReadProgress),
+    hydrateOne: async (ctx, name, pending, options, state, onReadProgress) => {
+        const importable = await hydrateCommand(
+            ctx,
+            name,
+            pending as PendingCommandRead,
+            state,
+            onReadProgress
+        );
+        await writeCommandResult(ctx, name, importable, options);
+    },
 });

@@ -122,8 +122,10 @@ export type ProgressHandler = (progress: ProgressPayload) => void;
 export type ExportProgressSink = {
     /** Called once the full list of names to export is known. */
     start(names: readonly string[]): void;
+    scanStarted?(): void;
     /** Called as item `index` (0-based) begins exporting. */
     item(index: number, name: string): void;
+    itemReactivated?(index: number): void;
     /**
      * Within-item read progress for item `index`, forwarded from the
      * action-list read's `ProgressHandler`. Optional — exporters that don't

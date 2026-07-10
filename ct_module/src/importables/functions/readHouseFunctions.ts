@@ -1,7 +1,12 @@
 import type { Action, ImportableFunction } from "htsw/types";
 import * as htsw from "htsw";
 
-import { readActionList } from "../../housingSync/actions/readList";
+import {
+    type DeferredActionListRead,
+    hydrateDeferredActionList,
+    readActionList,
+    readActionListDeferred,
+} from "../../housingSync/actions/readList";
 import type { ProgressHandler } from "../../housingSync/progress/types";
 import { clickGoBack } from "../../housingSync/menus/menuUtils";
 import { ItemCaptureRegistry } from "../../housingSync/itemCapture";
@@ -27,6 +32,17 @@ import {
     listAllFunctionNames,
     resetFunctionNameSession,
 } from "./listFunctions";
+
+type PendingFunctionRead = {
+    deferred: DeferredActionListRead;
+    icon: ImportableFunction["icon"];
+    repeatTicks?: number;
+};
+
+const validRepeatTicks = (repeatTicks: number | undefined): number | undefined =>
+    repeatTicks !== undefined && repeatTicks >= 4 && repeatTicks <= 18000
+        ? repeatTicks
+        : undefined;
 
 async function readFunction(
     ctx: TaskContext,
@@ -54,12 +70,9 @@ async function readFunction(
 
     const repeatTicks = readAutomaticExecutionTicks(ctx);
     await clickGoBack(ctx);
-    const validRepeatTicks =
-        repeatTicks !== undefined && repeatTicks >= 4 && repeatTicks <= 18000
-            ? repeatTicks
-            : undefined;
-    return validRepeatTicks !== undefined
-        ? { actions, repeatTicks: validRepeatTicks }
+    const valid = validRepeatTicks(repeatTicks);
+    return valid !== undefined
+        ? { actions, repeatTicks: valid }
         : { actions };
 }
 
@@ -84,24 +97,82 @@ async function readFunctionImportable(
     };
 }
 
-async function exportFunction(
+async function scanFunction(
     ctx: TaskContext,
     name: string,
+    state: BatchState,
+    onReadProgress: ProgressHandler | undefined
+): Promise<PendingFunctionRead> {
+    const icon = functionIconFromSnapshot(await getSessionFunctionIcon(ctx, name));
+    if ((await openFunctionEditor(ctx, name)) === "missing") {
+        throw new Error(`No function named "${name}" exists in this housing.`);
+    }
+
+    const deferred = await readActionListDeferred(ctx, { kind: "deep" }, {
+        itemCaptures: state.itemCaptures,
+        exactHydrationEstimate: true,
+        ...(onReadProgress !== undefined
+            ? {
+                  progress: onReadProgress,
+                  phaseUnits: { setup: 0, reading: 0, hydrating: 0, applying: 0 },
+              }
+            : {}),
+    });
+
+    await clickGoBack(ctx);
+    await openFunctionSettings(ctx, name);
+    const repeatTicks = validRepeatTicks(readAutomaticExecutionTicks(ctx));
+    await clickGoBack(ctx);
+
+    return {
+        deferred,
+        icon,
+        ...(repeatTicks !== undefined ? { repeatTicks } : {}),
+    };
+}
+
+async function hydrateFunction(
+    ctx: TaskContext,
+    name: string,
+    pending: PendingFunctionRead,
+    state: BatchState,
+    onReadProgress: ProgressHandler | undefined
+): Promise<ImportableFunction> {
+    if ((await openFunctionEditor(ctx, name)) === "missing") {
+        throw new Error(`No function named "${name}" exists in this housing.`);
+    }
+
+    await hydrateDeferredActionList(ctx, pending.deferred, {
+        itemCaptures: state.itemCaptures,
+        exactHydrationEstimate: true,
+        ...(onReadProgress !== undefined
+            ? {
+                  progress: onReadProgress,
+                  phaseUnits: { setup: 0, reading: 0, hydrating: 0, applying: 0 },
+              }
+            : {}),
+    });
+    await clickGoBack(ctx);
+
+    return {
+        type: "FUNCTION",
+        name,
+        actions: observedSlotsToActions(pending.deferred.observed),
+        ...(pending.repeatTicks !== undefined ? { repeatTicks: pending.repeatTicks } : {}),
+        ...(pending.icon !== undefined ? { icon: pending.icon } : {}),
+    };
+}
+
+async function writeFunctionResult(
+    ctx: TaskContext,
+    name: string,
+    importable: ImportableFunction,
     options: {
         importJsonPath: string;
         newExportTargetImportJson?: string;
         readOnly?: { housingUuid: string };
-    },
-    state: BatchState,
-    onReadProgress: ProgressHandler | undefined
+    }
 ): Promise<void> {
-    const importable = await readFunctionImportable(
-        ctx,
-        name,
-        state.itemCaptures,
-        onReadProgress
-    );
-
     if (options.readOnly !== undefined) {
         // Knowledge records what's REALLY in the function — items included.
         // Captures matched against the seeded project reuse real item names;
@@ -140,6 +211,25 @@ async function exportFunction(
     ctx.displayMessage(`&7  -> ${target.htslPath}`);
 }
 
+async function exportFunction(
+    ctx: TaskContext,
+    name: string,
+    options: {
+        importJsonPath: string;
+        newExportTargetImportJson?: string;
+        readOnly?: { housingUuid: string };
+    },
+    state: BatchState,
+    onReadProgress: ProgressHandler | undefined
+): Promise<void> {
+    await writeFunctionResult(
+        ctx,
+        name,
+        await readFunctionImportable(ctx, name, state.itemCaptures, onReadProgress),
+        options
+    );
+}
+
 export const readFunctions = makeReadHouse<string>({
     type: "FUNCTION",
     noun: "function",
@@ -161,4 +251,16 @@ export const readFunctions = makeReadHouse<string>({
     },
     readOne: (ctx, name, options, state, onReadProgress) =>
         exportFunction(ctx, name, options, state, onReadProgress),
+    scanOne: (ctx, name, _options, state, onReadProgress) =>
+        scanFunction(ctx, name, state, onReadProgress),
+    hydrateOne: async (ctx, name, pending, options, state, onReadProgress) => {
+        const importable = await hydrateFunction(
+            ctx,
+            name,
+            pending as PendingFunctionRead,
+            state,
+            onReadProgress
+        );
+        await writeFunctionResult(ctx, name, importable, options);
+    },
 });

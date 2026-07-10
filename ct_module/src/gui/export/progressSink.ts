@@ -24,12 +24,12 @@ import type { SyncEvent } from "../../housingSync/syncEvents";
 import { queueRowKey } from "../../housingSync/progress/queueRowKey";
 import { initialReducerState, reduce } from "../../housingSync/progress/reducer";
 import type { ExportProgressSink } from "../../housingSync/progress/types";
-import { estimateImportableCost } from "../../housingSync/progress/costs";
+import { estimateImportableReadUnits } from "../../housingSync/progress/costs";
 import { readImportableCache } from "../../importCache/cache";
 import { importableIdentity } from "../../importables/identity";
 import { getHousingUuid } from "../state";
 import { canonicalPath, requestParse } from "../parsing/parses";
-import { setEtaRough, setTaskProgress, setSessionVerb } from "../right-panel/import-tab/taskProgress";
+import { setEtaEstimating, setEtaRough, setTaskProgress, setSessionVerb } from "../right-panel/import-tab/taskProgress";
 import {
     addToQueue,
     makeExportQueueItem,
@@ -87,12 +87,12 @@ export function createExportProgressSink(
         const known: (number | null)[] = ns.map((name) => {
             const entry = uuid !== null ? readImportableCache(uuid, type, name) : null;
             if (entry !== null) {
-                return Math.max(1, estimateImportableCost(entry.importable));
+                return Math.max(1, estimateImportableReadUnits(entry.importable));
             }
             if (sourceValues !== null) {
                 for (const imp of sourceValues) {
                     if (imp.type === type && importableIdentity(imp) === name) {
-                        return Math.max(1, estimateImportableCost(imp));
+                        return Math.max(1, estimateImportableReadUnits(imp));
                     }
                 }
             }
@@ -146,6 +146,9 @@ export function createExportProgressSink(
                 addToQueue(item);
             }
         },
+        scanStarted() {
+            if (names.length > 0) setEtaEstimating(true);
+        },
         item(index, name) {
             if (names.length === 0) return;
             finishCurrent("imported");
@@ -161,6 +164,13 @@ export function createExportProgressSink(
                 rowIndex: index,
                 cached: null,
             });
+        },
+        itemReactivated(index) {
+            if (names.length === 0) return;
+            currentIndex = index;
+            currentClosed = false;
+            setEtaEstimating(false);
+            emit({ kind: "importableReactivated", key: keyFor(names[index]), rowIndex: index });
         },
         itemProgress(index, payload) {
             if (names.length === 0 || index !== currentIndex || currentClosed) return;

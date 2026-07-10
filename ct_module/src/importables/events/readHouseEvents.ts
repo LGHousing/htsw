@@ -1,8 +1,14 @@
 import type { Event, ImportableEvent } from "htsw/types";
 import * as htsw from "htsw";
 
-import { readActionList } from "../../housingSync/actions/readList";
+import {
+    type DeferredActionListRead,
+    hydrateDeferredActionList,
+    readActionList,
+    readActionListDeferred,
+} from "../../housingSync/actions/readList";
 import type { ProgressHandler } from "../../housingSync/progress/types";
+import { clickGoBack } from "../../housingSync/menus/menuUtils";
 import { tryWriteImportableCache, writeImportableCache } from "../../importCache";
 import TaskContext from "../../tasks/context";
 import { observedSlotsToActions } from "../../housingSync/observedActions";
@@ -15,6 +21,100 @@ import {
 import { makeReadHouse, type BatchState } from "../readHouse";
 import { openEventEditor } from "./shared";
 import { listAllEventNames } from "./listEvents";
+
+type PendingEventRead = {
+    deferred: DeferredActionListRead;
+};
+
+async function scanEvent(
+    ctx: TaskContext,
+    name: string,
+    state: BatchState,
+    onReadProgress: ProgressHandler | undefined
+): Promise<PendingEventRead> {
+    await openEventEditor(ctx, name);
+    const deferred = await readActionListDeferred(ctx, { kind: "deep" }, {
+        itemCaptures: state.itemCaptures,
+        exactHydrationEstimate: true,
+        ...(onReadProgress !== undefined
+            ? {
+                  progress: onReadProgress,
+                  phaseUnits: { setup: 0, reading: 0, hydrating: 0, applying: 0 },
+              }
+            : {}),
+    });
+    await clickGoBack(ctx);
+    return { deferred };
+}
+
+async function hydrateEvent(
+    ctx: TaskContext,
+    name: string,
+    pending: PendingEventRead,
+    state: BatchState,
+    onReadProgress: ProgressHandler | undefined
+): Promise<ImportableEvent> {
+    await openEventEditor(ctx, name);
+    await hydrateDeferredActionList(ctx, pending.deferred, {
+        itemCaptures: state.itemCaptures,
+        exactHydrationEstimate: true,
+        ...(onReadProgress !== undefined
+            ? {
+                  progress: onReadProgress,
+                  phaseUnits: { setup: 0, reading: 0, hydrating: 0, applying: 0 },
+              }
+            : {}),
+    });
+    await clickGoBack(ctx);
+
+    return {
+        type: "EVENT",
+        event: name as Event,
+        actions: observedSlotsToActions(pending.deferred.observed),
+    };
+}
+
+async function writeEventResult(
+    ctx: TaskContext,
+    name: string,
+    importable: ImportableEvent,
+    options: {
+        importJsonPath: string;
+        newExportTargetImportJson?: string;
+        readOnly?: { housingUuid: string };
+    }
+): Promise<void> {
+    if (options.readOnly !== undefined) {
+        writeImportableCache(ctx, options.readOnly.housingUuid, importable, "reader", true);
+        return;
+    }
+
+    const target = htslTargetForEventExport(
+        options.importJsonPath,
+        name,
+        options.newExportTargetImportJson
+    );
+    const actions = importable.actions ?? [];
+    const { source, diagnostics } = htsw.htsl.printActionsWithDiagnostics(actions);
+    for (const diag of diagnostics) {
+        ctx.displayMessage(`&7[export] &e${diag.message}`);
+    }
+
+    ensureParentDirs(target.htslPath);
+    FileLib.write(target.htslPath, source, true);
+
+    upsertImportableEntry(target.importJsonPath, "events", {
+        event: name,
+        actions: target.htslReference,
+    });
+
+    await tryWriteImportableCache(ctx, importable, "exporter");
+
+    ctx.displayMessage(
+        `&aExported event '${name}' (${actions.length} action${actions.length === 1 ? "" : "s"})`
+    );
+    ctx.displayMessage(`&7  -> ${target.htslPath}`);
+}
 
 async function exportEvent(
     ctx: TaskContext,
@@ -45,35 +145,7 @@ async function exportEvent(
         actions,
     };
 
-    if (options.readOnly !== undefined) {
-        writeImportableCache(ctx, options.readOnly.housingUuid, importable, "reader", true);
-        return;
-    }
-
-    const target = htslTargetForEventExport(
-        options.importJsonPath,
-        name,
-        options.newExportTargetImportJson
-    );
-    const { source, diagnostics } = htsw.htsl.printActionsWithDiagnostics(actions);
-    for (const diag of diagnostics) {
-        ctx.displayMessage(`&7[export] &e${diag.message}`);
-    }
-
-    ensureParentDirs(target.htslPath);
-    FileLib.write(target.htslPath, source, true);
-
-    upsertImportableEntry(target.importJsonPath, "events", {
-        event: name,
-        actions: target.htslReference,
-    });
-
-    await tryWriteImportableCache(ctx, importable, "exporter");
-
-    ctx.displayMessage(
-        `&aExported event '${name}' (${actions.length} action${actions.length === 1 ? "" : "s"})`
-    );
-    ctx.displayMessage(`&7  -> ${target.htslPath}`);
+    await writeEventResult(ctx, name, importable, options);
 }
 
 export const readEvents = makeReadHouse<string>({
@@ -88,4 +160,16 @@ export const readEvents = makeReadHouse<string>({
     },
     readOne: (ctx, name, options, state, onReadProgress) =>
         exportEvent(ctx, name, options, state, onReadProgress),
+    scanOne: (ctx, name, _options, state, onReadProgress) =>
+        scanEvent(ctx, name, state, onReadProgress),
+    hydrateOne: async (ctx, name, pending, options, state, onReadProgress) => {
+        const importable = await hydrateEvent(
+            ctx,
+            name,
+            pending as PendingEventRead,
+            state,
+            onReadProgress
+        );
+        await writeEventResult(ctx, name, importable, options);
+    },
 });

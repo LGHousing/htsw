@@ -2,6 +2,7 @@ import type { Action, Condition, Importable } from "htsw/types";
 
 import type {
     ActionHydrationWork,
+    ActionHydrationPlan,
     ActionListDiff,
     ActionListOperation,
     ConditionListDiff,
@@ -158,24 +159,46 @@ function childListUnits(count: number, rowTypes?: readonly string[]): number {
 
 export function hydrationEntryUnits(
     entry: ObservedActionSlot,
-    work: ActionHydrationWork
+    work: ActionHydrationWork,
+    includeSpeculativeChildRowScalarHydrate: boolean = true
 ): number {
     if (entry.action === null) return 0;
 
     let total = COST.menuClickWait + COST.goBackWait;
     work.childListsToRead.forEach((prop) => {
-        total += childListReadUnits(entry, prop);
+        total += childListReadUnits(
+            entry,
+            prop,
+            includeSpeculativeChildRowScalarHydrate
+        );
     });
     total += work.itemFieldsToCapture.length * ITEM_CAPTURE_FIELD_UNITS;
     return total;
 }
 
-export function childListReadUnits(entry: ObservedActionSlot, prop: ChildListName): number {
+export function exactHydrationPlanUnits(plan: ActionHydrationPlan): number {
+    let total = 0;
+    plan.forEach((work, entry) => {
+        total += hydrationEntryUnits(entry, work, false);
+    });
+    return total;
+}
+
+export function childListReadUnits(
+    entry: ObservedActionSlot,
+    prop: ChildListName,
+    includeSpeculativeChildRowScalarHydrate: boolean = true
+): number {
     const summary = entry.childListSummaries ? entry.childListSummaries[prop] : undefined;
     if (summary === undefined) return childListUnits(1);
     // Condition rows hydrate by observed value, not type (see
     // readConditionList), so they get no per-type scalar charge here.
-    return childListUnits(summary.length, prop === "conditions" ? undefined : summary);
+    return childListUnits(
+        summary.length,
+        includeSpeculativeChildRowScalarHydrate && prop !== "conditions"
+            ? summary
+            : undefined
+    );
 }
 
 function typeMaybeNeedsScalarHydrate(typeName: string): boolean {
@@ -653,6 +676,108 @@ function actionListCost(
         return baselineAwareApplyUnits(desired, baselineCurrent ?? []);
     }
     return phaseUnitsTotal(estimateActionListPhaseUnits(desired, baselineCurrent));
+}
+
+function actionListReadCost(actions: readonly Action[]): number {
+    return (
+        COST.menuClickWait +
+        pageTurnUnitsForListItemCount(actions.length) +
+        topLevelHydrateUnitsExact(actions) +
+        COST.goBackWait
+    );
+}
+
+function topLevelHydrateUnitsExact(actions: readonly Action[]): number {
+    let total = 0;
+    for (let i = 0; i < actions.length; i++) {
+        const action = actions[i];
+        let lists = 0;
+        if (action.type === "CONDITIONAL") {
+            lists += exactKnownChildListUnits(action.ifActions);
+            lists += exactKnownChildListUnits(action.elseActions);
+            if ((action.conditions?.length ?? 0) > 0) lists += childListUnits(action.conditions!.length);
+        } else if (action.type === "RANDOM") {
+            lists += exactKnownChildListUnits(action.actions);
+        }
+        if (lists > 0) total += COST.menuClickWait + COST.goBackWait + lists;
+    }
+    return total;
+}
+
+function exactKnownChildListUnits(actions: readonly Action[] | undefined): number {
+    return actions === undefined || actions.length === 0 ? 0 : childListUnits(actions.length);
+}
+
+export function estimateImportableReadUnits(importable: Importable): number {
+    if (importable.type === "FUNCTION") {
+        return (
+            COST.commandMenuWait +
+            actionListReadCost(importable.actions ?? []) +
+            COST.menuClickWait +
+            COST.goBackWait +
+            COST.cacheWrite
+        );
+    }
+    if (importable.type === "COMMAND") {
+        return (
+            COST.commandMenuWait +
+            actionListReadCost(importable.actions ?? []) +
+            COST.menuClickWait +
+            COST.cacheWrite
+        );
+    }
+    if (importable.type === "EVENT") {
+        return (
+            COST.commandMenuWait +
+            COST.menuClickWait +
+            actionListReadCost(importable.actions) +
+            COST.cacheWrite
+        );
+    }
+    if (importable.type === "REGION") {
+        return (
+            COST.commandMessageWait * 3 +
+            COST.commandMenuWait +
+            actionListReadCost(importable.onEnterActions ?? []) +
+            actionListReadCost(importable.onExitActions ?? []) +
+            COST.cacheWrite
+        );
+    }
+    if (importable.type === "ITEM") {
+        const left = importable.leftClickActions ?? [];
+        const right = importable.rightClickActions ?? [];
+        if (left.length === 0 && right.length === 0) return COST.cacheWrite;
+        return (
+            COST.itemInject +
+            COST.commandMenuWait +
+            COST.menuClickWait +
+            actionListReadCost(left) +
+            actionListReadCost(right) +
+            COST.guaranteedSleep1000 +
+            COST.nbtCapture +
+            COST.cacheWrite
+        );
+    }
+    if (importable.type === "MENU") {
+        let total = COST.commandMenuWait + COST.menuClickWait;
+        const slots = importable.slots ?? [];
+        for (let i = 0; i < slots.length; i++) {
+            total += actionListReadCost(slots[i].actions ?? []);
+        }
+        return total + COST.cacheWrite;
+    }
+    if (importable.type === "NPC") {
+        return (
+            COST.commandMenuWait +
+            COST.menuClickWait * 3 +
+            COST.chatInput +
+            (importable.leftClickRedirect === undefined ? 0 : COST.menuClickWait) +
+            actionListReadCost(importable.leftClickActions ?? []) +
+            actionListReadCost(importable.rightClickActions ?? []) +
+            COST.cacheWrite
+        );
+    }
+    return COST.commandMenuWait + COST.cacheWrite;
 }
 
 /**

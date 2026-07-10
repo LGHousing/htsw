@@ -42,7 +42,8 @@ const CHILD_LIST_SURCHARGE = COST.menuClickWait + COST.goBackWait;
 export function createHydrationEntryAccount(
     entry: ObservedActionSlot,
     work: ActionHydrationWork,
-    onChange: () => void
+    onChange: () => void,
+    includeSpeculativeChildRowScalarHydrate: boolean = true
 ): HydrationEntryAccount {
     // Unparsed entries are skipped by the hydrator and priced at zero by
     // `hydrationEntryUnits`; the account must agree or the entry would
@@ -61,7 +62,14 @@ export function createHydrationEntryAccount(
     const booked = new Map<ChildListName, number>();
     const completed = new Map<ChildListName, number>();
     work.childListsToRead.forEach((prop) => {
-        booked.set(prop, childListReadUnits(entry, prop));
+        booked.set(
+            prop,
+            childListReadUnits(
+                entry,
+                prop,
+                includeSpeculativeChildRowScalarHydrate
+            )
+        );
     });
     let activeProp: ChildListName | null = null;
     let finished = false;

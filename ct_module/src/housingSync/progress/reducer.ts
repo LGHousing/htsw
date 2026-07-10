@@ -211,9 +211,12 @@ function parkActiveIfNeeded(
 function trueUpReadHydrate(active: ActiveBookkeeping): ActiveBookkeeping {
     const setup = active.currentPhaseUnits.setup;
     const applying = active.currentPhaseUnits.applying;
+    const preserveHydrating =
+        active.phase === "setup" || active.phase === "reading";
+    const hydrating = preserveHydrating ? active.currentPhaseUnits.hydrating : 0;
     const truedTotal = Math.max(
         active.currentCompletedUnits,
-        active.currentCompletedUnits + applying
+        active.currentCompletedUnits + hydrating + applying
     );
     return {
         ...active,
@@ -221,7 +224,7 @@ function trueUpReadHydrate(active: ActiveBookkeeping): ActiveBookkeeping {
         currentPhaseUnits: {
             setup,
             reading: Math.max(0, active.currentCompletedUnits - setup),
-            hydrating: 0,
+            hydrating,
             applying,
         },
     };

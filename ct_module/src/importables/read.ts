@@ -60,6 +60,17 @@ export type ReadLoopParams = {
         name: string,
         onReadProgress: ProgressHandler | undefined
     ) => Promise<void>;
+    scanOne?: (
+        ctx: TaskContext,
+        name: string,
+        onReadProgress: ProgressHandler | undefined
+    ) => Promise<unknown>;
+    hydrateOne?: (
+        ctx: TaskContext,
+        name: string,
+        pending: unknown,
+        onReadProgress: ProgressHandler | undefined
+    ) => Promise<void>;
 };
 
 // The shared batch loop: owns the progress-sink lifecycle, cancellation, and
@@ -70,7 +81,7 @@ export async function runReadLoop(
     ctx: TaskContext,
     params: ReadLoopParams
 ): Promise<{ succeeded: number; failed: number }> {
-    const { names, verb, progress, processOne } = params;
+    const { names, verb, progress, processOne, scanOne, hydrateOne } = params;
     const shown = (name: string): string =>
         params.displayName !== undefined ? params.displayName(name) : name;
 
@@ -79,6 +90,59 @@ export async function runReadLoop(
     let succeeded = 0;
     let failed = 0;
     try {
+        if (scanOne !== undefined && hydrateOne !== undefined) {
+            const pending: Array<unknown | null> = names.map(() => null);
+            progress?.scanStarted?.();
+            for (let i = 0; i < names.length; i++) {
+                ctx.checkCancelled();
+                await waitIfStepPaused(ctx);
+                const name = names[i];
+                progress?.item(i, name);
+                ctx.displayMessage(`&7[${i + 1}/${names.length}] &fScanning '${shown(name)}'`);
+                const sink = progress;
+                try {
+                    pending[i] = await scanOne(
+                        ctx,
+                        name,
+                        sink?.itemProgress === undefined
+                            ? undefined
+                            : (payload) => sink.itemProgress!(i, payload)
+                    );
+                } catch (error) {
+                    if (isTaskCancelled(error)) throw error;
+                    pending[i] = null;
+                    failed++;
+                    sink?.itemFailed?.(i, String(error));
+                    ctx.displayMessage(`&c[export-all] failed on '${shown(name)}': ${error}`);
+                }
+            }
+            for (let i = 0; i < names.length; i++) {
+                if (pending[i] === null) continue;
+                ctx.checkCancelled();
+                await waitIfStepPaused(ctx);
+                const name = names[i];
+                progress?.itemReactivated?.(i);
+                ctx.displayMessage(`&7[${i + 1}/${names.length}] &f${verb} '${shown(name)}'`);
+                const sink = progress;
+                try {
+                    await hydrateOne(
+                        ctx,
+                        name,
+                        pending[i],
+                        sink?.itemProgress === undefined
+                            ? undefined
+                            : (payload) => sink.itemProgress!(i, payload)
+                    );
+                    succeeded++;
+                } catch (error) {
+                    if (isTaskCancelled(error)) throw error;
+                    failed++;
+                    sink?.itemFailed?.(i, String(error));
+                    ctx.displayMessage(`&c[export-all] failed on '${shown(name)}': ${error}`);
+                }
+            }
+            return { succeeded, failed };
+        }
         for (let i = 0; i < names.length; i++) {
             ctx.checkCancelled();
             await waitIfStepPaused(ctx);

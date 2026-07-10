@@ -40,6 +40,7 @@ import {
     getTaskProgress,
     getTaskProgressFraction,
     getSessionVerb,
+    isEtaEstimating,
     isEtaRough,
     phaseFractions,
     setActiveTaskPath,
@@ -297,6 +298,7 @@ function operationProgressText(completed: number, total: number): string {
 function progressTotalEtaLine(): string {
     const p = getTaskProgress();
     if (p === null) return "";
+    if (isEtaEstimating()) return "total estimating...";
     // Until the apply phase, the per-importable apply cost is just a rough
     // guess — the real op-by-op diff isn't known until each importable has
     // been read + hydrated. Showing a total before then is fiction, so we

@@ -110,6 +110,16 @@ export function setEtaRough(v: boolean): void {
     markGuiDirty();
 }
 
+let etaEstimating = false;
+export function isEtaEstimating(): boolean {
+    return etaEstimating;
+}
+export function setEtaEstimating(v: boolean): void {
+    if (etaEstimating === v) return;
+    etaEstimating = v;
+    markGuiDirty();
+}
+
 /** Display name of the importable currently being processed, or null when idle. */
 export function getActiveTaskLabel(): string | null {
     if (taskProgress === null || taskProgress.active === null) return null;
@@ -198,6 +208,7 @@ export function setTaskProgress(p: TaskProgress | null): void {
         // run, and resetting the verb on clear would mislabel those rows.
         sessionVerb = "import";
         etaRough = false;
+        etaEstimating = false;
     } else if (p === null) {
         lastFinishedTaskProgress = taskProgress;
         taskStartedAt = null;

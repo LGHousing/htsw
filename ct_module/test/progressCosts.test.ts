@@ -1,10 +1,13 @@
 import { describe, expect, test } from "vitest";
-import type { Action, Condition, ImportableMenu } from "htsw/types";
+import type { Action, Condition, ImportableFunction, ImportableMenu } from "htsw/types";
 
 import {
     actionOperationApplyUnits,
     conditionOperationUnits,
     estimateImportableCost,
+    estimateImportableReadUnits,
+    exactHydrationPlanUnits,
+    hydrationEntryUnits,
     COST,
 } from "../src/housingSync/progress/costs";
 import type {
@@ -12,7 +15,7 @@ import type {
     ConditionListOperation,
 } from "../src/housingSync/types";
 
-import { conditional, message } from "./utils";
+import { conditional, message, observedSlot } from "./utils";
 
 describe("progress cost estimates", () => {
     test("condition note-only edits charge one note edit", () => {
@@ -63,5 +66,44 @@ describe("progress cost estimates", () => {
             menuWith([conditional({ ifActions: [message("a"), message("b")] })])
         );
         expect(withChildren).toBeGreaterThan(emptySlot);
+    });
+
+    test("function read estimate prices its list walk without apply work", () => {
+        const importable: ImportableFunction = {
+            type: "FUNCTION",
+            name: "f",
+            actions: [conditional({ ifActions: [message("a")] })],
+        };
+
+        expect(estimateImportableReadUnits(importable)).toBeCloseTo(
+            COST.commandMenuWait +
+                COST.menuClickWait +
+                (COST.menuClickWait + COST.goBackWait +
+                    COST.menuClickWait + COST.goBackWait) +
+                COST.goBackWait +
+                COST.menuClickWait +
+                COST.goBackWait +
+                COST.cacheWrite
+        );
+    });
+
+    test("exact hydration plan pricing excludes speculative child-row scalar reads", () => {
+        const entry = {
+            ...observedSlot(0, conditional()),
+            childListSummaries: { ifActions: ["MESSAGE"] },
+        };
+        const work = {
+        childListsToRead: new Set(["ifActions"] as const),
+            scalarFieldsToRead: [],
+            itemFieldsToCapture: [],
+        };
+        const plan = new Map([[entry, work]]);
+
+        expect(exactHydrationPlanUnits(plan)).toBeCloseTo(
+            COST.menuClickWait * 2 + COST.goBackWait * 2
+        );
+        expect(hydrationEntryUnits(entry, work)).toBeGreaterThan(
+            exactHydrationPlanUnits(plan)
+        );
     });
 });
