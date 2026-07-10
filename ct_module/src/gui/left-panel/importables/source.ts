@@ -2,7 +2,7 @@
 
 import { Result, ResultImport, bumpTreeRevision } from "./rowModel";
 import { toForwardSlashes } from "../../lib/pathDisplay";
-import { isParsePending, requestParse } from "../../parsing/parses";
+import { canonicalPath, isParsePending, requestParse } from "../../parsing/parses";
 
 export type SourceDir = {
     kind: "dir";
@@ -74,13 +74,15 @@ function alreadyHas(fullPath: string): boolean {
 
 function addSourceFromAbsolute(absolute: string): void {
     const Files: JavaFilesStatics = Java.type("java.nio.file.Files");
+    // Identity via canonicalPath, like every other path comparison — dedup
+    // by any other spelling lets the same project open twice.
+    const fullPath = canonicalPath(String(absolute));
     let p: JavaPath;
     try {
-        p = pathOf(absolute);
+        p = pathOf(fullPath);
     } catch (_e) {
         return;
     }
-    const fullPath = toForwardSlashes(String(p.toString()));
     if (alreadyHas(fullPath)) return;
     let isDir = false;
     let isFile = false;

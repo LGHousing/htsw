@@ -1,7 +1,7 @@
 /// <reference types="../../../CTAutocomplete" />
 
 import { pathExists } from "../lib/java";
-import { toForwardSlashes } from "../lib/pathDisplay";
+import { normalizeHtswPath } from "../lib/pathDisplay";
 
 const RECENTS_PATH = "./config/ChatTriggers/modules/HTSW/gui-recents.json";
 const MAX_RECENTS = 8;
@@ -20,9 +20,14 @@ function load(): void {
         if (raw.trim() === "") return;
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed)) {
+            // Normalize + dedupe: older versions stored whatever spelling the
+            // caller had (absolute vs ./htsw/...), so one file could sit in
+            // the list twice.
             const filtered: string[] = [];
             for (let i = 0; i < parsed.length; i++) {
-                if (typeof parsed[i] === "string") filtered.push(parsed[i]);
+                if (typeof parsed[i] !== "string") continue;
+                const norm = normalizeHtswPath(parsed[i]);
+                if (filtered.indexOf(norm) === -1) filtered.push(norm);
             }
             recents = filtered;
         }
@@ -59,7 +64,7 @@ export function getRecents(): string[] {
 
 export function addRecent(path: string): void {
     load();
-    const norm = toForwardSlashes(path);
+    const norm = normalizeHtswPath(path);
     const next: string[] = [norm];
     for (let i = 0; i < recents.length; i++) {
         if (recents[i] !== norm) next.push(recents[i]);

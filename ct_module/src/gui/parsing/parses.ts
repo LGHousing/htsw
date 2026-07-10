@@ -107,8 +107,22 @@ export function canonicalPath(p: string): string {
     let result: string;
     try {
         if (_Paths === null) _Paths = javaType("java.nio.file.Paths");
-        result = String(_Paths.get(String(p)).toAbsolutePath().normalize().toString())
-            .split("\\").join("/");
+        const abs = _Paths.get(String(p)).toAbsolutePath();
+        let resolved: any;
+        try {
+            // The one identity function for paths: everything that compares,
+            // caches, or dedups by path goes through here, and on Windows the
+            // same file is reachable under differently-cased / relative /
+            // absolute spellings (a `./htsw/...` open vs the absolute path in
+            // housing-bindings.json once opened the same project as two
+            // sources with two parse-cache entries). `toRealPath` collapses
+            // every spelling of an existing file to the filesystem's own one.
+            resolved = abs.toRealPath();
+        } catch (_e) {
+            // File doesn't exist (yet) — fall back to lexical normalization.
+            resolved = abs.normalize();
+        }
+        result = String(resolved.toString()).split("\\").join("/");
     } catch (_e) {
         result = p.split("\\").join("/");
     }
