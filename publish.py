@@ -20,7 +20,7 @@ https://legendarygames.dev/htsw/ via the `location ^~ /htsw/` block in
 /etc/nginx/conf.d/legendarygames.dev.conf.
 
 Usage:
-  python publish.py                 # build both, then upload
+  python publish.py                 # build ct + vscode + cli, then upload
   python publish.py --no-build      # reuse existing builds
   python publish.py --no-upload     # build + stage locally only
   python publish.py --ct-only
@@ -243,15 +243,16 @@ def main() -> None:
     parser.add_argument("--no-upload", action="store_true", help="stage locally, do not upload")
     parser.add_argument("--ct-only", action="store_true")
     parser.add_argument("--vscode-only", action="store_true")
-    parser.add_argument("--cli-only", action="store_true", help="build+upload only the CLI (needs HTSW_DOCS_PATH)")
+    parser.add_argument("--cli-only", action="store_true")
     args = parser.parse_args()
 
-    # The CLI is opt-in (it needs HTSW_DOCS_PATH), so the default run still
-    # builds ct + vscode only. Any "--*-only" flag narrows to that surface.
+    # Any "--*-only" flag narrows to that surface; the default run builds all
+    # three. The CLI bundles the language at build time, so skipping it lets
+    # `htsw check` silently drift from the extension's diagnostics.
     any_only = args.ct_only or args.vscode_only or args.cli_only
     do_ct = args.ct_only or not any_only
     do_vscode = args.vscode_only or not any_only
-    do_cli = args.cli_only
+    do_cli = args.cli_only or not any_only
     do_build = not args.no_build
 
     targets: list[str] = []
