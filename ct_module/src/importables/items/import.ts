@@ -30,6 +30,8 @@ import { itemEditorOpened } from "../waiters";
 import { COST } from "../../housingSync/progress/costs";
 import { timed } from "../../housingSync/progress/timing";
 import { injectHeldItem } from "./heldItem";
+import { itemIdFromNbt } from "./exportLogic";
+import { isUnspawnableItem } from "../../housingSync/items/unspawnableItems";
 
 function hasItemClickActions(importable: ImportableItem): boolean {
     return (
@@ -104,6 +106,14 @@ async function importImportableItem(
     trustPlan?: ImportableTrustPlan,
     cachedUuid?: string
 ): Promise<void> {
+    const itemId = itemIdFromNbt(importable.nbt);
+    if (itemId !== null && isUnspawnableItem(itemId)) {
+        ctx.displayMessage(
+            `&7[import] &eSkipping unspawnable item '${importable.name}' (${itemId}) — Hypixel refuses to spawn it.`
+        );
+        return;
+    }
+
     const events = session.events;
     const ownSteps = hasItemClickActions(importable) ? 3 : 1;
     const setup = createSetupStepEmitter(events, countReferencedShells(importable) + ownSteps);
