@@ -48,6 +48,17 @@ describe("importableHash function icons", () => {
             )
         ).toBe(true);
     });
+
+    // Cache entries written by older versions stored bare item ids ("map",
+    // not "minecraft:map"). A legacy entry must compare equal to today's
+    // prefixed form, or every function with a default icon shows a phantom
+    // icon diff against a month-old cache.
+    test("legacy bare item ids compare equal to prefixed ones", () => {
+        expect(functionIconsEqual({ item: "map" }, undefined)).toBe(true);
+        expect(functionIconsEqual({ item: "map" }, { item: "minecraft:map" })).toBe(true);
+        expect(functionIconsEqual({ item: "stone" }, { item: "minecraft:stone" })).toBe(true);
+        expect(importableHash(fn({ item: "map" }))).toBe(importableHash(fn(undefined)));
+    });
 });
 
 describe("importableHash menu slot nbt", () => {

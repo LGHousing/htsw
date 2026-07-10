@@ -274,10 +274,16 @@ function commandCanonical(command: Importable): Importable {
 // Normalize in place rather than rebuilding from a named field list: spreading
 // the whole icon keeps every field in the hash (a rebuild silently drops any
 // field it doesn't name); then drop the optional defaults a live read omits so
-// `{item}` and `{item, count: 1}` hash alike. The item id needs no normalization
-// — both the loader and the live read already emit `minecraft:<lowercase>`.
+// `{item}` and `{item, count: 1}` hash alike. The item id DOES need
+// normalization: current loader and live reads emit `minecraft:<lowercase>`,
+// but cache entries written by older versions stored bare ids ("map") — a
+// stored entry freezes the convention of its write time, and comparing it
+// un-normalized manufactured a phantom icon diff against every current file.
 function functionIconCompareKeyOf(icon: FunctionIcon): string {
     const norm: Record<string, unknown> = { ...icon };
+    if (typeof norm.item === "string" && norm.item.indexOf(":") < 0) {
+        norm.item = "minecraft:" + norm.item.toLowerCase();
+    }
     if (norm.count === 1) delete norm.count;
     if (norm.enchanted !== true) delete norm.enchanted;
     return stableStringify(norm);
