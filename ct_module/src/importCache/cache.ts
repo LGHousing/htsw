@@ -1,7 +1,7 @@
 import type { Importable } from "htsw/types";
 
 import TaskContext from "../tasks/context";
-import { ensureParentDirs } from "../utils/filesystem";
+import { atomicWriteText, getFileMtimeMs } from "../utils/filesystem";
 import { traceNote } from "../housingSync/trace/taskTrace";
 import { importableHash, listHashes } from "./hash";
 import { getCurrentHousingUuid } from "./housingId";
@@ -23,6 +23,7 @@ import { removedFormatting } from "../utils/helpers";
  * carry content, so they read as `verified`. Both versions are accepted.
  */
 const CACHE_SCHEMA_VERSION = 2;
+const CACHE_ENTRY_VERSION = 1;
 const ACCEPTED_SCHEMA_VERSIONS = [1, 2];
 
 export type CacheWriter = "exporter" | "importer" | "reader";
@@ -31,16 +32,22 @@ export type CacheWriter = "exporter" | "importer" | "reader";
 // knowledge-status build reads every importable's cache entry on every
 // rebuild (one per dot); without this each rebuild did a `FileLib.read` +
 // `JSON.parse` per importable — hundreds of blocking disk reads that made
-// the dot fill stutter. These files are only ever written through this
-// module, so the mirror stays authoritative: writes/deletes below keep it
-// in sync.
-const readCache = new Map<string, ImportableCacheEntry | null>();
+// the dot fill stutter. Writes/deletes below keep it coherent immediately;
+// periodic mtime checks pick up changes made outside this process.
+type ReadCacheMemo = {
+    entry: ImportableCacheEntry | null;
+    mtime: number;
+    checkedAt: number;
+};
+
+const readCache = new Map<string, ReadCacheMemo>();
 
 // A content entry: the importable's full AST + hashes. This is what
 // `readImportableCache` returns — presence-only records (no content) are not
 // returned by it, so every diff/trust/import consumer is unchanged.
 export type ImportableCacheEntry = {
     schemaVersion: number;
+    version?: number;
     /** ISO 8601 instant the entry was last written. Informational only. */
     writtenAt: string;
     /** The importable's identity/name, so the record is self-describing. */
@@ -85,6 +92,7 @@ function buildImportableCacheEntry(
 ): ImportableCacheEntry {
     return {
         schemaVersion: CACHE_SCHEMA_VERSION,
+        version: CACHE_ENTRY_VERSION,
         writtenAt: new Date().toISOString(),
         name: importableIdentity(importable),
         verified: true,
@@ -119,9 +127,14 @@ export function writeImportableCache(
     const path = cachePathFor(housingUuid, importable);
     const entry = buildImportableCacheEntry(importable, writer);
     try {
-        ensureParentDirs(path);
-        FileLib.write(path, JSON.stringify(entry, null, 4), true);
-        readCache.set(path, entry);
+        if (!atomicWriteText(path, JSON.stringify(entry, null, 4))) {
+            throw new Error("write failed");
+        }
+        readCache.set(path, {
+            entry,
+            mtime: getFileMtimeMs(path),
+            checkedAt: Date.now(),
+        });
         indexUpsert(housingUuid, importable.type, {
             name: importableIdentity(importable),
             type: importable.type,
@@ -189,10 +202,12 @@ export function writePresence(
         ...(label !== undefined ? { label } : {}),
     };
     try {
-        ensureParentDirs(path);
-        FileLib.write(path, JSON.stringify(record, null, 4), true);
-        // Content readers must see this as "no content".
-        readCache.set(path, null);
+        if (!atomicWriteText(path, JSON.stringify(record, null, 4))) return;
+        readCache.set(path, {
+            entry: null,
+            mtime: getFileMtimeMs(path),
+            checkedAt: Date.now(),
+        });
         indexUpsert(housingUuid, type, {
             name,
             type,
@@ -241,15 +256,36 @@ export function readImportableCache(
     identity: string
 ): ImportableCacheEntry | null {
     const path = cachePathForId(housingUuid, type, identity);
-    if (readCache.has(path)) return readCache.get(path) ?? null;
+    const now = Date.now();
+    const memo = readCache.get(path);
+    if (memo !== undefined) {
+        if (now - memo.checkedAt < 1000) return memo.entry;
+        const mtime = getFileMtimeMs(path);
+        if (mtime === memo.mtime) {
+            memo.checkedAt = now;
+            return memo.entry;
+        }
+    }
+    // Stat BEFORE reading: if a writer swaps the file between the read and a
+    // post-read stat, we'd store the new mtime with the old content and serve
+    // stale until the next write. Stale-mtime-with-new-content (the other
+    // ordering's failure) just re-reads on the next check.
+    const mtimeBeforeRead = getFileMtimeMs(path);
     let raw: string | null;
     try {
         raw = FileLib.read(path);
     } catch {
         raw = null;
     }
-    const entry = parseCacheEntry(raw);
-    readCache.set(path, entry);
+    let entry = parseCacheEntry(raw);
+    if (memo !== undefined && JSON.stringify(memo.entry) === JSON.stringify(entry)) {
+        entry = memo.entry;
+    }
+    readCache.set(path, {
+        entry,
+        mtime: mtimeBeforeRead,
+        checkedAt: now,
+    });
     return entry;
 }
 
@@ -493,13 +529,10 @@ export function recordHouseScan(
     labels?: ReadonlyMap<string, string>
 ): void {
     const markerPath = cacheScanMarkerPath(uuid, type);
-    try {
-        ensureParentDirs(markerPath);
-        FileLib.write(markerPath, new Date().toISOString(), true);
-        scanMarkerCache.set(enumKey(uuid, type), true);
-    } catch (_e) {
-        scanMarkerCache.set(enumKey(uuid, type), false);
-    }
+    scanMarkerCache.set(
+        enumKey(uuid, type),
+        atomicWriteText(markerPath, new Date().toISOString())
+    );
     const present = new Set<string>();
     for (let i = 0; i < names.length; i++) present.add(names[i]);
     const known = ensureEnumLoaded(uuid, type).slice();

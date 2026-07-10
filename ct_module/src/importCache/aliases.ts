@@ -1,6 +1,7 @@
 /// <reference types="../../CTAutocomplete" />
 
 import { IMPORT_CACHE_ROOT } from "./paths";
+import { atomicWriteText } from "../utils/filesystem";
 
 /**
  * Plain-English nicknames for Housing UUIDs. The UUID is the canonical
@@ -61,11 +62,7 @@ function readMapFromDisk(): AliasMap {
 function writeMap(map: AliasMap): void {
     cachedMap = map;
     cachedAt = Date.now();
-    try {
-        FileLib.write(ALIAS_FILE, JSON.stringify(map, null, 2), true);
-    } catch (_e) {
-        // best-effort — failure to persist an alias shouldn't crash the GUI
-    }
+    atomicWriteText(ALIAS_FILE, JSON.stringify(map, null, 2));
 }
 
 export function getAlias(uuid: string): string | null {

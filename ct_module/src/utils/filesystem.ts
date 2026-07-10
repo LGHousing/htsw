@@ -20,6 +20,73 @@ export function ensureParentDirs(path: string): void {
     }
 }
 
+// Unique per write: two processes writing the same target (the shared-cache
+// scenario this exists for) must not collide on one temp name, or the moves
+// can publish each other's half-written temp.
+let tempWriteCounter = 0;
+
+export function atomicWriteText(path: string, content: string): boolean {
+    const tempPath = `${path}.${Date.now().toString(36)}-${++tempWriteCounter}.tmp`;
+    if (writeTempThenMove(path, tempPath, content)) return true;
+    try {
+        FileLib.write(path, content, true);
+        return true;
+    } catch (_fallbackError) {
+        return false;
+    }
+}
+
+function writeTempThenMove(path: string, tempPath: string, content: string): boolean {
+    try {
+        ensureParentDirs(path);
+        FileLib.write(tempPath, content, true);
+        const Paths = Java.type("java.nio.file.Paths");
+        const Files = Java.type("java.nio.file.Files");
+        const StandardCopyOption = Java.type("java.nio.file.StandardCopyOption");
+        const temp = Paths.get(String(tempPath));
+        const target = Paths.get(String(path));
+        if (tryFilesystemMove(() => {
+            Files.move(
+                temp,
+                target,
+                StandardCopyOption.ATOMIC_MOVE,
+                StandardCopyOption.REPLACE_EXISTING
+            );
+        })) return true;
+        if (tryFilesystemMove(() => {
+            Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING);
+        })) return true;
+        // Both moves failed; the unique-named temp would otherwise pile up.
+        try {
+            Files.deleteIfExists(temp);
+        } catch (_cleanupError) {
+            // litter is acceptable, a throw here is not
+        }
+        return false;
+    } catch (_tempWriteOrInteropError) {
+        return false;
+    }
+}
+
+function tryFilesystemMove(move: () => void): boolean {
+    try {
+        move();
+        return true;
+    } catch (_moveError) {
+        return false;
+    }
+}
+
+export function getFileMtimeMs(path: string): number {
+    try {
+        const Paths = Java.type("java.nio.file.Paths");
+        const Files = Java.type("java.nio.file.Files");
+        return Number(Files.getLastModifiedTime(Paths.get(String(path))).toMillis());
+    } catch (_e) {
+        return -1;
+    }
+}
+
 /** Recursively delete a directory (or file). Returns false when the path
  * doesn't exist or any delete failed. */
 export function deleteDirRecursive(path: string): boolean {

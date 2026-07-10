@@ -1,6 +1,7 @@
 /// <reference types="../../CTAutocomplete" />
 
 import { IMPORT_CACHE_ROOT } from "./paths";
+import { atomicWriteText } from "../utils/filesystem";
 
 /**
  * Reverse index from Housing UUID to the import.json bound to it via the
@@ -59,11 +60,7 @@ function readMapFromDisk(): BindingMap {
 function writeMap(map: BindingMap): void {
     cachedMap = map;
     cachedAt = Date.now();
-    try {
-        FileLib.write(BINDINGS_FILE, JSON.stringify(map, null, 2), true);
-    } catch (_e) {
-        // best-effort — the index is rebuilt from parses anyway
-    }
+    atomicWriteText(BINDINGS_FILE, JSON.stringify(map, null, 2));
 }
 
 /** Canonical path of the import.json bound to `uuid`, or null. May be stale
