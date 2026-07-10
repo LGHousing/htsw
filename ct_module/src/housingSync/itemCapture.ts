@@ -6,6 +6,7 @@ import {
     type TagLike,
     canonicalItemTag,
     normalizeBlankLoreSeparators,
+    stripInteractData,
     tagChild,
 } from "./fields/itemTagCanonical";
 
@@ -14,11 +15,13 @@ import { pollTicks } from "../tasks/poll";
 import { canonicalSlug } from "../project/paths";
 import { getItemFromNbt, getItemFromSnbt, itemToHtswTag } from "../utils/nbt";
 import { removedFormatting } from "../utils/helpers";
+import { closeOpenScreen } from "./sideEffects";
 import { clickGoBack } from "./menus/menuUtils";
 import { timedWaitForMenu } from "./menus/menuWait";
 import {
     SET_SLOT_ACK_MAX_TICKS,
     SET_SLOT_ACK_TIMEOUT_MS,
+    selectHotbarSlot,
     sendCreativeInventoryAction,
     waitForAnySetSlot,
 } from "./menus/packets";
@@ -41,6 +44,8 @@ export type CapturedItem = {
     /** True when this entry came from the destination project (seeded), so it
      * already exists on disk and must never be re-written by an export. */
     seeded: boolean;
+    inventorySlot?: number;
+    needsRepair?: boolean;
 };
 
 export class ItemCaptureRegistry {
@@ -61,25 +66,52 @@ export class ItemCaptureRegistry {
      * read-back `{id,Count,tag:{display:{}},Damage:0s}` the GUI hands back.
      */
     seed(name: string, nbt: ImportableItem["nbt"]): void {
-        this.seedHash(name, canonicalItemKey(getItemFromNbt(nbt)), displayNameFromTag(nbt));
+        const interactData = tagChild(
+            tagChild(tagChild(nbt as TagLike, "tag"), "ExtraAttributes"),
+            "interact_data"
+        );
+        this.seedHash(
+            name,
+            canonicalItemKey(getItemFromNbt(nbt)),
+            displayNameFromTag(nbt),
+            interactData !== undefined
+        );
     }
 
-    private seedHash(name: string, hash: string, displayName: string | null): void {
+    private seedHash(
+        name: string,
+        hash: string,
+        displayName: string | null,
+        needsRepair: boolean
+    ): void {
         if (this.byHash[hash] !== undefined) return; // first declaration wins
         if (this.nameToHash[name] !== undefined) return;
-        this.byHash[hash] = { name, snbt: "", displayName: "", seeded: true };
+        this.byHash[hash] = {
+            name,
+            snbt: "",
+            displayName: displayName ?? "",
+            seeded: true,
+            needsRepair,
+        };
         this.nameToHash[name] = hash;
         if (displayName !== null && this.seededDisplayNames[displayName] === undefined) {
             this.seededDisplayNames[displayName] = name;
         }
     }
 
-    register(snbt: string, displayNameHint: string): string {
+    register(snbt: string, displayNameHint: string, inventorySlot?: number): string {
         const normalizedSnbt = normalizeItemSnbtForExport(snbt);
         const hash = canonicalItemKey(getItemFromSnbt(normalizedSnbt));
         const existing = this.byHash[hash];
         if (existing !== undefined) {
-            if (existing.seeded) this.matchedHashes[hash] = true;
+            if (existing.seeded && existing.needsRepair === true) {
+                existing.snbt = normalizedSnbt;
+                existing.displayName = displayNameHint;
+                existing.seeded = false;
+                existing.inventorySlot = inventorySlot;
+            } else if (existing.seeded) {
+                this.matchedHashes[hash] = true;
+            }
             return existing.name;
         }
 
@@ -102,9 +134,20 @@ export class ItemCaptureRegistry {
             );
         }
 
-        this.byHash[hash] = { name, snbt: normalizedSnbt, displayName: displayNameHint, seeded: false };
+        this.byHash[hash] = {
+            name,
+            snbt: normalizedSnbt,
+            displayName: displayNameHint,
+            seeded: false,
+            inventorySlot,
+        };
         this.nameToHash[name] = hash;
         return name;
+    }
+
+    needsWrite(name: string): boolean {
+        const hash = this.nameToHash[name];
+        return hash !== undefined && this.byHash[hash]?.seeded === false;
     }
 
     /** Entries minted this run — the ones an export must write to disk. */
@@ -213,8 +256,8 @@ function diffForCapture(
     before: InventorySnapshot,
     after: InventorySnapshot,
     actionItemCount: number
-): { snbt: string } | null {
-    let found: { snbt: string } | null = null;
+): { snbt: string; slotId: number } | null {
+    let found: { snbt: string; slotId: number } | null = null;
     for (let i = 0; i < before.length; i++) {
         const b = before[i];
         const a = after[i];
@@ -222,7 +265,7 @@ function diffForCapture(
         if (a.nbt === null) continue;
         if (a.nbt === b.nbt && a.count === b.count) continue;
         if (found !== null) return null;
-        found = { snbt: rewriteSnbtCount(a.nbt, actionItemCount) };
+        found = { snbt: rewriteSnbtCount(a.nbt, actionItemCount), slotId: a.slotId };
     }
     return found;
 }
@@ -410,13 +453,16 @@ function findCapturedMatchingStack(
     after: InventorySnapshot,
     targetKey: string,
     actionItemCount: number
-): { snbt: string } | null {
-    let found: { snbt: string } | null = null;
+): { snbt: string; slotId: number } | null {
+    let found: { snbt: string; slotId: number } | null = null;
     for (let i = 0; i < after.length; i++) {
         const entry = after[i];
         if (mergeKey(entry.nbt) !== targetKey || entry.nbt === null) continue;
         if (found !== null) return null;
-        found = { snbt: rewriteSnbtCount(entry.nbt, actionItemCount) };
+        found = {
+            snbt: rewriteSnbtCount(entry.nbt, actionItemCount),
+            slotId: entry.slotId,
+        };
     }
     return found;
 }
@@ -436,7 +482,7 @@ function capturedFromInventory(
     current: InventorySnapshot,
     targetKey: string,
     actionItemCount: number
-): { snbt: string } | null {
+): { snbt: string; slotId: number } | null {
     const changed = diffForCapture(baseline, current, actionItemCount);
     if (changed !== null) return changed;
     if (snapshotHasMatchingStack(baseline, targetKey)) return null;
@@ -449,7 +495,7 @@ async function waitForCapturedInventoryChange(
     baseline: InventorySnapshot,
     targetKey: string,
     actionItemCount: number
-): Promise<{ snbt: string } | null> {
+): Promise<{ snbt: string; slotId: number } | null> {
     for (let i = 0; i < SET_SLOT_ACK_MAX_TICKS; i++) {
         const captured = capturedFromInventory(
             baseline,
@@ -486,6 +532,18 @@ export function prettySnbt(snbt: string): string {
     try {
         const tag = htsw.nbt.parseSnbtText(snbt);
         return htsw.nbt.printSnbt(normalizeBlankLoreSeparators(tag) as Tag, { pretty: true });
+    } catch (_error) {
+        return snbt;
+    }
+}
+
+export function portableItemSnbt(snbt: string): string {
+    try {
+        const tag = htsw.nbt.parseSnbtText(snbt);
+        return htsw.nbt.printSnbt(
+            stripInteractData(normalizeBlankLoreSeparators(tag) as TagLike) as Tag,
+            { pretty: true }
+        );
     } catch (_error) {
         return snbt;
     }
@@ -541,6 +599,7 @@ export async function captureItemFromOpenEditorField(
 
         const inventoryView: InventoryView = "openContainer";
         const originalInventory = snapshotOpenContainerInventory();
+        let retainCapturedItem = false;
         try {
             await clearMergeCandidates(ctx, inventoryView, originalInventory, targetKey, targetMergeKey);
 
@@ -566,15 +625,50 @@ export async function captureItemFromOpenEditorField(
                 return null;
             }
 
-            registered = registry.register(captured.snbt, displayNameHint);
+            registered = registry.register(
+                captured.snbt,
+                displayNameHint,
+                captured.slotId
+            );
+            retainCapturedItem = registry.needsWrite(registered);
         } finally {
-            await restoreInventoryToSnapshot(ctx, originalInventory, inventoryView);
+            if (!retainCapturedItem) {
+                await restoreInventoryToSnapshot(ctx, originalInventory, inventoryView);
+            }
         }
     } finally {
         await clickGoBack(ctx);
     }
 
     return registered;
+}
+
+function inventoryContainerSlot(slotId: number): number {
+    return slotId < 9 ? 36 + slotId : slotId;
+}
+
+export async function holdCapturedItem(
+    ctx: TaskContext,
+    item: CapturedItem
+): Promise<void> {
+    const slotId = item.inventorySlot;
+    if (slotId === undefined) {
+        throw new Error(`captured item "${item.name}" has no retained inventory slot`);
+    }
+
+    await closeOpenScreen(ctx);
+    if (slotId >= 9) {
+        const player = Player.getPlayer() as any;
+        const controller = Client.getMinecraft().field_71442_b;
+        const sourceSlot = inventoryContainerSlot(slotId);
+        controller.func_78753_a(0, sourceSlot, 0, 0, player);
+        controller.func_78753_a(0, 36, 0, 0, player);
+        controller.func_78753_a(0, sourceSlot, 0, 0, player);
+        await ctx.waitFor("tick");
+    }
+
+    selectHotbarSlot(ctx, slotId < 9 ? slotId : 0);
+    await ctx.waitFor("tick");
 }
 
 export async function restoreInventoryToSnapshot(

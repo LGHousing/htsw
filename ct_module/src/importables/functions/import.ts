@@ -6,6 +6,7 @@ import {
 } from "../../housingSync/actions/apply";
 import {
     actionsFullyHydrated,
+    fullyHydratedActionsFromSlots,
     type ActionListPlan,
 } from "../../housingSync/actions/plan";
 import { prepareActionListSync } from "../../housingSync/actions/prepareSync";
@@ -57,6 +58,7 @@ export async function prereadImportableFunction(
     });
 
     const settingsTrusted = functionSettingsTrusted(importable, trustPlan);
+    let actionsEditorOpened = false;
 
     const actionsSync = await prepareActionListSync(ctx, {
         desired: importable.actions,
@@ -65,6 +67,7 @@ export async function prereadImportableFunction(
         basePath: "actions",
         open: async () => {
             await ensureFunctionExists(ctx, importable.name);
+            actionsEditorOpened = true;
             setup(`opened function ${importable.name}`);
         },
     });
@@ -110,9 +113,15 @@ export async function prereadImportableFunction(
         throw new Error(`Unexpected action-list sync skip for function ${importable.name}.`);
     }
 
-    const settingsPlan = settingsTrusted
-        ? null
-        : await readFunctionSettingsPlanAfterActionEditor(ctx, importable);
+    let settingsPlan: FunctionSettingsPlan | null = null;
+    if (!settingsTrusted) {
+        if (actionsEditorOpened) {
+            settingsPlan = await readFunctionSettingsPlanAfterActionEditor(ctx, importable);
+        } else {
+            await openFunctionList(ctx);
+            settingsPlan = await readFunctionSettingsPlan(ctx, importable);
+        }
+    }
 
     return {
         kind: "FUNCTION",
@@ -224,6 +233,15 @@ export function reconstructPartialFunction(
         name: plan.importable.name,
         actions: current.slice() as Action[],
     };
+}
+
+export function reconstructObservedFunction(
+    plan: FunctionImportPlan
+): Importable | null {
+    if (plan.actionsPlan === null) return null;
+    const actions = fullyHydratedActionsFromSlots(plan.actionsPlan.observed);
+    if (actions === null) return null;
+    return { type: "FUNCTION", name: plan.importable.name, actions };
 }
 
 function functionSettingsTrusted(

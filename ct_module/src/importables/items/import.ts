@@ -34,10 +34,10 @@ import type { ImportSession } from "../imports";
 import { createMissingReferencedShells } from "../references";
 import { countReferencedShells } from "../referenceScanner";
 import { itemEditorOpened } from "../waiters";
-import { closeOpenScreen } from "../../housingSync/sideEffects";
 import { summarizeItemStack } from "../../runtimeDebug/itemStackSummary";
 import { COST } from "../../housingSync/progress/costs";
 import { timed } from "../../housingSync/progress/timing";
+import { closeOpenScreen } from "../../housingSync/sideEffects";
 
 function hasItemClickActions(importable: ImportableItem): boolean {
     return (
@@ -254,16 +254,31 @@ async function switchToHotbarSlot(ctx: TaskContext, slot: number): Promise<void>
     await ctx.waitFor("tick");
 }
 
-async function injectHeldItem(ctx: TaskContext, item: Item): Promise<void> {
+async function clearHotbarZero(ctx: TaskContext): Promise<void> {
+    if (hotbarSlotStack(0) === null) return;
+    sendCreativeInventoryAction(ctx, HOTBAR_ZERO_PACKET_SLOT, null);
+    const cleared = await pollTicks(
+        ctx,
+        SET_SLOT_ACK_MAX_TICKS,
+        () => hotbarSlotStack(0) === null
+    );
+    if (!cleared) {
+        const observed = summarizeItemStack(hotbarSlotStack(0));
+        throw new Error(
+            `could not clear hotbar slot 0 before item injection ` +
+                `(slot 0 holds: ${JSON.stringify(observed)}).`
+        );
+    }
+}
+
+export async function injectHeldItem(ctx: TaskContext, item: Item): Promise<void> {
     const stack = item.getItemStack();
     if (stack === null || stack === undefined) {
         throw new Error("Cannot inject an empty item stack.");
     }
 
-    // A menu left open by an earlier step (e.g. the Functions list after shell
-    // creation) makes the server drop the creative set-slot below — the ack
-    // never arrives and the injection times out.
     await closeOpenScreen(ctx);
+    await clearHotbarZero(ctx);
 
     sendCreativeInventoryAction(
         ctx,

@@ -60,7 +60,7 @@ function withoutTagAtPath(tag: TagLike, path: string[]): TagLike {
 // Drop `tag.ExtraAttributes.interact_data` — the housing-scoped encoding of an
 // item's click actions. It's non-portable, so it must never be part of an
 // item's identity (an action item reads back with it; its source has none).
-function stripInteractData(tag: TagLike): TagLike {
+export function stripInteractData(tag: TagLike): TagLike {
     return withoutTagAtPath(tag, ["tag", "ExtraAttributes", "interact_data"]);
 }
 

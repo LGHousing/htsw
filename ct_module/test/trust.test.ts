@@ -14,6 +14,11 @@ import {
     trustedChildListSnapshotsForImportable,
 } from "../src/importCache/trust";
 import { estimateImportableUnits } from "../src/housingSync/progress/costs";
+import { prepareActionListSync } from "../src/housingSync/actions/prepareSync";
+import { createItemRegistry } from "../src/importables/itemRegistry";
+import { createNpcLookupCache } from "../src/importables/npcs/listNpcs";
+import type { ImportSession } from "../src/importables/imports";
+import type TaskContext from "../src/tasks/context";
 
 function chat(message: string): Action {
     return { type: "MESSAGE", message };
@@ -219,5 +224,50 @@ describe("buildTrustPlan house lock gating", () => {
         expect(row?.trustMode).toBe(true);
         expect(row?.wholeImportableTrusted).toBe(true);
         expect(row?.cacheMatchesLock).toBe(true);
+    });
+});
+
+describe("trusted action-list planning", () => {
+    it("plans a changed list from the lock-validated cache without opening Housing", async () => {
+        const cached = fn([chat("old")]);
+        const desired = fn([chat("new")]);
+        const entry = cacheEntry(cached);
+        const open = vi.fn(async () => undefined);
+        const session: ImportSession = {
+            parsed: { value: [] } as never,
+            items: createItemRegistry([]),
+            housingUuid: "test-house",
+            trust: { housingUuid: "test-house", importables: new Map() },
+            events: undefined,
+            npcLookup: createNpcLookupCache(),
+        };
+
+        const result = await prepareActionListSync(null as unknown as TaskContext, {
+            desired: desired.actions,
+            basePath: "actions",
+            session,
+            trustPlan: {
+                importable: desired,
+                identity: desired.name,
+                entry,
+                sourceHash: importableHash(desired),
+                cacheHash: importableHash(cached),
+                lockHash: importableHash(cached),
+                cacheMatchesLock: true,
+                trustMode: true,
+                wholeImportableTrusted: false,
+                trustedChildListPaths: new Set(),
+                trustedChildLists: new Map(),
+            },
+            open,
+        });
+
+        expect(open).not.toHaveBeenCalled();
+        expect(result.kind).toBe("planned");
+        if (result.kind !== "planned") return;
+        expect(result.plan.observed.map((slot) => slot.action)).toEqual(cached.actions);
+        expect(result.plan.diff.operations).toHaveLength(1);
+        expect(result.plan.phaseUnits.reading).toBe(0);
+        expect(result.plan.phaseUnits.hydrating).toBe(0);
     });
 });

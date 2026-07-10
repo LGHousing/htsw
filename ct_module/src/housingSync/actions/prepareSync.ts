@@ -7,6 +7,7 @@ import TaskContext from "../../tasks/context";
 import type { ActionListTrust } from "../types";
 import type { ActionPath, ProgressScope } from "../syncEvents";
 import {
+    createKnownActionListPlan,
     createKnownEmptyActionListPlan,
     prereadActionList,
     type ActionListPlan,
@@ -48,6 +49,16 @@ export async function prepareActionListSync(
     }
     if (target.current?.kind === "known-empty") {
         return planned(createKnownEmptyActionListPlan(target.desired, target), target);
+    }
+    const trustedBaseline = getTrustedBaselineActionList(
+        target.trustPlan,
+        target.basePath
+    );
+    if (trustedBaseline !== undefined) {
+        return planned(
+            createKnownActionListPlan(target.desired, trustedBaseline, target),
+            target
+        );
     }
     if (target.open !== undefined) {
         await target.open();
@@ -92,6 +103,16 @@ export function getBaselineActionList(
     basePath: string
 ): readonly Action[] | undefined {
     if (plan === undefined || plan.entry === null) {
+        return undefined;
+    }
+    return readCachedActionList(plan.entry.importable, basePath);
+}
+
+export function getTrustedBaselineActionList(
+    plan: ImportableTrustPlan | undefined,
+    basePath: string
+): readonly Action[] | undefined {
+    if (plan?.trustMode !== true || plan.entry === null) {
         return undefined;
     }
     return readCachedActionList(plan.entry.importable, basePath);

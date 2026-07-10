@@ -1,6 +1,10 @@
 import { describe, expect, test } from "vitest";
 
-import { normalizeItemSnbtForExport, prettySnbt } from "../src/housingSync/itemCapture";
+import {
+    normalizeItemSnbtForExport,
+    portableItemSnbt,
+    prettySnbt,
+} from "../src/housingSync/itemCapture";
 
 describe("item SNBT export normalization", () => {
     test("uses one representation for blank lore separators", () => {
@@ -24,5 +28,14 @@ describe("item SNBT export normalization", () => {
 
         expect(out).toContain('"\u00a77"');
         expect(out).not.toContain('""');
+    });
+
+    test("portable item SNBT removes Housing interact_data", () => {
+        const out = portableItemSnbt(
+            '{id:"minecraft:stone",tag:{ExtraAttributes:{interact_data:{actions:1b},keep:"yes"}}}'
+        );
+
+        expect(out).not.toContain("interact_data");
+        expect(out).toContain('keep: "yes"');
     });
 });

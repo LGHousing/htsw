@@ -11,6 +11,7 @@ import {
     applyImportableEventPlan,
     eventPlanIsNoOp,
     prereadImportableEvent,
+    reconstructObservedEvent,
     reconstructPartialEvent,
     type EventImportPlan,
 } from "./events/import";
@@ -18,6 +19,7 @@ import {
     applyImportableCommandPlan,
     commandPlanIsNoOp,
     prereadImportableCommand,
+    reconstructObservedCommand,
     reconstructPartialCommand,
     type CommandImportPlan,
 } from "./commands/import";
@@ -25,6 +27,7 @@ import {
     applyImportableFunctionPlan,
     functionPlanIsNoOp,
     prereadImportableFunction,
+    reconstructObservedFunction,
     reconstructPartialFunction,
     type FunctionImportPlan,
 } from "./functions/import";
@@ -275,6 +278,35 @@ export function reconstructPartialImportable(
             return reconstructPartialEvent(plan, result);
         case "COMMAND":
             return reconstructPartialCommand(plan, result);
+        case "REGION":
+        case "NPC":
+        case "MENU":
+        case "ITEM":
+        case "TEAM":
+        case "GROUP":
+            return null;
+        default: {
+            const _exhaustiveCheck: never = plan;
+            return _exhaustiveCheck;
+        }
+    }
+}
+
+/**
+ * Rebuild the importable from the state its pre-read observed, for a plan that
+ * was read but never applied (the session aborted first). Same conservative
+ * type coverage and settings-dropping as the partial write above.
+ */
+export function reconstructObservedImportable(
+    plan: ImportablePlan
+): Importable | null {
+    switch (plan.kind) {
+        case "FUNCTION":
+            return reconstructObservedFunction(plan);
+        case "EVENT":
+            return reconstructObservedEvent(plan);
+        case "COMMAND":
+            return reconstructObservedCommand(plan);
         case "REGION":
         case "NPC":
         case "MENU":

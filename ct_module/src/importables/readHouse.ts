@@ -193,7 +193,7 @@ export function makeReadHouse<Entry>(spec: ReadHouseSpec<Entry>): ReadFn {
         } finally {
             try {
                 if (!readOnly && spec.capturesActionItems === true) {
-                    writeCapturedItems(
+                    await writeCapturedItems(
                         ctx,
                         state.itemCaptures,
                         options.rootDir,

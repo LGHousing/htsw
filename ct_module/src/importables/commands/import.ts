@@ -6,6 +6,7 @@ import {
 } from "../../housingSync/actions/apply";
 import {
     actionsFullyHydrated,
+    fullyHydratedActionsFromSlots,
     prereadActionList,
     type ActionListPlan,
 } from "../../housingSync/actions/plan";
@@ -111,6 +112,15 @@ export function commandPlanIsNoOp(plan: CommandImportPlan): boolean {
     const actionsNoOp =
         plan.actionsPlan === null || plan.actionsPlan.diff.operations.length === 0;
     return actionsNoOp && plan.settingsHandled;
+}
+
+export function reconstructObservedCommand(
+    plan: CommandImportPlan
+): Importable | null {
+    if (plan.actionsPlan === null) return null;
+    const actions = fullyHydratedActionsFromSlots(plan.actionsPlan.observed);
+    if (actions === null) return null;
+    return { type: "COMMAND", name: plan.importable.name, actions };
 }
 
 export function reconstructPartialCommand(

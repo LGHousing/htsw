@@ -197,7 +197,7 @@ async function exportAllNpcsInner(
         options.progress?.done();
         try {
             if (!readOnly) {
-                writeCapturedItems(
+                await writeCapturedItems(
                     ctx,
                     itemCaptures,
                     rootDir,

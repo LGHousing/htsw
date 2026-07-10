@@ -5,11 +5,11 @@ import type { ImportSession } from "../../importables/imports";
 import type {
     ActionListDiff,
     ActionListTrust,
+    Observed,
     ObservedActionSlot,
 } from "../types";
 import type { PhaseUnits, ProgressHandler } from "../progress/types";
 import {
-    baselineActionListFromActions,
     baselineActionListFromSlots,
     diffActionList,
 } from "./diff";
@@ -105,16 +105,33 @@ export function createKnownEmptyActionListPlan(
     desired: Action[],
     options: ActionListApplyOptions
 ): ActionListPlan {
+    return createKnownActionListPlan(desired, [], options);
+}
+
+export function createKnownActionListPlan(
+    desired: Action[],
+    current: readonly Action[],
+    options: ActionListApplyOptions
+): ActionListPlan {
+    const observed = current.map((action, index) => ({
+        index,
+        action: JSON.parse(JSON.stringify(action)) as Action,
+    }));
+    for (const entry of observed) {
+        canonicalizeActionItemName(entry.action, options.session.items);
+    }
     for (const action of desired) {
         canonicalizeActionItemName(action, options.session.items);
     }
-    const phaseUnits = estimateActionListPhaseUnits(desired, []);
-    const diff = diffActionList(baselineActionListFromActions([]), desired);
+    const phaseUnits = estimateActionListPhaseUnits(desired, current);
+    phaseUnits.reading = 0;
+    phaseUnits.hydrating = 0;
+    const diff = diffActionList(baselineActionListFromSlots(observed), desired);
     phaseUnits.applying = Math.max(
         actionListDiffApplyUnits(diff, editUnitsWithChildLists, desired.length),
         1
     );
-    return { desired, observed: [], diff, phaseUnits };
+    return { desired, observed, diff, phaseUnits };
 }
 
 /**
@@ -123,7 +140,9 @@ export function createKnownEmptyActionListPlan(
  * snapshot holds nulls for un-read child lists; persisting one would cache a
  * half-known list as truth.
  */
-export function actionsFullyHydrated(actions: ReadonlyArray<Action | null>): boolean {
+export function actionsFullyHydrated(
+    actions: ReadonlyArray<Action | Observed<Action> | null>
+): boolean {
     for (const action of actions) {
         if (action === null) return false;
         for (const field of getChildListFields(action.type)) {
@@ -139,4 +158,16 @@ export function actionsFullyHydrated(actions: ReadonlyArray<Action | null>): boo
         }
     }
     return true;
+}
+
+/**
+ * Observed slots as a plain action list, or null when any slot or child list
+ * is still unhydrated (persisting one would cache a half-known list as truth).
+ */
+export function fullyHydratedActionsFromSlots(
+    slots: readonly ObservedActionSlot[]
+): Action[] | null {
+    const actions = slots.map((slot) => slot.action);
+    if (!actionsFullyHydrated(actions)) return null;
+    return actions as unknown as Action[];
 }

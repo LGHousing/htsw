@@ -21,6 +21,7 @@ import {
     applyImportablePlan,
     planIsNoOp,
     prereadImportable,
+    reconstructObservedImportable,
     reconstructPartialImportable,
     type ImportablePlan,
     type ImportSession,
@@ -235,6 +236,12 @@ export async function importSelectedImportables(
             }
             plans.push({ row, plan });
         } catch (error) {
+            await writeObservedPlanCaches(
+                ctx,
+                plans,
+                selection.sourcePath,
+                selection.housingUuid
+            );
             if (isTaskCancelled(error)) {
                 throw error;
             }
@@ -264,7 +271,8 @@ export async function importSelectedImportables(
     }
 
     // ── Pass 2: apply every collected plan in original order. ──────────
-    for (const { row, plan } of plans) {
+    for (let planIndex = 0; planIndex < plans.length; planIndex++) {
+        const { row, plan } = plans[planIndex];
         await waitIfStepPaused(ctx);
         events?.emit({
             kind: "importableReactivated",
@@ -288,8 +296,15 @@ export async function importSelectedImportables(
             await maybeWritePartialImportCache(
                 ctx,
                 plan,
+                selection.sourcePath,
                 selection.housingUuid,
                 actionListApplyResultFromError(error)
+            );
+            await writeObservedPlanCaches(
+                ctx,
+                plans.slice(planIndex + 1),
+                selection.sourcePath,
+                selection.housingUuid
             );
             if (isTaskCancelled(error)) {
                 throw error;
@@ -320,10 +335,33 @@ export async function importSelectedImportables(
 async function maybeWritePartialImportCache(
     ctx: TaskContext,
     plan: ImportablePlan,
+    sourcePath: string,
     housingUuid: string,
     result: ActionListApplyResult | null
 ): Promise<void> {
     const partial = reconstructPartialImportable(plan, result);
     if (partial === null) return;
     await tryWriteImportableCache(ctx, partial, "importer", housingUuid);
+    upsertHouseLockImportable(sourcePath, housingUuid, partial);
+}
+
+/**
+ * An aborted session drops its remaining plans, but each plan's pre-read
+ * already walked the house menus. Persist what was observed so the retry can
+ * trust unchanged action lists instead of re-reading them. The house lock
+ * entry must be written too — without it the next run's trust plan discards
+ * the cache entry as untraceable (`cacheMatchesLock`).
+ */
+async function writeObservedPlanCaches(
+    ctx: TaskContext,
+    plans: ReadonlyArray<{ plan: ImportablePlan }>,
+    sourcePath: string,
+    housingUuid: string
+): Promise<void> {
+    for (const { plan } of plans) {
+        const observed = reconstructObservedImportable(plan);
+        if (observed === null) continue;
+        await tryWriteImportableCache(ctx, observed, "importer", housingUuid);
+        upsertHouseLockImportable(sourcePath, housingUuid, observed);
+    }
 }

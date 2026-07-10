@@ -6,6 +6,7 @@ import {
 } from "../../housingSync/actions/apply";
 import {
     actionsFullyHydrated,
+    fullyHydratedActionsFromSlots,
     type ActionListPlan,
 } from "../../housingSync/actions/plan";
 import { prepareActionListSync } from "../../housingSync/actions/prepareSync";
@@ -71,6 +72,13 @@ export async function applyImportableEventPlan(
 
 export function eventPlanIsNoOp(plan: EventImportPlan): boolean {
     return plan.actionsPlan === null || plan.actionsPlan.diff.operations.length === 0;
+}
+
+export function reconstructObservedEvent(plan: EventImportPlan): Importable | null {
+    if (plan.actionsPlan === null) return null;
+    const actions = fullyHydratedActionsFromSlots(plan.actionsPlan.observed);
+    if (actions === null) return null;
+    return { type: "EVENT", event: plan.importable.event, actions };
 }
 
 export function reconstructPartialEvent(
