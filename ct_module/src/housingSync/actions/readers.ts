@@ -25,6 +25,7 @@ import {
 } from "../menus/menuUtils";
 import { waitForMenu } from "../menus/menuWait";
 import {
+    dropNotSetLocationIfOptional,
     getActionFieldLabel,
     getActionScalarLoreFields,
 } from "../fields/actionMappings";
@@ -366,4 +367,5 @@ function refreshLocationFromEditor(
     const value = readStringValue(slot);
     if (value === null) return;
     (base as Record<string, unknown>).location = parseLocationField(value);
+    dropNotSetLocationIfOptional(base);
 }

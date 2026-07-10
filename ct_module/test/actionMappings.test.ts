@@ -43,6 +43,17 @@ describe("parseActionListItem", () => {
         });
     });
 
+    test("drops a Not Set location when the action's location is optional", () => {
+        const action = parseActionListItem(slotWithLore([
+            "Sound: Level Up",
+            "Volume: 0.7",
+            "Pitch: 1.0",
+            "Location: Not Set",
+        ]), "PLAY_SOUND");
+        expect(action).toMatchObject({ type: "PLAY_SOUND", sound: "Level Up" });
+        expect(action).not.toHaveProperty("location");
+    });
+
     test("keeps Not Set locations for export", () => {
         expect(parseActionListItem(slotWithLore([
             "Location: Not Set",
