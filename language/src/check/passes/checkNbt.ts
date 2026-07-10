@@ -3,13 +3,13 @@ import items from "../../assets/items.json";
 import type { GlobalCtxt } from "../../context";
 import { Diagnostic } from "../../diagnostic";
 import type { Tag, TagCompound } from "../../nbt";
-import { getTags } from "../helpers";
+import type { Importable } from "../../types";
 
-export function checkNbt(gcx: GlobalCtxt) {
-    const tags = getTags(gcx);
-
-    for (const tag of tags) {
-        checkTag(gcx, tag);
+export function checkNbt(gcx: GlobalCtxt, importables: Importable[] = gcx.importables) {
+    for (const importable of importables) {
+        if (importable.type === "ITEM") {
+            checkTag(gcx, importable.nbt);
+        }
     }
 }
 

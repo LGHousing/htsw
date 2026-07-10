@@ -1,11 +1,14 @@
 import type { GlobalCtxt } from "../../context";
 import { Diagnostic } from "../../diagnostic";
 import { resolveItemReference } from "../../items";
-import type { Action, Condition, ImportableItem } from "../../types";
+import type { Action, Condition, Importable, ImportableItem } from "../../types";
 
-export function checkItems(gcx: GlobalCtxt) {
+export function checkItems(
+    gcx: GlobalCtxt,
+    checkableImportables: Importable[] = gcx.importables,
+) {
     const items = collectItems(gcx);
-    checkItemReferences(gcx, items);
+    checkItemReferences(gcx, items, checkableImportables);
 }
 
 function collectItems(gcx: GlobalCtxt): ImportableItem[] {
@@ -14,10 +17,14 @@ function collectItems(gcx: GlobalCtxt): ImportableItem[] {
     );
 }
 
-function checkItemReferences(gcx: GlobalCtxt, items: ImportableItem[]): void {
+function checkItemReferences(
+    gcx: GlobalCtxt,
+    items: ImportableItem[],
+    importables: Importable[],
+): void {
     const itemNames = new Map(items.map((item) => [item.name, item]));
 
-    for (const importable of gcx.importables) {
+    for (const importable of importables) {
         if (importable.type === "FUNCTION") {
             checkActions(gcx, itemNames, importable.actions ?? []);
         } else if (importable.type === "EVENT") {

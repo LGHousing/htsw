@@ -4,6 +4,7 @@ import type { Diagnostic } from "./diagnostic";
 import { parseHtsl } from "./htsl";
 import { parseImportJson } from "./importjson";
 import { ImportJsonParseMetadata } from "./importjson/metadata";
+import { importableFilePaths } from "./importablePaths";
 import { SourceMap, type FileLoader } from "./sourceMap";
 import type { SpanTable } from "./spanTable";
 import type { Action, Importable } from "./types";
@@ -70,9 +71,22 @@ export function parseImportablesResult(
     const importJson = new ImportJsonParseMetadata();
     parseImportJson(gcx, path, importJson);
     importJson.rehomeFileTree();
-    if (!gcx.isFailed()) {
-        check(gcx);
+    const filesWithParseErrors = new Set<string>();
+    for (const diagnostic of gcx.diagnostics) {
+        if (diagnostic.level !== "error" && diagnostic.level !== "bug") continue;
+        const primary = diagnostic.spans.find(span => span.kind === "primary") ?? diagnostic.spans[0];
+        if (primary === undefined) continue;
+        try {
+            filesWithParseErrors.add(gcx.sourceMap.getFileByPos(primary.span.start).path);
+        } catch (_error) {
+            if (primary.span.start > 0) {
+                filesWithParseErrors.add(gcx.sourceMap.getFileByPos(primary.span.start - 1).path);
+            }
+        }
     }
+    check(gcx, gcx.importables.filter(importable =>
+        importableFilePaths(importable).every(file => !filesWithParseErrors.has(file))
+    ));
     return {
         value: gcx.importables,
         spans: gcx.spans,

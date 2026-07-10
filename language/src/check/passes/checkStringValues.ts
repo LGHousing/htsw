@@ -1,6 +1,6 @@
 import type { GlobalCtxt } from "../../context";
 import { Diagnostic } from "../../diagnostic";
-import type { Action } from "../../types";
+import type { Action, Importable } from "../../types";
 
 const MAX_CHAT_INPUT_LENGTH = 256;
 
@@ -20,8 +20,11 @@ const ACTION_STRING_FIELDS: Partial<Record<Action["type"], StringField[]>> = {
     CHANGE_VAR: [{ key: "value", allowEmpty: false }],
 };
 
-export function checkStringValues(gcx: GlobalCtxt) {
-    for (const importable of gcx.importables) {
+export function checkStringValues(
+    gcx: GlobalCtxt,
+    importables: Importable[] = gcx.importables,
+) {
+    for (const importable of importables) {
         if (importable.type === "FUNCTION") {
             checkActions(gcx, importable.actions ?? []);
         } else if (importable.type === "EVENT") {

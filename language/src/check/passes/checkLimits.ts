@@ -8,14 +8,15 @@ import {
     type Action,
     type ActionLimitContext,
     type Condition,
+    type Importable,
 } from "../../types";
 
 type ActionListContext = ActionLimitContext & {
     label: string;
 };
 
-export function checkLimits(gcx: GlobalCtxt) {
-    for (const importable of gcx.importables) {
+export function checkLimits(gcx: GlobalCtxt, importables: Importable[] = gcx.importables) {
+    for (const importable of importables) {
         if (importable.type === "FUNCTION") {
             checkActionList(gcx, importable.actions ?? [], {
                 importable: "functions",

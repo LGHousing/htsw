@@ -90,6 +90,57 @@ function errorMessages(result: htsw.ParseResult<unknown>) {
 }
 
 describe("Main API", () => {
+    it("runs semantic checks for clean files when a sibling file has parse errors", () => {
+        const sourceMap = new htsw.SourceMap(
+            new SimpleFileLoader({
+                "/project/import.json": JSON.stringify({
+                    functions: [
+                        { name: "broken", actions: "broken.htsl" },
+                        { name: "invalid", actions: "semantic-error.htsl" },
+                    ],
+                }),
+                "/project/broken.htsl": "chat\n",
+                "/project/semantic-error.htsl": makeLines("changePlayerGroup \"group\" false", 2),
+            })
+        );
+
+        const result = htsw.parseImportablesResult(sourceMap, "/project/import.json");
+        const errors = errorMessages(result);
+        expect(errors.some(message => message.includes("Expected string"))).toBe(true);
+        expect(errors.some(message => message.includes("Maximum amount of Change Player's Group actions exceeded"))).toBe(true);
+    });
+
+    it("does not run semantic checks on a file with parse errors", () => {
+        const sourceMap = new htsw.SourceMap(
+            new SimpleFileLoader({
+                "/project/import.json": JSON.stringify({
+                    functions: [{ name: "broken", actions: "broken.htsl" }],
+                }),
+                "/project/broken.htsl": "changePlayerGroup \"group\" false\nchangePlayerGroup\n",
+            })
+        );
+
+        const errors = errorMessages(htsw.parseImportablesResult(sourceMap, "/project/import.json"));
+        expect(errors.some(message => message.includes("Expected string"))).toBe(true);
+        expect(errors.some(message => message.includes("Maximum amount"))).toBe(false);
+    });
+
+    it("resolves item names from malformed item files in clean action files", () => {
+        const sourceMap = new htsw.SourceMap(
+            new SimpleFileLoader({
+                "/project/import.json": JSON.stringify({
+                    items: [{ name: "Broken Item", nbt: "broken.snbt" }],
+                    functions: [{ name: "healthy", actions: "healthy.htsl" }],
+                }),
+                "/project/broken.snbt": "{id: \"minecraft:stone\"}",
+                "/project/healthy.htsl": "giveItem \"Broken Item\"\n",
+            })
+        );
+
+        const errors = errorMessages(htsw.parseImportablesResult(sourceMap, "/project/import.json"));
+        expect(errors.some(message => message.includes("Unknown item 'Broken Item'"))).toBe(false);
+    });
+
     it("parseActionsResult parses simple source", () => {
         const sourceMap = new htsw.SourceMap(
             new SimpleFileLoader({

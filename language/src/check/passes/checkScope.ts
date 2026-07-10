@@ -1,6 +1,6 @@
 import type { GlobalCtxt } from "../../context";
 import { Diagnostic } from "../../diagnostic";
-import type { Action, Condition, Event } from "../../types";
+import type { Action, Condition, Event, Importable } from "../../types";
 import { ACTION_NAMES } from "../../types";
 
 type ActionContainer = "functions" | "events" | "items" | "menus" | "regions";
@@ -74,8 +74,11 @@ const NESTED_CONTAINER_FORBIDDEN_ACTIONS: Action["type"][] = [
     "RANDOM",
 ];
 
-export function checkActionContext(gcx: GlobalCtxt) {
-    for (const importable of gcx.importables) {
+export function checkActionContext(
+    gcx: GlobalCtxt,
+    importables: Importable[] = gcx.importables,
+) {
+    for (const importable of importables) {
         if (importable.type === "FUNCTION") {
             checkAll(gcx, checkActionInFunction, importable.actions ?? [], { container: "functions" });
         }
