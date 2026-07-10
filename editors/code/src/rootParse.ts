@@ -7,7 +7,7 @@ import * as path from "node:path";
  * The one full-project parse both consumers share: diagnostics validate
  * .htsl files in root scope, and the Importables tree renders the parse's
  * fileTree. A full parse is ~hundreds of ms for a big project, so results
- * are cached per root manifest and invalidated by a workspace generation
+ * are cached per root import.json and invalidated by a workspace generation
  * that the diagnostics adapter bumps on any watched file event.
  *
  * The cache reads open editor buffers (not just disk), but a buffer edit

@@ -146,8 +146,14 @@ export class DiagnosticsAdapter {
 
     private rootContextCache: Map<string, { generation: number; rootPath: string }> = new Map();
     private rootDiagnosticMarkers: Map<string, Map<string, vscode.Diagnostic[]>> = new Map();
+    private readonly normalizedLocalHistoryDirectory: string;
 
-    constructor() {
+    constructor(globalStorageUri: vscode.Uri) {
+        const localHistoryDirectory = path.join(
+            path.dirname(path.dirname(globalStorageUri.fsPath)),
+            "History"
+        );
+        this.normalizedLocalHistoryDirectory = localHistoryDirectory.replace(/\\/g, "/").toLowerCase();
         this.disposables.push(
             vscode.workspace.onDidOpenTextDocument((document) => this.scheduleValidate(document))
         );
@@ -170,6 +176,13 @@ export class DiagnosticsAdapter {
                 if (timer) {
                     clearTimeout(timer);
                     this.pendingValidations.delete(key);
+                }
+                if (
+                    document.uri.scheme === "file" &&
+                    this.isSupportedDocument(document) &&
+                    this.getContainingWorkspaceFolders(document.uri).length === 0
+                ) {
+                    this.diagnosticCollection.set(document.uri, []);
                 }
             })
         );
@@ -199,14 +212,14 @@ export class DiagnosticsAdapter {
         void this.scanWorkspace();
     }
 
-    // Validate every project file once on startup so the import.json tree's
-    // error/warning badges reflect the whole project, not just open files.
+    // Validate every import.json once on startup; each root validation publishes
+    // diagnostics for its include tree, so project badges cover the whole project.
     // Runs in the background; already-open files are covered by the open path.
     private async scanWorkspace(): Promise<void> {
         let files: vscode.Uri[];
         try {
             files = await vscode.workspace.findFiles(
-                "**/{*.htsl,*.snbt,import.json,*.import.json}",
+                "**/{import.json,*.import.json}",
                 "**/{node_modules,.git}/**",
             );
         } catch {
@@ -283,6 +296,18 @@ export class DiagnosticsAdapter {
 
     private async validateUriFromDisk(uri: vscode.Uri) {
         if (this.isExcludedUri(uri)) {
+            this.diagnosticCollection.set(uri, []);
+            return;
+        }
+
+        const uriKey = uri.toString();
+        const isOpen = vscode.workspace.textDocuments.some((document) => document.uri.toString() === uriKey);
+        const lowerPath = uri.fsPath.toLowerCase();
+        if (
+            !isOpen &&
+            (lowerPath.endsWith(".htsl") || lowerPath.endsWith(".snbt")) &&
+            this.findImportJsonContexts(uri.fsPath).length === 0
+        ) {
             this.diagnosticCollection.set(uri, []);
             return;
         }
@@ -500,7 +525,7 @@ export class DiagnosticsAdapter {
         return [];
     }
 
-    // An .htsl file is checked in its ROOT scope — the outermost manifest
+    // An .htsl file is checked in its ROOT scope — the outermost import.json
     // that transitively includes its declaring import.json — so VS Code's
     // errors match what an in-game import of the whole project sees.
     private collectContextualHtslDiagnostics(document: vscode.TextDocument): DiagnosticGroup[] | null {
@@ -550,8 +575,8 @@ export class DiagnosticsAdapter {
         return getCachedRootParse(rootPath);
     }
 
-    // The outermost manifest in the file's ancestor directories that
-    // transitively includes the declaring manifest; the declaring manifest
+    // The outermost import.json in the file's ancestor directories that
+    // transitively includes the declaring import.json; the declaring import.json
     // itself when nothing above includes it.
     private findRootContext(declaringPath: string): string {
         const cacheKey = normalizedPathKey(declaringPath);
@@ -567,7 +592,7 @@ export class DiagnosticsAdapter {
         while (true) {
             for (const candidate of this.listImportJsonFiles(dir)) {
                 if (normalizedPathKey(candidate) === cacheKey) continue;
-                if (this.manifestIncludesTransitively(candidate, declaringPath)) {
+                if (this.importJsonIncludesTransitively(candidate, declaringPath)) {
                     rootPath = candidate;
                 }
             }
@@ -582,7 +607,7 @@ export class DiagnosticsAdapter {
         return rootPath;
     }
 
-    private manifestIncludesTransitively(entryPath: string, targetPath: string): boolean {
+    private importJsonIncludesTransitively(entryPath: string, targetPath: string): boolean {
         const targetKey = normalizedPathKey(targetPath);
         let found = false;
         try {
@@ -714,7 +739,9 @@ export class DiagnosticsAdapter {
 
     private isExcludedUri(uri: vscode.Uri): boolean {
         if (uri.scheme !== "file") return false;
-        return isPathInExcludedDiagnosticFolder(uri.fsPath);
+        const normalizedUriPath = uri.fsPath.replace(/\\/g, "/").toLowerCase();
+        return isPathInExcludedDiagnosticFolder(uri.fsPath) ||
+            normalizedUriPath.startsWith(`${this.normalizedLocalHistoryDirectory}/`);
     }
 
     private isImportJsonDocument(document: vscode.TextDocument): boolean {

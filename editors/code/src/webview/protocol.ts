@@ -99,7 +99,7 @@ export type ProjectImportJsonNode = {
     missing?: boolean;
     cycle?: boolean;
     /**
-     * A repeat include of a manifest whose contents are already shown under
+     * A repeat include of an import.json whose contents are already shown under
      * its first appearance in the tree. Rendered as an unexpandable jump
      * link; counts/diagnostics mirror the home node but are not re-summed
      * into ancestors.

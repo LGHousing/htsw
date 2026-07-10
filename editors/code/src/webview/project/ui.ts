@@ -617,7 +617,7 @@ export function mountProjectExplorer(
         }
     }
 
-    // Reveal the expandable "home" appearance of a manifest that a reference
+    // Reveal the expandable "home" appearance of an import.json that a reference
     // row points at: expand its ancestor chain, re-render, scroll, flash.
     function jumpToHomeNode(fsPath: string): void {
         const chain = ancestorChain(state.roots, fsPath);

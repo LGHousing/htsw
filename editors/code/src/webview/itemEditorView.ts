@@ -86,13 +86,13 @@ async function submitItem(webview: vscode.Webview, form: ItemEditorForm): Promis
 }
 
 async function discoverImportTargets(): Promise<ImportTarget[]> {
-    const manifests = await vscode.workspace.findFiles(
+    const importJsons = await vscode.workspace.findFiles(
         "**/{import.json,*.import.json}",
         "**/{node_modules,.git}/**",
     );
     const found = new Map<string, ImportTarget>();
 
-    for (const uri of manifests) {
+    for (const uri of importJsons) {
         walkImportJsonTree(nodeProjectFs, uri.fsPath, (filePath) => {
             const key = pathKey(filePath);
             if (!found.has(key)) {

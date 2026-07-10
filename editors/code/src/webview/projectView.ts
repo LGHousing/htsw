@@ -1125,20 +1125,20 @@ function workspaceLabel(): string | undefined {
 }
 
 async function discoverProjectTree(): Promise<ProjectImportJsonNode[]> {
-    const manifests = await vscode.workspace.findFiles(
+    const importJsons = await vscode.workspace.findFiles(
         "**/{import.json,*.import.json}",
         "**/{node_modules,.git}/**",
     );
-    const manifestKeys = new Set(manifests.map((uri) => pathKey(uri.fsPath)));
+    const importJsonKeys = new Set(importJsons.map((uri) => pathKey(uri.fsPath)));
     const includedKeys = new Set<string>();
     const fs = projectFsWithOpenDocuments();
 
-    for (const uri of manifests) {
-        collectIncludedKeys(fs, uri.fsPath, manifestKeys, includedKeys, new Set<string>());
+    for (const uri of importJsons) {
+        collectIncludedKeys(fs, uri.fsPath, importJsonKeys, includedKeys, new Set<string>());
     }
 
-    const rootUris = manifests.filter((uri) => !includedKeys.has(pathKey(uri.fsPath)));
-    const roots = rootUris.length > 0 ? rootUris : manifests;
+    const rootUris = importJsons.filter((uri) => !includedKeys.has(pathKey(uri.fsPath)));
+    const roots = rootUris.length > 0 ? rootUris : importJsons;
     return roots
         .map((uri) => rootNodeFromParse(uri.fsPath))
         .sort((left, right) => left.label.localeCompare(right.label));
@@ -1414,7 +1414,7 @@ function mapSubEntries(
 ): ProjectImportableSub[] {
     const out: ProjectImportableSub[] = [];
     const declaringKey = pathKey(declaringPath);
-    // Inline JSON lists resolve to the manifest itself — no sub-row, same
+    // Inline JSON lists resolve to the import.json itself — no sub-row, same
     // as when these rows were read from `...Path: "file.htsl"` refs only.
     const pushActions = (label: string, fsPath: string | undefined): void => {
         if (fsPath === undefined || pathKey(fsPath) === declaringKey) return;
@@ -1541,7 +1541,7 @@ function nodeLabel(filePath: string, parentFilePath: string | null, rootDir: str
 function collectIncludedKeys(
     fs: ProjectFs,
     filePath: string,
-    knownManifests: Set<string>,
+    knownImportJsons: Set<string>,
     includedKeys: Set<string>,
     stack: Set<string>,
 ): void {
@@ -1551,8 +1551,8 @@ function collectIncludedKeys(
     for (const includePath of readIncludePaths(fs, filePath)) {
         const resolved = fs.resolvePath(fs.parentDir(filePath), includePath);
         const resolvedKey = pathKey(resolved);
-        if (knownManifests.has(resolvedKey)) includedKeys.add(resolvedKey);
-        collectIncludedKeys(fs, resolved, knownManifests, includedKeys, stack);
+        if (knownImportJsons.has(resolvedKey)) includedKeys.add(resolvedKey);
+        collectIncludedKeys(fs, resolved, knownImportJsons, includedKeys, stack);
     }
     stack.delete(key);
 }

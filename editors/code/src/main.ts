@@ -121,7 +121,7 @@ export function activate(context: ExtensionContext) {
             })
         );
 
-        providers.push(new languageFeatures.DiagnosticsAdapter());
+        providers.push(new languageFeatures.DiagnosticsAdapter(context.globalStorageUri));
 
         const toolsProvider = new HtswToolsViewProvider(
             context.extensionUri,

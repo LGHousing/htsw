@@ -71,18 +71,18 @@ async function buildRenameEdit(
             directory: await isDirectory(file.oldUri),
         })));
 
-    return editImportJsonFiles((manifestPath, source) => {
-        const movedManifestPath = movePath(manifestPath, moves) ?? manifestPath;
-        if (movedManifestPath !== manifestPath && !isProjectFileReference(movedManifestPath)) {
+    return editImportJsonFiles((importJsonPath, source) => {
+        const movedImportJsonPath = movePath(importJsonPath, moves) ?? importJsonPath;
+        if (movedImportJsonPath !== importJsonPath && !isProjectFileReference(movedImportJsonPath)) {
             return source;
         }
 
         const movedTarget = (targetPath: string) => movePath(targetPath, moves) ?? targetPath;
-        const removals = collectReferences(source, manifestPath)
+        const removals = collectReferences(source, importJsonPath)
             .filter((reference) => !isProjectFileReference(movedTarget(reference.targetPath)))
             .map((reference) => removalPath(reference.nodePath))
             .filter((nodePath): nodePath is (string | number)[] => nodePath !== undefined);
-        const rewritten = rewriteReferences(source, manifestPath, movedManifestPath, movedTarget);
+        const rewritten = rewriteReferences(source, importJsonPath, movedImportJsonPath, movedTarget);
         return applyRemovals(rewritten, removals);
     });
 }
@@ -95,12 +95,12 @@ async function buildDeleteEdit(files: readonly vscode.Uri[]): Promise<vscode.Wor
             directory: await isDirectory(uri),
         })));
 
-    return editImportJsonFiles((manifestPath, source) => {
-        if (deleted.some((entry) => pathMatches(manifestPath, entry.filePath, entry.directory))) {
+    return editImportJsonFiles((importJsonPath, source) => {
+        if (deleted.some((entry) => pathMatches(importJsonPath, entry.filePath, entry.directory))) {
             return source;
         }
 
-        const removals = collectReferences(source, manifestPath)
+        const removals = collectReferences(source, importJsonPath)
             .filter((reference) =>
                 deleted.some((entry) =>
                     pathMatches(reference.targetPath, entry.filePath, entry.directory)
@@ -114,15 +114,15 @@ async function buildDeleteEdit(files: readonly vscode.Uri[]): Promise<vscode.Wor
 }
 
 async function editImportJsonFiles(
-    transform: (manifestPath: string, source: string) => string,
+    transform: (importJsonPath: string, source: string) => string,
 ): Promise<vscode.WorkspaceEdit> {
     const edit = new vscode.WorkspaceEdit();
-    const manifests = await vscode.workspace.findFiles(
+    const importJsons = await vscode.workspace.findFiles(
         "**/{import.json,*.import.json}",
         "**/{node_modules,.git}/**",
     );
 
-    for (const uri of manifests) {
+    for (const uri of importJsons) {
         const document = await vscode.workspace.openTextDocument(uri);
         const source = document.getText();
         const next = transform(uri.fsPath, source);
@@ -140,18 +140,18 @@ async function editImportJsonFiles(
 
 function rewriteReferences(
     source: string,
-    oldManifestPath: string,
-    newManifestPath: string,
+    oldImportJsonPath: string,
+    newImportJsonPath: string,
     targetPath: (targetPath: string) => string,
 ): string {
     let next = source;
-    const references = collectReferences(source, oldManifestPath);
+    const references = collectReferences(source, oldImportJsonPath);
 
     for (const reference of references) {
         const movedTarget = targetPath(reference.targetPath);
         if (!isProjectFileReference(movedTarget)) continue;
-        const newReference = relativePath(path.dirname(newManifestPath), movedTarget);
-        const oldReference = relativePath(path.dirname(oldManifestPath), reference.targetPath);
+        const newReference = relativePath(path.dirname(newImportJsonPath), movedTarget);
+        const oldReference = relativePath(path.dirname(oldImportJsonPath), reference.targetPath);
         if (newReference === oldReference) continue;
 
         next = applyEdits(next, modify(next, reference.nodePath, newReference, {
@@ -162,7 +162,7 @@ function rewriteReferences(
     return next;
 }
 
-function collectReferences(source: string, manifestPath: string): Reference[] {
+function collectReferences(source: string, importJsonPath: string): Reference[] {
     const root = parseTree(source);
     if (!root) return [];
 
@@ -181,7 +181,7 @@ function collectReferences(source: string, manifestPath: string): Reference[] {
 
         references.push({
             nodePath,
-            targetPath: path.resolve(path.dirname(manifestPath), node.value),
+            targetPath: path.resolve(path.dirname(importJsonPath), node.value),
         });
     });
     return references;
@@ -303,15 +303,15 @@ async function createIncludedImportJson(uri?: vscode.Uri) {
     });
     if (!folderName) return;
 
-    const parentManifest = isImportJsonUri(uri)
+    const parentImportJson = isImportJsonUri(uri)
         ? uri
-        : await findNearestManifest(baseUri.fsPath);
-    if (!parentManifest) {
+        : await findNearestImportJson(baseUri.fsPath);
+    if (!parentImportJson) {
         void vscode.window.showWarningMessage("No parent import.json was found.");
         return;
     }
 
-    const document = await vscode.workspace.openTextDocument(parentManifest);
+    const document = await vscode.workspace.openTextDocument(parentImportJson);
     let parentReplacement: string | undefined;
     let result: ReturnType<typeof createIncludedImportJsonFiles>;
     try {
@@ -319,11 +319,11 @@ async function createIncludedImportJson(uri?: vscode.Uri) {
             {
                 ...nodeProjectFs,
                 readFile: (filePath) =>
-                    filePath === parentManifest.fsPath
+                    filePath === parentImportJson.fsPath
                         ? document.getText()
                         : nodeProjectFs.readFile(filePath),
                 writeFile: (filePath, text) => {
-                    if (filePath === parentManifest.fsPath) {
+                    if (filePath === parentImportJson.fsPath) {
                         parentReplacement = text;
                         return;
                     }
@@ -332,7 +332,7 @@ async function createIncludedImportJson(uri?: vscode.Uri) {
             },
             baseUri.fsPath,
             folderName,
-            parentManifest.fsPath,
+            parentImportJson.fsPath,
         );
     } catch (err) {
         void vscode.window.showWarningMessage(String(err instanceof Error ? err.message : err));
@@ -342,7 +342,7 @@ async function createIncludedImportJson(uri?: vscode.Uri) {
     if (parentReplacement !== undefined) {
         const edit = new vscode.WorkspaceEdit();
         edit.replace(
-            parentManifest,
+            parentImportJson,
             new vscode.Range(document.positionAt(0), document.positionAt(document.getText().length)),
             parentReplacement,
         );
@@ -367,14 +367,14 @@ function validateFolderName(basePath: string, value: string): string | undefined
     return undefined;
 }
 
-async function findNearestManifest(startDirectory: string): Promise<vscode.Uri | undefined> {
+async function findNearestImportJson(startDirectory: string): Promise<vscode.Uri | undefined> {
     const workspaceFolder = vscode.workspace.getWorkspaceFolder(vscode.Uri.file(startDirectory));
     const stopAt = workspaceFolder?.uri.fsPath;
     let directory = startDirectory;
 
     while (true) {
         const entries = await vscode.workspace.fs.readDirectory(vscode.Uri.file(directory));
-        const manifestName = entries
+        const importJsonName = entries
             .filter(([name, type]) =>
                 type === vscode.FileType.File && isImportJsonName(name)
             )
@@ -383,8 +383,8 @@ async function findNearestManifest(startDirectory: string): Promise<vscode.Uri |
                 Number(right === "import.json") - Number(left === "import.json") ||
                 left.localeCompare(right)
             )[0];
-        if (manifestName) {
-            return vscode.Uri.file(path.join(directory, manifestName));
+        if (importJsonName) {
+            return vscode.Uri.file(path.join(directory, importJsonName));
         }
 
         const parent = path.dirname(directory);
