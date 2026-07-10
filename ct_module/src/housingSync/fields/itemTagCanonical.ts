@@ -35,34 +35,41 @@ function stripEmptyCompounds(tag: TagLike): TagLike {
     return { type: "compound", value: out };
 }
 
-// Drop `tag.ExtraAttributes.interact_data` — the housing-scoped encoding of an
-// item's click actions — from a tag, rebuilding only the path it sits on. It's
-// non-portable, so it must never be part of an item's identity (an action item
-// reads back with it; its source has none).
-function stripInteractData(tag: TagLike): TagLike {
+// Remove the tag at `path`, rebuilding only the compounds on that path
+// (copy-on-write). Returns the input unchanged when the path doesn't resolve.
+function withoutTagAtPath(tag: TagLike, path: string[]): TagLike {
     if (tag.type !== "compound") return tag;
     const value = compoundEntries(tag);
-    const inner = value["tag"];
-    if (inner === undefined || inner.type !== "compound") return tag;
-    const innerValue = compoundEntries(inner);
-    const extra = innerValue["ExtraAttributes"];
-    if (extra === undefined || extra.type !== "compound") return tag;
-    const extraValue = compoundEntries(extra);
-    if (extraValue["interact_data"] === undefined) return tag;
-
-    const newExtra: Record<string, TagLike> = {};
-    for (const k of Object.keys(extraValue)) {
-        if (k !== "interact_data") newExtra[k] = extraValue[k];
+    const key = path[0];
+    if (value[key] === undefined) return tag;
+    const out: Record<string, TagLike> = {};
+    if (path.length === 1) {
+        for (const k of Object.keys(value)) {
+            if (k !== key) out[k] = value[k];
+        }
+        return { type: "compound", value: out };
     }
-    const newInner: Record<string, TagLike> = {};
-    for (const k of Object.keys(innerValue)) {
-        newInner[k] = k === "ExtraAttributes" ? { type: "compound", value: newExtra } : innerValue[k];
-    }
-    const newRoot: Record<string, TagLike> = {};
+    const child = withoutTagAtPath(value[key], path.slice(1));
+    if (child === value[key]) return tag;
     for (const k of Object.keys(value)) {
-        newRoot[k] = k === "tag" ? { type: "compound", value: newInner } : value[k];
+        out[k] = k === key ? child : value[k];
     }
-    return { type: "compound", value: newRoot };
+    return { type: "compound", value: out };
+}
+
+// Drop `tag.ExtraAttributes.interact_data` — the housing-scoped encoding of an
+// item's click actions. It's non-portable, so it must never be part of an
+// item's identity (an action item reads back with it; its source has none).
+function stripInteractData(tag: TagLike): TagLike {
+    return withoutTagAtPath(tag, ["tag", "ExtraAttributes", "interact_data"]);
+}
+
+// The server strips `tag.ItemModel` (the 1.21-era item-model override) when an
+// item round-trips through a 1.8.9 connection — verified live: a creative
+// spawn with tag:{ItemModel:"minecraft:netherite_spear"} echoed back with
+// tag:{}. Like interact_data, it can't be part of an item's identity.
+function stripItemModel(tag: TagLike): TagLike {
+    return withoutTagAtPath(tag, ["tag", "ItemModel"]);
 }
 
 // Housing renders a blank lore separator line as "§7"; a source snbt writes
@@ -163,7 +170,9 @@ function normalizeItemDefaults(tag: TagLike): TagLike {
 export function canonicalItemTag(tag: TagLike): TagLike {
     return stripEmptyCompounds(
         normalizeBlankLoreSeparators(
-            normalizeItemDefaults(normalizeIntegralTypes(stripInteractData(tag)))
+            normalizeItemDefaults(
+                normalizeIntegralTypes(stripItemModel(stripInteractData(tag)))
+            )
         )
     );
 }

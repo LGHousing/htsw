@@ -46,6 +46,38 @@ describe("canonicalItemTag", () => {
         expect(canonicalItemTag(withInteract)).toEqual(canonicalItemTag(plain));
     });
 
+    test("server-stripped ItemModel equals the source that carried it", () => {
+        // Verified in-game: a creative spawn with
+        // tag:{ItemModel:"minecraft:netherite_spear"} echoes back with tag:{}.
+        const source = compound({
+            id: str("minecraft:iron_sword"),
+            Count: byte(1),
+            tag: compound({ ItemModel: str("minecraft:netherite_spear") }),
+        });
+        const echoed = compound({
+            id: str("minecraft:iron_sword"),
+            Count: byte(1),
+            Damage: short(0),
+            tag: compound({}),
+        });
+        expect(canonicalItemTag(source)).toEqual(canonicalItemTag(echoed));
+
+        const otherModel = compound({
+            id: str("minecraft:iron_sword"),
+            Count: byte(1),
+            tag: compound({
+                ItemModel: str("minecraft:other"),
+                display: compound({ Name: str("§6Named") }),
+            }),
+        });
+        const plainNamed = compound({
+            id: str("minecraft:iron_sword"),
+            Count: byte(1),
+            tag: compound({ display: compound({ Name: str("§6Named") }) }),
+        });
+        expect(canonicalItemTag(otherModel)).toEqual(canonicalItemTag(plainNamed));
+    });
+
     test("bare item ids normalize to the minecraft namespace", () => {
         expect(canonicalItemTag(compound({ id: str("stone") }))).toEqual(
             canonicalItemTag(compound({ id: str("minecraft:stone") }))
