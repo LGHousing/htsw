@@ -48,7 +48,7 @@ import {
     resolveModuleRelativePath,
 } from "../project/paths";
 import { openPathInOS } from "../utils/osShell";
-import { registerExportSlashCommand } from "./export";
+import { commandExport, registerExportSlashCommand } from "./export";
 import { saveItem, giveItem } from "./debugItems";
 import { printOpKindStats, dumpEtaToFile } from "./debugEta";
 import { commandGroupPerms } from "../importables/groups/dumpPermissions";
@@ -63,6 +63,12 @@ type HtswSubcommand = {
 };
 
 const HTSW_SUBCOMMANDS: HtswSubcommand[] = [
+    {
+        name: "export",
+        summary: "Export live Housing content",
+        run: commandExport,
+        usage: "export itemactions <path|import.json>",
+    },
     {
         name: "saveitem",
         summary: "Save held item as .snbt",

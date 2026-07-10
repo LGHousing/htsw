@@ -15,8 +15,12 @@ import {
 } from "./exportArgs";
 import { printExportHelp } from "./exportHelp";
 import { runExportWithDestination } from "./exportTask";
+import {
+    exportHeldItemActions,
+    exportManifestItemActions,
+} from "../importables/items/export";
 
-function commandExport(args: string[]): void {
+export function commandExport(args: string[]): void {
     if (args.length === 0) {
         printExportHelp();
         return;
@@ -30,6 +34,17 @@ function commandExport(args: string[]): void {
         } else {
             ChatLib.chat("&7[htsw] No import/export task is running.");
         }
+        return;
+    }
+
+    if (tokens[0] === "itemactions") {
+        const path = pathArgument(tokens, 1);
+        if (path === undefined) {
+            ChatLib.chat("&cUsage: /htsw export itemactions <path|import.json>");
+            return;
+        }
+        const batch = path.toLowerCase().endsWith(".json");
+        runExportWithDestination(path, batch ? exportManifestItemActions : exportHeldItemActions);
         return;
     }
 
