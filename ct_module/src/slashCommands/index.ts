@@ -35,6 +35,7 @@ import {
 import {
     clearLagProbeSamples,
     getLagProbeSamples,
+    getStallStacks,
 } from "../perf/lagProbe";
 import { commandTest } from "../testSuite/command";
 import { appendActionsToOpenActionList } from "../housingSync/actions/apply";
@@ -363,12 +364,25 @@ function commandLagProbe(args: string[]): void {
     for (let i = 0; i < samples.length; i++) {
         const s = samples[i];
         const age = Math.max(0, Math.round((Date.now() - s.at) / 1000));
+        const gc = s.gcCount < 0 ? "gc n/a" : `gc +${s.gcCount}/${s.gcMs}ms`;
+        const heap =
+            s.heapBeforeMB < 0 ? "heap n/a" : `heap ${s.heapBeforeMB}→${s.heapAfterMB}MB`;
         ChatLib.chat(
-            `&7  &f${s.gapMs}ms&7 ${age}s ago screen=${s.screen} ` +
+            `&7  &f${s.gapMs}ms&7 ${age}s ago ${gc} ${heap} screen=${s.screen} ` +
             `import=${s.importing ? "yes" : "no"} task=${s.taskRunning ? "yes" : "no"} ` +
             `waiters t${s.waiters.tick}/pr${s.waiters.packetReceived}/ps${s.waiters.packetSent}/m${s.waiters.message}`
         );
         ChatLib.chat(`&8    last parse: ${s.lastParse}`);
+    }
+    const stacks = getStallStacks();
+    if (stacks.length > 0) {
+        ChatLib.chat("&7[lagprobe] mid-stall client-thread stacks (also in gui-debug.log):");
+        for (let i = Math.max(0, stacks.length - 2); i < stacks.length; i++) {
+            const lines = stacks[i];
+            for (let j = 0; j < Math.min(lines.length, 9); j++) {
+                ChatLib.chat(`&8  ${j === 0 ? "&7" : "  "}${lines[j]}`);
+            }
+        }
     }
 }
 
