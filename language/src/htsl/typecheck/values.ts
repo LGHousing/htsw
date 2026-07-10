@@ -135,7 +135,7 @@ function runPlaceholder(tcx: TyCtxt, name: string, ...args: string[]): VarState 
         case "house.guests":
             return longRange(Long.fromNumber(0), Long.fromNumber(250));
         case "house.cookies":
-            return unknownString();
+            return unknownLong();
         case "house.visitingrules":
             return unknownString();
         case "house.players":
