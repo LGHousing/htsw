@@ -39,7 +39,16 @@ export function cyrb53(str: string, seed: number = 0) {
     h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507);
     h2 ^= Math.imul(h1 ^ (h1 >>> 13), 3266489909);
 
-    return 4294967296 * (2097151 & h2) + (h1 >>> 0);
+    // Deliberately NOT standard cyrb53: the low word is added as a SIGNED
+    // int32, not `h1 >>> 0`. ChatTriggers' Rhino compiles `x >>> 0` to a
+    // no-op that keeps the sign (verified against ctjs 2.2.1 at optimization
+    // level 9; interpreted Rhino and Node both return unsigned), so the
+    // standard form gives in-game values exactly 2^32 below Node's whenever
+    // h1 is negative. Every hash persisted by released builds (knowledge
+    // caches, house.lock.json) carries the in-game signed form, so that form
+    // is canonical; the signed encoding maps (h1, h2) pairs one-to-one just
+    // like the unsigned one, so collision behavior is unchanged.
+    return 4294967296 * (2097151 & h2) + h1;
 }
 
 export function unique(values: readonly string[]): string[] {
