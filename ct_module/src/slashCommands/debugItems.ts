@@ -207,6 +207,20 @@ function giveFolderItems(rawPath: string, skip: number): void {
     }
 }
 
+export function clearInv(_args: string[]): void {
+    if (!isInCreativeMode()) {
+        ChatLib.chat("&c[htsw] Must be in creative mode to clear inventory.");
+        return;
+    }
+    let cleared = 0;
+    for (let slot = 9; slot < 36; slot++) {
+        if (Player.getInventory()?.getStackInSlot(slot) === null) continue;
+        Client.sendPacket(new C10PacketCreativeInventoryAction(packetSlotForInventorySlot(slot), null));
+        cleared++;
+    }
+    ChatLib.chat(`&7[htsw] Cleared ${cleared} main-inventory slot${cleared === 1 ? "" : "s"} (hotbar untouched).`);
+}
+
 export function giveItem(args: string[]): void {
     if (args.length === 0) {
         ChatLib.chat("&cUsage: /htsw giveitem <path> [skip]");

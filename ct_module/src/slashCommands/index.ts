@@ -49,7 +49,7 @@ import {
 } from "../project/paths";
 import { openPathInOS } from "../utils/osShell";
 import { registerExportSlashCommand } from "./export";
-import { saveItem, giveItem } from "./debugItems";
+import { saveItem, giveItem, clearInv } from "./debugItems";
 import { printOpKindStats, dumpEtaToFile } from "./debugEta";
 import { commandGroupPerms } from "../importables/groups/dumpPermissions";
 
@@ -74,6 +74,12 @@ const HTSW_SUBCOMMANDS: HtswSubcommand[] = [
         summary: "Spawn an item from a .snbt file",
         run: giveItem,
         usage: "giveitem <path>",
+    },
+    {
+        name: "clearinv",
+        summary: "Clear main inventory slots 9-35 (debug)",
+        run: clearInv,
+        hidden: true,
     },
     {
         name: "projects",
