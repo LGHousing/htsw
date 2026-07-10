@@ -1,5 +1,6 @@
 import * as path from "node:path";
 import * as vscode from "vscode";
+import { addGitDecorations } from "./gitDecorations";
 import * as json from "jsonc-parser";
 import * as htsw from "htsw";
 import {
@@ -1139,9 +1140,11 @@ async function discoverProjectTree(): Promise<ProjectImportJsonNode[]> {
 
     const rootUris = importJsons.filter((uri) => !includedKeys.has(pathKey(uri.fsPath)));
     const roots = rootUris.length > 0 ? rootUris : importJsons;
-    return roots
+    const projectRoots = roots
         .map((uri) => rootNodeFromParse(uri.fsPath))
         .sort((left, right) => left.label.localeCompare(right.label));
+    addGitDecorations(projectRoots);
+    return projectRoots;
 }
 
 // The tree is a projection of the LANGUAGE parse — the same fileTree (homes,

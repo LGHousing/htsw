@@ -28,7 +28,7 @@ Library — `gui/lib/` (project-agnostic UI primitives + screen/theme):
 - `inputState.ts` — per-input `GuiTextField` instances (cursor, selection, clipboard, arrow keys).
 - `scissor.ts` — GL scissor stack. Multiplies overlay coords by `getEffectiveOverlayScale()` to get real pixels (see Coordinate space).
 - `overlayScale.ts` — scale boundary helpers. `OVERLAY_SCALE_TARGET = 4` (the cap), `getEffectiveOverlayScale()` (per-frame actual), `mcToOverlay`, `getOverlayScreen{W,H}`. See **Coordinate space** below.
-- `bounds.ts` — reads the open Minecraft `GuiContainer`'s bounds via Java reflection and converts them to overlay space; provides fullscreen panel rect + chat rect helpers.
+- `bounds.ts` — reads the open Minecraft `GuiContainer`'s bounds via Java reflection and converts them to overlay space; provides fullscreen panel rect + chat rect helpers. It resolves and caches the four protected fields on the first container instead of walking the hierarchy on every visibility check; failed reflection lookups create expensive Rhino-wrapped Java exceptions.
 - `theme.ts` — color/size/glyph constants. `lib/popovers` reads its panel/scrim colors from here, so `theme` is treated as part of `lib`.
 - `components/` — thin element-builder functions (`Button`, `Container`, `Row`, `Col`, `Input`, `Scroll`, `Text`).
 
@@ -263,7 +263,7 @@ CT's `register("scrolled", ...)` exists but doesn't pass the underlying event, s
 - `field_147003_i` / `field_147009_r` — guiLeft / guiTop (**protected**, requires reflection)
 - `field_146999_f` / `field_147000_g` — xSize / ySize (**protected**, requires reflection)
 
-Rhino's property access only sees public fields, so the protected ones use `getDeclaredField + setAccessible(true)` with a class-hierarchy walk (creative inventory class doesn't declare them itself; `GuiContainer` does).
+Rhino's property access only sees public fields, so the protected ones use `getDeclaredField + setAccessible(true)`. The first container access walks to the declaring superclass and caches the four `Field` objects for subsequent bounds reads; do not move that hierarchy walk back into the per-field or per-frame path because every failed lookup creates a Rhino-wrapped Java exception.
 
 Returns `null` for non-`GuiContainer` screens (main menu, settings, etc.). The panel's `shouldBeVisible` callback uses this — when bounds are null, panels hide.
 

@@ -1,5 +1,10 @@
 export type SoundVersionId = "1.8.9" | "1.21.1";
 
+export type GitDecoration = {
+    badge: string;
+    color: "modified" | "untracked" | "added" | "deleted" | "renamed" | "conflicting";
+};
+
 export type ImportTarget = {
     fsPath: string;
     label: string;
@@ -53,6 +58,7 @@ export type ProjectImportableSub = {
     item?: ItemPreviewData;
     errors?: number;
     warnings?: number;
+    git?: GitDecoration;
 };
 
 export type ProjectImportableMetadata = {
@@ -84,6 +90,7 @@ export type ProjectImportableSummary = {
     /** Diagnostics in this importable's own source file (htsl/snbt). */
     errors?: number;
     warnings?: number;
+    git?: GitDecoration;
     /** Nested action lists / item refs, shown as expandable child rows. */
     subEntries?: ProjectImportableSub[];
     metadataEntries?: ProjectImportableMetadata[];
@@ -109,6 +116,8 @@ export type ProjectImportJsonNode = {
     /** Diagnostics aggregated across this node's whole subtree (like a folder badge). */
     errors?: number;
     warnings?: number;
+    git?: GitDecoration;
+    gitRollup?: boolean;
 };
 
 export type ProjectToHostMessage =

@@ -19,7 +19,7 @@ import { importableIdentity } from "../importables/identity";
 import { statusForImportable } from "./cache-status";
 import { addToQueue, makeImportableQueueItem } from "./right-panel/import-tab/queue";
 
-function queueModifiedFromParse(
+export function queueModifiedImportables(
     sourcePath: string,
     importables: readonly Importable[]
 ): void {
@@ -45,7 +45,7 @@ export function queueModifiedFromPath(sourcePath: string): void {
         ChatLib.chat(`&c[htsw] Skipping ${sourcePath}: ${cached.error ?? "parse failed"}`);
         return;
     }
-    queueModifiedFromParse(cached.canonicalPath, cached.parsed.value);
+    queueModifiedImportables(cached.canonicalPath, cached.parsed.value);
 }
 
 export function autoTrackRefresh(): void {
@@ -56,6 +56,6 @@ export function autoTrackRefresh(): void {
     forEachCachedParse((entry) => {
         if (entry.parsed === null) return;
         if (!tracked.has(entry.canonicalPath)) return;
-        queueModifiedFromParse(entry.canonicalPath, entry.parsed.value);
+        queueModifiedImportables(entry.canonicalPath, entry.parsed.value);
     });
 }

@@ -36,6 +36,8 @@ import {
     clearLagProbeSamples,
     getLagProbeSamples,
     getStallStacks,
+    isLagProbeEnabled,
+    setLagProbeEnabled,
 } from "../perf/lagProbe";
 import { commandTest } from "../testSuite/command";
 import { appendActionsToOpenActionList } from "../housingSync/actions/apply";
@@ -160,7 +162,7 @@ const DEBUG_SUBCOMMANDS: HtswSubcommand[] = [
         name: "lagprobe",
         summary: "Recent main-thread stall samples",
         run: commandLagProbe,
-        usage: "lagprobe [clear]",
+        usage: "lagprobe [on|off|clear]",
     },
     {
         name: "eta",
@@ -350,11 +352,23 @@ function shortPerfPath(path: string): string {
 }
 
 function commandLagProbe(args: string[]): void {
+    if (args[0] === "on") {
+        clearLagProbeSamples();
+        setLagProbeEnabled(true);
+        ChatLib.chat("&a[lagprobe] enabled; samples cleared.");
+        return;
+    }
+    if (args[0] === "off") {
+        setLagProbeEnabled(false);
+        ChatLib.chat("&7[lagprobe] disabled.");
+        return;
+    }
     if (args[0] === "clear") {
         clearLagProbeSamples();
         ChatLib.chat("&a[lagprobe] cleared samples.");
         return;
     }
+    ChatLib.chat(`&7[lagprobe] ${isLagProbeEnabled() ? "&aenabled" : "&8disabled"}&7.`);
     const samples = getLagProbeSamples();
     if (samples.length === 0) {
         ChatLib.chat("&7[lagprobe] no >250ms main-thread gaps recorded.");

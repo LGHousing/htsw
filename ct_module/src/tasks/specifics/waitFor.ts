@@ -54,6 +54,21 @@ const EVENT_CONTAINERS: EventContainers = {
     message: [],
 };
 const TIMEOUTS: TimeoutEntry[] = [];
+let packetCaptureForTask = false;
+
+type EventTrigger = ReturnType<typeof register> | undefined;
+const EVENT_TRIGGERS = {} as { [K in keyof CheckPredicateMap]: EventTrigger };
+
+function updateTriggerRegistration(event: EventName): void {
+    const needed =
+        EVENT_CONTAINERS[event].length > 0 ||
+        (event === "tick" && TIMEOUTS.length > 0) ||
+        ((event === "packetReceived" || event === "packetSent") &&
+            packetCaptureForTask);
+    const trigger = EVENT_TRIGGERS[event];
+    if (needed) trigger?.register();
+    else trigger?.unregister();
+}
 
 // Resolve only the waiters present when this event fired. resolve() can re-enter
 // synchronously (sync-drain polyfill): the awaiting continuation runs inline and
@@ -78,11 +93,13 @@ function maybeResolve<E extends EventName>(event: E, ...args: ParametersFor<E>) 
             container.resolve(args);
         }
     }
+    updateTriggerRegistration(event);
 }
 
 function cleanupTimeout(entry: TimeoutEntry): void {
     const idx = TIMEOUTS.indexOf(entry);
     if (idx !== -1) TIMEOUTS.splice(idx, 1);
+    updateTriggerRegistration("tick");
 }
 
 function rejectExpiredTimeouts(): void {
@@ -115,7 +132,8 @@ function onTick(): void {
     rejectExpiredTimeouts();
 }
 
-register("tick", onTick);
+EVENT_TRIGGERS.tick = register("tick", onTick);
+EVENT_TRIGGERS.tick?.unregister();
 
 export let lastWindowID___FromS30PacketWindowItemsPacketReceived__ThisIsNecessary_sadly_itIncrementsFrom1To100ThenItGoesBackAround_ButSometimesItSkipsOneOrMoreWeAreNotSureMaybeMore_AndItWillNeverBeZero: number = 0;
 
@@ -216,7 +234,7 @@ export function describeRecentWindowOpens(): string {
 // inline), and any GUI call it then makes crashes the client — see
 // runOnMainThread. Hop before touching EVENT_CONTAINERS or resolving anything;
 // the scheduled-task queue keeps packets in arrival order.
-register("packetReceived", (packet) => {
+EVENT_TRIGGERS.packetReceived = register("packetReceived", (packet) => {
     runOnMainThread(() => {
         recordPacket("received", packet);
         maybeResolve("packetReceived", packet);
@@ -224,21 +242,24 @@ register("packetReceived", (packet) => {
         recordWindowOpen(packet);
     });
 });
+EVENT_TRIGGERS.packetReceived?.unregister();
 
-register("packetSent", (packet) => {
+EVENT_TRIGGERS.packetSent = register("packetSent", (packet) => {
     runOnMainThread(() => {
         recordPacket("sent", packet);
         maybeResolve("packetSent", packet);
     });
 });
+EVENT_TRIGGERS.packetSent?.unregister();
 
-register("chat", (event) => {
+EVENT_TRIGGERS.message = register("chat", (event) => {
     // Read the message before deferring — other chat handlers may mutate or
     // cancel the event after this trigger returns.
     // @ts-expect-error CTAutocomplete's chat trigger event type is too narrow here.
     const message = ChatLib.getChatMessage(event, true);
     runOnMainThread(() => maybeResolve("message", message));
 });
+EVENT_TRIGGERS.message?.unregister();
 
 /**
  * Live waiter count per event type. Every received packet / tick re-runs
@@ -254,6 +275,12 @@ export function getEventContainerCounts(): { [k: string]: number } {
         message: EVENT_CONTAINERS.message.length,
         timeout: TIMEOUTS.length,
     };
+}
+
+export function setPacketCaptureForTask(active: boolean): void {
+    packetCaptureForTask = active;
+    updateTriggerRegistration("packetReceived");
+    updateTriggerRegistration("packetSent");
 }
 
 /**
@@ -276,6 +303,10 @@ export function resetEventContainers(): number {
     EVENT_CONTAINERS.packetSent.length = 0;
     EVENT_CONTAINERS.message.length = 0;
     TIMEOUTS.length = 0;
+    EVENT_TRIGGERS.tick?.unregister();
+    EVENT_TRIGGERS.packetReceived?.unregister();
+    EVENT_TRIGGERS.packetSent?.unregister();
+    EVENT_TRIGGERS.message?.unregister();
     return total;
 }
 
@@ -305,6 +336,7 @@ export function waitForTimeout(
             cleanupInner,
         };
         TIMEOUTS.push(entry);
+        updateTriggerRegistration("tick");
     }) as WaitForPromise<never>;
 
     promise.cleanupWaiter = (): void => {
@@ -332,6 +364,7 @@ export function waitFor<E extends EventName>(
             remaining: amount,
         };
         EVENT_CONTAINERS[event].push(container);
+        updateTriggerRegistration(event);
     }) as WaitForPromise<ParametersFor<E>>;
 
     function cleanup(): void {
@@ -340,6 +373,7 @@ export function waitFor<E extends EventName>(
         const index = containers.indexOf(container);
         if (index !== -1) containers.splice(index, 1);
         container = null;
+        updateTriggerRegistration(event);
     }
 
     promise.cleanupWaiter = cleanup;

@@ -6,6 +6,7 @@ import type {
     ProjectImportableMetadata,
     ProjectImportableSub,
     ProjectImportableSummary,
+    GitDecoration,
     ProjectImportJsonNode,
     ProjectToHostMessage,
 } from "../protocol";
@@ -802,9 +803,11 @@ function renderNode(
                 ${indentGuides(depth)}
                 <span class="twisty empty"></span>
                 <span class="row-icon json">${SVG.braces}</span>
-                <span class="row-label ${diagClass(node.errors, node.warnings)}">${escapeHtml(node.label)}</span>
+                <span class="row-label ${diagClass(node.errors, node.warnings)} ${gitClass(node.git)}">${escapeHtml(node.label)}</span>
                 <span class="row-jump">↩</span>
                 ${diagBadge(node.errors, node.warnings)}
+                ${gitBadge(node.git)}
+                ${gitRollupBadge(node.gitRollup)}
                 <span class="row-count">${node.importableCount}</span>
             </div>
         `;
@@ -828,8 +831,10 @@ function renderNode(
             <button class="twisty ${hasChildren ? "" : "empty"} ${expanded ? "open" : ""}" type="button"
                 data-toggle-node="${escapeAttr(node.fsPath)}" ${hasChildren ? "" : "disabled"}>${SVG.chevron}</button>
             <span class="row-icon json">${SVG.braces}</span>
-            <span class="row-label ${diagClass(node.errors, node.warnings)}">${escapeHtml(node.label)}</span>
+            <span class="row-label ${diagClass(node.errors, node.warnings)} ${gitClass(node.git)}">${escapeHtml(node.label)}</span>
             ${diagBadge(node.errors, node.warnings)}
+            ${gitBadge(node.git)}
+            ${gitRollupBadge(node.gitRollup)}
             <span class="row-count ${problem ? "problem" : ""}">${escapeHtml(badge)}</span>
         </div>
     `;
@@ -885,8 +890,9 @@ function renderImportable(
             <button class="twisty ${hasChildren ? "" : "empty"} ${expanded ? "open" : ""}" type="button"
                 data-toggle-node="${escapeAttr(entry.id)}" ${hasChildren ? "" : "disabled"}>${SVG.chevron}</button>
             ${importableIcon(entry)}
-            <span class="row-label ${diagClass(entry.errors, entry.warnings)}">${escapeHtml(entry.label)}</span>
+            <span class="row-label ${diagClass(entry.errors, entry.warnings)} ${gitClass(entry.git)}">${escapeHtml(entry.label)}</span>
             ${diagBadge(entry.errors, entry.warnings)}
+            ${gitBadge(entry.git)}
             <span class="row-type">${escapeHtml(entry.typeLabel)}</span>
         </div>
     `;
@@ -935,8 +941,9 @@ function renderSubEntry(sub: ProjectImportableSub, depth: number): string {
             ${indentGuides(depth)}
             <span class="twisty empty"></span>
             ${icon}
-            <span class="row-label ${diagClass(sub.errors, sub.warnings)}">${escapeHtml(sub.label)}</span>
+            <span class="row-label ${diagClass(sub.errors, sub.warnings)} ${gitClass(sub.git)}">${escapeHtml(sub.label)}</span>
             ${diagBadge(sub.errors, sub.warnings)}
+            ${gitBadge(sub.git)}
             <span class="row-type">${escapeHtml(baseName(sub.fsPath))}</span>
         </div>
     `;
@@ -1147,6 +1154,29 @@ function importableMatches(entry: ProjectImportableSummary, query: string): bool
         .map((field) => `${field.label} ${field.value}`)
         .join(" ");
     return `${entry.label} ${entry.typeLabel} ${entry.type} ${subs} ${metadata}`.toLowerCase().includes(query);
+}
+
+function gitClass(decoration?: GitDecoration): string {
+    return decoration ? `git-${decoration.color}` : "";
+}
+
+const GIT_STATUS_LABELS: Record<GitDecoration["color"], string> = {
+    modified: "Modified",
+    untracked: "Untracked",
+    added: "Added",
+    deleted: "Deleted",
+    renamed: "Renamed",
+    conflicting: "Conflicted",
+};
+
+function gitBadge(decoration?: GitDecoration): string {
+    if (!decoration) return "";
+    const label = GIT_STATUS_LABELS[decoration.color];
+    return `<span class="git-badge ${gitClass(decoration)}" title="${escapeAttr(label)}">${escapeHtml(decoration.badge)}</span>`;
+}
+
+function gitRollupBadge(rollup?: boolean): string {
+    return rollup ? `<span class="git-rollup" title="Contains changed files">●</span>` : "";
 }
 
 function post(vscode: VsCodeApi, message: ProjectToHostMessage): void {

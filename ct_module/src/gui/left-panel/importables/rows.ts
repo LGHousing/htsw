@@ -56,7 +56,7 @@ import { functionIconCompareKey } from "../../../importCache/hash";
 import { addToQueue, makeImportableQueueItem, queueItemKey, removeFromQueueKey } from "../../right-panel/import-tab/queue";
 import { isTaskRunning } from "../../../tasks/runningState";
 import { composeFileMenu, composeImportableMenu } from "../../menus/fileMenu";
-import { autoTrackRefresh, queueModifiedFromPath } from "../../autoTrack";
+import { autoTrackRefresh, queueModifiedFromPath, queueModifiedImportables } from "../../autoTrack";
 import { SourceDir, SourceFile, removeSource } from "./source";
 import { type IncludeNode, findIncludeNode, includeTreeOf, subtreeImportableCount } from "./includeTree";
 import {
@@ -646,6 +646,12 @@ function queueImportJsonSubtree(parent: ResultImport, node: IncludeNode): void {
     queueImportables(parent, importables);
 }
 
+function queueModifiedSubtree(parent: ResultImport, node: IncludeNode): void {
+    const importables: Importable[] = [];
+    collectSubtreeImportables(node, importables);
+    queueModifiedImportables(parent.fullPath, importables);
+}
+
 // Where the last row menu opened. Submenus ("Move to…") anchor here because
 // a MenuAction's onClick receives no coordinates of its own.
 let lastMenuX = 0;
@@ -1008,6 +1014,10 @@ export function includeGroupRow(
         {
             label: "Queue all importables",
             onClick: () => queueImportJsonSubtree(parent, node),
+        },
+        {
+            label: "Queue all modified",
+            onClick: () => queueModifiedSubtree(parent, node),
         },
         { kind: "separator" },
         {

@@ -1,7 +1,10 @@
 import { TaskManager } from "../tasks/manager";
 import type TaskContext from "../tasks/context";
 import { setTaskRunning } from "../tasks/runningState";
-import { resetEventContainers } from "../tasks/specifics/waitFor";
+import {
+    resetEventContainers,
+    setPacketCaptureForTask,
+} from "../tasks/specifics/waitFor";
 import {
     clearActiveTaskContext,
     setActiveTaskContext,
@@ -35,8 +38,10 @@ export async function runHousingSyncTask<T>(
             if (purged > 0) {
                 ChatLib.chat(`&8[htsw] purged ${purged} leaked event waiter(s) from a prior run.`);
             }
+            setPacketCaptureForTask(true);
             result = await task(ctx);
         } finally {
+            setPacketCaptureForTask(false);
             clearActiveTaskContext(kind, ctx);
             setTaskRunning(false);
         }

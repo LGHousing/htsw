@@ -443,6 +443,27 @@ select {
     white-space: nowrap;
 }
 
+.row .git-modified { color: var(--vscode-gitDecoration-modifiedResourceForeground); }
+.row .git-untracked { color: var(--vscode-gitDecoration-untrackedResourceForeground); }
+.row .git-added { color: var(--vscode-gitDecoration-addedResourceForeground); }
+.row .git-deleted { color: var(--vscode-gitDecoration-deletedResourceForeground); }
+.row .git-renamed { color: var(--vscode-gitDecoration-renamedResourceForeground); }
+.row .git-conflicting { color: var(--vscode-gitDecoration-conflictingResourceForeground); }
+
+.git-badge {
+    flex: none;
+    margin-left: 7px;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.git-rollup {
+    flex: none;
+    margin-left: 7px;
+    font-size: 8px;
+    color: var(--vscode-gitDecoration-modifiedResourceForeground);
+}
+
 .row.file .row-label {
     font-weight: 600;
 }

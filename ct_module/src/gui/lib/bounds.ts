@@ -22,24 +22,51 @@ export type ContainerBounds = {
 //   field_146999_f = GuiContainer.xSize   (protected — needs reflection)
 //   field_147000_g = GuiContainer.ySize   (protected — needs reflection)
 
-function readIntField(obj: any, fieldName: string): number | null {
+type ContainerFields = {
+    left: any;
+    top: any;
+    xSize: any;
+    ySize: any;
+};
+
+let containerFields: ContainerFields | null = null;
+
+function resolveContainerFields(obj: any): ContainerFields | null {
+    if (containerFields !== null) return containerFields;
     try {
         let klass = obj.getClass();
         while (klass !== null) {
-            try {
-                const field = klass.getDeclaredField(fieldName);
-                field.setAccessible(true);
-                const value = field.get(obj);
-                if (typeof value === "number") return value;
-                return null;
-            } catch (_e) {
-                klass = klass.getSuperclass();
+            const declared = klass.getDeclaredFields();
+            const found: { [name: string]: any } = {};
+            for (let i = 0; i < declared.length; i++) {
+                const field = declared[i];
+                found[String(field.getName())] = field;
             }
+            const left = found.field_147003_i;
+            const top = found.field_147009_r;
+            const xSize = found.field_146999_f;
+            const ySize = found.field_147000_g;
+            if (left && top && xSize && ySize) {
+                left.setAccessible(true);
+                top.setAccessible(true);
+                xSize.setAccessible(true);
+                ySize.setAccessible(true);
+                containerFields = { left, top, xSize, ySize };
+                return containerFields;
+            }
+            klass = klass.getSuperclass();
         }
-    } catch (_e) {
-        // ignore
-    }
+    } catch (_e) {}
     return null;
+}
+
+function readIntField(obj: any, field: any): number | null {
+    try {
+        const value = field.get(obj);
+        return typeof value === "number" ? value : null;
+    } catch (_e) {
+        return null;
+    }
 }
 
 // Screens that should NOT trigger our overlay — even though they're
@@ -71,10 +98,13 @@ export function getContainerBounds(): ContainerBounds | null {
     const screenH = gui.field_146295_m;
     if (typeof screenW !== "number" || typeof screenH !== "number") return null;
 
-    const left = readIntField(gui, "field_147003_i");
-    const top = readIntField(gui, "field_147009_r");
-    const xSize = readIntField(gui, "field_146999_f");
-    const ySize = readIntField(gui, "field_147000_g");
+    const fields = resolveContainerFields(gui);
+    if (fields === null) return null;
+
+    const left = readIntField(gui, fields.left);
+    const top = readIntField(gui, fields.top);
+    const xSize = readIntField(gui, fields.xSize);
+    const ySize = readIntField(gui, fields.ySize);
     if (left === null || top === null || xSize === null || ySize === null) {
         return null;
     }

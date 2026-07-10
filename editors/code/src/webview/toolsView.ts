@@ -14,6 +14,7 @@ import {
 } from "./projectView";
 import type { ItemEditorToHostMessage, ProjectToHostMessage, SoundPreviewToHostMessage } from "./protocol";
 import { SoundPreviewController } from "./soundPreviewView";
+import { onDidChangeGitStatus } from "./gitDecorations";
 
 type HtswToolsMessage = ProjectToHostMessage | ItemEditorToHostMessage | SoundPreviewToHostMessage;
 
@@ -100,9 +101,19 @@ export class HtswToolsViewProvider implements vscode.WebviewViewProvider {
                 void handleProjectMessage(view.webview, { type: "requestProjectTree" });
             }, 750);
         });
+        let gitTimer: ReturnType<typeof setTimeout> | undefined;
+        const gitSub = onDidChangeGitStatus(() => {
+            if (gitTimer) clearTimeout(gitTimer);
+            gitTimer = setTimeout(() => {
+                if (!view.visible) return;
+                void handleProjectMessage(view.webview, { type: "requestProjectTree" });
+            }, 500);
+        });
         view.onDidDispose(() => {
             if (diagTimer) clearTimeout(diagTimer);
+            if (gitTimer) clearTimeout(gitTimer);
             diagSub.dispose();
+            gitSub.dispose();
             if (this.webview === view.webview) this.webview = undefined;
         });
     }

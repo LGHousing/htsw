@@ -33,6 +33,8 @@ type LagSample = {
 
 const STALL_MS = 250;
 const MAX_SAMPLES = 16;
+const probeEnabled = new java.util.concurrent.atomic.AtomicBoolean(false);
+const watchdogRunning = new java.util.concurrent.atomic.AtomicBoolean(false);
 
 let lastStepAt = Date.now();
 const samples: LagSample[] = [];
@@ -144,44 +146,48 @@ const MAX_STACKS = 6;
 const stallStacks: string[][] = [];
 let clientThread: any = null;
 let stackQueue: any = null;
-let watchdogStarted = false;
 
 function startWatchdog(): void {
-    if (watchdogStarted) return;
-    watchdogStarted = true;
+    if (!watchdogRunning.compareAndSet(false, true)) return;
     try {
         const ConcurrentLinkedQueue = java.util.concurrent.ConcurrentLinkedQueue;
-        stackQueue = new ConcurrentLinkedQueue();
+        if (stackQueue === null) stackQueue = new ConcurrentLinkedQueue();
         let capturedForStepAt = 0;
         let capturesThisStall = 0;
         const t = new java.lang.Thread(function () {
-            while (true) {
-                try {
-                    java.lang.Thread.sleep(60);
-                    const stalledSince = lastStepAt;
-                    const stalledForMs = Date.now() - stalledSince;
-                    if (stalledForMs < STALL_MS) continue;
-                    if (capturedForStepAt !== stalledSince) {
-                        capturedForStepAt = stalledSince;
-                        capturesThisStall = 0;
+            try {
+                while (probeEnabled.get()) {
+                    try {
+                        java.lang.Thread.sleep(60);
+                        if (!probeEnabled.get()) break;
+                        const stalledSince = lastStepAt;
+                        const stalledForMs = Date.now() - stalledSince;
+                        if (stalledForMs < STALL_MS) continue;
+                        if (capturedForStepAt !== stalledSince) {
+                            capturedForStepAt = stalledSince;
+                            capturesThisStall = 0;
+                        }
+                        // Snapshot the start of the stall, then again each further
+                        // ~300ms of the same stall — long stalls get phase samples.
+                        if (stalledForMs < STALL_MS + 300 * capturesThisStall) continue;
+                        capturesThisStall++;
+                        const trace = clientThread.getStackTrace();
+                        const lines: string[] = [`stack ${stalledForMs}ms into stall:`];
+                        const n = Math.min(Number(trace.length), 30);
+                        for (let i = 0; i < n; i++) lines.push(String(trace[i].toString()));
+                        stackQueue.add(lines.join("\n"));
+                    } catch (_e) {
+                        // never let the watchdog die; next loop retries
                     }
-                    // Snapshot the start of the stall, then again each further
-                    // ~300ms of the same stall — long stalls get phase samples.
-                    if (stalledForMs < STALL_MS + 300 * capturesThisStall) continue;
-                    capturesThisStall++;
-                    const trace = clientThread.getStackTrace();
-                    const lines: string[] = [`stack ${stalledForMs}ms into stall:`];
-                    const n = Math.min(Number(trace.length), 30);
-                    for (let i = 0; i < n; i++) lines.push(String(trace[i].toString()));
-                    stackQueue.add(lines.join("\n"));
-                } catch (_e) {
-                    // never let the watchdog die; next loop retries
                 }
+            } finally {
+                watchdogRunning.set(false);
             }
         }, "htsw-lagprobe-watchdog");
         t.setDaemon(true);
         t.start();
     } catch (e) {
+        watchdogRunning.set(false);
         debugLogError("lagProbe.startWatchdog", e);
     }
 }
@@ -199,7 +205,7 @@ function drainStallStacks(): void {
     }
 }
 
-register("step", () => {
+const probeStepTrigger = register("step", () => {
     const now = Date.now();
     const gap = now - lastStepAt;
     lastStepAt = now;
@@ -211,6 +217,7 @@ register("step", () => {
             debugLogError("lagProbe.clientThread", e);
         }
     }
+    startWatchdog();
     drainStallStacks();
     const gc = gcTotals();
     const gcCount = gc === null ? -1 : gc.count - lastGcCount;
@@ -222,7 +229,29 @@ register("step", () => {
     const heapNow = heapUsedMB();
     if (gap >= STALL_MS) record(gap, gcCount, gcMs, lastHeapUsedMB, heapNow);
     lastHeapUsedMB = heapNow;
-}).setFps(60);
+}).setFps(10);
+probeStepTrigger.unregister();
+
+export function isLagProbeEnabled(): boolean {
+    return Boolean(probeEnabled.get());
+}
+
+export function setLagProbeEnabled(enabled: boolean): void {
+    if (enabled === isLagProbeEnabled()) return;
+    probeEnabled.set(enabled);
+    if (enabled) {
+        lastStepAt = Date.now();
+        const gc = gcTotals();
+        if (gc !== null) {
+            lastGcCount = gc.count;
+            lastGcMs = gc.ms;
+        }
+        lastHeapUsedMB = heapUsedMB();
+        probeStepTrigger.register();
+    } else {
+        probeStepTrigger.unregister();
+    }
+}
 
 export function getLagProbeSamples(): LagSample[] {
     return samples.slice();
