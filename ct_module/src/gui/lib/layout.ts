@@ -554,6 +554,15 @@ function layoutScroll(
     const crossAxis: "w" | "h" = horizontal ? "h" : "w";
     const mainLen = horizontal ? innerW : innerH;
 
+    // Advance the eased offset BEFORE extracting children, clamped against
+    // last frame's content length. Virtualized lists (the Importables tree,
+    // the code view) pick which children exist from this offset at extraction
+    // time — extracting first and advancing after made them materialize for
+    // the PREVIOUS frame's position, so a fast flick (or the >100ms low-FPS
+    // snap in advanceScrollOffset) scrolled the viewport past every
+    // materialized row and painted blank until the dirty backstop.
+    advanceScrollOffset(state, Math.max(0, state.contentLength - mainLen));
+
     const children = extractChildren(s.children);
     const n = children.length;
 
@@ -570,6 +579,9 @@ function layoutScroll(
     if (n > 1) contentMain += gap * (n - 1);
     state.contentLength = contentMain;
 
+    // Re-clamp against the freshly measured content (it may have grown or
+    // shrunk this frame). Exact under split dt, so the second call adds no
+    // extra easing movement.
     const maxOffset = Math.max(0, contentMain - mainLen);
     advanceScrollOffset(state, maxOffset);
 
