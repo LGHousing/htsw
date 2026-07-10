@@ -88,7 +88,16 @@ export function getActionLimit(
         return 40;
     }
 
-    return ACTION_LIMITS[type];
+    const limit = ACTION_LIMITS[type];
+
+    // Measured in-game (2026-07): inside a Random Action the server raises
+    // every per-type limit to at least 10; limits already >= 10 keep their
+    // normal value.
+    if (limit !== undefined && context.nested === "random") {
+        return Math.max(limit, 10);
+    }
+
+    return limit;
 }
 
 export function getConditionLimit(type: Condition["type"]): number | undefined {

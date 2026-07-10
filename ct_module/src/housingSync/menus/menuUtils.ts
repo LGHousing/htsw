@@ -725,13 +725,15 @@ export async function setLocationValue(
 
 /**
  * Detect the Housing "You can't have more of this {action|condition}!" hint
- * on the add-X menu's type slot. Lore-only check; no clicks.
+ * on the add-X menu's type slot. Lore-only check; no clicks. Scans every
+ * lore line because advanced tooltips (F3+H) append id/NBT lines after it.
  */
 export function isLimitExceeded(slot: ItemSlot, kind: "action" | "condition"): boolean {
-    const lore = slot.getItem().getLore();
-    if (lore.length === 0) return false;
-    const lastLine = lore[lore.length - 1];
-    return removedFormatting(lastLine) === `You can't have more of this ${kind}!`;
+    const message = `You can't have more of this ${kind}!`;
+    return slot
+        .getItem()
+        .getLore()
+        .some((line) => removedFormatting(line) === message);
 }
 
 /**

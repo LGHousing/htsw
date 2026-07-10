@@ -426,6 +426,36 @@ describe("Main API", () => {
         )).toBe(true);
     });
 
+    it("parseImportablesResult raises limits below 10 inside random actions only", () => {
+        const valid = parseFunctionWithActions([
+            "random {",
+            makeLines("    changePlayerGroup \"group\" false", 10),
+            "}",
+            "",
+        ].join("\n"));
+        expect(errorMessages(valid)).toEqual([]);
+
+        const invalid = parseFunctionWithActions([
+            "random {",
+            makeLines("    changePlayerGroup \"group\" false", 11),
+            "}",
+            "",
+        ].join("\n"));
+        expect(errorMessages(invalid).some((message) =>
+            message.includes("Maximum amount of Change Player's Group actions exceeded in Function \"test\" Random actions: 11/10."),
+        )).toBe(true);
+
+        const invalidConditional = parseFunctionWithActions([
+            "if and () {",
+            makeLines("    changePlayerGroup \"group\" false", 2),
+            "}",
+            "",
+        ].join("\n"));
+        expect(errorMessages(invalidConditional).some((message) =>
+            message.includes("Maximum amount of Change Player's Group actions exceeded in Function \"test\" Conditional if-actions: 2/1."),
+        )).toBe(true);
+    });
+
     it("parseImportablesResult enforces item consumeItem limits", () => {
         const valid = parseItemWithActions("consumeItem\n");
         expect(errorMessages(valid)).toEqual([]);
