@@ -180,7 +180,15 @@ export function childListsOf(imp: Importable): ImportableChildListName[] {
 }
 
 type FieldDiff = "changed" | "added" | "removed";
-export type MetadataField = { key: string; label: string; value: string; diff?: FieldDiff };
+export type MetadataField = {
+    key: string;
+    label: string;
+    value: string;
+    diff?: FieldDiff;
+    /** Hover text naming both sides of the diff — a bare marker invites
+     *  "why is this a diff?" when the house-side value isn't visible. */
+    diffTooltip?: string;
+};
 
 function formatPos(p: { x: number; y: number; z: number }): string {
     return p.x + ", " + p.y + ", " + p.z;
@@ -260,13 +268,25 @@ function importableStatus(imp: Importable): Element {
         : linkStatusIcon("unknown", "No Knowledge read yet");
 }
 
-function valDiff(a: unknown, b: unknown): FieldDiff | undefined {
-    const aj = JSON.stringify(a ?? null);
-    const bj = JSON.stringify(b ?? null);
+function showDiffValue(v: unknown): string {
+    const j = JSON.stringify(v ?? null);
+    if (j === "null") return "(none)";
+    return j.length > 60 ? j.substring(0, 57) + "..." : j;
+}
+
+function valDiff(
+    fileValue: unknown,
+    houseValue: unknown
+): { diff: FieldDiff; diffTooltip: string } | undefined {
+    const aj = JSON.stringify(fileValue ?? null);
+    const bj = JSON.stringify(houseValue ?? null);
     if (aj === bj) return undefined;
-    if (aj === "null" && bj !== "null") return "removed";
-    if (aj !== "null" && bj === "null") return "added";
-    return "changed";
+    const diff: FieldDiff =
+        aj === "null" ? "removed" : bj === "null" ? "added" : "changed";
+    return {
+        diff,
+        diffTooltip: `file: ${showDiffValue(fileValue)} — house: ${showDiffValue(houseValue)}`,
+    };
 }
 
 export function metadataFieldsOf(imp: Importable): MetadataField[] {
@@ -278,16 +298,13 @@ export function metadataFieldsOf(imp: Importable): MetadataField[] {
                 key: "repeatTicks",
                 label: "Repeat",
                 value: imp.repeatTicks !== undefined ? imp.repeatTicks + "t" : "off",
-                diff: cf !== null ? valDiff(imp.repeatTicks, cf.repeatTicks) : undefined,
+                ...(cf !== null ? valDiff(imp.repeatTicks, cf.repeatTicks) : undefined),
             },
             {
                 key: "icon",
                 label: "Icon",
                 value: imp.icon !== undefined ? imp.icon.item : "default",
-                diff:
-                    cf !== null
-                        ? valDiff(functionIconCompareKey(imp.icon), functionIconCompareKey(cf.icon))
-                        : undefined,
+                ...(cf !== null ? valDiff(functionIconCompareKey(imp.icon), functionIconCompareKey(cf.icon)) : undefined),
             },
         ];
         if (imp.icon !== undefined) {
@@ -296,10 +313,7 @@ export function metadataFieldsOf(imp: Importable): MetadataField[] {
                 label: "Count",
                 value: imp.icon.count !== undefined ? String(imp.icon.count) : "1",
                 // count 1 and absent count are the same icon.
-                diff:
-                    cf !== null
-                        ? valDiff(imp.icon.count ?? 1, cf.icon?.count ?? 1)
-                        : undefined,
+                ...(cf !== null ? valDiff(imp.icon.count ?? 1, cf.icon?.count ?? 1) : undefined),
             });
         }
         return fields;
@@ -311,19 +325,19 @@ export function metadataFieldsOf(imp: Importable): MetadataField[] {
                 key: "mode",
                 label: "Mode",
                 value: imp.mode ?? "Self",
-                diff: cc !== null ? valDiff(imp.mode ?? "Self", cc.mode ?? "Self") : undefined,
+                ...(cc !== null ? valDiff(imp.mode ?? "Self", cc.mode ?? "Self") : undefined),
             },
             {
                 key: "requiredPriority",
                 label: "Priority",
                 value: String(imp.requiredPriority ?? 0),
-                diff: cc !== null ? valDiff(imp.requiredPriority ?? 0, cc.requiredPriority ?? 0) : undefined,
+                ...(cc !== null ? valDiff(imp.requiredPriority ?? 0, cc.requiredPriority ?? 0) : undefined),
             },
             {
                 key: "listed",
                 label: "Listed",
                 value: (imp.listed ?? true) ? "true" : "false",
-                diff: cc !== null ? valDiff(imp.listed ?? true, cc.listed ?? true) : undefined,
+                ...(cc !== null ? valDiff(imp.listed ?? true, cc.listed ?? true) : undefined),
             },
         ];
     }
@@ -337,18 +351,18 @@ export function metadataFieldsOf(imp: Importable): MetadataField[] {
                     key: "bounds",
                     label: "Bounds",
                     value: "(not set)",
-                    diff: cr !== null ? valDiff(undefined, cachedBounds) : undefined,
+                    ...(cr !== null ? valDiff(undefined, cachedBounds) : undefined),
                 },
             ];
         }
         return [
             {
                 key: "boundsFrom", label: "From", value: formatPos(bounds.from),
-                diff: cachedBounds !== undefined ? valDiff(bounds.from, cachedBounds.from) : undefined,
+                ...(cachedBounds !== undefined ? valDiff(bounds.from, cachedBounds.from) : undefined),
             },
             {
                 key: "boundsTo", label: "To", value: formatPos(bounds.to),
-                diff: cachedBounds !== undefined ? valDiff(bounds.to, cachedBounds.to) : undefined,
+                ...(cachedBounds !== undefined ? valDiff(bounds.to, cachedBounds.to) : undefined),
             },
         ];
     }
@@ -359,7 +373,7 @@ export function metadataFieldsOf(imp: Importable): MetadataField[] {
                 key: "size",
                 label: "Size",
                 value: imp.size !== undefined ? imp.size + " lines" : "default",
-                diff: cm !== null ? valDiff(imp.size, cm.size) : undefined,
+                ...(cm !== null ? valDiff(imp.size, cm.size) : undefined),
             },
         ];
     }
@@ -370,7 +384,7 @@ export function metadataFieldsOf(imp: Importable): MetadataField[] {
                 key: "pos",
                 label: "Pos",
                 value: formatPos(imp.pos),
-                diff: cn !== null ? valDiff(imp.pos, cn.pos) : undefined,
+                ...(cn !== null ? valDiff(imp.pos, cn.pos) : undefined),
             },
             {
                 key: "leftClickRedirect",
@@ -378,7 +392,7 @@ export function metadataFieldsOf(imp: Importable): MetadataField[] {
                 value: imp.leftClickRedirect === undefined
                     ? "default"
                     : imp.leftClickRedirect ? "true" : "false",
-                diff: cn !== null ? valDiff(imp.leftClickRedirect, cn.leftClickRedirect) : undefined,
+                ...(cn !== null ? valDiff(imp.leftClickRedirect, cn.leftClickRedirect) : undefined),
             },
         ];
     }
@@ -389,7 +403,7 @@ export function metadataFieldsOf(imp: Importable): MetadataField[] {
                 key: "nbt",
                 label: "NBT",
                 value: "Item data",
-                diff: ci !== null ? valDiff(imp.nbt, ci.nbt) : undefined,
+                ...(ci !== null ? valDiff(imp.nbt, ci.nbt) : undefined),
             },
         ];
     }
@@ -1440,7 +1454,7 @@ export function metadataRow(parent: ResultImport, imp: Importable, field: Metada
                 ? Text({
                       text: DIFF_SYMBOL[field.diff],
                       color: DIFF_COLOR[field.diff],
-                      tooltip: field.diff,
+                      tooltip: field.diffTooltip ?? field.diff,
                       tooltipColor: DIFF_COLOR[field.diff],
                       style: { width: { kind: "px", value: 8 } },
                   })
