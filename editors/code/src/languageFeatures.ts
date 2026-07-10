@@ -508,16 +508,14 @@ export class DiagnosticsAdapter {
 
         if (this.isImportJsonDocument(document)) {
             const docPath = document.uri.fsPath;
-            const sourceMap = new htsw.SourceMap(
-                new HybridFileLoader(docPath, document.getText())
-            );
-            const result = htsw.parseImportablesResult(sourceMap, docPath);
+            const rootPath = this.findRootContext(docPath);
+            const { result, sourceMap } = this.parseRootScope(rootPath, document);
             return [{
                 diagnostics: result.diagnostics.filter((diagnostic) =>
                     this.isDiagnosticForFile(diagnostic, sourceMap, docPath)
                 ),
                 sourceMap,
-                rootPath: docPath,
+                rootPath,
                 rootDiagnostics: result.diagnostics,
             }];
         }
