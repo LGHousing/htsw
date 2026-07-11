@@ -24,7 +24,6 @@ import {
     itemWithInteractData,
 } from "../../utils/nbt";
 import {
-    HOTBAR_ZERO_PACKET_SLOT,
     SET_SLOT_ACK_MAX_TICKS,
     selectHotbarSlot,
     selectedHotbarSlot,
@@ -95,8 +94,8 @@ function stackLanded(current: any, sent: any): boolean {
     );
 }
 
-function hotbarZeroLanded(stack: any): boolean {
-    const current = hotbarSlotStack(0);
+function inventorySlotLanded(slot: number, stack: any): boolean {
+    const current = hotbarSlotStack(slot);
     return current !== null && stackLanded(current, stack);
 }
 
@@ -148,7 +147,7 @@ async function importImportableItem(
 
     const uuid = cachedUuid ?? session.housingUuid;
     if (!hasItemClickActions(importable)) {
-        await injectHeldItem(ctx, getItemFromNbt(importable.nbt));
+        await injectInventoryItem(ctx, getItemFromNbt(importable.nbt));
         setup(`gave ${importable.name}`);
         await tryWriteImportableCache(ctx, importable, "importer", uuid);
         return;
@@ -254,48 +253,69 @@ async function switchToHotbarSlot(ctx: TaskContext, slot: number): Promise<void>
     await ctx.waitFor("tick");
 }
 
-async function clearHotbarZero(ctx: TaskContext): Promise<void> {
-    if (hotbarSlotStack(0) === null) return;
-    sendCreativeInventoryAction(ctx, HOTBAR_ZERO_PACKET_SLOT, null);
-    const cleared = await pollTicks(
-        ctx,
-        SET_SLOT_ACK_MAX_TICKS,
-        () => hotbarSlotStack(0) === null
-    );
-    if (!cleared) {
-        const observed = summarizeItemStack(hotbarSlotStack(0));
-        throw new Error(
-            `could not clear hotbar slot 0 before item injection ` +
-                `(slot 0 holds: ${JSON.stringify(observed)}).`
-        );
+function findEmptyInventorySlot(): number | undefined {
+    const inventory = Player.getInventory();
+    if (inventory === null || inventory === undefined) return undefined;
+
+    for (let slot = 9; slot < 36; slot++) {
+        if (inventory.getStackInSlot(slot) === null) return slot;
     }
+    for (let slot = 0; slot < 9; slot++) {
+        if (inventory.getStackInSlot(slot) === null) return slot;
+    }
+    return undefined;
 }
 
-async function injectHeldItem(ctx: TaskContext, item: Item): Promise<void> {
+function findEmptyHotbarSlot(): number | undefined {
+    for (let slot = 0; slot < 9; slot++) {
+        if (hotbarSlotStack(slot) === null) return slot;
+    }
+    return undefined;
+}
+
+function packetSlotForInventorySlot(slot: number): number {
+    return slot < 9 ? slot + 36 : slot;
+}
+
+async function injectItemIntoSlot(ctx: TaskContext, item: Item, slot: number): Promise<void> {
     const stack = item.getItemStack();
     if (stack === null || stack === undefined) {
         throw new Error("Cannot inject an empty item stack.");
     }
 
     await closeOpenScreen(ctx);
-    await clearHotbarZero(ctx);
-
     sendCreativeInventoryAction(
         ctx,
-        HOTBAR_ZERO_PACKET_SLOT,
+        packetSlotForInventorySlot(slot),
         stack,
     );
-    const landed = await pollTicks(ctx, SET_SLOT_ACK_MAX_TICKS, () => hotbarZeroLanded(stack));
+    const landed = await pollTicks(ctx, SET_SLOT_ACK_MAX_TICKS, () => inventorySlotLanded(slot, stack));
     if (!landed) {
-        const observed = summarizeItemStack(hotbarSlotStack(0));
+        const observed = summarizeItemStack(hotbarSlotStack(slot));
         throw new Error(
-            `Hypixel did not accept this item into your hotbar. Check that its SNBT is formatted correctly ` +
-                `(slot 0 holds: ${observed === null ? "nothing" : JSON.stringify(observed)}).`
+            `Hypixel did not accept this item into your inventory. Check that its SNBT is formatted correctly ` +
+                `(slot ${slot} holds: ${observed === null ? "nothing" : JSON.stringify(observed)}).`
         );
     }
     await ctx.waitFor("tick");
+}
 
-    await switchToHotbarSlot(ctx, 0);
+async function injectInventoryItem(ctx: TaskContext, item: Item): Promise<void> {
+    const slot = findEmptyInventorySlot();
+    if (slot === undefined) {
+        throw new Error("Cannot import item: your inventory is full.");
+    }
+    await injectItemIntoSlot(ctx, item, slot);
+}
+
+async function injectHeldItem(ctx: TaskContext, item: Item): Promise<void> {
+    const slot = findEmptyHotbarSlot();
+    if (slot === undefined) {
+        throw new Error("Cannot import item actions: no empty hotbar slot is available.");
+    }
+
+    await injectItemIntoSlot(ctx, item, slot);
+    await switchToHotbarSlot(ctx, slot);
     await timed("sleep1000", COST.guaranteedSleep1000, () => ctx.sleep(1000));
 }
 
