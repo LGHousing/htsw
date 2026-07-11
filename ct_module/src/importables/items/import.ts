@@ -289,7 +289,7 @@ async function injectHeldItem(ctx: TaskContext, item: Item): Promise<void> {
     if (!landed) {
         const observed = summarizeItemStack(hotbarSlotStack(0));
         throw new Error(
-            `held item injection never landed in hotbar slot 0 within ${SET_SLOT_ACK_MAX_TICKS} ticks ` +
+            `Hypixel did not accept this item into your hotbar. Check that its SNBT is formatted correctly ` +
                 `(slot 0 holds: ${observed === null ? "nothing" : JSON.stringify(observed)}).`
         );
     }

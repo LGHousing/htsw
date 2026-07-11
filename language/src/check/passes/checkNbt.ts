@@ -24,6 +24,24 @@ function checkTag(gcx: GlobalCtxt, tag: Tag) {
 
     checkTagId(gcx, tag);
     checkTagCount(gcx, tag);
+    checkInteractData(gcx, tag);
+}
+
+function checkInteractData(gcx: GlobalCtxt, tag: TagCompound) {
+    const itemTag = tag.value["tag"];
+    if (itemTag?.type !== "compound") return;
+
+    const extraAttributes = itemTag.value["ExtraAttributes"];
+    if (extraAttributes?.type !== "compound") return;
+
+    const interactData = extraAttributes.value["interact_data"];
+    if (interactData === undefined) return;
+
+    gcx.addDiagnostic(
+        Diagnostic.error(
+            "Remove interaction data from this item. Define its clicks with 'leftClickActions' or 'rightClickActions' instead."
+        ).addPrimarySpan(gcx.spans.get(interactData))
+    );
 }
 
 function checkTagId(gcx: GlobalCtxt, tag: TagCompound) {
