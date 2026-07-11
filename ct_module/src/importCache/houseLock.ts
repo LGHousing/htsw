@@ -7,7 +7,7 @@ import { importableHash } from "./hash";
 const HOUSE_LOCK_SCHEMA_VERSION = 1;
 const HOUSE_LOCK_FILE = "house.lock.json";
 
-export type HouseLockEntry = {
+type HouseLockEntry = {
     type: Importable["type"];
     identity: string;
     hash: string;
@@ -27,7 +27,7 @@ function parentDir(path: string): string {
     return norm.substring(0, slash);
 }
 
-export function houseLockPathForImportJson(importJsonPath: string): string {
+function houseLockPathForImportJson(importJsonPath: string): string {
     return `${parentDir(importJsonPath)}/${HOUSE_LOCK_FILE}`;
 }
 
@@ -115,7 +115,7 @@ export function houseLockEntryFor(
     return lock.importables[importableKey(type, identity)] ?? null;
 }
 
-export function writeHouseLock(lockPath: string, lock: HouseLock): boolean {
+function writeHouseLock(lockPath: string, lock: HouseLock): boolean {
     try {
         ensureParentDirs(lockPath);
         FileLib.write(lockPath, JSON.stringify(lock, null, 4), true);
@@ -139,25 +139,5 @@ export function upsertHouseLockImportable(
         identity,
         hash: importableHash(importable),
     };
-    return writeHouseLock(path, lock);
-}
-
-export function upsertHouseLockImportables(
-    importJsonPath: string,
-    housingUuid: string,
-    importables: readonly Importable[]
-): boolean {
-    const path = houseLockPathForImportJson(importJsonPath);
-    const lock = readHouseLock(importJsonPath) ?? emptyHouseLock(housingUuid);
-    lock.houseUuid = housingUuid;
-    for (let i = 0; i < importables.length; i++) {
-        const importable = importables[i];
-        const identity = importableIdentity(importable);
-        lock.importables[importableKey(importable.type, identity)] = {
-            type: importable.type,
-            identity,
-            hash: importableHash(importable),
-        };
-    }
     return writeHouseLock(path, lock);
 }

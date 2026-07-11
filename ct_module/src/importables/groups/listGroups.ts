@@ -21,7 +21,7 @@ const GROUP_LIST_CONTROLS = new Set([
     "close",
 ]);
 
-export type GroupListEntry = {
+type GroupListEntry = {
     index: number;
     name: string;
 };
@@ -79,7 +79,7 @@ function editGroupOpened(): TaskWaiter<void> {
 
 // Groups have no slash command; the only entry point is the built-in Housing
 // menu (/hmenu) -> "Permissions and Groups".
-export async function openGroupsList(ctx: TaskContext): Promise<void> {
+async function openGroupsList(ctx: TaskContext): Promise<void> {
     // Already in the groups list (the list phase, or a "Go Back" from an edit
     // menu, left us here) — skip the /hmenu round-trip.
     if (isAtMenuTitle(ctx, "Permissions and Groups")) return;
@@ -91,7 +91,7 @@ export async function openGroupsList(ctx: TaskContext): Promise<void> {
     );
 }
 
-export async function listAllGroups(ctx: TaskContext): Promise<GroupListEntry[]> {
+async function listAllGroups(ctx: TaskContext): Promise<GroupListEntry[]> {
     await openGroupsList(ctx);
     return readGroupSlots(ctx).map((row) => row.entry);
 }

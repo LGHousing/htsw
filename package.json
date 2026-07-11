@@ -13,6 +13,7 @@
         "knip": "knip"
     },
     "devDependencies": {
-        "esbuild": "^0.28.1"
+        "esbuild": "^0.28.1",
+        "knip": "^6.16.1"
     }
 }

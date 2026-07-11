@@ -3,12 +3,12 @@
     "ignore": ["docs/**"],
     "ignoreIssues": {
         "ct_module/src/gui/lib/theme.ts": ["duplicates"],
-        "ct_module/src/tui/elements.ts": ["exports"]
+        "ct_module/src/tui/elements.ts": ["exports"],
+        "language/src/check/helpers.ts": ["files"]
     },
     "workspaces": {
         ".": {
-            "entry": ["vitest.workspace.ts"],
-            "ignoreBinaries": ["knip"]
+            "entry": ["vitest.workspace.ts"]
         },
         "ct_module": {
             "entry": ["scripts/*.ts", "test/**/*.test.ts"],

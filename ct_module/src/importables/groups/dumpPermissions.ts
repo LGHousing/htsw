@@ -118,7 +118,7 @@ function readPage(ctx: TaskContext, page: number): PermPageReport {
     return { page: page + 1, title: ctx.getOpenContainerTitle(), items };
 }
 
-export async function dumpGroupPermissions(
+async function dumpGroupPermissions(
     ctx: TaskContext,
     groupName?: string
 ): Promise<void> {

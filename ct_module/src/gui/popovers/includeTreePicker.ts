@@ -19,8 +19,8 @@ import type { IncludeNode } from "../left-panel/importables/includeTree";
 // "New …" action. Both callers own their own expansion/filter state and open
 // their own popover; only the model + row rendering live here.
 
-export const PICKER_INDENT = 12;
-export const PICKER_CARET_W = 18;
+const PICKER_INDENT = 12;
+const PICKER_CARET_W = 18;
 export const PICKER_ROW_H = 18;
 
 export type PickerNode = {
@@ -50,7 +50,7 @@ function baseNameOf(p: string): string {
 // A destination's label is its path relative to its parent node's directory
 // with a trailing import.json dropped, so a sub-include reads as "clocks"
 // instead of "functions/clocks/import.json".
-export function includeNodeLabel(parentDir: string, nodePath: string): string {
+function includeNodeLabel(parentDir: string, nodePath: string): string {
     const np = nodePath.split("\\").join("/");
     const base = parentDir.split("\\").join("/");
     let rel = np.indexOf(base + "/") === 0 ? np.substring(base.length + 1) : np;

@@ -79,7 +79,7 @@ export async function openTeamsList(ctx: TaskContext): Promise<void> {
     await ctx.expectAfter(() => ctx.runCommand("/teams"), teamsListOpened());
 }
 
-export async function listAllTeams(ctx: TaskContext): Promise<TeamListEntry[]> {
+async function listAllTeams(ctx: TaskContext): Promise<TeamListEntry[]> {
     await openTeamsList(ctx);
     return await readPaginatedList<TeamListEntry>(
         ctx,

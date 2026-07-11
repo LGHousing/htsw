@@ -208,7 +208,7 @@ export type GroupPermissionMenuState = {
 // Some groups (the built-in Owner) lock their permissions: the Edit Permissions
 // book reads "This group's permissions cannot be modified!" and clicking it
 // opens nothing. Detected from the Edit Group menu, before trying to open it.
-export function groupPermissionsLocked(ctx: TaskContext): boolean {
+function groupPermissionsLocked(ctx: TaskContext): boolean {
     const slot = ctx.tryGetMenuItemSlot(EDIT_PERMISSIONS_SLOT);
     if (slot === null) return false;
     // The lore is word-wrapped, so "cannot be modified" is split across two

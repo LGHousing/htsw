@@ -27,10 +27,3 @@ export { getCurrentHousingUuid } from "./housingId";
 
 export { buildTrustPlan } from "./trust";
 export type { ImportableTrustPlan, TrustPlan } from "./trust";
-
-export {
-    readHouseLock,
-    upsertHouseLockImportable,
-    upsertHouseLockImportables,
-} from "./houseLock";
-export type { HouseLock, HouseLockEntry } from "./houseLock";

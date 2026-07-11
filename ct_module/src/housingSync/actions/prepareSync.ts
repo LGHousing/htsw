@@ -108,7 +108,7 @@ export function getBaselineActionList(
     return readCachedActionList(plan.entry.importable, basePath);
 }
 
-export function getTrustedBaselineActionList(
+function getTrustedBaselineActionList(
     plan: ImportableTrustPlan | undefined,
     basePath: string
 ): readonly Action[] | undefined {
