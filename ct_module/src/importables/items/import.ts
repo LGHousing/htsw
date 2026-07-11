@@ -271,7 +271,7 @@ async function clearHotbarZero(ctx: TaskContext): Promise<void> {
     }
 }
 
-export async function injectHeldItem(ctx: TaskContext, item: Item): Promise<void> {
+async function injectHeldItem(ctx: TaskContext, item: Item): Promise<void> {
     const stack = item.getItemStack();
     if (stack === null || stack === undefined) {
         throw new Error("Cannot inject an empty item stack.");
@@ -329,17 +329,21 @@ async function syncItemActionLists(
     );
 
     if (leftNeedsSync) {
+        let actionsEditorOpened = false;
+        const openActionsEditor = async (): Promise<void> => {
+            ctx.getItemSlot("Left Click Actions").click();
+            await timedWaitForMenu(ctx, "menuClickWait");
+            actionsEditorOpened = true;
+        };
         const leftSync = await prepareActionListSync(ctx, {
             desired: leftDesired,
             session,
             trustPlan,
             basePath: "leftClickActions",
-            open: async () => {
-                ctx.getItemSlot("Left Click Actions").click();
-                await timedWaitForMenu(ctx, "menuClickWait");
-            },
+            open: openActionsEditor,
         });
         if (leftSync.kind === "planned") {
+            if (!actionsEditorOpened) await openActionsEditor();
             await applyActionListPlan(ctx, leftSync.plan, { session });
         }
 
@@ -349,17 +353,21 @@ async function syncItemActionLists(
     }
 
     if (rightNeedsSync) {
+        let actionsEditorOpened = false;
+        const openActionsEditor = async (): Promise<void> => {
+            ctx.getItemSlot("Right Click Actions").click();
+            await timedWaitForMenu(ctx, "menuClickWait");
+            actionsEditorOpened = true;
+        };
         const rightSync = await prepareActionListSync(ctx, {
             desired: rightDesired,
             session,
             trustPlan,
             basePath: "rightClickActions",
-            open: async () => {
-                ctx.getItemSlot("Right Click Actions").click();
-                await timedWaitForMenu(ctx, "menuClickWait");
-            },
+            open: openActionsEditor,
         });
         if (rightSync.kind === "planned") {
+            if (!actionsEditorOpened) await openActionsEditor();
             await applyActionListPlan(ctx, rightSync.plan, { session });
         }
     }

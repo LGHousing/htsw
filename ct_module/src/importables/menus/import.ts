@@ -406,18 +406,22 @@ export async function applyImportableMenuPlan(
             baselineApplyUnits: completedUnits,
             parentSync: { completedUnits: workDone, totalUnits: totals.count },
         };
+        let actionsEditorOpened = false;
+        const openActionsEditor = async (): Promise<void> => {
+            menuGridClick(op.slot, "LEFT");
+            await timedWaitForMenu(ctx, "menuClickWait");
+            actionsEditorOpened = true;
+        };
         const actionsSync = await prepareActionListSync(ctx, {
             desired: op.syncActions,
             session,
             trustPlan,
             basePath: op.actionsPath ?? "",
             progressScope,
-            open: async () => {
-                menuGridClick(op.slot, "LEFT");
-                await timedWaitForMenu(ctx, "menuClickWait");
-            },
+            open: openActionsEditor,
         });
         if (actionsSync.kind === "planned") {
+            if (!actionsEditorOpened) await openActionsEditor();
             await applyActionListPlan(ctx, actionsSync.plan, { session, progressScope });
             await clickGoBack(ctx);
         }
