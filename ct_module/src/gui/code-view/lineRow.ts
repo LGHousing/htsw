@@ -360,6 +360,7 @@ function buildVisualLineRow(
             background: bg,
         },
         onClick,
+        noClickFlash: true,
         onHover: (rect, mouseX) => {
             const localX = mouseX - bodyX(rect, options);
             onRowDrag(scrollId, line.id, tokens, localX);

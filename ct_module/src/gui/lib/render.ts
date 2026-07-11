@@ -472,7 +472,7 @@ export function dispatchClick(
         if (e.kind === "container" && (e.onClick || e.onDoubleClick)) {
             setFocusedInput(null);
             if (e.disabled !== undefined && extract(e.disabled)) return true;
-            if (e.onClick) registerClickFlash(item.rect);
+            if (e.onClick && !e.noClickFlash) registerClickFlash(item.rect);
             const isDouble =
                 button === 0 && consumeDoubleClick(item.rect, mouseX, mouseY);
             if (e.onClick) e.onClick(item.rect, { button, x: mouseX, y: mouseY, isDoubleClickSecond: isDouble });

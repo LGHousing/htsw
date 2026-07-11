@@ -49,6 +49,10 @@ export type Element =
           children: Extractable<Child[]>;
           onClick?: (rect: Rect, info: ClickInfo) => void;
           onDoubleClick?: (rect: Rect) => void;
+          /** Suppresses the white click-flash pulse. For clickable surfaces
+           * that are content rather than controls (code-view lines), where the
+           * flash reads as a glitch instead of feedback. */
+          noClickFlash?: boolean;
           disabled?: Extractable<boolean>;
           onHover?: (rect: Rect, mouseX: number, mouseY: number) => void;
           tooltip?: Extractable<string>;
