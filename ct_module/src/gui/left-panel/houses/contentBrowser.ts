@@ -3,6 +3,7 @@
 import { Element, Rect } from "../../lib/layout";
 import { Button, Col, Container, Icon, Input, Row, Scroll, Text } from "../../lib/components";
 import { Icons } from "../../lib/icons.generated";
+import type { IconName } from "../../lib/icons.generated";
 import {
     getEffectiveNewExportTarget,
     getExportImportJsonPath,
@@ -49,6 +50,14 @@ import { buildCacheStatusRow } from "../../../importCache/status";
 import { confirmSelect } from "../../right-panel/selection";
 import { importableSourcePath } from "../../parsing/importablePaths";
 import { linkStatusIcon, type LinkStatusKey } from "../../cache-status";
+import {
+    optionRow,
+    statusFilterPopoverContent,
+    statusFilterPopoverWidth,
+    STATUS_FILTER_POPOVER_HEIGHT,
+    FILTER_ACTIVE_BG,
+    FILTER_ACTIVE_HOVER_BG,
+} from "../statusFilter";
 import type { Importable } from "htsw/types";
 import { boundHouseUuidOf, confirmRebind } from "../../houseBinding";
 import { TAB_GAP, tabLabelsFit } from "../tabs";
@@ -66,6 +75,62 @@ function scanLabel(t: HouseContentType, uuid: string | null): string {
 let activeContentType: HouseContentType["type"] = HOUSE_CONTENT_TYPES[0].type;
 let itemSearch = "";
 const SCAN_BUTTON_W = 22;
+
+// Status narrowing for the shown type. The type tabs already scope by type, so
+// this page only offers the status half of the Projects filter.
+const selectedHouseStatuses: Set<LinkStatusKey> = new Set();
+
+function toggleHouseStatus(key: LinkStatusKey): void {
+    if (selectedHouseStatuses.has(key)) selectedHouseStatuses.delete(key);
+    else selectedHouseStatuses.add(key);
+}
+
+type HouseSortId = "alphabetical" | "status";
+type HouseSortDir = "ASC" | "DESC";
+const HOUSE_SORT_FIELDS: { id: HouseSortId; label: string }[] = [
+    { id: "alphabetical", label: "Alphabetically" },
+    { id: "status", label: "By status" },
+];
+// Actionable-first when sorting by status: rows that differ from your files
+// come before matches and the rest.
+const STATUS_SORT_ORDER: LinkStatusKey[] = ["differs", "matches", "present", "oneSided", "unknown"];
+const DEFAULT_HOUSE_SORT: { id: HouseSortId; direction: HouseSortDir } = {
+    id: "alphabetical",
+    direction: "ASC",
+};
+let houseSort: { id: HouseSortId; direction: HouseSortDir } = {
+    id: "alphabetical",
+    direction: "ASC",
+};
+
+function isHouseSortDefault(): boolean {
+    return houseSort.id === DEFAULT_HOUSE_SORT.id && houseSort.direction === DEFAULT_HOUSE_SORT.direction;
+}
+
+function selectHouseSort(id: HouseSortId): void {
+    if (houseSort.id === id) {
+        houseSort.direction = houseSort.direction === "ASC" ? "DESC" : "ASC";
+    } else {
+        houseSort = { id, direction: "ASC" };
+    }
+}
+
+function compareHouseRows(
+    a: { item: HouseImportable; state: HouseLinkState },
+    b: { item: HouseImportable; state: HouseLinkState }
+): number {
+    const an = (a.item.label ?? a.item.name).toLowerCase();
+    const bn = (b.item.label ?? b.item.name).toLowerCase();
+    const alpha = an < bn ? -1 : an > bn ? 1 : 0;
+    let c = alpha;
+    if (houseSort.id === "status") {
+        c =
+            STATUS_SORT_ORDER.indexOf(HOUSE_LINK_VISUAL[a.state].key) -
+            STATUS_SORT_ORDER.indexOf(HOUSE_LINK_VISUAL[b.state].key);
+        if (c === 0) c = alpha;
+    }
+    return houseSort.direction === "ASC" ? c : -c;
+}
 
 function activeType(): HouseContentType {
     for (let i = 0; i < HOUSE_CONTENT_TYPES.length; i++) {
@@ -135,6 +200,77 @@ function rescanButton(t: HouseContentType, uuid: string | null): Element {
 // The search bar is the rescan button's home: it stays put through the
 // not-scanned and empty states so the button is always in the same place,
 // instead of hiding as a small icon in the tab strip.
+// The sort/filter buttons mirror the Projects bar: no background until active
+// (then the same green tint), so only the refresh button — which keeps its
+// button background — reads as a distinct action.
+function barControlButton(
+    iconName: IconName,
+    active: boolean,
+    tooltip: string,
+    onClick: (rect: Rect) => void
+): Element {
+    return Button({
+        style: {
+            width: { kind: "px", value: SCAN_BUTTON_W },
+            height: { kind: "grow" },
+            background: active ? FILTER_ACTIVE_BG : undefined,
+            hoverBackground: active ? FILTER_ACTIVE_HOVER_BG : undefined,
+        },
+        onClick: (rect) => onClick(rect),
+        children: [
+            Icon({
+                name: iconName,
+                color: active ? COLOR_TEXT : COLOR_TEXT_DIM,
+                tooltip,
+                tooltipColor: COLOR_TEXT_DIM,
+                style: { width: { kind: "px", value: 12 }, height: { kind: "px", value: 12 } },
+            }),
+        ],
+    });
+}
+
+function houseSortButton(): Element {
+    return barControlButton(Icons.arrowUpDown, !isHouseSortDefault(), "Sort", (rect) => {
+        togglePopover({
+            key: "houses-sort",
+            anchor: rect,
+            content: houseSortPopoverContent(),
+            width: 140,
+            height: HOUSE_SORT_FIELDS.length * 20 + 6,
+        });
+    });
+}
+
+function houseStatusFilterButton(): Element {
+    return barControlButton(Icons.filter, selectedHouseStatuses.size > 0, "Filter by status", (rect) => {
+        togglePopover({
+            key: "houses-status-filter",
+            anchor: rect,
+            content: statusFilterPopoverContent(selectedHouseStatuses, toggleHouseStatus),
+            width: statusFilterPopoverWidth(),
+            height: STATUS_FILTER_POPOVER_HEIGHT,
+        });
+    });
+}
+
+function houseSortPopoverContent(): Element {
+    return Scroll({
+        id: "houses-sort-popover-scroll",
+        style: { padding: 4, gap: 2 },
+        children: () =>
+            HOUSE_SORT_FIELDS.map((f) => {
+                const on = houseSort.id === f.id;
+                return optionRow(
+                    on,
+                    () => selectHouseSort(f.id),
+                    null,
+                    f.label,
+                    on ? `[${houseSort.direction}]` : ""
+                );
+            }),
+    });
+}
+
 function searchRow(t: HouseContentType, uuid: string | null, canScan: boolean): Element {
     const children: Element[] = [
         Input({
@@ -151,6 +287,8 @@ function searchRow(t: HouseContentType, uuid: string | null, canScan: boolean): 
         }),
     ];
     if (canScan) children.push(rescanButton(t, uuid));
+    children.push(houseSortButton());
+    children.push(houseStatusFilterButton());
     return Row({
         style: { gap: 4, height: { kind: "px", value: SIZE_ROW_H + 6 } },
         children,
@@ -829,42 +967,45 @@ export function typeBrowserSection(getViewedUuid: () => string | null, availW: n
                 );
             } else {
                 const query = itemSearch.trim().toLowerCase();
-                const shown =
-                    query === ""
-                        ? items
-                        : items.filter(
-                              (i) =>
-                                  (i.label ?? i.name).toLowerCase().indexOf(query) !== -1 ||
-                                  i.name.toLowerCase().indexOf(query) !== -1
-                          );
+                const sourceMap = sourceImportablesByType(t.type);
+                const trusted = isHouseTrusted(uuid);
+                const statusActive = selectedHouseStatuses.size > 0;
+                const shown: { item: HouseImportable; state: HouseLinkState }[] = [];
+                for (let i = 0; i < items.length; i++) {
+                    const item = items[i];
+                    if (
+                        query !== "" &&
+                        (item.label ?? item.name).toLowerCase().indexOf(query) === -1 &&
+                        item.name.toLowerCase().indexOf(query) === -1
+                    ) {
+                        continue;
+                    }
+                    const state = houseLinkStateFor(uuid, item, sourceMap, trusted);
+                    if (statusActive && !selectedHouseStatuses.has(HOUSE_LINK_VISUAL[state].key)) {
+                        continue;
+                    }
+                    shown.push({ item, state });
+                }
+                shown.sort(compareHouseRows);
                 if (shown.length === 0) {
+                    const noun = t.label.toLowerCase();
+                    const message =
+                        query !== ""
+                            ? `No ${noun} match "${itemSearch.trim()}".`
+                            : `No ${noun} match the status filter.`;
                     out.push(
                         Col({
                             style: { height: { kind: "grow" } },
-                            children: [
-                                Text({
-                                    text: `No ${t.label.toLowerCase()} match "${itemSearch.trim()}".`,
-                                    color: COLOR_TEXT_FAINT,
-                                }),
-                            ],
+                            children: [Text({ text: message, color: COLOR_TEXT_FAINT })],
                         })
                     );
                 } else {
-                    const sourceMap = sourceImportablesByType(t.type);
-                    const trusted = isHouseTrusted(uuid);
                     out.push(
                         Scroll({
                             id: "houses-type-scroll",
                             style: { height: { kind: "grow" }, gap: 1 },
-                            children: shown.map((i) =>
-                                itemRow(
-                                    t,
-                                    uuid,
-                                    i,
-                                    inCurrentHouse,
-                                    canExport,
-                                    houseLinkStateFor(uuid, i, sourceMap, trusted)
-                                )
+                            children: shown.map((s) =>
+                                itemRow(t, uuid, s.item, inCurrentHouse, canExport, s.state)
                             )
                         })
                     );

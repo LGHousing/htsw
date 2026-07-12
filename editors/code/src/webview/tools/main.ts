@@ -9,44 +9,42 @@ import shellStyles from "./styles.css?inline";
 import { installTooltips } from "../tooltip";
 
 type ActiveTool = "project" | "item" | "sound";
+type ToolScrollState = Record<string, number>;
 type WebviewState = {
     activeTool?: ActiveTool;
     project?: ProjectExplorerPersistedState;
+    scroll?: Partial<Record<ActiveTool, ToolScrollState>>;
 };
 
 const vscode = acquireVsCodeApi<WebviewState>();
 const root = document.getElementById("app");
 let activeTool: ActiveTool = vscode.getState()?.activeTool ?? "project";
-let disposeActive: (() => void) | null = null;
-let activeStyle: HTMLStyleElement | null = null;
 let pendingItemLoad: ItemEditorLoad | null = null;
+const toolHosts = new Map<ActiveTool, HTMLElement>();
+const toolDisposers = new Map<ActiveTool, () => void>();
+const activeStyle = document.createElement("style");
 
 if (root) {
     installTooltips();
     window.addEventListener("message", onShellMessage);
     renderShell();
+    window.addEventListener("pagehide", disposeTools, { once: true });
 }
 
-// The host answers a project-tree item click with `loadItem`; the shell catches
-// it here (whatever tab is showing), switches to the Item editor, and hands the
-// parsed item to the mount. Other messages fall through to the active tool.
 function onShellMessage(event: MessageEvent): void {
     const message = event.data as { type?: string } | undefined;
     if (message?.type !== "loadItem") return;
     pendingItemLoad = event.data as ItemEditorLoad;
     if (activeTool !== "item") {
+        persistActiveScroll();
         activeTool = "item";
         vscode.setState({ ...(vscode.getState() ?? {}), activeTool });
     }
-    renderShell();
+    showActiveTool();
 }
 
 function renderShell(): void {
     if (!root) return;
-    disposeActive?.();
-    disposeActive = null;
-    activeStyle?.remove();
-
     root.innerHTML = `
         <div class="tools-shell">
             <div class="tools-tabs">
@@ -64,26 +62,77 @@ function renderShell(): void {
 
     const body = document.getElementById("tools-body");
     if (!body) return;
-
-    activeStyle = document.createElement("style");
-    activeStyle.textContent = activeToolStyles(activeTool) + "\n" + shellStyles;
+    for (const tool of ["project", "item", "sound"] as const) {
+        const host = document.createElement("div");
+        host.className = "tools-view";
+        host.dataset.tool = tool;
+        host.hidden = true;
+        toolHosts.set(tool, host);
+        body.appendChild(host);
+    }
     document.head.appendChild(activeStyle);
+    showActiveTool();
+}
 
+function showActiveTool(): void {
+    activeStyle.textContent = activeToolStyles(activeTool) + "\n" + shellStyles;
+    for (const [tool, host] of toolHosts) host.hidden = tool !== activeTool;
+    for (const tool of ["project", "item", "sound"] as const) {
+        document.getElementById(`tab-${tool}`)?.classList.toggle("active", tool === activeTool);
+    }
+
+    const host = toolHosts.get(activeTool);
+    if (!host) return;
+    if (toolDisposers.has(activeTool)) {
+        if (activeTool === "item") pendingItemLoad = null;
+        return;
+    }
+    let dispose: () => void;
     if (activeTool === "project") {
-        disposeActive = mountProjectExplorer(body, vscode, () => selectTool("item"));
+        dispose = mountProjectExplorer(host, vscode, () => selectTool("item"), savedScroll("project").tree);
     } else if (activeTool === "item") {
-        disposeActive = mountItemEditor(body, vscode, pendingItemLoad ?? undefined);
+        dispose = mountItemEditor(host, vscode, pendingItemLoad ?? undefined, savedScroll("item"));
         pendingItemLoad = null;
     } else {
-        disposeActive = mountSoundPreviewer(body, vscode);
+        dispose = mountSoundPreviewer(host, vscode, savedScroll("sound").list);
     }
+    toolDisposers.set(activeTool, dispose);
 }
 
 function selectTool(next: ActiveTool): void {
     if (activeTool === next) return;
+    persistActiveScroll();
     activeTool = next;
     vscode.setState({ ...(vscode.getState() ?? {}), activeTool });
-    renderShell();
+    showActiveTool();
+}
+
+function persistActiveScroll(): void {
+    const state = vscode.getState() ?? {};
+    const scroll = { ...(state.scroll ?? {}) };
+    const host = toolHosts.get(activeTool);
+    if (!host) return;
+    if (activeTool === "project") {
+        scroll.project = { tree: host.querySelector<HTMLElement>("#projectTree")?.scrollTop ?? 0 };
+    } else if (activeTool === "item") {
+        scroll.item = {
+            page: host.querySelector<HTMLElement>(":scope > .app")?.scrollTop ?? 0,
+            form: host.querySelector<HTMLElement>(".form-panel")?.scrollTop ?? 0,
+            preview: host.querySelector<HTMLElement>(".preview-panel")?.scrollTop ?? 0,
+        };
+    } else {
+        scroll.sound = { list: host.querySelector<HTMLElement>(".list")?.scrollTop ?? 0 };
+    }
+    vscode.setState({ ...state, scroll });
+}
+
+function savedScroll(tool: ActiveTool): ToolScrollState {
+    return vscode.getState()?.scroll?.[tool] ?? {};
+}
+
+function disposeTools(): void {
+    toolDisposers.forEach((dispose) => dispose());
+    toolDisposers.clear();
 }
 
 function activeToolStyles(tool: ActiveTool): string {

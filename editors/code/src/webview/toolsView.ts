@@ -71,7 +71,7 @@ export class HtswToolsViewProvider implements vscode.WebviewViewProvider {
         ];
     }
 
-    public resolveWebviewView(view: vscode.WebviewView): void {
+    public async resolveWebviewView(view: vscode.WebviewView): Promise<void> {
         this.webview = view.webview;
         view.webview.html = renderWebviewHtml(view.webview, this.extensionUri, {
             scriptName: "tools.js",
@@ -102,7 +102,7 @@ export class HtswToolsViewProvider implements vscode.WebviewViewProvider {
             }, 750);
         });
         let gitTimer: ReturnType<typeof setTimeout> | undefined;
-        const gitSub = onDidChangeGitStatus(() => {
+        const gitSub = await onDidChangeGitStatus(() => {
             if (gitTimer) clearTimeout(gitTimer);
             gitTimer = setTimeout(() => {
                 if (!view.visible) return;

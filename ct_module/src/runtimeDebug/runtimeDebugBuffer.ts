@@ -7,30 +7,38 @@ type RuntimeDebugRecord = Record<string, unknown> & {
 const MAX_RECORDS = 20000;
 let startedAt = Date.now();
 const records: RuntimeDebugRecord[] = [];
+let oldestRecordIndex = 0;
 let droppedRecords = 0;
 
 export function recordRuntimeDebug(
     kind: string,
     details: Record<string, unknown> = {}
 ): void {
-    records.push({
-        at: Date.now(),
-        tMs: Date.now() - startedAt,
+    const now = Date.now();
+    const record = {
+        at: now,
+        tMs: now - startedAt,
         kind,
         ...details,
-    });
-    if (records.length > MAX_RECORDS) {
-        records.shift();
-        droppedRecords++;
+    };
+    if (records.length < MAX_RECORDS) {
+        records.push(record);
+        return;
     }
+
+    records[oldestRecordIndex] = record;
+    oldestRecordIndex = (oldestRecordIndex + 1) % MAX_RECORDS;
+    droppedRecords++;
 }
 
 export function recentRuntimeDebugRecords(): RuntimeDebugRecord[] {
-    return records.slice();
+    if (oldestRecordIndex === 0) return records.slice();
+    return records.slice(oldestRecordIndex).concat(records.slice(0, oldestRecordIndex));
 }
 
 export function resetRuntimeDebugRecords(): void {
     records.length = 0;
+    oldestRecordIndex = 0;
     droppedRecords = 0;
     startedAt = Date.now();
 }

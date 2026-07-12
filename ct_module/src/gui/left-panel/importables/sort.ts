@@ -1,6 +1,7 @@
 import { Element } from "../../lib/layout";
-import { Container, Scroll, Text } from "../../lib/components";
-import { Result, ACTIVE_BG, ACTIVE_HOVER_BG, ROW_BG, ROW_HOVER_BG, bumpTreeRevision } from "./rowModel";
+import { Scroll } from "../../lib/components";
+import { optionRow } from "../statusFilter";
+import { Result, bumpTreeRevision } from "./rowModel";
 
 type SortDir = "ASC" | "DESC";
 type SortFieldId = "type" | "alphabetical";
@@ -86,24 +87,13 @@ export function sortPopoverContent(): Element {
         children: () =>
             SORT_FIELDS.map((f) => {
                 const on = activeSort.id === f.id;
-                return Container({
-                    style: {
-                        direction: "row",
-                        align: "center",
-                        padding: { side: "x", value: 6 },
-                        gap: 6,
-                        height: { kind: "px", value: 18 },
-                        background: on ? ACTIVE_BG : ROW_BG,
-                        hoverBackground: on ? ACTIVE_HOVER_BG : ROW_HOVER_BG,
-                    },
-                    onClick: () => selectSort(f.id),
-                    children: [
-                        Text({ text: f.label, style: { width: { kind: "grow" } } }),
-                        Text({
-                            text: on ? `[${activeSort.direction}]` : "",
-                        }),
-                    ],
-                });
+                return optionRow(
+                    on,
+                    () => selectSort(f.id),
+                    null,
+                    f.label,
+                    on ? `[${activeSort.direction}]` : ""
+                );
             }),
     });
 }

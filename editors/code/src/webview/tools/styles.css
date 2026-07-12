@@ -54,3 +54,13 @@ body {
     min-height: 0;
     overflow: hidden;
 }
+
+.tools-view {
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.tools-view[hidden] {
+    display: none;
+}

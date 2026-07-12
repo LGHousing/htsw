@@ -11,6 +11,7 @@ import {
     type ActiveTaskKind,
 } from "../tasks/activeTask";
 import { resetStepGate } from "./stepGate";
+import { resetRuntimeDebugRecords } from "../runtimeDebug/runtimeDebugBuffer";
 
 // The one place that owns per-run task bookkeeping: active-context
 // registration (Cancel button), the running flag, the Pause/Step gate reset,
@@ -40,6 +41,7 @@ export async function runHousingSyncTask<T>(
             }
             setPacketCaptureForTask(true);
             result = await task(ctx);
+            resetRuntimeDebugRecords();
         } finally {
             setPacketCaptureForTask(false);
             clearActiveTaskContext(kind, ctx);

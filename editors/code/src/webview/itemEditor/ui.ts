@@ -56,7 +56,16 @@ type State = {
 const ITEMS = htsw.types.MINECRAFT_ITEMS as readonly MinecraftItem[];
 const ENCHANTMENTS = htsw.types.ENCHANTMENTS;
 
-export function mountItemEditor(app: HTMLElement, vscode: VsCodeApi, load?: ItemEditorLoad): () => void {
+export function mountItemEditor(
+    app: HTMLElement,
+    vscode: VsCodeApi,
+    load?: ItemEditorLoad,
+    initialScroll: Record<string, number> = {},
+): () => void {
+    const bindInput = (id: string, handler: (value: string) => void) => bindInputIn(app, id, handler);
+    const bindSelect = (id: string, handler: (value: string) => void) => bindSelectIn(app, id, handler);
+    const bindCheckbox = (id: string, handler: (value: boolean) => void) => bindCheckboxIn(app, id, handler);
+    const bindClick = (id: string, handler: () => void) => bindClickIn(app, id, handler);
     ensureMinecraftFont();
     scrollPastNumberInputs();
     const firstItem = ITEMS[0];
@@ -82,6 +91,11 @@ export function mountItemEditor(app: HTMLElement, vscode: VsCodeApi, load?: Item
 
     const onMessage = (event: MessageEvent<ItemEditorFromHostMessage>) => {
         const message = event.data;
+        if (message.type === "loadItem") {
+            applyItemLoad(state, message);
+            render();
+            return;
+        }
         if (message.type === "importTargets") {
             state.targets = message.targets;
             if (!state.importJsonPath && message.targets.length > 0) {
@@ -112,6 +126,12 @@ export function mountItemEditor(app: HTMLElement, vscode: VsCodeApi, load?: Item
     return () => window.removeEventListener("message", onMessage);
 
     function render(): void {
+        const scroll = {
+            page: app.querySelector<HTMLElement>(":scope > .app")?.scrollTop ?? initialScroll.page ?? 0,
+            form: app.querySelector<HTMLElement>(".form-panel")?.scrollTop ?? initialScroll.form ?? 0,
+            preview: app.querySelector<HTMLElement>(".preview-panel")?.scrollTop ?? initialScroll.preview ?? 0,
+        };
+        initialScroll = {};
         const item = currentItem(state);
         const filteredItems = ensureSelectedItemOption(filterItems(state.itemSearch), state);
         const maxCount = item?.stackSize ?? 64;
@@ -188,6 +208,12 @@ export function mountItemEditor(app: HTMLElement, vscode: VsCodeApi, load?: Item
         updateFormattedPreviews();
         updateSnbtPreview();
         renderStatus();
+        const page = app.querySelector<HTMLElement>(":scope > .app");
+        const form = app.querySelector<HTMLElement>(".form-panel");
+        const preview = app.querySelector<HTMLElement>(".preview-panel");
+        if (page) page.scrollTop = scroll.page;
+        if (form) form.scrollTop = scroll.form;
+        if (preview) preview.scrollTop = scroll.preview;
     }
 
     function bindControls(vscode: VsCodeApi): void {
@@ -297,7 +323,7 @@ export function mountItemEditor(app: HTMLElement, vscode: VsCodeApi, load?: Item
     }
 
     function updateSnbtPreview(): void {
-        const preview = document.getElementById("snbtPreview");
+        const preview = app.querySelector("#snbtPreview");
         if (!preview) return;
         try {
             preview.textContent = htsw.nbt.printSnbt(currentItemTag(state), {
@@ -310,11 +336,11 @@ export function mountItemEditor(app: HTMLElement, vscode: VsCodeApi, load?: Item
     }
 
     function updateFormattedPreviews(): void {
-        renderItemPreview(state);
+        renderItemPreview(app, state);
     }
 
     function updateItemSelectOptions(): void {
-        const select = document.getElementById("itemName") as HTMLSelectElement | null;
+        const select = app.querySelector("#itemName") as HTMLSelectElement | null;
         if (!select) return;
         const filteredItems = ensureSelectedItemOption(filterItems(state.itemSearch), state);
         select.innerHTML = filteredItems
@@ -327,16 +353,30 @@ export function mountItemEditor(app: HTMLElement, vscode: VsCodeApi, load?: Item
     }
 
     function updateGenerateState(): void {
-        const generate = document.getElementById("generate") as HTMLButtonElement | null;
+        const generate = app.querySelector("#generate") as HTMLButtonElement | null;
         if (generate) generate.disabled = !canSubmit(state);
     }
 
     function renderStatus(): void {
-        const status = document.getElementById("status");
+        const status = app.querySelector("#status");
         if (!status) return;
         status.className = `status ${state.status.kind === "idle" ? "" : state.status.kind}`;
         status.textContent = state.status.text;
     }
+}
+
+function applyItemLoad(state: State, load: ItemEditorLoad): void {
+    state.itemSearch = "";
+    state.itemName = load.item.itemId.replace(/^minecraft:/, "");
+    state.metadata = load.item.metadata;
+    state.count = Math.max(1, load.item.count);
+    state.displayName = load.item.displayName;
+    state.lore = load.item.lore.length > 0 ? [...load.item.lore] : [""];
+    state.enchants = load.item.enchants.map((enchant) => ({ ...enchant }));
+    state.status = { kind: "idle", text: "" };
+    state.editPath = load.snbtPath;
+    state.editLabel = load.label;
+    state.originalTag = load.tag;
 }
 
 function toForm(state: State): ItemEditorForm {
@@ -517,8 +557,8 @@ function variantSelect(item: MinecraftItem | undefined, metadata: number | null)
     `;
 }
 
-function renderItemPreview(state: State): void {
-    const host = document.getElementById("itemPreview");
+function renderItemPreview(app: HTMLElement, state: State): void {
+    const host = app.querySelector<HTMLElement>("#itemPreview");
     if (!host) return;
     renderItemPreviewInto(host, itemViewFromState(state));
 }
@@ -559,23 +599,23 @@ function enchantRow(enchant: { name: string; level: number }, index: number): st
     `;
 }
 
-function bindInput(id: string, handler: (value: string) => void): void {
-    const input = document.getElementById(id) as HTMLInputElement | null;
+function bindInputIn(app: HTMLElement, id: string, handler: (value: string) => void): void {
+    const input = app.querySelector(`#${id}`) as HTMLInputElement | null;
     input?.addEventListener("input", () => handler(input.value));
 }
 
-function bindSelect(id: string, handler: (value: string) => void): void {
-    const select = document.getElementById(id) as HTMLSelectElement | null;
+function bindSelectIn(app: HTMLElement, id: string, handler: (value: string) => void): void {
+    const select = app.querySelector(`#${id}`) as HTMLSelectElement | null;
     select?.addEventListener("change", () => handler(select.value));
 }
 
-function bindCheckbox(id: string, handler: (value: boolean) => void): void {
-    const input = document.getElementById(id) as HTMLInputElement | null;
+function bindCheckboxIn(app: HTMLElement, id: string, handler: (value: boolean) => void): void {
+    const input = app.querySelector(`#${id}`) as HTMLInputElement | null;
     input?.addEventListener("change", () => handler(input.checked));
 }
 
-function bindClick(id: string, handler: () => void): void {
-    document.getElementById(id)?.addEventListener("click", handler);
+function bindClickIn(app: HTMLElement, id: string, handler: () => void): void {
+    app.querySelector(`#${id}`)?.addEventListener("click", handler);
 }
 
 function move<T>(values: T[], from: number, to: number): void {

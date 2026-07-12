@@ -121,6 +121,12 @@ function buildLineModel(
         }
         decorated.push({ line: lines[i], decorations: dec });
     }
+    const endLines = lineDecorator.extraLinesAtEnd?.() ?? [];
+    for (let i = 0; i < endLines.length; i++) {
+        const extra = endLines[i];
+        if (hasStatusGutterContent(extra.decorations)) showStatusGutters = true;
+        decorated.push(extra);
+    }
     const gutterW = gutterWidthForLines(maxLineNum);
     const lineNumDigits = digitsOf(maxLineNum);
     const bodyMaxWidth = bodyWidthForScroll(

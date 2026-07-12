@@ -18,6 +18,10 @@ type GitApi = {
     onDidCloseRepository: vscode.Event<GitRepository>;
 };
 
+type GitExtension = {
+    getAPI(version: 1): GitApi;
+};
+
 const STATUS: Record<number, GitDecoration> = {
     0: { badge: "M", color: "modified" },
     1: { badge: "A", color: "added" },
@@ -48,8 +52,15 @@ const STRENGTH: Record<GitDecoration["color"], number> = {
     untracked: 1,
 };
 
-function gitApi(): GitApi | undefined {
-    return vscode.extensions.getExtension("vscode.git")?.exports?.getAPI(1) as GitApi | undefined;
+async function gitApi(): Promise<GitApi | undefined> {
+    const extension = vscode.extensions.getExtension<GitExtension>("vscode.git");
+    if (!extension) return undefined;
+    try {
+        const exports = extension.isActive ? extension.exports : await extension.activate();
+        return exports.getAPI(1);
+    } catch {
+        return undefined;
+    }
 }
 
 function pathKey(fsPath: string): string {
@@ -57,9 +68,10 @@ function pathKey(fsPath: string): string {
     return process.platform === "win32" ? normalized.toLowerCase() : normalized;
 }
 
-export function addGitDecorations(roots: ProjectImportJsonNode[]): void {
+export async function addGitDecorations(roots: ProjectImportJsonNode[]): Promise<void> {
     const decorations = new Map<string, GitDecoration>();
-    for (const repository of gitApi()?.repositories ?? []) {
+    const api = await gitApi();
+    for (const repository of api?.repositories ?? []) {
         const changes = [
             ...repository.state.indexChanges,
             ...repository.state.workingTreeChanges,
@@ -132,8 +144,8 @@ export function addGitDecorations(roots: ProjectImportJsonNode[]): void {
     roots.forEach(mirrorReferences);
 }
 
-export function onDidChangeGitStatus(listener: () => void): vscode.Disposable {
-    const api = gitApi();
+export async function onDidChangeGitStatus(listener: () => void): Promise<vscode.Disposable> {
+    const api = await gitApi();
     if (!api) return new vscode.Disposable(() => undefined);
     const repositorySubs = new Map<GitRepository, vscode.Disposable>();
     const watch = (repository: GitRepository): void => {

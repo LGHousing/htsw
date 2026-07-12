@@ -1143,7 +1143,7 @@ async function discoverProjectTree(): Promise<ProjectImportJsonNode[]> {
     const projectRoots = roots
         .map((uri) => rootNodeFromParse(uri.fsPath))
         .sort((left, right) => left.label.localeCompare(right.label));
-    addGitDecorations(projectRoots);
+    await addGitDecorations(projectRoots);
     return projectRoots;
 }
 

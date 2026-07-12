@@ -205,17 +205,19 @@ pre {
 
 @media (max-width: 760px) {
     .app {
-        grid-template-columns: 1fr;
-        grid-template-rows: auto minmax(0, 1fr);
+        display: flex;
+        flex-direction: column;
         overflow: auto;
     }
 
     .preview-panel {
         order: -1;
+        flex: none;
         overflow: visible;
     }
 
     .form-panel {
+        flex: none;
         overflow: visible;
     }
 

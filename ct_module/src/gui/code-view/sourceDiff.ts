@@ -51,10 +51,22 @@ import {
 } from "../parsing/parses";
 import { getHousingUuid } from "../state/housing";
 import { readCachedActionList } from "../../importCache/actionLists";
+import { parseHtslFile } from "./htslParse";
 
 type SourceActionPathKey = string;
 
-export type SourceDiffEntry = Map<SourceActionPathKey, DiffState>;
+export type SourceDiffGhost = {
+    id: string;
+    action: Action;
+    depth: number;
+    headOnly: boolean;
+};
+
+export type SourceDiffEntry = {
+    states: Map<SourceActionPathKey, DiffState>;
+    ghostsBeforeLine: Map<number, SourceDiffGhost[]>;
+    ghostsAtEnd: SourceDiffGhost[];
+};
 
 // One memo per (import.json, file) key — including "no diff available"
 // (`value: null`). Without the negative memo, a file that isn't in the
@@ -164,9 +176,25 @@ function computeFor(filePath: string, importJsonPath?: string | null): SourceDif
     if (cache === null) return null;
     const sourceActions = readCachedActionList(match.importable, match.prefix);
     if (sourceActions === undefined) return null;
+    const cachedPrefix = cacheListPrefix(match, cache.importable);
+    const cachedActions = readCachedActionList(cache.importable, cachedPrefix);
+    if (cachedActions === undefined) return null;
     const cachedLists = cacheEntryListHashes(cache);
-    const out: SourceDiffEntry = new Map();
-    walk(out, cacheListPrefix(match, cache.importable), "", "", sourceActions, cachedLists);
+    const out: SourceDiffEntry = {
+        states: new Map(),
+        ghostsBeforeLine: new Map(),
+        ghostsAtEnd: [],
+    };
+    walk(
+        out,
+        cachedPrefix,
+        "",
+        "",
+        sourceActions,
+        cachedActions,
+        cachedLists,
+        parseHtslFile(filePath)
+    );
     return out;
 }
 
@@ -259,55 +287,15 @@ export function findFileTarget(filePath: string, importJsonPath?: string | null)
     return found;
 }
 
-/**
- * The house's (cached) version of the action at a source line's dotted
- * action path, e.g. "3" or "0.ifActions.2". Backs the hover card on
- * "edit" lines so the user can see WHAT the house has, not just that it
- * differs. Returns null when the cache has no action at that path.
- */
-export function houseActionAt(
-    filePath: string,
-    actionPath: string,
-    importJsonPath?: string | null
-): Action | null {
-    const match = findFileTarget(filePath, importJsonPath);
-    if (match === null) return null;
-    const housingUuid = getHousingUuid();
-    if (housingUuid === null) return null;
-    const cache = readImportableCache(
-        housingUuid,
-        match.importable.type,
-        importableIdentity(match.importable)
-    );
-    if (cache === null) return null;
-    let list = readCachedActionList(cache.importable, cacheListPrefix(match, cache.importable));
-    let action: Action | null = null;
-    const segments = actionPath.split(".");
-    for (let i = 0; i < segments.length; i++) {
-        const seg = segments[i];
-        if (/^\d+$/.test(seg)) {
-            if (list === undefined) return null;
-            action = list[Number(seg)] ?? null;
-            if (action === null) return null;
-            list = undefined;
-        } else {
-            if (action === null) return null;
-            const childList = (action as unknown as Record<string, unknown>)[seg];
-            if (!Array.isArray(childList)) return null;
-            list = childList as Action[];
-            action = null;
-        }
-    }
-    return action;
-}
-
 function walk(
     out: SourceDiffEntry,
     prefix: string,
     cacheBracketed: string,
     sourceDotted: string,
     items: readonly Action[],
-    lists: { [k: string]: string[] }
+    cachedItems: readonly Action[],
+    lists: { [k: string]: string[] },
+    sourceFile: ReturnType<typeof parseHtslFile>
 ): void {
     const cacheKey = cacheBracketed === "" ? prefix : `${prefix}${cacheBracketed}`;
     const slots = lists[cacheKey];
@@ -316,10 +304,12 @@ function walk(
     // positional compare reads that whole tail as edited/added. See `matchByHash`.
     const sourceHashes = items.map((a) => actionHash(a));
     const matched = matchByHash(sourceHashes, slots);
+    addDeletedGhosts(out, sourceDotted, items, cachedItems, matched, sourceFile);
     for (let i = 0; i < items.length; i++) {
         const action = items[i];
         const dotted = sourceDotted === "" ? `${i}` : `${sourceDotted}.${i}`;
         const j = matched[i];
+        const cachedAction = j === null ? undefined : cachedItems[j];
         let state: DiffState;
         if (j === null) {
             state = "add";
@@ -341,7 +331,20 @@ function walk(
         } else {
             state = slots !== undefined && slots[j] === sourceHashes[i] ? "match" : "edit";
         }
-        out.set(dotted, state);
+        out.states.set(dotted, state);
+        if (state === "edit" && cachedAction !== undefined) {
+            addGhostBeforeAction(
+                out,
+                dotted,
+                {
+                    id: `${dotted}:edit`,
+                    action: cachedAction,
+                    depth: actionDepth(dotted),
+                    headOnly: action.type === "CONDITIONAL",
+                },
+                sourceFile
+            );
+        }
         // Recurse into child lists against the MATCHED cache slot `j`, so a
         // shifted CONDITIONAL/RANDOM still lines up with its cached body. For an
         // added action (j === null) there is no counterpart; `[-1]` can't be a
@@ -355,7 +358,11 @@ function walk(
                 `${cacheBracketed}[${childIndex}].ifActions`,
                 `${dotted}.ifActions`,
                 action.ifActions,
-                lists
+                cachedAction !== undefined && cachedAction.type === "CONDITIONAL"
+                    ? cachedAction.ifActions
+                    : [],
+                lists,
+                sourceFile
             );
             walk(
                 out,
@@ -363,7 +370,11 @@ function walk(
                 `${cacheBracketed}[${childIndex}].elseActions`,
                 `${dotted}.elseActions`,
                 action.elseActions,
-                lists
+                cachedAction !== undefined && cachedAction.type === "CONDITIONAL"
+                    ? cachedAction.elseActions
+                    : [],
+                lists,
+                sourceFile
             );
         } else if (action.type === "RANDOM") {
             walk(
@@ -372,9 +383,151 @@ function walk(
                 `${cacheBracketed}[${childIndex}].actions`,
                 `${dotted}.actions`,
                 action.actions,
-                lists
+                cachedAction !== undefined && cachedAction.type === "RANDOM"
+                    ? cachedAction.actions
+                    : [],
+                lists,
+                sourceFile
             );
         }
+    }
+}
+
+function actionDepth(actionPath: string): number {
+    return Math.floor(actionPath.split(".").length / 2);
+}
+
+function sourceActionAt(actions: readonly Action[], actionPath: string): Action | null {
+    const parts = actionPath.split(".");
+    let action: Action | null = null;
+    let list: readonly Action[] = actions;
+    for (let i = 0; i < parts.length; i++) {
+        const part = parts[i];
+        if (/^\d+$/.test(part)) {
+            action = list[Number(part)] ?? null;
+            if (action === null) return null;
+        } else {
+            if (action === null) return null;
+            const child = (action as unknown as Record<string, unknown>)[part];
+            if (!Array.isArray(child)) return null;
+            list = child as Action[];
+            action = null;
+        }
+    }
+    return action;
+}
+
+function actionLineRange(
+    sourceFile: ReturnType<typeof parseHtslFile>,
+    actionPath: string
+): { start: number; end: number } | null {
+    if (sourceFile.file === null || sourceFile.spans === null) return null;
+    const action = sourceActionAt(sourceFile.actions, actionPath);
+    if (action === null) return null;
+    try {
+        const span = sourceFile.spans.get(action);
+        return {
+            start: sourceFile.file.getPosition(span.start).line,
+            end: sourceFile.file.getPosition(span.end).line,
+        };
+    } catch (_e) {
+        return null;
+    }
+}
+
+function addGhostBeforeLine(
+    out: SourceDiffEntry,
+    line: number,
+    ghost: SourceDiffGhost
+): void {
+    const existing = out.ghostsBeforeLine.get(line);
+    if (existing === undefined) out.ghostsBeforeLine.set(line, [ghost]);
+    else existing.push(ghost);
+}
+
+function addGhostBeforeAction(
+    out: SourceDiffEntry,
+    actionPath: string,
+    ghost: SourceDiffGhost,
+    sourceFile: ReturnType<typeof parseHtslFile>
+): void {
+    const range = actionLineRange(sourceFile, actionPath);
+    if (range === null) out.ghostsAtEnd.push(ghost);
+    else addGhostBeforeLine(out, range.start, ghost);
+}
+
+function addDeletedGhosts(
+    out: SourceDiffEntry,
+    sourceDotted: string,
+    items: readonly Action[],
+    cachedItems: readonly Action[],
+    matched: readonly (number | null)[],
+    sourceFile: ReturnType<typeof parseHtslFile>
+): void {
+    const used: boolean[] = new Array(cachedItems.length).fill(false);
+    for (let i = 0; i < matched.length; i++) {
+        const cachedIndex = matched[i];
+        if (cachedIndex !== null) used[cachedIndex] = true;
+    }
+    const lineCount = sourceFile.file === null ? 0 : sourceFile.file.src.split("\n").length;
+    for (let j = 0; j < cachedItems.length; j++) {
+        if (used[j]) continue;
+        const ghost: SourceDiffGhost = {
+            id: `${sourceDotted}:delete:${j}`,
+            action: cachedItems[j],
+            depth: actionDepth(sourceDotted === "" ? "0" : `${sourceDotted}.0`),
+            headOnly: false,
+        };
+        let nextSource = -1;
+        for (let i = 0; i < matched.length; i++) {
+            const cachedIndex = matched[i];
+            if (cachedIndex !== null && cachedIndex > j) {
+                nextSource = i;
+                break;
+            }
+        }
+        if (nextSource >= 0) {
+            const nextPath = sourceDotted === ""
+                ? `${nextSource}`
+                : `${sourceDotted}.${nextSource}`;
+            addGhostBeforeAction(out, nextPath, ghost, sourceFile);
+            continue;
+        }
+        let previousSource = -1;
+        for (let i = matched.length - 1; i >= 0; i--) {
+            const cachedIndex = matched[i];
+            if (cachedIndex !== null && cachedIndex < j) {
+                previousSource = i;
+                break;
+            }
+        }
+        if (previousSource >= 0) {
+            const previousPath = sourceDotted === ""
+                ? `${previousSource}`
+                : `${sourceDotted}.${previousSource}`;
+            const range = actionLineRange(sourceFile, previousPath);
+            if (range !== null && range.end < lineCount) {
+                addGhostBeforeLine(out, range.end + 1, ghost);
+            } else {
+                out.ghostsAtEnd.push(ghost);
+            }
+            continue;
+        }
+        if (items.length > 0) {
+            const firstPath = sourceDotted === "" ? "0" : `${sourceDotted}.0`;
+            addGhostBeforeAction(out, firstPath, ghost, sourceFile);
+            continue;
+        }
+        if (sourceDotted !== "") {
+            const parentPath = sourceDotted.split(".").slice(0, -1).join(".");
+            const parentRange = actionLineRange(sourceFile, parentPath);
+            if (parentRange !== null && parentRange.start < lineCount) {
+                addGhostBeforeLine(out, parentRange.start + 1, ghost);
+                continue;
+            }
+        }
+        if (lineCount > 0) addGhostBeforeLine(out, 1, ghost);
+        else out.ghostsAtEnd.push(ghost);
     }
 }
 

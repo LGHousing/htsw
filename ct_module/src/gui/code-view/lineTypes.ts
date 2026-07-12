@@ -74,6 +74,7 @@ export type LineDecorations = {
 export type LineDecorator = {
     decorateLine(line: RenderableLine): LineDecorations;
     focusedLineId(): string | null;
+    extraLinesAtEnd?(): { line: RenderableLine; decorations: LineDecorations }[];
     /**
      * Identity of everything `decorateLine` reads. The code view caches its
      * whole-file decoration pass and reuses it while (lines, this key,

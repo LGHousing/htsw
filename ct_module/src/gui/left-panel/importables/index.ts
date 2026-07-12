@@ -39,7 +39,7 @@ import { normalizeHtswPath } from "../../lib/pathDisplay";
 import { ACTIVE_BG, ACTIVE_HOVER_BG, ROW_BG, ROW_HOVER_BG } from "./rowModel";
 import { queueSourcePath } from "./source";
 import { SORT_FIELDS, isSortDefault, sortPopoverContent } from "./sort";
-import { isFilterDefault, filterPopoverContent, FILTER_POPOVER_HEIGHT } from "./filter";
+import { isFilterDefault, filterPopoverContent, filterPopoverWidth, FILTER_POPOVER_HEIGHT } from "./filter";
 import { searchQuery, setSearchQuery } from "./rows";
 import { createStarterProject } from "../../starterProject";
 import { isSampleDismissed, setSampleDismissed } from "../../persistence/onboarding";
@@ -347,7 +347,7 @@ export function ImportablesView(): Element {
                                 key: "left-filter",
                                 anchor: rect,
                                 content: filterPopoverContent(),
-                                width: 140,
+                                width: filterPopoverWidth(),
                                 height: FILTER_POPOVER_HEIGHT,
                             });
                         },

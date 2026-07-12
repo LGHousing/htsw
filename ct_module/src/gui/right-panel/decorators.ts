@@ -3,9 +3,13 @@
 import * as htsw from "htsw";
 
 import { ROW_BG_BY_STATE } from "../code-view/diffPalette";
-import { ensureSourceDiff, getSourceDiffRevision, houseActionAt } from "../code-view/sourceDiff";
+import {
+    ensureSourceDiff,
+    getSourceDiffRevision,
+    type SourceDiffGhost,
+} from "../code-view/sourceDiff";
 import { focusLineIdForFile } from "./import-tab/focusedLine";
-import { htslLineToChatString } from "./syntax";
+import { tokenizeHtsl } from "./syntax";
 import type { LineDecorations, LineDecorator, RenderableLine } from "../code-view/lineTypes";
 import {
     effectiveFocusActionPath,
@@ -21,48 +25,75 @@ const COLOR_GHOST_GRAY = 0xff444444 | 0;
 const COLOR_READ_FOCUS_ROW_BG = 0x5018365d | 0;
 const COLOR_APPLY_FOCUS_COLUMN_BG = 0xa067a7e8 | 0;
 
-function houseVersionHoverLines(
-    path: string,
-    actionPath: string,
-    importJsonPath?: string | null
-): string[] | null {
-    const house = houseActionAt(path, actionPath, importJsonPath);
-    if (house === null) return null;
-    let printed: string;
-    try {
-        printed = htsw.htsl.printAction(house);
-    } catch (_e) {
-        return null;
-    }
-    const firstLine = printed.split("\n")[0];
-    return ["&7In the house:", htslLineToChatString(firstLine)];
-}
-
 export function diffDecorator(path: string | null, importJsonPath?: string | null): LineDecorator {
+    function ghostRows(ghosts: readonly SourceDiffGhost[]) {
+        const rows: { line: RenderableLine; decorations: LineDecorations }[] = [];
+        for (let i = 0; i < ghosts.length; i++) {
+            let printed: string;
+            try {
+                printed = htsw.htsl.printAction(ghosts[i].action);
+            } catch (_e) {
+                printed = `${ghosts[i].action.type.toLowerCase()} ...`;
+            }
+            let printedLines = printed.split("\n");
+            if (ghosts[i].headOnly) printedLines = printedLines.slice(0, 1);
+            let indent = "";
+            for (let depth = 0; depth < ghosts[i].depth; depth++) indent += "    ";
+            for (let j = 0; j < printedLines.length; j++) {
+                if (printedLines[j] === "" && j === printedLines.length - 1) continue;
+                rows.push({
+                    line: {
+                        id: `static-ghost:${ghosts[i].id}:${j}`,
+                        lineNum: 0,
+                        depth: ghosts[i].depth,
+                        tokens: tokenizeHtsl(indent + printedLines[j]),
+                    },
+                    decorations: {
+                        state: "delete",
+                        background: ROW_BG_BY_STATE["delete"],
+                        foregroundColor: COLOR_GHOST_GRAY,
+                        italic: true,
+                        hideLineNum: true,
+                    },
+                });
+            }
+        }
+        return rows;
+    }
+
     return {
         decorateLine(line: RenderableLine): LineDecorations {
-            if (path === null || line.actionPath === undefined) return {};
+            if (path === null) return {};
             const overlay = ensureSourceDiff(path, importJsonPath);
             if (overlay === undefined) return {};
-            const state = overlay.get(line.actionPath);
-            if (state === undefined) return {};
+            const before = overlay.ghostsBeforeLine.get(line.lineNum);
+            const extraLinesBefore = before === undefined ? undefined : ghostRows(before);
+            if (line.actionPath === undefined) return { extraLinesBefore };
+            const state = overlay.states.get(line.actionPath);
+            if (state === undefined) return { extraLinesBefore };
             if (state === "edit") {
                 const actionPath = line.actionPath;
+                if (line.id !== `htsl:${actionPath}`) return { extraLinesBefore };
                 return {
-                    state,
-                    hoverLines: () => houseVersionHoverLines(path, actionPath, importJsonPath),
+                    state: "add",
+                    extraLinesBefore,
                 };
             }
             if (state === "add") {
                 return {
                     state,
-                    hoverLines: () => ["&7Not in the house — an import adds this."],
+                    extraLinesBefore,
                 };
             }
-            return { state };
+            return { state, extraLinesBefore };
         },
         focusedLineId(): string | null {
             return null;
+        },
+        extraLinesAtEnd() {
+            if (path === null) return [];
+            const overlay = ensureSourceDiff(path, importJsonPath);
+            return overlay === undefined ? [] : ghostRows(overlay.ghostsAtEnd);
         },
         modelKey(): string | null {
             if (path === null) return "diff:none";

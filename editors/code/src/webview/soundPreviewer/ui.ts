@@ -28,7 +28,9 @@ const VOLUME_MIN = 0;
 const VOLUME_MAX = 2;
 const SLIDER_STEP = 0.05;
 
-export function mountSoundPreviewer(app: HTMLElement, vscode: VsCodeApi): () => void {
+export function mountSoundPreviewer(app: HTMLElement, vscode: VsCodeApi, initialScrollTop = 0): () => void {
+    const bindInput = (id: string, handler: (value: string) => void) => bindInputIn(app, id, handler);
+    const bindClick = (id: string, handler: () => void) => bindClickIn(app, id, handler);
     scrollPastNumberInputs();
     const audio = new AudioEngine();
     const state: State = {
@@ -40,6 +42,7 @@ export function mountSoundPreviewer(app: HTMLElement, vscode: VsCodeApi): () => 
         loadingPath: null,
         status: { kind: "idle", text: "" },
     };
+    let pendingScrollTop: number | undefined = initialScrollTop;
 
     const onMessage = (event: MessageEvent<SoundPreviewFromHostMessage>) => {
         const message = event.data;
@@ -91,6 +94,9 @@ export function mountSoundPreviewer(app: HTMLElement, vscode: VsCodeApi): () => 
     return () => window.removeEventListener("message", onMessage);
 
     function render(): void {
+        const scrollTop = state.sounds.length > 0 && pendingScrollTop !== undefined
+            ? pendingScrollTop
+            : app.querySelector<HTMLElement>(".list")?.scrollTop ?? 0;
         const filtered = filterSounds(state.sounds, state.query);
         app.innerHTML = `
             <div class="app">
@@ -132,6 +138,9 @@ export function mountSoundPreviewer(app: HTMLElement, vscode: VsCodeApi): () => 
         `;
         bind(vscode);
         renderStatus();
+        const list = app.querySelector<HTMLElement>(".list");
+        if (list) list.scrollTop = scrollTop;
+        if (state.sounds.length > 0) pendingScrollTop = undefined;
     }
 
     function bind(vscode: VsCodeApi): void {
@@ -184,14 +193,14 @@ export function mountSoundPreviewer(app: HTMLElement, vscode: VsCodeApi): () => 
     }
 
     function renderStatus(): void {
-        const status = document.getElementById("status");
+        const status = app.querySelector("#status");
         if (!status) return;
         status.className = `status ${state.status.kind === "idle" ? "" : state.status.kind}`;
         status.textContent = state.status.text;
     }
 
     function renderSoundList(options: { preserveScroll?: boolean } = {}): void {
-        const list = document.querySelector<HTMLElement>(".list");
+        const list = app.querySelector<HTMLElement>(".list");
         if (!list) return;
         const scrollTop = options.preserveScroll ? list.scrollTop : 0;
         const scrollLeft = options.preserveScroll ? list.scrollLeft : 0;
@@ -207,22 +216,22 @@ export function mountSoundPreviewer(app: HTMLElement, vscode: VsCodeApi): () => 
     }
 
     function updateSoundControls(): void {
-        const pitch = document.getElementById("pitch") as HTMLInputElement | null;
-        const pitchNumber = document.getElementById("pitchNumber") as HTMLInputElement | null;
-        const volume = document.getElementById("volume") as HTMLInputElement | null;
-        const volumeNumber = document.getElementById("volumeNumber") as HTMLInputElement | null;
+        const pitch = app.querySelector("#pitch") as HTMLInputElement | null;
+        const pitchNumber = app.querySelector("#pitchNumber") as HTMLInputElement | null;
+        const volume = app.querySelector("#volume") as HTMLInputElement | null;
+        const volumeNumber = app.querySelector("#volumeNumber") as HTMLInputElement | null;
         if (pitch) pitch.value = String(state.pitch);
         if (pitchNumber) pitchNumber.value = String(state.pitch);
         if (volume) volume.value = String(state.volume);
         if (volumeNumber) volumeNumber.value = String(state.volume);
 
-        const readouts = document.querySelectorAll<HTMLElement>(".readout");
+        const readouts = app.querySelectorAll<HTMLElement>(".readout");
         if (readouts[0]) readouts[0].textContent = formatNumber(state.pitch);
         if (readouts[1]) readouts[1].textContent = formatNumber(state.volume);
     }
 
     function bindSoundRows(vscode: VsCodeApi): void {
-        for (const button of document.querySelectorAll<HTMLButtonElement>("[data-play-path]")) {
+        for (const button of app.querySelectorAll<HTMLButtonElement>("[data-play-path]")) {
             button.addEventListener("click", () => {
                 const sound = state.sounds.find((entry) => entry.path === button.dataset.playPath);
                 if (!sound) return;
@@ -239,7 +248,7 @@ export function mountSoundPreviewer(app: HTMLElement, vscode: VsCodeApi): () => 
             });
         }
 
-        for (const button of document.querySelectorAll<HTMLButtonElement>("[data-copy-path]")) {
+        for (const button of app.querySelectorAll<HTMLButtonElement>("[data-copy-path]")) {
             button.addEventListener("click", () => {
                 const soundPath = button.dataset.copyPath;
                 if (!soundPath) return;
@@ -294,13 +303,13 @@ function post(vscode: VsCodeApi, message: SoundPreviewToHostMessage): void {
     vscode.postMessage(message);
 }
 
-function bindInput(id: string, handler: (value: string) => void): void {
-    const input = document.getElementById(id) as HTMLInputElement | null;
+function bindInputIn(app: HTMLElement, id: string, handler: (value: string) => void): void {
+    const input = app.querySelector(`#${id}`) as HTMLInputElement | null;
     input?.addEventListener("input", () => handler(input.value));
 }
 
-function bindClick(id: string, handler: () => void): void {
-    document.getElementById(id)?.addEventListener("click", handler);
+function bindClickIn(app: HTMLElement, id: string, handler: () => void): void {
+    app.querySelector(`#${id}`)?.addEventListener("click", handler);
 }
 
 function normalizePitch(value: number): number {

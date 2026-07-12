@@ -120,6 +120,7 @@ export function mountProjectExplorer(
     app: HTMLElement,
     vscode: VsCodeApi,
     onOpenItemEditor?: () => void,
+    initialScrollTop = 0,
 ): () => void {
     const persisted = restoreProjectState(vscode.getState()?.project);
     const hasPersistedExpanded = persisted.expanded !== undefined;
@@ -147,6 +148,7 @@ export function mountProjectExplorer(
         suppressClick: boolean;
         removeMouseUp?: () => void;
     } | null = null;
+    let pendingScrollTop: number | undefined = initialScrollTop;
 
     const onMessage = (event: MessageEvent<ProjectFromHostMessage>) => {
         const message = event.data;
@@ -229,7 +231,9 @@ export function mountProjectExplorer(
     }
 
     function render(): void {
-        const scroll = document.getElementById("projectTree")?.scrollTop ?? 0;
+        const scroll = !state.loading && pendingScrollTop !== undefined
+            ? pendingScrollTop
+            : document.getElementById("projectTree")?.scrollTop ?? 0;
         app.innerHTML = `
             <div class="project-app">
                 <div class="toolbar">
@@ -256,6 +260,7 @@ export function mountProjectExplorer(
         renderStatus();
         const tree = document.getElementById("projectTree");
         if (tree) tree.scrollTop = scroll;
+        if (!state.loading) pendingScrollTop = undefined;
         if (state.showCreate) {
             (document.getElementById("folderPath") as HTMLInputElement | null)?.focus();
         }
