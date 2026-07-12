@@ -166,7 +166,7 @@ function currentPhaseLabel(): string {
  * progress bar (reading/hydrating/applying) and reused by `queue.ts`'s
  * per-row mini bar.
  */
-export function phaseSegment(
+function phaseSegment(
     widthFactor: number,
     fraction: number,
     color: number
