@@ -134,9 +134,20 @@ export function isInQueue(key: string): boolean {
     return false;
 }
 
+function sameImportWork(left: QueueItem, right: QueueItem): boolean {
+    return left.operation === "import"
+        && left.kind === "importable"
+        && right.operation === "import"
+        && right.kind === "importable"
+        && left.type === right.type
+        && left.identity === right.identity;
+}
+
 export function addToQueue(item: QueueItem): boolean {
     const key = queueItemKey(item);
-    if (isInQueue(key)) return false;
+    for (let i = 0; i < items.length; i++) {
+        if (queueItemKey(items[i]) === key || sameImportWork(items[i], item)) return false;
+    }
     items = items.concat([item]);
     markGuiDirty();
     return true;
@@ -150,9 +161,10 @@ export function addToQueue(item: QueueItem): boolean {
  * run is actually doing.
  */
 export function addSessionQueueItem(item: QueueItem): void {
-    addToQueue(item);
-    if (sessionKeys !== null && !sessionKeys.has(queueItemKey(item))) {
-        sessionKeys.add(queueItemKey(item));
+    const key = queueItemKey(item);
+    const added = addToQueue(item);
+    if (sessionKeys !== null && (added || isInQueue(key)) && !sessionKeys.has(key)) {
+        sessionKeys.add(key);
         markGuiDirty();
     }
 }

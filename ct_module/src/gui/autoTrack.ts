@@ -17,7 +17,12 @@ import {
 } from "./parsing/parses";
 import { importableIdentity } from "../importables/identity";
 import { statusForImportable } from "./cache-status";
-import { addToQueue, makeImportableQueueItem } from "./right-panel/import-tab/queue";
+import {
+    addToQueue,
+    isInQueue,
+    makeImportableQueueItem,
+    queueItemKey,
+} from "./right-panel/import-tab/queue";
 
 export function queueModifiedImportables(
     sourcePath: string,
@@ -28,7 +33,8 @@ export function queueModifiedImportables(
         const status = statusForImportable(imp);
         if (status === "modified" || status === "unknown") {
             const item = makeImportableQueueItem(imp, canonicalSourcePath);
-            addToQueue(item);
+            const added = addToQueue(item);
+            if (!added && !isInQueue(queueItemKey(item))) continue;
             const key = importableSelectionKey(
                 canonicalSourcePath,
                 imp.type,

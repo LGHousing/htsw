@@ -51,7 +51,7 @@ import {
 } from "../parsing/parses";
 import { getHousingUuid } from "../state/housing";
 import { readCachedActionList } from "../../importCache/actionLists";
-import { parseHtslFile } from "./htslParse";
+import { actionLineRange as parsedActionLineRange, parseHtslFile } from "./htslParse";
 
 type SourceActionPathKey = string;
 
@@ -424,15 +424,7 @@ function actionLineRange(
     if (sourceFile.file === null || sourceFile.spans === null) return null;
     const action = sourceActionAt(sourceFile.actions, actionPath);
     if (action === null) return null;
-    try {
-        const span = sourceFile.spans.get(action);
-        return {
-            start: sourceFile.file.getPosition(span.start).line,
-            end: sourceFile.file.getPosition(span.end).line,
-        };
-    } catch (_e) {
-        return null;
-    }
+    return parsedActionLineRange(sourceFile.file, sourceFile.spans, action);
 }
 
 function addGhostBeforeLine(

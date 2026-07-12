@@ -48,7 +48,13 @@ import {
 import { shortPath, toForwardSlashes } from "../../lib/pathDisplay";
 import { readImportableCache } from "../../../importCache/cache";
 import { functionIconCompareKey } from "../../../importCache/hash";
-import { addToQueue, makeImportableQueueItem, queueItemKey, removeFromQueueKey } from "../../right-panel/import-tab/queue";
+import {
+    addToQueue,
+    isInQueue,
+    makeImportableQueueItem,
+    queueItemKey,
+    removeFromQueueKey,
+} from "../../right-panel/import-tab/queue";
 import { isTaskRunning } from "../../../tasks/runningState";
 import { composeFileMenu, composeImportableMenu } from "../../menus/fileMenu";
 import { autoTrackRefresh, queueModifiedFromPath, queueModifiedImportables } from "../../autoTrack";
@@ -661,7 +667,9 @@ function collapsedSubtreeAggregates(parent: ResultImport, node: IncludeNode): El
 function queueImportables(parent: ResultImport, importables: readonly Importable[]): void {
     for (let i = 0; i < importables.length; i++) {
         const imp = importables[i];
-        addToQueue(makeImportableQueueItem(imp, parent.fullPath));
+        const item = makeImportableQueueItem(imp, parent.fullPath);
+        const added = addToQueue(item);
+        if (!added && !isInQueue(queueItemKey(item))) continue;
         const key = importableSelectionKey(parent.fullPath, imp.type, importableIdentity(imp));
         if (!isImportableChecked(key)) toggleImportableChecked(key);
     }
@@ -1205,8 +1213,13 @@ function toggleImportableInQueue(
     if (checked && isTaskRunning()) return; // would remove — locked mid-run
     const nowChecked = toggleImportableChecked(checkKey);
     const item = makeImportableQueueItem(imp, parent.fullPath);
-    if (nowChecked) addToQueue(item);
-    else removeFromQueueKey(queueItemKey(item));
+    if (nowChecked) {
+        if (!addToQueue(item) && !isInQueue(queueItemKey(item))) {
+            toggleImportableChecked(checkKey);
+        }
+    } else {
+        removeFromQueueKey(queueItemKey(item));
+    }
 }
 
 export function importableRow(parent: ResultImport, imp: Importable): Element {

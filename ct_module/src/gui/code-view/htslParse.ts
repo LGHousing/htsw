@@ -34,6 +34,24 @@ export type ParsedFile = {
     file: SourceFile | null;
 };
 
+export function actionLineRange(
+    file: SourceFile,
+    spans: SpanTable,
+    action: Action
+): { start: number; end: number } | null {
+    try {
+        const span = spans.get(action);
+        const start = file.getPosition(span.start);
+        const end = file.getPosition(span.end);
+        return {
+            start: start.line,
+            end: end.column === 1 && end.line > start.line ? end.line - 1 : end.line,
+        };
+    } catch (_e) {
+        return null;
+    }
+}
+
 const parseCache = new Map<string, ParsedFile>();
 
 

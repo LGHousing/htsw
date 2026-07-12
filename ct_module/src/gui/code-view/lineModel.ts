@@ -6,7 +6,12 @@ import type { Diagnostic, DiagnosticLevel, ImportablesParseResult, SourceFile, S
 import { getMtimeMs, pathExists } from "../lib/java";
 import { shortPath } from "../lib/pathDisplay";
 import { FileSystemFileLoader } from "../../utils/fileLoaders";
-import { actionsToLines, parseHtslFile, type HtslLine } from "./htslParse";
+import {
+    actionLineRange,
+    actionsToLines,
+    parseHtslFile,
+    type HtslLine,
+} from "./htslParse";
 import { getSelectedParsedResult } from "../parsing/selectedParse";
 import { getParseAt } from "../parsing/parses";
 import { tokenizeHtsl, tokenizeJson, tokenizeSnbt, type SyntaxToken } from "../right-panel/syntax";
@@ -480,21 +485,14 @@ function collectActionLineRanges(
             const a = list[i];
             if (a === null || a === undefined) continue;
             const actionPath = pathPrefix === undefined ? String(i) : `${pathPrefix}.${i}`;
-            let span;
-            try {
-                span = spans.get(a);
-            } catch (_e) {
-                continue;
-            }
-            let startLine = 0;
-            let endLine = 0;
-            try {
-                startLine = file.getPosition(span.start).line;
-                endLine = file.getPosition(span.end).line;
-            } catch (_e) {
-                continue;
-            }
-            out.push({ actionPath, startLine, endLine, depth });
+            const range = actionLineRange(file, spans, a);
+            if (range === null) continue;
+            out.push({
+                actionPath,
+                startLine: range.start,
+                endLine: range.end,
+                depth,
+            });
             if (a.type === "CONDITIONAL") {
                 visit(a.ifActions ?? [], `${actionPath}.ifActions`, depth + 1);
                 visit(a.elseActions ?? [], `${actionPath}.elseActions`, depth + 1);
