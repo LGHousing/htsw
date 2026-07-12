@@ -8,7 +8,7 @@ import { linkStatusIcon, type LinkStatusKey } from "../cache-status";
 // Importables (status only) bars read as the same control.
 export const FILTER_ACTIVE_BG = 0xff2d4d2d | 0;
 export const FILTER_ACTIVE_HOVER_BG = 0xff3a5d3a | 0;
-export const FILTER_ROW_BG = 0xff2d333d | 0;
+const FILTER_ROW_BG = 0xff2d333d | 0;
 export const FILTER_ROW_HOVER_BG = 0xff3a4350 | 0;
 
 export const ALL_LINK_STATUSES: { key: LinkStatusKey; label: string }[] = [

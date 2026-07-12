@@ -325,17 +325,3 @@ export const HOUSE_CONTENT_TYPES: HouseContentType[] =
     (Object.keys(HOUSE_CONTENT_BY_TYPE) as HouseReadableType[]).map(
         (type) => HOUSE_CONTENT_BY_TYPE[type]
     );
-
-// Importable types with a house-side listing (the scan/enumerate path above).
-// ITEM is absent: an item has no name-shaped house scan that can answer "is it
-// in the house?" (it exists only where an action or menu references it). NPCs
-// ARE listable (by position), so they're scannable; presence UI still gates on
-// this membership.
-const SCANNABLE_TYPES = new Set<Importable["type"]>();
-for (let i = 0; i < HOUSE_CONTENT_TYPES.length; i++) {
-    SCANNABLE_TYPES.add(HOUSE_CONTENT_TYPES[i].type);
-}
-
-export function isScannableType(type: Importable["type"]): boolean {
-    return SCANNABLE_TYPES.has(type);
-}

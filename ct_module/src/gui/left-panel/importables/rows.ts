@@ -139,7 +139,7 @@ export function setJumpFlash(expKey: string): void {
     jumpFlashKey = expKey;
     jumpFlashUntil = Date.now() + 1500;
 }
-export function isJumpFlashing(expKey: string): boolean {
+function isJumpFlashing(expKey: string): boolean {
     return jumpFlashKey === expKey && Date.now() < jumpFlashUntil;
 }
 
