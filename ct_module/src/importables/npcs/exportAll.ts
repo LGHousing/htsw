@@ -182,6 +182,7 @@ async function exportAllNpcsInner(
                     );
                 }
                 succeeded++;
+                sink?.itemFinished?.(i);
             } catch (error) {
                 if (isTaskCancelled(error)) {
                     throw error;

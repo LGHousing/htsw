@@ -101,8 +101,8 @@ export type HouseContentType = {
     // Export reads the live housing menu, so the view still gates it on standing
     // in the house. A type without this hook is browse-only.
     export?: {
-        selected: (names: string[], onDone: () => void) => void;
-        all: () => void;
+        selected: (names: string[], onDone: () => void, labels?: ReadonlyMap<string, string>) => void;
+        all: (labels?: ReadonlyMap<string, string>) => void;
     };
 };
 
@@ -110,8 +110,8 @@ export type HouseContentType = {
 // `startExport`; the type only supplies its batch exporter + a label.
 function exportHook(spec: ExportSpec): HouseContentType["export"] {
     return {
-        selected: (names, onDone) => startExport(spec, names, onDone),
-        all: () => startExport(spec),
+        selected: (names, onDone, labels) => startExport(spec, names, onDone, labels),
+        all: (labels) => startExport(spec, undefined, undefined, labels),
     };
 }
 

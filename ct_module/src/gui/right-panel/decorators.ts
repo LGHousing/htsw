@@ -3,7 +3,7 @@
 import * as htsw from "htsw";
 
 import { ROW_BG_BY_STATE } from "../code-view/diffPalette";
-import { ensureSourceDiff, houseActionAt } from "../code-view/sourceDiff";
+import { ensureSourceDiff, getSourceDiffRevision, houseActionAt } from "../code-view/sourceDiff";
 import { focusLineIdForFile } from "./import-tab/focusedLine";
 import { htslLineToChatString } from "./syntax";
 import type { LineDecorations, LineDecorator, RenderableLine } from "../code-view/lineTypes";
@@ -12,6 +12,7 @@ import {
     getCurrentPath,
     getLiveSummary,
     previewLineIdForPath,
+    previewRevision,
     type PreviewLine,
 } from "./import-tab/livePreview";
 
@@ -62,6 +63,10 @@ export function diffDecorator(path: string | null, importJsonPath?: string | nul
         },
         focusedLineId(): string | null {
             return null;
+        },
+        modelKey(): string | null {
+            if (path === null) return "diff:none";
+            return `diff:${path}\n${importJsonPath ?? ""}\n${getSourceDiffRevision()}`;
         },
     };
 }
@@ -171,6 +176,10 @@ export function progressDecorator(path: string | null): LineDecorator {
                 return previewLineIdForPath(path, current);
             }
             return focusLineIdForFile(path);
+        },
+        modelKey(): string | null {
+            if (path === null) return "progress:none";
+            return `progress:${path}\n${previewRevision(path)}\n${focusPath ?? ""}\n${isApplyPhase}`;
         },
     };
 }

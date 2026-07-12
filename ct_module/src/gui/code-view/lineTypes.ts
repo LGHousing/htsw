@@ -74,4 +74,13 @@ export type LineDecorations = {
 export type LineDecorator = {
     decorateLine(line: RenderableLine): LineDecorations;
     focusedLineId(): string | null;
+    /**
+     * Identity of everything `decorateLine` reads. The code view caches its
+     * whole-file decoration pass and reuses it while (lines, this key,
+     * viewport width) are unchanged — so scroll frames skip re-decorating
+     * every line. The key must therefore change whenever any state that can
+     * alter any line's decorations changes. Return null to opt out of
+     * caching (the pass then reruns every rebuilt frame).
+     */
+    modelKey(): string | null;
 };

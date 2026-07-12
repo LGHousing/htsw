@@ -58,6 +58,7 @@ import {
     closeHoverCard,
     drawHoverCard,
     isHoverCardVisible,
+    mouseIsOverHoverCard,
     tryDispatchHoverCardWheel,
 } from "./lib/hoverCards";
 import {
@@ -194,6 +195,73 @@ function laidOutTrees(): { root: Element; rect: Rect }[] {
         out.push({ root: activePanels[i].getRoot(), rect: activePanels[i].getBounds() });
     }
     return out;
+}
+
+// The one wheel-routing decision, shared by the suppression and application
+// halves (see the wheel comment block in initHtswGui) so they can never
+// disagree about which surface owns a wheel event. Precedence: popovers
+// (paint on top, modals absorb everywhere), then hover cards, then the first
+// panel scroll viewport under the cursor. With `apply` false this is a pure
+// hit-test; `delta` is ignored.
+function routeWheel(mx: number, my: number, delta: number, apply: boolean): boolean {
+    if (popoverIsOpen()) {
+        if (apply) {
+            if (tryDispatchPopoverWheel(mx, my, delta)) return true;
+        } else if (mouseIsOverPopover(mx, my)) {
+            return true;
+        }
+    }
+    if (apply) {
+        if (tryDispatchHoverCardWheel(mx, my, delta)) return true;
+    } else if (mouseIsOverHoverCard(mx, my)) {
+        return true;
+    }
+    const trees = laidOutTrees();
+    for (let i = 0; i < trees.length; i++) {
+        const t = trees[i];
+        const laid = layoutElement(t.root, t.rect.x, t.rect.y, t.rect.w, t.rect.h);
+        for (let j = 0; j < laid.length; j++) {
+            const el = laid[j].element;
+            if (el.kind !== "scroll") continue;
+            const s = getScrollState(el.id);
+            if (!pointInRect(s.viewportRect, mx, my)) continue;
+            if (apply) {
+                dispatchWheel(laid, mx, my, delta);
+                // The overlay caches its laid-out tree (lib/dirty); a scroll
+                // changes element positions, so force a rebuild or the new
+                // offset wouldn't render until the 200ms backstop.
+                markGuiDirty();
+            }
+            return true;
+        }
+    }
+    return false;
+}
+
+let lastWheelPollAt = 0;
+
+function pollWheel(): void {
+    const dwheel = MouseClass.getDWheel();
+    const now = Date.now();
+    // The accumulator collects wheel whether or not this poll is running
+    // (guiRender only fires with a screen open). After a gap, whatever it
+    // holds is stale in-world/other-screen input — drain and discard it
+    // instead of applying a phantom scroll on the first overlay frame.
+    const stale = now - lastWheelPollAt > 200;
+    lastWheelPollAt = now;
+    if (dwheel === 0 || stale) return;
+    // Notches, keeping the hardware's real magnitude: a standard wheel click
+    // is ±120, fast flicks coalesce into one larger reading, and high-res
+    // wheels/touchpads report fractions of 120. Collapsing this to ±1 made
+    // fast scrolling crawl.
+    const delta = dwheel / 120;
+    const mc = Client.getMinecraft();
+    const dh = (mc as any).field_71440_d;
+    const s = getEffectiveOverlayScale();
+    const overlayScreenH = Math.floor(dh / s);
+    const mx = Math.floor(MouseClass.getX() / s);
+    const my = overlayScreenH - Math.floor(MouseClass.getY() / s) - 1;
+    routeWheel(mx, my, delta, true);
 }
 
 function nativeScreenUsesTypedCharacters(): boolean {
@@ -452,20 +520,26 @@ export function initHtswGui(): void {
         cancel(event);
     });
 
-    // Mouse wheel: hook Forge's GuiScreenEvent.MouseInputEvent.Pre, which fires per Mouse.next()
-    // event BEFORE GuiScreen.handleMouseInput runs. Cancelling here suppresses both vanilla
-    // GuiContainer scroll AND GuiContainerCreative tab/item-list scrolling when the cursor is
-    // over one of our scroll viewports. Polling Mouse.getDWheel() in guiRender does NOT suppress
-    // MC's reaction because MC reads per-event wheel via Mouse.getEventDWheel() during runTick,
-    // which happens before guiRender; the accumulator and the per-event wheel are independent.
+    // Mouse wheel, two cooperating halves over the SAME routing decision
+    // (`routeWheel`):
+    //
+    // 1. Forge's GuiScreenEvent.MouseInputEvent.Pre — SUPPRESSION ONLY. It
+    //    fires per Mouse.next() event BEFORE GuiScreen.handleMouseInput runs,
+    //    which is the only place vanilla GuiContainer scroll and
+    //    GuiContainerCreative tab/item-list scrolling can be cancelled. It
+    //    does NOT apply the wheel to our scrolls.
+    // 2. A per-frame `Mouse.getDWheel()` poll in guiRender (`pollWheel`) —
+    //    APPLICATION. MC only drains the event queue during runTick (~20Hz),
+    //    so applying from events moved scroll targets in visible ~50ms steps
+    //    that the easing could only partially mask (20Hz velocity pulsing).
+    //    The accumulator is refilled by Display.processMessages every FRAME
+    //    and is independent of the per-event wheel (Mouse.getEventDWheel), so
+    //    polling it feeds the targets at render rate without double-applying
+    //    what the Pre handler saw. Draining it also doesn't starve MC — all
+    //    vanilla handling reads per-event wheel.
     register(ForgeMouseInputEventPre, (event: any) => {
         const dwheel = MouseClass.getEventDWheel();
         if (dwheel === 0) return;
-        // Notches, keeping the event's real magnitude: a standard wheel click
-        // is ±120, fast flicks coalesce into one larger event, and high-res
-        // wheels/touchpads report fractions of 120. Collapsing this to ±1
-        // made fast scrolling crawl.
-        const delta = dwheel / 120;
         const mc = Client.getMinecraft();
         const screen = (mc as any).field_71462_r;
         if (screen === null || screen === undefined) return;
@@ -476,39 +550,14 @@ export function initHtswGui(): void {
         const overlayScreenH = Math.floor(dh / s);
         const mx = Math.floor(MouseClass.getEventX() / s);
         const my = overlayScreenH - Math.floor(MouseClass.getEventY() / s) - 1;
-        // Popovers paint on top of panels so they should also see the wheel first. Without
-        // this, scrolling inside the file-browser/recents popovers fell through to whatever
-        // panel scroll happened to be under the cursor.
-        if (popoverIsOpen()) {
-            if (tryDispatchPopoverWheel(mx, my, delta)) {
-                cancel(event);
-                return;
-            }
-        }
-        if (tryDispatchHoverCardWheel(mx, my, delta)) {
-            cancel(event);
-            return;
-        }
-        const trees = laidOutTrees();
-        for (let i = 0; i < trees.length; i++) {
-            const t = trees[i];
-            const laid = layoutElement(t.root, t.rect.x, t.rect.y, t.rect.w, t.rect.h);
-            for (let j = 0; j < laid.length; j++) {
-                const el = laid[j].element;
-                if (el.kind !== "scroll") continue;
-                const s = getScrollState(el.id);
-                if (!pointInRect(s.viewportRect, mx, my)) continue;
-                dispatchWheel(laid, mx, my, delta);
-                // The overlay caches its laid-out tree (lib/dirty); a scroll
-                // changes element positions, so force a rebuild or the new
-                // offset wouldn't render until the 200ms backstop.
-                markGuiDirty();
-                cancel(event);
-                return;
-            }
-        }
+        if (routeWheel(mx, my, 0, false)) cancel(event);
     });
+    // Runs at default (NORMAL) priority, so everything here — the wheel poll's
+    // target moves, dirty marks — lands BEFORE the panel paints this same
+    // frame (Panel's render trigger is Priority.LOW). Moving any of it after
+    // the paint costs one frame of input latency.
     register("guiRender", (mouseX: number, mouseY: number) => {
+        pollWheel();
         tickTabDragAutoScroll(mcToOverlay(mouseX));
         const dragging = isDraggingScrollbar();
         if (dragging) updateScrollbarDrag(mcToOverlay(mouseY));

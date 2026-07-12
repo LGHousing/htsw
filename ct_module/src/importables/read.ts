@@ -134,6 +134,7 @@ export async function runReadLoop(
                             : (payload) => sink.itemProgress!(i, payload)
                     );
                     succeeded++;
+                    sink?.itemFinished?.(i);
                 } catch (error) {
                     if (isTaskCancelled(error)) throw error;
                     failed++;
@@ -163,6 +164,7 @@ export async function runReadLoop(
                         : (payload) => sink.itemProgress!(i, payload)
                 );
                 succeeded++;
+                sink?.itemFinished?.(i);
             } catch (error) {
                 if (isTaskCancelled(error)) {
                     throw error;

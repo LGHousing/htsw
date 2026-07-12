@@ -26,7 +26,8 @@ export type ExportSpec = {
 export function startExport(
     spec: ExportSpec,
     names?: readonly string[],
-    onSuccess?: () => void
+    onSuccess?: () => void,
+    labels?: ReadonlyMap<string, string>
 ): void {
     closeAllPopovers();
     const importJsonPath = getExportImportJsonPath();
@@ -56,7 +57,7 @@ export function startExport(
                 ? { newExportTargetImportJson: newExportTarget }
                 : {}),
             names,
-            progress: createExportProgressSink(spec.type, importJsonPath),
+            progress: createExportProgressSink(spec.type, importJsonPath, "export", labels),
         });
     }).then((result) => {
         if (result === undefined) return;

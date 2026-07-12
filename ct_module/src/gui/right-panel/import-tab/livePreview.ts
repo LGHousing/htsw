@@ -456,6 +456,15 @@ export function previewLinesForFile(path: string): readonly PreviewLine[] {
     return s ? s.lines : [];
 }
 
+/**
+ * Change counter for one file's preview lines. Every line mutation bumps it
+ * (see `bump`), so it keys caches derived from the line array — the line
+ * objects are mutated in place, so array identity alone can't.
+ */
+export function previewRevision(path: string): number {
+    return states[keyForFile(path)]?.revision ?? -1;
+}
+
 export function resetPreview(path: string): void {
     const k = keyForFile(path);
     if (states[k] !== undefined) {

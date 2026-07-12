@@ -41,7 +41,8 @@ import {
 export function createExportProgressSink(
     type: Importable["type"],
     importJsonPath: string,
-    verb: "export" | "read" = "export"
+    verb: "export" | "read" = "export",
+    labels?: ReadonlyMap<string, string>
 ): ExportProgressSink {
     const queueItems: QueueItem[] = [];
     let names: readonly string[] = [];
@@ -140,7 +141,8 @@ export function createExportProgressSink(
                     type,
                     n,
                     importJsonPath,
-                    getHousingUuid()
+                    getHousingUuid(),
+                    labels?.get(n)
                 );
                 queueItems.push(item);
                 addToQueue(item);
@@ -151,7 +153,6 @@ export function createExportProgressSink(
         },
         item(index, name) {
             if (names.length === 0) return;
-            finishCurrent("imported");
             currentIndex = index;
             currentClosed = false;
             emit({
@@ -171,6 +172,9 @@ export function createExportProgressSink(
             currentClosed = false;
             setEtaEstimating(false);
             emit({ kind: "importableReactivated", key: keyFor(names[index]), rowIndex: index });
+        },
+        itemFinished(index) {
+            if (index === currentIndex) finishCurrent("imported");
         },
         itemProgress(index, payload) {
             if (names.length === 0 || index !== currentIndex || currentClosed) return;

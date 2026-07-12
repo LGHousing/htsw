@@ -208,12 +208,28 @@ const ICON_DEFAULT_SIZE = 16;
 // must not trigger the font width measurement (`func_78256_a`), which is the
 // dominant per-frame layout cost on long unvirtualized lists (the chat
 // scrollback re-measured all ~100 lines every frame just to total their height).
+// Memoized font measurement: layout re-resolves every auto-width text's
+// width on every rebuild, and each measurement is a Rhino->Java crossing.
+// The glyph metrics are fixed per string, so during a scroll (same strings
+// every frame) this turns hundreds of crossings per rebuild into map hits.
+// (A mid-session Force Unicode Font toggle would serve stale widths until
+// /ct reload — accepted.)
+const textWidthCache = new Map<string, number>();
+
+function measureStringWidth(text: string): number {
+    const cached = textWidthCache.get(text);
+    if (cached !== undefined) return cached;
+    const w = Number(Client.getMinecraft().field_71466_p.func_78256_a(text));
+    if (textWidthCache.size >= 8192) textWidthCache.clear();
+    textWidthCache.set(text, w);
+    return w;
+}
+
 function intrinsicAxis(e: Element, axis: "w" | "h"): number {
     switch (e.kind) {
         case "text":
             return axis === "w"
-                ? Client.getMinecraft().field_71466_p.func_78256_a(extract(e.text)) +
-                      TEXT_PAD * 2
+                ? measureStringWidth(extract(e.text)) + TEXT_PAD * 2
                 : LINE_H + TEXT_PAD * 2;
         case "input":
             return axis === "w" ? 80 : LINE_H + INPUT_PAD_Y * 2;
@@ -358,6 +374,13 @@ export function setScrollOffset(id: string, offset: number): void {
 /** Set where the offset eases toward (the smoothed wheel path). */
 export function setScrollTarget(id: string, target: number): void {
     const s = getScrollState(id);
+    // A stale animAt means this input starts a NEW ease episode — the scroll
+    // has been idle, so nothing advanced it recently (idle rebuilds only
+    // happen on the ~200ms dirty backstop). Refresh it so the first advance
+    // eases from now instead of hitting the >100ms gap-snap and dumping the
+    // whole first notch into one frame.
+    const now = Date.now();
+    if (now - s.animAt > 100) s.animAt = now;
     s.target = clampOffset(s, target);
 }
 
@@ -398,9 +421,14 @@ function advanceScrollOffset(s: ScrollState, maxOffset: number): void {
     }
 
     const diff = s.target - s.offset;
-    // First use, a long gap (tab switch / low FPS), or sub-pixel remainder:
-    // snap so it neither lurches from a stale clock nor asymptotes forever.
-    if (dt <= 0 || dt > 100 || (diff > -0.5 && diff < 0.5)) {
+    // Zero elapsed time advances nothing (exp(0) = 1). This must NOT snap:
+    // the wheel poll's hit-test relayout and the same frame's paint relayout
+    // run within the same millisecond, so snapping here bypasses the easing
+    // for every frame that has wheel input — raw per-notch jumps.
+    if (dt <= 0) return;
+    // A long gap (tab switch / low FPS) or sub-pixel remainder: snap so it
+    // neither lurches from a stale clock nor asymptotes forever.
+    if (dt > 100 || (diff > -0.5 && diff < 0.5)) {
         s.offset = s.target;
         return;
     }

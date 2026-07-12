@@ -28,6 +28,7 @@ import type {
 } from "./lineTypes";
 import { joinTokenText, wrapTokensIntoVisualRows } from "./wrap";
 import { getViewSelection, publishCodeView } from "./selection";
+import { recordPhase } from "../lib/framePerf";
 
 export type CodeViewProps = {
     source?: Extractable<string | null>;
@@ -65,6 +66,205 @@ type DecoratedLine = {
     decorations: LineDecorations;
 };
 
+/**
+ * The whole-file decoration + row-layout pass: every line's decorations,
+ * wrap-derived row offsets, and the id lookup tables. Everything in here is
+ * O(total lines) to produce but independent of the scroll offset, so it is
+ * cached across frames (see `modelCache`) and eased scrolling only pays for
+ * slicing the visible window out of it.
+ */
+type LineModel = {
+    decorated: DecoratedLine[];
+    entryRowStart: number[];
+    entryRowEnd: number[];
+    totalRows: number;
+    lineIdToIndex: { [id: string]: number };
+    orderedLines: RenderableLine[];
+    idToOrdinal: { [id: string]: number };
+    showStatusGutters: boolean;
+    gutterW: number;
+    lineNumDigits: number;
+    bodyMaxWidth: number;
+};
+
+type ModelCacheEntry = {
+    lines: readonly RenderableLine[];
+    decoratorKey: string;
+    viewportW: number;
+    model: LineModel;
+};
+
+const modelCache: { [scrollId: string]: ModelCacheEntry } = {};
+
+function buildLineModel(
+    scrollId: string,
+    lines: readonly RenderableLine[],
+    lineDecorator: LineDecorator
+): LineModel {
+    const decorated: DecoratedLine[] = [];
+    let showStatusGutters = false;
+    let maxLineNum = 1;
+    for (let i = 0; i < lines.length; i++) {
+        const dec = lineDecorator.decorateLine(lines[i]);
+        if (lines[i].lineNum > maxLineNum) maxLineNum = lines[i].lineNum;
+        if (hasStatusGutterContent(dec)) showStatusGutters = true;
+        if (dec.extraLinesBefore !== undefined) {
+            for (let j = 0; j < dec.extraLinesBefore.length; j++) {
+                const extra = dec.extraLinesBefore[j];
+                if (extra.line.lineNum > maxLineNum) {
+                    maxLineNum = extra.line.lineNum;
+                }
+                if (hasStatusGutterContent(extra.decorations)) {
+                    showStatusGutters = true;
+                }
+            }
+        }
+        decorated.push({ line: lines[i], decorations: dec });
+    }
+    const gutterW = gutterWidthForLines(maxLineNum);
+    const lineNumDigits = digitsOf(maxLineNum);
+    const bodyMaxWidth = bodyWidthForScroll(
+        scrollId,
+        gutterW,
+        showStatusGutters,
+        showStatusGutters
+    );
+
+    // Count visual rows per entry (each line can wrap into multiple rows)
+    // and build the lineIdToIndex map needed by autoFollow — without
+    // constructing Element trees for anything.
+    const lineIdToIndex: { [id: string]: number } = {};
+    const entryRowStart: number[] = new Array(decorated.length);
+    const entryRowEnd: number[] = new Array(decorated.length);
+    const orderedLines: RenderableLine[] = [];
+    const idToOrdinal: { [id: string]: number } = {};
+    let totalRows = 0;
+    for (let i = 0; i < decorated.length; i++) {
+        const line = decorated[i].line;
+        const dec = decorated[i].decorations;
+        entryRowStart[i] = totalRows;
+        if (dec.extraLinesBefore !== undefined) {
+            for (let j = 0; j < dec.extraLinesBefore.length; j++) {
+                const extra = dec.extraLinesBefore[j];
+                if (lineIdToIndex[extra.line.id] === undefined) {
+                    lineIdToIndex[extra.line.id] = totalRows;
+                }
+                if (idToOrdinal[extra.line.id] === undefined) {
+                    idToOrdinal[extra.line.id] = orderedLines.length;
+                }
+                orderedLines.push(extra.line);
+                totalRows += wrapRowCount(extra.line, bodyMaxWidth, extra.decorations);
+            }
+        }
+        if (lineIdToIndex[line.id] === undefined) {
+            lineIdToIndex[line.id] = totalRows;
+        }
+        if (idToOrdinal[line.id] === undefined) {
+            idToOrdinal[line.id] = orderedLines.length;
+        }
+        orderedLines.push(line);
+        totalRows += wrapRowCount(line, bodyMaxWidth, dec);
+        entryRowEnd[i] = totalRows;
+    }
+
+    return {
+        decorated,
+        entryRowStart,
+        entryRowEnd,
+        totalRows,
+        lineIdToIndex,
+        orderedLines,
+        idToOrdinal,
+        showStatusGutters,
+        gutterW,
+        lineNumDigits,
+        bodyMaxWidth,
+    };
+}
+
+/**
+ * Reuse of built row Elements across frames. During a scroll almost the
+ * whole visible window repeats from the last frame, and `buildLineRows`
+ * re-wraps tokens and allocates a container tree per line — the dominant
+ * remaining rebuild cost once the LineModel itself is cached. Everything a
+ * row's Elements close over is in the key: the decorations object (stable
+ * while the LineModel cache holds, replaced when it rebuilds), the layout
+ * inputs, and the line's selection slice. Rows for a line whose inputs
+ * changed rebuild on the spot.
+ */
+type RowCacheEntry = {
+    decorations: LineDecorations;
+    selKey: string;
+    gutterWidth: number;
+    lineNumDigits: number;
+    bodyMaxWidth: number;
+    showStatusGutters: boolean;
+    rows: Element[];
+};
+
+const rowCache = new WeakMap<RenderableLine, RowCacheEntry>();
+
+function selectionKey(sel: LineSelection | null): string {
+    return sel === null ? "" : `${sel.start}:${sel.end}:${sel.continuesRight ? 1 : 0}`;
+}
+
+function cachedLineRows(
+    line: RenderableLine,
+    decorations: LineDecorations,
+    opts: {
+        scrollId: string;
+        gutterWidth: number;
+        lineNumDigits: number;
+        bodyMaxWidth: number;
+        showFocusGutter: boolean;
+        showStateGutter: boolean;
+        onOpenPath?: (path: string, options: { activate: boolean }) => void;
+    },
+    selection: LineSelection | null
+): Element[] {
+    const selKey = selectionKey(selection);
+    const cached = rowCache.get(line);
+    if (
+        cached !== undefined
+        && cached.decorations === decorations
+        && cached.selKey === selKey
+        && cached.gutterWidth === opts.gutterWidth
+        && cached.lineNumDigits === opts.lineNumDigits
+        && cached.bodyMaxWidth === opts.bodyMaxWidth
+        && cached.showStatusGutters === opts.showFocusGutter
+    ) {
+        return cached.rows;
+    }
+    const rows = buildLineRows(line, decorations, opts, selection);
+    rowCache.set(line, {
+        decorations,
+        selKey,
+        gutterWidth: opts.gutterWidth,
+        lineNumDigits: opts.lineNumDigits,
+        bodyMaxWidth: opts.bodyMaxWidth,
+        showStatusGutters: opts.showFocusGutter,
+        rows,
+    });
+    return rows;
+}
+
+/**
+ * Index of the first entry whose rows reach past `row` — i.e. the first
+ * entry the visible window can intersect. `entryRowEnd` is nondecreasing,
+ * so this is a binary search. Returns `entryRowEnd.length` when every
+ * entry ends at or before `row`.
+ */
+export function firstEntryIntersecting(entryRowEnd: readonly number[], row: number): number {
+    let lo = 0;
+    let hi = entryRowEnd.length;
+    while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (entryRowEnd[mid] > row) hi = mid;
+        else lo = mid + 1;
+    }
+    return lo;
+}
+
 function getFollowMeta(scrollId: string): FollowMeta {
     let m = followStates[scrollId];
     if (!m) {
@@ -85,168 +285,134 @@ export function CodeView(props: CodeViewProps): Element {
         style: { height: { kind: "grow" }, gap: 0 },
         locked: props.scrollLocked,
         children: () => {
-            const lineDecorator = extract(props.lineDecorator);
-            const sourcePath = props.source !== undefined ? extract(props.source) : null;
-            const sourceImportJsonPath =
-                props.sourceImportJsonPath !== undefined
-                    ? extract(props.sourceImportJsonPath)
-                    : null;
-            const viewIdentity =
-                sourcePath !== null && sourcePath.length > 0
-                    ? `${sourceImportJsonPath ?? ""}\n${sourcePath}`
-                    : "__live__";
-            let lines: readonly RenderableLine[] | null = null;
-            if (props.lines !== undefined) {
-                const explicit = extract(props.lines);
-                if (explicit !== null && explicit.length > 0) {
-                    lines = explicit;
-                }
+            const phaseStart = Date.now();
+            try {
+                return buildCodeViewChildren(props);
+            } finally {
+                recordPhase("codeview", Date.now() - phaseStart);
             }
-            if (lines === null && sourcePath !== null) {
-                lines = linesForFile(sourcePath, sourceImportJsonPath);
-            }
-            if (lines === null || lines.length === 0) {
-                publishCodeView(props.scrollId, viewIdentity, []);
-                return buildEmptyMessageRows(
-                    props.emptyMessage === undefined
-                        ? "(no file)"
-                        : extract(props.emptyMessage),
-                    bodyWidthForScroll(props.scrollId, 0, false, false)
-                );
-            }
-            const decorated: DecoratedLine[] = [];
-            let showStatusGutters = false;
-            let maxLineNum = 1;
-            for (let i = 0; i < lines.length; i++) {
-                const dec = lineDecorator.decorateLine(lines[i]);
-                if (lines[i].lineNum > maxLineNum) maxLineNum = lines[i].lineNum;
-                if (hasStatusGutterContent(dec)) showStatusGutters = true;
-                if (dec.extraLinesBefore !== undefined) {
-                    for (let j = 0; j < dec.extraLinesBefore.length; j++) {
-                        const extra = dec.extraLinesBefore[j];
-                        if (extra.line.lineNum > maxLineNum) {
-                            maxLineNum = extra.line.lineNum;
-                        }
-                        if (hasStatusGutterContent(extra.decorations)) {
-                            showStatusGutters = true;
-                        }
-                    }
-                }
-                decorated.push({ line: lines[i], decorations: dec });
-            }
-            const gutterW = gutterWidthForLines(maxLineNum);
-            const lineNumDigits = digitsOf(maxLineNum);
-            const bodyMaxWidth = bodyWidthForScroll(
-                props.scrollId,
-                gutterW,
-                showStatusGutters,
-                showStatusGutters
-            );
+        },
+    });
+}
 
-            // ── Virtualization pre-pass ──────────────────────────────
-            // Cheap O(decorated) pass: count visual rows per entry (each
-            // line can wrap into multiple rows) and build the
-            // lineIdToIndex map needed by autoFollow. Avoids constructing
-            // any actual Element trees for off-screen lines below.
-            const lineIdToIndex: { [id: string]: number } = {};
-            const entryRowStart: number[] = new Array(decorated.length);
-            const entryRowEnd: number[] = new Array(decorated.length);
-            const orderedLines: RenderableLine[] = [];
-            const idToOrdinal: { [id: string]: number } = {};
-            let totalRows = 0;
-            for (let i = 0; i < decorated.length; i++) {
-                const line = decorated[i].line;
-                const dec = decorated[i].decorations;
-                entryRowStart[i] = totalRows;
-                if (dec.extraLinesBefore !== undefined) {
-                    for (let j = 0; j < dec.extraLinesBefore.length; j++) {
-                        const extra = dec.extraLinesBefore[j];
-                        if (lineIdToIndex[extra.line.id] === undefined) {
-                            lineIdToIndex[extra.line.id] = totalRows;
-                        }
-                        if (idToOrdinal[extra.line.id] === undefined) {
-                            idToOrdinal[extra.line.id] = orderedLines.length;
-                        }
-                        orderedLines.push(extra.line);
-                        totalRows += wrapRowCount(extra.line, bodyMaxWidth, extra.decorations);
-                    }
-                }
-                if (lineIdToIndex[line.id] === undefined) {
-                    lineIdToIndex[line.id] = totalRows;
-                }
-                if (idToOrdinal[line.id] === undefined) {
-                    idToOrdinal[line.id] = orderedLines.length;
-                }
-                orderedLines.push(line);
-                totalRows += wrapRowCount(line, bodyMaxWidth, dec);
-                entryRowEnd[i] = totalRows;
-            }
+function buildCodeViewChildren(props: CodeViewProps): Element[] {
+    const lineDecorator = extract(props.lineDecorator);
+    const sourcePath = props.source !== undefined ? extract(props.source) : null;
+    const sourceImportJsonPath =
+        props.sourceImportJsonPath !== undefined
+            ? extract(props.sourceImportJsonPath)
+            : null;
+    const viewIdentity =
+        sourcePath !== null && sourcePath.length > 0
+            ? `${sourceImportJsonPath ?? ""}\n${sourcePath}`
+            : "__live__";
+    let lines: readonly RenderableLine[] | null = null;
+    if (props.lines !== undefined) {
+        const explicit = extract(props.lines);
+        if (explicit !== null && explicit.length > 0) {
+            lines = explicit;
+        }
+    }
+    if (lines === null && sourcePath !== null) {
+        lines = linesForFile(sourcePath, sourceImportJsonPath);
+    }
+    if (lines === null || lines.length === 0) {
+        delete modelCache[props.scrollId];
+        publishCodeView(props.scrollId, viewIdentity, []);
+        return buildEmptyMessageRows(
+            props.emptyMessage === undefined
+                ? "(no file)"
+                : extract(props.emptyMessage),
+            bodyWidthForScroll(props.scrollId, 0, false, false)
+        );
+    }
 
-            publishCodeView(props.scrollId, viewIdentity, orderedLines);
-            const resolvedSelection = resolveSelection(
-                getViewSelection(props.scrollId, viewIdentity),
-                idToOrdinal
-            );
+    // ── Whole-file model (decorations + row offsets) ─────────
+    // O(total lines); reused across frames while its inputs are
+    // unchanged, so eased-scroll rebuilds skip straight to the
+    // visible-window slice below.
+    const decoratorKey = lineDecorator.modelKey();
+    const viewportW = getScrollState(props.scrollId).viewportRect.w;
+    const cachedModel = modelCache[props.scrollId];
+    let model: LineModel;
+    if (
+        decoratorKey !== null
+        && cachedModel !== undefined
+        && cachedModel.lines === lines
+        && cachedModel.decoratorKey === decoratorKey
+        && cachedModel.viewportW === viewportW
+    ) {
+        model = cachedModel.model;
+    } else {
+        model = buildLineModel(props.scrollId, lines, lineDecorator);
+        if (decoratorKey !== null) {
+            modelCache[props.scrollId] = {
+                lines,
+                decoratorKey,
+                viewportW,
+                model,
+            };
+        } else {
+            delete modelCache[props.scrollId];
+        }
+    }
+    const {
+        decorated,
+        entryRowStart,
+        entryRowEnd,
+        totalRows,
+        lineIdToIndex,
+        orderedLines,
+        idToOrdinal,
+        showStatusGutters,
+        gutterW,
+        lineNumDigits,
+        bodyMaxWidth,
+    } = model;
 
-            // ── Visibility window ────────────────────────────────────
-            const scrollState = getScrollState(props.scrollId);
-            const offset = scrollState.offset;
-            const viewportH =
-                scrollState.viewportRect.h > 0
-                    ? scrollState.viewportRect.h
-                    : 0;
-            const BUFFER_ROWS = 8;
-            const haveViewport = viewportH > 0;
-            // Without a viewport (first render before measurement) keep
-            // the old "render everything" behavior so initial layout
-            // measurement still works.
-            const firstVisibleRow = haveViewport
-                ? Math.max(0, Math.floor(offset / LINE_H) - BUFFER_ROWS)
-                : 0;
-            const lastVisibleRow = haveViewport
-                ? Math.min(totalRows, Math.ceil((offset + viewportH) / LINE_H) + BUFFER_ROWS)
-                : totalRows;
+    publishCodeView(props.scrollId, viewIdentity, orderedLines);
+    const resolvedSelection = resolveSelection(
+        getViewSelection(props.scrollId, viewIdentity),
+        idToOrdinal
+    );
 
-            // ── Build only visible entries ───────────────────────────
-            const out: Element[] = [];
-            let skippedBeforeRows = 0;
-            let skippedAfterRows = 0;
-            for (let i = 0; i < decorated.length; i++) {
-                const start = entryRowStart[i];
-                const end = entryRowEnd[i];
-                if (end <= firstVisibleRow) {
-                    skippedBeforeRows = end;
-                    continue;
-                }
-                if (start >= lastVisibleRow) {
-                    skippedAfterRows = totalRows - start;
-                    break;
-                }
-                const line = decorated[i].line;
-                const dec = decorated[i].decorations;
-                if (dec.extraLinesBefore !== undefined) {
-                    for (let j = 0; j < dec.extraLinesBefore.length; j++) {
-                        const extra = dec.extraLinesBefore[j];
-                        const rows = buildLineRows(
-                            extra.line,
-                            extra.decorations,
-                            {
-                                scrollId: props.scrollId,
-                                gutterWidth: gutterW,
-                                lineNumDigits,
-                                bodyMaxWidth,
-                                showFocusGutter: showStatusGutters,
-                                showStateGutter: showStatusGutters,
-                                onOpenPath: props.onOpenPath,
-                            },
-                            lineSelectionFor(extra.line, resolvedSelection, idToOrdinal)
-                        );
-                        for (let k = 0; k < rows.length; k++) out.push(rows[k]);
-                    }
-                }
-                const rows = buildLineRows(
-                    line,
-                    dec,
+    // ── Visibility window ────────────────────────────────────
+    const scrollState = getScrollState(props.scrollId);
+    const offset = scrollState.offset;
+    const viewportH =
+        scrollState.viewportRect.h > 0
+            ? scrollState.viewportRect.h
+            : 0;
+    const BUFFER_ROWS = 8;
+    const haveViewport = viewportH > 0;
+    // Without a viewport (first render before measurement) keep
+    // the old "render everything" behavior so initial layout
+    // measurement still works.
+    const firstVisibleRow = haveViewport
+        ? Math.max(0, Math.floor(offset / LINE_H) - BUFFER_ROWS)
+        : 0;
+    const lastVisibleRow = haveViewport
+        ? Math.min(totalRows, Math.ceil((offset + viewportH) / LINE_H) + BUFFER_ROWS)
+        : totalRows;
+
+    // ── Build only visible entries ───────────────────────────
+    const out: Element[] = [];
+    const firstIdx = firstEntryIntersecting(entryRowEnd, firstVisibleRow);
+    const skippedBeforeRows = firstIdx > 0 ? entryRowEnd[firstIdx - 1] : 0;
+    let skippedAfterRows = 0;
+    for (let i = firstIdx; i < decorated.length; i++) {
+        if (entryRowStart[i] >= lastVisibleRow) {
+            skippedAfterRows = totalRows - entryRowStart[i];
+            break;
+        }
+        const line = decorated[i].line;
+        const dec = decorated[i].decorations;
+        if (dec.extraLinesBefore !== undefined) {
+            for (let j = 0; j < dec.extraLinesBefore.length; j++) {
+                const extra = dec.extraLinesBefore[j];
+                const rows = cachedLineRows(
+                    extra.line,
+                    extra.decorations,
                     {
                         scrollId: props.scrollId,
                         gutterWidth: gutterW,
@@ -256,28 +422,43 @@ export function CodeView(props: CodeViewProps): Element {
                         showStateGutter: showStatusGutters,
                         onOpenPath: props.onOpenPath,
                     },
-                    lineSelectionFor(line, resolvedSelection, idToOrdinal)
+                    lineSelectionFor(extra.line, resolvedSelection, idToOrdinal)
                 );
                 for (let k = 0; k < rows.length; k++) out.push(rows[k]);
             }
+        }
+        const rows = cachedLineRows(
+            line,
+            dec,
+            {
+                scrollId: props.scrollId,
+                gutterWidth: gutterW,
+                lineNumDigits,
+                bodyMaxWidth,
+                showFocusGutter: showStatusGutters,
+                showStateGutter: showStatusGutters,
+                onOpenPath: props.onOpenPath,
+            },
+            lineSelectionFor(line, resolvedSelection, idToOrdinal)
+        );
+        for (let k = 0; k < rows.length; k++) out.push(rows[k]);
+    }
 
-            if (skippedBeforeRows > 0) {
-                out.unshift(spacerRows(skippedBeforeRows));
-            }
-            if (skippedAfterRows > 0) {
-                out.push(spacerRows(skippedAfterRows));
-            }
+    if (skippedBeforeRows > 0) {
+        out.unshift(spacerRows(skippedBeforeRows));
+    }
+    if (skippedAfterRows > 0) {
+        out.push(spacerRows(skippedAfterRows));
+    }
 
-            if (props.autoFollow === true) {
-                applyAutoFollow(
-                    props.scrollId,
-                    lineDecorator,
-                    lineIdToIndex
-                );
-            }
-            return out;
-        },
-    });
+    if (props.autoFollow === true) {
+        applyAutoFollow(
+            props.scrollId,
+            lineDecorator,
+            lineIdToIndex
+        );
+    }
+    return out;
 }
 
 /**

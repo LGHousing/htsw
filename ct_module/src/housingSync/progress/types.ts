@@ -127,15 +127,20 @@ export type ExportProgressSink = {
     item(index: number, name: string): void;
     itemReactivated?(index: number): void;
     /**
+     * Called after item `index` completes successfully: after `processOne` on
+     * the single-pass path or `hydrateOne` on the two-pass path, never after
+     * `scanOne`.
+     */
+    itemFinished?(index: number): void;
+    /**
      * Within-item read progress for item `index`, forwarded from the
      * action-list read's `ProgressHandler`. Optional — exporters that don't
      * thread it just get item-boundary granularity.
      */
     itemProgress?(index: number, payload: ProgressPayload): void;
     /**
-     * Marks item `index` failed. Without this the sink's only "item ended"
-     * signal is the next `item()` call, which reads as success — so callers
-     * that swallow per-item errors and continue MUST report failures here.
+     * Marks item `index` failed. Callers that swallow per-item errors and
+     * continue must report failures here instead of calling `itemFinished`.
      */
     itemFailed?(index: number, error: string): void;
     /** Called once when the batch finishes (success, failure, or cancel). */

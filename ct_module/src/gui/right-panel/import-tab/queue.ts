@@ -23,7 +23,14 @@ export type ImportQueueItem =
     | {
           operation: "import";
           kind: "importable";
-          /** Canonical absolute path of the declaring import.json. */
+          /**
+           * Canonical absolute path of the top-level import.json the import
+           * session runs from (the parse-cache entry) — NOT the nested
+           * import.json that declares the importable. Where it lives in the
+           * include tree is derived from the parse at use time
+           * (`findImportableHome` in the include-tree helpers), so it stays correct
+           * if the importable is moved while queued.
+           */
           sourcePath: string;
           identity: string;
           type: Importable["type"];
@@ -324,7 +331,8 @@ export function makeExportQueueItem(
     type: Importable["type"],
     identity: string,
     destinationPath: string,
-    housingUuid: string | null
+    housingUuid: string | null,
+    label: string = identity
 ): ExportQueueItem {
     return {
         operation,
@@ -333,6 +341,6 @@ export function makeExportQueueItem(
         housingUuid,
         identity,
         type,
-        label: identity,
+        label,
     };
 }

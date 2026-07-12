@@ -22,9 +22,8 @@ import {
 import { ACCENT_DANGER, ACCENT_INFO, ACCENT_SUCCESS, ACCENT_WARN, COLOR_TEXT_DIM, COLOR_TEXT_FAINT } from "../../lib/theme";
 import { diagnosticCountsFor, diagnosticCountsForFile, type SeverityCounts } from "htsw";
 import { openEditImportableFieldPopover } from "./editFieldPopover";
-import { cacheStateForImportable, linkStatusIcon } from "../../cache-status";
+import { cacheStateForImportable, importableLinkStatus, linkStatusIcon } from "../../cache-status";
 import { menuSlotCacheStatus } from "../../cache-status/menuSlotStatus";
-import { isScannableType } from "../houses/contentTypes";
 import {
     hasChildList,
     importableDeclaringPath,
@@ -47,11 +46,7 @@ import {
     requestParse,
 } from "../../parsing/parses";
 import { shortPath, toForwardSlashes } from "../../lib/pathDisplay";
-import {
-    houseTypeScanned,
-    listCachedImportables,
-    readImportableCache,
-} from "../../../importCache/cache";
+import { readImportableCache } from "../../../importCache/cache";
 import { functionIconCompareKey } from "../../../importCache/hash";
 import { addToQueue, makeImportableQueueItem, queueItemKey, removeFromQueueKey } from "../../right-panel/import-tab/queue";
 import { isTaskRunning } from "../../../tasks/runningState";
@@ -118,6 +113,9 @@ export function isImportExpanded(expKey: string, defaultExpanded: boolean): bool
     if (sep !== -1 && autoExpandPaths.has(expKey.substring(sep + 2))) return true;
     return defaultExpanded;
 }
+export function expandImport(expKey: string): void {
+    importExpansion.set(expKey, true);
+}
 export const collapsedRoots: Set<string> = new Set();
 
 // Include-group rows (included import.jsons rendered as nested groups under
@@ -141,7 +139,7 @@ export function setJumpFlash(expKey: string): void {
     jumpFlashKey = expKey;
     jumpFlashUntil = Date.now() + 1500;
 }
-function isJumpFlashing(expKey: string): boolean {
+export function isJumpFlashing(expKey: string): boolean {
     return jumpFlashKey === expKey && Date.now() < jumpFlashUntil;
 }
 
@@ -201,71 +199,12 @@ function getCachedImportable(imp: Importable): Importable | null {
     return entry === null ? null : entry.importable;
 }
 
-type HousePresenceState = "unscanned" | "present" | "absent";
-
-function housePresenceStateFor(imp: Importable): HousePresenceState {
-    const uuid = getHousingUuid();
-    if (uuid !== null && imp.type === "EVENT") return "present";
-    if (uuid === null || !houseTypeScanned(uuid, imp.type)) return "unscanned";
-    const identity = importableIdentity(imp);
-    const items = listCachedImportables(uuid, imp.type);
-    for (let i = 0; i < items.length; i++) {
-        if (items[i].name === identity) return "present";
-    }
-    return "absent";
-}
-
-// The file<->house link icon for one of your importables. Tooltips are framed
-// from the file side ("what does this mean for importing this file?"); the
-// Houses page maps the same icons with house-side wording.
+// The file<->house link icon for one of your importables. The decision (and
+// its file-side tooltip wording) lives in cache-status/importableLinkStatus so
+// the type/status filter reads the same key this icon shows.
 function importableStatus(imp: Importable): Element {
-    const uuid = getHousingUuid();
-    if (uuid === null) {
-        return linkStatusIcon("unknown", "No house detected");
-    }
-    // Items have no house-side listing to scan (not in
-    // HOUSE_CONTENT_TYPES) — an item exists only where an action or menu
-    // references it. Presence can't be answered for these, so fall back to the
-    // import baseline: does your file still match what was last imported?
-    if (!isScannableType(imp.type)) {
-        const baseline = cacheStateForImportable(imp);
-        if (baseline === "current") {
-            return linkStatusIcon("matches", "Files match this house");
-        }
-        if (baseline === "modified") {
-            return linkStatusIcon("differs", "Import will update the house from these files");
-        }
-        // Never imported: file-side only as far as we can tell (items can't be
-        // listed from a house to confirm otherwise). Show it as not-yet-linked
-        // rather than "unknown" — import is the action that places/links it.
-        return linkStatusIcon(
-            "oneSided",
-            imp.type === "ITEM"
-                ? "Items can't be listed from a house — import to place it"
-                : "Not listed from a house — import to place it"
-        );
-    }
-    const presence = housePresenceStateFor(imp);
-    // Once the type is scanned, absence is authoritative: it must win over a
-    // stale Knowledge entry, or something the house dropped still shows a match.
-    if (presence === "absent") {
-        return linkStatusIcon("oneSided", "Not in this house");
-    }
-    if (!isHouseTrusted(uuid)) {
-        return presence === "present"
-            ? linkStatusIcon("present", "Exists in this house")
-            : linkStatusIcon("unknown", "Scan this house to check whether it exists");
-    }
-    const cacheState = cacheStateForImportable(imp);
-    if (cacheState === "current") {
-        return linkStatusIcon("matches", "Files match this house");
-    }
-    if (cacheState === "modified") {
-        return linkStatusIcon("differs", "Import will update the house from these files");
-    }
-    return presence === "present"
-        ? linkStatusIcon("present", "In this house; content not read yet")
-        : linkStatusIcon("unknown", "No Knowledge read yet");
+    const s = importableLinkStatus(imp);
+    return linkStatusIcon(s.key, s.tooltip);
 }
 
 function showDiffValue(v: unknown): string {
@@ -631,6 +570,94 @@ function collectSubtreeImportables(node: IncludeNode, out: Importable[]): void {
     }
 }
 
+type SubtreeAggregate = { changed: number; errors: number };
+type CachedSubtreeAggregate = SubtreeAggregate & { at: number };
+
+const SUBTREE_AGGREGATE_TTL_MS = 300;
+const subtreeAggregateCache = new Map<string, CachedSubtreeAggregate>();
+
+function subtreeAggregate(parent: ResultImport, node: IncludeNode): SubtreeAggregate {
+    const uuid = getHousingUuid();
+    const key = `${canonicalPath(node.path)}::${uuid ?? ""}`;
+    const now = Date.now();
+    const cached = subtreeAggregateCache.get(key);
+    if (cached !== undefined && now - cached.at < SUBTREE_AGGREGATE_TTL_MS) {
+        return cached;
+    }
+    const importables: Importable[] = [];
+    collectSubtreeImportables(node, importables);
+    let changed = 0;
+    let errors = 0;
+    for (let i = 0; i < importables.length; i++) {
+        const imp = importables[i];
+        if (cacheStateForImportable(imp) === "modified") changed++;
+        errors += diagnosticCountsFor(parent.parse, imp).errors;
+    }
+    const aggregate = { changed, errors, at: now };
+    subtreeAggregateCache.set(key, aggregate);
+    return aggregate;
+}
+
+function changedAggregate(count: number): Element {
+    const tooltip = `${count} will change on import`;
+    return Container({
+        style: { direction: "row", gap: 2, align: "center" },
+        children: [
+            Container({
+                style: {
+                    width: { kind: "px", value: 5 },
+                    height: { kind: "px", value: 5 },
+                    background: ACCENT_WARN,
+                },
+                tooltip,
+                tooltipColor: ACCENT_WARN,
+                children: [],
+            }),
+            Text({ text: String(count), color: ACCENT_WARN, tooltip, tooltipColor: ACCENT_WARN }),
+        ],
+    });
+}
+
+function errorAggregate(count: number): Element {
+    const tooltip = count === 1 ? "1 error inside" : `${count} errors inside`;
+    return Container({
+        style: { direction: "row", gap: 2, align: "center" },
+        children: [
+            Icon({
+                name: Icons.octagonAlert,
+                color: ACCENT_DANGER,
+                tooltip,
+                tooltipColor: ACCENT_DANGER,
+                style: { width: { kind: "px", value: 9 }, height: { kind: "px", value: 9 } },
+            }),
+            Container({
+                style: { padding: { side: "top", value: 1 } },
+                children: [
+                    Text({
+                        text: String(count),
+                        color: ACCENT_DANGER,
+                        tooltip,
+                        tooltipColor: ACCENT_DANGER,
+                    }),
+                ],
+            }),
+        ],
+    });
+}
+
+function collapsedSubtreeAggregates(parent: ResultImport, node: IncludeNode): Element[] {
+    const aggregate = subtreeAggregate(parent, node);
+    const uuid = getHousingUuid();
+    const out: Element[] = [];
+    if (uuid !== null && isHouseTrusted(uuid) && aggregate.changed > 0) {
+        out.push(changedAggregate(aggregate.changed), rowSlot(INNER_GAP));
+    }
+    if (aggregate.errors > 0) {
+        out.push(errorAggregate(aggregate.errors), rowSlot(INNER_GAP));
+    }
+    return out;
+}
+
 function queueImportables(parent: ResultImport, importables: readonly Importable[]): void {
     for (let i = 0; i < importables.length; i++) {
         const imp = importables[i];
@@ -884,6 +911,9 @@ export function resultRow(
     const importJsonPath = isImport ? r.fullPath : null;
     const expKey = expansionKey(sourceKey, r.fullPath);
     const expanded = isImport && isImportExpanded(expKey, defaultExpanded);
+    const aggregateIndicators = isImport && !expanded
+        ? collapsedSubtreeAggregates(r, includeTreeOf(r))
+        : [];
     const fileExtras: MenuAction[] = isImport && r.type === "import"
         ? [
               openInViewAction(r.fullPath, importJsonPath),
@@ -932,7 +962,7 @@ export function resultRow(
             gap: 0,
             align: "center",
             height: { kind: "px", value: 18 },
-            background: ROW_BG,
+            background: () => (isJumpFlashing(expKey) ? ROW_HOVER_BG : ROW_BG),
             hoverBackground: ROW_HOVER_BG,
         },
         onClick: rowHandler(actions, () => previewSelect(r.fullPath, importJsonPath)),
@@ -951,6 +981,7 @@ export function resultRow(
                 truncate: true,
                 style: { width: { kind: "grow" } },
             }),
+            ...aggregateIndicators,
             isImport && autoTrackIndicator(r.fullPath),
             isImport && isAutoTrackSource(r.fullPath) && rowSlot(INNER_GAP),
             isImport && houseBindControl(r.fullPath),
@@ -1009,6 +1040,7 @@ export function includeGroupRow(
     }
     const fullPath = canonicalPath(node.path);
     const expanded = isIncludeGroupExpanded(expKey, defaultExpanded);
+    const aggregateIndicators = expanded ? [] : collapsedSubtreeAggregates(parent, node);
     const actions = composeFileMenu([
         openInViewAction(fullPath, parent.fullPath),
         {
@@ -1053,6 +1085,7 @@ export function includeGroupRow(
                 truncate: true,
                 style: { width: { kind: "grow" } },
             }),
+            ...aggregateIndicators,
             Text({
                 text: String(subtreeImportableCount(node)),
                 color: COLOR_TEXT_FAINT,
@@ -1196,7 +1229,7 @@ export function importableRow(parent: ResultImport, imp: Importable): Element {
             ],
             gap: 0,
             align: "center",
-            background: ROW_BG,
+            background: () => (isJumpFlashing(expKey) ? ROW_HOVER_BG : ROW_BG),
             hoverBackground: ROW_HOVER_BG,
         },
         onClick: rowHandler(

@@ -39,7 +39,24 @@ const ELLIPSIS = "...";
 // units. Returns the original string when it already fits. Used by `truncate`
 // text elements so a grow-shrunk label clips cleanly instead of overflowing
 // into the sibling that follows it.
+// Memoized: this runs on the DRAW path for every truncated label every frame,
+// and the binary search below costs ~log2(len) getStringWidth Java calls per
+// invocation — a full tree of truncated file rows paid hundreds of font
+// measurements per frame. Font metrics are fixed per string, so (width, text)
+// fully determines the result.
+const truncateCache = new Map<string, string>();
+
 function truncateToWidth(text: string, maxW: number): string {
+    const key = `${maxW}|${text}`;
+    const cached = truncateCache.get(key);
+    if (cached !== undefined) return cached;
+    const out = truncateToWidthUncached(text, maxW);
+    if (truncateCache.size >= 2048) truncateCache.clear();
+    truncateCache.set(key, out);
+    return out;
+}
+
+function truncateToWidthUncached(text: string, maxW: number): string {
     if (maxW <= 0) return "";
     if (Renderer.getStringWidth(text) <= maxW) return text;
     const ellW = Renderer.getStringWidth(ELLIPSIS);
@@ -125,13 +142,40 @@ export function drawLaid(
     // actually reach the element, hover lights up normally.
     const intercepted = getClickInterceptor(laid, mouseX, mouseY) !== null;
 
-    for (let i = 0; i < laid.length; i++) {
-        const item = laid[i];
-        if (item.element.kind === "container" && item.element.anchorKey !== undefined) {
-            reportAnchorRect(item.element.anchorKey, item.rect);
+    // The scissor is managed HERE, not per item: consecutive items almost
+    // always share one clip rect (their scroll viewport), and a per-item
+    // push/pop cost 3-4 GL Java crossings each. The try/finally keeps the
+    // scissor stack balanced when an item's draw throws.
+    let activeClip: Rect | null = null;
+    try {
+        for (let i = 0; i < laid.length; i++) {
+            const item = laid[i];
+            if (item.element.kind === "container" && item.element.anchorKey !== undefined) {
+                reportAnchorRect(item.element.anchorKey, item.rect);
+            }
+            if (item.element === root) continue; // root drawn by caller (panel bg) or skipped
+            const clip = item.clipRect ?? null;
+            if (clip !== null) {
+                // Cull items fully outside their clip on the Y axis: the
+                // scissor would erase every pixel anyway, but only after
+                // paying the draw + scissor-switch cost (an unvirtualized
+                // list like the chat scrollback draws its whole backlog).
+                // Every draw starts at the rect origin and extends at most
+                // max(rect.h, 16)px down (icons / mc items / text centering),
+                // hence the 16px slop above. X is deliberately not culled:
+                // grow text overflows its rect sideways by design.
+                const r = item.rect;
+                if (r.y >= clip.y + clip.h || r.y + r.h + 16 <= clip.y) continue;
+            }
+            if (!sameClip(clip, activeClip)) {
+                if (activeClip !== null) popScissor();
+                if (clip !== null) pushScissor(clip);
+                activeClip = clip;
+            }
+            renderItem(item, mouseX, mouseY, interactive, intercepted);
         }
-        if (item.element === root) continue; // root drawn by caller (panel bg) or skipped
-        renderItem(item, mouseX, mouseY, interactive, intercepted);
+    } finally {
+        if (activeClip !== null) popScissor();
     }
 
     // Scrollbars render last (on top of clipped content) — overlay style.
@@ -253,8 +297,6 @@ function renderItem(
     const inClip = !item.clipRect || pointInRect(item.clipRect, mouseX, mouseY);
     const hovered =
         interactive && inClip && !intercepted && pointInRect(r, mouseX, mouseY);
-
-    if (item.clipRect) pushScissor(item.clipRect);
 
     if (e.kind === "container") {
         const disabled = e.disabled !== undefined && extract(e.disabled);
@@ -401,8 +443,12 @@ function renderItem(
     } else if (e.kind === "mcItem") {
         renderMcItem(e.item, e.count, r.x, r.y);
     }
+}
 
-    if (item.clipRect) popScissor();
+function sameClip(a: Rect | null, b: Rect | null): boolean {
+    if (a === b) return true;
+    if (a === null || b === null) return false;
+    return a.x === b.x && a.y === b.y && a.w === b.w && a.h === b.h;
 }
 
 function renderScrollbar(id: string, mouseX: number, mouseY: number): void {

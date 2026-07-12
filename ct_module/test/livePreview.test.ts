@@ -11,6 +11,7 @@ import {
     markPlannedMove,
     previewLineIdForPath,
     previewLinesForFile,
+    previewRevision,
     primeWithCache,
     resetPreview,
     setObservedTopLevel,
@@ -359,5 +360,32 @@ describe("previewLineIdForPath", () => {
         // Falls back to the canonical id so callers don't get null
         // when the model hasn't been built yet.
         expect(previewLineIdForPath(PATH, p("0"))).toBe("0:body");
+    });
+});
+
+describe("previewRevision", () => {
+    test("changes on every line mutation and on reset", () => {
+        expect(previewRevision(PATH)).toBe(-1);
+        primeWithCache(PATH, func([message("hi")]));
+        const primed = previewRevision(PATH);
+        expect(primed).toBeGreaterThan(-1);
+
+        markPlannedAdd(PATH, p("1"), message("new"), 1);
+        const planned = previewRevision(PATH);
+        expect(planned).toBeGreaterThan(primed);
+
+        applyComplete(PATH, p("1"), "add", "add");
+        expect(previewRevision(PATH)).toBeGreaterThan(planned);
+
+        resetPreview(PATH);
+        expect(previewRevision(PATH)).toBe(-1);
+    });
+
+    test("stays put when nothing mutates", () => {
+        primeWithCache(PATH, func([message("hi")]));
+        const before = previewRevision(PATH);
+        previewLinesForFile(PATH);
+        previewLineIdForPath(PATH, p("0"));
+        expect(previewRevision(PATH)).toBe(before);
     });
 });

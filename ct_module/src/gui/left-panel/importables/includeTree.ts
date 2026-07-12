@@ -1,4 +1,6 @@
 import type { ImportJsonFileNode } from "htsw";
+import type { Importable } from "htsw/types";
+import { importableIdentity } from "../../../importables/identity";
 import type { ResultImport } from "./rowModel";
 import { canonicalPath } from "../../parsing/parses";
 
@@ -17,6 +19,25 @@ export function includeTreeOf(r: ResultImport): IncludeNode {
     return { path: r.fullPath, importables: r.importables, includes: [] };
 }
 
+export function findImportableHome(
+    node: IncludeNode,
+    type: Importable["type"],
+    identity: string
+): { node: IncludeNode; imp: Importable } | null {
+    if (node.reference !== true) {
+        for (let i = 0; i < node.importables.length; i++) {
+            const imp = node.importables[i];
+            if (imp.type === type && importableIdentity(imp) === identity) {
+                return { node, imp };
+            }
+        }
+    }
+    for (let i = 0; i < node.includes.length; i++) {
+        const found = findImportableHome(node.includes[i], type, identity);
+        if (found !== null) return found;
+    }
+    return null;
+}
 /** Importables in this node and everything it includes. */
 export function subtreeImportableCount(node: IncludeNode): number {
     let n = node.importables.length;

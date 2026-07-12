@@ -8,7 +8,7 @@
 
 import type { Importable } from "htsw/types";
 
-import type { Element } from "../../lib/layout";
+import type { ClickInfo, Element } from "../../lib/layout";
 import { Container, Icon, Text } from "../../lib/components";
 import { Icons } from "../../lib/icons.generated";
 import {
@@ -19,6 +19,7 @@ import {
     COLOR_ROW,
     COLOR_ROW_HOVER,
     COLOR_TEXT_DIM,
+    COLOR_TEXT_FAINT,
     SIZE_ROW_H,
 } from "../../lib/theme";
 import { PHASE_APPLYING, PHASE_HYDRATING, PHASE_READING } from "./phaseColors";
@@ -39,10 +40,80 @@ import {
     removeFromQueueKey,
     type QueueItem,
 } from "./queue";
-import { requestParse } from "../../parsing/parses";
+import { canonicalPath, requestParse } from "../../parsing/parses";
 import { orderImportablesForImportSession } from "../../../importables/importSession";
 import { isTaskRunning } from "../../../tasks/runningState";
 import { phaseSegment } from "./progressPanel";
+import { setActiveLeftTab } from "../../left-panel/tabs";
+import { revealInProjectsTree } from "../../left-panel/importables/tree";
+import { findImportableHome, type IncludeNode } from "../../left-panel/importables/includeTree";
+
+type CachedDeclaringFolder = { folder: string | null; expiresAt: number };
+const declaringFolderCache = new Map<string, CachedDeclaringFolder>();
+
+function directoryOf(path: string): string {
+    const slash = path.lastIndexOf("/");
+    return slash < 0 ? "" : path.substring(0, slash);
+}
+
+function declaringFolder(item: QueueItem): string | null {
+    if (item.operation !== "import" || item.kind !== "importable") return null;
+    const key = `${item.sourcePath}\u0000${item.type}\u0000${item.identity}`;
+    const now = Date.now();
+    const cached = declaringFolderCache.get(key);
+    if (cached !== undefined && cached.expiresAt > now) return cached.folder;
+    let folder: string | null = null;
+    const parse = requestParse(item.sourcePath);
+    if (parse !== null && parse.parsed !== null) {
+        const parsed = parse.parsed;
+        const tree: IncludeNode = parsed.importJson.fileTree ?? {
+            path: item.sourcePath,
+            importables: parsed.value,
+            includes: [],
+        };
+        const home = findImportableHome(tree, item.type, item.identity);
+        if (home !== null) {
+            const rootDir = directoryOf(canonicalPath(item.sourcePath));
+            const homeDir = directoryOf(canonicalPath(home.node.path));
+            const prefix = rootDir === "" ? "" : `${rootDir}/`;
+            if (homeDir !== rootDir && homeDir.indexOf(prefix) === 0) {
+                folder = homeDir.substring(prefix.length);
+            }
+        }
+    }
+    declaringFolderCache.set(key, { folder, expiresAt: now + 300 });
+    return folder;
+}
+
+function declaringFolderElement(item: QueueItem): Element | false {
+    const folder = declaringFolder(item);
+    return folder !== null && Text({
+        text: folder,
+        color: COLOR_TEXT_FAINT,
+        truncate: true,
+        style: { width: { kind: "px", value: 110 } },
+    });
+}
+
+function revealQueueItem(item: QueueItem, info: ClickInfo): void {
+    if (info.button !== 0 || info.isDoubleClickSecond) return;
+    setActiveLeftTab("importables");
+    if (item.operation === "import" && item.kind === "importable") {
+        revealInProjectsTree({
+            kind: "importable",
+            declaringImportJson: item.sourcePath,
+            type: item.type,
+            identity: item.identity,
+        });
+    } else {
+        revealInProjectsTree({
+            kind: "file",
+            importJsonPath: item.operation === "import"
+                ? item.sourcePath
+                : item.destinationPath,
+        });
+    }
+}
 
 function willBeSkipped(item: QueueItem): boolean {
     if (!isCurrentHouseTrusted()) return false;
@@ -226,6 +297,7 @@ export function queueRow(item: QueueItem): Element {
             background: isCurrent ? COLOR_ROW_HOVER : COLOR_ROW,
             hoverBackground: COLOR_ROW_HOVER,
         },
+        onClick: (_rect, info) => revealQueueItem(item, info),
         children: [
             Container({
                 style: {
@@ -273,6 +345,7 @@ export function queueRow(item: QueueItem): Element {
                         truncate: true,
                         style: { width: { kind: "grow" } },
                     }),
+                    declaringFolderElement(item),
                     // No removal while an import is running — the queue is
                     // locked for the duration of the run.
                     isTaskRunning() || isQueueSessionItem(queueItemKey(item))
@@ -314,6 +387,7 @@ export function queueImportJsonChildRow(item: QueueItem): Element {
             background: isCurrent ? COLOR_ROW_HOVER : COLOR_ROW,
             hoverBackground: COLOR_ROW_HOVER,
         },
+        onClick: (_rect, info) => revealQueueItem(item, info),
         children: [
             Container({
                 style: {
@@ -344,6 +418,7 @@ export function queueImportJsonChildRow(item: QueueItem): Element {
                         truncate: true,
                         style: { width: { kind: "grow" } },
                     }),
+                    declaringFolderElement(item),
                     Container({
                         style: { width: { kind: "px", value: 14 }, height: { kind: "grow" } },
                         children: [],

@@ -14,6 +14,9 @@
  *   1. The user edits a file (the parse changes, mtime-detected by
  *      `parseImportJsonAt`) → entries for files in that parse cleared.
  *   2. An import completes for an importable → that file's entry cleared.
+ *   3. The current house changes → every entry recomputes on next access.
+ *
+ * "No diff available" results are memoized too (see `SourceDiffMemo`).
  *
  * Compute uses per-slot hashes from the cache entry's importable — much
  * cheaper than re-running the importer's full structural diff. See
@@ -29,7 +32,7 @@ import type { Action, Condition, Importable } from "htsw/types";
 import { normalizeHtswPath } from "../lib/pathDisplay";
 import { matchByHash } from "../../importCache/actionMatch";
 import type { DiffState } from "./diffPalette";
-import { readImportableCache } from "../../importCache/cache";
+import { getImportCacheWriteRevision, readImportableCache } from "../../importCache/cache";
 import { actionHash, conditionHash } from "../../importCache/hash";
 import { importableIdentity } from "../../importables/identity";
 import { cacheEntryListHashes } from "../../importCache/status";
@@ -53,21 +56,42 @@ type SourceActionPathKey = string;
 
 export type SourceDiffEntry = Map<SourceActionPathKey, DiffState>;
 
-const entries: Map<string, SourceDiffEntry> = new Map();
+// One memo per (import.json, file) key — including "no diff available"
+// (`value: null`). Without the negative memo, a file that isn't in the
+// import cache re-runs the whole target/cache lookup for EVERY line of
+// EVERY rebuilt frame (the decorator asks per line). A null result can
+// flip without this module hearing about it, so it revalidates against
+// the three inputs that produce one: the current house, the parse cache,
+// and import-cache content writes.
+type SourceDiffMemo = {
+    value: SourceDiffEntry | null;
+    housingUuid: string | null;
+    parseRev: number;
+    cacheWriteRev: number;
+};
+
+const entries: Map<string, SourceDiffMemo> = new Map();
+
+// Bumped whenever any memo's value changes. The code view keys its cached
+// whole-file decoration pass on this (via `diffDecorator.modelKey`).
+let revision = 0;
+
+export function getSourceDiffRevision(): number {
+    return revision;
+}
 
 function key(filePath: string, importJsonPath?: string | null): string {
     return `${importJsonPath === null || importJsonPath === undefined ? "" : normalizeHtswPath(importJsonPath)}\n${normalizeHtswPath(filePath)}`;
 }
 
 function deleteEntriesForFile(filePath: string): void {
-    const fileKey = normalizeHtswPath(filePath);
-    entries.delete(key(filePath));
-    const suffix = "\n" + fileKey;
+    const suffix = "\n" + normalizeHtswPath(filePath);
     const stale: string[] = [];
     entries.forEach((_value, entryKey) => {
         if (entryKey.indexOf(suffix) === entryKey.length - suffix.length) stale.push(entryKey);
     });
     for (let i = 0; i < stale.length; i++) entries.delete(stale[i]);
+    if (stale.length > 0) revision++;
 }
 
 /**
@@ -82,12 +106,26 @@ export function ensureSourceDiff(
     importJsonPath?: string | null
 ): SourceDiffEntry | undefined {
     const k = key(filePath, importJsonPath);
-    const cached = entries.get(k);
-    if (cached !== undefined) return cached;
+    const housingUuid = getHousingUuid();
+    const memo = entries.get(k);
+    if (memo !== undefined && memo.housingUuid === housingUuid) {
+        if (memo.value !== null) return memo.value;
+        if (
+            memo.parseRev === getParseCacheRevision()
+            && memo.cacheWriteRev === getImportCacheWriteRevision()
+        ) {
+            return undefined;
+        }
+    }
     const computed = computeFor(filePath, importJsonPath);
-    if (computed === null) return undefined;
-    entries.set(k, computed);
-    return computed;
+    entries.set(k, {
+        value: computed,
+        housingUuid,
+        parseRev: getParseCacheRevision(),
+        cacheWriteRev: getImportCacheWriteRevision(),
+    });
+    if (computed !== null || (memo !== undefined && memo.value !== null)) revision++;
+    return computed ?? undefined;
 }
 
 /**

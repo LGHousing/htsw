@@ -13,6 +13,7 @@ import {
 } from "./hoverCards";
 import { mcToOverlay } from "./overlayScale";
 import { beginHtswOverlayDraw, endHtswOverlayDraw } from "./overlayDraw";
+import { recordPanelFrame } from "./framePerf";
 
 const COLOR_PANEL = 0xf0242931 | 0;
 
@@ -92,8 +93,10 @@ export class Panel {
             // Hover follows click propagation: panels stay interactive unless the cursor is
             // actually over a popover (in which case the popover absorbs the click).
             const interactive = !mouseIsOverPopover(x, y) && !mouseIsOverHoverCard(x, y);
+            const renderStart = Date.now();
+            const rebuild = this.needsRebuild(b);
             try {
-                if (this.needsRebuild(b)) {
+                if (rebuild) {
                     this.cachedLaid = layoutElement(this.root, b.x, b.y, b.w, b.h);
                     this.builtRevision = getGuiRevision();
                     this.builtAt = Date.now();
@@ -103,6 +106,7 @@ export class Panel {
             } catch (err) {
                 debugLogError("panel render", err);
             }
+            recordPanelFrame(Date.now() - renderStart, rebuild);
             endHtswOverlayDraw();
         };
         // CT's "guiRender" maps to Forge's BackgroundDrawnEvent — fires after MC's dim gradient

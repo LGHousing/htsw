@@ -22,6 +22,7 @@ import {
     resetEventContainers,
 } from "../tasks/specifics/waitFor";
 import { getTreePerfStats } from "../gui/left-panel/importables/tree";
+import { clearFramePerf, getFramePerfStats } from "../gui/lib/framePerf";
 import { resetOnboarding } from "../gui/persistence/onboarding";
 import { rearmTourAutoStart } from "../gui/popovers/tour";
 import {
@@ -152,6 +153,12 @@ const DEBUG_SUBCOMMANDS: HtswSubcommand[] = [
         name: "treeperf",
         summary: "Projects tree render stats",
         run: commandTreePerf,
+    },
+    {
+        name: "guiperf",
+        summary: "Overlay frame pacing + render cost (scroll while sampling)",
+        run: commandGuiPerf,
+        usage: "guiperf [clear]",
     },
     {
         name: "parseperf",
@@ -317,6 +324,42 @@ function commandTour(): void {
         "&a[htsw] Onboarding reset — open a Housing menu to start the tour. " +
         "The sample-project button is back too."
     );
+}
+
+function commandGuiPerf(args: string[]): void {
+    if (args.length > 0 && args[0].toLowerCase() === "clear") {
+        clearFramePerf();
+        ChatLib.chat("&7[guiperf] samples cleared. Scroll around, then run /htsw debug guiperf.");
+        return;
+    }
+    const s = getFramePerfStats();
+    if (s.frames === 0) {
+        ChatLib.chat("&7[guiperf] no painted frames sampled yet — open the GUI first.");
+        return;
+    }
+    const fps = s.avgGapMs > 0 ? Math.round(1000 / s.avgGapMs) : 0;
+    ChatLib.chat(
+        `&7[guiperf] last ${s.frames} painted frames: ` +
+        `avg gap ${s.avgGapMs.toFixed(1)}ms (~${fps}fps), ` +
+        `p95 ${s.p95GapMs}ms, max ${s.maxGapMs}ms.`
+    );
+    ChatLib.chat(
+        `&7[guiperf] overlay render: rebuild frames ${s.rebuiltFrames}/${s.frames} ` +
+        `avg ${s.avgRebuildMs.toFixed(1)}ms (max ${s.maxRebuildMs}ms), ` +
+        `draw-only avg ${s.avgDrawOnlyMs.toFixed(1)}ms. ` +
+        `Scrolling rebuilds every frame — smooth needs rebuild avg well under the frame budget.`
+    );
+    if (s.phases.length > 0) {
+        let parts = "";
+        for (let i = 0; i < s.phases.length; i++) {
+            if (i > 0) parts += ", ";
+            parts += `${s.phases[i].name} ${s.phases[i].msPerRebuild.toFixed(1)}ms`;
+        }
+        ChatLib.chat(
+            `&7[guiperf] rebuild slices per rebuild frame: ${parts} — ` +
+            `the remainder is layout, chat, and panel chrome.`
+        );
+    }
 }
 
 function commandTreePerf(): void {

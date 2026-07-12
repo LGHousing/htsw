@@ -42,6 +42,21 @@ type ReadCacheMemo = {
 
 const readCache = new Map<string, ReadCacheMemo>();
 
+// Bumped on every content write/delete. Lets lazy consumers (the source
+// diff's negative memo) revalidate "this importable has no cache entry"
+// without re-reading the filesystem. Presence-only writes don't bump: they
+// read back as null content, so nothing derived from content can change.
+let contentWriteRevision = 0;
+let presenceWriteRevision = 0;
+
+export function getImportCacheWriteRevision(): number {
+    return contentWriteRevision;
+}
+
+export function getImportCachePresenceRevision(): number {
+    return presenceWriteRevision;
+}
+
 // A content entry: the importable's full AST + hashes. This is what
 // `readImportableCache` returns — presence-only records (no content) are not
 // returned by it, so every diff/trust/import consumer is unchanged.
@@ -135,6 +150,7 @@ export function writeImportableCache(
             mtime: getFileMtimeMs(path),
             checkedAt: Date.now(),
         });
+        contentWriteRevision++;
         indexUpsert(housingUuid, importable.type, {
             name: importableIdentity(importable),
             type: importable.type,
@@ -215,6 +231,7 @@ export function writePresence(
             importable: null,
             label,
         });
+        presenceWriteRevision++;
     } catch (_e) {
         // best-effort
     }
@@ -297,6 +314,8 @@ export function deleteImportableCache(
 ): void {
     const path = cachePathForId(housingUuid, type, identity);
     readCache.delete(path);
+    contentWriteRevision++;
+    presenceWriteRevision++;
     indexRemove(housingUuid, type, identity);
     try {
         const Paths = Java.type("java.nio.file.Paths");
@@ -315,6 +334,8 @@ export function deleteImportableCache(
  */
 export function deleteHousingCache(housingUuid: string): boolean {
     readCache.clear();
+    contentWriteRevision++;
+    presenceWriteRevision++;
     enumIndex.clear();
     scanMarkerCache.clear();
     try {
@@ -529,10 +550,9 @@ export function recordHouseScan(
     labels?: ReadonlyMap<string, string>
 ): void {
     const markerPath = cacheScanMarkerPath(uuid, type);
-    scanMarkerCache.set(
-        enumKey(uuid, type),
-        atomicWriteText(markerPath, new Date().toISOString())
-    );
+    const scanRecorded = atomicWriteText(markerPath, new Date().toISOString());
+    scanMarkerCache.set(enumKey(uuid, type), scanRecorded);
+    if (scanRecorded) presenceWriteRevision++;
     const present = new Set<string>();
     for (let i = 0; i < names.length; i++) present.add(names[i]);
     const known = ensureEnumLoaded(uuid, type).slice();

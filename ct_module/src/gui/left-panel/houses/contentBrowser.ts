@@ -443,11 +443,16 @@ function confirmDestructiveExport(
     });
 }
 
-function exportActionBar(t: HouseContentType, uuid: string, totalCount: number): Element {
+function exportActionBar(t: HouseContentType, uuid: string, items: HouseImportable[]): Element {
     const selected = getExportSelection().filter(
         (it) => it.uuid === uuid && it.type === t.type
     );
     const selectedCount = selected.length;
+    const totalCount = items.length;
+    const labels = new Map<string, string>();
+    for (const item of items) {
+        if (item.label !== undefined) labels.set(item.name, item.label);
+    }
     const deepRead = t.deepRead;
     // Missing = house items whose identity isn't already in the loaded
     // import.json. Same comparison itemRow uses.
@@ -589,11 +594,11 @@ function exportActionBar(t: HouseContentType, uuid: string, totalCount: number):
                             if (selectedCount > 0) {
                                 const names = selected.map((it) => it.name);
                                 confirmDestructiveExport(t, uuid, names, () =>
-                                    exp.selected(names, () => clearExportSelection())
+                                    exp.selected(names, () => clearExportSelection(), labels)
                                 );
                             } else {
-                                const names = t.items(uuid).map((i) => i.name);
-                                confirmDestructiveExport(t, uuid, names, () => exp.all());
+                                const names = items.map((i) => i.name);
+                                confirmDestructiveExport(t, uuid, names, () => exp.all(labels));
                             }
                         },
                     }),
@@ -866,7 +871,7 @@ export function typeBrowserSection(getViewedUuid: () => string | null, availW: n
                 }
             }
             if (canExport) {
-                out.push(exportActionBar(t, uuid, items.length));
+                out.push(exportActionBar(t, uuid, items));
             } else if (t.export !== undefined) {
                 out.push(
                     Row({

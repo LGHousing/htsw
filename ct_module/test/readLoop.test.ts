@@ -20,7 +20,10 @@ function fakeSink() {
     const calls: string[] = [];
     const sink: ExportProgressSink = {
         start: (names) => calls.push(`start:${names.join(",")}`),
+        scanStarted: () => calls.push("scanStarted"),
         item: (index, name) => calls.push(`item:${index}:${name}`),
+        itemReactivated: (index) => calls.push(`reactivated:${index}`),
+        itemFinished: (index) => calls.push(`finished:${index}`),
         itemProgress: () => calls.push("progress"),
         itemFailed: (index, error) => calls.push(`failed:${index}:${error}`),
         done: () => calls.push("done"),
@@ -29,6 +32,79 @@ function fakeSink() {
 }
 
 describe("runReadLoop", () => {
+    it("reports two-pass item lifecycle in scan then hydrate order", async () => {
+        const { sink, calls } = fakeSink();
+        await runReadLoop(fakeCtx(), {
+            names: ["a", "b"],
+            verb: "Exporting",
+            progress: sink,
+            processOne: async () => {},
+            scanOne: async (_ctx, name) => name,
+            hydrateOne: async () => {},
+        });
+        expect(calls).toEqual([
+            "start:a,b",
+            "scanStarted",
+            "item:0:a",
+            "item:1:b",
+            "reactivated:0",
+            "finished:0",
+            "reactivated:1",
+            "finished:1",
+            "done",
+        ]);
+    });
+
+    it("reports single-pass item lifecycle in processing order", async () => {
+        const { sink, calls } = fakeSink();
+        await runReadLoop(fakeCtx(), {
+            names: ["a", "b"],
+            verb: "Exporting",
+            progress: sink,
+            processOne: async () => {},
+        });
+        expect(calls).toEqual([
+            "start:a,b",
+            "item:0:a",
+            "finished:0",
+            "item:1:b",
+            "finished:1",
+            "done",
+        ]);
+    });
+
+    it("does not finish failed single-pass items and continues", async () => {
+        const { sink, calls } = fakeSink();
+        await runReadLoop(fakeCtx(), {
+            names: ["a", "b"],
+            verb: "Exporting",
+            progress: sink,
+            processOne: async (_ctx, name) => {
+                if (name === "a") throw new Error("boom");
+            },
+        });
+        expect(calls).toContain("failed:0:Error: boom");
+        expect(calls).not.toContain("finished:0");
+        expect(calls).toContain("finished:1");
+    });
+
+    it("does not finish failed hydrate items and continues", async () => {
+        const { sink, calls } = fakeSink();
+        await runReadLoop(fakeCtx(), {
+            names: ["a", "b"],
+            verb: "Exporting",
+            progress: sink,
+            processOne: async () => {},
+            scanOne: async (_ctx, name) => name,
+            hydrateOne: async (_ctx, name) => {
+                if (name === "a") throw new Error("boom");
+            },
+        });
+        expect(calls).toContain("failed:0:Error: boom");
+        expect(calls).not.toContain("finished:0");
+        expect(calls).toContain("finished:1");
+    });
+
     it("counts successes and failures without aborting the batch", async () => {
         const { sink, calls } = fakeSink();
         const result = await runReadLoop(fakeCtx(), {

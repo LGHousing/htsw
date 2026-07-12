@@ -1,6 +1,7 @@
 /// <reference types="../../../../CTAutocomplete" />
 
 import {
+    anyScrollAnimating,
     Element,
     getScrollState,
     setScrollOffset,
@@ -15,15 +16,29 @@ import {
     getSources,
 } from "./source";
 import { sortResults } from "./sort";
-import { isImportableTypeActive, isFilterDefault } from "./filter";
+import {
+    isImportableStatusFilterActive,
+    isImportableTypeActive,
+    isFilterDefault,
+    isLinkStatusActive,
+    resetFilters,
+} from "./filter";
 import { Result, ResultImport, ROW_BG, bumpTreeRevision, getTreeRevision } from "./rowModel";
-import { IncludeNode, includeAncestorPaths, includeTreeOf } from "./includeTree";
-import { canonicalPath } from "../../parsing/parses";
+import {
+    type IncludeNode,
+    includeAncestorPaths,
+    includeTreeOf,
+    findImportableHome,
+} from "./includeTree";
+import { canonicalPath, getParseCacheRevision } from "../../parsing/parses";
 import { compactPath } from "../../lib/pathDisplay";
+import { recordPhase } from "../../lib/framePerf";
 import {
     searchQuery,
+    setSearchQuery,
     expansionKey,
     isImportExpanded,
+    expandImport,
     collapsedRoots,
     importableExpansion,
     importableExpansionKey,
@@ -47,6 +62,13 @@ import {
     standaloneCloseAction,
 } from "./rows";
 import type { Importable } from "htsw/types";
+import { importableLinkStatus } from "../../cache-status";
+import {
+    getImportCachePresenceRevision,
+    getImportCacheWriteRevision,
+} from "../../../importCache/cache";
+import { getHousingUuid } from "../../state/housing";
+import { isHouseTrusted } from "../../state/trust";
 
 const LEFT_PAD = 7;
 const ARM_LEN = 8;
@@ -66,7 +88,6 @@ type TreeRow = {
     branch: BranchKind | null;
     content: () => Element;
     height: number;
-    /** Set on home include-group rows so a reference-row jump can find them. */
     key?: string;
 };
 
@@ -228,6 +249,10 @@ function filterImportableList(r: ResultImport, list: Importable[]): Importable[]
     for (let j = 0; j < list.length; j++) {
         const imp = list[j];
         if (!isImportableTypeActive(imp.type)) continue;
+        if (
+            isImportableStatusFilterActive() &&
+            !isLinkStatusActive(importableLinkStatus(imp).key)
+        ) continue;
         if (q.length > 0 && !pathMatch) {
             if (importableName(imp).toLowerCase().indexOf(q) < 0) continue;
         }
@@ -368,7 +393,7 @@ function emitIncludeNode(
     narrowing: boolean
 ): void {
     const imps = filterImportableList(r, node.importables);
-    // Missing includes aren't rendered in-game (the manifest's own error
+    // Missing includes aren't rendered in-game (the import.json's own error
     // badge already flags them); VS Code's tree does show them.
     const present = node.includes.filter((c) => c.missing !== true);
     const kids = narrowing
@@ -411,13 +436,14 @@ function emitIncludeNode(
         idx++;
         const imp = imps[j];
         const isLast = idx === total;
+        const subKey = importableExpansionKey(r.fullPath, imp);
         out.push({
             levels,
             branch: isLast ? "ell" : "tee",
             content: () => importableRow(r, imp),
             height: ENTRY_ROW_H,
+            key: subKey,
         });
-        const subKey = importableExpansionKey(r.fullPath, imp);
         if (importableExpansion.has(subKey)) {
             const subs = childListsOf(imp);
             const slots = imp.type === "MENU" ? imp.slots : [];
@@ -494,8 +520,55 @@ function formatFullDir(fullPath: string): string {
 // instant rebuild; the TTL picks up async changes (reparse, enumeration).
 let cachedTreeRows: TreeRow[] | null = null;
 let cachedTreeRevision = -1;
+let cachedParseRevision = -1;
 let cachedTreeAt = 0;
-const TREE_ROWS_TTL_MS = 300;
+let cachedTreeFingerprint = "";
+let cachedRowStarts: number[] = [];
+let cachedRowEnds: number[] = [];
+let cachedTreeHeight = 0;
+const TREE_ROWS_TTL_MS = 1000;
+
+let parseIdCounter = 0;
+const parseIds = new WeakMap<object, number>();
+
+function parseIdOf(parse: object | null): number {
+    if (parse === null) return -1;
+    let id = parseIds.get(parse);
+    if (id === undefined) {
+        id = ++parseIdCounter;
+        parseIds.set(parse, id);
+    }
+    return id;
+}
+
+// Everything the descriptor build reads that is NOT guarded by
+// bumpTreeRevision(): the per-source enumeration and each result's parse
+// (identified by object identity — the parse cache replaces the object on
+// every reparse). When this string is unchanged at TTL expiry, the cached
+// descriptors are still exact and the rebuild is skipped. Status-filter inputs
+// join the fingerprint only while that filter narrows.
+function treeInputsFingerprint(): string {
+    const sources = getSources();
+    let fp = "";
+    if (isImportableStatusFilterActive()) {
+        const uuid = getHousingUuid();
+        fp += `status:${uuid ?? ""}|${uuid !== null && isHouseTrusted(uuid) ? 1 : 0}|${getImportCacheWriteRevision()}|${getImportCachePresenceRevision()};`;
+    }
+    for (let i = 0; i < sources.length; i++) {
+        const s = sources[i];
+        fp += `${s.kind}:${s.fullPath};`;
+        const results = enumerateForSource(s);
+        for (let j = 0; j < results.length; j++) {
+            const r = results[j];
+            fp += `${r.type}|${r.fullPath}`;
+            if (r.type === "import") {
+                fp += `|${r.parsePending ? 1 : 0}|${parseIdOf(r.parse)}|${r.parseError ?? ""}`;
+            }
+            fp += ";";
+        }
+    }
+    return fp;
+}
 
 let lastBuildMs = 0;
 let maxBuildMs = 0;
@@ -512,20 +585,60 @@ export function getTreePerfStats(): { lastBuildMs: number; maxBuildMs: number; b
 
 function treeRows(): TreeRow[] {
     const now = Date.now();
+    const parseRevision = getParseCacheRevision();
     if (
-        cachedTreeRows !== null &&
-        cachedTreeRevision === getTreeRevision() &&
-        now - cachedTreeAt < TREE_ROWS_TTL_MS
+        cachedTreeRows !== null
+        && cachedTreeRevision === getTreeRevision()
+        && cachedParseRevision === parseRevision
     ) {
-        return cachedTreeRows;
+        if (now - cachedTreeAt < TREE_ROWS_TTL_MS || anyScrollAnimating()) {
+            return cachedTreeRows;
+        }
+        const fp = treeInputsFingerprint();
+        if (fp === cachedTreeFingerprint) {
+            cachedTreeAt = now;
+            return cachedTreeRows;
+        }
+        cachedTreeFingerprint = fp;
+    } else {
+        cachedTreeFingerprint = treeInputsFingerprint();
     }
+    const buildStart = Date.now();
     cachedTreeRows = buildTreeRows();
     cachedTreeRevision = getTreeRevision();
-    cachedTreeAt = now;
-    lastBuildMs = Date.now() - now;
+    cachedParseRevision = getParseCacheRevision();
+    cachedTreeAt = buildStart;
+    indexTreeRows(cachedTreeRows);
+    lastBuildMs = Date.now() - buildStart;
     if (lastBuildMs > maxBuildMs) maxBuildMs = lastBuildMs;
     buildCount++;
     return cachedTreeRows;
+}
+
+function indexTreeRows(rows: readonly TreeRow[]): void {
+    cachedRowStarts = new Array(rows.length);
+    cachedRowEnds = new Array(rows.length);
+    let y = 0;
+    for (let i = 0; i < rows.length; i++) {
+        cachedRowStarts[i] = y;
+        y += rows[i].height + ROW_GAP_H;
+        cachedRowEnds[i] = y;
+    }
+    cachedTreeHeight = y;
+}
+
+export function firstTreeRowEndingAtOrAfter(
+    rowEnds: readonly number[],
+    y: number
+): number {
+    let lo = 0;
+    let hi = rowEnds.length;
+    while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (rowEnds[mid] >= y) hi = mid;
+        else lo = mid + 1;
+    }
+    return lo;
 }
 
 function buildTreeRows(): TreeRow[] {
@@ -589,6 +702,7 @@ function buildTreeRows(): TreeRow[] {
                     branch: isLastResult ? "ell" : "tee",
                     content: () => resultRow(r, dirSourceKey, defaultExpanded),
                     height: 18,
+                    key: expKey,
                 });
 
                 if (r.type === "import" && isImportExpanded(expKey, defaultExpanded)) {
@@ -615,6 +729,7 @@ function buildTreeRows(): TreeRow[] {
                             formatFullDir(file.fullPath)
                         ),
                         height: 18,
+                        key: expKey,
                     });
 
                     if (r.type === "import" && isImportExpanded(expKey, defaultExpanded)) {
@@ -658,12 +773,123 @@ function jumpToIncludeNode(r: ResultImport, targetPath: string): void {
     }
 }
 
+export type ProjectsTreeRevealTarget =
+    | {
+          kind: "importable";
+          declaringImportJson: string;
+          type: Importable["type"];
+          identity: string;
+      }
+    | { kind: "file"; importJsonPath: string };
+
+type RevealLocation = {
+    result: ResultImport;
+    sourceKey: string;
+    rootKey: string | null;
+    declaringPath: string;
+    ancestors: string[];
+    topLevel: boolean;
+    targetKey: string;
+};
+
+function revealLocation(target: ProjectsTreeRevealTarget): RevealLocation | null {
+    const scopePath = canonicalPath(
+        target.kind === "importable" ? target.declaringImportJson : target.importJsonPath
+    );
+    const roots = buildRoots();
+    for (let ri = 0; ri < roots.length; ri++) {
+        const root = roots[ri];
+        const sources = root.kind === "dir" ? [root.source] : root.files;
+        for (let si = 0; si < sources.length; si++) {
+            const source = sources[si];
+            const results = resultsForSource(source);
+            for (let i = 0; i < results.length; i++) {
+                const r = results[i];
+                if (r.type !== "import") continue;
+                if (includeAncestorPaths(includeTreeOf(r), scopePath) === null) continue;
+                const sourceKey = root.kind === "dir" ? root.key : `file:${source.fullPath}`;
+                const rootKey = root.kind === "dir" ? root.key : null;
+                let declaringPath = scopePath;
+                let targetKey: string;
+                if (target.kind === "importable") {
+                    const home = findImportableHome(
+                        includeTreeOf(r),
+                        target.type,
+                        target.identity
+                    );
+                    if (home === null) continue;
+                    declaringPath = canonicalPath(home.node.path);
+                    targetKey = importableExpansionKey(r.fullPath, home.imp);
+                } else {
+                    targetKey =
+                        canonicalPath(r.fullPath) === declaringPath
+                            ? expansionKey(sourceKey, r.fullPath)
+                            : includeGroupKey(r.fullPath, declaringPath);
+                }
+                const ancestors = includeAncestorPaths(includeTreeOf(r), declaringPath);
+                if (ancestors === null) continue;
+                return {
+                    result: r,
+                    sourceKey,
+                    rootKey,
+                    declaringPath,
+                    ancestors,
+                    topLevel: canonicalPath(r.fullPath) === declaringPath,
+                    targetKey,
+                };
+            }
+        }
+    }
+    return null;
+}
+
+function scrollToTreeRow(key: string): boolean {
+    const rows = treeRows();
+    let y = 0;
+    for (let i = 0; i < rows.length; i++) {
+        if (rows[i].key === key) {
+            const viewportH = getScrollState(RESULTS_SCROLL_ID).viewportRect.h;
+            setScrollOffset(RESULTS_SCROLL_ID, Math.max(0, y - Math.max(0, viewportH / 3)));
+            setJumpFlash(key);
+            return true;
+        }
+        y += rows[i].height + ROW_GAP_H;
+    }
+    return false;
+}
+
+export function revealInProjectsTree(target: ProjectsTreeRevealTarget): void {
+    const location = revealLocation(target);
+    if (location === null) return;
+    if (location.rootKey !== null) collapsedRoots.delete(location.rootKey);
+    expandImport(expansionKey(location.sourceKey, location.result.fullPath));
+    for (let i = 0; i < location.ancestors.length; i++) {
+        expandIncludeGroup(includeGroupKey(location.result.fullPath, location.ancestors[i]));
+    }
+    if (!location.topLevel) {
+        expandIncludeGroup(includeGroupKey(location.result.fullPath, location.declaringPath));
+    }
+    bumpTreeRevision();
+    if (scrollToTreeRow(location.targetKey) || !isNarrowing()) return;
+    setSearchQuery("");
+    resetFilters();
+    bumpTreeRevision();
+    scrollToTreeRow(location.targetKey);
+}
+
 export function renderRows(): Element[] {
+    const t0 = Date.now();
+    try {
+        return renderRowsInner();
+    } finally {
+        recordPhase("tree", Date.now() - t0);
+    }
+}
+
+function renderRowsInner(): Element[] {
     const rows = treeRows();
     if (rows.length === 0) return [];
-
-    let totalH = 0;
-    for (let i = 0; i < rows.length; i++) totalH += rows[i].height + ROW_GAP_H;
+    const totalH = cachedTreeHeight;
 
     const state = getScrollState(RESULTS_SCROLL_ID);
     const viewportH = state.viewportRect.h;
@@ -682,16 +908,15 @@ export function renderRows(): Element[] {
     const minY = Math.max(0, state.offset - VIRTUAL_OVERSCAN_PX);
     const maxY = state.offset + viewportH + VIRTUAL_OVERSCAN_PX;
     const out: Element[] = [];
-    let cursor = 0;
     let visibleH = 0;
     let topPad = 0;
     let started = false;
 
-    for (let i = 0; i < rows.length; i++) {
+    const firstRow = firstTreeRowEndingAtOrAfter(cachedRowEnds, minY);
+    for (let i = firstRow; i < rows.length; i++) {
         const rowH = rows[i].height + ROW_GAP_H;
-        const rowStart = cursor;
-        const rowEnd = cursor + rowH;
-        if (rowEnd >= minY && rowStart <= maxY) {
+        const rowStart = cachedRowStarts[i];
+        if (rowStart <= maxY) {
             if (!started) {
                 topPad = rowStart;
                 if (topPad > 0) out.push(spacer(1, topPad));
@@ -702,7 +927,6 @@ export function renderRows(): Element[] {
         } else if (started && rowStart > maxY) {
             break;
         }
-        cursor = rowEnd;
     }
 
     if (!started) {
