@@ -1,6 +1,14 @@
 /// <reference types="../../../CTAutocomplete" />
 
-import { Element, LaidOut, Rect, layoutElement, pointInRect } from "./layout";
+import {
+    advanceScrollForPaint,
+    Element,
+    getScrollState,
+    LaidOut,
+    Rect,
+    layoutElement,
+    pointInRect,
+} from "./layout";
 import { Extractable, extract } from "./extractable";
 import { drawLaid, dispatchClick } from "./render";
 import { getGuiRevision, markGuiDirty, GUI_REBUILD_BACKSTOP_MS } from "./dirty";
@@ -13,9 +21,23 @@ import {
 } from "./hoverCards";
 import { mcToOverlay } from "./overlayScale";
 import { beginHtswOverlayDraw, endHtswOverlayDraw } from "./overlayDraw";
-import { recordPanelFrame } from "./framePerf";
+import { recordPanelFrame, recordPhase } from "./framePerf";
 
 const COLOR_PANEL = 0xf0242931 | 0;
+
+function translateClipGroup(laid: LaidOut[], clip: Rect, dx: number, dy: number): void {
+    for (let i = 0; i < laid.length; i++) {
+        const item = laid[i];
+        if (item.clipRect !== clip) continue;
+        item.rect.x += dx;
+        item.rect.y += dy;
+        if (item.element.kind !== "scroll") continue;
+        const nestedClip = getScrollState(item.element.id).viewportRect;
+        nestedClip.x += dx;
+        nestedClip.y += dy;
+        translateClipGroup(laid, nestedClip, dx, dy);
+    }
+}
 
 export class Panel {
     private bounds: Extractable<Rect>;
@@ -30,6 +52,9 @@ export class Panel {
     private builtRevision: number;
     private builtAt: number;
     private builtBounds: Rect | null;
+    private builtScrollOffsets: { [id: string]: number };
+    private displayedScrollOffsets: { [id: string]: number };
+    private lastScrollAt: number;
 
     constructor(
         bounds: Extractable<Rect>,
@@ -47,6 +72,9 @@ export class Panel {
         this.builtRevision = -1;
         this.builtAt = 0;
         this.builtBounds = null;
+        this.builtScrollOffsets = {};
+        this.displayedScrollOffsets = {};
+        this.lastScrollAt = 0;
     }
 
     public setRoot(root: Element): void {
@@ -57,11 +85,58 @@ export class Panel {
     private needsRebuild(b: Rect): boolean {
         if (this.cachedLaid === null) return true;
         if (getGuiRevision() !== this.builtRevision) return true;
-        if (Date.now() - this.builtAt >= GUI_REBUILD_BACKSTOP_MS) return true;
+        const now = Date.now();
+        if (
+            now - this.builtAt >= GUI_REBUILD_BACKSTOP_MS
+            && now - this.lastScrollAt >= 500
+        ) {
+            return true;
+        }
         const pb = this.builtBounds;
         return (
             pb === null || pb.x !== b.x || pb.y !== b.y || pb.w !== b.w || pb.h !== b.h
         );
+    }
+
+    private captureScrollOffsets(): void {
+        this.builtScrollOffsets = {};
+        this.displayedScrollOffsets = {};
+        const laid = this.cachedLaid as LaidOut[];
+        for (let i = 0; i < laid.length; i++) {
+            const element = laid[i].element;
+            if (element.kind !== "scroll") continue;
+            const offset = getScrollState(element.id).offset;
+            this.builtScrollOffsets[element.id] = offset;
+            this.displayedScrollOffsets[element.id] = offset;
+        }
+    }
+
+    private advanceCachedScrolls(): boolean {
+        const laid = this.cachedLaid as LaidOut[];
+        const shifts: { clip: Rect; dx: number; dy: number }[] = [];
+        for (let i = 0; i < laid.length; i++) {
+            const element = laid[i].element;
+            if (element.kind !== "scroll") continue;
+            const state = getScrollState(element.id);
+            const previous = this.displayedScrollOffsets[element.id] ?? state.offset;
+            const next = advanceScrollForPaint(element.id);
+            const built = this.builtScrollOffsets[element.id] ?? next;
+            if (Math.abs(next - built) > 24) return false;
+            const delta = Math.round(previous) - Math.round(next);
+            if (delta !== 0) {
+                this.lastScrollAt = Date.now();
+                shifts.push({
+                    clip: state.viewportRect,
+                    dx: state.axis === "x" ? delta : 0,
+                    dy: state.axis === "y" ? delta : 0,
+                });
+            }
+            this.displayedScrollOffsets[element.id] = next;
+        }
+        for (let i = 0; i < shifts.length; i++) {
+            translateClipGroup(laid, shifts[i].clip, shifts[i].dx, shifts[i].dy);
+        }
+        return true;
     }
     public setBounds(bounds: Extractable<Rect>): void {
         this.bounds = bounds;
@@ -74,6 +149,9 @@ export class Panel {
     }
     public getRoot(): Element {
         return this.root;
+    }
+    public getLaidOut(): LaidOut[] | null {
+        return this.cachedLaid;
     }
 
     public register(): void {
@@ -94,15 +172,21 @@ export class Panel {
             // actually over a popover (in which case the popover absorbs the click).
             const interactive = !mouseIsOverPopover(x, y) && !mouseIsOverHoverCard(x, y);
             const renderStart = Date.now();
-            const rebuild = this.needsRebuild(b);
+            let rebuild = this.needsRebuild(b);
             try {
+                if (!rebuild && !this.advanceCachedScrolls()) rebuild = true;
                 if (rebuild) {
+                    const layoutStart = Date.now();
                     this.cachedLaid = layoutElement(this.root, b.x, b.y, b.w, b.h);
+                    recordPhase("layout-total", Date.now() - layoutStart);
                     this.builtRevision = getGuiRevision();
                     this.builtAt = Date.now();
                     this.builtBounds = b;
+                    this.captureScrollOffsets();
                 }
+                const drawStart = Date.now();
                 drawLaid(this.cachedLaid as LaidOut[], this.root, x, y, interactive);
+                if (rebuild) recordPhase("draw-rebuild", Date.now() - drawStart);
             } catch (err) {
                 debugLogError("panel render", err);
             }

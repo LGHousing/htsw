@@ -89,6 +89,8 @@ type TreeRow = {
     content: () => Element;
     height: number;
     key?: string;
+    cachedElement?: Element;
+    cachedEpisode?: number;
 };
 
 function pixel(w: number, h: number): Element {
@@ -181,7 +183,14 @@ function gapBandFor(r: TreeRow): Element {
     });
 }
 
-function composeTreeRow(r: TreeRow): Element {
+function composeTreeRow(r: TreeRow, cacheEpisode: number | null): Element {
+    if (
+        cacheEpisode !== null
+        && r.cachedEpisode === cacheEpisode
+        && r.cachedElement !== undefined
+    ) {
+        return r.cachedElement;
+    }
     const cols: Element[] = [spacer(LEFT_PAD, r.height)];
     for (let i = 0; i < r.levels.length; i++) {
         cols.push(
@@ -209,10 +218,15 @@ function composeTreeRow(r: TreeRow): Element {
         },
         children: cols,
     });
-    return Col({
+    const element = Col({
         style: { width: { kind: "grow" } },
         children: [gapBandFor(r), body],
     });
+    if (cacheEpisode !== null) {
+        r.cachedEpisode = cacheEpisode;
+        r.cachedElement = element;
+    }
+    return element;
 }
 
 type Root =
@@ -744,6 +758,8 @@ function buildTreeRows(): TreeRow[] {
 
 export const RESULTS_SCROLL_ID = "left-results-scroll";
 const VIRTUAL_OVERSCAN_PX = 96;
+let rowCacheEpisode = 0;
+let treeWasAnimating = false;
 
 // Reveal the home group of a repeat-included file: expand the groups above
 // it, rebuild the descriptors, scroll its row into the upper third of the
@@ -890,6 +906,10 @@ function renderRowsInner(): Element[] {
     const rows = treeRows();
     if (rows.length === 0) return [];
     const totalH = cachedTreeHeight;
+    const animating = anyScrollAnimating();
+    if (animating && !treeWasAnimating) rowCacheEpisode++;
+    treeWasAnimating = animating;
+    const cacheEpisode = animating ? rowCacheEpisode : null;
 
     const state = getScrollState(RESULTS_SCROLL_ID);
     const viewportH = state.viewportRect.h;
@@ -898,7 +918,7 @@ function renderRowsInner(): Element[] {
         let initialH = 0;
         const limitH = 420;
         for (let i = 0; i < rows.length && initialH < limitH; i++) {
-            initial.push(composeTreeRow(rows[i]));
+            initial.push(composeTreeRow(rows[i], cacheEpisode));
             initialH += rows[i].height + ROW_GAP_H;
         }
         if (totalH > initialH) initial.push(spacer(1, totalH - initialH));
@@ -922,7 +942,7 @@ function renderRowsInner(): Element[] {
                 if (topPad > 0) out.push(spacer(1, topPad));
                 started = true;
             }
-            out.push(composeTreeRow(rows[i]));
+            out.push(composeTreeRow(rows[i], cacheEpisode));
             visibleH += rowH;
         } else if (started && rowStart > maxY) {
             break;

@@ -402,6 +402,13 @@ export function anyScrollAnimating(): boolean {
     return false;
 }
 
+export function advanceScrollForPaint(id: string): number {
+    const s = getScrollState(id);
+    const viewportMain = s.axis === "x" ? s.viewportRect.w : s.viewportRect.h;
+    advanceScrollOffset(s, Math.max(0, s.contentLength - viewportMain));
+    return s.offset;
+}
+
 // Ease `offset` toward `target` by the wall-clock time since the last step.
 // The exponential form is exact under split dt, so advancing more than once per
 // frame (wheel hit-test relayout + paint) integrates to the same result.

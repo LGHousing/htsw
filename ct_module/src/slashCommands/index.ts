@@ -356,8 +356,8 @@ function commandGuiPerf(args: string[]): void {
             parts += `${s.phases[i].name} ${s.phases[i].msPerRebuild.toFixed(1)}ms`;
         }
         ChatLib.chat(
-            `&7[guiperf] rebuild slices per rebuild frame: ${parts} — ` +
-            `the remainder is layout, chat, and panel chrome.`
+            `&7[guiperf] timed rebuild slices: ${parts}. ` +
+            `layout-total includes child builders such as tree/codeview.`
         );
     }
 }

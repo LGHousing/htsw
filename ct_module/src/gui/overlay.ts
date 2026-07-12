@@ -3,12 +3,12 @@
 import { Panel } from "./lib/panel";
 import {
     Element,
+    LaidOut,
     Rect,
     layoutElement,
     pointInRect,
     getScrollState,
     setScrollEasingProvider,
-    anyScrollAnimating,
 } from "./lib/layout";
 import { markGuiDirty } from "./lib/dirty";
 import { getSmoothScrolling } from "../settings";
@@ -188,11 +188,15 @@ type ActivePanel = {
 };
 const activePanels: ActivePanel[] = [];
 
-function laidOutTrees(): { root: Element; rect: Rect }[] {
-    const out: { root: Element; rect: Rect }[] = [];
+function laidOutTrees(): { root: Element; rect: Rect; laid: LaidOut[] | null }[] {
+    const out: { root: Element; rect: Rect; laid: LaidOut[] | null }[] = [];
     for (let i = 0; i < activePanels.length; i++) {
         if (!activePanels[i].isVisible()) continue;
-        out.push({ root: activePanels[i].getRoot(), rect: activePanels[i].getBounds() });
+        out.push({
+            root: activePanels[i].getRoot(),
+            rect: activePanels[i].getBounds(),
+            laid: activePanels[i].panel.getLaidOut(),
+        });
     }
     return out;
 }
@@ -219,7 +223,7 @@ function routeWheel(mx: number, my: number, delta: number, apply: boolean): bool
     const trees = laidOutTrees();
     for (let i = 0; i < trees.length; i++) {
         const t = trees[i];
-        const laid = layoutElement(t.root, t.rect.x, t.rect.y, t.rect.w, t.rect.h);
+        const laid = t.laid ?? layoutElement(t.root, t.rect.x, t.rect.y, t.rect.w, t.rect.h);
         for (let j = 0; j < laid.length; j++) {
             const el = laid[j].element;
             if (el.kind !== "scroll") continue;
@@ -227,10 +231,6 @@ function routeWheel(mx: number, my: number, delta: number, apply: boolean): bool
             if (!pointInRect(s.viewportRect, mx, my)) continue;
             if (apply) {
                 dispatchWheel(laid, mx, my, delta);
-                // The overlay caches its laid-out tree (lib/dirty); a scroll
-                // changes element positions, so force a rebuild or the new
-                // offset wouldn't render until the 200ms backstop.
-                markGuiDirty();
             }
             return true;
         }
@@ -565,7 +565,7 @@ export function initHtswGui(): void {
         // Rebuild every frame while the thumb is dragged or the wheel offset is
         // still easing, so scrolled content tracks at the refresh rate instead
         // of stepping on the dirty backstop.
-        if (dragging || anyScrollAnimating()) markGuiDirty();
+        if (dragging) markGuiDirty();
     });
     register("guiMouseRelease", () => {
         endScrollbarDrag();
