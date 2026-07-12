@@ -192,14 +192,6 @@ function houseDropdownRow(uuid: string): Element {
                     style: { width: { kind: "px", value: 10 }, height: { kind: "px", value: 10 } },
                 });
             })(),
-            isCurrent &&
-                Icon({
-                    name: Icons.target,
-                    color: COLOR_TEXT_DIM,
-                    tooltip: "Current house",
-                    tooltipColor: COLOR_TEXT_DIM,
-                    style: { width: { kind: "px", value: 10 }, height: { kind: "px", value: 10 } },
-                }),
             Container({
                 style: {
                     direction: "row",
@@ -305,7 +297,7 @@ function trustButton(uuid: string | null, trusted: boolean): Element {
     });
 }
 
-function houseSelector(viewed: string | null, isHere: boolean): Element {
+function houseSelector(viewed: string | null): Element {
     return Container({
         style: {
             direction: "row",
@@ -337,14 +329,6 @@ function houseSelector(viewed: string | null, isHere: boolean): Element {
                 truncate: true,
                 style: { width: { kind: "grow" } },
             }),
-            isHere &&
-                Icon({
-                    name: Icons.target,
-                    color: COLOR_TEXT_DIM,
-                    tooltip: "Current house",
-                    tooltipColor: COLOR_TEXT_DIM,
-                    style: { width: { kind: "px", value: 10 }, height: { kind: "px", value: 10 } },
-                }),
             Icon({
                 name: Icons.chevronDown,
                 style: {
@@ -395,10 +379,9 @@ function housePickerRow(): Element {
         },
         children: () => {
             const viewed = viewedUuid();
-            const isHere = viewed !== null && viewed === getHousingUuid();
             const trusted = viewed !== null && isHouseTrusted(viewed);
             return [
-                houseSelector(viewed, isHere),
+                houseSelector(viewed),
                 trustButton(viewed, trusted),
                 houseActionButton(Icons.pencil, "Rename this house", (rect: Rect) => {
                     if (viewed === null) return;
