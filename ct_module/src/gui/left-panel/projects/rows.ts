@@ -1198,7 +1198,7 @@ function diagnosticBadge(counts: SeverityCounts): Element {
 }
 
 /**
- * Toggle an importable's queue membership from an Importables row. Adding (an
+ * Toggle an importable's queue membership from a Projects row. Adding (an
  * unchecked importable → checked) is always allowed, even mid-import — the
  * queue session tracks late adds as "pending" and they survive the run.
  * Removing (checked → unchecked) is blocked while an import is running: the

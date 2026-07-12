@@ -39,6 +39,7 @@ type FileState = {
     lines: PreviewLine[];
     revision: number;
     hasContent: boolean;
+    readCompletedPaths: Set<string>;
     /** Action path the importer is touching right now (cursor / scroll target). */
     currentPath: ActionPath | null;
     /** Set once the diff plan is known; its presence means we're in the apply phase. */
@@ -50,10 +51,11 @@ type FileState = {
  * Minimum gap between full observed-snapshot rebuilds for one file. Each
  * rebuild reconstructs the whole line array (new line objects), which
  * invalidates the per-line text-wrap cache and forces a full re-measure on
- * the next frame. During the hydration of a large function the importer
+ * the next frame. During the hydration of a large function the reader
  * emits snapshots in rapid bursts; coalescing them here keeps the rebuild
  * + re-measure cost bounded so the game stays responsive. The final state
- * is never lost — `finalizeFromSource` rebuilds unconditionally at the end.
+ * is never lost: import finalization and export item completion force an
+ * unthrottled terminal rebuild.
  */
 const OBSERVED_REBUILD_THROTTLE_MS = 200;
 
@@ -67,7 +69,15 @@ function ensure(path: string): FileState {
     const k = keyForFile(path);
     let s = states[k];
     if (!s) {
-        s = { lines: [], revision: 0, hasContent: false, currentPath: null, summary: null, lastObservedAt: 0 };
+        s = {
+            lines: [],
+            revision: 0,
+            hasContent: false,
+            readCompletedPaths: new Set(),
+            currentPath: null,
+            summary: null,
+            lastObservedAt: 0,
+        };
         states[k] = s;
     }
     return s;
@@ -448,6 +458,35 @@ function renumberLines(lines: PreviewLine[]): void {
     }
 }
 
+function lineHasCompletedRead(line: PreviewLine, completedPaths: Set<string>): boolean {
+    if (line.variant === "placeholder" || line.actionPath === undefined) return false;
+    let probe = line.actionPath;
+    while (probe.length > 0) {
+        if (completedPaths.has(probe)) return true;
+        const dot = probe.lastIndexOf(".");
+        if (dot < 0) break;
+        probe = probe.substring(0, dot);
+    }
+    return false;
+}
+
+function applyReadCompletions(
+    lines: PreviewLine[],
+    completedPaths: Set<string>
+): boolean {
+    let changed = false;
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (!lineHasCompletedRead(line, completedPaths)) continue;
+        if (line.completed !== true || line.diffState !== undefined) {
+            line.completed = true;
+            line.diffState = undefined;
+            changed = true;
+        }
+    }
+    return changed;
+}
+
 // ── Exported query / mutation API ───────────────────────────────────
 
 export function previewLinesForFile(path: string): readonly PreviewLine[] {
@@ -487,17 +526,29 @@ export function primeWithCache(
 
 export function setObservedTopLevel(
     path: string,
-    actions: ReadonlyArray<MaybeAction | null>
+    actions: ReadonlyArray<MaybeAction | null>,
+    options?: { force?: boolean }
 ): void {
     const s = ensure(path);
     const now = Date.now();
-    if (s.hasContent && now - s.lastObservedAt < OBSERVED_REBUILD_THROTTLE_MS) {
+    if (
+        options?.force !== true &&
+        s.hasContent &&
+        now - s.lastObservedAt < OBSERVED_REBUILD_THROTTLE_MS
+    ) {
         return;
     }
     s.lastObservedAt = now;
     s.lines = buildLines(actions, undefined, 0);
+    applyReadCompletions(s.lines, s.readCompletedPaths);
     s.hasContent = true;
     bump(s);
+}
+
+export function markReadComplete(path: string, actionPath: ActionPath): void {
+    const s = ensure(path);
+    s.readCompletedPaths.add(actionPathKey(actionPath));
+    if (applyReadCompletions(s.lines, s.readCompletedPaths)) bump(s);
 }
 
 export function markPlannedAdd(

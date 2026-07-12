@@ -12,7 +12,10 @@
 
 import type { Importable } from "htsw/types";
 
-import type { TaskProgress, TaskProgressEntry } from "../../../housingSync/progress/types";
+import type {
+    TaskProgress,
+    TaskProgressEntry,
+} from "../../../housingSync/progress/types";
 import { queueRowKey } from "../../../housingSync/progress/queueRowKey";
 import {
     createEtaCalculator,
@@ -48,6 +51,7 @@ setProgressTraceSampler(() => {
 });
 
 let taskProgress: TaskProgress | null = null;
+let taskProgressRows = new Map<string, TaskProgressEntry>();
 /**
  * The last final task progress, kept after `taskProgress` is cleared
  * so the queue can still render done/skipped/failed states for a short
@@ -55,6 +59,7 @@ let taskProgress: TaskProgress | null = null;
  * for confirmation before being cleared).
  */
 let lastFinishedTaskProgress: TaskProgress | null = null;
+let lastFinishedTaskRows = new Map<string, TaskProgressEntry>();
 /**
  * `Date.now()` of the moment the in-flight task started. Captured the
  * first time `setTaskProgress` transitions from null to non-null and
@@ -64,12 +69,9 @@ let taskStartedAt: number | null = null;
 /** Fresh per task session — cleared when `taskProgress` returns to null. */
 let etaCalc: EtaCalculator | null = null;
 /**
- * Resolved filesystem path of the importable currently being processed
- * by the in-flight task session. Drives the live task panel above
- * the inventory: when set, that file's HTSL is rendered with diff
- * colors; when null, the panel shows an idle state. Cleared by the
- * task progress callback when the session reports no current
- * importable.
+ * Path-shaped identity for the in-flight task tab. Imports use the current
+ * source file; exports and reads use an in-memory `.htsl` preview identity.
+ * Cleared when the task finishes.
  */
 let activeTaskPath: string | null = null;
 
@@ -211,10 +213,19 @@ export function setTaskProgress(p: TaskProgress | null): void {
         etaEstimating = false;
     } else if (p === null) {
         lastFinishedTaskProgress = taskProgress;
+        lastFinishedTaskRows = taskProgressRows;
+        taskProgressRows = new Map<string, TaskProgressEntry>();
         taskStartedAt = null;
         etaCalc = null;
     }
     taskProgress = p === null ? null : normalizeTaskProgress(p);
+    if (taskProgress !== null) {
+        taskProgressRows = new Map<string, TaskProgressEntry>();
+        for (let i = 0; i < taskProgress.rows.length; i++) {
+            const row = taskProgress.rows[i];
+            taskProgressRows.set(row.key, row);
+        }
+    }
     onTaskRunningChanged(!wasNull, p !== null);
     markGuiDirty();
 }
@@ -222,6 +233,7 @@ export function setTaskProgress(p: TaskProgress | null): void {
 export function clearLastFinishedProgress(): void {
     if (lastFinishedTaskProgress === null) return;
     lastFinishedTaskProgress = null;
+    lastFinishedTaskRows = new Map<string, TaskProgressEntry>();
     markGuiDirty();
 }
 
@@ -240,19 +252,20 @@ export type QueueItemRunState =
     | {
           kind: "current";
           phase: QueuePhase;
-          /** 0..1 within the current phase. Resets to 0 when the phase advances. */
-          phaseFraction: number;
+          phaseUnits: PhaseUnits;
+          completedUnits: number;
       }
     | {
           kind: "parked";
           phase: QueuePhase;
-          phaseFraction: number;
+          phaseUnits: PhaseUnits;
+          completedUnits: number;
       };
 
 export function getQueueItemRunState(item: QueueItem): QueueItemRunState {
-    const progress =
-        taskProgress ??
-        (isQueueSessionItem(queueItemKey(item)) ? lastFinishedTaskProgress : null);
+    const useLastFinished =
+        taskProgress === null && isQueueSessionItem(queueItemKey(item));
+    const progress = taskProgress ?? (useLastFinished ? lastFinishedTaskProgress : null);
     if (progress === null) {
         return { kind: "queued" };
     }
@@ -262,14 +275,8 @@ export function getQueueItemRunState(item: QueueItem): QueueItemRunState {
     }
     const progressPath = queueItemProgressPath(item);
     if (progressPath === null) return { kind: "queued" };
-    let row: TaskProgressEntry | undefined;
     const key = queueRowKey(item.type, item.identity, progressPath);
-    for (let i = 0; i < progress.rows.length; i++) {
-        if (progress.rows[i].key === key) {
-            row = progress.rows[i];
-            break;
-        }
-    }
+    const row = (useLastFinished ? lastFinishedTaskRows : taskProgressRows).get(key);
     if (row === undefined) return { kind: "queued" };
     if (row.status === "imported") return { kind: "done" };
     if (row.status === "skipped") return { kind: "skipped" };
@@ -286,12 +293,18 @@ export function getQueueItemRunState(item: QueueItem): QueueItemRunState {
         const parked = progress.parked[key];
         if (parked !== undefined) {
             const snap = runStateFromActive(parked);
-            return { kind: "parked", phase: snap.phase, phaseFraction: snap.phaseFraction };
+            return {
+                kind: "parked",
+                phase: snap.phase,
+                phaseUnits: snap.phaseUnits,
+                completedUnits: snap.completedUnits,
+            };
         }
         return {
             kind: "parked",
             phase: "reading",
-            phaseFraction: 0,
+            phaseUnits: { setup: 0, reading: 0, hydrating: 0, applying: 0 },
+            completedUnits: 0,
         };
     }
     return runStateFromActive(current);
@@ -322,10 +335,7 @@ export function phaseFractions(
     const readingUnits = units.setup + units.reading;
     const within = Math.max(0, completedUnits);
     const readingDone = Math.min(readingUnits, within);
-    const hydrateDone = Math.min(
-        units.hydrating,
-        Math.max(0, within - readingUnits)
-    );
+    const hydrateDone = Math.min(units.hydrating, Math.max(0, within - readingUnits));
     const applyDone = Math.min(
         units.applying,
         Math.max(0, within - readingUnits - units.hydrating)
@@ -343,23 +353,19 @@ function runStateFromActive(active: {
     completedUnits: number;
     phaseUnits: PhaseUnits;
 }): Extract<QueueItemRunState, { kind: "current" }> {
-    const f = phaseFractions(active.phaseUnits, active.completedUnits);
     let phase: QueuePhase;
-    let phaseFraction: number;
     if (active.phase === "applying") {
         phase = "applying";
-        phaseFraction = f.applyFraction;
     } else if (active.phase === "hydrating") {
         phase = "hydrating";
-        phaseFraction = f.hydrateFraction;
     } else {
         phase = "reading";
-        phaseFraction = f.readFraction;
     }
     return {
         kind: "current",
         phase,
-        phaseFraction,
+        phaseUnits: active.phaseUnits,
+        completedUnits: active.completedUnits,
     };
 }
 
@@ -374,11 +380,7 @@ export function isCurrentQueueItem(item: QueueItem): boolean {
     if (item.kind === "importable") {
         const progressPath = queueItemProgressPath(item);
         if (progressPath === null) return false;
-        return current.key === queueRowKey(
-            item.type,
-            item.identity,
-            progressPath
-        );
+        return current.key === queueRowKey(item.type, item.identity, progressPath);
     }
     if (item.operation !== "import") return false;
     if (activeTaskPath === null) return false;

@@ -73,7 +73,7 @@ export function reduce(
         case "importableStarted":
             return startImportable(state, event);
         case "importableReactivated":
-            return reactivateImportable(state, event.key, event.rowIndex);
+            return reactivateImportable(state, event.key, event.rowIndex, event.phase);
         case "setupStep":
             return applySetupStep(state, event.completed, event.total);
         case "progress":
@@ -93,6 +93,7 @@ export function reduce(
         case "readStarted":
         case "childListReadStarted":
         case "observedSnapshot":
+        case "actionReadCompleted":
         case "diffPlanned":
         case "operationStarted":
         case "operationCompleted":
@@ -158,7 +159,8 @@ function startImportable(
 function reactivateImportable(
     state: ProgressReducerState,
     key: string,
-    rowIndex: number
+    rowIndex: number,
+    phase: ProgressPayload["phase"] | undefined
 ): ProgressReducerState {
     const carried = parkActiveIfNeeded(state, key);
     const parked = carried.parkedRows[key];
@@ -168,7 +170,12 @@ function reactivateImportable(
         return carried;
     }
     const { [key]: _consumed, ...rest } = carried.parkedRows;
-    const restored: ActiveBookkeeping = { ...parked, rowIndex, currentSlot: null };
+    const restored: ActiveBookkeeping = {
+        ...parked,
+        rowIndex,
+        currentSlot: null,
+        ...(phase === undefined ? {} : { phase }),
+    };
     return rebuildSnapshot({ ...carried, parkedRows: rest }, restored);
 }
 
@@ -211,8 +218,7 @@ function parkActiveIfNeeded(
 function trueUpReadHydrate(active: ActiveBookkeeping): ActiveBookkeeping {
     const setup = active.currentPhaseUnits.setup;
     const applying = active.currentPhaseUnits.applying;
-    const preserveHydrating =
-        active.phase === "setup" || active.phase === "reading";
+    const preserveHydrating = active.phase === "setup" || active.phase === "reading";
     const hydrating = preserveHydrating ? active.currentPhaseUnits.hydrating : 0;
     const truedTotal = Math.max(
         active.currentCompletedUnits,
@@ -365,9 +371,7 @@ function finishImportable(
     const completedAddend = active.currentTotalUnits;
     const totalAddend = active.currentTotalUnits - active.initialUnits;
     const rows = state.progress.rows.map((r, i): TaskProgressEntry =>
-        i === active.rowIndex
-            ? { ...r, status, totalUnits: active.currentTotalUnits }
-            : r
+        i === active.rowIndex ? { ...r, status, totalUnits: active.currentTotalUnits } : r
     );
     // Include still-parked importables in the displayed totals (the
     // accumulators below stay parked-free — they're the finished/initial
@@ -378,11 +382,15 @@ function finishImportable(
         ...state,
         progress: {
             ...state.progress,
-            failure: status === "failed" ? { key, message: error ?? "Import failed" } : state.progress.failure,
+            failure:
+                status === "failed"
+                    ? { key, message: error ?? "Import failed" }
+                    : state.progress.failure,
             active: null,
             parked: snapshotParked(state.parkedRows),
             rows,
-            completedUnits: state.completedSessionUnits + completedAddend + parked.completed,
+            completedUnits:
+                state.completedSessionUnits + completedAddend + parked.completed,
             totalUnits: state.totalSessionUnits + totalAddend + parked.refinement,
         },
         active: null,
@@ -419,7 +427,10 @@ function updateRowStatus(
         ...state,
         progress: {
             ...state.progress,
-            failure: status === "failed" ? { key, message: error ?? "Import failed" } : state.progress.failure,
+            failure:
+                status === "failed"
+                    ? { key, message: error ?? "Import failed" }
+                    : state.progress.failure,
             rows,
         },
     };
@@ -436,9 +447,7 @@ function rebuildSnapshot(
     );
     const parked = parkedSums(state.parkedRows);
     const remainingSessionUnits =
-        state.totalSessionUnits -
-        state.completedSessionUnits -
-        active.initialUnits;
+        state.totalSessionUnits - state.completedSessionUnits - active.initialUnits;
     const sessionCompletedUnits =
         state.completedSessionUnits + active.currentCompletedUnits + parked.completed;
     const sessionTotalUnits =
@@ -493,9 +502,9 @@ function parkedSums(parkedRows: { [key: string]: ActiveBookkeeping }): {
     return { refinement, completed };
 }
 
-function snapshotParked(parkedRows: {
-    [key: string]: ActiveBookkeeping;
-}): { [key: string]: TaskProgressActive } {
+function snapshotParked(parkedRows: { [key: string]: ActiveBookkeeping }): {
+    [key: string]: TaskProgressActive;
+} {
     const out: { [key: string]: TaskProgressActive } = {};
     for (const k in parkedRows) {
         const b = parkedRows[k];

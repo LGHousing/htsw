@@ -594,7 +594,7 @@ function layoutScroll(
     const mainLen = horizontal ? innerW : innerH;
 
     // Advance the eased offset BEFORE extracting children, clamped against
-    // last frame's content length. Virtualized lists (the Importables tree,
+    // last frame's content length. Virtualized lists (the Projects tree,
     // the code view) pick which children exist from this offset at extraction
     // time — extracting first and advancing after made them materialize for
     // the PREVIOUS frame's position, so a fast flick (or the >100ms low-FPS

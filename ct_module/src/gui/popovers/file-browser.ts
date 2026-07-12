@@ -29,7 +29,7 @@ import {
 import { setImportJsonPath } from "../state";
 import { addRecent } from "../persistence/recents";
 import { normalizeHtswPath, toForwardSlashes } from "../lib/pathDisplay";
-import { queueSourcePath } from "../left-panel/importables/source";
+import { queueSourcePath } from "../left-panel/projects/source";
 import { javaType } from "../lib/java";
 import { PROJECTS_ROOT } from "../../project/paths";
 
@@ -362,7 +362,7 @@ function deleteEntry(entry: Entry): void {
     }
 }
 
-// Same icon vocabulary as the Importables tree: blue { } for import.jsons,
+// Same icon vocabulary as the Projects tree: blue { } for import.jsons,
 // code/box files dimmed, folders neutral.
 function iconNameFor(e: Entry): IconName {
     if (e.isDir) return Icons.folder;

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { firstTreeRowEndingAtOrAfter } from "../src/gui/left-panel/importables/tree";
+import { firstTreeRowEndingAtOrAfter } from "../src/gui/left-panel/projects/tree";
 
 function linearReference(rowEnds: number[], y: number): number {
     for (let i = 0; i < rowEnds.length; i++) {

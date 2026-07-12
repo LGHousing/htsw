@@ -1,4 +1,5 @@
 import type { Importable } from "htsw/types";
+import type { SyncEventHandler } from "../syncEvents";
 
 export type ProgressPhase = "setup" | "reading" | "hydrating" | "applying";
 
@@ -120,6 +121,8 @@ export type ProgressHandler = (progress: ProgressPayload) => void;
  * injected by the caller, so `importables/` stays GUI-agnostic.
  */
 export type ExportProgressSink = {
+    /** Receives the reader's shallow and hydrated action snapshots for the live code view. */
+    events?: SyncEventHandler;
     /** Called once the full list of names to export is known. */
     start(names: readonly string[]): void;
     scanStarted?(): void;

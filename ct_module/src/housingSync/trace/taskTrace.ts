@@ -120,6 +120,7 @@ export function traceSyncEvent(event: SyncEvent): void {
         case "setupStep":
         case "childListReadStarted":
         case "observedSnapshot":
+        case "actionReadCompleted":
         case "operationCompleted":
         case "listSyncCompleted":
         case "blockActionHeaderApplied":

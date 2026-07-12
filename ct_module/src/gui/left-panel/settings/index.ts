@@ -13,14 +13,21 @@ import {
     SIZE_ROW_H,
 } from "../../lib/theme";
 import {
-    isImportSoundsMuted,
-    setImportSoundsMuted,
+    areTaskSoundsMuted,
+    isImportCompletionSoundEnabled,
+    setImportCompletionSoundEnabled,
+    setTaskSoundsMuted,
 } from "../../state/flags";
 import {
-    getAutoProceedPreference,
-    setAutoProceedPreference,
-} from "../../../housingSync/stepGate";
-import { getSmoothScrolling, setSmoothScrolling } from "../../../settings";
+    getAutoUpdatePreference,
+    getShowChatPanel,
+    getShowInventoryButtons,
+    getSmoothScrolling,
+    setShowChatPanel,
+    setShowInventoryButtons,
+    setSmoothScrolling,
+} from "../../../settings";
+import { commandUpdate } from "../../../autoUpdate";
 
 type ToggleRow = {
     icon: () => IconName;
@@ -49,7 +56,10 @@ function toggleRow(opts: ToggleRow): Element {
             Icon({
                 name: opts.icon,
                 color: () => (opts.isOn() ? COLOR_TEXT : COLOR_TEXT_DIM),
-                style: { width: { kind: "px", value: 12 }, height: { kind: "px", value: 12 } },
+                style: {
+                    width: { kind: "px", value: 12 },
+                    height: { kind: "px", value: 12 },
+                },
             }),
             Text({
                 text: opts.label,
@@ -59,7 +69,10 @@ function toggleRow(opts: ToggleRow): Element {
             Icon({
                 name: () => (opts.isOn() ? Icons.toggleRight : Icons.toggleLeft),
                 color: () => (opts.isOn() ? COLOR_TEXT : COLOR_TEXT_DIM),
-                style: { width: { kind: "px", value: 14 }, height: { kind: "px", value: 14 } },
+                style: {
+                    width: { kind: "px", value: 14 },
+                    height: { kind: "px", value: 14 },
+                },
             }),
         ],
     });
@@ -70,23 +83,45 @@ export function SettingsView(): Element {
         style: { gap: 6, height: { kind: "grow" }, padding: 4 },
         children: [
             toggleRow({
-                icon: () => (isImportSoundsMuted() ? Icons.volumeOff : Icons.volume2),
-                label: "Mute import sounds",
-                isOn: () => isImportSoundsMuted(),
-                onToggle: () => setImportSoundsMuted(!isImportSoundsMuted()),
+                icon: () => Icons.layoutPanelTop,
+                label: "Show inventory buttons",
+                isOn: () => getShowInventoryButtons(),
+                onToggle: () => setShowInventoryButtons(!getShowInventoryButtons()),
             }),
             toggleRow({
-                icon: () => (getAutoProceedPreference() ? Icons.play : Icons.pause),
-                label: "Auto-proceed imports",
-                isOn: () => getAutoProceedPreference(),
-                onToggle: () =>
-                    setAutoProceedPreference(!getAutoProceedPreference()),
+                icon: () => Icons.messagesSquare,
+                label: "Show chat panel",
+                isOn: () => getShowChatPanel(),
+                onToggle: () => setShowChatPanel(!getShowChatPanel()),
             }),
             toggleRow({
                 icon: () => (getSmoothScrolling() ? Icons.waves : Icons.mouse),
                 label: "Smooth scrolling",
                 isOn: () => getSmoothScrolling(),
                 onToggle: () => setSmoothScrolling(!getSmoothScrolling()),
+            }),
+            toggleRow({
+                icon: () => (areTaskSoundsMuted() ? Icons.volumeOff : Icons.volume2),
+                label: "Mute sounds during tasks",
+                isOn: () => areTaskSoundsMuted(),
+                onToggle: () => setTaskSoundsMuted(!areTaskSoundsMuted()),
+            }),
+            toggleRow({
+                icon: () =>
+                    isImportCompletionSoundEnabled() ? Icons.bellRing : Icons.bell,
+                label: "Play import completion sound",
+                isOn: () => isImportCompletionSoundEnabled(),
+                onToggle: () =>
+                    setImportCompletionSoundEnabled(!isImportCompletionSoundEnabled()),
+            }),
+            toggleRow({
+                icon: () => Icons.refreshCw,
+                label: "Automatic updates",
+                isOn: () => getAutoUpdatePreference() === "enabled",
+                onToggle: () =>
+                    commandUpdate([
+                        getAutoUpdatePreference() === "enabled" ? "disable" : "enable",
+                    ]),
             }),
         ],
     });

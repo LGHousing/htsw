@@ -10,10 +10,8 @@ const KeyBinding = Java.type("net.minecraft.client.settings.KeyBinding") as any;
  *   - Auto-run /gmc at import start (housing edits need creative).
  *   - Play random.levelup once on success as an "import done" cue.
  *
- * Muting: overlay.ts's `soundPlay` handler suppresses GAME sounds while import
- * progress is live; it cannot cover this success cue (fired at completion, when
- * progress may already be cleared), so the caller gates the call on
- * `isImportSoundsMuted()` directly.
+ * The completion cue is fired after task progress clears, so its preference is
+ * checked directly by the caller instead of the in-task sound interceptor.
  */
 
 export function gmcOnImportStart(): void {

@@ -32,7 +32,12 @@ import { viewBody } from "./view-body";
 import { compactFileLabel, compactPath, hasExt } from "../lib/pathDisplay";
 import { composeFileMenu } from "../menus/fileMenu";
 import { viewFooter } from "./view-footer";
-import { beginTabDrag, isTabDragging, updateTabDrag, TAB_STRIP_SCROLL_ID } from "./tabDrag";
+import {
+    beginTabDrag,
+    isTabDragging,
+    updateTabDrag,
+    TAB_STRIP_SCROLL_ID,
+} from "./tabDrag";
 import { canonicalPath } from "../parsing/parses";
 import {
     getQueue,
@@ -41,6 +46,7 @@ import {
     queueItemsForPath,
     type QueueItem,
 } from "./import-tab/queue";
+import { getSessionVerb } from "./import-tab/taskProgress";
 
 const TAB_BG = 0xff2c323b | 0;
 const TAB_BG_HOVER = 0xff3a4350 | 0;
@@ -66,15 +72,31 @@ const TAB_ICON_SLOT_W = TAB_ICON_W + TAB_ICON_GAP;
 
 function tabActions(tab: Extract<Tab, { kind: "file" }>): MenuAction[] {
     if (!tab.confirmed) {
-        return composeFileMenu([
-            { label: "Pin tab", onClick: () => confirmSelect(tab.path, tab.importJsonPath) },
-            { kind: "separator" },
-            { label: "Close tab", onClick: () => closeTab(tab.path, tab.importJsonPath) },
-        ], tab.path, tab.importJsonPath);
+        return composeFileMenu(
+            [
+                {
+                    label: "Pin tab",
+                    onClick: () => confirmSelect(tab.path, tab.importJsonPath),
+                },
+                { kind: "separator" },
+                {
+                    label: "Close tab",
+                    onClick: () => closeTab(tab.path, tab.importJsonPath),
+                },
+            ],
+            tab.path,
+            tab.importJsonPath
+        );
     }
     const specific: MenuAction[] = [
-        { label: "Move to start", onClick: () => moveTabToStart(tab.path, tab.importJsonPath) },
-        { label: "Move to end", onClick: () => moveTabToEnd(tab.path, tab.importJsonPath) },
+        {
+            label: "Move to start",
+            onClick: () => moveTabToStart(tab.path, tab.importJsonPath),
+        },
+        {
+            label: "Move to end",
+            onClick: () => moveTabToEnd(tab.path, tab.importJsonPath),
+        },
         { kind: "separator" },
         { label: "Close tab", onClick: () => closeTab(tab.path, tab.importJsonPath) },
     ];
@@ -121,14 +143,21 @@ function tabButton(tab: Tab): Element {
           activeFile.path === tab.path &&
           activeFile.importJsonPath === tab.importJsonPath;
     const labelText = isLive
-        ? `§o${compactFileLabel(tab.path)}`
+        ? getSessionVerb() === "export"
+            ? "§oExport"
+            : getSessionVerb() === "read"
+              ? "§oRead"
+              : `§o${compactFileLabel(tab.path)}`
         : tab.confirmed
           ? compactFileLabel(tab.path)
           : `§o${compactFileLabel(tab.path)}`;
     const isDraggable = !isLive && tab.confirmed;
-    const tabBg = isDraggable && isTabDragging(tab.path, tab.importJsonPath)
-        ? TAB_BG_DRAGGING
-        : isActive ? TAB_BG_ACTIVE : TAB_BG;
+    const tabBg =
+        isDraggable && isTabDragging(tab.path, tab.importJsonPath)
+            ? TAB_BG_DRAGGING
+            : isActive
+              ? TAB_BG_ACTIVE
+              : TAB_BG;
     const tabHoverBg = isActive ? TAB_BG_ACTIVE_HOVER : TAB_BG_HOVER;
     const fileStatus = isLive ? null : statusForFile(tab.path, tab.importJsonPath);
     const hasDot = fileStatus !== null;
@@ -154,7 +183,11 @@ function tabButton(tab: Tab): Element {
         },
         onClick: (_rect: Rect, info: ClickInfo) => {
             if (info.button === 1) {
-                openMenu(info.x, info.y, tab.kind === "live" ? liveTabMenu() : tabActions(tab));
+                openMenu(
+                    info.x,
+                    info.y,
+                    tab.kind === "live" ? liveTabMenu() : tabActions(tab)
+                );
                 return;
             }
             if (info.button !== 0) return;
@@ -184,44 +217,53 @@ function tabButton(tab: Tab): Element {
                     ],
                 },
                 children: [
-                    isLive && Icon({
-                        name: Icons.upload,
-                        style: {
-                            width: { kind: "px", value: TAB_ICON_W },
-                            height: { kind: "px", value: 10 },
-                        },
-                    }),
-                    isLive && Container({
-                        style: {
-                            width: { kind: "px", value: TAB_ICON_GAP },
-                            height: { kind: "grow" },
-                        },
-                        children: [],
-                    }),
-                    hasDot && Text({
-                        text: GLYPH_DOT,
-                        color: STATUS_COLOR[fileStatus],
-                        tooltip: STATUS_LABEL[fileStatus],
-                        tooltipColor: STATUS_COLOR[fileStatus],
-                        style: { width: { kind: "px", value: TAB_DOT_W } },
-                    }),
-                    isQueued && Icon({
-                        name: Icons.listCheck,
-                        color: ACCENT_TEAL,
-                        tooltip: queuedCount === 1 ? "Queued" : `${queuedCount} queued`,
-                        tooltipColor: ACCENT_TEAL,
-                        style: {
-                            width: { kind: "px", value: TAB_ICON_W },
-                            height: { kind: "px", value: 10 },
-                        },
-                    }),
-                    isQueued && Container({
-                        style: {
-                            width: { kind: "px", value: TAB_ICON_GAP },
-                            height: { kind: "grow" },
-                        },
-                        children: [],
-                    }),
+                    isLive &&
+                        Icon({
+                            name:
+                                getSessionVerb() === "import"
+                                    ? Icons.upload
+                                    : Icons.download,
+                            style: {
+                                width: { kind: "px", value: TAB_ICON_W },
+                                height: { kind: "px", value: 10 },
+                            },
+                        }),
+                    isLive &&
+                        Container({
+                            style: {
+                                width: { kind: "px", value: TAB_ICON_GAP },
+                                height: { kind: "grow" },
+                            },
+                            children: [],
+                        }),
+                    hasDot &&
+                        Text({
+                            text: GLYPH_DOT,
+                            color: STATUS_COLOR[fileStatus],
+                            tooltip: STATUS_LABEL[fileStatus],
+                            tooltipColor: STATUS_COLOR[fileStatus],
+                            style: { width: { kind: "px", value: TAB_DOT_W } },
+                        }),
+                    isQueued &&
+                        Icon({
+                            name: Icons.listCheck,
+                            color: ACCENT_TEAL,
+                            tooltip:
+                                queuedCount === 1 ? "Queued" : `${queuedCount} queued`,
+                            tooltipColor: ACCENT_TEAL,
+                            style: {
+                                width: { kind: "px", value: TAB_ICON_W },
+                                height: { kind: "px", value: 10 },
+                            },
+                        }),
+                    isQueued &&
+                        Container({
+                            style: {
+                                width: { kind: "px", value: TAB_ICON_GAP },
+                                height: { kind: "grow" },
+                            },
+                            children: [],
+                        }),
                     Text({ text: labelText }),
                 ],
             }),
@@ -292,11 +334,19 @@ function displayPath(p: string): string {
     return compact;
 }
 
+function displayedActivePath(p: string): string {
+    if (isLiveTabActive() && getSessionVerb() !== "import") {
+        const marker = p.lastIndexOf(".live-");
+        if (marker >= 0) return displayPath(p.substring(0, marker));
+    }
+    return displayPath(p);
+}
+
 function pathLabel(): Element {
     return Text({
         text: () => {
             const p = getActivePath();
-            return p === null ? "" : displayPath(p);
+            return p === null ? "" : displayedActivePath(p);
         },
         color: 0xff888888 | 0,
         truncate: true,

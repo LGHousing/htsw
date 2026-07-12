@@ -293,6 +293,17 @@ export async function readActionListDeferred(
             },
         });
     }
+    if (isTopLevelRead) {
+        for (const entry of observed) {
+            if (entry.action !== null && !plan.has(entry)) {
+                events?.emit({
+                    kind: "actionReadCompleted",
+                    path: actionPathForIndex(undefined, entry.index),
+                    hydrated: false,
+                });
+            }
+        }
+    }
     return { observed, plan, isTopLevelRead };
 }
 
@@ -534,6 +545,11 @@ async function hydrateActionDetails(
         emit();
         if (isTopLevelRead) {
             emitObservedSnapshot(observed, events);
+            events?.emit({
+                kind: "actionReadCompleted",
+                path: entryPath,
+                hydrated: true,
+            });
         }
     }
 }

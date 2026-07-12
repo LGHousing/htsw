@@ -4,11 +4,7 @@ import type { Element } from "../lib/layout";
 import { Button, Col, Container } from "../lib/components";
 import { isScrollUserOverridden } from "../lib/layout";
 import { Icons } from "../lib/icons.generated";
-import {
-    COLOR_BUTTON,
-    COLOR_BUTTON_HOVER,
-    COLOR_TEXT,
-} from "../lib/theme";
+import { COLOR_BUTTON, COLOR_BUTTON_HOVER, COLOR_TEXT } from "../lib/theme";
 import {
     confirmSelect,
     getActiveFileSelection,
@@ -16,7 +12,11 @@ import {
     isLiveTabActive,
     pinTab,
 } from "./selection";
-import { getActiveTaskPath, getTaskProgress, getSessionVerb } from "./import-tab/taskProgress";
+import {
+    getActiveTaskPath,
+    getTaskProgress,
+    getSessionVerb,
+} from "./import-tab/taskProgress";
 import { CodeView, jumpToFocusedLine } from "../code-view/codeView";
 import { diffDecorator, progressDecorator } from "./decorators";
 import { previewLinesForFile } from "./import-tab/livePreview";
@@ -30,23 +30,24 @@ export function viewBody(): Element {
         children: () =>
             isLiveTabActive()
                 ? [
-                      jumpBackPipRow(),
-                      CodeView({
-                          scrollId: LIVE_PREVIEW_SCROLL_ID,
-                          lines: () => extractLiveLines(),
-                          lineDecorator: () => progressDecorator(getActivePath()),
-                          autoFollow: true,
-                          scrollLocked: () => getActiveTaskPath() !== null,
-                          emptyMessage: () => {
-                              if (getTaskProgress() !== null) {
-                                  const verb = getSessionVerb();
-                                  if (verb === "export") return "Exporting...";
-                                  if (verb === "read") return "Reading house contents...";
-                                  return "Importing...";
-                              }
-                              return "No live diff to show.";
-                          },
-                      }),
+                          jumpBackPipRow(),
+                          CodeView({
+                              scrollId: LIVE_PREVIEW_SCROLL_ID,
+                              lines: () => extractLiveLines(),
+                              lineDecorator: () => progressDecorator(getActivePath()),
+                              autoFollow: true,
+                              scrollLocked: () => getActiveTaskPath() !== null,
+                              emptyMessage: () => {
+                                  if (getTaskProgress() !== null) {
+                                      const verb = getSessionVerb();
+                                      if (verb === "export") return "Exporting...";
+                                      if (verb === "read")
+                                          return "Reading house contents...";
+                                      return "Importing...";
+                                  }
+                                  return "No live diff to show.";
+                              },
+                          }),
                   ]
                 : [
                       CodeView({
@@ -63,7 +64,8 @@ export function viewBody(): Element {
                           },
                           autoFollow: false,
                           onOpenPath: (path, options) => {
-                              const owner = getActiveFileSelection()?.importJsonPath ?? null;
+                              const owner =
+                                  getActiveFileSelection()?.importJsonPath ?? null;
                               if (options.activate) confirmSelect(path, owner);
                               else pinTab(path, owner);
                           },

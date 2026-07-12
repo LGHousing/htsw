@@ -7,7 +7,7 @@ import { markGuiDirty } from "../../lib/dirty";
 import type { Section } from "../../../project/importJsonMutations";
 
 // File-level row types: what `enumerateForSource` returns. Each row is a
-// file the Importables tree displays directly. Importables themselves are no
+// file the Projects tree displays directly. Importables themselves are no
 // longer flattened into this list — they live as expansion children of
 // `ResultImport` rows now (see `ResultImport.importables`).
 export type ResultImport = {
@@ -43,7 +43,7 @@ export const IMPORTABLE_TYPE_COLORS: { [k in Importable["type"]]: number } = {
     COMMAND: 0xffe8e06a | 0,
 };
 
-// Structure revision for the Importables tree. The tree's row DESCRIPTORS
+// Structure revision for the Projects tree. The tree's row DESCRIPTORS
 // (which rows exist, not their per-frame content) are cached across frames;
 // any interaction that changes the row set — expansion toggles, search,
 // filter, sort, source add/remove — must bump this so the next frame

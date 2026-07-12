@@ -1,8 +1,8 @@
 /// <reference types="../../CTAutocomplete" />
 
 import { PROJECTS_ROOT } from "../project/paths";
-import { queueSourcePath } from "./left-panel/importables/source";
-import { forceImportExpand } from "./left-panel/importables/rows";
+import { queueSourcePath } from "./left-panel/projects/source";
+import { forceImportExpand } from "./left-panel/projects/rows";
 import { canonicalPath } from "./parsing/parses";
 import { previewSelect } from "./right-panel/selection";
 import { setImportJsonPath } from "./state";

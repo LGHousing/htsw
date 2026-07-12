@@ -372,7 +372,7 @@ type HouseLinkState =
     | "matches-knowledge"
     | "differs-from-knowledge";
 
-// House-side wording for the shared link-status icons. The Importables page
+// House-side wording for the shared link-status icons. The Projects page
 // maps the same keys with file-side phrasing — keep these answering "what does
 // this house row mean?", not "what import/export action will run?".
 const HOUSE_LINK_VISUAL: {

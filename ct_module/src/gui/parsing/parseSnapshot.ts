@@ -106,7 +106,7 @@ type Snapshot = {
     // bound file as unbound.
     houseUuid: string | null;
     // importJson.fileTree. Must round-trip, or a snapshot-served session renders
-    // the Importables include tree as one flat list.
+    // the Projects include tree as one flat list.
     fileTree: SerializedFileNode | null;
     // The parse's diagnostics, pre-rendered.
     diagnostics: SnapshotDiagnostic[];

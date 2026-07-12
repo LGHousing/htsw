@@ -236,7 +236,7 @@ function loadingRow(): Element {
     });
 }
 
-export function ImportablesView(): Element {
+export function ProjectsView(): Element {
     return Col({
         style: { gap: 6, height: { kind: "grow" } },
         children: [

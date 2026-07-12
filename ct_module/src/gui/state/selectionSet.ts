@@ -1,5 +1,5 @@
 /**
- * Multi-select for the Importables tab. Independent of single-selection
+ * Multi-select for the Projects tab. Independent of single-selection
  * (which drives preview); the checked set drives "Import selected" and the
  * queue-bulk paths.
  */

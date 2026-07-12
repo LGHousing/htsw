@@ -10,8 +10,8 @@ import {
     COLOR_TEXT_FAINT,
 } from "../lib/theme";
 import { canonicalPath } from "../parsing/parses";
-import { ROW_BG, ROW_HOVER_BG, caretButton } from "../left-panel/importables/rowModel";
-import type { IncludeNode } from "../left-panel/importables/includeTree";
+import { ROW_BG, ROW_HOVER_BG, caretButton } from "../left-panel/projects/rowModel";
+import type { IncludeNode } from "../left-panel/projects/includeTree";
 
 // The selectable include-tree UI shared by the "Move to…" destination picker
 // and the export sub-target picker: a collapsible folder tree of a project's

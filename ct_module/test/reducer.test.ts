@@ -1,9 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import {
-    initialReducerState,
-    reduce,
-} from "../src/housingSync/progress/reducer";
+import { initialReducerState, reduce } from "../src/housingSync/progress/reducer";
 import type { SyncEvent } from "../src/housingSync/syncEvents";
 
 const baseRow = { totalUnits: 10 };
@@ -234,7 +231,7 @@ describe("progress reducer", () => {
                     completedUnits: 3,
                     totalUnits: 10,
                     phaseUnits: { setup: 0, reading: 3, hydrating: 7, applying: 0 },
-            sync: { completedUnits: 0, totalUnits: 0, parent: null },
+                    sync: { completedUnits: 0, totalUnits: 0, parent: null },
                     preserveApplyingEstimate: false,
                 },
             },
@@ -287,7 +284,7 @@ describe("progress reducer", () => {
                     completedUnits: 8,
                     totalUnits: 8,
                     phaseUnits: { setup: 0, reading: 3, hydrating: 5, applying: 0 },
-            sync: { completedUnits: 0, totalUnits: 0, parent: null },
+                    sync: { completedUnits: 0, totalUnits: 0, parent: null },
                     preserveApplyingEstimate: false,
                 },
             },
@@ -310,5 +307,66 @@ describe("progress reducer", () => {
             applying: 0,
         });
         expect(s.progress.parked.a.totalUnits).toBe(10);
+    });
+
+    test("reactivating an export row enters hydration immediately", () => {
+        const s = emit([
+            {
+                kind: "sessionStarted",
+                rows: [
+                    { key: "a", status: "queued", ...baseRow },
+                    { key: "b", status: "queued", ...baseRow },
+                ],
+                initialTotalUnits: 20,
+            },
+            {
+                kind: "importableStarted",
+                key: "a",
+                type: "FUNCTION",
+                identity: "a",
+                setupUnits: 0,
+                initialUnits: 10,
+                rowIndex: 0,
+                cached: null,
+            },
+            {
+                kind: "progress",
+                scope: { kind: "topLevel" },
+                progress: {
+                    phase: "reading",
+                    completedUnits: 3,
+                    totalUnits: 8,
+                    phaseUnits: { setup: 0, reading: 3, hydrating: 5, applying: 0 },
+                    sync: { completedUnits: 3, totalUnits: 8, parent: null },
+                    preserveApplyingEstimate: false,
+                },
+            },
+            {
+                kind: "importableStarted",
+                key: "b",
+                type: "FUNCTION",
+                identity: "b",
+                setupUnits: 0,
+                initialUnits: 10,
+                rowIndex: 1,
+                cached: null,
+            },
+            {
+                kind: "importableReactivated",
+                key: "a",
+                rowIndex: 0,
+                phase: "hydrating",
+            },
+        ]);
+
+        expect(s.progress.active?.key).toBe("a");
+        expect(s.progress.active?.phase).toBe("hydrating");
+        expect(s.progress.active?.completedUnits).toBe(3);
+        expect(s.progress.active?.phaseUnits).toEqual({
+            setup: 0,
+            reading: 3,
+            hydrating: 5,
+            applying: 0,
+        });
     });
 });

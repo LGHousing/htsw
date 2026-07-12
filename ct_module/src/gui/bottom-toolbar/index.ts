@@ -20,13 +20,15 @@ import {
  * panel's Import tab. No background fill: the strip floats over the
  * world.
  */
-export function BottomToolbar(): Element {
+export function BottomToolbar(height: number = 26): Element {
+    const padding = Math.max(1, Math.min(4, Math.floor((height - 9) / 2)));
+    const buttonHeight = Math.max(9, height - 2 * padding);
     return Row({
         style: {
-            padding: 4,
+            padding,
             gap: 4,
             width: { kind: "grow" },
-            height: { kind: "px", value: 26 },
+            height: { kind: "px", value: height },
             align: "center",
         },
         children: [
@@ -37,7 +39,8 @@ export function BottomToolbar(): Element {
                 text: "Housing Menu",
                 style: {
                     width: { kind: "auto" },
-                    height: { kind: "px", value: 18 },
+                    height: { kind: "px", value: buttonHeight },
+                    padding: { side: "x", value: 3 },
                     background: COLOR_BUTTON,
                     hoverBackground: COLOR_BUTTON_HOVER,
                 },
@@ -54,7 +57,7 @@ export function BottomToolbar(): Element {
             Row({
                 style: {
                     width: { kind: "grow" },
-                    height: { kind: "px", value: 18 },
+                    height: { kind: "px", value: buttonHeight },
                     gap: 0,
                 },
                 children: [
@@ -62,7 +65,7 @@ export function BottomToolbar(): Element {
                         text: () => getLastOpenTarget().label,
                         style: {
                             width: { kind: "grow" },
-                            height: { kind: "px", value: 18 },
+                            height: { kind: "px", value: buttonHeight },
                             background: COLOR_BUTTON,
                             hoverBackground: COLOR_BUTTON_HOVER,
                         },
@@ -72,7 +75,7 @@ export function BottomToolbar(): Element {
                         text: GLYPH_CHEVRON_DOWN,
                         style: {
                             width: { kind: "px", value: 14 },
-                            height: { kind: "px", value: 18 },
+                            height: { kind: "px", value: buttonHeight },
                             background: COLOR_BUTTON,
                             hoverBackground: COLOR_BUTTON_HOVER,
                         },

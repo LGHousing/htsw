@@ -199,7 +199,7 @@ function isDirectorySafe(p: JavaPath): boolean {
 
 // Walk `dir`. When `depth > 0`, descend into immediate child directories
 // once (so depth=1 gives the folder root + one nest deep, no further).
-// Bounded recursion keeps the Importables list usable while letting the user
+// Bounded recursion keeps the Projects list usable while letting the user
 // drop a parent folder and still find the import.json one level in.
 function walkDir(dir: JavaPath, root: JavaPath, out: Result[], depth: number = 1): void {
     const Files: JavaFilesStatics = Java.type("java.nio.file.Files");

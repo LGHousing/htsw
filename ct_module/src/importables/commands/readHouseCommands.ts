@@ -8,6 +8,7 @@ import {
     readActionListDeferred,
 } from "../../housingSync/actions/readList";
 import type { ProgressHandler } from "../../housingSync/progress/types";
+import type { SyncEventHandler } from "../../housingSync/syncEvents";
 import { clickGoBack } from "../../housingSync/menus/menuUtils";
 import { ItemCaptureRegistry } from "../../housingSync/itemCapture";
 import { tryWriteImportableCache, writeImportableCache } from "../../importCache";
@@ -75,12 +76,14 @@ async function scanCommand(
     ctx: TaskContext,
     name: string,
     state: BatchState,
-    onReadProgress: ProgressHandler | undefined
+    onReadProgress: ProgressHandler | undefined,
+    events: SyncEventHandler | undefined
 ): Promise<PendingCommandRead> {
     await openExistingCommandActionsEditor(ctx, name);
     const deferred = await readActionListDeferred(ctx, { kind: "deep" }, {
         itemCaptures: state.itemCaptures,
         exactHydrationEstimate: true,
+        events,
         ...(onReadProgress !== undefined
             ? {
                   progress: onReadProgress,
@@ -110,12 +113,14 @@ async function hydrateCommand(
     name: string,
     pending: PendingCommandRead,
     state: BatchState,
-    onReadProgress: ProgressHandler | undefined
+    onReadProgress: ProgressHandler | undefined,
+    events: SyncEventHandler | undefined
 ): Promise<ImportableCommand> {
     await openExistingCommandActionsEditor(ctx, name);
     await hydrateDeferredActionList(ctx, pending.deferred, {
         itemCaptures: state.itemCaptures,
         exactHydrationEstimate: true,
+        events,
         ...(onReadProgress !== undefined
             ? {
                   progress: onReadProgress,
@@ -213,15 +218,16 @@ export const readCommands = makeReadHouse<string>({
     },
     readOne: (ctx, name, options, state, onReadProgress) =>
         exportCommand(ctx, name, options, state, onReadProgress),
-    scanOne: (ctx, name, _options, state, onReadProgress) =>
-        scanCommand(ctx, name, state, onReadProgress),
+    scanOne: (ctx, name, options, state, onReadProgress) =>
+        scanCommand(ctx, name, state, onReadProgress, options.progress?.events),
     hydrateOne: async (ctx, name, pending, options, state, onReadProgress) => {
         const importable = await hydrateCommand(
             ctx,
             name,
             pending as PendingCommandRead,
             state,
-            onReadProgress
+            onReadProgress,
+            options.progress?.events
         );
         await writeCommandResult(ctx, name, importable, options);
     },

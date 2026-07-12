@@ -4,7 +4,9 @@ import type { Action, Importable } from "htsw/types";
 import {
     applyComplete,
     finalizeFromSource,
+    getCurrentPath,
     markHeadApplied,
+    markReadComplete,
     markPlannedAdd,
     markPlannedDelete,
     markPlannedEdit,
@@ -17,6 +19,8 @@ import {
     setObservedTopLevel,
     type PreviewLine,
 } from "../src/gui/right-panel/import-tab/livePreview";
+import { getActiveTaskPath } from "../src/gui/right-panel/import-tab/taskProgress";
+import { createExportLivePreview } from "../src/gui/export/livePreview";
 import { actionPathFromKey } from "../src/housingSync/syncEvents";
 
 import { conditional, message } from "./utils";
@@ -107,6 +111,105 @@ describe("setObservedTopLevel", () => {
         expect(line!.variant).toBe("placeholder");
         // The text reports the count so the user sees how big the unhydrated body is.
         expect(line!.tokens.map((t) => t.text).join("")).toContain("3 actions");
+    });
+
+    test("preserves completed reads across later snapshots", () => {
+        setObservedTopLevel(PATH, [message("a"), message("b")]);
+        markReadComplete(PATH, p("0"));
+        setObservedTopLevel(PATH, [message("updated"), message("b")], {
+            force: true,
+        });
+
+        expect(bodyAt("0")?.completed).toBe(true);
+        expect(bodyAt("1")?.completed).toBeUndefined();
+    });
+
+    test("does not complete unresolved placeholders with their parent", () => {
+        setObservedTopLevel(PATH, [
+            conditional({ ifActions: [null] as unknown as Action[] }),
+        ]);
+        markReadComplete(PATH, p("0"));
+
+        const placeholder = previewLinesForFile(PATH).find(
+            (line) => line.variant === "placeholder"
+        );
+        expect(placeholder?.completed).toBeUndefined();
+    });
+});
+
+describe("export live preview", () => {
+    test("shows the shallow scan, follows hydration, and forces the final snapshot", () => {
+        const preview = createExportLivePreview("FUNCTION", "./project/import.json");
+        preview.start(["a"]);
+        preview.activate(0, true);
+        const path = getActiveTaskPath();
+        expect(path).not.toBeNull();
+
+        preview.events.emit({
+            kind: "observedSnapshot",
+            actions: [
+                conditional({
+                    ifActions: [null, null] as unknown as Action[],
+                }),
+            ],
+        });
+        expect(previewLinesForFile(path!)).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    id: "0.ifActions:placeholder",
+                    variant: "placeholder",
+                }),
+            ])
+        );
+
+        preview.events.emit({
+            kind: "childListReadStarted",
+            path: p("0"),
+            actionType: "CONDITIONAL",
+        });
+        expect(getCurrentPath(path!)).toEqual(p("0"));
+
+        preview.events.emit({
+            kind: "observedSnapshot",
+            actions: [conditional({ ifActions: [message("hydrated")] })],
+        });
+        preview.events.emit({
+            kind: "actionReadCompleted",
+            path: p("0"),
+            hydrated: true,
+        });
+        preview.finish(0);
+
+        expect(previewLinesForFile(path!).map((line) => line.id)).toEqual([
+            "0:body",
+            "0.ifActions.0:body",
+            "0:close",
+        ]);
+        expect(previewLinesForFile(path!).every((line) => line.completed)).toBe(true);
+        expect(getCurrentPath(path!)).toBeNull();
+        preview.clear();
+    });
+
+    test("colors shallow actions as soon as their scan completes", () => {
+        const preview = createExportLivePreview("FUNCTION", "./project/import.json");
+        preview.start(["a"]);
+        preview.activate(0, true);
+        const path = getActiveTaskPath()!;
+
+        preview.events.emit({
+            kind: "observedSnapshot",
+            actions: [message("ready"), message("pending")],
+        });
+        preview.events.emit({
+            kind: "actionReadCompleted",
+            path: p("0"),
+            hydrated: false,
+        });
+
+        const lines = previewLinesForFile(path);
+        expect(lines.find((line) => line.actionPath === "0")?.completed).toBe(true);
+        expect(lines.find((line) => line.actionPath === "1")?.completed).toBeUndefined();
+        preview.clear();
     });
 });
 

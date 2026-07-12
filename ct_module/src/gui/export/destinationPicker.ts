@@ -44,8 +44,8 @@ import {
     pickerTreeRows,
     type PickerNode,
 } from "../popovers/includeTreePicker";
-import type { IncludeNode } from "../left-panel/importables/includeTree";
-import { bumpTreeRevision } from "../left-panel/importables/rowModel";
+import type { IncludeNode } from "../left-panel/projects/includeTree";
+import { bumpTreeRevision } from "../left-panel/projects/rowModel";
 import { openNewProjectPopover } from "./newProjectPopover";
 import { showToast } from "../toast";
 import { getAlias } from "../../importCache/aliases";

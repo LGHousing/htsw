@@ -31,7 +31,11 @@ import {
     isImportableChecked,
     toggleImportableChecked,
 } from "../../state";
-import { getQueueItemRunState, isCurrentQueueItem } from "./taskProgress";
+import {
+    getQueueItemRunState,
+    isCurrentQueueItem,
+    type QueueItemRunState,
+} from "./taskProgress";
 import { importableIdentity } from "../../../importables/identity";
 import { buildCacheStatusRow } from "../../../importCache/status";
 import {
@@ -43,10 +47,13 @@ import {
 import { canonicalPath, requestParse } from "../../parsing/parses";
 import { orderImportablesForImportSession } from "../../../importables/importSession";
 import { isTaskRunning } from "../../../tasks/runningState";
-import { phaseSegment } from "./progressPanel";
+import { taskPhaseSegments } from "./progressPanel";
 import { setActiveLeftTab } from "../../left-panel/tabs";
-import { revealInProjectsTree } from "../../left-panel/importables/tree";
-import { findImportableHome, type IncludeNode } from "../../left-panel/importables/includeTree";
+import { revealInProjectsTree } from "../../left-panel/projects/tree";
+import {
+    findImportableHome,
+    type IncludeNode,
+} from "../../left-panel/projects/includeTree";
 
 type CachedDeclaringFolder = { folder: string | null; expiresAt: number };
 const declaringFolderCache = new Map<string, CachedDeclaringFolder>();
@@ -87,17 +94,20 @@ function declaringFolder(item: QueueItem): string | null {
 
 function declaringFolderElement(item: QueueItem): Element | false {
     const folder = declaringFolder(item);
-    return folder !== null && Text({
-        text: folder,
-        color: COLOR_TEXT_FAINT,
-        truncate: true,
-        style: { width: { kind: "px", value: 110 } },
-    });
+    return (
+        folder !== null &&
+        Text({
+            text: folder,
+            color: COLOR_TEXT_FAINT,
+            truncate: true,
+            style: { width: { kind: "px", value: 110 } },
+        })
+    );
 }
 
 function revealQueueItem(item: QueueItem, info: ClickInfo): void {
     if (info.button !== 0 || info.isDoubleClickSecond) return;
-    setActiveLeftTab("importables");
+    setActiveLeftTab("projects");
     if (item.operation === "import" && item.kind === "importable") {
         revealInProjectsTree({
             kind: "importable",
@@ -108,9 +118,8 @@ function revealQueueItem(item: QueueItem, info: ClickInfo): void {
     } else {
         revealInProjectsTree({
             kind: "file",
-            importJsonPath: item.operation === "import"
-                ? item.sourcePath
-                : item.destinationPath,
+            importJsonPath:
+                item.operation === "import" ? item.sourcePath : item.destinationPath,
         });
     }
 }
@@ -152,7 +161,8 @@ function findImportableInList(
     type: Importable["type"]
 ): Importable | null {
     for (let i = 0; i < list.length; i++) {
-        if (list[i].type === type && importableIdentity(list[i]) === identity) return list[i];
+        if (list[i].type === type && importableIdentity(list[i]) === identity)
+            return list[i];
     }
     return null;
 }
@@ -161,7 +171,7 @@ const collapsedQueueImportJsonRows: Set<string> = new Set();
 
 /**
  * Remove a queue item and, for a single importable, also clear its
- * Importables-tab checkbox so the two stay in sync (the Importables row's
+ * Projects-tab checkbox so the two stay in sync (the Projects row's
  * checkbox both adds to the queue and marks itself checked, so removal
  * has to undo both). importJson bundles have no single checkbox.
  */
@@ -172,12 +182,8 @@ function removeQueueItemAndUncheck(item: QueueItem): void {
     if (isImportableChecked(checkKey)) toggleImportableChecked(checkKey);
 }
 
-function queueRowMiniBar(item: QueueItem): Element {
-    const state = getQueueItemRunState(item);
-    if (state.kind === "queued" || state.kind === "parked") {
-        // Empty 2px slot — keeps row heights uniform. "parked" rows finished
-        // pass-1 hydration but pass-2 hasn't reached them; leave the bar blank
-        // (a fill there reads as "in progress" when it's just waiting).
+function queueRowMiniBar(state: QueueItemRunState): Element {
+    if (state.kind === "queued") {
         return Container({
             style: { width: { kind: "grow" }, height: { kind: "px", value: 2 } },
             children: [],
@@ -213,14 +219,13 @@ function queueRowMiniBar(item: QueueItem): Element {
             children: [],
         });
     }
-    const color = phaseColor(state.phase);
     return Container({
         style: {
             direction: "row",
             width: { kind: "grow" },
             height: { kind: "px", value: 2 },
         },
-        children: [phaseSegment(1, state.phaseFraction, color)],
+        children: taskPhaseSegments(state),
     });
 }
 
@@ -230,8 +235,8 @@ function phaseColor(phase: "reading" | "hydrating" | "applying"): number {
     return PHASE_READING;
 }
 
-function isActiveQueueItem(item: QueueItem): boolean {
-    return getQueueItemRunState(item).kind === "current";
+function activeQueueItemColor(state: QueueItemRunState): number | undefined {
+    return state.kind === "current" ? phaseColor(state.phase) : undefined;
 }
 
 function queueStateRail(color: number | undefined): Element {
@@ -268,28 +273,35 @@ export function queueImportJsonChildren(item: QueueItem): QueueItem[] {
 }
 
 export function isQueueImportJsonExpanded(item: QueueItem): boolean {
-    return item.operation === "import" && item.kind === "importJson" && !collapsedQueueImportJsonRows.has(queueItemKey(item));
+    return (
+        item.operation === "import" &&
+        item.kind === "importJson" &&
+        !collapsedQueueImportJsonRows.has(queueItemKey(item))
+    );
 }
 
 // Teal skip badge for a queue row: predictive ("will skip") until the run
 // resolves the row, then only an actually-skipped outcome keeps the badge —
 // a prediction has no business outliving the event it predicts.
-function skipBadge(item: QueueItem): { teal: boolean; tooltip: string | undefined } {
-    const runState = getQueueItemRunState(item);
+function skipBadge(
+    item: QueueItem,
+    runState: QueueItemRunState
+): { teal: boolean; tooltip: string | undefined } {
     if (runState.kind === "skipped") return { teal: true, tooltip: "Trusted - skipped" };
     const finished = runState.kind === "done" || runState.kind === "failed";
-    if (!finished && willBeSkipped(item)) return { teal: true, tooltip: "Trusted - will skip" };
+    if (!finished && willBeSkipped(item))
+        return { teal: true, tooltip: "Trusted - will skip" };
     return { teal: false, tooltip: undefined };
 }
 
 export function queueRow(item: QueueItem): Element {
     const typeText = item.kind === "importJson" ? "ALL" : item.type;
     const isCurrent = isCurrentQueueItem(item);
-    const isActive = isActiveQueueItem(item);
-    const { teal: skip, tooltip: skipTooltip } = skipBadge(item);
+    const runState = getQueueItemRunState(item);
+    const { teal: skip, tooltip: skipTooltip } = skipBadge(item, runState);
     const canExpand = item.operation === "import" && item.kind === "importJson";
     const expanded = canExpand && isQueueImportJsonExpanded(item);
-    const stateColor = isActive ? PHASE_READING : undefined;
+    const stateColor = activeQueueItemColor(runState);
     return Container({
         style: {
             direction: "col",
@@ -313,23 +325,30 @@ export function queueRow(item: QueueItem): Element {
                 },
                 children: [
                     queueStateRail(stateColor),
-                    canExpand && Container({
-                        style: {
-                            direction: "col",
-                            align: "center",
-                            justify: "center",
-                            width: { kind: "px", value: 14 },
-                            height: { kind: "grow" },
-                            hoverBackground: COLOR_BUTTON_HOVER,
-                        },
-                        onClick: (_rect, info) => {
-                            if (info.button !== 0) return;
-                            const key = queueItemKey(item);
-                            if (expanded) collapsedQueueImportJsonRows.add(key);
-                            else collapsedQueueImportJsonRows.delete(key);
-                        },
-                        children: [Icon({ name: expanded ? Icons.chevronDown : Icons.chevronRight })],
-                    }),
+                    canExpand &&
+                        Container({
+                            style: {
+                                direction: "col",
+                                align: "center",
+                                justify: "center",
+                                width: { kind: "px", value: 14 },
+                                height: { kind: "grow" },
+                                hoverBackground: COLOR_BUTTON_HOVER,
+                            },
+                            onClick: (_rect, info) => {
+                                if (info.button !== 0) return;
+                                const key = queueItemKey(item);
+                                if (expanded) collapsedQueueImportJsonRows.add(key);
+                                else collapsedQueueImportJsonRows.delete(key);
+                            },
+                            children: [
+                                Icon({
+                                    name: expanded
+                                        ? Icons.chevronDown
+                                        : Icons.chevronRight,
+                                }),
+                            ],
+                        }),
                     Text({
                         text: typeText,
                         color: skip ? ACCENT_TEAL : COLOR_TEXT_DIM,
@@ -350,7 +369,10 @@ export function queueRow(item: QueueItem): Element {
                     // locked for the duration of the run.
                     isTaskRunning() || isQueueSessionItem(queueItemKey(item))
                         ? Container({
-                              style: { width: { kind: "px", value: 14 }, height: { kind: "grow" } },
+                              style: {
+                                  width: { kind: "px", value: 14 },
+                                  height: { kind: "grow" },
+                              },
                               children: [],
                           })
                         : Container({
@@ -370,16 +392,16 @@ export function queueRow(item: QueueItem): Element {
                           }),
                 ],
             }),
-            queueRowMiniBar(item),
+            queueRowMiniBar(runState),
         ],
     });
 }
 
 export function queueImportJsonChildRow(item: QueueItem): Element {
     const isCurrent = isCurrentQueueItem(item);
-    const isActive = isActiveQueueItem(item);
-    const { teal: skip, tooltip: skipTooltip } = skipBadge(item);
-    const stateColor = isActive ? PHASE_READING : undefined;
+    const runState = getQueueItemRunState(item);
+    const { teal: skip, tooltip: skipTooltip } = skipBadge(item, runState);
+    const stateColor = activeQueueItemColor(runState);
     return Container({
         style: {
             direction: "col",
@@ -420,12 +442,15 @@ export function queueImportJsonChildRow(item: QueueItem): Element {
                     }),
                     declaringFolderElement(item),
                     Container({
-                        style: { width: { kind: "px", value: 14 }, height: { kind: "grow" } },
+                        style: {
+                            width: { kind: "px", value: 14 },
+                            height: { kind: "grow" },
+                        },
                         children: [],
                     }),
                 ],
             }),
-            queueRowMiniBar(item),
+            queueRowMiniBar(runState),
         ],
     });
 }

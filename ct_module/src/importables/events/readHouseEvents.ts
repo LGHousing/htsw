@@ -8,6 +8,7 @@ import {
     readActionListDeferred,
 } from "../../housingSync/actions/readList";
 import type { ProgressHandler } from "../../housingSync/progress/types";
+import type { SyncEventHandler } from "../../housingSync/syncEvents";
 import { clickGoBack } from "../../housingSync/menus/menuUtils";
 import { tryWriteImportableCache, writeImportableCache } from "../../importCache";
 import TaskContext from "../../tasks/context";
@@ -30,12 +31,14 @@ async function scanEvent(
     ctx: TaskContext,
     name: string,
     state: BatchState,
-    onReadProgress: ProgressHandler | undefined
+    onReadProgress: ProgressHandler | undefined,
+    events: SyncEventHandler | undefined
 ): Promise<PendingEventRead> {
     await openEventEditor(ctx, name);
     const deferred = await readActionListDeferred(ctx, { kind: "deep" }, {
         itemCaptures: state.itemCaptures,
         exactHydrationEstimate: true,
+        events,
         ...(onReadProgress !== undefined
             ? {
                   progress: onReadProgress,
@@ -52,12 +55,14 @@ async function hydrateEvent(
     name: string,
     pending: PendingEventRead,
     state: BatchState,
-    onReadProgress: ProgressHandler | undefined
+    onReadProgress: ProgressHandler | undefined,
+    events: SyncEventHandler | undefined
 ): Promise<ImportableEvent> {
     await openEventEditor(ctx, name);
     await hydrateDeferredActionList(ctx, pending.deferred, {
         itemCaptures: state.itemCaptures,
         exactHydrationEstimate: true,
+        events,
         ...(onReadProgress !== undefined
             ? {
                   progress: onReadProgress,
@@ -160,15 +165,16 @@ export const readEvents = makeReadHouse<string>({
     },
     readOne: (ctx, name, options, state, onReadProgress) =>
         exportEvent(ctx, name, options, state, onReadProgress),
-    scanOne: (ctx, name, _options, state, onReadProgress) =>
-        scanEvent(ctx, name, state, onReadProgress),
+    scanOne: (ctx, name, options, state, onReadProgress) =>
+        scanEvent(ctx, name, state, onReadProgress, options.progress?.events),
     hydrateOne: async (ctx, name, pending, options, state, onReadProgress) => {
         const importable = await hydrateEvent(
             ctx,
             name,
             pending as PendingEventRead,
             state,
-            onReadProgress
+            onReadProgress,
+            options.progress?.events
         );
         await writeEventResult(ctx, name, importable, options);
     },

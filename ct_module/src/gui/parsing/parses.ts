@@ -28,7 +28,7 @@ import {
  * The mtime fingerprint for a parsed import.json: the import.json plus
  * every file it references. Built on `allReferencedPaths` — the single
  * source of "what files does this parse depend on" — so the parse cache,
- * the snapshot, and the Importables tree all agree on the set.
+ * the snapshot, and the Projects tree all agree on the set.
  */
 function buildParseFingerprint(
     importJsonPath: string,
@@ -46,7 +46,7 @@ function buildParseFingerprint(
 }
 
 /**
- * Per-file `import.json` parse cache. Lets the Importables tree show
+ * Per-file `import.json` parse cache. Lets the Projects tree show
  * importables from any number of import.jsons simultaneously, and lets
  * the dynamic queue resolve `QueueItem`s back to the parsed importable
  * objects regardless of which import.json they originated from.

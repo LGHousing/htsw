@@ -1,6 +1,10 @@
 /// <reference types="../../../CTAutocomplete" />
 
-import { ContainerBounds, getContainerBounds } from "./bounds";
+import {
+    ContainerBounds,
+    getContainerBounds,
+    getOpenContainerBounds,
+} from "./bounds";
 import { javaType } from "./java";
 
 // The overlay renders at MC's current GUI scale, capped at `OVERLAY_SCALE_TARGET` (4) so a
@@ -63,8 +67,7 @@ export function getOverlayScreenH(): number {
 // Same as `getContainerBounds` from `bounds.ts`, but with every field converted into overlay
 // coords. Use this for layout / panel positioning; use the bounds.ts version when you need raw
 // MC coords (e.g. forwarding to a Java API that expects them).
-export function getContainerBoundsOverlay(): ContainerBounds | null {
-    const b = getContainerBounds();
+function toOverlayBounds(b: ContainerBounds | null): ContainerBounds | null {
     if (b === null) return null;
     return {
         screenW: mcToOverlay(b.screenW),
@@ -74,4 +77,12 @@ export function getContainerBoundsOverlay(): ContainerBounds | null {
         xSize: mcToOverlay(b.xSize),
         ySize: mcToOverlay(b.ySize),
     };
+}
+
+export function getContainerBoundsOverlay(): ContainerBounds | null {
+    return toOverlayBounds(getContainerBounds());
+}
+
+export function getOpenContainerBoundsOverlay(): ContainerBounds | null {
+    return toOverlayBounds(getOpenContainerBounds());
 }

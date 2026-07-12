@@ -1,4 +1,9 @@
-import { getMuteImportSounds, setMuteImportSounds } from "../../settings";
+import {
+    getMuteTaskSounds,
+    getPlayImportCompletionSound,
+    setMuteTaskSounds,
+    setPlayImportCompletionSound,
+} from "../../settings";
 
 let parseInProgress = false;
 export function isParseInProgress(): boolean {
@@ -10,13 +15,19 @@ export function setParseInProgress(v: boolean): void {
 
 /**
  * When true, sound effects fired by `Forge.PlaySoundEvent` are cancelled
- * while an import is in flight. Suppresses the repetitive ding/click
- * sounds Hypixel plays on every housing menu open during an import.
+ * while a Housing sync task is in flight. Suppresses the repetitive sounds
+ * Hypixel plays while its menus are being driven.
  * Persisted via the settings store so the choice survives /ct reload.
  */
-export function isImportSoundsMuted(): boolean {
-    return getMuteImportSounds();
+export function areTaskSoundsMuted(): boolean {
+    return getMuteTaskSounds();
 }
-export function setImportSoundsMuted(muted: boolean): void {
-    setMuteImportSounds(muted);
+export function setTaskSoundsMuted(muted: boolean): void {
+    setMuteTaskSounds(muted);
+}
+export function isImportCompletionSoundEnabled(): boolean {
+    return getPlayImportCompletionSound();
+}
+export function setImportCompletionSoundEnabled(enabled: boolean): void {
+    setPlayImportCompletionSound(enabled);
 }

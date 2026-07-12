@@ -7,15 +7,23 @@ const SETTINGS_PATH = "./config/ChatTriggers/modules/HTSW/gui-settings.json";
 export type AutoUpdatePreference = "unset" | "enabled" | "disabled";
 
 type Settings = {
-    muteImportSounds: boolean;
-    autoProceed: boolean;
+    showInventoryButtons: boolean;
+    showChatPanel: boolean;
+    muteTaskSounds: boolean;
+    playImportCompletionSound: boolean;
     smoothScrolling: boolean;
     autoUpdate: AutoUpdatePreference;
 };
 
+type PersistedSettings = Partial<Settings> & {
+    muteImportSounds?: boolean;
+};
+
 let state: Settings = {
-    muteImportSounds: false,
-    autoProceed: true,
+    showInventoryButtons: true,
+    showChatPanel: true,
+    muteTaskSounds: false,
+    playImportCompletionSound: true,
     smoothScrolling: true,
     autoUpdate: "unset",
 };
@@ -32,10 +40,19 @@ function load(): void {
         if (!FileLib.exists(SETTINGS_PATH)) return;
         const raw = String(FileLib.read(SETTINGS_PATH) ?? "");
         if (raw.trim() === "") return;
-        const parsed = JSON.parse(raw) as Partial<Settings>;
+        const parsed = JSON.parse(raw) as PersistedSettings;
+        const legacySoundsMuted = parsed.muteImportSounds === true;
         state = {
-            muteImportSounds: parsed.muteImportSounds === true,
-            autoProceed: parsed.autoProceed !== false,
+            showInventoryButtons: parsed.showInventoryButtons !== false,
+            showChatPanel: parsed.showChatPanel !== false,
+            muteTaskSounds:
+                parsed.muteTaskSounds === undefined
+                    ? legacySoundsMuted
+                    : parsed.muteTaskSounds === true,
+            playImportCompletionSound:
+                parsed.playImportCompletionSound === undefined
+                    ? !legacySoundsMuted
+                    : parsed.playImportCompletionSound !== false,
             smoothScrolling: parsed.smoothScrolling !== false,
             autoUpdate: parseAutoUpdatePreference(parsed.autoUpdate),
         };
@@ -52,25 +69,47 @@ function persist(): void {
     }
 }
 
-export function getMuteImportSounds(): boolean {
+export function getShowInventoryButtons(): boolean {
     load();
-    return state.muteImportSounds;
+    return state.showInventoryButtons;
 }
 
-export function setMuteImportSounds(value: boolean): void {
+export function setShowInventoryButtons(value: boolean): void {
     load();
-    state.muteImportSounds = value;
+    state.showInventoryButtons = value;
     persist();
 }
 
-export function getAutoProceedSetting(): boolean {
+export function getShowChatPanel(): boolean {
     load();
-    return state.autoProceed;
+    return state.showChatPanel;
 }
 
-export function setAutoProceedSetting(value: boolean): void {
+export function setShowChatPanel(value: boolean): void {
     load();
-    state.autoProceed = value;
+    state.showChatPanel = value;
+    persist();
+}
+
+export function getMuteTaskSounds(): boolean {
+    load();
+    return state.muteTaskSounds;
+}
+
+export function setMuteTaskSounds(value: boolean): void {
+    load();
+    state.muteTaskSounds = value;
+    persist();
+}
+
+export function getPlayImportCompletionSound(): boolean {
+    load();
+    return state.playImportCompletionSound;
+}
+
+export function setPlayImportCompletionSound(value: boolean): void {
+    load();
+    state.playImportCompletionSound = value;
     persist();
 }
 

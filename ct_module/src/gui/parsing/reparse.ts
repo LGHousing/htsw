@@ -24,7 +24,7 @@ import { autoTrackRefresh } from "../autoTrack";
  * `parseImportJsonBlocking` (parses.ts). It owns no parsing, snapshotting, or
  * mtime-watching of its own — that all lives in `parses.ts` /
  * `parseSnapshot.ts`, behind one fingerprint-based freshness check shared
- * with the Importables tree. This driver only:
+ * with the Projects tree. This driver only:
  *   - tracks which import.json is active and debounces explicit reloads,
  *   - polls the authority when the overlay is visible,
  *   - runs side effects when the selected import.json gets a changed parse.

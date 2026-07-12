@@ -321,7 +321,7 @@ function importableLabel(imp: Importable): string {
 
 /**
  * Convenience: the item that corresponds to a specific `Importable`
- * object pulled from a known parse. Used by Importables row right-clicks
+ * object pulled from a known parse. Used by Projects row right-clicks
  * which already have the importable in hand and don't need to scan.
  */
 export function makeImportableQueueItem(

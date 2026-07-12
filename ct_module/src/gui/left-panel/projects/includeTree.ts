@@ -5,7 +5,7 @@ import type { ResultImport } from "./rowModel";
 import { canonicalPath } from "../../parsing/parses";
 
 /**
- * The parser's include tree, re-exported for the Importables tree renderer.
+ * The parser's include tree, re-exported for the Projects tree renderer.
  *
  * Node paths are in the parser's own format (the language fileLoader's
  * resolved form, backslashes on Windows for included files) — run them

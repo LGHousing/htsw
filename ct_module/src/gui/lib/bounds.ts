@@ -88,11 +88,20 @@ function isSuppressedScreen(gui: any): boolean {
     return false;
 }
 
-export function getContainerBounds(): ContainerBounds | null {
+export function getOpenContainerBottomExtension(): number {
+    const gui = Client.getMinecraft().field_71462_r;
+    if (gui === null || gui === undefined) return 0;
+    try {
+        const name = String(gui.getClass().getName());
+        return name.indexOf("GuiContainerCreative") >= 0 ? 28 : 0;
+    } catch (_e) {
+        return 0;
+    }
+}
+
+function readOpenContainerBounds(): ContainerBounds | null {
     const gui = Client.getMinecraft().field_71462_r;
     if (gui === null || gui === undefined) return null;
-
-    if (isSuppressedScreen(gui)) return null;
 
     const screenW = gui.field_146294_l;
     const screenH = gui.field_146295_m;
@@ -109,6 +118,16 @@ export function getContainerBounds(): ContainerBounds | null {
         return null;
     }
     return { screenW, screenH, left, top, xSize, ySize };
+}
+
+export function getOpenContainerBounds(): ContainerBounds | null {
+    return readOpenContainerBounds();
+}
+
+export function getContainerBounds(): ContainerBounds | null {
+    const gui = Client.getMinecraft().field_71462_r;
+    if (gui === null || gui === undefined || isSuppressedScreen(gui)) return null;
+    return readOpenContainerBounds();
 }
 
 export function getFullscreenPanelRect(b: ContainerBounds): Rect {

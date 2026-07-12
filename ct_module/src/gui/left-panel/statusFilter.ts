@@ -5,7 +5,7 @@ import { Container, Scroll, Text } from "../lib/components";
 import { linkStatusIcon, type LinkStatusKey } from "../cache-status";
 
 // Row colors shared by every filter popover so the Projects (type + status) and
-// Importables (status only) bars read as the same control.
+// Houses (status only) bars read as the same control.
 export const FILTER_ACTIVE_BG = 0xff2d4d2d | 0;
 export const FILTER_ACTIVE_HOVER_BG = 0xff3a5d3a | 0;
 const FILTER_ROW_BG = 0xff2d333d | 0;

@@ -8,6 +8,7 @@ import {
     readActionListDeferred,
 } from "../../housingSync/actions/readList";
 import type { ProgressHandler } from "../../housingSync/progress/types";
+import type { SyncEventHandler } from "../../housingSync/syncEvents";
 import { clickGoBack } from "../../housingSync/menus/menuUtils";
 import { ItemCaptureRegistry } from "../../housingSync/itemCapture";
 import { tryWriteImportableCache } from "../../importCache";
@@ -101,7 +102,8 @@ async function scanFunction(
     ctx: TaskContext,
     name: string,
     state: BatchState,
-    onReadProgress: ProgressHandler | undefined
+    onReadProgress: ProgressHandler | undefined,
+    events: SyncEventHandler | undefined
 ): Promise<PendingFunctionRead> {
     const icon = functionIconFromSnapshot(await getSessionFunctionIcon(ctx, name));
     if ((await openFunctionEditor(ctx, name)) === "missing") {
@@ -111,6 +113,7 @@ async function scanFunction(
     const deferred = await readActionListDeferred(ctx, { kind: "deep" }, {
         itemCaptures: state.itemCaptures,
         exactHydrationEstimate: true,
+        events,
         ...(onReadProgress !== undefined
             ? {
                   progress: onReadProgress,
@@ -136,7 +139,8 @@ async function hydrateFunction(
     name: string,
     pending: PendingFunctionRead,
     state: BatchState,
-    onReadProgress: ProgressHandler | undefined
+    onReadProgress: ProgressHandler | undefined,
+    events: SyncEventHandler | undefined
 ): Promise<ImportableFunction> {
     if ((await openFunctionEditor(ctx, name)) === "missing") {
         throw new Error(`No function named "${name}" exists in this housing.`);
@@ -145,6 +149,7 @@ async function hydrateFunction(
     await hydrateDeferredActionList(ctx, pending.deferred, {
         itemCaptures: state.itemCaptures,
         exactHydrationEstimate: true,
+        events,
         ...(onReadProgress !== undefined
             ? {
                   progress: onReadProgress,
@@ -251,15 +256,16 @@ export const readFunctions = makeReadHouse<string>({
     },
     readOne: (ctx, name, options, state, onReadProgress) =>
         exportFunction(ctx, name, options, state, onReadProgress),
-    scanOne: (ctx, name, _options, state, onReadProgress) =>
-        scanFunction(ctx, name, state, onReadProgress),
+    scanOne: (ctx, name, options, state, onReadProgress) =>
+        scanFunction(ctx, name, state, onReadProgress, options.progress?.events),
     hydrateOne: async (ctx, name, pending, options, state, onReadProgress) => {
         const importable = await hydrateFunction(
             ctx,
             name,
             pending as PendingFunctionRead,
             state,
-            onReadProgress
+            onReadProgress,
+            options.progress?.events
         );
         await writeFunctionResult(ctx, name, importable, options);
     },

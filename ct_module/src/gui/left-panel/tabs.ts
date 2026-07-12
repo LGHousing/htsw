@@ -3,7 +3,7 @@
 import { Element } from "../lib/layout";
 import { Button, Container, Icon, Row, Text } from "../lib/components";
 import { Icons, IconName } from "../lib/icons.generated";
-import { ImportablesView } from "./importables";
+import { ProjectsView } from "./projects";
 import { HousesView } from "./houses";
 import { SettingsView } from "./settings";
 import {
@@ -17,17 +17,17 @@ import {
 } from "../lib/theme";
 import { markGuiDirty } from "../lib/dirty";
 
-type TabId = "importables" | "houses" | "settings";
+type TabId = "projects" | "houses" | "settings";
 
 type Tab = { id: TabId; label: string; icon: IconName; content: (bodyW: number) => Element };
 
 const TABS: Tab[] = [
-    { id: "importables", label: "Projects", icon: Icons.compass, content: ImportablesView },
-    { id: "houses", label: "Importables", icon: Icons.house, content: HousesView },
+    { id: "projects", label: "Projects", icon: Icons.compass, content: ProjectsView },
+    { id: "houses", label: "Houses", icon: Icons.house, content: HousesView },
     { id: "settings", label: "Settings", icon: Icons.settings, content: SettingsView },
 ];
 
-let activeTab: TabId = "importables";
+let activeTab: TabId = "projects";
 
 export function getActiveTab(): Tab {
     for (let i = 0; i < TABS.length; i++) if (TABS[i].id === activeTab) return TABS[i];
@@ -111,7 +111,7 @@ export function TabBar(availW: number): Element {
     const perTab = (availW - TAB_GAP * (n - 1)) / n;
     const showLabels = tabLabelsFit(perTab, TABS.map((t) => t.label));
     const buttons = TABS.map((t) => tabButton(t, showLabels));
-    // Projects + Importables are the two "sides of your project" the tour's step 3
+    // Projects + Houses are the two "sides of your project" the tour's step 3
     // points at; Settings isn't one of them. Grouping just those two under the
     // anchor keeps the spotlight off Settings. The pair group takes grow 2 to
     // the lone Settings tab's grow 1, so all three tabs keep their even thirds.

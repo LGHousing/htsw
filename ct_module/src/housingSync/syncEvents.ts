@@ -10,11 +10,12 @@ export type ActionPath = {
     readonly parts: readonly ActionPathPart[];
 };
 
-export function actionPathForIndex(listPath: ActionPath | undefined, index: number): ActionPath {
+export function actionPathForIndex(
+    listPath: ActionPath | undefined,
+    index: number
+): ActionPath {
     return {
-        parts: listPath === undefined
-            ? [index]
-            : listPath.parts.concat(index),
+        parts: listPath === undefined ? [index] : listPath.parts.concat(index),
     };
 }
 
@@ -144,13 +145,13 @@ export type SyncEvent =
     | {
           /**
            * Re-activates an already-started importable as the current
-           * focus without resetting its progress. Used by the two-pass
-           * orchestrator to mark a row "current again" for its apply
-           * pass after pass-1 advanced past it.
+           * focus without resetting its progress. Used when a later pass
+           * returns to a row after the first pass advanced past it.
            */
           kind: "importableReactivated";
           key: string;
           rowIndex: number;
+          phase?: ProgressPayload["phase"];
       }
     | { kind: "sessionFinished" }
     | { kind: "progress"; scope: ProgressScope; progress: ProgressPayload }
@@ -170,8 +171,13 @@ export type SyncEvent =
       }
     | { kind: "setupStep"; label: string; completed: number; total: number }
     | { kind: "readStarted"; listPath: string }
-    | { kind: "childListReadStarted"; path: ActionPath; actionType: Action["type"] | null }
+    | {
+          kind: "childListReadStarted";
+          path: ActionPath;
+          actionType: Action["type"] | null;
+      }
     | { kind: "observedSnapshot"; actions: ReadonlyArray<Action | null> }
+    | { kind: "actionReadCompleted"; path: ActionPath; hydrated: boolean }
     | {
           kind: "diffPlanned";
           summary: DiffSummary;

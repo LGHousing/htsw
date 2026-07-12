@@ -12,7 +12,11 @@ import {
     COLOR_TEXT_FAINT,
 } from "../lib/theme";
 import { clearImportableChecks } from "../state";
-import { getActiveTaskLabel, getTaskProgress } from "./import-tab/taskProgress";
+import {
+    getActiveTaskLabel,
+    getSessionVerb,
+    getTaskProgress,
+} from "./import-tab/taskProgress";
 import {
     clearQueue,
     getQueue,
@@ -41,7 +45,11 @@ function appendQueueRows(rows: Child[], items: readonly QueueItem[]): void {
     for (let i = 0; i < items.length; i++) {
         const item = items[i];
         rows.push(queueRow(item));
-        if (item.operation === "import" && item.kind === "importJson" && isQueueImportJsonExpanded(item)) {
+        if (
+            item.operation === "import" &&
+            item.kind === "importJson" &&
+            isQueueImportJsonExpanded(item)
+        ) {
             const children = queueImportJsonChildren(item);
             for (let j = 0; j < children.length; j++) {
                 rows.push(queueImportJsonChildRow(children[j]));
@@ -105,7 +113,9 @@ function queueChevron(): Element {
             queueExpanded = !queueExpanded;
         },
         children: [
-            Icon({ name: () => (isQueueExpanded() ? Icons.chevronDown : Icons.chevronRight) }),
+            Icon({
+                name: () => (isQueueExpanded() ? Icons.chevronDown : Icons.chevronRight),
+            }),
         ],
     });
 }
@@ -156,8 +166,13 @@ export function viewFooter(): Element {
     return Col({
         style: { gap: 4, width: { kind: "grow" } },
         children: () => {
-            const children: Child[] = [divider(), queueSummary()];
-            if (isQueueExpanded()) children.push(queueScroll());
+            const taskListIsInView =
+                getTaskProgress() !== null && getSessionVerb() !== "import";
+            const children: Child[] = [divider()];
+            if (!taskListIsInView) {
+                children.push(queueSummary());
+                if (isQueueExpanded()) children.push(queueScroll());
+            }
             if (getTaskProgress() !== null) children.push(liveTaskFooterPanel());
             children.push(importControl());
             return children;

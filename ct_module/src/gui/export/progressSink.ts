@@ -29,7 +29,12 @@ import { readImportableCache } from "../../importCache/cache";
 import { importableIdentity } from "../../importables/identity";
 import { getHousingUuid } from "../state";
 import { canonicalPath, requestParse } from "../parsing/parses";
-import { setEtaEstimating, setEtaRough, setTaskProgress, setSessionVerb } from "../right-panel/import-tab/taskProgress";
+import {
+    setEtaEstimating,
+    setEtaRough,
+    setTaskProgress,
+    setSessionVerb,
+} from "../right-panel/import-tab/taskProgress";
 import {
     addToQueue,
     makeExportQueueItem,
@@ -37,6 +42,7 @@ import {
     removeFromQueueKey,
     type QueueItem,
 } from "../right-panel/import-tab/queue";
+import { createExportLivePreview } from "./livePreview";
 
 export function createExportProgressSink(
     type: Importable["type"],
@@ -51,8 +57,8 @@ export function createExportProgressSink(
     let currentIndex: number | null = null;
     /** True once the current item reached a terminal status (failed early). */
     let currentClosed = false;
-
     const canonicalImportJsonPath = canonicalPath(importJsonPath);
+    const livePreview = createExportLivePreview(type, canonicalImportJsonPath);
     const keyFor = (name: string): string =>
         queueRowKey(type, name, canonicalImportJsonPath);
 
@@ -64,6 +70,7 @@ export function createExportProgressSink(
     const finishCurrent = (status: "imported" | "failed", error?: string): void => {
         if (currentIndex === null || currentClosed) return;
         currentClosed = true;
+        livePreview.finish(currentIndex);
         emit({
             kind: "importableFinished",
             key: keyFor(names[currentIndex]),
@@ -115,9 +122,11 @@ export function createExportProgressSink(
     };
 
     return {
+        events: livePreview.events,
         start(ns) {
             names = ns;
             if (ns.length === 0) return;
+            livePreview.start(ns);
             const resolved = resolveUnits(ns);
             units = resolved.units;
             let total = 0;
@@ -155,6 +164,7 @@ export function createExportProgressSink(
             if (names.length === 0) return;
             currentIndex = index;
             currentClosed = false;
+            livePreview.activate(index, true);
             emit({
                 kind: "importableStarted",
                 key: keyFor(name),
@@ -170,8 +180,14 @@ export function createExportProgressSink(
             if (names.length === 0) return;
             currentIndex = index;
             currentClosed = false;
+            livePreview.activate(index, false);
             setEtaEstimating(false);
-            emit({ kind: "importableReactivated", key: keyFor(names[index]), rowIndex: index });
+            emit({
+                kind: "importableReactivated",
+                key: keyFor(names[index]),
+                rowIndex: index,
+                phase: "hydrating",
+            });
         },
         itemFinished(index) {
             if (index === currentIndex) finishCurrent("imported");
@@ -205,6 +221,7 @@ export function createExportProgressSink(
                 emit({ kind: "sessionFinished" });
             }
             setTaskProgress(null);
+            livePreview.clear();
             for (const it of queueItems) removeFromQueueKey(queueItemKey(it));
             queueItems.length = 0;
         },

@@ -4,7 +4,7 @@ import {
     getHousingUuid,
     clearImportableChecks,
     isCurrentHouseTrusted,
-    isImportSoundsMuted,
+    isImportCompletionSoundEnabled,
     setHousingUuid,
 } from "../../state";
 import {
@@ -219,6 +219,7 @@ function createSyncEventHandler(args: {
         observedSnapshot: (e) => {
             if (activeViewPath !== null) setObservedTopLevel(activeViewPath, e.actions);
         },
+        actionReadCompleted: () => {},
         blockActionHeaderApplied: (e) => {
             if (activeViewPath !== null) markHeadApplied(activeViewPath, e.path);
         },
@@ -479,7 +480,7 @@ export function startImport(explicit?: readonly ImportQueueItem[]): void {
                 // Gate our own cue here: the overlay soundPlay interceptor only
                 // suppresses sounds while task progress is live, and this fires
                 // at completion — so the toggle must be checked directly.
-                if (!isImportSoundsMuted()) playImportSuccessSound();
+                if (isImportCompletionSoundEnabled()) playImportSuccessSound();
                 showToast(
                     `Import complete in ${elapsed} · ${totalImported} imported, ${totalSkipped} skipped`,
                     0xff5cb85c

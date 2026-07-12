@@ -50,7 +50,7 @@ const STEPS: TourStep[] = [
             "This tour points at each part of the overlay.",
         ],
         setup: () => {
-            setActiveLeftTab("importables");
+            setActiveLeftTab("projects");
         },
     },
     {
@@ -64,7 +64,7 @@ const STEPS: TourStep[] = [
             "Already have your own files? Just hit Next.",
         ],
         anchor: "tour:left-body",
-        setup: () => setActiveLeftTab("importables"),
+        setup: () => setActiveLeftTab("projects"),
         action: {
             label: () =>
                 FileLib.exists(`${STARTER_DIR}/import.json`)
@@ -76,13 +76,13 @@ const STEPS: TourStep[] = [
     {
         title: "Two sides of your project",
         lines: [
-            "Projects is your FILES; Importables is what's",
+            "Projects is your FILES; Houses is what's",
             "actually built in the house you're in.",
             "Everything HTSW does moves content between",
             "these two.",
         ],
         anchor: "tour:project-tabs",
-        setup: () => setActiveLeftTab("importables"),
+        setup: () => setActiveLeftTab("projects"),
     },
     {
         title: "Projects: your files",
@@ -93,7 +93,7 @@ const STEPS: TourStep[] = [
             "Hover it to see exactly what it means.",
         ],
         anchor: "tour:left-body",
-        setup: () => setActiveLeftTab("importables"),
+        setup: () => setActiveLeftTab("projects"),
     },
     {
         title: "View: read before you write",
@@ -119,7 +119,7 @@ const STEPS: TourStep[] = [
         anchor: "tour:right-import",
     },
     {
-        title: "Importables: the house into files",
+        title: "Houses: the house into files",
         lines: [
             "Scan lists names (fast). Read into knowledge",
             "(in the export dropdown) pulls full contents.",
@@ -138,7 +138,7 @@ const STEPS: TourStep[] = [
             "Replay this anytime with /htsw tour.",
         ],
         setup: () => {
-            setActiveLeftTab("importables");
+            setActiveLeftTab("projects");
         },
     },
 ];

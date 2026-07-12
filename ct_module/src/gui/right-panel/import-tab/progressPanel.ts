@@ -111,8 +111,7 @@ function opCounterText(): string {
  * Returns the parts to show in place of `opCounterText` while a slot is active.
  */
 function menuSlotParts(slot: MenuSlotFocus): string[] {
-    const named =
-        slot.label !== null && slot.label.length > 0 ? ` (${slot.label})` : "";
+    const named = slot.label !== null && slot.label.length > 0 ? ` (${slot.label})` : "";
     const parts = [`slot ${slot.slot}${named}`];
     if (slot.count > 1) parts.push(`${slot.index}/${slot.count}`);
     return parts;
@@ -142,10 +141,10 @@ function phaseEtaText(suffix: string): string {
 function currentPhaseLabel(): string {
     const p = getTaskProgress();
     if (p === null || p.active === null) return "";
-    if (getSessionVerb() === "export") return "§lExporting";
-    if (getSessionVerb() === "read") return "§lReading";
     const labels = PHASE_LABELS[p.active.phase];
     if (labels === undefined) return "§lDone";
+    const title = isEtaEstimating() ? "Scanning" : labels.title;
+    const etaSuffix = isEtaEstimating() ? "scan" : labels.etaSuffix;
     const parts: string[] = [];
     const slot = p.active.currentSlot;
     if (slot != null && p.active.phase === "applying") {
@@ -154,11 +153,9 @@ function currentPhaseLabel(): string {
         const counter = opCounterText();
         if (counter.length > 0) parts.push(counter);
     }
-    const eta = phaseEtaText(labels.etaSuffix);
+    const eta = phaseEtaText(etaSuffix);
     if (eta.length > 0) parts.push(eta);
-    return parts.length > 0
-        ? `§l${labels.title}§r  ·  ${parts.join("  ·  ")}`
-        : `§l${labels.title}`;
+    return parts.length > 0 ? `§l${title}§r  ·  ${parts.join("  ·  ")}` : `§l${title}`;
 }
 
 // ── Progress bar geometry ──────────────────────────────────────────────
@@ -169,7 +166,11 @@ function currentPhaseLabel(): string {
  * progress bar (reading/hydrating/applying) and reused by `queue.ts`'s
  * per-row mini bar.
  */
-export function phaseSegment(widthFactor: number, fraction: number, color: number): Element {
+export function phaseSegment(
+    widthFactor: number,
+    fraction: number,
+    color: number
+): Element {
     return Container({
         style: {
             direction: "row",
@@ -196,7 +197,7 @@ export function phaseSegment(widthFactor: number, fraction: number, color: numbe
     });
 }
 
-function rowPhaseChildrenFor(snapshot: {
+export function taskPhaseSegments(snapshot: {
     phaseUnits: PhaseUnits;
     completedUnits: number;
 }): Element[] {
@@ -216,7 +217,7 @@ function rowPhaseChildrenFor(snapshot: {
 function activeRowPhaseChildren(): Element[] {
     const p = getTaskProgress();
     if (p === null || p.active === null) return [];
-    return rowPhaseChildrenFor(p.active);
+    return taskPhaseSegments(p.active);
 }
 
 function parkedRowPhaseChildren(key: string): Element[] {
@@ -224,7 +225,7 @@ function parkedRowPhaseChildren(key: string): Element[] {
     if (p === null) return [];
     const parked = p.parked[key];
     if (parked === undefined) return [];
-    return rowPhaseChildrenFor(parked);
+    return taskPhaseSegments(parked);
 }
 
 function progressBar(): Element {
@@ -242,14 +243,16 @@ function progressBar(): Element {
             for (let i = 0; i < p.rows.length; i++) {
                 const row = p.rows[i];
                 if (i > 0) {
-                    children.push(Container({
-                        style: {
-                            width: { kind: "px", value: 2 },
-                            height: { kind: "grow" },
-                            background: COLOR_PANEL,
-                        },
-                        children: [],
-                    }));
+                    children.push(
+                        Container({
+                            style: {
+                                width: { kind: "px", value: 2 },
+                                height: { kind: "grow" },
+                                background: COLOR_PANEL,
+                            },
+                            children: [],
+                        })
+                    );
                 }
                 if (row.status === "imported") {
                     children.push(phaseSegment(1, 1, ACCENT_SUCCESS));
@@ -258,26 +261,30 @@ function progressBar(): Element {
                 } else if (row.status === "failed") {
                     children.push(phaseSegment(1, 1, ACCENT_DANGER));
                 } else if (p.active !== null && p.active.key === row.key) {
-                    children.push(Container({
-                        style: {
-                            direction: "row",
-                            width: { kind: "grow" },
-                            height: { kind: "grow" },
-                        },
-                        children: activeRowPhaseChildren(),
-                    }));
+                    children.push(
+                        Container({
+                            style: {
+                                direction: "row",
+                                width: { kind: "grow" },
+                                height: { kind: "grow" },
+                            },
+                            children: activeRowPhaseChildren(),
+                        })
+                    );
                 } else if (p.parked[row.key] !== undefined) {
                     // Pass-1 finished read/hydrate for this row but pass-2
                     // hasn't reached it yet. Show the parked phase fill so
                     // the segment doesn't visually rewind.
-                    children.push(Container({
-                        style: {
-                            direction: "row",
-                            width: { kind: "grow" },
-                            height: { kind: "grow" },
-                        },
-                        children: parkedRowPhaseChildren(row.key),
-                    }));
+                    children.push(
+                        Container({
+                            style: {
+                                direction: "row",
+                                width: { kind: "grow" },
+                                height: { kind: "grow" },
+                            },
+                            children: parkedRowPhaseChildren(row.key),
+                        })
+                    );
                 } else {
                     children.push(phaseSegment(1, 0, ACCENT_SUCCESS));
                 }
@@ -329,8 +336,11 @@ function progressPosition(): {
     const p = getTaskProgress();
     if (p === null) return null;
     const current = p.active;
-    const { completed: completedImportables, failed: failedImportables, total: totalImportables } =
-        countTaskRowsByStatus(p);
+    const {
+        completed: completedImportables,
+        failed: failedImportables,
+        total: totalImportables,
+    } = countTaskRowsByStatus(p);
     const allDone = completedImportables + failedImportables >= totalImportables;
     let currentNumber = completedImportables + 1;
     if (current !== null) {
@@ -355,8 +365,7 @@ function progressHeadlineText(): string {
     const pos = progressPosition();
     if (pos === null) return "";
     const verb = getSessionVerb();
-    const noun =
-        verb === "export" ? "Export" : verb === "read" ? "Read" : "Importable";
+    const noun = verb === "export" ? "Export" : verb === "read" ? "Read" : "Importable";
     const gerund =
         verb === "export" ? "Exporting" : verb === "read" ? "Reading" : "Importing";
     return pos.current !== null
@@ -455,7 +464,10 @@ export function liveTaskFooterPanel(): Element {
                         style: { width: { kind: "grow" } },
                     }),
                     Container({
-                        style: { width: { kind: "grow" }, height: { kind: "px", value: 2 } },
+                        style: {
+                            width: { kind: "grow" },
+                            height: { kind: "px", value: 2 },
+                        },
                         children: [],
                     }),
                     progressBar(),
@@ -463,10 +475,15 @@ export function liveTaskFooterPanel(): Element {
                     // separate rows: sharing one row truncated the text to
                     // "total 9m37s - end…" on narrow GUIs.
                     Row({
-                        style: { gap: 6, height: { kind: "px", value: 12 }, align: "center" },
+                        style: {
+                            gap: 6,
+                            height: { kind: "px", value: 12 },
+                            align: "center",
+                        },
                         children: [
                             Text({
-                                text: () => `${Math.floor(getTaskProgressFraction() * 100)}%`,
+                                text: () =>
+                                    `${Math.floor(getTaskProgressFraction() * 100)}%`,
                                 color: COLOR_TEXT,
                                 style: { width: { kind: "px", value: 30 } },
                             }),
@@ -482,7 +499,10 @@ export function liveTaskFooterPanel(): Element {
                         style: { gap: 6, height: { kind: "px", value: 12 } },
                         children: [
                             Container({
-                                style: { width: { kind: "grow" }, height: { kind: "px", value: 1 } },
+                                style: {
+                                    width: { kind: "grow" },
+                                    height: { kind: "px", value: 1 },
+                                },
                                 children: [],
                             }),
                             ...progressControlButtons(),

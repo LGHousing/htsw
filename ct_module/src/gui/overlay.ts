@@ -11,7 +11,11 @@ import {
     setScrollEasingProvider,
 } from "./lib/layout";
 import { markGuiDirty } from "./lib/dirty";
-import { getSmoothScrolling } from "../settings";
+import {
+    getShowChatPanel,
+    getShowInventoryButtons,
+    getSmoothScrolling,
+} from "../settings";
 import { javaType } from "./lib/java";
 
 declare const JavaAdapter: new (baseClass: any, implementation: object) => any;
@@ -37,7 +41,14 @@ const RenderGameOverlayElementType = javaType(
 // we need to catch to stop the placeholder-screen flash mid-import.
 const ForgeGuiOpenEvent = javaType("net.minecraftforge.client.event.GuiOpenEvent");
 import { RootTree, getImportCachedBounds } from "./root";
-import { getContainerBounds, getFullscreenPanelRect } from "./lib/bounds";
+import {
+    getContainerBounds,
+    getFullscreenPanelRect,
+    getOpenContainerBottomExtension,
+    getOpenContainerBounds,
+} from "./lib/bounds";
+import { BottomToolbar } from "./bottom-toolbar";
+import { Container } from "./lib/components";
 import { handleCompletedParse, tickReparse } from "./parsing/reparse";
 import { onParseCacheEntryChanged, processPendingParses } from "./parsing/parses";
 import { invalidateSourceDiffForParse } from "./code-view/sourceDiff";
@@ -61,11 +72,7 @@ import {
     mouseIsOverHoverCard,
     tryDispatchHoverCardWheel,
 } from "./lib/hoverCards";
-import {
-    getHousingUuid,
-    isImportSoundsMuted,
-    setHousingUuid,
-} from "./state";
+import { areTaskSoundsMuted, getHousingUuid, setHousingUuid } from "./state";
 import { getTaskProgress } from "./right-panel/import-tab/taskProgress";
 import { detectHousingUuid } from "../importCache/housingId";
 import { isTaskRunning } from "../tasks/runningState";
@@ -97,6 +104,7 @@ import {
     getEffectiveOverlayScale,
     mcToOverlay,
     getContainerBoundsOverlay,
+    getOpenContainerBoundsOverlay,
     getOverlayScreenW,
     getOverlayScreenH,
 } from "./lib/overlayScale";
@@ -136,6 +144,33 @@ function frameVisible(): boolean {
     if (housingPresence !== "in") return false;
     if (getContainerBounds() !== null) return true;
     return getTaskProgress() !== null && getImportCachedBounds() !== null;
+}
+
+function inventoryToolbarBounds(): Rect {
+    const b = getOpenContainerBoundsOverlay();
+    if (b === null) return ZERO_RECT;
+    const y = b.top + b.ySize + mcToOverlay(getOpenContainerBottomExtension());
+    return { x: b.left, y, w: b.xSize, h: Math.max(0, Math.min(26, b.screenH - y)) };
+}
+
+function inventoryToolbarVisible(): boolean {
+    if (!enabled || !getShowInventoryButtons() || housingPresence !== "in") return false;
+    return (
+        getOpenContainerBounds() !== null &&
+        getContainerBounds() === null &&
+        inventoryToolbarBounds().h >= 9
+    );
+}
+
+function InventoryToolbarTree(): Element {
+    return Container({
+        style: { width: { kind: "grow" }, height: { kind: "grow" } },
+        children: () => [BottomToolbar(inventoryToolbarBounds().h)],
+    });
+}
+
+function anyHtswPanelVisible(): boolean {
+    return frameVisible() || inventoryToolbarVisible();
 }
 
 // Housing presence + UUID auto-fetch. `/wtfmap` is the only live "are we in a
@@ -376,6 +411,20 @@ export function initHtswGui(): void {
         isVisible: frameVisible,
     });
 
+    const inventoryToolbar = new Panel(
+        inventoryToolbarBounds,
+        InventoryToolbarTree(),
+        inventoryToolbarVisible,
+        false
+    );
+    inventoryToolbar.register();
+    activePanels.push({
+        panel: inventoryToolbar,
+        getBounds: inventoryToolbarBounds,
+        getRoot: () => inventoryToolbar.getRoot(),
+        isVisible: inventoryToolbarVisible,
+    });
+
     // Mid-import fallback paint. When Hypixel closes the housing menu to
     // prompt for a chat-entered value, `getContainerBounds()` flips to
     // null and the regular `guiRender` (Forge BackgroundDrawnEvent) stops
@@ -516,7 +565,7 @@ export function initHtswGui(): void {
     ) => {
         if (!enabled) return;
         if (getTaskProgress() === null) return;
-        if (!isImportSoundsMuted()) return;
+        if (!areTaskSoundsMuted()) return;
         cancel(event);
     });
 
@@ -561,7 +610,7 @@ export function initHtswGui(): void {
         tickTabDragAutoScroll(mcToOverlay(mouseX));
         const dragging = isDraggingScrollbar();
         if (dragging) updateScrollbarDrag(mcToOverlay(mouseY));
-        if (frameVisible() && refreshChatLines()) markGuiDirty();
+        if (frameVisible() && getShowChatPanel() && refreshChatLines()) markGuiDirty();
         // Rebuild every frame while the thumb is dragged or the wheel offset is
         // still easing, so scrolled content tracks at the refresh rate instead
         // of stepping on the dirty backstop.
@@ -598,7 +647,13 @@ export function initHtswGui(): void {
         // leaving the inventory. Mirrors vanilla MC's "T opens chat"
         // affordance; key is Minecraft's existing Open Chat binding.
         const chatKey = getChatKeyCode();
-        if (focusedId === null && enabled && chatKey > 0 && keyCode === chatKey) {
+        if (
+            focusedId === null &&
+            enabled &&
+            getShowChatPanel() &&
+            chatKey > 0 &&
+            keyCode === chatKey
+        ) {
             if (getContainerBounds() !== null && !nativeScreenUsesTypedCharacters()) {
                 setFocusedInput(CHAT_INPUT_ID);
                 markGuiDirty();
@@ -681,7 +736,7 @@ export function initHtswGui(): void {
         if (frameVisible() && !isTaskRunning()) {
             tickReparse();
             // Drain one off-frame parse queued by requestParse() (export pane,
-            // Importables tree, queue rows) so a cold parse never blocks render.
+            // Projects tree, queue rows) so a cold parse never blocks render.
             processPendingParses(handleCompletedParse);
         }
         // First-load walkthrough; once per session, never mid-import, and only
@@ -716,7 +771,7 @@ export function initHtswGui(): void {
         // overlay shows — frameVisible() now gates on a known UUID, so the
         // fetch has to run independently of it or the overlay could never
         // appear (null UUID → hidden → never fetched).
-        if (getContainerBounds() !== null) {
+        if (getOpenContainerBounds() !== null) {
             maybeAutoFetchHousingUuid();
         }
         // Only tear down popovers + focus when the overlay isn't showing at all.
@@ -724,7 +779,7 @@ export function initHtswGui(): void {
         // though getContainerBounds() flickers null between menu operations —
         // keying the teardown on getContainerBounds() here would drop overlay
         // popover/focus state on every one of those flickers.
-        if (!frameVisible()) {
+        if (!anyHtswPanelVisible()) {
             if (popoverIsOpen()) closeAllPopovers();
             closeHoverCard();
             if (getFocusedInput() !== null) setFocusedInput(null);

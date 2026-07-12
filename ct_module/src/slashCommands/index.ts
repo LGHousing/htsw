@@ -21,7 +21,7 @@ import {
     getEventContainerCounts,
     resetEventContainers,
 } from "../tasks/specifics/waitFor";
-import { getTreePerfStats } from "../gui/left-panel/importables/tree";
+import { getTreePerfStats } from "../gui/left-panel/projects/tree";
 import { clearFramePerf, getFramePerfStats } from "../gui/lib/framePerf";
 import { resetOnboarding } from "../gui/persistence/onboarding";
 import { rearmTourAutoStart } from "../gui/popovers/tour";

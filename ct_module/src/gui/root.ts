@@ -14,6 +14,7 @@ import { BottomToolbar } from "./bottom-toolbar";
 import { ChatPanel } from "./chat";
 import { getTaskProgress } from "./right-panel/import-tab/taskProgress";
 import { COLOR_PANEL } from "./lib/theme";
+import { getShowChatPanel, getShowInventoryButtons } from "../settings";
 
 // Smallest chat panel we'll render (input bar + a couple scrollback rows) and
 // the minimum height the left rail keeps above it, so a short window degrades
@@ -117,11 +118,13 @@ function buildLayout(b: ContainerBounds): Element {
                             width: { kind: "px", value: leftColW },
                             height: { kind: "grow" },
                         },
-                        children: [
-                            bgWrap(LeftPanel(leftColW), "grow"),
-                            transparentPad(RAIL_CHAT_GAP),
-                            ChatPanel(leftColW, chatH),
-                        ],
+                        children: getShowChatPanel()
+                            ? [
+                                  bgWrap(LeftPanel(leftColW), "grow"),
+                                  transparentPad(RAIL_CHAT_GAP),
+                                  ChatPanel(leftColW, chatH),
+                              ]
+                            : [bgWrap(LeftPanel(leftColW), "grow")],
                     }),
                     // CENTER COLUMN — transparent above the inventory, the
                     // inventory cutout itself, and the slim BottomToolbar
@@ -134,7 +137,7 @@ function buildLayout(b: ContainerBounds): Element {
                         children: [
                             transparentPad(topGapH),
                             transparentPad(b.ySize),
-                            BottomToolbar(),
+                            ...(getShowInventoryButtons() ? [BottomToolbar()] : []),
                         ],
                     }),
                     // RIGHT COLUMN — same height as the left column. Add
