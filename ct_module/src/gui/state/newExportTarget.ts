@@ -2,6 +2,7 @@
 
 import { getExportImportJsonPath } from "./paths";
 import { normalizeHtswPath } from "../lib/pathDisplay";
+import { readSettingsFile, settingsFilePath } from "../../persistence/settingsFiles";
 
 // The sticky "new exports land here" file, chosen per export destination. It is
 // keyed by the base destination (the parse root the include tree walks from),
@@ -9,7 +10,8 @@ import { normalizeHtswPath } from "../lib/pathDisplay";
 // importables honor it — the routing in exportTargets keeps re-exports on their
 // existing declaration and ignores a target the include tree no longer reaches.
 
-const EXPORT_TARGETS_FILE = "./htsw/.cache/export-targets.json";
+const EXPORT_TARGETS_FILE_NAME = "export-targets.json";
+const EXPORT_TARGETS_FILE = settingsFilePath(EXPORT_TARGETS_FILE_NAME);
 let loaded = false;
 const targetByBase: Map<string, string> = new Map();
 
@@ -20,8 +22,9 @@ function baseKey(basePath: string): string {
 function loadTargets(): void {
     if (loaded) return;
     try {
-        if (FileLib.exists(EXPORT_TARGETS_FILE)) {
-            const raw = String(FileLib.read(EXPORT_TARGETS_FILE) ?? "");
+        const stored = readSettingsFile(EXPORT_TARGETS_FILE_NAME);
+        if (stored !== null) {
+            const raw = stored;
             if (raw.trim() !== "") {
                 const obj = JSON.parse(raw) as unknown;
                 if (obj !== null && typeof obj === "object" && !Array.isArray(obj)) {

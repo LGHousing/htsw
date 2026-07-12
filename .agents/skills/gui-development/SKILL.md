@@ -34,11 +34,11 @@ Library — `gui/lib/` (project-agnostic UI primitives + screen/theme):
 
 App state — `gui/state/` (genuinely-global mutable state ONLY; split by concern, with `index.ts` as a convenience re-export barrel — nothing else lives here):
 - `paths.ts` — active + export `import.json` path. `getExportImportJsonPath()` is the effective destination: manual pick wins, else the current house's bound file (covers the post-`/ct reload` no-transition case), else the active path.
-- `newExportTarget.ts` — sticky "new exports land here" file, keyed by the base export destination, persisted to `export-targets.json`. Only NEW importables honor it (routing in `exportTargets.ts`); `getNewExportTarget`/`getEffectiveNewExportTarget`/`setNewExportTarget`.
+- `newExportTarget.ts` — sticky "new exports land here" file, keyed by the base export destination, persisted to `.settings/export-targets.json`. Only NEW importables honor it (routing in `exportTargets.ts`); `getNewExportTarget`/`getEffectiveNewExportTarget`/`setNewExportTarget`.
 - `housing.ts` — current housing UUID.
-- `trust.ts` — **per-house trust set** with `isHouseTrusted` / `setHouseTrust` / `isCurrentHouseTrusted`, persisted to `trusted-houses.json`.
+- `trust.ts` — **per-house trust set** with `isHouseTrusted` / `setHouseTrust` / `isCurrentHouseTrusted`, persisted to `.settings/trusted-houses.json`.
 - `selectionSet.ts` — Importables-tab multi-select checkbox set.
-- `autoTrack.ts` — auto-track source set, persisted by canonical base import.json path to `auto-track.json`.
+- `autoTrack.ts` — auto-track source set, persisted by canonical base import.json path to `.settings/auto-track.json`.
 - `flags.ts` — `parseInProgress` + import-sound mute.
 - `index.ts` — re-export barrel over the above. Import-session progress is owned by `right-panel/import-tab/taskProgress.ts`, not global state.
 

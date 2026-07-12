@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
-const AUTO_TRACK_FILE = "./htsw/.cache/auto-track.json";
+const AUTO_TRACK_FILE = "./htsw/.settings/auto-track.json";
 
 vi.mock("../src/gui/parsing/parses", () => ({
     canonicalPath: (path: string) => path.replace(/\\/g, "/").toLowerCase(),
@@ -16,6 +16,7 @@ describe("auto-track persistence", () => {
             exists: (path: string) => files.has(path),
             read: (path: string) => files.get(path) ?? null,
             write: (path: string, value: string) => files.set(path, value),
+            delete: (path: string) => files.delete(path),
         });
     });
 

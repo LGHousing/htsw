@@ -1,16 +1,19 @@
 /// <reference types="../../../CTAutocomplete" />
 
 import { canonicalPath } from "../parsing/parses";
+import { readSettingsFile, settingsFilePath } from "../../persistence/settingsFiles";
 
-const AUTO_TRACK_FILE = "./htsw/.cache/auto-track.json";
+const AUTO_TRACK_FILE_NAME = "auto-track.json";
+const AUTO_TRACK_FILE = settingsFilePath(AUTO_TRACK_FILE_NAME);
 let autoTrackSourcesLoaded = false;
 const autoTrackSources: Set<string> = new Set();
 
 function loadAutoTrackSources(): void {
     if (autoTrackSourcesLoaded) return;
     try {
-        if (FileLib.exists(AUTO_TRACK_FILE)) {
-            const raw = String(FileLib.read(AUTO_TRACK_FILE) ?? "");
+        const stored = readSettingsFile(AUTO_TRACK_FILE_NAME);
+        if (stored !== null) {
+            const raw = stored;
             if (raw.trim() !== "") {
                 const parsed = JSON.parse(raw) as unknown;
                 if (Array.isArray(parsed)) {

@@ -1,7 +1,7 @@
 /// <reference types="../../CTAutocomplete" />
 
-import { IMPORT_CACHE_ROOT } from "./paths";
 import { atomicWriteText } from "../utils/filesystem";
+import { readSettingsFile, settingsFilePath } from "../persistence/settingsFiles";
 
 /**
  * Plain-English nicknames for Housing UUIDs. The UUID is the canonical
@@ -9,7 +9,7 @@ import { atomicWriteText } from "../utils/filesystem";
  * string that's painful to read in the GUI; the alias is what the user
  * actually sees.
  *
- * Storage: a single JSON file under the import cache root. Writes are
+ * Storage: a single JSON file under the settings root. Writes are
  * full-rewrites that preserve every other UUID's alias.
  *
  * Reads serve an in-memory copy: alias lookups happen per row per FRAME
@@ -19,7 +19,8 @@ import { atomicWriteText } from "../utils/filesystem";
  * re-read picks up out-of-band edits to the file.
  */
 
-const ALIAS_FILE = `${IMPORT_CACHE_ROOT}/housing-aliases.json`;
+const ALIAS_FILE_NAME = "housing-aliases.json";
+const ALIAS_FILE = settingsFilePath(ALIAS_FILE_NAME);
 
 type AliasMap = { [uuid: string]: string };
 
@@ -38,8 +39,9 @@ function readMap(): AliasMap {
 
 function readMapFromDisk(): AliasMap {
     try {
-        if (!FileLib.exists(ALIAS_FILE)) return {};
-        const raw = String(FileLib.read(ALIAS_FILE) ?? "");
+        const stored = readSettingsFile(ALIAS_FILE_NAME);
+        if (stored === null) return {};
+        const raw = stored;
         if (raw.trim() === "") return {};
         const parsed = JSON.parse(raw) as unknown;
         if (parsed === null || typeof parsed !== "object") return {};

@@ -1,16 +1,19 @@
 /// <reference types="../../../CTAutocomplete" />
 
 import { getHousingUuid } from "./housing";
+import { readSettingsFile, settingsFilePath } from "../../persistence/settingsFiles";
 
-const TRUSTED_HOUSES_FILE = "./htsw/.cache/trusted-houses.json";
+const TRUSTED_HOUSES_FILE_NAME = "trusted-houses.json";
+const TRUSTED_HOUSES_FILE = settingsFilePath(TRUSTED_HOUSES_FILE_NAME);
 let trustedHousesLoaded = false;
 const trustedHouses: Set<string> = new Set();
 
 function loadTrustedHouses(): void {
     if (trustedHousesLoaded) return;
     try {
-        if (FileLib.exists(TRUSTED_HOUSES_FILE)) {
-            const raw = String(FileLib.read(TRUSTED_HOUSES_FILE) ?? "");
+        const stored = readSettingsFile(TRUSTED_HOUSES_FILE_NAME);
+        if (stored !== null) {
+            const raw = stored;
             if (raw.trim() !== "") {
                 const arr = JSON.parse(raw) as unknown;
                 if (Array.isArray(arr)) {
