@@ -203,9 +203,13 @@ function rescanButton(t: HouseContentType, uuid: string | null): Element {
 // The sort/filter buttons mirror the Projects bar: no background until active
 // (then the same green tint), so only the refresh button — which keeps its
 // button background — reads as a distinct action.
+// Background must be a function: passing a bare `undefined` value makes Button
+// fall back to its default COLOR_BUTTON box, which is what boxed these controls.
+// A function that returns undefined reads as "no background", like the Projects
+// sort/filter buttons.
 function barControlButton(
     iconName: IconName,
-    active: boolean,
+    isActive: () => boolean,
     tooltip: string,
     onClick: (rect: Rect) => void
 ): Element {
@@ -213,14 +217,13 @@ function barControlButton(
         style: {
             width: { kind: "px", value: SCAN_BUTTON_W },
             height: { kind: "grow" },
-            background: active ? FILTER_ACTIVE_BG : undefined,
-            hoverBackground: active ? FILTER_ACTIVE_HOVER_BG : undefined,
+            background: () => (isActive() ? FILTER_ACTIVE_BG : undefined),
+            hoverBackground: () => (isActive() ? FILTER_ACTIVE_HOVER_BG : undefined),
         },
         onClick: (rect) => onClick(rect),
         children: [
             Icon({
                 name: iconName,
-                color: active ? COLOR_TEXT : COLOR_TEXT_DIM,
                 tooltip,
                 tooltipColor: COLOR_TEXT_DIM,
                 style: { width: { kind: "px", value: 12 }, height: { kind: "px", value: 12 } },
@@ -230,7 +233,7 @@ function barControlButton(
 }
 
 function houseSortButton(): Element {
-    return barControlButton(Icons.arrowUpDown, !isHouseSortDefault(), "Sort", (rect) => {
+    return barControlButton(Icons.arrowUpDown, () => !isHouseSortDefault(), "Sort", (rect) => {
         togglePopover({
             key: "houses-sort",
             anchor: rect,
@@ -242,7 +245,7 @@ function houseSortButton(): Element {
 }
 
 function houseStatusFilterButton(): Element {
-    return barControlButton(Icons.filter, selectedHouseStatuses.size > 0, "Filter by status", (rect) => {
+    return barControlButton(Icons.filter, () => selectedHouseStatuses.size > 0, "Filter by status", (rect) => {
         togglePopover({
             key: "houses-status-filter",
             anchor: rect,
@@ -286,9 +289,9 @@ function searchRow(t: HouseContentType, uuid: string | null, canScan: boolean): 
             },
         }),
     ];
-    if (canScan) children.push(rescanButton(t, uuid));
     children.push(houseSortButton());
     children.push(houseStatusFilterButton());
+    if (canScan) children.push(rescanButton(t, uuid));
     return Row({
         style: { gap: 4, height: { kind: "px", value: SIZE_ROW_H + 6 } },
         children,
