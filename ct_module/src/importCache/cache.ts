@@ -26,7 +26,7 @@ const CACHE_SCHEMA_VERSION = 2;
 const CACHE_ENTRY_VERSION = 1;
 const ACCEPTED_SCHEMA_VERSIONS = [1, 2];
 
-export type CacheWriter = "exporter" | "importer" | "reader";
+export type CacheWriter = "exporter" | "importer" | "reader" | "project-lock";
 
 // In-memory mirror of the on-disk cache, keyed by cache-file path. The
 // knowledge-status build reads every importable's cache entry on every
@@ -138,7 +138,7 @@ export function writeImportableCache(
     importable: Importable,
     writer: CacheWriter,
     quiet?: boolean
-): void {
+): boolean {
     const path = cachePathFor(housingUuid, importable);
     const entry = buildImportableCacheEntry(importable, writer);
     try {
@@ -159,8 +159,10 @@ export function writeImportableCache(
             label: houseDisplayLabel(importable),
         });
         if (quiet !== true) ctx.displayMessage(`&7[cache] saved &f${path}`);
+        return true;
     } catch (error) {
         ctx.displayMessage(`&7[cache] &eFailed to write cache at ${path}: ${error}`);
+        return false;
     }
 }
 

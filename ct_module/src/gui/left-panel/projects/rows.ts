@@ -83,6 +83,7 @@ import {
     caretButton,
 } from "./rowModel";
 import { openMoveDestinationPicker } from "./moveDestinationPicker";
+import { acceptHouseLockMenuAction } from "./acceptHouseLock";
 import { confirmRebind, houseBindingActions } from "../../houseBinding";
 import type { Bounds, Importable, MenuSlot } from "htsw/types";
 import { tagChild, type TagLike } from "../../../housingSync/fields/itemTagCanonical";
@@ -944,6 +945,7 @@ export function resultRow(
                       if (nowOn) autoTrackRefresh();
                   },
               },
+              acceptHouseLockMenuAction(r.fullPath),
               {
                   label: "Open project in VSCode",
                   onClick: () => {
