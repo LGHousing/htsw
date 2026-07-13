@@ -4,6 +4,7 @@ import { Element, Rect } from "../../lib/layout";
 import { Button, Col, Container, Icon, Scroll, Text } from "../../lib/components";
 import { Icons, IconName } from "../../lib/icons.generated";
 import {
+    getExportImportJsonPath,
     getHousingUuid,
     isHouseTrusted,
     setHousingUuid,
@@ -23,6 +24,7 @@ import { deleteHousingCache } from "../../../importCache/cache";
 import { clearAlias } from "../../../importCache/aliases";
 import { javaType } from "../../lib/java";
 import { openBoundProjectForHouse } from "../../boundProject";
+import { confirmRebind } from "../../houseBinding";
 import {
     ACCENT_DANGER,
     ACCENT_SUCCESS,
@@ -312,8 +314,18 @@ function houseSelector(viewed: string | null): Element {
         onClick: (rect, info) => {
             if (info.button === 1) {
                 if (viewed !== null) {
-                    openMenu(info.x, info.y, [
+                    const actions = [
                         { label: "Set alias", onClick: () => openAliasPopover(rect, viewed) },
+                    ];
+                    const exportProject = getExportImportJsonPath();
+                    if (exportProject.trim() !== "") {
+                        actions.push({
+                            label: `Bind ${shortPath(exportProject)}`,
+                            onClick: () => confirmRebind(exportProject, viewed),
+                        });
+                    }
+                    openMenu(info.x, info.y, [
+                        ...actions,
                         { kind: "separator" },
                         { label: "Delete tracked house", onClick: () => confirmDeleteHouse(viewed) },
                     ]);

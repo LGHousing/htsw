@@ -15,10 +15,15 @@ import {
     COLOR_TEXT,
     COLOR_TEXT_DIM,
     COLOR_TEXT_FAINT,
-    SIZE_ROW_H,
 } from "../lib/theme";
 import { closeAllPopovers } from "../lib/popovers";
-import { compactFileLabel, normalizeHtswPath, shortPath } from "../lib/pathDisplay";
+import {
+    basename,
+    compactFileLabel,
+    dirname,
+    normalizeHtswPath,
+    shortPath,
+} from "../lib/pathDisplay";
 import {
     getEffectiveNewExportTarget,
     getExportImportJsonPath,
@@ -40,7 +45,6 @@ import { openConfirmPopover } from "../popovers/confirm";
 import { openTextPromptPopover } from "../popovers/text-prompt";
 import {
     buildPickerNode,
-    newPickerRow,
     pickerTreeRows,
     type PickerNode,
 } from "../popovers/includeTreePicker";
@@ -111,7 +115,8 @@ function destinationSection(label: string): Element {
 }
 
 function destinationRow(path: string, boundPath: string | null): Element {
-    const selected = normalizeHtswPath(path) === normalizeHtswPath(getExportImportJsonPath());
+    const selected = (): boolean =>
+        normalizeHtswPath(path) === normalizeHtswPath(getExportImportJsonPath());
     const bound = boundPath !== null && normalizeHtswPath(path) === boundPath;
     return Container({
         style: {
@@ -119,9 +124,9 @@ function destinationRow(path: string, boundPath: string | null): Element {
             align: "center",
             padding: { side: "x", value: 8 },
             gap: 6,
-            height: { kind: "px", value: SIZE_ROW_H },
-            background: selected ? COLOR_ROW_SELECTED : COLOR_ROW,
-            hoverBackground: selected ? COLOR_ROW_SELECTED_HOVER : COLOR_ROW_HOVER,
+            height: { kind: "px", value: 28 },
+            background: () => (selected() ? COLOR_ROW_SELECTED : COLOR_ROW),
+            hoverBackground: () => (selected() ? COLOR_ROW_SELECTED_HOVER : COLOR_ROW_HOVER),
         },
         // Selecting a destination keeps the picker open so the "New exports
         // land in" tree below can rebuild for it — the whole point of the
@@ -131,18 +136,17 @@ function destinationRow(path: string, boundPath: string | null): Element {
             markGuiDirty();
         },
         children: [
-            Icon({ name: selected ? Icons.check : Icons.fileJson }),
-            Text({
-                text: compactFileLabel(path),
-                color: bound ? ACCENT_SUCCESS : COLOR_TEXT,
-                truncate: true,
-                style: { width: { kind: "grow" } },
-            }),
-            Text({
-                text: shortPath(path),
-                color: COLOR_TEXT_DIM,
-                truncate: true,
-                style: { width: { kind: "grow" } },
+            Icon({ name: () => (selected() ? Icons.check : Icons.fileJson) }),
+            Col({
+                style: { gap: 2, width: { kind: "grow" } },
+                children: [
+                    Text({
+                        text: basename(dirname(path)) || compactFileLabel(path),
+                        color: bound ? ACCENT_SUCCESS : COLOR_TEXT,
+                        truncate: true,
+                    }),
+                    Text({ text: shortPath(path), color: COLOR_TEXT_DIM, truncate: true }),
+                ],
             }),
             ...(bound
                 ? [
@@ -189,7 +193,7 @@ function splitIntoSectionFolders(importJsonPath: string): void {
 // The sub-target tree (where a new export lands) is rebuilt from the current
 // base each time the picker opens; the base's include structure is the set of
 // files a new export can be routed into.
-const EXPORT_PROJECTS_SCROLL_H = SIZE_ROW_H * 3 + 6;
+const EXPORT_PROJECTS_SCROLL_H = 28 * 3 + 6;
 let exportSubRoots: PickerNode[] = [];
 const exportSubExpansion: Set<string> = new Set();
 // Signature of what `exportSubRoots` was last built from, so the tree rebuilds
@@ -260,33 +264,52 @@ function exportSubTreeRows(): Element[] {
 // folder contains it, so `functions/combat` nests under functions/) and route
 // new exports there. Closes the picker; reopening shows the new file checked.
 function newExportFileRow(): Element {
-    return newPickerRow("New import.json…", () => {
-        const base = getExportImportJsonPath();
-        if (base.trim() === "") return;
-        openTextPromptPopover({
-            title: "New import.json",
-            description: [
-                "Name a folder to hold the new import.json;",
-                "it's created and included in your project.",
-                "Use a slash to nest, e.g. functions/combat",
-            ],
-            placeholder: "combat",
-            submitLabel: "Create",
-            width: 288,
-            onSubmit: (folderPath) => {
-                try {
-                    const created = createIncludedFolderInTree(base, folderPath);
-                    setNewExportTarget(created.importJsonPath);
-                    invalidateParseCacheEntry(base);
-                    requestParse(base);
-                    bumpTreeRevision();
-                    closeAllPopovers();
-                    showToast(`New exports → ${shortPath(created.importJsonPath)}`, 0xff5cb85c);
-                } catch (err) {
-                    ChatLib.chat(`&c[htsw] New file failed: ${err}`);
-                }
-            },
-        });
+    const disabled = (): boolean => getExportImportJsonPath().trim() === "";
+    return Button({
+        icon: Icons.folderPlus,
+        text: "New import.json…",
+        disabled,
+        tooltip: () =>
+            disabled() ? "Choose a project first" : "Create an included export folder",
+        tooltipColor: COLOR_TEXT_FAINT,
+        style: {
+            width: { kind: "grow" },
+            height: { kind: "grow" },
+            justify: "start",
+            background: COLOR_BUTTON,
+            hoverBackground: COLOR_BUTTON_HOVER,
+        },
+        onClick: () => {
+            const base = getExportImportJsonPath();
+            if (base.trim() === "") return;
+            openTextPromptPopover({
+                title: "New import.json",
+                description: [
+                    "Name a folder to hold the new import.json;",
+                    "it's created and included in your project.",
+                    "Use a slash to nest, e.g. functions/combat",
+                ],
+                placeholder: "combat",
+                submitLabel: "Create",
+                width: 288,
+                onSubmit: (folderPath) => {
+                    try {
+                        const created = createIncludedFolderInTree(base, folderPath);
+                        setNewExportTarget(created.importJsonPath);
+                        invalidateParseCacheEntry(base);
+                        requestParse(base);
+                        bumpTreeRevision();
+                        closeAllPopovers();
+                        showToast(
+                            `New exports → ${shortPath(created.importJsonPath)}`,
+                            0xff5cb85c
+                        );
+                    } catch (err) {
+                        ChatLib.chat(`&c[htsw] New file failed: ${err}`);
+                    }
+                },
+            });
+        },
     });
 }
 
@@ -332,7 +355,6 @@ export function exportDestinationPicker(): Element {
     const rawBound = uuid !== null ? boundImportJsonPath(uuid) : null;
     const boundPath = rawBound !== null ? normalizeHtswPath(rawBound) : null;
     const row = (path: string) => destinationRow(path, boundPath);
-    const dest = getExportImportJsonPath();
 
     // Force a fresh sub-tree build on first render (resets expansion for the
     // current destination); `ensureExportSubTree` keeps it current after that.
@@ -346,7 +368,18 @@ export function exportDestinationPicker(): Element {
     return Col({
         style: { gap: 4, padding: 4, height: { kind: "grow" } },
         children: [
-            destinationSection("Destination project"),
+            Text({
+                text: "Export destination",
+                color: COLOR_TEXT,
+                style: { padding: { side: "x", value: 4 } },
+            }),
+            Text({
+                text: "Choose the project and where newly exported items are created.",
+                color: COLOR_TEXT_DIM,
+                truncate: true,
+                style: { padding: { side: "x", value: 4 } },
+            }),
+            destinationSection("Project"),
             Scroll({
                 id: "export-dest-projects",
                 style: { gap: 2, height: { kind: "px", value: EXPORT_PROJECTS_SCROLL_H } },
@@ -386,13 +419,13 @@ export function exportDestinationPicker(): Element {
             }),
             Row({
                 style: { gap: 4, align: "center", height: { kind: "px", value: 16 } },
-                children: [
+                children: () => [
                     Text({
-                        text: "New exports land in",
+                        text: "Folder for new exports",
                         color: COLOR_TEXT_FAINT,
                         style: { width: { kind: "grow" }, padding: { side: "x", value: 4 } },
                     }),
-                    splitAction(dest),
+                    splitAction(getExportImportJsonPath()),
                 ],
             }),
             Scroll({
@@ -400,7 +433,25 @@ export function exportDestinationPicker(): Element {
                 style: { gap: 1, height: { kind: "grow" } },
                 children: () => exportSubTreeRows(),
             }),
-            newExportFileRow(),
+            Row({
+                style: { gap: 4, height: { kind: "px", value: 20 } },
+                children: [
+                    Container({
+                        style: { width: { kind: "grow" }, height: { kind: "grow" } },
+                        children: [newExportFileRow()],
+                    }),
+                    Button({
+                        text: "Done",
+                        style: {
+                            width: { kind: "px", value: 64 },
+                            height: { kind: "grow" },
+                            background: COLOR_BUTTON,
+                            hoverBackground: COLOR_BUTTON_HOVER,
+                        },
+                        onClick: () => closeAllPopovers(),
+                    }),
+                ],
+            }),
         ],
     });
 }

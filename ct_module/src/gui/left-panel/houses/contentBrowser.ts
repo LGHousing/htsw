@@ -11,9 +11,8 @@ import {
     isHouseTrusted,
 } from "../../state";
 import { GLYPH_DOT } from "../../lib/theme";
-import { shortPath } from "../../lib/pathDisplay";
-import { canonicalPath, requestParse } from "../../parsing/parses";
-import { boundImportJsonPath } from "../../../importCache/houseBindings";
+import { basename, dirname, shortPath } from "../../lib/pathDisplay";
+import { requestParse } from "../../parsing/parses";
 import { openConfirmPopover } from "../../popovers/confirm";
 import { openMenu, type MenuAction } from "../../lib/menu";
 import { togglePopover } from "../../lib/popovers";
@@ -26,7 +25,6 @@ import {
 } from "./exportSelection";
 import { importableIdentity } from "../../../importables/identity";
 import {
-    ACCENT_SUCCESS,
     COLOR_BUTTON,
     COLOR_BUTTON_HOVER,
     COLOR_BUTTON_PRIMARY,
@@ -59,7 +57,6 @@ import {
     FILTER_ACTIVE_HOVER_BG,
 } from "../statusFilter";
 import type { Importable } from "htsw/types";
-import { boundHouseUuidOf, confirmRebind } from "../../houseBinding";
 import { TAB_GAP, tabLabelsFit } from "../tabs";
 
 // Rhino lacks String.prototype.repeat, so cycle through a fixed table.
@@ -605,95 +602,61 @@ function exportActionBar(t: HouseContentType, uuid: string, items: HouseImportab
     const hasDest = getExportImportJsonPath().trim() !== "";
     const hasItems = totalCount > 0;
     const canExportItems = hasDest && hasItems;
-    const destBound = hasDest ? boundHouseUuidOf(getExportImportJsonPath()) : null;
-    const destBoundHere = destBound !== null && destBound === uuid;
-    const canBindDest = hasDest && !destBoundHere;
     return Col({
-        // Right inset so the caret split-button isn't flush against the panel
-        // edge (it sat right at the boundary and read as clipped).
         style: { gap: 4, padding: { side: "right", value: 8 } },
         children: [
-            Row({
+            Button({
                 style: {
-                    gap: 4,
-                    height: { kind: "px", value: SIZE_ROW_H },
+                    direction: "row",
+                    justify: "start",
+                    gap: 6,
+                    padding: { side: "x", value: 8 },
+                    height: { kind: "px", value: 34 },
                     align: "center",
+                    background: COLOR_BUTTON,
+                    hoverBackground: COLOR_BUTTON_HOVER,
                 },
+                tooltip: hasDest ? "Change export destination" : "Choose an export destination",
+                tooltipColor: COLOR_TEXT_DIM,
+                onClick: (rect: Rect) =>
+                    togglePopover({
+                        key: "houses-export-destination",
+                        anchor: rect,
+                        content: exportDestinationPicker(),
+                        width: 380,
+                        height: 320,
+                    }),
                 children: [
-                    (() => {
-                        const bound = boundImportJsonPath(uuid);
-                        if (bound === null) return false;
-                        const d = getExportImportJsonPath();
-                        const matches = d.trim() !== "" && canonicalPath(d) === bound;
-                        const color = uuid === getHousingUuid() ? ACCENT_SUCCESS : COLOR_TEXT_FAINT;
-                        return Icon({
-                            name: Icons.house,
-                            color,
-                            tooltip: matches
-                                ? "Destination is this house's bound file"
-                                : `This house's bound file is ${shortPath(bound)}`,
-                            tooltipColor: color,
-                            style: {
-                                width: { kind: "px", value: 10 },
-                                height: { kind: "px", value: 10 },
-                            },
-                        });
-                    })(),
-                    Text({
-                        // Shows where NEW exports land: the base file, or the
-                        // sticky sub-target when one is chosen (its path already
-                        // carries the project prefix, so it reads as project/sub).
-                        text: () => {
-                            const d = getExportImportJsonPath();
-                            if (d.trim() === "") return "No export destination";
-                            const target = getEffectiveNewExportTarget();
-                            return `→ ${shortPath(target)}`;
-                        },
-                        color: COLOR_TEXT_DIM,
-                        truncate: true,
-                        style: {
-                            width: { kind: "grow" },
-                            padding: { side: "x", value: 4 },
-                        },
+                    Icon({
+                        name: hasDest ? Icons.folderOutput : Icons.folderPlus,
+                        color: hasDest ? undefined : COLOR_TEXT_DIM,
                     }),
-                    Button({
-                        text: destBoundHere ? "Bound" : "Bind",
-                        textColor: canBindDest ? undefined : COLOR_TEXT_FAINT,
-                        style: {
-                            width: { kind: "px", value: 52 },
-                            height: { kind: "grow" },
-                            background: COLOR_BUTTON,
-                            hoverBackground: canBindDest ? COLOR_BUTTON_HOVER : COLOR_BUTTON,
-                        },
-                        tooltip: !hasDest
-                            ? "Choose a destination first"
-                            : destBoundHere
-                              ? "Destination is already bound to this house"
-                              : "Bind destination to this house",
-                        tooltipColor: canBindDest ? COLOR_TEXT_DIM : COLOR_TEXT_FAINT,
-                        disabled: !canBindDest,
-                        onClick: () => {
-                            if (!canBindDest) return;
-                            confirmRebind(getExportImportJsonPath(), uuid);
-                        },
-                    }),
-                    Button({
-                        text: "Change",
-                        style: {
-                            width: { kind: "px", value: 60 },
-                            height: { kind: "grow" },
-                            background: COLOR_BUTTON,
-                            hoverBackground: COLOR_BUTTON_HOVER,
-                        },
-                        onClick: (rect: Rect) =>
-                            togglePopover({
-                                key: "houses-export-destination",
-                                anchor: rect,
-                                content: exportDestinationPicker(),
-                                width: 380,
-                                height: 320,
+                    Col({
+                        style: { gap: 2, width: { kind: "grow" } },
+                        children: [
+                            Text({
+                                text: () => {
+                                    const destination = getExportImportJsonPath();
+                                    if (destination.trim() === "") return "Choose where to export";
+                                    const project = basename(dirname(destination));
+                                    return `Project: ${project}`;
+                                },
+                                color: hasDest ? COLOR_TEXT : COLOR_TEXT_DIM,
+                                truncate: true,
                             }),
+                            Text({
+                                text: () => {
+                                    if (getExportImportJsonPath().trim() === "") {
+                                        return "Select a project and folder";
+                                    }
+                                    return `New exports: ${shortPath(getEffectiveNewExportTarget())}`;
+                                },
+                                color: COLOR_TEXT_DIM,
+                                truncate: true,
+                            }),
+                        ],
                     }),
+                    Icon({ name: Icons.chevronRight, color: COLOR_TEXT_DIM }),
                 ],
             }),
             Row({
