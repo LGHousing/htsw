@@ -148,7 +148,8 @@
                 {
                     "id": "htsw.tools",
                     "type": "webview",
-                    "name": "HTSW"
+                    "name": "HTSW",
+                    "icon": "media/htsw-activitybar.svg"
                 }
             ]
         },
