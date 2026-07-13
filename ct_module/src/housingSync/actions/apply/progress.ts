@@ -5,13 +5,16 @@ import type {
     ActionListOperation,
 } from "../../types";
 import {
-    actionPathForIndex,
-    type ActionPath,
     type DiffSummary,
     type SyncEventHandler,
     type PlannedOp,
     type ProgressScope,
 } from "../../syncEvents";
+import {
+    actionPathForIndex,
+    type ActionListPath,
+    type ActionPath,
+} from "../../actionPath";
 import {
     actionOperationApplyUnits,
     editUnitsWithChildLists,
@@ -25,7 +28,7 @@ export function emitDiffPlanned(
     events: SyncEventHandler | undefined,
     diff: ActionListDiff,
     desired: Action[],
-    listPath: ActionPath | undefined
+    listPath: ActionListPath | undefined
 ): void {
     if (events === undefined) return;
     const operations: PlannedOp[] = [];

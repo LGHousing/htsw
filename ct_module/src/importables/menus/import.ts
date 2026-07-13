@@ -401,8 +401,7 @@ export async function applyImportableMenuPlan(
         if (op.syncActions === undefined) continue;
         startSlot(op.slot, op.itemLabel);
         const progressScope: ProgressScope = {
-            kind: "childList",
-            path: { parts: [] },
+            kind: "menuSlotActions",
             baselineApplyUnits: completedUnits,
             parentSync: { completedUnits: workDone, totalUnits: totals.count },
         };

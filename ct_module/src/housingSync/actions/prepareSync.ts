@@ -5,7 +5,8 @@ import type { ImportableTrustPlan } from "../../importCache";
 import { readCachedActionList } from "../../importCache/actionLists";
 import TaskContext from "../../tasks/context";
 import type { ActionListTrust } from "../types";
-import type { ActionPath, ProgressScope } from "../syncEvents";
+import type { ProgressScope } from "../syncEvents";
+import type { ActionListPath } from "../actionPath";
 import {
     createKnownActionListPlan,
     createKnownEmptyActionListPlan,
@@ -25,7 +26,7 @@ export type ActionListSyncTarget = {
     trustPlan?: ImportableTrustPlan;
     open?: () => Promise<void>;
     current?: { kind: "known-empty" };
-    listPath?: ActionPath;
+    listPath?: ActionListPath;
     progressScope?: ProgressScope;
 };
 

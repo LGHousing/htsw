@@ -3,7 +3,9 @@ import type { ItemSlot } from "../tasks/specifics/slots";
 import type { ItemRegistry } from "../importables/itemRegistry";
 import type { ItemCaptureRegistry } from "./itemCapture";
 import type { ProgressHandler, PhaseUnits } from "./progress/types";
-import type { ActionPath, SyncEventHandler } from "./syncEvents";
+import type { ActionListPath, ChildListName } from "./actionPath";
+import type { SyncEventHandler } from "./syncEvents";
+export type { ChildListName } from "./actionPath";
 
 export type UiFieldKind =
     | "boolean"
@@ -60,8 +62,6 @@ export type ActionLoreSpec<T extends Action> = {
     displayName: string;
     loreFields: Record<string, ActionLoreFieldSpec<T>>;
 };
-
-export type ChildListName = "conditions" | "ifActions" | "elseActions" | "actions";
 
 /** Child list properties that still need to be read by clicking in. */
 export type ChildListsToRead = Set<ChildListName>;
@@ -207,7 +207,7 @@ type ReadContext = {
     itemRegistry?: ItemRegistry;
     itemCaptures?: ItemCaptureRegistry;
     events?: SyncEventHandler;
-    listPath?: ActionPath;
+    listPath?: ActionListPath;
     emitSnapshot?: () => void;
 };
 

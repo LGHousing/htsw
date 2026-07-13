@@ -52,8 +52,18 @@ import {
 import { getHousingUuid } from "../state/housing";
 import { readCachedActionList } from "../../importCache/actionLists";
 import { actionLineRange as parsedActionLineRange, parseHtslFile } from "./htslParse";
-
-type SourceActionPathKey = string;
+import {
+    actionAtPath,
+    actionPathDepth,
+    actionPathForIndex,
+    actionPathKey,
+    actionTreePathKey,
+    childActionListPath,
+    parentActionPath,
+    type ActionListPath,
+    type ActionPath,
+    type ActionPathKey,
+} from "../../housingSync/actionPath";
 
 export type SourceDiffGhost = {
     id: string;
@@ -63,7 +73,7 @@ export type SourceDiffGhost = {
 };
 
 export type SourceDiffEntry = {
-    states: Map<SourceActionPathKey, DiffState>;
+    states: Map<ActionPathKey, DiffState>;
     ghostsBeforeLine: Map<number, SourceDiffGhost[]>;
     ghostsAtEnd: SourceDiffGhost[];
 };
@@ -189,7 +199,7 @@ function computeFor(filePath: string, importJsonPath?: string | null): SourceDif
         out,
         cachedPrefix,
         "",
-        "",
+        undefined,
         sourceActions,
         cachedActions,
         cachedLists,
@@ -291,7 +301,7 @@ function walk(
     out: SourceDiffEntry,
     prefix: string,
     cacheBracketed: string,
-    sourceDotted: string,
+    sourceListPath: ActionListPath | undefined,
     items: readonly Action[],
     cachedItems: readonly Action[],
     lists: { [k: string]: string[] },
@@ -304,10 +314,11 @@ function walk(
     // positional compare reads that whole tail as edited/added. See `matchByHash`.
     const sourceHashes = items.map((a) => actionHash(a));
     const matched = matchByHash(sourceHashes, slots);
-    addDeletedGhosts(out, sourceDotted, items, cachedItems, matched, sourceFile);
+    addDeletedGhosts(out, sourceListPath, items, cachedItems, matched, sourceFile);
     for (let i = 0; i < items.length; i++) {
         const action = items[i];
-        const dotted = sourceDotted === "" ? `${i}` : `${sourceDotted}.${i}`;
+        const sourcePath = actionPathForIndex(sourceListPath, i);
+        const sourcePathKey = actionPathKey(sourcePath);
         const j = matched[i];
         const cachedAction = j === null ? undefined : cachedItems[j];
         let state: DiffState;
@@ -331,15 +342,15 @@ function walk(
         } else {
             state = slots !== undefined && slots[j] === sourceHashes[i] ? "match" : "edit";
         }
-        out.states.set(dotted, state);
+        out.states.set(sourcePathKey, state);
         if (state === "edit" && cachedAction !== undefined) {
             addGhostBeforeAction(
                 out,
-                dotted,
+                sourcePath,
                 {
-                    id: `${dotted}:edit`,
+                    id: `${sourcePathKey}:edit`,
                     action: cachedAction,
-                    depth: actionDepth(dotted),
+                    depth: actionPathDepth(sourcePath),
                     headOnly: action.type === "CONDITIONAL",
                 },
                 sourceFile
@@ -356,7 +367,7 @@ function walk(
                 out,
                 prefix,
                 `${cacheBracketed}[${childIndex}].ifActions`,
-                `${dotted}.ifActions`,
+                childActionListPath(sourcePath, "ifActions"),
                 action.ifActions,
                 cachedAction !== undefined && cachedAction.type === "CONDITIONAL"
                     ? cachedAction.ifActions
@@ -368,7 +379,7 @@ function walk(
                 out,
                 prefix,
                 `${cacheBracketed}[${childIndex}].elseActions`,
-                `${dotted}.elseActions`,
+                childActionListPath(sourcePath, "elseActions"),
                 action.elseActions,
                 cachedAction !== undefined && cachedAction.type === "CONDITIONAL"
                     ? cachedAction.elseActions
@@ -381,7 +392,7 @@ function walk(
                 out,
                 prefix,
                 `${cacheBracketed}[${childIndex}].actions`,
-                `${dotted}.actions`,
+                childActionListPath(sourcePath, "actions"),
                 action.actions,
                 cachedAction !== undefined && cachedAction.type === "RANDOM"
                     ? cachedAction.actions
@@ -393,36 +404,12 @@ function walk(
     }
 }
 
-function actionDepth(actionPath: string): number {
-    return Math.floor(actionPath.split(".").length / 2);
-}
-
-function sourceActionAt(actions: readonly Action[], actionPath: string): Action | null {
-    const parts = actionPath.split(".");
-    let action: Action | null = null;
-    let list: readonly Action[] = actions;
-    for (let i = 0; i < parts.length; i++) {
-        const part = parts[i];
-        if (/^\d+$/.test(part)) {
-            action = list[Number(part)] ?? null;
-            if (action === null) return null;
-        } else {
-            if (action === null) return null;
-            const child = (action as unknown as Record<string, unknown>)[part];
-            if (!Array.isArray(child)) return null;
-            list = child as Action[];
-            action = null;
-        }
-    }
-    return action;
-}
-
 function actionLineRange(
     sourceFile: ReturnType<typeof parseHtslFile>,
-    actionPath: string
+    actionPath: ActionPath
 ): { start: number; end: number } | null {
     if (sourceFile.file === null || sourceFile.spans === null) return null;
-    const action = sourceActionAt(sourceFile.actions, actionPath);
+    const action = actionAtPath(sourceFile.actions, actionPath);
     if (action === null) return null;
     return parsedActionLineRange(sourceFile.file, sourceFile.spans, action);
 }
@@ -439,7 +426,7 @@ function addGhostBeforeLine(
 
 function addGhostBeforeAction(
     out: SourceDiffEntry,
-    actionPath: string,
+    actionPath: ActionPath,
     ghost: SourceDiffGhost,
     sourceFile: ReturnType<typeof parseHtslFile>
 ): void {
@@ -450,7 +437,7 @@ function addGhostBeforeAction(
 
 function addDeletedGhosts(
     out: SourceDiffEntry,
-    sourceDotted: string,
+    sourceListPath: ActionListPath | undefined,
     items: readonly Action[],
     cachedItems: readonly Action[],
     matched: readonly (number | null)[],
@@ -464,10 +451,13 @@ function addDeletedGhosts(
     const lineCount = sourceFile.file === null ? 0 : sourceFile.file.src.split("\n").length;
     for (let j = 0; j < cachedItems.length; j++) {
         if (used[j]) continue;
+        const listKey = sourceListPath === undefined
+            ? "root"
+            : actionTreePathKey(sourceListPath);
         const ghost: SourceDiffGhost = {
-            id: `${sourceDotted}:delete:${j}`,
+            id: `${listKey}:delete:${j}`,
             action: cachedItems[j],
-            depth: actionDepth(sourceDotted === "" ? "0" : `${sourceDotted}.0`),
+            depth: actionPathDepth(actionPathForIndex(sourceListPath, 0)),
             headOnly: false,
         };
         let nextSource = -1;
@@ -479,9 +469,7 @@ function addDeletedGhosts(
             }
         }
         if (nextSource >= 0) {
-            const nextPath = sourceDotted === ""
-                ? `${nextSource}`
-                : `${sourceDotted}.${nextSource}`;
+            const nextPath = actionPathForIndex(sourceListPath, nextSource);
             addGhostBeforeAction(out, nextPath, ghost, sourceFile);
             continue;
         }
@@ -494,9 +482,7 @@ function addDeletedGhosts(
             }
         }
         if (previousSource >= 0) {
-            const previousPath = sourceDotted === ""
-                ? `${previousSource}`
-                : `${sourceDotted}.${previousSource}`;
+            const previousPath = actionPathForIndex(sourceListPath, previousSource);
             const range = actionLineRange(sourceFile, previousPath);
             if (range !== null && range.end < lineCount) {
                 addGhostBeforeLine(out, range.end + 1, ghost);
@@ -506,12 +492,13 @@ function addDeletedGhosts(
             continue;
         }
         if (items.length > 0) {
-            const firstPath = sourceDotted === "" ? "0" : `${sourceDotted}.0`;
+            const firstPath = actionPathForIndex(sourceListPath, 0);
             addGhostBeforeAction(out, firstPath, ghost, sourceFile);
             continue;
         }
-        if (sourceDotted !== "") {
-            const parentPath = sourceDotted.split(".").slice(0, -1).join(".");
+        if (sourceListPath !== undefined) {
+            const parentPath = parentActionPath(sourceListPath);
+            if (parentPath === null) continue;
             const parentRange = actionLineRange(sourceFile, parentPath);
             if (parentRange !== null && parentRange.start < lineCount) {
                 addGhostBeforeLine(out, parentRange.start + 1, ghost);

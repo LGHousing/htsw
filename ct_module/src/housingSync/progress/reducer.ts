@@ -271,8 +271,8 @@ function applyProgress(
     payload: ProgressPayload
 ): ProgressReducerState {
     if (state.active === null) return state;
-    if (scope.kind === "childList") {
-        return applyChildListProgress(state, scope, payload);
+    if (scope.kind !== "topLevel") {
+        return applyNestedListProgress(state, scope, payload);
     }
     const setupUnits = state.active.setupUnits;
     const eventTotalUnits =
@@ -325,9 +325,9 @@ function applyProgress(
     return rebuildSnapshot(state, next);
 }
 
-function applyChildListProgress(
+function applyNestedListProgress(
     state: ProgressReducerState,
-    scope: Extract<ProgressScope, { kind: "childList" }>,
+    scope: Exclude<ProgressScope, { kind: "topLevel" }>,
     payload: ProgressPayload
 ): ProgressReducerState {
     if (state.active === null) return state;

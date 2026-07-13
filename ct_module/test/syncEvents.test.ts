@@ -2,10 +2,13 @@ import { describe, expect, test } from "vitest";
 
 import { applyActionListPlan } from "../src/housingSync/actions/apply";
 import {
-    actionPathFromKey,
     type SyncEvent,
     type SyncEventHandler,
 } from "../src/housingSync/syncEvents";
+import {
+    actionPathForIndex,
+    childActionListPath,
+} from "../src/housingSync/actionPath";
 import type { ActionListDiff } from "../src/housingSync/types";
 import type { ActionListPlan } from "../src/housingSync/actions/plan";
 import { createItemRegistry } from "../src/importables/itemRegistry";
@@ -69,7 +72,10 @@ describe("applyActionListPlan — top-level-only terminal events", () => {
             emptyPlan(),
             {
                 session: sessionWith(handler),
-                listPath: actionPathFromKey("5.ifActions"),
+                listPath: childActionListPath(
+                    actionPathForIndex(undefined, 5),
+                    "ifActions"
+                ),
             }
         );
         const kinds = handler.events.map((e) => e.kind);

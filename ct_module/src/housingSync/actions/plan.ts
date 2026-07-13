@@ -22,11 +22,11 @@ import {
     phaseUnitsTotal,
 } from "../progress/costs";
 import type { ProgressScope } from "../syncEvents";
-import type { ActionPath } from "../syncEvents";
+import type { ActionListPath } from "../actionPath";
 
 export type ActionListApplyOptions = {
     session: ImportSession;
-    listPath?: ActionPath;
+    listPath?: ActionListPath;
     progressScope?: ProgressScope;
 };
 

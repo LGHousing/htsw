@@ -175,6 +175,48 @@ describe("progress reducer", () => {
         });
     });
 
+    test("menu slot action progress uses nested-list accounting without an action path", () => {
+        const s = emit([
+            {
+                kind: "sessionStarted",
+                rows: [{ key: "m", status: "queued", ...baseRow }],
+                initialTotalUnits: 10,
+            },
+            {
+                kind: "importableStarted",
+                key: "m",
+                type: "MENU",
+                identity: "Shop",
+                setupUnits: 0,
+                initialUnits: 10,
+                rowIndex: 0,
+                cached: null,
+            },
+            {
+                kind: "progress",
+                scope: {
+                    kind: "menuSlotActions",
+                    baselineApplyUnits: 2,
+                    parentSync: { completedUnits: 1, totalUnits: 3 },
+                },
+                progress: {
+                    phase: "applying",
+                    completedUnits: 3,
+                    totalUnits: 5,
+                    phaseUnits: { setup: 0, reading: 0, hydrating: 0, applying: 5 },
+                    sync: { completedUnits: 3, totalUnits: 5, parent: null },
+                },
+            },
+        ]);
+
+        expect(s.progress.active!.completedUnits).toBe(5);
+        expect(s.progress.active!.sync).toEqual({
+            completedUnits: 3,
+            totalUnits: 5,
+            parent: { completedUnits: 1, totalUnits: 3 },
+        });
+    });
+
     test("importableFinished folds into session totals + clears active", () => {
         const s = emit([
             {

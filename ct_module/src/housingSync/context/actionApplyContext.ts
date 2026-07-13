@@ -8,12 +8,16 @@ import type {
     ObservedActionSlot,
     ChildListDiff,
 } from "../types";
-import type {
-    ActionPath,
-    SyncEventHandler,
-    ProgressScope,
-} from "../syncEvents";
-import { childListPath } from "../syncEvents";
+import type { SyncEventHandler, ProgressScope } from "../syncEvents";
+import {
+    childActionListPath,
+    conditionListPath,
+    type ActionListPath,
+    type ActionPath,
+    type ChildActionListName,
+    type ChildListName,
+    type NestedListPath,
+} from "../actionPath";
 import type { ProgressHandler } from "../progress/types";
 import {
     estimateActionListPhaseUnits,
@@ -35,9 +39,9 @@ type ConditionApplyArgs = {
 
 export type ActionApplyContext = {
     markHeaderApplied(): void;
-    shouldApplyList(prop: string): boolean;
-    applyChildActions(prop: string, args: ChildActionApplyArgs): Promise<void>;
-    applyConditions(prop: string, args: ConditionApplyArgs): Promise<void>;
+    shouldApplyList(prop: ChildListName): boolean;
+    applyChildActions(prop: ChildActionListName, args: ChildActionApplyArgs): Promise<void>;
+    applyConditions(prop: "conditions", args: ConditionApplyArgs): Promise<void>;
 };
 
 type ApplyChildActionList = (
@@ -46,7 +50,7 @@ type ApplyChildActionList = (
     options: {
         observed?: ObservedActionSlot[];
         session: ImportSession;
-        listPath?: ActionPath;
+        listPath?: ActionListPath;
         baselineCurrent?: readonly Action[];
         progressScope?: ProgressScope;
     }
@@ -89,7 +93,7 @@ function childListScope(
     baselineApplyUnits: number,
     completedOps: number,
     totalOps: number
-): (path: ActionPath, extraOffset?: number) => ProgressScope {
+): (path: NestedListPath, extraOffset?: number) => ProgressScope {
     return (path, extraOffset) => ({
         kind: "childList",
         path,
@@ -122,7 +126,6 @@ export function createActionApplyContext({
 }: CreateActionApplyContextArgs): ActionApplyContext {
     const events = session.events;
     const scopeAt = childListScope(appliedUnits, completedOps, totalOps);
-    const pathForChildList = (prop: string): ActionPath => childListPath(actionPath, prop);
     const listsToApply = childListDiffs === undefined
         ? null
         : new Set(childListDiffs.map((diff) => diff.prop));
@@ -138,7 +141,7 @@ export function createActionApplyContext({
         },
 
         async applyChildActions(prop, args) {
-            const path = pathForChildList(prop);
+            const path = childActionListPath(actionPath, prop);
             const baselineCurrent = observedActionsAsBaselineCurrent(args.observed);
             const offset = args.offset ?? nextOffset;
             await applyChildActions(ctx, args.desired, {
@@ -153,7 +156,7 @@ export function createActionApplyContext({
         },
 
         async applyConditions(prop, args) {
-            const path = pathForChildList(prop);
+            const path = conditionListPath(actionPath);
             const offset = args.offset ?? nextOffset;
             await applyConditionList(ctx, args.desired, {
                 itemRegistry: session.items,

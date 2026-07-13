@@ -10,6 +10,7 @@
 import type { SyntaxToken } from "../right-panel/syntax";
 import type { DiffState } from "./diffPalette";
 import type { Diagnostic, ImportablesParseResult } from "htsw";
+import type { ActionTreePath } from "../../housingSync/actionPath";
 
 export type TokenSpan = SyntaxToken & {
     fieldProp?: string;
@@ -45,7 +46,7 @@ export type RenderableLine = {
     lineNum: number;
     depth: number;
     tokens: TokenSpan[];
-    actionPath?: string;
+    actionPath?: ActionTreePath;
     staticBackground?: number;
     staticForeground?: number;
     isHeader?: boolean;

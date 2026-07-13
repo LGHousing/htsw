@@ -12,19 +12,22 @@ import type {
 } from "../types";
 import type { PhaseUnits, ProgressHandler } from "../progress/types";
 import type { ReadConditionListOptions } from "../actions/conditions/readList";
+import type { SyncEventHandler } from "../syncEvents";
 import {
-    childListPath,
+    childActionListPath,
+    conditionListPath,
     type ActionPath,
-    type SyncEventHandler,
-} from "../syncEvents";
+    type ChildActionListName,
+    type NestedListPath,
+} from "../actionPath";
 import type { ItemCaptureRegistry } from "../itemCapture";
 
 export type ActionReadContext = {
     readChildActions(
-        prop: string,
+        prop: ChildActionListName,
         mode?: ActionListReadMode
     ): Promise<Array<Observed<Action> | null>>;
-    readConditions(prop: string): Promise<Array<Condition | null>>;
+    readConditions(prop: "conditions"): Promise<Array<Condition | null>>;
     emitSnapshot(): void;
 };
 
@@ -72,20 +75,18 @@ export function createActionReadContext({
     readConditions: readConditionList,
     childListProgress,
 }: CreateActionReadContextArgs): ActionReadContext {
-    const pathForChildList = (prop: string): ActionPath => childListPath(actionPath, prop);
-    const focusChildField = (prop: string): ActionPath => {
-        const path = pathForChildList(prop);
+    const focusChildField = (path: NestedListPath): void => {
         events?.emit({
             kind: "childListReadStarted",
             path,
             actionType,
         });
-        return path;
     };
 
     return {
         async readChildActions(prop, mode = { kind: "deep" }) {
-            const path = focusChildField(prop);
+            const path = childActionListPath(actionPath, prop);
+            focusChildField(path);
             const actions: Array<Observed<Action> | null> = [];
             const entries = await readChildActions(ctx, mode, {
                 itemRegistry,
@@ -102,7 +103,7 @@ export function createActionReadContext({
         },
 
         async readConditions(prop) {
-            focusChildField(prop);
+            focusChildField(conditionListPath(actionPath));
             const conditions: Array<Condition | null> = [];
             const entries = await readConditionList(ctx, {
                 itemRegistry,

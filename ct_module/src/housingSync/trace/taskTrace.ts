@@ -3,6 +3,7 @@
 import type { SyncEvent } from "../syncEvents";
 import { createJsonlTrace } from "../../trace/jsonl";
 import { recordRuntimeDebug } from "../../runtimeDebug/runtimeDebugBuffer";
+import { actionTreePathKey, type ActionTreePath } from "../actionPath";
 
 const taskTrace = createJsonlTrace("./htsw/task-trace.jsonl");
 
@@ -64,7 +65,7 @@ export function traceSyncEvent(event: SyncEvent): void {
         key: "key" in event ? event.key : undefined,
         status: "status" in event ? event.status : undefined,
         error: "error" in event ? event.error : undefined,
-        path: "path" in event ? event.path : undefined,
+        path: "path" in event ? tracePath(event.path) : undefined,
     });
     if (!taskTrace.isEnabled()) return;
     switch (event.kind) {
@@ -80,7 +81,12 @@ export function traceSyncEvent(event: SyncEvent): void {
             taskTrace.write({ kind: "phase", phase: "apply", rowIndex: event.rowIndex });
             return;
         case "readStarted":
-            taskTrace.write({ kind: "read", listPath: event.listPath });
+            taskTrace.write({
+                kind: "read",
+                listPath: event.listPath.parts.length === 0
+                    ? "actions"
+                    : actionTreePathKey(event.listPath),
+            });
             return;
         case "diffPlanned":
             taskTrace.write({ kind: "diffSummary", summary: event.summary });
@@ -88,7 +94,7 @@ export function traceSyncEvent(event: SyncEvent): void {
                 taskTrace.write({
                     kind: "op",
                     op: op.op,
-                    path: op.path,
+                    path: actionTreePathKey(op.path),
                     actionType: op.actionType,
                     fieldsChanged: op.op === "edit" ? op.fieldsChanged : undefined,
                     input:
@@ -101,7 +107,7 @@ export function traceSyncEvent(event: SyncEvent): void {
             taskTrace.write({
                 kind: "opStart",
                 op: event.op,
-                path: event.path,
+                path: actionTreePathKey(event.path),
                 actionType: event.actionType,
             });
             return;
@@ -127,4 +133,8 @@ export function traceSyncEvent(event: SyncEvent): void {
         case "finalizeSource":
             return;
     }
+}
+
+function tracePath(path: ActionTreePath | null | undefined): string | null | undefined {
+    return path === null || path === undefined ? path : actionTreePathKey(path);
 }

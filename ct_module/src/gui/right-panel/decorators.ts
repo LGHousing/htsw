@@ -12,6 +12,11 @@ import { focusLineIdForFile } from "./import-tab/focusedLine";
 import { tokenizeHtsl } from "./syntax";
 import type { LineDecorations, LineDecorator, RenderableLine } from "../code-view/lineTypes";
 import {
+    actionPathEquals,
+    actionPathKey,
+    isPathWithinAction,
+} from "../../housingSync/actionPath";
+import {
     effectiveFocusActionPath,
     getCurrentPath,
     getLiveSummary,
@@ -68,11 +73,12 @@ export function diffDecorator(path: string | null, importJsonPath?: string | nul
             const before = overlay.ghostsBeforeLine.get(line.lineNum);
             const extraLinesBefore = before === undefined ? undefined : ghostRows(before);
             if (line.actionPath === undefined) return { extraLinesBefore };
-            const state = overlay.states.get(line.actionPath);
+            if (line.actionPath.kind !== "action") return { extraLinesBefore };
+            const actionPathKeyValue = actionPathKey(line.actionPath);
+            const state = overlay.states.get(actionPathKeyValue);
             if (state === undefined) return { extraLinesBefore };
             if (state === "edit") {
-                const actionPath = line.actionPath;
-                if (line.id !== `htsl:${actionPath}`) return { extraLinesBefore };
+                if (line.id !== `htsl:${actionPathKeyValue}`) return { extraLinesBefore };
                 return {
                     state: "add",
                     extraLinesBefore,
@@ -128,11 +134,10 @@ export function progressDecorator(path: string | null): LineDecorator {
             let inFocusRange = false;
             if (focusPath !== null && line.actionPath !== undefined) {
                 inFocusRange = isApplyPhase
-                    ? isBody && line.actionPath === focusPath
-                    : (
-                        line.actionPath === focusPath
-                        || line.actionPath.indexOf(focusPath + ".") === 0
-                    );
+                    ? isBody
+                        && line.actionPath.kind === "action"
+                        && actionPathEquals(line.actionPath, focusPath)
+                    : isPathWithinAction(line.actionPath, focusPath);
             }
 
             const isCursorTarget = isApplyPhase
@@ -140,8 +145,8 @@ export function progressDecorator(path: string | null): LineDecorator {
                 : (isBody || isConsolidatedPlaceholder);
             const isFocused =
                 focusPath !== null
-                && line.actionPath !== undefined
-                && focusPath === line.actionPath
+                && line.actionPath?.kind === "action"
+                && actionPathEquals(focusPath, line.actionPath)
                 && isCursorTarget;
 
             const focusRowBg =
@@ -157,14 +162,9 @@ export function progressDecorator(path: string | null): LineDecorator {
                 };
             }
             if (preview.variant === "ghost") {
-                // Ghost shares actionPath with its body partner above; the cursor stays
-                // on the body. Background set directly (not via state: "edit") so the
-                // `~` glyph doesn't reappear here — the body line above already carries it.
                 return {
-                    foregroundColor: COLOR_GHOST_GRAY,
-                    italic: true,
+                    state: "add",
                     hideLineNum: true,
-                    background: ROW_BG_BY_STATE["edit"],
                     isFocused: false,
                     cursorColumnBackground: focusColBg,
                 };

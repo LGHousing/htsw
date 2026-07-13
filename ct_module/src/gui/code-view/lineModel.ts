@@ -17,6 +17,13 @@ import { getParseAt } from "../parsing/parses";
 import { tokenizeHtsl, tokenizeJson, tokenizeSnbt, type SyntaxToken } from "../right-panel/syntax";
 import type { FieldSpan, RenderableLine, TokenSpan } from "./lineTypes";
 import { normalizeDiagnosticSpans, type DiagnosticLineSpan } from "../../diagnostics/spans";
+import {
+    actionPathForIndex,
+    actionPathKey,
+    childActionListPath,
+    type ActionListPath,
+    type ActionPath,
+} from "../../housingSync/actionPath";
 
 const COLOR_PLAIN = 0xffe5e5e5 | 0;
 const COLOR_ERROR = 0xffe85c5c | 0;
@@ -289,13 +296,14 @@ function htslRenderableLines(
             undefined
         );
         let id: string;
-        if (ln.actionPath !== undefined && ln.actionPath.length > 0) {
-            const seenAt = seenPaths[ln.actionPath];
+        if (ln.actionPath !== undefined) {
+            const pathKey = actionPathKey(ln.actionPath);
+            const seenAt = seenPaths[pathKey];
             if (seenAt === undefined) {
-                seenPaths[ln.actionPath] = i;
-                id = `htsl:${ln.actionPath}`;
+                seenPaths[pathKey] = i;
+                id = `htsl:${pathKey}`;
             } else {
-                id = `htsl:${ln.actionPath}:c${i - seenAt}`;
+                id = `htsl:${pathKey}:c${i - seenAt}`;
             }
         } else {
             id = `htsl:line${i}`;
@@ -458,7 +466,7 @@ function snbtRenderableLines(
 }
 
 type ActionLineRange = {
-    actionPath: string;
+    actionPath: ActionPath;
     startLine: number;
     endLine: number;
     depth: number;
@@ -467,9 +475,7 @@ type ActionLineRange = {
 /**
  * Walks the parsed action tree, looking up each node's byte-offset span
  * and converting to a `[startLine, endLine]` range on the raw source.
- * Mirrors the actionPath naming used by `appendActions` in
- * `importPreviewState.ts`: top-level → `"i"`, CONDITIONAL child →
- * `"i.ifActions.j"` / `"i.elseActions.j"`, RANDOM child → `"i.actions.j"`.
+ * Uses the same structured action paths as importer events and live preview rows.
  */
 function collectActionLineRanges(
     actions: readonly Action[],
@@ -480,11 +486,15 @@ function collectActionLineRanges(
     visit(actions, undefined, 0);
     return out;
 
-    function visit(list: readonly Action[], pathPrefix: string | undefined, depth: number): void {
+    function visit(
+        list: readonly Action[],
+        listPath: ActionListPath | undefined,
+        depth: number
+    ): void {
         for (let i = 0; i < list.length; i++) {
             const a = list[i];
             if (a === null || a === undefined) continue;
-            const actionPath = pathPrefix === undefined ? String(i) : `${pathPrefix}.${i}`;
+            const actionPath = actionPathForIndex(listPath, i);
             const range = actionLineRange(file, spans, a);
             if (range === null) continue;
             out.push({
@@ -494,10 +504,10 @@ function collectActionLineRanges(
                 depth,
             });
             if (a.type === "CONDITIONAL") {
-                visit(a.ifActions ?? [], `${actionPath}.ifActions`, depth + 1);
-                visit(a.elseActions ?? [], `${actionPath}.elseActions`, depth + 1);
+                visit(a.ifActions ?? [], childActionListPath(actionPath, "ifActions"), depth + 1);
+                visit(a.elseActions ?? [], childActionListPath(actionPath, "elseActions"), depth + 1);
             } else if (a.type === "RANDOM") {
-                visit(a.actions ?? [], `${actionPath}.actions`, depth + 1);
+                visit(a.actions ?? [], childActionListPath(actionPath, "actions"), depth + 1);
             }
         }
     }
@@ -512,8 +522,8 @@ function collectActionLineRanges(
 function pathPerLine(
     lineCount: number,
     ranges: readonly ActionLineRange[]
-): Array<string | undefined> {
-    const paths: Array<string | undefined> = new Array(lineCount);
+): Array<ActionPath | undefined> {
+    const paths: Array<ActionPath | undefined> = new Array(lineCount);
     const depths: Array<number> = new Array(lineCount);
     for (let i = 0; i < lineCount; i++) {
         paths[i] = undefined;
@@ -587,12 +597,13 @@ function htslRawRenderableLines(
         const actionPath = linePaths[i];
         let id: string;
         if (actionPath !== undefined) {
-            const seenAt = seenPaths[actionPath];
+            const pathKey = actionPathKey(actionPath);
+            const seenAt = seenPaths[pathKey];
             if (seenAt === undefined) {
-                seenPaths[actionPath] = i;
-                id = `htsl:${actionPath}`;
+                seenPaths[pathKey] = i;
+                id = `htsl:${pathKey}`;
             } else {
-                id = `htsl:${actionPath}:c${i - seenAt}`;
+                id = `htsl:${pathKey}:c${i - seenAt}`;
             }
         } else {
             id = `htsl:line${i + 1}`;

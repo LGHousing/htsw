@@ -53,8 +53,13 @@ import {
     isEmptyPaginatedPlaceholder,
     readPaginatedList,
 } from "../menus/paginatedList";
-import type { ActionPath, SyncEventHandler } from "../syncEvents";
-import { actionPathForIndex, actionPathKey } from "../syncEvents";
+import type { SyncEventHandler } from "../syncEvents";
+import {
+    actionPathForIndex,
+    actionPathKey,
+    rootActionListPath,
+    type ActionPath,
+} from "../actionPath";
 import {
     COST,
     exactHydrationPlanUnits,
@@ -226,7 +231,7 @@ export async function readActionListDeferred(
     }
     events?.emit({
         kind: "readStarted",
-        listPath: read?.listPath === undefined ? "actions" : actionPathKey(read.listPath),
+        listPath: read?.listPath ?? rootActionListPath(),
     });
     observed = await readPaginatedList(
         ctx,

@@ -7,12 +7,11 @@ import { timedWaitForMenu } from "../../menus/menuWait";
 import { clickGoBack, setListItemNote } from "../../menus/menuUtils";
 import { getPaginatedListSlotAtIndex, goToPaginatedListPage } from "../../menus/paginatedList";
 import type {
-    ActionPath,
     DiffFinalState,
     SyncEventHandler,
     ProgressScope,
 } from "../../syncEvents";
-import { actionPathForIndex } from "../../syncEvents";
+import { actionPathForIndex, type ActionPath } from "../../actionPath";
 import {
     actionListDiffApplyUnits,
     editUnitsWithChildLists,

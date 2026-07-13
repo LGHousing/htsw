@@ -10,12 +10,18 @@ import * as htsw from "htsw";
 import type { Action } from "htsw/types";
 import { FileSystemFileLoader } from "../../utils/fileLoaders";
 import { getMtimeMs } from "../lib/java";
+import {
+    actionPathForIndex,
+    childActionListPath,
+    type ActionPath,
+    type ChildActionListName,
+} from "../../housingSync/actionPath";
 
 export type HtslLine = {
     /** Index into the action list this line belongs to. -1 for synthetic header/blank lines. */
     actionIndex: number;
-    /** Child action path, e.g. `4.ifActions.2`; top-level lines use `4`. */
-    actionPath: string;
+    /** Structured path of the action that owns this rendered line. */
+    actionPath: ActionPath;
     /** Indent level (child actions inside CONDITIONAL/RANDOM bodies). */
     depth: number;
     /** Rendered text (no trailing newline). */
@@ -86,12 +92,16 @@ export function parseHtslFile(path: string): ParsedFile {
  * given action index. Indent depth is inferred from leading spaces in the
  * printer output (4-space indent per the printer's default style).
  */
-function collectChildActionPaths(action: Action, basePath: string): string[] {
-    const out: string[] = [];
-    function addChildren(actions: readonly Action[] | undefined, prop: string): void {
+function collectChildActionPaths(action: Action, basePath: ActionPath): ActionPath[] {
+    const out: ActionPath[] = [];
+    function addChildren(
+        actions: readonly Action[] | undefined,
+        prop: ChildActionListName
+    ): void {
         if (actions === undefined) return;
+        const listPath = childActionListPath(basePath, prop);
         for (let i = 0; i < actions.length; i++) {
-            const path = `${basePath}.${prop}.${i}`;
+            const path = actionPathForIndex(listPath, i);
             out.push(path);
             const childPaths = collectChildActionPaths(actions[i], path);
             for (let j = 0; j < childPaths.length; j++) out.push(childPaths[j]);
@@ -111,7 +121,7 @@ function isStructuralLine(text: string): boolean {
 }
 
 function actionToLines(action: Action, actionIndex: number): HtslLine[] {
-    const basePath = String(actionIndex);
+    const basePath = actionPathForIndex(undefined, actionIndex);
     let src: string;
     try {
         src = htsw.htsl.printAction(action);

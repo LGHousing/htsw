@@ -1,41 +1,14 @@
 import type { Action, Importable } from "htsw/types";
 import type { TaskProgressEntry, ProgressPayload } from "./progress/types";
+import type {
+    ActionListPath,
+    ActionPath,
+    ActionTreePath,
+    NestedListPath,
+} from "./actionPath";
 
 export type DiffOpKind = "edit" | "add" | "move" | "delete";
 export type DiffFinalState = "match" | "edit" | "add" | "delete";
-
-type ActionPathPart = string | number;
-
-export type ActionPath = {
-    readonly parts: readonly ActionPathPart[];
-};
-
-export function actionPathForIndex(
-    listPath: ActionPath | undefined,
-    index: number
-): ActionPath {
-    return {
-        parts: listPath === undefined ? [index] : listPath.parts.concat(index),
-    };
-}
-
-export function childListPath(parent: ActionPath, prop: string): ActionPath {
-    return { parts: parent.parts.concat(prop) };
-}
-
-export function actionPathKey(path: ActionPath): string {
-    return path.parts.map(String).join(".");
-}
-
-export function actionPathFromKey(key: string): ActionPath {
-    const raw = key.split(".");
-    const parts: ActionPathPart[] = [];
-    for (let i = 0; i < raw.length; i++) {
-        const value = Number(raw[i]);
-        parts.push(String(value) === raw[i] ? value : raw[i]);
-    }
-    return { parts };
-}
 
 export type DiffSummary = {
     matches: number;
@@ -107,17 +80,18 @@ export type PlannedOp =
           fromIndex: number;
       };
 
+type NestedProgressScope = {
+    baselineApplyUnits: number;
+    parentSync: {
+        completedUnits: number;
+        totalUnits: number;
+    };
+};
+
 export type ProgressScope =
     | { kind: "topLevel" }
-    | {
-          kind: "childList";
-          path: ActionPath;
-          baselineApplyUnits: number;
-          parentSync: {
-              completedUnits: number;
-              totalUnits: number;
-          };
-      };
+    | (NestedProgressScope & { kind: "childList"; path: NestedListPath })
+    | (NestedProgressScope & { kind: "menuSlotActions" });
 
 export type SyncEvent =
     | {
@@ -170,10 +144,10 @@ export type SyncEvent =
           count: number;
       }
     | { kind: "setupStep"; label: string; completed: number; total: number }
-    | { kind: "readStarted"; listPath: string }
+    | { kind: "readStarted"; listPath: ActionListPath }
     | {
           kind: "childListReadStarted";
-          path: ActionPath;
+          path: ActionTreePath;
           actionType: Action["type"] | null;
       }
     | { kind: "observedSnapshot"; actions: ReadonlyArray<Action | null> }
