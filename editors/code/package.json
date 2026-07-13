@@ -34,7 +34,6 @@
     "main": "./dist/extension.cjs",
     "activationEvents": [
         "onStartupFinished",
-        "onCommand:htsw.checkForUpdates",
         "onLanguage:json",
         "onLanguage:jsonc"
     ],
