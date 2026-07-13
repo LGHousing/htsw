@@ -15,7 +15,7 @@ const KeyBinding = Java.type("net.minecraft.client.settings.KeyBinding") as any;
  */
 
 export function gmcOnImportStart(): void {
-    ChatLib.command("gmc", true);
+    ChatLib.command("gmc");
 }
 
 export function isInCreativeMode(): boolean {
