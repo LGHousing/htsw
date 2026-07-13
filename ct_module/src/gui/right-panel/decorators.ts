@@ -52,7 +52,6 @@ export function diffDecorator(path: string | null, importJsonPath?: string | nul
                         state: "delete",
                         background: ROW_BG_BY_STATE["delete"],
                         foregroundColor: COLOR_GHOST_GRAY,
-                        italic: true,
                         hideLineNum: true,
                     },
                 });
