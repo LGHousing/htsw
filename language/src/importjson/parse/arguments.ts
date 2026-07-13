@@ -77,6 +77,20 @@ function parseMinecraftItemId(p: Parser): string {
 }
 
 const HOUSE_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const TAG_RE = /^[a-z0-9 ]*$/i;
+
+export function parseTag(p: Parser): string {
+    const tag = p.parseString();
+
+    if (!TAG_RE.test(tag)) {
+        p.gcx.addDiagnostic(
+            Diagnostic.error("Tags can only contain numbers, letters, and spaces")
+                .addPrimarySpan(p.span())
+        );
+    }
+
+    return tag;
+}
 
 function parseUuid(p: Parser): string {
     const uuid = p.parseString();

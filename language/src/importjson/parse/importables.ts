@@ -24,6 +24,7 @@ import {
     parseSnbt,
     parseCommandMode,
     parsePos,
+    parseTag,
 } from "./arguments";
 import { contentFilePath, parseOption, warnUnused } from "./helpers";
 import type { Parser } from "./parser";
@@ -113,7 +114,7 @@ export function parseImportableTeam(p: Parser): ImportableTeam {
     p.setNodeSpan(im);
 
     p.parseField("name").setField(im, "name", (p) => p.parseString());
-    p.parseFieldOrUndefined("tag")?.setField(im, "tag", (p) => p.parseString());
+    p.parseFieldOrUndefined("tag")?.setField(im, "tag", parseTag);
     p.parseFieldOrUndefined("color")?.setField(im, "color", parseColor);
     p.parseFieldOrUndefined("friendlyFire")?.setField(im, "friendlyFire", p => p.parseBoolean());
 
@@ -126,7 +127,7 @@ export function parseImportableGroup(p: Parser): ImportableGroup {
     p.setNodeSpan(im);
 
     p.parseField("name").setField(im, "name", (p) => p.parseString());
-    p.parseFieldOrUndefined("tag")?.setField(im, "tag", (p) => p.parseString());
+    p.parseFieldOrUndefined("tag")?.setField(im, "tag", parseTag);
     p.parseFieldOrUndefined("tagShownInChat")?.setField(im, "tagShownInChat", (p) => p.parseBoolean());
     p.parseFieldOrUndefined("color")?.setField(im, "color", parseColor);
     p.parseFieldOrUndefined("priority")?.setField(im, "priority", (p) => p.parseBoundedNumber(0, 20));
