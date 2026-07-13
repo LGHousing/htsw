@@ -8,6 +8,7 @@ import type {
     ProjectImportableSummary,
     GitDecoration,
     ProjectImportJsonNode,
+    ProjectTextSpan,
     ProjectToHostMessage,
 } from "../protocol";
 
@@ -114,6 +115,18 @@ function validSortMode(value: unknown): value is SortMode {
 
 function validImportableKind(value: unknown): value is ImportableKind {
     return ADD_KINDS.some((kind) => kind.value === value);
+}
+
+function validProjectImportableKind(value: unknown): value is ProjectImportableSummary["type"] {
+    return value === "function"
+        || value === "event"
+        || value === "region"
+        || value === "item"
+        || value === "menu"
+        || value === "command"
+        || value === "npc"
+        || value === "team"
+        || value === "group";
 }
 
 export function mountProjectExplorer(
@@ -486,7 +499,11 @@ export function mountProjectExplorer(
                         selectSingleImportable(importableId);
                     }
                     const importablePath = row.dataset.openPath;
-                    if (importablePath) post(vscode, { type: "openProjectFile", fsPath: importablePath, preview: true });
+                    if (importablePath) {
+                        post(vscode, { type: "openProjectFile", fsPath: importablePath, preview: true });
+                    } else {
+                        openImportableDeclaration(row, true);
+                    }
                     return;
                 }
                 const fsPath = row.dataset.openPath;
@@ -514,8 +531,11 @@ export function mountProjectExplorer(
                     return;
                 }
                 const fsPath = row.dataset.openPath;
-                if (!fsPath) return;
-                post(vscode, { type: "openProjectFile", fsPath, preview: false });
+                if (fsPath) {
+                    post(vscode, { type: "openProjectFile", fsPath, preview: false });
+                    return;
+                }
+                if (row.dataset.importableId) openImportableDeclaration(row, false);
             });
             row.addEventListener("contextmenu", () => {
                 const importableId = row.dataset.importableId;
@@ -537,25 +557,50 @@ export function mountProjectExplorer(
             });
         }
 
-        for (const row of document.querySelectorAll<HTMLElement>("[data-edit-metadata]")) {
+        for (const row of document.querySelectorAll<HTMLElement>("[data-import-json-field-path]")) {
             row.addEventListener("click", () => {
-                const importJsonPath = row.dataset.importJsonPath;
-                const kind = row.dataset.importableKind;
-                const identity = row.dataset.importableIdentity;
-                const key = row.dataset.metadataKey;
-                if (!importJsonPath || !kind || !identity || !key || !validImportableKind(kind)) return;
-                state.status = { kind: "idle", text: "Editing…" };
-                renderStatus();
-                post(vscode, {
-                    type: "editImportableMetadata",
-                    importJsonPath,
-                    kind,
-                    identity,
-                    key,
-                });
+                const rawPath = row.dataset.importJsonFieldPath;
+                if (rawPath === undefined) return;
+                try {
+                    const fieldPath = JSON.parse(rawPath) as unknown;
+                    if (!Array.isArray(fieldPath) || !fieldPath.every((part) => typeof part === "string")) return;
+                    openImportableDeclaration(row, true, fieldPath);
+                } catch (_error) {
+                    openImportableDeclaration(row, true);
+                }
             });
         }
 
+    }
+
+    function openImportableDeclaration(
+        row: HTMLElement,
+        preview: boolean,
+        fieldPath?: string[],
+    ): void {
+        const importJsonPath = row.dataset.importJsonPath;
+        const kind = row.dataset.importableKind;
+        const identity = row.dataset.importableIdentity;
+        if (!importJsonPath || !validProjectImportableKind(kind) || identity === undefined) return;
+
+        const message: Extract<ProjectToHostMessage, { type: "openImportableDeclaration" }> = {
+            type: "openImportableDeclaration",
+            importJsonPath,
+            kind,
+            identity,
+            preview,
+        };
+        if (fieldPath !== undefined) message.fieldPath = fieldPath;
+        const declarationSpan = declarationSpanFromRow(row);
+        if (declarationSpan !== undefined) message.declarationSpan = declarationSpan;
+        post(vscode, message);
+    }
+
+    function declarationSpanFromRow(row: HTMLElement): ProjectTextSpan | undefined {
+        const start = Number(row.dataset.declarationStart);
+        const end = Number(row.dataset.declarationEnd);
+        if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end < start) return undefined;
+        return { start, end };
     }
 
     function selectableImportableRow(target: EventTarget | Element | null): HTMLElement | null {
@@ -882,13 +927,12 @@ function renderImportable(
         label: entry.label,
     });
     const selected = state.selection.has(entry.id);
-    // Item importables open the visual editor on click (data-item-path); others
-    // keep the default open-file behavior.
-    const itemPath = entry.type === "item" ? entry.openPath : undefined;
+    const itemPath = entry.type === "item" ? entry.sourcePath : undefined;
     const itemAttrs = itemPath ? ` data-item-path="${escapeAttr(itemPath)}"` : "";
     const row = `
-        <div class="row imp ${entry.type} ${selected ? "selected" : ""}" data-open-path="${escapeAttr(entry.openPath ?? "")}"
+        <div class="row imp ${entry.type} ${selected ? "selected" : ""}" data-open-path="${escapeAttr(entry.sourcePath ?? "")}"
             data-importable-id="${escapeAttr(entry.id)}"
+            ${importableDeclarationAttrs(entry, declaringPath)}
             data-vscode-context="${escapeAttr(importableContext(entry, declaringPath, state))}"${itemAttrs}
             title="${escapeAttr(importableTooltip(entry))}">
             ${indentGuides(depth)}
@@ -960,15 +1004,11 @@ function renderMetadataEntry(
     declaringPath: string,
     depth: number,
 ): string {
-    const editable = field.editable === true;
     return `
-        <div class="row metadata ${editable ? "editable" : ""}"
-            ${editable ? `data-edit-metadata="1"` : ""}
-            data-import-json-path="${escapeAttr(declaringPath)}"
-            data-importable-kind="${escapeAttr(entry.type)}"
-            data-importable-identity="${escapeAttr(entry.identity)}"
-            data-metadata-key="${escapeAttr(field.key)}"
-            title="${escapeAttr(`${field.label}: ${field.value}${editable ? "\nClick to edit" : ""}`)}">
+        <div class="row metadata"
+            data-import-json-field-path="${escapeAttr(JSON.stringify(field.jsonPath))}"
+            ${importableDeclarationAttrs(entry, declaringPath)}
+            title="${escapeAttr(`${field.label}: ${field.value}\nClick to reveal in import.json`)}">
             ${indentGuides(depth)}
             <span class="twisty empty"></span>
             <span class="row-icon metadata">${SVG.metadata}</span>
@@ -976,6 +1016,14 @@ function renderMetadataEntry(
             <span class="metadata-value">${escapeHtml(field.value)}</span>
         </div>
     `;
+}
+
+function importableDeclarationAttrs(entry: ProjectImportableSummary, declaringPath: string): string {
+    const span = entry.declarationSpan;
+    const spanAttrs = span === undefined
+        ? ""
+        : ` data-declaration-start="${span.start}" data-declaration-end="${span.end}"`;
+    return `data-import-json-path="${escapeAttr(declaringPath)}" data-importable-kind="${escapeAttr(entry.type)}" data-importable-identity="${escapeAttr(entry.identity)}"${spanAttrs}`;
 }
 
 function baseName(fsPath: string): string {

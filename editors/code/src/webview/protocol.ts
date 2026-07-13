@@ -62,10 +62,14 @@ export type ProjectImportableSub = {
 };
 
 export type ProjectImportableMetadata = {
-    key: string;
     label: string;
     value: string;
-    editable?: boolean;
+    jsonPath: string[];
+};
+
+export type ProjectTextSpan = {
+    start: number;
+    end: number;
 };
 
 export type ProjectImportableSummary = {
@@ -77,7 +81,8 @@ export type ProjectImportableSummary = {
     label: string;
     type: "function" | "event" | "region" | "item" | "menu" | "command" | "npc" | "team" | "group";
     typeLabel: string;
-    openPath?: string;
+    sourcePath?: string;
+    declarationSpan?: ProjectTextSpan;
     /** Minecraft item id powering the row icon, e.g. "minecraft:clock" — a
      * function's declared `icon.item` or the `id` read from an item's snbt. */
     iconItem?: string;
@@ -123,6 +128,15 @@ export type ProjectImportJsonNode = {
 export type ProjectToHostMessage =
     | { type: "requestProjectTree"; fresh?: boolean }
     | { type: "openProjectFile"; fsPath: string; preview: boolean }
+    | {
+          type: "openImportableDeclaration";
+          importJsonPath: string;
+          kind: ProjectImportableSummary["type"];
+          identity: string;
+          fieldPath?: string[];
+          declarationSpan?: ProjectTextSpan;
+          preview: boolean;
+      }
     | { type: "createIncludedImportJson"; parentImportJsonPath: string; folderPath: string }
     | {
           type: "addImportable";
@@ -135,13 +149,6 @@ export type ProjectToHostMessage =
           importJsonPath: string;
           kind: ProjectImportableSummary["type"];
           identity: string;
-      }
-    | {
-          type: "editImportableMetadata";
-          importJsonPath: string;
-          kind: ProjectImportableSummary["type"];
-          identity: string;
-          key: string;
       }
     | { type: "openItemInEditor"; snbtPath: string };
 

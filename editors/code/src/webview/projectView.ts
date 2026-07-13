@@ -10,6 +10,7 @@ import {
     htslTargetForCommandExport,
     htslTargetForEventExport,
     htslTargetForFunctionExport,
+    importableEntryMatchesIdentity,
     moveImportableEntry,
     normalizeRelativeProjectPath,
     planDeleteImportableEntry,
@@ -18,7 +19,6 @@ import {
     removeImportableEntryForDelete,
     renameImportableEntry,
     resolveImportableFile,
-    updateImportableField,
     upsertImportableEntry,
     type ProjectFs,
     type RefSlot,
@@ -36,6 +36,7 @@ import type {
     ProjectImportableSub,
     ProjectImportableSummary,
     ProjectImportJsonNode,
+    ProjectTextSpan,
     ProjectToHostMessage,
 } from "./protocol";
 
@@ -77,6 +78,9 @@ export async function handleProjectMessage(
         case "openProjectFile":
             await openProjectFile(message.fsPath, message.preview);
             return;
+        case "openImportableDeclaration":
+            await openImportableDeclaration(message);
+            return;
         case "createIncludedImportJson":
             await createIncludedImportJson(webview, message.parentImportJsonPath, message.folderPath);
             return;
@@ -86,182 +90,10 @@ export async function handleProjectMessage(
         case "moveImportable":
             await moveImportable(webview, message.importJsonPath, message.kind, message.identity);
             return;
-        case "editImportableMetadata":
-            await editImportableMetadata(webview, message);
-            return;
         case "openItemInEditor":
             await openItemInEditor(webview, message.snbtPath);
             return;
     }
-}
-
-async function editImportableMetadata(
-    webview: vscode.Webview,
-    message: Extract<ProjectToHostMessage, { type: "editImportableMetadata" }>,
-): Promise<void> {
-    try {
-        const section = SECTION_BY_KIND[message.kind];
-        const entryJsonPath = await treeRootForImportJson(message.importJsonPath);
-        const fs = projectFsWithOpenDocuments();
-        const declaringJsonPath = resolveImportableFile(fs, entryJsonPath, section, message.identity);
-        const entry = readEntryValue(fs, declaringJsonPath, section, message.identity);
-        if (entry === null) throw new Error(`Couldn't find ${message.kind} "${message.identity}".`);
-
-        const edit = await promptMetadataEdit(message.kind, message.key, entry);
-        if (edit === null) return;
-
-        await withDocAwareWrites((fs) => {
-            const ok = updateImportableField(
-                fs,
-                entryJsonPath,
-                section,
-                message.identity,
-                edit.field,
-                edit.value,
-            );
-            if (!ok) throw new Error(`Couldn't update ${message.kind} "${message.identity}".`);
-        });
-
-        await webview.postMessage({
-            type: "projectResult",
-            ok: true,
-            message: `Updated ${message.kind} "${message.identity}".`,
-        } satisfies ProjectFromHostMessage);
-        await postFreshProjectTree(webview);
-    } catch (err) {
-        const error = err instanceof Error ? err.message : String(err);
-        await webview.postMessage({ type: "projectResult", ok: false, error } satisfies ProjectFromHostMessage);
-        void vscode.window.showWarningMessage(`Could not update metadata: ${error}`);
-    }
-}
-
-type MetadataEdit = {
-    field: string | string[];
-    value: unknown;
-};
-
-async function promptMetadataEdit(
-    kind: ProjectImportableSummary["type"],
-    key: string,
-    entry: Record<string, unknown>,
-): Promise<MetadataEdit | null> {
-    if (kind === "function") return promptFunctionMetadataEdit(key, entry);
-    if (kind === "command") return promptCommandMetadataEdit(key, entry);
-    if (kind === "menu" && key === "size") {
-        const value = await numberInput("Menu size", entry.size, 1, 54, "Blank uses the default.");
-        return value === false ? null : { field: "size", value: value ?? undefined };
-    }
-    if (kind === "npc" && key === "leftClickRedirect") {
-        const value = await booleanPick("Redirect left click", entry.leftClickRedirect);
-        return value === undefined ? null : { field: "leftClickRedirect", value: value ?? undefined };
-    }
-    throw new Error("This metadata field is read-only in the VS Code sidebar.");
-}
-
-async function promptFunctionMetadataEdit(
-    key: string,
-    entry: Record<string, unknown>,
-): Promise<MetadataEdit | null> {
-    const icon = objectValue(entry.icon);
-    if (key === "repeatTicks") {
-        const value = await numberInput("Repeat ticks", entry.repeatTicks, 4, 18000, "Blank disables repeating.");
-        return value === false ? null : { field: "repeatTicks", value: value ?? undefined };
-    }
-    if (key === "icon") {
-        const value = await textInput("Function icon item", stringValue(icon?.item), "minecraft:clock", "Blank uses the default icon.");
-        if (value === undefined) return null;
-        return value.trim() === ""
-            ? { field: "icon", value: undefined }
-            : { field: ["icon", "item"], value: value.trim() };
-    }
-    if (key === "iconCount") {
-        const value = await numberInput("Function icon count", icon?.count, 1, 64, "Blank uses 1.");
-        return value === false ? null : { field: ["icon", "count"], value: value ?? undefined };
-    }
-    throw new Error("Unknown function metadata field.");
-}
-
-async function promptCommandMetadataEdit(
-    key: string,
-    entry: Record<string, unknown>,
-): Promise<MetadataEdit | null> {
-    if (key === "mode") {
-        const pick = await vscode.window.showQuickPick(["Self", "Targeted"] as const, {
-            placeHolder: "Command mode",
-        });
-        return pick === undefined ? null : { field: "mode", value: pick === "Self" ? undefined : pick };
-    }
-    if (key === "requiredPriority") {
-        const value = await numberInput("Required priority", entry.requiredPriority, 0, 20, "Blank uses 0.");
-        return value === false ? null : { field: "requiredPriority", value: value ?? undefined };
-    }
-    if (key === "listed") {
-        const value = await booleanPick("Listed", entry.listed);
-        return value === undefined ? null : { field: "listed", value: value ?? undefined };
-    }
-    throw new Error("Unknown command metadata field.");
-}
-
-async function textInput(
-    prompt: string,
-    value: string,
-    placeHolder: string,
-    description: string,
-): Promise<string | undefined> {
-    return vscode.window.showInputBox({
-        prompt: `${prompt}. ${description}`,
-        value,
-        placeHolder,
-        valueSelection: [0, value.length],
-    });
-}
-
-async function numberInput(
-    prompt: string,
-    current: unknown,
-    min: number,
-    max: number,
-    description: string,
-): Promise<number | null | false> {
-    const value = typeof current === "number" ? String(current) : "";
-    const input = await vscode.window.showInputBox({
-        prompt: `${prompt}. ${description}`,
-        value,
-        valueSelection: [0, value.length],
-        validateInput: (raw) => {
-            const trimmed = raw.trim();
-            if (trimmed === "") return undefined;
-            const parsed = Number(trimmed);
-            if (!Number.isInteger(parsed) || parsed < min || parsed > max) {
-                return `Enter a whole number from ${min} to ${max}.`;
-            }
-            return undefined;
-        },
-    });
-    if (input === undefined) return false;
-    const trimmed = input.trim();
-    return trimmed === "" ? null : Number(trimmed);
-}
-
-async function booleanPick(prompt: string, current: unknown): Promise<boolean | null | undefined> {
-    const pick = await vscode.window.showQuickPick([
-        { label: "Default", value: null },
-        { label: "True", value: true },
-        { label: "False", value: false },
-    ], {
-        placeHolder: `${prompt}${typeof current === "boolean" ? `: ${current}` : ": default"}`,
-    });
-    return pick?.value;
-}
-
-function objectValue(value: unknown): Record<string, unknown> | null {
-    return typeof value === "object" && value !== null && !Array.isArray(value)
-        ? value as Record<string, unknown>
-        : null;
-}
-
-function stringValue(value: unknown): string {
-    return typeof value === "string" ? value : "";
 }
 
 // Parse an item .snbt and hand it to the Item Editor tab. Keeps the original
@@ -1298,7 +1130,7 @@ function mapImportable(
             : (imp as { name: string }).name;
     const label = imp.type === "NPC" ? `${imp.name} @ ${identity}` : identity;
 
-    const openPath = resolvedImportableSourcePath(imp, declaringPath);
+    const sourcePath = externalImportableSourcePath(imp, declaringPath);
     const own = ownDiagnosticCounts(parse, imp);
     const subEntries = mapSubEntries(imp, declaringPath, parse);
     const metadataEntries = metadataEntriesOf(imp);
@@ -1309,7 +1141,8 @@ function mapImportable(
         label,
         type,
         typeLabel: imp.type,
-        openPath,
+        sourcePath,
+        declarationSpan: localImportableSpan(imp, declaringPath, parse),
         ...mapImportableIcon(imp),
         repeatTicks: imp.type === "FUNCTION" ? imp.repeatTicks : undefined,
         item: imp.type === "ITEM" ? itemPreviewFromTag(imp.nbt) : undefined,
@@ -1324,60 +1157,56 @@ function metadataEntriesOf(imp: htsw.types.Importable): ProjectImportableMetadat
     if (imp.type === "FUNCTION") {
         const fields: ProjectImportableMetadata[] = [
             {
-                key: "repeatTicks",
                 label: "Repeat",
                 value: imp.repeatTicks !== undefined ? `${imp.repeatTicks}t` : "off",
-                editable: true,
+                jsonPath: ["repeatTicks"],
             },
             {
-                key: "icon",
                 label: "Icon",
                 value: imp.icon !== undefined ? imp.icon.item : "default",
-                editable: true,
+                jsonPath: ["icon"],
             },
         ];
         if (imp.icon !== undefined) {
             fields.push({
-                key: "iconCount",
                 label: "Count",
                 value: imp.icon.count !== undefined ? String(imp.icon.count) : "1",
-                editable: true,
+                jsonPath: ["icon", "count"],
             });
         }
         return fields;
     }
     if (imp.type === "COMMAND") {
         return [
-            { key: "mode", label: "Mode", value: imp.mode ?? "Self", editable: true },
-            { key: "requiredPriority", label: "Priority", value: String(imp.requiredPriority ?? 0), editable: true },
-            { key: "listed", label: "Listed", value: (imp.listed ?? true) ? "true" : "false", editable: true },
+            { label: "Mode", value: imp.mode ?? "Self", jsonPath: ["mode"] },
+            { label: "Priority", value: String(imp.requiredPriority ?? 0), jsonPath: ["requiredPriority"] },
+            { label: "Listed", value: (imp.listed ?? true) ? "true" : "false", jsonPath: ["listed"] },
         ];
     }
     if (imp.type === "REGION") {
         if (imp.bounds === undefined) {
-            return [{ key: "bounds", label: "Bounds", value: "(not set)" }];
+            return [{ label: "Bounds", value: "(not set)", jsonPath: ["bounds"] }];
         }
         return [
-            { key: "boundsFrom", label: "From", value: formatPos(imp.bounds.from) },
-            { key: "boundsTo", label: "To", value: formatPos(imp.bounds.to) },
+            { label: "From", value: formatPos(imp.bounds.from), jsonPath: ["bounds", "from"] },
+            { label: "To", value: formatPos(imp.bounds.to), jsonPath: ["bounds", "to"] },
         ];
     }
     if (imp.type === "MENU") {
-        return [{ key: "size", label: "Size", value: imp.size !== undefined ? `${imp.size} lines` : "default", editable: true }];
+        return [{ label: "Size", value: imp.size !== undefined ? `${imp.size} lines` : "default", jsonPath: ["size"] }];
     }
     if (imp.type === "NPC") {
         return [
-            { key: "pos", label: "Pos", value: formatPos(imp.pos) },
+            { label: "Pos", value: formatPos(imp.pos), jsonPath: ["pos"] },
             {
-                key: "leftClickRedirect",
                 label: "Redirect",
                 value: imp.leftClickRedirect === undefined ? "default" : imp.leftClickRedirect ? "true" : "false",
-                editable: true,
+                jsonPath: ["leftClickRedirect"],
             },
         ];
     }
     if (imp.type === "ITEM") {
-        return [{ key: "nbt", label: "NBT", value: "Item data" }];
+        return [{ label: "NBT", value: "Item data", jsonPath: ["nbt"] }];
     }
     return [];
 }
@@ -1386,8 +1215,31 @@ function formatPos(pos: { x: number; y: number; z: number }): string {
     return `${pos.x}, ${pos.y}, ${pos.z}`;
 }
 
-function resolvedImportableSourcePath(imp: htsw.types.Importable, declaringPath: string): string {
-    return htsw.importableSourcePath(imp) ?? declaringPath;
+function externalImportableSourcePath(
+    imp: htsw.types.Importable,
+    declaringPath: string,
+): string | undefined {
+    const sourcePath = htsw.importableSourcePath(imp);
+    return sourcePath !== undefined && pathKey(sourcePath) !== pathKey(declaringPath)
+        ? sourcePath
+        : undefined;
+}
+
+function localImportableSpan(
+    imp: htsw.types.Importable,
+    declaringPath: string,
+    parse: ContextParse,
+): ProjectTextSpan | undefined {
+    try {
+        const span = parse.result.spans.get(imp);
+        const sourceFile = parse.sourceMap.getFile(declaringPath);
+        const start = span.start - sourceFile.startPos;
+        const end = span.end - sourceFile.startPos;
+        if (start < 0 || end < start || end > sourceFile.src.length) return undefined;
+        return { start, end };
+    } catch (_error) {
+        return undefined;
+    }
 }
 
 function mapImportableIcon(
@@ -1636,6 +1488,72 @@ async function createIncludedImportJson(
 async function openProjectFile(fsPath: string, preview: boolean): Promise<void> {
     const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(fsPath));
     await vscode.window.showTextDocument(doc, { preview });
+}
+
+async function openImportableDeclaration(
+    message: Extract<ProjectToHostMessage, { type: "openImportableDeclaration" }>,
+): Promise<void> {
+    const document = await vscode.workspace.openTextDocument(vscode.Uri.file(message.importJsonPath));
+    const selection = importableDeclarationRange(document, message);
+    const options: vscode.TextDocumentShowOptions = { preview: message.preview };
+    if (selection !== undefined) options.selection = selection;
+    const editor = await vscode.window.showTextDocument(document, options);
+    if (selection !== undefined) {
+        editor.revealRange(selection, vscode.TextEditorRevealType.InCenterIfOutsideViewport);
+    }
+}
+
+function importableDeclarationRange(
+    document: vscode.TextDocument,
+    message: Extract<ProjectToHostMessage, { type: "openImportableDeclaration" }>,
+): vscode.Range | undefined {
+    const tree = json.parseTree(document.getText());
+    if (tree === undefined) return undefined;
+    const section = SECTION_BY_KIND[message.kind];
+    const sectionNode = json.findNodeAtLocation(tree, [section]);
+    if (sectionNode?.type !== "array") return undefined;
+
+    const candidates = (sectionNode.children ?? []).filter((node) =>
+        importableEntryMatchesIdentity(section, node, message.identity)
+    );
+    if (candidates.length === 0) return undefined;
+
+    const hint = validProjectTextSpan(message.declarationSpan, document.getText().length)
+        ? message.declarationSpan
+        : undefined;
+    const entry = hint === undefined
+        ? candidates[0]
+        : candidates.find((node) => node.offset === hint.start && node.offset + node.length === hint.end)
+            ?? candidates.reduce((nearest, node) =>
+                Math.abs(node.offset - hint.start) < Math.abs(nearest.offset - hint.start) ? node : nearest
+            );
+
+    const fieldPath = Array.isArray(message.fieldPath)
+        ? message.fieldPath.filter((part): part is string => typeof part === "string")
+        : [];
+    let target = entry;
+    for (let depth = 1; depth <= fieldPath.length; depth++) {
+        const field = json.findNodeAtLocation(entry, fieldPath.slice(0, depth));
+        if (field === undefined) break;
+        target = field;
+    }
+
+    return new vscode.Range(
+        document.positionAt(target.offset),
+        document.positionAt(target.offset + target.length),
+    );
+}
+
+function validProjectTextSpan(
+    span: ProjectTextSpan | undefined,
+    textLength: number,
+): span is ProjectTextSpan {
+    return span !== undefined
+        && Number.isInteger(span.start)
+        && Number.isInteger(span.end)
+        && span.start >= 0
+        && span.end >= span.start
+        && span.end <= textLength;
 }
 
 function projectFsWithOpenDocuments(): ProjectFs {

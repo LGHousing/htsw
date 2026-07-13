@@ -102,7 +102,7 @@ export async function addGitDecorations(roots: ProjectImportJsonNode[]): Promise
         node.git = decorations.get(pathKey(node.fsPath));
         for (const entry of node.importables) {
             const sourcePaths = (entry.subEntries ?? []).map((sub) => sub.fsPath);
-            if (entry.openPath && pathKey(entry.openPath) !== nodeKey) sourcePaths.push(entry.openPath);
+            if (entry.sourcePath && pathKey(entry.sourcePath) !== nodeKey) sourcePaths.push(entry.sourcePath);
             entry.git = strongest(sourcePaths);
             for (const sub of entry.subEntries ?? []) {
                 sub.git = decorations.get(pathKey(sub.fsPath));

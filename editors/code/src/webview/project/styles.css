@@ -231,10 +231,6 @@ select {
 /* Metadata child rows -------------------------------------------------- */
 
 .row.metadata {
-    cursor: default;
-}
-
-.row.metadata.editable {
     cursor: pointer;
 }
 
