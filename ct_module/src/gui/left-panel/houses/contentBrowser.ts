@@ -384,17 +384,23 @@ const HOUSE_LINK_VISUAL: {
 };
 
 // Source importables (from the selected import.json) keyed by identity, so each
-// row can be diffed against your file. Non-blocking parse — empty until warm.
-function sourceImportablesByType(type: HouseContentType["type"]): Map<string, Importable> {
+// row can be diffed against your file. Non-blocking parse — null until warm.
+function loadedSourceImportablesByType(
+    type: HouseContentType["type"]
+): Map<string, Importable> | null {
     const out = new Map<string, Importable>();
     const dest = getExportImportJsonPath();
     if (dest.trim() === "") return out;
     const parse = requestParse(dest);
-    if (parse === null || parse.parsed === null) return out;
+    if (parse === null || parse.parsed === null) return null;
     for (const imp of parse.parsed.value) {
         if (imp.type === type) out.set(importableIdentity(imp), imp);
     }
     return out;
+}
+
+function sourceImportablesByType(type: HouseContentType["type"]): Map<string, Importable> {
+    return loadedSourceImportablesByType(type) ?? new Map<string, Importable>();
 }
 
 function houseLinkStateFor(
@@ -411,16 +417,6 @@ function houseLinkStateFor(
     if (state === "current") return "matches-knowledge";
     if (state === "modified") return "differs-from-knowledge";
     return "unread";
-}
-
-function differsFromKnowledge(
-    uuid: string,
-    item: HouseImportable,
-    sourceByKey: Map<string, Importable>
-): boolean {
-    const source = sourceByKey.get(item.name);
-    if (source === undefined || !item.verified) return false;
-    return buildCacheStatusRow(uuid, source).state === "modified";
 }
 
 function itemRowActionButton(
@@ -542,46 +538,50 @@ function itemRow(
     });
 }
 
-function namesChangedFromKnowledge(
+function namesAlreadyInDestination(
     t: HouseContentType,
-    uuid: string,
     names: readonly string[]
-): string[] {
-    const sourceMap = sourceImportablesByType(t.type);
-    const byName = new Map<string, HouseImportable>();
-    for (const item of t.items(uuid)) byName.set(item.name, item);
+): string[] | null {
+    const sourceMap = loadedSourceImportablesByType(t.type);
+    if (sourceMap === null) return null;
     const out: string[] = [];
     for (const n of names) {
-        const item = byName.get(n);
-        if (item !== undefined && differsFromKnowledge(uuid, item, sourceMap)) {
-            out.push(n);
-        }
+        if (sourceMap.has(n)) out.push(n);
     }
     return out;
 }
 
-// Export overwrites local files with the house version. When the export set
-// contains rows that differ from Knowledge, interpose a modal confirm naming
-// what gets overwritten.
 function confirmDestructiveExport(
     t: HouseContentType,
-    uuid: string,
     names: readonly string[],
     run: () => void
 ): void {
-    const changed = namesChangedFromKnowledge(t, uuid, names);
-    if (changed.length === 0) {
+    const existing = namesAlreadyInDestination(t, names);
+    if (existing !== null && existing.length === 0) {
         run();
         return;
     }
-    const shown = changed.slice(0, 5);
-    const lines = shown.map((n) => `• ${n}`);
-    if (changed.length > shown.length) {
-        lines.push(`…and ${changed.length - shown.length} more`);
+    if (existing === null) {
+        openConfirmPopover({
+            title: "Overwrite local files?",
+            lines: [
+                "HTSW couldn't verify which entries already exist in the destination.",
+                "Export may replace local versions with the house versions.",
+            ],
+            confirmLabel: "Export anyway",
+            danger: true,
+            onConfirm: run,
+        });
+        return;
     }
-    lines.push("Export pulls the house version over your local files.");
+    const shown = existing.slice(0, 5);
+    const lines = shown.map((n) => `• ${n}`);
+    if (existing.length > shown.length) {
+        lines.push(`…and ${existing.length - shown.length} more`);
+    }
+    lines.push("Export replaces the local versions with the house versions.");
     openConfirmPopover({
-        title: `Overwrite local changes to ${changed.length} ${t.label.toLowerCase()}?`,
+        title: `Overwrite existing ${t.label.toLowerCase()} (${existing.length})?`,
         lines,
         confirmLabel: "Export anyway",
         danger: true,
@@ -705,12 +705,12 @@ function exportActionBar(t: HouseContentType, uuid: string, items: HouseImportab
                             const exp = t.export;
                             if (selectedCount > 0) {
                                 const names = selected.map((it) => it.name);
-                                confirmDestructiveExport(t, uuid, names, () =>
+                                confirmDestructiveExport(t, names, () =>
                                     exp.selected(names, () => clearExportSelection(), labels)
                                 );
                             } else {
                                 const names = items.map((i) => i.name);
-                                confirmDestructiveExport(t, uuid, names, () => exp.all(labels));
+                                confirmDestructiveExport(t, names, () => exp.all(labels));
                             }
                         },
                     }),
@@ -799,8 +799,10 @@ function exportActionBar(t: HouseContentType, uuid: string, items: HouseImportab
                                     disabled: unreadNames.length === 0,
                                     onClick: () => {
                                         if (unreadNames.length > 0) {
-                                            exp.selected(unreadNames, () =>
-                                                clearExportSelection()
+                                            confirmDestructiveExport(t, unreadNames, () =>
+                                                exp.selected(unreadNames, () =>
+                                                    clearExportSelection()
+                                                )
                                             );
                                         }
                                     },
@@ -810,7 +812,7 @@ function exportActionBar(t: HouseContentType, uuid: string, items: HouseImportab
                                     disabled: differingNames.length === 0,
                                     onClick: () => {
                                         if (differingNames.length > 0) {
-                                            confirmDestructiveExport(t, uuid, differingNames, () =>
+                                            confirmDestructiveExport(t, differingNames, () =>
                                                 exp.selected(differingNames, () =>
                                                     clearExportSelection()
                                                 )
@@ -824,7 +826,7 @@ function exportActionBar(t: HouseContentType, uuid: string, items: HouseImportab
                                     onClick: () => {
                                         if (totalCount === 0) return;
                                         const names = t.items(uuid).map((i) => i.name);
-                                        confirmDestructiveExport(t, uuid, names, () => exp.all());
+                                        confirmDestructiveExport(t, names, () => exp.all());
                                     },
                                 },
                             ];
