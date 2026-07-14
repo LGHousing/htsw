@@ -145,7 +145,6 @@ export function mountItemEditor(
         };
         initialScroll = {};
         const item = currentItem(state);
-        const filteredItems = ensureSelectedItemOption(filterItems(state.itemSearch), state);
         const maxCount = item?.stackSize ?? 64;
         if (state.count > maxCount) state.count = maxCount;
 
@@ -154,16 +153,26 @@ export function mountItemEditor(
                 <div class="panel form-panel">
                     <div class="section">
                         <h2>Item</h2>
-                        <label>
-                            <span class="label-text">Search</span>
-                            <input id="itemSearch" value="${escapeAttr(state.itemSearch)}" placeholder="stone, sword, wool">
-                        </label>
-                        <label>
-                            <span class="label-text">Type</span>
-                            <select id="itemName">
-                                ${filteredItems.map((entry) => option(itemOptionValue(entry), entry.label, entry.item.name === state.itemName && entry.metadata === state.metadata)).join("")}
-                            </select>
-                        </label>
+                        <div id="itemPicker" class="item-picker">
+                            <span class="label-text">Item type</span>
+                            <div class="item-combobox">
+                                <input
+                                    id="itemSearch"
+                                    role="combobox"
+                                    aria-autocomplete="list"
+                                    aria-controls="itemResults"
+                                    aria-expanded="false"
+                                    aria-label="Item type"
+                                    autocomplete="off"
+                                    spellcheck="false"
+                                    value="${escapeAttr(selectedItemLabel(state))}"
+                                    placeholder="Search by name or ID"
+                                >
+                                <button id="itemPickerToggle" class="item-picker-toggle" type="button" aria-label="Show item types" tabindex="-1">⌄</button>
+                                <div id="itemResults" class="item-results" role="listbox" hidden></div>
+                            </div>
+                            <span class="field-hint">Type to search, then choose a match.</span>
+                        </div>
                         ${variantSelect(item, state.metadata)}
                         <div class="two">
                             <label>
@@ -243,24 +252,12 @@ export function mountItemEditor(
     }
 
     function bindControls(vscode: VsCodeApi): void {
-        bindInput("itemSearch", (value) => {
-            state.itemSearch = value;
-            updateItemSelectOptions();
-        });
-        bindSelect("itemName", (value) => {
-            const previous = currentItem(state);
-            const syncEntryName =
-                state.entryName.trim().length === 0 ||
-                state.entryName === (previous?.displayName ?? previous?.name);
-            const selected = parseItemOptionValue(value);
-            const item = itemByName(selected.itemName);
-            state.itemName = selected.itemName;
-            state.metadata = selected.metadata ?? firstMetadata(item);
-            if (syncEntryName) state.entryName = selected.label ?? item?.displayName ?? selected.itemName;
-            render();
-        });
+        bindItemPicker();
         bindSelect("metadata", (value) => {
             state.metadata = value === "" ? null : Number(value);
+            const input = app.querySelector<HTMLInputElement>("#itemSearch");
+            if (input) input.value = selectedItemLabel(state);
+            updateFormattedPreviews();
             updateSnbtPreview();
         });
         bindInput("count", (value) => {
@@ -376,6 +373,107 @@ export function mountItemEditor(
         });
     }
 
+    function bindItemPicker(): void {
+        const picker = app.querySelector<HTMLElement>("#itemPicker");
+        const input = app.querySelector<HTMLInputElement>("#itemSearch");
+        const toggle = app.querySelector<HTMLButtonElement>("#itemPickerToggle");
+        const results = app.querySelector<HTMLElement>("#itemResults");
+        if (!picker || !input || !toggle || !results) return;
+
+        let activeIndex = -1;
+
+        const isOpen = () => input.getAttribute("aria-expanded") === "true";
+        const close = (restoreSelection: boolean) => {
+            results.hidden = true;
+            input.setAttribute("aria-expanded", "false");
+            input.removeAttribute("aria-activedescendant");
+            activeIndex = -1;
+            if (!restoreSelection) return;
+            state.itemSearch = "";
+            input.value = selectedItemLabel(state);
+        };
+        const setActive = (index: number) => {
+            const options = [...results.querySelectorAll<HTMLButtonElement>("[data-item-value]")];
+            if (options.length === 0) {
+                activeIndex = -1;
+                input.removeAttribute("aria-activedescendant");
+                return;
+            }
+            activeIndex = Math.max(0, Math.min(index, options.length - 1));
+            for (let i = 0; i < options.length; i++) {
+                options[i].classList.toggle("active", i === activeIndex);
+            }
+            const active = options[activeIndex];
+            input.setAttribute("aria-activedescendant", active.id);
+            active.scrollIntoView({ block: "nearest" });
+        };
+        const choose = (value: string) => {
+            const previous = currentItem(state);
+            const syncEntryName =
+                state.entryName.trim().length === 0 ||
+                state.entryName === (previous?.displayName ?? previous?.name);
+            const selected = parseItemOptionValue(value);
+            const item = itemByName(selected.itemName);
+            state.itemName = selected.itemName;
+            state.metadata = selected.metadata ?? firstMetadata(item);
+            state.itemSearch = "";
+            if (syncEntryName) state.entryName = selected.label ?? item?.displayName ?? selected.itemName;
+            render();
+        };
+        const open = () => {
+            const filtered = filterItems(state.itemSearch);
+            const matches = state.itemSearch.trim().length === 0
+                ? ensureSelectedItemOption(filtered, state)
+                : filtered;
+            results.innerHTML = itemResultList(matches, state);
+            results.hidden = false;
+            input.setAttribute("aria-expanded", "true");
+            for (const option of results.querySelectorAll<HTMLButtonElement>("[data-item-value]")) {
+                option.addEventListener("click", () => choose(option.dataset.itemValue ?? ""));
+            }
+            activeIndex = -1;
+        };
+
+        input.addEventListener("focus", () => {
+            input.select();
+            open();
+        });
+        input.addEventListener("input", () => {
+            state.itemSearch = input.value;
+            open();
+            setActive(0);
+        });
+        input.addEventListener("keydown", (event) => {
+            if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                event.preventDefault();
+                if (!isOpen()) open();
+                setActive(activeIndex + (event.key === "ArrowDown" ? 1 : -1));
+                return;
+            }
+            if (event.key === "Enter" && isOpen() && activeIndex >= 0) {
+                event.preventDefault();
+                const option = results.querySelectorAll<HTMLButtonElement>("[data-item-value]")[activeIndex];
+                if (option) choose(option.dataset.itemValue ?? "");
+                return;
+            }
+            if (event.key === "Escape" && isOpen()) {
+                event.preventDefault();
+                close(true);
+            }
+        });
+        toggle.addEventListener("click", () => {
+            if (isOpen()) {
+                close(true);
+                return;
+            }
+            input.focus();
+        });
+        picker.addEventListener("focusout", (event) => {
+            if (event.relatedTarget instanceof Node && picker.contains(event.relatedTarget)) return;
+            close(true);
+        });
+    }
+
     function updateSnbtPreview(): void {
         const preview = app.querySelector("#snbtPreview");
         if (!preview) return;
@@ -391,19 +489,6 @@ export function mountItemEditor(
 
     function updateFormattedPreviews(): void {
         renderItemPreview(app, state);
-    }
-
-    function updateItemSelectOptions(): void {
-        const select = app.querySelector("#itemName") as HTMLSelectElement | null;
-        if (!select) return;
-        const filteredItems = ensureSelectedItemOption(filterItems(state.itemSearch), state);
-        select.innerHTML = filteredItems
-            .map((entry) => option(
-                itemOptionValue(entry),
-                entry.label,
-                entry.item.name === state.itemName && entry.metadata === state.metadata
-            ))
-            .join("");
     }
 
     function updateActionState(): void {
@@ -541,7 +626,7 @@ function firstMetadata(item: MinecraftItem | undefined): number | null {
 function filterItems(query: string): FilteredItem[] {
     const normalized = query.trim().toLowerCase();
     if (!normalized) {
-        return ITEMS.slice(0, 180).map((item) => ({
+        return ITEMS.map((item) => ({
             item,
             metadata: firstMetadata(item),
             label: item.displayName,
@@ -551,13 +636,13 @@ function filterItems(query: string): FilteredItem[] {
     const terms = normalized.split(/\s+/).filter(Boolean);
     const matches: FilteredItem[] = [];
     for (const item of ITEMS) {
-        const topHaystack = `${item.displayName} ${item.name}`.toLowerCase();
+        const topHaystack = `${item.displayName} ${item.name} minecraft:${item.name}`.toLowerCase();
         if (terms.every((term) => topHaystack.includes(term))) {
             matches.push({ item, metadata: firstMetadata(item), label: item.displayName });
         }
 
         for (const variant of item.variations ?? []) {
-            const variantHaystack = `${variant.displayName} ${item.displayName} ${item.name}`.toLowerCase();
+            const variantHaystack = `${variant.displayName} ${item.displayName} ${item.name} minecraft:${item.name}`.toLowerCase();
             if (!terms.every((term) => variantHaystack.includes(term))) continue;
             matches.push({
                 item,
@@ -576,8 +661,7 @@ function filterItems(query: string): FilteredItem[] {
 
     return [...unique.values()]
         .sort((left, right) => matchRank(left, normalized) - matchRank(right, normalized) ||
-            left.label.localeCompare(right.label))
-        .slice(0, 250);
+            left.label.localeCompare(right.label));
 }
 
 function matchRank(entry: FilteredItem, query: string): number {
@@ -612,6 +696,45 @@ function ensureSelectedItemOption(items: FilteredItem[], state: State): Filtered
         metadata: state.metadata,
         label: variantDisplayName(item, state.metadata) ?? item.displayName,
     }, ...items];
+}
+
+function selectedItemLabel(state: State): string {
+    const item = currentItem(state);
+    if (!item) return state.itemName;
+    return variantDisplayName(item, state.metadata) ?? item.displayName;
+}
+
+function itemResultList(items: FilteredItem[], state: State): string {
+    if (items.length === 0) {
+        return `<div class="item-results-empty">No matching items</div>`;
+    }
+
+    const visible = items.slice(0, 80);
+    const rows = visible.map((entry, index) => {
+        const selected = entry.item.name === state.itemName && entry.metadata === state.metadata;
+        const metadata = entry.metadata === null ? "" : ` · data ${entry.metadata}`;
+        return `
+            <button
+                id="itemResult-${index}"
+                class="item-result${selected ? " selected" : ""}"
+                type="button"
+                role="option"
+                aria-selected="${selected}"
+                data-item-value="${escapeAttr(itemOptionValue(entry))}"
+                tabindex="-1"
+            >
+                <span class="item-result-copy">
+                    <span class="item-result-name">${escapeHtml(entry.label)}</span>
+                    <span class="item-result-id">minecraft:${escapeHtml(entry.item.name)}${metadata}</span>
+                </span>
+                <span class="item-result-check" aria-hidden="true">✓</span>
+            </button>
+        `;
+    }).join("");
+    const remaining = items.length - visible.length;
+    return remaining > 0
+        ? `${rows}<div class="item-results-more">${remaining} more — keep typing to narrow the list</div>`
+        : rows;
 }
 
 function variantDisplayName(item: MinecraftItem, metadata: number | null): string | undefined {
