@@ -6,6 +6,8 @@ import { enterValue } from "../../housingSync/menus/menuUtils";
 import { isAtMenuTitle } from "../../housingSync/menus/currentMenu";
 import { ItemSlot, MouseButton, menuStateDescription } from "../../tasks/specifics/slots";
 import { removedFormatting } from "../../utils/helpers";
+import type { Color } from "htsw/types";
+import { teamGroupColorFromDisplayName } from "../teamGroupColor";
 
 const HOUSING_MENU_GROUPS_SLOT = "Permissions and Groups";
 const CREATE_GROUP_SLOT = "Create Group";
@@ -21,19 +23,18 @@ const GROUP_LIST_CONTROLS = new Set([
     "close",
 ]);
 
-type GroupListEntry = {
+export type GroupListEntry = {
     index: number;
     name: string;
+    color?: Color;
 };
 
 function stripTooltipDebugSuffix(name: string): string {
     return name.replace(/\s*\(#[0-9a-fA-F]+(?:\/[0-9]+)?\)\s*$/, "").trim();
 }
 
-function groupNameFromSlot(slot: ItemSlot): string | null {
-    const item = slot.getItem();
-    if (item === null || item === undefined) return null;
-    const name = stripTooltipDebugSuffix(removedFormatting(item.getName()).trim());
+function groupNameFromDisplayName(displayName: string): string | null {
+    const name = stripTooltipDebugSuffix(removedFormatting(displayName).trim());
     if (name.length === 0) return null;
     if (GROUP_LIST_CONTROLS.has(name.toLowerCase())) return null;
     return name;
@@ -46,9 +47,19 @@ function readGroupSlots(ctx: TaskContext): { entry: GroupListEntry; slot: ItemSl
     }
     const out: { entry: GroupListEntry; slot: ItemSlot }[] = [];
     for (let i = 0; i < slots.length; i++) {
-        const name = groupNameFromSlot(slots[i]);
+        const item = slots[i].getItem();
+        if (item === null || item === undefined) continue;
+        const displayName = item.getName();
+        const name = groupNameFromDisplayName(displayName);
         if (name === null) continue;
-        out.push({ entry: { index: out.length, name }, slot: slots[i] });
+        out.push({
+            entry: {
+                index: out.length,
+                name,
+                color: teamGroupColorFromDisplayName(displayName),
+            },
+            slot: slots[i],
+        });
     }
     return out;
 }
@@ -91,13 +102,13 @@ async function openGroupsList(ctx: TaskContext): Promise<void> {
     );
 }
 
-async function listAllGroups(ctx: TaskContext): Promise<GroupListEntry[]> {
+export async function listAllGroupEntries(ctx: TaskContext): Promise<GroupListEntry[]> {
     await openGroupsList(ctx);
     return readGroupSlots(ctx).map((row) => row.entry);
 }
 
 export async function listAllGroupNames(ctx: TaskContext): Promise<string[]> {
-    return (await listAllGroups(ctx)).map((entry) => entry.name);
+    return (await listAllGroupEntries(ctx)).map((entry) => entry.name);
 }
 
 export async function openEditGroup(ctx: TaskContext, name: string): Promise<void> {

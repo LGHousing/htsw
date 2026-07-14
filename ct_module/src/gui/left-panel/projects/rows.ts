@@ -87,6 +87,7 @@ import { acceptHouseLockMenuAction } from "./acceptHouseLock";
 import { confirmRebind, houseBindingActions } from "../../houseBinding";
 import type { Bounds, Importable, MenuSlot } from "htsw/types";
 import { tagChild, type TagLike } from "../../../housingSync/fields/itemTagCanonical";
+import { ImportableIcon } from "../../importableVisuals";
 
 export let searchQuery = "";
 export function setSearchQuery(v: string): void {
@@ -1233,6 +1234,11 @@ export function importableRow(parent: ResultImport, imp: Importable): Element {
     const checked = isImportableChecked(checkKey);
     const diagCounts = diagnosticCountsFor(parent.parse, imp);
     const showBadge = diagCounts.errors > 0 || diagCounts.warnings > 0;
+    const contentIcon = ImportableIcon({
+        type: imp.type,
+        name: importableLabel(imp),
+        importable: imp,
+    });
     return Container({
         style: {
             direction: "row",
@@ -1258,9 +1264,8 @@ export function importableRow(parent: ResultImport, imp: Importable): Element {
             rowSlot(INNER_GAP),
             importableStatus(imp),
             rowSlot(INNER_GAP),
-            imp.type === "FUNCTION" && imp.icon !== undefined &&
-                McItem({ item: imp.icon.item, count: imp.icon.count ?? 1 }),
-            imp.type === "FUNCTION" && imp.icon !== undefined && rowSlot(INNER_GAP),
+            contentIcon,
+            contentIcon !== false && rowSlot(INNER_GAP),
             Text({
                 text: importableLabel(imp),
                 truncate: true,

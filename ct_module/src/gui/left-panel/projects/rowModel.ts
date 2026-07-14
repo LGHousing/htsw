@@ -5,6 +5,7 @@ import { Container, Icon } from "../../lib/components";
 import { Icons } from "../../lib/icons.generated";
 import { markGuiDirty } from "../../lib/dirty";
 import type { Section } from "../../../project/importJsonMutations";
+export { IMPORTABLE_TYPE_COLORS } from "../../importableVisuals";
 
 // File-level row types: what `enumerateForSource` returns. Each row is a
 // file the Projects tree displays directly. Importables themselves are no
@@ -29,19 +30,6 @@ export type ResultImport = {
 type ResultScript = { type: "script"; path: string; fullPath: string };
 type ResultItem = { type: "item"; path: string; fullPath: string };
 export type Result = ResultImport | ResultScript | ResultItem;
-
-// The colored bar shown on each importable row, by importable kind.
-export const IMPORTABLE_TYPE_COLORS: { [k in Importable["type"]]: number } = {
-    FUNCTION: 0xff67a7e8 | 0,
-    EVENT: 0xffce7be0 | 0,
-    REGION: 0xff5cb85c | 0,
-    ITEM: 0xffe5bc4b | 0,
-    MENU: 0xffe87a4b | 0,
-    NPC: 0xff6fd38f | 0,
-    TEAM: 0xff4aa3a8 | 0,
-    GROUP: 0xffb695e8 | 0,
-    COMMAND: 0xffe8e06a | 0,
-};
 
 // Structure revision for the Projects tree. The tree's row DESCRIPTORS
 // (which rows exist, not their per-frame content) are cached across frames;

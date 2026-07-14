@@ -58,6 +58,7 @@ import {
 } from "../statusFilter";
 import type { Importable } from "htsw/types";
 import { TAB_GAP, tabLabelsFit } from "../tabs";
+import { ImportableIcon } from "../../importableVisuals";
 
 // Rhino lacks String.prototype.repeat, so cycle through a fixed table.
 const SCAN_DOTS = ["", ".", "..", "..."];
@@ -513,6 +514,13 @@ function itemRow(
                         tooltip: "Stand in this house to select for export",
                         tooltipColor: COLOR_TEXT_DIM,
                     }),
+            ImportableIcon({
+                type: item.type,
+                name: item.name,
+                importable: item.importable,
+                functionIcon: item.icon,
+                color: item.color,
+            }),
             Text({
                 text: item.label ?? item.name,
                 color: COLOR_TEXT,

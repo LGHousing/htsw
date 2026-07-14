@@ -1,4 +1,4 @@
-import type { Importable } from "htsw/types";
+import { COLORS, type Color, type FunctionIcon, type Importable } from "htsw/types";
 
 import TaskContext from "../tasks/context";
 import { atomicWriteText, getFileMtimeMs } from "../utils/filesystem";
@@ -96,6 +96,8 @@ type PresenceRecord = {
     // their name here so the browser reads it without a deep read. Omitted when
     // the identity already is the display name.
     label?: string;
+    icon?: FunctionIcon;
+    color?: Color;
 };
 
 /**
@@ -123,6 +125,11 @@ function buildImportableCacheEntry(
 // type's identity already is its name, so they need no separate label.
 function houseDisplayLabel(importable: Importable): string | undefined {
     if (importable.type === "NPC") return removedFormatting(importable.name);
+    return undefined;
+}
+
+function houseDisplayColor(importable: Importable): Color | undefined {
+    if (importable.type === "TEAM" || importable.type === "GROUP") return importable.color;
     return undefined;
 }
 
@@ -157,6 +164,8 @@ export function writeImportableCache(
             verified: true,
             importable,
             label: houseDisplayLabel(importable),
+            icon: importable.type === "FUNCTION" ? importable.icon : undefined,
+            color: houseDisplayColor(importable),
         });
         if (quiet !== true) ctx.displayMessage(`&7[cache] saved &f${path}`);
         return true;
@@ -202,14 +211,40 @@ export function writePresence(
     housingUuid: string,
     type: Importable["type"],
     name: string,
-    label?: string
+    label?: string,
+    icon?: FunctionIcon,
+    color?: Color
 ): void {
     // Skip if this importable is already known — as content (don't clobber a
     // verified read) or as an existing presence record (don't re-write on every
     // rescan). `name` is the identity for every type (events included).
     const known = ensureEnumLoaded(housingUuid, type);
+    let existing: HouseImportable | undefined;
     for (let i = 0; i < known.length; i++) {
-        if (known[i].name === name) return;
+        if (known[i].name === name) {
+            existing = known[i];
+            break;
+        }
+    }
+    if (existing !== undefined && existing.verified) {
+        if (icon !== undefined || color !== undefined) {
+            indexUpsert(housingUuid, type, {
+                ...existing,
+                ...(icon !== undefined ? { icon } : {}),
+                ...(color !== undefined ? { color } : {}),
+            });
+        }
+        return;
+    }
+    if (
+        existing !== undefined &&
+        existing.label === label &&
+        existing.icon?.item === icon?.item &&
+        (existing.icon?.count ?? 1) === (icon?.count ?? 1) &&
+        existing.icon?.enchanted === icon?.enchanted &&
+        existing.color === color
+    ) {
+        return;
     }
     const path = cachePathForId(housingUuid, type, name);
     const record: PresenceRecord = {
@@ -217,7 +252,9 @@ export function writePresence(
         writtenAt: new Date().toISOString(),
         name,
         verified: false,
-        ...(label !== undefined ? { label } : {}),
+        ...((label ?? existing?.label) !== undefined ? { label: label ?? existing?.label } : {}),
+        ...(icon !== undefined ? { icon } : {}),
+        ...(color !== undefined ? { color } : {}),
     };
     try {
         if (!atomicWriteText(path, JSON.stringify(record, null, 4))) return;
@@ -231,7 +268,9 @@ export function writePresence(
             type,
             verified: false,
             importable: null,
-            label,
+            label: label ?? existing?.label,
+            icon,
+            color,
         });
         presenceWriteRevision++;
     } catch (_e) {
@@ -391,6 +430,8 @@ export type HouseImportable = {
     // Human-readable label when `name` (the identity) isn't itself a name, e.g.
     // an NPC keyed by position. Undefined = display `name` directly.
     label?: string;
+    icon?: FunctionIcon;
+    color?: Color;
 };
 
 const enumIndex = new Map<string, HouseImportable[]>();
@@ -407,6 +448,8 @@ function parseHouseRecord(raw: string | null, type: Importable["type"]): HouseIm
         importable?: unknown;
         name?: unknown;
         label?: unknown;
+        icon?: unknown;
+        color?: unknown;
     };
     try {
         obj = JSON.parse(String(raw));
@@ -423,7 +466,15 @@ function parseHouseRecord(raw: string | null, type: Importable["type"]): HouseIm
     if (obj.importable !== null && typeof obj.importable === "object") {
         const imp = obj.importable as Importable;
         const name = typeof obj.name === "string" ? obj.name : importableIdentity(imp);
-        return { name, type, verified: true, importable: imp, label: houseDisplayLabel(imp) };
+        return {
+            name,
+            type,
+            verified: true,
+            importable: imp,
+            label: houseDisplayLabel(imp),
+            icon: imp.type === "FUNCTION" ? imp.icon : undefined,
+            color: houseDisplayColor(imp),
+        };
     }
     if (typeof obj.name === "string") {
         return {
@@ -432,9 +483,28 @@ function parseHouseRecord(raw: string | null, type: Importable["type"]): HouseIm
             verified: false,
             importable: null,
             label: typeof obj.label === "string" ? obj.label : undefined,
+            icon: parseStoredFunctionIcon(obj.icon),
+            color: parseStoredColor(obj.color),
         };
     }
     return null;
+}
+
+function parseStoredFunctionIcon(value: unknown): FunctionIcon | undefined {
+    if (value === null || typeof value !== "object") return undefined;
+    const raw = value as { item?: unknown; count?: unknown; enchanted?: unknown };
+    if (typeof raw.item !== "string") return undefined;
+    return {
+        item: raw.item,
+        ...(typeof raw.count === "number" ? { count: raw.count } : {}),
+        ...(raw.enchanted === true ? { enchanted: true } : {}),
+    };
+}
+
+function parseStoredColor(value: unknown): Color | undefined {
+    return typeof value === "string" && COLORS.indexOf(value as Color) !== -1
+        ? (value as Color)
+        : undefined;
 }
 
 function scanTypeDir(uuid: string, type: Importable["type"]): HouseImportable[] {
@@ -549,7 +619,9 @@ export function recordHouseScan(
     names: readonly string[],
     // Display labels keyed by identity, for types whose identity isn't a name
     // (NPCs, keyed by position). Omitted for name-identified types.
-    labels?: ReadonlyMap<string, string>
+    labels?: ReadonlyMap<string, string>,
+    icons?: ReadonlyMap<string, FunctionIcon>,
+    colors?: ReadonlyMap<string, Color | undefined>
 ): void {
     const markerPath = cacheScanMarkerPath(uuid, type);
     const scanRecorded = atomicWriteText(markerPath, new Date().toISOString());
@@ -564,6 +636,13 @@ export function recordHouseScan(
         }
     }
     for (let i = 0; i < names.length; i++) {
-        writePresence(uuid, type, names[i], labels?.get(names[i]));
+        writePresence(
+            uuid,
+            type,
+            names[i],
+            labels?.get(names[i]),
+            icons?.get(names[i]),
+            colors?.get(names[i])
+        );
     }
 }

@@ -3,7 +3,8 @@
 import { TaskManager } from "../../../../tasks/manager";
 import { getHousingUuid } from "../../../state";
 import { showToast } from "../../../toast";
-import { listAllTeamNames } from "../../../../importables/teams/listTeams";
+import { markGuiDirty } from "../../../lib/dirty";
+import { listAllTeamEntries } from "../../../../importables/teams/listTeams";
 import {
     houseTypeScanned,
     listCachedImportables,
@@ -32,10 +33,19 @@ export function scanHouseTeams(): void {
     scanInFlight = true;
     TaskManager.run(async (ctx) => {
         try {
-            const names = await listAllTeamNames(ctx);
-            recordHouseScan(uuid, "TEAM", names);
+            const entries = await listAllTeamEntries(ctx);
+            const colors = new Map(entries.map((entry) => [entry.name, entry.color]));
+            recordHouseScan(
+                uuid,
+                "TEAM",
+                entries.map((entry) => entry.name),
+                undefined,
+                undefined,
+                colors
+            );
+            markGuiDirty();
             showToast(
-                `Scanned ${names.length} team${names.length === 1 ? "" : "s"}`,
+                `Scanned ${entries.length} team${entries.length === 1 ? "" : "s"}`,
                 0xff5cb85c
             );
         } finally {

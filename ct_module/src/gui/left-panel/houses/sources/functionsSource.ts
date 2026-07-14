@@ -1,9 +1,13 @@
 /// <reference types="../../../../../CTAutocomplete" />
 
+import type { FunctionIcon } from "htsw/types";
+
 import { TaskManager } from "../../../../tasks/manager";
 import { getHousingUuid } from "../../../state";
 import { showToast } from "../../../toast";
+import { markGuiDirty } from "../../../lib/dirty";
 import { listAllFunctionEntries } from "../../../../importables/functions/listFunctions";
+import { functionIconFromSnapshot } from "../../../../importables/functions/icon";
 import {
     deleteImportableCache,
     houseTypeScanned,
@@ -35,7 +39,13 @@ export function scanHouseFunctions(): void {
     TaskManager.run(async (ctx) => {
         try {
             const entries = await listAllFunctionEntries(ctx);
-            recordHouseScan(uuid, "FUNCTION", entries.map((e) => e.name));
+            const icons = new Map<string, FunctionIcon>();
+            for (let i = 0; i < entries.length; i++) {
+                const icon = functionIconFromSnapshot(entries[i].icon);
+                if (icon !== undefined) icons.set(entries[i].name, icon);
+            }
+            recordHouseScan(uuid, "FUNCTION", entries.map((e) => e.name), undefined, icons);
+            markGuiDirty();
             showToast(
                 `Scanned ${entries.length} function${entries.length === 1 ? "" : "s"}`,
                 0xff5cb85c

@@ -9,14 +9,14 @@ const ItemClass: any = javaType("net.minecraft.item.Item");
 const ItemStackClass: any = javaType("net.minecraft.item.ItemStack");
 const mcItemCache: { [key: string]: any } = {};
 
-function getCachedItemStack(itemId: string, count: number): any {
-    const key = itemId + ":" + count;
+function getCachedItemStack(itemId: string, count: number, metadata: number): any {
+    const key = itemId + ":" + count + ":" + metadata;
     if (key in mcItemCache) return mcItemCache[key];
     try {
         const id = itemId.indexOf(":") >= 0 ? itemId : "minecraft:" + itemId;
         const item = ItemClass.func_111206_d(id);
         if (item === null || item === undefined) { mcItemCache[key] = null; return null; }
-        const stack = new ItemStackClass(item, count);
+        const stack = new ItemStackClass(item, count, metadata);
         mcItemCache[key] = stack;
         return stack;
     } catch (_e) {
@@ -25,8 +25,14 @@ function getCachedItemStack(itemId: string, count: number): any {
     }
 }
 
-export function renderMcItem(itemId: string, count: number, x: number, y: number): void {
-    const stack = getCachedItemStack(itemId, count);
+export function renderMcItem(
+    itemId: string,
+    count: number,
+    metadata: number,
+    x: number,
+    y: number
+): void {
+    const stack = getCachedItemStack(itemId, count, metadata);
     if (stack === null) return;
     try {
         const mc = Client.getMinecraft();

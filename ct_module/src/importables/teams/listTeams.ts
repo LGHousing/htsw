@@ -11,6 +11,8 @@ import {
 } from "../../housingSync/menus/paginatedList";
 import { ItemSlot, MouseButton } from "../../tasks/specifics/slots";
 import { removedFormatting } from "../../utils/helpers";
+import type { Color } from "htsw/types";
+import { teamGroupColorFromDisplayName } from "../teamGroupColor";
 
 const TEAM_LIST_CONFIG: PaginatedListConfig = {
     label: "team",
@@ -20,6 +22,7 @@ const TEAM_LIST_CONFIG: PaginatedListConfig = {
 export type TeamListEntry = {
     index: number;
     name: string;
+    color?: Color;
 };
 
 // The /teams grid mixes team heads with fixed controls; these are not teams.
@@ -44,8 +47,10 @@ function teamNameFromSlotName(rawDisplayName: string): string | null {
 function readTeamEntryFromSlot(slot: ItemSlot, index: number): TeamListEntry | null {
     const item = slot.getItem();
     if (item === null || item === undefined) return null;
-    const name = teamNameFromSlotName(item.getName());
-    return name === null ? null : { index, name };
+    const displayName = item.getName();
+    const name = teamNameFromSlotName(displayName);
+    const color = teamGroupColorFromDisplayName(displayName);
+    return name === null ? null : { index, name, color };
 }
 
 function readVisibleTeamEntries(ctx: TaskContext): TeamListEntry[] {
@@ -79,7 +84,7 @@ export async function openTeamsList(ctx: TaskContext): Promise<void> {
     await ctx.expectAfter(() => ctx.runCommand("/teams"), teamsListOpened());
 }
 
-async function listAllTeams(ctx: TaskContext): Promise<TeamListEntry[]> {
+export async function listAllTeamEntries(ctx: TaskContext): Promise<TeamListEntry[]> {
     await openTeamsList(ctx);
     return await readPaginatedList<TeamListEntry>(
         ctx,
@@ -89,7 +94,7 @@ async function listAllTeams(ctx: TaskContext): Promise<TeamListEntry[]> {
 }
 
 export async function listAllTeamNames(ctx: TaskContext): Promise<string[]> {
-    return (await listAllTeams(ctx)).map((entry) => entry.name);
+    return (await listAllTeamEntries(ctx)).map((entry) => entry.name);
 }
 
 export async function openManageTeam(

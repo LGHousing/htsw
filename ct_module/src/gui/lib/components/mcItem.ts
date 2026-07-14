@@ -3,6 +3,7 @@ import { Element, Style } from "../layout";
 export type McItemProps = {
     item: string;
     count?: number;
+    metadata?: number;
     style?: Style;
 };
 
@@ -17,5 +18,6 @@ export function McItem(props: McItemProps): Element {
         style: props.style ?? DEFAULT_SIZE,
         item: props.item,
         count: props.count ?? 1,
+        metadata: props.metadata ?? 0,
     };
 }

@@ -121,6 +121,7 @@ export type Element =
           style: Style;
           item: string;
           count: number;
+          metadata: number;
       };
 
 function extractChildren(c: Extractable<Child[]>): Element[] {

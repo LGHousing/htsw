@@ -441,7 +441,7 @@ function renderItem(
             );
         }
     } else if (e.kind === "mcItem") {
-        renderMcItem(e.item, e.count, r.x, r.y);
+        renderMcItem(e.item, e.count, e.metadata, r.x, r.y);
     }
 }
 
