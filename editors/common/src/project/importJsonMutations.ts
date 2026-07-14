@@ -188,9 +188,12 @@ export function removeImportableEntry(
     const match = findEntry(fs, importJsonPath, section, identity);
     if (match === null) return false;
 
+    const path: json.JSONPath = match.sectionLength === 1
+        ? [section]
+        : [section, match.index];
     const next = json.applyEdits(match.text, json.modify(
         match.text,
-        [section, match.index],
+        path,
         undefined,
         { formattingOptions: FORMATTING }
     ));
@@ -222,6 +225,7 @@ export function renameImportableEntry(
 type EntryMatch = {
     text: string;
     index: number;
+    sectionLength: number;
 };
 
 function findEntry(
@@ -241,7 +245,7 @@ function findEntry(
     const items = sectionNode.children ?? [];
     for (let i = 0; i < items.length; i++) {
         if (entryNodeMatchesIdentity(items[i], section, identity)) {
-            return { text, index: i };
+            return { text, index: i, sectionLength: items.length };
         }
     }
     return null;
