@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import * as htsw from "htsw";
+import { getLocation } from "jsonc-parser";
 
 type CompletionKind =
     | "action"
@@ -379,6 +380,46 @@ class HtslCompletionProvider {
 
 }
 
+export class ImportJsonCompletionAdapter implements vscode.CompletionItemProvider {
+    public provideCompletionItems(
+        document: vscode.TextDocument,
+        position: vscode.Position
+    ): vscode.CompletionItem[] | undefined {
+        if (!isImportJsonDocument(document)) return undefined;
+
+        const location = getLocation(document.getText(), document.offsetAt(position));
+        if (!isFunctionIconItemPath(location.path)) return undefined;
+
+        const range = document.getWordRangeAtPosition(position, /[\w:.-]+/);
+        return minecraftItemIdCompletions().map((completion) => {
+            const item = new vscode.CompletionItem(
+                completion.label,
+                vscode.CompletionItemKind.Value
+            );
+            item.detail = completion.detail;
+            item.range = range
+                ? new vscode.Range(range.start, position)
+                : undefined;
+            item.insertText = completion.insertText;
+            item.filterText = completion.filterText;
+            return item;
+        });
+    }
+}
+
+function isImportJsonDocument(document: vscode.TextDocument): boolean {
+    const fileName = document.uri.path.slice(document.uri.path.lastIndexOf("/") + 1).toLowerCase();
+    return fileName === "import.json" || fileName.endsWith(".import.json");
+}
+
+function isFunctionIconItemPath(path: readonly (string | number)[]): boolean {
+    return path.length === 4 &&
+        path[0] === "functions" &&
+        typeof path[1] === "number" &&
+        path[2] === "icon" &&
+        path[3] === "item";
+}
+
 function completionCandidateRank(
     candidate: string,
     normalized: string,
@@ -630,13 +671,7 @@ function provideSnbtCompletions(linePrefix: string): CompletionSpec[] {
 
     const currentToken = /[A-Za-z0-9_:.-]*$/.exec(linePrefix)?.[0] ?? "";
     if (currentToken.startsWith("minecraft:") || /id\s*:\s*"?minecraft:[\w.-]*$/i.test(linePrefix)) {
-        return htsw.types.MINECRAFT_ITEMS.map((item) => ({
-            label: `minecraft:${item.name}`,
-            insertText: `minecraft:${item.name}`,
-            filterText: `minecraft:${item.name} ${item.displayName}`,
-            kind: "item" as const,
-            detail: item.displayName,
-        }));
+        return minecraftItemIdCompletions();
     }
 
     return [
@@ -654,6 +689,16 @@ function provideSnbtCompletions(linePrefix: string): CompletionSpec[] {
         insertText: key,
         kind: "constant" as const,
         detail: "SNBT key",
+    }));
+}
+
+function minecraftItemIdCompletions(): CompletionSpec[] {
+    return htsw.types.MINECRAFT_ITEMS.map((item) => ({
+        label: `minecraft:${item.name}`,
+        insertText: `minecraft:${item.name}`,
+        filterText: `minecraft:${item.name} ${item.displayName}`,
+        kind: "item",
+        detail: item.displayName,
     }));
 }
 

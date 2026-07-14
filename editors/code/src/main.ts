@@ -71,6 +71,14 @@ export function activate(context: ExtensionContext) {
 
         for (const lang of ["json", "jsonc"]) {
             providers.push(
+                languages.registerCompletionItemProvider(
+                    lang,
+                    new languageFeatures.ImportJsonCompletionAdapter(),
+                    '"',
+                    ":"
+                )
+            );
+            providers.push(
                 languages.registerCodeActionsProvider(
                     lang,
                     new languageFeatures.JsonSnbtCodeActionAdapter(),

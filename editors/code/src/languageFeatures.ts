@@ -21,7 +21,7 @@ import {
 } from "./snbtFormat";
 import { isPathInExcludedDiagnosticFolder } from "./diagnosticExclusions";
 
-export { CompletionAdapter, SnbtCompletionAdapter } from "./completions";
+export { CompletionAdapter, ImportJsonCompletionAdapter, SnbtCompletionAdapter } from "./completions";
 
 class StringFileLoader implements htsw.FileLoader {
     constructor(private readonly src: string) {}
